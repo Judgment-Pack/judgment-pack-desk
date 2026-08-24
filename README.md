@@ -11,7 +11,7 @@ matching change on the Go side.
 
 ## What it shows
 
-The first view is a pack browser:
+**A pack browser:**
 
 - `/` lists the packs the project declares, via the runtime's `list_packs`.
 - `/packs/:id` fetches one document with `get_pack` and renders it: the
@@ -22,6 +22,53 @@ The first view is a pack browser:
 Conditions are shown as formatted JSON rather than paraphrased into English. A
 paraphrase of a policy condition would be a claim about what the policy means,
 and only the document gets to make that claim.
+
+**An evaluation and trace view:**
+
+- `/packs/:id/evaluate` runs the pack over documents you supply, through the
+  runtime's `experimental_evaluate` tool, and renders the payload it returns.
+
+That view keeps three things apart, because the payload does:
+
+- The **disposition** is the portable JPS Core §8.3 answer and the authoritative
+  part of the payload. It gets the first panel and a frame of its own: kind,
+  outcome id, the retained reason set, and the handoff state with what triggered
+  it.
+- The **handoff target** is shown *beside* the disposition and never inside it,
+  because §8.3 keeps it outside one. It is what the pack configures. No delivery
+  is observed, and the desk claims none.
+- The **trace** is informative. It is rendered as the staged walk it is —
+  applicability, then exceptions, then rules, in the payload's own order — with
+  each entry's id, its condition verdict colour-coded across `true`, `false` and
+  `unknown`, the effect or outcome where the entry carries one, and badges for
+  `skipped`, `suppressed` and `onUnknown`. It decides nothing.
+
+The envelope panel reports the facts about the run rather than about the answer:
+the `experimental` flag, the specVersion the pack declares beside the
+evaluatorSpecVersion of the contract applied to it, the packId and packVersion
+read off the document that was evaluated, the bundled artifact digest, and
+`conformanceClaimReference` — displayed as what it is, a locator for the file
+that states the runtime's claim, and not a claim the payload itself makes.
+
+Nothing is invented: a member the payload omits is absent from the view rather
+than filled in, and a verdict is shown as the payload spells it. A refused
+evaluation carries no disposition at all, so a refusal is reported as its §8.4
+class and phase with the runtime's diagnostics, and never as a substitute
+answer.
+
+**A what-if loop.** `experimental_evaluate` takes the facts and evidence
+documents as JSON text rather than as paths, so the loop needs nothing from the
+chassis: edit the documents in the page, press **Re-evaluate**, and a *What
+changed* table puts the previous disposition beside the current one — kind,
+outcome id, reasons, handoff state, what triggered it, and the handoff target.
+Unchanged members are listed too, so the diff never hides what held. The trace
+is not diffed: a trace that moved while the disposition held is not a change in
+the answer.
+
+The two editors keep the tri-state the tool asks for. Leaving the evidence box
+unchecked omits the key entirely, which is what "no evidence document at all"
+means; a key present with an empty string would be a *supplied* empty document,
+and is refused as malformed-input.
 
 ## Requirements
 
@@ -143,6 +190,23 @@ JPACK_PROJECT=/path/to/project go test ./...
 
 `JPACK_BIN` overrides the runtime binary; otherwise `./bin/jpack` is used when
 present.
+
+## Upstream gaps
+
+The desk consumes the runtime's public wire and nothing else. Where the wire
+cannot express something the desk wants, the gap is recorded here rather than
+worked around in the chassis — a chassis that parsed or supplemented the traffic
+would stop being one.
+
+- **No rehearsal mode on `experimental_evaluate`.** Every completed call appends
+  one audit record in a project whose `jpack.json` declares an audit directory,
+  and the what-if loop is calls: exploring five variants of a facts document
+  leaves five records saying the project decided five times. The runtime already
+  draws this distinction elsewhere — `experimental_test_packs` writes nothing,
+  on the grounds that a matrix row is a rehearsal rather than a decision — but a
+  what-if run has no equivalent, and the tool takes no argument that would say
+  so. Until it does, the desk's evaluate view names the consequence in the page
+  instead of hiding it.
 
 ## License
 

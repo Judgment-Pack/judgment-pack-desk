@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { ErrorBox } from './components/primitives'
 import { useMcp } from './mcp/McpProvider'
 import { PackDetail } from './routes/PackDetail'
+import { PackEvaluate } from './routes/PackEvaluate'
 import { PackList } from './routes/PackList'
 
 export function App() {
@@ -23,6 +24,7 @@ export function App() {
           <Routes>
             <Route path="/" element={<PackList />} />
             <Route path="/packs/:packId" element={<PackDetail />} />
+            <Route path="/packs/:packId/evaluate" element={<PackEvaluate />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         )}

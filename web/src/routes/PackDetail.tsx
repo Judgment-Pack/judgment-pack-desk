@@ -50,6 +50,9 @@ export function PackDetail() {
         <TabButton current={tab} value="raw" onSelect={setTab}>
           Raw JSON
         </TabButton>
+        <Link className="tab tab-action" to={`/packs/${encodeURIComponent(packId ?? '')}/evaluate`}>
+          Evaluate…
+        </Link>
       </div>
 
       {tab === 'semantic' ? (
