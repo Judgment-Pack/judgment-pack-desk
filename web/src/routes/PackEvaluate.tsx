@@ -4,7 +4,8 @@ import { DispositionDiff } from '../components/DispositionDiff'
 import { EvaluationRaw, EvaluationView } from '../components/EvaluationView'
 import { Empty, ErrorBox, Pill, Section } from '../components/primitives'
 import { useMcp } from '../mcp/McpProvider'
-import { ToolRefusal, useEvaluate, usePacks } from '../mcp/queries'
+import { useEvaluate, usePacks } from '../mcp/queries'
+import { ToolRefusal } from '../mcp/refusal'
 import type { EvaluationRun, PackSummary } from '../mcp/types'
 
 type ResultTab = 'reading' | 'raw'
@@ -24,7 +25,7 @@ type ResultTab = 'reading' | 'raw'
  */
 export function PackEvaluate() {
   const { packId } = useParams<{ packId: string }>()
-  const { status, rehearsalSupported } = useMcp()
+  const { status, rehearsalSupported, known: capabilitiesKnown } = useMcp()
   const { data: inventory } = usePacks()
   const evaluate = useEvaluate()
 
@@ -99,11 +100,19 @@ export function PackEvaluate() {
               is identical, no audit record is appended, no reviewed set is
               consulted, and the payload carries the label.
             </>
-          ) : (
+          ) : capabilitiesKnown ? (
             <>
               This runtime predates the rehearsal declaration (jpack 0.18.0), so
               in a project whose <code>jpack.json</code> declares an audit
               directory, each completed run appends one record to it.
+            </>
+          ) : (
+            <>
+              This desk could not read the runtime's tool listing, so whether it
+              accepts the rehearsal declaration is unknown rather than known to
+              be no. Runs are sent without it, which means that in a project
+              whose <code>jpack.json</code> declares an audit directory, each
+              completed run may append one record to it.
             </>
           )}
         </p>

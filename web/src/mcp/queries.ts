@@ -5,57 +5,49 @@ import {
   type UseMutationResult,
   type UseQueryResult
 } from '@tanstack/react-query'
+import { readServedDocument } from './graphDocument'
 import { useMcp } from './McpProvider'
+import { ToolRefusal } from './refusal'
 import type {
   Evaluation,
   EvaluationRun,
+  GraphDocumentMeta,
+  GraphInventory,
   GraphSuite,
   LoadedPack,
   PackFileMeta,
   PackInventory,
   PackTest,
-  RefusalEnvelope
+  RefusalEnvelope,
+  ServedGraph
 } from './types'
 
 /**
- * A refusal the runtime reported in band: `isError`, with the message as text
- * and, on the evaluation surface, the JPS §8.4 envelope as structuredContent.
- * Both are kept, so a view can show the machine-readable class and phase
- * instead of parsing them back out of the prose.
- */
-export class ToolRefusal extends Error {
-  readonly envelope: RefusalEnvelope | undefined
-
-  constructor(message: string, envelope: RefusalEnvelope | undefined) {
-    super(message)
-    this.name = 'ToolRefusal'
-    this.envelope = envelope
-  }
-}
-
-/**
- * Call a runtime tool and parse the JSON it returns.
+ * Call a runtime tool and return its text beside its structured content.
  *
- * Every jpack tool answers with one text content block holding JSON, and
- * reports refusals in band via isError rather than as a protocol error. Both
- * facts are handled here so no view has to know them.
+ * Every jpack tool answers with one text content block, and reports refusals
+ * in band via isError rather than as a protocol error. Both facts are handled
+ * here so no view has to know them. What the text *is* is the caller's
+ * question: most tools answer with JSON, and one — `experimental_get_graph` —
+ * answers with the project's own document bytes, which are exactly as
+ * parseable as the file on disk happens to be.
  */
-async function callToolJSON<T>(
+async function callToolText(
   client: Client,
   name: string,
   args: Record<string, unknown> = {},
   signal?: AbortSignal
-): Promise<{ parsed: T; raw: string; structured: Record<string, unknown> | undefined }> {
+): Promise<{ raw: string; structured: Record<string, unknown> | undefined }> {
   // The signal is the query's own: a file change cancels in-flight project
   // queries before invalidating, so a stale in-flight answer can never satisfy
   // the fresh question (see McpProvider's fileChanged handler).
   const result = await client.callTool({ name, arguments: args }, undefined, { signal })
 
-  const blocks = Array.isArray(result.content) ? result.content : []
-  const text = blocks
-    .filter((block): block is { type: 'text'; text: string } => block?.type === 'text')
-    .map((block) => block.text)
-    .join('')
+  const content = Array.isArray(result.content) ? result.content : []
+  const textBlocks = content.filter(
+    (block): block is { type: 'text'; text: string } => block?.type === 'text'
+  )
+  const text = textBlocks.map((block) => block.text).join('')
 
   if (result.isError) {
     throw new ToolRefusal(
@@ -63,21 +55,39 @@ async function callToolJSON<T>(
       result.structuredContent as RefusalEnvelope | undefined
     )
   }
-  if (!text) {
+  // The block count is the question, not the joined length. A tool that
+  // answered with an empty text block *did* answer, and a served document that
+  // happens to be an empty file is exactly that answer — reporting it as "no
+  // text content" would describe the runtime as having said nothing. What an
+  // empty answer means is each caller's own: the JSON door below rejects it at
+  // the parse, and the served-document door reads it as the zero bytes it is.
+  if (textBlocks.length === 0) {
     throw new Error(`${name} returned no text content`)
   }
+  return { raw: text, structured: result.structuredContent as Record<string, unknown> | undefined }
+}
 
+/**
+ * Call a runtime tool whose text half is one JSON payload, and parse it.
+ *
+ * Text that is not JSON is a failure *here* because every tool this wraps
+ * promises JSON. The one tool that promises only bytes does not come through
+ * this door.
+ */
+async function callToolJSON<T>(
+  client: Client,
+  name: string,
+  args: Record<string, unknown> = {},
+  signal?: AbortSignal
+): Promise<{ parsed: T; raw: string; structured: Record<string, unknown> | undefined }> {
+  const { raw, structured } = await callToolText(client, name, args, signal)
   let parsed: T
   try {
-    parsed = JSON.parse(text) as T
+    parsed = JSON.parse(raw) as T
   } catch (cause) {
     throw new Error(`${name} returned text that is not JSON: ${String(cause)}`)
   }
-  return {
-    parsed,
-    raw: text,
-    structured: result.structuredContent as Record<string, unknown> | undefined
-  }
+  return { parsed, raw, structured }
 }
 
 /** The project's declared packs, as the runtime resolves them. */
@@ -145,17 +155,137 @@ export function usePackMatrix(packId?: string): UseQueryResult<PackTest, Error> 
  * refused, so "this project declares no graph" is an answer this query returns
  * rather than an error a view has to recognise.
  */
-export function useGraphMatrix(graphId?: string): UseQueryResult<GraphSuite, Error> {
+export function useGraphMatrix(
+  graphId?: string,
+  /**
+   * Whether to run at all. The home page turns it off where the cheap
+   * inventory answers its question instead — running every configured graph's
+   * matrix to decide whether to render a link is a real cost on a large
+   * project, and ADR-0029 made it unnecessary.
+   */
+  enabled = true
+): UseQueryResult<GraphSuite, Error> {
   const { client, status } = useMcp()
   return useQuery({
     queryKey: ['experimental_test_graphs', graphId ?? null],
-    enabled: status === 'ready' && client !== null,
+    enabled: enabled && status === 'ready' && client !== null,
     queryFn: async ({ signal }) => {
       const args = graphId === undefined ? {} : { graph_id: graphId }
       const { parsed } = await callToolJSON<GraphSuite>(client!, 'experimental_test_graphs', args, signal)
       return parsed
     }
   })
+}
+
+/**
+ * The graphs the project configures, resolved (ADR-0029).
+ *
+ * The cheap half of the graph surface: one call, no evaluator, and the
+ * document identities read beside the configured ids. It answers what the
+ * graph matrix previously had to be run to answer, and it answers it about
+ * graphs whose *rows* would not load — a graph the matrix reports only as a
+ * failure is still a configured graph, and this says so.
+ *
+ * The query is disabled where the runtime does not advertise the tool, so
+ * against jpack 0.18.0 and older it never fires and its consumers fall back.
+ */
+export function useGraphInventory(): UseQueryResult<GraphInventory, Error> {
+  const { client, status, graphInventorySupported } = useMcp()
+  return useQuery({
+    queryKey: ['experimental_list_graphs'],
+    enabled: status === 'ready' && client !== null && graphInventorySupported,
+    queryFn: async ({ signal }) => {
+      const { parsed } = await callToolJSON<GraphInventory>(
+        client!,
+        'experimental_list_graphs',
+        {},
+        signal
+      )
+      return parsed
+    }
+  })
+}
+
+/**
+ * One configured graph document, served (ADR-0029).
+ *
+ * The text half is the project's own file, byte for byte; the structured half
+ * is the metadata beside it, including the runtime's own `status` — `valid`
+ * where its decode succeeded, `undecodable` where it did not. **Serving is not
+ * validating**, so an undecodable document arrives as a successful call whose
+ * text is not JSON. That is why this goes through `callToolText`: routing it
+ * through the JSON door would turn a document the runtime deliberately served
+ * into a transport error, and the mid-edit document is the one a client most
+ * needs to see.
+ *
+ * The read is subordinate to the runtime's verdict, never a second opinion on
+ * it. `readServedDocument` consults `meta.status` before it parses: the
+ * runtime's decode is the stricter of the two — duplicate member names alone
+ * are refused there and taken last-wins by `JSON.parse` — so a document the
+ * runtime could not decode is never one this client decodes anyway. `document`
+ * is undefined in that case and in every case where the text did not carry what
+ * the views draw from, and `unreadable` says which.
+ *
+ * The connection epoch is part of the key. A served document is joined to a
+ * matrix run's coverage by node name and edge index, and those two accounts
+ * only describe one graph if they came from one connection to one project; a
+ * key that survived a reconnect would let a document read before the socket
+ * dropped be joined to a matrix run from after it.
+ */
+export function useGraphDocument(graphId: string | undefined): UseQueryResult<ServedGraph, Error> {
+  const { client, status, graphDocumentSupported, connectionEpoch } = useMcp()
+  return useQuery({
+    queryKey: ['experimental_get_graph', connectionEpoch, graphId ?? null],
+    enabled:
+      status === 'ready' && client !== null && graphDocumentSupported && Boolean(graphId),
+    queryFn: async ({ signal }) => {
+      const { raw, structured } = await callToolText(
+        client!,
+        'experimental_get_graph',
+        { graph_id: graphId },
+        signal
+      )
+      // A runtime that answered without structured content leaves the metadata
+      // empty rather than invented; every reader here treats a missing member
+      // as missing — including the status, whose absence is not `valid`.
+      const meta = (structured ?? {}) as unknown as GraphDocumentMeta
+      const read = readServedDocument(meta, raw)
+      return read.ok
+        ? { meta, raw, document: read.document }
+        : { meta, raw, unreadable: read.reason }
+    }
+  })
+}
+
+/**
+ * How many graphs the project configures, by the cheapest route the connected
+ * runtime offers.
+ *
+ * With `experimental_list_graphs` (ADR-0029) that is one call that evaluates
+ * nothing. Without it the only way to find out is to run every configured
+ * graph's matrix — affordable, because a row is a rehearsal and writes nothing,
+ * but a real cost on a large project paid to decide whether to render a link.
+ * Exactly one of the two queries is enabled, so the older route is not run
+ * beside the newer one.
+ */
+export function useConfiguredGraphs(): {
+  count: number
+  isPending: boolean
+  error: Error | null
+  /** True where the count came from the inventory rather than from a matrix run. */
+  fromInventory: boolean
+} {
+  const { graphInventorySupported } = useMcp()
+  const inventory = useGraphInventory()
+  const matrix = useGraphMatrix(undefined, !graphInventorySupported)
+  const source = graphInventorySupported ? inventory : matrix
+  const graphs = graphInventorySupported ? inventory.data?.graphs : matrix.data?.graphs
+  return {
+    count: graphs?.length ?? 0,
+    isPending: source.isPending,
+    error: source.error,
+    fromInventory: graphInventorySupported
+  }
 }
 
 /** The documents one evaluation is run over. */

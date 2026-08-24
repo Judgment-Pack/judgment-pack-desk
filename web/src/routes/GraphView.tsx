@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { CoverageReport } from '../components/CoverageReport'
 import { GraphWalkDiagram } from '../components/GraphWalkDiagram'
 import { Empty, ErrorBox, Loading, Pill, Section, statusTone } from '../components/primitives'
 import { parseDisposition } from '../mcp/canonical'
-import { useGraphMatrix } from '../mcp/queries'
-import type { GraphSuiteEntry, GraphTestRow } from '../mcp/types'
+import { deriveWalkLayout, walkFallbackReason } from '../mcp/graphDocument'
+import { useMcp } from '../mcp/McpProvider'
+import { useGraphDocument, useGraphInventory, useGraphMatrix } from '../mcp/queries'
+import type { GraphInventory, GraphSuiteEntry, GraphSummary, GraphTestRow } from '../mcp/types'
 
 /**
  * The project's configured graphs, and their matrices run.
@@ -16,20 +18,67 @@ import type { GraphSuiteEntry, GraphTestRow } from '../mcp/types'
  * convention, and only each node's pack evaluation reaches the shared
  * evaluator. The payload says so in its label, and so does this page.
  *
+ * Two of the runtime's tools answer two different questions here, and the page
+ * uses whichever it has:
+ *
+ * - `experimental_list_graphs` (ADR-0029) says what the project *configures*,
+ *   for one cheap call that evaluates nothing. It lands first, so the page has
+ *   something true to show while the matrix is still running — and it lists a
+ *   graph whose rows would not load, which a matrix run reports only as a
+ *   failure.
+ * - `experimental_test_graphs` runs the rows, and stays the only source of
+ *   rows and coverage.
+ *
  * A project that configures no graph is an answer rather than an error: the
  * walk reports `skipped` with no entries, and the page says so plainly.
  */
 export function GraphView() {
   const { graphId } = useParams<{ graphId?: string }>()
+  const { graphInventorySupported } = useMcp()
+  const inventory = useGraphInventory()
   const { data, error, isPending, isFetching } = useGraphMatrix(graphId)
 
-  if (isPending) return <Loading what={graphId ? `graph ${graphId}` : "the project's graphs"} />
-  if (error) {
-    return <ErrorBox title={graphId ? `Could not run graph ${graphId}` : 'Could not run the graphs'} error={error} />
-  }
-  if (!data) return null
+  // The inventory is what lets the page render before the matrix has run. With
+  // no inventory to show, the old behaviour stands exactly: wait, then report.
+  //
+  // A listing that failed shows nothing rather than what it last said: this
+  // section is titled "Configured", and configuration a failed call cannot
+  // confirm is not what the project configures now. The failure itself is
+  // reported below, which is what the home page sends a reader here for.
+  const listing = inventory.error ? undefined : inventory.data
 
-  const graphs = data.graphs ?? []
+  // Nonfatal, and never silent: the matrix still runs and still reports what it
+  // can, but a listing that refused is the one thing that would otherwise
+  // vanish — the graphs it would have named are exactly the ones a matrix run
+  // cannot report on.
+  const inventoryNotice = inventory.error ? (
+    <p className="note note-warn">
+      The configured graphs could not be listed — {inventory.error.message}. What is below is the
+      matrix run, which reports a graph only where its rows loaded.
+    </p>
+  ) : null
+
+  if (isPending && !listing) {
+    return (
+      <>
+        {inventoryNotice}
+        <Loading what={graphId ? `graph ${graphId}` : "the project's graphs"} />
+      </>
+    )
+  }
+  if (error && !listing) {
+    return (
+      <>
+        {inventoryNotice}
+        <ErrorBox
+          title={graphId ? `Could not run graph ${graphId}` : 'Could not run the graphs'}
+          error={error}
+        />
+      </>
+    )
+  }
+
+  const graphs = data?.graphs ?? []
 
   return (
     <article className="detail">
@@ -49,36 +98,63 @@ export function GraphView() {
 
       <header className="detail-head">
         <h1>{graphId ?? 'Graphs'}</h1>
-        <p className="ids">
-          <Pill tone={statusTone(data.status)}>{data.status}</Pill>
-          <span>
-            {data.summary.passed} of {data.summary.total}{' '}
-            {data.summary.total === 1 ? 'row' : 'rows'} passed
-          </span>
-          {data.summary.mismatched > 0 && (
-            <Pill tone="danger">{data.summary.mismatched} mismatched</Pill>
-          )}
-          {isFetching && <span className="quiet">re-running…</span>}
-        </p>
+        {data ? (
+          <p className="ids">
+            <Pill tone={statusTone(data.status)}>{data.status}</Pill>
+            <span>
+              {data.summary.passed} of {data.summary.total}{' '}
+              {data.summary.total === 1 ? 'row' : 'rows'} passed
+            </span>
+            {data.summary.mismatched > 0 && (
+              <Pill tone="danger">{data.summary.mismatched} mismatched</Pill>
+            )}
+            {isFetching && <span className="quiet">re-running…</span>}
+          </p>
+        ) : (
+          <p className="ids">
+            <span className="quiet">
+              {error ? 'the graph matrix could not run' : 'running the graph matrix…'}
+            </span>
+          </p>
+        )}
         <p className="meta">
-          {data.configPath && <code>{data.configPath}</code>}
-          {data.configVersion && <span>configVersion {data.configVersion}</span>}
-          {data.formatVersion && <span>graph format {data.formatVersion}</span>}
-          {data.evaluatorSpecVersion && <span>evaluator {data.evaluatorSpecVersion}</span>}
+          {(data?.configPath ?? listing?.configPath) && (
+            <code>{data?.configPath ?? listing?.configPath}</code>
+          )}
+          {(data?.configVersion ?? listing?.configVersion) && (
+            <span>configVersion {data?.configVersion ?? listing?.configVersion}</span>
+          )}
+          {data?.formatVersion && <span>graph format {data.formatVersion}</span>}
+          {data?.evaluatorSpecVersion && <span>evaluator {data.evaluatorSpecVersion}</span>}
         </p>
       </header>
 
-      {graphs.length === 0 ? (
+      {inventoryNotice}
+
+      {graphInventorySupported && listing && (
+        <ConfiguredGraphs inventory={listing} only={graphId} />
+      )}
+
+      {error ? (
+        <ErrorBox
+          title={graphId ? `Could not run graph ${graphId}` : 'Could not run the graphs'}
+          error={error}
+        />
+      ) : !data ? (
+        <Loading what={graphId ? `graph ${graphId}` : "the project's graphs"} />
+      ) : graphs.length === 0 ? (
         <Empty>
           This project configures no graph. A graph is declared under{' '}
           <code>graphs</code> in <code>jpack.json</code>, which needs{' '}
           <code>configVersion</code> 2 or newer.
         </Empty>
       ) : (
-        graphs.map((entry) => <GraphEntry key={entry.id} entry={entry} />)
+        graphs.map((entry) => (
+          <GraphEntry key={entry.id} entry={entry} matrixSettled={!isFetching} />
+        ))
       )}
 
-      {data.label && (
+      {data?.label && (
         <p className="note">
           <strong>What this reports.</strong> {data.label}
         </p>
@@ -87,7 +163,104 @@ export function GraphView() {
   )
 }
 
-function GraphEntry({ entry }: { entry: GraphSuiteEntry }) {
+/**
+ * What the project configures, from the inventory alone.
+ *
+ * Nothing here has been run. The section says what `jpack.json` declares and
+ * what the runtime read off each document's own bytes — which is why a row can
+ * carry a `detail` and no identity at all: listing is not validating, and the
+ * identity members are left empty rather than guessed. `nodeCount` and
+ * `edgeCount` are absent rather than zero for exactly the same reason, so
+ * "counts not read" is printed where they are missing instead of a `0` that
+ * would read as an honest empty graph.
+ */
+function ConfiguredGraphs({ inventory, only }: { inventory: GraphInventory; only?: string }) {
+  const all = inventory.graphs ?? []
+  const rows = only ? all.filter((row) => row.id === only) : all
+  return (
+    <Section title="Configured" count={rows.length}>
+      <>
+        {inventory.note && <p className="note">{inventory.note}</p>}
+        {rows.length === 0 ? (
+          <Empty>
+            {only
+              ? `The project's configuration declares no graph with the id ${only}.`
+              : 'The configuration declares no graph.'}
+          </Empty>
+        ) : (
+          <ul className="cards">
+            {rows.map((row) => (
+              <ConfiguredGraph key={row.id} row={row} />
+            ))}
+          </ul>
+        )}
+      </>
+    </Section>
+  )
+}
+
+function ConfiguredGraph({ row }: { row: GraphSummary }) {
+  return (
+    <li className="card">
+      <div className="card-head">
+        <h3>
+          <Link to={`/graphs/${encodeURIComponent(row.id)}`}>{row.id}</Link>
+        </h3>
+        {row.graphVersion && <Pill tone="quiet">v{row.graphVersion}</Pill>}
+        {row.resultNode && <Pill tone="neutral">result {row.resultNode}</Pill>}
+        {!row.rowsDeclared && <Pill tone="skipped">no rows declared</Pill>}
+      </div>
+      {row.description && <p>{row.description}</p>}
+      <p className="meta">
+        {row.path && <code>{row.path}</code>}
+        {row.rowsPath && <code>{row.rowsPath}</code>}
+        {row.graphId && <span>graph id {row.graphId}</span>}
+        {row.formatVersion && <span>format {row.formatVersion}</span>}
+        <span>
+          {row.nodeCount === undefined || row.edgeCount === undefined
+            ? 'node and edge counts not read'
+            : `${row.nodeCount} ${row.nodeCount === 1 ? 'node' : 'nodes'}, ${row.edgeCount} ${
+                row.edgeCount === 1 ? 'edge' : 'edges'
+              }`}
+        </span>
+      </p>
+      {row.detail && <p className="note note-warn">{row.detail}</p>}
+    </li>
+  )
+}
+
+/**
+ * One configured graph's run, and the walk drawn from the document beside it.
+ *
+ * The two accounts on screen come from two separate calls: the matrix run this
+ * entry is part of, and the document fetched here. They are joined by node name
+ * and by edge index — nothing on either payload binds them to each other — so
+ * the join is only honest while both are the *current* answer from the *same*
+ * connection. Everything below turns on that:
+ *
+ * - the document query is keyed by the connection epoch, so a reconnect brings
+ *   no document forward from the socket before it;
+ * - a document is drawn only while the runtime still advertises the tool, so a
+ *   reconnect to a runtime without it withdraws the drawing rather than leaving
+ *   a document no live capability accounts for;
+ * - and it is drawn only while neither call is in flight, so a matrix being
+ *   re-run never lends its previous coverage to a document just read, or the
+ *   other way round.
+ *
+ * There is no permanent binding to be had here: the matrix payload carries no
+ * digest of the document its walk ran over, so nothing in the two answers can
+ * prove they describe one file. Inventing one — comparing node names, say, and
+ * calling agreement provenance — would be this client asserting a link the
+ * runtime never stated. See the README's upstream gaps.
+ */
+function GraphEntry({
+  entry,
+  /** False while the matrix these rows came from is being re-run. */
+  matrixSettled
+}: {
+  entry: GraphSuiteEntry
+  matrixSettled: boolean
+}) {
   const rows = entry.rows ?? []
   // Selection is derived, not just stored: the requested row where it still
   // exists, else the first row there is. A refetch that drops the requested
@@ -95,6 +268,22 @@ function GraphEntry({ entry }: { entry: GraphSuiteEntry }) {
   // instead of leaving a full picker with nothing on the diagram.
   const [selected, setSelected] = useState<string | undefined>(undefined)
   const row = rows.find((candidate) => candidate.id === selected) ?? rows[0]
+
+  // The configured id the matrix reports an entry under is the same configured
+  // id the inventory and the fetch are keyed by — the runtime resolves both
+  // from one jpack.json entry — so this is the id to ask for.
+  const { graphDocumentSupported } = useMcp()
+  const served = useGraphDocument(entry.id)
+  const inFlight = graphDocumentSupported && (served.isPending || served.isFetching || !matrixSettled)
+  const settled = graphDocumentSupported && served.isSuccess && !served.isFetching && matrixSettled
+  const layout = useMemo(
+    () =>
+      settled && served.data?.document
+        ? deriveWalkLayout(served.data.document, entry.coverage)
+        : undefined,
+    [settled, served.data, entry.coverage]
+  )
+  const shape = layout?.drawn ? layout.shape : undefined
 
   return (
     <section className="matrix-entry">
@@ -131,7 +320,42 @@ function GraphEntry({ entry }: { entry: GraphSuiteEntry }) {
               ))}
             </div>
           )}
-          <GraphWalkDiagram entry={entry} row={row} />
+          {inFlight ? (
+            <Loading what="the served graph document" />
+          ) : (
+            <>
+              {shape && served.data && (
+                <p className="meta">
+                  <span>
+                    drawn from the served document{' '}
+                    {served.data.meta.graphId || entry.id}
+                    {served.data.meta.graphVersion ? ` v${served.data.meta.graphVersion}` : ''}
+                  </span>
+                  {served.data.meta.formatVersion && (
+                    <span>format {served.data.meta.formatVersion}</span>
+                  )}
+                  {served.data.meta.bytes !== undefined && (
+                    <span>{served.data.meta.bytes} bytes</span>
+                  )}
+                  {served.data.meta.sha256 && (
+                    <code>sha256 {served.data.meta.sha256.slice(0, 12)}…</code>
+                  )}
+                </p>
+              )}
+              <GraphWalkDiagram
+                entry={entry}
+                row={row}
+                shape={shape}
+                fallbackReason={walkFallbackReason({
+                  supported: graphDocumentSupported,
+                  drawn: shape !== undefined,
+                  served: settled ? served.data : undefined,
+                  declined: layout && !layout.drawn ? layout.reason : undefined,
+                  error: served.error
+                })}
+              />
+            </>
+          )}
         </>
       </Section>
 

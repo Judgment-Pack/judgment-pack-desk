@@ -25,13 +25,30 @@
  *
  *   npm run smoke -- <url> --matrix --graphs
  *   npm run smoke -- <url> --matrix --expect-matrix-status passed
+ *
+ * With --graph-document it exercises the graph-serving pair the walk diagram
+ * draws from (ADR-0029): the inventory, then one document fetched by its
+ * configured id. The served text is checked against the metadata beside it —
+ * byte count and sha256, which is a self-contained exactness proof — and
+ * against a local read of the file itself where --graph-file names one. Both
+ * tools are refused as missing rather than skipped quietly if the connected
+ * runtime does not advertise them: asking for the step is asking for the
+ * check.
+ *
+ *   npm run smoke -- <url> --graph-document onboarding \
+ *     --graph-file /path/to/project/graphs/onboarding.graph.json
  */
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { DeskWebSocketTransport } from '../src/mcp/transport.ts'
 import { describeHandoffTarget, nodesInWalkOrder, parseProbe } from '../src/mcp/canonical.ts'
+import { deriveWalkLayout, edgeCarries, readServedDocument } from '../src/mcp/graphDocument.ts'
+import { listAllTools, readCapabilities } from '../src/mcp/capabilities.ts'
 import type {
   Evaluation,
+  GraphDocumentMeta,
+  GraphInventory,
   GraphSuite,
   MatrixProbe,
   PackDocument,
@@ -51,6 +68,8 @@ interface Options {
   graphs: boolean
   expectMatrixStatus?: string
   expectGraphStatus?: string
+  graphDocument?: string
+  graphFile?: string
 }
 
 function usage(message: string): never {
@@ -59,7 +78,8 @@ function usage(message: string): never {
     'usage: smoke.ts <desk url with ?token=…> [--facts <path>] [--evidence <path>]\n' +
       '                [--pack <decision id>] [--trace <n>] [--expect-kind <kind>]\n' +
       '                [--expect-handoff <state>] [--matrix] [--graphs]\n' +
-      '                [--expect-matrix-status <status>] [--expect-graph-status <status>]'
+      '                [--expect-matrix-status <status>] [--expect-graph-status <status>]\n' +
+      '                [--graph-document <configured graph id>] [--graph-file <path>]'
   )
   process.exit(2)
 }
@@ -108,6 +128,12 @@ function parseArgs(argv: string[]): Options {
         options.expectGraphStatus = value
         options.graphs = true
         break
+      case '--graph-document':
+        options.graphDocument = value
+        break
+      case '--graph-file':
+        options.graphFile = value
+        break
       default:
         usage(`unknown flag ${flag}`)
     }
@@ -148,8 +174,19 @@ await client.connect(new DeskWebSocketTransport(wsURL))
 const server = client.getServerVersion()
 console.log(`initialize    ok  serverInfo=${server?.name} ${server?.version}`)
 
-const tools = await client.listTools()
-console.log(`tools/list    ok  ${tools.tools.length} tools: ${tools.tools.map((t) => t.name).join(', ')}`)
+// Every page of it, exactly as the page reads it: a tool on a second page that
+// was never asked for is a tool this would report as absent.
+const tools = await listAllTools(client)
+console.log(`tools/list    ok  ${tools.length} tools: ${tools.map((t) => t.name).join(', ')}`)
+
+// The same reading the page does at connect time, printed so a drive against
+// two runtimes shows which world each one is.
+const capabilities = readCapabilities(tools)
+console.log(
+  `capabilities      rehearsal=${capabilities.rehearsalSupported} ` +
+    `list_graphs=${capabilities.graphInventorySupported} ` +
+    `get_graph=${capabilities.graphDocumentSupported}`
+)
 
 const inventory = JSON.parse(
   textOf(await client.callTool({ name: 'list_packs', arguments: {} }))
@@ -196,6 +233,10 @@ if (options.matrix) {
 
 if (options.graphs) {
   await testGraphs()
+}
+
+if (options.graphDocument) {
+  await graphDocument(options.graphDocument, options.graphFile)
 }
 
 console.log(`notifications ${sawFileChange ? 'saw desk/fileChanged' : 'none seen (expected: nothing changed)'}`)
@@ -387,6 +428,176 @@ async function testGraphs(): Promise<void> {
     console.error(`expected graph status ${expectedGraphStatus}, got ${payload.status}`)
     process.exit(1)
   }
+}
+
+/**
+ * The graph-serving pair, exercised (ADR-0029).
+ *
+ * This is the call the walk diagram draws its real edges from, so what is
+ * checked here is exactness rather than plausibility: the served text must be
+ * the document byte for byte. Two independent checks say so — the metadata's
+ * own byte count and sha256 over the text this client received, which needs no
+ * file at all, and a local read of the file where one is named. The digest is
+ * bare hex on this payload, not the `sha256:`-prefixed form the lock and audit
+ * records use, and is compared as the payload spells it.
+ *
+ * The walk is then derived with the page's own code and printed with its
+ * arrows, so a shape the browser would draw wrongly is visible here first.
+ */
+async function graphDocument(graphId: string, graphFile?: string): Promise<void> {
+  for (const [name, present] of [
+    ['experimental_list_graphs', capabilities.graphInventorySupported],
+    ['experimental_get_graph', capabilities.graphDocumentSupported]
+  ] as const) {
+    if (!present) {
+      console.error(
+        `--graph-document needs ${name}, which this runtime does not advertise ` +
+          '(ADR-0029; jpack 0.18.0 and older have neither). The desk falls back to the ' +
+          'coverage-derived walk against such a runtime, and this check is not applicable to it.'
+      )
+      process.exit(1)
+    }
+  }
+
+  const listed = await client.callTool({ name: 'experimental_list_graphs', arguments: {} })
+  if (listed.isError) {
+    console.error(`experimental_list_graphs refused: ${textOf(listed)}`)
+    process.exit(1)
+  }
+  const inventory = JSON.parse(textOf(listed)) as GraphInventory
+  const rows = inventory.graphs ?? []
+  console.log(
+    `list_graphs   ok  status=${inventory.status} graphs=${rows.length} ` +
+      `configVersion=${inventory.configVersion}`
+  )
+  for (const row of rows) {
+    console.log(
+      `                  - ${row.id.padEnd(24)} ${(row.graphId || '(identity not read)').padEnd(24)} ` +
+        `v${row.graphVersion || '?'} format ${row.formatVersion || '?'} ` +
+        // Absent, never zero: a malformed document must not look honestly empty.
+        `${row.nodeCount ?? '?'} nodes ${row.edgeCount ?? '?'} edges ` +
+        `result=${row.resultNode ?? '(none)'} rows=${row.rowsDeclared}`
+    )
+    if (row.detail) console.log(`                      ! ${row.detail}`)
+  }
+  if (!rows.some((row) => row.id === graphId)) {
+    console.error(`the inventory lists no graph configured as ${graphId}`)
+    process.exit(1)
+  }
+
+  const fetched = await client.callTool({
+    name: 'experimental_get_graph',
+    arguments: { graph_id: graphId }
+  })
+  const served = textOf(fetched)
+  if (fetched.isError) {
+    console.error(`experimental_get_graph refused: ${served}`)
+    process.exit(1)
+  }
+  const meta = fetched.structuredContent as unknown as GraphDocumentMeta
+  console.log(
+    `get_graph     ok  status=${meta.status} id=${meta.id} graphId=${meta.graphId || '(not read)'} ` +
+      `v${meta.graphVersion || '?'} format=${meta.formatVersion || '?'} ` +
+      `result=${meta.resultNode ?? '(none)'} bytes=${meta.bytes} path=${meta.path}`
+  )
+  if (meta.detail) console.log(`                  detail: ${meta.detail}`)
+
+  const bytes = Buffer.from(served, 'utf8')
+  const digest = createHash('sha256').update(bytes).digest('hex')
+  if (bytes.byteLength !== meta.bytes) {
+    console.error(`the served text is ${bytes.byteLength} bytes and the payload says ${meta.bytes}`)
+    process.exit(1)
+  }
+  if (digest !== meta.sha256) {
+    console.error(`the served text hashes to ${digest} and the payload says ${meta.sha256}`)
+    process.exit(1)
+  }
+  console.log(`                  text matches its own metadata: ${bytes.byteLength} bytes, sha256 ${digest}`)
+
+  if (graphFile) {
+    const onDisk = await readFile(graphFile, 'utf8')
+    if (onDisk !== served) {
+      console.error(`the served text is not ${graphFile} byte for byte`)
+      process.exit(1)
+    }
+    console.log(`                  text matches ${graphFile} exactly`)
+  }
+
+  const read = readServedDocument(meta, served)
+  if (meta.status !== 'valid') {
+    // An undecodable document is a *successful* call the runtime meant to make,
+    // so it is reported and not treated as a transport failure. The desk falls
+    // back to the coverage walk on exactly this, and says why — with the
+    // runtime's own sentence, which is the one printed here.
+    console.log(`                  the runtime could not decode this document; no walk is derived`)
+    console.log(`                  reason as the desk shows it: ${read.ok ? '(none)' : read.reason}`)
+    if (read.ok) {
+      console.error('the desk read a document the runtime reported it could not decode')
+      process.exit(1)
+    }
+    return
+  }
+  if (!read.ok) {
+    console.error(`the served document did not yield the shape the desk draws from: ${read.reason}`)
+    process.exit(1)
+  }
+
+  // The layering the page would do, with the tie-break the page uses: the walk
+  // order of this graph's own coverage report. Passing an empty coverage here
+  // would exercise a tie-break the browser never takes.
+  const coverage = await graphCoverage(graphId)
+  console.log(
+    `  walk order      ${nodesInWalkOrder(coverage).join(' → ') || '(coverage names no node)'}`
+  )
+  const layout = deriveWalkLayout(read.document, coverage)
+  if (!layout.drawn) {
+    console.error(`the desk declines to draw this document: ${layout.reason}`)
+    process.exit(1)
+  }
+  const shape = layout.shape
+  console.log(
+    `  walk            ${shape.nodes.length} nodes in ${shape.depth} ` +
+      `${shape.depth === 1 ? 'layer' : 'layers'}, ${shape.edges.length} declared ` +
+      `${shape.edges.length === 1 ? 'edge' : 'edges'}`
+  )
+  for (const node of shape.nodes) {
+    console.log(
+      `    layer ${node.layer}  ${node.id.padEnd(24)} pack=${node.pack ?? '(none)'}` +
+        `${node.isResult ? '  [declared result]' : ''}`
+    )
+  }
+  for (const edge of shape.edges) {
+    console.log(
+      `    edge ${edge.index}    ${edge.from} -> ${edge.to}  carries ${edgeCarries(edge)}` +
+        `${edge.drawable ? '' : '  [endpoint not declared — not drawn]'}`
+    )
+  }
+  if (shape.result !== undefined && shape.resultDangling) {
+    console.error(`the document declares result ${shape.result} and declares no node by that name`)
+    process.exit(1)
+  }
+}
+
+/**
+ * One graph's own coverage report, for the layering tie-break.
+ *
+ * The tie inside a layer is broken by the order the runtime evaluated the
+ * nodes in, and the coverage report is the only place that order appears. A run
+ * whose rows did not load reports no coverage, which is an answer: the tie then
+ * falls back to the document's own key order, exactly as it does in the page.
+ */
+async function graphCoverage(graphId: string): Promise<MatrixProbe[]> {
+  const result = await client.callTool({
+    name: 'experimental_test_graphs',
+    arguments: { graph_id: graphId }
+  })
+  if (result.isError) {
+    console.error(`experimental_test_graphs refused: ${textOf(result)}`)
+    process.exit(1)
+  }
+  const payload = JSON.parse(textOf(result)) as GraphSuite
+  const entry = (payload.graphs ?? []).find((candidate) => candidate.id === graphId)
+  return entry?.coverage ?? []
 }
 
 /** How much of what a report derived is witnessed by a row. */
