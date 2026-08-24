@@ -223,9 +223,9 @@ JPACK_PROJECT=/path/to/judgment-pack-quickstart scripts/acceptance.sh
 It builds the chassis, copies the project to a temporary directory — a completed
 evaluation appends a record in a project that declares an audit directory, and
 an acceptance run must not write into the tree it was pointed at — reads the
-tokened URL off the chassis' own first line of output, and drives the desk's
-client twice. `MUTATE` is the jq expression that removes the fact, and defaults
-to the quickstart pack's `/request/completeness`.
+tokened URL off the `open:` line of the chassis' startup output, and drives the
+desk's client twice. `MUTATE` is the jq expression that removes the fact, and
+defaults to the quickstart pack's `/request/completeness`.
 
 The same client runs on its own against a chassis you already have open:
 
