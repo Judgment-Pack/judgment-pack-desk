@@ -73,8 +73,13 @@ and is refused as malformed-input.
 ## Requirements
 
 - Go 1.24 or newer
-- Node 20.19+ or 22.12+ (for building the SPA)
+- Node 22 or newer (`web/package.json` declares `engines.node >= 22`)
 - A `jpack` binary — the [judgment-pack runtime](https://github.com/Judgment-Pack/judgment-pack-runtime)
+
+TypeScript and Vite are pinned to exact versions rather than caret ranges. They
+are the two tools whose output this repository ships — a transpile and a bundle
+— so a fresh `npm ci` producing a different build than the last one would be a
+change nobody made.
 
 ## Production mode
 
