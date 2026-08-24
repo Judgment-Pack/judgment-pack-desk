@@ -1,0 +1,10 @@
+# Build outputs
+/bin/
+/jpack-desk
+web/node_modules/
+web/dist/*
+!web/dist/.gitkeep
+
+# Editor and OS noise
+.DS_Store
+*.swp
