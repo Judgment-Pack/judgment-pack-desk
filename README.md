@@ -159,6 +159,12 @@ as its working directory and is killed when the socket that started it closes.
 - One message originates in the chassis rather than the runtime: a file watcher
   over the project tree sends a `desk/fileChanged` JSON-RPC notification
   carrying the changed path, and the page invalidates its caches on it.
+- A dropped socket is reconnected by the page rather than reported and left. The
+  delay doubles from 500 ms up to a 15 s cap, with jitter, and each attempt
+  builds a fresh MCP client — one that has closed already negotiated with a
+  server that is gone. A successful reconnect invalidates every query, because
+  whatever the project did while the socket was down arrived as
+  `desk/fileChanged` notifications nobody heard.
 
 ## Layout
 

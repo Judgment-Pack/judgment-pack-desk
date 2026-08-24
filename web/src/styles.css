@@ -118,6 +118,22 @@ a {
   color: var(--danger);
 }
 
+.badge-reconnecting {
+  background: var(--warn-soft);
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.banner {
+  margin: 0 0 1.25rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 0.88rem;
+}
+
 /* Cards ------------------------------------------------------------------- */
 
 .cards {
