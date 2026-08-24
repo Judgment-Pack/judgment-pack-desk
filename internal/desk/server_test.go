@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -188,87 +189,10 @@ func TestRelayEndToEnd(t *testing.T) {
 	defer c.Close(websocket.StatusNormalClosure, "")
 	c.SetReadLimit(readLimit)
 
-	send := func(v any) {
-		t.Helper()
-		raw, err := json.Marshal(v)
-		if err != nil {
-			t.Fatalf("marshal: %v", err)
-		}
-		if err := c.Write(ctx, websocket.MessageText, raw); err != nil {
-			t.Fatalf("write: %v", err)
-		}
-	}
-	// readResult waits for the response carrying id, skipping any
-	// desk/fileChanged notification that arrives in the meantime.
-	readResult := func(id float64) map[string]any {
-		t.Helper()
-		for {
-			typ, data, err := c.Read(ctx)
-			if err != nil {
-				t.Fatalf("read: %v", err)
-			}
-			if typ != websocket.MessageText {
-				continue
-			}
-			var msg map[string]any
-			if err := json.Unmarshal(data, &msg); err != nil {
-				t.Fatalf("the relay delivered something that is not JSON: %v: %s", err, data)
-			}
-			if got, ok := msg["id"].(float64); !ok || got != id {
-				continue
-			}
-			if errObj, ok := msg["error"]; ok {
-				t.Fatalf("id %v returned an error: %v", id, errObj)
-			}
-			result, ok := msg["result"].(map[string]any)
-			if !ok {
-				t.Fatalf("id %v has no result object: %s", id, data)
-			}
-			return result
-		}
-	}
+	session := &rpcSession{t: t, ctx: ctx, ws: c}
+	session.initialize()
 
-	send(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "initialize",
-		"params": map[string]any{
-			"protocolVersion": "2025-06-18",
-			"capabilities":    map[string]any{},
-			"clientInfo":      map[string]any{"name": "jpack-desk-test", "version": "0"},
-		},
-	})
-	initResult := readResult(1)
-	server, ok := initResult["serverInfo"].(map[string]any)
-	if !ok || server["name"] == "" {
-		t.Fatalf("initialize returned no serverInfo: %v", initResult)
-	}
-	t.Logf("initialize: serverInfo=%v protocolVersion=%v", server, initResult["protocolVersion"])
-
-	send(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
-
-	send(map[string]any{
-		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-		"params": map[string]any{"name": "list_packs", "arguments": map[string]any{}},
-	})
-	callResult := readResult(2)
-	if isErr, _ := callResult["isError"].(bool); isErr {
-		t.Fatalf("list_packs reported a tool error: %v", callResult)
-	}
-	content, ok := callResult["content"].([]any)
-	if !ok || len(content) == 0 {
-		t.Fatalf("list_packs returned no content: %v", callResult)
-	}
-	text, _ := content[0].(map[string]any)["text"].(string)
-	var inventory struct {
-		Status string `json:"status"`
-		Packs  []struct {
-			ID          string `json:"id"`
-			PackID      string `json:"packId"`
-			PackVersion string `json:"packVersion"`
-		} `json:"packs"`
-	}
-	if err := json.Unmarshal([]byte(text), &inventory); err != nil {
-		t.Fatalf("list_packs text is not the inventory JSON: %v", err)
-	}
+	inventory := session.inventory(2)
 	if len(inventory.Packs) == 0 {
 		t.Fatalf("list_packs returned an empty pack list for %s", project)
 	}
@@ -277,12 +201,8 @@ func TestRelayEndToEnd(t *testing.T) {
 		inventory.Packs[0].ID, inventory.Packs[0].PackID, inventory.Packs[0].PackVersion)
 
 	// get_pack proves a large single-line payload survives the relay intact.
-	send(map[string]any{
-		"jsonrpc": "2.0", "id": 3, "method": "tools/call",
-		"params": map[string]any{"name": "get_pack", "arguments": map[string]any{"pack_id": inventory.Packs[0].ID}},
-	})
-	packResult := readResult(3)
-	packText, _ := packResult["content"].([]any)[0].(map[string]any)["text"].(string)
+	packResult := session.call(3, "get_pack", map[string]any{"pack_id": inventory.Packs[0].ID})
+	packText := toolText(t, "get_pack", packResult)
 	var doc map[string]any
 	if err := json.Unmarshal([]byte(packText), &doc); err != nil {
 		t.Fatalf("get_pack text is not a JSON document: %v", err)
@@ -293,6 +213,258 @@ func TestRelayEndToEnd(t *testing.T) {
 		}
 	}
 	t.Logf("get_pack: %d bytes, title=%q rules=%d", len(packText), doc["title"], len(doc["rules"].([]any)))
+}
+
+// TestRelayCarriesEvaluation drives the runtime's experimental evaluation
+// surface through the relay: the call the desk's evaluation view makes, and the
+// richest payload the desk reads back.
+//
+// The facts document is the empty object, which is the one document that says
+// the same thing about every project: no fact pointer resolves, so every
+// condition reading one is unknown. This test is about the wire and not about
+// any pack's rules — it asserts that a disposition and a trace arrive whole,
+// never which disposition a pack ought to reach.
+//
+// The project is copied first. A completed evaluation appends one record in a
+// project whose configuration declares an audit directory, and a test must not
+// write into the tree it was pointed at.
+func TestRelayCarriesEvaluation(t *testing.T) {
+	bin, project := e2eFixtures(t)
+	copied := filepath.Join(t.TempDir(), "project")
+	if err := copyTree(project, copied); err != nil {
+		t.Fatalf("copying %s: %v", project, err)
+	}
+
+	s, err := New(Config{
+		ProjectDir: copied,
+		JpackBin:   bin,
+		Token:      testToken,
+		Logger:     log.New(io.Discard, "", 0),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws?token="+testToken, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Origin": []string{ts.URL}},
+	})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close(websocket.StatusNormalClosure, "")
+	c.SetReadLimit(readLimit)
+
+	session := &rpcSession{t: t, ctx: ctx, ws: c}
+	session.initialize()
+
+	inventory := session.inventory(2)
+	if len(inventory.Packs) == 0 {
+		t.Fatalf("list_packs returned an empty pack list for %s", copied)
+	}
+
+	result := session.call(3, "experimental_evaluate", map[string]any{
+		"pack_id": inventory.Packs[0].ID,
+		"facts":   "{}",
+	})
+	text := toolText(t, "experimental_evaluate", result)
+	var payload struct {
+		Experimental bool   `json:"experimental"`
+		SpecVersion  string `json:"specVersion"`
+		PackID       string `json:"packId"`
+		Disposition  struct {
+			Kind      string   `json:"kind"`
+			OutcomeID string   `json:"outcomeId"`
+			Reasons   []string `json:"reasons"`
+			Handoff   struct {
+				State       string   `json:"state"`
+				TriggeredBy []string `json:"triggeredBy"`
+			} `json:"handoff"`
+		} `json:"disposition"`
+		HandoffTarget *struct {
+			Kind string `json:"kind"`
+			Name string `json:"name"`
+		} `json:"handoffTarget"`
+		Trace []struct {
+			Stage     string `json:"stage"`
+			ID        string `json:"id"`
+			Condition string `json:"condition"`
+		} `json:"trace"`
+	}
+	if err := json.Unmarshal([]byte(text), &payload); err != nil {
+		t.Fatalf("experimental_evaluate text is not the evaluation payload: %v", err)
+	}
+	if !payload.Experimental {
+		t.Errorf("the payload must carry experimental = true: %s", text)
+	}
+	if payload.Disposition.Kind == "" {
+		t.Fatalf("the payload carries no disposition kind: %s", text)
+	}
+	if payload.Disposition.Handoff.State == "" {
+		t.Errorf("the disposition carries no handoff state: %s", text)
+	}
+	if len(payload.Trace) == 0 {
+		t.Fatalf("the payload carries no trace entries: %s", text)
+	}
+	t.Logf("experimental_evaluate: pack=%s spec=%s kind=%s outcomeId=%q reasons=%v handoff=%s triggeredBy=%v target=%v",
+		payload.PackID, payload.SpecVersion, payload.Disposition.Kind, payload.Disposition.OutcomeID,
+		payload.Disposition.Reasons, payload.Disposition.Handoff.State,
+		payload.Disposition.Handoff.TriggeredBy, payload.HandoffTarget)
+	for _, entry := range payload.Trace {
+		t.Logf("  trace: %-13s %-8s %s", entry.Stage, entry.Condition, entry.ID)
+	}
+}
+
+// rpcSession is one open relay socket driven as a JSON-RPC client. The
+// end-to-end tests share it so that each one is the calls it makes rather than
+// the framing they all repeat.
+type rpcSession struct {
+	t   *testing.T
+	ctx context.Context
+	ws  *websocket.Conn
+}
+
+func (s *rpcSession) send(v any) {
+	s.t.Helper()
+	raw, err := json.Marshal(v)
+	if err != nil {
+		s.t.Fatalf("marshal: %v", err)
+	}
+	if err := s.ws.Write(s.ctx, websocket.MessageText, raw); err != nil {
+		s.t.Fatalf("write: %v", err)
+	}
+}
+
+// result waits for the response carrying id, skipping any desk/fileChanged
+// notification that arrives in the meantime.
+func (s *rpcSession) result(id float64) map[string]any {
+	s.t.Helper()
+	for {
+		typ, data, err := s.ws.Read(s.ctx)
+		if err != nil {
+			s.t.Fatalf("read: %v", err)
+		}
+		if typ != websocket.MessageText {
+			continue
+		}
+		var msg map[string]any
+		if err := json.Unmarshal(data, &msg); err != nil {
+			s.t.Fatalf("the relay delivered something that is not JSON: %v: %s", err, data)
+		}
+		if got, ok := msg["id"].(float64); !ok || got != id {
+			continue
+		}
+		if errObj, ok := msg["error"]; ok {
+			s.t.Fatalf("id %v returned an error: %v", id, errObj)
+		}
+		result, ok := msg["result"].(map[string]any)
+		if !ok {
+			s.t.Fatalf("id %v has no result object: %s", id, data)
+		}
+		return result
+	}
+}
+
+func (s *rpcSession) initialize() {
+	s.t.Helper()
+	s.send(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2025-06-18",
+			"capabilities":    map[string]any{},
+			"clientInfo":      map[string]any{"name": "jpack-desk-test", "version": "0"},
+		},
+	})
+	initResult := s.result(1)
+	server, ok := initResult["serverInfo"].(map[string]any)
+	if !ok || server["name"] == "" {
+		s.t.Fatalf("initialize returned no serverInfo: %v", initResult)
+	}
+	s.t.Logf("initialize: serverInfo=%v protocolVersion=%v", server, initResult["protocolVersion"])
+	s.send(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
+}
+
+func (s *rpcSession) call(id float64, name string, args map[string]any) map[string]any {
+	s.t.Helper()
+	s.send(map[string]any{
+		"jsonrpc": "2.0", "id": id, "method": "tools/call",
+		"params": map[string]any{"name": name, "arguments": args},
+	})
+	result := s.result(id)
+	if isErr, _ := result["isError"].(bool); isErr {
+		s.t.Fatalf("%s reported a tool error: %v", name, result)
+	}
+	return result
+}
+
+// packInventory is the part of the runtime's list_packs answer these tests read.
+type packInventory struct {
+	Status string `json:"status"`
+	Packs  []struct {
+		ID          string `json:"id"`
+		PackID      string `json:"packId"`
+		PackVersion string `json:"packVersion"`
+	} `json:"packs"`
+}
+
+func (s *rpcSession) inventory(id float64) packInventory {
+	s.t.Helper()
+	text := toolText(s.t, "list_packs", s.call(id, "list_packs", map[string]any{}))
+	var inventory packInventory
+	if err := json.Unmarshal([]byte(text), &inventory); err != nil {
+		s.t.Fatalf("list_packs text is not the inventory JSON: %v", err)
+	}
+	return inventory
+}
+
+// toolText is the first text content block of a tool result: where every jpack
+// tool puts the JSON it answers with.
+func toolText(t *testing.T, name string, result map[string]any) string {
+	t.Helper()
+	content, ok := result["content"].([]any)
+	if !ok || len(content) == 0 {
+		t.Fatalf("%s returned no content: %v", name, result)
+	}
+	block, ok := content[0].(map[string]any)
+	if !ok {
+		t.Fatalf("%s returned a content block that is not an object: %v", name, content[0])
+	}
+	text, _ := block["text"].(string)
+	if text == "" {
+		t.Fatalf("%s returned no text content: %v", name, block)
+	}
+	return text
+}
+
+// copyTree copies a directory tree. It carries directories and regular files
+// and nothing else: a project is documents, and a symlink or a device node in
+// one is not something a test should reproduce.
+func copyTree(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	})
 }
 
 // TestFileChangeNotification proves the one message the chassis originates

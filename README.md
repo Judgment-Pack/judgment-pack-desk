@@ -174,10 +174,12 @@ internal/desk/
   server.go          routing, SPA fallback, token and origin checks
   relay.go           WebSocket ↔ `jpack mcp` subprocess
   watch.go           project-tree file watching
+scripts/acceptance.sh  the two-run acceptance proof
 web/                 Vite + React + TypeScript SPA
   src/mcp/           the MCP client: transport, connection, queries
-  src/routes/        pack list and pack detail
-  src/components/    the semantic document view
+  src/routes/        pack list, pack detail, evaluation
+  src/components/    the semantic document and evaluation views
+  scripts/smoke.ts   the desk's own client, driven outside a browser
 ```
 
 ## Tests
@@ -197,6 +199,31 @@ JPACK_PROJECT=/path/to/project go test ./...
 `JPACK_BIN` overrides the runtime binary; otherwise `./bin/jpack` is used when
 present.
 
+### The acceptance proof
+
+Two real evaluations through the relay, against the same pack: one with the
+project's full facts, one with a load-bearing fact removed. The first should
+resolve to an outcome; the second should escalate.
+
+```sh
+go build -C /path/to/judgment-pack-runtime -o "$PWD/bin/jpack" ./cmd/jpack
+JPACK_PROJECT=/path/to/judgment-pack-quickstart scripts/acceptance.sh
+```
+
+It builds the chassis, copies the project to a temporary directory — a completed
+evaluation appends a record in a project that declares an audit directory, and
+an acceptance run must not write into the tree it was pointed at — reads the
+tokened URL off the chassis' own first line of output, and drives the desk's
+client twice. `MUTATE` is the jq expression that removes the fact, and defaults
+to the quickstart pack's `/request/completeness`.
+
+The same client runs on its own against a chassis you already have open:
+
+```sh
+npm --prefix web run smoke -- 'http://127.0.0.1:8791/?token=…' \
+  --facts /path/to/full-facts.json --evidence /path/to/evidence.json
+```
+
 ## Upstream gaps
 
 The desk consumes the runtime's public wire and nothing else. Where the wire
@@ -212,7 +239,7 @@ would stop being one.
   on the grounds that a matrix row is a rehearsal rather than a decision — but a
   what-if run has no equivalent, and the tool takes no argument that would say
   so. Until it does, the desk's evaluate view names the consequence in the page
-  instead of hiding it.
+  instead of hiding it, and the acceptance script evaluates a copy.
 
 ## License
 

@@ -8,18 +8,77 @@
  *
  *   node --experimental-strip-types --no-warnings scripts/smoke.ts <url>
  *   npm run smoke -- http://127.0.0.1:8799/?token=…
+ *
+ * With --facts it additionally runs one real evaluation over the relay and
+ * prints the disposition and the head of the trace. That is the pair the
+ * acceptance script exercises: the same pack, one run with a load-bearing fact
+ * and one without it.
+ *
+ *   npm run smoke -- <url> --facts full-facts.json --evidence evidence.json
+ *   npm run smoke -- <url> --facts partial-facts.json --expect-kind unresolved
  */
+import { readFile } from 'node:fs/promises'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { DeskWebSocketTransport } from '../src/mcp/transport.ts'
-import type { PackDocument, PackInventory } from '../src/mcp/types.ts'
+import type { Evaluation, PackDocument, PackInventory } from '../src/mcp/types.ts'
 
-const target = process.argv[2]
-if (!target) {
-  console.error('usage: smoke.ts <desk url with ?token=…>')
+interface Options {
+  target: string
+  facts?: string
+  evidence?: string
+  packId?: string
+  traceHead: number
+  expectKind?: string
+  expectHandoff?: string
+}
+
+function usage(message: string): never {
+  console.error(message)
+  console.error(
+    'usage: smoke.ts <desk url with ?token=…> [--facts <path>] [--evidence <path>]\n' +
+      '                [--pack <decision id>] [--trace <n>] [--expect-kind <kind>]\n' +
+      '                [--expect-handoff <state>]'
+  )
   process.exit(2)
 }
 
-const url = new URL(target)
+function parseArgs(argv: string[]): Options {
+  const [target, ...rest] = argv
+  if (!target) usage('the desk URL is required')
+  const options: Options = { target, traceHead: 5 }
+  for (let i = 0; i < rest.length; i += 2) {
+    const flag = rest[i]!
+    const value = rest[i + 1]
+    if (value === undefined) usage(`${flag} needs a value`)
+    switch (flag) {
+      case '--facts':
+        options.facts = value
+        break
+      case '--evidence':
+        options.evidence = value
+        break
+      case '--pack':
+        options.packId = value
+        break
+      case '--trace':
+        options.traceHead = Number(value)
+        break
+      case '--expect-kind':
+        options.expectKind = value
+        break
+      case '--expect-handoff':
+        options.expectHandoff = value
+        break
+      default:
+        usage(`unknown flag ${flag}`)
+    }
+  }
+  return options
+}
+
+const options = parseArgs(process.argv.slice(2))
+
+const url = new URL(options.target)
 const token = url.searchParams.get('token')
 if (!token) {
   console.error('the URL must carry the session token the chassis printed (?token=…)')
@@ -27,8 +86,11 @@ if (!token) {
 }
 const wsURL = `ws://${url.host}/ws?token=${encodeURIComponent(token)}`
 
-function textOf(result: { content?: unknown }): string {
-  const blocks = Array.isArray(result.content) ? result.content : []
+// The SDK's tool-result type is a union that includes a shape carrying no
+// content at all, so the narrowing happens here rather than in the signature.
+function textOf(result: unknown): string {
+  const content = (result as { content?: unknown } | undefined)?.content
+  const blocks = Array.isArray(content) ? content : []
   return blocks
     .filter((b): b is { type: 'text'; text: string } => (b as { type?: string })?.type === 'text')
     .map((b) => b.text)
@@ -63,8 +125,13 @@ if (packs.length === 0) {
   process.exit(1)
 }
 
-const first = packs[0]!
-const packResult = await client.callTool({ name: 'get_pack', arguments: { pack_id: first.id } })
+const selected = options.packId ?? packs[0]!.id
+if (!packs.some((pack) => pack.id === selected)) {
+  console.error(`the project declares no pack with the decision id ${selected}`)
+  process.exit(1)
+}
+
+const packResult = await client.callTool({ name: 'get_pack', arguments: { pack_id: selected } })
 const raw = textOf(packResult)
 const doc = JSON.parse(raw) as PackDocument
 console.log(
@@ -80,7 +147,89 @@ for (const member of ['specVersion', 'id', 'version', 'title', 'decision', 'outc
   }
 }
 
+if (options.facts) {
+  await evaluate(options.facts, options.evidence)
+}
+
 console.log(`notifications ${sawFileChange ? 'saw desk/fileChanged' : 'none seen (expected: nothing changed)'}`)
 console.log('\nOK')
 await client.close()
 process.exit(0)
+
+/**
+ * One real evaluation over the relay, reported the way the desk's evaluation
+ * view reports it: the disposition first, the handoff target beside it and
+ * never inside it, then the head of the trace. The trace is informative — the
+ * disposition is the answer, and only the disposition is checked against the
+ * expectations this script was given.
+ */
+async function evaluate(factsPath: string, evidencePath?: string): Promise<void> {
+  const args: Record<string, unknown> = {
+    pack_id: selected,
+    facts: await readFile(factsPath, 'utf8')
+  }
+  // Omitting the key is the only form absence takes: a key present with an
+  // empty string is a supplied empty document and is refused as malformed-input.
+  if (evidencePath) args.evidence = await readFile(evidencePath, 'utf8')
+
+  const result = await client.callTool({ name: 'experimental_evaluate', arguments: args })
+  const text = textOf(result)
+  if (result.isError) {
+    console.error(`experimental_evaluate refused: ${text}`)
+    process.exit(1)
+  }
+  const payload = JSON.parse(text) as Evaluation
+  const disposition = payload.disposition
+  const handoff = disposition.handoff
+
+  console.log(
+    `evaluate      ok  pack=${selected} (${payload.packId} v${payload.packVersion})  ` +
+      `spec=${payload.specVersion} evaluator=${payload.evaluatorSpecVersion} ` +
+      `experimental=${payload.experimental}`
+  )
+  console.log(
+    `                  facts=${factsPath}` +
+      `${evidencePath ? ` evidence=${evidencePath}` : ' evidence=(key omitted)'}`
+  )
+  console.log(
+    `  disposition     kind=${disposition.kind}` +
+      `${disposition.outcomeId ? ` outcomeId=${disposition.outcomeId}` : ''}` +
+      ` reasons=[${(disposition.reasons ?? []).join(' ')}]` +
+      ` handoff=${handoff?.state}` +
+      `${handoff?.triggeredBy?.length ? ` triggeredBy=[${handoff.triggeredBy.join(' ')}]` : ''}`
+  )
+  console.log(
+    `  handoffTarget   ${
+      payload.handoffTarget
+        ? `${payload.handoffTarget.name} (${payload.handoffTarget.kind})`
+        : '(none reported)'
+    }`
+  )
+
+  const trace = payload.trace ?? []
+  const head = trace.slice(0, Math.max(0, options.traceHead))
+  console.log(`  trace           ${head.length} of ${trace.length} entries`)
+  head.forEach((entry, index) => {
+    const badges = [
+      entry.effect,
+      entry.outcome ? `-> ${entry.outcome}` : undefined,
+      entry.skipped ? 'skipped' : undefined,
+      entry.suppressed ? 'suppressed' : undefined,
+      entry.onUnknown ? `onUnknown=${entry.onUnknown}` : undefined
+    ].filter((badge): badge is string => badge !== undefined)
+    console.log(
+      `    ${String(index + 1).padStart(2)} ${entry.stage.padEnd(13)} ` +
+        `${entry.condition.padEnd(7)} ${(entry.id ?? '(unnamed)').padEnd(40)}` +
+        `${badges.length ? ` ${badges.join(' ')}` : ''}`
+    )
+  })
+
+  if (options.expectKind !== undefined && disposition.kind !== options.expectKind) {
+    console.error(`expected disposition kind ${options.expectKind}, got ${disposition.kind}`)
+    process.exit(1)
+  }
+  if (options.expectHandoff !== undefined && handoff?.state !== options.expectHandoff) {
+    console.error(`expected handoff state ${options.expectHandoff}, got ${handoff?.state}`)
+    process.exit(1)
+  }
+}
