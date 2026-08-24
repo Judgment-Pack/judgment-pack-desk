@@ -24,7 +24,7 @@ type ResultTab = 'reading' | 'raw'
  */
 export function PackEvaluate() {
   const { packId } = useParams<{ packId: string }>()
-  const { status } = useMcp()
+  const { status, rehearsalSupported } = useMcp()
   const { data: inventory } = usePacks()
   const evaluate = useEvaluate()
 
@@ -92,8 +92,20 @@ export function PackEvaluate() {
           <strong>Experimental surface.</strong> This runs the runtime's
           <code> experimental_evaluate</code> tool, which may change or be removed
           without a compatibility promise. It authorizes nothing and executes
-          nothing — and in a project whose <code>jpack.json</code> declares an
-          audit directory, each completed run appends one record to it.
+          nothing.{' '}
+          {rehearsalSupported ? (
+            <>
+              Every run here is declared a rehearsal (ADR-0028): the evaluation
+              is identical, no audit record is appended, no reviewed set is
+              consulted, and the payload carries the label.
+            </>
+          ) : (
+            <>
+              This runtime predates the rehearsal declaration (jpack 0.18.0), so
+              in a project whose <code>jpack.json</code> declares an audit
+              directory, each completed run appends one record to it.
+            </>
+          )}
         </p>
       </header>
 
