@@ -14,6 +14,13 @@ export interface McpConnection {
   server: { name: string; version: string } | null
   /** Consecutive failed attempts; 0 while connected. */
   attempt: number
+  /**
+   * True when the connected runtime's experimental_evaluate advertises the
+   * boolean rehearsal argument (ADR-0028, jpack >= 0.18.0). Read from the
+   * tool's own declared schema at connect time — a capability is what the
+   * server says it accepts, never what a version string implies.
+   */
+  rehearsalSupported: boolean
   /** True once this page has connected at least once. */
   everConnected: boolean
   /** Abandon the current backoff and try again now. */
@@ -25,6 +32,7 @@ const McpContext = createContext<McpConnection>({
   status: 'connecting',
   error: null,
   server: null,
+  rehearsalSupported: false,
   attempt: 0,
   everConnected: false,
   retryNow: () => {}
@@ -89,6 +97,7 @@ export function McpProvider({ children }: { children: ReactNode }) {
     status: 'connecting',
     error: null,
     server: null,
+    rehearsalSupported: false,
     attempt: 0,
     everConnected: false,
     retryNow: () => {}
@@ -121,6 +130,7 @@ export function McpProvider({ children }: { children: ReactNode }) {
           'No session token. Open the URL that jpack-desk printed at startup — it carries ?token=…'
         ),
         server: null,
+        rehearsalSupported: false,
         attempt: 0,
         everConnected: everConnected.current,
         retryNow
@@ -136,6 +146,7 @@ export function McpProvider({ children }: { children: ReactNode }) {
         status: 'reconnecting',
         error: cause,
         server: null,
+        rehearsalSupported: false,
         attempt,
         everConnected: everConnected.current,
         retryNow
@@ -179,11 +190,26 @@ export function McpProvider({ children }: { children: ReactNode }) {
           attempt = 0
           everConnected.current = true
           const info = client.getServerVersion()
+          // The capability is read off the tool's declared schema, once per
+          // connection: what the server advertises is the contract, and a
+          // runtime that predates the argument simply never receives it.
+          let rehearsalSupported = false
+          try {
+            const tools = await client.listTools()
+            const evaluate = tools.tools.find((tool) => tool.name === 'experimental_evaluate')
+            const properties = (evaluate?.inputSchema as { properties?: Record<string, unknown> } | undefined)
+              ?.properties
+            rehearsalSupported = Boolean(properties && 'rehearsal' in properties)
+          } catch {
+            // A failed listing leaves the capability off; evaluate still works.
+          }
+          if (disposed || live !== client) return
           setConnection({
             client,
             status: 'ready',
             error: null,
             server: info ? { name: info.name, version: info.version } : null,
+            rehearsalSupported,
             attempt: 0,
             everConnected: true,
             retryNow

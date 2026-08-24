@@ -183,13 +183,30 @@ export interface EvaluateInput {
  * answer to the documents that were supplied, and re-running is the user's to
  * ask for.
  */
+/**
+ * The arguments one evaluation sends, built in one place so the rules are
+ * testable: evidence absence is the omitted key, and the rehearsal declaration
+ * is sent exactly when the connected runtime advertises the argument — never
+ * to one that would refuse the unknown member, and never omitted from one that
+ * accepts it, because a what-if run that could be a rehearsal and is not
+ * appends a decision nobody took (ADR-0028).
+ */
+export function buildEvaluateArguments(
+  input: EvaluateInput,
+  rehearsalSupported: boolean
+): Record<string, unknown> {
+  const args: Record<string, unknown> = { pack_id: input.packId, facts: input.facts }
+  if (input.evidence !== undefined) args.evidence = input.evidence
+  if (rehearsalSupported) args.rehearsal = true
+  return args
+}
+
 export function useEvaluate(): UseMutationResult<EvaluationRun, Error, EvaluateInput> {
-  const { client } = useMcp()
+  const { client, rehearsalSupported } = useMcp()
   return useMutation({
     mutationFn: async (input: EvaluateInput) => {
       if (!client) throw new Error('the desk is not connected to the runtime')
-      const args: Record<string, unknown> = { pack_id: input.packId, facts: input.facts }
-      if (input.evidence !== undefined) args.evidence = input.evidence
+      const args = buildEvaluateArguments(input, rehearsalSupported)
       const { parsed, raw } = await callToolJSON<Evaluation>(
         client,
         'experimental_evaluate',

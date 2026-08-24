@@ -219,6 +219,12 @@ export interface Evaluation {
   command: string
   status: string
   experimental: boolean
+  /**
+   * Present exactly when the run was declared a rehearsal (ADR-0028): no audit
+   * record was appended and no reviewed set was consulted, and the payload says
+   * so in band. Absent on runtimes that predate the declaration.
+   */
+  rehearsal?: boolean
   /** A locator for the file that states the claim; not itself a claim. */
   conformanceClaimReference: string
   /** The version the evaluated pack declares. */
