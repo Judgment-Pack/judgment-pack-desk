@@ -548,18 +548,37 @@ export interface GraphDocument {
 }
 
 /**
- * One `experimental_get_graph` answer: the exact bytes, the metadata beside
- * them, and this client's own parse of those bytes where it succeeded.
+ * A served graph document this client has read: every member the views draw
+ * from, checked to be what the format declares it to be.
  *
- * The parse is kept apart from the metadata deliberately. `meta.status` is the
- * runtime's verdict on its own decode; `document` is undefined when *this*
- * client could not make the declared shape out of the text. A view must not
- * draw from one while reporting the other.
+ * `nodes` and `edges` are required here where they are optional above, because
+ * a document missing either is one the reader declines rather than one a view
+ * renders with a gap. Reading is what turns the first type into this one; no
+ * cast may, which is the point of there being two.
+ */
+export interface ReadGraphDocument extends GraphDocument {
+  nodes: Record<string, GraphDocumentNode>
+  edges: GraphDocumentEdge[]
+}
+
+/**
+ * One `experimental_get_graph` answer: the exact bytes, the metadata beside
+ * them, and this client's own read of those bytes where it made one.
+ *
+ * The read is subordinate to the metadata, never a second opinion on it.
+ * `meta.status` is the runtime's verdict on its own decode and it is the
+ * stricter reader of the two, so a document it reports `undecodable` is never
+ * read here — `document` is undefined and `unreadable` carries the runtime's
+ * own sentence. `document` is undefined too where the runtime decoded the bytes
+ * and they did not carry what the views draw from, and `unreadable` then says
+ * which member. Exactly one of the two is ever present.
  */
 export interface ServedGraph {
   meta: GraphDocumentMeta
   raw: string
-  document?: GraphDocument
+  document?: ReadGraphDocument
+  /** Why no document was read, where none was. */
+  unreadable?: string
 }
 
 /** The `experimental_test_graphs` payload: the project's configured graphs. */

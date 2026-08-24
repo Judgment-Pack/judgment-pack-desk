@@ -3,7 +3,7 @@
  *
  * Kept apart from the provider that calls it so that the desk's own client
  * script — which runs outside a browser and must not pull React in — asks the
- * question exactly the way the page does.
+ * question exactly the way the page does, including how it pages.
  */
 
 /**
@@ -14,8 +14,20 @@
  * implies: the desk is built against an unreleased runtime and must keep
  * working against a released one, so every one of these is feature-detected
  * and every false is a working page with less on it.
+ *
+ * Every false is only honest once `known` is true. A listing that never
+ * answered leaves the desk not knowing what the runtime can do, which is a
+ * different thing from knowing it can do none of it — see `known`.
  */
 export interface RuntimeCapabilities {
+  /**
+   * True once a `tools/list` answer has been read. False means the listing was
+   * never made or did not complete, and every flag below is then *unknown*
+   * rather than absent: presenting a runtime whose listing failed as one
+   * without the tools would impersonate an older runtime, and quietly withdraw
+   * features from a runtime that has them.
+   */
+  known: boolean
   /**
    * True when `experimental_evaluate` advertises the boolean `rehearsal`
    * argument (ADR-0028, jpack >= 0.18.0). Read from the tool's own declared
@@ -38,17 +50,65 @@ export interface RuntimeCapabilities {
   graphInventorySupported: boolean
 }
 
-/** Every capability off, which is what an unread or failed listing means. */
-export const NO_CAPABILITIES: RuntimeCapabilities = {
+/**
+ * Nothing read yet: no listing has answered, so nothing is claimed either way.
+ * It is the state of a connection still being made and of one whose listing
+ * failed, and the views treat it as the connected page with the least on it —
+ * while the page says the listing is what is missing.
+ */
+export const UNKNOWN_CAPABILITIES: RuntimeCapabilities = {
+  known: false,
   rehearsalSupported: false,
   graphDocumentSupported: false,
   graphInventorySupported: false
 }
 
 /** One row of a `tools/list` answer, narrowed to what capability reading uses. */
-interface AdvertisedTool {
+export interface AdvertisedTool {
   name: string
   inputSchema?: unknown
+}
+
+/** The half of an MCP client this module needs: one paged tool listing. */
+export interface ToolLister {
+  listTools(params?: { cursor?: string }): Promise<{ tools: AdvertisedTool[]; nextCursor?: string }>
+}
+
+/** More pages than any real runtime advertises; a stop rather than a policy. */
+const MAX_TOOL_PAGES = 64
+
+/**
+ * Every tool the runtime advertises, following `nextCursor` to the end.
+ *
+ * MCP pages `tools/list`, and a runtime that grows past one page would
+ * otherwise have its later tools read as absent — which is exactly the silent
+ * feature withdrawal capability detection exists to avoid. A cursor the server
+ * repeats, or a page count past any plausible listing, stops the walk: a client
+ * that looped forever on a misbehaving server would hang the connection rather
+ * than report it.
+ */
+export async function listAllTools(client: ToolLister): Promise<AdvertisedTool[]> {
+  const tools: AdvertisedTool[] = []
+  const seen = new Set<string>()
+  let cursor: string | undefined
+  for (let page = 0; page < MAX_TOOL_PAGES; page += 1) {
+    const answer = await client.listTools(cursor === undefined ? undefined : { cursor })
+    tools.push(...answer.tools)
+    const next = answer.nextCursor
+    if (next === undefined || next === null || next === '') return tools
+    if (seen.has(next)) {
+      throw new Error(
+        `the runtime's tools/list repeated the cursor ${JSON.stringify(next)}, so its tool ` +
+          'listing does not terminate'
+      )
+    }
+    seen.add(next)
+    cursor = next
+  }
+  throw new Error(
+    `the runtime's tools/list did not end within ${MAX_TOOL_PAGES} pages, so its tool listing ` +
+      'was not read'
+  )
 }
 
 /**
@@ -66,6 +126,10 @@ interface AdvertisedTool {
  * would be wrong twice: against a development build that has the tools, and
  * against a future release that removes them, which an experimental surface is
  * allowed to do.
+ *
+ * The answer this reads must be the *whole* listing — see `listAllTools`. An
+ * answer read off one page of several would report the tools on later pages as
+ * absent, which is a false negative this cannot detect from here.
  */
 export function readCapabilities(tools: readonly AdvertisedTool[]): RuntimeCapabilities {
   const names = new Set(tools.map((tool) => tool.name))
@@ -73,6 +137,7 @@ export function readCapabilities(tools: readonly AdvertisedTool[]): RuntimeCapab
   const properties = (evaluate?.inputSchema as { properties?: Record<string, unknown> } | undefined)
     ?.properties
   return {
+    known: true,
     rehearsalSupported: Boolean(properties && 'rehearsal' in properties),
     graphDocumentSupported: names.has('experimental_get_graph'),
     graphInventorySupported: names.has('experimental_list_graphs')

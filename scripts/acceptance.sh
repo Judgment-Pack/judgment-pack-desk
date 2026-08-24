@@ -65,6 +65,11 @@ graph_file="${GRAPH_FILE:-}"
 die() { echo "acceptance: $*" >&2; exit 1; }
 
 [ -n "$project" ] || die "set JPACK_PROJECT to a Judgment Pack project directory"
+# GRAPH_FILE is the byte-for-byte half of the graph-document check and does
+# nothing on its own. Accepting it alone would report a green run for a check
+# that never ran, which is the one outcome an acceptance script must not have.
+[ -z "$graph_file" ] || [ -n "$graph_document" ] || \
+  die "GRAPH_FILE names a document to compare against and needs GRAPH_DOCUMENT to say which graph to fetch"
 [ -f "$project/jpack.json" ] || die "JPACK_PROJECT=$project has no jpack.json"
 [ -x "$jpack" ] || die "no runtime binary at $jpack — build one with: go build -C ../judgment-pack-runtime -o $jpack ./cmd/jpack"
 command -v jq >/dev/null || die "jq is required to remove the load-bearing fact"

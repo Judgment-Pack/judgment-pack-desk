@@ -5,8 +5,9 @@ import {
   type UseMutationResult,
   type UseQueryResult
 } from '@tanstack/react-query'
-import { parseGraphDocument } from './graphDocument'
+import { readServedDocument } from './graphDocument'
 import { useMcp } from './McpProvider'
+import { ToolRefusal } from './refusal'
 import type {
   Evaluation,
   EvaluationRun,
@@ -20,22 +21,6 @@ import type {
   RefusalEnvelope,
   ServedGraph
 } from './types'
-
-/**
- * A refusal the runtime reported in band: `isError`, with the message as text
- * and, on the evaluation surface, the JPS §8.4 envelope as structuredContent.
- * Both are kept, so a view can show the machine-readable class and phase
- * instead of parsing them back out of the prose.
- */
-export class ToolRefusal extends Error {
-  readonly envelope: RefusalEnvelope | undefined
-
-  constructor(message: string, envelope: RefusalEnvelope | undefined) {
-    super(message)
-    this.name = 'ToolRefusal'
-    this.envelope = envelope
-  }
-}
 
 /**
  * Call a runtime tool and return its text beside its structured content.
@@ -58,11 +43,11 @@ async function callToolText(
   // the fresh question (see McpProvider's fileChanged handler).
   const result = await client.callTool({ name, arguments: args }, undefined, { signal })
 
-  const blocks = Array.isArray(result.content) ? result.content : []
-  const text = blocks
-    .filter((block): block is { type: 'text'; text: string } => block?.type === 'text')
-    .map((block) => block.text)
-    .join('')
+  const content = Array.isArray(result.content) ? result.content : []
+  const textBlocks = content.filter(
+    (block): block is { type: 'text'; text: string } => block?.type === 'text'
+  )
+  const text = textBlocks.map((block) => block.text).join('')
 
   if (result.isError) {
     throw new ToolRefusal(
@@ -70,7 +55,13 @@ async function callToolText(
       result.structuredContent as RefusalEnvelope | undefined
     )
   }
-  if (!text) {
+  // The block count is the question, not the joined length. A tool that
+  // answered with an empty text block *did* answer, and a served document that
+  // happens to be an empty file is exactly that answer — reporting it as "no
+  // text content" would describe the runtime as having said nothing. What an
+  // empty answer means is each caller's own: the JSON door below rejects it at
+  // the parse, and the served-document door reads it as the zero bytes it is.
+  if (textBlocks.length === 0) {
     throw new Error(`${name} returned no text content`)
   }
   return { raw: text, structured: result.structuredContent as Record<string, unknown> | undefined }
@@ -227,15 +218,24 @@ export function useGraphInventory(): UseQueryResult<GraphInventory, Error> {
  * into a transport error, and the mid-edit document is the one a client most
  * needs to see.
  *
- * The parse is this client's own and is kept apart from the runtime's verdict.
- * `document` is undefined whenever the text did not yield the declared shape —
- * whatever the metadata says — because a view drawing edges must draw them
- * from something it actually read.
+ * The read is subordinate to the runtime's verdict, never a second opinion on
+ * it. `readServedDocument` consults `meta.status` before it parses: the
+ * runtime's decode is the stricter of the two — duplicate member names alone
+ * are refused there and taken last-wins by `JSON.parse` — so a document the
+ * runtime could not decode is never one this client decodes anyway. `document`
+ * is undefined in that case and in every case where the text did not carry what
+ * the views draw from, and `unreadable` says which.
+ *
+ * The connection epoch is part of the key. A served document is joined to a
+ * matrix run's coverage by node name and edge index, and those two accounts
+ * only describe one graph if they came from one connection to one project; a
+ * key that survived a reconnect would let a document read before the socket
+ * dropped be joined to a matrix run from after it.
  */
 export function useGraphDocument(graphId: string | undefined): UseQueryResult<ServedGraph, Error> {
-  const { client, status, graphDocumentSupported } = useMcp()
+  const { client, status, graphDocumentSupported, connectionEpoch } = useMcp()
   return useQuery({
-    queryKey: ['experimental_get_graph', graphId ?? null],
+    queryKey: ['experimental_get_graph', connectionEpoch, graphId ?? null],
     enabled:
       status === 'ready' && client !== null && graphDocumentSupported && Boolean(graphId),
     queryFn: async ({ signal }) => {
@@ -245,14 +245,14 @@ export function useGraphDocument(graphId: string | undefined): UseQueryResult<Se
         { graph_id: graphId },
         signal
       )
-      return {
-        // A runtime that answered without structured content leaves the
-        // metadata empty rather than invented; every reader here treats a
-        // missing member as missing.
-        meta: (structured ?? {}) as unknown as GraphDocumentMeta,
-        raw,
-        document: parseGraphDocument(raw)
-      }
+      // A runtime that answered without structured content leaves the metadata
+      // empty rather than invented; every reader here treats a missing member
+      // as missing — including the status, whose absence is not `valid`.
+      const meta = (structured ?? {}) as unknown as GraphDocumentMeta
+      const read = readServedDocument(meta, raw)
+      return read.ok
+        ? { meta, raw, document: read.document }
+        : { meta, raw, unreadable: read.reason }
     }
   })
 }

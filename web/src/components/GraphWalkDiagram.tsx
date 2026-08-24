@@ -11,9 +11,10 @@ import type { GraphSuiteEntry, GraphTestRow, MatrixProbe } from '../mcp/types'
  * With a document (`experimental_get_graph`, ADR-0029) the picture is the
  * composition itself: every node the document declares, laid out in layers by
  * the document's own edges, with a real arrow per edge labelled with what that
- * edge carries, and the declared `result` node marked. A node the run never
- * admitted appears here and is said to be missing from coverage, which is the
- * case the old view could not represent at all.
+ * edge carries, and the declared `result` node marked. A node the coverage
+ * report names no probe for appears here and is said to be absent from
+ * coverage — the case the old view could not represent at all — with no cause
+ * given, because neither payload states one.
  *
  * Without one — jpack 0.18.0 and older, whose wire carries no graph document —
  * the only account of a graph's structure that reaches this client is the
@@ -296,6 +297,10 @@ function DocumentWalk({
         and nothing else.
       </p>
 
+      {/* What coverage does not name, said as exactly that. Why it does not is
+          something neither payload states: a node the walk never admitted and a
+          node whose probes the report omitted look identical from here, so no
+          cause is given for what is only an absence. */}
       {shape.nodes.some((node) => !node.inCoverage) && (
         <p className="note note-warn">
           {shape.nodes
@@ -303,18 +308,9 @@ function DocumentWalk({
             .map((node) => node.id)
             .join(', ')}{' '}
           {shape.nodes.filter((node) => !node.inCoverage).length === 1 ? 'is' : 'are'} declared by
-          the document and named by no probe in the coverage report — a node this
-          run never admitted. It is drawn because the document declares it, and
-          nothing is claimed about what its rows witness.
-        </p>
-      )}
-
-      {shape.cyclic.length > 0 && (
-        <p className="note note-warn">
-          The served document's edges form a cycle through{' '}
-          <code>{shape.cyclic.join(', ')}</code>, so no layering can order those
-          nodes. They are drawn below what could be ordered, and their arrows are
-          drawn as the document declares them.
+          the document and named by no probe in the coverage report. It is drawn
+          because the document declares it, and nothing is claimed here about why
+          coverage names no probe for it or about what its rows witness.
         </p>
       )}
 
@@ -528,9 +524,9 @@ function CoverageWalk({
 
       <p className="note">
         Nodes in the order the runtime evaluates them — those represented in the
-        coverage report, which can omit a node the run never admitted. The wire
-        does not carry which node feeds which, so no arrow is drawn between two
-        of them. See the README's upstream gaps.
+        coverage report, which can name no probe for a node the graph declares.
+        The wire does not carry which node feeds which, so no arrow is drawn
+        between two of them. See the README's upstream gaps.
       </p>
 
       {edges.length > 0 && (

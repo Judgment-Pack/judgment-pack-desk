@@ -2,7 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import type { Notification } from '@modelcontextprotocol/sdk/types.js'
 import { useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import { NO_CAPABILITIES, type RuntimeCapabilities, readCapabilities } from './capabilities'
+import { UNKNOWN_CAPABILITIES, type RuntimeCapabilities, listAllTools, readCapabilities } from './capabilities'
 import { DeskWebSocketTransport } from './transport'
 
 export type ConnectionStatus = 'connecting' | 'ready' | 'reconnecting' | 'failed'
@@ -13,6 +13,23 @@ export interface McpConnection extends RuntimeCapabilities {
   error: Error | null
   /** The runtime that answered initialize, for the status bar. */
   server: { name: string; version: string } | null
+  /**
+   * Which connection this is: 0 before the first, then one more for each
+   * socket that completed initialize.
+   *
+   * It exists so a query whose answer is only meaningful beside another
+   * query's can be keyed by the connection both were read over. Two answers
+   * read across a reconnect describe a runtime that was restarted, a project
+   * that may have changed underneath, and possibly a different binary
+   * altogether — joining them would state a relationship nothing observed.
+   */
+  connectionEpoch: number
+  /**
+   * Why the tool listing did not answer, where it did not. The connection is
+   * still usable — initialize succeeded — but what the runtime can do is
+   * unknown rather than absent, and `known` is false to say so.
+   */
+  capabilitiesError: Error | null
   /** Consecutive failed attempts; 0 while connected. */
   attempt: number
   /** True once this page has connected at least once. */
@@ -21,16 +38,24 @@ export interface McpConnection extends RuntimeCapabilities {
   retryNow: () => void
 }
 
-const McpContext = createContext<McpConnection>({
+const DISCONNECTED: McpConnection = {
   client: null,
   status: 'connecting',
   error: null,
   server: null,
-  ...NO_CAPABILITIES,
+  ...UNKNOWN_CAPABILITIES,
+  connectionEpoch: 0,
+  capabilitiesError: null,
   attempt: 0,
   everConnected: false,
   retryNow: () => {}
-})
+}
+
+/**
+ * Exported so a test can stand one connection up without a socket. Nothing in
+ * the application reads it directly: `useMcp` is the door.
+ */
+export const McpContext = createContext<McpConnection>(DISCONNECTED)
 
 export function useMcp(): McpConnection {
   return useContext(McpContext)
@@ -86,16 +111,7 @@ function backoffDelay(attempt: number): number {
  */
 export function McpProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
-  const [connection, setConnection] = useState<McpConnection>({
-    client: null,
-    status: 'connecting',
-    error: null,
-    server: null,
-    ...NO_CAPABILITIES,
-    attempt: 0,
-    everConnected: false,
-    retryNow: () => {}
-  })
+  const [connection, setConnection] = useState<McpConnection>(DISCONNECTED)
   // Bumping this re-runs the effect, which is what "try again now" means: the
   // effect owns every socket, timer, and Client, so restarting it is the one
   // way to retry that cannot leave a second connection behind.
@@ -103,6 +119,9 @@ export function McpProvider({ children }: { children: ReactNode }) {
   // Survives those restarts, so a manual retry does not tell the views this
   // page has never been connected.
   const everConnected = useRef(false)
+  // And so does the epoch: it counts connections this page has completed, so it
+  // must not restart when the effect does.
+  const epoch = useRef(0)
 
   useEffect(() => {
     let disposed = false
@@ -118,14 +137,12 @@ export function McpProvider({ children }: { children: ReactNode }) {
     if (!token) {
       // Nothing to retry: no token will appear on its own.
       setConnection({
-        client: null,
+        ...DISCONNECTED,
         status: 'failed',
         error: new Error(
           'No session token. Open the URL that jpack-desk printed at startup — it carries ?token=…'
         ),
-        server: null,
-        ...NO_CAPABILITIES,
-        attempt: 0,
+        connectionEpoch: epoch.current,
         everConnected: everConnected.current,
         retryNow
       })
@@ -136,11 +153,10 @@ export function McpProvider({ children }: { children: ReactNode }) {
       if (disposed) return
       attempt += 1
       setConnection({
-        client: null,
+        ...DISCONNECTED,
         status: 'reconnecting',
         error: cause,
-        server: null,
-        ...NO_CAPABILITIES,
+        connectionEpoch: epoch.current,
         attempt,
         everConnected: everConnected.current,
         retryNow
@@ -183,17 +199,22 @@ export function McpProvider({ children }: { children: ReactNode }) {
           if (disposed || live !== client) return
           attempt = 0
           everConnected.current = true
+          epoch.current += 1
           const info = client.getServerVersion()
           // The capabilities are read off one listing, once per connection:
           // what the server advertises is the contract, and a runtime that
-          // predates a tool or an argument simply never receives it.
-          let capabilities = NO_CAPABILITIES
+          // predates a tool or an argument simply never receives it. Every page
+          // of the listing is read, because a tool on a second page that was
+          // never asked for is a tool this would report as absent.
+          let capabilities = UNKNOWN_CAPABILITIES
+          let capabilitiesError: Error | null = null
           try {
-            const tools = await client.listTools()
-            capabilities = readCapabilities(tools.tools)
-          } catch {
-            // A failed listing leaves every capability off, which is the safe
-            // reading: each one's absence is a working page with less on it.
+            capabilities = readCapabilities(await listAllTools(client))
+          } catch (cause) {
+            // A failed listing leaves every capability off *and says so*. Off
+            // alone would be the page impersonating a connection to an older
+            // runtime, which is a claim about the runtime this never made.
+            capabilitiesError = cause instanceof Error ? cause : new Error(String(cause))
           }
           if (disposed || live !== client) return
           setConnection({
@@ -202,6 +223,8 @@ export function McpProvider({ children }: { children: ReactNode }) {
             error: null,
             server: info ? { name: info.name, version: info.version } : null,
             ...capabilities,
+            connectionEpoch: epoch.current,
+            capabilitiesError,
             attempt: 0,
             everConnected: true,
             retryNow
@@ -222,8 +245,10 @@ export function McpProvider({ children }: { children: ReactNode }) {
 
     setConnection((previous) => ({
       ...previous,
+      ...UNKNOWN_CAPABILITIES,
       client: null,
       status: everConnected.current ? 'reconnecting' : 'connecting',
+      capabilitiesError: null,
       attempt: 0,
       everConnected: everConnected.current,
       retryNow

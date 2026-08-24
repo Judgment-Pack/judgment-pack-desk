@@ -125,7 +125,13 @@ shared evaluator. The page carries the payload's own label saying so.
 
 Each graph is drawn as the **walk** it is, and what that diagram can claim
 depends on what the connected runtime serves. The desk feature-detects both
-graph tools by name at connect time and never reads a version string.
+graph tools by name at connect time and never reads a version string — following
+`nextCursor` to the end of the listing, because a tool on a page nobody asked
+for would read as a tool the runtime does not have. A listing that does not
+answer leaves what the runtime can do **unknown rather than absent**: the
+optional surfaces stay off, and a banner says the listing is what is missing,
+because a page that quietly withdrew them would be claiming the runtime lacks
+them.
 
 **With `experimental_get_graph`** (ADR-0029) the desk fetches the graph
 document itself and draws the composition: every node the document declares,
@@ -137,19 +143,45 @@ declares as its `result` is marked, and the arrow from it to the composite
 headline is the one further relationship the document states. Each node names
 the pack it evaluates. Layering is longest-path over the declared edges; where
 two nodes sit in one layer the tie is broken by the runtime's own evaluation
-order, read off the coverage report, so nothing invents a sequence. A cycle in
-a mid-edit document is reported rather than hung on, and an edge naming an
-endpoint the document does not declare is listed rather than drawn.
+order, read off the coverage report, so nothing invents a sequence.
 
-The document also shows what coverage alone could not: a node the run never
-admitted is declared by the document and named by no probe, and the page says
-so rather than showing it with a gap count of zero.
+**The runtime's verdict on its own bytes is final.** `experimental_get_graph`
+reports `status: valid` where its own strict decode succeeded and
+`undecodable` where it did not, and that decode is stricter than a browser's:
+duplicate member names alone are refused there and resolved last-wins by
+`JSON.parse` here. So the desk reads nothing out of a document the runtime could
+not — it falls back with the runtime's own sentence, verbatim, rather than
+drawing a graph out of bytes the runtime had already refused.
+
+Past that verdict, what the views draw from is checked here, member by member,
+because `valid` means acceptable JSON with an object root and not a schema
+verdict. A `nodes` member that is not a map, a missing `edges` array (the format
+requires it even when empty, so absent is not none), an edge missing an
+endpoint, a member of the wrong type — each declines the drawing and says which
+member declined it, rather than being coerced into a shape the document never
+stated. **A cycle or a self-loop declines it too**: the format requires the
+edges to form a DAG, so every way of drawing one is a repair — and an edge
+naming an endpoint the document does not declare is listed rather than drawn.
+
+The document also shows what coverage alone could not: a node the coverage
+report names no probe for is declared by the document and drawn, and the page
+says coverage names no probe for it rather than showing it with a gap count of
+zero. Why coverage names none is not something either payload states, so the
+page does not say.
+
+The two accounts on screen — the document, and the matrix run whose coverage and
+rows it is joined to — come from two calls that nothing binds to each other, so
+the join is only made while both are the current answer from the same
+connection. The document query is keyed by the connection, a document is drawn
+only while the runtime still advertises the tool, and neither is joined to the
+other while either call is in flight. See the README's upstream gaps for what an
+honest permanent binding would need.
 
 **Without it** — jpack 0.18.0 and older — the fallback is unchanged: the nodes
 represented in the coverage report, on the evaluation-order axis the runtime
 enumerated them along, ending in the composite headline. Coverage is then the
 only account of the graph's shape that reaches this wire, and it can omit a node
-the run never admitted, so that diagram claims representation and not
+the walk holds, so that diagram claims representation and not
 completeness. **It draws no arrow between two nodes**, because the wire carries
 the walk's node order and the edge indices coverage represents but not which
 node feeds which — and in a graph with independent branches that arrow would be
@@ -177,8 +209,11 @@ evaluates nothing, so it lands before the matrix has finished — and it lists a
 graph whose rows would not load, which a matrix run reports only as a failure.
 Counts absent from a row are printed as not read rather than as `0`: the runtime
 omits them, never zeroes them, exactly so a malformed document cannot look
-honestly empty. Without that tool the page behaves as it always did and finds
-the graphs by running their matrices.
+honestly empty. A listing that *refused* is reported on the page with the
+runtime's own message, and the section is left empty rather than showing what a
+failed call could no longer confirm — the matrix still runs beside it, and still
+reports the graphs whose rows loaded. Without that tool the page behaves as it
+always did and finds the graphs by running their matrices.
 
 Graph coverage is grouped per node, in the runtime's evaluation order, and
 reported exactly as the pack coverage is.
@@ -371,7 +406,10 @@ Setting `GRAPH_DOCUMENT` to a configured graph id adds the graph-serving pair to
 that third run, and `GRAPH_FILE` names that graph's document relative to the
 project so the served text is compared against the file byte for byte. Both are
 unset by default: a runtime that predates ADR-0029 advertises neither tool, and
-the step refuses rather than passing quietly.
+the step refuses rather than passing quietly. `GRAPH_FILE` on its own is refused
+before anything runs, because it names the half of a check that only happens
+when `GRAPH_DOCUMENT` says which graph to fetch — and an acceptance run must not
+report green for a check that never ran.
 
 The same client runs on its own against a chassis you already have open:
 
@@ -431,6 +469,24 @@ would stop being one.
   running their matrices. A document the runtime serves but could not decode
   falls back the same way with one line saying why — serving is not validating,
   so that document arrives as a successful call whose text is not a graph.
+
+- **Nothing binds a served graph document to the matrix run drawn beside it.**
+  The walk on the graphs page joins two answers from two calls: the document
+  `experimental_get_graph` served, and the coverage and rows
+  `experimental_test_graphs` reported. They are joined by node name and by edge
+  index, which is how the coverage report names its probes — and no member of
+  either payload says the two describe the same bytes. `experimental_get_graph`
+  reports the document's `sha256`; a graph matrix entry reports none, so there
+  is nothing to compare it against. The desk therefore draws only from a
+  document and a matrix that are both the current answer over one connection —
+  the document query is keyed by the connection, the drawing is withdrawn while
+  either call is in flight and when the runtime stops advertising the tool — and
+  it invents no binding of its own, because agreement between node names is not
+  provenance and calling it that would assert a link the runtime never stated.
+  The honest permanent fix is upstream: a graph matrix entry carrying the digest
+  of the document its walk ran over, which the desk could then compare to the
+  digest served beside the document. Until then the freshness gates above are
+  what stands, and they bound the window rather than close it.
 
 - **A graph matrix reports no node trace.** ADR-0027 pins the trace contract and
   binds it to each node evaluation inside a graph run, and the runtime's

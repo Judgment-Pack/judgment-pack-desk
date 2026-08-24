@@ -4,7 +4,7 @@ import { CoverageReport } from '../components/CoverageReport'
 import { GraphWalkDiagram } from '../components/GraphWalkDiagram'
 import { Empty, ErrorBox, Loading, Pill, Section, statusTone } from '../components/primitives'
 import { parseDisposition } from '../mcp/canonical'
-import { deriveWalkShape, walkFallbackReason } from '../mcp/graphDocument'
+import { deriveWalkLayout, walkFallbackReason } from '../mcp/graphDocument'
 import { useMcp } from '../mcp/McpProvider'
 import { useGraphDocument, useGraphInventory, useGraphMatrix } from '../mcp/queries'
 import type { GraphInventory, GraphSuiteEntry, GraphSummary, GraphTestRow } from '../mcp/types'
@@ -40,10 +40,42 @@ export function GraphView() {
 
   // The inventory is what lets the page render before the matrix has run. With
   // no inventory to show, the old behaviour stands exactly: wait, then report.
-  const listing = inventory.data
-  if (isPending && !listing) return <Loading what={graphId ? `graph ${graphId}` : "the project's graphs"} />
+  //
+  // A listing that failed shows nothing rather than what it last said: this
+  // section is titled "Configured", and configuration a failed call cannot
+  // confirm is not what the project configures now. The failure itself is
+  // reported below, which is what the home page sends a reader here for.
+  const listing = inventory.error ? undefined : inventory.data
+
+  // Nonfatal, and never silent: the matrix still runs and still reports what it
+  // can, but a listing that refused is the one thing that would otherwise
+  // vanish — the graphs it would have named are exactly the ones a matrix run
+  // cannot report on.
+  const inventoryNotice = inventory.error ? (
+    <p className="note note-warn">
+      The configured graphs could not be listed — {inventory.error.message}. What is below is the
+      matrix run, which reports a graph only where its rows loaded.
+    </p>
+  ) : null
+
+  if (isPending && !listing) {
+    return (
+      <>
+        {inventoryNotice}
+        <Loading what={graphId ? `graph ${graphId}` : "the project's graphs"} />
+      </>
+    )
+  }
   if (error && !listing) {
-    return <ErrorBox title={graphId ? `Could not run graph ${graphId}` : 'Could not run the graphs'} error={error} />
+    return (
+      <>
+        {inventoryNotice}
+        <ErrorBox
+          title={graphId ? `Could not run graph ${graphId}` : 'Could not run the graphs'}
+          error={error}
+        />
+      </>
+    )
   }
 
   const graphs = data?.graphs ?? []
@@ -97,6 +129,8 @@ export function GraphView() {
         </p>
       </header>
 
+      {inventoryNotice}
+
       {graphInventorySupported && listing && (
         <ConfiguredGraphs inventory={listing} only={graphId} />
       )}
@@ -115,7 +149,9 @@ export function GraphView() {
           <code>configVersion</code> 2 or newer.
         </Empty>
       ) : (
-        graphs.map((entry) => <GraphEntry key={entry.id} entry={entry} />)
+        graphs.map((entry) => (
+          <GraphEntry key={entry.id} entry={entry} matrixSettled={!isFetching} />
+        ))
       )}
 
       {data?.label && (
@@ -193,7 +229,38 @@ function ConfiguredGraph({ row }: { row: GraphSummary }) {
   )
 }
 
-function GraphEntry({ entry }: { entry: GraphSuiteEntry }) {
+/**
+ * One configured graph's run, and the walk drawn from the document beside it.
+ *
+ * The two accounts on screen come from two separate calls: the matrix run this
+ * entry is part of, and the document fetched here. They are joined by node name
+ * and by edge index — nothing on either payload binds them to each other — so
+ * the join is only honest while both are the *current* answer from the *same*
+ * connection. Everything below turns on that:
+ *
+ * - the document query is keyed by the connection epoch, so a reconnect brings
+ *   no document forward from the socket before it;
+ * - a document is drawn only while the runtime still advertises the tool, so a
+ *   reconnect to a runtime without it withdraws the drawing rather than leaving
+ *   a document no live capability accounts for;
+ * - and it is drawn only while neither call is in flight, so a matrix being
+ *   re-run never lends its previous coverage to a document just read, or the
+ *   other way round.
+ *
+ * There is no permanent binding to be had here: the matrix payload carries no
+ * digest of the document its walk ran over, so nothing in the two answers can
+ * prove they describe one file. Inventing one — comparing node names, say, and
+ * calling agreement provenance — would be this client asserting a link the
+ * runtime never stated. See the README's upstream gaps.
+ */
+function GraphEntry({
+  entry,
+  /** False while the matrix these rows came from is being re-run. */
+  matrixSettled
+}: {
+  entry: GraphSuiteEntry
+  matrixSettled: boolean
+}) {
   const rows = entry.rows ?? []
   // Selection is derived, not just stored: the requested row where it still
   // exists, else the first row there is. A refetch that drops the requested
@@ -207,13 +274,16 @@ function GraphEntry({ entry }: { entry: GraphSuiteEntry }) {
   // from one jpack.json entry — so this is the id to ask for.
   const { graphDocumentSupported } = useMcp()
   const served = useGraphDocument(entry.id)
-  const shape = useMemo(
+  const inFlight = graphDocumentSupported && (served.isPending || served.isFetching || !matrixSettled)
+  const settled = graphDocumentSupported && served.isSuccess && !served.isFetching && matrixSettled
+  const layout = useMemo(
     () =>
-      served.data?.document
-        ? deriveWalkShape(served.data.document, entry.coverage)
+      settled && served.data?.document
+        ? deriveWalkLayout(served.data.document, entry.coverage)
         : undefined,
-    [served.data, entry.coverage]
+    [settled, served.data, entry.coverage]
   )
+  const shape = layout?.drawn ? layout.shape : undefined
 
   return (
     <section className="matrix-entry">
@@ -250,7 +320,7 @@ function GraphEntry({ entry }: { entry: GraphSuiteEntry }) {
               ))}
             </div>
           )}
-          {graphDocumentSupported && served.isPending ? (
+          {inFlight ? (
             <Loading what="the served graph document" />
           ) : (
             <>
@@ -276,12 +346,13 @@ function GraphEntry({ entry }: { entry: GraphSuiteEntry }) {
                 entry={entry}
                 row={row}
                 shape={shape}
-                fallbackReason={walkFallbackReason(
-                  graphDocumentSupported,
-                  shape !== undefined,
-                  served.data,
-                  served.error
-                )}
+                fallbackReason={walkFallbackReason({
+                  supported: graphDocumentSupported,
+                  drawn: shape !== undefined,
+                  served: settled ? served.data : undefined,
+                  declined: layout && !layout.drawn ? layout.reason : undefined,
+                  error: served.error
+                })}
               />
             </>
           )}

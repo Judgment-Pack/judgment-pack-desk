@@ -43,8 +43,8 @@ import { readFile } from 'node:fs/promises'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { DeskWebSocketTransport } from '../src/mcp/transport.ts'
 import { describeHandoffTarget, nodesInWalkOrder, parseProbe } from '../src/mcp/canonical.ts'
-import { deriveWalkShape, edgeCarries, parseGraphDocument } from '../src/mcp/graphDocument.ts'
-import { readCapabilities } from '../src/mcp/capabilities.ts'
+import { deriveWalkLayout, edgeCarries, readServedDocument } from '../src/mcp/graphDocument.ts'
+import { listAllTools, readCapabilities } from '../src/mcp/capabilities.ts'
 import type {
   Evaluation,
   GraphDocumentMeta,
@@ -174,12 +174,14 @@ await client.connect(new DeskWebSocketTransport(wsURL))
 const server = client.getServerVersion()
 console.log(`initialize    ok  serverInfo=${server?.name} ${server?.version}`)
 
-const tools = await client.listTools()
-console.log(`tools/list    ok  ${tools.tools.length} tools: ${tools.tools.map((t) => t.name).join(', ')}`)
+// Every page of it, exactly as the page reads it: a tool on a second page that
+// was never asked for is a tool this would report as absent.
+const tools = await listAllTools(client)
+console.log(`tools/list    ok  ${tools.length} tools: ${tools.map((t) => t.name).join(', ')}`)
 
 // The same reading the page does at connect time, printed so a drive against
 // two runtimes shows which world each one is.
-const capabilities = readCapabilities(tools.tools)
+const capabilities = readCapabilities(tools)
 console.log(
   `capabilities      rehearsal=${capabilities.rehearsalSupported} ` +
     `list_graphs=${capabilities.graphInventorySupported} ` +
@@ -521,25 +523,42 @@ async function graphDocument(graphId: string, graphFile?: string): Promise<void>
     console.log(`                  text matches ${graphFile} exactly`)
   }
 
+  const read = readServedDocument(meta, served)
   if (meta.status !== 'valid') {
     // An undecodable document is a *successful* call the runtime meant to make,
     // so it is reported and not treated as a transport failure. The desk falls
-    // back to the coverage walk on exactly this, and says why.
-    console.log('                  the runtime could not decode this document; no walk is derived')
+    // back to the coverage walk on exactly this, and says why — with the
+    // runtime's own sentence, which is the one printed here.
+    console.log(`                  the runtime could not decode this document; no walk is derived`)
+    console.log(`                  reason as the desk shows it: ${read.ok ? '(none)' : read.reason}`)
+    if (read.ok) {
+      console.error('the desk read a document the runtime reported it could not decode')
+      process.exit(1)
+    }
     return
   }
-
-  const parsed = parseGraphDocument(served)
-  if (!parsed) {
-    console.error('the served document did not yield the shape the desk draws from')
+  if (!read.ok) {
+    console.error(`the served document did not yield the shape the desk draws from: ${read.reason}`)
     process.exit(1)
   }
-  const shape = deriveWalkShape(parsed, [])
+
+  // The layering the page would do, with the tie-break the page uses: the walk
+  // order of this graph's own coverage report. Passing an empty coverage here
+  // would exercise a tie-break the browser never takes.
+  const coverage = await graphCoverage(graphId)
+  console.log(
+    `  walk order      ${nodesInWalkOrder(coverage).join(' → ') || '(coverage names no node)'}`
+  )
+  const layout = deriveWalkLayout(read.document, coverage)
+  if (!layout.drawn) {
+    console.error(`the desk declines to draw this document: ${layout.reason}`)
+    process.exit(1)
+  }
+  const shape = layout.shape
   console.log(
     `  walk            ${shape.nodes.length} nodes in ${shape.depth} ` +
       `${shape.depth === 1 ? 'layer' : 'layers'}, ${shape.edges.length} declared ` +
-      `${shape.edges.length === 1 ? 'edge' : 'edges'}` +
-      `${shape.cyclic.length ? `, cycle through ${shape.cyclic.join(' ')}` : ''}`
+      `${shape.edges.length === 1 ? 'edge' : 'edges'}`
   )
   for (const node of shape.nodes) {
     console.log(
@@ -557,6 +576,28 @@ async function graphDocument(graphId: string, graphFile?: string): Promise<void>
     console.error(`the document declares result ${shape.result} and declares no node by that name`)
     process.exit(1)
   }
+}
+
+/**
+ * One graph's own coverage report, for the layering tie-break.
+ *
+ * The tie inside a layer is broken by the order the runtime evaluated the
+ * nodes in, and the coverage report is the only place that order appears. A run
+ * whose rows did not load reports no coverage, which is an answer: the tie then
+ * falls back to the document's own key order, exactly as it does in the page.
+ */
+async function graphCoverage(graphId: string): Promise<MatrixProbe[]> {
+  const result = await client.callTool({
+    name: 'experimental_test_graphs',
+    arguments: { graph_id: graphId }
+  })
+  if (result.isError) {
+    console.error(`experimental_test_graphs refused: ${textOf(result)}`)
+    process.exit(1)
+  }
+  const payload = JSON.parse(textOf(result)) as GraphSuite
+  const entry = (payload.graphs ?? []).find((candidate) => candidate.id === graphId)
+  return entry?.coverage ?? []
 }
 
 /** How much of what a report derived is witnessed by a row. */

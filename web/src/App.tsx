@@ -8,7 +8,8 @@ import { PackEvaluate } from './routes/PackEvaluate'
 import { ProjectHome } from './routes/ProjectHome'
 
 export function App() {
-  const { status, error, server, everConnected, attempt, retryNow } = useMcp()
+  const { status, error, server, everConnected, attempt, retryNow, known, capabilitiesError } =
+    useMcp()
   // A connection that has never been made has nothing to show behind a banner,
   // so the reason takes the page. Once the desk has been connected, a drop is a
   // banner over what is already on screen: the reconnect is automatic, and
@@ -30,6 +31,21 @@ export function App() {
             Lost the connection to the chassis. Reconnecting (attempt {attempt})…{' '}
             <button type="button" className="link-button" onClick={retryNow}>
               try now
+            </button>
+          </p>
+        )}
+        {/* Connected, and this page does not know what it is connected to. Every
+            feature-detected capability is off while that holds, and saying so is
+            the difference between a page with less on it and a page quietly
+            claiming the runtime has less on it. */}
+        {status === 'ready' && !known && (
+          <p className="banner" role="status">
+            The runtime's tool listing could not be read
+            {capabilitiesError ? ` — ${capabilitiesError.message}` : ''}. What this runtime can do
+            is unknown rather than known to be little, so the optional surfaces are left off and
+            nothing here should be read as the runtime lacking them.{' '}
+            <button type="button" className="link-button" onClick={retryNow}>
+              reconnect and ask again
             </button>
           </p>
         )}
