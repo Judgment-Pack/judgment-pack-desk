@@ -324,10 +324,22 @@ JPACK_PROJECT=/path/to/project go test ./...
 `JPACK_BIN` overrides the runtime binary; otherwise `./bin/jpack` is used when
 present.
 
-CI runs `gofmt`, `go vet` and `go test` on one job and `npm ci`, `tsc` and
-`vite build` on another. It supplies neither a runtime binary nor a project, so
-the end-to-end tests skip themselves there and what runs is the coverage that
-needs nothing external.
+The component tests run under vitest against fixture payloads shaped like the
+wire's own:
+
+```sh
+npm --prefix web test
+```
+
+They are where a rendering rule fails a test rather than surviving as a habit —
+that a verdict the runtime did not state is never painted, that a served graph
+document is read and never repaired, and that each fallback says exactly as much
+as it should about why it is one.
+
+CI runs `gofmt`, `go vet` and `go test` on one job and `npm ci`, `tsc`, the
+component tests and `vite build` on another. It supplies neither a runtime binary
+nor a project, so the end-to-end tests skip themselves there and what runs is the
+coverage that needs nothing external.
 
 ### The acceptance proof
 
