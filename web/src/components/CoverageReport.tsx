@@ -44,9 +44,9 @@ export function CoverageReport({
   if (!coverage || coverage.length === 0) {
     return (
       <Empty>
-        No coverage report. The runtime derives one from what a pack declares, and
-        omits it entirely where the matrix did not load or where the declarations
-        derive no probe at all — an absent report is not an empty one.
+        No coverage was reported. An absent report is not an empty one — where
+        the runtime said why, the entry's own status and detail above say it,
+        and nothing is invented here in their place.
       </Empty>
     )
   }

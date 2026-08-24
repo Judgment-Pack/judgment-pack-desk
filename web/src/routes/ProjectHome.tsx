@@ -60,21 +60,44 @@ export function ProjectHome() {
             </p>
           </li>
         )}
-        {graphEntries.length > 0 && (
+        {graphs.isPending ? (
+          <li className="card">
+            <div className="card-head">
+              <h3>Graphs</h3>
+              <Pill tone="quiet">running…</Pill>
+            </div>
+            <p>The graph walk is running to find what this project configures.</p>
+          </li>
+        ) : graphs.error ? (
           <li className="card card-link">
             <div className="card-head">
               <h3>
                 <Link to="/graphs">Graphs</Link>
               </h3>
-              <Pill tone="quiet">
-                {graphEntries.length} {graphEntries.length === 1 ? 'graph' : 'graphs'}
-              </Pill>
+              <Pill tone="danger">error</Pill>
             </div>
             <p>
-              The compositions this project configures: each one's walk, its
-              rows, and the coverage derived per node and per edge.
+              The graph walk could not run, which says nothing about whether
+              graphs are configured — open Graphs for the error itself.
             </p>
           </li>
+        ) : (
+          graphEntries.length > 0 && (
+            <li className="card card-link">
+              <div className="card-head">
+                <h3>
+                  <Link to="/graphs">Graphs</Link>
+                </h3>
+                <Pill tone="quiet">
+                  {graphEntries.length} {graphEntries.length === 1 ? 'graph' : 'graphs'}
+                </Pill>
+              </div>
+              <p>
+                The compositions this project configures: each one's walk, its
+                rows, and the coverage derived per node and per edge.
+              </p>
+            </li>
+          )
         )}
       </ul>
 

@@ -62,7 +62,7 @@ export function GraphWalkDiagram({
         className="diagram"
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`The ${nodes.length} nodes of graph ${entry.id}, in the order the runtime evaluates them`}
+        aria-label={`The ${nodes.length} nodes represented in coverage for graph ${entry.id}, in the order the runtime evaluates them`}
       >
         {/* The axis is evaluation order, which the payload states. It is not a
             dependency edge, which the payload does not. */}
@@ -78,7 +78,7 @@ export function GraphWalkDiagram({
           const y = TOP + index * (NODE_HEIGHT + NODE_GAP)
           const result = byNode.get(node)
           const disposition = parseDisposition(result?.actual)
-          const status = result ? result.status : 'unasserted'
+          const status = result ? result.status : 'unreported'
           const gaps = countMissing(entry.coverage, node)
           return (
             <g key={node} className={`diagram-node diagram-node-${status}`}>
@@ -100,7 +100,7 @@ export function GraphWalkDiagram({
               <text className="diagram-node-meta" x={NODE_X + 14} y={y + 44}>
                 {result
                   ? `${result.status} · ${describe(disposition)}`
-                  : 'no row asserts this node'}
+                  : 'selected row reports no comparison'}
               </text>
               {gaps > 0 && (
                 <text className="diagram-node-gaps" x={NODE_X + NODE_WIDTH - 14} y={y + 44}>
@@ -111,12 +111,16 @@ export function GraphWalkDiagram({
           )
         })}
 
-        {/* The composite headline: the disposition every row is judged on. */}
+        {/* The composite headline the row was judged on — drawn neutrally,
+            because row.status covers the headline AND every reported node
+            comparison: a node-only mismatch must not paint a byte-identical
+            composite. The row's own verdict is reported beside the diagram,
+            as the row's. */}
         {(() => {
           const y = TOP + nodes.length * (NODE_HEIGHT + NODE_GAP)
           const disposition = parseDisposition(row?.actual)
           return (
-            <g className={`diagram-node diagram-composite diagram-node-${row?.status ?? 'unasserted'}`}>
+            <g className="diagram-node diagram-composite">
               <rect
                 className="diagram-box"
                 x={NODE_X}
@@ -129,23 +133,32 @@ export function GraphWalkDiagram({
                 composite result
               </text>
               <text className="diagram-node-meta" x={NODE_X + 14} y={y + 44}>
-                {row ? `${row.status} · ${describe(disposition)}` : 'select a row to see its result'}
+                {row ? describe(disposition) : 'select a row to see its result'}
               </text>
             </g>
           )
         })()}
       </svg>
 
+      {row && (
+        <p className="note">
+          Row <code>{row.id}</code>: <strong>{row.status}</strong> — that verdict
+          covers the composite headline and every node comparison the row
+          reported, together.
+        </p>
+      )}
+
       <p className="note">
-        Nodes in the order the runtime evaluates them. The wire carries that
-        order and the edge count, and does not carry which node feeds which — so
-        no arrow is drawn between two of them. See the README's upstream gaps.
+        Nodes in the order the runtime evaluates them — those represented in the
+        coverage report, which can omit a node the run never admitted. The wire
+        does not carry which node feeds which, so no arrow is drawn between two
+        of them. See the README's upstream gaps.
       </p>
 
       {edges.length > 0 && (
         <div className="diagram-edges">
           <h4 className="coverage-group-title">
-            {edges.length} declared {edges.length === 1 ? 'edge' : 'edges'}
+            {edges.length} edge {edges.length === 1 ? 'index' : 'indices'} represented in coverage
           </h4>
           <ul className="edge-slots">
             {edges.map((index) => (

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { CoverageReport } from '../components/CoverageReport'
 import { GraphWalkDiagram } from '../components/GraphWalkDiagram'
-import { Empty, ErrorBox, Loading, Pill, Section } from '../components/primitives'
+import { Empty, ErrorBox, Loading, Pill, Section, statusTone } from '../components/primitives'
 import { parseDisposition } from '../mcp/canonical'
 import { useGraphMatrix } from '../mcp/queries'
 import type { GraphSuiteEntry, GraphTestRow } from '../mcp/types'
@@ -50,13 +50,13 @@ export function GraphView() {
       <header className="detail-head">
         <h1>{graphId ?? 'Graphs'}</h1>
         <p className="ids">
-          <Pill tone={data.status === 'passed' ? 'strong' : 'quiet'}>{data.status}</Pill>
+          <Pill tone={statusTone(data.status)}>{data.status}</Pill>
           <span>
             {data.summary.passed} of {data.summary.total}{' '}
             {data.summary.total === 1 ? 'row' : 'rows'} passed
           </span>
           {data.summary.mismatched > 0 && (
-            <Pill tone="strong">{data.summary.mismatched} mismatched</Pill>
+            <Pill tone="danger">{data.summary.mismatched} mismatched</Pill>
           )}
           {isFetching && <span className="quiet">re-running…</span>}
         </p>
@@ -89,11 +89,12 @@ export function GraphView() {
 
 function GraphEntry({ entry }: { entry: GraphSuiteEntry }) {
   const rows = entry.rows ?? []
-  // The first row is selected so the diagram has something to say on arrival.
-  // Selecting a row colours the nodes with what that row produced; it changes
-  // nothing about the run, which already happened.
-  const [selected, setSelected] = useState<string | undefined>(rows[0]?.id)
-  const row = rows.find((candidate) => candidate.id === selected)
+  // Selection is derived, not just stored: the requested row where it still
+  // exists, else the first row there is. A refetch that drops the requested
+  // row (or brings rows to a graph that had none) then selects something
+  // instead of leaving a full picker with nothing on the diagram.
+  const [selected, setSelected] = useState<string | undefined>(undefined)
+  const row = rows.find((candidate) => candidate.id === selected) ?? rows[0]
 
   return (
     <section className="matrix-entry">
@@ -101,7 +102,7 @@ function GraphEntry({ entry }: { entry: GraphSuiteEntry }) {
         <h2>
           <Link to={`/graphs/${encodeURIComponent(entry.id)}`}>{entry.id}</Link>
         </h2>
-        <Pill tone={entry.status === 'passed' ? 'quiet' : 'strong'}>{entry.status}</Pill>
+        <Pill tone={statusTone(entry.status)}>{entry.status}</Pill>
         {entry.graphVersion && <Pill tone="quiet">v{entry.graphVersion}</Pill>}
         <span className="quiet">
           {entry.summary.passed}/{entry.summary.total} rows
@@ -122,7 +123,7 @@ function GraphEntry({ entry }: { entry: GraphSuiteEntry }) {
                 <button
                   key={candidate.id}
                   type="button"
-                  className={`tab${candidate.id === selected ? ' tab-on' : ''}`}
+                  className={`tab${candidate.id === row?.id ? ' tab-on' : ''}`}
                   onClick={() => setSelected(candidate.id)}
                 >
                   {candidate.id}
@@ -140,7 +141,9 @@ function GraphEntry({ entry }: { entry: GraphSuiteEntry }) {
 
       <Section title="Rows" count={rows.length}>
         {rows.length === 0 ? (
-          <Empty>This graph declares no matrix, so no row ran for it.</Empty>
+          <Empty>
+            No rows were reported for this graph{entry.detail ? ' — the note above says why' : ''}.
+          </Empty>
         ) : (
           <ul className="rows">
             {rows.map((candidate) => (
@@ -161,15 +164,14 @@ function GraphEntry({ entry }: { entry: GraphSuiteEntry }) {
  * absent from this list rather than shown as having passed.
  */
 function GraphRowItem({ row }: { row: GraphTestRow }) {
-  const passed = row.status === 'passed'
   return (
     <li className={`row row-${row.status}`}>
       <div className="row-head">
         <code className="row-id">{row.id}</code>
-        <Pill tone={passed ? 'quiet' : 'strong'}>{row.status}</Pill>
+        <Pill tone={statusTone(row.status)}>{row.status}</Pill>
         {row.nodes?.length ? (
           <Pill tone="quiet">
-            {row.nodes.length} named {row.nodes.length === 1 ? 'node' : 'nodes'}
+            {row.nodes.length} reported node {row.nodes.length === 1 ? 'comparison' : 'comparisons'}
           </Pill>
         ) : null}
       </div>
@@ -184,7 +186,19 @@ function GraphRowItem({ row }: { row: GraphTestRow }) {
             </>
           )}
           {' · actual: '}
-          {row.actualErrorClass ? <code>{row.actualErrorClass}</code> : 'a composite result was produced'}
+          {row.actualErrorClass ? (
+            <>
+              <code>{row.actualErrorClass}</code>
+              {row.actualErrorPhase && (
+                <>
+                  {' '}
+                  in <code>{row.actualErrorPhase}</code>
+                </>
+              )}
+            </>
+          ) : (
+            'a composite result was produced'
+          )}
         </p>
       ) : (
         <div className="row-compare">

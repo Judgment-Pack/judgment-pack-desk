@@ -154,8 +154,11 @@ export function McpProvider({ children }: { children: ReactNode }) {
       client.fallbackNotificationHandler = async (notification: Notification) => {
         if (notification.method !== 'desk/fileChanged') return
         // The runtime reads the project tree on every call, so any change under
-        // it can make any cached answer stale. Invalidating the whole desk cache
-        // is both correct and cheap: these are local calls to a local process.
+        // it can make any cached answer stale. Cancel before invalidating:
+        // invalidation alone reuses a fetch already in flight, and an answer
+        // read from the tree before the change would land as fresh — the abort
+        // travels into callTool through each query's own signal.
+        await queryClient.cancelQueries()
         await queryClient.invalidateQueries()
       }
 

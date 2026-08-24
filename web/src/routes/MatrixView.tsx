@@ -1,7 +1,7 @@
 import { Link, useParams } from 'react-router-dom'
 import { CoverageReport } from '../components/CoverageReport'
 import { MatrixRowList } from '../components/MatrixRowList'
-import { Empty, ErrorBox, Loading, Pill, Section } from '../components/primitives'
+import { Empty, ErrorBox, Loading, Pill, Section, statusTone } from '../components/primitives'
 import { usePackMatrix } from '../mcp/queries'
 import type { PackTestEntry } from '../mcp/types'
 
@@ -49,13 +49,13 @@ export function MatrixView() {
       <header className="detail-head">
         <h1>{packId ? `${packId} matrix` : 'Project matrix'}</h1>
         <p className="ids">
-          <Pill tone={data.status === 'passed' ? 'strong' : 'quiet'}>{data.status}</Pill>
+          <Pill tone={statusTone(data.status)}>{data.status}</Pill>
           <span>
             {data.summary.passed} of {data.summary.total}{' '}
             {data.summary.total === 1 ? 'row' : 'rows'} passed
           </span>
           {data.summary.mismatched > 0 && (
-            <Pill tone="strong">{data.summary.mismatched} mismatched</Pill>
+            <Pill tone="danger">{data.summary.mismatched} mismatched</Pill>
           )}
           {isFetching && <span className="quiet">re-running…</span>}
         </p>
@@ -100,7 +100,7 @@ function PackMatrixEntry({ entry }: { entry: PackTestEntry }) {
         <h2>
           <Link to={`/packs/${encodeURIComponent(entry.id)}`}>{entry.id}</Link>
         </h2>
-        <Pill tone={entry.status === 'passed' ? 'quiet' : 'strong'}>{entry.status}</Pill>
+        <Pill tone={statusTone(entry.status)}>{entry.status}</Pill>
         {entry.packVersion && <Pill tone="quiet">v{entry.packVersion}</Pill>}
         <span className="quiet">
           {entry.summary.passed}/{entry.summary.total} rows
@@ -122,7 +122,9 @@ function PackMatrixEntry({ entry }: { entry: PackTestEntry }) {
 
       <Section title="Rows" count={rows.length}>
         {rows.length === 0 ? (
-          <Empty>This pack declares no matrix, so no row ran for it.</Empty>
+          <Empty>
+            No rows were reported for this pack{entry.detail ? ' — the note above says why' : ''}.
+          </Empty>
         ) : (
           <MatrixRowList rows={rows} />
         )}

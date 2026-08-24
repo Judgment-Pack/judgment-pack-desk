@@ -1,6 +1,6 @@
 import { describeHandoffTarget, parseDisposition } from '../mcp/canonical'
 import type { Disposition, MatrixRow } from '../mcp/types'
-import { Pill } from './primitives'
+import { Pill, statusTone } from './primitives'
 
 /**
  * One matrix's rows, expected beside actual.
@@ -17,11 +17,11 @@ import { Pill } from './primitives'
  * - a row expecting a **disposition**, compared byte for byte;
  * - a row expecting a **refusal**, which carries no disposition at all and is
  *   judged on the §8.4 error class and phase;
- * - a row additionally asserting a **handoff target** (ADR-0025), which is not
- *   part of the disposition and gates separately. That last one is the case
- *   this view most needs to make legible: a pack edit touching only where a
- *   handoff goes leaves every disposition byte identical, so a row can fail
- *   with its expected and actual dispositions matching exactly.
+ * - a row additionally asserting a **handoff-target state** (ADR-0025), which
+ *   is not part of the disposition and gates separately. Its two members are
+ *   display renderings — a long one is truncated with a digest tail — so this
+ *   view never compares them: the comparator decides on decoded targets, and
+ *   the row's own status is the only verdict shown.
  */
 export function MatrixRowList({ rows }: { rows: MatrixRow[] }) {
   return (
@@ -34,28 +34,24 @@ export function MatrixRowList({ rows }: { rows: MatrixRow[] }) {
 }
 
 function MatrixRowItem({ row }: { row: MatrixRow }) {
-  const passed = row.status === 'passed'
   const dispositionsAgree = row.expected === row.actual
   const expectsRefusal = Boolean(row.expectedErrorClass)
   const assertsTarget = row.expectedHandoffTarget !== undefined
-  const targetsAgree = row.expectedHandoffTarget === row.actualHandoffTarget
 
   return (
     <li className={`row row-${row.status}`}>
       <div className="row-head">
         <code className="row-id">{row.id}</code>
-        <Pill tone={passed ? 'quiet' : 'strong'}>{row.status}</Pill>
+        <Pill tone={statusTone(row.status)}>{row.status}</Pill>
         {row.origin && <Pill tone="quiet">origin {row.origin}</Pill>}
-        {assertsTarget && <Pill tone="quiet">asserts a handoff target</Pill>}
+        {assertsTarget && (
+          <Pill tone="quiet">
+            {row.expectedHandoffTarget === 'null'
+              ? 'asserts no handoff target'
+              : 'asserts a handoff-target state'}
+          </Pill>
+        )}
       </div>
-
-      {!passed && dispositionsAgree && assertsTarget && !targetsAgree && (
-        <p className="note note-warn">
-          The dispositions match byte for byte. This row fails on the handoff
-          target alone — where the decision goes, which §8.3 keeps outside the
-          disposition.
-        </p>
-      )}
 
       {expectsRefusal ? (
         <RefusalComparison row={row} />
@@ -68,8 +64,8 @@ function MatrixRowItem({ row }: { row: MatrixRow }) {
 
       {assertsTarget && (
         <div className="row-compare row-targets">
-          <TargetSide label="expected target" member={row.expectedHandoffTarget} differs={!targetsAgree} />
-          <TargetSide label="actual target" member={row.actualHandoffTarget} differs={!targetsAgree} />
+          <TargetSide label="expected target" member={row.expectedHandoffTarget} />
+          <TargetSide label="actual target" member={row.actualHandoffTarget} />
         </div>
       )}
 
@@ -94,7 +90,14 @@ function RefusalComparison({ row }: { row: MatrixRow }) {
           )}
         </p>
       </div>
-      <div className={`row-side${row.actualErrorClass === row.expectedErrorClass ? '' : ' row-side-differs'}`}>
+      <div
+        className={`row-side${
+          row.actualErrorClass === row.expectedErrorClass &&
+          (!row.expectedErrorPhase || row.actualErrorPhase === row.expectedErrorPhase)
+            ? ''
+            : ' row-side-differs'
+        }`}
+      >
         <span className="row-side-label">actual</span>
         {row.actualErrorClass ? (
           <p className="row-refusal">
@@ -159,17 +162,14 @@ function DispositionSummary({ disposition }: { disposition: Disposition }) {
   )
 }
 
-function TargetSide({
-  label,
-  member,
-  differs
-}: {
-  label: string
-  member: string | undefined
-  differs: boolean
-}) {
+/**
+ * One side of the target pair, shown and never compared: the members are
+ * display renderings the comparator does not decide on, so no mark here may
+ * claim a difference — the row's status already said what the runtime decided.
+ */
+function TargetSide({ label, member }: { label: string; member: string | undefined }) {
   return (
-    <div className={`row-side${differs ? ' row-side-differs' : ''}`}>
+    <div className="row-side">
       <span className="row-side-label">{label}</span>
       <p className="target-name">{member === undefined ? '(not reported)' : describeHandoffTarget(member)}</p>
     </div>

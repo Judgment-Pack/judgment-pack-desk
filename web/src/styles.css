@@ -202,6 +202,23 @@ a {
   color: var(--ink-faint);
 }
 
+.pill-success {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.pill-skipped {
+  border-style: dashed;
+  color: var(--ink-soft);
+}
+
+.pill-danger {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 /* Sections and fields ------------------------------------------------------ */
 
 .section {
@@ -987,7 +1004,7 @@ a {
   fill: var(--danger-soft);
 }
 
-.diagram-node-unasserted .diagram-box {
+.diagram-node-unreported .diagram-box {
   stroke-dasharray: 4 3;
 }
 

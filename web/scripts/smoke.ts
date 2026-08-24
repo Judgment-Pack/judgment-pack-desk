@@ -377,8 +377,14 @@ async function testGraphs(): Promise<void> {
       )
     }
   }
-  if (options.expectGraphStatus !== undefined && payload.status !== options.expectGraphStatus) {
-    console.error(`expected graph status ${options.expectGraphStatus}, got ${payload.status}`)
+  // With no explicit expectation, the payload's own shape sets one: a project
+  // whose graphs are present must pass their rows, and skipped is accepted only
+  // where there is no graph to run. An empty default that accepted mismatch
+  // would let a graph whose rows never load read as a green acceptance.
+  const expectedGraphStatus =
+    options.expectGraphStatus ?? ((payload.graphs ?? []).length > 0 ? 'passed' : 'skipped')
+  if (payload.status !== expectedGraphStatus) {
+    console.error(`expected graph status ${expectedGraphStatus}, got ${payload.status}`)
     process.exit(1)
   }
 }

@@ -77,7 +77,10 @@ cp -R "$project" "$work/project"
 [ -f "$work/project/$facts" ] || die "the project has no $facts"
 jq "$mutate" "$work/project/$facts" > "$work/project/degraded-facts.json"
 
-echo "== building the chassis =="
+echo "== building the web assets =="
+npm --prefix "$root/web" --silent run build
+
+echo "== building the chassis (embedding the built assets) =="
 go build -C "$root" -o "$work/jpack-desk" .
 
 echo "== starting the chassis on 127.0.0.1:$port =="

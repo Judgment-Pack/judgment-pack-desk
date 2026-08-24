@@ -43,9 +43,13 @@ export class ToolRefusal extends Error {
 async function callToolJSON<T>(
   client: Client,
   name: string,
-  args: Record<string, unknown> = {}
+  args: Record<string, unknown> = {},
+  signal?: AbortSignal
 ): Promise<{ parsed: T; raw: string; structured: Record<string, unknown> | undefined }> {
-  const result = await client.callTool({ name, arguments: args })
+  // The signal is the query's own: a file change cancels in-flight project
+  // queries before invalidating, so a stale in-flight answer can never satisfy
+  // the fresh question (see McpProvider's fileChanged handler).
+  const result = await client.callTool({ name, arguments: args }, undefined, { signal })
 
   const blocks = Array.isArray(result.content) ? result.content : []
   const text = blocks
@@ -82,8 +86,8 @@ export function usePacks(): UseQueryResult<PackInventory, Error> {
   return useQuery({
     queryKey: ['list_packs'],
     enabled: status === 'ready' && client !== null,
-    queryFn: async () => {
-      const { parsed } = await callToolJSON<PackInventory>(client!, 'list_packs')
+    queryFn: async ({ signal }) => {
+      const { parsed } = await callToolJSON<PackInventory>(client!, 'list_packs', {}, signal)
       return parsed
     }
   })
@@ -95,11 +99,12 @@ export function usePack(packId: string | undefined): UseQueryResult<LoadedPack, 
   return useQuery({
     queryKey: ['get_pack', packId],
     enabled: status === 'ready' && client !== null && Boolean(packId),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { parsed, raw, structured } = await callToolJSON<LoadedPack['document']>(
         client!,
         'get_pack',
-        { pack_id: packId }
+        { pack_id: packId },
+        signal
       )
       return { document: parsed, raw, meta: (structured ?? {}) as PackFileMeta }
     }
@@ -124,9 +129,9 @@ export function usePackMatrix(packId?: string): UseQueryResult<PackTest, Error> 
   return useQuery({
     queryKey: ['experimental_test_packs', packId ?? null],
     enabled: status === 'ready' && client !== null,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const args = packId === undefined ? {} : { pack_id: packId }
-      const { parsed } = await callToolJSON<PackTest>(client!, 'experimental_test_packs', args)
+      const { parsed } = await callToolJSON<PackTest>(client!, 'experimental_test_packs', args, signal)
       return parsed
     }
   })
@@ -145,9 +150,9 @@ export function useGraphMatrix(graphId?: string): UseQueryResult<GraphSuite, Err
   return useQuery({
     queryKey: ['experimental_test_graphs', graphId ?? null],
     enabled: status === 'ready' && client !== null,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const args = graphId === undefined ? {} : { graph_id: graphId }
-      const { parsed } = await callToolJSON<GraphSuite>(client!, 'experimental_test_graphs', args)
+      const { parsed } = await callToolJSON<GraphSuite>(client!, 'experimental_test_graphs', args, signal)
       return parsed
     }
   })

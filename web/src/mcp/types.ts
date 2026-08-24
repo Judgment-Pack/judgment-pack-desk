@@ -310,11 +310,13 @@ export interface MatrixProbe {
  *
  * `expected` and `actual` hold canonical JSON *text*, so a view that wants the
  * disposition's members parses them. `expectedHandoffTarget` and
- * `actualHandoffTarget` (ADR-0025) appear together or not at all — a row that
- * asserts no target carries neither — and each is a canonical target rendering,
- * the literal `null` for "no target at all", or `unavailable` where the report
- * cannot state one. They are display values: the comparator decides equality on
- * decoded targets, because a long rendering is truncated with a digest tail.
+ * `actualHandoffTarget` (ADR-0025) appear together exactly when the row asserts
+ * a handoff-target state — a row that omits the assertion carries neither,
+ * while a row asserting "no target at all" carries both, each as the literal
+ * `null` — and each is a canonical target rendering, that literal `null`, or
+ * `unavailable` where the report cannot state one. They are display values a
+ * view must never compare: the comparator decides equality on decoded targets,
+ * because a long rendering is truncated with a digest tail.
  */
 export interface MatrixRow {
   id: string

@@ -123,16 +123,21 @@ version defines a graph, a composition, or a composite result — the format is
 the runtime's own convention, and only each node's pack evaluation reaches the
 shared evaluator. The page carries the payload's own label saying so.
 
-Each graph is drawn as the **walk** it is: its nodes as an SVG diagram, on the
-evaluation-order axis the runtime enumerated them along, ending in the composite
-headline every row is judged on. Choosing a row colours the nodes with what that
-row produced, and a node no row named is shown as unasserted rather than as
-having passed — a node a row does not name is unchecked by the author's choice,
-not defaulted to anything.
+Each graph is drawn as the **walk** it is: the nodes represented in its
+coverage report as an SVG diagram, on the evaluation-order axis the runtime
+enumerated them along, ending in the composite headline every row is judged on.
+Coverage is the only account of the graph's shape that reaches this wire, and
+it can omit a node the run never admitted — so the diagram claims representation,
+not completeness. Choosing a row colours the nodes with the comparisons that row
+reported; a node the selected row reports no comparison for is shown exactly
+that way rather than as having passed, and the row's own verdict — which covers
+the headline and every reported node comparison together — is shown beside the
+diagram as the row's, never painted onto the composite.
 
 **The diagram draws no arrow between two nodes.** The wire carries the walk's
-node order and the edge count; it does not carry which node feeds which, so an
-arrow would assert a dependency the payload never states — and in a graph with
+node order and the edge indices coverage represents; it does not carry which
+node feeds which, so an arrow would assert a dependency the payload never
+states — and in a graph with
 independent branches that assertion would be false. The edges are reported
 beside the diagram as the indexed slots the payload describes them as, each with
 the witness its resolved and unresolved branches have. The missing structure is

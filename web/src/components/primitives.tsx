@@ -35,8 +35,25 @@ export function Json({ value, label }: { value: unknown; label?: string }) {
   )
 }
 
-export function Pill({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neutral' | 'strong' | 'quiet' }) {
+export function Pill({
+  children,
+  tone = 'neutral'
+}: {
+  children: ReactNode
+  tone?: 'neutral' | 'strong' | 'quiet' | 'success' | 'skipped' | 'danger'
+}) {
   return <span className={`pill pill-${tone}`}>{children}</span>
+}
+
+/**
+ * The tone one of the runtime's own suite statuses reads as. Success is
+ * reserved for `passed`; `skipped` is a non-answer and must never wear the
+ * success accent; everything else is the runtime saying no.
+ */
+export function statusTone(status: string): 'success' | 'skipped' | 'danger' {
+  if (status === 'passed') return 'success'
+  if (status === 'skipped') return 'skipped'
+  return 'danger'
 }
 
 export function Fields({ items }: { items: [string, ReactNode][] }) {
