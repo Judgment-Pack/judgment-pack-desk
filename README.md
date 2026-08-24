@@ -204,6 +204,11 @@ JPACK_PROJECT=/path/to/project go test ./...
 `JPACK_BIN` overrides the runtime binary; otherwise `./bin/jpack` is used when
 present.
 
+CI runs `gofmt`, `go vet` and `go test` on one job and `npm ci`, `tsc` and
+`vite build` on another. It supplies neither a runtime binary nor a project, so
+the end-to-end tests skip themselves there and what runs is the coverage that
+needs nothing external.
+
 ### The acceptance proof
 
 Two real evaluations through the relay, against the same pack: one with the

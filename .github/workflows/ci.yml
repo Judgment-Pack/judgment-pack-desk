@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # gofmt writes in place, so the diff is the report: a clean tree means
+      # every file was already formatted.
+      - name: gofmt
+        run: |
+          gofmt -w .
+          git diff --exit-code
+
+      - name: go vet
+        run: go vet ./...
+
+      # The relay's end-to-end tests need a runtime binary and a Judgment Pack
+      # project. CI supplies neither, so they skip themselves — see
+      # requireBinary and e2eFixtures in internal/desk/server_test.go. What runs
+      # here is the token, origin, and SPA-fallback coverage, which needs
+      # nothing external. `-v` keeps the skips visible rather than silent.
+      - name: go test
+        run: go test -v ./...
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: tsc
+        run: npm run typecheck
+
+      - name: vite build
+        run: npx vite build
