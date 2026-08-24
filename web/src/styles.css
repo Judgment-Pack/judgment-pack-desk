@@ -968,10 +968,11 @@ a {
   height: auto;
 }
 
-/* The document walk is wider than the order axis: it lays layers out across,
-   so a branching graph needs the room. */
+/* The document walk lays layers out across, so a branching graph needs the
+   room; the element carries its own max-width, computed from what it actually
+   drew, so a narrow graph is not scaled up until its labels swamp it. */
 .diagram-document {
-  max-width: 720px;
+  max-width: none;
 }
 
 .diagram-axis {
@@ -1084,6 +1085,13 @@ a {
   letter-spacing: 0.04em;
   text-anchor: end;
   text-transform: uppercase;
+}
+
+.diagram-node-coverage {
+  fill: var(--warn);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .diagram-node-pack {

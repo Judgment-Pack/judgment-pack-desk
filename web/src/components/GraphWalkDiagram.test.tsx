@@ -173,7 +173,7 @@ describe('GraphWalkDiagram, drawn from a served document', () => {
     ]
     const withGap = deriveWalkShape(parseGraphDocument(SERVED)!, onlyScreening)
     const { container } = render(<GraphWalkDiagram entry={entry} shape={withGap} />)
-    expect(container.textContent).toContain('not in coverage')
+    expect(container.textContent).toContain('not represented in coverage')
     expect(container.textContent).toContain('named by no probe in the coverage report')
   })
 

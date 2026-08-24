@@ -59,7 +59,7 @@ export function GraphWalkDiagram({
 /* The document walk ------------------------------------------------------- */
 
 const NODE_W = 240
-const NODE_H = 72
+const NODE_H = 90
 const H_GAP = 32
 const V_GAP = 78
 const MARGIN = 16
@@ -122,6 +122,11 @@ function DocumentWalk({
       <svg
         className="diagram diagram-document"
         viewBox={`0 0 ${width} ${height}`}
+        // Drawn near its natural size: the box widths and type sizes below are
+        // chosen to be legible at 1:1, and a percentage width would scale a
+        // narrow single-column graph up until its labels swamped it. The floor
+        // keeps a two-node graph from being microscopic on a wide page.
+        style={{ maxWidth: Math.min(Math.max(width, 420), 760) }}
         role="img"
         aria-label={
           `The ${shape.nodes.length} ${shape.nodes.length === 1 ? 'node' : 'nodes'} and ` +
@@ -168,7 +173,10 @@ function DocumentWalk({
                 markerEnd={`url(#${arrow})`}
               />
               <text className="diagram-edge-label" x={midX} y={midY - 3} textAnchor="middle">
-                {short(carries)}
+                {/* An edge label spans the gap between layers rather than one
+                    box, so it has more room than a line inside one. The full
+                    text is in the list below and in this group's title. */}
+                {short(carries, 46)}
               </text>
             </g>
           )
@@ -240,15 +248,18 @@ function DocumentWalk({
                   ? short(`${result.status} · ${describe(disposition)}`)
                   : 'selected row reports no comparison'}
               </text>
+              {/* Its own line, not the row status' right margin: "selected row
+                  reports no comparison" is wording that must survive whole, so
+                  nothing may be truncated to make room beside it. */}
               {node.inCoverage ? (
                 gaps > 0 && (
-                  <text className="diagram-node-gaps" x={point.x + NODE_W - 12} y={point.y + 58}>
+                  <text className="diagram-node-coverage" x={point.x + 12} y={point.y + 77}>
                     {gaps} unwitnessed
                   </text>
                 )
               ) : (
-                <text className="diagram-node-gaps" x={point.x + NODE_W - 12} y={point.y + 58}>
-                  not in coverage
+                <text className="diagram-node-coverage" x={point.x + 12} y={point.y + 77}>
+                  not represented in coverage
                 </text>
               )}
             </g>
