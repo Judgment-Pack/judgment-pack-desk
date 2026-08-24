@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { ErrorBox, Loading, Pill } from '../components/primitives'
-import { useGraphMatrix, usePacks } from '../mcp/queries'
+import { useConfiguredGraphs, usePacks } from '../mcp/queries'
 import type { PackSummary } from '../mcp/types'
 
 /**
@@ -12,23 +12,22 @@ import type { PackSummary } from '../mcp/types'
  *
  * - **Packs** come from `list_packs`, which reports the matrix flag per pack —
  *   so whether a matrix exists costs nothing to know.
- * - **Graphs** have no such inventory. Nothing on the wire lists a project's
- *   configured graphs short of running their matrices, so this page runs the
- *   graph walk to find out. That is affordable because the tool writes nothing
- *   — a row is a rehearsal, not a decision — and the result is the same cached
- *   query the graphs page then reads. The missing inventory is recorded in the
- *   README's upstream gaps.
+ * - **Graphs** come from `experimental_list_graphs` where the runtime serves
+ *   it (ADR-0029) — one call that evaluates nothing. Against a runtime with no
+ *   such tool the fallback is what this page always did: run the graph walk to
+ *   find out, affordable because the tool writes nothing (a row is a rehearsal,
+ *   not a decision) and the result is the same cached query the graphs page
+ *   then reads.
  */
 export function ProjectHome() {
   const { data, error, isPending } = usePacks()
-  const graphs = useGraphMatrix()
+  const graphs = useConfiguredGraphs()
 
   if (isPending) return <Loading what="the project" />
   if (error) return <ErrorBox title="Could not read the project" error={error} />
 
   const packs = data?.packs ?? []
   const withMatrix = packs.filter((pack) => pack.matrix)
-  const graphEntries = graphs.data?.graphs ?? []
 
   return (
     <>
@@ -66,7 +65,11 @@ export function ProjectHome() {
               <h3>Graphs</h3>
               <Pill tone="quiet">running…</Pill>
             </div>
-            <p>The graph walk is running to find what this project configures.</p>
+            <p>
+              {graphs.fromInventory
+                ? 'Reading what this project configures.'
+                : 'The graph walk is running to find what this project configures.'}
+            </p>
           </li>
         ) : graphs.error ? (
           <li className="card card-link">
@@ -77,19 +80,20 @@ export function ProjectHome() {
               <Pill tone="danger">error</Pill>
             </div>
             <p>
-              The graph walk could not run, which says nothing about whether
-              graphs are configured — open Graphs for the error itself.
+              {graphs.fromInventory
+                ? 'The configured graphs could not be listed — open Graphs for the error itself.'
+                : 'The graph walk could not run, which says nothing about whether graphs are configured — open Graphs for the error itself.'}
             </p>
           </li>
         ) : (
-          graphEntries.length > 0 && (
+          graphs.count > 0 && (
             <li className="card card-link">
               <div className="card-head">
                 <h3>
                   <Link to="/graphs">Graphs</Link>
                 </h3>
                 <Pill tone="quiet">
-                  {graphEntries.length} {graphEntries.length === 1 ? 'graph' : 'graphs'}
+                  {graphs.count} {graphs.count === 1 ? 'graph' : 'graphs'}
                 </Pill>
               </div>
               <p>

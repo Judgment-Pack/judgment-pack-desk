@@ -2,11 +2,12 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import type { Notification } from '@modelcontextprotocol/sdk/types.js'
 import { useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { NO_CAPABILITIES, type RuntimeCapabilities, readCapabilities } from './capabilities'
 import { DeskWebSocketTransport } from './transport'
 
 export type ConnectionStatus = 'connecting' | 'ready' | 'reconnecting' | 'failed'
 
-export interface McpConnection {
+export interface McpConnection extends RuntimeCapabilities {
   client: Client | null
   status: ConnectionStatus
   error: Error | null
@@ -14,13 +15,6 @@ export interface McpConnection {
   server: { name: string; version: string } | null
   /** Consecutive failed attempts; 0 while connected. */
   attempt: number
-  /**
-   * True when the connected runtime's experimental_evaluate advertises the
-   * boolean rehearsal argument (ADR-0028, jpack >= 0.18.0). Read from the
-   * tool's own declared schema at connect time — a capability is what the
-   * server says it accepts, never what a version string implies.
-   */
-  rehearsalSupported: boolean
   /** True once this page has connected at least once. */
   everConnected: boolean
   /** Abandon the current backoff and try again now. */
@@ -32,7 +26,7 @@ const McpContext = createContext<McpConnection>({
   status: 'connecting',
   error: null,
   server: null,
-  rehearsalSupported: false,
+  ...NO_CAPABILITIES,
   attempt: 0,
   everConnected: false,
   retryNow: () => {}
@@ -97,7 +91,7 @@ export function McpProvider({ children }: { children: ReactNode }) {
     status: 'connecting',
     error: null,
     server: null,
-    rehearsalSupported: false,
+    ...NO_CAPABILITIES,
     attempt: 0,
     everConnected: false,
     retryNow: () => {}
@@ -130,7 +124,7 @@ export function McpProvider({ children }: { children: ReactNode }) {
           'No session token. Open the URL that jpack-desk printed at startup — it carries ?token=…'
         ),
         server: null,
-        rehearsalSupported: false,
+        ...NO_CAPABILITIES,
         attempt: 0,
         everConnected: everConnected.current,
         retryNow
@@ -146,7 +140,7 @@ export function McpProvider({ children }: { children: ReactNode }) {
         status: 'reconnecting',
         error: cause,
         server: null,
-        rehearsalSupported: false,
+        ...NO_CAPABILITIES,
         attempt,
         everConnected: everConnected.current,
         retryNow
@@ -190,18 +184,16 @@ export function McpProvider({ children }: { children: ReactNode }) {
           attempt = 0
           everConnected.current = true
           const info = client.getServerVersion()
-          // The capability is read off the tool's declared schema, once per
-          // connection: what the server advertises is the contract, and a
-          // runtime that predates the argument simply never receives it.
-          let rehearsalSupported = false
+          // The capabilities are read off one listing, once per connection:
+          // what the server advertises is the contract, and a runtime that
+          // predates a tool or an argument simply never receives it.
+          let capabilities = NO_CAPABILITIES
           try {
             const tools = await client.listTools()
-            const evaluate = tools.tools.find((tool) => tool.name === 'experimental_evaluate')
-            const properties = (evaluate?.inputSchema as { properties?: Record<string, unknown> } | undefined)
-              ?.properties
-            rehearsalSupported = Boolean(properties && 'rehearsal' in properties)
+            capabilities = readCapabilities(tools.tools)
           } catch {
-            // A failed listing leaves the capability off; evaluate still works.
+            // A failed listing leaves every capability off, which is the safe
+            // reading: each one's absence is a working page with less on it.
           }
           if (disposed || live !== client) return
           setConnection({
@@ -209,7 +201,7 @@ export function McpProvider({ children }: { children: ReactNode }) {
             status: 'ready',
             error: null,
             server: info ? { name: info.name, version: info.version } : null,
-            rehearsalSupported,
+            ...capabilities,
             attempt: 0,
             everConnected: true,
             retryNow

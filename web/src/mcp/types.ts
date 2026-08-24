@@ -417,6 +417,151 @@ export interface GraphSuiteEntry {
   detail?: string
 }
 
+/**
+ * One inventory row from `experimental_list_graphs` (ADR-0029).
+ *
+ * `id` is the configured id and `graphId` is the document's own; they are two
+ * members because they are two names, exactly as a `PackSummary` reports them.
+ * Listing is not validating: a document that could not be read or decoded is
+ * still a row, with `detail` saying why and the identity members *empty rather
+ * than guessed* — so an empty `graphId` means "not read off the bytes", never
+ * "the document declares an empty id".
+ *
+ * `nodeCount` and `edgeCount` exist exactly when identity decoding succeeded
+ * and each member had its declared shape, and are absent — never zero —
+ * otherwise, so a malformed document cannot look honestly empty. A view must
+ * therefore distinguish absent from 0 and never coerce.
+ */
+export interface GraphSummary {
+  id: string
+  graphId: string
+  graphVersion: string
+  formatVersion: string
+  resultNode?: string
+  path: string
+  rowsPath?: string
+  rowsDeclared: boolean
+  description?: string
+  nodeCount?: number
+  edgeCount?: number
+  detail?: string
+}
+
+/**
+ * The `experimental_list_graphs` payload (ADR-0029).
+ *
+ * A project with no configuration answers `none` with a `note` saying where
+ * the runtime looked, rather than refusing: an absent configuration is an
+ * answer on this surface.
+ */
+export interface GraphInventory {
+  outputVersion?: string
+  tool?: { name: string; version: string }
+  command?: string
+  status: string
+  experimental?: boolean
+  kind?: string
+  configPath?: string
+  configVersion?: string
+  note?: string
+  graphs?: GraphSummary[]
+}
+
+/**
+ * The metadata half of `experimental_get_graph` — the structured content
+ * beside the served bytes (ADR-0029).
+ *
+ * `status` is `valid` when the served bytes decoded and the identity members
+ * were read off them, and `undecodable` when they did not, in which case
+ * `detail` says why and those members are empty rather than guessed. Neither
+ * value is a verdict against the graph schema: serving is not validating.
+ *
+ * `formatVersion` here is the version the *document* declares, not the format
+ * version a walk applied — the member means the latter on an evaluation
+ * payload, and the two must not be read as one.
+ *
+ * `sha256` is bare hex, the payload-member convention, not the `sha256:`
+ * prefixed digest the lock and audit records use.
+ */
+export interface GraphDocumentMeta {
+  outputVersion?: string
+  tool?: { name: string; version: string }
+  command?: string
+  status: string
+  experimental?: boolean
+  kind?: string
+  configPath?: string
+  id: string
+  graphId: string
+  graphVersion: string
+  formatVersion: string
+  resultNode?: string
+  path: string
+  rowsPath?: string
+  description?: string
+  bytes: number
+  sha256: string
+  detail?: string
+}
+
+/** One node of a served graph document: a reference to one pack by decision id. */
+export interface GraphDocumentNode {
+  pack: string
+  description?: string
+}
+
+/**
+ * One edge's outcome-as-evidence device: the downstream requirement id, and
+ * the tri-state an upstream disposition that is *not* an outcome contributes.
+ */
+export interface GraphDocumentEvidenceFeed {
+  id: string
+  onUnresolved?: string
+}
+
+/**
+ * One edge of a served graph document. It feeds an upstream node's disposition
+ * to a downstream node as a fact, as evidence availability, or both — the
+ * format requires at least one of the two devices.
+ */
+export interface GraphDocumentEdge {
+  from: string
+  to: string
+  fact?: string
+  evidence?: GraphDocumentEvidenceFeed
+  description?: string
+}
+
+/**
+ * A served graph document, as the text half of `experimental_get_graph`
+ * carries it. This is the project's own file, unaltered — the one artifact
+ * that states the composition.
+ */
+export interface GraphDocument {
+  formatVersion?: string
+  id?: string
+  version?: string
+  description?: string
+  nodes?: Record<string, GraphDocumentNode>
+  edges?: GraphDocumentEdge[]
+  result?: string
+}
+
+/**
+ * One `experimental_get_graph` answer: the exact bytes, the metadata beside
+ * them, and this client's own parse of those bytes where it succeeded.
+ *
+ * The parse is kept apart from the metadata deliberately. `meta.status` is the
+ * runtime's verdict on its own decode; `document` is undefined when *this*
+ * client could not make the declared shape out of the text. A view must not
+ * draw from one while reporting the other.
+ */
+export interface ServedGraph {
+  meta: GraphDocumentMeta
+  raw: string
+  document?: GraphDocument
+}
+
 /** The `experimental_test_graphs` payload: the project's configured graphs. */
 export interface GraphSuite {
   outputVersion?: string

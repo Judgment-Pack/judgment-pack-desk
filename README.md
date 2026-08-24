@@ -14,8 +14,8 @@ matching change on the Go side.
 **A project home.** `/` is what the project declares — its packs, and the two
 rehearsals that can be run over them. The matrix and graph entries appear only
 where the project has one: `list_packs` reports a matrix flag per pack, and the
-configured graphs are found by running their matrices, because nothing lighter
-reports them (see [Upstream gaps](#upstream-gaps)).
+configured graphs come from `experimental_list_graphs` where the runtime serves
+it, or from running their matrices where it does not.
 
 **A pack browser:**
 
@@ -123,29 +123,65 @@ version defines a graph, a composition, or a composite result — the format is
 the runtime's own convention, and only each node's pack evaluation reaches the
 shared evaluator. The page carries the payload's own label saying so.
 
-Each graph is drawn as the **walk** it is: the nodes represented in its
-coverage report as an SVG diagram, on the evaluation-order axis the runtime
-enumerated them along, ending in the composite headline every row is judged on.
-Coverage is the only account of the graph's shape that reaches this wire, and
-it can omit a node the run never admitted — so the diagram claims representation,
-not completeness. Choosing a row colours the nodes with the comparisons that row
-reported; a node the selected row reports no comparison for is shown exactly
-that way rather than as having passed, and the row's own verdict — which covers
-the headline and every reported node comparison together — is shown beside the
-diagram as the row's, never painted onto the composite.
+Each graph is drawn as the **walk** it is, and what that diagram can claim
+depends on what the connected runtime serves. The desk feature-detects both
+graph tools by name at connect time and never reads a version string.
 
-**The diagram draws no arrow between two nodes.** The wire carries the walk's
-node order and the edge indices coverage represents; it does not carry which
-node feeds which, so an arrow would assert a dependency the payload never
-states — and in a graph with
-independent branches that assertion would be false. The edges are reported
-beside the diagram as the indexed slots the payload describes them as, each with
-the witness its resolved and unresolved branches have. The missing structure is
-recorded in [Upstream gaps](#upstream-gaps) rather than reconstructed by parsing
-the English in a `detail` sentence, which would make a contract out of prose.
+**With `experimental_get_graph`** (ADR-0029) the desk fetches the graph
+document itself and draws the composition: every node the document declares,
+laid out in layers by the document's own edges, with **one real arrow per
+declared edge** labelled with what that edge carries — the fact pointer it
+writes, the evidence requirement it feeds, and the tri-state that requirement
+takes when the upstream disposition is not an outcome. The node the document
+declares as its `result` is marked, and the arrow from it to the composite
+headline is the one further relationship the document states. Each node names
+the pack it evaluates. Layering is longest-path over the declared edges; where
+two nodes sit in one layer the tie is broken by the runtime's own evaluation
+order, read off the coverage report, so nothing invents a sequence. A cycle in
+a mid-edit document is reported rather than hung on, and an edge naming an
+endpoint the document does not declare is listed rather than drawn.
 
-Graph coverage is grouped per node, in that same order, and reported exactly as
-the pack coverage is.
+The document also shows what coverage alone could not: a node the run never
+admitted is declared by the document and named by no probe, and the page says
+so rather than showing it with a gap count of zero.
+
+**Without it** — jpack 0.18.0 and older — the fallback is unchanged: the nodes
+represented in the coverage report, on the evaluation-order axis the runtime
+enumerated them along, ending in the composite headline. Coverage is then the
+only account of the graph's shape that reaches this wire, and it can omit a node
+the run never admitted, so that diagram claims representation and not
+completeness. **It draws no arrow between two nodes**, because the wire carries
+the walk's node order and the edge indices coverage represents but not which
+node feeds which — and in a graph with independent branches that arrow would be
+false. Its edges are reported beside it as the indexed slots the payload
+describes them as, each with the witness its resolved and unresolved branches
+have. Nothing is reconstructed by parsing the English in a `detail` sentence,
+which would make a contract out of prose.
+
+A runtime that serves documents but could not decode this one falls back the
+same way, with one line saying so: **serving is not validating**, and the
+runtime returns a mid-edit document deliberately rather than going silent on it.
+
+What holds either way: choosing a row colours the nodes with the comparisons
+that row reported and nothing else; a node the selected row reports no
+comparison for is shown exactly that way rather than as having passed; and the
+row's own verdict — which covers the headline and every reported node comparison
+together — is shown beside the diagram as the row's, never painted onto the
+composite.
+
+**What the project configures** is listed above the run where
+`experimental_list_graphs` is served: the configured id beside the document's
+own id and version, its declared format version and result node, its node and
+edge counts, and the configuration's description. It costs one call that
+evaluates nothing, so it lands before the matrix has finished — and it lists a
+graph whose rows would not load, which a matrix run reports only as a failure.
+Counts absent from a row are printed as not read rather than as `0`: the runtime
+omits them, never zeroes them, exactly so a malformed document cannot look
+honestly empty. Without that tool the page behaves as it always did and finds
+the graphs by running their matrices.
+
+Graph coverage is grouped per node, in the runtime's evaluation order, and
+reported exactly as the pack coverage is.
 
 A project that configures no graph is an answer rather than an error: the walk
 reports `skipped` with no entries, the home page offers no graph entry, and the
@@ -262,8 +298,9 @@ internal/desk/
   watch.go           project-tree file watching
 scripts/acceptance.sh  the two-run acceptance proof
 web/                 Vite + React + TypeScript SPA
-  src/mcp/           the MCP client: transport, connection, queries, and the
-                     canonical-string and probe-name readers
+  src/mcp/           the MCP client: transport, connection, queries, the
+                     advertised-capability reader, and the canonical-string,
+                     probe-name and graph-document readers
   src/routes/        project home, pack detail, evaluation, matrix, graphs
   src/components/    the semantic document, evaluation, coverage, row and
                      graph-walk views
@@ -326,7 +363,19 @@ npm --prefix web run smoke -- 'http://127.0.0.1:8791/?token=…' \
 
 # the two calls the matrix and graph views make
 npm --prefix web run smoke -- 'http://127.0.0.1:8791/?token=…' --matrix --graphs
+
+# the graph-serving pair the walk diagram draws its edges from (ADR-0029):
+# the inventory, then one document by its configured id, checked byte for byte
+# against its own metadata and against the file on disk
+npm --prefix web run smoke -- 'http://127.0.0.1:8791/?token=…' \
+  --graph-document vendor-onboarding-flow \
+  --graph-file /path/to/project/graphs/vendor-onboarding.graph.json
 ```
+
+`--graph-document` fails rather than skipping where the connected runtime does
+not advertise those tools: asking for the step is asking for the check. Against
+a runtime that has neither, the fallback is what the other flags already
+exercise.
 
 ## Upstream gaps
 
@@ -346,19 +395,24 @@ would stop being one.
   the runtime is; against an older runtime the original consequence note
   returns, and the acceptance script still evaluates a copy.
 
-- **A graph's structure is not on the wire.** `experimental_test_graphs` reports
-  each configured graph's rows and its derived coverage, and no member of that
-  payload carries the graph document: not the pack each node names, not the
-  edges' endpoints, not the fact pointer or evidence id an edge carries, and not
-  which node the document declares as its `result`. There is a `get_pack` for
-  pack documents and no `get_graph` for graph documents, and the payload's
-  `path` member names a file the browser cannot read. What does reach the wire
-  is the coverage report's own namespacing — one block of probes per node,
-  emitted in the walk's evaluation order, and two probes per edge identified by
-  position — so the desk draws the nodes on that order axis and draws no edge
-  between them. A `get_graph` mirroring `get_pack` would close this; parsing the
-  node-and-pack prefix out of a probe's English `detail` would not, because that
-  sentence is a message and not a contract.
+- **Resolved: the graph document and the graph inventory** (was: no member of
+  any payload carried the graph document — not the pack each node names, not the
+  edges' endpoints, not the fact pointer or evidence id an edge carries, not
+  which node is the declared `result` — so the desk could draw the nodes on the
+  coverage report's order axis and no edge between them; and nothing listed the
+  graphs a project configures short of running every one of their matrices).
+  Filed as runtime issue #126 and closed by ADR-0029: `experimental_get_graph`
+  serves one configured graph document by its configured id, byte for byte,
+  beside its identity, digest and size, and `experimental_list_graphs` resolves
+  the whole configured inventory for one call that evaluates nothing. The desk
+  feature-detects both by name in `tools/list` and never reads a version string.
+  With the fetch it draws the real edges from the served document; with the
+  listing it says what the project configures before the matrix has run. Against
+  a runtime with neither, the coverage-derived walk and its "no arrow is drawn"
+  note return exactly as they were, and the home page finds the graphs by
+  running their matrices. A document the runtime serves but could not decode
+  falls back the same way with one line saying why — serving is not validating,
+  so that document arrives as a successful call whose text is not a graph.
 
 - **A graph matrix reports no node trace.** ADR-0027 pins the trace contract and
   binds it to each node evaluation inside a graph run, and the runtime's
@@ -369,14 +423,6 @@ would stop being one.
   `expected` and `actual`, so the desk can show what a node concluded and not
   how it got there, though the runtime computed it. The pack surface has no such
   gap: `experimental_evaluate` returns the trace, and the desk renders it.
-
-- **No inventory of configured graphs.** `list_packs` reports a matrix flag per
-  pack, so whether a pack declares a matrix costs one cheap call. Nothing
-  reports the graphs a project configures, so the only way to learn whether
-  there is one is to run every graph's matrix. The desk's home page does that —
-  affordable because the tool writes nothing, and the result is the query the
-  graphs page then reads — but on a large matrix it is a real cost paid to
-  render a link.
 
 - **Graph rows cannot assert a handoff target.** ADR-0025 added
   `expectedHandoffTarget` to pack matrix rows and deferred the graph surface

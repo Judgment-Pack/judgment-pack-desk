@@ -968,6 +968,12 @@ a {
   height: auto;
 }
 
+/* The document walk is wider than the order axis: it lays layers out across,
+   so a branching graph needs the room. */
+.diagram-document {
+  max-width: 720px;
+}
+
 .diagram-axis {
   stroke: var(--border-strong);
   stroke-width: 2;
@@ -1033,8 +1039,74 @@ a {
   text-anchor: end;
 }
 
+/* A drawn edge is a dependency the served document states. Nothing draws one
+   from the coverage report, which does not carry endpoints. */
+
+.diagram-edge-line {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1.75;
+}
+
+.diagram-arrow-head {
+  fill: var(--border-strong);
+}
+
+.diagram-edge-result .diagram-edge-line {
+  stroke: var(--accent);
+  stroke-dasharray: 5 4;
+}
+
+.diagram-edge-result .diagram-arrow-head {
+  fill: var(--accent);
+}
+
+.diagram-edge-label {
+  fill: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 10px;
+  /* The halo keeps the label legible where it crosses its own arrow. */
+  stroke: var(--surface);
+  stroke-width: 3px;
+  paint-order: stroke fill;
+}
+
+.diagram-node-result .diagram-box {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+.diagram-node-badge {
+  fill: var(--accent);
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-anchor: end;
+  text-transform: uppercase;
+}
+
+.diagram-node-pack {
+  fill: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
 .diagram-edges {
   margin-top: 1rem;
+}
+
+.edge-carries {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+}
+
+.edge-detail {
+  flex-basis: 100%;
+  margin: 0.15rem 0 0;
+  color: var(--ink-faint);
+  font-size: 0.85rem;
 }
 
 .edge-slots {
