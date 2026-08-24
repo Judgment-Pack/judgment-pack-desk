@@ -40,6 +40,12 @@
 #   EXPECT_GRAPH_STATUS   status the graph matrices must report; a project that
 #                         configures none reports skipped, so this defaults to
 #                         empty and is only checked when you set it
+#   GRAPH_DOCUMENT        a configured graph id to fetch through
+#                         experimental_get_graph (ADR-0029), checking the served
+#                         text against its own metadata; unset by default,
+#                         because a runtime without that tool would refuse it
+#   GRAPH_FILE            that graph's document, relative to the project, to
+#                         compare the served text against byte for byte
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -53,6 +59,8 @@ expect_kind="${EXPECT_KIND:-outcome}"
 expect_degraded_kind="${EXPECT_DEGRADED_KIND:-unresolved}"
 expect_matrix_status="${EXPECT_MATRIX_STATUS:-passed}"
 expect_graph_status="${EXPECT_GRAPH_STATUS:-}"
+graph_document="${GRAPH_DOCUMENT:-}"
+graph_file="${GRAPH_FILE:-}"
 
 die() { echo "acceptance: $*" >&2; exit 1; }
 
@@ -123,6 +131,10 @@ echo
 echo "== 3/3  the rows the project declares about itself =="
 graph_args=(--graphs)
 [ -n "$expect_graph_status" ] && graph_args=(--expect-graph-status "$expect_graph_status")
+# Opt-in, because a runtime that predates ADR-0029 advertises neither tool and
+# the smoke script refuses the step rather than passing it quietly.
+[ -n "$graph_document" ] && graph_args+=(--graph-document "$graph_document")
+[ -n "$graph_file" ] && graph_args+=(--graph-file "$work/project/$graph_file")
 npm --prefix "$root/web" --silent run smoke -- "$url" \
   --expect-matrix-status "$expect_matrix_status" "${graph_args[@]}"
 

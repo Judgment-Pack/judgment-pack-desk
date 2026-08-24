@@ -355,6 +355,12 @@ project. `EXPECT_MATRIX_STATUS` defaults to `passed`; `EXPECT_GRAPH_STATUS` is
 checked only when set, because a project that configures no graph correctly
 reports `skipped`.
 
+Setting `GRAPH_DOCUMENT` to a configured graph id adds the graph-serving pair to
+that third run, and `GRAPH_FILE` names that graph's document relative to the
+project so the served text is compared against the file byte for byte. Both are
+unset by default: a runtime that predates ADR-0029 advertises neither tool, and
+the step refuses rather than passing quietly.
+
 The same client runs on its own against a chassis you already have open:
 
 ```sh
