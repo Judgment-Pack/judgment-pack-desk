@@ -703,3 +703,334 @@ a {
 .card-warn {
   border-color: var(--warn);
 }
+
+/* Matrices, coverage and graphs -------------------------------------------- */
+
+.cards-nav {
+  margin-bottom: 1.75rem;
+}
+
+.matrix-entry {
+  margin: 1.75rem 0;
+  padding: 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.matrix-entry-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.matrix-entry-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+/* Coverage. The missing probes are the report, so they are the ones that get
+   the page: the covered set is folded away behind a disclosure. */
+
+.coverage-group {
+  margin: 0.9rem 0;
+}
+
+.coverage-group-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 600;
+}
+
+.coverage-covered {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+
+.coverage-covered summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+.probes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.probe {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.probes-missing .probe {
+  border-left-color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.probes-covered .probe {
+  border-left-color: var(--true);
+}
+
+.probe-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.probe-name {
+  overflow-wrap: anywhere;
+}
+
+.probe-status {
+  flex: none;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.probe-status-covered,
+.probe-status-passed {
+  color: var(--true);
+}
+
+.probe-status-missing,
+.probe-status-mismatch {
+  color: var(--warn);
+}
+
+.probe-detail {
+  margin: 0.3rem 0 0;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+
+/* Rows. Expected sits beside actual, and the side that differs is marked —
+   following the payload's verdict rather than recomputing one. */
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.row {
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--true);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.row-mismatch {
+  border-left-color: var(--danger);
+}
+
+.row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.row-id {
+  font-weight: 600;
+}
+
+.row-compare {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.6rem;
+}
+
+.row-targets {
+  margin-top: 0.5rem;
+}
+
+.row-side {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.row-side-differs {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.row-side-label {
+  display: block;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.row-disposition {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.row-outcome {
+  font-weight: 600;
+}
+
+.row-members {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.row-raw,
+.row-refusal {
+  margin: 0;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.row-detail {
+  margin: 0.5rem 0 0;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+
+.row-nodes {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.row-node {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.3rem 0.5rem;
+  border-left: 2px solid var(--border-strong);
+}
+
+.row-picker {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+/* The walk diagram. The vertical rule is the order the runtime evaluated the
+   nodes in — not a dependency arrow, which the payload does not carry. */
+
+.diagram-wrap {
+  margin: 0.5rem 0;
+}
+
+.diagram {
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+}
+
+.diagram-axis {
+  stroke: var(--border-strong);
+  stroke-width: 2;
+  stroke-dasharray: 3 4;
+}
+
+.diagram-tick {
+  fill: var(--surface);
+  stroke: var(--border-strong);
+  stroke-width: 2;
+}
+
+.diagram-tick-label {
+  fill: var(--ink-soft);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  text-anchor: middle;
+}
+
+.diagram-box {
+  fill: var(--surface);
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+}
+
+.diagram-node-passed .diagram-box {
+  stroke: var(--true);
+  fill: var(--true-soft);
+}
+
+.diagram-node-mismatch .diagram-box {
+  stroke: var(--danger);
+  fill: var(--danger-soft);
+}
+
+.diagram-node-unasserted .diagram-box {
+  stroke-dasharray: 4 3;
+}
+
+.diagram-composite .diagram-box {
+  stroke-width: 2.5;
+}
+
+.diagram-node-id {
+  fill: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.diagram-node-meta {
+  fill: var(--ink-soft);
+  font-family: var(--sans);
+  font-size: 11px;
+}
+
+.diagram-node-gaps {
+  fill: var(--warn);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  text-anchor: end;
+}
+
+.diagram-edges {
+  margin-top: 1rem;
+}
+
+.edge-slots {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.edge-slot {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}

@@ -16,11 +16,28 @@
  *
  *   npm run smoke -- <url> --facts full-facts.json --evidence evidence.json
  *   npm run smoke -- <url> --facts partial-facts.json --expect-kind unresolved
+ *
+ * With --matrix it runs the project's declared pack matrices through
+ * experimental_test_packs, and with --graphs the configured graph matrices
+ * through experimental_test_graphs — the two calls the matrix and graph views
+ * make. Both write nothing: a matrix row is a rehearsal, not a decision, so
+ * unlike an evaluation these are safe to run against a project in place.
+ *
+ *   npm run smoke -- <url> --matrix --graphs
+ *   npm run smoke -- <url> --matrix --expect-matrix-status passed
  */
 import { readFile } from 'node:fs/promises'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { DeskWebSocketTransport } from '../src/mcp/transport.ts'
-import type { Evaluation, PackDocument, PackInventory } from '../src/mcp/types.ts'
+import { describeHandoffTarget, nodesInWalkOrder, parseProbe } from '../src/mcp/canonical.ts'
+import type {
+  Evaluation,
+  GraphSuite,
+  MatrixProbe,
+  PackDocument,
+  PackInventory,
+  PackTest
+} from '../src/mcp/types.ts'
 
 interface Options {
   target: string
@@ -30,6 +47,10 @@ interface Options {
   traceHead: number
   expectKind?: string
   expectHandoff?: string
+  matrix: boolean
+  graphs: boolean
+  expectMatrixStatus?: string
+  expectGraphStatus?: string
 }
 
 function usage(message: string): never {
@@ -37,19 +58,29 @@ function usage(message: string): never {
   console.error(
     'usage: smoke.ts <desk url with ?token=…> [--facts <path>] [--evidence <path>]\n' +
       '                [--pack <decision id>] [--trace <n>] [--expect-kind <kind>]\n' +
-      '                [--expect-handoff <state>]'
+      '                [--expect-handoff <state>] [--matrix] [--graphs]\n' +
+      '                [--expect-matrix-status <status>] [--expect-graph-status <status>]'
   )
   process.exit(2)
 }
 
+/** Flags that stand alone; every other flag takes the argument after it. */
+const FLAGS = new Set(['--matrix', '--graphs'])
+
 function parseArgs(argv: string[]): Options {
   const [target, ...rest] = argv
   if (!target) usage('the desk URL is required')
-  const options: Options = { target, traceHead: 5 }
-  for (let i = 0; i < rest.length; i += 2) {
+  const options: Options = { target, traceHead: 5, matrix: false, graphs: false }
+  for (let i = 0; i < rest.length; i += 1) {
     const flag = rest[i]!
+    if (FLAGS.has(flag)) {
+      if (flag === '--matrix') options.matrix = true
+      if (flag === '--graphs') options.graphs = true
+      continue
+    }
     const value = rest[i + 1]
     if (value === undefined) usage(`${flag} needs a value`)
+    i += 1
     switch (flag) {
       case '--facts':
         options.facts = value
@@ -68,6 +99,14 @@ function parseArgs(argv: string[]): Options {
         break
       case '--expect-handoff':
         options.expectHandoff = value
+        break
+      case '--expect-matrix-status':
+        options.expectMatrixStatus = value
+        options.matrix = true
+        break
+      case '--expect-graph-status':
+        options.expectGraphStatus = value
+        options.graphs = true
         break
       default:
         usage(`unknown flag ${flag}`)
@@ -151,6 +190,14 @@ if (options.facts) {
   await evaluate(options.facts, options.evidence)
 }
 
+if (options.matrix) {
+  await testPacks()
+}
+
+if (options.graphs) {
+  await testGraphs()
+}
+
 console.log(`notifications ${sawFileChange ? 'saw desk/fileChanged' : 'none seen (expected: nothing changed)'}`)
 console.log('\nOK')
 await client.close()
@@ -232,4 +279,114 @@ async function evaluate(factsPath: string, evidencePath?: string): Promise<void>
     console.error(`expected handoff state ${options.expectHandoff}, got ${handoff?.state}`)
     process.exit(1)
   }
+}
+
+/**
+ * The project's declared pack matrices, reported the way the matrix view
+ * reports them: the rows, then the gaps — because the gaps are the report.
+ *
+ * A mismatching or skipped run is a *successful* call carrying its status, so
+ * this reads the payload's status rather than treating a non-green run as a
+ * transport failure. Only an explicit expectation makes a status fatal.
+ */
+async function testPacks(): Promise<void> {
+  const result = await client.callTool({ name: 'experimental_test_packs', arguments: {} })
+  const text = textOf(result)
+  if (result.isError) {
+    console.error(`experimental_test_packs refused: ${text}`)
+    process.exit(1)
+  }
+  const payload = JSON.parse(text) as PackTest
+  const packs = payload.packs ?? []
+  console.log(
+    `test_packs    ok  status=${payload.status} ` +
+      `rows=${payload.summary.passed}/${payload.summary.total} ` +
+      `mismatched=${payload.summary.mismatched} packs=${packs.length} ` +
+      `configVersion=${payload.configVersion}`
+  )
+  for (const entry of packs) {
+    const rows = entry.rows ?? []
+    console.log(
+      `                  - ${entry.id.padEnd(22)} ${entry.status.padEnd(9)} ` +
+        `${entry.summary.passed}/${entry.summary.total} rows  ${coverageTally(entry.coverage)}`
+    )
+    for (const row of rows.filter((candidate) => candidate.status !== 'passed')) {
+      console.log(`                      ! ${row.id}: ${row.detail ?? 'mismatch'}`)
+      // A row asserting a handoff target can fail with its dispositions
+      // byte-identical, so the two are reported apart, never merged.
+      if (row.expectedHandoffTarget !== undefined) {
+        console.log(
+          `                        expected target ${describeHandoffTarget(row.expectedHandoffTarget)}` +
+            ` · actual ${describeHandoffTarget(row.actualHandoffTarget ?? '')}`
+        )
+      }
+    }
+    for (const probe of (entry.coverage ?? []).filter((p) => p.status !== 'covered')) {
+      console.log(`                      ~ unwitnessed ${probe.probe}`)
+    }
+  }
+  if (options.expectMatrixStatus !== undefined && payload.status !== options.expectMatrixStatus) {
+    console.error(`expected matrix status ${options.expectMatrixStatus}, got ${payload.status}`)
+    process.exit(1)
+  }
+}
+
+/**
+ * The project's configured graph matrices.
+ *
+ * The walk order printed here is read out of the coverage report's own node
+ * namespacing, because that is the only account of a graph's nodes the wire
+ * carries — the payload reports no node list, no node-to-pack mapping and no
+ * edge endpoints. See the README's upstream gaps.
+ */
+async function testGraphs(): Promise<void> {
+  const result = await client.callTool({ name: 'experimental_test_graphs', arguments: {} })
+  const text = textOf(result)
+  if (result.isError) {
+    console.error(`experimental_test_graphs refused: ${text}`)
+    process.exit(1)
+  }
+  const payload = JSON.parse(text) as GraphSuite
+  const graphs = payload.graphs ?? []
+  console.log(
+    `test_graphs   ok  status=${payload.status} ` +
+      `rows=${payload.summary.passed}/${payload.summary.total} ` +
+      `mismatched=${payload.summary.mismatched} graphs=${graphs.length}`
+  )
+  if (graphs.length === 0) {
+    console.log('                  (this project configures no graph, which is an answer and not an error)')
+  }
+  for (const entry of graphs) {
+    const nodes = nodesInWalkOrder(entry.coverage)
+    console.log(
+      `                  - ${entry.id.padEnd(22)} ${entry.status.padEnd(9)} ` +
+        `${entry.summary.passed}/${entry.summary.total} rows  ${coverageTally(entry.coverage)}`
+    )
+    console.log(`                    walk: ${nodes.join(' → ') || '(no node named)'}`)
+    for (const row of entry.rows ?? []) {
+      const named = (row.nodes ?? []).map((node) => `${node.node}=${node.status}`).join(' ')
+      console.log(
+        `                    ${row.status === 'passed' ? ' ' : '!'} ${row.id.padEnd(32)} ` +
+          `${row.status}${named ? `  [${named}]` : ''}`
+      )
+    }
+    for (const probe of (entry.coverage ?? []).filter((p) => p.status !== 'covered')) {
+      const parsed = parseProbe(probe.probe)
+      console.log(
+        `                      ~ unwitnessed ${parsed.node ? `${parsed.node}: ` : ''}${parsed.rest}`
+      )
+    }
+  }
+  if (options.expectGraphStatus !== undefined && payload.status !== options.expectGraphStatus) {
+    console.error(`expected graph status ${options.expectGraphStatus}, got ${payload.status}`)
+    process.exit(1)
+  }
+}
+
+/** How much of what a report derived is witnessed by a row. */
+function coverageTally(coverage: MatrixProbe[] | undefined): string {
+  const probes = coverage ?? []
+  if (probes.length === 0) return 'coverage: none derived'
+  const covered = probes.filter((probe) => probe.status === 'covered').length
+  return `coverage: ${covered}/${probes.length} witnessed`
 }

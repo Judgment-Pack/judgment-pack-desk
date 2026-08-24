@@ -1,9 +1,11 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { ErrorBox } from './components/primitives'
 import { useMcp } from './mcp/McpProvider'
+import { GraphView } from './routes/GraphView'
+import { MatrixView } from './routes/MatrixView'
 import { PackDetail } from './routes/PackDetail'
 import { PackEvaluate } from './routes/PackEvaluate'
-import { PackList } from './routes/PackList'
+import { ProjectHome } from './routes/ProjectHome'
 
 export function App() {
   const { status, error, server, everConnected, attempt, retryNow } = useMcp()
@@ -45,9 +47,13 @@ export function App() {
           </>
         ) : (
           <Routes>
-            <Route path="/" element={<PackList />} />
+            <Route path="/" element={<ProjectHome />} />
+            <Route path="/matrix" element={<MatrixView />} />
+            <Route path="/graphs" element={<GraphView />} />
+            <Route path="/graphs/:graphId" element={<GraphView />} />
             <Route path="/packs/:packId" element={<PackDetail />} />
             <Route path="/packs/:packId/evaluate" element={<PackEvaluate />} />
+            <Route path="/packs/:packId/matrix" element={<MatrixView />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         )}

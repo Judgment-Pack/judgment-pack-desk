@@ -270,3 +270,160 @@ export interface EvaluationRun {
   /** Absent when the run supplied no evidence document at all. */
   evidence?: string
 }
+
+/* Matrices and coverage ----------------------------------------------------- */
+
+/**
+ * The payloads `experimental_test_packs` and `experimental_test_graphs` return.
+ *
+ * Both surfaces are experimental and share a vocabulary deliberately: the same
+ * `summary` counts, the same probe record, and rows whose expected and actual
+ * dispositions are *strings* — the RFC 8785 canonical bytes the comparator
+ * compared, not objects. The views parse them to render structure and diff the
+ * strings for the verdict, because byte equality is what decided the row.
+ */
+
+/** The row counts a suite reports. There is no skipped count: see `status`. */
+export interface SuiteSummary {
+  total: number
+  passed: number
+  mismatched: number
+}
+
+/**
+ * One derived coverage probe (ADR-0014, ADR-0016, ADR-0023).
+ *
+ * `status` is `covered` or `missing` and never a third value: a behaviour the
+ * declarations cannot reach is not derived at all, because "skipped" in this
+ * field would be a reachability claim. A missing probe is therefore a fact
+ * about what the rows *state*, and `detail` is the runtime's own sentence
+ * naming what none of them said. Coverage informs; it never gates.
+ */
+export interface MatrixProbe {
+  probe: string
+  status: string
+  detail?: string
+}
+
+/**
+ * One pack matrix row's result.
+ *
+ * `expected` and `actual` hold canonical JSON *text*, so a view that wants the
+ * disposition's members parses them. `expectedHandoffTarget` and
+ * `actualHandoffTarget` (ADR-0025) appear together or not at all — a row that
+ * asserts no target carries neither — and each is a canonical target rendering,
+ * the literal `null` for "no target at all", or `unavailable` where the report
+ * cannot state one. They are display values: the comparator decides equality on
+ * decoded targets, because a long rendering is truncated with a digest tail.
+ */
+export interface MatrixRow {
+  id: string
+  origin?: string
+  specSection?: string
+  packId?: string
+  packVersion?: string
+  status: string
+  expected: string
+  actual: string
+  expectedErrorClass?: string
+  actualErrorClass?: string
+  expectedErrorPhase?: string
+  actualErrorPhase?: string
+  expectedHandoffTarget?: string
+  actualHandoffTarget?: string
+  detail?: string
+}
+
+/** How many of one pack's rows declare one origin (ADR-0024). Moves no status. */
+export interface OriginCount {
+  origin: string
+  rows: number
+}
+
+/** One pack's matrix run inside the project walk. */
+export interface PackTestEntry {
+  id: string
+  packId?: string
+  packVersion?: string
+  path?: string
+  matrixPath?: string
+  status: string
+  summary: SuiteSummary
+  rows?: MatrixRow[]
+  coverage?: MatrixProbe[]
+  origins?: OriginCount[]
+  detail?: string
+}
+
+/** The `experimental_test_packs` payload: the project's declared matrices. */
+export interface PackTest {
+  outputVersion?: string
+  tool?: { name: string; version: string }
+  command?: string
+  /** `passed`, `mismatch`, or `skipped`. Zero rows is never `passed`. */
+  status: string
+  experimental?: boolean
+  evaluatorSpecVersion?: string
+  conformanceClaimReference?: string
+  label?: string
+  kind?: string
+  configPath?: string
+  configVersion?: string
+  summary: SuiteSummary
+  packs?: PackTestEntry[]
+}
+
+/** One node comparison a graph row asked for. A row names the nodes it checks. */
+export interface GraphTestNode {
+  node: string
+  status: string
+  expected: string
+  actual: string
+}
+
+/** One graph matrix row: the composite headline, and the nodes the row named. */
+export interface GraphTestRow {
+  id: string
+  status: string
+  expected: string
+  actual: string
+  expectedErrorClass?: string
+  actualErrorClass?: string
+  expectedErrorPhase?: string
+  actualErrorPhase?: string
+  nodes?: GraphTestNode[]
+  detail?: string
+}
+
+/** One configured graph's matrix run inside the project walk. */
+export interface GraphSuiteEntry {
+  id: string
+  path?: string
+  rowsPath?: string
+  graphId?: string
+  graphVersion?: string
+  status: string
+  summary: SuiteSummary
+  rows?: GraphTestRow[]
+  coverage?: MatrixProbe[]
+  detail?: string
+}
+
+/** The `experimental_test_graphs` payload: the project's configured graphs. */
+export interface GraphSuite {
+  outputVersion?: string
+  tool?: { name: string; version: string }
+  command?: string
+  status: string
+  experimental?: boolean
+  conformanceClaimReference?: string
+  label?: string
+  kind?: string
+  /** The graph format's version, which is not the graph document's version. */
+  formatVersion?: string
+  evaluatorSpecVersion?: string
+  configPath?: string
+  configVersion?: string
+  summary: SuiteSummary
+  graphs?: GraphSuiteEntry[]
+}
