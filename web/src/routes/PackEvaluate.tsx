@@ -79,7 +79,7 @@ export function PackEvaluate() {
   return (
     <article className="detail">
       <nav className="crumbs">
-        <Link to="/">Packs</Link>
+        <Link to="/">Project</Link>
         <span aria-hidden="true">/</span>
         <Link to={`/packs/${encodeURIComponent(packId ?? '')}`}>{packId}</Link>
         <span aria-hidden="true">/</span>

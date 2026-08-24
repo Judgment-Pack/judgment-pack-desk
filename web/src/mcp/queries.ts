@@ -9,9 +9,11 @@ import { useMcp } from './McpProvider'
 import type {
   Evaluation,
   EvaluationRun,
+  GraphSuite,
   LoadedPack,
   PackFileMeta,
   PackInventory,
+  PackTest,
   RefusalEnvelope
 } from './types'
 
@@ -41,9 +43,13 @@ export class ToolRefusal extends Error {
 async function callToolJSON<T>(
   client: Client,
   name: string,
-  args: Record<string, unknown> = {}
+  args: Record<string, unknown> = {},
+  signal?: AbortSignal
 ): Promise<{ parsed: T; raw: string; structured: Record<string, unknown> | undefined }> {
-  const result = await client.callTool({ name, arguments: args })
+  // The signal is the query's own: a file change cancels in-flight project
+  // queries before invalidating, so a stale in-flight answer can never satisfy
+  // the fresh question (see McpProvider's fileChanged handler).
+  const result = await client.callTool({ name, arguments: args }, undefined, { signal })
 
   const blocks = Array.isArray(result.content) ? result.content : []
   const text = blocks
@@ -80,8 +86,8 @@ export function usePacks(): UseQueryResult<PackInventory, Error> {
   return useQuery({
     queryKey: ['list_packs'],
     enabled: status === 'ready' && client !== null,
-    queryFn: async () => {
-      const { parsed } = await callToolJSON<PackInventory>(client!, 'list_packs')
+    queryFn: async ({ signal }) => {
+      const { parsed } = await callToolJSON<PackInventory>(client!, 'list_packs', {}, signal)
       return parsed
     }
   })
@@ -93,13 +99,61 @@ export function usePack(packId: string | undefined): UseQueryResult<LoadedPack, 
   return useQuery({
     queryKey: ['get_pack', packId],
     enabled: status === 'ready' && client !== null && Boolean(packId),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { parsed, raw, structured } = await callToolJSON<LoadedPack['document']>(
         client!,
         'get_pack',
-        { pack_id: packId }
+        { pack_id: packId },
+        signal
       )
       return { document: parsed, raw, meta: (structured ?? {}) as PackFileMeta }
+    }
+  })
+}
+
+/**
+ * The project's declared pack matrices, run.
+ *
+ * It is a query and not a mutation even though it runs the evaluator, because
+ * the tool writes nothing: a matrix row is a rehearsal rather than a decision,
+ * so no audit record is appended and no reviewed set is consulted (ADR-0018,
+ * ADR-0019). That is the distinction `experimental_evaluate` does not draw,
+ * and it is why this one may be cached and re-run on a file change.
+ *
+ * Passing a decision id runs that pack's matrix alone. Omitting the key runs
+ * every declared pack — and the key is omitted rather than sent empty, because
+ * a present-but-empty `pack_id` is refused rather than read as absent.
+ */
+export function usePackMatrix(packId?: string): UseQueryResult<PackTest, Error> {
+  const { client, status } = useMcp()
+  return useQuery({
+    queryKey: ['experimental_test_packs', packId ?? null],
+    enabled: status === 'ready' && client !== null,
+    queryFn: async ({ signal }) => {
+      const args = packId === undefined ? {} : { pack_id: packId }
+      const { parsed } = await callToolJSON<PackTest>(client!, 'experimental_test_packs', args, signal)
+      return parsed
+    }
+  })
+}
+
+/**
+ * The project's configured graph matrices, run.
+ *
+ * The graph twin of `usePackMatrix`, and a read for the same reason. A project
+ * that configures no graph is reported `skipped` with no entries rather than
+ * refused, so "this project declares no graph" is an answer this query returns
+ * rather than an error a view has to recognise.
+ */
+export function useGraphMatrix(graphId?: string): UseQueryResult<GraphSuite, Error> {
+  const { client, status } = useMcp()
+  return useQuery({
+    queryKey: ['experimental_test_graphs', graphId ?? null],
+    enabled: status === 'ready' && client !== null,
+    queryFn: async ({ signal }) => {
+      const args = graphId === undefined ? {} : { graph_id: graphId }
+      const { parsed } = await callToolJSON<GraphSuite>(client!, 'experimental_test_graphs', args, signal)
+      return parsed
     }
   })
 }

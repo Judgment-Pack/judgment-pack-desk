@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# The desk's acceptance proof: two real evaluations through the relay.
+# The desk's acceptance proof: two real evaluations through the relay, then the
+# project's own declared rows.
 #
 # It builds the chassis, points it at a throwaway copy of a Judgment Pack
 # project, and drives the desk's own MCP client twice against the same pack —
@@ -9,8 +10,17 @@
 # should escalate, and both dispositions come from the runtime over the wire the
 # browser uses.
 #
+# It then runs what the project itself declares: every pack matrix, and every
+# configured graph matrix, through the two tools the matrix and graph views
+# call. Those runs answer a different question from the evaluations. An
+# evaluation asks what this pack does with these facts; a matrix asks whether
+# what the project wrote about its own packs still holds, and its coverage
+# report asks how much of each pack those rows are about at all.
+#
 # Nothing is written to the project you name: it is copied first, because a
 # completed evaluation appends an audit record in a project that declares one.
+# The matrix runs need no such care — a row is a rehearsal and writes nothing —
+# but they run against the same copy anyway, so one run means one project.
 #
 #   JPACK_PROJECT=/path/to/judgment-pack-quickstart scripts/acceptance.sh
 #
@@ -20,10 +30,16 @@
 #   PORT           loopback port for the chassis      (default: 8799)
 #   FACTS          facts document, relative to the project (default: full-facts.json)
 #   EVIDENCE       evidence document, relative to the project (default: evidence.json)
+#   PACK           decision id to evaluate; defaults to the project's first, which
+#                  is only the right one where FACTS suits it
 #   MUTATE         jq expression removing a load-bearing fact from FACTS
 #                  (default: the quickstart pack's /request/completeness)
 #   EXPECT_KIND    disposition kind the full-facts run must produce (default: outcome)
 #   EXPECT_DEGRADED_KIND  and the mutated run's                     (default: unresolved)
+#   EXPECT_MATRIX_STATUS  status the pack matrices must report      (default: passed)
+#   EXPECT_GRAPH_STATUS   status the graph matrices must report; a project that
+#                         configures none reports skipped, so this defaults to
+#                         empty and is only checked when you set it
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -35,6 +51,8 @@ evidence="${EVIDENCE:-evidence.json}"
 mutate="${MUTATE:-del(.request.completeness)}"
 expect_kind="${EXPECT_KIND:-outcome}"
 expect_degraded_kind="${EXPECT_DEGRADED_KIND:-unresolved}"
+expect_matrix_status="${EXPECT_MATRIX_STATUS:-passed}"
+expect_graph_status="${EXPECT_GRAPH_STATUS:-}"
 
 die() { echo "acceptance: $*" >&2; exit 1; }
 
@@ -59,7 +77,10 @@ cp -R "$project" "$work/project"
 [ -f "$work/project/$facts" ] || die "the project has no $facts"
 jq "$mutate" "$work/project/$facts" > "$work/project/degraded-facts.json"
 
-echo "== building the chassis =="
+echo "== building the web assets =="
+npm --prefix "$root/web" --silent run build
+
+echo "== building the chassis (embedding the built assets) =="
 go build -C "$root" -o "$work/jpack-desk" .
 
 echo "== starting the chassis on 127.0.0.1:$port =="
@@ -83,18 +104,28 @@ echo "   $url"
 
 evidence_args=()
 [ -f "$work/project/$evidence" ] && evidence_args=(--evidence "$work/project/$evidence")
+pack_args=()
+[ -n "${PACK:-}" ] && pack_args=(--pack "$PACK")
 
 echo
-echo "== 1/2  full facts =="
+echo "== 1/3  full facts =="
 npm --prefix "$root/web" --silent run smoke -- "$url" \
-  --facts "$work/project/$facts" "${evidence_args[@]}" \
+  --facts "$work/project/$facts" "${evidence_args[@]}" "${pack_args[@]}" \
   --expect-kind "$expect_kind"
 
 echo
-echo "== 2/2  the same pack with one load-bearing fact removed: $mutate =="
+echo "== 2/3  the same pack with one load-bearing fact removed: $mutate =="
 npm --prefix "$root/web" --silent run smoke -- "$url" \
-  --facts "$work/project/degraded-facts.json" "${evidence_args[@]}" \
+  --facts "$work/project/degraded-facts.json" "${evidence_args[@]}" "${pack_args[@]}" \
   --expect-kind "$expect_degraded_kind" --expect-handoff requested
 
 echo
-echo "acceptance: both runs produced the disposition they were expected to."
+echo "== 3/3  the rows the project declares about itself =="
+graph_args=(--graphs)
+[ -n "$expect_graph_status" ] && graph_args=(--expect-graph-status "$expect_graph_status")
+npm --prefix "$root/web" --silent run smoke -- "$url" \
+  --expect-matrix-status "$expect_matrix_status" "${graph_args[@]}"
+
+echo
+echo "acceptance: both evaluations produced the disposition they were expected to,"
+echo "            and the project's declared rows ran with their coverage reported."

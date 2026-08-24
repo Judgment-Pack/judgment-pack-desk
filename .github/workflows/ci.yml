@@ -58,5 +58,8 @@ jobs:
       - name: tsc
         run: npm run typecheck
 
+      - name: component tests
+        run: npm test
+
       - name: vite build
         run: npx vite build

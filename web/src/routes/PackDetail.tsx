@@ -21,7 +21,7 @@ export function PackDetail() {
   return (
     <article className="detail">
       <nav className="crumbs">
-        <Link to="/">Packs</Link>
+        <Link to="/">Project</Link>
         <span aria-hidden="true">/</span>
         <span>{packId}</span>
       </nav>
@@ -52,6 +52,9 @@ export function PackDetail() {
         </TabButton>
         <Link className="tab tab-action" to={`/packs/${encodeURIComponent(packId ?? '')}/evaluate`}>
           Evaluate…
+        </Link>
+        <Link className="tab tab-action" to={`/packs/${encodeURIComponent(packId ?? '')}/matrix`}>
+          Matrix…
         </Link>
       </div>
 

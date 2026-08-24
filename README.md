@@ -11,9 +11,14 @@ matching change on the Go side.
 
 ## What it shows
 
+**A project home.** `/` is what the project declares — its packs, and the two
+rehearsals that can be run over them. The matrix and graph entries appear only
+where the project has one: `list_packs` reports a matrix flag per pack, and the
+configured graphs are found by running their matrices, because nothing lighter
+reports them (see [Upstream gaps](#upstream-gaps)).
+
 **A pack browser:**
 
-- `/` lists the packs the project declares, via the runtime's `list_packs`.
 - `/packs/:id` fetches one document with `get_pack` and renders it: the
   decision, outcomes, applicability, evidence requirements, rules, exceptions,
   escalation, sources and metadata — plus a **Raw JSON** tab holding the
@@ -69,6 +74,82 @@ The two editors keep the tri-state the tool asks for. Leaving the evidence box
 unchecked omits the key entirely, which is what "no evidence document at all"
 means; a key present with an empty string would be a *supplied* empty document,
 and is refused as malformed-input.
+
+**A matrix and coverage view:**
+
+- `/matrix` runs every matrix the project declares, through
+  `experimental_test_packs`.
+- `/packs/:id/matrix` runs one pack's.
+
+Two things are on that page, and they answer different questions.
+
+The **rows** say whether what a project wrote about its own packs still holds.
+Each row shows the disposition it expects beside the one the evaluator produced
+— the comparison is on RFC 8785 canonical bytes, so the view parses those bytes
+to show `kind`, `outcomeId`, reasons and handoff, and reports the runtime's own
+verdict rather than recomputing one. A row that expects a refusal carries no
+disposition at all, and is shown as the §8.4 class and phase it names.
+
+A row may additionally assert **where the decision goes** (ADR-0025), and that
+assertion is kept visibly apart from the disposition, because §8.3 keeps the
+target outside one. It is the case the view most needs to make legible: a pack
+edit touching only `escalation.target.name` leaves every disposition byte
+identical, so such a row fails with its expected and actual dispositions
+matching exactly. The page says so in as many words rather than leaving a red
+row to be puzzled over. The three states the report distinguishes are kept
+distinct too — a named target, the literal `null` for "no target at all", and
+`unavailable` where the report cannot state one — because "no target" is an
+answer and "unavailable" is the absence of one.
+
+The **coverage report** says how much of each pack those rows are about, and it
+usually has more to say than the rows do: a matrix can pass everything it has
+while stating nothing about most of what its pack can do. So the gaps lead and
+the witnessed probes fold away underneath. Each gap carries the runtime's own
+sentence naming what no row said, including the derived boundary probes
+(ADR-0023) — the exact value at which a strict and a non-strict encoding of a
+threshold would differ, which is the one input a matrix is most likely to lack.
+
+None of it gates. A missing probe moves no status, and the page says so, because
+a report that looked like a failing check would be read as one.
+
+**Graph views:**
+
+- `/graphs` runs every graph the project configures, through
+  `experimental_test_graphs`; `/graphs/:id` runs one.
+
+A graph composes packs: one node's outcome lands at a fact pointer the next
+node's rules read, and its resolution state feeds that node's evidence. No JPS
+version defines a graph, a composition, or a composite result — the format is
+the runtime's own convention, and only each node's pack evaluation reaches the
+shared evaluator. The page carries the payload's own label saying so.
+
+Each graph is drawn as the **walk** it is: the nodes represented in its
+coverage report as an SVG diagram, on the evaluation-order axis the runtime
+enumerated them along, ending in the composite headline every row is judged on.
+Coverage is the only account of the graph's shape that reaches this wire, and
+it can omit a node the run never admitted — so the diagram claims representation,
+not completeness. Choosing a row colours the nodes with the comparisons that row
+reported; a node the selected row reports no comparison for is shown exactly
+that way rather than as having passed, and the row's own verdict — which covers
+the headline and every reported node comparison together — is shown beside the
+diagram as the row's, never painted onto the composite.
+
+**The diagram draws no arrow between two nodes.** The wire carries the walk's
+node order and the edge indices coverage represents; it does not carry which
+node feeds which, so an arrow would assert a dependency the payload never
+states — and in a graph with
+independent branches that assertion would be false. The edges are reported
+beside the diagram as the indexed slots the payload describes them as, each with
+the witness its resolved and unresolved branches have. The missing structure is
+recorded in [Upstream gaps](#upstream-gaps) rather than reconstructed by parsing
+the English in a `detail` sentence, which would make a contract out of prose.
+
+Graph coverage is grouped per node, in that same order, and reported exactly as
+the pack coverage is.
+
+A project that configures no graph is an answer rather than an error: the walk
+reports `skipped` with no entries, the home page offers no graph entry, and the
+graphs page says the project configures none.
 
 ## Requirements
 
@@ -181,9 +262,11 @@ internal/desk/
   watch.go           project-tree file watching
 scripts/acceptance.sh  the two-run acceptance proof
 web/                 Vite + React + TypeScript SPA
-  src/mcp/           the MCP client: transport, connection, queries
-  src/routes/        pack list, pack detail, evaluation
-  src/components/    the semantic document and evaluation views
+  src/mcp/           the MCP client: transport, connection, queries, and the
+                     canonical-string and probe-name readers
+  src/routes/        project home, pack detail, evaluation, matrix, graphs
+  src/components/    the semantic document, evaluation, coverage, row and
+                     graph-walk views
   scripts/smoke.ts   the desk's own client, driven outside a browser
 ```
 
@@ -213,7 +296,8 @@ needs nothing external.
 
 Two real evaluations through the relay, against the same pack: one with the
 project's full facts, one with a load-bearing fact removed. The first should
-resolve to an outcome; the second should escalate.
+resolve to an outcome; the second should escalate. Then the rows the project
+declares about itself — every pack matrix, and every configured graph matrix.
 
 ```sh
 go build -C /path/to/judgment-pack-runtime -o "$PWD/bin/jpack" ./cmd/jpack
@@ -224,14 +308,24 @@ It builds the chassis, copies the project to a temporary directory — a complet
 evaluation appends a record in a project that declares an audit directory, and
 an acceptance run must not write into the tree it was pointed at — reads the
 tokened URL off the `open:` line of the chassis' startup output, and drives the
-desk's client twice. `MUTATE` is the jq expression that removes the fact, and
-defaults to the quickstart pack's `/request/completeness`.
+desk's client three times. `MUTATE` is the jq expression that removes the fact,
+and defaults to the quickstart pack's `/request/completeness`. `PACK` selects
+the decision id where the project's first is not the one `FACTS` suits.
+
+The matrix runs need none of that care — a row is a rehearsal and writes
+nothing — but they run against the same copy anyway, so one run means one
+project. `EXPECT_MATRIX_STATUS` defaults to `passed`; `EXPECT_GRAPH_STATUS` is
+checked only when set, because a project that configures no graph correctly
+reports `skipped`.
 
 The same client runs on its own against a chassis you already have open:
 
 ```sh
 npm --prefix web run smoke -- 'http://127.0.0.1:8791/?token=…' \
   --facts /path/to/full-facts.json --evidence /path/to/evidence.json
+
+# the two calls the matrix and graph views make
+npm --prefix web run smoke -- 'http://127.0.0.1:8791/?token=…' --matrix --graphs
 ```
 
 ## Upstream gaps
@@ -251,6 +345,45 @@ would stop being one.
   schema advertises the argument, and says in the page which of the two worlds
   the runtime is; against an older runtime the original consequence note
   returns, and the acceptance script still evaluates a copy.
+
+- **A graph's structure is not on the wire.** `experimental_test_graphs` reports
+  each configured graph's rows and its derived coverage, and no member of that
+  payload carries the graph document: not the pack each node names, not the
+  edges' endpoints, not the fact pointer or evidence id an edge carries, and not
+  which node the document declares as its `result`. There is a `get_pack` for
+  pack documents and no `get_graph` for graph documents, and the payload's
+  `path` member names a file the browser cannot read. What does reach the wire
+  is the coverage report's own namespacing — one block of probes per node,
+  emitted in the walk's evaluation order, and two probes per edge identified by
+  position — so the desk draws the nodes on that order axis and draws no edge
+  between them. A `get_graph` mirroring `get_pack` would close this; parsing the
+  node-and-pack prefix out of a probe's English `detail` would not, because that
+  sentence is a message and not a contract.
+
+- **A graph matrix reports no node trace.** ADR-0027 pins the trace contract and
+  binds it to each node evaluation inside a graph run, and the runtime's
+  `GraphNodeEvaluation` carries that node's `trace` beside its `factFeeds` and
+  `evidenceFeeds` — how the composition actually fed one node from another. That
+  shape is produced by `jpack experimental graph evaluate`, which has no MCP
+  tool. Over the wire a graph row reports per node only `node`, `status`,
+  `expected` and `actual`, so the desk can show what a node concluded and not
+  how it got there, though the runtime computed it. The pack surface has no such
+  gap: `experimental_evaluate` returns the trace, and the desk renders it.
+
+- **No inventory of configured graphs.** `list_packs` reports a matrix flag per
+  pack, so whether a pack declares a matrix costs one cheap call. Nothing
+  reports the graphs a project configures, so the only way to learn whether
+  there is one is to run every graph's matrix. The desk's home page does that —
+  affordable because the tool writes nothing, and the result is the query the
+  graphs page then reads — but on a large matrix it is a real cost paid to
+  render a link.
+
+- **Graph rows cannot assert a handoff target.** ADR-0025 added
+  `expectedHandoffTarget` to pack matrix rows and deferred the graph surface
+  explicitly. A graph row compares composite and per-node dispositions only, so
+  a change to where a composed decision is handed off leaves every graph row
+  green. The desk shows the assertion on pack rows and has nothing to show on
+  graph rows, which is the runtime's position and not a gap in the view.
 
 ## License
 
