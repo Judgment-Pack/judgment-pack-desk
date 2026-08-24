@@ -19,6 +19,14 @@ import { Fields, Json, Pill, Section } from './primitives'
 export function EvaluationView({ payload }: { payload: Evaluation }) {
   return (
     <div className="evaluation">
+      {payload.rehearsal && (
+        <p className="note">
+          <strong>Rehearsal.</strong> This run was declared not a decision
+          (ADR-0028): no audit record was appended and no reviewed set was
+          consulted, and the payload says so in band with{' '}
+          <code>"rehearsal": true</code>.
+        </p>
+      )}
       <DispositionPanel
         disposition={payload.disposition}
         handoffTarget={payload.handoffTarget}

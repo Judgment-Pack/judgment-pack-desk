@@ -241,15 +241,16 @@ cannot express something the desk wants, the gap is recorded here rather than
 worked around in the chassis — a chassis that parsed or supplemented the traffic
 would stop being one.
 
-- **No rehearsal mode on `experimental_evaluate`.** Every completed call appends
-  one audit record in a project whose `jpack.json` declares an audit directory,
-  and the what-if loop is calls: exploring five variants of a facts document
-  leaves five records saying the project decided five times. The runtime already
-  draws this distinction elsewhere — `experimental_test_packs` writes nothing,
-  on the grounds that a matrix row is a rehearsal rather than a decision — but a
-  what-if run has no equivalent, and the tool takes no argument that would say
-  so. Until it does, the desk's evaluate view names the consequence in the page
-  instead of hiding it, and the acceptance script evaluates a copy.
+- **Resolved: rehearsal mode on `experimental_evaluate`** (was: every completed
+  call appended one audit record in a project declaring an audit directory, so
+  a five-variant what-if session left five records saying the project decided
+  five times). Filed as runtime issue #124 and closed by ADR-0028 in jpack
+  0.18.0: a call declaring `"rehearsal": true` runs identically, appends no
+  record, consults no reviewed set, and carries the label in its payload. The
+  desk declares it on every what-if run when the connected runtime's own tool
+  schema advertises the argument, and says in the page which of the two worlds
+  the runtime is; against an older runtime the original consequence note
+  returns, and the acceptance script still evaluates a copy.
 
 ## License
 
