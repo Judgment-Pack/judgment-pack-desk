@@ -9,12 +9,17 @@ afterEach(cleanup)
  * One evaluation whose trace exercises what the renderer distinguishes: two
  * consecutive stages, an entry with no id, an unknown resolution with the
  * `onUnknown` it was resolved by, and a skipped entry.
+ *
+ * The envelope is the wire's own: `outputVersion` "2", the success `status`
+ * "evaluated", and a skipped rule whose condition is "not-evaluated" — the
+ * runtime's word for a condition it never reached, which is not the same claim
+ * as a condition that evaluated false.
  */
 const PAYLOAD: Evaluation = {
-  outputVersion: '1',
+  outputVersion: '2',
   tool: { name: 'jpack', version: 'test' },
   command: 'experimental evaluate',
-  status: 'ok',
+  status: 'evaluated',
   experimental: true,
   conformanceClaimReference: 'CONFORMANCE.md',
   specVersion: '0.2.0-draft',
@@ -31,7 +36,7 @@ const PAYLOAD: Evaluation = {
     { stage: 'applicability', condition: 'true' },
     { stage: 'exception', id: 'sanctioned-jurisdiction', condition: 'false' },
     { stage: 'rule', id: 'screen-clear', condition: 'unknown', onUnknown: 'escalate' },
-    { stage: 'rule', id: 'fallback', condition: 'false', skipped: true }
+    { stage: 'rule', id: 'fallback', condition: 'not-evaluated', skipped: true }
   ]
 }
 

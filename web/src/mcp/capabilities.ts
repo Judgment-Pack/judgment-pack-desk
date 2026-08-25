@@ -143,10 +143,8 @@ export async function listAllTools(client: ToolLister): Promise<AdvertisedTool[]
  */
 export function readCapabilities(tools: readonly AdvertisedTool[]): RuntimeCapabilities {
   const names = new Set(tools.map((tool) => tool.name))
-  const takes = (tool: string, argument: string) => {
-    const properties = advertisedProperties(tools, tool)
-    return properties !== undefined && argument in properties
-  }
+  const takes = (tool: string, argument: string) =>
+    argument in (advertisedProperties(tools, tool) ?? {})
   return {
     known: true,
     rehearsalSupported: takes('experimental_evaluate', 'rehearsal'),
@@ -159,16 +157,30 @@ export function readCapabilities(tools: readonly AdvertisedTool[]): RuntimeCapab
 /**
  * The properties one advertised tool's input schema declares, or undefined.
  *
- * Undefined covers three different things and deliberately does not
- * distinguish them, because every one of them answers the argument question
- * the same way: no such tool, a tool with no schema, and a schema with no
- * properties all mean this runtime does not advertise the argument. Reading a
- * missing schema as "takes everything" is the failure this shape prevents.
+ * Undefined covers several different things and deliberately does not
+ * distinguish them, because every one answers the argument question the same
+ * way: no such tool, a tool with no schema, a schema with no `properties`, and
+ * a `properties` that is not an object at all all mean this runtime does not
+ * advertise the argument. Reading a missing schema as "takes everything" is one
+ * failure this shape prevents.
+ *
+ * The type check is the other, and it is not defensive decoration. `inputSchema`
+ * is `unknown` off the wire — a server may send anything — and `"x" in y`
+ * throws a TypeError for every non-object `y`, including `null`, `false`, `0`
+ * and `""`. A malformed listing would then take down capability reading
+ * altogether, which leaves the connection reporting *nothing* about what the
+ * runtime can do rather than reporting one argument as unadvertised.
  */
 function advertisedProperties(
   tools: readonly AdvertisedTool[],
   name: string
 ): Record<string, unknown> | undefined {
   const tool = tools.find((candidate) => candidate.name === name)
-  return (tool?.inputSchema as { properties?: Record<string, unknown> } | undefined)?.properties
+  const schema = tool?.inputSchema
+  if (typeof schema !== 'object' || schema === null) return undefined
+  const properties = (schema as { properties?: unknown }).properties
+  if (typeof properties !== 'object' || properties === null || Array.isArray(properties)) {
+    return undefined
+  }
+  return properties as Record<string, unknown>
 }

@@ -37,7 +37,7 @@ export function MatrixRowList({ rows }: { rows: MatrixRow[] }) {
 function MatrixRowItem({ row }: { row: MatrixRow }) {
   const dispositionsAgree = row.expected === row.actual
   const expectsRefusal = Boolean(row.expectedErrorClass)
-  const assertion = describeTargetAssertion(row.expectedHandoffTarget)
+  const assertion = describeTargetAssertion(row)
 
   return (
     <li className={`row row-${row.status}`}>
@@ -57,7 +57,7 @@ function MatrixRowItem({ row }: { row: MatrixRow }) {
         </div>
       )}
 
-      <TargetPair expected={row.expectedHandoffTarget} actual={row.actualHandoffTarget} />
+      <TargetPair of={row} />
 
       {row.detail && <p className="row-detail">{row.detail}</p>}
     </li>

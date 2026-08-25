@@ -397,11 +397,21 @@ export interface PackTest {
  * purpose: the report's, and the evaluator's. Neither may be read off the
  * other, and nothing here reorders either.
  *
- * `expectedHandoffTarget` and `actualHandoffTarget` (ADR-0032) appear together
- * exactly when the row's well-formed assertion named a node this run
- * evaluated. Each is a capped display rendering, the literal `null`, or
- * `unavailable` — never an equality key: the comparator decided on decoded
- * values, and this client only shows what it decided about.
+ * `expectedHandoffTarget` and `actualHandoffTarget` (ADR-0032) are **one pair**
+ * spelled as two flat optionals, because the wire types mirror the JSON and the
+ * JSON carries them flat. The rule the pair obeys is that the two appear
+ * *together*, exactly when the row's well-formed assertion named a node this
+ * run performed; a row whose assertion was itself defective — undecodable, or
+ * naming a node the graph does not declare — reports that defect in its detail
+ * and carries no pair here. Read them through `handoffTargetPair`, which is the
+ * one place that rule is applied.
+ *
+ * On a node comparison the values are a capped rendering or the literal `null`,
+ * and never `unavailable`: a comparison exists only because the walk evaluated
+ * the node, so there is always a reported target or an honest absence of one.
+ * `unavailable` belongs to the row, where a refused run leaves nothing to
+ * state. Neither value is ever an equality key — the comparator decided on
+ * decoded values, and this client only shows what it decided about.
  */
 export interface GraphTestNode {
   node: string
@@ -418,11 +428,21 @@ export interface GraphTestNode {
  *
  * `expectedHandoffTarget` and `actualHandoffTarget` (ADR-0032) are the
  * composite's pair, on the pack row's own vocabulary and semantics: present
- * together exactly when a well-formed assertion rode a run this walk
- * performed, absent where a row defect is reported in `detail` instead. The
- * one reachable `unavailable` is a run refused where the row expected a
- * composite — a §8.4-classed refusal sets `actualErrorClass` beside it, and a
- * graph-layer refusal that carries no class is told by the `detail`.
+ * together exactly when a **well-formed** assertion rode a run this walk
+ * **performed**, and absent where a row defect is reported in `detail`
+ * instead. The composite's target is the result node's own — the value that
+ * run reported beside the disposition the headline compares, which is a named
+ * target exactly when that disposition requested a handoff and the literal
+ * `null` otherwise.
+ *
+ * This row is the only carrier on which `unavailable` is reachable: a run
+ * refused where the row expected a disposition leaves no target to state. A
+ * §8.4-classed refusal sets `actualErrorClass` beside it; a graph-layer
+ * refusal carries no class at all and is told by the `detail`.
+ *
+ * A composite **target** mismatch is decided after the headline and before the
+ * node comparisons are built, so a row that fails on the target alone reports
+ * no `nodes` — the two are not seen together on one row.
  */
 export interface GraphTestRow {
   id: string

@@ -15,7 +15,6 @@ import {
 } from '../mcp/graphDocument'
 import { useMcp } from '../mcp/McpProvider'
 import { useGraphDocument, useGraphInventory, useGraphMatrix } from '../mcp/queries'
-import { ToolRefusal } from '../mcp/refusal'
 import { divergentPairIdentity, recordDivergentPair } from '../mcp/refetchLedger'
 import type {
   GraphInventory,
@@ -61,6 +60,14 @@ export function GraphView() {
   const asked = graphTracesSupported && includeTraces
   const { data, error, isPending, isFetching } = useGraphMatrix(graphId, true, asked)
 
+  // Whether an untraced answer is actually in hand, observed rather than
+  // assumed. The two runs are separate cache entries, so clearing the ask lands
+  // on a result only where one was fetched — and a page that promised to
+  // "restore the run that worked" after a toggle flipped before any untraced
+  // run ever completed would be promising something that does not exist. This
+  // observer never fetches; it only reads what the untraced key holds.
+  const retainedUntraced = useGraphMatrix(graphId, false, false).data !== undefined
+
   // The inventory is what lets the page render before the matrix has run. With
   // no inventory to show, the old behaviour stands exactly: wait, then report.
   //
@@ -93,7 +100,7 @@ export function GraphView() {
         onChange={(event) => setIncludeTraces(event.target.checked)}
       />
       <span>
-        Ask for each compared node's trace (ADR-0031). Off — the default — is the
+        Ask for traces of the compared nodes the walk evaluates (ADR-0031). Off — the default — is the
         call this desk has always made, byte for byte. Asked, the traces are
         charged against the runtime's own report budget, so a suite that fits
         without them can be refused with them.
@@ -101,21 +108,30 @@ export function GraphView() {
     </label>
   ) : null
 
-  // Named, never diagnosed. The runtime's own message is the reason and it is
-  // shown verbatim beside this; what this adds is the one fact the message
-  // cannot carry — that traces were asked for on this run, and that the ask is
-  // reversible. It never says the nodes have no traces: the question was not
-  // answered, so nothing is known about the answer.
+  // Named, never diagnosed.
+  //
+  // What went wrong is the runtime's to say and it says it verbatim below. This
+  // adds only the two facts its message cannot carry: that *this* request was
+  // the one that asked for traces, and what clearing the ask will do. It stops
+  // short of the budget on purpose. A tool error arrives in one unstructured
+  // shape whether the cause was the report budget, an argument this runtime
+  // rejects, a configuration it could not find, or a graph id it does not have
+  // — and an error that is not a refusal at all covers a response the runtime
+  // *did* produce and this client could not read. Naming the budget would be
+  // this page diagnosing a message it has not parsed.
+  //
+  // Nor does it ever report the failure as an absence of traces. The question
+  // was not answered, so nothing at all is known about the answer.
   const tracesRefusal =
     asked && error ? (
       <p className="note note-warn">
-        This run was made with traces asked for, and the runtime{' '}
-        {error instanceof ToolRefusal
-          ? 'refused it'
-          : 'did not answer it — which is a call that did not complete rather than an answer'}
-        . Traces ride inside the report budget, so a suite that fits without them
-        can be over it with them. Clearing the ask above restores the run that
-        worked; nothing here says these nodes have no traces.
+        This request asked for traces, and it did not produce a usable answer.
+        The runtime's own message is below and is the reason.{' '}
+        {retainedUntraced
+          ? 'Clear the ask to return to the untraced request, whose answer is still in hand.'
+          : 'Clear the ask to retry the untraced request.'}{' '}
+        Nothing here says these nodes have no traces: the question was not
+        answered.
       </p>
     ) : null
 
@@ -598,7 +614,7 @@ function useDigestRefetch({
  * moved on a node three hops back changes nothing any headline can see.
  */
 function GraphRowItem({ row }: { row: GraphTestRow }) {
-  const assertion = describeTargetAssertion(row.expectedHandoffTarget)
+  const assertion = describeTargetAssertion(row)
   return (
     <li className={`row row-${row.status}`}>
       <div className="row-head">
@@ -644,8 +660,7 @@ function GraphRowItem({ row }: { row: GraphTestRow }) {
       )}
 
       <TargetPair
-        expected={row.expectedHandoffTarget}
-        actual={row.actualHandoffTarget}
+        of={row}
         expectedLabel="expected composite target"
         actualLabel="actual composite target"
       />
@@ -681,7 +696,7 @@ function GraphRowItem({ row }: { row: GraphTestRow }) {
  * empty trace says it is empty.
  */
 function GraphNodeItem({ node }: { node: GraphTestNode }) {
-  const assertion = describeTargetAssertion(node.expectedHandoffTarget)
+  const assertion = describeTargetAssertion(node)
   return (
     <li className={`row-node row-${node.status}`}>
       <div className="row-node-head">
@@ -696,8 +711,7 @@ function GraphNodeItem({ node }: { node: GraphTestNode }) {
       </div>
 
       <TargetPair
-        expected={node.expectedHandoffTarget}
-        actual={node.actualHandoffTarget}
+        of={node}
         expectedLabel={`expected target of ${node.node}`}
         actualLabel={`actual target of ${node.node}`}
       />

@@ -17,9 +17,16 @@
  * verdict, and it is already shown beside the pair.
  *
  * **The three states stay three.** "No target" is an answer — the disposition
- * requested no handoff — and `unavailable` is the absence of one, reachable
- * where a run was refused under an expected composite. Collapsing them would
- * turn a refused run into a policy that hands off nowhere.
+ * requested no handoff — and `unavailable` is the absence of one. Collapsing
+ * them would turn a refused run into a policy that hands off nowhere.
+ *
+ * `unavailable` is reachable on **one** carrier only: a matrix row whose run
+ * was refused where the row expected a disposition. A graph *node* comparison
+ * exists only because the walk evaluated that node, so its actual value is
+ * always a rendering or the literal `null` and never `unavailable`. This
+ * renderer would show the word if a payload carried it — showing what the
+ * runtime said is the rule — but nothing here manufactures it, and no fixture
+ * should pretend a node can reach it.
  */
 import { NO_HANDOFF_TARGET, describeHandoffTarget } from '../mcp/canonical'
 
@@ -42,30 +49,60 @@ export function TargetSide({ label, member }: { label: string; member: string | 
 }
 
 /**
- * The pair, where the row or comparison asserts one, and nothing where it does
- * not.
+ * Anything that may carry a reported handoff-target assertion: a pack matrix
+ * row, a graph matrix row, or one graph node comparison.
  *
- * Presence is decided on the *expected* member alone, because that is the one
- * the assertion is: a row that asserts nothing carries neither, and a row that
- * asserts "no target at all" carries both, each as the literal `null`.
+ * The members are flat optionals because the wire types mirror the JSON, and
+ * the JSON carries them flat. The *rule* is that they appear together — see
+ * `handoffTargetPair`, which is the one place that rule is applied.
+ */
+export interface HandoffTargetCarrier {
+  expectedHandoffTarget?: string
+  actualHandoffTarget?: string
+}
+
+/**
+ * The one pair a carrier reports, or nothing where it asserts none.
+ *
+ * The runtime's rule is that the two members appear **together**, exactly when
+ * a well-formed assertion rode a run this walk performed: a carrier asserting
+ * nothing has neither, and one asserting "no target at all" has both, each the
+ * literal `null`. A row whose *defect* was the problem — an undecodable
+ * expectation, a node the graph does not declare — reports that defect in its
+ * detail and no pair at all.
+ *
+ * One accessor applies the rule so that no call site re-derives it and gets it
+ * half right. Reading presence off `expected` alone, as two call sites once
+ * did, would render half a pair on a payload that reported only one member,
+ * and half a pair reads as an assertion that was made and not answered.
+ */
+export function handoffTargetPair(
+  carrier: HandoffTargetCarrier
+): { expected: string; actual: string } | undefined {
+  const { expectedHandoffTarget: expected, actualHandoffTarget: actual } = carrier
+  if (expected === undefined || actual === undefined) return undefined
+  return { expected, actual }
+}
+
+/**
+ * The pair, where the carrier reports one, and nothing where it does not.
  */
 export function TargetPair({
-  expected,
-  actual,
+  of,
   /** What the two sides are called, so a node's pair reads as the node's. */
   expectedLabel = 'expected target',
   actualLabel = 'actual target'
 }: {
-  expected: string | undefined
-  actual: string | undefined
+  of: HandoffTargetCarrier
   expectedLabel?: string
   actualLabel?: string
 }) {
-  if (expected === undefined) return null
+  const pair = handoffTargetPair(of)
+  if (!pair) return null
   return (
     <div className="row-compare row-targets">
-      <TargetSide label={expectedLabel} member={expected} />
-      <TargetSide label={actualLabel} member={actual} />
+      <TargetSide label={expectedLabel} member={pair.expected} />
+      <TargetSide label={actualLabel} member={pair.actual} />
     </div>
   )
 }
@@ -75,11 +112,14 @@ export function TargetPair({
  *
  * "Asserts no handoff target" and "asserts a handoff-target state" are two
  * different claims and the literal `null` is what separates them, so the badge
- * reads the member rather than the mere fact of one being present.
+ * reads the member rather than the mere fact of one being present. It reads it
+ * through the same accessor the pair does, so a badge can never appear over a
+ * pair that is not being shown.
  */
-export function describeTargetAssertion(expected: string | undefined): string | undefined {
-  if (expected === undefined) return undefined
-  return expected === NO_HANDOFF_TARGET
+export function describeTargetAssertion(carrier: HandoffTargetCarrier): string | undefined {
+  const pair = handoffTargetPair(carrier)
+  if (!pair) return undefined
+  return pair.expected === NO_HANDOFF_TARGET
     ? 'asserts no handoff target'
     : 'asserts a handoff-target state'
 }

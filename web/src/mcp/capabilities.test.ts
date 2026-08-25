@@ -109,6 +109,34 @@ describe('readCapabilities', () => {
     expect(crossed.graphTracesSupported).toBe(false)
   })
 
+  it('reads a malformed schema as no argument rather than throwing', () => {
+    // `inputSchema` is unknown off the wire, and `"x" in y` throws a TypeError
+    // for every non-object y. A listing that carried one of these would take
+    // capability reading down altogether — leaving the connection reporting
+    // nothing about what the runtime can do, which is strictly worse than
+    // reporting one argument as unadvertised.
+    for (const properties of [null, false, 0, '', 'rehearsal', [], ['rehearsal']]) {
+      const capabilities = readCapabilities([
+        { name: 'experimental_evaluate', inputSchema: { properties } },
+        { name: 'experimental_test_graphs', inputSchema: { properties } }
+      ])
+      expect(capabilities.rehearsalSupported).toBe(false)
+      expect(capabilities.graphTracesSupported).toBe(false)
+      expect(capabilities.known).toBe(true)
+    }
+  })
+
+  it('reads a schema that is not an object as no argument either', () => {
+    for (const inputSchema of [null, false, 0, '', 'properties', []]) {
+      const capabilities = readCapabilities([
+        { name: 'experimental_evaluate', inputSchema },
+        { name: 'experimental_test_graphs', inputSchema }
+      ])
+      expect(capabilities.rehearsalSupported).toBe(false)
+      expect(capabilities.graphTracesSupported).toBe(false)
+    }
+  })
+
   it('reads nothing from an empty listing, and knows that it read it', () => {
     // An empty listing is an answer: this runtime advertises no tool. That is a
     // different claim from never having asked, which is what UNKNOWN is — and
