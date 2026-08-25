@@ -543,3 +543,207 @@ describe('the authoring shell, not losing an edit', () => {
     expect(confirm).not.toHaveBeenCalled()
   })
 })
+
+describe('the authoring shell, not losing an edit to something unrelated', () => {
+  it('keeps the editor and the buffer when the file list fails to refresh', async () => {
+    // The watcher refetches every query on any file change, so a listing that
+    // fails once must not take an open editor down with it. TanStack keeps the
+    // previous data; the pane must too.
+    let listings = 0
+    chassis({
+      files: () => {
+        listings += 1
+        return listings === 1
+          ? { status: 200, body: LISTING }
+          : { status: 500, body: { error: 'the project directory went away' } }
+      },
+      file: () => ({ status: 200, body: READ })
+    })
+    const { container, queryClient } = render()
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: EDITED } })
+
+    await act(async () => {
+      void queryClient.invalidateQueries({ queryKey: ['desk-files'] })
+      await Promise.resolve()
+    })
+    await screen.findByText(/could not be refreshed/)
+
+    // The edit survived, and the base it is measured against did not move.
+    expect((screen.getByLabelText('File contents') as HTMLTextAreaElement).value).toBe(EDITED)
+    expect(container.textContent).toContain('unsaved changes')
+    expect(container.textContent).toContain(LOADED_SHA.slice(0, 12))
+    expect(container.textContent).not.toContain("Could not list the project's files")
+  })
+
+  it('keeps the edit when an explicit reload fails', async () => {
+    // A failed refetch can still carry cached data. Installing that as the new
+    // base would discard the buffer in exchange for bytes the reload never got.
+    let reads = 0
+    chassis({
+      files: () => ({ status: 200, body: LISTING }),
+      file: () => {
+        reads += 1
+        return reads === 1
+          ? { status: 200, body: READ }
+          : { status: 500, body: { error: 'the file could not be read' } }
+      }
+    })
+    const { container } = render()
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: EDITED } })
+
+    fireEvent.click(screen.getByText('Reload from disk'))
+    await waitFor(() => expect(container.textContent).toContain('unsaved changes'))
+    expect((screen.getByLabelText('File contents') as HTMLTextAreaElement).value).toBe(EDITED)
+  })
+
+  it('asks before an in-app navigation leaves unsaved changes behind', async () => {
+    // beforeunload never sees this: same-document routing simply unmounts the
+    // editor. The router blocker is what stands in that path.
+    chassis({
+      files: () => ({ status: 200, body: LISTING }),
+      file: () => ({ status: 200, body: READ })
+    })
+    const confirm = vi.fn(() => false)
+    vi.stubGlobal('confirm', confirm)
+
+    const { container } = renderConnected(
+      <Routes>
+        <Route path="/author" element={<AuthorView />} />
+        <Route path="/elsewhere" element={<p>somewhere else</p>} />
+      </Routes>,
+      connected(),
+      { path: '/author', nav: true }
+    )
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: EDITED } })
+
+    fireEvent.click(screen.getByText('go elsewhere'))
+    await waitFor(() => expect(confirm).toHaveBeenCalled())
+    // Refused, so the editor is still here with the edit in it.
+    expect(container.textContent).toContain('unsaved changes')
+    expect(container.textContent).not.toContain('somewhere else')
+
+    confirm.mockReturnValue(true)
+    fireEvent.click(screen.getByText('go elsewhere'))
+    await screen.findByText('somewhere else')
+  })
+
+  it('does not ask when an in-app navigation leaves nothing behind', async () => {
+    chassis({
+      files: () => ({ status: 200, body: LISTING }),
+      file: () => ({ status: 200, body: READ })
+    })
+    const confirm = vi.fn(() => true)
+    vi.stubGlobal('confirm', confirm)
+    renderConnected(
+      <Routes>
+        <Route path="/author" element={<AuthorView />} />
+        <Route path="/elsewhere" element={<p>somewhere else</p>} />
+      </Routes>,
+      connected(),
+      { path: '/author', nav: true }
+    )
+    await openTheFile()
+    fireEvent.click(screen.getByText('go elsewhere'))
+    await screen.findByText('somewhere else')
+    expect(confirm).not.toHaveBeenCalled()
+  })
+})
+
+describe('the authoring shell, after a save', () => {
+  it('leaves no cache disagreeing with the read-back', async () => {
+    // The read-back is what is on disk. If the file cache and the listing keep
+    // pre-save state, the page can say "Saved, and verified" beside a "changed
+    // on disk" warning derived from bytes the save replaced.
+    chassis({
+      files: () => ({ status: 200, body: LISTING }),
+      file: () => ({ status: 200, body: READ }),
+      write: (body) => ({
+        status: 200,
+        body: {
+          path: body.path,
+          bytes: String(body.content).length,
+          sha256: EDITED_SHA,
+          content: body.content
+        }
+      })
+    })
+    const { container } = render()
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: EDITED } })
+    fireEvent.click(screen.getByText('Save'))
+    await screen.findByText(/Saved, and verified/)
+
+    expect(container.textContent).not.toContain('changed on disk since you opened it')
+    expect(container.textContent).not.toContain('no longer in the project')
+    // The listing carries the saved size, not the loaded one.
+    expect(container.textContent).toContain(`${EDITED.length} bytes`)
+  })
+
+  it('clears a previous verdict when the next save starts', async () => {
+    let attempt = 0
+    let settle: (() => void) | undefined
+    chassis({
+      files: () => ({ status: 200, body: LISTING }),
+      file: () => ({ status: 200, body: READ }),
+      write: (body) => {
+        attempt += 1
+        const answer = {
+          status: 200,
+          body: { path: body.path, bytes: 1, sha256: EDITED_SHA, content: body.content }
+        }
+        if (attempt === 1) return answer
+        return { ...answer, delay: new Promise<void>((resolve) => { settle = resolve }) }
+      }
+    })
+    const { container } = render()
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: EDITED } })
+    fireEvent.click(screen.getByText('Save'))
+    await screen.findByText(/Saved, and verified/)
+
+    fireEvent.change(box, { target: { value: EDITED + '\n// again' } })
+    fireEvent.click(screen.getByText('Save'))
+    await waitFor(() => expect(screen.getByText('Saving…')).toBeTruthy())
+    // The old verdict is not left standing over a save in flight.
+    expect(container.textContent).not.toContain('Saved, and verified')
+    await act(async () => {
+      settle!()
+      await Promise.resolve()
+    })
+    await screen.findByText(/Saved, and verified/)
+  })
+
+  it('clears a conflict when the edit is discarded', async () => {
+    chassis({
+      files: () => ({ status: 200, body: LISTING }),
+      file: () => ({ status: 200, body: READ }),
+      write: () => ({
+        status: 409,
+        body: {
+          error: 'stale',
+          path: 'packs/vendor-onboarding.pack.json',
+          expectedSha256: LOADED_SHA,
+          actualSha256: THEIRS_SHA,
+          exists: true
+        }
+      })
+    })
+    const { container } = render()
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: EDITED } })
+    fireEvent.click(screen.getByText('Save'))
+    await screen.findByText(/the file changed since you opened it/)
+
+    fireEvent.click(screen.getByText('Discard changes'))
+    // Nothing differs any more, so an offer to overwrite is an offer to write
+    // something nobody is proposing.
+    await waitFor(() =>
+      expect(screen.queryByText(/the file changed since you opened it/)).toBeNull()
+    )
+    expect(screen.queryByText('Overwrite anyway')).toBeNull()
+    expect(container.textContent).not.toContain('unsaved changes')
+  })
+})

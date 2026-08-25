@@ -110,7 +110,11 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	defer c.stop()
 
 	cmd := exec.CommandContext(ctx, s.cfg.JpackBin, "mcp")
-	cmd.Dir = s.cfg.ProjectDir
+	// The resolved project directory, not the configured pathname: the file API
+	// holds a descriptor to this same directory, and a runtime started from a
+	// pathname that has since been repointed would be judging a different tree
+	// from the one the desk is writing.
+	cmd.Dir = s.projectDir
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		s.closeWith(ws, websocket.StatusInternalError, "cannot open runtime stdin")

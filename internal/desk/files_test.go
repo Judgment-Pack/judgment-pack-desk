@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -183,7 +184,10 @@ func TestSymlinkEscapeRefusedOverTheWire(t *testing.T) {
 		if status != http.StatusForbidden && status != http.StatusNotFound {
 			t.Fatalf("read %s: status %d, body %v", rel, status, body)
 		}
-		if message, ok := body["error"].(string); ok && strings.Contains(message, "secret") {
+		// The refusal may echo the path the caller asked for — that is theirs
+		// already. What it must not do is name where the link pointed, which
+		// would describe the filesystem outside the project to whoever asked.
+		if message, ok := body["error"].(string); ok && strings.Contains(message, outside) {
 			t.Fatalf("the refusal describes what is outside the project: %v", message)
 		}
 		if status, _ := putJSON(t, ts, WriteRequest{Path: rel, Content: "{}", Override: true}); status == http.StatusOK {
@@ -1143,3 +1147,288 @@ func TestHandlersRefuseTraversalOverTheWire(t *testing.T) {
 }
 
 func urlEscape(s string) string { return url.QueryEscape(s) }
+
+/* Round-2 findings --------------------------------------------------------- */
+
+// TestExcludedDirectoriesAreEndpointExclusions pins that the documented
+// exclusions are refusals and not merely omissions from the listing. A GET or
+// PUT that walked into one would also write debris the startup cleanup never
+// collects, because cleanup skips those trees.
+func TestExcludedDirectoriesAreEndpointExclusions(t *testing.T) {
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, ".git/config", "[core]")
+	writeProjectFile(t, project, "node_modules/pkg/index.js", "// no")
+
+	for _, rel := range []string{
+		".git/config", "node_modules/pkg/index.js", "dist/app.js",
+		".venv/pyvenv.cfg", "vendor/x/y.go", "packs/.git/config",
+	} {
+		t.Run(rel, func(t *testing.T) {
+			if status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path="+urlEscape(rel)); status != http.StatusForbidden {
+				t.Fatalf("read: status %d, %v", status, body)
+			}
+			if status, _ := putJSON(t, ts, WriteRequest{Path: rel, Content: "{}", Override: true}); status != http.StatusForbidden {
+				t.Fatalf("write: status %d", status)
+			}
+		})
+	}
+	if data, _ := os.ReadFile(filepath.Join(project, ".git", "config")); string(data) != "[core]" {
+		t.Fatalf(".git/config was written: %q", string(data))
+	}
+}
+
+// TestSymlinkedPathsAreRefusedByBothVerbs pins the consistency the README
+// claims.
+//
+// An in-root symlink to an in-root file is the case that used to differ: GET
+// followed it and returned the target's bytes, while a save renamed over the
+// *link*. One name, two objects, and the editor showing one while the save
+// replaced the other.
+func TestSymlinkedPathsAreRefusedByBothVerbs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on Windows")
+	}
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "packs/real.pack.json", `{"id":"real"}`)
+	if err := os.Symlink("real.pack.json", filepath.Join(project, "packs", "alias.pack.json")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	if err := os.Symlink("packs", filepath.Join(project, "linkdir")); err != nil {
+		t.Fatalf("symlink dir: %v", err)
+	}
+
+	for _, rel := range []string{"packs/alias.pack.json", "linkdir/real.pack.json"} {
+		t.Run(rel, func(t *testing.T) {
+			status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path="+urlEscape(rel))
+			if status != http.StatusForbidden {
+				t.Fatalf("read: status %d, %v", status, body)
+			}
+			if status, _ := putJSON(t, ts, WriteRequest{Path: rel, Content: "{}", Override: true}); status != http.StatusForbidden {
+				t.Fatalf("write: status %d", status)
+			}
+		})
+	}
+	// The real file is untouched and still reachable by its own name.
+	if status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path=packs/real.pack.json"); status != http.StatusOK {
+		t.Fatalf("the real file became unreadable: %d %v", status, body)
+	}
+	// And neither link is listed.
+	_, listing := getJSON(t, ts, "/api/files?token="+testToken)
+	for _, raw := range listing["files"].([]any) {
+		if p := raw.(map[string]any)["path"].(string); strings.Contains(p, "alias") || strings.HasPrefix(p, "linkdir/") {
+			t.Fatalf("a symlink was listed: %s", p)
+		}
+	}
+}
+
+// TestListingSaysWhenItIsPartial pins that a thinned listing says so.
+//
+// A directory the walk cannot read is a real condition, and answering 200 with
+// the files it did manage is indistinguishable from answering 200 for a smaller
+// project. The `partial` member is what makes the two different answers.
+func TestListingSaysWhenItIsPartial(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs Unix permissions and a non-root user")
+	}
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", "{}")
+	writeProjectFile(t, project, "locked/secret.json", "{}")
+	locked := filepath.Join(project, "locked")
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(locked, 0o755) })
+
+	status, body := getJSON(t, ts, "/api/files?token="+testToken)
+	if status != http.StatusOK {
+		t.Fatalf("list: status %d", status)
+	}
+	partial, ok := body["partial"].([]any)
+	if !ok || len(partial) == 0 {
+		t.Fatalf("an unreadable subtree was not reported: %v", body)
+	}
+	if !strings.Contains(body["note"].(string), "PARTIAL") {
+		t.Fatalf("the note does not say the listing is partial: %v", body["note"])
+	}
+	// What it could read is still reported.
+	listed := map[string]bool{}
+	for _, raw := range body["files"].([]any) {
+		listed[raw.(map[string]any)["path"].(string)] = true
+	}
+	if !listed["jpack.json"] {
+		t.Fatalf("a readable file was dropped: %v", listed)
+	}
+}
+
+// TestWriteHoldsTheLockAcrossTheCommit proves the mutex is held, rather than
+// hoping the scheduler produces the right answer.
+//
+// The first request is stopped *inside* the critical section. If the second can
+// reach its own current-bytes read while that is true, the compare and the
+// commit are not one decision and the barrier test only ever passed by luck.
+func TestWriteHoldsTheLockAcrossTheCommit(t *testing.T) {
+	_, ts, project := filesServer(t)
+	const base = `{"id":"a"}`
+	writeProjectFile(t, project, "packs/a.pack.json", base)
+	baseDigest := digestOf([]byte(base))
+
+	var entries atomic.Int32
+	inside := make(chan struct{})
+	hold := make(chan struct{})
+	later := make(chan string, 4)
+	var release sync.Once
+	unblock := func() { release.Do(func() { close(hold) }) }
+	// Whatever happens — including a t.Fatal below — the held request must be
+	// let go, or the server's own Close waits on it forever and the failure
+	// becomes a hang.
+	t.Cleanup(func() {
+		testHookAfterLockEntry = nil
+		unblock()
+	})
+
+	testHookAfterLockEntry = func(rel string) {
+		if entries.Add(1) == 1 {
+			close(inside)
+			<-hold
+			return
+		}
+		later <- rel
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		putJSONNoFatal(ts, WriteRequest{Path: "packs/a.pack.json", Content: `{"id":"first"}`, BaseSHA256: baseDigest})
+	}()
+	<-inside // the first request holds the lock and is not moving
+
+	second := make(chan int, 1)
+	go func() {
+		status, _ := putJSONNoFatal(ts, WriteRequest{Path: "packs/a.pack.json", Content: `{"id":"second"}`, BaseSHA256: baseDigest})
+		second <- status
+	}()
+
+	// The second request must not get inside while the first is held there. A
+	// barrier placed only *before* the lock proves nothing: the scheduler is
+	// free to produce the expected 200/409 by luck.
+	select {
+	case rel := <-later:
+		t.Fatalf("a second write entered the critical section for %s while the first held it", rel)
+	case status := <-second:
+		t.Fatalf("a second write completed with %d while the first held the lock", status)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	unblock()
+	<-done
+	if status := <-second; status != http.StatusConflict {
+		t.Fatalf("the second write should have found changed bytes: status %d", status)
+	}
+	if got := entries.Load(); got != 2 {
+		t.Fatalf("expected two entries into the critical section, got %d", got)
+	}
+}
+
+// TestOriginRefusesEmptyDelimiters pins "nothing else" against the two forms
+// that parse to empty rather than to a value.
+func TestOriginRefusesEmptyDelimiters(t *testing.T) {
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", "{}")
+
+	for _, origin := range []string{ts.URL + "?", ts.URL + "#", ts.URL + "?#"} {
+		t.Run(origin, func(t *testing.T) {
+			r, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files?token="+testToken, nil)
+			r.Header.Set("Origin", origin)
+			resp, err := http.DefaultClient.Do(r)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusForbidden {
+				t.Fatalf("Origin %q: status %d", origin, resp.StatusCode)
+			}
+		})
+	}
+}
+
+// TestRuntimeAndFileAPIShareOneProject pins the two authorities together.
+//
+// The runtime is started from a pathname — a subprocess cannot inherit the
+// desk's directory descriptor portably — so the pathname it is given must be
+// the one the root was pinned from. Resolving `ProjectDir` once at construction
+// is what makes a retargeted symlink unable to split them.
+func TestRuntimeAndFileAPIShareOneProject(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on Windows")
+	}
+	parent := t.TempDir()
+	real := filepath.Join(parent, "real")
+	other := filepath.Join(parent, "other")
+	for _, dir := range []string{real, other} {
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+	link := filepath.Join(parent, "project")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	s, err := New(Config{ProjectDir: link, JpackBin: "jpack", Token: testToken, Logger: log.New(io.Discard, "", 0)})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	// Repoint after startup: neither half may follow.
+	if err := os.Remove(link); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if err := os.Symlink(other, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	resolvedReal, err := filepath.EvalSymlinks(real)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	if s.projectDir != resolvedReal {
+		t.Fatalf("the runtime would start in %s, not %s", s.projectDir, resolvedReal)
+	}
+	if s.root.Name() != resolvedReal {
+		t.Fatalf("the file API root is %s, not %s", s.root.Name(), resolvedReal)
+	}
+}
+
+// TestWatcherRefusesToReportSuccessWithNoWatches pins the startup failure.
+//
+// `filepath.WalkDir` does not follow a symlink handed to it as the walk root,
+// so a symlinked project directory used to install zero watches and report
+// success: live reload silently off, and nothing said. The resolved path is what
+// the server passes now, and a genuinely unwatchable tree is an error.
+func TestWatcherRefusesToReportSuccessWithNoWatches(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on Windows")
+	}
+	parent := t.TempDir()
+	real := filepath.Join(parent, "real")
+	if err := os.Mkdir(real, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	link := filepath.Join(parent, "project")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	// The unresolved symlink is what used to install nothing.
+	if w, err := newWatcher(link, log.New(io.Discard, "", 0), func(string) {}); err == nil {
+		w.Close()
+		t.Fatal("watching a symlinked root reported success with no watches")
+	}
+	// The resolved path — what the server actually passes — works.
+	w, err := newWatcher(real, log.New(io.Discard, "", 0), func(string) {})
+	if err != nil {
+		t.Fatalf("watching the resolved root: %v", err)
+	}
+	w.Close()
+}

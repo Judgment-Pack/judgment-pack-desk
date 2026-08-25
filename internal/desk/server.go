@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -70,8 +71,19 @@ type Server struct {
 	// through it, so containment is a held directory descriptor rather than a
 	// pathname that was true when it was checked — see files.go.
 	root *os.Root
-	// writes serializes each target path's compare-and-commit.
-	writes *pathLocks
+	// projectDir is ProjectDir with its symlinks resolved, taken once at
+	// construction. It is the pathname every part of the chassis that cannot
+	// hold a descriptor uses: the runtime's working directory and the file
+	// watcher. Resolving it once is what stops the two halves of the desk
+	// operating on two different projects — repointing a symlinked ProjectDir
+	// after startup would otherwise leave the file API writing the original
+	// tree while each new runtime judged the replacement.
+	projectDir string
+	// writes serializes the compare-and-commit of every write. One mutex, not
+	// one per path: a per-path key is a *spelling*, and two spellings of one
+	// file on a case-insensitive filesystem would take different locks and both
+	// commit. Desk-scale contention is not worth a correctness argument.
+	writes sync.Mutex
 }
 
 // NewToken returns a fresh random session token.
@@ -97,19 +109,24 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = log.New(io.Discard, "", 0)
 	}
+	// Resolved once, and everything that needs a pathname uses this one.
+	resolved, err := filepath.EvalSymlinks(cfg.ProjectDir)
+	if err != nil {
+		return nil, fmt.Errorf("desk: project directory: %w", err)
+	}
 	// Pinned once, and closed with the server. Re-opening it per request would
 	// let the authority itself be retargeted between requests.
-	root, err := os.OpenRoot(cfg.ProjectDir)
+	root, err := os.OpenRoot(resolved)
 	if err != nil {
 		return nil, fmt.Errorf("desk: project directory: %w", err)
 	}
 	s := &Server{
-		cfg:    cfg,
-		mux:    http.NewServeMux(),
-		log:    cfg.Logger,
-		conns:  make(map[*conn]struct{}),
-		root:   root,
-		writes: newPathLocks(),
+		cfg:        cfg,
+		mux:        http.NewServeMux(),
+		log:        cfg.Logger,
+		conns:      make(map[*conn]struct{}),
+		root:       root,
+		projectDir: resolved,
 	}
 	s.removeStaleStaging()
 	if cfg.Static != nil {
@@ -124,7 +141,7 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("PUT /api/file", s.handleFileWrite)
 	s.mux.HandleFunc("/", s.handleStatic)
 
-	w, werr := newWatcher(cfg.ProjectDir, s.log, s.broadcastFileChange)
+	w, werr := newWatcher(resolved, s.log, s.broadcastFileChange)
 	if werr != nil {
 		// A desk without live reload is still a working desk; a desk that
 		// refuses to start because the tree is large or the inotify budget is
@@ -183,8 +200,13 @@ func (s *Server) originAllowed(r *http.Request) bool {
 	// Matching on the host alone would accept `http://127.0.0.1:8791/evil` and
 	// an origin whose scheme is not the one we were served under, while the
 	// prose promises same-origin semantics.
+	// "Nothing else" means nothing else, including the delimiters that parse to
+	// empty: `http://host?` sets ForceQuery with an empty RawQuery, and a bare
+	// trailing `#` is dropped by the parser entirely, so the raw header is
+	// checked for it.
 	if u.Scheme == "" || u.Host == "" || u.Opaque != "" || u.User != nil ||
-		u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" ||
+		strings.ContainsRune(origin, '#') {
 		return false
 	}
 	if !strings.EqualFold(u.Scheme, requestScheme(r)) {

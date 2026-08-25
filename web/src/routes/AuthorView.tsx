@@ -1,6 +1,8 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
+import { useBlocker } from 'react-router-dom'
 import { Empty, ErrorBox, Loading, Pill, Section } from '../components/primitives'
-import { StaleWrite, type FileContent } from '../files/client'
+import { StaleWrite, type FileContent, type FileEntry, type FileListing } from '../files/client'
 import { useFileContent, useFileListing, useWriteFile } from '../files/queries'
 
 /**
@@ -42,14 +44,30 @@ export function AuthorView() {
   // survive: unmounting would throw the buffer away before the user is told.
   const listedNow = files.some((file) => file.path === selected)
 
-  // The browser's own guard. It only fires on a real navigation or close, and
-  // only where the page has something to lose.
+  // Two guards, because they cover two different exits and neither covers the
+  // other. `beforeunload` is the browser's, and it fires only when the document
+  // itself goes — a reload, a close, a link off the site. Everything inside this
+  // application is same-document routing, which that event never sees: Back out
+  // of the editor, or follow any in-app link, and the component simply unmounts
+  // with the buffer in it.
   useEffect(() => {
     if (!dirty) return
     const warn = (event: BeforeUnloadEvent) => event.preventDefault()
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
   }, [dirty])
+
+  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
+    dirty && currentLocation.pathname !== nextLocation.pathname
+  )
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return
+    if (window.confirm('This file has unsaved changes that will be lost. Leave anyway?')) {
+      blocker.proceed()
+    } else {
+      blocker.reset()
+    }
+  }, [blocker])
 
   const choose = (path: string) => {
     if (path === selected) return
@@ -90,12 +108,24 @@ export function AuthorView() {
         <a href="https://github.com/Judgment-Pack/judgment-pack-desk/issues/14">#14</a>.
       </p>
 
-      {listing.error ? (
+      {/* An error replaces the pane only when there is nothing behind it.
+          TanStack keeps the previous listing after a failed refetch, and the
+          file watcher refetches on every change — so treating any error as
+          fatal would unmount an open editor, and its buffer with it, because
+          something unrelated failed once. */}
+      {listing.error && !listing.data ? (
         <ErrorBox title="Could not list the project's files" error={listing.error} />
       ) : listing.isPending ? (
         <Loading what="the project's files" />
       ) : (
         <div className="authoring-panes">
+          {listing.error && (
+            <p className="note note-warn authoring-wide" role="status">
+              <strong>The file list could not be refreshed</strong> —{' '}
+              {listing.error.message}. What is shown is the last listing that
+              answered; your edit is untouched.
+            </p>
+          )}
           <Section title="Files" count={files.length}>
             {files.length === 0 ? (
               <Empty>This project directory contains no files.</Empty>
@@ -163,6 +193,7 @@ function FileEditor({
 }) {
   const loaded = useFileContent(path)
   const write = useWriteFile()
+  const queryClient = useQueryClient()
 
   // The revision this edit is against. Editor-local and immutable except where
   // the user acts: seeded once from the first successful load, replaced by an
@@ -200,8 +231,11 @@ function FileEditor({
   const reload = () => {
     write.reset()
     setOutcome(undefined)
+    // Only a *successful* refetch replaces the edit. A failed one can still
+    // carry the previously cached `data`, and installing that as the new base
+    // would discard the buffer in exchange for bytes the reload never fetched.
     void loaded.refetch().then((result) => {
-      if (result.data) {
+      if (result.isSuccess && result.data) {
         setBase(result.data)
         setBuffer(result.data.content)
       }
@@ -210,6 +244,10 @@ function FileEditor({
 
   const save = (override: boolean) => {
     if (buffer === undefined || base === undefined) return
+    // A previous verdict does not survive into a new attempt: leaving "Saved,
+    // and verified" on screen while the next save is pending or failing states
+    // something about bytes that are no longer the question.
+    setOutcome(undefined)
     // The snapshot is captured here, with the request. Everything about
     // verifying this save is judged against it and never against the buffer,
     // which the user is free to keep typing into.
@@ -220,6 +258,23 @@ function FileEditor({
         onSuccess: (landed) => {
           setOutcome({ submitted, landed })
           setBase(landed)
+          // The read-back is the authority on what is now on disk, so the
+          // caches are told rather than left to disagree with it. Without this
+          // the page can say "Saved, and verified" beside a "changed on disk"
+          // warning derived from the pre-save cache — both from the same save.
+          queryClient.setQueryData(['desk-file', path], landed)
+          queryClient.setQueryData(['desk-files'], (previous: FileListing | undefined) =>
+            previous === undefined
+              ? previous
+              : {
+                  ...previous,
+                  files: upsertListed(previous.files, {
+                    path: landed.path,
+                    bytes: landed.bytes,
+                    sha256: landed.sha256
+                  })
+                }
+          )
         }
       }
     )
@@ -296,7 +351,15 @@ function FileEditor({
             type="button"
             className="button button-quiet"
             disabled={!dirty || write.isPending}
-            onClick={() => setBuffer(base.content)}
+            onClick={() => {
+              // Discard puts the buffer back *and* clears what the last attempt
+              // said about it. A stale conflict notice with a live "Overwrite
+              // anyway" beside a buffer that no longer differs is an offer to
+              // write something nobody is proposing.
+              setBuffer(base.content)
+              setOutcome(undefined)
+              write.reset()
+            }}
           >
             Discard changes
           </button>
@@ -313,7 +376,14 @@ function FileEditor({
           </button>
         </div>
 
-        {stale && <StaleNotice stale={stale} onReload={reload} onOverride={() => save(true)} />}
+        {stale && (
+          <StaleNotice
+            stale={stale}
+            pending={write.isPending}
+            onReload={reload}
+            onOverride={() => save(true)}
+          />
+        )}
         {failure && <ErrorBox title={`Could not save ${path}`} error={failure} />}
 
         {outcome && !stale && (
@@ -351,10 +421,12 @@ function FileEditor({
  */
 function StaleNotice({
   stale,
+  pending,
   onReload,
   onOverride
 }: {
   stale: StaleWrite
+  pending: boolean
   onReload: () => void
   onOverride: () => void
 }) {
@@ -376,10 +448,15 @@ function StaleNotice({
         </span>
       </p>
       <div className="actions">
-        <button type="button" className="button" onClick={onReload}>
+        <button type="button" className="button" disabled={pending} onClick={onReload}>
           Reload from disk
         </button>
-        <button type="button" className="button button-quiet" onClick={onOverride}>
+        <button
+          type="button"
+          className="button button-quiet"
+          disabled={pending}
+          onClick={onOverride}
+        >
           Overwrite anyway
         </button>
       </div>
@@ -389,4 +466,10 @@ function StaleNotice({
 
 function shortDigest(digest: string): string {
   return digest ? `${digest.slice(0, 12)}…` : '(no file)'
+}
+
+/** The listing with one entry replaced, or added where it was not there. */
+function upsertListed(files: FileEntry[], entry: FileEntry): FileEntry[] {
+  const without = files.filter((file) => file.path !== entry.path)
+  return [...without, entry].sort((a, b) => a.path.localeCompare(b.path))
 }

@@ -1,6 +1,7 @@
 package desk
 
 import (
+	"fmt"
 	"io/fs"
 	"log"
 	"os"
@@ -52,9 +53,19 @@ func newWatcher(root string, logger *log.Logger, emit func(string)) (*watcher, e
 		closing: make(chan struct{}),
 		pending: make(map[string]*time.Timer),
 	}
-	if err := w.addTree(root); err != nil {
+	// The root itself must end up watched. `filepath.WalkDir` does not follow a
+	// symlink handed to it as the walk root, so a symlinked project directory
+	// would install zero watches and report success — live reload silently off,
+	// and the page never told. The caller passes the *resolved* path (see
+	// Server.projectDir), and this refuses to pretend either way.
+	watched, err := w.addTree(root)
+	if err != nil {
 		_ = fsw.Close()
 		return nil, err
+	}
+	if watched == 0 {
+		_ = fsw.Close()
+		return nil, fmt.Errorf("no directory under %s could be watched", root)
 	}
 	go w.loop()
 	return w, nil
@@ -62,8 +73,22 @@ func newWatcher(root string, logger *log.Logger, emit func(string)) (*watcher, e
 
 // addTree watches dir and every descendant directory. fsnotify is not
 // recursive, so a directory created later is added when its Create arrives.
-func (w *watcher) addTree(dir string) error {
-	return filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+// addTree watches dir and every descendant directory, and reports how many
+// watches it installed.
+//
+// The count is the point: zero means the tree was never reached, which is a
+// startup failure rather than a quiet degradation.
+//
+// **fsnotify is pathname-based and cannot be pinned to a descriptor.** This is
+// the one part of the chassis that watches by name, so a directory replaced
+// after startup is watched by whatever now bears that name. It is a
+// notification channel and not an authority: nothing is read, written or
+// decided here — the file API holds the descriptor, and the worst a misdirected
+// watch can do is invalidate a query that then re-reads through the root. Stated
+// in the README rather than implied.
+func (w *watcher) addTree(dir string) (int, error) {
+	watched := 0
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// An unreadable subtree is not a reason to refuse to watch the rest.
 			return nil //nolint:nilerr // deliberate: skip and continue
@@ -78,8 +103,10 @@ func (w *watcher) addTree(dir string) error {
 			w.log.Printf("desk: cannot watch %s: %v", p, err)
 			return filepath.SkipDir
 		}
+		watched++
 		return nil
 	})
+	return watched, err
 }
 
 func (w *watcher) loop() {
@@ -116,7 +143,7 @@ func (w *watcher) handle(ev fsnotify.Event) {
 		// A directory created after startup needs its own watch, or nothing
 		// inside it is ever seen: fsnotify watches a directory, not a tree.
 		if fi, err := os.Stat(ev.Name); err == nil && fi.IsDir() {
-			_ = w.addTree(ev.Name)
+			_, _ = w.addTree(ev.Name)
 		}
 	}
 	rel, err := filepath.Rel(w.root, ev.Name)

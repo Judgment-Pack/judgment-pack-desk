@@ -23,6 +23,14 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 2
 fi
 
+commit="$(git rev-parse HEAD)"
+
+restore() { git checkout -- internal web/src 2>/dev/null; }
+# However this ends — a failing mutation, Ctrl-C, a kill — the tree goes back.
+# A harness that leaves a mutation in place is worse than no harness: the next
+# thing anyone runs is testing something nobody wrote.
+trap restore EXIT INT TERM
+
 pass=0
 fail=0
 
@@ -40,8 +48,6 @@ p.write_text(s.replace(old, new, 1))
 PY
 }
 
-restore() { git checkout -- internal web/src 2>/dev/null; }
-
 report() { # report <name> <result-line>
   printf '| %-52s | %s |\n' "$1" "$2"
 }
@@ -53,16 +59,20 @@ run_go() {
   local out named
   out="$(go test ./internal/desk -count=1 -timeout 45s 2>&1)"
   if grep -q 'build failed\|cannot use\|undefined:\|declared and not used\|syntax error' <<<"$out"; then
-    echo "DID NOT COMPILE — inconclusive"
+    echo "INCONCLUSIVE — did not compile"
     return
   fi
   if grep -q 'panic: test timed out' <<<"$out"; then
-    echo "SUITE TIMED OUT (the mutation hangs a handler)"
+    echo "INCONCLUSIVE — suite timed out (the mutation hangs a handler)"
+    return
+  fi
+  if grep -q '^panic:' <<<"$out"; then
+    echo "INCONCLUSIVE — suite panicked"
     return
   fi
   named="$(grep -E '^--- FAIL|^    --- FAIL' <<<"$out" | sed 's/^ *--- FAIL: //;s/ (.*//' | sort -u | paste -sd', ' -)"
   if [ -z "$named" ] && grep -q '^FAIL' <<<"$out"; then
-    echo "FAILED without naming a test"
+    echo "INCONCLUSIVE — failed without naming a test"
     return
   fi
   echo "$named"
@@ -74,14 +84,22 @@ run_web() {
   # a different root, a different config resolution — can fail a test that has
   # nothing to do with the mutation, and that failure would appear in every row
   # and make a mutation nothing catches look caught.
-  out="$(npm --prefix web test 2>&1)"
+  #
+  # Bounded, because a mutation can hang a render as easily as a handler, and an
+  # unbounded run would stall the whole table rather than report the hang.
+  out="$(timeout 300 npm --prefix web test 2>&1)"
+  local code=$?
+  if [ "$code" -eq 124 ]; then
+    echo "INCONCLUSIVE — web suite timed out"
+    return
+  fi
   if grep -q 'error TS[0-9]\|Transform failed\|Build failed' <<<"$out"; then
-    echo "DID NOT COMPILE — inconclusive"
+    echo "INCONCLUSIVE — did not compile"
     return
   fi
   named="$(grep -E '^ *× ' <<<"$out" | sed 's/^ *× //;s/ [0-9]*ms$//' | sort -u | paste -sd', ' -)"
   if [ -z "$named" ] && grep -qE 'Tests +[0-9]+ failed' <<<"$out"; then
-    echo "FAILED without naming a test"
+    echo "INCONCLUSIVE — failed without naming a test"
     return
   fi
   echo "$named"
@@ -103,22 +121,35 @@ mutate() { # mutate <lang> <name> <file> <needle> <replacement>
     "")
       report "$name" "**NOT DISCRIMINATING — nothing failed**"
       fail=$((fail + 1))
-      return
       ;;
-    "DID NOT COMPILE"*)
+    INCONCLUSIVE*)
+      # Not survived — not tested. Counting this as a pass is how an untested
+      # mutation becomes evidence of coverage.
       report "$name" "**$failures**"
       fail=$((fail + 1))
-      return
+      ;;
+    *)
+      report "$name" "$failures"
+      pass=$((pass + 1))
       ;;
   esac
-  if false; then
-    :
-  else
-    report "$name" "$failures"
-    pass=$((pass + 1))
-  fi
 }
 
+# A baseline that is not green makes every row meaningless: an unrelated failing
+# test "catches" every mutation, and the table reads as total coverage.
+echo "checking the unmutated baseline at ${commit:0:7}…" >&2
+baseline_go="$(run_go)"
+baseline_web=""
+if [ "$which" = all ] || [ "$which" = web ]; then baseline_web="$(run_web)"; fi
+if [ -n "$baseline_go" ] || [ -n "$baseline_web" ]; then
+  echo "the unmutated suite is not green — every row below would be meaningless" >&2
+  echo "  go:  ${baseline_go:-clean}" >&2
+  echo "  web: ${baseline_web:-clean}" >&2
+  exit 2
+fi
+
+echo "mutation check against $commit"
+echo
 echo "| mutation | test that failed |"
 echo "| --- | --- |"
 
@@ -169,8 +200,35 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if !req.Override && !strings.EqualFold' \
     '	if !false && !strings.EqualFold'
   mutate go "the compare-and-commit is not serialized" "$F" \
-    '	release := s.writes.acquire(clean)' \
-    '	release := func() {}; _ = s.writes; _ = clean'
+    '	s.writes.Lock()
+	defer s.writes.Unlock()' \
+    ''
+  mutate go "the write path drops the symlink refusal" "$F" \
+    '	if err := s.refuseSymlinkedPath(clean); err != nil {
+		writeJSONError(w, http.StatusForbidden, err.Error())
+		return
+	}
+
+	// What is there now, under the lock.' \
+    '	// What is there now, under the lock.'
+  mutate go "excluded directories are not endpoint exclusions" "$F" \
+    '	for _, part := range strings.Split(clean, "/") {
+		if skipDirs[part] {' \
+    '	for _, part := range strings.Split(clean, "/") {
+		if false && skipDirs[part] {'
+  mutate go "the listing hides that it is partial" "$F" \
+    '	if len(problems) > 0 {' \
+    '	if false {'
+  mutate go "the watcher reports success with no watches" internal/desk/watch.go \
+    '	if watched == 0 {' \
+    '	if false {'
+  mutate go "the runtime starts from the unresolved pathname" internal/desk/relay.go \
+    '	cmd.Dir = s.projectDir' \
+    '	cmd.Dir = s.cfg.ProjectDir'
+  mutate go "Origin accepts empty delimiters" "$S" \
+    '		u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" ||
+		strings.ContainsRune(origin, '"'"'#'"'"') {' \
+    '		u.Path != "" || u.RawQuery != "" {'
   mutate go "the save is a direct write, not a replace" "$F" \
     '	dir := path.Dir(clean)
 	name, err := s.createStaging(dir)' \
@@ -221,9 +279,9 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		return false
 	}' \
     ''
-  mutate go "the listing stats by pathname, not through the root" "$F" \
-    '		info, ierr := s.root.Stat(osPath(p))' \
-    '		info, ierr := d.Info()'
+  mutate go "the listing classifies by pathname, not through the root" "$F" \
+    '			info, lerr := s.root.Lstat(osPath(child))' \
+    '			info, lerr := os.Lstat(filepath.Join(s.root.Name(), osPath(child)))'
   mutate go "the project root is re-resolved per request" "$F" \
     '	f, err := s.root.OpenFile(osPath(clean), os.O_RDONLY|openNonBlocking, 0)' \
     '	f, err := os.OpenFile(filepath.Join(s.cfg.ProjectDir, osPath(clean)), os.O_RDONLY|openNonBlocking, 0)'
@@ -251,6 +309,29 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "a deleted file unmounts the editor" "$A" \
     '          {selected ? (' \
     '          {selected && listedNow ? ('
+  mutate web "a failed listing refresh unmounts the editor" "$A" \
+    '      {listing.error && !listing.data ? (' \
+    '      {listing.error ? ('
+  mutate web "a failed reload installs stale cached bytes" "$A" \
+    '      if (result.isSuccess && result.data) {' \
+    '      if (result.data) {'
+  mutate web "in-app navigation is not blocked" "$A" \
+    '  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
+    dirty && currentLocation.pathname !== nextLocation.pathname
+  )' \
+    '  const blocker = useBlocker(() => false)'
+  mutate web "the caches are left disagreeing with the read-back" "$A" \
+    "$(printf '          queryClient.setQueryData([%sdesk-file%s, path], landed)' "'" "'")" \
+    '          void landed'
+  mutate web "a previous verdict survives the next save" "$A" \
+    '    setOutcome(undefined)
+    write.mutate(' \
+    '    write.mutate('
+  mutate web "discard leaves the conflict standing" "$A" \
+    '              setBuffer(base.content)
+              setOutcome(undefined)
+              write.reset()' \
+    '              setBuffer(base.content)'
   mutate web "switching files does not ask about unsaved work" "$A" \
     '    if (
       dirty &&

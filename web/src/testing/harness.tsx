@@ -17,7 +17,7 @@ import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
 import type { ReactElement } from 'react'
-import { MemoryRouter } from 'react-router-dom'
+import { Link, RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { UNKNOWN_CAPABILITIES } from '../mcp/capabilities'
 import { McpContext, type McpConnection } from '../mcp/McpProvider'
 
@@ -99,16 +99,41 @@ export function testQueryClient(): QueryClient {
 export function renderConnected(
   ui: ReactElement,
   connection: McpConnection,
-  options: { path?: string; queryClient?: QueryClient } = {}
+  options: {
+    path?: string
+    queryClient?: QueryClient
+    /**
+     * Add an in-app link, so a test can drive same-document navigation — the
+     * exit `beforeunload` never sees and a router blocker has to cover.
+     */
+    nav?: boolean
+  } = {}
 ) {
   const queryClient = options.queryClient ?? testQueryClient()
-  const wrap = (value: McpConnection) => (
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[options.path ?? '/']}>
-        <McpContext.Provider value={value}>{ui}</McpContext.Provider>
-      </MemoryRouter>
-    </QueryClientProvider>
-  )
+  // A data router, because the application uses one: `useBlocker` is only
+  // available there, and a harness on the older router would let a view that
+  // depends on it pass here and throw in the page.
+  const wrap = (value: McpConnection) => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '*',
+          element: (
+            <McpContext.Provider value={value}>
+              {options.nav && <Link to="/elsewhere">go elsewhere</Link>}
+              {ui}
+            </McpContext.Provider>
+          )
+        }
+      ],
+      { initialEntries: [options.path ?? '/'] }
+    )
+    return (
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    )
+  }
   const result = render(wrap(connection))
   return {
     ...result,

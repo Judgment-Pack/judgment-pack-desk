@@ -298,7 +298,7 @@ graphs page says the project configures none.
 
 ## Requirements
 
-- Go 1.24 or newer
+- Go 1.25 or newer (`go.mod` declares it; CI reads that file)
 - Node 22 or newer (`web/package.json` declares `engines.node >= 22`)
 - A `jpack` binary — the [judgment-pack runtime](https://github.com/Judgment-Pack/judgment-pack-runtime)
 
@@ -390,6 +390,19 @@ anyway is refused by the same guard, which is what a non-browser client meets.
 Both are asserted by tests, so neither can be dropped on the assumption that the
 other suffices.
 
+**What these layers are for, and what they are not.** The containment machinery
+defends against *confused* requests — a page on another site, a bad path, an
+encoded traversal — and against this desk's own bugs; the write protocol defends
+honest editors working at the same time. None of it defends against a hostile
+local process that already owns the filesystem: such a process can race any
+component addressed by name, and every part of this arrangement has one — the
+watcher watches by pathname, the runtime is started with a pathname working
+directory, and the runtime reads the project by pathname too. Holding a
+descriptor makes the file API's own resolution unraceable and stops the two
+halves of the desk drifting onto different trees; it does not make the machine
+someone else's problem. That boundary is stated here rather than implied by the
+absence of a caveat.
+
 The chassis holds no credential and opens no outbound connection. It writes to
 the project only through the file API, only inside the project root, and only
 where a request carried the token and an acceptable origin. The runtime
@@ -414,14 +427,20 @@ the whole shape.
 read `jpack.json`, does not care whether a path is a pack, and forms no opinion
 about what any file means. Every verdict stays the runtime's, asked for through
 the tools every other view already uses, and rendered as the runtime states it.
-That includes refusals: a project under a reviewed-set lock (ADR-0019) will
-refuse to evaluate an edited pack until it is re-reviewed, and the desk will
-report that refusal as the runtime's answer. It will not offer to update the
-lock, and it does not route around one.
+That includes refusals, with one qualification worth stating precisely rather
+than promising: **whether a reviewed-set lock (ADR-0019) refuses depends on what
+the desk asked for.** The only evaluation surface here is the what-if view, and
+against a runtime that accepts the rehearsal argument it declares one — a
+rehearsal consults no reviewed set by design (ADR-0028), so a locked pack does
+*not* produce a refusal there. Against an older runtime with no rehearsal
+argument, the same view makes an ordinary evaluation and a lock refusal appears
+verbatim. Either way the desk never offers to update a lock and never routes
+around one. See "The lock, and what phase 1 does not do" below.
 
 ### The file API
 
-Three endpoints, under the same two checks as `/ws` — the session token first,
+Three endpoints, proxied alongside `/ws` by the dev server, under the same two
+checks as `/ws` — the session token first,
 then the Origin — through one shared guard, because a new endpoint is a new
 place to forget one:
 
@@ -434,7 +453,10 @@ place to forget one:
 **Containment is a held directory descriptor, not a path check.** The chassis
 opens the project directory once with `os.Root` when it starts and closes it
 with the server; every list, read, stat, staging write and rename goes through
-that handle. This matters for two reasons a string check cannot address:
+that handle. (On the desktop platforms this desk targets that handle is a real
+directory descriptor. Go documents `os.Root` as falling back to pathname
+resolution where the syscalls do not exist — Plan 9 and js/wasm — and the
+guarantee is correspondingly weaker there; the desk is not built for either.) This matters for two reasons a string check cannot address:
 
 - A pathname that is validated and then opened is checked against one
   filesystem and opened against another. Replace an approved ancestor directory
@@ -454,13 +476,22 @@ descriptor on 1.26. The listing therefore stats through `Root.Stat` explicitly
 rather than through the entry — depending on which toolchain is underneath to
 hold a containment property is not a property.
 
-A lexical check runs first and is tested on its own. It refuses `..`, absolute
-paths, drive and UNC forms, NUL, and **backslash anywhere** — on Windows that is
+The listing walks the same way, directory descriptor by directory descriptor,
+rather than through `Root.FS()`: the `DirEntry` that yields resolves by pathname
+on the Go version this module declares, and on a filesystem that does not report
+entry types it does so to classify at all. A subtree it cannot read is reported
+in a `partial` member and named in the note — a thinned answer that still
+returned a bare `200` would be indistinguishable from a smaller project.
+
+A lexical check runs first and is tested on its own. It refuses **escaping**
+`..` (an interior `a/../b` normalises and is fine), absolute paths, drive and
+UNC forms, NUL, and **backslash anywhere** — on Windows that is
 a separator, so `..\secret` is a traversal slash-only cleaning does not see, and
 refusing it everywhere removes the platform difference from the argument rather
-than reasoning about it. `os.Root` refuses a superset, so this layer is defence
-in depth; it is kept because the two refuse for different reasons and because a
-change to one should not silently become the only thing standing.
+than reasoning about it. The two layers are independent rather than nested — `os.Root` refuses escapes
+this one never sees, and this one refuses spellings (a colon, a backslash) that
+Unix `os.Root` would happily treat as a filename. Each is kept because a change
+to the other should not silently become the only thing standing.
 
 *Windows caveat, stated because it cannot be tested here:* reserved device names
 and trailing-dot or trailing-space aliases are refused by the filesystem layer
@@ -468,7 +499,12 @@ rather than by the lexical one, and this project's CI runs Linux only.
 
 **What is readable and writable.** Any path inside the root **except**: the
 directories the watcher also ignores — `.git`, `node_modules`, `dist`, `.venv`,
-`vendor` — and this desk's own `.jpack-desk-*` staging files. Those exclusions
+`vendor` — and this desk's own `.jpack-desk-*` staging files. Those are refused
+by the *endpoints*, not merely omitted from the listing, and a path with such a
+component is refused on `GET` and `PUT` alike. **Symlinks are not documents
+here**: a path any component of which is a symlink is refused by both verbs,
+because a read follows a link while a save renames over it — one name, two
+objects, and an editor showing you one while the save replaced the other. Those exclusions
 are reported in the listing's `excluded` member rather than left to be inferred.
 Non-regular files are excluded too: a symlink is not listed and not readable, a
 FIFO or device is refused on open (with `O_NONBLOCK`, so a FIFO cannot hang the
@@ -481,15 +517,20 @@ Otherwise it is the user's own files on the user's own machine, and this API is
 their hand, not a policy layer. It does not consult `jpack.json` and forms no
 opinion about what any file is.
 
-**Writing requires an existing directory.** A `PUT` into a directory that is not
-there answers `404` naming it, rather than creating the tree or reporting a
-containment failure. This API writes files; a missing directory is not an escape
-and must not be described as one.
+**Writing requires an existing directory.** A `PUT` whose parent directory is
+not there answers `404` naming it, rather than creating the tree or reporting a
+containment failure — this API writes files, and a missing directory is not an
+escape. The conflict check runs first, so a write that also carries a stale
+`baseSha256` gets its `409` before that `404`: the `404` is what a
+believed-new or overriding write receives.
 
 **Atomic replace, scoped honestly.** The bytes are staged in the target's own
 directory through the same pinned root — rename is atomic only within a
 filesystem — the mode is set, the data is flushed, the file is closed, the
-rename happens, and then the directory entry is flushed.
+rename happens, and then a directory sync is **attempted** — best effort, and a
+failure there is not reported, because it cannot undo a write that has already
+landed. The staging file is written through the descriptor it was created with
+and never reopened by name.
 
 - *On Unix*, `rename(2)` replaces the directory entry atomically, so a concurrent
   reader sees the old file or the new one and never a truncated one. Only the
@@ -503,7 +544,10 @@ rename happens, and then the directory entry is flushed.
 
 A crash between staging and rename leaves a staging file. It is excluded from the
 listing and from the watcher, cannot be read or written through the API, and the
-server removes stale ones at startup.
+server removes stale ones at startup — **unconditionally**, and only files
+bearing this desk's reserved prefix and suffix. That startup sweep skips the
+excluded directories, which is consistent because nothing may be written into
+them through the API either.
 
 **The write answers with a read-back** taken off the disk after the rename rather
 than echoing the request, so the client can verify what actually landed. The
