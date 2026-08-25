@@ -175,6 +175,69 @@ func TestResolveInProjectContainment(t *testing.T) {
 	}
 }
 
+// TestSiblingDirectoryIsNotInsideTheProject pins the separator in the prefix
+// test. Without it "/tmp/proj-evil" tests as inside "/tmp/proj", and a project
+// with a same-prefixed neighbour is readable through this API.
+func TestSiblingDirectoryIsNotInsideTheProject(t *testing.T) {
+	parent := t.TempDir()
+	project := filepath.Join(parent, "proj")
+	sibling := filepath.Join(parent, "proj-evil")
+	for _, dir := range []string{project, sibling} {
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(sibling, "secret.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	real := mustEval(t, project)
+	if within(real, mustEval(t, sibling)) {
+		t.Fatal("a sibling directory tested as inside the project")
+	}
+	if !within(real, filepath.Join(real, "packs", "a.json")) {
+		t.Fatal("a real child tested as outside the project")
+	}
+	if !within(real, real) {
+		t.Fatal("the project is not inside itself")
+	}
+}
+
+// TestWriteReplacesAReadOnlyFile pins that the save replaces the *directory
+// entry* rather than writing through the file — which is what makes it atomic,
+// and is observable exactly here: renaming over a read-only file succeeds where
+// opening it for truncation would be refused. The mode is carried across, so a
+// read-only document stays read-only.
+func TestWriteReplacesAReadOnlyFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mode semantics differ on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the write bit, so this cannot discriminate")
+	}
+	_, ts, project := filesServer(t)
+	abs := writeProjectFile(t, project, "packs/a.pack.json", "{}")
+	if err := os.Chmod(abs, 0o444); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	status, body := putJSON(t, ts, WriteRequest{
+		Path: "packs/a.pack.json", Content: `{"id":"a"}`, BaseSHA256: digestOf([]byte("{}")),
+	})
+	if status != http.StatusOK {
+		t.Fatalf("write over a read-only file: status %d, %v", status, body)
+	}
+	onDisk, err := os.ReadFile(abs)
+	if err != nil || string(onDisk) != `{"id":"a"}` {
+		t.Fatalf("disk: %q, %v", string(onDisk), err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode().Perm() != 0o444 {
+		t.Fatalf("mode after replacing a read-only file: %v", info.Mode().Perm())
+	}
+}
+
 func mustEval(t *testing.T, p string) string {
 	t.Helper()
 	real, err := filepath.EvalSymlinks(p)
