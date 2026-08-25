@@ -353,6 +353,16 @@ func TestRetargetedProjectRootIsNotAdopted(t *testing.T) {
 	if !listed["mine.json"] {
 		t.Fatalf("the chassis lost the root it was given: %v", listed)
 	}
+
+	// Reading, not only listing: the read path opens through the root too, and
+	// a read that rejoined the configured pathname would find the other tree.
+	status, read := getJSON(t, ts, "/api/file?token="+testToken+"&path=mine.json")
+	if status != http.StatusOK || read["content"] != `{"mine":true}` {
+		t.Fatalf("reading through the pinned root: status %d, %v", status, read)
+	}
+	if status, _ := getJSON(t, ts, "/api/file?token="+testToken+"&path=theirs.json"); status == http.StatusOK {
+		t.Fatal("a file from the retargeted tree was readable")
+	}
 }
 
 /* Authorization ----------------------------------------------------------- */
@@ -890,30 +900,83 @@ func TestReadRefusesWhatIsNotARegularFile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("no mkfifo on Windows")
 	}
-	_, ts, project := filesServer(t)
+	project := t.TempDir()
 	fifo := filepath.Join(project, "pipe")
 	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
 		t.Skipf("mkfifo: %v", err)
 	}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		status, _ := getJSON(t, ts, "/api/file?token="+testToken+"&path=pipe")
-		if status == http.StatusOK {
-			t.Errorf("a FIFO was read as a document")
-		}
-	}()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("reading a FIFO blocked the handler")
+	srv, err := New(Config{ProjectDir: project, JpackBin: "jpack", Token: testToken, Logger: log.New(io.Discard, "", 0)})
+	if err != nil {
+		t.Fatalf("New: %v", err)
 	}
-	// And it is not listed.
+	t.Cleanup(func() { srv.Close() })
+
+	// This server is deliberately not closed through t.Cleanup. A handler that
+	// blocks on the FIFO — exactly what this test exists to catch — would keep
+	// httptest.Server.Close waiting forever, and the failure would arrive as a
+	// whole-suite timeout naming no test at all. A named failure is worth a
+	// leaked listener in a build that is already broken.
+	ts := httptest.NewServer(srv)
+
+	// A client deadline, so the request gives up rather than the test.
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(ts.URL + "/api/file?token=" + testToken + "&path=pipe")
+	if err != nil {
+		ts.CloseClientConnections()
+		t.Fatalf("reading a FIFO did not answer within the deadline — the open blocked: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("a FIFO was read as a document: status %d", resp.StatusCode)
+	}
+
+	// And it is not listed as a document either.
 	_, body := getJSON(t, ts, "/api/files?token="+testToken)
 	for _, raw := range body["files"].([]any) {
 		if raw.(map[string]any)["path"] == "pipe" {
 			t.Fatal("a FIFO was listed as a document")
 		}
+	}
+	ts.Close()
+}
+
+// TestWriteRefusesWhatItCouldNotRead pins that a refused read is not read as an
+// absent file.
+//
+// "There is no such file" is the only refusal that means this write creates
+// one. Treating any other — a directory, a file too large — as absence lets an
+// override write proceed against a target it was never allowed to read, and the
+// write must carry the *read's own* refusal rather than a 404 claiming it would
+// have created something or a 500 from a rename that was allowed to try.
+func TestWriteRefusesWhatItCouldNotRead(t *testing.T) {
+	_, ts, project := filesServer(t)
+	if err := os.Mkdir(filepath.Join(project, "adirectory"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	big := make([]byte, maxFileBytes+16)
+	if err := os.WriteFile(filepath.Join(project, "big.json"), big, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	for _, tc := range []struct {
+		rel  string
+		want int
+	}{
+		{"adirectory", http.StatusBadRequest},
+		{"big.json", http.StatusRequestEntityTooLarge},
+	} {
+		t.Run(tc.rel, func(t *testing.T) {
+			status, body := putJSON(t, ts, WriteRequest{Path: tc.rel, Content: "{}", Override: true})
+			if status != tc.want {
+				t.Fatalf("write to %s: status %d, want %d (%v)", tc.rel, status, tc.want, body)
+			}
+		})
+	}
+	if info, err := os.Stat(filepath.Join(project, "adirectory")); err != nil || !info.IsDir() {
+		t.Fatalf("the directory was replaced: %v %v", info, err)
+	}
+	if info, err := os.Stat(filepath.Join(project, "big.json")); err != nil || info.Size() != int64(len(big)) {
+		t.Fatalf("the oversized file was overwritten: %v %v", info, err)
 	}
 }
 
@@ -1392,8 +1455,8 @@ func TestRuntimeAndFileAPIShareOneProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EvalSymlinks: %v", err)
 	}
-	if s.projectDir != resolvedReal {
-		t.Fatalf("the runtime would start in %s, not %s", s.projectDir, resolvedReal)
+	if s.runtimeWorkingDir() != resolvedReal {
+		t.Fatalf("the runtime would start in %s, not %s", s.runtimeWorkingDir(), resolvedReal)
 	}
 	if s.root.Name() != resolvedReal {
 		t.Fatalf("the file API root is %s, not %s", s.root.Name(), resolvedReal)

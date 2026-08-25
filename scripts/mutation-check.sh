@@ -221,7 +221,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if false {'
   mutate go "the watcher reports success with no watches" internal/desk/watch.go \
     '	if watched == 0 {' \
-    '	if false {'
+    '	if watched < 0 {'
   mutate go "the runtime starts from the unresolved pathname" internal/desk/relay.go \
     '	cmd.Dir = s.projectDir' \
     '	cmd.Dir = s.cfg.ProjectDir'
@@ -230,19 +230,17 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		strings.ContainsRune(origin, '"'"'#'"'"') {' \
     '		u.Path != "" || u.RawQuery != "" {'
   mutate go "the save is a direct write, not a replace" "$F" \
-    '	dir := path.Dir(clean)
-	name, err := s.createStaging(dir)' \
+    '	dir := path.Dir(clean)' \
     '	if true {
-		f, ferr := s.root.OpenFile(osPath(clean), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+		g, ferr := s.root.OpenFile(osPath(clean), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 		if ferr != nil {
 			return ferr
 		}
-		defer f.Close()
-		_, werr := f.Write(data)
+		defer g.Close()
+		_, werr := g.Write(data)
 		return werr
 	}
-	dir := path.Dir(clean)
-	name, err := s.createStaging(dir)'
+	dir := path.Dir(clean)'
   mutate go "the file mode is not preserved" "$F" \
     '	if info, serr := s.root.Stat(osPath(clean)); serr == nil {' \
     '	if info, serr := s.root.Stat(osPath(clean)); false && serr == nil {'
@@ -263,8 +261,10 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	}' \
     ''
   mutate go "staging files are listed" "$F" \
-    '		if !d.Type().IsRegular() || strings.HasPrefix(d.Name(), stagingPrefix) {' \
-    '		if !d.Type().IsRegular() {'
+    '		if strings.HasPrefix(path.Base(rel), stagingPrefix) {
+			return
+		}' \
+    ''
   mutate go "stale staging files are not cleared at startup" "$S" \
     '	s.removeStaleStaging()' \
     ''
@@ -275,13 +275,16 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     ''
   mutate go "origin matching accepts extra URL components" "$S" \
     '	if u.Scheme == "" || u.Host == "" || u.Opaque != "" || u.User != nil ||
-		u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" ||
+		strings.ContainsRune(origin, '"'"'#'"'"') {
 		return false
 	}' \
-    ''
+    '	if u.Scheme == "" || u.Host == "" {
+		return false
+	}'
   mutate go "the listing classifies by pathname, not through the root" "$F" \
     '			info, lerr := s.root.Lstat(osPath(child))' \
-    '			info, lerr := os.Lstat(filepath.Join(s.root.Name(), osPath(child)))'
+    '			info, lerr := os.Lstat(filepath.Join(s.cfg.ProjectDir, osPath(child)))'
   mutate go "the project root is re-resolved per request" "$F" \
     '	f, err := s.root.OpenFile(osPath(clean), os.O_RDONLY|openNonBlocking, 0)' \
     '	f, err := os.OpenFile(filepath.Join(s.cfg.ProjectDir, osPath(clean)), os.O_RDONLY|openNonBlocking, 0)'
@@ -325,8 +328,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '          void landed'
   mutate web "a previous verdict survives the next save" "$A" \
     '    setOutcome(undefined)
-    write.mutate(' \
-    '    write.mutate('
+    const submitted = buffer' \
+    '    const submitted = buffer'
   mutate web "discard leaves the conflict standing" "$A" \
     '              setBuffer(base.content)
               setOutcome(undefined)
