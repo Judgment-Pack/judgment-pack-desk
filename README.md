@@ -170,12 +170,34 @@ zero. Why coverage names none is not something either payload states, so the
 page does not say.
 
 The two accounts on screen — the document, and the matrix run whose coverage and
-rows it is joined to — come from two calls that nothing binds to each other, so
-the join is only made while both are the current answer from the same
-connection. The document query is keyed by the connection, a document is drawn
-only while the runtime still advertises the tool, and neither is joined to the
-other while either call is in flight. See the README's upstream gaps for what an
-honest permanent binding would need.
+rows it is joined to — come from two calls, and **ADR-0030 is what proves they
+describe one file**. A graph matrix entry reports `graphSha256`, the digest of
+the exact bytes that run decoded; `experimental_get_graph` reports the `sha256`
+of the bytes it served. The desk compares the two.
+
+Where they **agree**, the walk is drawn and the page says so in one line: one
+revision, a binding of bytes and not a verdict on the revision. Where they
+**disagree**, the graph file was edited between the two calls, so the two
+answers are about two revisions and the desk does not join them at all — the
+document walk is withdrawn, the coverage fallback stands in with a line naming
+the divergence, and both queries are asked again so the next pair can re-bind.
+That re-ask is **one cycle per pair**: the pairs a connection has asked about
+are remembered whole, digests folded to one spelling, so a file still being
+edited settles into the withdrawal instead of spinning, and one edited back and
+forth between two revisions asks about each once rather than alternating
+forever. Combining one revision's rows with another revision's arrows is the
+thing this prevents, and it prevents it by not drawing rather than by choosing a
+winner:
+neither revision is called wrong, because which is right is not a question two
+digests answer. Where the matrix entry states **no digest** — jpack 0.18.0 and
+older, or an entry whose document did not load at all — there is nothing to
+compare, so nothing is claimed in either direction and the older bounds below
+stand exactly as they were.
+
+Those bounds stay in every case, because the digest upgrades the join rather
+than replacing what keys it: the document query is keyed by the connection, a
+document is drawn only while the runtime still advertises the tool, and neither
+is joined to the other while either call is in flight.
 
 **Without it** — jpack 0.18.0 and older — the fallback is unchanged: the nodes
 represented in the coverage report, on the evaluation-order axis the runtime
@@ -334,8 +356,9 @@ internal/desk/
 scripts/acceptance.sh  the two-run acceptance proof
 web/                 Vite + React + TypeScript SPA
   src/mcp/           the MCP client: transport, connection, queries, the
-                     advertised-capability reader, and the canonical-string,
-                     probe-name and graph-document readers
+                     advertised-capability reader, the canonical-string,
+                     probe-name and graph-document readers, and the ledger of
+                     divergent digest pairs already asked about
   src/routes/        project home, pack detail, evaluation, matrix, graphs
   src/components/    the semantic document, evaluation, coverage, row and
                      graph-walk views
@@ -470,23 +493,36 @@ would stop being one.
   falls back the same way with one line saying why — serving is not validating,
   so that document arrives as a successful call whose text is not a graph.
 
-- **Nothing binds a served graph document to the matrix run drawn beside it.**
-  The walk on the graphs page joins two answers from two calls: the document
+- **Resolved: binding a served graph document to the matrix run drawn beside it**
+  (was: the walk joined two answers from two calls — the document
   `experimental_get_graph` served, and the coverage and rows
-  `experimental_test_graphs` reported. They are joined by node name and by edge
-  index, which is how the coverage report names its probes — and no member of
-  either payload says the two describe the same bytes. `experimental_get_graph`
-  reports the document's `sha256`; a graph matrix entry reports none, so there
-  is nothing to compare it against. The desk therefore draws only from a
-  document and a matrix that are both the current answer over one connection —
-  the document query is keyed by the connection, the drawing is withdrawn while
-  either call is in flight and when the runtime stops advertising the tool — and
-  it invents no binding of its own, because agreement between node names is not
-  provenance and calling it that would assert a link the runtime never stated.
-  The honest permanent fix is upstream: a graph matrix entry carrying the digest
-  of the document its walk ran over, which the desk could then compare to the
-  digest served beside the document. Until then the freshness gates above are
-  what stands, and they bound the window rather than close it.
+  `experimental_test_graphs` reported — by node name and by edge index, with no
+  member of either payload saying the two described the same bytes;
+  `experimental_get_graph` reported the document's `sha256` and a graph matrix
+  entry reported none, so the desk bounded the window with connection-epoch
+  keying and in-flight gating and invented no binding of its own, which bounds
+  staleness without ever proving sameness). Filed as runtime issue #132 and
+  closed by ADR-0030 in jpack 0.19.0: a graph matrix entry carries
+  `graphSha256`, bare hex, the digest of the exact bytes that run decoded,
+  present exactly when the document loaded. The desk compares it to the `sha256`
+  served beside the document, and the comparison decides the join and nothing
+  else — it never derives, revises or overrides a verdict the runtime reached
+  about either revision. Equal, the walk is drawn as before and the page states
+  the provenance in one line. Unequal, the graph file was edited between the two
+  calls, so the joined walk is withdrawn, a line names the divergence, and both
+  queries are invalidated so the next pair of answers can re-bind — **one
+  refetch cycle per normalized pair**, each cycle being the two requests, and
+  every pair a connection has already asked about is remembered for the life of
+  that connection. So a file still mid-edit reads as a standing withdrawal
+  rather than spinning the page, and a file edited back and forth between two
+  revisions settles after asking about each of them once instead of
+  ping-ponging. Absent — jpack 0.18.0 and older, or an entry
+  whose document did not load, since a rows failure *after* a successful load
+  keeps the digest — nothing is compared and nothing is claimed either way, and
+  the epoch-bounded behaviour stands exactly as it was. The connection-epoch key
+  stays in all three cases: it is what keys cache identity to one connection,
+  and the digest upgrades the join from a bounded window to proven sameness
+  rather than replacing it.
 
 - **A graph matrix reports no node trace.** ADR-0027 pins the trace contract and
   binds it to each node evaluation inside a graph run, and the runtime's

@@ -6,12 +6,18 @@ import {
   renderConnected,
   stubClient,
   testQueryClient,
+  type ToolAnswer,
   type ToolHandler
 } from '../testing/harness'
+import { forgetDivergentPairs } from '../mcp/refetchLedger'
 import type { GraphInventory, GraphSuite } from '../mcp/types'
 import { GraphView } from './GraphView'
 
 afterEach(cleanup)
+// Which divergent pairs have been asked about is the connection's memory, not
+// a component's, so it outlives a render. Each case starts from a connection
+// that has asked about nothing.
+afterEach(forgetDivergentPairs)
 
 /**
  * One configured graph, run: two nodes, one edge, coverage namespaced to the
@@ -91,6 +97,12 @@ const DOCUMENT = JSON.stringify({
   result: 'decision'
 })
 
+/** The digest of the bytes served below, as `experimental_get_graph` reports it. */
+const SERVED_DIGEST = 'a'.repeat(64)
+
+/** A digest of some other revision of the same file: an edit landed between two calls. */
+const OTHER_DIGEST = 'b'.repeat(64)
+
 const SERVED_META = {
   status: 'valid',
   id: 'onboarding',
@@ -99,7 +111,26 @@ const SERVED_META = {
   formatVersion: '1',
   path: 'graphs/vendor-onboarding.graph.json',
   bytes: DOCUMENT.length,
-  sha256: 'a'.repeat(64)
+  sha256: SERVED_DIGEST
+}
+
+/** The same run, reporting the digest of the bytes its walk decoded (ADR-0030). */
+function matrixBinding(graphSha256: string): GraphSuite {
+  return { ...MATRIX, graphs: [{ ...MATRIX.graphs![0]!, graphSha256 }] }
+}
+
+/**
+ * One answer that does not arrive in the tick it was asked for.
+ *
+ * The wire has latency, and the re-ask a divergence triggers only passes
+ * through its in-flight state across one. An answer that resolves inside the
+ * asking render collapses that state into a single commit, and a fixture
+ * without latency therefore cannot tell a refetch asked once from one asked in
+ * a loop: both read as two calls. With it, the guarded page asks twice and an
+ * unguarded one asked 56 times over the same window.
+ */
+function afterATick(answer: ToolAnswer): Promise<ToolAnswer> {
+  return new Promise((resolve) => setTimeout(() => resolve(answer), 5))
 }
 
 function servingDesk(overrides: Record<string, ToolHandler> = {}) {
@@ -250,6 +281,170 @@ describe('the graphs page, against a runtime that serves documents', () => {
     })
     await waitFor(() => expect(arrows(container)).toBe(0))
     expect(container.textContent).toContain('the served graph document')
+  })
+
+  it('draws the walk and states the binding where the two digests agree', async () => {
+    // ADR-0030: the matrix entry reports the digest of the bytes its walk
+    // decoded, and it is the digest served beside the document. The join is
+    // therefore proven rather than bounded, and the page says which.
+    const { client } = servingDesk({
+      experimental_test_graphs: () => ({ text: JSON.stringify(matrixBinding(SERVED_DIGEST)) })
+    })
+    const { container } = renderConnected(view(), serving(client), { path: '/graphs' })
+    await screen.findByText(/One revision/)
+    expect(arrows(container)).toBe(2)
+    expect(container.textContent).toContain('same document digest')
+    expect(container.textContent).toContain(`sha256 ${SERVED_DIGEST.slice(0, 12)}`)
+    // The binding is provenance of the join. It is not a second verdict on the
+    // run, and the runtime's own verdict is untouched beside it.
+    expect(container.textContent).toContain('not a verdict on the revision')
+    expect(container.textContent).not.toContain('different revision')
+  })
+
+  it('withdraws the join where the digests name two revisions, and asks for both again', async () => {
+    // The failure this exists to prevent: one revision's rows drawn against
+    // another revision's arrows, with nothing on screen saying so. Reported as
+    // a HIGH finding against the epoch-only version of this join.
+    const { client, calls } = servingDesk({
+      experimental_test_graphs: () =>
+        afterATick({ text: JSON.stringify(matrixBinding(OTHER_DIGEST)) }),
+      experimental_get_graph: () => afterATick({ text: DOCUMENT, structured: SERVED_META })
+    })
+    const { container } = renderConnected(view(), serving(client), { path: '/graphs' })
+    await screen.findByText(/Two revisions, not joined/)
+    expect(container.textContent).toContain('edited between the two calls')
+    expect(container.textContent).toContain(`sha256 ${OTHER_DIGEST.slice(0, 12)}`)
+    expect(container.textContent).toContain(`sha256 ${SERVED_DIGEST.slice(0, 12)}`)
+    // Neither answer is called wrong; the desk overrides no runtime verdict.
+    expect(container.textContent).toContain('Neither revision is being called wrong')
+
+    // Both answers are asked for again, so the next pair can re-bind.
+    const asked = (name: string) => calls.filter((call) => call.name === name).length
+    await waitFor(() => {
+      expect(asked('experimental_get_graph')).toBe(2)
+      expect(asked('experimental_test_graphs')).toBe(2)
+    })
+
+    // And it settles there. A file that is still mid-edit lands the same two
+    // digests again, which must read as a standing withdrawal rather than spin
+    // the page asking forever. The window is long enough for a spin to show:
+    // an unguarded page ran through 56 calls over one this size.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    })
+    expect(asked('experimental_get_graph')).toBe(2)
+    expect(asked('experimental_test_graphs')).toBe(2)
+
+    // Settled, with the same disagreement in hand: the withdrawal stands, and
+    // nothing is joined — no arrow drawn from a document the rows are not
+    // about. Asserted here rather than at the first sight of the notice,
+    // because a page merely waiting for an answer draws no arrow either.
+    expect(container.textContent).toContain('Two revisions, not joined')
+    expect(arrows(container)).toBe(0)
+  })
+
+  it('asks once about a pair it has seen, however many other pairs came between', async () => {
+    // A file edited back and forth alternates between two revisions, so the
+    // runtime answers B, then C, then B again. A memory holding only the pair
+    // asked about last reads that third answer as new and asks forever, running
+    // the whole graph suite each time.
+    const THIRD_DIGEST = 'c'.repeat(64)
+    const cycle = [OTHER_DIGEST, THIRD_DIGEST]
+    let run = 0
+    const { client, calls } = servingDesk({
+      experimental_test_graphs: () => {
+        const digest = cycle[run % cycle.length]!
+        run += 1
+        return afterATick({ text: JSON.stringify(matrixBinding(digest)) })
+      },
+      experimental_get_graph: () => afterATick({ text: DOCUMENT, structured: SERVED_META })
+    })
+    renderConnected(view(), serving(client), { path: '/graphs' })
+    await screen.findByText(/Two revisions, not joined/)
+
+    const asked = (name: string) => calls.filter((call) => call.name === name).length
+    // One cycle for the first pair, one for the second, and none for the third
+    // answer, which is the first pair again.
+    await waitFor(() => expect(asked('experimental_test_graphs')).toBe(3))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    })
+    expect(asked('experimental_test_graphs')).toBe(3)
+    expect(asked('experimental_get_graph')).toBe(3)
+    expect(screen.getByText(/Two revisions, not joined/)).toBeTruthy()
+  })
+
+  it('does not ask again about a seen pair after the entry unmounts and comes back', async () => {
+    // Routing to one graph and back unmounts and remounts the entry. A memory
+    // living in the component would come back empty and ask again about a pair
+    // it had already asked about — the same spin, reached by another road.
+    const { client, calls } = servingDesk({
+      experimental_test_graphs: () =>
+        afterATick({ text: JSON.stringify(matrixBinding(OTHER_DIGEST)) }),
+      experimental_get_graph: () => afterATick({ text: DOCUMENT, structured: SERVED_META })
+    })
+    const queryClient = testQueryClient()
+    const asked = (name: string) => calls.filter((call) => call.name === name).length
+
+    const first = renderConnected(view(), serving(client), { path: '/graphs', queryClient })
+    await screen.findByText(/Two revisions, not joined/)
+    await waitFor(() => expect(asked('experimental_test_graphs')).toBe(2))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    })
+    expect(asked('experimental_test_graphs')).toBe(2)
+
+    first.unmount()
+    // The same connection and the same cache: what is answered here is what was
+    // already answered, and it is the pair already asked about.
+    renderConnected(view(), serving(client), { path: '/graphs', queryClient })
+    await screen.findByText(/Two revisions, not joined/)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    })
+    expect(asked('experimental_test_graphs')).toBe(2)
+    expect(asked('experimental_get_graph')).toBe(2)
+  })
+
+  it('reads one pair spelled two ways as the one pair it is', async () => {
+    // Hex is case-insensitive, so the same disagreement reported in upper case
+    // and then in lower is one disagreement. An identity built from the raw
+    // strings would file the two separately and ask about each in turn, which
+    // over an alternating pair of spellings never ends.
+    const spellings = [` ${OTHER_DIGEST.toUpperCase()} `, OTHER_DIGEST]
+    let run = 0
+    const { client, calls } = servingDesk({
+      experimental_test_graphs: () => {
+        const digest = spellings[run % spellings.length]!
+        run += 1
+        return afterATick({ text: JSON.stringify(matrixBinding(digest)) })
+      },
+      experimental_get_graph: () => afterATick({ text: DOCUMENT, structured: SERVED_META })
+    })
+    renderConnected(view(), serving(client), { path: '/graphs' })
+    await screen.findByText(/Two revisions, not joined/)
+
+    const asked = (name: string) => calls.filter((call) => call.name === name).length
+    await waitFor(() => expect(asked('experimental_test_graphs')).toBe(2))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    })
+    // One cycle, not one per spelling.
+    expect(asked('experimental_test_graphs')).toBe(2)
+    expect(asked('experimental_get_graph')).toBe(2)
+  })
+
+  it('claims no binding where the matrix run states no digest', async () => {
+    // jpack 0.18.0 and older, and any entry whose document did not load: there
+    // is nothing to compare, so the epoch-bounded behaviour stands exactly as
+    // it was and the page asserts nothing about the join in either direction.
+    const { client } = servingDesk()
+    const { container } = renderConnected(view(), serving(client), { path: '/graphs' })
+    await screen.findByText(/declared edge/)
+    expect(arrows(container)).toBe(2)
+    expect(container.textContent).not.toContain('One revision')
+    expect(container.textContent).not.toContain('Two revisions, not joined')
+    expect(container.textContent).not.toContain('edited between the two calls')
   })
 
   it('reports an inventory that refused, and shows no configuration it cannot confirm', async () => {

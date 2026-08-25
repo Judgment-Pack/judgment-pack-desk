@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  bindGraphDigests,
   deriveWalkLayout,
   edgeCarries,
   readGraphDocument,
@@ -334,6 +335,43 @@ describe('edgeCarries', () => {
   })
 })
 
+describe('bindGraphDigests', () => {
+  const A = 'a'.repeat(64)
+  const B = 'b'.repeat(64)
+
+  it('binds two answers that report one digest', () => {
+    expect(bindGraphDigests(A, A)).toBe('bound')
+  })
+
+  it('reports two different digests as two revisions', () => {
+    expect(bindGraphDigests(A, B)).toBe('divergent')
+  })
+
+  it('claims nothing where the matrix run states no digest', () => {
+    // jpack 0.18.0 and older, and any entry whose document did not load.
+    expect(bindGraphDigests(undefined, A)).toBe('unstated')
+  })
+
+  it('claims nothing where the served document states no digest', () => {
+    expect(bindGraphDigests(A, undefined)).toBe('unstated')
+  })
+
+  it('does not bind two absences to each other', () => {
+    // The failure this guards: `undefined === undefined` would report a
+    // binding neither payload stated, and an empty string is a runtime saying
+    // nothing rather than saying "the empty digest".
+    expect(bindGraphDigests(undefined, undefined)).toBe('unstated')
+    expect(bindGraphDigests('', '')).toBe('unstated')
+    expect(bindGraphDigests('   ', '   ')).toBe('unstated')
+  })
+
+  it('reads one digest spelled two ways as one digest', () => {
+    // Hex is case-insensitive, so withdrawing a walk over a spelling would be
+    // reporting an edit that never happened.
+    expect(bindGraphDigests(A.toUpperCase(), A)).toBe('bound')
+  })
+})
+
 describe('walkFallbackReason', () => {
   const base = { supported: true, drawn: false, served: undefined, error: null }
 
@@ -410,5 +448,31 @@ describe('walkFallbackReason', () => {
     })
     expect(reason).toContain('could not be placed')
     expect(reason).toContain('no edge is drawn')
+  })
+
+  it('names a divergent binding as the edit it is, not as a document that would not read', () => {
+    // The document read perfectly well. What is wrong is that it is a different
+    // revision from the one the rows came from, and saying "did not yield the
+    // shape this view draws from" would blame the document for the edit.
+    const reason = walkFallbackReason({
+      ...base,
+      served: { meta: { status: 'valid' } },
+      divergent: true
+    })
+    expect(reason).toContain('different digests')
+    expect(reason).toContain('edited between the two calls')
+    expect(reason).not.toContain('did not yield the shape')
+  })
+
+  it("lets the runtime's own decode verdict lead a divergence", () => {
+    // Both are true of an undecodable document served across an edit. Which
+    // one leads is the more basic fact: this is not a document at all.
+    const reason = walkFallbackReason({
+      ...base,
+      served: { meta: { status: 'undecodable', detail: 'not valid JSON at line 1' } },
+      divergent: true
+    })
+    expect(reason).toContain('not valid JSON at line 1')
+    expect(reason).not.toContain('different digests')
   })
 })
