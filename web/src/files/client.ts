@@ -35,6 +35,16 @@ export interface FileListing {
   root: string
   files: FileEntry[]
   note?: string
+  /**
+   * What the listing could not read, where anything could not be read.
+   *
+   * Present exactly when the answer is incomplete — an unreadable subtree, a
+   * directory that contains itself, a tree past the walk's budget, a file whose
+   * digest could not be taken. `files` is then not all of them, and a view that
+   * ignored this would report a project as empty on the strength of a
+   * permission error.
+   */
+  partial?: string[]
 }
 
 /** One file's bytes and what they hash to. A write answers with this too. */

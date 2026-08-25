@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -88,6 +89,13 @@ func newWatcher(root string, logger *log.Logger, emit func(string)) (*watcher, e
 // in the README rather than implied.
 func (w *watcher) addTree(dir string) (int, error) {
 	watched := 0
+	// The same budget the file listing walks under, and for the same reason: a
+	// tree can contain itself through a bind mount or a directory hard link
+	// without a single symlink in it, and enumerating one with no bound is a
+	// startup that never finishes. `filepath.WalkDir` does not follow symlinks,
+	// so those are already excluded; this bounds everything else.
+	visited := 0
+	seen := map[string]bool{}
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// An unreadable subtree is not a reason to refuse to watch the rest.
@@ -96,8 +104,23 @@ func (w *watcher) addTree(dir string) (int, error) {
 		if !d.IsDir() {
 			return nil
 		}
-		if p != dir && skipDirs[d.Name()] {
+		visited++
+		if visited > maxWalkEntries {
+			w.log.Printf("desk: stopped adding watches after %d directories", maxWalkEntries)
+			return filepath.SkipAll
+		}
+		if p != dir && isExcludedName(d.Name()) {
 			return filepath.SkipDir
+		}
+		// Identity, not pathname: two aliases of one directory are one
+		// directory, and watching it twice doubles every event it reports.
+		if info, serr := os.Stat(p); serr == nil {
+			if key := identityKey(info); key != "" {
+				if seen[key] {
+					return filepath.SkipDir
+				}
+				seen[key] = true
+			}
 		}
 		if err := w.fsw.Add(p); err != nil {
 			w.log.Printf("desk: cannot watch %s: %v", p, err)
@@ -107,6 +130,17 @@ func (w *watcher) addTree(dir string) (int, error) {
 		return nil
 	})
 	return watched, err
+}
+
+// identityKey names one directory by what the filesystem thinks it is, or ""
+// where the platform does not say. Empty means "cannot tell", and the caller
+// then declines to deduplicate rather than deduplicating wrongly.
+func identityKey(info fs.FileInfo) string {
+	sys, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("%d:%d", sys.Dev, sys.Ino)
 }
 
 func (w *watcher) loop() {
@@ -130,7 +164,7 @@ func (w *watcher) loop() {
 
 func (w *watcher) handle(ev fsnotify.Event) {
 	base := filepath.Base(ev.Name)
-	if skipDirs[base] {
+	if isExcludedName(base) {
 		return
 	}
 	// A staging file is this desk replacing a document, not a document

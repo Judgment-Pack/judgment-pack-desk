@@ -2,7 +2,13 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { useBlocker } from 'react-router-dom'
 import { Empty, ErrorBox, Loading, Pill, Section } from '../components/primitives'
-import { StaleWrite, type FileContent, type FileEntry, type FileListing } from '../files/client'
+import {
+  StaleWrite,
+  readFile,
+  type FileContent,
+  type FileEntry,
+  type FileListing
+} from '../files/client'
 import { useFileContent, useFileListing, useWriteFile } from '../files/queries'
 
 /**
@@ -38,6 +44,7 @@ export function AuthorView() {
   const [dirty, setDirty] = useState(false)
 
   const files = listing.data?.files ?? []
+  const partial = listing.data?.partial ?? []
 
   // The selection is not dropped when the listing stops carrying it. A file
   // deleted underneath an open editor is the case the editor most needs to
@@ -127,8 +134,25 @@ export function AuthorView() {
             </p>
           )}
           <Section title="Files" count={files.length}>
-            {files.length === 0 ? (
+            {partial.length > 0 && (
+              <p className="note note-warn" role="status">
+                <strong>This list is incomplete.</strong> The desk could not read
+                everything in the project:
+                <br />
+                {partial.map((problem) => (
+                  <code key={problem} className="partial-reason">
+                    {problem}
+                  </code>
+                ))}
+              </p>
+            )}
+            {files.length === 0 && partial.length === 0 ? (
               <Empty>This project directory contains no files.</Empty>
+            ) : files.length === 0 ? (
+              // Not "no files" — nothing readable. The difference is the whole
+              // reason `partial` exists, and stating the definite version here
+              // would report a permission error as an empty project.
+              <Empty>Nothing in this project could be read; see above.</Empty>
             ) : (
               <ul className="file-list">
                 {files.map((file) => (
@@ -201,6 +225,7 @@ function FileEditor({
   const [base, setBase] = useState<FileContent | undefined>(undefined)
   const [buffer, setBuffer] = useState<string | undefined>(undefined)
   const [outcome, setOutcome] = useState<SaveOutcome | undefined>(undefined)
+  const [reloadError, setReloadError] = useState<Error | undefined>(undefined)
 
   useEffect(() => {
     if (loaded.data && base === undefined) {
@@ -231,15 +256,21 @@ function FileEditor({
   const reload = () => {
     write.reset()
     setOutcome(undefined)
-    // Only a *successful* refetch replaces the edit. A failed one can still
-    // carry the previously cached `data`, and installing that as the new base
-    // would discard the buffer in exchange for bytes the reload never fetched.
-    void loaded.refetch().then((result) => {
-      if (result.isSuccess && result.data) {
-        setBase(result.data)
-        setBuffer(result.data.content)
-      }
-    })
+    // A direct read, not a refetch. `refetch()` reports success from cache
+    // when the watcher's broad `cancelQueries()` cancels the request in flight,
+    // so its success is not proof that anything was fetched — and installing
+    // cached bytes as the new base is how a reload replaces an edit with what
+    // it was already showing. Only this request's own answer counts.
+    setReloadError(undefined)
+    void readFile(path)
+      .then((fresh) => {
+        setBase(fresh)
+        setBuffer(fresh.content)
+        queryClient.setQueryData(['desk-file', path], fresh)
+      })
+      .catch((cause: unknown) => {
+        setReloadError(cause instanceof Error ? cause : new Error(String(cause)))
+      })
   }
 
   const save = (override: boolean) => {
@@ -252,12 +283,21 @@ function FileEditor({
     // verifying this save is judged against it and never against the buffer,
     // which the user is free to keep typing into.
     const submitted = buffer
+    // When this save was issued, measured against the file query's own clock.
+    const startedAt = queryClient.getQueryState(['desk-file', path])?.dataUpdatedAt ?? 0
     write.mutate(
       { path, content: submitted, baseSha256: base.sha256, override },
       {
         onSuccess: (landed) => {
           setOutcome({ submitted, landed })
           setBase(landed)
+          // The read-back is authoritative about the bytes this save wrote, and
+          // *not* about anything that happened afterwards. A watcher refetch
+          // that completed while this PUT was in flight is newer than this
+          // answer, and installing over it would replace a fresher read and
+          // clear the invalidation that fetched it.
+          const state = queryClient.getQueryState(['desk-file', path])
+          if (state !== undefined && state.dataUpdatedAt > startedAt) return
           // The read-back is the authority on what is now on disk, so the
           // caches are told rather than left to disagree with it. Without this
           // the page can say "Saved, and verified" beside a "changed on disk"
@@ -385,6 +425,7 @@ function FileEditor({
           />
         )}
         {failure && <ErrorBox title={`Could not save ${path}`} error={failure} />}
+        {reloadError && <ErrorBox title={`Could not reload ${path}`} error={reloadError} />}
 
         {outcome && !stale && (
           <p className={verified ? 'note' : 'note note-warn'}>

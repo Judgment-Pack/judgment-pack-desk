@@ -341,7 +341,7 @@ Two processes: the chassis for the relay, Vite for hot reload.
 # first positional argument)
 go run . --dev-token dev --port 8791 --jpack /path/to/jpack /path/to/project
 
-# terminal 2 — Vite dev server, proxying /ws to the chassis
+# terminal 2 — Vite dev server, proxying /ws and /api to the chassis
 npm --prefix web run dev
 ```
 
@@ -472,16 +472,28 @@ guarantee is correspondingly weaker there; the desk is not built for either.) Th
 
 *One version-dependent trap, named because it bit:* the `fs.DirEntry` that
 `Root.FS()` yields resolves `Info()` by **pathname** on Go 1.25 and by
-descriptor on 1.26. The listing therefore stats through `Root.Stat` explicitly
-rather than through the entry — depending on which toolchain is underneath to
-hold a containment property is not a property.
+descriptor on 1.26, and on a filesystem that does not report entry types in the
+directory block it lstats by pathname to classify at all. So the listing does
+not use `Root.FS()` — depending on which toolchain is underneath to hold a
+containment property is not a property.
 
-The listing walks the same way, directory descriptor by directory descriptor,
-rather than through `Root.FS()`: the `DirEntry` that yields resolves by pathname
-on the Go version this module declares, and on a filesystem that does not report
-entry types it does so to classify at all. A subtree it cannot read is reported
-in a `partial` member and named in the note — a thinned answer that still
-returned a bare `200` would be indistinguishable from a smaller project.
+The listing walks directory descriptor by directory descriptor: it opens each
+directory through the pinned root, reads names in bounded batches, and
+classifies each child with `Root.Lstat` — `Lstat`, so a symlink is seen as one
+rather than followed.
+
+It is also **bounded**, because a tree can be adversarial without anyone being
+hostile: a bind mount or a directory hard link makes a tree contain itself with
+no symlink in it, and a depth cap alone does not save you — two aliases per level
+and the work doubles. Each opened directory's identity is compared with the
+directories open above it (`os.SameFile`), and there is a total entry budget.
+The watcher's traversal carries the same bounds.
+
+Anything the walk could not read — an unreadable subtree, a repeated ancestor, a
+budget reached — is reported in a `partial` member and named in the note. A
+thinned answer that still returned a bare `200` would be indistinguishable from
+a smaller project, so the editor renders `partial` prominently and, when it is
+present, never says the project is empty.
 
 A lexical check runs first and is tested on its own. It refuses **escaping**
 `..` (an interior `a/../b` normalises and is fine), absolute paths, drive and
@@ -510,7 +522,9 @@ Non-regular files are excluded too: a symlink is not listed and not readable, a
 FIFO or device is refused on open (with `O_NONBLOCK`, so a FIFO cannot hang the
 handler before the check runs). A file too large to read is **listed with an
 empty digest** rather than hidden — it is really there — and refused by the read
-endpoint. Reads and writes are refused alike for every one of these: an API that
+endpoint. That empty digest means exactly one thing; a file the listing could not
+read for any *other* reason is named in `partial` instead, so "too large" is
+never said about a permission error. Reads and writes are refused alike for every one of these: an API that
 reads and writes a path by different rules is one nobody can reason about.
 
 Otherwise it is the user's own files on the user's own machine, and this API is
@@ -556,8 +570,8 @@ read from the live buffer — and says "saved, and verified" only when they matc
 
 **Concurrency: a conditional commit, and one honest residual.** A write carries
 `baseSha256`, the digest of the bytes the editor loaded. The current-bytes read,
-the comparison, the rename and the read-back all happen under a per-path lock,
-so the check and the commit are one decision: two writes from the same base
+the comparison, the rename and the read-back all happen under **one server-wide
+write mutex**, so the check and the commit are one decision: two writes from the same base
 produce exactly one `200` and one `409`, never two `200`s where the second
 silently discards the first. The `409` carries both digests and `exists`, so the
 client can say what it had, what is there, and whether the file was changed or
@@ -588,12 +602,14 @@ and offers nothing that would update one.
 
 Two consequences worth stating plainly rather than implying otherwise:
 
-- **Lock refusals do not surface anywhere yet.** The only evaluation surface in
-  the desk is the what-if view, which declares `rehearsal: true` — and a
-  rehearsal consults no reviewed set by design (ADR-0028). So editing a locked
-  pack and rehearsing it will *not* produce a lock refusal today. Phase 3 runs
-  matrices from disk, which is where the runtime's own answer about a lock will
-  first appear, and it will appear verbatim.
+- **Whether a lock refusal surfaces depends on the connected runtime.** The
+  only evaluation surface in the desk is the what-if view. Against a runtime
+  that advertises the rehearsal argument the desk declares one, and a rehearsal
+  consults no reviewed set by design (ADR-0028) — so editing a locked pack and
+  rehearsing it will *not* produce a lock refusal there. Against an older
+  runtime with no such argument the same view makes an ordinary evaluation, and
+  a lock refusal appears verbatim. Phase 3 runs matrices from disk, which is
+  where a lock's answer will appear regardless of that distinction.
 - **The editor can edit the lock file.** `jpack.lock.json` is a file in the
   project, and this API has no list of files that are special. Editing it is
   possible, it is the user's own file, and it is stated here as a fact rather

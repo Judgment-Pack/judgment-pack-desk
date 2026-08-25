@@ -33,9 +33,11 @@ package desk
 //     or repoint the symlink it was reached through, and later requests adopt a
 //     different tree without racing anything.
 //
-// A lexical check still runs first. It refuses a superset of what any
-// filesystem does, costs nothing, and is tested on its own so that deleting it
-// is visible — see `wireRelativePath`.
+// A lexical check still runs first. The two layers overlap without either
+// containing the other: `os.Root` refuses escapes the string check never sees,
+// and the string check refuses spellings — a colon, a backslash — that Unix
+// `os.Root` would treat as an ordinary filename. It costs no syscall and is
+// tested on its own, so deleting it is visible — see `wireRelativePath`.
 //
 // # Concurrency
 //
@@ -74,6 +76,18 @@ const maxFileBytes = 4 << 20
 // not a document, and reporting one would both expose a half-written file to a
 // second tab and fire a change notification for something nobody edited.
 const stagingPrefix = ".jpack-desk-"
+
+// Bounds on one traversal of the project. A tree can be adversarial without
+// anybody being hostile — a build directory nobody excluded, a bind mount, a
+// directory hard link — and a walk with no budget answers such a tree by never
+// answering at all. Exhausting any of these is reported through the same
+// `partial` channel as an unreadable subtree, because it is the same fact: what
+// came back is not all of it.
+const (
+	maxWalkDepth   = 64
+	maxWalkEntries = 100_000
+	readdirBatch   = 512
+)
 
 // errOutsideProject is the one containment failure, however it was reached.
 // The reason is deliberately not itemized to the caller: dot-dot, an absolute
@@ -216,7 +230,7 @@ func wireRelativePath(rel string) (string, error) {
 	// cleanup skips these trees, so debris written into one would never be
 	// collected either.
 	for _, part := range strings.Split(clean, "/") {
-		if skipDirs[part] {
+		if isExcludedName(part) {
 			return "", fmt.Errorf("%s is under %s, which this desk does not edit", clean, part)
 		}
 	}
@@ -254,10 +268,27 @@ func (s *Server) refuseSymlinkedPath(clean string) error {
 // osPath converts a validated wire path to the form Root's methods take.
 func osPath(clean string) string { return filepath.FromSlash(clean) }
 
+// isExcludedName reports whether one whole path component names a directory
+// this desk does not edit.
+//
+// Whole components, so `node_modules.json` is an ordinary document and only
+// `node_modules` itself is excluded. Case-insensitively, because a
+// case-insensitive volume reaches `.git` through `.GIT`, and an exclusion a
+// spelling walks around is not an exclusion. One function, so the endpoints, the
+// listing and the watcher cannot drift into three answers.
+func isExcludedName(name string) bool {
+	for excluded := range skipDirs {
+		if strings.EqualFold(name, excluded) {
+			return true
+		}
+	}
+	return false
+}
+
 /* Serialization ----------------------------------------------------------- */
 //
-// One mutex guards every write, from the current-bytes read through the rename
-// to the read-back. That is coarser than one lock per file and deliberately so:
+// One server-wide mutex guards every write, from the current-bytes read through
+// the rename to the read-back. That is coarser than one lock per file and deliberately so:
 // a per-path lock is keyed by a *spelling*, and `A.json` and `a.json` name one
 // file on a case-insensitive filesystem while taking two different locks — both
 // writers would then compare against the same base and both commit. A key that
@@ -338,7 +369,9 @@ func contentOf(clean string, data []byte) (*FileContent, int, error) {
 // does not report entry types in the directory block it *lstats by pathname*
 // to classify at all — both of which walk back out through whatever the root's
 // path currently names. Opening each directory through the root and classifying
-// each child with `Root.Lstat` keeps every step on the held descriptor.
+// each child with `Root.Lstat` keeps every step on the held descriptor —
+// `Lstat` rather than `Stat`, because a symlink must be seen as one rather than
+// followed to whatever it points at.
 //
 // A symlink is never followed and never visited: it is not a document here, and
 // following one is the escape this file exists to prevent. Anything unreadable
@@ -346,12 +379,18 @@ func contentOf(clean string, data []byte) (*FileContent, int, error) {
 // thins out is indistinguishable from a project that is smaller than it is.
 func (s *Server) walkProject(visit func(rel string, info fs.FileInfo)) []string {
 	problems := []string{}
-	const maxDepth = 64
+	budget := maxWalkEntries
+	// The identity of every directory currently open above this one. A tree
+	// reached through bind mounts or directory hard links can contain itself
+	// without a single symlink, and a depth cap alone does not save you: two
+	// aliases to an ancestor branch and the work doubles per level until the cap
+	// is reached. Comparing identities stops it at the first repeat.
+	var ancestors []fs.FileInfo
 
 	var walk func(dir string, depth int)
 	walk = func(dir string, depth int) {
-		if depth > maxDepth {
-			problems = append(problems, fmt.Sprintf("%s: nested deeper than %d directories", dir, maxDepth))
+		if depth > maxWalkDepth {
+			problems = append(problems, fmt.Sprintf("%s: nested deeper than %d directories", dir, maxWalkDepth))
 			return
 		}
 		d, err := s.root.Open(osPath(dir))
@@ -359,44 +398,106 @@ func (s *Server) walkProject(visit func(rel string, info fs.FileInfo)) []string 
 			problems = append(problems, fmt.Sprintf("%s: %v", dir, err))
 			return
 		}
-		names, rerr := d.Readdirnames(-1)
-		d.Close()
-		if rerr != nil {
-			problems = append(problems, fmt.Sprintf("%s: %v", dir, rerr))
+		info, serr := d.Stat()
+		if serr != nil {
+			d.Close()
+			problems = append(problems, fmt.Sprintf("%s: %v", dir, serr))
 			return
 		}
+		for _, ancestor := range ancestors {
+			if os.SameFile(ancestor, info) {
+				d.Close()
+				problems = append(problems, fmt.Sprintf(
+					"%s: is the same directory as one of its own ancestors, so the walk stops here", dir))
+				return
+			}
+		}
+
+		// Names come in bounded batches and the descriptor is closed before
+		// recursing: a directory with a million entries is not read into memory
+		// in one go, and the walk holds one descriptor per level rather than one
+		// per directory.
+		names := []string{}
+		for {
+			batch, rerr := d.Readdirnames(readdirBatch)
+			names = append(names, batch...)
+			if rerr == io.EOF {
+				break
+			}
+			if rerr != nil {
+				problems = append(problems, fmt.Sprintf("%s: %v", dir, rerr))
+				break
+			}
+			if len(names) >= budget {
+				break
+			}
+		}
+		d.Close()
 		sort.Strings(names)
+
+		ancestors = append(ancestors, info)
+		defer func() { ancestors = ancestors[:len(ancestors)-1] }()
+
 		for _, name := range names {
+			if budget <= 0 {
+				problems = append(problems, fmt.Sprintf(
+					"the walk stopped after %d entries, which is all this listing reads", maxWalkEntries))
+				return
+			}
+			budget--
+
 			child := name
 			if dir != "." {
 				child = path.Join(dir, name)
 			}
-			info, lerr := s.root.Lstat(osPath(child))
+			childInfo, lerr := s.root.Lstat(osPath(child))
 			if lerr != nil {
 				problems = append(problems, fmt.Sprintf("%s: %v", child, lerr))
 				continue
 			}
 			switch {
-			case info.Mode()&fs.ModeSymlink != 0:
+			case childInfo.Mode()&fs.ModeSymlink != 0:
 				// Not a document, and not followed.
-			case info.IsDir():
-				if skipDirs[name] {
+			case childInfo.IsDir():
+				if isExcludedName(name) {
 					continue
 				}
 				walk(child, depth+1)
-			case info.Mode().IsRegular():
-				visit(child, info)
+			case childInfo.Mode().IsRegular():
+				// A regular file bearing an excluded directory's name is omitted
+				// too: GET and PUT refuse that path, and listing something the
+				// endpoints will not open is an offer the API does not honour.
+				if isExcludedName(name) {
+					continue
+				}
+				visit(child, childInfo)
 			}
 		}
 	}
 	walk(".", 0)
-	return problems
+	// One exhaustion message, however many directories reached it.
+	return dedupe(problems)
+}
+
+// dedupe keeps the first occurrence of each problem, in order.
+func dedupe(problems []string) []string {
+	seen := map[string]bool{}
+	out := problems[:0]
+	for _, problem := range problems {
+		if seen[problem] {
+			continue
+		}
+		seen[problem] = true
+		out = append(out, problem)
+	}
+	return out
 }
 
 // handleFiles lists every regular file in the project.
 //
-// The walk goes through `Root.FS()`, so it cannot leave the pinned root even if
-// the tree changes underneath it. Directories the watcher ignores are ignored
+// The walk holds a descriptor at every level, so it cannot leave the pinned
+// root even if the tree changes underneath it. Directories the watcher ignores
+// are ignored
 // here for the same reason: they are large, they churn, and nothing in them is
 // a document anyone opened this desk to edit. Anything that is not a regular
 // file — a symlink, a socket, a device — is left out rather than listed as
@@ -408,6 +509,7 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 	afterResolve(".")
 
 	files := []FileEntry{}
+	unread := []string{}
 	problems := s.walkProject(func(rel string, info fs.FileInfo) {
 		if strings.HasPrefix(path.Base(rel), stagingPrefix) {
 			return
@@ -415,13 +517,23 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		entry := FileEntry{Path: rel, Bytes: info.Size()}
 		// The digest is what lets an editor open a file and later prove which
 		// bytes it opened, so it is read here rather than left to a second call.
-		// A file too large to read is listed with an empty digest rather than
-		// omitted: it is really there, and saying so is more use than hiding it.
-		if data, _, derr := s.readThroughRoot(rel); derr == nil {
+		data, status, derr := s.readThroughRoot(rel)
+		switch {
+		case derr == nil:
 			entry.SHA256 = digestOf(data)
+		case status == http.StatusRequestEntityTooLarge:
+			// Listed with an empty digest, deliberately: the file is really
+			// there and too big to hash, and that is a documented shape.
+		default:
+			// Everything else is a file this listing could not read, which is
+			// the same fact as an unreadable subtree and belongs in the same
+			// channel. Folding it into the oversized shape would say "too
+			// large" about a permission error.
+			unread = append(unread, fmt.Sprintf("%s: %v", rel, derr))
 		}
 		files = append(files, entry)
 	})
+	problems = append(problems, unread...)
 
 	body := map[string]any{
 		"root":     s.projectDir,
@@ -511,6 +623,21 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The lock covers the filesystem transaction and nothing else. Encoding a
+	// response is client-speed work — a caller that stops reading its socket
+	// holds the write mid-flight for as long as it likes — and holding the
+	// write mutex across that would let one stalled client stop every later
+	// save on the machine.
+	status, body := s.commitWrite(clean, req)
+	writeJSON(w, status, body)
+}
+
+// commitWrite is the whole locked transaction: read what is there, compare it
+// to the base the editor stated, replace it, and read back what landed.
+//
+// It returns what the caller should send and touches no ResponseWriter, which
+// is what keeps client-speed I/O out of the critical section.
+func (s *Server) commitWrite(clean string, req WriteRequest) (int, any) {
 	// Before the lock, deliberately. The hook is where a test performs the
 	// symlink swap a time-of-check attack would — which must happen before any
 	// filesystem access — and it is also where a test can hold two requests
@@ -523,8 +650,7 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 	afterLockEntry(clean)
 
 	if err := s.refuseSymlinkedPath(clean); err != nil {
-		writeJSONError(w, http.StatusForbidden, err.Error())
-		return
+		return http.StatusForbidden, errorBody(err)
 	}
 
 	// What is there now, under the lock.
@@ -539,8 +665,7 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 	current, readStatus, readErr := s.readThroughRoot(clean)
 	exists := readErr == nil
 	if readErr != nil && readStatus != http.StatusNotFound {
-		writeJSONError(w, readStatus, readErr.Error())
-		return
+		return readStatus, errorBody(readErr)
 	}
 	actual := ""
 	if exists {
@@ -552,15 +677,14 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 	// client is told both digests rather than having its work quietly overwrite
 	// someone else's.
 	if !req.Override && !strings.EqualFold(strings.TrimSpace(req.BaseSHA256), actual) {
-		writeJSON(w, http.StatusConflict, conflict{
+		return http.StatusConflict, conflict{
 			Error: "the file on disk is not the file this edit started from; " +
 				"reload it, or write again with override",
 			Path:           clean,
 			ExpectedSHA256: strings.ToLower(strings.TrimSpace(req.BaseSHA256)),
 			ActualSHA256:   actual,
 			Exists:         exists,
-		})
-		return
+		}
 	}
 
 	// A directory that is not there is not a containment failure and must not
@@ -570,15 +694,13 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 	if parent := path.Dir(clean); parent != "." {
 		info, derr := s.root.Stat(osPath(parent))
 		if derr != nil || !info.IsDir() {
-			writeJSONError(w, http.StatusNotFound, fmt.Sprintf(
-				"the directory %s does not exist in the project; create it first", parent))
-			return
+			return http.StatusNotFound, map[string]string{"error": fmt.Sprintf(
+				"the directory %s does not exist in the project; create it first", parent)}
 		}
 	}
 
 	if err := s.atomicWrite(clean, []byte(req.Content)); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
-		return
+		return http.StatusInternalServerError, errorBody(err)
 	}
 
 	// Read back from the disk rather than echo the request. The point of the
@@ -586,17 +708,17 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 	// only that the request survived the trip out.
 	data, status, err := s.readThroughRoot(clean)
 	if err != nil {
-		writeJSONError(w, status, err.Error())
-		return
+		return status, errorBody(err)
 	}
 	content, status, err := contentOf(clean, data)
 	if err != nil {
-		writeJSONError(w, status, err.Error())
-		return
+		return status, errorBody(err)
 	}
 	content.Created = !exists
-	writeJSON(w, http.StatusOK, content)
+	return http.StatusOK, content
 }
+
+func errorBody(err error) map[string]string { return map[string]string{"error": err.Error()} }
 
 /* Atomic replace ---------------------------------------------------------- */
 

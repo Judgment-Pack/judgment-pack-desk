@@ -20,6 +20,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/desk"
 )
@@ -95,7 +96,21 @@ func run() error {
 	defer stop()
 
 	addr := fmt.Sprintf("127.0.0.1:%d", *port)
-	httpSrv := &http.Server{Addr: addr, Handler: srv}
+	httpSrv := &http.Server{
+		Addr:    addr,
+		Handler: srv,
+		// ReadHeaderTimeout only. A WriteTimeout would be wrong here: it applies
+		// to the whole connection, and /ws is a long-lived WebSocket the relay
+		// holds open for the life of a session — a write deadline would sever
+		// every relay on a timer. Header reading happens before any upgrade, so
+		// bounding it costs the relay nothing and closes the one slow-client
+		// window that does not need a hijack.
+		//
+		// The stalled-client hazard on /api is handled where it actually is:
+		// the write mutex is released before the response is encoded, so a
+		// client that stops reading holds only its own request.
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 
 	go func() {
 		<-ctx.Done()

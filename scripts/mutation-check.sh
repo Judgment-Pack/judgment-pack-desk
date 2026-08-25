@@ -35,8 +35,14 @@ restore() { git checkout -- internal web/src 2>/dev/null; }
 # thing anyone runs is testing something nobody wrote.
 trap restore EXIT INT TERM
 
+case "$which" in
+  all|go|web) ;;
+  *) echo "usage: $0 [all|go|web] [row-name-substring]" >&2; exit 2 ;;
+esac
+
 pass=0
 fail=0
+matched=0
 
 # apply <file> <needle> <replacement> — asserts the needle is present, so a
 # mutation that silently no-ops cannot be read as "the suite survived it".
@@ -115,6 +121,7 @@ mutate() { # mutate <lang> <name> <file> <needle> <replacement>
     *"$only"*) ;;
     *) return ;;
   esac
+  matched=$((matched + 1))
   restore
   if ! apply "$file" "$needle" "$replacement"; then
     report "$name" "MUTATION DID NOT APPLY"
@@ -372,5 +379,12 @@ fi
 
 restore
 echo
+# A filter that matched nothing is not a clean run: it is a filter naming a row
+# that no longer exists, and exiting 0 on it would report a mutation as verified
+# when none was applied.
+if [ -n "$only" ] && [ "$matched" -eq 0 ]; then
+  echo "no row matched \"$only\" — nothing was checked" >&2
+  exit 2
+fi
 echo "discriminating: $pass    not discriminating: $fail"
 [ "$fail" -eq 0 ]

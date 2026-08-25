@@ -747,3 +747,152 @@ describe('the authoring shell, after a save', () => {
     expect(container.textContent).not.toContain('unsaved changes')
   })
 })
+
+describe('the authoring shell, when the listing is incomplete', () => {
+  it('says the list is incomplete rather than that the project is empty', async () => {
+    // A permission error is not an empty project, and the definite sentence is
+    // the one thing that must not be said on a partial answer.
+    chassis({
+      files: () => ({
+        status: 200,
+        body: {
+          root: '/project',
+          files: [],
+          partial: ['locked: openat locked: permission denied']
+        }
+      })
+    })
+    const { container } = render()
+    await screen.findByText(/This list is incomplete/)
+    expect(container.textContent).toContain('locked: openat locked: permission denied')
+    expect(container.textContent).not.toContain('This project directory contains no files')
+    expect(container.textContent).toContain('Nothing in this project could be read')
+  })
+
+  it('warns beside the files it did read', async () => {
+    chassis({
+      files: () => ({ status: 200, body: { ...LISTING, partial: ['deep: too deep'] } }),
+      file: () => ({ status: 200, body: READ })
+    })
+    const { container } = render()
+    await screen.findByText(/This list is incomplete/)
+    expect(container.textContent).toContain('deep: too deep')
+    // And the files it did read are still usable.
+    expect(container.textContent).toContain('packs/vendor-onboarding.pack.json')
+  })
+
+  it('says nothing about completeness when the listing is whole', async () => {
+    chassis({ files: () => ({ status: 200, body: LISTING }) })
+    const { container } = render()
+    await screen.findByText('jpack.json')
+    expect(container.textContent).not.toContain('This list is incomplete')
+  })
+})
+
+describe('the authoring shell, against answers that arrive out of order', () => {
+  it('does not install a save read-back over a newer read', async () => {
+    // The watcher refetches on every change. A refetch that completes while a
+    // PUT is in flight is *newer* than that PUT's read-back, and installing the
+    // read-back over it would replace a fresher read and clear the
+    // invalidation that fetched it.
+    let settle: (() => void) | undefined
+    let reads = 0
+    const { queryClient } = (() => {
+      chassis({
+        files: () => ({ status: 200, body: LISTING }),
+        file: () => {
+          reads += 1
+          return reads === 1
+            ? { status: 200, body: READ }
+            : { status: 200, body: { ...READ, content: '{"id":"theirs"}', sha256: THEIRS_SHA } }
+        },
+        write: (body) => ({
+          status: 200,
+          body: { path: body.path, bytes: 1, sha256: EDITED_SHA, content: body.content },
+          delay: new Promise<void>((resolve) => {
+            settle = resolve
+          })
+        })
+      })
+      return render()
+    })()
+
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: EDITED } })
+    fireEvent.click(screen.getByText('Save'))
+    await waitFor(() => expect(screen.getByText('Saving…')).toBeTruthy())
+
+    // A watcher-driven refetch lands while the PUT is still out.
+    await act(async () => {
+      void queryClient.invalidateQueries({ queryKey: ['desk-file', 'packs/vendor-onboarding.pack.json'] })
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(reads).toBeGreaterThan(1))
+
+    await act(async () => {
+      settle!()
+      await Promise.resolve()
+    })
+    await screen.findByText(/Saved, and verified/)
+
+    // The newer read is still what the cache holds.
+    const cached = queryClient.getQueryData(['desk-file', 'packs/vendor-onboarding.pack.json']) as
+      | { sha256: string }
+      | undefined
+    expect(cached?.sha256).toBe(THEIRS_SHA)
+  })
+
+  it('reloads from its own request, not from whatever the cache holds', async () => {
+    // `refetch()` reports success from cache when the watcher's broad
+    // cancelQueries cancels the request in flight. A reload that trusted that
+    // would replace the edit with the bytes it was already showing.
+    let reads = 0
+    chassis({
+      files: () => ({ status: 200, body: LISTING }),
+      file: () => {
+        reads += 1
+        return reads === 1
+          ? { status: 200, body: READ }
+          : { status: 200, body: { ...READ, content: '{"id":"fresh"}', sha256: THEIRS_SHA } }
+      }
+    })
+    const { container, queryClient } = render()
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: EDITED } })
+
+    // Cancel every query, as the watcher does, and then reload.
+    await act(async () => {
+      void queryClient.cancelQueries()
+      await Promise.resolve()
+    })
+    fireEvent.click(screen.getByText('Reload from disk'))
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('File contents') as HTMLTextAreaElement).value).toBe(
+        '{"id":"fresh"}'
+      )
+    )
+    expect(container.textContent).not.toContain('unsaved changes')
+  })
+
+  it('keeps the edit when its own reload request fails', async () => {
+    let reads = 0
+    chassis({
+      files: () => ({ status: 200, body: LISTING }),
+      file: () => {
+        reads += 1
+        return reads === 1
+          ? { status: 200, body: READ }
+          : { status: 500, body: { error: 'the file could not be read' } }
+      }
+    })
+    const { container } = render()
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: EDITED } })
+
+    fireEvent.click(screen.getByText('Reload from disk'))
+    await screen.findByText(/Could not reload/)
+    expect((screen.getByLabelText('File contents') as HTMLTextAreaElement).value).toBe(EDITED)
+    expect(container.textContent).toContain('unsaved changes')
+  })
+})

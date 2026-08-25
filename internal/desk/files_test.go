@@ -3,12 +3,14 @@ package desk
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -1333,7 +1335,10 @@ func TestWriteHoldsTheLockAcrossTheCommit(t *testing.T) {
 	_, ts, project := filesServer(t)
 	const base = `{"id":"a"}`
 	writeProjectFile(t, project, "packs/a.pack.json", base)
+	const other = `{"id":"b"}`
+	writeProjectFile(t, project, "packs/b.pack.json", other)
 	baseDigest := digestOf([]byte(base))
+	otherDigest := digestOf([]byte(other))
 
 	var entries atomic.Int32
 	inside := make(chan struct{})
@@ -1350,6 +1355,7 @@ func TestWriteHoldsTheLockAcrossTheCommit(t *testing.T) {
 	})
 
 	testHookAfterLockEntry = func(rel string) {
+		_ = rel
 		if entries.Add(1) == 1 {
 			close(inside)
 			<-hold
@@ -1366,8 +1372,11 @@ func TestWriteHoldsTheLockAcrossTheCommit(t *testing.T) {
 	<-inside // the first request holds the lock and is not moving
 
 	second := make(chan int, 1)
+	// A *different* file, deliberately. With a per-path lock the second request
+	// would take a different lock and sail straight in, and this test would pass
+	// against the implementation it exists to rule out.
 	go func() {
-		status, _ := putJSONNoFatal(ts, WriteRequest{Path: "packs/a.pack.json", Content: `{"id":"second"}`, BaseSHA256: baseDigest})
+		status, _ := putJSONNoFatal(ts, WriteRequest{Path: "packs/b.pack.json", Content: `{"id":"second"}`, BaseSHA256: otherDigest})
 		second <- status
 	}()
 
@@ -1384,8 +1393,11 @@ func TestWriteHoldsTheLockAcrossTheCommit(t *testing.T) {
 
 	unblock()
 	<-done
-	if status := <-second; status != http.StatusConflict {
-		t.Fatalf("the second write should have found changed bytes: status %d", status)
+	// It targets a different file with a correct base, so once the lock is free
+	// it simply succeeds. What was under test is that it could not proceed
+	// while the first held the mutex.
+	if status := <-second; status != http.StatusOK {
+		t.Fatalf("the second write should have succeeded once the lock was free: status %d", status)
 	}
 	if got := entries.Load(); got != 2 {
 		t.Fatalf("expected two entries into the critical section, got %d", got)
@@ -1494,4 +1506,222 @@ func TestWatcherRefusesToReportSuccessWithNoWatches(t *testing.T) {
 		t.Fatalf("watching the resolved root: %v", err)
 	}
 	w.Close()
+}
+
+/* Round-3 findings --------------------------------------------------------- */
+
+// TestWalkStopsAtARepeatedAncestor pins the cycle guard.
+//
+// A tree can contain itself without a single symlink: a bind mount, or on
+// filesystems that allow it a directory hard link. The depth cap alone does not
+// save you — two aliases per level and the work doubles until the cap — so the
+// walk compares each opened directory's identity against the directories open
+// above it.
+func TestWalkStopsAtARepeatedAncestor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("bind mounts are not available here")
+	}
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", "{}")
+	writeProjectFile(t, project, "deep/a.json", "{}")
+
+	inner := filepath.Join(project, "deep", "loop")
+	if err := os.Mkdir(inner, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// A bind mount of the project onto a directory inside it. Without
+	// privileges this is not available, and the test says so rather than
+	// pretending to have run.
+	if out, err := exec.Command("mount", "--bind", project, inner).CombinedOutput(); err != nil {
+		t.Skipf("cannot bind-mount (needs privileges): %v: %s", err, out)
+	}
+	t.Cleanup(func() { _ = exec.Command("umount", inner).Run() })
+
+	done := make(chan map[string]any, 1)
+	go func() {
+		_, body := getJSON(t, ts, "/api/files?token="+testToken)
+		done <- body
+	}()
+	select {
+	case body := <-done:
+		partial, _ := body["partial"].([]any)
+		found := false
+		for _, p := range partial {
+			if strings.Contains(p.(string), "ancestors") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("the repeated ancestor was not reported: %v", body["partial"])
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the listing did not finish: the walk followed the cycle")
+	}
+}
+
+// TestWalkIsBoundedInAWideDirectory pins the entry budget.
+//
+// A directory nobody excluded can hold more entries than anyone wants read into
+// one response. The budget is what turns that into a partial answer rather than
+// an unbounded one, and the answer says so.
+func TestWalkIsBoundedInAWideDirectory(t *testing.T) {
+	if testing.Short() {
+		t.Skip("writes a great many files")
+	}
+	_, ts, project := filesServer(t)
+	wide := filepath.Join(project, "wide")
+	if err := os.Mkdir(wide, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Just past the budget, so the walk must stop and say it stopped.
+	for i := range maxWalkEntries + 32 {
+		if err := os.WriteFile(filepath.Join(wide, fmt.Sprintf("f%06d.json", i)), []byte("{}"), 0o644); err != nil {
+			t.Skipf("could not create %d files: %v", i, err)
+		}
+	}
+
+	status, body := getJSON(t, ts, "/api/files?token="+testToken)
+	if status != http.StatusOK {
+		t.Fatalf("list: status %d", status)
+	}
+	partial, _ := body["partial"].([]any)
+	found := false
+	for _, p := range partial {
+		if strings.Contains(p.(string), "stopped after") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a listing past the budget did not say it stopped: %v", body["partial"])
+	}
+	if len(body["files"].([]any)) > maxWalkEntries+1 {
+		t.Fatalf("the listing returned %d files, past the budget", len(body["files"].([]any)))
+	}
+}
+
+// TestExcludedNamesMatchWholeComponentsCaseInsensitively pins both halves of the
+// rule at once.
+//
+// `node_modules.json` is an ordinary document and must keep working; `.GIT` and
+// `NODE_MODULES` are the same directories as their lowercase spellings on a
+// case-insensitive volume, and an exclusion a spelling walks around is not one.
+func TestExcludedNamesMatchWholeComponentsCaseInsensitively(t *testing.T) {
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "node_modules.json", `{"id":"a document"}`)
+	writeProjectFile(t, project, "packs/vendor.pack.json", `{"id":"also a document"}`)
+
+	for _, rel := range []string{"node_modules.json", "packs/vendor.pack.json"} {
+		t.Run("allowed/"+rel, func(t *testing.T) {
+			if status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path="+urlEscape(rel)); status != http.StatusOK {
+				t.Fatalf("read: status %d, %v", status, body)
+			}
+		})
+	}
+	for _, rel := range []string{
+		".GIT/config", "NODE_MODULES/x.js", "Node_Modules/x.js",
+		"Dist/app.js", "VENDOR/x.go", "packs/.Git/config",
+	} {
+		t.Run("refused/"+rel, func(t *testing.T) {
+			if status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path="+urlEscape(rel)); status != http.StatusForbidden {
+				t.Fatalf("read: status %d, %v", status, body)
+			}
+			if status, _ := putJSON(t, ts, WriteRequest{Path: rel, Content: "{}", Override: true}); status != http.StatusForbidden {
+				t.Fatalf("write: status %d", status)
+			}
+		})
+	}
+
+	// A regular file bearing an excluded directory's name is omitted from the
+	// listing too, because GET and PUT refuse that path.
+	if err := os.WriteFile(filepath.Join(project, "vendor"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, listing := getJSON(t, ts, "/api/files?token="+testToken)
+	listed := map[string]bool{}
+	for _, raw := range listing["files"].([]any) {
+		listed[raw.(map[string]any)["path"].(string)] = true
+	}
+	if listed["vendor"] {
+		t.Fatal("a regular file named vendor was listed, but the endpoints refuse it")
+	}
+	if !listed["node_modules.json"] {
+		t.Fatalf("an ordinary document was excluded: %v", listed)
+	}
+}
+
+// TestUnreadableFileGoesToPartialRatherThanTheOversizedShape pins the
+// distinction.
+//
+// An empty digest is a documented shape meaning "too large to hash". Using it
+// for a permission error says "too large" about a file that is not.
+func TestUnreadableFileGoesToPartialRatherThanTheOversizedShape(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs Unix permissions and a non-root user")
+	}
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", "{}")
+	locked := writeProjectFile(t, project, "unreadable.json", "{}")
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(locked, 0o644) })
+
+	_, body := getJSON(t, ts, "/api/files?token="+testToken)
+	partial, _ := body["partial"].([]any)
+	found := false
+	for _, p := range partial {
+		if strings.Contains(p.(string), "unreadable.json") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("an unreadable file was not reported as partial: %v", body["partial"])
+	}
+}
+
+// TestWriteReleasesTheLockBeforeEncoding pins that a stalled reader cannot hold
+// the write mutex.
+//
+// The response is encoded to a ResponseWriter, which is client-speed: a caller
+// that stops reading its socket holds that write for as long as it likes.
+// Inside the lock, one such client stops every later save on the machine.
+func TestWriteReleasesTheLockBeforeEncoding(t *testing.T) {
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "a.json", "{}")
+	writeProjectFile(t, project, "b.json", "{}")
+
+	// A body big enough that the response cannot sit in one socket buffer, and
+	// a client that reads none of it.
+	big := strings.Repeat("x", 2<<20)
+	stalled := make(chan struct{})
+	go func() {
+		defer close(stalled)
+		payload, _ := json.Marshal(WriteRequest{Path: "a.json", Content: big, Override: true})
+		req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/file?token="+testToken, bytes.NewReader(payload))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return
+		}
+		// Deliberately not reading the body: hold the response open, then go.
+		time.Sleep(2 * time.Second)
+		resp.Body.Close()
+	}()
+
+	// While that one is stalled mid-response, another save must still complete.
+	deadline := time.After(10 * time.Second)
+	done := make(chan int, 1)
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		status, _ := putJSONNoFatal(ts, WriteRequest{Path: "b.json", Content: `{"id":"b"}`, Override: true})
+		done <- status
+	}()
+	select {
+	case status := <-done:
+		if status != http.StatusOK {
+			t.Fatalf("the second save answered %d", status)
+		}
+	case <-deadline:
+		t.Fatal("a second save could not complete while a client stalled reading its response")
+	}
+	<-stalled
 }
