@@ -51,7 +51,13 @@ import { readFile } from 'node:fs/promises'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { DeskWebSocketTransport } from '../src/mcp/transport.ts'
 import { describeHandoffTarget, nodesInWalkOrder, parseProbe } from '../src/mcp/canonical.ts'
-import { deriveWalkLayout, edgeCarries, readServedDocument } from '../src/mcp/graphDocument.ts'
+import {
+  bindGraphDigests,
+  deriveWalkLayout,
+  edgeCarries,
+  readServedDocument,
+  statedDigest
+} from '../src/mcp/graphDocument.ts'
 import { listAllTools, readCapabilities } from '../src/mcp/capabilities.ts'
 import type {
   Evaluation,
@@ -163,13 +169,16 @@ const wsURL = `ws://${url.host}/ws?token=${encodeURIComponent(token)}`
 
 // The SDK's tool-result type is a union that includes a shape carrying no
 // content at all, so the narrowing happens here rather than in the signature.
-function textOf(result: unknown): string {
+function textBlocksOf(result: unknown): string[] {
   const content = (result as { content?: unknown } | undefined)?.content
   const blocks = Array.isArray(content) ? content : []
   return blocks
     .filter((b): b is { type: 'text'; text: string } => (b as { type?: string })?.type === 'text')
     .map((b) => b.text)
-    .join('')
+}
+
+function textOf(result: unknown): string {
+  return textBlocksOf(result).join('')
 }
 
 const client = new Client({ name: 'jpack-desk-smoke', version: '0.1.0' }, { capabilities: {} })
@@ -242,9 +251,16 @@ if (options.matrix) {
   await testPacks()
 }
 
-if (options.graphs) {
-  await testGraphs()
-}
+// The graph surface is driven by at most **one** matrix run per drive.
+//
+// `--graphs` prints the whole suite; the binding and the layout then read
+// their entry out of *that* run rather than making a second one. Two runs
+// would be two reads of a file that can be edited between them: the printed
+// suite could pass over revision A while the binding described revision B,
+// and the second run's own status would never be printed at all. That is
+// precisely the condition ADR-0030's digest exists to detect, so producing it
+// here would be the check defeating itself.
+const graphSuite = options.graphs ? await testGraphs() : undefined
 
 // Two ways into the graph surface, and they differ in what an absent
 // capability means. Naming a graph *asks* for the check, so a runtime without
@@ -252,10 +268,17 @@ if (options.graphs) {
 // answer, so the same absence is a skip — and the deeper leg subsumes the
 // automatic one, which is why only one of them runs.
 if (options.graphDocument) {
-  await graphDocument(options.graphDocument, options.graphFile)
+  await graphDocument(options.graphDocument, options.graphFile, graphSuite)
 } else {
-  await graphBinding()
+  await graphBinding(graphSuite)
 }
+
+// Deferred until after the binding, deliberately. The suite's status is a
+// verdict about rows; the binding is a fact about which bytes those rows were
+// read from. Exiting on the verdict first would leave a mismatching run with
+// no statement of what it ran over — and a mismatch caused by a mid-edit is
+// exactly the case where that statement matters most.
+if (graphSuite) checkGraphSuiteStatus(graphSuite)
 
 console.log(`notifications ${sawFileChange ? 'saw desk/fileChanged' : 'none seen (expected: nothing changed)'}`)
 console.log('\nOK')
@@ -398,7 +421,7 @@ async function testPacks(): Promise<void> {
  * carries — the payload reports no node list, no node-to-pack mapping and no
  * edge endpoints. See the README's upstream gaps.
  */
-async function testGraphs(): Promise<void> {
+async function testGraphs(): Promise<GraphSuite> {
   const result = await client.callTool({ name: 'experimental_test_graphs', arguments: {} })
   const text = textOf(result)
   if (result.isError) {
@@ -436,14 +459,28 @@ async function testGraphs(): Promise<void> {
       )
     }
   }
-  // With no explicit expectation, the payload's own shape sets one: a project
-  // whose graphs are present must pass their rows, and skipped is accepted only
-  // where there is no graph to run. An empty default that accepted mismatch
-  // would let a graph whose rows never load read as a green acceptance.
-  const expectedGraphStatus =
+  return payload
+}
+
+/**
+ * The graph suite's own status, held to the expectation — after the binding.
+ *
+ * Split out of `testGraphs` so the exit happens last. A run that mismatched
+ * still has a digest, and which bytes it mismatched over is the first thing
+ * anyone reading a red run wants: a mismatch that appeared because the file was
+ * edited mid-drive looks identical to a mismatch in the rows until the binding
+ * says which revision was read.
+ *
+ * With no explicit expectation, the payload's own shape sets one: a project
+ * whose graphs are present must pass their rows, and skipped is accepted only
+ * where there is no graph to run. An empty default that accepted mismatch would
+ * let a graph whose rows never load read as a green acceptance.
+ */
+function checkGraphSuiteStatus(payload: GraphSuite): void {
+  const expected =
     options.expectGraphStatus ?? ((payload.graphs ?? []).length > 0 ? 'passed' : 'skipped')
-  if (payload.status !== expectedGraphStatus) {
-    console.error(`expected graph status ${expectedGraphStatus}, got ${payload.status}`)
+  if (payload.status !== expected) {
+    console.error(`expected graph status ${expected}, got ${payload.status}`)
     process.exit(1)
   }
 }
@@ -462,7 +499,11 @@ async function testGraphs(): Promise<void> {
  * The walk is then derived with the page's own code and printed with its
  * arrows, so a shape the browser would draw wrongly is visible here first.
  */
-async function graphDocument(graphId: string, graphFile?: string): Promise<void> {
+async function graphDocument(
+  graphId: string,
+  graphFile: string | undefined,
+  suite: GraphSuite | undefined
+): Promise<void> {
   for (const [name, present] of [
     ['experimental_list_graphs', capabilities.graphInventorySupported],
     ['experimental_get_graph', capabilities.graphDocumentSupported]
@@ -513,11 +554,10 @@ async function graphDocument(graphId: string, graphFile?: string): Promise<void>
     process.exit(1)
   }
 
-  // One matrix call answers both questions: whether these bytes are the bytes
-  // that run decoded, and what order it evaluated the nodes in. Asking twice
-  // would be two runs, and two runs are two reads of a file that may have been
-  // edited between them — the very thing the binding exists to detect.
-  const entry = await graphMatrixEntry(graphId)
+  // One matrix run answers both questions: whether these bytes are the bytes
+  // that run decoded, and what order it evaluated the nodes in. Where
+  // `--graphs` already ran the suite, that run is the one read here.
+  const entry = await graphEntryFor(graphId, suite)
   checkGraphBinding(graphId, digest, entry)
 
   // The layering the page would do, with the tie-break the page uses: the walk
@@ -571,12 +611,22 @@ async function graphDocument(graphId: string, graphFile?: string): Promise<void>
  * one revision of one file (ADR-0030). Two calls, one file, and until that
  * member existed nothing in either payload could say so.
  */
-async function graphBinding(): Promise<void> {
-  if (!capabilities.graphInventorySupported || !capabilities.graphDocumentSupported) {
+async function graphBinding(suite: GraphSuite | undefined): Promise<void> {
+  // Named exactly, never inferred. A runtime advertising one of the two and not
+  // the other is a real shape, and a line claiming it advertises neither would
+  // be false about the half it has. No version is read here either: what a
+  // runtime can do is what it advertises, and a version string is a guess about
+  // that — jpack 0.18.0 is one runtime that advertises neither, named as a
+  // known example rather than as the diagnosis.
+  const missing = [
+    capabilities.graphInventorySupported ? undefined : 'experimental_list_graphs',
+    capabilities.graphDocumentSupported ? undefined : 'experimental_get_graph'
+  ].filter((name): name is string => name !== undefined)
+  if (missing.length > 0) {
     console.log(
-      'graph binding skipped  this runtime advertises no experimental_list_graphs / ' +
-        'experimental_get_graph (ADR-0029; jpack 0.18.0 and older), so there is no served ' +
-        'document to bind a run to'
+      `graph binding skipped  this runtime advertises no ${missing.join(' and no ')}; ` +
+        'both are needed to choose a graph and fetch its document without being told which one ' +
+        '(ADR-0029, which jpack 0.18.0 predates)'
     )
     return
   }
@@ -592,9 +642,50 @@ async function graphBinding(): Promise<void> {
   // A graph declaring no rows is skipped before its document is loaded, so its
   // entry carries no digest to compare — not a failure, just nothing to bind.
   // Preferring one that declares rows picks the graph that can answer.
-  const chosen = rows.find((row) => row.rowsDeclared) ?? rows[0]!
+  const chosen = chooseGraphToBind(rows)
   const { digest } = await fetchServedGraph(chosen.id)
-  checkGraphBinding(chosen.id, digest, await graphMatrixEntry(chosen.id))
+  checkGraphBinding(chosen.id, digest, await graphEntryFor(chosen.id, suite))
+}
+
+/**
+ * Which configured graph this drive binds, and why that one.
+ *
+ * Preference order, most informative first: a graph that declares rows *and*
+ * whose inventory row decoded — identity read, no detail — because only such a
+ * graph yields a matrix entry carrying a digest to compare. Then any graph that
+ * declares rows. Then the first configured graph, which will report that it
+ * states no binding and is still worth saying so about.
+ *
+ * The fallbacks are not failures, and preferring the clean row is the point: a
+ * project whose *first* graph carries a decode detail would otherwise end this
+ * leg green and unbound while a later graph could have bound. The chosen id and
+ * the reason are printed, so a green run always says what it bound.
+ */
+function chooseGraphToBind(rows: GraphSummary[]): GraphSummary {
+  const bindable = rows.find((row) => row.rowsDeclared && row.graphId && !row.detail)
+  const withRows = rows.find((row) => row.rowsDeclared)
+  const chosen = bindable ?? withRows ?? rows[0]!
+  const why = bindable
+    ? 'declares rows, and its inventory row decoded'
+    : withRows
+      ? 'declares rows; no configured graph both declares rows and decoded cleanly'
+      : 'the only configured graph, and it declares no rows'
+  console.log(`                  binding ${chosen.id} — ${why}`)
+  return chosen
+}
+
+/**
+ * The matrix entry for one graph, from the run already made where there is one.
+ *
+ * Reusing the suite is what keeps a drive to one run. A targeted call is made
+ * only when no suite was run at all, and then it is the drive's only run.
+ */
+async function graphEntryFor(
+  graphId: string,
+  suite: GraphSuite | undefined
+): Promise<GraphSuiteEntry | undefined> {
+  if (suite) return (suite.graphs ?? []).find((candidate) => candidate.id === graphId)
+  return graphMatrixEntry(graphId)
 }
 
 /**
@@ -651,9 +742,20 @@ async function fetchServedGraph(
     name: 'experimental_get_graph',
     arguments: { graph_id: graphId }
   })
-  const served = textOf(fetched)
+  const blocks = textBlocksOf(fetched)
+  const served = blocks.join('')
   if (fetched.isError) {
     console.error(`experimental_get_graph refused: ${served}`)
+    process.exit(1)
+  }
+  // The block *count* is the question, not the joined length. A tool that
+  // answered with one empty text block did answer, and a graph document that
+  // happens to be an empty file is exactly that answer. A tool that answered
+  // with no text block at all served no document — and joining nothing gives
+  // the same empty string, so metadata claiming zero bytes and the digest of
+  // the empty string would agree with it and print "text matches".
+  if (blocks.length === 0) {
+    console.error('experimental_get_graph returned no text content, so no document was served')
     process.exit(1)
   }
   const meta = fetched.structuredContent as unknown as GraphDocumentMeta
@@ -670,8 +772,17 @@ async function fetchServedGraph(
     console.error(`the served text is ${bytes.byteLength} bytes and the payload says ${meta.bytes}`)
     process.exit(1)
   }
-  if (digest !== meta.sha256) {
-    console.error(`the served text hashes to ${digest} and the payload says ${meta.sha256}`)
+  // Read the way the page reads it. Hex is case-insensitive, so a runtime
+  // spelling its digest in upper case states the same digest — and this script
+  // failing a drive the desk would have bound would be reporting a disagreement
+  // between two spellings as a disagreement about bytes.
+  const stated = statedDigest(meta.sha256)
+  if (stated === undefined) {
+    console.error('the payload states no sha256 beside the text it served')
+    process.exit(1)
+  }
+  if (stated !== digest) {
+    console.error(`the served text hashes to ${digest} and the payload says ${stated}`)
     process.exit(1)
   }
   console.log(`                  text matches its own metadata: ${bytes.byteLength} bytes, sha256 ${digest}`)
@@ -730,26 +841,30 @@ function checkGraphBinding(
     )
     process.exit(1)
   }
+  // The page's own comparator, not a second one. It folds case and reads an
+  // empty member as absent, so this script binds exactly the pairs the desk
+  // binds and divides exactly the pairs it divides.
   const run = entry.graphSha256
-  if (run === undefined || run === '') {
-    console.log(
-      `graph binding     this run states no graphSha256 (ADR-0030; jpack 0.18.0 and older, or a ` +
-        `document that did not load${entry.detail ? ` — ${entry.detail}` : ''}), so nothing binds ` +
-        `it to the served document`
-    )
-    return
+  switch (bindGraphDigests(run, servedDigest)) {
+    case 'unstated':
+      console.log(
+        `graph binding     this run reports no graphSha256 for ${graphId}, so nothing in the ` +
+          `two answers binds them to each other` +
+          `${entry.detail ? `; the entry's own detail: ${entry.detail}` : ''}`
+      )
+      return
+    case 'divergent':
+      console.error(
+        `the graph matrix ran over ${statedDigest(run)} and the runtime served ${servedDigest}, ` +
+          `so the two answers describe different revisions of ${graphId} and must not be joined`
+      )
+      process.exit(1)
+    case 'bound':
+      console.log(
+        `graph binding ok  the matrix run and the served document report one digest: ` +
+          `sha256 ${statedDigest(run)}`
+      )
   }
-  if (run !== servedDigest) {
-    console.error(
-      `the graph matrix ran over ${run} and the runtime served ${servedDigest}, so the two ` +
-        `answers describe different revisions of ${graphId} and must not be joined`
-    )
-    process.exit(1)
-  }
-  console.log(
-    `graph binding ok  the matrix run and the served document report one digest: ` +
-      `sha256 ${run}`
-  )
 }
 
 /** How much of what a report derived is witnessed by a row. */

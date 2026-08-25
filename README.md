@@ -511,27 +511,48 @@ exercise.
 
 **The graph leg runs without being asked for**, and there the same absence is a
 skip rather than a failure — naming no graph asks what this runtime can tell you
-about its graphs, and "nothing" is an answer jpack 0.18.0 is entitled to give.
-Where both tools are advertised it lists the configured graphs, fetches one
-document, checks the served text against its own `bytes` and `sha256`, and then
-checks the **binding** (ADR-0030): the `graphSha256` the matrix run decoded
-against the digest served beside the document. Equal proves the two calls
-describe one revision of one file, which is what lets the graphs page join a
-served document to a matrix run at all; unequal proves the file was edited
-between them and fails the drive. An entry that states no digest is reported and
-not failed — that is the older runtime, or a document that never loaded, and the
-desk's epoch-bounded fallback is what stands there.
+about its graphs, and "nothing" is an answer a runtime is entitled to give. Where
+both tools are advertised it lists the configured graphs and, **where the
+project configures one**, fetches its document, checks the served text against
+its own `bytes` and `sha256`, and then checks the **binding** (ADR-0030): the
+`graphSha256` the matrix run decoded against the digest served beside the
+document. Equal proves the two calls describe one revision of one file, which is
+what lets the graphs page join a served document to a matrix run at all; unequal
+proves the file was edited between them and fails the drive. Where the entry
+carries no digest, the leg reports that absence and the entry's own detail if it
+has one, and does not fail — it says what it observed, not why.
 
-Against jpack 0.18.0 the leg prints one line and the drive still ends `OK`:
+Which graph it binds is printed with it. A graph that declares rows and whose
+inventory row decoded is preferred, because only such a graph yields an entry
+with a digest to compare; a project whose first graph carries a decode detail
+would otherwise end the leg unbound while a later one could have bound. Failing
+that it takes any graph declaring rows, then the first configured graph.
+
+Both tools are required, and the skip line names whichever is missing rather
+than assuming both are:
 
 ```
 capabilities      rehearsal=true list_graphs=false get_graph=false include_traces=false
-graph binding skipped  this runtime advertises no experimental_list_graphs / …
+graph binding skipped  this runtime advertises no experimental_list_graphs and no
+experimental_get_graph; both are needed to choose a graph and fetch its document
+without being told which one (ADR-0029, which jpack 0.18.0 predates)
 ```
 
-Nothing in the leg reads a row, a status or a coverage probe. Digest equality is
-byte arithmetic over bytes the runtime handed over; what a run *concluded* is
-the runtime's to say, and the leg says only which bytes it concluded it about.
+That drive still ends `OK`. No version is read anywhere: what a runtime can do
+is what it advertises, and jpack 0.18.0 is named as a known example rather than
+as the diagnosis.
+
+The whole graph surface is **one matrix run per drive** — `--graphs` prints the
+suite and the binding reads its entry out of that same run, and the suite's own
+status is checked only *after* the binding has been stated. Two runs would be
+two reads of an editable file, which is the condition the digest exists to
+detect; and exiting on a mismatch first would leave a red run with no statement
+of which revision it read.
+
+The binding decision reads no matrix status, no row and no coverage probe.
+Digest equality is byte arithmetic over bytes the runtime handed over; what a
+run *concluded* is the runtime's to say, and the leg says only which bytes it
+concluded it about.
 
 ## Upstream gaps
 
