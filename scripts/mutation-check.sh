@@ -17,6 +17,10 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 which="${1:-all}"
+# An optional substring: run only the rows whose name contains it. Re-verifying
+# one repaired row should not mean re-running a half that takes forty minutes,
+# and a filter kept in the harness is reproducible where an ad-hoc helper is not.
+only="${2:-}"
 
 if [ -n "$(git status --porcelain)" ]; then
   echo "the tree is not clean; commit before mutating (this restores with git checkout)" >&2
@@ -107,6 +111,10 @@ run_web() {
 
 mutate() { # mutate <lang> <name> <file> <needle> <replacement>
   local lang="$1" name="$2" file="$3" needle="$4" replacement="$5"
+  case "$name" in
+    *"$only"*) ;;
+    *) return ;;
+  esac
   restore
   if ! apply "$file" "$needle" "$replacement"; then
     report "$name" "MUTATION DID NOT APPLY"
@@ -223,8 +231,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if watched == 0 {' \
     '	if watched < 0 {'
   mutate go "the runtime starts from the unresolved pathname" internal/desk/relay.go \
-    '	cmd.Dir = s.projectDir' \
-    '	cmd.Dir = s.cfg.ProjectDir'
+    'func (s *Server) runtimeWorkingDir() string { return s.projectDir }' \
+    'func (s *Server) runtimeWorkingDir() string { return s.cfg.ProjectDir }'
   mutate go "Origin accepts empty delimiters" "$S" \
     '		u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" ||
 		strings.ContainsRune(origin, '"'"'#'"'"') {' \
@@ -328,8 +336,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '          void landed'
   mutate web "a previous verdict survives the next save" "$A" \
     '    setOutcome(undefined)
-    const submitted = buffer' \
-    '    const submitted = buffer'
+    // The snapshot is captured here, with the request.' \
+    '    // The snapshot is captured here, with the request.'
   mutate web "discard leaves the conflict standing" "$A" \
     '              setBuffer(base.content)
               setOutcome(undefined)
