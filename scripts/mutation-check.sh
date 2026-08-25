@@ -240,6 +240,33 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the runtime starts from the unresolved pathname" internal/desk/relay.go \
     'func (s *Server) runtimeWorkingDir() string { return s.projectDir }' \
     'func (s *Server) runtimeWorkingDir() string { return s.cfg.ProjectDir }'
+  mutate go "the walk does not detect a repeated ancestor" "$F" \
+    '			if os.SameFile(ancestor, info) {' \
+    '			if false && os.SameFile(ancestor, info) {'
+  mutate go "the walk has no entry budget" "$F" \
+    '			if budget <= 0 {' \
+    '			if false {'
+  mutate go "an unreadable file gets the oversized shape" "$F" \
+    '		case status == http.StatusRequestEntityTooLarge:' \
+    '		case status != 0:'
+  mutate go "excluded names match case-sensitively" "$F" \
+    '		if strings.EqualFold(name, excluded) {' \
+    '		if name == excluded {'
+  mutate go "a reserved-name regular file is listed" "$F" \
+    '				// A regular file bearing an excluded directory'"'"'s name is omitted
+				// too: GET and PUT refuse that path, and listing something the
+				// endpoints will not open is an offer the API does not honour.
+				if isExcludedName(name) {
+					continue
+				}' \
+    ''
+  mutate go "the write mutex spans the response encoding" "$F" \
+    '	status, body := s.commitWrite(clean, req)
+	writeJSON(w, status, body)' \
+    '	s.writes.Lock()
+	defer s.writes.Unlock()
+	status, body := s.commitWriteUnlocked(clean, req)
+	writeJSON(w, status, body)'
   mutate go "Origin accepts empty delimiters" "$S" \
     '		u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" ||
 		strings.ContainsRune(origin, '"'"'#'"'"') {' \
@@ -370,6 +397,21 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     throw new StaleWrite(body as ConstructorParameters<typeof StaleWrite>[0])
   }' \
     ''
+  mutate web "a partial listing is reported as an empty project" "$A" \
+    '            {files.length === 0 && partial.length === 0 ? (' \
+    '            {files.length === 0 ? ('
+  mutate web "the partial warning is not shown" "$A" \
+    '            {partial.length > 0 && (' \
+    '            {false && (' 
+  mutate web "the save read-back installs over a newer read" "$A" \
+    '          if (state !== undefined && state.dataUpdatedAt > startedAt) return' \
+    '          void state'
+  mutate web "reload trusts refetch rather than its own read" "$A" \
+    '    void readFile(path)' \
+    '    void loaded.refetch().then((r) => r.data!)
+      .then((fresh) => { setBase(fresh); setBuffer(fresh.content) })
+      .catch(() => {})
+    void Promise.resolve(base)'
   mutate web "deleted and changed are no longer distinguished" "$A" \
     "        {stale.exists
           ? 'Something else wrote to it while this edit was open.'
