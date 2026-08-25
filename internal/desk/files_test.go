@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1691,28 +1692,38 @@ func TestWriteReleasesTheLockBeforeEncoding(t *testing.T) {
 	writeProjectFile(t, project, "a.json", "{}")
 	writeProjectFile(t, project, "b.json", "{}")
 
-	// A body big enough that the response cannot sit in one socket buffer, and
-	// a client that reads none of it.
-	big := strings.Repeat("x", 2<<20)
-	stalled := make(chan struct{})
-	go func() {
-		defer close(stalled)
-		payload, _ := json.Marshal(WriteRequest{Path: "a.json", Content: big, Override: true})
-		req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/file?token="+testToken, bytes.NewReader(payload))
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return
-		}
-		// Deliberately not reading the body: hold the response open, then go.
-		time.Sleep(2 * time.Second)
-		resp.Body.Close()
-	}()
+	// A raw socket that sends a request and then reads nothing at all. Go's
+	// HTTP client buffers enough of a response to hide this: the point is a
+	// client whose receive window fills and stays full, so the server's write
+	// blocks mid-response. The body is near the write limit so it cannot fit in
+	// any socket buffer.
+	big := strings.Repeat("x", maxFileBytes-1024)
+	payload, err := json.Marshal(WriteRequest{Path: "a.json", Content: big, Override: true})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	host := strings.TrimPrefix(ts.URL, "http://")
+	conn, err := net.Dial("tcp", host)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	request := fmt.Sprintf(
+		"PUT /api/file?token=%s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n",
+		testToken, host, len(payload))
+	if _, err := conn.Write(append([]byte(request), payload...)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
 
-	// While that one is stalled mid-response, another save must still complete.
-	deadline := time.After(10 * time.Second)
+	// Give the handler time to finish the filesystem work and get well into
+	// writing its answer to a reader that is not reading.
+	time.Sleep(500 * time.Millisecond)
+
+	// A second save, to a different file, must still complete. If the mutex is
+	// held across the response encoding, it cannot: the first request is parked
+	// in a socket write.
 	done := make(chan int, 1)
 	go func() {
-		time.Sleep(200 * time.Millisecond)
 		status, _ := putJSONNoFatal(ts, WriteRequest{Path: "b.json", Content: `{"id":"b"}`, Override: true})
 		done <- status
 	}()
@@ -1721,10 +1732,9 @@ func TestWriteReleasesTheLockBeforeEncoding(t *testing.T) {
 		if status != http.StatusOK {
 			t.Fatalf("the second save answered %d", status)
 		}
-	case <-deadline:
+	case <-time.After(10 * time.Second):
 		t.Fatal("a second save could not complete while a client stalled reading its response")
 	}
-	<-stalled
 }
 
 // TestSameAsAnyAncestorSeesThroughAName pins the cycle guard's logic without

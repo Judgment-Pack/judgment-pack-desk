@@ -241,10 +241,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'func (s *Server) runtimeWorkingDir() string { return s.projectDir }' \
     'func (s *Server) runtimeWorkingDir() string { return s.cfg.ProjectDir }'
   mutate go "the walk does not detect a repeated ancestor" "$F" \
-    '		if os.SameFile(ancestor, info) {
-			return true
-		}' \
-    ''
+    '		if os.SameFile(ancestor, info) {' \
+    '		if false && os.SameFile(ancestor, info) {'
   mutate go "the walk has no entry budget" "$F" \
     '			if budget <= 0 {' \
     '			if false {'
