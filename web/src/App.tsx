@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { ErrorBox } from './components/primitives'
+import { AuthorView } from './routes/AuthorView'
 import { useMcp } from './mcp/McpProvider'
 import { GraphView } from './routes/GraphView'
 import { MatrixView } from './routes/MatrixView'
@@ -65,6 +66,7 @@ export function App() {
           <Routes>
             <Route path="/" element={<ProjectHome />} />
             <Route path="/matrix" element={<MatrixView />} />
+            <Route path="/author" element={<AuthorView />} />
             <Route path="/graphs" element={<GraphView />} />
             <Route path="/graphs/:graphId" element={<GraphView />} />
             <Route path="/packs/:packId" element={<PackDetail />} />

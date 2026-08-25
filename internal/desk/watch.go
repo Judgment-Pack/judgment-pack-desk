@@ -1,11 +1,14 @@
 package desk
 
 import (
+	"fmt"
 	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -51,9 +54,19 @@ func newWatcher(root string, logger *log.Logger, emit func(string)) (*watcher, e
 		closing: make(chan struct{}),
 		pending: make(map[string]*time.Timer),
 	}
-	if err := w.addTree(root); err != nil {
+	// The root itself must end up watched. `filepath.WalkDir` does not follow a
+	// symlink handed to it as the walk root, so a symlinked project directory
+	// would install zero watches and report success — live reload silently off,
+	// and the page never told. The caller passes the *resolved* path (see
+	// Server.projectDir), and this refuses to pretend either way.
+	watched, err := w.addTree(root)
+	if err != nil {
 		_ = fsw.Close()
 		return nil, err
+	}
+	if watched == 0 {
+		_ = fsw.Close()
+		return nil, fmt.Errorf("no directory under %s could be watched", root)
 	}
 	go w.loop()
 	return w, nil
@@ -61,8 +74,29 @@ func newWatcher(root string, logger *log.Logger, emit func(string)) (*watcher, e
 
 // addTree watches dir and every descendant directory. fsnotify is not
 // recursive, so a directory created later is added when its Create arrives.
-func (w *watcher) addTree(dir string) error {
-	return filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+// addTree watches dir and every descendant directory, and reports how many
+// watches it installed.
+//
+// The count is the point: zero means the tree was never reached, which is a
+// startup failure rather than a quiet degradation.
+//
+// **fsnotify is pathname-based and cannot be pinned to a descriptor.** This is
+// the one part of the chassis that watches by name, so a directory replaced
+// after startup is watched by whatever now bears that name. It is a
+// notification channel and not an authority: nothing is read, written or
+// decided here — the file API holds the descriptor, and the worst a misdirected
+// watch can do is invalidate a query that then re-reads through the root. Stated
+// in the README rather than implied.
+func (w *watcher) addTree(dir string) (int, error) {
+	watched := 0
+	// The same budget the file listing walks under, and for the same reason: a
+	// tree can contain itself through a bind mount or a directory hard link
+	// without a single symlink in it, and enumerating one with no bound is a
+	// startup that never finishes. `filepath.WalkDir` does not follow symlinks,
+	// so those are already excluded; this bounds everything else.
+	visited := 0
+	seen := map[string]bool{}
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// An unreadable subtree is not a reason to refuse to watch the rest.
 			return nil //nolint:nilerr // deliberate: skip and continue
@@ -70,15 +104,43 @@ func (w *watcher) addTree(dir string) error {
 		if !d.IsDir() {
 			return nil
 		}
-		if p != dir && skipDirs[d.Name()] {
+		visited++
+		if visited > maxWalkEntries {
+			w.log.Printf("desk: stopped adding watches after %d directories", maxWalkEntries)
+			return filepath.SkipAll
+		}
+		if p != dir && isExcludedName(d.Name()) {
 			return filepath.SkipDir
+		}
+		// Identity, not pathname: two aliases of one directory are one
+		// directory, and watching it twice doubles every event it reports.
+		if info, serr := os.Stat(p); serr == nil {
+			if key := identityKey(info); key != "" {
+				if seen[key] {
+					return filepath.SkipDir
+				}
+				seen[key] = true
+			}
 		}
 		if err := w.fsw.Add(p); err != nil {
 			w.log.Printf("desk: cannot watch %s: %v", p, err)
 			return filepath.SkipDir
 		}
+		watched++
 		return nil
 	})
+	return watched, err
+}
+
+// identityKey names one directory by what the filesystem thinks it is, or ""
+// where the platform does not say. Empty means "cannot tell", and the caller
+// then declines to deduplicate rather than deduplicating wrongly.
+func identityKey(info fs.FileInfo) string {
+	sys, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("%d:%d", sys.Dev, sys.Ino)
 }
 
 func (w *watcher) loop() {
@@ -102,14 +164,20 @@ func (w *watcher) loop() {
 
 func (w *watcher) handle(ev fsnotify.Event) {
 	base := filepath.Base(ev.Name)
-	if skipDirs[base] {
+	if isExcludedName(base) {
+		return
+	}
+	// A staging file is this desk replacing a document, not a document
+	// changing. Reporting one would fire an invalidation for a file nobody
+	// edited — and would do it in the middle of the save that created it.
+	if strings.HasPrefix(base, stagingPrefix) {
 		return
 	}
 	if ev.Op&fsnotify.Create != 0 {
 		// A directory created after startup needs its own watch, or nothing
 		// inside it is ever seen: fsnotify watches a directory, not a tree.
 		if fi, err := os.Stat(ev.Name); err == nil && fi.IsDir() {
-			_ = w.addTree(ev.Name)
+			_, _ = w.addTree(ev.Name)
 		}
 	}
 	rel, err := filepath.Rel(w.root, ev.Name)

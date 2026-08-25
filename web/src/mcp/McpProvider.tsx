@@ -68,7 +68,7 @@ export function useMcp(): McpConnection {
  */
 const TOKEN_KEY = 'jpack-desk-token'
 
-function sessionToken(): string {
+export function sessionToken(): string {
   const fromUrl = new URLSearchParams(window.location.search).get('token')
   if (fromUrl) {
     window.sessionStorage.setItem(TOKEN_KEY, fromUrl)

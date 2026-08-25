@@ -15,9 +15,9 @@
  */
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render } from '@testing-library/react'
-import type { ReactElement } from 'react'
-import { MemoryRouter } from 'react-router-dom'
+import { act, render } from '@testing-library/react'
+import { useState, type ReactElement } from 'react'
+import { Link, RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { UNKNOWN_CAPABILITIES } from '../mcp/capabilities'
 import { McpContext, type McpConnection } from '../mcp/McpProvider'
 
@@ -98,21 +98,56 @@ export function testQueryClient(): QueryClient {
  */
 export function renderConnected(
   ui: ReactElement,
-  connection: McpConnection,
-  options: { path?: string; queryClient?: QueryClient } = {}
+  connectionValue: McpConnection,
+  options: {
+    path?: string
+    queryClient?: QueryClient
+    /**
+     * Add an in-app link, so a test can drive same-document navigation — the
+     * exit `beforeunload` never sees and a router blocker has to cover.
+     */
+    nav?: boolean
+  } = {}
 ) {
   const queryClient = options.queryClient ?? testQueryClient()
-  const wrap = (value: McpConnection) => (
+  const setConnectionRef: { current?: (next: McpConnection) => void } = {}
+  // A data router, because the application uses one: `useBlocker` is only
+  // available there, and a harness on the older router would let a view that
+  // depends on it pass here and throw in the page.
+  //
+  // **One router for the life of the render.** Production builds its router
+  // once; a harness that built a new one on every `setConnection` would reset
+  // history and remount the tree on a capability change, which is neither what
+  // the page does nor a state any test means to be in. Only the context value
+  // changes, which is exactly what the provider changes.
+  const connection = { current: connectionValue }
+  const Shell = () => {
+    const [value, setValue] = useState(connection.current)
+    setConnectionRef.current = (next: McpConnection) => {
+      connection.current = next
+      setValue(next)
+    }
+    return (
+      <McpContext.Provider value={value}>
+        {options.nav && <Link to="/elsewhere">go elsewhere</Link>}
+        {ui}
+      </McpContext.Provider>
+    )
+  }
+  const router = createMemoryRouter([{ path: '*', element: <Shell /> }], {
+    initialEntries: [options.path ?? '/']
+  })
+  const tree = (
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[options.path ?? '/']}>
-        <McpContext.Provider value={value}>{ui}</McpContext.Provider>
-      </MemoryRouter>
+      <RouterProvider router={router} />
     </QueryClientProvider>
   )
-  const result = render(wrap(connection))
+  const result = render(tree)
   return {
     ...result,
     queryClient,
-    setConnection: (next: McpConnection) => result.rerender(wrap(next))
+    setConnection: (next: McpConnection) => {
+      act(() => setConnectionRef.current?.(next))
+    }
   }
 }

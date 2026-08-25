@@ -298,7 +298,7 @@ graphs page says the project configures none.
 
 ## Requirements
 
-- Go 1.24 or newer
+- Go 1.25 or newer (`go.mod` declares it; CI reads that file)
 - Node 22 or newer (`web/package.json` declares `engines.node >= 22`)
 - A `jpack` binary — the [judgment-pack runtime](https://github.com/Judgment-Pack/judgment-pack-runtime)
 
@@ -341,7 +341,7 @@ Two processes: the chassis for the relay, Vite for hot reload.
 # first positional argument)
 go run . --dev-token dev --port 8791 --jpack /path/to/jpack /path/to/project
 
-# terminal 2 — Vite dev server, proxying /ws to the chassis
+# terminal 2 — Vite dev server, proxying /ws and /api to the chassis
 npm --prefix web run dev
 ```
 
@@ -361,24 +361,260 @@ npm --prefix web run smoke -- 'http://127.0.0.1:8791/?token=dev'
 
 ## Security model
 
-The desk drives a runtime that reads your project. Three things bound it:
+The desk drives a runtime that reads your project, and — since the authoring
+surface — writes files in it. Two capabilities are gated, and gated the same
+way: **`/ws`**, the relay, and **`/api/*`**, the file API. Static assets are
+not; they are the page, and the page can do nothing without one of the two.
 
 - **Loopback only.** The listener binds `127.0.0.1`. Nothing off the machine
   can reach it.
-- **A session token.** A random token is generated at startup and printed in
-  the URL. `/ws` requires it as `?token=`, compared in constant time. Static
-  assets are served without it; the relay is the capability, and it is the
-  thing that is gated.
-- **An origin check.** A WebSocket upgrade whose `Origin` is not the origin the
-  page was served from is refused. This is what stops a page on another site
-  from opening a socket to your loopback and driving the runtime through your
-  own browser — a token in a URL you have visited is not, by itself, protection
-  against that. A request with no `Origin` at all is not from a browser, and
-  the token is its authorization.
+- **A session token.** A random 192-bit token is generated at startup and
+  printed in the URL. Both capabilities require it as `?token=`, compared in
+  constant time. (Length is still observable, which does not matter: the format
+  is fixed and public, and the value is the secret.)
+- **An origin check.** A request whose `Origin` is not the origin the page was
+  served from is refused — **scheme and host both**, and an `Origin` carrying a
+  path, query, fragment or userinfo is refused outright rather than matched on
+  its host. This is what stops a page on another site from driving your runtime,
+  or writing to your project, through your own browser: a token in a URL you
+  have visited is not by itself protection against that. A request with no
+  `Origin` at all is not from a browser — it is a script or a test holding the
+  token — and the token is its authorization.
 
-The chassis holds no credential, opens no outbound connection, and writes
-nothing to the project. The runtime subprocess inherits the project directory
-as its working directory and is killed when the socket that started it closes.
+**A cross-origin write is refused twice, and neither layer is load-bearing
+alone.** A page on another site cannot send the file API's `PUT` from a browser
+at all: the JSON content type makes it a non-simple request, so the browser must
+preflight, and the chassis grants no CORS permission whatsoever — that layer is
+the browser's. The second is ours: a `PUT` that arrives with a foreign `Origin`
+anyway is refused by the same guard, which is what a non-browser client meets.
+Both are asserted by tests, so neither can be dropped on the assumption that the
+other suffices.
+
+**What these layers are for, and what they are not.** The containment machinery
+defends against *confused* requests — a page on another site, a bad path, an
+encoded traversal — and against this desk's own bugs; the write protocol defends
+honest editors working at the same time. None of it defends against a hostile
+local process that already owns the filesystem: such a process can race any
+component addressed by name, and every part of this arrangement has one — the
+watcher watches by pathname, the runtime is started with a pathname working
+directory, and the runtime reads the project by pathname too. Holding a
+descriptor makes the file API's own resolution unraceable and stops the two
+halves of the desk drifting onto different trees; it does not make the machine
+someone else's problem. That boundary is stated here rather than implied by the
+absence of a caveat.
+
+The chassis holds no credential and opens no outbound connection. It writes to
+the project only through the file API, only inside the project root, and only
+where a request carried the token and an acceptable origin. The runtime
+subprocess inherits the project directory as its working directory and is killed
+when the socket that started it closes.
+
+## Authoring (issue #14, phase 1)
+
+The runtime has **no write tools**, and that is a decision rather than a gap:
+ADR-0006 makes it a stateless oracle, so the authoring lifecycle belongs to the
+client. The desk is the client, so **the desk owns writes** — through the
+chassis, never through the relay, which stays a verbatim pipe.
+
+What phase 1 is, exactly: a chassis file API, and an editor shell at `/author`
+that lists the project's files, edits one as text, and saves it. That is all.
+There are **no schema forms and no validation wiring** — those are phase 2, and
+matrix and rows editing is phase 3. See
+[issue #14](https://github.com/Judgment-Pack/judgment-pack-desk/issues/14) for
+the whole shape.
+
+**Nothing in the desk judges a document.** The file API moves bytes; it does not
+read `jpack.json`, does not care whether a path is a pack, and forms no opinion
+about what any file means. Every verdict stays the runtime's, asked for through
+the tools every other view already uses, and rendered as the runtime states it.
+That includes refusals, with one qualification worth stating precisely rather
+than promising: **whether a reviewed-set lock (ADR-0019) refuses depends on what
+the desk asked for.** The only evaluation surface here is the what-if view, and
+against a runtime that accepts the rehearsal argument it declares one — a
+rehearsal consults no reviewed set by design (ADR-0028), so a locked pack does
+*not* produce a refusal there. Against an older runtime with no rehearsal
+argument, the same view makes an ordinary evaluation and a lock refusal appears
+verbatim. Either way the desk never offers to update a lock and never routes
+around one. See "The lock, and what phase 1 does not do" below.
+
+### The file API
+
+Three endpoints, proxied alongside `/ws` by the dev server, under the same two
+checks as `/ws` — the session token first,
+then the Origin — through one shared guard, because a new endpoint is a new
+place to forget one:
+
+| | |
+| --- | --- |
+| `GET /api/files` | the project's regular files, with sizes and digests |
+| `GET /api/file?path=…` | one file's bytes |
+| `PUT /api/file` | replace one file's bytes |
+
+**Containment is a held directory descriptor, not a path check.** The chassis
+opens the project directory once with `os.Root` when it starts and closes it
+with the server; every list, read, stat, staging write and rename goes through
+that handle. (On the desktop platforms this desk targets that handle is a real
+directory descriptor. Go documents `os.Root` as falling back to pathname
+resolution where the syscalls do not exist — Plan 9 and js/wasm — and the
+guarantee is correspondingly weaker there; the desk is not built for either.) This matters for two reasons a string check cannot address:
+
+- A pathname that is validated and then opened is checked against one
+  filesystem and opened against another. Replace an approved ancestor directory
+  with a symlink in between and the open follows it — no amount of resolving
+  beforehand prevents that. `os.Root` resolves each component against the held
+  descriptor, so the thing checked is the thing opened. There are tests that
+  perform exactly this swap, on `GET`, on `PUT`, and on the listing.
+- Pinning it *once* is the other half. Re-resolving the project path per request
+  would let the authority itself be retargeted — rename the directory, or
+  repoint the symlink it was reached through, and later requests would adopt a
+  different tree without racing anything. A test repoints a symlinked root after
+  startup and asserts the desk keeps serving the tree it was given.
+
+*One version-dependent trap, named because it bit:* the `fs.DirEntry` that
+`Root.FS()` yields resolves `Info()` by **pathname** on Go 1.25 and by
+descriptor on 1.26, and on a filesystem that does not report entry types in the
+directory block it lstats by pathname to classify at all. So the listing does
+not use `Root.FS()` — depending on which toolchain is underneath to hold a
+containment property is not a property.
+
+The listing walks directory descriptor by directory descriptor: it opens each
+directory through the pinned root, reads names in bounded batches, and
+classifies each child with `Root.Lstat` — `Lstat`, so a symlink is seen as one
+rather than followed.
+
+It is also **bounded**, because a tree can be adversarial without anyone being
+hostile: a bind mount or a directory hard link makes a tree contain itself with
+no symlink in it, and a depth cap alone does not save you — two aliases per level
+and the work doubles. Each opened directory's identity is compared with the
+directories open above it (`os.SameFile`), and there is a total entry budget.
+The watcher's traversal carries the same bounds.
+
+Anything the walk could not read — an unreadable subtree, a repeated ancestor, a
+budget reached — is reported in a `partial` member and named in the note. A
+thinned answer that still returned a bare `200` would be indistinguishable from
+a smaller project, so the editor renders `partial` prominently and, when it is
+present, never says the project is empty.
+
+A lexical check runs first and is tested on its own. It refuses **escaping**
+`..` (an interior `a/../b` normalises and is fine), absolute paths, drive and
+UNC forms, NUL, and **backslash anywhere** — on Windows that is
+a separator, so `..\secret` is a traversal slash-only cleaning does not see, and
+refusing it everywhere removes the platform difference from the argument rather
+than reasoning about it. The two layers are independent rather than nested — `os.Root` refuses escapes
+this one never sees, and this one refuses spellings (a colon, a backslash) that
+Unix `os.Root` would happily treat as a filename. Each is kept because a change
+to the other should not silently become the only thing standing.
+
+*Windows caveat, stated because it cannot be tested here:* reserved device names
+and trailing-dot or trailing-space aliases are refused by the filesystem layer
+rather than by the lexical one, and this project's CI runs Linux only.
+
+**What is readable and writable.** Any path inside the root **except**: the
+directories the watcher also ignores — `.git`, `node_modules`, `dist`, `.venv`,
+`vendor` — and this desk's own `.jpack-desk-*` staging files. Those are refused
+by the *endpoints*, not merely omitted from the listing, and a path with such a
+component is refused on `GET` and `PUT` alike. **Symlinks are not documents
+here**: a path any component of which is a symlink is refused by both verbs,
+because a read follows a link while a save renames over it — one name, two
+objects, and an editor showing you one while the save replaced the other. Those exclusions
+are reported in the listing's `excluded` member rather than left to be inferred.
+Non-regular files are excluded too: a symlink is not listed and not readable, a
+FIFO or device is refused on open (with `O_NONBLOCK`, so a FIFO cannot hang the
+handler before the check runs). A file too large to read is **listed with an
+empty digest** rather than hidden — it is really there — and refused by the read
+endpoint. That empty digest means exactly one thing; a file the listing could not
+read for any *other* reason is named in `partial` instead, so "too large" is
+never said about a permission error. Reads and writes are refused alike for every one of these: an API that
+reads and writes a path by different rules is one nobody can reason about.
+
+Otherwise it is the user's own files on the user's own machine, and this API is
+their hand, not a policy layer. It does not consult `jpack.json` and forms no
+opinion about what any file is.
+
+**Writing requires an existing directory.** A `PUT` whose parent directory is
+not there answers `404` naming it, rather than creating the tree or reporting a
+containment failure — this API writes files, and a missing directory is not an
+escape. The conflict check runs first, so a write that also carries a stale
+`baseSha256` gets its `409` before that `404`: the `404` is what a
+believed-new or overriding write receives.
+
+**Atomic replace, scoped honestly.** The bytes are staged in the target's own
+directory through the same pinned root — rename is atomic only within a
+filesystem — the mode is set, the data is flushed, the file is closed, the
+rename happens, and then a directory sync is **attempted** — best effort, and a
+failure there is not reported, because it cannot undo a write that has already
+landed. The staging file is written through the descriptor it was created with
+and never reopened by name.
+
+- *On Unix*, `rename(2)` replaces the directory entry atomically, so a concurrent
+  reader sees the old file or the new one and never a truncated one. Only the
+  POSIX rwx bits are carried across; owner, group, ACLs, extended attributes and
+  the inode identity are not, because a replace is a new file by construction.
+- *On other platforms*, Go promises no such atomicity and neither does this. What
+  they get is `os.Root`'s rename semantics and nothing stronger claimed.
+- *This is not crash durability.* Data before the rename and the directory after
+  it is the usual recipe, and power loss, a lying disk cache, or a filesystem
+  with its own ordering can still lose the write.
+
+A crash between staging and rename leaves a staging file. It is excluded from the
+listing and from the watcher, cannot be read or written through the API, and the
+server removes stale ones at startup — **unconditionally**, and only files
+bearing this desk's reserved prefix and suffix. That startup sweep skips the
+excluded directories, which is consistent because nothing may be written into
+them through the API either.
+
+**The write answers with a read-back** taken off the disk after the rename rather
+than echoing the request, so the client can verify what actually landed. The
+editor compares it to the bytes it *submitted* — captured with the request, not
+read from the live buffer — and says "saved, and verified" only when they match.
+
+**Concurrency: a conditional commit, and one honest residual.** A write carries
+`baseSha256`, the digest of the bytes the editor loaded. The current-bytes read,
+the comparison, the rename and the read-back all happen under **one server-wide
+write mutex**, so the check and the commit are one decision: two writes from the same base
+produce exactly one `200` and one `409`, never two `200`s where the second
+silently discards the first. The `409` carries both digests and `exists`, so the
+client can say what it had, what is there, and whether the file was changed or
+deleted. `override` writes anyway — the user's deliberate choice, never a
+default.
+
+That serialization covers writers **through this API**. It cannot cover an
+editor, a `git checkout`, or any other process; nothing in a single chassis can.
+For those the file watcher is the mitigation and not a guarantee: it notices the
+change and the page says the file moved underneath the edit, but a write that
+lands between this API's read and its rename is not serialized with. The `409`
+is what makes the common case honest; the watcher is what makes the uncommon one
+visible.
+
+**The editor never rebases an open edit.** The watcher makes the desk invalidate
+every query on a file change, so the bytes an edit is measured against are held
+by the editor and replaced only when the user acts — an initial load, an explicit
+reload, a successful save. A base taken from the live query would silently move
+to bytes the user never saw, and `Save` would overwrite them with no `409` at
+all. A file deleted underneath an open edit keeps the editor and the buffer, and
+says so.
+
+### The lock, and what phase 1 does not do
+
+A project can carry a reviewed-set lock (runtime ADR-0019). Phase 1 **neither
+interprets nor regenerates** one: the desk has no lock parser, writes no lock,
+and offers nothing that would update one.
+
+Two consequences worth stating plainly rather than implying otherwise:
+
+- **Whether a lock refusal surfaces depends on the connected runtime.** The
+  only evaluation surface in the desk is the what-if view. Against a runtime
+  that advertises the rehearsal argument the desk declares one, and a rehearsal
+  consults no reviewed set by design (ADR-0028) — so editing a locked pack and
+  rehearsing it will *not* produce a lock refusal there. Against an older
+  runtime with no such argument the same view makes an ordinary evaluation, and
+  a lock refusal appears verbatim. Phase 3 runs matrices from disk, which is
+  where a lock's answer will appear regardless of that distinction.
+- **The editor can edit the lock file.** `jpack.lock.json` is a file in the
+  project, and this API has no list of files that are special. Editing it is
+  possible, it is the user's own file, and it is stated here as a fact rather
+  than presented as a feature — the runtime remains the only thing that decides
+  what a lock means.
 
 ## How the relay works
 
@@ -403,6 +639,7 @@ as its working directory and is killed when the socket that started it closes.
 main.go              flags, embedded assets, HTTP server
 internal/desk/
   server.go          routing, SPA fallback, token and origin checks
+  files.go           the file API: containment, atomic save, stale-write refusal
   relay.go           WebSocket ↔ `jpack mcp` subprocess
   watch.go           project-tree file watching
 scripts/acceptance.sh  the two-run acceptance proof
@@ -411,7 +648,9 @@ web/                 Vite + React + TypeScript SPA
                      advertised-capability reader, the canonical-string,
                      probe-name and graph-document readers, and the ledger of
                      divergent digest pairs already asked about
-  src/routes/        project home, pack detail, evaluation, matrix, graphs
+  src/files/         the chassis file API: the client, and its query hooks
+  src/routes/        project home, pack detail, evaluation, matrix, graphs,
+                     the authoring shell
   src/components/    the semantic document, evaluation, coverage, row and
                      graph-walk views, plus the trace and handoff-target
                      renderers both the pack and graph surfaces share

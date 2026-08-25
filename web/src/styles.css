@@ -1155,3 +1155,72 @@ a {
   gap: 0.75rem;
   flex-wrap: wrap;
 }
+
+/* Authoring (issue #14, phase 1) -------------------------------------------
+   The file list and the editor sit side by side where there is room, and stack
+   where there is not. Nothing here is a form: phase 1 edits bytes. */
+
+.authoring-panes {
+  display: grid;
+  grid-template-columns: minmax(220px, 18rem) minmax(0, 1fr);
+  gap: 1.2rem;
+  align-items: start;
+}
+
+@media (max-width: 52rem) {
+  .authoring-panes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.15rem;
+  max-height: 30rem;
+  overflow-y: auto;
+}
+
+.file-entry {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-entry:hover {
+  background: var(--surface);
+}
+
+.file-entry-on {
+  border-left-color: var(--accent);
+  background: var(--surface);
+}
+
+.stale-write .actions {
+  margin-top: 0.6rem;
+}
+
+.stale-write p {
+  margin: 0 0 0.35rem;
+  color: var(--ink);
+}
+
+/* A notice that spans both authoring panes rather than sitting in one. */
+.authoring-wide {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}

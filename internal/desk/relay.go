@@ -110,7 +110,7 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	defer c.stop()
 
 	cmd := exec.CommandContext(ctx, s.cfg.JpackBin, "mcp")
-	cmd.Dir = s.cfg.ProjectDir
+	cmd.Dir = s.runtimeWorkingDir()
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		s.closeWith(ws, websocket.StatusInternalError, "cannot open runtime stdin")
@@ -222,3 +222,16 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 func (s *Server) closeWith(ws *websocket.Conn, code websocket.StatusCode, reason string) {
 	_ = ws.Close(code, reason)
 }
+
+// runtimeWorkingDir is the directory every `jpack mcp` subprocess starts in.
+//
+// The *resolved* project directory, not the configured pathname. A subprocess
+// cannot portably inherit this process's directory descriptor, so the runtime
+// is necessarily addressed by name — and the name it is given has to be the one
+// the file API's root was pinned from. Otherwise repointing a symlinked
+// ProjectDir leaves the desk writing one tree while every new runtime judges
+// another, with neither half able to tell.
+//
+// A method rather than a field read at the call site, so a test can assert it
+// without starting a subprocess.
+func (s *Server) runtimeWorkingDir() string { return s.projectDir }

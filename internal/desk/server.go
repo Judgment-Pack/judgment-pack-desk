@@ -17,7 +17,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -64,6 +66,24 @@ type Server struct {
 	conns map[*conn]struct{}
 
 	watcher *watcher
+
+	// root is the project directory, pinned once. Every file-API operation goes
+	// through it, so containment is a held directory descriptor rather than a
+	// pathname that was true when it was checked — see files.go.
+	root *os.Root
+	// projectDir is ProjectDir with its symlinks resolved, taken once at
+	// construction. It is the pathname every part of the chassis that cannot
+	// hold a descriptor uses: the runtime's working directory and the file
+	// watcher. Resolving it once is what stops the two halves of the desk
+	// operating on two different projects — repointing a symlinked ProjectDir
+	// after startup would otherwise leave the file API writing the original
+	// tree while each new runtime judged the replacement.
+	projectDir string
+	// writes serializes the compare-and-commit of every write. One mutex, not
+	// one per path: a per-path key is a *spelling*, and two spellings of one
+	// file on a case-insensitive filesystem would take different locks and both
+	// commit. Desk-scale contention is not worth a correctness argument.
+	writes sync.Mutex
 }
 
 // NewToken returns a fresh random session token.
@@ -89,36 +109,63 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = log.New(io.Discard, "", 0)
 	}
-	s := &Server{
-		cfg:   cfg,
-		mux:   http.NewServeMux(),
-		log:   cfg.Logger,
-		conns: make(map[*conn]struct{}),
+	// Resolved once, and everything that needs a pathname uses this one.
+	resolved, err := filepath.EvalSymlinks(cfg.ProjectDir)
+	if err != nil {
+		return nil, fmt.Errorf("desk: project directory: %w", err)
 	}
+	// Pinned once, and closed with the server. Re-opening it per request would
+	// let the authority itself be retargeted between requests.
+	root, err := os.OpenRoot(resolved)
+	if err != nil {
+		return nil, fmt.Errorf("desk: project directory: %w", err)
+	}
+	s := &Server{
+		cfg:        cfg,
+		mux:        http.NewServeMux(),
+		log:        cfg.Logger,
+		conns:      make(map[*conn]struct{}),
+		root:       root,
+		projectDir: resolved,
+	}
+	s.removeStaleStaging()
 	if cfg.Static != nil {
 		s.static = http.FileServer(http.FS(cfg.Static))
 	}
 	s.mux.HandleFunc("/ws", s.handleWS)
+	// The file API (issue #14, phase 1). Everything else the desk shows comes
+	// over the relay; writes cannot, because the runtime has no write tools by
+	// design. See files.go for what this does and does not decide.
+	s.mux.HandleFunc("GET /api/files", s.handleFiles)
+	s.mux.HandleFunc("GET /api/file", s.handleFileRead)
+	s.mux.HandleFunc("PUT /api/file", s.handleFileWrite)
 	s.mux.HandleFunc("/", s.handleStatic)
 
-	w, err := newWatcher(cfg.ProjectDir, s.log, s.broadcastFileChange)
-	if err != nil {
+	w, werr := newWatcher(resolved, s.log, s.broadcastFileChange)
+	if werr != nil {
 		// A desk without live reload is still a working desk; a desk that
 		// refuses to start because the tree is large or the inotify budget is
 		// spent is not. Report and continue.
-		s.log.Printf("desk: file watching disabled: %v", err)
+		s.log.Printf("desk: file watching disabled: %v", werr)
 	} else {
 		s.watcher = w
 	}
 	return s, nil
 }
 
-// Close stops the file watcher. Open relays end with their sockets.
+// Close stops the file watcher and releases the pinned project root. Open
+// relays end with their sockets.
 func (s *Server) Close() error {
+	var err error
 	if s.watcher != nil {
-		return s.watcher.Close()
+		err = s.watcher.Close()
 	}
-	return nil
+	if s.root != nil {
+		if rerr := s.root.Close(); err == nil {
+			err = rerr
+		}
+	}
+	return err
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
@@ -149,6 +196,22 @@ func (s *Server) originAllowed(r *http.Request) bool {
 	if err != nil {
 		return false
 	}
+	// A serialized origin is a scheme, a host and a port, and nothing else.
+	// Matching on the host alone would accept `http://127.0.0.1:8791/evil` and
+	// an origin whose scheme is not the one we were served under, while the
+	// prose promises same-origin semantics.
+	// "Nothing else" means nothing else, including the delimiters that parse to
+	// empty: `http://host?` sets ForceQuery with an empty RawQuery, and a bare
+	// trailing `#` is dropped by the parser entirely, so the raw header is
+	// checked for it.
+	if u.Scheme == "" || u.Host == "" || u.Opaque != "" || u.User != nil ||
+		u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" ||
+		strings.ContainsRune(origin, '#') {
+		return false
+	}
+	if !strings.EqualFold(u.Scheme, requestScheme(r)) {
+		return false
+	}
 	if strings.EqualFold(u.Host, r.Host) {
 		return true
 	}
@@ -160,6 +223,17 @@ func (s *Server) originAllowed(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+// requestScheme is the scheme this request reached us under. The chassis binds
+// loopback and serves plain HTTP; TLS is reported where a future build ends up
+// terminating it here, and no forwarded header is trusted, because anything a
+// proxy asserts is something an attacker can assert too.
+func requestScheme(r *http.Request) string {
+	if r.TLS != nil {
+		return "https"
+	}
+	return "http"
 }
 
 // handleStatic serves the embedded SPA with single-page fallback: a path that
