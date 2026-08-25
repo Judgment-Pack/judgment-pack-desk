@@ -1777,3 +1777,46 @@ func TestSameAsAnyAncestorSeesThroughAName(t *testing.T) {
 		t.Fatal("a repeat deeper in the ancestor stack was missed")
 	}
 }
+
+// TestUnreadableFileIsNotCalledAContainmentFailure pins the distinction.
+//
+// A file inside the project that this process may not open is a permission
+// problem. Reporting it as "not inside the project" sends whoever reads that
+// message hunting a containment bug that does not exist — the same mistake a
+// missing parent directory used to produce on the write path.
+func TestUnreadableFileIsNotCalledAContainmentFailure(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs Unix permissions and a non-root user")
+	}
+	_, ts, project := filesServer(t)
+	locked := writeProjectFile(t, project, "unreadable.json", "{}")
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(locked, 0o644) })
+
+	status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path=unreadable.json")
+	if status != http.StatusForbidden {
+		t.Fatalf("read: status %d, %v", status, body)
+	}
+	message := body["error"].(string)
+	if strings.Contains(message, "not inside the project") {
+		t.Fatalf("a permission error was reported as a containment failure: %q", message)
+	}
+	if !strings.Contains(message, "unreadable.json") || !strings.Contains(message, "permission") {
+		t.Fatalf("unhelpful message: %q", message)
+	}
+
+	// And the listing says the same thing in its partial channel.
+	_, listing := getJSON(t, ts, "/api/files?token="+testToken)
+	partial, _ := listing["partial"].([]any)
+	found := false
+	for _, p := range partial {
+		if strings.Contains(p.(string), "unreadable.json") && !strings.Contains(p.(string), "not inside the project") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the listing did not report it honestly: %v", listing["partial"])
+	}
+}

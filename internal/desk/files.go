@@ -312,8 +312,15 @@ func (s *Server) readThroughRoot(clean string) ([]byte, int, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, http.StatusNotFound, fmt.Errorf("no such file in the project: %s", clean)
 		}
-		// Root refuses an escape with its own error; every refusal reaching here
-		// is reported as the one containment refusal.
+		// A file inside the project that this process may not open is not a
+		// containment failure, and saying so would send someone hunting a
+		// security problem that is not there — the same mistake a missing
+		// parent directory used to produce on the write path.
+		if errors.Is(err, fs.ErrPermission) {
+			return nil, http.StatusForbidden, fmt.Errorf("%s cannot be read: %w", clean, fs.ErrPermission)
+		}
+		// Everything else is the one containment refusal, deliberately not
+		// itemized: which rule stopped it is not the caller's business.
 		return nil, http.StatusForbidden, errOutsideProject
 	}
 	defer f.Close()

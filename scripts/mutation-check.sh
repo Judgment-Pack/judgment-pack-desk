@@ -246,6 +246,9 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the walk has no entry budget" "$F" \
     '			if budget <= 0 {' \
     '			if false {'
+  mutate go "a permission error is called a containment failure" "$F" \
+    '		if errors.Is(err, fs.ErrPermission) {' \
+    '		if false {'
   mutate go "an unreadable file gets the oversized shape" "$F" \
     '		case status == http.StatusRequestEntityTooLarge:' \
     '		case status != 0:'
