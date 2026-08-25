@@ -221,6 +221,9 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		return false
 	}' \
     ''
+  mutate go "the listing stats by pathname, not through the root" "$F" \
+    '		info, ierr := s.root.Stat(osPath(p))' \
+    '		info, ierr := d.Info()'
   mutate go "the project root is re-resolved per request" "$F" \
     '	f, err := s.root.OpenFile(osPath(clean), os.O_RDONLY|openNonBlocking, 0)' \
     '	f, err := os.OpenFile(filepath.Join(s.cfg.ProjectDir, osPath(clean)), os.O_RDONLY|openNonBlocking, 0)'

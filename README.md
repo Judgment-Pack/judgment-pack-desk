@@ -448,6 +448,12 @@ that handle. This matters for two reasons a string check cannot address:
   different tree without racing anything. A test repoints a symlinked root after
   startup and asserts the desk keeps serving the tree it was given.
 
+*One version-dependent trap, named because it bit:* the `fs.DirEntry` that
+`Root.FS()` yields resolves `Info()` by **pathname** on Go 1.25 and by
+descriptor on 1.26. The listing therefore stats through `Root.Stat` explicitly
+rather than through the entry — depending on which toolchain is underneath to
+hold a containment property is not a property.
+
 A lexical check runs first and is tested on its own. It refuses `..`, absolute
 paths, drive and UNC forms, NUL, and **backslash anywhere** — on Windows that is
 a separator, so `..\secret` is a traversal slash-only cleaning does not see, and
