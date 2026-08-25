@@ -70,7 +70,11 @@ run_go() {
 
 run_web() {
   local out named
-  out="$(npx --prefix web vitest run --root web 2>&1)"
+  # The project's own command. An invocation of vitest that differs from it —
+  # a different root, a different config resolution — can fail a test that has
+  # nothing to do with the mutation, and that failure would appear in every row
+  # and make a mutation nothing catches look caught.
+  out="$(npm --prefix web test 2>&1)"
   if grep -q 'error TS[0-9]\|Transform failed\|Build failed' <<<"$out"; then
     echo "DID NOT COMPILE — inconclusive"
     return

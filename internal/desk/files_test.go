@@ -554,6 +554,42 @@ func TestWritePreservesTheFileMode(t *testing.T) {
 	}
 }
 
+// TestWriteReplacesAReadOnlyFile pins that the save replaces the *directory
+// entry* rather than writing through the file — which is what makes it atomic,
+// and is observable exactly here: renaming over a read-only file succeeds where
+// opening it for truncation would be refused. The mode is carried across, so a
+// read-only document stays read-only.
+func TestWriteReplacesAReadOnlyFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mode semantics differ on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the write bit, so this cannot discriminate")
+	}
+	_, ts, project := filesServer(t)
+	abs := writeProjectFile(t, project, "packs/a.pack.json", "{}")
+	if err := os.Chmod(abs, 0o444); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	status, body := putJSON(t, ts, WriteRequest{
+		Path: "packs/a.pack.json", Content: `{"id":"a"}`, BaseSHA256: digestOf([]byte("{}")),
+	})
+	if status != http.StatusOK {
+		t.Fatalf("write over a read-only file: status %d, %v", status, body)
+	}
+	onDisk, err := os.ReadFile(abs)
+	if err != nil || string(onDisk) != `{"id":"a"}` {
+		t.Fatalf("disk: %q, %v", string(onDisk), err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode().Perm() != 0o444 {
+		t.Fatalf("mode after replacing a read-only file: %v", info.Mode().Perm())
+	}
+}
+
 func TestStaleWriteIsRefusedWithBothDigests(t *testing.T) {
 	_, ts, project := filesServer(t)
 	const loaded = `{"id":"a"}`
