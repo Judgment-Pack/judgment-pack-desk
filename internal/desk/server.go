@@ -17,6 +17,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"strings"
 	"sync"
@@ -64,6 +65,13 @@ type Server struct {
 	conns map[*conn]struct{}
 
 	watcher *watcher
+
+	// root is the project directory, pinned once. Every file-API operation goes
+	// through it, so containment is a held directory descriptor rather than a
+	// pathname that was true when it was checked — see files.go.
+	root *os.Root
+	// writes serializes each target path's compare-and-commit.
+	writes *pathLocks
 }
 
 // NewToken returns a fresh random session token.
@@ -89,12 +97,21 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = log.New(io.Discard, "", 0)
 	}
-	s := &Server{
-		cfg:   cfg,
-		mux:   http.NewServeMux(),
-		log:   cfg.Logger,
-		conns: make(map[*conn]struct{}),
+	// Pinned once, and closed with the server. Re-opening it per request would
+	// let the authority itself be retargeted between requests.
+	root, err := os.OpenRoot(cfg.ProjectDir)
+	if err != nil {
+		return nil, fmt.Errorf("desk: project directory: %w", err)
 	}
+	s := &Server{
+		cfg:    cfg,
+		mux:    http.NewServeMux(),
+		log:    cfg.Logger,
+		conns:  make(map[*conn]struct{}),
+		root:   root,
+		writes: newPathLocks(),
+	}
+	s.removeStaleStaging()
 	if cfg.Static != nil {
 		s.static = http.FileServer(http.FS(cfg.Static))
 	}
@@ -107,24 +124,31 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("PUT /api/file", s.handleFileWrite)
 	s.mux.HandleFunc("/", s.handleStatic)
 
-	w, err := newWatcher(cfg.ProjectDir, s.log, s.broadcastFileChange)
-	if err != nil {
+	w, werr := newWatcher(cfg.ProjectDir, s.log, s.broadcastFileChange)
+	if werr != nil {
 		// A desk without live reload is still a working desk; a desk that
 		// refuses to start because the tree is large or the inotify budget is
 		// spent is not. Report and continue.
-		s.log.Printf("desk: file watching disabled: %v", err)
+		s.log.Printf("desk: file watching disabled: %v", werr)
 	} else {
 		s.watcher = w
 	}
 	return s, nil
 }
 
-// Close stops the file watcher. Open relays end with their sockets.
+// Close stops the file watcher and releases the pinned project root. Open
+// relays end with their sockets.
 func (s *Server) Close() error {
+	var err error
 	if s.watcher != nil {
-		return s.watcher.Close()
+		err = s.watcher.Close()
 	}
-	return nil
+	if s.root != nil {
+		if rerr := s.root.Close(); err == nil {
+			err = rerr
+		}
+	}
+	return err
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
@@ -155,6 +179,17 @@ func (s *Server) originAllowed(r *http.Request) bool {
 	if err != nil {
 		return false
 	}
+	// A serialized origin is a scheme, a host and a port, and nothing else.
+	// Matching on the host alone would accept `http://127.0.0.1:8791/evil` and
+	// an origin whose scheme is not the one we were served under, while the
+	// prose promises same-origin semantics.
+	if u.Scheme == "" || u.Host == "" || u.Opaque != "" || u.User != nil ||
+		u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	if !strings.EqualFold(u.Scheme, requestScheme(r)) {
+		return false
+	}
 	if strings.EqualFold(u.Host, r.Host) {
 		return true
 	}
@@ -166,6 +201,17 @@ func (s *Server) originAllowed(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+// requestScheme is the scheme this request reached us under. The chassis binds
+// loopback and serves plain HTTP; TLS is reported where a future build ends up
+// terminating it here, and no forwarded header is trusted, because anything a
+// proxy asserts is something an attacker can assert too.
+func requestScheme(r *http.Request) string {
+	if r.TLS != nil {
+		return "https"
+	}
+	return "http"
 }
 
 // handleStatic serves the embedded SPA with single-page fallback: a path that

@@ -7,11 +7,15 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // filesServer stands one chassis up over a fresh project tree. No runtime
@@ -81,116 +85,33 @@ func putJSON(t *testing.T, ts *httptest.Server, req WriteRequest) (int, map[stri
 
 /* Containment ------------------------------------------------------------- */
 
-// TestResolveInProjectContainment is the table the whole API rests on. Each
-// case names the family it belongs to, because the three are stopped by three
-// different parts of the function and a test that only asked "was it refused?"
-// could not tell which of them had stopped running.
-func TestResolveInProjectContainment(t *testing.T) {
-	s, _, project := filesServer(t)
-
-	writeProjectFile(t, project, "jpack.json", `{"configVersion":"2"}`)
-	writeProjectFile(t, project, "packs/a.pack.json", `{}`)
-
-	// A place outside the project, and a file in it that must stay unreachable.
-	outside := t.TempDir()
-	secret := filepath.Join(outside, "secret.json")
-	if err := os.WriteFile(secret, []byte(`{"secret":true}`), 0o600); err != nil {
-		t.Fatalf("write secret: %v", err)
-	}
-
-	if runtime.GOOS != "windows" {
-		// A symlink *inside* the project pointing at a file outside it. This is
-		// the case a lexical check cannot see: the path never says `..`, and
-		// `filepath.Clean` reports it as contained.
-		if err := os.Symlink(secret, filepath.Join(project, "escape.json")); err != nil {
-			t.Fatalf("symlink file: %v", err)
-		}
-		// And a symlinked *directory*, so the escape is in a path component
-		// rather than in the leaf.
-		if err := os.Symlink(outside, filepath.Join(project, "elsewhere")); err != nil {
-			t.Fatalf("symlink dir: %v", err)
-		}
-	}
-
-	allowed := []struct {
-		name string
-		rel  string
-	}{
-		{"a file at the root", "jpack.json"},
-		{"a file in a subdirectory", "packs/a.pack.json"},
-		{"a file that does not exist yet", "packs/new.pack.json"},
-		{"a dot-dot that stays inside", "packs/../jpack.json"},
-	}
-	for _, tc := range allowed {
-		t.Run("allowed/"+tc.name, func(t *testing.T) {
-			abs, err := s.resolveInProject(tc.rel)
-			if err != nil {
-				t.Fatalf("resolveInProject(%q): %v", tc.rel, err)
-			}
-			if !strings.HasPrefix(abs, mustEval(t, project)) {
-				t.Fatalf("resolved outside the project: %s", abs)
-			}
-		})
-	}
-
-	refused := []struct {
-		name   string
-		rel    string
-		family string
-	}{
-		{"empty", "", "syntax"},
-		{"the project itself", ".", "syntax"},
-		{"bare dot-dot", "..", "lexical"},
-		{"climbing out", "../secret.json", "lexical"},
-		{"climbing out through a subdirectory", "packs/../../secret.json", "lexical"},
-		{"deep climb", "a/b/c/../../../../secret.json", "lexical"},
-		{"absolute", secret, "absolute"},
-		{"absolute root", "/etc/passwd", "absolute"},
-	}
-	if runtime.GOOS != "windows" {
-		refused = append(refused,
-			struct {
-				name   string
-				rel    string
-				family string
-			}{"a symlink pointing out", "escape.json", "symlink"},
-			struct {
-				name   string
-				rel    string
-				family string
-			}{"through a symlinked directory", "elsewhere/secret.json", "symlink"},
-			struct {
-				name   string
-				rel    string
-				family string
-			}{"a new file under a symlinked directory", "elsewhere/new.json", "symlink"},
-		)
-	}
-	for _, tc := range refused {
-		t.Run("refused/"+tc.family+"/"+tc.name, func(t *testing.T) {
-			if abs, err := s.resolveInProject(tc.rel); err == nil {
-				t.Fatalf("resolveInProject(%q) allowed %s; expected refusal (%s)", tc.rel, abs, tc.family)
-			}
-		})
-	}
-}
-
-// TestLexicalLayerRefusesOnItsOwn names the layer.
+// TestWireRelativePathRefusesOnItsOwn names the lexical layer.
 //
-// Two independent checks stand between a client path and the disk, and the
-// resolver refuses a superset of what the lexical check does — so a test that
-// went through resolveInProject and asked only "was it refused?" stays green
-// with the lexical layer deleted. This asks the layer directly, which is the
-// only way to notice it has stopped running.
-func TestLexicalLayerRefusesOnItsOwn(t *testing.T) {
-	refused := []string{
-		"", ".", "..", "../secret.json", "packs/../../secret.json",
-		"a/b/../../../out.json", "/etc/passwd",
+// Two independent things stand between a client path and the disk: this, and
+// the pinned root. The root refuses a superset, so a test that went through a
+// handler and asked only "was it refused?" stays green with this layer deleted.
+// Asking it directly is the only way to notice it has stopped running.
+func TestWireRelativePathRefusesOnItsOwn(t *testing.T) {
+	refused := map[string]string{
+		"empty":                 "",
+		"the project itself":    ".",
+		"bare dot-dot":          "..",
+		"climbing out":          "../secret.json",
+		"climbing through":      "packs/../../secret.json",
+		"deep climb":            "a/b/c/../../../../secret.json",
+		"absolute":              "/etc/passwd",
+		"windows drive":         "C:/secret.json",
+		"unc":                   "//host/share/secret.json",
+		"backslash traversal":   `..\secret.json`,
+		"backslash separator":   `packs\a.pack.json`,
+		"nul byte":              "packs/a\x00.json",
+		"a staging file":        ".jpack-desk-abc.tmp",
+		"a staging file nested": "packs/.jpack-desk-abc.tmp",
 	}
-	for _, rel := range refused {
-		t.Run("refused/"+rel, func(t *testing.T) {
-			if clean, err := lexicallyInsideProject(rel); err == nil {
-				t.Fatalf("lexicallyInsideProject(%q) allowed %q", rel, clean)
+	for name, rel := range refused {
+		t.Run("refused/"+name, func(t *testing.T) {
+			if clean, err := wireRelativePath(rel); err == nil {
+				t.Fatalf("wireRelativePath(%q) allowed %q", rel, clean)
 			}
 		})
 	}
@@ -203,9 +124,9 @@ func TestLexicalLayerRefusesOnItsOwn(t *testing.T) {
 	}
 	for rel, want := range allowed {
 		t.Run("allowed/"+rel, func(t *testing.T) {
-			clean, err := lexicallyInsideProject(rel)
+			clean, err := wireRelativePath(rel)
 			if err != nil {
-				t.Fatalf("lexicallyInsideProject(%q): %v", rel, err)
+				t.Fatalf("wireRelativePath(%q): %v", rel, err)
 			}
 			if clean != want {
 				t.Fatalf("cleaned to %q, want %q", clean, want)
@@ -214,81 +135,9 @@ func TestLexicalLayerRefusesOnItsOwn(t *testing.T) {
 	}
 }
 
-// TestSiblingDirectoryIsNotInsideTheProject pins the separator in the prefix
-// test. Without it "/tmp/proj-evil" tests as inside "/tmp/proj", and a project
-// with a same-prefixed neighbour is readable through this API.
-func TestSiblingDirectoryIsNotInsideTheProject(t *testing.T) {
-	parent := t.TempDir()
-	project := filepath.Join(parent, "proj")
-	sibling := filepath.Join(parent, "proj-evil")
-	for _, dir := range []string{project, sibling} {
-		if err := os.Mkdir(dir, 0o755); err != nil {
-			t.Fatalf("mkdir: %v", err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(sibling, "secret.json"), []byte("{}"), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	real := mustEval(t, project)
-	if within(real, mustEval(t, sibling)) {
-		t.Fatal("a sibling directory tested as inside the project")
-	}
-	if !within(real, filepath.Join(real, "packs", "a.json")) {
-		t.Fatal("a real child tested as outside the project")
-	}
-	if !within(real, real) {
-		t.Fatal("the project is not inside itself")
-	}
-}
-
-// TestWriteReplacesAReadOnlyFile pins that the save replaces the *directory
-// entry* rather than writing through the file — which is what makes it atomic,
-// and is observable exactly here: renaming over a read-only file succeeds where
-// opening it for truncation would be refused. The mode is carried across, so a
-// read-only document stays read-only.
-func TestWriteReplacesAReadOnlyFile(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("mode semantics differ on Windows")
-	}
-	if os.Geteuid() == 0 {
-		t.Skip("root ignores the write bit, so this cannot discriminate")
-	}
-	_, ts, project := filesServer(t)
-	abs := writeProjectFile(t, project, "packs/a.pack.json", "{}")
-	if err := os.Chmod(abs, 0o444); err != nil {
-		t.Fatalf("chmod: %v", err)
-	}
-	status, body := putJSON(t, ts, WriteRequest{
-		Path: "packs/a.pack.json", Content: `{"id":"a"}`, BaseSHA256: digestOf([]byte("{}")),
-	})
-	if status != http.StatusOK {
-		t.Fatalf("write over a read-only file: status %d, %v", status, body)
-	}
-	onDisk, err := os.ReadFile(abs)
-	if err != nil || string(onDisk) != `{"id":"a"}` {
-		t.Fatalf("disk: %q, %v", string(onDisk), err)
-	}
-	info, err := os.Stat(abs)
-	if err != nil {
-		t.Fatalf("stat: %v", err)
-	}
-	if info.Mode().Perm() != 0o444 {
-		t.Fatalf("mode after replacing a read-only file: %v", info.Mode().Perm())
-	}
-}
-
-func mustEval(t *testing.T, p string) string {
-	t.Helper()
-	real, err := filepath.EvalSymlinks(p)
-	if err != nil {
-		t.Fatalf("EvalSymlinks(%q): %v", p, err)
-	}
-	return real
-}
-
 // TestSymlinkEscapeRefusedOverTheWire proves the containment is reached by the
-// endpoints and not merely by the helper — on reads and on writes alike, which
-// is the consistency this API promises.
+// endpoints — on reads and on writes alike, which is the consistency this API
+// promises.
 func TestSymlinkEscapeRefusedOverTheWire(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink semantics differ on Windows")
@@ -300,26 +149,182 @@ func TestSymlinkEscapeRefusedOverTheWire(t *testing.T) {
 		t.Fatalf("write secret: %v", err)
 	}
 	if err := os.Symlink(secret, filepath.Join(project, "escape.json")); err != nil {
-		t.Fatalf("symlink: %v", err)
+		t.Fatalf("symlink file: %v", err)
+	}
+	if err := os.Symlink(outside, filepath.Join(project, "elsewhere")); err != nil {
+		t.Fatalf("symlink dir: %v", err)
 	}
 
-	status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path=escape.json")
-	if status != http.StatusForbidden {
-		t.Fatalf("read through a symlink: status %d, body %v", status, body)
+	for _, rel := range []string{"escape.json", "elsewhere/secret.json", "elsewhere/new.json"} {
+		status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path="+rel)
+		if status != http.StatusForbidden && status != http.StatusNotFound {
+			t.Fatalf("read %s: status %d, body %v", rel, status, body)
+		}
+		if message, ok := body["error"].(string); ok && strings.Contains(message, "secret") {
+			t.Fatalf("the refusal describes what is outside the project: %v", message)
+		}
+		if status, _ := putJSON(t, ts, WriteRequest{Path: rel, Content: "{}", Override: true}); status == http.StatusOK {
+			t.Fatalf("write %s succeeded", rel)
+		}
 	}
-	if strings.Contains(body["error"].(string), "secret") {
-		t.Fatalf("the refusal describes what is outside the project: %v", body["error"])
-	}
-
-	status, _ = putJSON(t, ts, WriteRequest{Path: "escape.json", Content: "{}", Override: true})
-	if status != http.StatusForbidden {
-		t.Fatalf("write through a symlink: status %d", status)
-	}
-	// And the file outside is untouched, which is the thing that actually
-	// matters — a refusal that had already written would be no refusal.
+	// The file outside is untouched, which is what actually matters — a
+	// refusal that had already written would be no refusal.
 	after, err := os.ReadFile(secret)
 	if err != nil || string(after) != `{"secret":true}` {
 		t.Fatalf("the file outside the project changed: %q, %v", string(after), err)
+	}
+	// And it is not listed, with no target or size disclosed.
+	_, listing := getJSON(t, ts, "/api/files?token="+testToken)
+	for _, raw := range listing["files"].([]any) {
+		if p := raw.(map[string]any)["path"].(string); p == "escape.json" || strings.HasPrefix(p, "elsewhere/") {
+			t.Fatalf("a symlink was listed: %s", p)
+		}
+	}
+}
+
+// TestSymlinkSwapBetweenCheckAndUse is the time-of-check/time-of-use case.
+//
+// The hook fires at the one instant an attacker would need: the path has been
+// validated and the operation has not yet happened. It replaces an approved
+// directory with a symlink pointing outside the project — the swap that defeats
+// any design that validates a pathname and then opens it by name.
+//
+// Every route must still refuse, or write nothing outside the root.
+func TestSymlinkSwapBetweenCheckAndUse(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on Windows")
+	}
+
+	swapDirForSymlinkOut := func(t *testing.T, project, outside string) func(string) {
+		t.Helper()
+		var once sync.Once
+		return func(string) {
+			once.Do(func() {
+				victim := filepath.Join(project, "packs")
+				if err := os.RemoveAll(victim); err != nil {
+					t.Errorf("remove: %v", err)
+					return
+				}
+				if err := os.Symlink(outside, victim); err != nil {
+					t.Errorf("symlink: %v", err)
+				}
+			})
+		}
+	}
+
+	t.Run("GET", func(t *testing.T) {
+		_, ts, project := filesServer(t)
+		writeProjectFile(t, project, "packs/a.pack.json", `{"id":"a"}`)
+		outside := t.TempDir()
+		if err := os.WriteFile(filepath.Join(outside, "a.pack.json"), []byte(`{"secret":true}`), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		testHookAfterResolve = swapDirForSymlinkOut(t, project, outside)
+		t.Cleanup(func() { testHookAfterResolve = nil })
+
+		status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path=packs/a.pack.json")
+		if status == http.StatusOK {
+			t.Fatalf("read followed the swapped directory: %v", body)
+		}
+	})
+
+	t.Run("PUT", func(t *testing.T) {
+		_, ts, project := filesServer(t)
+		writeProjectFile(t, project, "packs/a.pack.json", `{"id":"a"}`)
+		outside := t.TempDir()
+		victimOutside := filepath.Join(outside, "a.pack.json")
+		if err := os.WriteFile(victimOutside, []byte(`{"secret":true}`), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		testHookAfterResolve = swapDirForSymlinkOut(t, project, outside)
+		t.Cleanup(func() { testHookAfterResolve = nil })
+
+		status, _ := putJSON(t, ts, WriteRequest{
+			Path: "packs/a.pack.json", Content: `{"owned":true}`, Override: true,
+		})
+		if status == http.StatusOK {
+			t.Fatal("write followed the swapped directory")
+		}
+		after, err := os.ReadFile(victimOutside)
+		if err != nil || string(after) != `{"secret":true}` {
+			t.Fatalf("the file outside the project was written: %q, %v", string(after), err)
+		}
+	})
+
+	t.Run("list", func(t *testing.T) {
+		_, ts, project := filesServer(t)
+		writeProjectFile(t, project, "packs/a.pack.json", `{"id":"a"}`)
+		outside := t.TempDir()
+		if err := os.WriteFile(filepath.Join(outside, "secret.json"), []byte(`{"secret":true}`), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		testHookAfterResolve = swapDirForSymlinkOut(t, project, outside)
+		t.Cleanup(func() { testHookAfterResolve = nil })
+
+		_, body := getJSON(t, ts, "/api/files?token="+testToken)
+		for _, raw := range body["files"].([]any) {
+			if p := raw.(map[string]any)["path"].(string); strings.Contains(p, "secret") {
+				t.Fatalf("the listing walked outside the project: %s", p)
+			}
+		}
+	})
+}
+
+// TestRetargetedProjectRootIsNotAdopted pins the root itself.
+//
+// The desk is started against a symlinked path — an ordinary way to reach a
+// project — and the symlink is then repointed at another tree. A chassis that
+// re-resolved its root per request would serve the new tree; this one holds a
+// descriptor to the directory it was given.
+func TestRetargetedProjectRootIsNotAdopted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on Windows")
+	}
+	parent := t.TempDir()
+	real := filepath.Join(parent, "real")
+	other := filepath.Join(parent, "other")
+	for _, dir := range []string{real, other} {
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(real, "mine.json"), []byte(`{"mine":true}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(other, "theirs.json"), []byte(`{"theirs":true}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	link := filepath.Join(parent, "project")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	s, err := New(Config{ProjectDir: link, JpackBin: "jpack", Token: testToken, Logger: log.New(io.Discard, "", 0)})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	// Repoint the root after the server was built.
+	if err := os.Remove(link); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if err := os.Symlink(other, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	_, body := getJSON(t, ts, "/api/files?token="+testToken)
+	listed := map[string]bool{}
+	for _, raw := range body["files"].([]any) {
+		listed[raw.(map[string]any)["path"].(string)] = true
+	}
+	if listed["theirs.json"] {
+		t.Fatal("the chassis adopted the retargeted root")
+	}
+	if !listed["mine.json"] {
+		t.Fatalf("the chassis lost the root it was given: %v", listed)
 	}
 }
 
@@ -678,13 +683,330 @@ func TestAtomicWriteCleansUpWhenTheRenameCannotHappen(t *testing.T) {
 	// The failure surface: staging succeeded, the replace did not. Renaming
 	// onto a directory fails on every platform, which makes it a portable way
 	// to reach that branch without a fault-injection layer.
-	project := t.TempDir()
-	target := filepath.Join(project, "adirectory")
-	if err := os.Mkdir(target, 0o755); err != nil {
+	s, _, project := filesServer(t)
+	if err := os.Mkdir(filepath.Join(project, "adirectory"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := atomicWrite(target, []byte("{}")); err == nil {
+	if err := s.atomicWrite("adirectory", []byte("{}")); err == nil {
 		t.Fatal("expected the write to fail")
 	}
 	assertNoTempFiles(t, project)
 }
+
+// TestStagingFilesAreNeitherListedNorWatched pins the exclusion.
+//
+// A staging file is this desk mid-save. Listing it exposes a half-written
+// document to a second tab, and watching it fires a change notification for a
+// file nobody edited — in the middle of the save that made it.
+func TestStagingFilesAreNeitherListedNorWatched(t *testing.T) {
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", "{}")
+	writeProjectFile(t, project, ".jpack-desk-deadbeef.tmp", "half a document")
+	writeProjectFile(t, project, "packs/.jpack-desk-cafe.tmp", "half a document")
+
+	_, body := getJSON(t, ts, "/api/files?token="+testToken)
+	for _, raw := range body["files"].([]any) {
+		if p := raw.(map[string]any)["path"].(string); strings.Contains(p, ".jpack-desk-") {
+			t.Fatalf("a staging file was listed: %s", p)
+		}
+	}
+	// And neither can be read or written through the API by name.
+	if status, _ := getJSON(t, ts, "/api/file?token="+testToken+"&path=.jpack-desk-deadbeef.tmp"); status != http.StatusForbidden {
+		t.Fatalf("reading a staging file: status %d", status)
+	}
+	if status, _ := putJSON(t, ts, WriteRequest{Path: ".jpack-desk-new.tmp", Content: "{}", Override: true}); status != http.StatusForbidden {
+		t.Fatalf("writing a staging file: status %d", status)
+	}
+}
+
+// TestStaleStagingFilesAreClearedAtStartup pins the cleanup. A crash between
+// staging and rename leaves one behind; a project should not slowly fill with
+// the debris of interrupted saves.
+func TestStaleStagingFilesAreClearedAtStartup(t *testing.T) {
+	project := t.TempDir()
+	writeProjectFile(t, project, "jpack.json", "{}")
+	writeProjectFile(t, project, ".jpack-desk-stale.tmp", "left by a crash")
+	writeProjectFile(t, project, "packs/.jpack-desk-stale.tmp", "left by a crash")
+	// Not ours, and not touched.
+	writeProjectFile(t, project, "keep.tmp", "somebody else's")
+
+	s, err := New(Config{ProjectDir: project, JpackBin: "jpack", Token: testToken, Logger: log.New(io.Discard, "", 0)})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	for _, gone := range []string{".jpack-desk-stale.tmp", "packs/.jpack-desk-stale.tmp"} {
+		if _, err := os.Stat(filepath.Join(project, filepath.FromSlash(gone))); !os.IsNotExist(err) {
+			t.Fatalf("%s survived startup", gone)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(project, "keep.tmp")); err != nil {
+		t.Fatalf("a file this desk does not own was removed: %v", err)
+	}
+}
+
+// TestReadRefusesWhatIsNotARegularFile pins the handle-based type check. A FIFO
+// opened for reading blocks until somebody writes to it, which would hold a
+// handler forever.
+func TestReadRefusesWhatIsNotARegularFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no mkfifo on Windows")
+	}
+	_, ts, project := filesServer(t)
+	fifo := filepath.Join(project, "pipe")
+	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		status, _ := getJSON(t, ts, "/api/file?token="+testToken+"&path=pipe")
+		if status == http.StatusOK {
+			t.Errorf("a FIFO was read as a document")
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("reading a FIFO blocked the handler")
+	}
+	// And it is not listed.
+	_, body := getJSON(t, ts, "/api/files?token="+testToken)
+	for _, raw := range body["files"].([]any) {
+		if raw.(map[string]any)["path"] == "pipe" {
+			t.Fatal("a FIFO was listed as a document")
+		}
+	}
+}
+
+// TestReadIsBoundedByTheReaderNotTheStat pins the LimitReader. A size read from
+// metadata is a claim about a moment; the bound has to be on the read itself.
+func TestReadIsBoundedByTheReaderNotTheStat(t *testing.T) {
+	_, ts, project := filesServer(t)
+	big := make([]byte, maxFileBytes+1024)
+	for i := range big {
+		big[i] = 'x'
+	}
+	if err := os.WriteFile(filepath.Join(project, "big.json"), big, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path=big.json")
+	if status != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized read: status %d, %v", status, body)
+	}
+	// It is still listed — it is really there — with no digest, because it was
+	// not read.
+	_, listing := getJSON(t, ts, "/api/files?token="+testToken)
+	found := false
+	for _, raw := range listing["files"].([]any) {
+		entry := raw.(map[string]any)
+		if entry["path"] == "big.json" {
+			found = true
+			if entry["sha256"] != "" {
+				t.Fatalf("an unread file was listed with a digest: %v", entry["sha256"])
+			}
+		}
+	}
+	if !found {
+		t.Fatal("an oversized file was omitted from the listing rather than listed without a digest")
+	}
+}
+
+/* Origin and the browser's own defences ----------------------------------- */
+
+// TestOriginMatchIsStrict pins scheme-and-host matching rather than host-only.
+//
+// A browser will not mint most of these, but the prose promises same-origin
+// semantics and a check that reads only the host does not deliver them.
+func TestOriginMatchIsStrict(t *testing.T) {
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", "{}")
+	host := strings.TrimPrefix(ts.URL, "http://")
+
+	refused := map[string]string{
+		"another site":        "http://evil.example",
+		"a different scheme":  "https://" + host,
+		"a path-bearing form": "http://" + host + "/evil",
+		"a query-bearing one": "http://" + host + "?x=1",
+		"userinfo":            "http://user@" + host,
+		"an opaque form":      "http:evil",
+		"scheme only":         "http://",
+		"not a URL at all":    "null",
+	}
+	for name, origin := range refused {
+		t.Run("refused/"+name, func(t *testing.T) {
+			r, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files?token="+testToken, nil)
+			r.Header.Set("Origin", origin)
+			resp, err := http.DefaultClient.Do(r)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusForbidden {
+				t.Fatalf("Origin %q: status %d", origin, resp.StatusCode)
+			}
+		})
+	}
+
+	t.Run("allowed/the origin we were served under", func(t *testing.T) {
+		r, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files?token="+testToken, nil)
+		r.Header.Set("Origin", ts.URL)
+		resp, err := http.DefaultClient.Do(r)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("same origin: status %d", resp.StatusCode)
+		}
+	})
+}
+
+// TestCrossOriginWriteIsRefusedAtBothLayers documents a defence that was
+// accidental until it was written down.
+//
+// A page on another site cannot send this PUT from a browser: the JSON content
+// type makes it a non-simple request, so the browser must preflight, and the
+// chassis answers no CORS permission at all — no `Access-Control-Allow-Origin`,
+// no handler for OPTIONS. That is the first layer, and it belongs to the
+// browser rather than to us.
+//
+// The second layer is ours and does not depend on the first: a PUT that arrives
+// with a foreign Origin anyway — a non-browser client, or a browser bug — is
+// refused by the same guard every other endpoint uses. Both are asserted here
+// so that neither can be removed on the assumption that the other is enough.
+func TestCrossOriginWriteIsRefusedAtBothLayers(t *testing.T) {
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", `{"id":"a"}`)
+
+	// The browser's layer: nothing grants permission to preflight.
+	preflight, _ := http.NewRequest(http.MethodOptions, ts.URL+"/api/file?token="+testToken, nil)
+	preflight.Header.Set("Origin", "http://evil.example")
+	preflight.Header.Set("Access-Control-Request-Method", "PUT")
+	preflight.Header.Set("Access-Control-Request-Headers", "content-type")
+	resp, err := http.DefaultClient.Do(preflight)
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	defer resp.Body.Close()
+	if allow := resp.Header.Get("Access-Control-Allow-Origin"); allow != "" {
+		t.Fatalf("the chassis granted a cross-origin permission: %q", allow)
+	}
+	if resp.StatusCode == http.StatusOK && resp.Header.Get("Access-Control-Allow-Methods") != "" {
+		t.Fatal("the chassis answered a preflight with method permission")
+	}
+
+	// Our layer: the request itself, sent anyway.
+	payload, _ := json.Marshal(WriteRequest{Path: "jpack.json", Content: "{}", Override: true})
+	put, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/file?token="+testToken, bytes.NewReader(payload))
+	put.Header.Set("Origin", "http://evil.example")
+	put.Header.Set("Content-Type", "application/json")
+	written, err := http.DefaultClient.Do(put)
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	defer written.Body.Close()
+	if written.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-origin PUT: status %d", written.StatusCode)
+	}
+	if data, _ := os.ReadFile(filepath.Join(project, "jpack.json")); string(data) != `{"id":"a"}` {
+		t.Fatalf("a cross-origin write reached the disk: %q", string(data))
+	}
+}
+
+// TestViteProxyShapeNeedsDevMode models the header shape the dev server
+// actually sends.
+//
+// The Vite proxy forwards the browser's Origin and — with changeOrigin off —
+// the browser-facing Host too, so both name the dev server. A host-only check
+// would see them match and accept, which would make the documented `--dev-token`
+// requirement a fiction. With the scheme-and-host check they differ from the
+// chassis' own origin, so the request is refused unless dev mode is on.
+func TestViteProxyShapeNeedsDevMode(t *testing.T) {
+	const devOrigin = "http://localhost:5173"
+
+	for _, dev := range []bool{false, true} {
+		t.Run(map[bool]string{false: "production refuses", true: "--dev-token accepts"}[dev], func(t *testing.T) {
+			project := t.TempDir()
+			if err := os.WriteFile(filepath.Join(project, "jpack.json"), []byte("{}"), 0o644); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			s, err := New(Config{
+				ProjectDir: project, JpackBin: "jpack", Token: testToken,
+				DevMode: dev, Logger: log.New(io.Discard, "", 0),
+			})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			defer s.Close()
+			ts := httptest.NewServer(s)
+			defer ts.Close()
+
+			r, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files?token="+testToken, nil)
+			// The shape `changeOrigin: true` produces: Host rewritten to the
+			// chassis' own, the browser's Origin forwarded unchanged. The two
+			// differ, so the check actually decides.
+			r.Header.Set("Origin", devOrigin)
+			resp, err := http.DefaultClient.Do(r)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			defer resp.Body.Close()
+			want := http.StatusForbidden
+			if dev {
+				want = http.StatusOK
+			}
+			if resp.StatusCode != want {
+				t.Fatalf("dev=%v: status %d, want %d", dev, resp.StatusCode, want)
+			}
+		})
+	}
+}
+
+// TestHandlersRefuseTraversalOverTheWire is the call-site test.
+//
+// TestWireRelativePathRefusesOnItsOwn asks the validator directly, which is
+// what notices its guards being deleted. This asks the *handlers*, which is
+// what notices the validator no longer being called at all — a mutation the
+// direct test cannot see, because the function it tests is still perfectly
+// correct and simply unreferenced.
+func TestHandlersRefuseTraversalOverTheWire(t *testing.T) {
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", `{"id":"mine"}`)
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.json")
+	if err := os.WriteFile(secret, []byte(`{"secret":true}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	for _, rel := range []string{
+		"../" + filepath.Base(outside) + "/secret.json",
+		"..",
+		"/etc/passwd",
+		"packs/../../secret.json",
+		".jpack-desk-x.tmp",
+	} {
+		t.Run("read/"+rel, func(t *testing.T) {
+			status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path="+urlEscape(rel))
+			if status == http.StatusOK {
+				t.Fatalf("read %q succeeded: %v", rel, body)
+			}
+		})
+		t.Run("write/"+rel, func(t *testing.T) {
+			status, _ := putJSON(t, ts, WriteRequest{Path: rel, Content: "{}", Override: true})
+			if status == http.StatusOK {
+				t.Fatalf("write %q succeeded", rel)
+			}
+		})
+	}
+	// Nothing outside changed, and the one legitimate file is untouched.
+	if data, _ := os.ReadFile(secret); string(data) != `{"secret":true}` {
+		t.Fatalf("a file outside the project changed: %q", string(data))
+	}
+	if data, _ := os.ReadFile(filepath.Join(project, "jpack.json")); string(data) != `{"id":"mine"}` {
+		t.Fatalf("the project file changed: %q", string(data))
+	}
+}
+
+func urlEscape(s string) string { return url.QueryEscape(s) }

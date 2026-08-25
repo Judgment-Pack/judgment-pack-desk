@@ -9,26 +9,45 @@ package desk
 // through the relay.
 //
 // **This API is the user's hand, not a policy layer.** Any path inside the
-// project root is readable and writable: they are the user's own files, on the
-// user's own machine, reached over loopback with the session token. It does not
-// consult jpack.json, it does not care whether a path is a pack, and it forms
-// no opinion about what the bytes mean. The runtime remains the only judge of
-// that, and it judges after the bytes land — which is why every editor surface
-// round-trips through the runtime's own tools rather than through anything
-// here.
+// project root is readable and writable, subject only to the exclusions below:
+// they are the user's own files, on the user's own machine, reached over
+// loopback with the session token. It does not consult jpack.json, it does not
+// care whether a path is a pack, and it forms no opinion about what the bytes
+// mean. The runtime remains the only judge of that, and it judges after the
+// bytes land.
 //
-// Two things it does enforce, because they are not opinions about content:
+// # Containment
 //
-//   - **Containment.** A path must resolve inside the project root, after
-//     symlinks. Dot-dot, absolute paths, and a symlink inside the root pointing
-//     out are all refused, on reads and on writes alike.
-//   - **Honest concurrency.** Last write wins, but never silently: a write
-//     carries the digest of the bytes the editor loaded, and a disagreement
-//     with what is on disk is refused with both digests so the client can
-//     reload. Overriding is available and explicit — the same discipline the
-//     graph binding uses, for the same reason.
+// Every operation goes through one *os.Root, opened once when the server is
+// built and closed with it. That is the whole containment mechanism, and it is
+// deliberately not a path-string check:
+//
+//   - A pathname validated and then opened is a check against one filesystem
+//     and an open against another. Replacing an approved ancestor directory
+//     with a symlink between the two redirects the open, and no amount of
+//     `EvalSymlinks` before the fact prevents it. `os.Root` resolves each
+//     component against a held directory descriptor, so the thing checked is
+//     the thing opened.
+//   - Pinning the root once is the other half. Re-resolving `ProjectDir` per
+//     request lets the *authority itself* be retargeted — rename the directory,
+//     or repoint the symlink it was reached through, and later requests adopt a
+//     different tree without racing anything.
+//
+// A lexical check still runs first. It refuses a superset of what any
+// filesystem does, costs nothing, and is tested on its own so that deleting it
+// is visible — see `wireRelativePath`.
+//
+// # Concurrency
+//
+// Last write wins, but never silently *between clients of this API*: a write
+// carries the digest of the bytes the editor loaded, the compare-and-commit is
+// serialized per target path, and a disagreement is refused with both digests.
+// A writer that does not come through this API — an editor, a git checkout —
+// is not serialized with, and cannot be; the file watcher is what tells the
+// page about those, and it is a notification rather than a guarantee.
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -41,6 +60,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -49,11 +69,32 @@ import (
 // into a browser tab in the first place.
 const maxFileBytes = 4 << 20
 
+// stagingPrefix names the files atomicWrite creates while replacing a target.
+// They are excluded from the listing and from the watcher: a staged edit is
+// not a document, and reporting one would both expose a half-written file to a
+// second tab and fire a change notification for something nobody edited.
+const stagingPrefix = ".jpack-desk-"
+
 // errOutsideProject is the one containment failure, however it was reached.
 // The reason is deliberately not itemized to the caller: dot-dot, an absolute
 // path and a symlink escape are the same refusal, and describing which one
 // would narrate the shape of the filesystem to whoever asked.
 var errOutsideProject = errors.New("path is not inside the project")
+
+// testHookAfterResolve runs between validating a path and acting on it, and is
+// nil outside tests.
+//
+// It exists so a test can perform exactly the swap a time-of-check/time-of-use
+// attack would — replace an approved directory with a symlink pointing out —
+// at the one instant where it would matter. Without it the containment story
+// would rest on reading the code and believing it.
+var testHookAfterResolve func(rel string)
+
+func afterResolve(rel string) {
+	if testHookAfterResolve != nil {
+		testHookAfterResolve(rel)
+	}
+}
 
 // FileEntry is one file the project contains.
 type FileEntry struct {
@@ -107,70 +148,33 @@ func digestOf(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// resolveInProject turns a client-supplied relative path into an absolute one
-// inside the project, or refuses.
-//
-// The refusal is what matters, so it is done in one place and reached by every
-// caller. Three families are stopped, and the third is the one a naive
-// implementation misses:
-//
-//   - a path that is absolute, or empty, or names no file;
-//   - a path whose cleaned form climbs out with `..`;
-//   - a path that stays inside lexically and leaves through a **symlink** —
-//     either because a component is a link out, or because the file itself is.
-//
-// The last is why this resolves symlinks rather than only cleaning strings.
-// `filepath.Clean` is a lexical operation and cannot see a link, so a check
-// built on it alone reports `notes/escape.json` as contained while the open
-// call writes to wherever `escape.json` points.
-//
-// A file that does not exist yet is resolved through its parent, because a
-// write must be able to create one — the parent still has to resolve inside.
-func (s *Server) resolveInProject(rel string) (string, error) {
-	clean, err := lexicallyInsideProject(rel)
-	if err != nil {
-		return "", err
-	}
+/* Path validation --------------------------------------------------------- */
 
-	// The root is resolved too. A project reached through a symlinked path is
-	// perfectly ordinary — /tmp is one on macOS — and comparing a resolved
-	// child against an unresolved root would refuse every file in it.
-	root, rerr := filepath.EvalSymlinks(s.cfg.ProjectDir)
-	if rerr != nil {
-		return "", fmt.Errorf("project directory: %w", rerr)
-	}
-	full := filepath.Join(root, filepath.FromSlash(clean))
-
-	real, resolveErr := resolveExisting(root, full)
-	if resolveErr != nil {
-		return "", resolveErr
-	}
-	if !within(root, real) {
-		return "", errOutsideProject
-	}
-	return real, nil
-}
-
-// lexicallyInsideProject is the first of the two containment layers: the one
-// that can be decided from the string alone.
+// wireRelativePath validates a client-supplied path and returns its cleaned
+// slash form.
 //
-// It refuses an empty path, an absolute one, and any path whose cleaned form is
-// or climbs out through `..`, and returns the cleaned slash-path otherwise.
+// This is the lexical half of containment: everything decidable from the string
+// alone, before any filesystem is consulted. `os.Root` refuses a superset of
+// what this refuses, so removing this would not open an escape today — it is
+// kept, and tested on its own, because the two layers refuse for different
+// reasons, this one costs no syscall, and a change to the other would otherwise
+// silently become the only thing between a `..` and the disk.
 //
-// The second layer — resolving symlinks and comparing against the resolved root
-// — refuses a superset of what this does, so removing this function would not
-// let an escape through today. It is kept, and tested on its own, for the
-// reason defence in depth is usually kept: the layers refuse for different
-// reasons, this one costs no filesystem call, and a change to the resolver
-// would otherwise silently become the only thing standing between a `..` and
-// the disk. A test that only asked "was it refused?" could not tell that the
-// layer had stopped running.
-func lexicallyInsideProject(rel string) (string, error) {
+// Backslash is refused outright rather than cleaned. On Windows it is a
+// separator, so `..\secret` is a traversal that slash-only cleaning does not
+// see; on Unix it is a legal filename character. Refusing it everywhere costs a
+// filename nobody puts in a Judgment Pack project and removes the platform
+// difference from the containment argument entirely.
+func wireRelativePath(rel string) (string, error) {
 	if rel == "" {
 		return "", errors.New("path is required")
 	}
-	// The wire form is slash-separated on every platform, so it is converted
-	// once at the join rather than assumed anywhere else.
+	if strings.ContainsRune(rel, 0) {
+		return "", errOutsideProject
+	}
+	if strings.ContainsRune(rel, '\\') {
+		return "", errOutsideProject
+	}
 	if path.IsAbs(rel) || filepath.IsAbs(rel) || strings.HasPrefix(rel, "/") || strings.Contains(rel, ":") {
 		return "", errOutsideProject
 	}
@@ -178,109 +182,179 @@ func lexicallyInsideProject(rel string) (string, error) {
 	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
 		return "", errOutsideProject
 	}
+	// fs.ValidPath is the standard library's own answer to "is this a
+	// well-formed slash path for an fs.FS": unrooted, no empty or dot elements,
+	// no dot-dot. Asking it as well means this agrees with `Root.FS()`, which
+	// the listing walks.
+	if !fs.ValidPath(clean) {
+		return "", errOutsideProject
+	}
+	if strings.HasPrefix(path.Base(clean), stagingPrefix) {
+		return "", fmt.Errorf("%s is a staging file this desk owns, not a document", clean)
+	}
 	return clean, nil
 }
 
-// resolveExisting resolves the symlinks on the part of full that exists, and
-// re-appends the part that does not.
+// osPath converts a validated wire path to the form Root's methods take.
+func osPath(clean string) string { return filepath.FromSlash(clean) }
+
+/* Per-target serialization ------------------------------------------------ */
+
+// pathLocks serializes the compare-and-commit of a write per target path.
 //
-// A path naming a file that is not there yet still has to be checked, because
-// a write creates one — and the check that matters is on the deepest component
-// that does exist, since that is what a symlink could be. Walking up rather
-// than looking only at the immediate parent is what lets a write name a file in
-// a directory that is also not there yet: `a/b/c.json` under a symlinked `a`
-// is still an escape, and this sees it.
+// The digest check and the rename are one decision — "replace these bytes, if
+// these are still the bytes" — and a check that is not held across its commit
+// is not a conditional commit at all: two writers sharing a base can both pass
+// the check and both rename, and the second silently discards the first.
 //
-// Whether a missing directory may be *created* is a separate question, and not
-// this function's: it answers where the path would be, and the caller decides
-// what to do about a parent that is absent.
-func resolveExisting(root, full string) (string, error) {
-	missing := []string{}
-	current := full
-	for {
-		real, err := filepath.EvalSymlinks(current)
-		if err == nil {
-			if !within(root, real) {
-				return "", errOutsideProject
-			}
-			// Re-append what did not exist, innermost last.
-			for i := len(missing) - 1; i >= 0; i-- {
-				real = filepath.Join(real, missing[i])
-			}
-			return real, nil
+// In-process is the right scope, and the only honest one: the chassis is one
+// process serving one project, and no lock here can serialize an editor or a
+// git checkout. Those are the residual, and the file watcher is what surfaces
+// them.
+type pathLocks struct {
+	mu    sync.Mutex
+	locks map[string]*pathLock
+}
+
+type pathLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+func newPathLocks() *pathLocks { return &pathLocks{locks: map[string]*pathLock{}} }
+
+// acquire blocks until the caller holds the lock for key, and returns the
+// release. Entries are reference-counted so the map does not grow with every
+// path a long session touches.
+func (p *pathLocks) acquire(key string) func() {
+	p.mu.Lock()
+	entry := p.locks[key]
+	if entry == nil {
+		entry = &pathLock{}
+		p.locks[key] = entry
+	}
+	entry.refs++
+	p.mu.Unlock()
+
+	entry.mu.Lock()
+	return func() {
+		entry.mu.Unlock()
+		p.mu.Lock()
+		entry.refs--
+		if entry.refs == 0 {
+			delete(p.locks, key)
 		}
-		if !errors.Is(err, fs.ErrNotExist) {
-			return "", errOutsideProject
-		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			// Walked to the filesystem root without finding anything that
-			// exists. Nothing here is inside the project.
-			return "", errOutsideProject
-		}
-		missing = append(missing, filepath.Base(current))
-		current = parent
+		p.mu.Unlock()
 	}
 }
 
-// within reports whether p is root or sits under it.
+/* Reading ----------------------------------------------------------------- */
+
+// readThroughRoot opens one file inside the root and returns its bytes.
 //
-// The separator in the prefix test is load-bearing: without it `/tmp/proj-evil`
-// tests as inside `/tmp/proj`.
-func within(root, p string) bool {
-	if p == root {
-		return true
+// The open, the type check and the read all happen on one descriptor: `Stat`
+// on a pathname and `ReadFile` on the same pathname are two resolutions, and
+// what arrives between them is not this process's to assume. The regular-file
+// requirement is what keeps a FIFO from blocking a handler forever and a device
+// from being read at all, and it is checked on the handle rather than on the
+// name.
+func (s *Server) readThroughRoot(clean string) ([]byte, int, error) {
+	// O_NONBLOCK so that a FIFO does not block the open itself: the type check
+	// below can only decide if it gets to run.
+	f, err := s.root.OpenFile(osPath(clean), os.O_RDONLY|openNonBlocking, 0)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, http.StatusNotFound, fmt.Errorf("no such file in the project: %s", clean)
+		}
+		// Root refuses an escape with its own error; every refusal reaching here
+		// is reported as the one containment refusal.
+		return nil, http.StatusForbidden, errOutsideProject
 	}
-	return strings.HasPrefix(p, root+string(filepath.Separator))
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return nil, http.StatusInternalServerError, err
+	}
+	if info.IsDir() {
+		return nil, http.StatusBadRequest, fmt.Errorf("%s is a directory", clean)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, http.StatusBadRequest,
+			fmt.Errorf("%s is not a regular file, so this editor will not read it", clean)
+	}
+	// Bounded by the reader, not by the size the metadata claimed: a file that
+	// grows between the stat and the read would otherwise be unbounded.
+	data, err := io.ReadAll(io.LimitReader(f, maxFileBytes+1))
+	if err != nil {
+		return nil, http.StatusInternalServerError, err
+	}
+	if len(data) > maxFileBytes {
+		return nil, http.StatusRequestEntityTooLarge,
+			fmt.Errorf("%s is larger than %d bytes, which is the most this editor reads", clean, maxFileBytes)
+	}
+	return data, http.StatusOK, nil
 }
+
+// contentOf packages bytes for the wire, refusing what JSON cannot carry.
+func contentOf(clean string, data []byte) (*FileContent, int, error) {
+	// JSON strings are UTF-8, and Go's encoder substitutes U+FFFD for bytes
+	// that are not. Handing back a silently mangled document would be worse
+	// than handing back nothing, and far worse if the editor then saved it.
+	if !utf8.Valid(data) {
+		return nil, http.StatusUnsupportedMediaType,
+			fmt.Errorf("%s is not UTF-8 text, so this editor will not load it", clean)
+	}
+	return &FileContent{
+		Path:    clean,
+		Bytes:   len(data),
+		SHA256:  digestOf(data),
+		Content: string(data),
+	}, http.StatusOK, nil
+}
+
+/* Handlers ---------------------------------------------------------------- */
 
 // handleFiles lists every regular file in the project.
 //
-// Directories the watcher ignores are ignored here for the same reason: they
-// are large, they churn, and nothing in them is a document anyone opened this
-// desk to edit. Anything that is not a regular file — a symlink, a socket, a
-// device — is left out rather than listed as something the read endpoint would
-// then refuse.
+// The walk goes through `Root.FS()`, so it cannot leave the pinned root even if
+// the tree changes underneath it. Directories the watcher ignores are ignored
+// here for the same reason: they are large, they churn, and nothing in them is
+// a document anyone opened this desk to edit. Anything that is not a regular
+// file — a symlink, a socket, a device — is left out rather than listed as
+// something the read endpoint would then refuse.
 func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
 		return
 	}
-	root, err := filepath.EvalSymlinks(s.cfg.ProjectDir)
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("project directory: %v", err))
-		return
-	}
+	afterResolve(".")
 
 	files := []FileEntry{}
-	walkErr := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	walkErr := fs.WalkDir(s.root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// One unreadable directory is not a reason to answer nothing.
 			return nil //nolint:nilerr // reported as an absence, not a failure
 		}
 		if d.IsDir() {
-			if p != root && skipDirs[d.Name()] {
-				return filepath.SkipDir
+			if p != "." && skipDirs[d.Name()] {
+				return fs.SkipDir
 			}
 			return nil
 		}
-		if !d.Type().IsRegular() {
+		if !d.Type().IsRegular() || strings.HasPrefix(d.Name(), stagingPrefix) {
 			return nil
 		}
 		info, ierr := d.Info()
 		if ierr != nil {
 			return nil
 		}
-		rel, rerr := filepath.Rel(root, p)
-		if rerr != nil {
-			return nil
-		}
-		entry := FileEntry{Path: filepath.ToSlash(rel), Bytes: info.Size()}
+		entry := FileEntry{Path: p, Bytes: info.Size()}
 		// The digest is what lets an editor open a file and later prove which
 		// bytes it opened, so it is read here rather than left to a second call.
-		if info.Size() <= maxFileBytes {
-			if data, derr := os.ReadFile(p); derr == nil {
-				entry.SHA256 = digestOf(data)
-			}
+		// A file too large to read is listed with an empty digest rather than
+		// omitted: it is really there, and saying so is more use than hiding it.
+		if data, _, derr := s.readThroughRoot(p); derr == nil {
+			entry.SHA256 = digestOf(data)
 		}
 		files = append(files, entry)
 		return nil
@@ -291,12 +365,23 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"root":  s.cfg.ProjectDir,
-		"files": files,
-		"note": "Every regular file in the project tree. This endpoint reads the " +
-			"filesystem and nothing else: it does not consult jpack.json and forms no " +
-			"opinion about what any file is.",
+		"root":     s.cfg.ProjectDir,
+		"files":    files,
+		"excluded": excludedNames(),
+		"note": "Every regular file in the project tree, except the excluded directories " +
+			"and this desk's own staging files. This endpoint reads the filesystem and " +
+			"nothing else: it does not consult jpack.json and forms no opinion about what " +
+			"any file is. A file too large to read is listed with an empty digest.",
 	})
+}
+
+func excludedNames() []string {
+	names := make([]string, 0, len(skipDirs)+1)
+	for name := range skipDirs {
+		names = append(names, name)
+	}
+	names = append(names, stagingPrefix+"*")
+	return names
 }
 
 // handleFileRead returns one file's bytes.
@@ -304,13 +389,19 @@ func (s *Server) handleFileRead(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
 		return
 	}
-	rel := r.URL.Query().Get("path")
-	abs, err := s.resolveInProject(rel)
+	clean, err := wireRelativePath(r.URL.Query().Get("path"))
 	if err != nil {
 		writeJSONError(w, http.StatusForbidden, err.Error())
 		return
 	}
-	content, status, err := readFileContent(rel, abs)
+	afterResolve(clean)
+
+	data, status, err := s.readThroughRoot(clean)
+	if err != nil {
+		writeJSONError(w, status, err.Error())
+		return
+	}
+	content, status, err := contentOf(clean, data)
 	if err != nil {
 		writeJSONError(w, status, err.Error())
 		return
@@ -318,44 +409,12 @@ func (s *Server) handleFileRead(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, content)
 }
 
-// readFileContent reads one resolved file, with the checks a JSON response
-// needs made before the bytes go into one.
-func readFileContent(rel, abs string) (*FileContent, int, error) {
-	info, err := os.Stat(abs)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, http.StatusNotFound, fmt.Errorf("no such file in the project: %s", rel)
-		}
-		return nil, http.StatusInternalServerError, err
-	}
-	if info.IsDir() {
-		return nil, http.StatusBadRequest, fmt.Errorf("%s is a directory", rel)
-	}
-	if info.Size() > maxFileBytes {
-		return nil, http.StatusRequestEntityTooLarge,
-			fmt.Errorf("%s is %d bytes; this editor reads at most %d", rel, info.Size(), maxFileBytes)
-	}
-	data, err := os.ReadFile(abs)
-	if err != nil {
-		return nil, http.StatusInternalServerError, err
-	}
-	// JSON strings are UTF-8, and Go's encoder substitutes U+FFFD for bytes
-	// that are not. Handing back a silently mangled document would be worse
-	// than handing back nothing, and far worse if the editor then saved it.
-	if !utf8.Valid(data) {
-		return nil, http.StatusUnsupportedMediaType,
-			fmt.Errorf("%s is not UTF-8 text, so this editor will not load it", rel)
-	}
-	return &FileContent{
-		Path:    filepath.ToSlash(path.Clean(rel)),
-		Bytes:   len(data),
-		SHA256:  digestOf(data),
-		Content: string(data),
-	}, http.StatusOK, nil
-}
-
-// handleFileWrite replaces one file's bytes, atomically, and answers with what
-// is on disk afterwards.
+// handleFileWrite replaces one file's bytes and answers with what is on disk
+// afterwards.
+//
+// Everything from the current-bytes read to the read-back happens under the
+// per-path lock, which is what makes the digest check a conditional commit
+// rather than a suggestion.
 func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
 		return
@@ -370,17 +429,30 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("this editor writes at most %d bytes", maxFileBytes))
 		return
 	}
-	abs, err := s.resolveInProject(req.Path)
+	clean, err := wireRelativePath(req.Path)
 	if err != nil {
 		writeJSONError(w, http.StatusForbidden, err.Error())
 		return
 	}
 
-	// What is there now, before anything is written.
-	current, err := os.ReadFile(abs)
-	exists := err == nil
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
+	release := s.writes.acquire(clean)
+	defer release()
+
+	afterResolve(clean)
+
+	// What is there now, under the lock.
+	//
+	// Only "there is no such file" means this write creates one. Any other
+	// refusal — a symlink pointing out of the project, a FIFO, a directory, a
+	// file too large to read — is a refusal to *write* as well. Treating them
+	// as absence is what would let a write replace an out-pointing symlink with
+	// a regular file: nothing escapes, but the read of that same path is
+	// refused, and an API that reads and writes a path by different rules is
+	// one nobody can reason about.
+	current, readStatus, readErr := s.readThroughRoot(clean)
+	exists := readErr == nil
+	if readErr != nil && readStatus != http.StatusNotFound {
+		writeJSONError(w, readStatus, readErr.Error())
 		return
 	}
 	actual := ""
@@ -389,14 +461,14 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Last write wins, but never silently. The editor states which bytes it
-	// loaded; a disagreement means someone else changed the file underneath it,
-	// and the client is told both digests rather than having its work quietly
-	// overwrite theirs.
+	// loaded; a disagreement means the file changed underneath it, and the
+	// client is told both digests rather than having its work quietly overwrite
+	// someone else's.
 	if !req.Override && !strings.EqualFold(strings.TrimSpace(req.BaseSHA256), actual) {
 		writeJSON(w, http.StatusConflict, conflict{
 			Error: "the file on disk is not the file this edit started from; " +
 				"reload it, or write again with override",
-			Path:           filepath.ToSlash(path.Clean(req.Path)),
+			Path:           clean,
 			ExpectedSHA256: strings.ToLower(strings.TrimSpace(req.BaseSHA256)),
 			ActualSHA256:   actual,
 			Exists:         exists,
@@ -408,14 +480,16 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 	// be reported as one. This API writes files; it does not create the tree
 	// they live in, and saying so plainly is better than a mkdir nobody asked
 	// for.
-	if info, derr := os.Stat(filepath.Dir(abs)); derr != nil || !info.IsDir() {
-		writeJSONError(w, http.StatusNotFound, fmt.Sprintf(
-			"the directory %s does not exist in the project; create it first",
-			path.Dir(path.Clean(req.Path))))
-		return
+	if parent := path.Dir(clean); parent != "." {
+		info, derr := s.root.Stat(osPath(parent))
+		if derr != nil || !info.IsDir() {
+			writeJSONError(w, http.StatusNotFound, fmt.Sprintf(
+				"the directory %s does not exist in the project; create it first", parent))
+			return
+		}
 	}
 
-	if err := atomicWrite(abs, []byte(req.Content)); err != nil {
+	if err := s.atomicWrite(clean, []byte(req.Content)); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -423,7 +497,12 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 	// Read back from the disk rather than echo the request. The point of the
 	// answer is that the client can verify what landed, and an echo verifies
 	// only that the request survived the trip out.
-	content, status, err := readFileContent(req.Path, abs)
+	data, status, err := s.readThroughRoot(clean)
+	if err != nil {
+		writeJSONError(w, status, err.Error())
+		return
+	}
+	content, status, err := contentOf(clean, data)
 	if err != nil {
 		writeJSONError(w, status, err.Error())
 		return
@@ -432,54 +511,148 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, content)
 }
 
+/* Atomic replace ---------------------------------------------------------- */
+
 // atomicWrite replaces a file's contents without a window in which the file is
 // half written.
 //
-// The temporary file is created in the **same directory** as the target,
-// because rename is only atomic within a filesystem and a temp directory may
-// be on another one. Everything is durable before the rename: a crash then
-// leaves either the old file or the new one, and never a truncated file where
-// a document used to be.
+// The staging file is created in the **same directory** as the target, through
+// the same pinned root, because rename is only atomic within a filesystem and
+// only safe if both names resolve where they were checked. The order is
+// deliberate: write, set the mode, flush the data, close, rename, then flush
+// the directory. Setting the mode before the flush is what keeps the metadata
+// from being the one thing not yet durable when the rename lands.
 //
-// A failure removes the temporary file. A crash between create and rename
-// leaves one behind — it is a dotfile, it is not the document, and nothing
-// reads it; that is the honest limit of this approach rather than a bug in it.
-func atomicWrite(abs string, data []byte) error {
-	dir := filepath.Dir(abs)
-	tmp, err := os.CreateTemp(dir, ".jpack-desk-*.tmp")
+// **What is promised.** On Unix, `rename(2)` replaces the directory entry
+// atomically, so a concurrent reader sees the old file or the new one and never
+// a truncated one. On other platforms Go makes no such promise and neither does
+// this.
+//
+// **What is not.** This is not a crash-durability guarantee. The data is
+// flushed before the rename and the directory after it, which is the usual
+// recipe, but power loss, a lying disk cache, or a filesystem with its own
+// ordering rules can still lose the write. A crash between staging and rename
+// leaves a staging file behind; it is excluded from the listing and from the
+// watcher, and the server removes stale ones at startup.
+func (s *Server) atomicWrite(clean string, data []byte) error {
+	dir := path.Dir(clean)
+	name, err := s.createStaging(dir)
 	if err != nil {
+		return err
+	}
+	staged := name
+	if dir != "." {
+		staged = path.Join(dir, name)
+	}
+	remove := func() { _ = s.root.Remove(osPath(staged)) }
+
+	f, err := s.root.OpenFile(osPath(staged), os.O_WRONLY, 0o600)
+	if err != nil {
+		remove()
 		return fmt.Errorf("could not stage the write: %w", err)
 	}
-	name := tmp.Name()
-	cleanup := func() {
-		tmp.Close()
-		os.Remove(name)
-	}
-	if _, err := tmp.Write(data); err != nil {
-		cleanup()
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		remove()
 		return fmt.Errorf("could not stage the write: %w", err)
 	}
-	if err := tmp.Sync(); err != nil {
-		cleanup()
-		return fmt.Errorf("could not flush the write: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(name)
-		return fmt.Errorf("could not close the staged write: %w", err)
-	}
-	// Keep the mode a pre-existing file already had; CreateTemp makes 0600.
-	if info, err := os.Stat(abs); err == nil {
-		if cerr := os.Chmod(name, info.Mode().Perm()); cerr != nil {
-			os.Remove(name)
+	// Mode first, then the flush, so nothing about the file is still pending
+	// when the rename publishes it. Only the POSIX rwx bits are carried across:
+	// owner, group, ACLs, extended attributes and the inode identity are not,
+	// because a replace is a new file by construction.
+	if info, serr := s.root.Stat(osPath(clean)); serr == nil {
+		if cerr := f.Chmod(info.Mode().Perm()); cerr != nil {
+			f.Close()
+			remove()
 			return fmt.Errorf("could not set the mode of the staged write: %w", cerr)
 		}
 	}
-	if err := os.Rename(name, abs); err != nil {
-		os.Remove(name)
+	if err := f.Sync(); err != nil {
+		f.Close()
+		remove()
+		return fmt.Errorf("could not flush the write: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		remove()
+		return fmt.Errorf("could not close the staged write: %w", err)
+	}
+	if err := s.root.Rename(osPath(staged), osPath(clean)); err != nil {
+		remove()
 		return fmt.Errorf("could not replace the file: %w", err)
 	}
+	s.syncDir(dir)
 	return nil
 }
+
+// createStaging makes an exclusive, randomly named staging file in dir and
+// returns its base name. `os.Root` has no CreateTemp, so the exclusivity is
+// asked for directly — O_EXCL is what makes a name collision a retry rather
+// than a silent overwrite of somebody's staged edit.
+func (s *Server) createStaging(dir string) (string, error) {
+	for attempt := 0; attempt < 10; attempt++ {
+		var raw [12]byte
+		if _, err := rand.Read(raw[:]); err != nil {
+			return "", fmt.Errorf("could not stage the write: %w", err)
+		}
+		name := stagingPrefix + hex.EncodeToString(raw[:]) + ".tmp"
+		full := name
+		if dir != "." {
+			full = path.Join(dir, name)
+		}
+		f, err := s.root.OpenFile(osPath(full), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+		if err == nil {
+			f.Close()
+			return name, nil
+		}
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		return "", fmt.Errorf("could not stage the write: %w", err)
+	}
+	return "", errors.New("could not stage the write: no unused staging name")
+}
+
+// syncDir flushes the directory entry a rename just changed.
+//
+// Best effort by design: on Unix this is what makes the *rename* durable rather
+// than only the bytes, and on platforms where a directory cannot be opened for
+// sync it fails harmlessly. A failure here does not undo a write that has
+// already landed, so it is not reported as one.
+func (s *Server) syncDir(dir string) {
+	d, err := s.root.OpenFile(osPath(dir), os.O_RDONLY|openNonBlocking, 0)
+	if err != nil {
+		return
+	}
+	defer d.Close()
+	_ = d.Sync()
+}
+
+// removeStaleStaging clears staging files left by a crash.
+//
+// Only at startup, and only files this desk names: a staging file that survived
+// is not a document, nothing reads it, and leaving it to accumulate would mean
+// a project slowly filling with the debris of interrupted saves.
+func (s *Server) removeStaleStaging() {
+	_ = fs.WalkDir(s.root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil //nolint:nilerr // a directory we cannot read holds nothing we may delete
+		}
+		if d.IsDir() {
+			if p != "." && skipDirs[d.Name()] {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.Type().IsRegular() && strings.HasPrefix(d.Name(), stagingPrefix) && strings.HasSuffix(d.Name(), ".tmp") {
+			if rerr := s.root.Remove(osPath(p)); rerr != nil {
+				s.log.Printf("desk: could not remove the stale staging file %s: %v", p, rerr)
+			}
+		}
+		return nil
+	})
+}
+
+/* Plumbing ---------------------------------------------------------------- */
 
 // guard applies the same two checks every other chassis endpoint applies, in
 // the same order: the token first, then the origin. Sharing the function is

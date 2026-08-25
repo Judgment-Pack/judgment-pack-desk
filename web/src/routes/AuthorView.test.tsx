@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { connected, renderConnected } from '../testing/harness'
@@ -28,10 +28,17 @@ interface Call {
 }
 
 /** A chassis whose answers a test writes, recording what it was asked. */
+interface Answer {
+  status: number
+  body: unknown
+  /** Resolve to let a deliberately slow answer complete. */
+  delay?: Promise<void>
+}
+
 function chassis(handlers: {
-  files?: () => { status: number; body: unknown }
-  file?: () => { status: number; body: unknown }
-  write?: (body: Record<string, unknown>) => { status: number; body: unknown }
+  files?: () => Answer
+  file?: () => Answer
+  write?: (body: Record<string, unknown>) => Answer
 }) {
   const calls: Call[] = []
   const stub = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -40,13 +47,14 @@ function chassis(handlers: {
     const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : undefined
     calls.push({ url, method, body })
 
-    const answer =
+    const answer: Answer =
       method === 'PUT'
-        ? (handlers.write ?? (() => ({ status: 500, body: { error: 'no write stub' } })))(body!)
+        ? (handlers.write ?? ((): Answer => ({ status: 500, body: { error: 'no write stub' } })))(body!)
         : url.startsWith('/api/files')
-          ? (handlers.files ?? (() => ({ status: 200, body: { root: '/project', files: [] } })))()
-          : (handlers.file ?? (() => ({ status: 500, body: { error: 'no read stub' } })))()
+          ? (handlers.files ?? ((): Answer => ({ status: 200, body: { root: '/project', files: [] } })))()
+          : (handlers.file ?? ((): Answer => ({ status: 500, body: { error: 'no read stub' } })))()
 
+    if (answer.delay) await answer.delay
     return new Response(JSON.stringify(answer.body), {
       status: answer.status,
       headers: { 'Content-Type': 'application/json' }
@@ -336,5 +344,202 @@ describe('the authoring shell', () => {
       )
     )
     expect(container.textContent).not.toContain('unsaved changes')
+  })
+})
+
+describe('the authoring shell, against the desk invalidating its own queries', () => {
+  /**
+   * The watcher makes the desk invalidate every active query on any file
+   * change. These drive that for real — `queryClient.invalidateQueries()` with
+   * no key, exactly as `McpProvider` calls it — because the failure being
+   * guarded against is precisely that a background refetch quietly moves the
+   * bytes an open edit is measured against.
+   */
+  it('does not rebase an open edit when the file changes on disk', async () => {
+    let reads = 0
+    const calls = chassis({
+      files: () => ({ status: 200, body: LISTING }),
+      file: () => {
+        reads += 1
+        // The second read is what the watcher-driven refetch gets back: the
+        // file changed underneath the edit.
+        return reads === 1
+          ? { status: 200, body: READ }
+          : { status: 200, body: { ...READ, content: '{"id":"theirs"}', sha256: THEIRS_SHA } }
+      },
+      write: (body) => ({
+        status: 200,
+        body: { path: body.path, bytes: 1, sha256: EDITED_SHA, content: body.content }
+      })
+    })
+    const { container, queryClient } = render()
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: EDITED } })
+
+    // The desk's own invalidation, as the file watcher triggers it.
+    await act(async () => {
+      void queryClient.invalidateQueries()
+      await Promise.resolve()
+    })
+    await screen.findByText(/changed on disk since you opened it/)
+
+    // The buffer is untouched and still dirty.
+    expect((screen.getByLabelText('File contents') as HTMLTextAreaElement).value).toBe(EDITED)
+    expect(container.textContent).toContain('unsaved changes')
+
+    // And the save still carries the digest of the bytes the edit started from,
+    // so the chassis can refuse it. A rebased base would have sent THEIRS_SHA
+    // and overwritten a change the user never saw.
+    fireEvent.click(screen.getByText('Save'))
+    await waitFor(() => expect(calls.some((call) => call.method === 'PUT')).toBe(true))
+    expect(calls.find((call) => call.method === 'PUT')!.body!.baseSha256).toBe(LOADED_SHA)
+  })
+
+  it('keeps a dirty buffer when the file is deleted underneath it', async () => {
+    let listings = 0
+    chassis({
+      files: () => {
+        listings += 1
+        return listings === 1
+          ? { status: 200, body: LISTING }
+          : { status: 200, body: { ...LISTING, files: [LISTING.files[0]] } }
+      },
+      file: () => (listings <= 1 ? { status: 200, body: READ } : { status: 404, body: { error: 'no such file in the project' } })
+    })
+    const { container, queryClient } = render()
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: EDITED } })
+
+    await act(async () => {
+      void queryClient.invalidateQueries()
+      await Promise.resolve()
+    })
+    await screen.findByText(/no longer in the project/)
+
+    // The editor is still mounted and the edit survives — the whole point.
+    expect((screen.getByLabelText('File contents') as HTMLTextAreaElement).value).toBe(EDITED)
+    expect(container.textContent).toContain('unsaved changes')
+  })
+})
+
+describe('the authoring shell, saving', () => {
+  it('verifies against the bytes it sent, not the bytes in the box', async () => {
+    // Typing after a successful save must not turn "verified" into a false
+    // "does not match": the claim is about what was written, and what was
+    // written is fixed at the moment of the request.
+    chassis({
+      files: () => ({ status: 200, body: LISTING }),
+      file: () => ({ status: 200, body: READ }),
+      write: (body) => ({
+        status: 200,
+        body: { path: body.path, bytes: 1, sha256: EDITED_SHA, content: body.content }
+      })
+    })
+    const { container } = render()
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: EDITED } })
+    fireEvent.click(screen.getByText('Save'))
+    await screen.findByText(/Saved, and verified/)
+
+    fireEvent.change(box, { target: { value: EDITED + '\n// more' } })
+    expect(container.textContent).toContain('Saved, and verified')
+    expect(container.textContent).not.toContain('read-back does not match')
+    // And the new typing is unsaved work again, measured against what landed.
+    expect(container.textContent).toContain('unsaved changes')
+  })
+
+  it('holds its verdict while a slow write is in flight, and does not let a reload race it', async () => {
+    let settle: (() => void) | undefined
+    chassis({
+      files: () => ({ status: 200, body: LISTING }),
+      file: () => ({ status: 200, body: READ }),
+      write: (body) => ({
+        status: 200,
+        body: { path: body.path, bytes: 1, sha256: EDITED_SHA, content: body.content },
+        delay: new Promise<void>((resolve) => {
+          settle = resolve
+        })
+      })
+    })
+    const { container } = render()
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: EDITED } })
+    fireEvent.click(screen.getByText('Save'))
+
+    await waitFor(() => expect(screen.getByText('Saving…')).toBeTruthy())
+    // Reload cannot be taken while the PUT is unresolved: it is not cancellable,
+    // and a reload would set a base the in-flight save is about to supersede.
+    expect((screen.getByText('Reload from disk') as HTMLButtonElement).disabled).toBe(true)
+
+    // Typing during the write does not change what the write will be judged on.
+    fireEvent.change(box, { target: { value: EDITED + '\n// typed during the save' } })
+    await act(async () => {
+      settle!()
+      await Promise.resolve()
+    })
+    await screen.findByText(/Saved, and verified/)
+    expect(container.textContent).not.toContain('read-back does not match')
+  })
+
+  it('sends text that is not JSON without complaint, because the runtime is the judge', async () => {
+    // Phase 1 edits bytes. A desk that refused to save invalid JSON would be
+    // making a judgement the runtime is there to make — and would make a
+    // half-finished document impossible to save at all.
+    const calls = chassis({
+      files: () => ({ status: 200, body: LISTING }),
+      file: () => ({ status: 200, body: READ }),
+      write: (body) => ({
+        status: 200,
+        body: { path: body.path, bytes: 1, sha256: EDITED_SHA, content: body.content }
+      })
+    })
+    const broken = '{ "id": "vendor-onboarding", '
+    const { container } = render()
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: broken } })
+    fireEvent.click(screen.getByText('Save'))
+
+    await screen.findByText(/Saved, and verified/)
+    expect(calls.find((call) => call.method === 'PUT')!.body!.content).toBe(broken)
+    expect(container.textContent).not.toContain('not valid JSON')
+  })
+})
+
+describe('the authoring shell, not losing an edit', () => {
+  it('asks before opening another file over unsaved changes', async () => {
+    chassis({
+      files: () => ({ status: 200, body: LISTING }),
+      file: () => ({ status: 200, body: READ })
+    })
+    const confirm = vi.fn(() => false)
+    vi.stubGlobal('confirm', confirm)
+
+    const { container } = render()
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: EDITED } })
+
+    fireEvent.click(screen.getByText('jpack.json'))
+    expect(confirm).toHaveBeenCalledOnce()
+    // Refused, so the edit is still open and still here.
+    expect((screen.getByLabelText('File contents') as HTMLTextAreaElement).value).toBe(EDITED)
+    expect(container.textContent).toContain('unsaved changes')
+
+    confirm.mockReturnValue(true)
+    fireEvent.click(screen.getByText('jpack.json'))
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2))
+  })
+
+  it('does not ask when nothing is unsaved', async () => {
+    chassis({
+      files: () => ({ status: 200, body: LISTING }),
+      file: () => ({ status: 200, body: READ })
+    })
+    const confirm = vi.fn(() => true)
+    vi.stubGlobal('confirm', confirm)
+
+    render()
+    await openTheFile()
+    fireEvent.click(screen.getByText('jpack.json'))
+    expect(confirm).not.toHaveBeenCalled()
   })
 })

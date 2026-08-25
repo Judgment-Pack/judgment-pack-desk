@@ -361,24 +361,40 @@ npm --prefix web run smoke -- 'http://127.0.0.1:8791/?token=dev'
 
 ## Security model
 
-The desk drives a runtime that reads your project. Three things bound it:
+The desk drives a runtime that reads your project, and — since the authoring
+surface — writes files in it. Two capabilities are gated, and gated the same
+way: **`/ws`**, the relay, and **`/api/*`**, the file API. Static assets are
+not; they are the page, and the page can do nothing without one of the two.
 
 - **Loopback only.** The listener binds `127.0.0.1`. Nothing off the machine
   can reach it.
-- **A session token.** A random token is generated at startup and printed in
-  the URL. `/ws` requires it as `?token=`, compared in constant time. Static
-  assets are served without it; the relay is the capability, and it is the
-  thing that is gated.
-- **An origin check.** A WebSocket upgrade whose `Origin` is not the origin the
-  page was served from is refused. This is what stops a page on another site
-  from opening a socket to your loopback and driving the runtime through your
-  own browser — a token in a URL you have visited is not, by itself, protection
-  against that. A request with no `Origin` at all is not from a browser, and
-  the token is its authorization.
+- **A session token.** A random 192-bit token is generated at startup and
+  printed in the URL. Both capabilities require it as `?token=`, compared in
+  constant time. (Length is still observable, which does not matter: the format
+  is fixed and public, and the value is the secret.)
+- **An origin check.** A request whose `Origin` is not the origin the page was
+  served from is refused — **scheme and host both**, and an `Origin` carrying a
+  path, query, fragment or userinfo is refused outright rather than matched on
+  its host. This is what stops a page on another site from driving your runtime,
+  or writing to your project, through your own browser: a token in a URL you
+  have visited is not by itself protection against that. A request with no
+  `Origin` at all is not from a browser — it is a script or a test holding the
+  token — and the token is its authorization.
 
-The chassis holds no credential, opens no outbound connection, and writes
-nothing to the project. The runtime subprocess inherits the project directory
-as its working directory and is killed when the socket that started it closes.
+**A cross-origin write is refused twice, and neither layer is load-bearing
+alone.** A page on another site cannot send the file API's `PUT` from a browser
+at all: the JSON content type makes it a non-simple request, so the browser must
+preflight, and the chassis grants no CORS permission whatsoever — that layer is
+the browser's. The second is ours: a `PUT` that arrives with a foreign `Origin`
+anyway is refused by the same guard, which is what a non-browser client meets.
+Both are asserted by tests, so neither can be dropped on the assumption that the
+other suffices.
+
+The chassis holds no credential and opens no outbound connection. It writes to
+the project only through the file API, only inside the project root, and only
+where a request carried the token and an acceptable origin. The runtime
+subprocess inherits the project directory as its working directory and is killed
+when the socket that started it closes.
 
 ## Authoring (issue #14, phase 1)
 
@@ -406,51 +422,133 @@ lock, and it does not route around one.
 ### The file API
 
 Three endpoints, under the same two checks as `/ws` — the session token first,
-then the Origin — because a new endpoint is a new place to forget one:
+then the Origin — through one shared guard, because a new endpoint is a new
+place to forget one:
 
 | | |
 | --- | --- |
-| `GET /api/files` | every regular file in the project tree, with sizes and digests |
+| `GET /api/files` | the project's regular files, with sizes and digests |
 | `GET /api/file?path=…` | one file's bytes |
 | `PUT /api/file` | replace one file's bytes |
 
-**Containment.** A path must resolve inside the project root *after symlinks*.
-Dot-dot, absolute paths, and a symlink inside the root pointing out are all
-refused — and **reads and writes are refused alike**, which is the consistent
-choice: a read that followed a link out would turn the desk into a file browser
-for the whole machine. Resolution walks up to the deepest component that
-exists, so a path naming a file that is not there yet is still checked against
-something real. The refusal never says *which* family stopped it, because
-narrating that describes the filesystem to whoever asked.
+**Containment is a held directory descriptor, not a path check.** The chassis
+opens the project directory once with `os.Root` when it starts and closes it
+with the server; every list, read, stat, staging write and rename goes through
+that handle. This matters for two reasons a string check cannot address:
 
-**Any path inside the root is writable.** These are the user's own files on the
-user's own machine, reached over loopback with the session token. The API is the
-user's hand, not a policy layer.
+- A pathname that is validated and then opened is checked against one
+  filesystem and opened against another. Replace an approved ancestor directory
+  with a symlink in between and the open follows it — no amount of resolving
+  beforehand prevents that. `os.Root` resolves each component against the held
+  descriptor, so the thing checked is the thing opened. There are tests that
+  perform exactly this swap, on `GET`, on `PUT`, and on the listing.
+- Pinning it *once* is the other half. Re-resolving the project path per request
+  would let the authority itself be retargeted — rename the directory, or
+  repoint the symlink it was reached through, and later requests would adopt a
+  different tree without racing anything. A test repoints a symlinked root after
+  startup and asserts the desk keeps serving the tree it was given.
 
-**Atomic save.** The bytes are written to a temporary file in the *same
-directory* — rename is only atomic within a filesystem — flushed, and renamed
-over the target, preserving the mode the file already had. A crash leaves the
-old file or the new one, never a truncated document. A failure removes the
-staging file; a crash between staging and rename can leave one behind, which is
-the honest limit of the approach rather than a defect in it.
+A lexical check runs first and is tested on its own. It refuses `..`, absolute
+paths, drive and UNC forms, NUL, and **backslash anywhere** — on Windows that is
+a separator, so `..\secret` is a traversal slash-only cleaning does not see, and
+refusing it everywhere removes the platform difference from the argument rather
+than reasoning about it. `os.Root` refuses a superset, so this layer is defence
+in depth; it is kept because the two refuse for different reasons and because a
+change to one should not silently become the only thing standing.
 
-**The write answers with a read-back** taken off the disk after the rename,
-rather than echoing the request, so the client can verify what actually landed.
-The editor compares it to what it sent and says "saved, and verified" only when
-they match.
+*Windows caveat, stated because it cannot be tested here:* reserved device names
+and trailing-dot or trailing-space aliases are refused by the filesystem layer
+rather than by the lexical one, and this project's CI runs Linux only.
 
-**Concurrency is last-write-wins, and never silent.** A write carries
-`baseSha256`, the digest of the bytes the editor loaded. If the file on disk
-hashes to something else the write is **refused** with both digests and
-`exists`, so the client can say what it had, what is there, and whether the file
-was changed or deleted. An explicit `override` writes anyway — the user's
-deliberate choice, never a default. It is the same digest discipline the graph
-binding uses, for the same reason: two answers about one file, and only equality
-proves they are about one revision.
+**What is readable and writable.** Any path inside the root **except**: the
+directories the watcher also ignores — `.git`, `node_modules`, `dist`, `.venv`,
+`vendor` — and this desk's own `.jpack-desk-*` staging files. Those exclusions
+are reported in the listing's `excluded` member rather than left to be inferred.
+Non-regular files are excluded too: a symlink is not listed and not readable, a
+FIFO or device is refused on open (with `O_NONBLOCK`, so a FIFO cannot hang the
+handler before the check runs). A file too large to read is **listed with an
+empty digest** rather than hidden — it is really there — and refused by the read
+endpoint. Reads and writes are refused alike for every one of these: an API that
+reads and writes a path by different rules is one nobody can reason about.
 
-Two limits worth stating: a file over 4 MiB is refused rather than loaded into a
-browser tab, and a file that is not UTF-8 is refused rather than returned with
-substitution characters that an editor could then save over the original.
+Otherwise it is the user's own files on the user's own machine, and this API is
+their hand, not a policy layer. It does not consult `jpack.json` and forms no
+opinion about what any file is.
+
+**Writing requires an existing directory.** A `PUT` into a directory that is not
+there answers `404` naming it, rather than creating the tree or reporting a
+containment failure. This API writes files; a missing directory is not an escape
+and must not be described as one.
+
+**Atomic replace, scoped honestly.** The bytes are staged in the target's own
+directory through the same pinned root — rename is atomic only within a
+filesystem — the mode is set, the data is flushed, the file is closed, the
+rename happens, and then the directory entry is flushed.
+
+- *On Unix*, `rename(2)` replaces the directory entry atomically, so a concurrent
+  reader sees the old file or the new one and never a truncated one. Only the
+  POSIX rwx bits are carried across; owner, group, ACLs, extended attributes and
+  the inode identity are not, because a replace is a new file by construction.
+- *On other platforms*, Go promises no such atomicity and neither does this. What
+  they get is `os.Root`'s rename semantics and nothing stronger claimed.
+- *This is not crash durability.* Data before the rename and the directory after
+  it is the usual recipe, and power loss, a lying disk cache, or a filesystem
+  with its own ordering can still lose the write.
+
+A crash between staging and rename leaves a staging file. It is excluded from the
+listing and from the watcher, cannot be read or written through the API, and the
+server removes stale ones at startup.
+
+**The write answers with a read-back** taken off the disk after the rename rather
+than echoing the request, so the client can verify what actually landed. The
+editor compares it to the bytes it *submitted* — captured with the request, not
+read from the live buffer — and says "saved, and verified" only when they match.
+
+**Concurrency: a conditional commit, and one honest residual.** A write carries
+`baseSha256`, the digest of the bytes the editor loaded. The current-bytes read,
+the comparison, the rename and the read-back all happen under a per-path lock,
+so the check and the commit are one decision: two writes from the same base
+produce exactly one `200` and one `409`, never two `200`s where the second
+silently discards the first. The `409` carries both digests and `exists`, so the
+client can say what it had, what is there, and whether the file was changed or
+deleted. `override` writes anyway — the user's deliberate choice, never a
+default.
+
+That serialization covers writers **through this API**. It cannot cover an
+editor, a `git checkout`, or any other process; nothing in a single chassis can.
+For those the file watcher is the mitigation and not a guarantee: it notices the
+change and the page says the file moved underneath the edit, but a write that
+lands between this API's read and its rename is not serialized with. The `409`
+is what makes the common case honest; the watcher is what makes the uncommon one
+visible.
+
+**The editor never rebases an open edit.** The watcher makes the desk invalidate
+every query on a file change, so the bytes an edit is measured against are held
+by the editor and replaced only when the user acts — an initial load, an explicit
+reload, a successful save. A base taken from the live query would silently move
+to bytes the user never saw, and `Save` would overwrite them with no `409` at
+all. A file deleted underneath an open edit keeps the editor and the buffer, and
+says so.
+
+### The lock, and what phase 1 does not do
+
+A project can carry a reviewed-set lock (runtime ADR-0019). Phase 1 **neither
+interprets nor regenerates** one: the desk has no lock parser, writes no lock,
+and offers nothing that would update one.
+
+Two consequences worth stating plainly rather than implying otherwise:
+
+- **Lock refusals do not surface anywhere yet.** The only evaluation surface in
+  the desk is the what-if view, which declares `rehearsal: true` — and a
+  rehearsal consults no reviewed set by design (ADR-0028). So editing a locked
+  pack and rehearsing it will *not* produce a lock refusal today. Phase 3 runs
+  matrices from disk, which is where the runtime's own answer about a lock will
+  first appear, and it will appear verbatim.
+- **The editor can edit the lock file.** `jpack.lock.json` is a file in the
+  project, and this API has no list of files that are special. Editing it is
+  possible, it is the user's own file, and it is stated here as a fact rather
+  than presented as a feature — the runtime remains the only thing that decides
+  what a lock means.
 
 ## How the relay works
 

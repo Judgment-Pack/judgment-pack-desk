@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -103,6 +104,12 @@ func (w *watcher) loop() {
 func (w *watcher) handle(ev fsnotify.Event) {
 	base := filepath.Base(ev.Name)
 	if skipDirs[base] {
+		return
+	}
+	// A staging file is this desk replacing a document, not a document
+	// changing. Reporting one would fire an invalidation for a file nobody
+	// edited — and would do it in the middle of the save that created it.
+	if strings.HasPrefix(base, stagingPrefix) {
 		return
 	}
 	if ev.Op&fsnotify.Create != 0 {
