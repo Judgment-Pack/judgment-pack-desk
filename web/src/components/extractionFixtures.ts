@@ -19,12 +19,7 @@
  * required, and the kind vocabulary the evaluator's own.
  */
 import type { Evaluation, MatrixRow } from '../mcp/types'
-
-const PROCEED = '{"handoff":{"state":"none"},"kind":"outcome","outcomeId":"proceed","reasons":[]}'
-const REVIEW =
-  '{"handoff":{"state":"requested","triggeredBy":["exception-escalation"]},"kind":"outcome","outcomeId":"review","reasons":["exception-escalation"]}'
-const UNRESOLVED =
-  '{"handoff":{"state":"requested","triggeredBy":["unknown"]},"kind":"unresolved","reasons":["unknown"]}'
+import { PROCEED, REVIEW, UNRESOLVED } from '../testing/dispositions'
 
 /** Every optional member the evaluation view can render, all at once. */
 export const FULL_EVALUATION: Evaluation = {

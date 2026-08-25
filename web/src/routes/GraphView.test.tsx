@@ -10,6 +10,13 @@ import {
   type ToolHandler
 } from '../testing/harness'
 import { forgetDivergentPairs } from '../mcp/refetchLedger'
+import {
+  CLEAR,
+  EMEA_QUEUE,
+  PROCEED,
+  REVIEW_QUEUE,
+  UNRESOLVED
+} from '../testing/dispositions'
 import type { GraphInventory, GraphSuite } from '../mcp/types'
 import { GraphView } from './GraphView'
 
@@ -467,24 +474,6 @@ describe('the graphs page, against a runtime that serves documents', () => {
 })
 
 /* Node traces (ADR-0031) and handoff-target assertions (ADR-0032) ---------- */
-
-/**
- * The §8.3 dispositions these rows compare, as RFC 8785 canonical text.
- *
- * The comparator decides on these bytes, so a fixture that is not canonical is
- * not a fixture of anything: members are ordered by name — `handoff`, `kind`,
- * `outcomeId`, `reasons` — `handoff` is required and never omitted, and the
- * kind vocabulary is the evaluator's own (`outcome`, `unresolved`,
- * `not-applicable`; there is no `unknown` kind).
- */
-const PROCEED = '{"handoff":{"state":"none"},"kind":"outcome","outcomeId":"proceed","reasons":[]}'
-const CLEAR = '{"handoff":{"state":"none"},"kind":"outcome","outcomeId":"clear","reasons":[]}'
-const UNRESOLVED =
-  '{"handoff":{"state":"requested","triggeredBy":["unknown"]},"kind":"unresolved","reasons":["unknown"]}'
-
-/** Two renderings of one asserted destination, differing by one member. */
-const REVIEW_QUEUE = '{"kind":"queue","name":"vendor-review"}'
-const EMEA_QUEUE = '{"kind":"queue","name":"vendor-review-emea"}'
 
 /**
  * One run of a graph whose rows assert targets and whose comparisons carry
