@@ -1,6 +1,7 @@
-import { describeHandoffTarget, parseDisposition } from '../mcp/canonical'
+import { parseDisposition } from '../mcp/canonical'
 import type { Disposition, MatrixRow } from '../mcp/types'
 import { Pill, statusTone } from './primitives'
+import { TargetPair, describeTargetAssertion } from './TargetPair'
 
 /**
  * One matrix's rows, expected beside actual.
@@ -36,7 +37,7 @@ export function MatrixRowList({ rows }: { rows: MatrixRow[] }) {
 function MatrixRowItem({ row }: { row: MatrixRow }) {
   const dispositionsAgree = row.expected === row.actual
   const expectsRefusal = Boolean(row.expectedErrorClass)
-  const assertsTarget = row.expectedHandoffTarget !== undefined
+  const assertion = describeTargetAssertion(row)
 
   return (
     <li className={`row row-${row.status}`}>
@@ -44,13 +45,7 @@ function MatrixRowItem({ row }: { row: MatrixRow }) {
         <code className="row-id">{row.id}</code>
         <Pill tone={statusTone(row.status)}>{row.status}</Pill>
         {row.origin && <Pill tone="quiet">origin {row.origin}</Pill>}
-        {assertsTarget && (
-          <Pill tone="quiet">
-            {row.expectedHandoffTarget === 'null'
-              ? 'asserts no handoff target'
-              : 'asserts a handoff-target state'}
-          </Pill>
-        )}
+        {assertion && <Pill tone="quiet">{assertion}</Pill>}
       </div>
 
       {expectsRefusal ? (
@@ -62,12 +57,7 @@ function MatrixRowItem({ row }: { row: MatrixRow }) {
         </div>
       )}
 
-      {assertsTarget && (
-        <div className="row-compare row-targets">
-          <TargetSide label="expected target" member={row.expectedHandoffTarget} />
-          <TargetSide label="actual target" member={row.actualHandoffTarget} />
-        </div>
-      )}
+      <TargetPair of={row} />
 
       {row.detail && <p className="row-detail">{row.detail}</p>}
     </li>
@@ -158,20 +148,6 @@ function DispositionSummary({ disposition }: { disposition: Disposition }) {
           </>
         )}
       </span>
-    </div>
-  )
-}
-
-/**
- * One side of the target pair, shown and never compared: the members are
- * display renderings the comparator does not decide on, so no mark here may
- * claim a difference — the row's status already said what the runtime decided.
- */
-function TargetSide({ label, member }: { label: string; member: string | undefined }) {
-  return (
-    <div className="row-side">
-      <span className="row-side-label">{label}</span>
-      <p className="target-name">{member === undefined ? '(not reported)' : describeHandoffTarget(member)}</p>
     </div>
   )
 }

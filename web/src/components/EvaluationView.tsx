@@ -1,5 +1,6 @@
-import type { Disposition, Evaluation, HandoffTarget, TraceEntry } from '../mcp/types'
-import { Fields, Json, Pill, Section } from './primitives'
+import type { Disposition, Evaluation, HandoffTarget } from '../mcp/types'
+import { Fields, Json, Pill, Section, slug } from './primitives'
+import { TracePanel } from './TracePanel'
 
 /**
  * A reading view of one evaluation payload.
@@ -134,88 +135,6 @@ function DispositionPanel({
   )
 }
 
-/** One run of consecutive trace entries sharing a stage, keeping their place. */
-interface TraceStage {
-  stage: string
-  /** Zero-based position of the first entry in the whole trace. */
-  offset: number
-  entries: TraceEntry[]
-}
-
-/**
- * Split the trace into consecutive same-stage runs. The order is the
- * evaluator's own walk, so entries are never regrouped across it: a stage that
- * appears twice appears twice here, and the numbering stays the trace's.
- */
-function stagesOf(trace: TraceEntry[]): TraceStage[] {
-  const stages: TraceStage[] = []
-  trace.forEach((entry, index) => {
-    const open = stages[stages.length - 1]
-    if (open && open.stage === entry.stage) {
-      open.entries.push(entry)
-      return
-    }
-    stages.push({ stage: entry.stage, offset: index, entries: [entry] })
-  })
-  return stages
-}
-
-/** The trace as the staged walk it is, in the order the payload carries it. */
-function TracePanel({ trace }: { trace: TraceEntry[] }) {
-  const entries = trace ?? []
-  return (
-    <Section title="Trace" count={entries.length}>
-      <p className="note">
-        Informative: what the evaluator walked, in order. It decides nothing —
-        the disposition above is the answer.
-      </p>
-      {entries.length === 0 ? (
-        <p className="empty">This payload carries no trace entries.</p>
-      ) : (
-        <div className="trace">
-          {stagesOf(entries).map((stage) => (
-            <section className="trace-stage" key={`${stage.stage}:${stage.offset}`}>
-              <h4>{stage.stage}</h4>
-              <ol className="trace-list" start={stage.offset + 1}>
-                {stage.entries.map((entry, index) => (
-                  <TraceRow key={`${entry.id ?? stage.stage}:${stage.offset + index}`} entry={entry} />
-                ))}
-              </ol>
-            </section>
-          ))}
-        </div>
-      )}
-    </Section>
-  )
-}
-
-function TraceRow({ entry }: { entry: TraceEntry }) {
-  return (
-    <li className={entry.skipped ? 'trace-entry trace-entry-skipped' : 'trace-entry'}>
-      <span
-        className={`verdict verdict-${slug(entry.condition)}`}
-        title={`condition: ${entry.condition}`}
-      >
-        {entry.condition}
-      </span>
-      <span className="trace-id">
-        {entry.id ? (
-          <code className="id">{entry.id}</code>
-        ) : (
-          <em className="quiet">unnamed {entry.stage} condition</em>
-        )}
-      </span>
-      <span className="trace-badges">
-        {entry.effect && <Pill>{entry.effect}</Pill>}
-        {entry.outcome && <Pill tone="strong">→ {entry.outcome}</Pill>}
-        {entry.skipped && <Pill>skipped</Pill>}
-        {entry.suppressed && <Pill>suppressed</Pill>}
-        {entry.onUnknown && <Pill tone="quiet">on unknown: {entry.onUnknown}</Pill>}
-      </span>
-    </li>
-  )
-}
-
 /**
  * The envelope: the facts about the run rather than about the answer.
  * conformanceClaimReference is shown as what it is — a locator for the file
@@ -298,12 +217,6 @@ function TokenList({ values }: { values: string[] }) {
       ))}
     </span>
   )
-}
-
-/** The payload's own vocabularies are open; anything unrecognised styles neutral. */
-function slug(value: string | undefined): string {
-  if (!value) return 'other'
-  return /^[a-z0-9-]+$/.test(value) ? value : 'other'
 }
 
 /** The raw payload, for reading exactly what the runtime returned. */
