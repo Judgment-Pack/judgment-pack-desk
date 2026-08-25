@@ -6,6 +6,7 @@ import {
   renderConnected,
   stubClient,
   testQueryClient,
+  type ToolAnswer,
   type ToolHandler
 } from '../testing/harness'
 import type { GraphInventory, GraphSuite } from '../mcp/types'
@@ -111,6 +112,20 @@ const SERVED_META = {
 /** The same run, reporting the digest of the bytes its walk decoded (ADR-0030). */
 function matrixBinding(graphSha256: string): GraphSuite {
   return { ...MATRIX, graphs: [{ ...MATRIX.graphs![0]!, graphSha256 }] }
+}
+
+/**
+ * One answer that does not arrive in the tick it was asked for.
+ *
+ * The wire has latency, and the re-ask a divergence triggers only passes
+ * through its in-flight state across one. An answer that resolves inside the
+ * asking render collapses that state into a single commit, and a fixture
+ * without latency therefore cannot tell a refetch asked once from one asked in
+ * a loop: both read as two calls. With it, the guarded page asks twice and an
+ * unguarded one asked 56 times over the same window.
+ */
+function afterATick(answer: ToolAnswer): Promise<ToolAnswer> {
+  return new Promise((resolve) => setTimeout(() => resolve(answer), 5))
 }
 
 function servingDesk(overrides: Record<string, ToolHandler> = {}) {
@@ -286,13 +301,12 @@ describe('the graphs page, against a runtime that serves documents', () => {
     // another revision's arrows, with nothing on screen saying so. Reported as
     // a HIGH finding against the epoch-only version of this join.
     const { client, calls } = servingDesk({
-      experimental_test_graphs: () => ({ text: JSON.stringify(matrixBinding(OTHER_DIGEST)) })
+      experimental_test_graphs: () =>
+        afterATick({ text: JSON.stringify(matrixBinding(OTHER_DIGEST)) }),
+      experimental_get_graph: () => afterATick({ text: DOCUMENT, structured: SERVED_META })
     })
     const { container } = renderConnected(view(), serving(client), { path: '/graphs' })
     await screen.findByText(/Two revisions, not joined/)
-
-    // Nothing joined: no arrow from a document the rows are not about.
-    expect(arrows(container)).toBe(0)
     expect(container.textContent).toContain('edited between the two calls')
     expect(container.textContent).toContain(`sha256 ${OTHER_DIGEST.slice(0, 12)}`)
     expect(container.textContent).toContain(`sha256 ${SERVED_DIGEST.slice(0, 12)}`)
@@ -308,13 +322,20 @@ describe('the graphs page, against a runtime that serves documents', () => {
 
     // And it settles there. A file that is still mid-edit lands the same two
     // digests again, which must read as a standing withdrawal rather than spin
-    // the page asking forever.
+    // the page asking forever. The window is long enough for a spin to show:
+    // an unguarded page ran through 56 calls over one this size.
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50))
+      await new Promise((resolve) => setTimeout(resolve, 200))
     })
     expect(asked('experimental_get_graph')).toBe(2)
     expect(asked('experimental_test_graphs')).toBe(2)
+
+    // Settled, with the same disagreement in hand: the withdrawal stands, and
+    // nothing is joined — no arrow drawn from a document the rows are not
+    // about. Asserted here rather than at the first sight of the notice,
+    // because a page merely waiting for an answer draws no arrow either.
     expect(container.textContent).toContain('Two revisions, not joined')
+    expect(arrows(container)).toBe(0)
   })
 
   it('claims no binding where the matrix run states no digest', async () => {
