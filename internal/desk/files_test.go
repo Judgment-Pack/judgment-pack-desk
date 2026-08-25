@@ -63,6 +63,29 @@ func getJSON(t *testing.T, ts *httptest.Server, path string) (int, map[string]an
 	return resp.StatusCode, body
 }
 
+// putJSONNoFatal is putJSON for a goroutine: it reports a transport failure as
+// a zero status rather than calling t.Fatalf, which is only defined on the
+// test's own goroutine — there it stops that goroutine and the test carries on
+// believing everything is fine.
+func putJSONNoFatal(ts *httptest.Server, req WriteRequest) (int, map[string]any) {
+	payload, err := json.Marshal(req)
+	if err != nil {
+		return 0, nil
+	}
+	r, err := http.NewRequest(http.MethodPut, ts.URL+"/api/file?token="+testToken, bytes.NewReader(payload))
+	if err != nil {
+		return 0, nil
+	}
+	resp, err := http.DefaultClient.Do(r)
+	if err != nil {
+		return 0, nil
+	}
+	defer resp.Body.Close()
+	var body map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	return resp.StatusCode, body
+}
+
 func putJSON(t *testing.T, ts *httptest.Server, req WriteRequest) (int, map[string]any) {
 	t.Helper()
 	payload, err := json.Marshal(req)
@@ -628,6 +651,80 @@ func TestWritingOverADeletedFileIsRefused(t *testing.T) {
 	}
 }
 
+// TestCompetingWritesFromOneBaseProduceOneWinner is the conditional commit.
+//
+// Two writers load the same bytes and both save without override. The check and
+// the rename are one decision, so exactly one may succeed: if both pass the
+// digest check and both rename, the second silently discards the first, and
+// both clients are told they saved.
+//
+// The barrier is what makes it deterministic rather than a race that usually
+// goes the right way. Neither request may proceed until both are inside the
+// handler, which is the interleaving a lock has to survive.
+func TestCompetingWritesFromOneBaseProduceOneWinner(t *testing.T) {
+	_, ts, project := filesServer(t)
+	const base = `{"id":"a"}`
+	abs := writeProjectFile(t, project, "packs/a.pack.json", base)
+	baseDigest := digestOf([]byte(base))
+
+	var arrived sync.WaitGroup
+	arrived.Add(2)
+	release := make(chan struct{})
+	var once sync.Once
+	testHookAfterResolve = func(rel string) {
+		if rel != "packs/a.pack.json" {
+			return
+		}
+		arrived.Done()
+		<-release
+	}
+	t.Cleanup(func() { testHookAfterResolve = nil })
+	go func() {
+		arrived.Wait()
+		once.Do(func() { close(release) })
+	}()
+
+	type outcome struct {
+		status int
+	}
+	results := make(chan outcome, 2)
+	for _, content := range []string{`{"id":"first"}`, `{"id":"second"}`} {
+		go func(content string) {
+			status, _ := putJSONNoFatal(ts, WriteRequest{
+				Path: "packs/a.pack.json", Content: content, BaseSHA256: baseDigest,
+			})
+			results <- outcome{status}
+		}(content)
+	}
+
+	statuses := []int{}
+	for range 2 {
+		statuses = append(statuses, (<-results).status)
+	}
+	ok, conflicted := 0, 0
+	for _, status := range statuses {
+		switch status {
+		case http.StatusOK:
+			ok++
+		case http.StatusConflict:
+			conflicted++
+		default:
+			t.Fatalf("unexpected status %d (all: %v)", status, statuses)
+		}
+	}
+	if ok != 1 || conflicted != 1 {
+		t.Fatalf("expected one 200 and one 409, got %v — the digest check is not held across the commit", statuses)
+	}
+	final, err := os.ReadFile(abs)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(final) != `{"id":"first"}` && string(final) != `{"id":"second"}` {
+		t.Fatalf("the file is not any whole write: %q", string(final))
+	}
+	assertNoTempFiles(t, filepath.Join(project, "packs"))
+}
+
 func TestConcurrentWritesLeaveOneWholeDocument(t *testing.T) {
 	// Last write wins, and the race is not what is under test: what is under
 	// test is that no interleaving leaves a half-written file. Every writer
@@ -643,7 +740,7 @@ func TestConcurrentWritesLeaveOneWholeDocument(t *testing.T) {
 		contents[i] = `{"writer":` + strings.Repeat("9", i+1) + `}`
 		go func(body string) {
 			defer func() { done <- struct{}{} }()
-			putJSON(t, ts, WriteRequest{Path: "packs/a.pack.json", Content: body, Override: true})
+			putJSONNoFatal(ts, WriteRequest{Path: "packs/a.pack.json", Content: body, Override: true})
 		}(contents[i])
 	}
 	for range writers {

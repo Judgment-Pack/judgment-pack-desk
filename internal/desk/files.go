@@ -179,13 +179,16 @@ func wireRelativePath(rel string) (string, error) {
 		return "", errOutsideProject
 	}
 	clean := path.Clean(rel)
-	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+	// `.` is the project directory itself, which is a valid fs path and not a
+	// document, so it is refused separately.
+	if clean == "." {
 		return "", errOutsideProject
 	}
 	// fs.ValidPath is the standard library's own answer to "is this a
 	// well-formed slash path for an fs.FS": unrooted, no empty or dot elements,
-	// no dot-dot. Asking it as well means this agrees with `Root.FS()`, which
-	// the listing walks.
+	// and no dot-dot. It is the whole lexical dot-dot rule — an explicit `..`
+	// check beside it would be dead code, and dead code in a containment
+	// argument reads as a layer that is doing something.
 	if !fs.ValidPath(clean) {
 		return "", errOutsideProject
 	}
@@ -435,10 +438,15 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Before the lock, deliberately. The hook is where a test performs the
+	// symlink swap a time-of-check attack would — which must happen before any
+	// filesystem access — and it is also where a test can hold two requests
+	// until both have arrived. Inside the lock the second request would still
+	// be waiting at the door, and no barrier could ever see it.
+	afterResolve(clean)
+
 	release := s.writes.acquire(clean)
 	defer release()
-
-	afterResolve(clean)
 
 	// What is there now, under the lock.
 	//

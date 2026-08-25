@@ -46,14 +46,41 @@ report() { # report <name> <result-line>
   printf '| %-52s | %s |\n' "$1" "$2"
 }
 
+# A mutation that does not compile, panics, or hangs the suite has not been
+# survived — it has not been tested. Reporting any of those as "nothing failed"
+# would be the most dangerous thing this script could do, so each is named.
 run_go() {
-  go test ./internal/desk -count=1 -timeout 120s 2>&1 |
-    grep -E '^--- FAIL|^    --- FAIL' | sed 's/^ *--- FAIL: //;s/ (.*//' | sort -u | paste -sd', ' -
+  local out named
+  out="$(go test ./internal/desk -count=1 -timeout 45s 2>&1)"
+  if grep -q 'build failed\|cannot use\|undefined:\|declared and not used\|syntax error' <<<"$out"; then
+    echo "DID NOT COMPILE — inconclusive"
+    return
+  fi
+  if grep -q 'panic: test timed out' <<<"$out"; then
+    echo "SUITE TIMED OUT (the mutation hangs a handler)"
+    return
+  fi
+  named="$(grep -E '^--- FAIL|^    --- FAIL' <<<"$out" | sed 's/^ *--- FAIL: //;s/ (.*//' | sort -u | paste -sd', ' -)"
+  if [ -z "$named" ] && grep -q '^FAIL' <<<"$out"; then
+    echo "FAILED without naming a test"
+    return
+  fi
+  echo "$named"
 }
 
 run_web() {
-  npx --prefix web vitest run --root web 2>&1 |
-    grep -E '^ *× ' | sed 's/^ *× //;s/ [0-9]*ms$//' | sort -u | paste -sd', ' -
+  local out named
+  out="$(npx --prefix web vitest run --root web 2>&1)"
+  if grep -q 'error TS[0-9]\|Transform failed\|Build failed' <<<"$out"; then
+    echo "DID NOT COMPILE — inconclusive"
+    return
+  fi
+  named="$(grep -E '^ *× ' <<<"$out" | sed 's/^ *× //;s/ [0-9]*ms$//' | sort -u | paste -sd', ' -)"
+  if [ -z "$named" ] && grep -qE 'Tests +[0-9]+ failed' <<<"$out"; then
+    echo "FAILED without naming a test"
+    return
+  fi
+  echo "$named"
 }
 
 mutate() { # mutate <lang> <name> <file> <needle> <replacement>
@@ -68,9 +95,20 @@ mutate() { # mutate <lang> <name> <file> <needle> <replacement>
   local failures
   if [ "$lang" = go ]; then failures="$(run_go)"; else failures="$(run_web)"; fi
   restore
-  if [ -z "$failures" ]; then
-    report "$name" "**NOT DISCRIMINATING — nothing failed**"
-    fail=$((fail + 1))
+  case "$failures" in
+    "")
+      report "$name" "**NOT DISCRIMINATING — nothing failed**"
+      fail=$((fail + 1))
+      return
+      ;;
+    "DID NOT COMPILE"*)
+      report "$name" "**$failures**"
+      fail=$((fail + 1))
+      return
+      ;;
+  esac
+  if false; then
+    :
   else
     report "$name" "$failures"
     pass=$((pass + 1))
@@ -84,11 +122,14 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   F=internal/desk/files.go
   S=internal/desk/server.go
 
-  mutate go "lexical path guard: dot-dot allowed" "$F" \
-    '	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {' \
-    '	if clean == "." || false {'
+  mutate go "lexical path guard: the project itself allowed" "$F" \
+    '	if clean == "." {' \
+    '	if false {'
+  mutate go "lexical path guard: fs.ValidPath not consulted" "$F" \
+    '	if !fs.ValidPath(clean) {' \
+    '	if false {'
   mutate go "lexical path guard: backslash allowed" "$F" \
-    '	if strings.ContainsRune(rel, '"'"'\\\\'"'"') {' \
+    "$(printf '\tif strings.ContainsRune(rel, %s) {' "'\\\\'")" \
     '	if false {'
   mutate go "lexical path guard: NUL allowed" "$F" \
     '	if strings.ContainsRune(rel, 0) {' \
@@ -105,9 +146,12 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "read does not require a regular file" "$F" \
     '	if !info.Mode().IsRegular() {' \
     '	if false {'
-  mutate go "read is bounded by the stat, not the reader" "$F" \
-    '	data, err := io.ReadAll(io.LimitReader(f, maxFileBytes+1))' \
-    '	data, err := io.ReadAll(f)'
+  # Deliberately not mutated: replacing the LimitReader with a plain ReadAll
+  # produces the same 413 for the same file, because the size verdict is taken
+  # after the read either way. What the LimitReader changes is peak memory on a
+  # file that grows between the stat and the read, and no test here can observe
+  # that. It is kept because it is correct, and it is named here so that its
+  # absence from this table is a statement rather than an oversight.
   mutate go "FIFO blocks the open (no O_NONBLOCK)" "$F" \
     '	f, err := s.root.OpenFile(osPath(clean), os.O_RDONLY|openNonBlocking, 0)' \
     '	f, err := s.root.OpenFile(osPath(clean), os.O_RDONLY, 0)'
