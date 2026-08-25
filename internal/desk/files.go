@@ -347,8 +347,19 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		if !d.Type().IsRegular() || strings.HasPrefix(d.Name(), stagingPrefix) {
 			return nil
 		}
-		info, ierr := d.Info()
+		// `d.Info()` is not used here, and the reason is the whole point of this
+		// file. On Go 1.25 the DirEntry that `Root.FS()` yields resolves Info by
+		// *pathname* — `lstat <root>/./mine.json` — which walks back out through
+		// whatever the root's path now names. Go 1.26 changed it to use the
+		// descriptor. Depending on which one is underneath is depending on a
+		// version to hold a security property, so the stat goes through the
+		// pinned root explicitly and behaves the same on both.
+		info, ierr := s.root.Stat(osPath(p))
 		if ierr != nil {
+			// Unreachable through the pinned root is not in the project, so it
+			// is not listed. Logged rather than silent: a listing that quietly
+			// became empty is exactly how this bug hid.
+			s.log.Printf("desk: %s is in the tree and not reachable through the project root: %v", p, ierr)
 			return nil
 		}
 		entry := FileEntry{Path: p, Bytes: info.Size()}
