@@ -509,6 +509,30 @@ not advertise those tools: asking for the step is asking for the check. Against
 a runtime that has neither, the fallback is what the other flags already
 exercise.
 
+**The graph leg runs without being asked for**, and there the same absence is a
+skip rather than a failure — naming no graph asks what this runtime can tell you
+about its graphs, and "nothing" is an answer jpack 0.18.0 is entitled to give.
+Where both tools are advertised it lists the configured graphs, fetches one
+document, checks the served text against its own `bytes` and `sha256`, and then
+checks the **binding** (ADR-0030): the `graphSha256` the matrix run decoded
+against the digest served beside the document. Equal proves the two calls
+describe one revision of one file, which is what lets the graphs page join a
+served document to a matrix run at all; unequal proves the file was edited
+between them and fails the drive. An entry that states no digest is reported and
+not failed — that is the older runtime, or a document that never loaded, and the
+desk's epoch-bounded fallback is what stands there.
+
+Against jpack 0.18.0 the leg prints one line and the drive still ends `OK`:
+
+```
+capabilities      rehearsal=true list_graphs=false get_graph=false include_traces=false
+graph binding skipped  this runtime advertises no experimental_list_graphs / …
+```
+
+Nothing in the leg reads a row, a status or a coverage probe. Digest equality is
+byte arithmetic over bytes the runtime handed over; what a run *concluded* is
+the runtime's to say, and the leg says only which bytes it concluded it about.
+
 ## Upstream gaps
 
 The desk consumes the runtime's public wire and nothing else. Where the wire

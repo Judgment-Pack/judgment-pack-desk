@@ -37,6 +37,14 @@
  *
  *   npm run smoke -- <url> --graph-document onboarding \
  *     --graph-file /path/to/project/graphs/onboarding.graph.json
+ *
+ * Without that flag the graph leg still runs, capability-gated rather than
+ * refused: where the runtime advertises both graph tools it lists the
+ * configured graphs, fetches one document, and checks the ADR-0030 binding —
+ * the digest the matrix run decoded against the digest served beside the
+ * document. Where it advertises neither, the leg says so in one line and the
+ * drive stays green, because a runtime with no such tools is not a runtime
+ * that failed the check.
  */
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
@@ -50,6 +58,8 @@ import type {
   GraphDocumentMeta,
   GraphInventory,
   GraphSuite,
+  GraphSuiteEntry,
+  GraphSummary,
   MatrixProbe,
   PackDocument,
   PackInventory,
@@ -185,7 +195,8 @@ const capabilities = readCapabilities(tools)
 console.log(
   `capabilities      rehearsal=${capabilities.rehearsalSupported} ` +
     `list_graphs=${capabilities.graphInventorySupported} ` +
-    `get_graph=${capabilities.graphDocumentSupported}`
+    `get_graph=${capabilities.graphDocumentSupported} ` +
+    `include_traces=${capabilities.graphTracesSupported}`
 )
 
 const inventory = JSON.parse(
@@ -235,8 +246,15 @@ if (options.graphs) {
   await testGraphs()
 }
 
+// Two ways into the graph surface, and they differ in what an absent
+// capability means. Naming a graph *asks* for the check, so a runtime without
+// the tools fails the run. Naming none asks for whatever this runtime can
+// answer, so the same absence is a skip — and the deeper leg subsumes the
+// automatic one, which is why only one of them runs.
 if (options.graphDocument) {
   await graphDocument(options.graphDocument, options.graphFile)
+} else {
+  await graphBinding()
 }
 
 console.log(`notifications ${sawFileChange ? 'saw desk/fileChanged' : 'none seen (expected: nothing changed)'}`)
@@ -459,60 +477,13 @@ async function graphDocument(graphId: string, graphFile?: string): Promise<void>
     }
   }
 
-  const listed = await client.callTool({ name: 'experimental_list_graphs', arguments: {} })
-  if (listed.isError) {
-    console.error(`experimental_list_graphs refused: ${textOf(listed)}`)
-    process.exit(1)
-  }
-  const inventory = JSON.parse(textOf(listed)) as GraphInventory
-  const rows = inventory.graphs ?? []
-  console.log(
-    `list_graphs   ok  status=${inventory.status} graphs=${rows.length} ` +
-      `configVersion=${inventory.configVersion}`
-  )
-  for (const row of rows) {
-    console.log(
-      `                  - ${row.id.padEnd(24)} ${(row.graphId || '(identity not read)').padEnd(24)} ` +
-        `v${row.graphVersion || '?'} format ${row.formatVersion || '?'} ` +
-        // Absent, never zero: a malformed document must not look honestly empty.
-        `${row.nodeCount ?? '?'} nodes ${row.edgeCount ?? '?'} edges ` +
-        `result=${row.resultNode ?? '(none)'} rows=${row.rowsDeclared}`
-    )
-    if (row.detail) console.log(`                      ! ${row.detail}`)
-  }
+  const rows = await listGraphs()
   if (!rows.some((row) => row.id === graphId)) {
     console.error(`the inventory lists no graph configured as ${graphId}`)
     process.exit(1)
   }
 
-  const fetched = await client.callTool({
-    name: 'experimental_get_graph',
-    arguments: { graph_id: graphId }
-  })
-  const served = textOf(fetched)
-  if (fetched.isError) {
-    console.error(`experimental_get_graph refused: ${served}`)
-    process.exit(1)
-  }
-  const meta = fetched.structuredContent as unknown as GraphDocumentMeta
-  console.log(
-    `get_graph     ok  status=${meta.status} id=${meta.id} graphId=${meta.graphId || '(not read)'} ` +
-      `v${meta.graphVersion || '?'} format=${meta.formatVersion || '?'} ` +
-      `result=${meta.resultNode ?? '(none)'} bytes=${meta.bytes} path=${meta.path}`
-  )
-  if (meta.detail) console.log(`                  detail: ${meta.detail}`)
-
-  const bytes = Buffer.from(served, 'utf8')
-  const digest = createHash('sha256').update(bytes).digest('hex')
-  if (bytes.byteLength !== meta.bytes) {
-    console.error(`the served text is ${bytes.byteLength} bytes and the payload says ${meta.bytes}`)
-    process.exit(1)
-  }
-  if (digest !== meta.sha256) {
-    console.error(`the served text hashes to ${digest} and the payload says ${meta.sha256}`)
-    process.exit(1)
-  }
-  console.log(`                  text matches its own metadata: ${bytes.byteLength} bytes, sha256 ${digest}`)
+  const { served, meta, digest } = await fetchServedGraph(graphId)
 
   if (graphFile) {
     const onDisk = await readFile(graphFile, 'utf8')
@@ -542,10 +513,17 @@ async function graphDocument(graphId: string, graphFile?: string): Promise<void>
     process.exit(1)
   }
 
+  // One matrix call answers both questions: whether these bytes are the bytes
+  // that run decoded, and what order it evaluated the nodes in. Asking twice
+  // would be two runs, and two runs are two reads of a file that may have been
+  // edited between them — the very thing the binding exists to detect.
+  const entry = await graphMatrixEntry(graphId)
+  checkGraphBinding(graphId, digest, entry)
+
   // The layering the page would do, with the tie-break the page uses: the walk
   // order of this graph's own coverage report. Passing an empty coverage here
   // would exercise a tie-break the browser never takes.
-  const coverage = await graphCoverage(graphId)
+  const coverage = entry?.coverage ?? []
   console.log(
     `  walk order      ${nodesInWalkOrder(coverage).join(' → ') || '(coverage names no node)'}`
   )
@@ -579,14 +557,137 @@ async function graphDocument(graphId: string, graphFile?: string): Promise<void>
 }
 
 /**
- * One graph's own coverage report, for the layering tie-break.
+ * The graph leg that is not asked for: run where the runtime can answer it,
+ * skipped in one line where it cannot.
  *
- * The tie inside a layer is broken by the order the runtime evaluated the
- * nodes in, and the coverage report is the only place that order appears. A run
- * whose rows did not load reports no coverage, which is an answer: the tie then
- * falls back to the document's own key order, exactly as it does in the page.
+ * `--graph-document` refuses a runtime without the tools because naming a graph
+ * is asking for the check. Naming none asks a different question — *what can
+ * this runtime tell me about its graphs* — and jpack 0.18.0's answer to that is
+ * "nothing", which is an answer rather than a failure. So a drive against an
+ * older runtime prints one line here and still ends OK.
+ *
+ * What it proves where it does run is the join the desk's graphs page makes:
+ * the document served by one call and the matrix run made by another describe
+ * one revision of one file (ADR-0030). Two calls, one file, and until that
+ * member existed nothing in either payload could say so.
  */
-async function graphCoverage(graphId: string): Promise<MatrixProbe[]> {
+async function graphBinding(): Promise<void> {
+  if (!capabilities.graphInventorySupported || !capabilities.graphDocumentSupported) {
+    console.log(
+      'graph binding skipped  this runtime advertises no experimental_list_graphs / ' +
+        'experimental_get_graph (ADR-0029; jpack 0.18.0 and older), so there is no served ' +
+        'document to bind a run to'
+    )
+    return
+  }
+
+  const rows = await listGraphs()
+  if (rows.length === 0) {
+    console.log(
+      '                  (this project configures no graph, which is an answer and not an error)'
+    )
+    return
+  }
+
+  // A graph declaring no rows is skipped before its document is loaded, so its
+  // entry carries no digest to compare — not a failure, just nothing to bind.
+  // Preferring one that declares rows picks the graph that can answer.
+  const chosen = rows.find((row) => row.rowsDeclared) ?? rows[0]!
+  const { digest } = await fetchServedGraph(chosen.id)
+  checkGraphBinding(chosen.id, digest, await graphMatrixEntry(chosen.id))
+}
+
+/**
+ * The configured inventory, listed and printed (ADR-0029).
+ *
+ * Listing is not validating: a row may carry a detail and no identity at all,
+ * because the runtime leaves the identity members empty rather than guessing
+ * them off a document it could not read. Printed the same way here.
+ */
+async function listGraphs(): Promise<GraphSummary[]> {
+  const listed = await client.callTool({ name: 'experimental_list_graphs', arguments: {} })
+  if (listed.isError) {
+    console.error(`experimental_list_graphs refused: ${textOf(listed)}`)
+    process.exit(1)
+  }
+  const inventory = JSON.parse(textOf(listed)) as GraphInventory
+  const rows = inventory.graphs ?? []
+  console.log(
+    `list_graphs   ok  status=${inventory.status} graphs=${rows.length} ` +
+      `configVersion=${inventory.configVersion}`
+  )
+  for (const row of rows) {
+    console.log(
+      `                  - ${row.id.padEnd(24)} ${(row.graphId || '(identity not read)').padEnd(24)} ` +
+        `v${row.graphVersion || '?'} format ${row.formatVersion || '?'} ` +
+        // Absent, never zero: a malformed document must not look honestly empty.
+        `${row.nodeCount ?? '?'} nodes ${row.edgeCount ?? '?'} edges ` +
+        `result=${row.resultNode ?? '(none)'} rows=${row.rowsDeclared}`
+    )
+    if (row.detail) console.log(`                      ! ${row.detail}`)
+  }
+  return rows
+}
+
+/**
+ * One served graph document, with the text checked against its own metadata.
+ *
+ * Two independent facts are asserted here and neither needs a file on disk: the
+ * byte count the payload states, and the sha256 it states, both against the
+ * text this client actually received. That is the desk's own binding check —
+ * the arithmetic half of it — exercised over the wire rather than over a
+ * fixture. The digest is bare hex on this payload, not the `sha256:`-prefixed
+ * form the lock and audit records use, and is compared as the payload spells
+ * it.
+ *
+ * Computing a digest is not deriving a verdict. It is byte arithmetic over
+ * bytes the runtime handed us, and its only claim is that the two halves of one
+ * answer agree with each other.
+ */
+async function fetchServedGraph(
+  graphId: string
+): Promise<{ served: string; meta: GraphDocumentMeta; digest: string }> {
+  const fetched = await client.callTool({
+    name: 'experimental_get_graph',
+    arguments: { graph_id: graphId }
+  })
+  const served = textOf(fetched)
+  if (fetched.isError) {
+    console.error(`experimental_get_graph refused: ${served}`)
+    process.exit(1)
+  }
+  const meta = fetched.structuredContent as unknown as GraphDocumentMeta
+  console.log(
+    `get_graph     ok  status=${meta.status} id=${meta.id} graphId=${meta.graphId || '(not read)'} ` +
+      `v${meta.graphVersion || '?'} format=${meta.formatVersion || '?'} ` +
+      `result=${meta.resultNode ?? '(none)'} bytes=${meta.bytes} path=${meta.path}`
+  )
+  if (meta.detail) console.log(`                  detail: ${meta.detail}`)
+
+  const bytes = Buffer.from(served, 'utf8')
+  const digest = createHash('sha256').update(bytes).digest('hex')
+  if (bytes.byteLength !== meta.bytes) {
+    console.error(`the served text is ${bytes.byteLength} bytes and the payload says ${meta.bytes}`)
+    process.exit(1)
+  }
+  if (digest !== meta.sha256) {
+    console.error(`the served text hashes to ${digest} and the payload says ${meta.sha256}`)
+    process.exit(1)
+  }
+  console.log(`                  text matches its own metadata: ${bytes.byteLength} bytes, sha256 ${digest}`)
+  return { served, meta, digest }
+}
+
+/**
+ * One configured graph's matrix entry, run.
+ *
+ * The whole entry rather than its coverage, because two different checks read
+ * two different members of it and both must come from the *same* run: the
+ * digest that run decoded, and the node order it evaluated in. A second call
+ * for the second member would be a second read of a file that may have changed
+ * between them.
+ */
+async function graphMatrixEntry(graphId: string): Promise<GraphSuiteEntry | undefined> {
   const result = await client.callTool({
     name: 'experimental_test_graphs',
     arguments: { graph_id: graphId }
@@ -596,8 +697,59 @@ async function graphCoverage(graphId: string): Promise<MatrixProbe[]> {
     process.exit(1)
   }
   const payload = JSON.parse(textOf(result)) as GraphSuite
-  const entry = (payload.graphs ?? []).find((candidate) => candidate.id === graphId)
-  return entry?.coverage ?? []
+  return (payload.graphs ?? []).find((candidate) => candidate.id === graphId)
+}
+
+/**
+ * The ADR-0030 binding, checked against a live runtime.
+ *
+ * A graph matrix entry reports `graphSha256`, the digest of the exact bytes
+ * that run decoded; `experimental_get_graph` reports the digest of the bytes it
+ * served. Equal proves the two answers are about one revision, which is what
+ * lets the desk join a served document to a matrix run at all. Unequal proves
+ * the file was edited between the two calls — a real condition, and one that
+ * makes this drive no longer a proof of anything, so it fails.
+ *
+ * It is a binding of bytes and not a verdict about either revision. Nothing
+ * here reads a row, a status or a coverage probe: what the run *concluded* is
+ * the runtime's to say, and this says only which bytes it concluded it about.
+ *
+ * An absent member is not a failure. It means this runtime states no binding —
+ * jpack 0.18.0 and older, or an entry whose document never loaded — and the
+ * desk's epoch-bounded fallback is what stands there, so this reports it and
+ * moves on.
+ */
+function checkGraphBinding(
+  graphId: string,
+  servedDigest: string,
+  entry: GraphSuiteEntry | undefined
+): void {
+  if (!entry) {
+    console.error(
+      `the graph matrix reported no entry for ${graphId}, so there is nothing to bind these bytes to`
+    )
+    process.exit(1)
+  }
+  const run = entry.graphSha256
+  if (run === undefined || run === '') {
+    console.log(
+      `graph binding     this run states no graphSha256 (ADR-0030; jpack 0.18.0 and older, or a ` +
+        `document that did not load${entry.detail ? ` — ${entry.detail}` : ''}), so nothing binds ` +
+        `it to the served document`
+    )
+    return
+  }
+  if (run !== servedDigest) {
+    console.error(
+      `the graph matrix ran over ${run} and the runtime served ${servedDigest}, so the two ` +
+        `answers describe different revisions of ${graphId} and must not be joined`
+    )
+    process.exit(1)
+  }
+  console.log(
+    `graph binding ok  the matrix run and the served document report one digest: ` +
+      `sha256 ${run}`
+  )
 }
 
 /** How much of what a report derived is witnessed by a row. */
