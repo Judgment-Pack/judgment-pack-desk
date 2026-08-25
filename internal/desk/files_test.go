@@ -175,6 +175,45 @@ func TestResolveInProjectContainment(t *testing.T) {
 	}
 }
 
+// TestLexicalLayerRefusesOnItsOwn names the layer.
+//
+// Two independent checks stand between a client path and the disk, and the
+// resolver refuses a superset of what the lexical check does — so a test that
+// went through resolveInProject and asked only "was it refused?" stays green
+// with the lexical layer deleted. This asks the layer directly, which is the
+// only way to notice it has stopped running.
+func TestLexicalLayerRefusesOnItsOwn(t *testing.T) {
+	refused := []string{
+		"", ".", "..", "../secret.json", "packs/../../secret.json",
+		"a/b/../../../out.json", "/etc/passwd",
+	}
+	for _, rel := range refused {
+		t.Run("refused/"+rel, func(t *testing.T) {
+			if clean, err := lexicallyInsideProject(rel); err == nil {
+				t.Fatalf("lexicallyInsideProject(%q) allowed %q", rel, clean)
+			}
+		})
+	}
+	allowed := map[string]string{
+		"jpack.json":          "jpack.json",
+		"packs/a.pack.json":   "packs/a.pack.json",
+		"packs/../jpack.json": "jpack.json",
+		"./packs/a.pack.json": "packs/a.pack.json",
+		"packs//a.pack.json":  "packs/a.pack.json",
+	}
+	for rel, want := range allowed {
+		t.Run("allowed/"+rel, func(t *testing.T) {
+			clean, err := lexicallyInsideProject(rel)
+			if err != nil {
+				t.Fatalf("lexicallyInsideProject(%q): %v", rel, err)
+			}
+			if clean != want {
+				t.Fatalf("cleaned to %q, want %q", clean, want)
+			}
+		})
+	}
+}
+
 // TestSiblingDirectoryIsNotInsideTheProject pins the separator in the prefix
 // test. Without it "/tmp/proj-evil" tests as inside "/tmp/proj", and a project
 // with a same-prefixed neighbour is readable through this API.

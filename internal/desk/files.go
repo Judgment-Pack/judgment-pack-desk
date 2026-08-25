@@ -127,11 +127,50 @@ func digestOf(data []byte) string {
 // A file that does not exist yet is resolved through its parent, because a
 // write must be able to create one — the parent still has to resolve inside.
 func (s *Server) resolveInProject(rel string) (string, error) {
+	clean, err := lexicallyInsideProject(rel)
+	if err != nil {
+		return "", err
+	}
+
+	// The root is resolved too. A project reached through a symlinked path is
+	// perfectly ordinary — /tmp is one on macOS — and comparing a resolved
+	// child against an unresolved root would refuse every file in it.
+	root, rerr := filepath.EvalSymlinks(s.cfg.ProjectDir)
+	if rerr != nil {
+		return "", fmt.Errorf("project directory: %w", rerr)
+	}
+	full := filepath.Join(root, filepath.FromSlash(clean))
+
+	real, resolveErr := resolveExisting(root, full)
+	if resolveErr != nil {
+		return "", resolveErr
+	}
+	if !within(root, real) {
+		return "", errOutsideProject
+	}
+	return real, nil
+}
+
+// lexicallyInsideProject is the first of the two containment layers: the one
+// that can be decided from the string alone.
+//
+// It refuses an empty path, an absolute one, and any path whose cleaned form is
+// or climbs out through `..`, and returns the cleaned slash-path otherwise.
+//
+// The second layer — resolving symlinks and comparing against the resolved root
+// — refuses a superset of what this does, so removing this function would not
+// let an escape through today. It is kept, and tested on its own, for the
+// reason defence in depth is usually kept: the layers refuse for different
+// reasons, this one costs no filesystem call, and a change to the resolver
+// would otherwise silently become the only thing standing between a `..` and
+// the disk. A test that only asked "was it refused?" could not tell that the
+// layer had stopped running.
+func lexicallyInsideProject(rel string) (string, error) {
 	if rel == "" {
 		return "", errors.New("path is required")
 	}
 	// The wire form is slash-separated on every platform, so it is converted
-	// once here rather than assumed anywhere else.
+	// once at the join rather than assumed anywhere else.
 	if path.IsAbs(rel) || filepath.IsAbs(rel) || strings.HasPrefix(rel, "/") || strings.Contains(rel, ":") {
 		return "", errOutsideProject
 	}
@@ -139,24 +178,7 @@ func (s *Server) resolveInProject(rel string) (string, error) {
 	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
 		return "", errOutsideProject
 	}
-
-	// The root is resolved too. A project reached through a symlinked path is
-	// perfectly ordinary — /tmp is one on macOS — and comparing a resolved
-	// child against an unresolved root would refuse every file in it.
-	root, err := filepath.EvalSymlinks(s.cfg.ProjectDir)
-	if err != nil {
-		return "", fmt.Errorf("project directory: %w", err)
-	}
-	full := filepath.Join(root, filepath.FromSlash(clean))
-
-	real, err := resolveExisting(root, full)
-	if err != nil {
-		return "", err
-	}
-	if !within(root, real) {
-		return "", errOutsideProject
-	}
-	return real, nil
+	return clean, nil
 }
 
 // resolveExisting resolves the symlinks on the part of full that exists, and
