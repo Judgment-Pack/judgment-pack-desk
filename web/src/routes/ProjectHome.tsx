@@ -43,6 +43,19 @@ export function ProjectHome() {
       </header>
 
       <ul className="cards cards-nav">
+        <li className="card card-link">
+          <div className="card-head">
+            <h3>
+              <Link to="/author">Author</Link>
+            </h3>
+            <Pill tone="quiet">phase 1</Pill>
+          </div>
+          <p>
+            Edit the project's files and save them atomically. The desk owns writes
+            because the runtime has none by design; what the bytes mean stays the
+            runtime's answer.
+          </p>
+        </li>
         {withMatrix.length > 0 && (
           <li className="card card-link">
             <div className="card-head">

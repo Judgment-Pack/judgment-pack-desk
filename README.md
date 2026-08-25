@@ -380,6 +380,78 @@ The chassis holds no credential, opens no outbound connection, and writes
 nothing to the project. The runtime subprocess inherits the project directory
 as its working directory and is killed when the socket that started it closes.
 
+## Authoring (issue #14, phase 1)
+
+The runtime has **no write tools**, and that is a decision rather than a gap:
+ADR-0006 makes it a stateless oracle, so the authoring lifecycle belongs to the
+client. The desk is the client, so **the desk owns writes** — through the
+chassis, never through the relay, which stays a verbatim pipe.
+
+What phase 1 is, exactly: a chassis file API, and an editor shell at `/author`
+that lists the project's files, edits one as text, and saves it. That is all.
+There are **no schema forms and no validation wiring** — those are phase 2, and
+matrix and rows editing is phase 3. See
+[issue #14](https://github.com/Judgment-Pack/judgment-pack-desk/issues/14) for
+the whole shape.
+
+**Nothing in the desk judges a document.** The file API moves bytes; it does not
+read `jpack.json`, does not care whether a path is a pack, and forms no opinion
+about what any file means. Every verdict stays the runtime's, asked for through
+the tools every other view already uses, and rendered as the runtime states it.
+That includes refusals: a project under a reviewed-set lock (ADR-0019) will
+refuse to evaluate an edited pack until it is re-reviewed, and the desk will
+report that refusal as the runtime's answer. It will not offer to update the
+lock, and it does not route around one.
+
+### The file API
+
+Three endpoints, under the same two checks as `/ws` — the session token first,
+then the Origin — because a new endpoint is a new place to forget one:
+
+| | |
+| --- | --- |
+| `GET /api/files` | every regular file in the project tree, with sizes and digests |
+| `GET /api/file?path=…` | one file's bytes |
+| `PUT /api/file` | replace one file's bytes |
+
+**Containment.** A path must resolve inside the project root *after symlinks*.
+Dot-dot, absolute paths, and a symlink inside the root pointing out are all
+refused — and **reads and writes are refused alike**, which is the consistent
+choice: a read that followed a link out would turn the desk into a file browser
+for the whole machine. Resolution walks up to the deepest component that
+exists, so a path naming a file that is not there yet is still checked against
+something real. The refusal never says *which* family stopped it, because
+narrating that describes the filesystem to whoever asked.
+
+**Any path inside the root is writable.** These are the user's own files on the
+user's own machine, reached over loopback with the session token. The API is the
+user's hand, not a policy layer.
+
+**Atomic save.** The bytes are written to a temporary file in the *same
+directory* — rename is only atomic within a filesystem — flushed, and renamed
+over the target, preserving the mode the file already had. A crash leaves the
+old file or the new one, never a truncated document. A failure removes the
+staging file; a crash between staging and rename can leave one behind, which is
+the honest limit of the approach rather than a defect in it.
+
+**The write answers with a read-back** taken off the disk after the rename,
+rather than echoing the request, so the client can verify what actually landed.
+The editor compares it to what it sent and says "saved, and verified" only when
+they match.
+
+**Concurrency is last-write-wins, and never silent.** A write carries
+`baseSha256`, the digest of the bytes the editor loaded. If the file on disk
+hashes to something else the write is **refused** with both digests and
+`exists`, so the client can say what it had, what is there, and whether the file
+was changed or deleted. An explicit `override` writes anyway — the user's
+deliberate choice, never a default. It is the same digest discipline the graph
+binding uses, for the same reason: two answers about one file, and only equality
+proves they are about one revision.
+
+Two limits worth stating: a file over 4 MiB is refused rather than loaded into a
+browser tab, and a file that is not UTF-8 is refused rather than returned with
+substitution characters that an editor could then save over the original.
+
 ## How the relay works
 
 - One WebSocket connection spawns one `jpack mcp` subprocess with `cwd` set to
@@ -403,6 +475,7 @@ as its working directory and is killed when the socket that started it closes.
 main.go              flags, embedded assets, HTTP server
 internal/desk/
   server.go          routing, SPA fallback, token and origin checks
+  files.go           the file API: containment, atomic save, stale-write refusal
   relay.go           WebSocket ↔ `jpack mcp` subprocess
   watch.go           project-tree file watching
 scripts/acceptance.sh  the two-run acceptance proof
@@ -411,7 +484,9 @@ web/                 Vite + React + TypeScript SPA
                      advertised-capability reader, the canonical-string,
                      probe-name and graph-document readers, and the ledger of
                      divergent digest pairs already asked about
-  src/routes/        project home, pack detail, evaluation, matrix, graphs
+  src/files/         the chassis file API: the client, and its query hooks
+  src/routes/        project home, pack detail, evaluation, matrix, graphs,
+                     the authoring shell
   src/components/    the semantic document, evaluation, coverage, row and
                      graph-walk views, plus the trace and handoff-target
                      renderers both the pack and graph surfaces share

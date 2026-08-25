@@ -99,6 +99,12 @@ func New(cfg Config) (*Server, error) {
 		s.static = http.FileServer(http.FS(cfg.Static))
 	}
 	s.mux.HandleFunc("/ws", s.handleWS)
+	// The file API (issue #14, phase 1). Everything else the desk shows comes
+	// over the relay; writes cannot, because the runtime has no write tools by
+	// design. See files.go for what this does and does not decide.
+	s.mux.HandleFunc("GET /api/files", s.handleFiles)
+	s.mux.HandleFunc("GET /api/file", s.handleFileRead)
+	s.mux.HandleFunc("PUT /api/file", s.handleFileWrite)
 	s.mux.HandleFunc("/", s.handleStatic)
 
 	w, err := newWatcher(cfg.ProjectDir, s.log, s.broadcastFileChange)
