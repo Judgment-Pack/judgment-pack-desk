@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -1724,4 +1725,45 @@ func TestWriteReleasesTheLockBeforeEncoding(t *testing.T) {
 		t.Fatal("a second save could not complete while a client stalled reading its response")
 	}
 	<-stalled
+}
+
+// TestSameAsAnyAncestorSeesThroughAName pins the cycle guard's logic without
+// needing the privileges a real cycle does.
+//
+// The end-to-end case — a bind mount, a directory hard link — cannot be built
+// unprivileged, and `TestWalkStopsAtARepeatedAncestor` skips where it cannot.
+// What can be built anywhere is two `FileInfo` values for one directory reached
+// under two different names, which is exactly what the guard has to recognise.
+func TestSameAsAnyAncestorSeesThroughAName(t *testing.T) {
+	dir := t.TempDir()
+	sibling := t.TempDir()
+
+	byName, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	// The same directory, named differently. A pathname comparison sees two
+	// strings; the filesystem sees one directory.
+	byOtherName, err := os.Stat(filepath.Join(dir, "."))
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	other, err := os.Stat(sibling)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+
+	if !sameAsAnyAncestor([]fs.FileInfo{byName}, byOtherName) {
+		t.Fatal("one directory under two names was not recognised as itself")
+	}
+	if sameAsAnyAncestor([]fs.FileInfo{byName}, other) {
+		t.Fatal("two different directories were treated as the same one")
+	}
+	if sameAsAnyAncestor(nil, byName) {
+		t.Fatal("an empty ancestor stack matched")
+	}
+	// And it is the whole stack that is consulted, not only the nearest.
+	if !sameAsAnyAncestor([]fs.FileInfo{byName, other}, byOtherName) {
+		t.Fatal("a repeat deeper in the ancestor stack was missed")
+	}
 }

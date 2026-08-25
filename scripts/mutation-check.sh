@@ -241,8 +241,10 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'func (s *Server) runtimeWorkingDir() string { return s.projectDir }' \
     'func (s *Server) runtimeWorkingDir() string { return s.cfg.ProjectDir }'
   mutate go "the walk does not detect a repeated ancestor" "$F" \
-    '			if os.SameFile(ancestor, info) {' \
-    '			if false && os.SameFile(ancestor, info) {'
+    '		if os.SameFile(ancestor, info) {
+			return true
+		}' \
+    ''
   mutate go "the walk has no entry budget" "$F" \
     '			if budget <= 0 {' \
     '			if false {'
@@ -261,12 +263,12 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 				}' \
     ''
   mutate go "the write mutex spans the response encoding" "$F" \
-    '	status, body := s.commitWrite(clean, req)
+    '	status, body := s.commitWriteLocked(clean, req)
+	s.writes.Unlock()
 	writeJSON(w, status, body)' \
-    '	s.writes.Lock()
-	defer s.writes.Unlock()
-	status, body := s.commitWriteUnlocked(clean, req)
-	writeJSON(w, status, body)'
+    '	status, body := s.commitWriteLocked(clean, req)
+	writeJSON(w, status, body)
+	s.writes.Unlock()'
   mutate go "Origin accepts empty delimiters" "$S" \
     '		u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" ||
 		strings.ContainsRune(origin, '"'"'#'"'"') {' \

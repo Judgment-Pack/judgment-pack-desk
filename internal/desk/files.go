@@ -404,13 +404,11 @@ func (s *Server) walkProject(visit func(rel string, info fs.FileInfo)) []string 
 			problems = append(problems, fmt.Sprintf("%s: %v", dir, serr))
 			return
 		}
-		for _, ancestor := range ancestors {
-			if os.SameFile(ancestor, info) {
-				d.Close()
-				problems = append(problems, fmt.Sprintf(
-					"%s: is the same directory as one of its own ancestors, so the walk stops here", dir))
-				return
-			}
+		if sameAsAnyAncestor(ancestors, info) {
+			d.Close()
+			problems = append(problems, fmt.Sprintf(
+				"%s: is the same directory as one of its own ancestors, so the walk stops here", dir))
+			return
 		}
 
 		// Names come in bounded batches and the descriptor is closed before
@@ -477,6 +475,26 @@ func (s *Server) walkProject(visit func(rel string, info fs.FileInfo)) []string 
 	walk(".", 0)
 	// One exhaustion message, however many directories reached it.
 	return dedupe(problems)
+}
+
+// sameAsAnyAncestor reports whether info is one of the directories already open
+// above it.
+//
+// Identity, not pathname: a tree can contain itself through a bind mount or a
+// directory hard link with no symlink anywhere in it, and those reach the same
+// directory under a name that looks new. `os.SameFile` is what sees through
+// that.
+//
+// A named predicate rather than a loop inline, because the end-to-end case needs
+// privileges this project's tests do not assume — so the *logic* is pinned here
+// by a unit test that does not.
+func sameAsAnyAncestor(ancestors []fs.FileInfo, info fs.FileInfo) bool {
+	for _, ancestor := range ancestors {
+		if os.SameFile(ancestor, info) {
+			return true
+		}
+	}
+	return false
 }
 
 // dedupe keeps the first occurrence of each problem, in order.
@@ -628,16 +646,6 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 	// holds the write mid-flight for as long as it likes — and holding the
 	// write mutex across that would let one stalled client stop every later
 	// save on the machine.
-	status, body := s.commitWrite(clean, req)
-	writeJSON(w, status, body)
-}
-
-// commitWrite is the whole locked transaction: read what is there, compare it
-// to the base the editor stated, replace it, and read back what landed.
-//
-// It returns what the caller should send and touches no ResponseWriter, which
-// is what keeps client-speed I/O out of the critical section.
-func (s *Server) commitWrite(clean string, req WriteRequest) (int, any) {
 	// Before the lock, deliberately. The hook is where a test performs the
 	// symlink swap a time-of-check attack would — which must happen before any
 	// filesystem access — and it is also where a test can hold two requests
@@ -646,7 +654,20 @@ func (s *Server) commitWrite(clean string, req WriteRequest) (int, any) {
 	afterResolve(clean)
 
 	s.writes.Lock()
-	defer s.writes.Unlock()
+	status, body := s.commitWriteLocked(clean, req)
+	s.writes.Unlock()
+	writeJSON(w, status, body)
+}
+
+// commitWrite is the whole locked transaction: read what is there, compare it
+// to the base the editor stated, replace it, and read back what landed.
+//
+// It returns what the caller should send and touches no ResponseWriter, which
+// is what keeps client-speed I/O out of the critical section.
+// The caller holds s.writes, and releases it before encoding anything. The lock
+// is taken at the call site rather than here so that its extent is one readable
+// span: the filesystem transaction, and nothing that talks to a client.
+func (s *Server) commitWriteLocked(clean string, req WriteRequest) (int, any) {
 	afterLockEntry(clean)
 
 	if err := s.refuseSymlinkedPath(clean); err != nil {
