@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { CoverageReport } from '../components/CoverageReport'
 import { GraphWalkDiagram } from '../components/GraphWalkDiagram'
@@ -13,6 +13,7 @@ import {
 } from '../mcp/graphDocument'
 import { useMcp } from '../mcp/McpProvider'
 import { useGraphDocument, useGraphInventory, useGraphMatrix } from '../mcp/queries'
+import { divergentPairIdentity, recordDivergentPair } from '../mcp/refetchLedger'
 import type { GraphInventory, GraphSuiteEntry, GraphSummary, GraphTestRow } from '../mcp/types'
 
 /**
@@ -317,14 +318,15 @@ function GraphEntry({
   // beside it and the coverage inside it came from bytes it does not describe.
   const shape = layout?.drawn && binding !== 'divergent' ? layout.shape : undefined
 
+  // One refetch cycle per disagreeing pair. A cycle that lands a pair this
+  // connection has already asked about — the file is still mid-edit, or two
+  // revisions are alternating — must not ask again, or the page would spin.
   useDigestRefetch({
     active: settled && binding === 'divergent',
-    // One request per distinct disagreeing pair. A refetch that lands the same
-    // two digests — the file is still mid-edit, or the edit is between the two
-    // reads every time — must not ask again, or the page would spin.
-    pair: `${entry.graphSha256 ?? ''}:${servedDigest ?? ''}`,
     connectionEpoch,
-    graphId: entry.id
+    graphId: entry.id,
+    run: entry.graphSha256,
+    served: servedDigest
   })
 
   return (
@@ -488,33 +490,38 @@ function shortDigest(digest: string | undefined): string {
  * queries are invalidated: the matrix payload is one answer covering every
  * entry, so a divergence in any entry means the whole answer is being re-asked.
  *
- * The guard is what keeps a mid-edit file from spinning the page: a pair
- * already asked about is never asked about twice, so a refetch landing the same
- * two digests settles into the withdrawal rather than firing again.
+ * One cycle per pair, and the memory of which pairs have been asked about is
+ * the connection's rather than this component's — see `refetchLedger` for why
+ * neither a last-pair-only memory nor a component-local one is enough. What
+ * this hook owes that module is the *identity*: the pair the runtime just
+ * reported, under the epoch that reported it.
  */
 function useDigestRefetch({
   active,
-  pair,
   connectionEpoch,
-  graphId
+  graphId,
+  run,
+  served
 }: {
   active: boolean
-  pair: string
   /** Part of the document query's key: a document belongs to one connection. */
   connectionEpoch: number
   graphId: string
+  /** The digest the matrix entry reported, as the payload spells it. */
+  run: string | undefined
+  /** The digest the runtime served, as the payload spells it. */
+  served: string | undefined
 }) {
   const queryClient = useQueryClient()
-  const asked = useRef<string | undefined>(undefined)
   useEffect(() => {
     if (!active) return
-    if (asked.current === pair) return
-    asked.current = pair
+    const identity = divergentPairIdentity({ graphId, run, served })
+    if (!recordDivergentPair(connectionEpoch, identity)) return
     void queryClient.invalidateQueries({
       queryKey: ['experimental_get_graph', connectionEpoch, graphId]
     })
     void queryClient.invalidateQueries({ queryKey: ['experimental_test_graphs'] })
-  }, [active, pair, connectionEpoch, graphId, queryClient])
+  }, [active, connectionEpoch, graphId, run, served, queryClient])
 }
 
 /**

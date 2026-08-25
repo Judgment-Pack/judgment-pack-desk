@@ -181,8 +181,13 @@ revision, a binding of bytes and not a verdict on the revision. Where they
 answers are about two revisions and the desk does not join them at all — the
 document walk is withdrawn, the coverage fallback stands in with a line naming
 the divergence, and both queries are asked again so the next pair can re-bind.
-Combining one revision's rows with another revision's arrows is the thing this
-prevents, and it prevents it by not drawing rather than by choosing a winner:
+That re-ask is **one cycle per pair**: the pairs a connection has asked about
+are remembered whole, digests folded to one spelling, so a file still being
+edited settles into the withdrawal instead of spinning, and one edited back and
+forth between two revisions asks about each once rather than alternating
+forever. Combining one revision's rows with another revision's arrows is the
+thing this prevents, and it prevents it by not drawing rather than by choosing a
+winner:
 neither revision is called wrong, because which is right is not a question two
 digests answer. Where the matrix entry states **no digest** — jpack 0.18.0 and
 older, or an entry whose document did not load at all — there is nothing to
@@ -351,8 +356,9 @@ internal/desk/
 scripts/acceptance.sh  the two-run acceptance proof
 web/                 Vite + React + TypeScript SPA
   src/mcp/           the MCP client: transport, connection, queries, the
-                     advertised-capability reader, and the canonical-string,
-                     probe-name and graph-document readers
+                     advertised-capability reader, the canonical-string,
+                     probe-name and graph-document readers, and the ledger of
+                     divergent digest pairs already asked about
   src/routes/        project home, pack detail, evaluation, matrix, graphs
   src/components/    the semantic document, evaluation, coverage, row and
                      graph-walk views
@@ -504,9 +510,13 @@ would stop being one.
   about either revision. Equal, the walk is drawn as before and the page states
   the provenance in one line. Unequal, the graph file was edited between the two
   calls, so the joined walk is withdrawn, a line names the divergence, and both
-  queries are invalidated so the next pair of answers can re-bind — one request
-  per disagreeing pair, so a file still mid-edit reads as a standing withdrawal
-  rather than spinning the page. Absent — jpack 0.18.0 and older, or an entry
+  queries are invalidated so the next pair of answers can re-bind — **one
+  refetch cycle per normalized pair**, each cycle being the two requests, and
+  every pair a connection has already asked about is remembered for the life of
+  that connection. So a file still mid-edit reads as a standing withdrawal
+  rather than spinning the page, and a file edited back and forth between two
+  revisions settles after asking about each of them once instead of
+  ping-ponging. Absent — jpack 0.18.0 and older, or an entry
   whose document did not load, since a rows failure *after* a successful load
   keeps the digest — nothing is compared and nothing is claimed either way, and
   the epoch-bounded behaviour stands exactly as it was. The connection-epoch key

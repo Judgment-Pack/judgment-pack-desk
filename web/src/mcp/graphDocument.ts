@@ -198,7 +198,7 @@ export type GraphDigestBinding = 'bound' | 'divergent' | 'unstated'
  * digest spelled two ways is one digest, and reporting that pair as an edit
  * would withdraw a walk over a spelling.
  */
-function statedDigest(digest: string | undefined): string | undefined {
+export function statedDigest(digest: string | undefined): string | undefined {
   const trimmed = digest?.trim().toLowerCase()
   return trimmed ? trimmed : undefined
 }
