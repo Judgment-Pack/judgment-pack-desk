@@ -240,6 +240,37 @@ always did and finds the graphs by running their matrices.
 Graph coverage is grouped per node, in the runtime's evaluation order, and
 reported exactly as the pack coverage is.
 
+**Each compared node's trace, where you ask for it** (ADR-0031). A control on
+the page — present only where the connected runtime advertises the
+`include_traces` argument on its own graph matrix tool, and **off by default** —
+re-runs the matrix asking for it. Off omits the argument entirely, so the
+untraced call is unchanged; the two answers are kept in separate cache entries,
+because a payload carrying no traces answers a different question and must never
+be shown as the answer to this one. Each trace is drawn by the same renderer the
+evaluation view uses, since it is the same artifact under the same contract, and
+a comparison that *mismatched* shows its trace too — that is the one worth
+reading. A trace of `[]` is said to carry no entries; an absent member shows
+nothing, because absent means not asked or not evaluated. The comparisons are
+listed lexicographically by node name and each trace is the evaluator's own walk
+order: two different orders, said so where they meet.
+
+Traces ride inside the runtime's report budget, so a suite that fits without
+them can be **refused** with them. The desk shows that refusal as the runtime's
+own message, adds the one fact the message cannot carry — traces were asked for
+on this run, and clearing the ask restores the run that worked — and keeps the
+control on screen through it. It never renders a refusal as an absence of
+traces.
+
+**Where a composed decision is handed off** (ADR-0032). A rows document
+declaring `graphMatrixVersion` `"2"` may assert the handoff target of the
+composite and of each node it names, and the run reports each assertion as an
+expected/actual pair — on the row, and on that node's comparison. The desk shows
+both with the component the pack matrix uses, in the same three states: a named
+target, the literal `null` for "no target at all", and `unavailable` where a
+refused run leaves none to state. The renderings are display values and are
+never compared here, exactly as on the pack side: the comparator decided on
+decoded targets, and the row's own status is the only verdict shown.
+
 A project that configures no graph is an answer rather than an error: the walk
 reports `skipped` with no entries, the home page offers no graph entry, and the
 graphs page says the project configures none.
@@ -361,7 +392,8 @@ web/                 Vite + React + TypeScript SPA
                      divergent digest pairs already asked about
   src/routes/        project home, pack detail, evaluation, matrix, graphs
   src/components/    the semantic document, evaluation, coverage, row and
-                     graph-walk views
+                     graph-walk views, plus the trace and handoff-target
+                     renderers both the pack and graph surfaces share
   scripts/smoke.ts   the desk's own client, driven outside a browser
 ```
 
@@ -524,22 +556,58 @@ would stop being one.
   and the digest upgrades the join from a bounded window to proven sameness
   rather than replacing it.
 
-- **A graph matrix reports no node trace.** ADR-0027 pins the trace contract and
-  binds it to each node evaluation inside a graph run, and the runtime's
-  `GraphNodeEvaluation` carries that node's `trace` beside its `factFeeds` and
-  `evidenceFeeds` — how the composition actually fed one node from another. That
-  shape is produced by `jpack experimental graph evaluate`, which has no MCP
-  tool. Over the wire a graph row reports per node only `node`, `status`,
-  `expected` and `actual`, so the desk can show what a node concluded and not
-  how it got there, though the runtime computed it. The pack surface has no such
-  gap: `experimental_evaluate` returns the trace, and the desk renders it.
+- **Resolved: node traces on the graph matrix** (was: ADR-0027 pinned the trace
+  contract and bound it to each node evaluation inside a graph run, and the
+  runtime's `GraphNodeEvaluation` carried that node's `trace` — but the wire
+  dropped it, reporting per node only `node`, `status`, `expected` and `actual`,
+  so the desk could show what a node concluded and not how it got there, though
+  the runtime had computed it). Filed as runtime issue #127 and closed by
+  ADR-0031 in jpack 0.19.0: `experimental_test_graphs` accepts an optional
+  boolean `include_traces`, and asked, each reported comparison whose node the
+  walk evaluated carries that evaluation's own `trace` under ADR-0027's
+  contract. The desk detects the argument in that tool's own advertised schema —
+  the same way it detects `rehearsal` on `experimental_evaluate`, and never by
+  the tool's name, which predates the argument — and offers **an opt-in control,
+  off by default**. Off omits the key entirely, so the untraced call is the one
+  this desk has always made, byte for byte; the traced and untraced answers are
+  separate cache entries, because a payload with no traces is an answer to a
+  different question and must never stand in for one that was asked.
+  **Traces are charged against the runtime's report budget**, so a suite that
+  fits without them can be refused with them. That refusal is shown as the
+  runtime's own message, with one line saying traces were asked for on this run
+  and that clearing the ask restores the run that worked — never as "these nodes
+  have no traces", which would be a claim about an answer nobody received. The
+  control stays on screen through the refusal, including on a runtime with no
+  inventory to render beside it, so the ask that failed is always reversible.
+  Each node's trace is drawn by **the same renderer the evaluation view uses**,
+  because it is the same artifact under the same contract; a mismatching
+  comparison shows its trace too, which is the one most worth reading. `[]` is a
+  trace with no entries and is said to be empty; an absent member is not asked,
+  or not evaluated, and shows nothing. **Two orders are kept apart**: the
+  comparisons are listed lexicographically by node name, the report's order,
+  while each trace inside one is the evaluator's walk order — the page says so
+  where they meet, and neither is read off the other.
 
-- **Graph rows cannot assert a handoff target.** ADR-0025 added
+- **Resolved: handoff-target assertions on graph rows** (was: ADR-0025 added
   `expectedHandoffTarget` to pack matrix rows and deferred the graph surface
-  explicitly. A graph row compares composite and per-node dispositions only, so
-  a change to where a composed decision is handed off leaves every graph row
-  green. The desk shows the assertion on pack rows and has nothing to show on
-  graph rows, which is the runtime's position and not a gap in the view.
+  explicitly, so a graph row compared composite and per-node dispositions only
+  and a change to where a composed decision is handed off left every graph row
+  green). Filed as runtime issue #128 and closed by ADR-0032 in jpack 0.19.0:
+  a rows document declaring `graphMatrixVersion` `"2"` may assert
+  `expectedHandoffTarget` for the composite and `expectedNodeHandoffTargets` for
+  the nodes it names, and the run reports each as an
+  `expectedHandoffTarget`/`actualHandoffTarget` pair — on the row for the
+  composite, on the named node's comparison for the rest. Both carriers exist
+  because a headline-only assertion stays blind upstream, where an escalation
+  target on a node three hops back is as editable as the composite's and
+  changes nothing any headline can see. The desk renders both pairs with the
+  **pack surface's own component**, on the same vocabulary: a capped rendering,
+  the literal `null` for "no target at all", and `unavailable` where a refused
+  run leaves no target to state. Those last two stay distinct, because one is an
+  answer and the other is the absence of one. As on the pack side the renderings
+  are **display values and are never compared here** — a capped rendering can
+  differ from its own pair past the cap — so no mark on a pair is this client's:
+  the row's status is the runtime's verdict and the only one shown.
 
 ## License
 

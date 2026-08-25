@@ -87,3 +87,17 @@ export function ErrorBox({ title, error }: { title: string; error: Error }) {
 export function Loading({ what }: { what: string }) {
   return <p className="loading">Loading {what}…</p>
 }
+
+/**
+ * One payload value as a CSS class suffix.
+ *
+ * The payload's own vocabularies are open — a runtime may report a kind or a
+ * condition verdict this sheet has no colour for — so anything unrecognised
+ * styles neutral rather than injecting itself into a class name. Shared
+ * because two views slug the same payload values and a second copy would be
+ * free to disagree with the stylesheet the first was written against.
+ */
+export function slug(value: string | undefined): string {
+  if (!value) return 'other'
+  return /^[a-z0-9-]+$/.test(value) ? value : 'other'
+}

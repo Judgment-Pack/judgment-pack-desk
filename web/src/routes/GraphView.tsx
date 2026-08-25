@@ -4,6 +4,8 @@ import { Link, useParams } from 'react-router-dom'
 import { CoverageReport } from '../components/CoverageReport'
 import { GraphWalkDiagram } from '../components/GraphWalkDiagram'
 import { Empty, ErrorBox, Loading, Pill, Section, statusTone } from '../components/primitives'
+import { TargetPair, describeTargetAssertion } from '../components/TargetPair'
+import { TracePanel } from '../components/TracePanel'
 import { parseDisposition } from '../mcp/canonical'
 import {
   bindGraphDigests,
@@ -13,8 +15,15 @@ import {
 } from '../mcp/graphDocument'
 import { useMcp } from '../mcp/McpProvider'
 import { useGraphDocument, useGraphInventory, useGraphMatrix } from '../mcp/queries'
+import { ToolRefusal } from '../mcp/refusal'
 import { divergentPairIdentity, recordDivergentPair } from '../mcp/refetchLedger'
-import type { GraphInventory, GraphSuiteEntry, GraphSummary, GraphTestRow } from '../mcp/types'
+import type {
+  GraphInventory,
+  GraphSuiteEntry,
+  GraphSummary,
+  GraphTestNode,
+  GraphTestRow
+} from '../mcp/types'
 
 /**
  * The project's configured graphs, and their matrices run.
@@ -41,9 +50,16 @@ import type { GraphInventory, GraphSuiteEntry, GraphSummary, GraphTestRow } from
  */
 export function GraphView() {
   const { graphId } = useParams<{ graphId?: string }>()
-  const { graphInventorySupported } = useMcp()
+  const { graphInventorySupported, graphTracesSupported } = useMcp()
   const inventory = useGraphInventory()
-  const { data, error, isPending, isFetching } = useGraphMatrix(graphId)
+
+  // Off by default, and off is today's call byte for byte (ADR-0031). Traces
+  // multiply per node per row and ride inside the runtime's own report budget,
+  // so asking is a decision with a cost — which is why it is a control a person
+  // presses rather than something this page decides for them.
+  const [includeTraces, setIncludeTraces] = useState(false)
+  const asked = graphTracesSupported && includeTraces
+  const { data, error, isPending, isFetching } = useGraphMatrix(graphId, true, asked)
 
   // The inventory is what lets the page render before the matrix has run. With
   // no inventory to show, the old behaviour stands exactly: wait, then report.
@@ -65,10 +81,49 @@ export function GraphView() {
     </p>
   ) : null
 
+  // The control is rendered on every path this component can take, including
+  // the ones that show only an error. A run refused *because* traces were asked
+  // for must leave the ask reachable — a control that vanished with the payload
+  // would strand the page on the question that failed.
+  const tracesControl = graphTracesSupported ? (
+    <label className="checkbox trace-ask">
+      <input
+        type="checkbox"
+        checked={includeTraces}
+        onChange={(event) => setIncludeTraces(event.target.checked)}
+      />
+      <span>
+        Ask for each compared node's trace (ADR-0031). Off — the default — is the
+        call this desk has always made, byte for byte. Asked, the traces are
+        charged against the runtime's own report budget, so a suite that fits
+        without them can be refused with them.
+      </span>
+    </label>
+  ) : null
+
+  // Named, never diagnosed. The runtime's own message is the reason and it is
+  // shown verbatim beside this; what this adds is the one fact the message
+  // cannot carry — that traces were asked for on this run, and that the ask is
+  // reversible. It never says the nodes have no traces: the question was not
+  // answered, so nothing is known about the answer.
+  const tracesRefusal =
+    asked && error ? (
+      <p className="note note-warn">
+        This run was made with traces asked for, and the runtime{' '}
+        {error instanceof ToolRefusal
+          ? 'refused it'
+          : 'did not answer it — which is a call that did not complete rather than an answer'}
+        . Traces ride inside the report budget, so a suite that fits without them
+        can be over it with them. Clearing the ask above restores the run that
+        worked; nothing here says these nodes have no traces.
+      </p>
+    ) : null
+
   if (isPending && !listing) {
     return (
       <>
         {inventoryNotice}
+        {tracesControl}
         <Loading what={graphId ? `graph ${graphId}` : "the project's graphs"} />
       </>
     )
@@ -77,6 +132,8 @@ export function GraphView() {
     return (
       <>
         {inventoryNotice}
+        {tracesControl}
+        {tracesRefusal}
         <ErrorBox
           title={graphId ? `Could not run graph ${graphId}` : 'Could not run the graphs'}
           error={error}
@@ -134,9 +191,11 @@ export function GraphView() {
           {data?.formatVersion && <span>graph format {data.formatVersion}</span>}
           {data?.evaluatorSpecVersion && <span>evaluator {data.evaluatorSpecVersion}</span>}
         </p>
+        {tracesControl}
       </header>
 
       {inventoryNotice}
+      {tracesRefusal}
 
       {graphInventorySupported && listing && (
         <ConfiguredGraphs inventory={listing} only={graphId} />
@@ -530,13 +589,22 @@ function useDigestRefetch({
  * A row checks the nodes it chose to check. A node the row does not name is
  * unchecked by the author's choice rather than defaulted to anything, so it is
  * absent from this list rather than shown as having passed.
+ *
+ * Two further assertions can ride on a row (ADR-0032), on the pack surface's
+ * own vocabulary and rendered by the pack surface's own component: the
+ * composite's handoff-target pair here, and one pair per named node below. They
+ * exist because a target-only edit leaves every disposition byte identical, and
+ * on a composition that blindness reaches upstream too — an escalation target
+ * moved on a node three hops back changes nothing any headline can see.
  */
 function GraphRowItem({ row }: { row: GraphTestRow }) {
+  const assertion = describeTargetAssertion(row.expectedHandoffTarget)
   return (
     <li className={`row row-${row.status}`}>
       <div className="row-head">
         <code className="row-id">{row.id}</code>
         <Pill tone={statusTone(row.status)}>{row.status}</Pill>
+        {assertion && <Pill tone="quiet">{assertion}</Pill>}
         {row.nodes?.length ? (
           <Pill tone="quiet">
             {row.nodes.length} reported node {row.nodes.length === 1 ? 'comparison' : 'comparisons'}
@@ -575,21 +643,77 @@ function GraphRowItem({ row }: { row: GraphTestRow }) {
         </div>
       )}
 
+      <TargetPair
+        expected={row.expectedHandoffTarget}
+        actual={row.actualHandoffTarget}
+        expectedLabel="expected composite target"
+        actualLabel="actual composite target"
+      />
+
       {row.nodes?.length ? (
         <ul className="row-nodes">
           {row.nodes.map((node) => (
-            <li key={node.node} className={`row-node row-${node.status}`}>
-              <code>{node.node}</code>
-              <span className={`probe-status probe-status-${node.status === 'passed' ? 'covered' : 'missing'}`}>
-                {node.status}
-              </span>
-              <span className="row-members">{summarize(node.actual)}</span>
-            </li>
+            <GraphNodeItem key={node.node} node={node} />
           ))}
         </ul>
       ) : null}
 
       {row.detail && <p className="row-detail">{row.detail}</p>}
+    </li>
+  )
+}
+
+/**
+ * One node comparison inside a row: what the node concluded, what the row
+ * asserted about where it hands off, and — where the run was asked — how it got
+ * there.
+ *
+ * The trace is rendered by the same component the evaluation view uses, because
+ * it is the same artifact under the same contract (ADR-0027, carried here by
+ * ADR-0031). It is informative and decides nothing: the `status` beside the node
+ * id is the runtime's verdict, and it stands whether or not a trace explains it
+ * — which is why a *mismatching* comparison shows its trace too. A mismatch is
+ * the case a trace is most worth reading.
+ *
+ * Absence is not emptiness. A trace member that is absent means the run was not
+ * asked, or this node was never evaluated; `[]` means asked, evaluated, and
+ * nothing walked. So nothing is rendered where the member is absent, and an
+ * empty trace says it is empty.
+ */
+function GraphNodeItem({ node }: { node: GraphTestNode }) {
+  const assertion = describeTargetAssertion(node.expectedHandoffTarget)
+  return (
+    <li className={`row-node row-${node.status}`}>
+      <div className="row-node-head">
+        <code>{node.node}</code>
+        <span
+          className={`probe-status probe-status-${node.status === 'passed' ? 'covered' : 'missing'}`}
+        >
+          {node.status}
+        </span>
+        <span className="row-members">{summarize(node.actual)}</span>
+        {assertion && <Pill tone="quiet">{assertion}</Pill>}
+      </div>
+
+      <TargetPair
+        expected={node.expectedHandoffTarget}
+        actual={node.actualHandoffTarget}
+        expectedLabel={`expected target of ${node.node}`}
+        actualLabel={`actual target of ${node.node}`}
+      />
+
+      {node.trace !== undefined && (
+        <TracePanel
+          trace={node.trace}
+          title={`Trace of ${node.node}`}
+          context={
+            'This trace is the evaluator’s own walk order; the node comparisons ' +
+            'above it are listed lexicographically by node name. Two orders, and ' +
+            'neither is read off the other.'
+          }
+          emptyWhat="This node's evaluation"
+        />
+      )}
     </li>
   )
 }

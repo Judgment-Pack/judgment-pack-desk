@@ -381,15 +381,49 @@ export interface PackTest {
   packs?: PackTestEntry[]
 }
 
-/** One node comparison a graph row asked for. A row names the nodes it checks. */
+/**
+ * One node comparison a graph row asked for. A row names the nodes it checks.
+ *
+ * `trace` (ADR-0031) is that node evaluation's own trace under ADR-0027's
+ * pinned contract, present exactly when the run was *asked* for traces and the
+ * walk evaluated this node — `[]` at minimum, never `null`, so an empty array
+ * is a trace with no entries and absence is "not asked, or not evaluated". A
+ * comparison naming a node the graph does not declare was never evaluated and
+ * carries none even when asked; a row that failed before node comparisons
+ * exist carries no comparisons at all.
+ *
+ * The comparisons are listed **lexicographically by node name** and each trace
+ * is **walk-ordered** inside itself. Those are two different orders on
+ * purpose: the report's, and the evaluator's. Neither may be read off the
+ * other, and nothing here reorders either.
+ *
+ * `expectedHandoffTarget` and `actualHandoffTarget` (ADR-0032) appear together
+ * exactly when the row's well-formed assertion named a node this run
+ * evaluated. Each is a capped display rendering, the literal `null`, or
+ * `unavailable` — never an equality key: the comparator decided on decoded
+ * values, and this client only shows what it decided about.
+ */
 export interface GraphTestNode {
   node: string
   status: string
   expected: string
   actual: string
+  expectedHandoffTarget?: string
+  actualHandoffTarget?: string
+  trace?: TraceEntry[]
 }
 
-/** One graph matrix row: the composite headline, and the nodes the row named. */
+/**
+ * One graph matrix row: the composite headline, and the nodes the row named.
+ *
+ * `expectedHandoffTarget` and `actualHandoffTarget` (ADR-0032) are the
+ * composite's pair, on the pack row's own vocabulary and semantics: present
+ * together exactly when a well-formed assertion rode a run this walk
+ * performed, absent where a row defect is reported in `detail` instead. The
+ * one reachable `unavailable` is a run refused where the row expected a
+ * composite — a §8.4-classed refusal sets `actualErrorClass` beside it, and a
+ * graph-layer refusal that carries no class is told by the `detail`.
+ */
 export interface GraphTestRow {
   id: string
   status: string
@@ -399,6 +433,8 @@ export interface GraphTestRow {
   actualErrorClass?: string
   expectedErrorPhase?: string
   actualErrorPhase?: string
+  expectedHandoffTarget?: string
+  actualHandoffTarget?: string
   nodes?: GraphTestNode[]
   detail?: string
 }

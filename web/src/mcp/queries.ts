@@ -163,14 +163,31 @@ export function useGraphMatrix(
    * matrix to decide whether to render a link is a real cost on a large
    * project, and ADR-0029 made it unnecessary.
    */
-  enabled = true
+  enabled = true,
+  /**
+   * Whether to ask for each compared node's trace (ADR-0031).
+   *
+   * Off is the default and off omits the key entirely, so the untraced call is
+   * byte-identical to the one this desk has always made. On sends the boolean
+   * the runtime advertises, and only a caller that checked the capability
+   * should pass it: an older runtime refuses the unknown member rather than
+   * ignoring it.
+   *
+   * It is part of the query key because a traced answer and an untraced one are
+   * two different answers to two different questions. A shared key would let a
+   * traced payload satisfy an untraced ask, and — worse — let an untraced
+   * payload satisfy a traced one, which would read on screen as a runtime that
+   * reported no traces rather than as a question never asked.
+   */
+  includeTraces = false
 ): UseQueryResult<GraphSuite, Error> {
   const { client, status } = useMcp()
   return useQuery({
-    queryKey: ['experimental_test_graphs', graphId ?? null],
+    queryKey: ['experimental_test_graphs', graphId ?? null, includeTraces],
     enabled: enabled && status === 'ready' && client !== null,
     queryFn: async ({ signal }) => {
-      const args = graphId === undefined ? {} : { graph_id: graphId }
+      const args: Record<string, unknown> = graphId === undefined ? {} : { graph_id: graphId }
+      if (includeTraces) args.include_traces = true
       const { parsed } = await callToolJSON<GraphSuite>(client!, 'experimental_test_graphs', args, signal)
       return parsed
     }

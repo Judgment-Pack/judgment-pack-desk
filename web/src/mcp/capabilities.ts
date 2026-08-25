@@ -48,6 +48,15 @@ export interface RuntimeCapabilities {
    * only way to find out is to run every graph's matrix.
    */
   graphInventorySupported: boolean
+  /**
+   * True when `experimental_test_graphs` advertises the boolean
+   * `include_traces` argument (ADR-0031, jpack >= 0.19.0). Read from that
+   * tool's own declared schema, exactly as `rehearsal` is read from
+   * `experimental_evaluate`'s: the argument is a member of a schema, so the
+   * schema is where the question is asked, and a tool of the same name may or
+   * may not take it.
+   */
+  graphTracesSupported: boolean
 }
 
 /**
@@ -60,7 +69,8 @@ export const UNKNOWN_CAPABILITIES: RuntimeCapabilities = {
   known: false,
   rehearsalSupported: false,
   graphDocumentSupported: false,
-  graphInventorySupported: false
+  graphInventorySupported: false,
+  graphTracesSupported: false
 }
 
 /** One row of a `tools/list` answer, narrowed to what capability reading uses. */
@@ -133,13 +143,32 @@ export async function listAllTools(client: ToolLister): Promise<AdvertisedTool[]
  */
 export function readCapabilities(tools: readonly AdvertisedTool[]): RuntimeCapabilities {
   const names = new Set(tools.map((tool) => tool.name))
-  const evaluate = tools.find((tool) => tool.name === 'experimental_evaluate')
-  const properties = (evaluate?.inputSchema as { properties?: Record<string, unknown> } | undefined)
-    ?.properties
+  const takes = (tool: string, argument: string) => {
+    const properties = advertisedProperties(tools, tool)
+    return properties !== undefined && argument in properties
+  }
   return {
     known: true,
-    rehearsalSupported: Boolean(properties && 'rehearsal' in properties),
+    rehearsalSupported: takes('experimental_evaluate', 'rehearsal'),
     graphDocumentSupported: names.has('experimental_get_graph'),
-    graphInventorySupported: names.has('experimental_list_graphs')
+    graphInventorySupported: names.has('experimental_list_graphs'),
+    graphTracesSupported: takes('experimental_test_graphs', 'include_traces')
   }
+}
+
+/**
+ * The properties one advertised tool's input schema declares, or undefined.
+ *
+ * Undefined covers three different things and deliberately does not
+ * distinguish them, because every one of them answers the argument question
+ * the same way: no such tool, a tool with no schema, and a schema with no
+ * properties all mean this runtime does not advertise the argument. Reading a
+ * missing schema as "takes everything" is the failure this shape prevents.
+ */
+function advertisedProperties(
+  tools: readonly AdvertisedTool[],
+  name: string
+): Record<string, unknown> | undefined {
+  const tool = tools.find((candidate) => candidate.name === name)
+  return (tool?.inputSchema as { properties?: Record<string, unknown> } | undefined)?.properties
 }

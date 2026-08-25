@@ -1,4 +1,4 @@
-import { act, cleanup, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
@@ -463,5 +463,344 @@ describe('the graphs page, against a runtime that serves documents', () => {
     // The matrix still ran, and still reports what it can.
     await screen.findByText(/declared edge/)
     expect(arrows(container)).toBe(2)
+  })
+})
+
+/* Node traces (ADR-0031) and handoff-target assertions (ADR-0032) ---------- */
+
+/**
+ * One run of a graph whose rows assert targets and whose comparisons carry
+ * traces — the payload a jpack 0.19.0 runtime returns when asked.
+ *
+ * The two rows are the two shapes the surface has. `clear-approves` expected a
+ * composite and got one, asserts the composite's target and each node's, and
+ * carries a trace per compared node. `refused-walk` expected a composite and
+ * the run was refused, which is the one reachable `unavailable`.
+ *
+ * The node comparisons are listed lexicographically by node name, as the
+ * runtime lists them — `decision` before `screening` — while each trace inside
+ * one is the evaluator's own walk order. Two different orders, and the fixture
+ * carries both so a view that conflated them would be visible here.
+ */
+const TRACED: GraphSuite = {
+  status: 'mismatch',
+  configPath: '/project/jpack.json',
+  configVersion: '2',
+  summary: { total: 2, passed: 0, mismatched: 2 },
+  graphs: [
+    {
+      id: 'onboarding',
+      status: 'mismatch',
+      graphId: 'vendor-onboarding-flow',
+      graphSha256: SERVED_DIGEST,
+      summary: { total: 2, passed: 0, mismatched: 2 },
+      coverage: [{ probe: 'node:screening:outcome:clear', status: 'covered' }],
+      rows: [
+        {
+          id: 'clear-approves',
+          status: 'mismatch',
+          expected: '{"kind":"outcome","outcomeId":"proceed","reasons":[]}',
+          actual: '{"kind":"outcome","outcomeId":"proceed","reasons":[]}',
+          // Byte-identical dispositions, different destinations: the exact
+          // defect class the assertion exists for.
+          expectedHandoffTarget: '{"kind":"queue","name":"vendor-review"}',
+          actualHandoffTarget: '{"kind":"queue","name":"vendor-review-emea"}',
+          nodes: [
+            {
+              node: 'decision',
+              status: 'passed',
+              expected: '{"kind":"outcome","outcomeId":"proceed","reasons":[]}',
+              actual: '{"kind":"outcome","outcomeId":"proceed","reasons":[]}',
+              // An assertion that there is no target at all: both members
+              // present, each the literal null.
+              expectedHandoffTarget: 'null',
+              actualHandoffTarget: 'null',
+              // Asked and evaluated, and nothing walked. Not the same as absent.
+              trace: []
+            },
+            {
+              node: 'screening',
+              status: 'mismatch',
+              expected: '{"kind":"outcome","outcomeId":"clear","reasons":[]}',
+              actual: '{"kind":"unknown","reasons":["unknown"]}',
+              trace: [
+                { stage: 'applicability', condition: 'true' },
+                { stage: 'exception', id: 'sanctioned-jurisdiction', condition: 'false' },
+                { stage: 'rule', id: 'screen-clear', condition: 'unknown', onUnknown: 'escalate' }
+              ]
+            }
+          ]
+        },
+        {
+          id: 'refused-walk',
+          status: 'mismatch',
+          expected: '{"kind":"outcome","outcomeId":"proceed","reasons":[]}',
+          actual: '',
+          actualErrorClass: 'malformed-input',
+          actualErrorPhase: 'admission',
+          expectedHandoffTarget: '{"kind":"queue","name":"vendor-review"}',
+          // The one reachable third state: the run was refused, so no target
+          // can be stated. Not "no target" — the absence of an answer.
+          actualHandoffTarget: 'unavailable',
+          detail: 'the walk was refused before a composite was produced'
+        }
+      ]
+    }
+  ]
+}
+
+/** The same graph run without the ask: no trace member anywhere (ADR-0031). */
+const UNTRACED: GraphSuite = {
+  ...TRACED,
+  graphs: [
+    {
+      ...TRACED.graphs![0]!,
+      rows: TRACED.graphs![0]!.rows!.map((row) => ({
+        ...row,
+        nodes: row.nodes?.map(({ trace: _trace, ...node }) => node)
+      }))
+    }
+  ]
+}
+
+/**
+ * A desk whose graph matrix answers the ask, and records having been asked.
+ *
+ * The handler branches on the argument rather than ignoring it, because the
+ * whole point of the control is that two different calls produce two different
+ * payloads — a stub that answered the same either way would let a view that
+ * never sends the argument pass.
+ */
+function tracingDesk(overrides: Record<string, ToolHandler> = {}) {
+  return stubClient({
+    experimental_test_graphs: (args) => ({
+      text: JSON.stringify(args.include_traces === true ? TRACED : UNTRACED)
+    }),
+    experimental_list_graphs: () => ({ text: JSON.stringify(INVENTORY) }),
+    experimental_get_graph: () => ({ text: DOCUMENT, structured: SERVED_META }),
+    ...overrides
+  })
+}
+
+function tracing(client: ReturnType<typeof stubClient>['client'], overrides = {}) {
+  return connected({
+    client,
+    graphDocumentSupported: true,
+    graphInventorySupported: true,
+    graphTracesSupported: true,
+    ...overrides
+  })
+}
+
+const matrixCalls = (calls: { name: string; args: Record<string, unknown> }[]) =>
+  calls.filter((call) => call.name === 'experimental_test_graphs')
+
+describe('the graphs page, against a runtime that reports node traces (ADR-0031)', () => {
+  it('offers no ask where the runtime does not advertise the argument', async () => {
+    // jpack 0.18.0: the tool exists and the argument does not, so sending it
+    // would be refused rather than ignored. No control, and nothing else on
+    // the page changes.
+    const { client, calls } = tracingDesk()
+    const { container } = renderConnected(
+      view(),
+      tracing(client, { graphTracesSupported: false }),
+      { path: '/graphs' }
+    )
+    await screen.findAllByText(/clear-approves/)
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(container.textContent).not.toContain("Ask for each compared node's trace")
+    // The one call it made is the call it has always made.
+    expect(matrixCalls(calls)).toHaveLength(1)
+    expect(matrixCalls(calls)[0]!.args).toEqual({})
+  })
+
+  it('asks only when asked, and keeps the two answers apart', async () => {
+    const { client, calls } = tracingDesk()
+    renderConnected(view(), tracing(client), { path: '/graphs' })
+    await screen.findAllByText(/clear-approves/)
+
+    // Default off, and off omits the key entirely: byte-identical to the call
+    // this desk made before the argument existed.
+    expect(matrixCalls(calls)).toHaveLength(1)
+    expect(matrixCalls(calls)[0]!.args).toEqual({})
+    expect(screen.queryByText(/Trace of screening/)).toBeNull()
+
+    fireEvent.click(screen.getByRole('checkbox'))
+    await screen.findByText(/Trace of screening/)
+
+    // A second call, carrying the argument. A shared query key would have
+    // served the untraced payload back and made no call at all.
+    await waitFor(() => expect(matrixCalls(calls)).toHaveLength(2))
+    expect(matrixCalls(calls)[1]!.args).toEqual({ include_traces: true })
+
+    // And back: the untraced answer is its own cache entry, so clearing the ask
+    // costs no call and withdraws the traces.
+    fireEvent.click(screen.getByRole('checkbox'))
+    await waitFor(() => expect(screen.queryByText(/Trace of screening/)).toBeNull())
+    expect(matrixCalls(calls)).toHaveLength(2)
+  })
+
+  it('renders each compared node’s trace with the evaluation view’s own renderer', async () => {
+    const { client } = tracingDesk()
+    const { container } = renderConnected(view(), tracing(client), { path: '/graphs' })
+    await screen.findAllByText(/clear-approves/)
+    fireEvent.click(screen.getByRole('checkbox'))
+    await screen.findByText(/Trace of screening/)
+
+    // The staged walk, as the shared renderer draws it: stage headings, the
+    // entry ids, and the badges the evaluate view shows.
+    expect(container.textContent).toContain('applicability')
+    expect(container.textContent).toContain('sanctioned-jurisdiction')
+    expect(container.textContent).toContain('screen-clear')
+    expect(container.textContent).toContain('on unknown: escalate')
+    // The framing travels with the renderer rather than being restated here.
+    expect(container.textContent).toContain('It decides nothing')
+    // And the fact only this surface has: two orders, neither read off the other.
+    expect(container.textContent).toContain('lexicographically by node name')
+  })
+
+  it('shows the trace of a comparison that mismatched, which is the one worth reading', async () => {
+    // The node whose trace is rendered here is the node that failed. A view
+    // that only traced passing comparisons would hide every trace anyone opens
+    // the page for.
+    const { client } = tracingDesk()
+    const { container } = renderConnected(view(), tracing(client), { path: '/graphs' })
+    await screen.findAllByText(/clear-approves/)
+    fireEvent.click(screen.getByRole('checkbox'))
+
+    const heading = await screen.findByText(/Trace of screening/)
+    const node = heading.closest('.row-node')
+    expect(node).not.toBeNull()
+    expect(node!.className).toContain('row-mismatch')
+    expect(node!.textContent).toContain('screen-clear')
+    // The runtime's verdict is untouched beside it: the trace explains, and
+    // decides nothing.
+    expect(node!.textContent).toContain('mismatch')
+    expect(container.textContent).toContain('Trace of decision')
+  })
+
+  it('distinguishes a trace with no entries from a comparison carrying none', async () => {
+    // `[]` is asked, evaluated, and nothing walked; absent is not asked, or not
+    // evaluated. Collapsing them would report a runtime as having walked
+    // nothing when it was never asked.
+    const { client } = tracingDesk()
+    const { container } = renderConnected(view(), tracing(client), { path: '/graphs' })
+    await screen.findAllByText(/clear-approves/)
+    fireEvent.click(screen.getByRole('checkbox'))
+    await screen.findByText(/Trace of decision/)
+    expect(container.textContent).toContain("This node's evaluation carries no trace entries")
+  })
+
+  it('surfaces a refused traced run as the runtime’s own answer, and leaves the ask reachable', async () => {
+    // Traces are charged against the report budget, so a suite that fits
+    // without them can be refused with them. The refusal is the runtime's
+    // answer to the question that was asked — never rendered as "these nodes
+    // have no traces", which is a claim about an answer nobody received.
+    const refusal =
+      'graph matrix report budget exceeded: 4 MiB with traces (2 rows, 4 node comparisons)'
+    const { client } = tracingDesk({
+      experimental_test_graphs: (args) =>
+        args.include_traces === true
+          ? { text: refusal, isError: true }
+          : { text: JSON.stringify(UNTRACED) }
+    })
+    const { container } = renderConnected(view(), tracing(client), { path: '/graphs' })
+    await screen.findAllByText(/clear-approves/)
+    fireEvent.click(screen.getByRole('checkbox'))
+
+    await screen.findByText(/traces asked for/)
+    expect(container.textContent).toContain(refusal)
+    expect(container.textContent).toContain('refused it')
+    expect(container.textContent).toContain('nothing here says these nodes have no traces')
+    // The ask that failed is still reachable, so the page is not stranded on it.
+    expect(screen.getByRole('checkbox')).toBeTruthy()
+  })
+
+  it('leaves the ask reachable even where there is no inventory to render beside it', async () => {
+    // Without experimental_list_graphs there is no listing to fall back on, so
+    // a refused run is the whole page. The control has to be on that page too,
+    // or turning the ask off becomes impossible.
+    const { client } = tracingDesk({
+      experimental_test_graphs: (args) =>
+        args.include_traces === true
+          ? { text: 'report budget exceeded', isError: true }
+          : { text: JSON.stringify(UNTRACED) }
+    })
+    const { container } = renderConnected(
+      view(),
+      tracing(client, { graphInventorySupported: false }),
+      { path: '/graphs' }
+    )
+    await screen.findAllByText(/clear-approves/)
+    fireEvent.click(screen.getByRole('checkbox'))
+
+    await screen.findByText(/Could not run the graphs/)
+    expect(screen.getByRole('checkbox')).toBeTruthy()
+    expect(container.textContent).toContain('report budget exceeded')
+    expect(container.textContent).toContain('traces asked for')
+  })
+
+  it('shows no trace anywhere in an untraced payload', async () => {
+    const { client } = tracingDesk()
+    const { container } = renderConnected(view(), tracing(client), { path: '/graphs' })
+    await screen.findAllByText(/clear-approves/)
+    expect(container.textContent).not.toContain('Trace of')
+    expect(container.textContent).not.toContain('carries no trace entries')
+  })
+})
+
+describe('the graphs page, against rows that assert a handoff target (ADR-0032)', () => {
+  it('shows the composite pair where a row asserts one, and marks the assertion', async () => {
+    const { client } = tracingDesk()
+    const { container } = renderConnected(view(), tracing(client), { path: '/graphs' })
+    await screen.findAllByText(/clear-approves/)
+
+    expect(container.textContent).toContain('expected composite target')
+    expect(container.textContent).toContain('actual composite target')
+    // Rendered through the pack surface's own describer: kind beside name.
+    expect(container.textContent).toContain('vendor-review (queue)')
+    expect(container.textContent).toContain('vendor-review-emea (queue)')
+    expect(container.textContent).toContain('asserts a handoff-target state')
+  })
+
+  it('keeps “no target” and “unavailable” apart, because they are two things', async () => {
+    const { client } = tracingDesk()
+    const { container } = renderConnected(view(), tracing(client), { path: '/graphs' })
+    await screen.findAllByText(/refused-walk/)
+
+    // The node that asserts there is no target at all.
+    expect(container.textContent).toContain('no target')
+    expect(container.textContent).toContain('asserts no handoff target')
+    // The row whose run was refused, so no target can be stated.
+    expect(container.textContent).toContain('unavailable')
+  })
+
+  it('shows a node’s own pair beside that node’s comparison', async () => {
+    const { client } = tracingDesk()
+    const { container } = renderConnected(view(), tracing(client), { path: '/graphs' })
+    await screen.findAllByText(/clear-approves/)
+    const node = [...container.querySelectorAll('.row-node')].find(
+      (candidate) => candidate.querySelector('code')?.textContent === 'decision'
+    )
+    expect(node).not.toBeUndefined()
+    expect(node!.textContent).toContain('expected target of decision')
+    expect(node!.textContent).toContain('actual target of decision')
+    expect(node!.textContent).toContain('no target')
+    expect(container.textContent).not.toContain('expected target of screening')
+  })
+
+  it('marks no difference of its own on a pair, because renderings are not the verdict', async () => {
+    // The two composite renderings differ and the row mismatched, but the mark
+    // that says so is the row's status — never a comparison this client made.
+    // A capped rendering can differ from its own pair past the cap, so a mark
+    // drawn from these strings could contradict what the runtime decided.
+    const { client } = tracingDesk()
+    const { container } = renderConnected(view(), tracing(client), { path: '/graphs' })
+    await screen.findAllByText(/clear-approves/)
+    const targets = container.querySelectorAll('.row-targets .row-side')
+    expect(targets.length).toBeGreaterThan(0)
+    for (const side of targets) {
+      expect(side.className).not.toContain('row-side-differs')
+    }
   })
 })
