@@ -173,6 +173,58 @@ export function readServedDocument(
   return readGraphDocument(text)
 }
 
+/* Binding a run to the bytes it ran over ---------------------------------- */
+
+/**
+ * What the two digests say about the two answers on screen.
+ *
+ * - `bound` — the matrix entry's `graphSha256` and the served document's
+ *   `sha256` are the same digest, so both answers decoded the same bytes.
+ * - `divergent` — they are different digests, so the graph file was edited
+ *   between the two calls and the two answers are about two revisions.
+ * - `unstated` — at least one side names no digest, so there is nothing to
+ *   compare and no binding may be claimed either way.
+ */
+export type GraphDigestBinding = 'bound' | 'divergent' | 'unstated'
+
+/**
+ * A digest as a comparable value, or undefined where none was stated.
+ *
+ * Absent and empty are one case: ADR-0030 omits the member rather than
+ * emitting an empty string, so an empty one is a runtime saying nothing, and
+ * comparing two nothings would manufacture a binding out of two absences.
+ *
+ * Case is folded because hex is case-insensitive by definition — the same
+ * digest spelled two ways is one digest, and reporting that pair as an edit
+ * would withdraw a walk over a spelling.
+ */
+function statedDigest(digest: string | undefined): string | undefined {
+  const trimmed = digest?.trim().toLowerCase()
+  return trimmed ? trimmed : undefined
+}
+
+/**
+ * Bind a graph matrix run to the document served beside it (ADR-0030).
+ *
+ * This is provenance of the *join* and nothing else. It says whether the rows
+ * and the drawn structure are about one revision of one file; it never revises,
+ * derives or overrides a verdict the runtime reached about either revision. A
+ * `divergent` pair does not mean a row was wrong — it means the two answers are
+ * not about the same bytes, so joining them would combine one revision's rows
+ * with another revision's arrows.
+ */
+export function bindGraphDigests(
+  /** The digest the matrix entry reports for the bytes its walk decoded. */
+  run: string | undefined,
+  /** The digest the runtime reports beside the document it served. */
+  served: string | undefined
+): GraphDigestBinding {
+  const a = statedDigest(run)
+  const b = statedDigest(served)
+  if (a === undefined || b === undefined) return 'unstated'
+  return a === b ? 'bound' : 'divergent'
+}
+
 /** One node of a laid-out walk. */
 export interface WalkNode {
   id: string
@@ -394,6 +446,13 @@ export function deriveWalkLayout(
  * decode. Its reason is the runtime's own detail, verbatim, and it is decided
  * before anything about what this client made of the bytes — the runtime's
  * verdict on its own bytes is not this browser's to revisit.
+ *
+ * A **divergent binding** (ADR-0030) is neither of those: the document read
+ * perfectly well and describes a revision the matrix run never ran over. It is
+ * reported after the runtime's own verdict on the bytes, because a document
+ * that is not a document is the more basic fact, and before anything about the
+ * layout, because a shape derived from the wrong revision is not worth naming a
+ * reason about.
  */
 export function walkFallbackReason(input: {
   /** Whether the runtime advertises `experimental_get_graph` at all. */
@@ -404,9 +463,11 @@ export function walkFallbackReason(input: {
   served: { meta: { status?: string; detail?: string }; unreadable?: string } | undefined
   /** Why a read document was not laid out, where it was read and not laid out. */
   declined?: string
+  /** True where the two digests name two revisions, so the join was withdrawn. */
+  divergent?: boolean
   error: Error | null
 }): string | undefined {
-  const { supported, drawn, served, declined, error } = input
+  const { supported, drawn, served, declined, divergent, error } = input
   if (!supported) return undefined
   if (error) {
     return error instanceof ToolRefusal
@@ -421,6 +482,12 @@ export function walkFallbackReason(input: {
     return because(
       `the runtime served this graph's document and could not decode it — ` +
         `${served.meta.detail ?? 'no reason was given'} — and serving is not validating`
+    )
+  }
+  if (divergent) {
+    return because(
+      `the matrix run and the served document report different digests, so the graph file was ` +
+        `edited between the two calls and the two answers describe different revisions`
     )
   }
   if (drawn) return undefined

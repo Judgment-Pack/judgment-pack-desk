@@ -91,6 +91,12 @@ const DOCUMENT = JSON.stringify({
   result: 'decision'
 })
 
+/** The digest of the bytes served below, as `experimental_get_graph` reports it. */
+const SERVED_DIGEST = 'a'.repeat(64)
+
+/** A digest of some other revision of the same file: an edit landed between two calls. */
+const OTHER_DIGEST = 'b'.repeat(64)
+
 const SERVED_META = {
   status: 'valid',
   id: 'onboarding',
@@ -99,7 +105,12 @@ const SERVED_META = {
   formatVersion: '1',
   path: 'graphs/vendor-onboarding.graph.json',
   bytes: DOCUMENT.length,
-  sha256: 'a'.repeat(64)
+  sha256: SERVED_DIGEST
+}
+
+/** The same run, reporting the digest of the bytes its walk decoded (ADR-0030). */
+function matrixBinding(graphSha256: string): GraphSuite {
+  return { ...MATRIX, graphs: [{ ...MATRIX.graphs![0]!, graphSha256 }] }
 }
 
 function servingDesk(overrides: Record<string, ToolHandler> = {}) {
@@ -250,6 +261,73 @@ describe('the graphs page, against a runtime that serves documents', () => {
     })
     await waitFor(() => expect(arrows(container)).toBe(0))
     expect(container.textContent).toContain('the served graph document')
+  })
+
+  it('draws the walk and states the binding where the two digests agree', async () => {
+    // ADR-0030: the matrix entry reports the digest of the bytes its walk
+    // decoded, and it is the digest served beside the document. The join is
+    // therefore proven rather than bounded, and the page says which.
+    const { client } = servingDesk({
+      experimental_test_graphs: () => ({ text: JSON.stringify(matrixBinding(SERVED_DIGEST)) })
+    })
+    const { container } = renderConnected(view(), serving(client), { path: '/graphs' })
+    await screen.findByText(/One revision/)
+    expect(arrows(container)).toBe(2)
+    expect(container.textContent).toContain('same document digest')
+    expect(container.textContent).toContain(`sha256 ${SERVED_DIGEST.slice(0, 12)}`)
+    // The binding is provenance of the join. It is not a second verdict on the
+    // run, and the runtime's own verdict is untouched beside it.
+    expect(container.textContent).toContain('not a verdict on the revision')
+    expect(container.textContent).not.toContain('different revision')
+  })
+
+  it('withdraws the join where the digests name two revisions, and asks for both again', async () => {
+    // The failure this exists to prevent: one revision's rows drawn against
+    // another revision's arrows, with nothing on screen saying so. Reported as
+    // a HIGH finding against the epoch-only version of this join.
+    const { client, calls } = servingDesk({
+      experimental_test_graphs: () => ({ text: JSON.stringify(matrixBinding(OTHER_DIGEST)) })
+    })
+    const { container } = renderConnected(view(), serving(client), { path: '/graphs' })
+    await screen.findByText(/Two revisions, not joined/)
+
+    // Nothing joined: no arrow from a document the rows are not about.
+    expect(arrows(container)).toBe(0)
+    expect(container.textContent).toContain('edited between the two calls')
+    expect(container.textContent).toContain(`sha256 ${OTHER_DIGEST.slice(0, 12)}`)
+    expect(container.textContent).toContain(`sha256 ${SERVED_DIGEST.slice(0, 12)}`)
+    // Neither answer is called wrong; the desk overrides no runtime verdict.
+    expect(container.textContent).toContain('Neither revision is being called wrong')
+
+    // Both answers are asked for again, so the next pair can re-bind.
+    const asked = (name: string) => calls.filter((call) => call.name === name).length
+    await waitFor(() => {
+      expect(asked('experimental_get_graph')).toBe(2)
+      expect(asked('experimental_test_graphs')).toBe(2)
+    })
+
+    // And it settles there. A file that is still mid-edit lands the same two
+    // digests again, which must read as a standing withdrawal rather than spin
+    // the page asking forever.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(asked('experimental_get_graph')).toBe(2)
+    expect(asked('experimental_test_graphs')).toBe(2)
+    expect(container.textContent).toContain('Two revisions, not joined')
+  })
+
+  it('claims no binding where the matrix run states no digest', async () => {
+    // jpack 0.18.0 and older, and any entry whose document did not load: there
+    // is nothing to compare, so the epoch-bounded behaviour stands exactly as
+    // it was and the page asserts nothing about the join in either direction.
+    const { client } = servingDesk()
+    const { container } = renderConnected(view(), serving(client), { path: '/graphs' })
+    await screen.findByText(/declared edge/)
+    expect(arrows(container)).toBe(2)
+    expect(container.textContent).not.toContain('One revision')
+    expect(container.textContent).not.toContain('Two revisions, not joined')
+    expect(container.textContent).not.toContain('edited between the two calls')
   })
 
   it('reports an inventory that refused, and shows no configuration it cannot confirm', async () => {

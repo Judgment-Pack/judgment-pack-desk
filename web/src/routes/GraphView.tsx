@@ -1,10 +1,16 @@
-import { useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { CoverageReport } from '../components/CoverageReport'
 import { GraphWalkDiagram } from '../components/GraphWalkDiagram'
 import { Empty, ErrorBox, Loading, Pill, Section, statusTone } from '../components/primitives'
 import { parseDisposition } from '../mcp/canonical'
-import { deriveWalkLayout, walkFallbackReason } from '../mcp/graphDocument'
+import {
+  bindGraphDigests,
+  deriveWalkLayout,
+  walkFallbackReason,
+  type GraphDigestBinding
+} from '../mcp/graphDocument'
 import { useMcp } from '../mcp/McpProvider'
 import { useGraphDocument, useGraphInventory, useGraphMatrix } from '../mcp/queries'
 import type { GraphInventory, GraphSuiteEntry, GraphSummary, GraphTestRow } from '../mcp/types'
@@ -234,9 +240,30 @@ function ConfiguredGraph({ row }: { row: GraphSummary }) {
  *
  * The two accounts on screen come from two separate calls: the matrix run this
  * entry is part of, and the document fetched here. They are joined by node name
- * and by edge index — nothing on either payload binds them to each other — so
- * the join is only honest while both are the *current* answer from the *same*
- * connection. Everything below turns on that:
+ * and by edge index, and **ADR-0030 is what proves the join describes one
+ * file**: the matrix entry reports `graphSha256`, the digest of the exact bytes
+ * its walk decoded, and `experimental_get_graph` reports the `sha256` of the
+ * bytes it served. Three cases, and the page behaves differently in each.
+ *
+ * - **The two digests agree.** The walk is drawn, and the page says so. This is
+ *   provenance of the join and nothing more: it establishes that the rows and
+ *   the arrows are about one revision, and says nothing about whether that
+ *   revision is any good. No verdict the runtime reached is derived, revised or
+ *   overridden here — the desk never decides for the runtime.
+ * - **They disagree.** The graph file was edited between the two calls, so the
+ *   two answers are about two revisions and joining them would put one
+ *   revision's rows against another's arrows. The joined walk is withdrawn, the
+ *   page says why in as many words, and both queries are invalidated so the
+ *   next pair of answers can re-bind. Silently combining them is exactly the
+ *   thing this exists to prevent.
+ * - **The matrix entry states no digest.** Either the connected runtime is
+ *   jpack 0.18.0 or older, or this entry's document did not load at all (a rows
+ *   failure *after* a successful load keeps the digest, so that case still
+ *   binds). Nothing can be compared, so nothing is claimed either way, and the
+ *   epoch-bounded behaviour below stands exactly as it did.
+ *
+ * Those bounds stay in every case, because the digest upgrades the join and
+ * does not replace what keys it:
  *
  * - the document query is keyed by the connection epoch, so a reconnect brings
  *   no document forward from the socket before it;
@@ -246,12 +273,6 @@ function ConfiguredGraph({ row }: { row: GraphSummary }) {
  * - and it is drawn only while neither call is in flight, so a matrix being
  *   re-run never lends its previous coverage to a document just read, or the
  *   other way round.
- *
- * There is no permanent binding to be had here: the matrix payload carries no
- * digest of the document its walk ran over, so nothing in the two answers can
- * prove they describe one file. Inventing one — comparing node names, say, and
- * calling agreement provenance — would be this client asserting a link the
- * runtime never stated. See the README's upstream gaps.
  */
 function GraphEntry({
   entry,
@@ -272,10 +293,18 @@ function GraphEntry({
   // The configured id the matrix reports an entry under is the same configured
   // id the inventory and the fetch are keyed by — the runtime resolves both
   // from one jpack.json entry — so this is the id to ask for.
-  const { graphDocumentSupported } = useMcp()
+  const { graphDocumentSupported, connectionEpoch } = useMcp()
   const served = useGraphDocument(entry.id)
   const inFlight = graphDocumentSupported && (served.isPending || served.isFetching || !matrixSettled)
   const settled = graphDocumentSupported && served.isSuccess && !served.isFetching && matrixSettled
+
+  // The binding is read off whatever pair of answers is in hand, not only off a
+  // settled one, so the notice stays on screen through the refetch a divergence
+  // itself asks for. Acting on it is gated on `settled` below: a pair half of
+  // which is being replaced is not a pair worth chasing.
+  const servedDigest = graphDocumentSupported ? served.data?.meta.sha256 : undefined
+  const binding = bindGraphDigests(entry.graphSha256, servedDigest)
+
   const layout = useMemo(
     () =>
       settled && served.data?.document
@@ -283,7 +312,20 @@ function GraphEntry({
         : undefined,
     [settled, served.data, entry.coverage]
   )
-  const shape = layout?.drawn ? layout.shape : undefined
+  // Divergence withdraws the drawing outright. There is a laid-out shape in
+  // hand and it is the wrong revision's, which is worse than none: the rows
+  // beside it and the coverage inside it came from bytes it does not describe.
+  const shape = layout?.drawn && binding !== 'divergent' ? layout.shape : undefined
+
+  useDigestRefetch({
+    active: settled && binding === 'divergent',
+    // One request per distinct disagreeing pair. A refetch that lands the same
+    // two digests — the file is still mid-edit, or the edit is between the two
+    // reads every time — must not ask again, or the page would spin.
+    pair: `${entry.graphSha256 ?? ''}:${servedDigest ?? ''}`,
+    connectionEpoch,
+    graphId: entry.id
+  })
 
   return (
     <section className="matrix-entry">
@@ -306,6 +348,11 @@ function GraphEntry({
 
       <Section title="The walk">
         <>
+          <BindingNotice
+            binding={binding}
+            runDigest={entry.graphSha256}
+            servedDigest={servedDigest}
+          />
           {rows.length > 0 && (
             <div className="row-picker" role="group" aria-label="Choose a row to see on the diagram">
               {rows.map((candidate) => (
@@ -351,6 +398,7 @@ function GraphEntry({
                   drawn: shape !== undefined,
                   served: settled ? served.data : undefined,
                   declined: layout && !layout.drawn ? layout.reason : undefined,
+                  divergent: binding === 'divergent',
                   error: served.error
                 })}
               />
@@ -378,6 +426,95 @@ function GraphEntry({
       </Section>
     </section>
   )
+}
+
+/**
+ * What the digests say about the two answers being shown together (ADR-0030).
+ *
+ * A stated binding is worth one short line, and `unstated` is worth none: a
+ * runtime that reports no digest has said nothing about the join, and a badge
+ * announcing that absence would turn silence into a finding. What the older
+ * behaviour rests on instead — the connection epoch, the in-flight gates — is
+ * documented in the README rather than repeated on every graph.
+ *
+ * Neither line is a verdict. `bound` says two answers decoded the same bytes;
+ * `divergent` says they did not. Whether either revision passes its own rows is
+ * the runtime's to say, and it says it in the rows below.
+ */
+function BindingNotice({
+  binding,
+  runDigest,
+  servedDigest
+}: {
+  binding: GraphDigestBinding
+  runDigest?: string
+  servedDigest?: string
+}) {
+  if (binding === 'unstated') return null
+  if (binding === 'bound') {
+    return (
+      <p className="note">
+        <strong>One revision.</strong> The matrix run reports the same document digest{' '}
+        <code>{shortDigest(runDigest)}</code> the runtime served beside these bytes, so the walk
+        drawn here and the rows below are about one revision of the graph file. It binds bytes; it
+        is not a verdict on the revision.
+      </p>
+    )
+  }
+  return (
+    <p className="note note-warn">
+      <strong>Two revisions, not joined.</strong> The matrix run ran over{' '}
+      <code>{shortDigest(runDigest)}</code> and the runtime served{' '}
+      <code>{shortDigest(servedDigest)}</code>, so the graph file was edited between the two calls
+      and the rows below describe a different revision from the document. The walk is not drawn
+      from that document, because combining one revision's rows with another revision's arrows
+      would be a picture neither answer supports. Both answers have been asked for again. Neither
+      revision is being called wrong: this says only that the two are not one file.
+    </p>
+  )
+}
+
+/** A digest short enough to read, labelled with the algorithm that produced it. */
+function shortDigest(digest: string | undefined): string {
+  return digest ? `sha256 ${digest.slice(0, 12)}…` : 'no digest'
+}
+
+/**
+ * Ask for both answers again, once per disagreeing pair.
+ *
+ * A divergence is a fact about two readings taken at two moments, and the
+ * repair is to take both again from the file as it is now — not to pick one, and
+ * not to leave the page showing a withdrawal it will never come out of. Both
+ * queries are invalidated: the matrix payload is one answer covering every
+ * entry, so a divergence in any entry means the whole answer is being re-asked.
+ *
+ * The guard is what keeps a mid-edit file from spinning the page: a pair
+ * already asked about is never asked about twice, so a refetch landing the same
+ * two digests settles into the withdrawal rather than firing again.
+ */
+function useDigestRefetch({
+  active,
+  pair,
+  connectionEpoch,
+  graphId
+}: {
+  active: boolean
+  pair: string
+  /** Part of the document query's key: a document belongs to one connection. */
+  connectionEpoch: number
+  graphId: string
+}) {
+  const queryClient = useQueryClient()
+  const asked = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (!active) return
+    if (asked.current === pair) return
+    asked.current = pair
+    void queryClient.invalidateQueries({
+      queryKey: ['experimental_get_graph', connectionEpoch, graphId]
+    })
+    void queryClient.invalidateQueries({ queryKey: ['experimental_test_graphs'] })
+  }, [active, pair, connectionEpoch, graphId, queryClient])
 }
 
 /**

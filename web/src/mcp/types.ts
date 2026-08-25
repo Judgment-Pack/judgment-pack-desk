@@ -403,13 +403,29 @@ export interface GraphTestRow {
   detail?: string
 }
 
-/** One configured graph's matrix run inside the project walk. */
+/**
+ * One configured graph's matrix run inside the project walk.
+ *
+ * `graphSha256` (ADR-0030) is bare hex — the payload-member convention, not the
+ * `sha256:` prefixed spelling the lock and audit records use — and it is the
+ * digest of the exact bytes *this run* decoded. It is present exactly when the
+ * document loaded: an entry whose document could not be read carries none,
+ * beside the `detail` that says why, while a rows failure *after* a successful
+ * load keeps it, because the bytes the digest names did load.
+ *
+ * What it enables is a binding and not a verdict. Equality with the `sha256`
+ * `experimental_get_graph` reports beside a served document proves the two
+ * answers describe one revision; inequality proves the file was edited between
+ * the two calls. Neither says anything about whether either revision is any
+ * good. Absent on jpack 0.18.0 and older, where nothing binds the two at all.
+ */
 export interface GraphSuiteEntry {
   id: string
   path?: string
   rowsPath?: string
   graphId?: string
   graphVersion?: string
+  graphSha256?: string
   status: string
   summary: SuiteSummary
   rows?: GraphTestRow[]
