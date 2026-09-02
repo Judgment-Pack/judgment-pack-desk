@@ -12,10 +12,12 @@
    still beats an unlayered `display:` — and the closed Inspector depends on
    exactly that.
 
-   No dark values here. Phase A ships the token plumbing and the light
-   palette that `styles.css` already carries; the dark set, including the
-   three verdict colours that cannot be mechanically inverted, is its own
-   piece of work. */
+   No palette here at all, dark or light. The theme plumbing — the
+   `prefers-color-scheme` block, the `[data-theme]` block, and the note that
+   both carry the light values because the dark palette is its own piece of
+   work — lives beside the tokens it redefines, in `styles.css`, because a
+   layered `:root` here would lose to that unlayered one whatever its
+   specificity. */
 
 @layer shell {
   :root {
@@ -61,7 +63,10 @@
 
   .desk-rail {
     grid-column: 1;
-    grid-row: 2 / 4;
+    /* Down to the last line, not to row 4: the strip occupies row 4 in column
+       2 only, and a rail that stopped above it left a 248x28 unpainted notch
+       in the corner where its own surface and its right border ended. */
+    grid-row: 2 / -1;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
@@ -72,23 +77,30 @@
     min-width: 0;
   }
 
-  /* The one scroll container. `.desk-main`'s padding is `.app-body`'s,
-     preserved verbatim, and `.desk-measure` carries its 60rem measure to every
-     route — so phase A changes no route's rendered width. */
+  /* The one scroll container, and **column 2 only**. Spanning 2/4 put main in
+     the same grid cell as the inspector, which paints an opaque surface over
+     it: the right 360px of every route was occluded the moment the Inspector
+     was opened. Measured in Chrome before and after; the check is in the PR.
+
+     `.desk-measure` reproduces `.app-body` exactly — `max-width: 60rem` and
+     the same `2rem 1.5rem 4rem`, under `box-sizing: border-box` — so the
+     rendered content column is 57rem on every route, as it was at main. The
+     padding is on the measure and not on the scroll container so that the two
+     together are one element's worth of geometry rather than two. */
   .desk-main {
-    grid-column: 2 / 4;
+    grid-column: 2;
     grid-row: 2;
     overflow: auto;
     scrollbar-gutter: stable;
     min-width: 0;
     min-height: 0;
     width: 100%;
-    padding: 2rem 1.5rem 4rem;
   }
 
   .desk-measure {
     max-width: 60rem;
     margin: 0 auto;
+    padding: 2rem 1.5rem 4rem;
   }
 
   .desk-inspector {
@@ -125,6 +137,21 @@
     border-top: 1px solid var(--border);
     color: var(--ink-faint);
     font-size: 0.82rem;
+  }
+
+  .desk-strip-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  /* The configuration cue. A link, because it goes to the page that names the
+     problem — never a colour the shell decided on its own. */
+  .desk-strip-warn {
+    color: var(--warn);
   }
 
   /* Header --------------------------------------------------------------- */
@@ -360,6 +387,20 @@
     margin-top: auto;
   }
 
+  /* Admin and its sections menu are one row. `.desk-nav-item` is `display:
+     flex`, i.e. block-level, so without this the chevron dropped onto its own
+     line below the link and read as a stray unlabelled button. */
+  .desk-admin-row {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .desk-admin-row .desk-nav-item {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
   .desk-dirty {
     width: 6px;
     height: 6px;
@@ -384,6 +425,14 @@
     width: 32px;
     justify-content: center;
     padding: 0.4rem 0;
+  }
+
+  /* At 56px the rail has 40px of inner width, which will not hold a 32px nav
+     item and a 24px trigger side by side. The sections menu is hidden there
+     rather than squeezed: every one of its destinations is a heading on the
+     page the Admin link itself opens, so nothing is unreachable. */
+  .desk-rail[data-mode='icons'] .desk-admin-row .desk-icon-button {
+    display: none;
   }
 
   /* Panes ---------------------------------------------------------------- */

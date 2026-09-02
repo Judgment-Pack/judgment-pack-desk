@@ -11,9 +11,15 @@
  * Help & About renders that prompt's text for a person to carry to whatever
  * agent they run; this dialog links there and does nothing else about it.
  *
- * The path field is free text seeded with `packs/` — a prefix, not a name, so
- * the desk invents nothing — and the helper line says the location and the
- * suffix are this dialog's convenience rather than anything JPS requires.
+ * The path field is free text. It is seeded with `packs/` — a prefix, not a
+ * name, so the desk invents nothing — **only where the project already has a
+ * file under `packs/`**, and with nothing otherwise. That rule exists because
+ * the chassis creates no directories: `files.go` stats the parent and answers
+ * 404 with "the directory packs does not exist in the project; create it
+ * first", and a dialog whose default path 404s on first use in a flat project
+ * is a dead end offered as a convenience. The helper lines say both things —
+ * that the location and the suffix are this dialog's idea, and that the parent
+ * directory has to be there already.
  *
  * The write is the existing `PUT /api/file` with `baseSha256: ''`, the
  * documented "I believe this file does not exist" case, and **no `override`**.
@@ -25,7 +31,7 @@ import { Dialog } from 'radix-ui'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { StaleWrite } from '../files/client'
-import { useWriteFile } from '../files/queries'
+import { useFileListing, useWriteFile } from '../files/queries'
 import { useMcp } from '../mcp/McpProvider'
 import { useExample, useExampleListing, useSchema } from '../mcp/starters'
 import { requestOpen } from './authorBridge'
@@ -33,6 +39,9 @@ import { requestOpen } from './authorBridge'
 const PATH_PREFIX = 'packs/'
 const PATH_HELP =
   'A convenience of this dialog: nothing in JPS requires this location or this suffix.'
+const PARENT_DIR_NOTE =
+  'The parent directory has to exist already — the chassis writes files and creates no ' +
+  'directories, and it refuses a path whose directory is not there.'
 const NO_STARTER =
   'This runtime advertises no example and no schema, so the only starting point the desk can ' +
   'offer without inventing one is an empty file.'
@@ -58,14 +67,34 @@ export function CreatePackDialog({
 }) {
   const { exampleSupported, schemaSupported } = useMcp()
   const listing = useExampleListing()
+  const files = useFileListing()
   const write = useWriteFile()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
 
-  const [path, setPath] = useState(PATH_PREFIX)
+  const [path, setPath] = useState('')
+  const [pathEdited, setPathEdited] = useState(false)
   const [selection, setSelection] = useState<string | undefined>(undefined)
 
   const examples = useMemo(() => listing.data?.examples ?? [], [listing.data])
+
+  /**
+   * `packs/` only where the project already keeps one there.
+   *
+   * The listing is the project's own answer, not a guess: a project with a
+   * flat layout gets an empty field and writes where it actually writes, and a
+   * project with a `packs/` directory gets the prefix it uses. A failed or
+   * pending listing is the flat case, because an unanswered question is not
+   * evidence that a directory exists.
+   */
+  const seed = useMemo(
+    () => ((files.data?.files ?? []).some((file) => file.path.startsWith(PATH_PREFIX)) ? PATH_PREFIX : ''),
+    [files.data]
+  )
+  useEffect(() => {
+    if (pathEdited) return
+    setPath(seed)
+  }, [seed, pathEdited])
 
   // The runtime's own first example, else the schema, else empty — the
   // precedence in one place, and the runtime's ordering never re-sorted here.
@@ -81,7 +110,8 @@ export function CreatePackDialog({
 
   useEffect(() => {
     if (!open) {
-      setPath(PATH_PREFIX)
+      setPath('')
+      setPathEdited(false)
       setSelection(undefined)
       write.reset()
     }
@@ -134,10 +164,14 @@ export function CreatePackDialog({
               id="desk-create-path"
               className="desk-input"
               value={path}
-              onChange={(event) => setPath(event.target.value)}
+              onChange={(event) => {
+                setPathEdited(true)
+                setPath(event.target.value)
+              }}
             />
           </p>
           <p className="quiet">{PATH_HELP}</p>
+          <p className="quiet">{PARENT_DIR_NOTE}</p>
 
           <p>
             <label htmlFor="desk-create-start">Starting bytes</label>

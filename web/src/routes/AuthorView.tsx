@@ -10,7 +10,7 @@ import {
   type FileListing
 } from '../files/client'
 import { useFileContent, useFileListing, useWriteFile } from '../files/queries'
-import { publishDirty, takeRequestedOpen } from '../shell/authorBridge'
+import { publishDirty, takeRequestedOpen, useRequestedOpen } from '../shell/authorBridge'
 
 /**
  * The authoring shell: pick a file, edit its bytes, save them (issue #14,
@@ -60,14 +60,24 @@ export function AuthorView() {
     publishDirty(dirty)
     return () => publishDirty(false)
   }, [dirty])
-  // An effect and not a lazy `useState` initializer: StrictMode invokes an
-  // initializer twice and would swallow a consume-once take in the run whose
-  // state React discards. An effect's mount → cleanup → mount preserves
+  // Driven by the published value rather than by mount, because creating a
+  // pack while this view is already open navigates to the route it is already
+  // on: the element does not remount, and a `[]`-dependency effect would never
+  // run again. It routes through `choose` so the dirty-buffer question is
+  // asked here too, rather than only where a file is clicked.
+  //
+  // Still an effect and not a lazy `useState` initializer: StrictMode invokes
+  // an initializer twice and would swallow a consume-once take in the run
+  // whose state React discards. An effect's mount → cleanup → mount preserves
   // state, so the second run simply finds nothing to do.
+  const requestedOpen = useRequestedOpen()
   useEffect(() => {
     const requested = takeRequestedOpen()
-    if (requested) setSelected(requested)
-  }, [])
+    if (requested) choose(requested)
+    // `choose` is re-created every render and is not a dependency: this effect
+    // fires on a new request, never on a re-render of the editor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedOpen])
 
   // Two guards, because they cover two different exits and neither covers the
   // other. `beforeunload` is the browser's, and it fires only when the document

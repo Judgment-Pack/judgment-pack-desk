@@ -80,6 +80,30 @@ describe('the left rail', () => {
     expect(stub.calls.every((call) => call.name !== 'experimental_test_graphs')).toBe(true)
   })
 
+  it('asks the runtime nothing for a dialog nobody has opened', async () => {
+    // The Create-pack dialog was mounted unconditionally, so its body ran on
+    // every route: `list_examples` on first paint everywhere, and again on
+    // every `desk/fileChanged`, because a mounted query is an active one. This
+    // is the same objection as the graph walk above, one order of magnitude
+    // smaller, and it is held by a runtime that *does* advertise the tools —
+    // which is what the earlier rail tests, on `UNKNOWN_CAPABILITIES`, could
+    // not see.
+    const stub = stubClient({
+      list_packs: () => ({ text: JSON.stringify({ status: 'valid', packs: [] }) }),
+      list_examples: () => ({ text: JSON.stringify({ examples: [{ name: 'minimal' }] }) }),
+      get_example: () => ({ text: '{}' }),
+      get_schema: () => ({ text: '{}' })
+    })
+    renderRail(stub, { exampleSupported: true, schemaSupported: true })
+    await screen.findByRole('button', { name: 'Create a pack' })
+    expect(stub.calls.map((call) => call.name)).toEqual(['list_packs'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create a pack' }))
+    await waitFor(() =>
+      expect(stub.calls.map((call) => call.name)).toContain('list_examples')
+    )
+  })
+
   it('renders Graphs whether or not the runtime advertises the inventory', async () => {
     renderRail(packs([]), { graphInventorySupported: false })
     expect(screen.getByRole('link', { name: 'Graphs' })).toBeTruthy()

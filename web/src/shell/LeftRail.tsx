@@ -75,11 +75,17 @@ export function LeftRail({
       <Dialog.Root open={drawerOpen} onOpenChange={onDrawerOpenChange}>
         <Dialog.Portal>
           <Dialog.Overlay className="desk-overlay" />
-          <Dialog.Content className="desk-drawer desk-drawer-left">
+          <Dialog.Content className="desk-drawer desk-drawer-left" id="desk-rail">
             <VisuallyHidden.Root>
               <Dialog.Title>Project navigation</Dialog.Title>
             </VisuallyHidden.Root>
-            <RailBody mode="expanded" onToggle={onToggle} showCollapse={false} />
+            {/* The landmark travels with the rail. Without this the drawer
+                form offered no `navigation` at all, so the desk below 900px
+                had one fewer landmark than the README's region table says it
+                has — and the difference was the breakpoint, not the state. */}
+            <nav aria-label="Project">
+              <RailBody mode="expanded" onToggle={onToggle} showCollapse={false} />
+            </nav>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
@@ -124,7 +130,12 @@ function RailBody({
           {!icons && <span className="desk-nav-label">Create pack</span>}
         </button>
       </Labelled>
-      <CreatePackDialog open={creating} onOpenChange={setCreating} />
+      {/* Mounted only while it is open. Mounted unconditionally, its body ran
+          on every route: `list_examples` was called on first paint everywhere
+          and refetched on every `desk/fileChanged`, for a dialog nobody had
+          opened. That is the same objection this file raises about the graph
+          walk, one order of magnitude smaller, and it gets the same answer. */}
+      {creating && <CreatePackDialog open onOpenChange={setCreating} />}
 
       <PacksGroup icons={icons} />
 

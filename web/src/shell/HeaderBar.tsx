@@ -17,12 +17,13 @@
  * never to an invented company.
  */
 import { Avatar, DropdownMenu, Separator, Toggle } from 'radix-ui'
+import { Link } from 'react-router-dom'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { DESK_FALLBACK_NAME } from '../config/deskConfig'
 import { UserControl, monogram } from '../identity/UserControl'
 import { useMcp } from '../mcp/McpProvider'
 import { usePacks } from '../mcp/queries'
-import { IconChevronDown, IconPanelBottom, IconPanelRight } from './icons'
+import { IconChevronDown, IconPanelBottom, IconPanelLeft, IconPanelRight } from './icons'
 
 /**
  * The mark as a `data:` URI.
@@ -45,12 +46,19 @@ export function HeaderBar({
   inspectorOpen,
   consoleOpen,
   onToggleInspector,
-  onToggleConsole
+  onToggleConsole,
+  railIsDrawer,
+  railDrawerOpen,
+  onOpenRail
 }: {
   inspectorOpen: boolean
   consoleOpen: boolean
   onToggleInspector: () => void
   onToggleConsole: () => void
+  /** True below 900px, where the rail is an overlay rather than a column. */
+  railIsDrawer: boolean
+  railDrawerOpen: boolean
+  onOpenRail: () => void
 }) {
   const { config } = useEffectiveConfig()
   const name = config.organization.name ?? DESK_FALLBACK_NAME
@@ -59,13 +67,39 @@ export function HeaderBar({
   return (
     <header className="desk-head">
       <div className="desk-head-left">
+        {/* The drawer's only pointer affordance, and it has to live outside
+            the drawer: in overlay form the rail renders no collapse toggle,
+            so without this the entire left menu was reachable by Mod+B alone
+            — on a width whose likeliest device has no keyboard at all. */}
+        {railIsDrawer && (
+          <button
+            type="button"
+            className="desk-icon-button"
+            aria-label="Project navigation"
+            aria-expanded={railDrawerOpen}
+            aria-controls="desk-rail"
+            onClick={onOpenRail}
+          >
+            <IconPanelLeft />
+          </button>
+        )}
         <Avatar.Root className="desk-orgmark">
           {mark && <Avatar.Image src={mark} alt="" />}
           <Avatar.Fallback delayMs={0}>{monogram(name)}</Avatar.Fallback>
         </Avatar.Root>
-        <a className="desk-brand" href="/">
+        {/* A router `Link`, not an `<a href>`. A full document load here would
+            restart the SPA, refetch every query and drop `/ws` — and the
+            chassis kills the runtime subprocess when the socket that started
+            it closes, so clicking the brand would have respawned `jpack mcp`.
+
+            The mark is beside the link rather than inside it, departing from
+            one clause of the spec: the link's accessible name and text are the
+            organization name exactly — the fallback's non-breaking hyphen is
+            asserted character for character — and a monogram inside the anchor
+            puts two initials in front of both. */}
+        <Link className="desk-brand" to="/">
           {name}
-        </a>
+        </Link>
         <Separator.Root className="desk-rule" decorative orientation="vertical" />
         <ProjectChip />
       </div>

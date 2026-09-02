@@ -296,48 +296,55 @@ export function ShellStateProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey, panesSignature])
 
-  // Debounced, and idempotent: writing the same record twice is a no-op on
-  // disk, which is what makes StrictMode's double effect free.
+  /**
+   * Debounced, idempotent — and **only for a layout the viewer chose**.
+   *
+   * The guard is the other half of the seed above, and without it the seed is
+   * defeated by the shell writing to itself. A record persisted on mount is
+   * preferred over the config on the next read, so a desk that had ever been
+   * opened would ignore `panes` in `jpack-desk.json` for ever: the first visit
+   * stored the built-in defaults, and every visit after that restored them.
+   * The same write also beat the config on the *first* visit whenever the file
+   * read answered more than 250ms after `list_packs` did.
+   *
+   * A layout that came from the file or from the built-ins does not need
+   * storing: it is re-derived on every load from inputs that are still there.
+   * The only thing worth a record is a choice this browser's viewer made, and
+   * `touched` is exactly that. It is read inside the timeout so the toggles
+   * stay ordinary state updates.
+   */
   useEffect(() => {
-    const timer = setTimeout(() => writeShellState(storageKey, state), WRITE_DEBOUNCE_MS)
+    const timer = setTimeout(() => {
+      if (!touched.current) return
+      writeShellState(storageKey, state)
+    }, WRITE_DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [storageKey, state])
 
-  const toggleRail = useCallback(
-    () =>
-      setState((previous) => {
-        touched.current = true
-        return {
-          ...previous,
-          left: { mode: previous.left.mode === 'expanded' ? 'icons' : 'expanded' }
-        }
-      }),
-    []
-  )
-  const toggleInspector = useCallback(
-    () =>
-      setState((previous) => {
-        touched.current = true
-        return { ...previous, inspector: { open: !previous.inspector.open } }
-      }),
-    []
-  )
-  const toggleConsole = useCallback(
-    () =>
-      setState((previous) => {
-        touched.current = true
-        return { ...previous, console: { ...previous.console, open: !previous.console.open } }
-      }),
-    []
-  )
-  const setConsoleTab = useCallback(
-    (tab: ConsoleTab) =>
-      setState((previous) => {
-        touched.current = true
-        return { ...previous, console: { ...previous.console, tab } }
-      }),
-    []
-  )
+  // `touched` is marked in the handler and never inside an updater: an
+  // updater must stay pure, and React reserves the right to run one twice.
+  const toggleRail = useCallback(() => {
+    touched.current = true
+    setState((previous) => ({
+      ...previous,
+      left: { mode: previous.left.mode === 'expanded' ? 'icons' : 'expanded' }
+    }))
+  }, [])
+  const toggleInspector = useCallback(() => {
+    touched.current = true
+    setState((previous) => ({ ...previous, inspector: { open: !previous.inspector.open } }))
+  }, [])
+  const toggleConsole = useCallback(() => {
+    touched.current = true
+    setState((previous) => ({
+      ...previous,
+      console: { ...previous.console, open: !previous.console.open }
+    }))
+  }, [])
+  const setConsoleTab = useCallback((tab: ConsoleTab) => {
+    touched.current = true
+    setState((previous) => ({ ...previous, console: { ...previous.console, tab } }))
+  }, [])
 
   const value = useMemo<ShellStateApi>(
     () => ({ ...state, toggleRail, toggleInspector, toggleConsole, setConsoleTab, storageKey }),

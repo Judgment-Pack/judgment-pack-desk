@@ -133,6 +133,16 @@ export function IconPencil() {
   )
 }
 
+/** The rail's drawer opener below 900px: the panel, hinged on the left. */
+export function IconPanelLeft() {
+  return (
+    <Glyph>
+      <rect x="2.25" y="2.75" width="11.5" height="10.5" rx="1.5" />
+      <path d="M6 2.75v10.5" />
+    </Glyph>
+  )
+}
+
 export function IconPanelRight() {
   return (
     <Glyph>

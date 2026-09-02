@@ -47,7 +47,12 @@ export function monogram(name: string): string {
 
 export function UserControl() {
   const session = useIdentity()
-  const name = session.mode === 'local' ? session.displayName : (session.label ?? 'signed out')
+  // Where a provider is configured and carries no label, the name falls back
+  // to the issuer's host — something the desk read out of the file. It does
+  // **not** fall back to "signed out": that is a verdict about a session, and
+  // phase A performs no discovery, holds no token and computes no expiry, so
+  // it is a state this desk has not established and must not assert.
+  const name = session.mode === 'local' ? session.displayName : (session.label ?? session.issuerHost)
 
   return (
     <DropdownMenu.Root>

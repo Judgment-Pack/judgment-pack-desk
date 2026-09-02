@@ -7,7 +7,7 @@
  * as "locked" to anyone who does not know better, which is the opposite of
  * what this desk is.
  */
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
@@ -40,6 +40,10 @@ const PROVIDER: IdentityProviderConfig = {
 const QUIET = stubClient({ list_packs: () => ({ text: JSON.stringify({ packs: [] }) }) })
 
 function renderHeader(overrides: Partial<DeskConfig> = {}) {
+  return renderHeaderIn('/', overrides)
+}
+
+function renderHeaderIn(path: string, overrides: Partial<DeskConfig> = {}) {
   const base = effectiveConfig(undefined)
   const value = { ...base, config: { ...base.config, ...overrides } }
   const router = createMemoryRouter(
@@ -55,6 +59,9 @@ function renderHeader(overrides: Partial<DeskConfig> = {}) {
                   consoleOpen={false}
                   onToggleInspector={() => {}}
                   onToggleConsole={() => {}}
+                  railIsDrawer={false}
+                  railDrawerOpen={false}
+                  onOpenRail={() => {}}
                 />
               </IdentityProvider>
             </DeskConfigFixture>
@@ -62,13 +69,16 @@ function renderHeader(overrides: Partial<DeskConfig> = {}) {
         )
       }
     ],
-    { initialEntries: ['/'] }
+    { initialEntries: [path] }
   )
-  return render(
-    <QueryClientProvider client={testQueryClient()}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
-  )
+  return {
+    router,
+    ...render(
+      <QueryClientProvider client={testQueryClient()}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    )
+  }
 }
 
 describe('the header’s organization identity', () => {
@@ -96,6 +106,18 @@ describe('the header’s organization identity', () => {
     expect(markToDataUri(null)).toBeUndefined()
     // A path is not a mark; nothing here fetches one.
     expect(markToDataUri('assets/logo.svg')).toBeUndefined()
+  })
+
+  it('keeps the brand inside the router rather than reloading the document', async () => {
+    // An `<a href="/">` here is a full document load: the SPA restarts, every
+    // query refetches, `/ws` drops — and the chassis kills the runtime
+    // subprocess when the socket that started it closes, so clicking the desk's
+    // own name respawned `jpack mcp`.
+    const brand = screen.queryByRole('link', { name: DESK_FALLBACK_NAME })
+    expect(brand).toBeNull()
+    const { router } = renderHeaderIn('/admin')
+    fireEvent.click(screen.getByRole('link', { name: DESK_FALLBACK_NAME }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
   })
 
   it('labels the project chip as a label rather than a switcher', async () => {
@@ -159,6 +181,20 @@ describe('the user control, a provider configured', () => {
     // Still no roles, groups, scopes or entitlements, and still no gate.
     expect(menu.textContent).not.toContain('role')
     expect(menu.textContent).not.toContain('scope')
+  })
+
+  it('states no session verdict, because phase A checks no session', () => {
+    // With no label the control used to read "signed out" — a verdict about a
+    // session that is only reachable by checking discovery and expiry, neither
+    // of which happens anywhere in this phase. It names what the desk actually
+    // read out of the file instead.
+    const { container } = renderHeader({
+      identity: { provider: { ...PROVIDER, label: null } }
+    })
+    expect(container.textContent).not.toContain('signed out')
+    expect(container.textContent).not.toContain('Signed out')
+    expect(container.textContent).not.toContain('Sign in')
+    expect(screen.getAllByText('issuer.example').length).toBeGreaterThan(0)
   })
 
   it('never takes the organization name from the provider’s label', () => {

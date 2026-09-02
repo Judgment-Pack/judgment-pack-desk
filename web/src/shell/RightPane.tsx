@@ -77,7 +77,15 @@ export function RightPane({
         <Dialog.Root open={open} onOpenChange={(next) => !next && onClose()}>
           <Dialog.Portal>
             <Dialog.Overlay className="desk-overlay" />
-            <Dialog.Content className="desk-drawer desk-drawer-right" aria-label="Inspector">
+            {/* The id is on both forms, because the header's toggle points at
+                it with `aria-controls` in both — and a dangling reference
+                offers assistive technology a broken relationship rather than
+                none. Only one form is ever mounted, so the id stays unique. */}
+            <Dialog.Content
+              className="desk-drawer desk-drawer-right"
+              id="desk-inspector"
+              aria-label="Inspector"
+            >
               <VisuallyHidden.Root>
                 <Dialog.Title>Inspector</Dialog.Title>
               </VisuallyHidden.Root>

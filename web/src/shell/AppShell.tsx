@@ -61,6 +61,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   )
 }
 
+/**
+ * Below 900px the rail is an overlay drawer, and its opener is in the header
+ * rather than in the rail — a control inside a closed drawer opens nothing.
+ * That is why `railIsDrawer` is threaded into `HeaderBar` at all.
+ */
 function ShellFrame({
   railIsDrawer,
   inspectorIsDrawer,
@@ -106,6 +111,9 @@ function ShellFrame({
         consoleOpen={shell.console.open}
         onToggleInspector={shell.toggleInspector}
         onToggleConsole={shell.toggleConsole}
+        railIsDrawer={railIsDrawer}
+        railDrawerOpen={railDrawerOpen}
+        onOpenRail={() => setRailDrawerOpen(true)}
       />
 
       <LeftRail
