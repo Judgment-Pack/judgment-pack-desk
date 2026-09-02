@@ -192,6 +192,19 @@ describe('the Create-pack dialog', () => {
     expect((screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
+  it('writes an empty file when Empty file is chosen — it ships no template', async () => {
+    // A desk-authored skeleton would be the desk asserting what a pack is,
+    // which is exactly the opinion the file API disclaims and the runtime is
+    // the only thing entitled to hold.
+    const sent = captureWrites()
+    renderDialog(FULL, FULL_CAPS)
+    fireEvent.change(screen.getByLabelText('Starting bytes'), { target: { value: 'empty' } })
+    await readyToCreate('packs/new.json')
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect((sent[0]!.body as { content: string }).content).toBe('')
+  })
+
   it('says the path is this dialog’s convenience and not a rule of the format', () => {
     renderDialog(FULL, FULL_CAPS)
     expect(

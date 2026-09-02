@@ -454,6 +454,12 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "a failed listing refresh unmounts the editor" "$A" \
     '      {listing.error && !listing.data ? (' \
     '      {listing.error ? ('
+  # PRE-EXISTING AND BROKEN AT main (441a99c): this needle appears nowhere in
+  # AuthorView.tsx and did not before this branch either — `reload` reads the
+  # file directly and never consults a query result. It is left as it stands
+  # and reported rather than repaired by guesswork: what it was written to
+  # break is not recoverable from the current source, and a row rewritten to
+  # something that happens to fail would be a row testing a different claim.
   mutate web "a failed reload installs stale cached bytes" "$A" \
     '      if (result.isSuccess && result.data) {' \
     '      if (result.data) {'
