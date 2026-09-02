@@ -10,6 +10,7 @@
 import { createContext, useContext, type ReactNode } from 'react'
 import { effectiveConfig, type EffectiveConfig } from './deskConfig'
 import { useDeskConfig } from './queries'
+import { useAppliedTheme } from './theme'
 
 const DEFAULTS: EffectiveConfig = effectiveConfig(undefined)
 
@@ -21,7 +22,12 @@ export function useEffectiveConfig(): EffectiveConfig {
 
 export function DeskConfigProvider({ children }: { children: ReactNode }) {
   const { data } = useDeskConfig()
-  return <DeskConfigContext.Provider value={data ?? DEFAULTS}>{children}</DeskConfigContext.Provider>
+  const value = data ?? DEFAULTS
+  // The one configuration key that is applied rather than displayed. It is
+  // applied here, where the file arrives, so there is a single place that
+  // turns a decoded value into a change on the page.
+  useAppliedTheme(value.config.appearance.theme)
+  return <DeskConfigContext.Provider value={value}>{children}</DeskConfigContext.Provider>
 }
 
 /** For a test that wants one configuration without a query behind it. */

@@ -14,6 +14,7 @@ import { AUTHOR_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompt
 import { usePacks } from '../mcp/queries'
 import { TOKEN_SENTENCE } from '../identity/UserControl'
 import { SHORTCUTS } from '../shell/shortcuts'
+import { useHashTarget } from '../shell/useHashTarget'
 
 const REPO = 'https://github.com/Judgment-Pack/judgment-pack-desk'
 
@@ -23,6 +24,9 @@ export function HelpAbout() {
   const prompts = usePromptNames()
   const advertised = (prompts.data ?? []).includes(AUTHOR_PACK_PROMPT)
   const authorPack = usePromptText(AUTHOR_PACK_PROMPT, advertised)
+  // `#shortcuts` and `#authoring-method` are linked from the rail, the user
+  // menu and the Create-pack dialog; nothing else scrolls to a fragment.
+  useHashTarget()
 
   return (
     <article className="detail">
@@ -89,6 +93,11 @@ export function HelpAbout() {
           suppressed while you are typing in a field or in the authoring editor.
         </p>
         <p className="quiet">
+          Below 900px the rail is an overlay drawer and draws no collapse toggle of its own, so its
+          button moves to the header: <strong>Project navigation</strong>, at the left, next to the
+          organization mark. A control inside a closed drawer opens nothing.
+        </p>
+        <p className="quiet">
           A pane is not a dialog, so <code>Escape</code> does not close one — with one exception,
           stated rather than hidden: below 1100px the Inspector is rendered as a drawer, and a
           drawer <em>is</em> a dialog, so Escape closes it there.
@@ -106,7 +115,7 @@ export function HelpAbout() {
             This runtime advertises no <code>{AUTHOR_PACK_PROMPT}</code> prompt.
           </p>
         ) : authorPack.error ? (
-          <p className="note note-warn" role="status">
+          <p className="note note-warn" role="status" id="authoring-method">
             The prompt could not be read — {authorPack.error.message}
           </p>
         ) : authorPack.data ? (
@@ -120,7 +129,9 @@ export function HelpAbout() {
             </pre>
           </figure>
         ) : (
-          <p className="loading">Loading the runtime's authoring prompt…</p>
+          <p className="loading" id="authoring-method">
+            Loading the runtime's authoring prompt…
+          </p>
         )}
       </Section>
 

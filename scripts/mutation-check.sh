@@ -350,6 +350,9 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   N=web/src/shell/AppShell.tsx
   X=web/src/shell/CreatePackDialog.tsx
   Y=web/src/mcp/capabilities.ts
+  W=web/src/config/DeskConfigProvider.tsx
+  V=web/src/routes/AdminView.tsx
+  Q=web/src/shell/useHashTarget.ts
 
   # The rail's graph gate. `useConfiguredGraphs` falls back to a whole-project
   # `experimental_test_graphs` walk against any runtime without the inventory
@@ -364,8 +367,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   return Boolean(element.closest?.('[contenteditable]:not([contenteditable=\"false\"])'))" \
     "  return false"
   mutate web "pane state is not persisted" "$P" \
-    '    const timer = setTimeout(() => writeShellState(storageKey, state), WRITE_DEBOUNCE_MS)' \
-    '    const timer = setTimeout(() => {}, WRITE_DEBOUNCE_MS)'
+    '      writeShellState(storageKey, state)' \
+    '      void state'
+  # The other half of the same effect: a record nobody chose must not be
+  # written, because the seed prefers a stored record over the configured one —
+  # so a shell that persisted its own defaults would shadow the file for ever.
+  mutate web "an unchosen layout is persisted anyway" "$P" \
+    '      if (!touched.current) return
+      writeShellState(storageKey, state)' \
+    '      writeShellState(storageKey, state)'
   mutate web "a throwing localStorage takes the shell down" "$P" \
     '  let raw: string | null = null
   try {
@@ -384,17 +394,23 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '    if (seededFrom.current === signature) return' \
     '    if (true) return'
   mutate web "re-seeding overrides a layout the viewer chose" "$P" \
-    '        touched.current = true
-        return { ...previous, console: { ...previous.console, open: !previous.console.open } }' \
-    '        return { ...previous, console: { ...previous.console, open: !previous.console.open } }'
+    '  const toggleConsole = useCallback(() => {
+    touched.current = true' \
+    '  const toggleConsole = useCallback(() => {'
   mutate web "the restored layout is not clamped to the viewport" "$P" \
     '    left: { mode: viewport.railIsDrawer ? '"'"'icons'"'"' : merged.left.mode },
     inspector: { open: viewport.inspectorIsDrawer ? false : merged.inspector.open },' \
     '    left: merged.left,
     inspector: merged.inspector,'
   mutate web "the strip stops naming the runtime" "$S" \
-    '          connected to <code>{server.name}</code> {server.version}' \
-    '          connected to <code>{server.name}</code>'
+    '            connected to <code>{server.name}</code> {server.version}' \
+    '            connected to <code>{server.name}</code>'
+  # A refused configuration is the built-in defaults — correct, and until this
+  # cue it was indistinguishable from having no configuration file at all
+  # anywhere except /admin.
+  mutate web "a refused configuration is silent outside Admin" "$S" \
+    '        {problems.length > 0 && (' \
+    '        {false && ('
   mutate web "main remounts on a pane change" "$N" \
     '      <main id="main" tabIndex={-1} className="desk-main">' \
     '      <main id="main" key={String(shell.console.open)} tabIndex={-1} className="desk-main">'
@@ -436,6 +452,67 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the dialog invents a starting template" "$X" \
     "    choice.kind === 'example' ? example.data : choice.kind === 'schema' ? schema.data : ''" \
     "    choice.kind === 'example' ? example.data : choice.kind === 'schema' ? schema.data : '{\"packId\":\"\"}'"
+  # Below 900px the rail is a Dialog drawer and renders no collapse toggle, so
+  # the header's opener is the only pointer affordance there is. Without it the
+  # whole left menu is reachable by Mod+B alone, on the width whose likeliest
+  # device has no keyboard.
+  mutate web "the rail drawer has no opener" "$H" \
+    '        {railIsDrawer && (' \
+    '        {false && ('
+  mutate web "the rail drawer carries no landmark" "$L" \
+    '            <nav aria-label="Project">
+              <RailBody mode="expanded" onToggle={onToggle} showCollapse={false} />
+            </nav>' \
+    '            <RailBody mode="expanded" onToggle={onToggle} showCollapse={false} />'
+  mutate web "the inspector drawer answers to no id" "$R" \
+    '              id="desk-inspector"
+              aria-label="Inspector"' \
+    '              aria-label="Inspector"'
+  mutate web "the brand leaves the router on every click" "$H" \
+    '        <Link className="desk-brand" to="/">' \
+    '        <Link className="desk-brand" to="/" reloadDocument>'
+  mutate web "an empty organization name is accepted" "$D" \
+    "      const name = organizationName(organization.name, problems)" \
+    "      const name = optionalString(organization.name, 'organization.name', problems)"
+  mutate web "the identity slot admits a discriminator one level up" "$D" \
+    "    const identity = section(record.identity, 'identity', ['provider'], problems)" \
+    "    const identity = section(record.identity, 'identity', ['provider', 'kind', 'mode', 'operator', 'vendor', 'clientSecret'], problems)"
+  mutate web "the control states a session verdict it never checked" "$U" \
+    "  const name = session.mode === 'local' ? session.displayName : (session.label ?? session.issuerHost)" \
+    "  const name = session.mode === 'local' ? session.displayName : (session.label ?? 'signed out')"
+  mutate web "the configured theme is decoded and never applied" "$W" \
+    '  useAppliedTheme(value.config.appearance.theme)' \
+    '  void value.config.appearance.theme'
+  mutate web "the copy button reports a copy it did not make" "$V" \
+    '          const written = navigator.clipboard?.writeText(text)
+          if (!written) {
+            setCopied(false)
+            return
+          }
+          written.then(
+            () => setCopied(true),
+            () => setCopied(false)
+          )' \
+    '          void navigator.clipboard?.writeText(text)
+          setCopied(true)'
+  mutate web "the section links go nowhere" "$Q" \
+    '    target?.scrollIntoView()' \
+    '    void target'
+  # The dialog's seeded path. The chassis creates no directories and answers
+  # 404 for a missing parent, so a default of `packs/` in a project with a flat
+  # layout is a dead end offered as a convenience.
+  mutate web "the dialog seeds a directory the project may not have" "$X" \
+    "    () => ((files.data?.files ?? []).some((file) => file.path.startsWith(PATH_PREFIX)) ? PATH_PREFIX : '')," \
+    "    () => PATH_PREFIX,"
+  mutate web "the create dialog is mounted on every route" "$L" \
+    '      {creating && <CreatePackDialog open onOpenChange={setCreating} />}' \
+    '      <CreatePackDialog open={creating} onOpenChange={setCreating} />'
+  # `navigate('/author')` from `/author` matches the same element, so a
+  # mount-only take never runs again: the editor stayed where it was and the
+  # request was left in module state for an unrelated mount to consume.
+  mutate web "create leaves its request behind when the editor is already open" "$A" \
+    '  }, [requestedOpen])' \
+    '  }, [])'
   mutate web "the example capability is read from one tool" "$Y" \
     "    exampleSupported: names.has('list_examples') && names.has('get_example')," \
     "    exampleSupported: names.has('get_example'),"
@@ -461,15 +538,16 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "a failed listing refresh unmounts the editor" "$A" \
     '      {listing.error && !listing.data ? (' \
     '      {listing.error ? ('
-  # PRE-EXISTING AND BROKEN AT main (441a99c): this needle appears nowhere in
-  # AuthorView.tsx and did not before this branch either — `reload` reads the
-  # file directly and never consults a query result. It is left as it stands
-  # and reported rather than repaired by guesswork: what it was written to
-  # break is not recoverable from the current source, and a row rewritten to
-  # something that happens to fail would be a row testing a different claim.
-  mutate web "a failed reload installs stale cached bytes" "$A" \
-    '      if (result.isSuccess && result.data) {' \
-    '      if (result.data) {'
+  # REMOVED: "a failed reload installs stale cached bytes". Broken at main
+  # (441a99c) and broken here — its needle, `if (result.isSuccess && result.data)`,
+  # appears nowhere in AuthorView.tsx and did not before this branch either, so
+  # the row could only ever report MUTATION DID NOT APPLY. It is deleted rather
+  # than rewritten to something that happens to fail: the claim it names is
+  # already held, exactly and by name, by "reload trusts refetch rather than its
+  # own read" below — which breaks the direct `readFile(path)` into a
+  # `refetch()` and is caught by "reloads from its own request, not from
+  # whatever the cache holds". A row whose claim is covered twice, once
+  # inoperably, is one row.
   mutate web "in-app navigation is not blocked" "$A" \
     '  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
     dirty && currentLocation.pathname !== nextLocation.pathname

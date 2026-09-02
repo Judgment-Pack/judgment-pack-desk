@@ -192,6 +192,30 @@ describe('decodeDeskConfig', () => {
     expect(decoded.problems.find((p) => p.key === 'appearance.theme')!.reason).toContain('"midnight"')
   })
 
+  it('refuses an empty organization name, exactly as it refuses an empty display name', () => {
+    // `null` is how a file says "use the desk's own name"; `""` is not that
+    // sentence. Accepted, it rendered a blank brand link and a `·` monogram —
+    // the one case `DESK_FALLBACK_NAME` exists for, and the one it missed.
+    for (const name of ['', '   ']) {
+      const decoded = decodeDeskConfig(
+        JSON.stringify({ deskConfigVersion: 1, organization: { name, mark: null } }),
+        'project'
+      )
+      expect(decoded.values, `${JSON.stringify(name)} refuses the file`).toBeUndefined()
+      expect(keys(decoded.problems)).toEqual(['organization.name'])
+      expect(decoded.problems[0]!.reason).toContain('non-empty string or null')
+    }
+  })
+
+  it('accepts null as the way a file asks for the desk’s own name', () => {
+    const decoded = decodeDeskConfig(
+      JSON.stringify({ deskConfigVersion: 1, organization: { name: null, mark: null } }),
+      'project'
+    )
+    expect(decoded.problems).toEqual([])
+    expect(decoded.values?.organization?.name).toBeNull()
+  })
+
   it('takes a display name from the project file — it is local and gates nothing', () => {
     const decoded = decodeDeskConfig(
       JSON.stringify({ deskConfigVersion: 1, user: { displayName: 'desk operator' } }),

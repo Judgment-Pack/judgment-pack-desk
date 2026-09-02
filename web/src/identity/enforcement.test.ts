@@ -7,6 +7,21 @@
  * string enumerations over the source tree; they cannot catch a novel spelling
  * and are labelled here as the weak guards they are, because a guard whose
  * limits are not written down gets read as a proof.
+ *
+ * **The slot is the whole of `identity`, not only `identity.provider`.** The
+ * rule the spec states is about the slot — "there is no kind, no mode, no
+ * operator, no vendor, and no third shape" — and a discriminator one level up
+ * at `identity.kind` would branch the desk just as effectively as one inside
+ * the provider object. So (1) reads both declarations and pastes at both
+ * depths. Scanning only the inner object left the outer one open, and a
+ * supplied-versus-bring-your-own branch on Admin passed every test.
+ *
+ * **(2) and (3) read `routes/` as well.** The identity table pins Admin ›
+ * Identity provider by name — no preset list, no discovery default, no issuer
+ * literal anywhere in the source tree — and that page is `routes/AdminView.tsx`.
+ * Guards that stopped at `shell/`, `identity/` and `config/` did not look at
+ * the identity UI's own page at all, which is a sharper limitation than the
+ * "cannot catch a novel spelling" they were labelled with.
  */
 import { readFileSync } from 'node:fs'
 import { readdirSync } from 'node:fs'
@@ -55,18 +70,26 @@ function interfaceBody(text: string, name: string): string {
 const DISCRIMINATORS = ['kind', 'mode', 'operator', 'vendor', 'clientSecret']
 
 describe('(1) the identity type admits no discriminator — the load-bearing guard', () => {
-  it('declares none of them as a member of IdentityProviderConfig', () => {
-    // Scoped to that one interface's body, because `PanesConfig.left.mode` and
-    // `IdentitySession.mode` legitimately exist elsewhere in this tree: a
+  it('declares none of them as a member of the identity types', () => {
+    // Scoped to these two interface bodies, because `PanesConfig.left.mode`
+    // and `IdentitySession.mode` legitimately exist elsewhere in this tree: a
     // whole-file grep for "mode" would either fail on innocent code or be
-    // loosened until it caught nothing.
-    const body = interfaceBody(read('config/deskConfig.ts'), 'IdentityProviderConfig')
-    for (const name of DISCRIMINATORS) {
-      expect(body).not.toMatch(new RegExp(`^\\s*${name}\\??\\s*:`, 'm'))
+    // loosened until it caught nothing. Both are read, because the slot is
+    // `identity` and not only the object inside it — `identity.kind` would
+    // branch the desk exactly as well. `\\??` covers the optional spelling,
+    // which is how such a member would actually be added.
+    const source = read('config/deskConfig.ts')
+    for (const declaration of ['IdentityProviderConfig', 'IdentityConfig']) {
+      const body = interfaceBody(source, declaration)
+      for (const name of DISCRIMINATORS) {
+        expect(body, `${declaration} declares ${name}`).not.toMatch(
+          new RegExp(`^\\s*${name}\\??\\s*:`, 'm')
+        )
+      }
     }
   })
 
-  it('refuses one pasted into the file, by name', () => {
+  it('refuses one pasted into the provider object, by name', () => {
     for (const name of DISCRIMINATORS) {
       const decoded = decodeDeskConfig(
         JSON.stringify({
@@ -77,6 +100,21 @@ describe('(1) the identity type admits no discriminator — the load-bearing gua
       )
       expect(decoded.values, `${name} refuses the whole file`).toBeUndefined()
       expect(decoded.problems.map((problem) => problem.key)).toContain(`identity.provider.${name}`)
+    }
+  })
+
+  it('refuses one pasted beside the provider, by name', () => {
+    // The other depth, and the one nothing asserted: the decoder's identity
+    // allow-list is exactly ['provider'], so a `kind` here is an unknown key
+    // and the file is refused whole. Unasserted, that allow-list could have
+    // grown a second member without a single test noticing.
+    for (const name of DISCRIMINATORS) {
+      const decoded = decodeDeskConfig(
+        JSON.stringify({ deskConfigVersion: 1, identity: { provider: null, [name]: 'v' } }),
+        'desk'
+      )
+      expect(decoded.values, `identity.${name} refuses the whole file`).toBeUndefined()
+      expect(decoded.problems.map((problem) => problem.key)).toContain(`identity.${name}`)
     }
   })
 
@@ -92,12 +130,12 @@ describe('(1) the identity type admits no discriminator — the load-bearing gua
 })
 
 describe('(2) no component branches on the issuer — a WEAK, enumerated guard', () => {
-  it('finds no comparison against an issuer anywhere in shell/ or identity/', () => {
+  it('finds no comparison against an issuer anywhere in shell/, identity/ or routes/', () => {
     // Weak by construction: it looks for the shapes a comparison is usually
     // written in, and a novel spelling walks straight past it. (1) is what
     // actually holds the design in place.
     const comparisons = [/issuer\s*===/, /issuer\s*!==/, /issuerHost\s*===/, /\.includes\(\s*['"]https/]
-    for (const source of sourcesUnder('shell', 'identity')) {
+    for (const source of sourcesUnder('shell', 'identity', 'routes')) {
       if (source.path === 'identity/enforcement.test.ts') continue
       for (const pattern of comparisons) {
         expect(source.text, `${source.path} compares an issuer`).not.toMatch(pattern)
@@ -114,7 +152,7 @@ describe('(3) no issuer literal in the source — a WEAK, enumerated guard', () 
       'https://github.com/Judgment-Pack/judgment-pack-desk',
       'https://github.com/Judgment-Pack/judgment-pack-runtime'
     ]
-    for (const source of sourcesUnder('shell', 'identity', 'config')) {
+    for (const source of sourcesUnder('shell', 'identity', 'config', 'routes')) {
       if (source.path.includes('.test.')) continue
       const literals = [...source.text.matchAll(/https:\/\/[^\s'"`)]+/g)].map((match) => match[0])
       for (const literal of literals) {

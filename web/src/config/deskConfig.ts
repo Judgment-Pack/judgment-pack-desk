@@ -179,7 +179,7 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
   if ('organization' in record) {
     const organization = section(record.organization, 'organization', ['name', 'mark'], problems)
     if (organization) {
-      const name = optionalString(organization.name, 'organization.name', problems)
+      const name = organizationName(organization.name, problems)
       const mark = markValue(organization.mark, problems)
       values.organization = {
         name: name ?? DESK_DEFAULTS.organization.name,
@@ -319,6 +319,29 @@ function optionalString(
     return undefined
   }
   return value
+}
+
+/**
+ * The organization name: a non-empty string, or `null` for the desk's own.
+ *
+ * The same rule `user.displayName` gets, and for the same reason. An empty
+ * string is not a name: it renders as a blank brand link and a `·` monogram,
+ * and it reaches neither the `?? DESK_FALLBACK_NAME` fallback nor a refusal,
+ * so the one case the fallback exists for would be the one case it missed.
+ */
+function organizationName(
+  value: unknown,
+  problems: ConfigProblem[]
+): string | null | undefined {
+  const name = optionalString(value, 'organization.name', problems)
+  if (typeof name === 'string' && name.trim() === '') {
+    problems.push({
+      key: 'organization.name',
+      reason: `must be a non-empty string or null; found ${describe(value)}`
+    })
+    return undefined
+  }
+  return name
 }
 
 function markValue(value: unknown, problems: ConfigProblem[]): string | null | undefined {

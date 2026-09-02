@@ -12,7 +12,7 @@
  * same endpoint, answering the same body the live chassis answered.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { IdentityProvider } from '../identity/IdentityProvider'
@@ -25,7 +25,24 @@ afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
   window.localStorage.clear()
+  document.documentElement.removeAttribute('data-theme')
 })
+
+/** Past the pane record's write debounce, in real time. */
+const PAST_THE_DEBOUNCE = 400
+
+async function wait(ms: number) {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, ms))
+  })
+}
+
+/** Every shell record this browser holds, as `[key, value]`. */
+function shellRecords(): [string, string][] {
+  return Object.keys(window.localStorage)
+    .filter((key) => key.startsWith('jpack-desk:shell:'))
+    .map((key) => [key, window.localStorage.getItem(key) ?? ''])
+}
 
 /**
  * Exactly what the chassis answered on 2026-09-02, running against a copy of
@@ -56,11 +73,19 @@ const PROJECT = stubClient({
   })
 })
 
-/** The file API, answering the one path the shell asks for and nothing else. */
-function serveConfig(answer: unknown, status = 200) {
+/**
+ * The file API, answering the one path the shell asks for and nothing else.
+ *
+ * `delayMs` is not a flourish: the configuration is read over the network and
+ * `list_packs` is not, so which of the two answers first is a race the shell
+ * has to survive in both orders. A stub that always resolves in a microtask
+ * tests only the order that happens to be convenient.
+ */
+function serveConfig(answer: unknown, status = 200, delayMs = 0) {
   const asked: string[] = []
   vi.stubGlobal('fetch', async (url: string) => {
     asked.push(String(url))
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
     return {
       ok: status >= 200 && status < 300,
       status,
@@ -146,6 +171,101 @@ describe('the desk reading jpack-desk.json', () => {
     // The file says the console is open; the viewer has said otherwise.
     await screen.findByRole('link', { name: 'Acme Co.' })
     expect(screen.queryByRole('region', { name: 'Console' })).toBeNull()
+  })
+
+  it('opens the console because the file said so, even when the read is slow', async () => {
+    // The ordering that used to lose. `list_packs` answers immediately and the
+    // file read does not, so the shell's own debounced write landed first — and
+    // a stored record is preferred over the configured one, so the file was
+    // shadowed by a layout the shell had written to itself.
+    serveConfig(LIVE_ANSWER, 200, 600)
+    renderDesk()
+    await wait(PAST_THE_DEBOUNCE)
+    expect(screen.queryByRole('region', { name: 'Console' })).toBeNull()
+    await waitFor(
+      () => expect(screen.getByRole('region', { name: 'Console' })).toBeTruthy(),
+      { timeout: 2000 }
+    )
+  })
+
+  it('writes no record at all for a layout nobody chose', async () => {
+    // Every visit used to store the built-in defaults 250ms after mount. That
+    // record then beat the config on the next visit, which is how a `panes`
+    // block could be permanently inert on a browser that had opened the desk
+    // once before the file existed.
+    serveConfig({ error: 'no such file' }, 404)
+    renderDesk()
+    await screen.findByRole('link', { name: 'judgment‑pack desk' })
+    await wait(PAST_THE_DEBOUNCE)
+    expect(shellRecords()).toEqual([])
+  })
+
+  it('honours a file written after a visit that chose nothing', async () => {
+    // Visit one: no file, and nothing chosen. Visit two: the file says the
+    // console is open. Deterministic — no timing at all.
+    serveConfig({ error: 'no such file' }, 404)
+    const first = renderDesk()
+    await screen.findByRole('link', { name: 'judgment‑pack desk' })
+    await wait(PAST_THE_DEBOUNCE)
+    first.unmount()
+
+    vi.unstubAllGlobals()
+    serveConfig(LIVE_ANSWER)
+    renderDesk()
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Console' })).toBeTruthy())
+  })
+
+  it('still remembers a layout the viewer chose', async () => {
+    // The other half of the same rule: the gate is on *choice*, not on writes.
+    serveConfig({ error: 'no such file' }, 404)
+    const first = renderDesk()
+    await screen.findByRole('link', { name: 'judgment‑pack desk' })
+    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
+    await waitFor(() => expect(shellRecords()).toHaveLength(1))
+    expect(shellRecords()[0]![1]).toContain('"open":true')
+    first.unmount()
+
+    renderDesk()
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Console' })).toBeTruthy())
+  })
+
+  it('applies the configured theme to the root element, and takes it off for system', async () => {
+    serveConfig({
+      ...LIVE_ANSWER,
+      content: JSON.stringify({ deskConfigVersion: 1, appearance: { theme: 'dark', density: 'comfortable' } })
+    })
+    const dark = renderDesk()
+    await waitFor(() => expect(document.documentElement.getAttribute('data-theme')).toBe('dark'))
+    dark.unmount()
+
+    vi.unstubAllGlobals()
+    serveConfig(LIVE_ANSWER)
+    renderDesk()
+    // LIVE_ANSWER asks for `system`, which is the absence of the attribute —
+    // `prefers-color-scheme` answers instead.
+    await screen.findByRole('link', { name: 'Acme Co.' })
+    expect(document.documentElement.hasAttribute('data-theme')).toBe(false)
+  })
+
+  it('says the file was refused somewhere other than Admin', async () => {
+    // A refused file is the built-in defaults, which is right — but that made
+    // it indistinguishable from having no file at all from every surface
+    // except /admin. The strip is always visible and always says which it is.
+    serveConfig({
+      ...LIVE_ANSWER,
+      content: JSON.stringify({ deskConfigVersion: 1, organization: { name: 'Acme Co.' }, colour: 'blue' })
+    })
+    renderDesk()
+    const cue = await screen.findByRole('link', { name: 'configuration refused — see Admin' })
+    expect(cue.getAttribute('href')).toBe('/admin')
+    expect(screen.getByRole('contentinfo').textContent).toContain('configuration refused')
+  })
+
+  it('says nothing about the configuration where there is no problem with it', async () => {
+    serveConfig(LIVE_ANSWER)
+    renderDesk()
+    await screen.findByRole('link', { name: 'Acme Co.' })
+    expect(screen.queryByText(/configuration refused/)).toBeNull()
   })
 
   it('keeps the desk’s own name where the file is absent', async () => {

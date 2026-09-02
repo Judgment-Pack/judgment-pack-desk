@@ -22,6 +22,7 @@
  */
 import { useState } from 'react'
 import { Json, Section } from '../components/primitives'
+import { useHashTarget } from '../shell/useHashTarget'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { DESK_FALLBACK_NAME } from '../config/deskConfig'
 import { useMcp } from '../mcp/McpProvider'
@@ -41,6 +42,10 @@ export function AdminView() {
   const { data } = usePacks()
   const shell = useShellState()
   const [reset, setReset] = useState(false)
+  // The rail's and the user menu's section links carry a hash. Nothing in the
+  // router scrolls to one, and the document is not the scroll container here —
+  // `.desk-main` is — so without this they changed the URL and moved nothing.
+  useHashTarget()
 
   return (
     <article className="detail">
@@ -152,9 +157,19 @@ export function AdminView() {
         <SourceBadge source={sources.appearance} path={path} />
       </p>
       <p className="quiet">
-        Phase A ships the token plumbing for a dark palette and none of its values. The three
-        condition verdict colours carry meaning and cannot be mechanically inverted, so they are
-        authored rather than derived — in their own piece of work.
+        <code>theme</code> is applied: <code>light</code> and <code>dark</code> write{' '}
+        <code>data-theme</code> on the root element and <code>system</code> takes it off, leaving{' '}
+        <code>prefers-color-scheme</code> to answer. <strong>What it selects today is a palette
+        whose values are the light ones.</strong> Phase A ships that plumbing — the two selectors
+        and the attribute — and none of the dark values: the three condition verdict colours carry
+        meaning and cannot be mechanically inverted, and a desk that re-authored its neutrals
+        around them would be half dark. So choosing dark changes the attribute and no colour, and
+        the palette is its own piece of work.
+      </p>
+      <p className="quiet">
+        <code>density</code> is recorded and validated and is read by nothing yet. It is in the
+        schema because a file that carries it should not be refused for it; it is named here
+        because a key that is accepted and does nothing should say so.
       </p>
 
       <h2 id={ADMIN_SECTIONS[5]!.id} className="section-title">
@@ -227,9 +242,16 @@ function SourceBadge({ source, path }: { source: string; path: string }) {
   )
 }
 
-/** The exact JSON to paste, and a button that copies it. */
+/**
+ * The exact JSON to paste, and a button that copies it.
+ *
+ * The button reports what happened rather than what it attempted. There is no
+ * `navigator.clipboard` in an insecure context and the write can be refused by
+ * permission, and a page whose whole argument is that it never states what it
+ * did not observe cannot say "copied" on the strength of having asked.
+ */
 function PasteBlock({ label, json }: { label: string; json: unknown }) {
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<boolean | undefined>(undefined)
   const text = JSON.stringify(json, null, 2)
   return (
     <div>
@@ -237,13 +259,23 @@ function PasteBlock({ label, json }: { label: string; json: unknown }) {
       <button
         type="button"
         onClick={() => {
-          void navigator.clipboard?.writeText(text)
-          setCopied(true)
+          const written = navigator.clipboard?.writeText(text)
+          if (!written) {
+            setCopied(false)
+            return
+          }
+          written.then(
+            () => setCopied(true),
+            () => setCopied(false)
+          )
         }}
       >
         <IconCopy /> Copy
       </button>{' '}
-      {copied && <span className="quiet">copied</span>}
+      {copied === true && <span className="quiet">copied</span>}
+      {copied === false && (
+        <span className="quiet">this browser did not allow the copy — the JSON is above</span>
+      )}
     </div>
   )
 }
