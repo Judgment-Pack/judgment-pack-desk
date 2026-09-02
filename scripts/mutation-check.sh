@@ -338,6 +338,100 @@ fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
   C=web/src/files/client.ts
+  L=web/src/shell/LeftRail.tsx
+  K=web/src/shell/shortcuts.ts
+  P=web/src/shell/paneState.ts
+  S=web/src/shell/StatusStrip.tsx
+  R=web/src/shell/RightPane.tsx
+  M=web/src/mcp/McpProvider.tsx
+  D=web/src/config/deskConfig.ts
+  H=web/src/shell/HeaderBar.tsx
+  U=web/src/identity/UserControl.tsx
+  N=web/src/shell/AppShell.tsx
+  X=web/src/shell/CreatePackDialog.tsx
+  Y=web/src/mcp/capabilities.ts
+
+  # The rail's graph gate. `useConfiguredGraphs` falls back to a whole-project
+  # `experimental_test_graphs` walk against any runtime without the inventory
+  # tool, and in the rail that would fire on every route. Aliased at the import
+  # so the mutation is one line and still compiles.
+  mutate web "rail calls the whole-project graph walk" "$L" \
+    "import { useGraphInventory, usePacks } from '../mcp/queries'" \
+    "import { useConfiguredGraphs as useGraphInventory, usePacks } from '../mcp/queries'"
+  mutate web "shortcuts fire inside the editor" "$K" \
+    "  if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') return true
+  if (element.isContentEditable === true) return true
+  return Boolean(element.closest?.('[contenteditable]:not([contenteditable=\"false\"])'))" \
+    "  return false"
+  mutate web "pane state is not persisted" "$P" \
+    '    const timer = setTimeout(() => writeShellState(storageKey, state), WRITE_DEBOUNCE_MS)' \
+    '    const timer = setTimeout(() => {}, WRITE_DEBOUNCE_MS)'
+  mutate web "a throwing localStorage takes the shell down" "$P" \
+    '  let raw: string | null = null
+  try {
+    raw = window.localStorage.getItem(key)
+  } catch {
+    return undefined
+  }' \
+    '  const raw: string | null = window.localStorage.getItem(key)'
+  mutate web "the reset clears more than one key" "$P" \
+    '    window.localStorage.removeItem(key)' \
+    '    window.localStorage.clear()'
+  mutate web "a record from another shell version is restored anyway" "$P" \
+    '  if (record.v !== RECORD_VERSION) return undefined' \
+    '  if (false) return undefined'
+  mutate web "the restored layout is not clamped to the viewport" "$P" \
+    '    left: { mode: viewport.railIsDrawer ? '"'"'icons'"'"' : merged.left.mode },
+    inspector: { open: viewport.inspectorIsDrawer ? false : merged.inspector.open },' \
+    '    left: merged.left,
+    inspector: merged.inspector,'
+  mutate web "the strip stops naming the runtime" "$S" \
+    '          connected to <code>{server.name}</code> {server.version}' \
+    '          connected to <code>{server.name}</code>'
+  mutate web "main remounts on a pane change" "$N" \
+    '      <main id="main" tabIndex={-1} className="desk-main">' \
+    '      <main id="main" key={String(shell.console.open)} tabIndex={-1} className="desk-main">'
+  mutate web "the closed inspector stays tabbable" "$R" \
+    '      <aside className="desk-inspector" aria-label="Inspector" id="desk-inspector" hidden={!open}>' \
+    '      <aside className="desk-inspector" aria-label="Inspector" id="desk-inspector">'
+  mutate web "the file channel is fed by nothing" "$M" \
+    "        recordFileChange(String((notification.params as { path?: unknown })?.path ?? ''))" \
+    '        void recordFileChange'
+  mutate web "a config problem no longer refuses the whole file" "$D" \
+    '  if (problems.length > 0) return { values: undefined, problems }' \
+    '  if (false) return { values: undefined, problems }'
+  mutate web "an unknown config key is accepted silently" "$D" \
+    "    problems.push({ key, reason: 'unknown key' })" \
+    '    void key'
+  mutate web "identity may be configured in the shared project file" "$D" \
+    "const PROJECT_KEYS: readonly string[] = COMMON_KEYS" \
+    "const PROJECT_KEYS: readonly string[] = [...COMMON_KEYS, 'identity']"
+  mutate web "the provider object admits a discriminator" "$D" \
+    "    ['label', 'issuer', 'clientId', 'scopes', 'audience', 'claims', 'showRemoteAvatar', 'signOut']," \
+    "    ['label', 'issuer', 'clientId', 'scopes', 'audience', 'claims', 'showRemoteAvatar', 'signOut', 'kind', 'mode', 'operator', 'vendor', 'clientSecret']," 
+  mutate web "the header invents an organization name" "$H" \
+    "  const name = config.organization.name ?? DESK_FALLBACK_NAME" \
+    "  const name = config.organization.name ?? 'Acme Co.'"
+  mutate web "the NONE menu offers a Sign out" "$U" \
+    "          <DropdownMenu.Item asChild className=\"desk-menu-item\">
+            <Link to=\"/help\">About</Link>
+          </DropdownMenu.Item>" \
+    "          <DropdownMenu.Item asChild className=\"desk-menu-item\">
+            <Link to=\"/help\">About</Link>
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className=\"desk-menu-item\">Sign out</DropdownMenu.Item>"
+  mutate web "create sends a base digest it did not read" "$X" \
+    "      { path: trimmed, content: starting, baseSha256: '' }," \
+    "      { path: trimmed, content: starting, baseSha256: 'x' },"
+  mutate web "create overrides an existing file" "$X" \
+    "      { path: trimmed, content: starting, baseSha256: '' }," \
+    "      { path: trimmed, content: starting, baseSha256: '', override: true },"
+  mutate web "the dialog invents a starting template" "$X" \
+    "    choice.kind === 'example' ? example.data : choice.kind === 'schema' ? schema.data : ''" \
+    "    choice.kind === 'example' ? example.data : choice.kind === 'schema' ? schema.data : '{\"packId\":\"\"}'"
+  mutate web "the example capability is read from one tool" "$Y" \
+    "    exampleSupported: names.has('list_examples') && names.has('get_example')," \
+    "    exampleSupported: names.has('get_example'),"
 
   mutate web "dirty means 'something was typed'" "$A" \
     '    () => buffer !== undefined && base !== undefined && buffer !== base.content,' \

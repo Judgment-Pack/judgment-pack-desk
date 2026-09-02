@@ -10,6 +10,7 @@ import {
   type FileListing
 } from '../files/client'
 import { useFileContent, useFileListing, useWriteFile } from '../files/queries'
+import { publishDirty, takeRequestedOpen } from '../shell/authorBridge'
 
 /**
  * The authoring shell: pick a file, edit its bytes, save them (issue #14,
@@ -50,6 +51,23 @@ export function AuthorView() {
   // deleted underneath an open editor is the case the editor most needs to
   // survive: unmounting would throw the buffer away before the user is told.
   const listedNow = files.some((file) => file.path === selected)
+
+  // The two lines the shell needs from this view, and nothing else changes
+  // here. `dirty` is component-local and the selection has no URL parameter,
+  // so the rail's dot and the Create-pack dialog's open-the-new-file cannot
+  // work without them.
+  useEffect(() => {
+    publishDirty(dirty)
+    return () => publishDirty(false)
+  }, [dirty])
+  // An effect and not a lazy `useState` initializer: StrictMode invokes an
+  // initializer twice and would swallow a consume-once take in the run whose
+  // state React discards. An effect's mount → cleanup → mount preserves
+  // state, so the second run simply finds nothing to do.
+  useEffect(() => {
+    const requested = takeRequestedOpen()
+    if (requested) setSelected(requested)
+  }, [])
 
   // Two guards, because they cover two different exits and neither covers the
   // other. `beforeunload` is the browser's, and it fires only when the document

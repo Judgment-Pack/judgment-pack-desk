@@ -57,6 +57,23 @@ export interface RuntimeCapabilities {
    * may not take it.
    */
   graphTracesSupported: boolean
+  /**
+   * True when the runtime advertises **both** `list_examples` and
+   * `get_example`.
+   *
+   * The pair, and not either one alone, because `get_example` requires a
+   * `name` argument and the only non-inventing source of a name is
+   * `list_examples`. A runtime advertising one without the other leaves the
+   * desk unable to ask a question it could answer, which is the same
+   * situation as not advertising it at all — and guessing a name would be the
+   * desk asserting what examples a runtime carries.
+   */
+  exampleSupported: boolean
+  /**
+   * True when `get_schema` is advertised. The schema is a reference to author
+   * against, not a pack, and the Create-pack dialog labels it as one.
+   */
+  schemaSupported: boolean
 }
 
 /**
@@ -70,7 +87,9 @@ export const UNKNOWN_CAPABILITIES: RuntimeCapabilities = {
   rehearsalSupported: false,
   graphDocumentSupported: false,
   graphInventorySupported: false,
-  graphTracesSupported: false
+  graphTracesSupported: false,
+  exampleSupported: false,
+  schemaSupported: false
 }
 
 /** One row of a `tools/list` answer, narrowed to what capability reading uses. */
@@ -150,7 +169,9 @@ export function readCapabilities(tools: readonly AdvertisedTool[]): RuntimeCapab
     rehearsalSupported: takes('experimental_evaluate', 'rehearsal'),
     graphDocumentSupported: names.has('experimental_get_graph'),
     graphInventorySupported: names.has('experimental_list_graphs'),
-    graphTracesSupported: takes('experimental_test_graphs', 'include_traces')
+    graphTracesSupported: takes('experimental_test_graphs', 'include_traces'),
+    exampleSupported: names.has('list_examples') && names.has('get_example'),
+    schemaSupported: names.has('get_schema')
   }
 }
 

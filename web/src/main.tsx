@@ -3,7 +3,10 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RouterProvider, createBrowserRouter } from 'react-router-dom'
 import { App } from './App'
+import { DeskConfigProvider } from './config/DeskConfigProvider'
+import { IdentityProvider } from './identity/IdentityProvider'
 import { McpProvider } from './mcp/McpProvider'
+import './shell.css'
 import './styles.css'
 
 // The runtime is a local subprocess reading local files, and the chassis tells
@@ -31,8 +34,16 @@ const router = createBrowserRouter([
   {
     path: '*',
     element: (
+      // The configuration feeds both the identity slot and the pane defaults,
+      // so it is outermost. None of the three is a gate: the config query
+      // fails closed to the built-in defaults, identity is display only, and
+      // the pane state has a real default value of its own.
       <McpProvider>
-        <App />
+        <DeskConfigProvider>
+          <IdentityProvider>
+            <App />
+          </IdentityProvider>
+        </DeskConfigProvider>
       </McpProvider>
     )
   }
