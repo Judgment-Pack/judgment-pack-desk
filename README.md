@@ -323,7 +323,6 @@ red badge in a nav rail would be a gate the runtime never issued.
 |---|---|---|---|
 | Header | Always visible, 48px | Never | `banner` |
 | Left rail | Expanded, 248px | → 56px icon rail; a drawer below 900px | `navigation`, named "Project" |
-| Brand, project chip, connection badge, pane toggles, user control | In the header | — | inside `banner` |
 | Main | Always visible | Never | `main`, `id="main"`, the skip link's target |
 | Inspector | Closed | → 0px; a drawer below 1100px | `complementary`, named "Inspector" |
 | Console | Collapsed to the 28px strip | → the strip, never below it | `region`, named "Console" |
