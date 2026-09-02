@@ -256,16 +256,45 @@ export function ShellStateProvider({
   const [state, setState] = useState<ShellState>(() =>
     initialShellState(readShellState(storageKey), panes, viewport)
   )
-  const seededFor = useRef(storageKey)
+
+  /**
+   * True once the viewer has moved a pane themselves.
+   *
+   * Everything below re-seeds the layout, and this is what stops it doing so
+   * over someone's shoulder. It is a ref rather than state because re-seeding
+   * must not itself be a render.
+   */
+  const touched = useRef(false)
+
+  /**
+   * Why the seed is not once and for all.
+   *
+   * Both of the inputs arrive **after** the first paint. The project key is
+   * unknown until `list_packs` answers with a `configPath`, and the config's
+   * `panes` block is unknown until `jpack-desk.json` has been read over the
+   * file API. A provider that seeded only on mount would therefore honour
+   * neither: the layout in the file would silently never apply, which is worse
+   * than not reading the file at all — the key is in the schema, in Admin and
+   * in the README, and it would do nothing.
+   *
+   * So the seed is re-taken whenever either input actually changes, and never
+   * after the viewer has touched a pane. The signature is the config's own
+   * JSON, because the object identity changes on every query render while its
+   * content does not.
+   */
+  const panesSignature = JSON.stringify(panes ?? null)
+  const seededFrom = useRef(`${storageKey}|${panesSignature}`)
   useEffect(() => {
-    if (seededFor.current === storageKey) return
-    seededFor.current = storageKey
+    const signature = `${storageKey}|${panesSignature}`
+    if (seededFrom.current === signature) return
+    seededFrom.current = signature
+    if (touched.current) return
     setState(initialShellState(readShellState(storageKey), panes, viewport))
-    // `panes` and `viewport` are read at the moment the project changes and are
-    // deliberately not dependencies: a viewport change must not re-clamp a
+    // `panes` and `viewport` are read at the moment the seed is re-taken and
+    // are deliberately not dependencies: a viewport change must not re-clamp a
     // layout the viewer has since chosen by hand.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storageKey])
+  }, [storageKey, panesSignature])
 
   // Debounced, and idempotent: writing the same record twice is a no-op on
   // disk, which is what makes StrictMode's double effect free.
@@ -276,27 +305,37 @@ export function ShellStateProvider({
 
   const toggleRail = useCallback(
     () =>
-      setState((previous) => ({
-        ...previous,
-        left: { mode: previous.left.mode === 'expanded' ? 'icons' : 'expanded' }
-      })),
+      setState((previous) => {
+        touched.current = true
+        return {
+          ...previous,
+          left: { mode: previous.left.mode === 'expanded' ? 'icons' : 'expanded' }
+        }
+      }),
     []
   )
   const toggleInspector = useCallback(
-    () => setState((previous) => ({ ...previous, inspector: { open: !previous.inspector.open } })),
+    () =>
+      setState((previous) => {
+        touched.current = true
+        return { ...previous, inspector: { open: !previous.inspector.open } }
+      }),
     []
   )
   const toggleConsole = useCallback(
     () =>
-      setState((previous) => ({
-        ...previous,
-        console: { ...previous.console, open: !previous.console.open }
-      })),
+      setState((previous) => {
+        touched.current = true
+        return { ...previous, console: { ...previous.console, open: !previous.console.open } }
+      }),
     []
   )
   const setConsoleTab = useCallback(
     (tab: ConsoleTab) =>
-      setState((previous) => ({ ...previous, console: { ...previous.console, tab } })),
+      setState((previous) => {
+        touched.current = true
+        return { ...previous, console: { ...previous.console, tab } }
+      }),
     []
   )
 

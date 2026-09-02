@@ -380,6 +380,13 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "a record from another shell version is restored anyway" "$P" \
     '  if (record.v !== RECORD_VERSION) return undefined' \
     '  if (false) return undefined'
+  mutate web "the configured pane default never arrives" "$P" \
+    '    if (seededFrom.current === signature) return' \
+    '    if (true) return'
+  mutate web "re-seeding overrides a layout the viewer chose" "$P" \
+    '        touched.current = true
+        return { ...previous, console: { ...previous.console, open: !previous.console.open } }' \
+    '        return { ...previous, console: { ...previous.console, open: !previous.console.open } }'
   mutate web "the restored layout is not clamped to the viewport" "$P" \
     '    left: { mode: viewport.railIsDrawer ? '"'"'icons'"'"' : merged.left.mode },
     inspector: { open: viewport.inspectorIsDrawer ? false : merged.inspector.open },' \
