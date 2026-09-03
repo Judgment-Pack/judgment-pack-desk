@@ -167,19 +167,33 @@ export interface TouchedPanes {
 export const NOTHING_TOUCHED: TouchedPanes = { left: false, inspector: false, console: false }
 
 /**
- * Write **only the sections the viewer chose**, and nothing beside them.
+ * Write the sections the viewer chose **this visit**, over the ones they chose
+ * before, and invent none.
  *
- * A record is preferred over the configuration on the next read, so a section
- * serialized on the strength of a sibling's toggle is a built-in default that
- * silently outranks `panes` in `jpack-desk.json` for ever. One global touched
- * bit did exactly that: collapsing the Console stored a rail mode and an
- * Inspector flag nobody had chosen.
+ * Two rules, and each is the correction of the other's failure mode.
+ *
+ * A section must not be serialized because a *sibling* was toggled: a record
+ * is preferred over the configuration on the next read, so a built-in default
+ * written that way outranks `panes` in `jpack-desk.json` for ever. One global
+ * touched bit did exactly that — collapsing the Console stored a rail mode and
+ * an Inspector flag nobody had chosen.
+ *
+ * But a section the viewer chose on an *earlier* visit must not be dropped
+ * either, and starting the outgoing record at `{v}` did precisely that: with a
+ * stored rail and Inspector on disk, toggling only the Console rewrote the key
+ * as `{"v":1,"console":…}` and erased both. So the base is the record already
+ * there — read back through the same validator, so nothing unreadable is
+ * carried forward — and only the currently touched sections override it.
  */
 export function writeShellState(key: string, state: ShellState, touched: TouchedPanes): void {
+  const kept = readShellState(key) ?? {}
+  const left = touched.left ? state.left : kept.left
+  const inspector = touched.inspector ? state.inspector : kept.inspector
+  const consoleSection = touched.console ? state.console : kept.console
   const record: Record<string, unknown> = { v: RECORD_VERSION }
-  if (touched.left) record.left = state.left
-  if (touched.inspector) record.inspector = state.inspector
-  if (touched.console) record.console = state.console
+  if (left !== undefined) record.left = left
+  if (inspector !== undefined) record.inspector = inspector
+  if (consoleSection !== undefined) record.console = consoleSection
   try {
     window.localStorage.setItem(key, JSON.stringify(record))
   } catch {
@@ -312,11 +326,25 @@ export function ShellStateProvider({
 }) {
   const keyResolved = identityIsResolved(projectIdentity)
   const storageKey = shellStateKey(projectKey(projectIdentity))
+
+  /**
+   * The stored record, or nothing at all while the key is provisional.
+   *
+   * **The read is gated as well as the write**, and the write gate alone was
+   * not enough. Until the chassis names the project, `storageKey` is the
+   * literal `default` — a key some earlier build of this desk may well have
+   * written to. Reading it applied one project's layout to another for as long
+   * as the listing was in flight, and *permanently* where the listing failed,
+   * since nothing then arrives to correct it. A layout that belongs to a
+   * project this may not be is not a layout to restore.
+   */
+  const storedForKey = () => (keyResolved ? readShellState(storageKey) : undefined)
+
   // Seeded once per key. StrictMode mounts the provider twice; a lazy
   // initializer runs per mount and reads the same record, which is why the
   // read is idempotent and carries no side effect of its own.
   const [state, setState] = useState<ShellState>(() =>
-    initialShellState(readShellState(storageKey), panes, viewport)
+    initialShellState(storedForKey(), panes, viewport)
   )
 
   /**
@@ -355,15 +383,18 @@ export function ShellStateProvider({
    */
   const panesSignature = JSON.stringify(panes ?? null)
   const viewportSignature = `${viewport.railIsDrawer}|${viewport.inspectorIsDrawer}`
-  const seededFrom = useRef(`${storageKey}|${panesSignature}|${viewportSignature}`)
+  // `keyResolved` is in the signature because it is the moment the record
+  // becomes readable: the seed taken while the key was provisional saw no
+  // record at all, and the one taken after must see this project's.
+  const seededFrom = useRef(`${storageKey}|${keyResolved}|${panesSignature}|${viewportSignature}`)
   useEffect(() => {
-    const signature = `${storageKey}|${panesSignature}|${viewportSignature}`
+    const signature = `${storageKey}|${keyResolved}|${panesSignature}|${viewportSignature}`
     if (seededFrom.current === signature) return
     seededFrom.current = signature
     const chosen = touched.current
     if (chosen.left && chosen.inspector && chosen.console) return
     setState((previous) => {
-      const seeded = initialShellState(readShellState(storageKey), panes, viewport)
+      const seeded = initialShellState(storedForKey(), panes, viewport)
       return {
         left: chosen.left ? previous.left : seeded.left,
         inspector: chosen.inspector ? previous.inspector : seeded.inspector,
@@ -374,7 +405,7 @@ export function ShellStateProvider({
     // are deliberately not dependencies: their signatures above are, and an
     // object identity that changes on every render is not a change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storageKey, panesSignature, viewportSignature])
+  }, [storageKey, keyResolved, panesSignature, viewportSignature])
 
   /**
    * Debounced, idempotent — and **only for the sections the viewer chose**.
@@ -426,6 +457,12 @@ export function ShellStateProvider({
    */
   const resetPanes = useCallback((): ResetOutcome => {
     if (!keyResolved) return 'unresolved'
+    // **Nothing changes unless the record actually went.** Clearing the live
+    // layout on a storage that refused the deletion left Admin saying "the
+    // layout is unchanged" while the panes had visibly moved — and the record
+    // was still there to come back on the next reload. A refusal is now a
+    // no-op in every respect, which is what that sentence claims.
+    if (!resetShellState(storageKey)) return 'refused'
     // Belt and braces, and labelled as such: the state change below re-runs
     // the write effect, whose cleanup cancels this same timer, so breaking
     // these three lines alone leaves every test green. What makes a pending
@@ -436,10 +473,9 @@ export function ShellStateProvider({
       clearTimeout(pending.current)
       pending.current = undefined
     }
-    const cleared = resetShellState(storageKey)
     touched.current = { ...NOTHING_TOUCHED }
     setState(initialShellState(undefined, panes, viewport))
-    return cleared ? 'cleared' : 'refused'
+    return 'cleared'
     // `panes` and `viewport` are read at the moment the reset runs, exactly as
     // the seed reads them; their signatures are the dependencies.
     // eslint-disable-next-line react-hooks/exhaustive-deps

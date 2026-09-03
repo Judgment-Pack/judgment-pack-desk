@@ -355,6 +355,26 @@ describe('the desk reading jpack-desk.json', () => {
     expect(screen.queryByText(/configuration refused/)).toBeNull()
   })
 
+  it('keeps the cue’s full sentence as its accessible name, and a short one on the face', async () => {
+    // The link neither shrinks nor wraps, deliberately — and the full sentence
+    // is wider than a 320px strip has left beside the console button. Both
+    // spellings are in the DOM and CSS paints one; the name is on the link, so
+    // it is the full sentence at every width.
+    serveConfig({ error: 'the file is too large to read' }, 413)
+    renderDesk()
+    const cue = await screen.findByRole('link', {
+      name: 'configuration could not be read — see Admin'
+    })
+    expect(cue.querySelector('.desk-strip-warn-full')!.textContent).toBe(
+      'configuration could not be read — see Admin'
+    )
+    expect(cue.querySelector('.desk-strip-warn-short')!.textContent).toBe('config unread')
+    // Neither span may reach the accessible name, or it would read twice.
+    for (const span of cue.querySelectorAll('span')) {
+      expect(span.getAttribute('aria-hidden')).toBe('true')
+    }
+  })
+
   it('says nothing about the configuration where the file is simply absent', async () => {
     serveConfig({ error: 'no such file' }, 404)
     renderDesk()

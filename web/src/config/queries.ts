@@ -17,7 +17,9 @@
  *
  * **The query never rejects.** A 404, a body that is not JSON, a file over the
  * 4 MiB read cap, a non-UTF-8 file, or no `fetch` stub at all each resolve to
- * the built-in defaults with the reason recorded for Admin. The last case is
+ * the built-in defaults with the reason recorded for Admin — and with the
+ * chassis' status beside it where the chassis answered, so a refusal it issued
+ * is not confused with a request that never reached it. The last case is
  * load-bearing: `testing/harness.tsx` stubs no fetch, and a shell query that
  * rejected would poison every future integration test with an unhandled
  * rejection that has nothing to do with the case under test.
@@ -45,8 +47,15 @@ export async function loadDeskConfig(signal?: AbortSignal): Promise<EffectiveCon
     // socket that never answered — is a configuration that exists and was not
     // honoured, and reporting that as "no file" is the desk describing itself
     // as unconfigured when it is misconfigured.
-    if (cause instanceof FileRequestError && cause.status === 404) {
-      return effectiveConfig(undefined, reasonFor(cause))
+    //
+    // And a status is kept where there was one. A refusal the chassis answered
+    // is a statement about the file; a socket that never answered is not — it
+    // establishes only that absence was *not* established, and attributing the
+    // browser's `Failed to fetch` to the chassis would be the desk sourcing a
+    // sentence to a party that never spoke.
+    if (cause instanceof FileRequestError) {
+      if (cause.status === 404) return effectiveConfig(undefined, reasonFor(cause))
+      return effectiveConfig(undefined, undefined, messageOf(cause), cause.status)
     }
     return effectiveConfig(undefined, undefined, messageOf(cause))
   }

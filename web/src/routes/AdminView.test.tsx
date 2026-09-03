@@ -236,6 +236,22 @@ describe('the Admin page', () => {
     expect(screen.getByText('the file is too large to read')).toBeTruthy()
   })
 
+  it('sources an unread reason to whoever actually said it', () => {
+    // "The reason is the chassis' own" was false for a browser error such as
+    // `Failed to fetch`: nothing answered, so nothing the chassis said is
+    // being quoted, and the read establishes only that absence was not
+    // established.
+    renderAdmin(effectiveConfig(undefined, undefined, 'the file is too large to read', 413))
+    expect(screen.getByText(/The chassis answered/)).toBeTruthy()
+    expect(screen.getByText('413')).toBeTruthy()
+    cleanup()
+
+    renderAdmin(effectiveConfig(undefined, undefined, 'Failed to fetch'))
+    expect(screen.getByText(/The request never got an answer/)).toBeTruthy()
+    expect(screen.getByText(/the reason below is the browser/)).toBeTruthy()
+    expect(screen.queryByText(/The chassis answered/)).toBeNull()
+  })
+
   it('says why no file was read where the file is simply absent', () => {
     renderAdmin(effectiveConfig(undefined, 'no configuration was read: no such file'))
     expect(screen.getByText('no configuration was read: no such file')).toBeTruthy()

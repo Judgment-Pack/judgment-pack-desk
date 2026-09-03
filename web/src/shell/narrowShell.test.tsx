@@ -17,11 +17,18 @@ import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { McpContext } from '../mcp/McpProvider'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
-import { DESK_DEFAULTS, effectiveConfig, type PanesConfig } from '../config/deskConfig'
+import {
+  DESK_DEFAULTS,
+  NOTHING_DECLARED,
+  effectiveConfig,
+  type DeclaredPanes,
+  type PanesConfig
+} from '../config/deskConfig'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { AppShell } from './AppShell'
 import { forgetAuthorBridge } from './authorBridge'
 import { forgetConsole } from './consoleLog'
+import { projectKey, shellStateKey } from './paneState'
 
 const ROOT = '/home/someone/a-project'
 
@@ -97,7 +104,7 @@ function viewport(width: number) {
   }
 }
 
-function renderShell(panes?: PanesConfig) {
+function renderShell(panes?: PanesConfig, declaredPanes: DeclaredPanes = NOTHING_DECLARED) {
   const router = createMemoryRouter(
     [
       {
@@ -107,7 +114,8 @@ function renderShell(panes?: PanesConfig) {
             <DeskConfigFixture
               value={{
                 ...effectiveConfig(undefined),
-                config: { ...DESK_DEFAULTS, panes: panes ?? DESK_DEFAULTS.panes }
+                config: { ...DESK_DEFAULTS, panes: panes ?? DESK_DEFAULTS.panes },
+                declaredPanes
               }}
             >
               <AppShell>
@@ -275,15 +283,30 @@ describe('the shell at 1000px, where the Inspector is a drawer', () => {
     expect(document.getElementById('desk-inspector')!.getAttribute('role')).toBe('dialog')
   })
 
-  it('takes the drawer’s width from the configuration, not from the sheet', async () => {
+  it('takes the drawer’s width from the configuration, where the file states one', async () => {
     viewport(1000)
-    renderShell({
-      ...DESK_DEFAULTS.panes,
-      inspector: { open: false, width: 420 }
-    })
+    renderShell(
+      { ...DESK_DEFAULTS.panes, inspector: { open: false, width: 420 } },
+      { ...NOTHING_DECLARED, inspectorWidth: true }
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Inspector' }))
     const drawer = await screen.findByRole('dialog', { name: 'Inspector' })
     expect(drawer.style.getPropertyValue('--drawer-w')).toBe('420px')
+  })
+
+  it('leaves the drawer on the sheet’s own 320px where the file states none', async () => {
+    // The column's default is 360px and the drawer's has always been 320px.
+    // Supplying the effective width unconditionally moved every unconfigured
+    // desk's drawer to 360px — a behaviour change dressed as applying
+    // configuration. `--drawer-w` is written only where a width was stated.
+    viewport(1000)
+    renderShell()
+    fireEvent.click(screen.getByRole('button', { name: 'Inspector' }))
+    const drawer = await screen.findByRole('dialog', { name: 'Inspector' })
+    expect(drawer.style.getPropertyValue('--drawer-w')).toBe('')
+    // Radix writes `pointer-events` of its own; what must be absent is the
+    // width, so the sheet's `min(var(--drawer-w, 320px), 85vw)` falls back.
+    expect(drawer.getAttribute('style') ?? '').not.toContain('--drawer-w')
   })
 
   it('returns focus to the header toggle when the Inspector drawer closes', async () => {
@@ -325,6 +348,27 @@ describe('crossing a breakpoint', () => {
     await waitFor(() =>
       expect(screen.queryByRole('complementary', { name: 'Inspector' })).toBeNull()
     )
+  })
+
+  it('restores a choice made on an earlier visit when the window widens', async () => {
+    // The narrow→wide leg the whole-record defect broke. The record says the
+    // Inspector is open; a narrow desk clamps it shut, and widening must give
+    // the viewer's own choice back — not the configuration's, and not the
+    // built-in default.
+    window.localStorage.setItem(
+      shellStateKey(projectKey(ROOT)),
+      JSON.stringify({ v: 1, left: { mode: 'icons' }, inspector: { open: true } })
+    )
+    const wide = viewport(800)
+    renderShell()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Console' })).toBeTruthy())
+    expect(screen.queryByRole('complementary', { name: 'Inspector' })).toBeNull()
+
+    wide.resizeTo(1400)
+    await waitFor(() =>
+      expect(screen.getByRole('complementary', { name: 'Inspector' })).toBeTruthy()
+    )
+    expect(screen.getByRole('navigation', { name: 'Project' }).dataset.mode).toBe('icons')
   })
 
   it('leaves a pane the viewer moved exactly where they left it', async () => {

@@ -96,6 +96,29 @@ export interface StorageConfig {
   }
 }
 
+/**
+ * Which pane dimensions the file actually stated.
+ *
+ * `PanesConfig` cannot answer this: every field is filled in from the built-in
+ * defaults, so a 360px Inspector width means "the file said 360" and "the file
+ * said nothing" indistinguishably. That difference is load-bearing in exactly
+ * one place — the Inspector's **drawer** form, whose own baseline is 320px and
+ * not the column's 360px. Supplying the effective width unconditionally
+ * changed the drawer on every desk that configures nothing, which is a
+ * behaviour change nobody asked for dressed as a fix.
+ */
+export interface DeclaredPanes {
+  leftWidth: boolean
+  inspectorWidth: boolean
+  consoleHeight: boolean
+}
+
+export const NOTHING_DECLARED: DeclaredPanes = {
+  leftWidth: false,
+  inspectorWidth: false,
+  consoleHeight: false
+}
+
 export interface DeskConfig {
   deskConfigVersion: 1
   organization: OrganizationConfig
@@ -170,10 +193,12 @@ const IDENTITY_AT_PROJECT =
  * The largest organization mark this will take, in **bytes** of UTF-8.
  *
  * Measured with `TextEncoder`, not `String.length`. The two disagree by up to
- * four to one on a mark carrying non-ASCII — an `<svg>` with a `<title>` in
- * Japanese, a base64 `data:` URI is ASCII and unaffected — and a limit
+ * **three** to one on a mark carrying non-ASCII — an `<svg>` with a `<title>`
+ * in Japanese; a base64 `data:` URI is ASCII and unaffected — and a limit
  * documented as 64KB while counted in UTF-16 code units is a limit nobody can
- * check against the file on disk.
+ * check against the file on disk. Three and not four: a four-byte astral
+ * character costs two UTF-16 code units, so it is 2:1, and the worst case is
+ * the three-byte character that costs one.
  */
 const MAX_MARK_BYTES = 65536
 
@@ -181,6 +206,8 @@ export interface DecodedConfig {
   /** Undefined where anything at all was refused. */
   values: Partial<DeskConfig> | undefined
   problems: ConfigProblem[]
+  /** Which pane dimensions the file stated, as opposed to inheriting. */
+  declaredPanes?: DeclaredPanes
 }
 
 /**
@@ -205,6 +232,7 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
   }
   const record = parsed as Record<string, unknown>
   const problems: ConfigProblem[] = []
+  let declaredPanes: DeclaredPanes = { ...NOTHING_DECLARED }
 
   if (!('deskConfigVersion' in record)) {
     problems.push({ key: 'deskConfigVersion', reason: 'required' })
@@ -293,6 +321,11 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
         'console' in panes
           ? section(panes.console, 'panes.console', ['open', 'height'], problems)
           : undefined
+      declaredPanes = {
+        leftWidth: declares(left, 'width'),
+        inspectorWidth: declares(inspector, 'width'),
+        consoleHeight: declares(consoleSection, 'height')
+      }
       values.panes = {
         left: {
           mode:
@@ -341,8 +374,8 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
     }
   }
 
-  if (problems.length > 0) return { values: undefined, problems }
-  return { values, problems: [] }
+  if (problems.length > 0) return { values: undefined, problems, declaredPanes }
+  return { values, problems: [], declaredPanes }
 }
 
 /**
@@ -459,6 +492,11 @@ function idBase(value: unknown, problems: ConfigProblem[]): string | undefined {
 
 function refuse(problem: ConfigProblem): DecodedConfig {
   return { values: undefined, problems: [problem] }
+}
+
+/** True where a section is present and states this key at all. */
+function declares(section: Record<string, unknown> | undefined, member: string): boolean {
+  return section !== undefined && section[member] !== undefined
 }
 
 function describe(value: unknown): string {
@@ -579,12 +617,44 @@ function boolean(value: unknown, key: string, problems: ConfigProblem[]): boolea
   return value
 }
 
+/**
+ * The bounds each pane dimension is held to, and why they are not `>= 0`.
+ *
+ * A dimension is written into the grid, and the grid is a clipped viewport
+ * frame. **Zero is the dangerous value**, not a harmless one: a pane the file
+ * declares `open` at zero pixels renders as an open pane nobody can see, with
+ * a toggle that appears to do nothing. And an enormous one is the same defect
+ * from the other end — a console of 20,000px pushes the status strip out of a
+ * frame that no longer scrolls, and a 5,000px rail leaves no main at all.
+ *
+ * The minima are the smallest size at which the pane is still the thing it
+ * claims to be: a rail wider than its own 56px icon form, an Inspector wide
+ * enough for a key and a value side by side, a console tall enough for its tab
+ * strip and a line of log. The maxima are generous — this is a refusal of the
+ * absurd, not a design opinion — and the CSS caps in `shell.css` are the
+ * second line: they are viewport-relative, so a legal value on a large monitor
+ * still cannot eat the frame on a small one.
+ */
+export const PANE_BOUNDS: Record<string, { min: number; max: number }> = {
+  'panes.left.width': { min: 160, max: 640 },
+  'panes.inspector.width': { min: 240, max: 720 },
+  'panes.console.height': { min: 80, max: 720 }
+}
+
 function dimension(value: unknown, key: string, problems: ConfigProblem[]): number | undefined {
   if (value === undefined) return undefined
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
     problems.push({
       key,
-      reason: `must be a whole number of pixels, zero or more; found ${describe(value)}`
+      reason: `must be a whole number of pixels; found ${describe(value)}`
+    })
+    return undefined
+  }
+  const bounds = PANE_BOUNDS[key]
+  if (bounds !== undefined && (value < bounds.min || value > bounds.max)) {
+    problems.push({
+      key,
+      reason: `must be between ${bounds.min} and ${bounds.max} pixels inclusive; found ${value}`
     })
     return undefined
   }
@@ -725,6 +795,19 @@ export interface EffectiveConfig {
    * Rendered on Admin and cued on the status strip.
    */
   readFailure?: string
+  /**
+   * The HTTP status the chassis answered with, where it answered at all.
+   *
+   * Absent means the request never got a reply — a dead socket, a refused
+   * connection, an aborted fetch — and that is a different claim: a status
+   * came from the chassis and says something about the file, whereas a
+   * transport failure says only that **absence was not established**. Admin
+   * attributes the reason accordingly rather than calling every one of them
+   * "the chassis' own".
+   */
+  readFailureStatus?: number
+  /** Which pane dimensions the project file stated, rather than inherited. */
+  declaredPanes: DeclaredPanes
 }
 
 export const PROJECT_CONFIG_PATH = 'jpack-desk.json'
@@ -738,7 +821,8 @@ export const PROJECT_CONFIG_PATH = 'jpack-desk.json'
 export function effectiveConfig(
   decoded: DecodedConfig | undefined,
   note?: string,
-  readFailure?: string
+  readFailure?: string,
+  readFailureStatus?: number
 ): EffectiveConfig {
   const values = decoded?.values
   const from = <K extends keyof Omit<DeskConfig, 'deskConfigVersion'>>(key: K): ValueSource =>
@@ -767,6 +851,11 @@ export function effectiveConfig(
     problems: decoded?.problems ?? [],
     path: PROJECT_CONFIG_PATH,
     note,
-    readFailure
+    readFailure,
+    readFailureStatus,
+    // A refused file contributes nothing, its dimensions included: the desk is
+    // on the built-in defaults, and none of them was declared.
+    declaredPanes:
+      values?.panes === undefined ? NOTHING_DECLARED : (decoded?.declaredPanes ?? NOTHING_DECLARED)
   }
 }

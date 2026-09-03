@@ -35,6 +35,22 @@
     --inspector-current: 0px;
     --console-current: 0px;
 
+    /* The caps, and the second line of the same defence.
+       The decoder refuses an absurd pane size by name, which is the right
+       place for it — but a size legal on a 27-inch monitor is still able to
+       eat the frame on a phone, and the frame no longer scrolls. So each pane
+       is additionally capped against the viewport it is actually in: neither
+       side column may take more than 40% of the width, which leaves main at
+       least 20% with both open, and the console may not grow past what leaves
+       `--main-floor` of route visible under the header and above the strip.
+       `max(0px, …)` keeps the track non-negative on a viewport shorter than
+       the reserve, where a bare `calc` would make the whole declaration
+       invalid and take the grid with it. */
+    --main-floor: 120px;
+    --side-cap: 40vw;
+    --console-cap: max(0px, calc(100vh - var(--header-h) - var(--strip-h) - var(--main-floor)));
+    --console-cap: max(0px, calc(100dvh - var(--header-h) - var(--strip-h) - var(--main-floor)));
+
     --z-drawer: 40;
     --z-menu: 50;
     --z-dialog: 60;
@@ -54,8 +70,15 @@
      the panes — every one of which carries `min-height: 0`. */
   .desk {
     display: grid;
-    grid-template-columns: var(--rail-current) minmax(0, 1fr) var(--inspector-current);
-    grid-template-rows: var(--header-h) minmax(0, 1fr) var(--console-current) var(--strip-h);
+    grid-template-columns:
+      min(var(--rail-current), var(--side-cap))
+      minmax(0, 1fr)
+      min(var(--inspector-current), var(--side-cap));
+    grid-template-rows:
+      var(--header-h)
+      minmax(0, 1fr)
+      min(var(--console-current), var(--console-cap))
+      var(--strip-h);
     height: 100vh;
     height: 100dvh;
     overflow: hidden;
@@ -179,6 +202,27 @@
     flex: 0 0 auto;
     white-space: nowrap;
     color: var(--warn);
+  }
+
+  /* Two spellings of one cue, and only one of them is ever painted.
+     `configuration refused — see Admin` is about 263px in the strip's own
+     face; a 320px viewport leaves roughly 232px between the padding, the gap
+     and the console button. Unshrinkable and unwrappable, it painted straight
+     across that button and off the edge of a frame that clips. So the narrow
+     spelling is a short one — and the accessible name is unchanged in both,
+     because it is on the link, not in the text. */
+  .desk-strip-warn-short {
+    display: none;
+  }
+
+  @media (max-width: 599px) {
+    .desk-strip-warn-full {
+      display: none;
+    }
+
+    .desk-strip-warn-short {
+      display: inline;
+    }
   }
 
   /* Header --------------------------------------------------------------- */

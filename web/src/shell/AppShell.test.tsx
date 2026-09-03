@@ -241,6 +241,47 @@ describe('the shell frame', () => {
     ).toEqual([])
   })
 
+  it('keeps a rail and Inspector chosen on an earlier visit through a console-only write', async () => {
+    // The whole-record defect, end to end. With `left` and `inspector` already
+    // on disk, a Console toggle rewrote the key as `{"v":1,"console":…}` — so
+    // the choices survived the visit that made them and nothing after it.
+    window.localStorage.setItem(
+      shellStateKey(projectKey(ROOT)),
+      JSON.stringify({ v: 1, left: { mode: 'icons' }, inspector: { open: true } })
+    )
+    const first = renderShell(
+      <AppShell>
+        <h1>a route</h1>
+      </AppShell>
+    )
+    await waitFor(() =>
+      expect(screen.getByRole('navigation', { name: 'Project' }).dataset.mode).toBe('icons')
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
+    await waitFor(() => {
+      const stored = window.localStorage.getItem(shellStateKey(projectKey(ROOT)))
+      expect(JSON.parse(stored!)).toEqual({
+        v: 1,
+        left: { mode: 'icons' },
+        inspector: { open: true },
+        console: { open: true, tab: 'connection' }
+      })
+    })
+    first.unmount()
+
+    // And the next visit restores all three, which is the point of keeping them.
+    renderShell(
+      <AppShell>
+        <h1>a route</h1>
+      </AppShell>
+    )
+    await waitFor(() =>
+      expect(screen.getByRole('navigation', { name: 'Project' }).dataset.mode).toBe('icons')
+    )
+    expect(screen.getByRole('complementary', { name: 'Inspector' })).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Console' })).toBeTruthy()
+  })
+
   it('stores only the pane the viewer moved, not the two they did not', async () => {
     // One global touched bit made a single toggle speak for all three: the
     // rail's mode and the Inspector's flag were serialized from the built-in

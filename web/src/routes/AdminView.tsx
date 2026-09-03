@@ -12,9 +12,11 @@
  * **Every field is text.** There is no disabled radio group and there are no
  * disabled inputs, deliberately departing from the artboard: a disabled
  * control that will never enable is an affordance that lies about what the
- * page can do. The only control that **changes any state at all** is Panes'
- * reset, which clears one `localStorage` key; the Copy buttons beside each
- * paste block put text on the clipboard and change nothing here.
+ * page can do. The only control that changes **persisted desk-layout state**
+ * is Panes' reset, which clears one `localStorage` key. That is the exact
+ * claim and not a rounding of it: the Copy buttons beside each paste block
+ * change the clipboard, and their own transient "copied" state with it —
+ * calling them state-free was a sentence this file's own `useState` refuted.
  *
  * `runtime.jpackBin` and `project.dir` are **not in the schema at all** —
  * `relay.go` runs the configured binary, so a config-supplied path would be a
@@ -40,7 +42,8 @@ const DESK_FILE_NOTE =
   'chassis tells the page at connect time, is the spec’s open question 2 and is unanswered.'
 
 export function AdminView() {
-  const { config, sources, problems, path, note, readFailure } = useEffectiveConfig()
+  const { config, sources, problems, path, note, readFailure, readFailureStatus } =
+    useEffectiveConfig()
   const { server, known } = useMcp()
   const { data } = usePacks()
   const listing = useFileListing()
@@ -91,8 +94,20 @@ export function AdminView() {
           <strong>The project configuration could not be read, and the desk is on its
           defaults.</strong>{' '}
           This is not the same as having no file: the desk asked for <code>{path}</code> and the
-          read did not succeed, so whatever it says has not been applied. The reason is the
-          chassis' own, verbatim.
+          read did not succeed, so whatever it says has not been applied — and nothing here
+          establishes that the file is absent either.{' '}
+          {readFailureStatus === undefined ? (
+            <>
+              <strong>The request never got an answer</strong>, so the reason below is the
+              browser&apos;s own and not the chassis&apos;. It says the read failed; it says
+              nothing about what is on disk.
+            </>
+          ) : (
+            <>
+              The chassis answered <code>{readFailureStatus}</code>, and the reason below is its
+              own, verbatim.
+            </>
+          )}
           <br />
           <code className="partial-reason">{readFailure}</code>
         </p>
