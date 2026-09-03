@@ -20,9 +20,20 @@
  * `Avatar.Image`: it appears a tick later. Every avatar assertion in this repo
  * therefore uses `findBy*`; a `getBy*` would pass or fail on how long an
  * earlier `await` happened to take.
+ * **A `Select`'s options do not exist until its trigger is opened**, and the
+ * trigger reports the current choice as its own text. So "what does this
+ * select offer" cannot be asked of a closed one — which is why the Create-pack
+ * dialog's template cases open it first, and why the eleven cases written
+ * against a native `<select>` could not be adjusted to it.
+ * **An arrow key moves a `Select`'s focus inside a `setTimeout`.** The handler
+ * on the content computes the candidates and then defers `focusFirst`, so an
+ * assertion on the next line reads the focus the key was pressed from. Every
+ * keyboard case here waits for the move instead. Opening focuses the
+ * *selected* item, not the first one, which is what makes the direction of an
+ * arrow assertion meaningful.
  */
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { Avatar, Collapsible, Dialog, DropdownMenu, Separator, Tabs, Toggle, Tooltip, VisuallyHidden } from 'radix-ui'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { Avatar, Collapsible, Dialog, DropdownMenu, Select, Separator, Tabs, Toggle, Tooltip, VisuallyHidden } from 'radix-ui'
 import { afterEach, describe, expect, it } from 'vitest'
 
 afterEach(cleanup)
@@ -121,6 +132,48 @@ describe('the Radix primitives this shell is built on', () => {
     expect(screen.queryByText('LU')).toBeNull()
     const fallback = await screen.findByText('LU')
     expect(fallback.tagName).toBe('SPAN')
+  })
+
+  it('hides a Select’s options until it opens, and moves focus a tick after an arrow', async () => {
+    render(
+      <Select.Root defaultValue="empty">
+        <Select.Trigger aria-label="Template">
+          <Select.Value />
+        </Select.Trigger>
+        <Select.Portal>
+          <Select.Content>
+            <Select.Viewport>
+              <Select.Item value="minimal">
+                <Select.ItemText>minimal-expense-approval</Select.ItemText>
+              </Select.Item>
+              <Select.Item value="empty">
+                <Select.ItemText>Empty pack</Select.ItemText>
+              </Select.Item>
+            </Select.Viewport>
+          </Select.Content>
+        </Select.Portal>
+      </Select.Root>
+    )
+    const trigger = screen.getByRole('combobox', { name: 'Template' })
+    // Closed: the trigger carries the choice and there are no options at all.
+    expect(trigger.textContent).toContain('Empty pack')
+    expect(screen.queryAllByRole('option')).toHaveLength(0)
+
+    fireEvent.click(trigger)
+    const options = await screen.findAllByRole('option')
+    expect(options.map((option) => option.textContent)).toEqual([
+      'minimal-expense-approval',
+      'Empty pack'
+    ])
+    // Opening focuses the selected item, not the first one.
+    expect(document.activeElement?.textContent).toBe('Empty pack')
+
+    // And the arrow's focus move is deferred — asserted on the next line it
+    // would still read "Empty pack", which is the trap this case records.
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' })
+    await waitFor(() =>
+      expect(document.activeElement?.textContent).toBe('minimal-expense-approval')
+    )
   })
 
   it('gives a Toggle aria-pressed', () => {

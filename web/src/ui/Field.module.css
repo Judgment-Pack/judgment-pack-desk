@@ -1,0 +1,24 @@
+.field {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0 0 1rem;
+}
+
+.label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  overflow-wrap: anywhere;
+}
+
+.error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--danger);
+}
