@@ -1,5 +1,5 @@
 /**
- * Admin: six read-only sections about this machine's desk.
+ * Admin: seven read-only sections about this machine's desk.
  *
  * **Nothing on this page writes configuration**, and that is the decision
  * rather than the state of the work. A real editor needs a `PUT` to a file
@@ -25,6 +25,7 @@ import { Json, Section } from '../components/primitives'
 import { useHashTarget } from '../shell/useHashTarget'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { DESK_FALLBACK_NAME } from '../config/deskConfig'
+import { useFileListing } from '../files/queries'
 import { useMcp } from '../mcp/McpProvider'
 import { usePacks } from '../mcp/queries'
 import { useShellState, resetShellState } from '../shell/paneState'
@@ -40,12 +41,27 @@ export function AdminView() {
   const { config, sources, problems, path } = useEffectiveConfig()
   const { server, known } = useMcp()
   const { data } = usePacks()
+  const listing = useFileListing()
   const shell = useShellState()
   const [reset, setReset] = useState(false)
   // The rail's and the user menu's section links carry a hash. Nothing in the
   // router scrolls to one, and the document is not the scroll container here —
   // `.desk-main` is — so without this they changed the URL and moved nothing.
   useHashTarget()
+
+  /**
+   * Whether the configured pack location has anything in it.
+   *
+   * Derived from the file listing, which reports **regular files only** — so
+   * this can say a location holds files and can never say an empty one exists.
+   * A page whose whole argument is that it does not state what it did not
+   * observe must not claim a directory it has no evidence for, and a listing
+   * that failed or has not answered is not evidence either.
+   */
+  const packDir = config.storage.packs.dir
+  const holdsFiles = (listing.data?.files ?? []).some((file) =>
+    file.path.startsWith(`${packDir}/`)
+  )
 
   return (
     <article className="detail">
@@ -150,6 +166,47 @@ export function AdminView() {
         {ADMIN_SECTIONS[4]!.title}
       </h2>
       <p>
+        Kind: <strong>{config.storage.packs.kind}</strong>{' '}
+        <span className="quiet">a file in this project, written through the file API</span>
+        <br />
+        Packs are written to: <code>{config.storage.packs.dir}</code>{' '}
+        <span className="quiet">{holdsFiles ? 'holds files' : 'no file under it yet — the first pack creates it'}</span>
+        <br />
+        Pack id prefix: <code>{config.storage.packs.idBase}</code>
+        <br />
+        <SourceBadge source={sources.storage} path={path} />
+      </p>
+      <p className="quiet">
+        A new pack's name gives its id, and the id gives its file name inside the location above —
+        so Create a pack asks for a name, a description and a template, and never for a location.
+        The id prefix is normalised to end in a separator when it is read, which is why what is
+        shown here is what is written.
+      </p>
+      <p className="quiet">
+        Two other kinds are named in the schema's refusal and are <strong>not available yet</strong>:{' '}
+        <span>database — coming soon</span>, <span>cloud storage — coming soon</span>. They are not
+        selectable here or anywhere, and they change nothing about creating a pack: this desk creates
+        a pack by writing a file, always. A disabled control offering one would be an affordance
+        lying about what the page can do.
+      </p>
+      <PasteBlock
+        label="Add to jpack-desk.json"
+        json={{
+          deskConfigVersion: 1,
+          storage: {
+            packs: {
+              kind: 'filesystem',
+              dir: 'packs',
+              idBase: 'https://example.invalid/judgment-packs/'
+            }
+          }
+        }}
+      />
+
+      <h2 id={ADMIN_SECTIONS[5]!.id} className="section-title">
+        {ADMIN_SECTIONS[5]!.title}
+      </h2>
+      <p>
         Theme: <code>{config.appearance.theme}</code>
         <br />
         Density: <code>{config.appearance.density}</code>
@@ -172,8 +229,8 @@ export function AdminView() {
         because a key that is accepted and does nothing should say so.
       </p>
 
-      <h2 id={ADMIN_SECTIONS[5]!.id} className="section-title">
-        {ADMIN_SECTIONS[5]!.title}
+      <h2 id={ADMIN_SECTIONS[6]!.id} className="section-title">
+        {ADMIN_SECTIONS[6]!.title}
       </h2>
       <p>
         Rail: <code>{config.panes.left.mode}</code>, {config.panes.left.width}px
@@ -215,6 +272,13 @@ export function AdminView() {
               left: { mode: 'expanded', width: 248 },
               inspector: { open: false, width: 360 },
               console: { open: false, height: 240 }
+            },
+            storage: {
+              packs: {
+                kind: 'filesystem',
+                dir: 'packs',
+                idBase: 'https://example.invalid/judgment-packs/'
+              }
             }
           }}
         />

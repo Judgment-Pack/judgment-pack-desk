@@ -12,7 +12,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
-import { effectiveConfig } from '../config/deskConfig'
+import { decodeDeskConfig, effectiveConfig } from '../config/deskConfig'
 import { McpContext } from '../mcp/McpProvider'
 import { ShellStateProvider } from '../shell/paneState'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
@@ -56,12 +56,89 @@ function renderAdmin(value = effectiveConfig(undefined), path = '/admin') {
 }
 
 describe('the Admin page', () => {
-  it('renders the six sections in order, with those exact headings', () => {
+  it('renders every section in order, with those exact headings and no others', () => {
+    // The whole list, not a slice of it. `slice(0, 6)` said nothing about a
+    // seventh section and nothing about a heading nobody declared; this fails
+    // if a section is added without being declared, declared without being
+    // rendered, or rendered out of order.
     renderAdmin()
     const headings = screen
       .getAllByRole('heading', { level: 2 })
       .map((heading) => heading.textContent)
-    expect(headings.slice(0, 6)).toEqual(ADMIN_SECTIONS.map((section) => section.title))
+    expect(headings).toEqual([
+      ...ADMIN_SECTIONS.map((section) => section.title),
+      // The paste block at the foot, which is not a section of the page.
+      'The whole file'
+    ])
+  })
+
+  it('names the storage kind, the location, the id prefix and where it read them', () => {
+    const decoded = decodeDeskConfig(
+      JSON.stringify({
+        deskConfigVersion: 1,
+        storage: { packs: { dir: 'decisions', idBase: 'https://acme.example/d' } }
+      }),
+      'project'
+    )
+    renderAdmin(effectiveConfig(decoded))
+    expect(screen.getByText('filesystem')).toBeTruthy()
+    expect(screen.getByText('decisions')).toBeTruthy()
+    // The prefix as it will actually be written — normalised at decode.
+    expect(screen.getByText('https://acme.example/d/')).toBeTruthy()
+    expect(screen.getAllByText(/source: project file/).length).toBeGreaterThan(0)
+  })
+
+  it('shows the built-in location and prefix where the project configured none', () => {
+    renderAdmin()
+    expect(screen.getByText('packs')).toBeTruthy()
+    expect(screen.getByText('https://example.invalid/judgment-packs/')).toBeTruthy()
+  })
+
+  it('says a location holds files only where the listing shows one', async () => {
+    // The listing reports regular files only, so the page can say a location
+    // holds files and can never claim an empty one exists.
+    vi.stubGlobal('fetch', async () => ({
+      ok: true,
+      status: 200,
+      statusText: '',
+      text: async () =>
+        JSON.stringify({
+          root: '/p',
+          files: [{ path: 'packs/a.pack.json', bytes: 1, sha256: 'aa' }]
+        })
+    }))
+    renderAdmin()
+    expect(await screen.findByText('holds files')).toBeTruthy()
+  })
+
+  it('says the location is not there yet where the listing shows nothing under it', async () => {
+    vi.stubGlobal('fetch', async () => ({
+      ok: true,
+      status: 200,
+      statusText: '',
+      text: async () =>
+        JSON.stringify({ root: '/p', files: [{ path: 'jpack.json', bytes: 1, sha256: 'aa' }] })
+    }))
+    renderAdmin()
+    expect(
+      await screen.findByText('no file under it yet — the first pack creates it')
+    ).toBeTruthy()
+  })
+
+  it('names the two future kinds as coming soon, as text and not as controls', () => {
+    renderAdmin()
+    expect(screen.getByText('database — coming soon')).toBeTruthy()
+    expect(screen.getByText('cloud storage — coming soon')).toBeTruthy()
+    // Neither is a control, and neither is a disabled one — which the page's
+    // "exactly one interactive control" case is what actually proves.
+    expect(screen.queryByRole('option', { name: /database/ })).toBeNull()
+    expect(screen.queryByRole('radio')).toBeNull()
+  })
+
+  it('says the future kinds change nothing about creating a pack', () => {
+    renderAdmin()
+    expect(screen.getByText(/not available yet/)).toBeTruthy()
+    expect(screen.getByText(/creates a pack by writing a file, always/)).toBeTruthy()
   })
 
   it('carries the standing disclaimer character for character', () => {
