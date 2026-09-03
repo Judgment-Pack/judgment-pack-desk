@@ -46,7 +46,8 @@ describe('the desk-config read', () => {
     const effective = await loadDeskConfig()
     expect(effective.config).toEqual(DESK_DEFAULTS)
     // Not `note`: nothing answered, so nothing said the file is absent.
-    expect(effective.readFailure).toContain('no fetch stub')
+    expect(effective.readFailure!.reason).toContain('no fetch stub')
+    expect(effective.readFailure!.responseReceived).toBe(false)
     expect(effective.note).toBeUndefined()
   })
 
@@ -60,7 +61,9 @@ describe('the desk-config read', () => {
       respond(status, { error: `refused with ${status}` })
       const unread = await loadDeskConfig()
       expect(unread.config, `${status} is still the defaults`).toEqual(DESK_DEFAULTS)
-      expect(unread.readFailure, `${status} is a read failure`).toContain(`refused with ${status}`)
+      expect(unread.readFailure!.reason, `${status} is a read failure`).toContain(
+        `refused with ${status}`
+      )
       expect(unread.note, `${status} is not an absence`).toBeUndefined()
     }
   })
@@ -96,22 +99,46 @@ describe('the desk-config read', () => {
     expect(effective.sources.organization).toBe('project file')
   })
 
-  it('keeps the chassis’ status where the chassis answered, and none where it did not', async () => {
-    // A refusal the chassis issued is a statement about the file; a socket
-    // that never answered is not — it establishes only that absence was not
-    // established. Admin sources the reason accordingly, so the two cases have
-    // to be distinguishable here.
-    respond(413, { error: 'the file is too large to read' })
-    const refused = await loadDeskConfig()
-    expect(refused.readFailureStatus).toBe(413)
-    expect(refused.readFailure).toContain('too large')
+  it('carries the provenance of a failed read rather than inferring it', () => {
+    // Three cases, three provenances, and none of them read off a sibling:
+    // the chassis answered and its `{error}` is quoted; a response arrived
+    // that this desk cannot use, so the sentence is the desk's; or nothing
+    // answered at all.
+    return (async () => {
+      respond(413, { error: 'the file is too large to read' })
+      const refused = await loadDeskConfig()
+      expect(refused.readFailure).toEqual({
+        reason: 'the file is too large to read',
+        responseReceived: true,
+        status: 413,
+        source: 'chassis'
+      })
 
-    vi.stubGlobal('fetch', async () => {
-      throw new TypeError('Failed to fetch')
-    })
-    const unreachable = await loadDeskConfig()
-    expect(unreachable.readFailure).toContain('Failed to fetch')
-    expect(unreachable.readFailureStatus).toBeUndefined()
+      vi.stubGlobal('fetch', async () => {
+        throw new TypeError('Failed to fetch')
+      })
+      const unreachable = await loadDeskConfig()
+      expect(unreachable.readFailure!.responseReceived).toBe(false)
+      expect(unreachable.readFailure!.source).toBe('browser')
+      expect(unreachable.readFailure!.status).toBeUndefined()
+      expect(unreachable.readFailure!.reason).toContain('Failed to fetch')
+    })()
+  })
+
+  it('calls a malformed 200 an answer, because it is one', async () => {
+    // The regression. A `200` whose body is not the envelope this API promises
+    // used to throw a plain `Error`, which lost the status — so provenance
+    // read off "is there a status?" put it in the transport-failure bucket and
+    // Admin said the request never got an answer. It did.
+    respond(200, 'not the envelope this API promises')
+    const malformed = await loadDeskConfig()
+    expect(malformed.config).toEqual(DESK_DEFAULTS)
+    expect(malformed.readFailure!.responseReceived).toBe(true)
+    expect(malformed.readFailure!.status).toBe(200)
+    // The sentence is the desk's own: the chassis sent nothing to quote.
+    expect(malformed.readFailure!.source).toBe('desk')
+    expect(malformed.readFailure!.reason).toContain('not JSON')
+    expect(malformed.note).toBeUndefined()
   })
 
   it('resolves to the defaults when the fetch itself throws', async () => {
@@ -121,7 +148,7 @@ describe('the desk-config read', () => {
     const effective = await loadDeskConfig()
     expect(effective.config).toEqual(DESK_DEFAULTS)
     // A socket that never answered is not a project without a file.
-    expect(effective.readFailure).toContain('Failed to fetch')
+    expect(effective.readFailure!.reason).toContain('Failed to fetch')
     expect(effective.note).toBeUndefined()
   })
 })

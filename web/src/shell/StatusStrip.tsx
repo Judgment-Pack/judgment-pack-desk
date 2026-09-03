@@ -19,11 +19,14 @@
  * the decoder's own refusal, counted and linked to the page that explains it.
  *
  * There is a second cue beside it, for the case the first one missed entirely:
- * a file that **could not be read**. A 413, a permission error, a non-UTF-8
- * body or a dead socket all resolved to the built-in defaults with the reason
- * recorded where nothing rendered it, so a configured desk that could not open
+ * a read that **could not produce a file**. A 413, a permission error, a
+ * non-UTF-8 body or a dead socket all resolved to the built-in defaults with
+ * the reason recorded where nothing rendered it, so a desk that could not open
  * its own file looked exactly like a desk with no file. Absence stays silent —
- * that is the ordinary case — and unreadability does not.
+ * that is the ordinary case — and this does not. The cue says only that the
+ * read failed: a chassis refusal says something about a file, while a socket
+ * that never answered establishes only that absence was not established, and
+ * the strip is not the place to tell those apart. Admin is.
  */
 import { Link } from 'react-router-dom'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
@@ -34,8 +37,12 @@ export const CONFIG_REFUSED_CUE = 'configuration refused — see Admin'
 
 /**
  * The other half of the same cue, and a different sentence because it is a
- * different fact: the file is there and the desk could not read it. "Refused"
- * is a verdict the decoder reached about content; this one never got that far.
+ * different fact: the read did not produce a file, and it was not a 404.
+ * "Refused" is a verdict the decoder reached about content; this one never got
+ * that far. It deliberately does **not** say the file exists — a chassis
+ * refusal says something about a file, but a socket that never answered
+ * establishes only that absence was not established, and one cue covers both.
+ * Admin is where the two are told apart.
  */
 export const CONFIG_UNREAD_CUE = 'configuration could not be read — see Admin'
 

@@ -45,15 +45,52 @@
        `--main-floor` of route visible under the header and above the strip.
        `max(0px, …)` keeps the track non-negative on a viewport shorter than
        the reserve, where a bare `calc` would make the whole declaration
-       invalid and take the grid with it. */
+       invalid and take the grid with it.
+
+       And the console has a **floor that beats the cap**: on a viewport too
+       short for the reserve the cap reaches zero, and a console the viewer
+       has opened would then render at no height at all while its toggle still
+       said expanded. An open console gets at least the smallest height the
+       decoder will accept for one, and main — which scrolls — takes the
+       squeeze instead. Collapsed is still exactly zero, because
+       `--console-current` is `0px` then and `min()` picks it.
+
+       The floor is itself bounded by `--console-room`, the height that
+       actually exists between the header and the strip, and that ordering is
+       the point: a bare 80px floor on a 109px viewport pushed the strip out of
+       the frame — trading the defect this fixes for the one the cap exists to
+       prevent. The strip is never what gives way. Where there is less room
+       than a floor, the console takes all of it.
+
+       **The `dvh` value is behind `@supports` and not a second declaration.**
+       A custom property is not validated at parse time: `100dvh` is a valid
+       token stream to a browser that has never heard of `dvh`, so a second
+       declaration here *wins*, and the invalidity only surfaces later — at
+       substitution, where it takes the whole `grid-template-rows` with it.
+       The usual two-declaration fallback works for a real property like
+       `height` below and does not work here. */
     --main-floor: 120px;
     --side-cap: 40vw;
+    --console-floor: 80px;
+    --console-room: max(0px, calc(100vh - var(--header-h) - var(--strip-h)));
     --console-cap: max(0px, calc(100vh - var(--header-h) - var(--strip-h) - var(--main-floor)));
-    --console-cap: max(0px, calc(100dvh - var(--header-h) - var(--strip-h) - var(--main-floor)));
 
     --z-drawer: 40;
     --z-menu: 50;
     --z-dialog: 60;
+  }
+
+  /* The guarded half of the pair above. A browser with `dvh` measures against
+     the viewport that excludes the mobile URL bar; one without keeps the `vh`
+     value, because this override never reaches it. */
+  @supports (height: 100dvh) {
+    :root {
+      --console-room: max(0px, calc(100dvh - var(--header-h) - var(--strip-h)));
+      --console-cap: max(
+        0px,
+        calc(100dvh - var(--header-h) - var(--strip-h) - var(--main-floor))
+      );
+    }
   }
 
   /* The frame ------------------------------------------------------------ */
@@ -77,7 +114,10 @@
     grid-template-rows:
       var(--header-h)
       minmax(0, 1fr)
-      min(var(--console-current), var(--console-cap))
+      min(
+        var(--console-current),
+        max(var(--console-cap), min(var(--console-floor), var(--console-room)))
+      )
       var(--strip-h);
     height: 100vh;
     height: 100dvh;

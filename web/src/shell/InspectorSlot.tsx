@@ -25,7 +25,15 @@ import { createContext, useContext } from 'react'
 
 export interface InspectorSlot {
   open: boolean
-  /** The pane's width in pixels while open, 0 while closed. */
+  /**
+   * The pane's **measured** width in pixels while open, 0 while closed.
+   *
+   * Measured and not configured, because the two are different numbers: the
+   * sheet caps the configured width against the viewport, and the drawer form
+   * ignores it altogether unless the project file stated one. A route that
+   * lays something out against this needs the width the pane actually has.
+   * It updates as the window is dragged.
+   */
   size: number
   tab: string | null
   setTab: (tab: string | null) => void

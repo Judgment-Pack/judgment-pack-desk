@@ -27,9 +27,10 @@ import { useState } from 'react'
 import { Json, Section } from '../components/primitives'
 import { useHashTarget } from '../shell/useHashTarget'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
-import { DESK_FALLBACK_NAME } from '../config/deskConfig'
+import { DESK_FALLBACK_NAME, PANE_BOUNDS } from '../config/deskConfig'
 import { useMcp } from '../mcp/McpProvider'
 import { usePacks } from '../mcp/queries'
+import { useRenderedPanes, type MeasuredBox } from '../shell/measured'
 import { useShellState } from '../shell/paneState'
 import { IconCopy } from '../shell/icons'
 import type { ResetOutcome } from '../shell/paneState'
@@ -41,11 +42,15 @@ const DESK_FILE_NOTE =
   'chassis tells the page at connect time, is the spec’s open question 2 and is unanswered.'
 
 export function AdminView() {
-  const { config, sources, problems, path, note, readFailure, readFailureStatus } =
-    useEffectiveConfig()
+  const { config, sources, problems, path, note, readFailure } = useEffectiveConfig()
   const { server, known } = useMcp()
   const { data } = usePacks()
   const shell = useShellState()
+  // Re-measured when a pane is toggled: a pane arriving or leaving is not a
+  // resize of anything already observed.
+  const rendered = useRenderedPanes(
+    `${shell.left.mode}|${shell.inspector.open}|${shell.console.open}`
+  )
   const [reset, setReset] = useState<ResetOutcome | undefined>(undefined)
   // The rail's and the user menu's section links carry a hash. Nothing in the
   // router scrolls to one, and the document is not the scroll container here —
@@ -80,20 +85,30 @@ export function AdminView() {
           This is not the same as having no file: the desk asked for <code>{path}</code> and the
           read did not succeed, so whatever it says has not been applied — and nothing here
           establishes that the file is absent either.{' '}
-          {readFailureStatus === undefined ? (
+          {/* Attribution off the carried provenance, never off "is there a
+              status?": a 200 whose body is not the envelope this API promises
+              is an answer whose *sentence* is the desk's own, and inferring
+              it had this page say the request never got an answer. */}
+          {!readFailure.responseReceived ? (
             <>
               <strong>The request never got an answer</strong>, so the reason below is the
-              browser&apos;s own and not the chassis&apos;. It says the read failed; it says
-              nothing about what is on disk.
+              browser&apos;s own. It says the read failed; it says nothing about what is on
+              disk.
+            </>
+          ) : readFailure.source === 'chassis' ? (
+            <>
+              The chassis answered <code>{readFailure.status}</code>, and the reason below is
+              its own, verbatim.
             </>
           ) : (
             <>
-              The chassis answered <code>{readFailureStatus}</code>, and the reason below is its
-              own, verbatim.
+              The chassis answered <code>{readFailure.status}</code>, but the reason below is
+              this desk&apos;s sentence about that answer rather than the chassis&apos; own —
+              it sent nothing this desk could quote.
             </>
           )}
           <br />
-          <code className="partial-reason">{readFailure}</code>
+          <code className="partial-reason">{readFailure.reason}</code>
         </p>
       )}
 
@@ -212,13 +227,53 @@ export function AdminView() {
         {ADMIN_SECTIONS[5]!.title}
       </h2>
       <p>
-        Rail: <code>{config.panes.left.mode}</code>, {config.panes.left.width}px
+        {/* **Configured, and labelled as configured.** These are the decoded
+            numbers before the sheet's viewport caps touch them; the rendered
+            column beside them is what is on screen. Printing one and calling
+            it the other is how an accepted 720px Inspector was reported as
+            720px while rendering 440px. */}
+        Rail: <code>{config.panes.left.mode}</code>, configured{' '}
+        <strong>{config.panes.left.width}px</strong> — rendered{' '}
+        <Rendered box={rendered.rail} axis="width" />
         <br />
-        Inspector: {config.panes.inspector.open ? 'open' : 'closed'}, {config.panes.inspector.width}px
+        Inspector: {config.panes.inspector.open ? 'open' : 'closed'}, configured{' '}
+        <strong>{config.panes.inspector.width}px</strong> — rendered{' '}
+        <Rendered box={rendered.inspector} axis="width" />
         <br />
-        Console: {config.panes.console.open ? 'open' : 'closed'}, {config.panes.console.height}px
+        Console: {config.panes.console.open ? 'open' : 'closed'}, configured{' '}
+        <strong>{config.panes.console.height}px</strong> — rendered{' '}
+        <Rendered box={rendered.console} axis="height" />
         <br />
         <SourceBadge source={sources.panes} path={path} />
+      </p>
+      <p className="quiet">
+        <strong>Configured is not rendered</strong>, and the difference is the frame rather than
+        a rounding. The rendered figures above are measured off this page&apos;s own live panes;
+        a pane that is not on screen at this width says so rather than reporting a number nothing
+        has.
+      </p>
+      <p className="quiet">
+        Each dimension is accepted only inside its range, inclusive at both ends, and a value
+        outside it refuses the whole file by name:
+        <br />
+        {PANE_DIMENSIONS.map((dimension) => (
+          <code key={dimension.key} className="partial-reason">
+            {dimension.key}: {PANE_BOUNDS[dimension.key]!.min}–{PANE_BOUNDS[dimension.key]!.max}px
+          </code>
+        ))}
+      </p>
+      <p className="quiet">
+        A legal value is then <strong>capped against the viewport it is actually in</strong>,
+        because a size that fits a monitor can still eat a phone and this frame does not scroll.
+        The rail and the Inspector each take at most <code>40vw</code>, which leaves the routes at
+        least 20% of the width with both open. The console takes at most what leaves{' '}
+        <code>120px</code> of route under the header and above this strip — <em>except</em> that
+        an open console never falls below <code>80px</code>, the smallest height the schema
+        accepts for one. On a viewport too short for both, the routes give way rather than the
+        console silently becoming a pane of no height with a toggle still saying it is open;
+        and where there is less room between the header and this strip than <code>80px</code>,
+        the console takes all of it and no more, because the strip is the one thing that never
+        leaves the frame.
       </p>
       <p className="quiet">
         Which panes are open is remembered per project on this machine only, under{' '}
@@ -279,6 +334,29 @@ export function AdminView() {
       </Section>
     </article>
   )
+}
+
+/** The three bounded dimensions, in the order the section prints them. */
+const PANE_DIMENSIONS = [
+  { key: 'panes.left.width' },
+  { key: 'panes.inspector.width' },
+  { key: 'panes.console.height' }
+] as const
+
+/**
+ * One measured dimension, or the reason there is not one.
+ *
+ * Three answers and not two. **Absent** is a pane that is not in the document
+ * at this width — the Inspector's drawer form while it is closed — and
+ * **collapsed** is one that is mounted at zero, which is what `hidden` plus
+ * `display: none` produces. Reporting either as `0px` would be a measurement
+ * of something that is not there.
+ */
+function Rendered({ box, axis }: { box: MeasuredBox | undefined; axis: 'width' | 'height' }) {
+  if (box === undefined) return <span className="quiet">not mounted at this width</span>
+  const value = box[axis]
+  if (value === 0) return <span className="quiet">collapsed</span>
+  return <strong>{value}px</strong>
 }
 
 function SourceBadge({ source, path }: { source: string; path: string }) {

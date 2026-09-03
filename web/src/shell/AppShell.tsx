@@ -37,6 +37,7 @@ import { InspectorSlotContext, type InspectorSlot } from './InspectorSlot'
 import { LeftRail } from './LeftRail'
 import { RightPane } from './RightPane'
 import { StatusStrip } from './StatusStrip'
+import { useMeasuredBox } from './measured'
 import { ShellStateProvider, useShellState } from './paneState'
 import { installShortcuts } from './shortcuts'
 import { INSPECTOR_DRAWER_BELOW, RAIL_DRAWER_BELOW, useMediaQuery } from './useMediaQuery'
@@ -117,20 +118,33 @@ function ShellFrame({
    * a detached one.
    */
   const [inspectorTarget, setInspectorTarget] = useState<HTMLElement | null>(null)
+  const [inspectorPane, setInspectorPane] = useState<HTMLElement | null>(null)
   const [inspectorTab, setInspectorTab] = useState<string | null>(null)
   const publishTarget = useCallback((target: HTMLDivElement | null) => {
     setInspectorTarget(target)
   }, [])
+  const publishPane = useCallback((pane: HTMLElement | null) => {
+    setInspectorPane(pane)
+  }, [])
   const inspectorWidth = config.panes.inspector.width
+  /**
+   * **Measured, not configured.** `size` promises a route the pane's width,
+   * and the configured number is not that: the sheet caps it against the
+   * viewport — an accepted 720px renders 440px at 1100px — and the drawer form
+   * ignores it entirely unless the file stated one, rendering at the sheet's
+   * own 320px while Admin said 360. A route laying something out against the
+   * old value was laying it out against a width nothing on screen had.
+   */
+  const inspectorBox = useMeasuredBox(inspectorPane)
   const slot = useMemo<InspectorSlot>(
     () => ({
       open: shell.inspector.open,
-      size: shell.inspector.open ? inspectorWidth : 0,
+      size: shell.inspector.open ? (inspectorBox?.width ?? 0) : 0,
       tab: inspectorTab,
       setTab: setInspectorTab,
       target: inspectorTarget
     }),
-    [shell.inspector.open, inspectorWidth, inspectorTab, inspectorTarget]
+    [shell.inspector.open, inspectorBox, inspectorTab, inspectorTarget]
   )
 
   useEffect(
@@ -200,6 +214,7 @@ function ShellFrame({
           asDrawer={inspectorIsDrawer}
           declaredWidth={declaredPanes.inspectorWidth ? inspectorWidth : undefined}
           publishTarget={publishTarget}
+          publishPane={publishPane}
           openerRef={inspectorOpenerRef}
         />
 

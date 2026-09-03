@@ -373,6 +373,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   T=web/src/shell/BottomPane.tsx
   J=web/src/mcp/queries.ts
   Z=web/src/config/queries.ts
+  O=web/src/shell/measured.ts
 
   # The rail's graph gate. `useConfiguredGraphs` falls back to a whole-project
   # `experimental_test_graphs` walk against any runtime without the inventory
@@ -435,8 +436,11 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '      <main id="main" tabIndex={-1} className="desk-main">' \
     '      <main id="main" key={String(shell.console.open)} tabIndex={-1} className="desk-main">'
   mutate web "the closed inspector stays tabbable" "$R" \
-    '    <aside className="desk-inspector" aria-label="Inspector" id="desk-inspector" hidden={!open}>' \
-    '    <aside className="desk-inspector" aria-label="Inspector" id="desk-inspector">'
+    '      id="desk-inspector"
+      hidden={!open}
+    >' \
+    '      id="desk-inspector"
+    >'
   mutate web "the file channel is fed by nothing" "$M" \
     "        recordFileChange(String((notification.params as { path?: unknown })?.path ?? ''))" \
     '        void recordFileChange'
@@ -843,7 +847,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  const mod = event.ctrlKey || event.metaKey'
 
   # 18. The mark's bound is documented in bytes; counted in UTF-16 code units
-  # it is up to four times looser on a mark that is not ASCII.
+  # it is up to three times looser on a mark that is not ASCII — three and not
+  # four, because a four-byte astral character costs two UTF-16 units.
   mutate web "the mark's size bound is counted in code units" "$D" \
     '  const bytes = new TextEncoder().encode(value).length' \
     '  const bytes = value.length'
@@ -868,7 +873,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
       min(var(--inspector-current), var(--side-cap));' \
     '    grid-template-columns: var(--rail-current) minmax(0, 1fr) var(--inspector-current);'
   mutate web "the console may grow past the route it sits under" "$G" \
-    '      min(var(--console-current), var(--console-cap))' \
+    '      min(
+        var(--console-current),
+        max(var(--console-cap), min(var(--console-floor), var(--console-room)))
+      )' \
     '      var(--console-current)'
   mutate web "the caps reserve no room for main at all" "$G" \
     '    --main-floor: 120px;
@@ -927,7 +935,94 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '    if (cause instanceof FileRequestError) {' \
     '    if (false) {'
   mutate web "Admin sources every unread reason to the chassis" "$V" \
-    '          {readFailureStatus === undefined ? (' \
+    "          ) : readFailure.source === 'chassis' ? (" \
+    '          ) : true ? ('
+
+  # ---- Codex round 3 -----------------------------------------------------
+
+  # 1. A custom property is not validated at parse time, so a second `dvh`
+  # declaration wins on a browser that has never heard of `dvh` — and the
+  # invalidity then surfaces at substitution, taking grid-template-rows with it.
+  mutate web "the dvh cap is a second declaration rather than a guarded one" "$G" \
+    '  @supports (height: 100dvh) {
+    :root {
+      --console-room: max(0px, calc(100dvh - var(--header-h) - var(--strip-h)));
+      --console-cap: max(
+        0px,
+        calc(100dvh - var(--header-h) - var(--strip-h) - var(--main-floor))
+      );
+    }
+  }' \
+    ''
+  mutate web "the vh cap is the one that never applies" "$G" \
+    '    --console-cap: max(0px, calc(100vh - var(--header-h) - var(--strip-h) - var(--main-floor)));' \
+    '    --console-cap: max(0px, calc(100dvh - var(--header-h) - var(--strip-h) - var(--main-floor)));'
+
+  # 2. On a viewport too short for the reserve the cap reaches zero, and an
+  # open console renders at no height with a toggle still saying it is open.
+  mutate web "an open console can be capped down to no height at all" "$G" \
+    '        max(var(--console-cap), min(var(--console-floor), var(--console-room)))' \
+    '        var(--console-cap)'
+  # The other half, and the one the first fix got wrong on its own: a bare
+  # 80px floor on a 109px viewport pushed the strip out of a frame that does
+  # not scroll — trading this defect for the one the cap exists to prevent.
+  mutate web "the console floor may push the strip out of the frame" "$G" \
+    '        max(var(--console-cap), min(var(--console-floor), var(--console-room)))' \
+    '        max(var(--console-cap), var(--console-floor))'
+  mutate web "the room the console may take reserves main's share too" "$G" \
+    '    --console-room: max(0px, calc(100vh - var(--header-h) - var(--strip-h)));' \
+    '    --console-room: max(0px, calc(100vh - var(--header-h) - var(--strip-h) - var(--main-floor)));'
+  mutate web "the console floor is smaller than a console" "$G" \
+    '    --console-floor: 80px;' \
+    '    --console-floor: 0px;'
+
+  # 3. `slot.size` promises a route the pane's width; the configured number is
+  # capped by the sheet and ignored outright by the drawer form.
+  mutate web "the slot reports a configured width the pane does not have" "$N" \
+    '      size: shell.inspector.open ? (inspectorBox?.width ?? 0) : 0,' \
+    '      size: shell.inspector.open ? inspectorWidth : 0,'
+  mutate web "the pane is never published for measurement" "$E" \
+    '      ref={publishPane}
+      className="desk-inspector"' \
+    '      className="desk-inspector"'
+  mutate web "a measured box is taken once and never again" "$O" \
+    '    const observer = new ResizeObserver(read)
+    observer.observe(element)
+    return () => observer.disconnect()' \
+    ''
+
+  # 4. Admin printed a decoded number with nothing said about what bounds it,
+  # what the frame does to it, or what is actually on screen.
+  mutate web "Admin names no accepted range at all" "$V" \
+    "const PANE_DIMENSIONS = [
+  { key: 'panes.left.width' },
+  { key: 'panes.inspector.width' },
+  { key: 'panes.console.height' }
+] as const" \
+    'const PANE_DIMENSIONS = [] as const'
+  mutate web "Admin calls a configured number the rendered one" "$V" \
+    '        Rail: <code>{config.panes.left.mode}</code>, configured{'"'"' '"'"'}
+        <strong>{config.panes.left.width}px</strong> — rendered{'"'"' '"'"'}
+        <Rendered box={rendered.rail} axis="width" />' \
+    '        Rail: <code>{config.panes.left.mode}</code>, {config.panes.left.width}px'
+  mutate web "an absent pane is reported as a pane of zero" "$V" \
+    "  if (box === undefined) return <span className=\"quiet\">not mounted at this width</span>" \
+    '  if (box === undefined) return <strong>0px</strong>'
+
+  # 5. A 200 whose body is not the envelope this API promises is still an
+  # answer — losing its status put it in the transport-failure bucket.
+  mutate web "a malformed answer loses the fact that it was an answer" "$C" \
+    '      throw new FileRequestError(
+        response.status,
+        `the desk answered ${response.status} with text that is not JSON`,
+        '"'"'desk'"'"'
+      )' \
+    '      throw new Error(`the desk answered ${response.status} with text that is not JSON`)'
+  mutate web "every answered reason is quoted as the chassis' own" "$C" \
+    "    throw new FileRequestError(response.status, message, 'chassis')" \
+    "    throw new FileRequestError(response.status, message, 'desk')"
+  mutate web "provenance is inferred from the status again" "$V" \
+    '          {!readFailure.responseReceived ? (' \
     '          {false ? ('
 fi
 

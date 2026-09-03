@@ -98,7 +98,10 @@ describe('no pane may eat the frame, whatever the file says', () => {
     expect(columns).toContain('min(var(--rail-current), var(--side-cap))')
     expect(columns).toContain('min(var(--inspector-current), var(--side-cap))')
     const rows = /grid-template-rows:([^;]+);/.exec(rule)![1]!
-    expect(rows).toContain('min(var(--console-current), var(--console-cap))')
+    const normalised = rows.replace(/\s+/g, ' ')
+    expect(normalised).toContain(
+      'min( var(--console-current), max(var(--console-cap), min(var(--console-floor), var(--console-room))) )'
+    )
   })
 
   it('reserves main’s share in the caps themselves', () => {
@@ -107,19 +110,66 @@ describe('no pane may eat the frame, whatever the file says', () => {
     expect(root).toMatch(/--side-cap:\s*40vw;/)
     // And the console stops where 120px of route would otherwise go.
     expect(root).toMatch(/--main-floor:\s*120px;/)
-    // `max(0px, …)` keeps the track non-negative on a viewport shorter than
-    // the reserve; a bare `calc` there would be invalid and take the grid
-    // with it. Declared twice so a browser without `dvh` keeps the `vh` one.
+    // Exactly one unguarded `--console-cap`, and it is the `vh` one. A second
+    // declaration here is not a fallback: a custom property is not validated
+    // at parse time, so `100dvh` is a valid token stream to a browser that has
+    // never heard of `dvh` and would *win* — the invalidity then surfaces at
+    // substitution and takes the whole `grid-template-rows` with it.
     const caps = [...root.matchAll(/--console-cap:\s*([^;]+);/g)].map((m) => m[1]!.trim())
-    expect(caps).toHaveLength(2)
-    expect(caps.every((cap) => cap.startsWith('max(0px,'))).toBe(true)
+    expect(caps).toHaveLength(1)
+    expect(caps[0]!.startsWith('max(0px,')).toBe(true)
     expect(caps[0]).toContain('100vh')
-    expect(caps[1]).toContain('100dvh')
-    for (const cap of caps) {
-      expect(cap).toContain('var(--header-h)')
-      expect(cap).toContain('var(--strip-h)')
-      expect(cap).toContain('var(--main-floor)')
-    }
+    expect(caps[0]).not.toContain('100dvh')
+    expect(caps[0]).toContain('var(--header-h)')
+    expect(caps[0]).toContain('var(--strip-h)')
+    expect(caps[0]).toContain('var(--main-floor)')
+  })
+
+  it('puts the dvh value behind @supports, where a fallback actually works', () => {
+    // The two-declaration fallback is correct for a real property and wrong
+    // for a custom one, which is the whole of this rule.
+    const guard = SHEET.indexOf('@supports (height: 100dvh)')
+    expect(guard, 'the dvh override is guarded').toBeGreaterThan(-1)
+    const block = SHEET.slice(guard, SHEET.indexOf('\n  }\n', guard))
+    expect(block).toContain('--console-cap')
+    expect(block).toContain('100dvh')
+    // And `height` itself keeps the plain pair, because there the fallback is
+    // the mechanism: an unsupported `100dvh` makes that declaration invalid at
+    // parse time and the `100vh` before it stands.
+    expect(values('.desk', 'height')).toEqual(['100vh', '100dvh'])
+  })
+
+  it('gives an open console a floor the cap cannot take away', () => {
+    // On a viewport too short for the reserve the cap reaches zero, and a
+    // console the viewer has opened would render at no height at all while
+    // its toggle still said expanded. The floor is the decoder's own minimum
+    // for a console; main scrolls and takes the squeeze.
+    expect(declarations(':root')).toMatch(/--console-floor:\s*80px;/)
+    // Collapsed is still exactly zero: `--console-current` is `0px` then, and
+    // `min()` picks it over the floor.
+    expect(declarations(':root')).toMatch(/--console-current:\s*0px;/)
+  })
+
+  it('bounds the floor by the room that actually exists, so the strip never goes', () => {
+    // The floor without this traded one defect for the other: 80px on a 109px
+    // viewport pushed the status strip out of a frame that does not scroll,
+    // which is exactly what the cap exists to prevent. `--console-room` is
+    // everything between the header and the strip, and the floor cannot ask
+    // for more than that.
+    const room = [...declarations(':root').matchAll(/--console-room:\s*([^;]+);/g)].map((m) =>
+      m[1]!.trim()
+    )
+    expect(room).toHaveLength(1)
+    expect(room[0]!.startsWith('max(0px,')).toBe(true)
+    expect(room[0]).toContain('100vh')
+    expect(room[0]).toContain('var(--header-h)')
+    expect(room[0]).toContain('var(--strip-h)')
+    // It reserves nothing for main — main is what gives way here.
+    expect(room[0]).not.toContain('var(--main-floor)')
+    // And its dvh twin is guarded, on the same terms as the cap's.
+    const guard = SHEET.indexOf('@supports (height: 100dvh)')
+    const block = SHEET.slice(guard, SHEET.indexOf('\n  }\n', guard))
+    expect(block).toContain('--console-room')
   })
 })
 
