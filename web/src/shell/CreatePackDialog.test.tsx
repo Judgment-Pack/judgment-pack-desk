@@ -12,8 +12,9 @@
  * dialog asks, not writes it makes, and counting them would make "exactly two
  * writes" mean nothing.
  */
-import { QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
@@ -85,15 +86,27 @@ interface Sent {
  * or `undefined` for a project that has none. `answer` lets one case make a
  * chosen write fail.
  */
+type Refusal = { status: number; body: unknown }
+
 function serveProject(
   options: {
     files?: string[]
+    listing?: Refusal
     project?: string | undefined
-    answer?: (path: string, index: number) => { status: number; body: unknown } | undefined
+    /**
+     * Successive answers to `GET jpack.json`, for the cases where the file is
+     * not what this dialog last read. Falls back to `project` once exhausted,
+     * which is every other case.
+     */
+    reads?: (string | Refusal)[]
+    answer?: (path: string, index: number) => Refusal | undefined
+    /** Awaited before any write answers, so a test can act mid-flight. */
+    gate?: () => Promise<void>
   } = {}
 ) {
   const files = options.files ?? ['jpack.json']
   const sent: Sent[] = []
+  let reads = 0
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const text = String(url)
     const ok = (body: unknown) => ({
@@ -102,36 +115,40 @@ function serveProject(
       statusText: '',
       text: async () => JSON.stringify(body)
     })
+    const refuse = (refusal: Refusal) => ({
+      ok: false,
+      status: refusal.status,
+      statusText: '',
+      text: async () => JSON.stringify(refusal.body)
+    })
     if (text.includes('/api/files')) {
+      if (options.listing) return refuse(options.listing)
       return ok({ root: '/p', files: files.map((path) => ({ path, bytes: 1, sha256: 'aa' })) })
     }
     if (init?.method !== 'PUT') {
       // A read. `jpack-desk.json` is asked for by the config provider on every
       // render and is deliberately absent here: the dialog runs on defaults.
       if (text.includes(`path=${encodeURIComponent('jpack.json')}`) || text.includes('path=jpack.json')) {
-        if (options.project === undefined) {
+        const answer = options.reads?.[reads] ?? options.project
+        reads += 1
+        if (answer === undefined) {
           return { ok: false, status: 404, statusText: 'Not Found', text: async () => '{"error":"no such file in the project: jpack.json"}' }
         }
+        if (typeof answer !== 'string') return refuse(answer)
         return ok({
           path: 'jpack.json',
-          bytes: options.project.length,
+          bytes: answer.length,
           sha256: PROJECT_SHA,
-          content: options.project
+          content: answer
         })
       }
       return { ok: false, status: 404, statusText: 'Not Found', text: async () => '{"error":"no such file"}' }
     }
     const body = JSON.parse(String(init.body)) as Record<string, unknown>
     sent.push({ method: init.method, path: String(body.path), body })
+    if (options.gate) await options.gate()
     const chosen = options.answer?.(String(body.path), sent.length - 1)
-    if (chosen) {
-      return {
-        ok: false,
-        status: chosen.status,
-        statusText: '',
-        text: async () => JSON.stringify(chosen.body)
-      }
-    }
+    if (chosen) return refuse(chosen)
     return ok({
       path: body.path,
       bytes: 2,
@@ -151,34 +168,81 @@ const FULL = stubClient({
 
 const FULL_CAPS = { exampleSupported: true, schemaSupported: true }
 
+/**
+ * The dialog, mounted the way the rail mounts it.
+ *
+ * `open` is state here rather than a constant, because the rail renders
+ * `{creating && <CreatePackDialog …/>}` — a dismissal unmounts the component
+ * and takes its alert off the screen with it. A harness that pinned `open`
+ * open could not tell a dialog that refuses to be dismissed mid-flight from
+ * one that is simply never asked.
+ */
+function Mounted({
+  stub,
+  overrides,
+  deskConfig,
+  onClose
+}: {
+  stub: ReturnType<typeof stubClient>
+  overrides: Partial<McpConnection>
+  deskConfig: ReturnType<typeof effectiveConfig>
+  onClose: (open: boolean) => void
+}) {
+  const [open, setOpen] = useState(true)
+  return (
+    <McpContext.Provider value={connected({ client: stub.client, ...overrides })}>
+      <DeskConfigFixture value={deskConfig}>
+        {open && (
+          <CreatePackDialog
+            open
+            onOpenChange={(next) => {
+              onClose(next)
+              setOpen(next)
+            }}
+          />
+        )}
+      </DeskConfigFixture>
+    </McpContext.Provider>
+  )
+}
+
 function renderDialog(
   stub: ReturnType<typeof stubClient> = FULL,
   overrides: Partial<McpConnection> = FULL_CAPS,
   deskConfig = effectiveConfig(undefined)
 ) {
   const seen: string[] = []
+  const closed: boolean[] = []
   const router = createMemoryRouter(
     [
       {
         path: '*',
         element: (
-          <McpContext.Provider value={connected({ client: stub.client, ...overrides })}>
-            <DeskConfigFixture value={deskConfig}>
-              <CreatePackDialog open onOpenChange={() => {}} />
-            </DeskConfigFixture>
-          </McpContext.Provider>
+          <Mounted
+            stub={stub}
+            overrides={overrides}
+            deskConfig={deskConfig}
+            onClose={(next) => closed.push(next)}
+          />
         )
       }
     ],
     { initialEntries: ['/'] }
   )
   router.subscribe((state) => seen.push(state.location.pathname))
+  const queryClient: QueryClient = testQueryClient()
+  const invalidated: unknown[][] = []
+  const realInvalidate = queryClient.invalidateQueries.bind(queryClient)
+  queryClient.invalidateQueries = ((filters?: { queryKey?: unknown[] }) => {
+    if (filters?.queryKey) invalidated.push(filters.queryKey)
+    return realInvalidate(filters as never)
+  }) as typeof queryClient.invalidateQueries
   const result = render(
-    <QueryClientProvider client={testQueryClient()}>
+    <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>
   )
-  return { ...result, seen }
+  return { ...result, seen, closed, invalidated }
 }
 
 const createButton = () => screen.getByRole('button', { name: 'Create pack' }) as HTMLButtonElement
@@ -262,14 +326,72 @@ describe('the templates it offers', () => {
     ])
   })
 
-  it('offers the empty pack alone, and asks nothing, where neither tool is advertised', async () => {
+  it('offers no template at all where neither tool is advertised, and says so', async () => {
+    // The empty pack is the *schema's* skeleton. Without a schema there is
+    // nothing to derive one from, and what the dialog used to offer under that
+    // name was `{}` with a title, an id and a version written onto it — a file
+    // with no `specVersion`, which nothing can read as a pack. It was written,
+    // reported as a success, and called invalid the moment anything checked it.
     serveProject({ project: PROJECT })
     const bare = stubClient({})
     renderDialog(bare, { exampleSupported: false, schemaSupported: false })
+    expect(await screen.findByText('There is no template to start from here.')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Vendor Onboarding' } })
+    expect(createButton().disabled).toBe(true)
+    expect(bare.calls).toEqual([])
+  })
+
+  it('offers the empty pack where the schema is advertised and no examples are', async () => {
+    serveProject({ project: PROJECT })
+    const schemaOnly = stubClient({ get_schema: () => ({ text: SCHEMA }) })
+    renderDialog(schemaOnly, { exampleSupported: false, schemaSupported: true })
     fireEvent.click(screen.getByLabelText('Template'))
     const options = await screen.findAllByRole('option')
     expect(options.map((option) => option.textContent)).toEqual(['Empty pack'])
-    expect(bare.calls).toEqual([])
+  })
+
+  it('says an empty pack is a start rather than letting it be discovered', async () => {
+    // The skeleton carries the schema's required members and nothing else, so
+    // `outcomes` is `[]` against `minItems: 2` and `decision` is `{}` against
+    // its own required members. The runtime reports it incomplete, correctly,
+    // and this line is what stops that being a surprise.
+    serveProject({ project: PROJECT })
+    const schemaOnly = stubClient({ get_schema: () => ({ text: SCHEMA }) })
+    renderDialog(schemaOnly, { exampleSupported: false, schemaSupported: true })
+    const hint = await screen.findByText(
+      'An empty pack is a start, not a finished one: checks report it incomplete until you fill it in.'
+    )
+    expect(screen.getByLabelText('Template').getAttribute('aria-describedby')).toContain(hint.id)
+  })
+
+  it('says less when a template is refused with no reason given', async () => {
+    // `get_example` answering `isError` with no text used to print "the runtime
+    // refused get_example" to whoever was creating a pack.
+    serveProject({ project: PROJECT })
+    const refusing = stubClient({
+      list_examples: () => ({ text: EXAMPLES }),
+      get_example: () => ({ text: '', isError: true }),
+      get_schema: () => ({ text: SCHEMA })
+    })
+    const { container } = renderDialog(refusing)
+    expect(await screen.findByText('This template could not be read.')).toBeTruthy()
+    expect(container.textContent).not.toMatch(/get_example|runtime/i)
+    expect(createButton().disabled).toBe(true)
+  })
+
+  it('carries the refusal’s own sentence where it gave one', async () => {
+    serveProject({ project: PROJECT })
+    const refusing = stubClient({
+      list_examples: () => ({ text: EXAMPLES }),
+      get_example: () => ({ text: 'no example is named minimal-expense-approval', isError: true }),
+      get_schema: () => ({ text: SCHEMA })
+    })
+    renderDialog(refusing)
+    expect(
+      await screen.findByText(
+        'This template could not be read — no example is named minimal-expense-approval'
+      )
+    ).toBeTruthy()
   })
 })
 
@@ -397,6 +519,53 @@ describe('what it says when it cannot', () => {
     expect(sent).toEqual([])
   })
 
+  it('does not call a listing that failed a project with no jpack.json in it', async () => {
+    // `retry: false` means one failed request is the final answer, so the
+    // dialog used to enable Create, take the empty listing as fact, and tell
+    // the user their project has no jpack.json — a false statement about a
+    // project it never read.
+    const sent = serveProject({ listing: { status: 503, body: { error: 'the project could not be read' } } })
+    renderDialog()
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('This project’s files could not be read, so nothing was created.')
+    expect(alert.textContent).toContain('the project could not be read')
+    expect(alert.textContent).not.toContain('has no jpack.json')
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Vendor Onboarding' } })
+    expect(createButton().disabled).toBe(true)
+    expect(sent).toEqual([])
+  })
+
+  it('says a name is taken rather than quoting an editor’s override advice', async () => {
+    // The chassis answers a 409 with "reload it, or write again with override",
+    // which is what it tells an editor. This dialog has no override to offer
+    // and the person in front of it has a name to change.
+    const sent = serveProject({
+      project: PROJECT,
+      answer: (path) =>
+        path === 'jpack.json'
+          ? undefined
+          : {
+              status: 409,
+              body: {
+                error: 'the file on disk is not the file this edit started from; reload it, or write again with override',
+                path: 'packs/vendor-onboarding.pack.json',
+                exists: true,
+                actualSha256: 'bb'
+              }
+            }
+    })
+    renderDialog()
+    await waitFor(() => expect(screen.getByLabelText('Template').textContent).toContain('minimal'))
+    await nameIt('Vendor Onboarding')
+    fireEvent.click(createButton())
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe(
+      'The pack could not be created. Something is already there under that name — try another.'
+    )
+    expect(alert.textContent).not.toMatch(/override|reload/i)
+    expect(sent).toHaveLength(1)
+  })
+
   it('carries the refusal the write answered with, and sends no second write', async () => {
     const sent = serveProject({
       project: PROJECT,
@@ -463,5 +632,198 @@ describe('what it says when it cannot', () => {
     )
     expect(screen.getByText('could not stage the write')).toBeTruthy()
     expect(sent).toHaveLength(2)
+  })
+})
+
+/**
+ * The order of the sequence, which is the whole of what makes it safe.
+ *
+ * Everything that can refuse a create is asked before the first write. With
+ * the project file read *after* the pack was written, three separate defects
+ * were reachable: an id that was free when the dialog opened and taken by the
+ * time it was used silently replaced the entry that had it; an unreadable or
+ * unparseable configuration produced an orphan for a reason known in advance;
+ * and none of it was discoverable from the dialog, which reported success.
+ */
+describe('what it settles before it writes anything', () => {
+  const WITH_VENDOR = `{
+  "configVersion": "2",
+  "packs": {
+    "sanctions-screening": {
+      "path": "sanctions-screening-0.1.0.pack.json"
+    },
+    "vendor-onboarding": {
+      "path": "vendor-onboarding-0.1.0.pack.json",
+      "description": "Whether a vendor may be onboarded."
+    }
+  }
+}
+`
+
+  it('refuses an id that was taken while this dialog was open, and writes nothing', async () => {
+    // Not contrived: the runtime's own fixture project registers
+    // `vendor-onboarding` at `vendor-onboarding-0.1.0.pack.json` — its
+    // documented filename convention, which this desk deliberately does not
+    // write into. So the *file* does not collide, the write succeeds, and
+    // `withPack` replaces the key: the original document stays on disk, named
+    // by nothing, and the dialog reports success and navigates to it.
+    const sent = serveProject({ project: PROJECT, reads: [PROJECT, WITH_VENDOR] })
+    const { seen } = renderDialog()
+    await waitFor(() => expect(screen.getByLabelText('Template').textContent).toContain('minimal'))
+    await nameIt('Vendor Onboarding')
+    fireEvent.click(createButton())
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe('This project already has a pack called vendor-onboarding.')
+    expect(sent).toEqual([])
+    expect(seen).not.toContain('/packs/vendor-onboarding')
+  })
+
+  it('refuses a file another entry already claims, even with nothing on disk', async () => {
+    const claimed = `{
+  "configVersion": "2",
+  "packs": {
+    "vendor-onboarding-v2": {
+      "path": "packs/vendor-onboarding.pack.json"
+    }
+  }
+}
+`
+    const sent = serveProject({ project: PROJECT, reads: [PROJECT, claimed] })
+    renderDialog()
+    await waitFor(() => expect(screen.getByLabelText('Template').textContent).toContain('minimal'))
+    await nameIt('Vendor Onboarding')
+    fireEvent.click(createButton())
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe('Another pack in this project already uses that file.')
+    expect(sent).toEqual([])
+  })
+
+  it('leaves no orphan when jpack.json cannot be parsed', async () => {
+    const sent = serveProject({ project: PROJECT, reads: [PROJECT, '{ "packs": broken'] })
+    renderDialog()
+    await waitFor(() => expect(screen.getByLabelText('Template').textContent).toContain('minimal'))
+    await nameIt('Vendor Onboarding')
+    fireEvent.click(createButton())
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain(
+      'This project’s jpack.json could not be read, so a new pack cannot be registered. Nothing was created.'
+    )
+    expect(alert.textContent).toContain('not valid JSON')
+    expect(sent).toEqual([])
+  })
+
+  it('leaves no orphan when jpack.json cannot be read', async () => {
+    const sent = serveProject({
+      project: PROJECT,
+      reads: [PROJECT, { status: 403, body: { error: 'permission denied' } }]
+    })
+    renderDialog()
+    await waitFor(() => expect(screen.getByLabelText('Template').textContent).toContain('minimal'))
+    await nameIt('Vendor Onboarding')
+    fireEvent.click(createButton())
+    expect(await screen.findByText('permission denied')).toBeTruthy()
+    expect(sent).toEqual([])
+  })
+
+  it('says a template it cannot use is a template, and sends nothing', async () => {
+    const sent = serveProject({ project: PROJECT })
+    const broken = stubClient({
+      list_examples: () => ({ text: EXAMPLES }),
+      get_example: () => ({ text: 'not a document' }),
+      get_schema: () => ({ text: SCHEMA })
+    })
+    renderDialog(broken)
+    await waitFor(() => expect(screen.getByLabelText('Template').textContent).toContain('minimal'))
+    await nameIt('Vendor Onboarding')
+    fireEvent.click(createButton())
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('This template could not be used.')
+    expect(sent).toEqual([])
+  })
+})
+
+describe('what it does while it is working', () => {
+  /** A write held open until the test lets it answer. */
+  function held() {
+    let release!: () => void
+    const promise = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    return { gate: () => promise, release }
+  }
+
+  it('cannot be dismissed mid-sequence, so the residue is reported to somebody', async () => {
+    // The rail unmounts this component when it closes. Escape between the two
+    // writes used to take the only place the outcome is stated off the screen,
+    // leaving a pack on disk that nothing names and nobody was told about.
+    const { gate, release } = held()
+    const sent = serveProject({
+      project: PROJECT,
+      gate,
+      answer: (path) =>
+        path === 'jpack.json' ? { status: 500, body: { error: 'could not stage the write' } } : undefined
+    })
+    const { closed } = renderDialog()
+    await waitFor(() => expect(screen.getByLabelText('Template').textContent).toContain('minimal'))
+    await nameIt('Vendor Onboarding')
+    fireEvent.click(createButton())
+    await waitFor(() => expect(sent).toHaveLength(1))
+
+    fireEvent.keyDown(document.body, { key: 'Escape', code: 'Escape' })
+    expect(closed).toEqual([])
+    expect(screen.getByRole('dialog')).toBeTruthy()
+
+    release()
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain(
+      'The pack was created but could not be registered. Nothing else was changed.'
+    )
+  })
+
+  it('disables Cancel while it works, so the affordance agrees with the behaviour', async () => {
+    const { gate, release } = held()
+    const sent = serveProject({ project: PROJECT, gate })
+    renderDialog()
+    await waitFor(() => expect(screen.getByLabelText('Template').textContent).toContain('minimal'))
+    await nameIt('Vendor Onboarding')
+    const cancel = screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement
+    expect(cancel.disabled).toBe(false)
+    fireEvent.click(createButton())
+    await waitFor(() => expect(cancel.disabled).toBe(true))
+    release()
+    await waitFor(() => expect(sent).toHaveLength(2))
+  })
+})
+
+describe('what it invalidates', () => {
+  it('invalidates the configuration it just amended, not only the listing', async () => {
+    // Without `['desk-file', 'jpack.json']`, the cache the collision check
+    // reads stays stale by exactly the entry that was just added.
+    const sent = serveProject({ project: PROJECT })
+    const { invalidated } = renderDialog()
+    await waitFor(() => expect(screen.getByLabelText('Template').textContent).toContain('minimal'))
+    await nameIt('Vendor Onboarding')
+    fireEvent.click(createButton())
+    await waitFor(() => expect(sent).toHaveLength(2))
+    await waitFor(() => expect(invalidated).toContainEqual(['desk-file', 'jpack.json']))
+    expect(invalidated).toContainEqual(['desk-files'])
+    expect(invalidated).toContainEqual(['list_packs'])
+  })
+
+  it('invalidates the listing after a refused write, so a retry is refused in the field', async () => {
+    const sent = serveProject({
+      project: PROJECT,
+      answer: (path) =>
+        path === 'jpack.json'
+          ? undefined
+          : { status: 500, body: { error: 'could not stage the write' } }
+    })
+    const { invalidated } = renderDialog()
+    await waitFor(() => expect(screen.getByLabelText('Template').textContent).toContain('minimal'))
+    await nameIt('Vendor Onboarding')
+    fireEvent.click(createButton())
+    await screen.findByRole('alert')
+    expect(sent).toHaveLength(1)
+    expect(invalidated).toContainEqual(['desk-files'])
   })
 })
