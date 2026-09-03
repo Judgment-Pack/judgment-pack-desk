@@ -367,6 +367,24 @@ func TestRetargetedProjectRootIsNotAdopted(t *testing.T) {
 	if status, _ := getJSON(t, ts, "/api/file?token="+testToken+"&path=theirs.json"); status == http.StatusOK {
 		t.Fatal("a file from the retargeted tree was readable")
 	}
+
+	// Writing, and creating the directories it needs. `createParents` is a
+	// fourth verb on the same held descriptor, so it is pinned by the same
+	// argument as the other three — and a create that rejoined the configured
+	// pathname would build the tree in whichever directory the symlink now
+	// names. That is the one thing a string-based mkdir would get wrong and no
+	// other test here would see.
+	if status, body := putJSON(t, ts, WriteRequest{
+		Path: "made/here.json", Content: `{"mine":true}`, CreateParents: true,
+	}); status != http.StatusOK {
+		t.Fatalf("write through the pinned root: status %d, %v", status, body)
+	}
+	if _, err := os.Stat(filepath.Join(real, "made", "here.json")); err != nil {
+		t.Fatalf("the file was not created in the tree the desk was given: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(other, "made")); err == nil {
+		t.Fatal("a directory was created in the retargeted tree")
+	}
 }
 
 /* Authorization ----------------------------------------------------------- */

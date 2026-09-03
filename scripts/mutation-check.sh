@@ -340,7 +340,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # `s.cfg.ProjectDir`.
   mutate go "the listing classifies by pathname, not through the root" "$F" \
     '			childInfo, lerr := s.root.Lstat(osPath(child))' \
-    '			childInfo, lerr := os.Lstat(filepath.Join(s.projectDir, osPath(child)))'
+    '			childInfo, lerr := os.Lstat(filepath.Join(s.cfg.ProjectDir, osPath(child)))'
   mutate go "the project root is re-resolved per request" "$F" \
     '	f, err := s.root.OpenFile(osPath(clean), os.O_RDONLY|openNonBlocking, 0)' \
     '	f, err := os.OpenFile(filepath.Join(s.cfg.ProjectDir, osPath(clean)), os.O_RDONLY|openNonBlocking, 0)'
@@ -351,7 +351,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '		case derr == nil:'
   mutate go "createParents resolves a pathname instead of the pinned root" "$F" \
     '			if err := s.root.MkdirAll(osPath(parent), 0o777); err != nil {' \
-    '			if err := os.MkdirAll(filepath.Join(s.projectDir, osPath(parent)), 0o777); err != nil {'
+    '			if err := os.MkdirAll(filepath.Join(s.cfg.ProjectDir, osPath(parent)), 0o777); err != nil {'
   mutate go "parents are created before the stale-digest check" "$F" \
     '	if !req.Override && !strings.EqualFold(strings.TrimSpace(req.BaseSHA256), actual) {' \
     '	if parent := path.Dir(clean); parent != "." && req.CreateParents {
@@ -696,9 +696,6 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the select reports back a value nobody offered" "$SEL" \
     '        if (offered.has(next)) onValueChange(next)' \
     '        onValueChange(next)'
-  mutate web "the select's trigger reads its label off an item that may never mount" "$SEL" \
-    '          {options.find((option) => option.value === value)?.label}' \
-    '          {undefined}'
   # Admin's storage section, and the decoder behind it.
   mutate web "Admin claims a location the listing does not show" "$V" \
     '  const holdsFiles = (listing.data?.files ?? []).some((file) =>

@@ -11,14 +11,6 @@
  * this file, and it is why an assertion about what a select offers has to open
  * it first; `testing/radixGround.test.tsx` writes that down once.
  *
- * **The trigger's text is passed in, not read off an item.** By default
- * `Select.Value` renders the selected *item's* text, which requires that item
- * to have mounted — and items mount only while the list is open. So a value
- * that changes while the list is closed (a default that arrives once the
- * runtime has answered, say) leaves the trigger blank until the first open.
- * Resolving the label from `options` here removes that dependency entirely:
- * the trigger says what is selected whether or not it has ever been opened.
- *
  * **A value the caller never offered is not a choice, and is dropped.** This
  * is not defensiveness; it is repairing a specific, reproducible Radix
  * behaviour that only appears *inside a form*. There, `Select.Root` mirrors its
@@ -72,9 +64,7 @@ export function Select({
       }}
     >
       <RadixSelect.Trigger id={id} className={styles.trigger} {...described}>
-        <RadixSelect.Value placeholder={placeholder}>
-          {options.find((option) => option.value === value)?.label}
-        </RadixSelect.Value>
+        <RadixSelect.Value placeholder={placeholder} />
         <RadixSelect.Icon className={styles.icon}>
           <IconChevronDown />
         </RadixSelect.Icon>
