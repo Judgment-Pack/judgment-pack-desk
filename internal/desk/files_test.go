@@ -1820,3 +1820,284 @@ func TestUnreadableFileIsNotCalledAContainmentFailure(t *testing.T) {
 		t.Fatalf("the listing did not report it honestly: %v", listing["partial"])
 	}
 }
+
+/* createParents ------------------------------------------------------------
+   A write may ask for its missing directories to be made, inside the same
+   pinned root and after every check an ordinary write already passes. The six
+   cases below are the whole containment argument, one property each. */
+
+// putRaw sends a body this test wrote by hand.
+//
+// putJSON marshals a WriteRequest, and `createParents` has no `omitempty`, so
+// it always reaches the wire — as `false` where the caller set nothing. That is
+// the same thing the server sees for an absent member, but "the same thing" is
+// the claim under test, so the absent case is sent literally absent.
+func putRaw(t *testing.T, ts *httptest.Server, body string) (int, map[string]any) {
+	t.Helper()
+	r, err := http.NewRequest(http.MethodPut, ts.URL+"/api/file?token="+testToken, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(r)
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	defer resp.Body.Close()
+	var decoded map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&decoded)
+	return resp.StatusCode, decoded
+}
+
+// dirExists reports whether one project-relative path is a directory, read
+// through the pinned root rather than by joining a pathname — the same handle
+// the create went through, so the assertion and the act agree about which
+// filesystem they are talking about.
+func dirExists(t *testing.T, s *Server, rel string) bool {
+	t.Helper()
+	info, err := s.root.Stat(osPath(rel))
+	if err != nil {
+		return false
+	}
+	return info.IsDir()
+}
+
+func TestWriteCreatesNestedParentsInsideTheRoot(t *testing.T) {
+	s, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", "{}")
+
+	status, body := putJSON(t, ts, WriteRequest{
+		Path: "a/b/c.pack.json", Content: `{"id":"c"}`, CreateParents: true,
+	})
+	if status != http.StatusOK {
+		t.Fatalf("create with parents: status %d, %v", status, body)
+	}
+	if body["created"] != true {
+		t.Fatalf("the write did not report creating the file: %v", body)
+	}
+	// Both levels, not only the last one.
+	for _, dir := range []string{"a", "a/b"} {
+		if !dirExists(t, s, dir) {
+			t.Fatalf("%s was not created through the root", dir)
+		}
+	}
+	// And the read-back is the bytes that were sent.
+	if body["content"] != `{"id":"c"}` {
+		t.Fatalf("read-back is not what was written: %v", body["content"])
+	}
+	on, err := os.ReadFile(filepath.Join(project, "a", "b", "c.pack.json"))
+	if err != nil || string(on) != `{"id":"c"}` {
+		t.Fatalf("on disk: %q, %v", string(on), err)
+	}
+}
+
+// TestWriteWithoutCreateParentsStillRefusesAMissingDirectory is the row that
+// proves the opt-in is real. Without it, "createParents is honoured" and "every
+// write creates its parents" are the same passing suite.
+func TestWriteWithoutCreateParentsStillRefusesAMissingDirectory(t *testing.T) {
+	for _, shape := range []struct {
+		name string
+		body string
+	}{
+		{"member absent", `{"path":"a/b/c.pack.json","content":"{}","baseSha256":""}`},
+		{"member false", `{"path":"a/b/c.pack.json","content":"{}","baseSha256":"","createParents":false}`},
+	} {
+		t.Run(shape.name, func(t *testing.T) {
+			s, ts, project := filesServer(t)
+			writeProjectFile(t, project, "jpack.json", "{}")
+
+			status, body := putRaw(t, ts, shape.body)
+			if status != http.StatusNotFound {
+				t.Fatalf("status %d, %v", status, body)
+			}
+			// The existing sentence, unchanged.
+			message, _ := body["error"].(string)
+			if message != "the directory a/b does not exist in the project; create it first" {
+				t.Fatalf("the refusal changed: %q", message)
+			}
+			if dirExists(t, s, "a") {
+				t.Fatal("a directory was created by a request that did not ask for one")
+			}
+		})
+	}
+}
+
+func TestCreateParentsRefusesAnEscape(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on Windows")
+	}
+
+	t.Run("lexical", func(t *testing.T) {
+		_, ts, project := filesServer(t)
+		writeProjectFile(t, project, "jpack.json", "{}")
+		outside := t.TempDir()
+
+		for _, rel := range []string{"../outside/x.json", "a/../../outside/x.json"} {
+			status, body := putJSON(t, ts, WriteRequest{
+				Path: rel, Content: "{}", CreateParents: true,
+			})
+			if status != http.StatusForbidden {
+				t.Fatalf("%s: status %d, %v", rel, status, body)
+			}
+			if message, _ := body["error"].(string); message != "path is not inside the project" {
+				t.Fatalf("%s: %q", rel, message)
+			}
+		}
+		// Nothing was made at either escape target — neither beside the project
+		// nor in the directory the paths named.
+		if entries, err := os.ReadDir(outside); err == nil && len(entries) != 0 {
+			t.Fatalf("the escape target was populated: %v", entries)
+		}
+		if _, err := os.Stat(filepath.Join(filepath.Dir(project), "outside")); err == nil {
+			t.Fatal("a directory was created beside the project root")
+		}
+	})
+
+	// The swap a time-of-check attack performs: the path resolves, and the
+	// component it resolved through becomes a symlink out of the root before
+	// anything acts on it. MkdirAll goes through the same held descriptor as
+	// every other operation here, so it cannot follow the new link.
+	t.Run("swapped between resolve and act", func(t *testing.T) {
+		_, ts, project := filesServer(t)
+		if err := os.Mkdir(filepath.Join(project, "a"), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		outside := t.TempDir()
+		var once sync.Once
+		testHookAfterResolve = func(string) {
+			once.Do(func() {
+				victim := filepath.Join(project, "a")
+				if err := os.RemoveAll(victim); err != nil {
+					t.Errorf("remove: %v", err)
+					return
+				}
+				if err := os.Symlink(outside, victim); err != nil {
+					t.Errorf("symlink: %v", err)
+				}
+			})
+		}
+		t.Cleanup(func() { testHookAfterResolve = nil })
+
+		status, _ := putJSON(t, ts, WriteRequest{
+			Path: "a/b/c.pack.json", Content: "{}", CreateParents: true,
+		})
+		if status == http.StatusOK {
+			t.Fatal("the write followed the swapped directory")
+		}
+		if _, err := os.Stat(filepath.Join(outside, "b")); err == nil {
+			t.Fatal("a directory was created outside the project")
+		}
+	})
+}
+
+// TestCreateParentsRefusesASymlinkedParent covers both halves, because this
+// desk's rule is stricter than os.Root's: a link pointing *inside* the root is
+// refused too, and only asserting the outward one would let the inward case
+// quietly start creating directories through a link.
+func TestCreateParentsRefusesASymlinkedParent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on Windows")
+	}
+
+	t.Run("pointing outside the root", func(t *testing.T) {
+		_, ts, project := filesServer(t)
+		outside := t.TempDir()
+		if err := os.Symlink(outside, filepath.Join(project, "packs")); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+		status, body := putJSON(t, ts, WriteRequest{
+			Path: "packs/x/y.pack.json", Content: "{}", CreateParents: true,
+		})
+		if status != http.StatusForbidden {
+			t.Fatalf("status %d, %v", status, body)
+		}
+		if message, _ := body["error"].(string); !strings.Contains(message, "passes through a symbolic link") {
+			t.Fatalf("%q", message)
+		}
+		if _, err := os.Stat(filepath.Join(outside, "x")); err == nil {
+			t.Fatal("a directory was created through the link")
+		}
+	})
+
+	t.Run("pointing inside the root", func(t *testing.T) {
+		s, ts, project := filesServer(t)
+		if err := os.Mkdir(filepath.Join(project, "real"), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.Symlink("real", filepath.Join(project, "packs")); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+		status, body := putJSON(t, ts, WriteRequest{
+			Path: "packs/x/y.pack.json", Content: "{}", CreateParents: true,
+		})
+		if status != http.StatusForbidden {
+			t.Fatalf("status %d, %v", status, body)
+		}
+		if message, _ := body["error"].(string); !strings.Contains(message, "passes through a symbolic link") {
+			t.Fatalf("%q", message)
+		}
+		if dirExists(t, s, "real/x") {
+			t.Fatal("a directory was created through a link that points inside the root")
+		}
+	})
+}
+
+// TestCreateParentsDoesNotCreateOnARefusedWrite pins the ordering: the create
+// sits after the conditional commit, so a write refused as stale leaves the
+// tree exactly as it found it.
+func TestCreateParentsDoesNotCreateOnARefusedWrite(t *testing.T) {
+	s, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", "{}")
+
+	status, body := putJSON(t, ts, WriteRequest{
+		Path:          "a/b/c.pack.json",
+		Content:       "{}",
+		BaseSHA256:    "0000000000000000000000000000000000000000000000000000000000000000",
+		CreateParents: true,
+	})
+	if status != http.StatusConflict {
+		t.Fatalf("status %d, %v", status, body)
+	}
+	if dirExists(t, s, "a") {
+		t.Fatal("a refused write created its parent directories anyway")
+	}
+}
+
+// TestCreateParentsRefusesAParentThatIsAFile pins that a regular file is never
+// created over, and — the part worth writing down — that the refusal does not
+// come from the parent block at all.
+//
+// Opening `packs/x.pack.json` where `packs` is a regular file is ENOTDIR, and
+// `readThroughRoot` maps everything that is neither "not found" nor a
+// permission error onto the one containment refusal. So the current-bytes read
+// answers 403 before the parent block is reached, and it did so before
+// `createParents` existed — the probe that established this ran against the
+// unmutated chassis. The assertion is therefore "identical with and without the
+// member", which is the property that matters: the opt-in buys no new power
+// over a path that is already refused.
+func TestCreateParentsRefusesAParentThatIsAFile(t *testing.T) {
+	for _, ask := range []bool{false, true} {
+		t.Run(fmt.Sprintf("createParents=%v", ask), func(t *testing.T) {
+			_, ts, project := filesServer(t)
+			abs := writeProjectFile(t, project, "packs", "not a directory")
+
+			status, body := putJSON(t, ts, WriteRequest{
+				Path: "packs/x.pack.json", Content: "{}", CreateParents: ask,
+			})
+			if status != http.StatusForbidden {
+				t.Fatalf("status %d, %v", status, body)
+			}
+			if message, _ := body["error"].(string); message != "path is not inside the project" {
+				t.Fatalf("the refusal changed: %q", message)
+			}
+			// The file is a file still: nothing replaced it, and nothing was
+			// created under a name that is not a directory.
+			if on, err := os.ReadFile(abs); err != nil || string(on) != "not a directory" {
+				t.Fatalf("the file was touched: %q, %v", string(on), err)
+			}
+			info, err := os.Stat(abs)
+			if err != nil || info.IsDir() {
+				t.Fatalf("the file became a directory: %v, %v", info, err)
+			}
+		})
+	}
+}

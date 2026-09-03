@@ -158,6 +158,43 @@ type WriteRequest struct {
 	// default: a client that always sent it would have no concurrency story at
 	// all, only an unstated one.
 	Override bool `json:"override"`
+	// CreateParents asks for the missing directories of Path to be created
+	// inside the project before the file is written. Opt-in per request and
+	// never a default: with it absent this API creates no directory at all,
+	// which is what every existing caller and every existing test still gets.
+	//
+	// Containment is the same held descriptor the rest of this file uses, and
+	// the create is reached only after every check a write already passes:
+	//
+	//   - Root.MkdirAll resolves each component against the *os.Root opened
+	//     once when the server was built. It takes no pathname and re-derives
+	//     nothing, so the thing checked is the thing created, and a component
+	//     that would resolve outside the root errors rather than creating.
+	//   - wireRelativePath has already refused an absolute path, a `..`, a NUL,
+	//     a backslash, a colon, `.` itself, a staging name, and any component
+	//     named by an excluded directory. A directory this API would refuse to
+	//     write a file into is therefore one it will not create either.
+	//   - refuseSymlinkedPath has already walked the existing components
+	//     through the root and refused the whole path if any of them is a
+	//     symlink — whatever it points at, including a target inside the root,
+	//     because this desk's rule is stricter than os.Root's. That walk stops
+	//     at the first component that does not exist, which is exactly where
+	//     MkdirAll begins: a symlinked parent is refused before one directory
+	//     is created, and there is no window in which a create follows a link.
+	//   - It sits after the stale-digest check and inside the per-path write
+	//     lock, so a write refused as stale creates nothing and two concurrent
+	//     creates of one path are serialized exactly as two saves are.
+	//
+	// **There is no unwind.** If the directories are created and the write then
+	// fails, an empty directory is left behind. Removing it would need a delete
+	// verb this API does not have, applied to a directory another process may
+	// have populated in the interval; an empty directory is inert and the next
+	// attempt uses it. The mode is 0o777 masked by the process umask — the
+	// ordinary convention for a directory in the user's own project, which is
+	// committed to their repository and read by their other tools. 0o700 would
+	// be this desk setting access control on the user's project, which it does
+	// nowhere else.
+	CreateParents bool `json:"createParents"`
 }
 
 // conflict is the body of a refused stale write. Both digests are reported so
@@ -721,9 +758,20 @@ func (s *Server) commitWriteLocked(clean string, req WriteRequest) (int, any) {
 	// for.
 	if parent := path.Dir(clean); parent != "." {
 		info, derr := s.root.Stat(osPath(parent))
-		if derr != nil || !info.IsDir() {
+		switch {
+		case derr == nil && info.IsDir():
+			// Already there. Nothing to do, and nothing to create.
+		case derr == nil || !req.CreateParents:
+			// Present but not a directory, or missing with no request to make
+			// it: the existing refusal, unchanged. `derr == nil` here is
+			// "exists and is not a directory" — a regular file cannot be turned
+			// into a directory, so CreateParents is not a licence to try.
 			return http.StatusNotFound, map[string]string{"error": fmt.Sprintf(
 				"the directory %s does not exist in the project; create it first", parent)}
+		default:
+			if err := s.root.MkdirAll(osPath(parent), 0o777); err != nil {
+				return http.StatusInternalServerError, errorBody(err)
+			}
 		}
 	}
 
