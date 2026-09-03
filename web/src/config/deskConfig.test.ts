@@ -7,9 +7,13 @@
  * wrote it, as a setting that does not work rather than a spelling that is
  * wrong. And it would half-honour a file with a pasted secret in it.
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   DESK_DEFAULTS,
+  EXCLUDED_DIRECTORIES,
+  STAGING_PREFIX,
   decodeDeskConfig,
   effectiveConfig,
   type ConfigProblem
@@ -284,6 +288,40 @@ describe('the storage member', () => {
       expect(decoded.values, `dir ${JSON.stringify(dir)} was accepted`).toBeUndefined()
       expect(keys(decoded.problems)).toEqual(['storage.packs.dir'])
     }
+  })
+
+  it('refuses a directory the desk never reads or writes', () => {
+    // `"dir": "dist"` used to decode clean: Admin advertised it as the pack
+    // location and every create then failed at the write, because the chassis
+    // excludes those names from its endpoints altogether. A configuration that
+    // is accepted and cannot work is worse than one refused where it was
+    // written.
+    for (const dir of ['dist', 'node_modules', '.git', 'a/vendor/b', 'DIST', '.venv/x']) {
+      const decoded = withStorage({ dir })
+      expect(decoded.values, `dir ${JSON.stringify(dir)} was accepted`).toBeUndefined()
+      expect(keys(decoded.problems)).toEqual(['storage.packs.dir'])
+      expect(decoded.problems[0]!.reason).toContain('never reads or writes')
+    }
+    // And a staging name, which `wireRelativePath` refuses for the same reason.
+    expect(withStorage({ dir: '.jpack-desk-abc' }).values).toBeUndefined()
+    // A directory that merely contains one of those words is fine: the test is
+    // per whole path segment, as the chassis' own is.
+    expect(withStorage({ dir: 'distribution' }).values?.storage?.packs.dir).toBe('distribution')
+    expect(withStorage({ dir: 'my-vendor-packs' }).values?.storage?.packs.dir).toBe('my-vendor-packs')
+  })
+
+  it('names the same directories the chassis excludes, and cannot drift from them', () => {
+    // The list is mirrored rather than fetched, so this reads the Go source
+    // that owns it. Two answers about what the desk edits is the failure mode
+    // worth preventing; one answer plus this assertion is not.
+    const watch = readFileSync(join(import.meta.dirname, '../../../internal/desk/watch.go'), 'utf8')
+    const block = watch.match(/var skipDirs = map\[string\]bool\{([^}]*)\}/)
+    expect(block, 'skipDirs is no longer a map literal in watch.go').toBeTruthy()
+    const named = [...block![1]!.matchAll(/"([^"]+)":/g)].map((match) => match[1]!)
+    expect(named.sort()).toEqual([...EXCLUDED_DIRECTORIES].sort())
+
+    const files = readFileSync(join(import.meta.dirname, '../../../internal/desk/files.go'), 'utf8')
+    expect(files).toContain(`const stagingPrefix = "${STAGING_PREFIX}"`)
   })
 
   it('trims a trailing separator rather than refusing it', () => {

@@ -4,9 +4,18 @@
  *
  * The runtime owns what a project configuration means. This module decodes
  * nothing beyond the shape it has to touch to add one key, validates nothing
- * at all, and carries every other member through byte for byte. A desk that
- * re-derived the schema here would be a second answer to a question the
- * runtime already answers, and the two would drift on the first version bump.
+ * at all, and carries every other member through unchanged in value and in key
+ * order. A desk that re-derived the schema here would be a second answer to a
+ * question the runtime already answers, and the two would drift on the first
+ * version bump.
+ *
+ * **Not byte for byte, and the difference is worth stating.** The round trip
+ * is through `JSON.parse`, so a number is carried as a double: a 20-digit
+ * integer comes back rounded, `1.0` comes back `1`, `1e2` comes back `100`,
+ * and duplicate keys collapse to the last. Every member `jpack.json` carries
+ * today is a string or an object, so nothing in the file is subject to it —
+ * but a future numeric member would be, and that is the sentence that has to
+ * be here rather than the reassuring one.
  *
  * # What a pack entry may carry, and why this writes so little
  *
@@ -138,14 +147,21 @@ export function packEntryFor(path: string, description: string): PackEntry {
 /**
  * Re-encode, in the shape the file was already written in.
  *
- * The indent and the trailing newline are taken from the source text. Without
- * that, the first pack a project creates silently reformats a hand-authored
- * file wholesale, and the diff its maintainer reviews is every line rather
- * than the four that were added.
+ * The indent, the line ending and the trailing newline are taken from the
+ * source text. Without that, the first pack a project creates silently
+ * reformats a hand-authored file wholesale, and the diff its maintainer
+ * reviews is every line rather than the four that were added.
+ *
+ * The line ending is not a detail: `JSON.stringify` emits `\n` only, so a
+ * CRLF `jpack.json` — ordinary on a Windows checkout, which the chassis
+ * supports — would come back with every line changed. That is precisely the
+ * whole-file rewrite this function exists to avoid, arriving through the one
+ * axis the indent does not cover.
  */
 export function serialiseProjectConfig(source: string, config: ProjectConfig): string {
-  const encoded = JSON.stringify(config, null, indentOf(source))
-  return source.endsWith('\n') ? `${encoded}\n` : encoded
+  const eol = source.includes('\r\n') ? '\r\n' : '\n'
+  const encoded = JSON.stringify(config, null, indentOf(source)).replace(/\n/g, eol)
+  return source.endsWith('\n') ? `${encoded}${eol}` : encoded
 }
 
 /**
@@ -153,6 +169,13 @@ export function serialiseProjectConfig(source: string, config: ProjectConfig): s
  * and the first member on that line. Two spaces where there is nothing to
  * measure — a one-line file has no indent to preserve, and two is what the
  * runtime's own fixtures use.
+ *
+ * The *first* indented line, which is a top-level member in any file whose
+ * members are each on their own line. A file that opens with everything
+ * collapsed onto line one and indents only some nested object later would have
+ * that nesting's indent applied to its top level; it is measured rather than
+ * parsed because a file already written the ordinary way is the case worth
+ * getting right, and a collapsed file has no formatting to preserve anyway.
  */
 function indentOf(source: string): string | number {
   const match = source.match(/\n([ \t]+)"/)

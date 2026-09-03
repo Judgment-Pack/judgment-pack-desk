@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  MAX_SLUG_LENGTH,
   collisionIn,
   emptyPackFrom,
   packPathFor,
@@ -48,10 +49,34 @@ describe('slugFor', () => {
     expect(slugFor(name)).toEqual({ slug })
   })
 
-  it('refuses a name with no letter or number in it', () => {
-    for (const name of ['', '   ', '!!!', '---']) {
-      expect(slugFor(name)).toEqual({ problem: 'A name needs at least one letter or number.' })
+  it('folds diacritics rather than dropping the letters that carry them', () => {
+    // `Überprüfung` used to derive `berpr-fung` — an id with its first letter
+    // silently removed, shown live under the field as if it were the answer.
+    expect(slugFor('Überprüfung')).toEqual({ slug: 'uberprufung' })
+    expect(slugFor('Café Décision')).toEqual({ slug: 'cafe-decision' })
+  })
+
+  it('states the alphabet rather than claiming a name has no letters', () => {
+    // `決裁レビュー` is made of letters. Telling its author it "needs at least
+    // one letter or number" is a false statement about the name they typed;
+    // the id alphabet is the thing that cannot carry it, and that is what the
+    // sentence now says.
+    const problem = {
+      problem: 'A name needs at least one letter a–z or digit 0–9 — an id can carry no others.'
     }
+    for (const name of ['', '   ', '!!!', '---', '決裁レビュー', 'Проверка', '日本語の決定']) {
+      expect(slugFor(name)).toEqual(problem)
+    }
+  })
+
+  it('refuses a name too long for the id it would make', () => {
+    // Not a rule of the format: a pack is written as `<slug>.pack.json`, and a
+    // single name component tops out at 255 bytes. Refused in the field, where
+    // it can be acted on, rather than as a containment error from the write.
+    expect(slugFor('a'.repeat(MAX_SLUG_LENGTH))).toEqual({ slug: 'a'.repeat(MAX_SLUG_LENGTH) })
+    expect(slugFor('a'.repeat(MAX_SLUG_LENGTH + 1))).toEqual({
+      problem: `A name is too long: an id can be at most ${MAX_SLUG_LENGTH} characters.`
+    })
   })
 
   it('refuses a name whose slug would not start with a letter', () => {
@@ -86,6 +111,7 @@ describe('packPathFor', () => {
 describe('collisionIn', () => {
   const project = {
     keys: ['sanctions-screening'],
+    paths: ['sanctions-screening-0.1.0.pack.json'],
     files: ['jpack.json', 'packs/vendor-onboarding.pack.json'],
     path: 'packs/vendor-onboarding.pack.json'
   }
@@ -102,7 +128,21 @@ describe('collisionIn', () => {
     )
   })
 
-  it('allows a slug that collides with neither', () => {
+  it('refuses a slug whose file another entry already claims, with nothing on disk', () => {
+    // The window this closes: an entry naming a file that has not been written
+    // yet is an ordinary state for a project under construction, and a second
+    // pack created over it would leave the first registered nowhere.
+    expect(
+      collisionIn('expense-approval', {
+        ...project,
+        paths: ['packs/expense-approval.pack.json'],
+        files: ['jpack.json'],
+        path: 'packs/expense-approval.pack.json'
+      })
+    ).toBe('Another pack in this project already uses that file.')
+  })
+
+  it('allows a slug that collides with none of the three', () => {
     expect(
       collisionIn('expense-approval', { ...project, path: 'packs/expense-approval.pack.json' })
     ).toBeUndefined()
@@ -205,7 +245,7 @@ describe('shapeTemplate', () => {
 })
 
 describe('emptyPackFrom', () => {
-  const skeleton = () => JSON.parse(emptyPackFrom(SCHEMA)) as Record<string, unknown>
+  const skeleton = () => JSON.parse(emptyPackFrom(SCHEMA)!) as Record<string, unknown>
 
   it('emits only the members the schema itself lists as required', () => {
     expect(Object.keys(skeleton())).toEqual([
@@ -242,16 +282,29 @@ describe('emptyPackFrom', () => {
     expect(document.rules).toEqual([])
   })
 
-  it('is an empty object where no schema was advertised', () => {
-    // Nothing is invented from nothing. The dialog fills its four members on
-    // top of this, which is what a runtime advertising neither tool leaves.
-    expect(JSON.parse(emptyPackFrom(undefined))).toEqual({})
-    expect(JSON.parse(emptyPackFrom('not json'))).toEqual({})
+  it('is nothing at all where there is no schema to derive it from', () => {
+    // Not an empty object. `{}` shaped by the dialog is a file with a title, an
+    // id and a version and no `specVersion` — which is not an incomplete pack
+    // but a document nothing can read as one. It was written, reported as a
+    // success, and the runtime then called it invalid.
+    expect(emptyPackFrom(undefined)).toBeUndefined()
+    expect(emptyPackFrom('not json')).toBeUndefined()
+  })
+
+  it('is nothing where the schema yields no specVersion', () => {
+    // The one member that says which version of the format the rest is written
+    // to. A skeleton without it is refused here rather than written and
+    // discovered later.
+    const withoutSpecVersion = JSON.stringify({
+      required: ['id', 'title'],
+      properties: { id: { type: 'string' }, title: { type: 'string' } }
+    })
+    expect(emptyPackFrom(withoutSpecVersion)).toBeUndefined()
   })
 
   it('is shaped by the dialog exactly as a served template is', () => {
     const document = JSON.parse(
-      shapeTemplate(emptyPackFrom(SCHEMA), {
+      shapeTemplate(emptyPackFrom(SCHEMA)!, {
         name: 'Vendor Onboarding',
         description: '',
         slug: 'vendor-onboarding',

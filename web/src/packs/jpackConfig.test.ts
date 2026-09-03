@@ -180,6 +180,24 @@ describe('serialiseProjectConfig', () => {
     expect(serialiseProjectConfig(source, parseProjectConfig(source))).toBe(source)
   })
 
+  it('follows a CRLF file rather than rewriting every line of it', () => {
+    // `JSON.stringify` emits `\n` only. On a Windows checkout — which the
+    // chassis supports, and which git's autocrlf makes ordinary — a CRLF
+    // jpack.json came back entirely LF, so the maintainer's diff was every
+    // line: the exact whole-file rewrite this function exists to prevent,
+    // arriving through the one axis the indent does not cover.
+    const source = '{\r\n  "configVersion": "1",\r\n  "packs": {}\r\n}\r\n'
+    expect(serialiseProjectConfig(source, parseProjectConfig(source))).toBe(source)
+
+    const amended = serialiseProjectConfig(
+      source,
+      withPack(parseProjectConfig(source), 'a', packEntryFor('packs/a.pack.json', ''))
+    )
+    expect(amended.includes('\n') && !amended.includes('\r\n')).toBe(false)
+    expect(amended.split('\n').length - 1).toBe(amended.split('\r\n').length - 1)
+    expect(amended.endsWith('\r\n')).toBe(true)
+  })
+
   it('writes two-space indent where the source has none to measure', () => {
     const source = '{"configVersion":"1","packs":{}}'
     const text = serialiseProjectConfig(source, parseProjectConfig(source))

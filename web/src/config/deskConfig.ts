@@ -371,6 +371,20 @@ function storageKind(
 }
 
 /**
+ * The directory names the chassis excludes from every endpoint, and the prefix
+ * it stages writes under.
+ *
+ * Mirrored from `skipDirs` in `internal/desk/watch.go` and from
+ * `stagingPrefix` in `internal/desk/files.go` — and **held to them by a test
+ * that reads those two files**, so this list cannot drift into a second answer
+ * about what the desk edits. Without it, `"dir": "dist"` decodes clean, Admin
+ * reports it as the pack location, and every create fails at the write with a
+ * sentence about a directory nobody chose to look at.
+ */
+export const EXCLUDED_DIRECTORIES = ['.git', 'node_modules', 'dist', '.venv', 'vendor']
+export const STAGING_PREFIX = '.jpack-desk-'
+
+/**
  * The directory new packs are written into, project-relative.
  *
  * The lexical shape the chassis will refuse anyway (`wireRelativePath`):
@@ -378,6 +392,11 @@ function storageKind(
  * dialog failing on the write with a path nobody chose to look at. A trailing
  * separator is trimmed rather than refused — `"packs/"` is unambiguous and
  * means what it says — so `dir` never doubles a slash at use.
+ *
+ * That includes the directories the chassis excludes from its endpoints
+ * altogether. `dist` is a plausible thing to type and a directory the desk
+ * will never write into, and a configuration that decodes clean while making
+ * every create fail is worse than one that is refused where it was written.
  */
 function packDir(value: unknown, problems: ConfigProblem[]): string | undefined {
   if (value === undefined) return undefined
@@ -394,6 +413,16 @@ function packDir(value: unknown, problems: ConfigProblem[]): string | undefined 
   }
   if (trimmed.split('/').some((part) => part === '..' || part === '.' || part === '')) {
     return bad('must not contain an empty, "." or ".." path segment')
+  }
+  const skipped = trimmed
+    .split('/')
+    .find(
+      (part) =>
+        part.toLowerCase().startsWith(STAGING_PREFIX) ||
+        EXCLUDED_DIRECTORIES.some((name) => name.toLowerCase() === part.toLowerCase())
+    )
+  if (skipped !== undefined) {
+    return bad(`must not name ${skipped}, which the desk never reads or writes`)
   }
   return trimmed
 }
