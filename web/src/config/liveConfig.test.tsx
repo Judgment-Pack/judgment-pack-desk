@@ -67,6 +67,8 @@ const LIVE_ANSWER = {
 `
 }
 
+const PROJECT_ROOT = '/home/someone/a-project'
+
 const PROJECT = stubClient({
   list_packs: () => ({
     text: JSON.stringify({ status: 'valid', configPath: '/p/jpack.json', packs: [] })
@@ -84,7 +86,19 @@ const PROJECT = stubClient({
 function serveConfig(answer: unknown, status = 200, delayMs = 0) {
   const asked: string[] = []
   vi.stubGlobal('fetch', async (url: string) => {
-    asked.push(String(url))
+    const path = String(url)
+    asked.push(path)
+    // The listing is answered separately and immediately: its `root` is the
+    // project identity the pane record is keyed on, and it is not the thing
+    // any case here is delaying or refusing.
+    if (path.includes('/api/files')) {
+      return {
+        ok: true,
+        status: 200,
+        statusText: '',
+        text: async () => JSON.stringify({ root: PROJECT_ROOT, files: [] })
+      }
+    }
     if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
     return {
       ok: status >= 200 && status < 300,
@@ -133,8 +147,75 @@ describe('the desk reading jpack-desk.json', () => {
     expect(asked.some((url) => url.includes('/api/file') && url.includes('path=jpack-desk.json'))).toBe(
       true
     )
-    // No new endpoint: nothing asks for a desk-config route.
+    // No new endpoint: nothing asks for a desk-config route, and the only
+    // other thing the shell reads is the listing it already shared with
+    // `/author` and the Create dialog.
     expect(asked.some((url) => url.includes('desk-config'))).toBe(false)
+    expect(
+      asked.every((url) => url.includes('/api/file?') || url.includes('/api/files?'))
+    ).toBe(true)
+  })
+
+  it('honours a late `panes` block for every pane the viewer has not moved', async () => {
+    // One global touched bit made a single toggle suppress the whole re-seed:
+    // collapsing the Console before the file was read froze the rail and the
+    // Inspector on the built-in defaults, and then wrote both into a record
+    // that outranks the file for ever after.
+    serveConfig(
+      {
+        ...LIVE_ANSWER,
+        content: JSON.stringify({
+          deskConfigVersion: 1,
+          panes: {
+            left: { mode: 'icons', width: 248 },
+            inspector: { open: true, width: 360 },
+            console: { open: true, height: 240 }
+          }
+        })
+      },
+      200,
+      300
+    )
+    renderDesk()
+    // The viewer opens the Console before the file arrives, and closes it.
+    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
+
+    // The file's rail and Inspector still land; the Console stays where the
+    // viewer left it.
+    await waitFor(() =>
+      expect(screen.getByRole('navigation', { name: 'Project' }).dataset.mode).toBe('icons')
+    )
+    expect(screen.getByRole('complementary', { name: 'Inspector' })).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'Console' })).toBeNull()
+
+    // And only the Console is written down.
+    await waitFor(() => expect(shellRecords()).toHaveLength(1))
+    expect(JSON.parse(shellRecords()[0]![1])).toEqual({
+      v: 1,
+      console: { open: false, tab: 'connection' }
+    })
+  })
+
+  it('applies the configured pane sizes to the grid, rather than three built-in numbers', async () => {
+    serveConfig({
+      ...LIVE_ANSWER,
+      content: JSON.stringify({
+        deskConfigVersion: 1,
+        panes: {
+          left: { mode: 'expanded', width: 300 },
+          inspector: { open: false, width: 420 },
+          console: { open: false, height: 180 }
+        }
+      })
+    })
+    const { container } = renderDesk()
+    const desk = container.querySelector('.desk') as HTMLElement
+    await waitFor(() => expect(desk.style.getPropertyValue('--rail-w')).toBe('300px'))
+    expect(desk.style.getPropertyValue('--inspector-w')).toBe('420px')
+    expect(desk.style.getPropertyValue('--console-h')).toBe('180px')
+    // And collapse still writes one of the two values, not a third number.
+    expect(desk.style.getPropertyValue('--rail-current')).toBe('var(--rail-w)')
   })
 
   it('paints the configured organization name in the header', async () => {
@@ -259,6 +340,27 @@ describe('the desk reading jpack-desk.json', () => {
     const cue = await screen.findByRole('link', { name: 'configuration refused — see Admin' })
     expect(cue.getAttribute('href')).toBe('/admin')
     expect(screen.getByRole('contentinfo').textContent).toContain('configuration refused')
+  })
+
+  it('says a configuration it could not read is unread, not absent', async () => {
+    // Absence is the ordinary case and stays silent. A 413, a permission
+    // refusal or a socket that never answered is a file that exists and was
+    // not honoured, and until this cue the two were the same silence.
+    serveConfig({ error: 'the file is too large to read' }, 413)
+    renderDesk()
+    const cue = await screen.findByRole('link', {
+      name: 'configuration could not be read — see Admin'
+    })
+    expect(cue.getAttribute('href')).toBe('/admin')
+    expect(screen.queryByText(/configuration refused/)).toBeNull()
+  })
+
+  it('says nothing about the configuration where the file is simply absent', async () => {
+    serveConfig({ error: 'no such file' }, 404)
+    renderDesk()
+    await screen.findByRole('link', { name: 'judgment‑pack desk' })
+    expect(screen.queryByText(/configuration could not be read/)).toBeNull()
+    expect(screen.queryByText(/configuration refused/)).toBeNull()
   })
 
   it('says nothing about the configuration where there is no problem with it', async () => {

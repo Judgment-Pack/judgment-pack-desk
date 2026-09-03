@@ -12,8 +12,9 @@
  * **Every field is text.** There is no disabled radio group and there are no
  * disabled inputs, deliberately departing from the artboard: a disabled
  * control that will never enable is an affordance that lies about what the
- * page can do. The one interactive control on the page is Panes' reset, which
- * clears one `localStorage` key.
+ * page can do. The only control that **changes any state at all** is Panes'
+ * reset, which clears one `localStorage` key; the Copy buttons beside each
+ * paste block put text on the clipboard and change nothing here.
  *
  * `runtime.jpackBin` and `project.dir` are **not in the schema at all** —
  * `relay.go` runs the configured binary, so a config-supplied path would be a
@@ -28,8 +29,9 @@ import { DESK_FALLBACK_NAME } from '../config/deskConfig'
 import { useFileListing } from '../files/queries'
 import { useMcp } from '../mcp/McpProvider'
 import { usePacks } from '../mcp/queries'
-import { useShellState, resetShellState } from '../shell/paneState'
+import { useShellState } from '../shell/paneState'
 import { IconCopy } from '../shell/icons'
+import type { ResetOutcome } from '../shell/paneState'
 import { ADMIN_DISCLAIMER, ADMIN_SECTIONS } from './adminSections'
 
 const DESK_FILE_NOTE =
@@ -38,12 +40,12 @@ const DESK_FILE_NOTE =
   'chassis tells the page at connect time, is the spec’s open question 2 and is unanswered.'
 
 export function AdminView() {
-  const { config, sources, problems, path } = useEffectiveConfig()
+  const { config, sources, problems, path, note, readFailure } = useEffectiveConfig()
   const { server, known } = useMcp()
   const { data } = usePacks()
   const listing = useFileListing()
   const shell = useShellState()
-  const [reset, setReset] = useState(false)
+  const [reset, setReset] = useState<ResetOutcome | undefined>(undefined)
   // The rail's and the user menu's section links carry a hash. Nothing in the
   // router scrolls to one, and the document is not the scroll container here —
   // `.desk-main` is — so without this they changed the URL and moved nothing.
@@ -81,6 +83,18 @@ export function AdminView() {
               {problem.key === '' ? problem.reason : `${problem.key}: ${problem.reason}`}
             </code>
           ))}
+        </p>
+      )}
+
+      {problems.length === 0 && readFailure !== undefined && (
+        <p className="note note-warn" role="status">
+          <strong>The project configuration could not be read, and the desk is on its
+          defaults.</strong>{' '}
+          This is not the same as having no file: the desk asked for <code>{path}</code> and the
+          read did not succeed, so whatever it says has not been applied. The reason is the
+          chassis' own, verbatim.
+          <br />
+          <code className="partial-reason">{readFailure}</code>
         </p>
       )}
 
@@ -161,6 +175,13 @@ export function AdminView() {
         Desk configuration file: <code>{path}</code>{' '}
         <span className="quiet">read through the chassis file API, like any project file</span>
       </p>
+      {note !== undefined && problems.length === 0 && readFailure === undefined && (
+        <p className="quiet">
+          {/* The ordinary case, said out loud rather than left as a silence
+              indistinguishable from a file that was read and did nothing. */}
+          <code>{note}</code>
+        </p>
+      )}
 
       <h2 id={ADMIN_SECTIONS[4]!.id} className="section-title">
         {ADMIN_SECTIONS[4]!.title}
@@ -243,21 +264,43 @@ export function AdminView() {
       </p>
       <p className="quiet">
         Which panes are open is remembered per project on this machine only, under{' '}
-        <code>{shell.storageKey}</code>. It is never sent anywhere and never written to the
-        project. Phase A stores the collapse flags and the console's channel and no sizes at all,
-        because nothing on this desk can yet change a size.
+        <code>{shell.storageKey}</code>
+        {shell.keyResolved ? (
+          '. '
+        ) : (
+          <span className="quiet">
+            {' '}
+            — provisional, because the chassis has not yet reported this project&apos;s root;
+            nothing is written under it.{' '}
+          </span>
+        )}
+        It is never sent anywhere and never written to the project. Phase A stores the collapse
+        flags and the console&apos;s channel for the panes the viewer has actually moved, and no
+        sizes at all, because nothing on this desk can yet change a size.
       </p>
       <p>
-        <button
-          type="button"
-          onClick={() => {
-            resetShellState(shell.storageKey)
-            setReset(true)
-          }}
-        >
+        <button type="button" onClick={() => setReset(shell.resetPanes())}>
           Reset panes on this machine
         </button>{' '}
-        {reset && <span className="quiet">Cleared. The layout returns to the defaults on reload.</span>}
+        {/* What happened, not what was attempted. The reset runs inside the
+            provider that owns the record — it cancels a write already on its
+            way, refuses to clear the provisional key before the chassis has
+            said which project this is, and reads the key back afterwards — and
+            each of those is a different sentence here. */}
+        {reset === 'cleared' && (
+          <span className="quiet">Cleared, and the panes are back on their configured defaults.</span>
+        )}
+        {reset === 'refused' && (
+          <span className="quiet">
+            this browser did not clear the record — the layout is unchanged
+          </span>
+        )}
+        {reset === 'unresolved' && (
+          <span className="quiet">
+            nothing was cleared: this desk has not yet been told which project it is open on, so
+            the record above is not the one this project will use
+          </span>
+        )}
       </p>
 
       <Section title="The whole file">

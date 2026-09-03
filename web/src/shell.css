@@ -42,11 +42,23 @@
 
   /* The frame ------------------------------------------------------------ */
 
+  /* A **definite** height, not a minimum, and that word is the whole rule.
+     `min-height` leaves the grid's available space indefinite, so the
+     `minmax(0, 1fr)` row grows to whatever the tallest route renders (CSS Grid
+     Level 2, flexible tracks with indefinite available space): `.desk-main`
+     then never becomes the scroll container it is written to be, and the
+     always-visible 28px strip is pushed below the fold by a long Admin page or
+     a thirty-pack rail. `dvh` second, so a browser that has it uses the
+     viewport that excludes the mobile URL bar and one that does not keeps
+     `vh`. `overflow: hidden` on the frame, because the scrolling belongs to
+     the panes — every one of which carries `min-height: 0`. */
   .desk {
     display: grid;
     grid-template-columns: var(--rail-current) minmax(0, 1fr) var(--inspector-current);
     grid-template-rows: var(--header-h) minmax(0, 1fr) var(--console-current) var(--strip-h);
-    min-height: 100vh;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
   }
 
   .desk-head {
@@ -110,6 +122,7 @@
     background: var(--surface);
     border-left: 1px solid var(--border);
     min-width: 0;
+    min-height: 0;
   }
 
   .desk-console {
@@ -121,6 +134,7 @@
     background: var(--surface);
     border-top: 1px solid var(--border);
     min-width: 0;
+    min-height: 0;
   }
 
   /* Its own grid row, and a direct child of the grid — so it is the
@@ -144,13 +158,26 @@
     align-items: center;
     gap: 0.75rem;
     min-width: 0;
+  }
+
+  /* The connection sentence is the part that gives way. It used to be the
+     other way round: `overflow: hidden` sat on the lane and the nowrap
+     connection text came first, so at a phone width the cue that the
+     configuration was refused was the half pushed out of sight — a warning
+     that disappears exactly where the screen is smallest. */
+  .desk-strip-connection {
+    min-width: 0;
     overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   /* The configuration cue. A link, because it goes to the page that names the
-     problem — never a colour the shell decided on its own. */
+     problem — never a colour the shell decided on its own. It never shrinks
+     and never wraps: it is the shorter string and the more important one. */
   .desk-strip-warn {
+    flex: 0 0 auto;
+    white-space: nowrap;
     color: var(--warn);
   }
 
@@ -455,6 +482,20 @@
     text-align: center;
   }
 
+  /* The middle link of the console's flex chain, and it was missing.
+     `.desk-console` is a fixed-height flex column and `.desk-console-body`
+     claims `flex: 1`, but `Tabs.Root` between them is an ordinary block: the
+     body had no flex parent and no constrained height, so a log longer than
+     the pane was clipped by `.desk-console`'s `overflow: hidden` rather than
+     scrolled. Three declarations, and the fourth — `min-height: 0` — is what
+     lets it shrink below its content instead of pushing the tab list out. */
+  .desk-console-tabs {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
   .desk-console-body {
     flex: 1;
     overflow: auto;
@@ -507,15 +548,29 @@
     z-index: var(--z-drawer);
   }
 
+  /* `--drawer-w` is written inline by the pane that renders the drawer, so
+     the Inspector's drawer form is the width its configuration asks for
+     rather than a second number nobody set. The fallback is the value that
+     was hard-coded here. */
   .desk-drawer {
     position: fixed;
     top: 0;
     bottom: 0;
-    width: min(320px, 85vw);
+    width: min(var(--drawer-w, 320px), 85vw);
     padding: 0.75rem;
     overflow: auto;
     background: var(--surface);
     z-index: var(--z-dialog);
+  }
+
+  /* The rail drawer's own head, which exists for one control: a visible way
+     out. Escape closed it and the overlay closed it, and neither is an
+     affordance a viewer can see. */
+  .desk-drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-bottom: 0.25rem;
   }
 
   .desk-drawer-left {

@@ -8,6 +8,12 @@
  * would then write shell state, which React forbids in spirit and punishes in
  * practice.
  *
+ * **The provider sits above `<main>`.** It has to: a provider wrapped around
+ * the Inspector alone is a sibling of the routes, so `useInspectorSlot()` in a
+ * route read the closed default and every portal was a no-op. The pane
+ * publishes its target upwards through a callback ref, and the frame holds
+ * both the target and the tab.
+ *
  * The context value is **metadata only**: whether the pane is open, how wide
  * it is, which tab is selected. No node, ever.
  *

@@ -44,7 +44,16 @@ export function BottomPane({
 
   return (
     <section className="desk-console" aria-label="Console" id="desk-console" hidden={!open}>
-      <Tabs.Root value={tab} onValueChange={(next) => onTabChange(next as ConsoleTab)}>
+      {/* A flex column of its own, and the class is load-bearing. `.desk-console`
+          is a fixed-height flex column with `overflow: hidden`; this element sat
+          between it and `.desk-console-body` as an ordinary block, so the body's
+          `flex: 1; overflow: auto` had neither a flex parent nor a constrained
+          height and a long log was clipped rather than scrolled. */}
+      <Tabs.Root
+        className="desk-console-tabs"
+        value={tab}
+        onValueChange={(next) => onTabChange(next as ConsoleTab)}
+      >
         <Tabs.List className="desk-tablist" aria-label="Console channels">
           <Tabs.Trigger className="desk-tab" value="connection">
             Connection

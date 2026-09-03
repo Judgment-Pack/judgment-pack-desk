@@ -9,11 +9,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   BUILT_IN_SHELL_STATE,
+  NOTHING_TOUCHED,
+  identityIsResolved,
   initialShellState,
   projectKey,
   readShellState,
   resetShellState,
-  shellStateKey
+  shellStateKey,
+  writeShellState
 } from './paneState'
 import { DESK_DEFAULTS } from '../config/deskConfig'
 
@@ -30,10 +33,26 @@ const OPEN_EVERYTHING = JSON.stringify({
 })
 
 describe('projectKey', () => {
-  it('is the literal default when the runtime reported no config path', () => {
+  it('is the literal default when the chassis has not reported a root', () => {
     expect(projectKey(undefined)).toBe('default')
     expect(projectKey('')).toBe('default')
     expect(projectKey('   ')).toBe('default')
+  })
+
+  it('keys two configless projects apart, which the config path could not', () => {
+    // The defect this replaced: the key came from the runtime's `configPath`,
+    // and a project with no `jpack.json` has none — so every configless
+    // project on one origin mapped to the literal `default` and shared one
+    // record. The chassis' root is there either way.
+    expect(projectKey('/home/someone/one')).not.toBe(projectKey('/home/someone/two'))
+    expect(projectKey('/home/someone/one')).not.toBe('default')
+  })
+
+  it('says outright whether the identity has been read yet', () => {
+    expect(identityIsResolved(undefined)).toBe(false)
+    expect(identityIsResolved('')).toBe(false)
+    expect(identityIsResolved('   ')).toBe(false)
+    expect(identityIsResolved('/home/someone/one')).toBe(true)
   })
 
   it('slugs the path and appends a hash of the whole of it', () => {
@@ -103,15 +122,78 @@ describe('readShellState', () => {
   })
 })
 
+describe('writeShellState', () => {
+  const STATE = {
+    left: { mode: 'icons' as const },
+    inspector: { open: true },
+    console: { open: true, tab: 'files' as const }
+  }
+
+  it('serializes only the panes the viewer actually moved', () => {
+    // A record is preferred over the configuration on the next read, so a
+    // section written on the strength of a sibling's toggle is a built-in
+    // default silently outranking `panes` in `jpack-desk.json` for ever.
+    const key = shellStateKey('p')
+    writeShellState(key, STATE, { ...NOTHING_TOUCHED, console: true })
+    expect(JSON.parse(window.localStorage.getItem(key)!)).toEqual({
+      v: 1,
+      console: { open: true, tab: 'files' }
+    })
+  })
+
+  it('writes all three where all three were chosen', () => {
+    const key = shellStateKey('p')
+    writeShellState(key, STATE, { left: true, inspector: true, console: true })
+    expect(JSON.parse(window.localStorage.getItem(key)!)).toEqual({
+      v: 1,
+      left: { mode: 'icons' },
+      inspector: { open: true },
+      console: { open: true, tab: 'files' }
+    })
+  })
+
+  it('round-trips through the reader as a partial record', () => {
+    const key = shellStateKey('p')
+    writeShellState(key, STATE, { ...NOTHING_TOUCHED, left: true })
+    expect(readShellState(key)).toEqual({ left: { mode: 'icons' } })
+  })
+})
+
 describe('resetShellState', () => {
-  it('clears exactly one key and nothing beside it', () => {
+  it('clears exactly one key and nothing beside it, and says it did', () => {
     window.localStorage.setItem(shellStateKey('one'), OPEN_EVERYTHING)
     window.localStorage.setItem(shellStateKey('two'), OPEN_EVERYTHING)
     window.localStorage.setItem('something-else', 'kept')
-    resetShellState(shellStateKey('one'))
+    expect(resetShellState(shellStateKey('one'))).toBe(true)
     expect(window.localStorage.getItem(shellStateKey('one'))).toBeNull()
     expect(window.localStorage.getItem(shellStateKey('two'))).toBe(OPEN_EVERYTHING)
     expect(window.localStorage.getItem('something-else')).toBe('kept')
+  })
+
+  it('reports a deletion that did not take, rather than assuming it did', () => {
+    // `removeItem` resolves on a storage that keeps the value. The page's
+    // "Cleared." is a claim about the record, so the record is read back.
+    vi.stubGlobal('localStorage', {
+      getItem: () => OPEN_EVERYTHING,
+      setItem: () => {},
+      removeItem: () => {}
+    })
+    expect(resetShellState(shellStateKey('one'))).toBe(false)
+  })
+
+  it('reports a storage that throws on the accessor as a failure, not a success', () => {
+    vi.stubGlobal('localStorage', {
+      getItem() {
+        throw new DOMException('The operation is insecure.', 'SecurityError')
+      },
+      setItem() {
+        throw new DOMException('The operation is insecure.', 'SecurityError')
+      },
+      removeItem() {
+        throw new DOMException('The operation is insecure.', 'SecurityError')
+      }
+    })
+    expect(resetShellState(shellStateKey('one'))).toBe(false)
   })
 })
 

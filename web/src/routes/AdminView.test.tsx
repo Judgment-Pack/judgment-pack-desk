@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
 import { decodeDeskConfig, effectiveConfig } from '../config/deskConfig'
 import { McpContext } from '../mcp/McpProvider'
-import { ShellStateProvider } from '../shell/paneState'
+import { ShellStateProvider, projectKey, shellStateKey } from '../shell/paneState'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { AdminView } from './AdminView'
 import { ADMIN_DISCLAIMER, ADMIN_SECTIONS } from './adminSections'
@@ -27,7 +27,20 @@ afterEach(() => {
 
 const QUIET = stubClient({ list_packs: () => ({ text: JSON.stringify({ packs: [] }) }) })
 
-function renderAdmin(value = effectiveConfig(undefined), path = '/admin') {
+/** The chassis' project root, and the key the record therefore lives under. */
+const ROOT = '/home/someone/a-project'
+const KEY = shellStateKey(projectKey(ROOT))
+
+/**
+ * `null` means "the chassis has not answered yet". Not `undefined`: a default
+ * parameter takes over for an explicit `undefined`, so the provisional case
+ * silently got the resolved root and asserted nothing.
+ */
+function renderAdmin(
+  value = effectiveConfig(undefined),
+  path = '/admin',
+  projectIdentity: string | null = ROOT
+) {
   const router = createMemoryRouter(
     [
       {
@@ -36,7 +49,7 @@ function renderAdmin(value = effectiveConfig(undefined), path = '/admin') {
           <McpContext.Provider value={connected({ client: QUIET.client })}>
             <DeskConfigFixture value={value}>
               <ShellStateProvider
-                projectKey="a-project"
+                projectIdentity={projectIdentity ?? undefined}
                 viewport={{ railIsDrawer: false, inspectorIsDrawer: false }}
               >
                 <AdminView />
@@ -156,25 +169,77 @@ describe('the Admin page', () => {
     }
   })
 
-  it('has exactly one interactive control, and it is the pane reset', () => {
+  it('has exactly one state-changing control, and it is the pane reset', () => {
+    // Not "one interactive control": the page also carries a Copy button
+    // beside every paste block, and calling those nothing was a claim the
+    // page's own markup contradicted. What holds is the narrower statement —
+    // the reset is the only control that changes anything.
     const { container } = renderAdmin()
     const interactive = container.querySelectorAll('button, input, select, textarea')
     const labels = Array.from(interactive).map((element) => element.textContent?.trim())
-    // The copy buttons are the only others, and they copy rather than change.
     expect(labels.filter((label) => label === 'Reset panes on this machine')).toHaveLength(1)
+    // Every other control on the page is a Copy, and a copy changes nothing here.
+    const others = labels.filter((label) => label !== 'Reset panes on this machine')
+    expect(others.length).toBeGreaterThan(0)
+    expect(others.every((label) => label?.includes('Copy'))).toBe(true)
     expect(container.querySelectorAll('input, select, textarea')).toHaveLength(0)
     expect(container.querySelectorAll('[disabled]')).toHaveLength(0)
   })
 
-  it('clears exactly one localStorage key when the reset is pressed', () => {
-    window.localStorage.setItem('jpack-desk:shell:v1:a-project', '{"v":1}')
+  it('clears exactly one localStorage key when the reset is pressed, and says so', () => {
+    window.localStorage.setItem(KEY, '{"v":1}')
     window.localStorage.setItem('jpack-desk:shell:v1:another', '{"v":1}')
     window.localStorage.setItem('jpack-desk-token', 'a token')
     renderAdmin()
     fireEvent.click(screen.getByRole('button', { name: 'Reset panes on this machine' }))
-    expect(window.localStorage.getItem('jpack-desk:shell:v1:a-project')).toBeNull()
+    expect(window.localStorage.getItem(KEY)).toBeNull()
     expect(window.localStorage.getItem('jpack-desk:shell:v1:another')).toBe('{"v":1}')
     expect(window.localStorage.getItem('jpack-desk-token')).toBe('a token')
+    expect(screen.getByText(/Cleared, and the panes are back/)).toBeTruthy()
+  })
+
+  it('reports a reset it could not make, rather than reporting one it did', () => {
+    // A storage that refuses the deletion answered "Cleared." before. The page
+    // reads the key back and says what it found.
+    const backing = new Map<string, string>([[KEY, '{"v":1}']])
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => backing.get(key) ?? null,
+      setItem: (key: string, value: string) => void backing.set(key, value),
+      removeItem: () => {},
+      clear: () => {}
+    })
+    renderAdmin()
+    fireEvent.click(screen.getByRole('button', { name: 'Reset panes on this machine' }))
+    expect(screen.getByText(/did not clear the record/)).toBeTruthy()
+    expect(screen.queryByText(/Cleared, and the panes/)).toBeNull()
+  })
+
+  it('refuses to reset a provisional key, and says which key it is', () => {
+    // Before the chassis reports the project root the key is the literal
+    // `default`, which is not this project's record — clearing it would delete
+    // whatever else had been written there and report success for a project
+    // whose layout is untouched.
+    window.localStorage.setItem(shellStateKey('default'), '{"v":1}')
+    renderAdmin(effectiveConfig(undefined), '/admin', null)
+    expect(screen.getByText(/provisional, because the chassis/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Reset panes on this machine' }))
+    expect(screen.getByText(/has not yet been told which project/)).toBeTruthy()
+    expect(window.localStorage.getItem(shellStateKey('default'))).toBe('{"v":1}')
+  })
+
+  it('names a configuration that could not be read, and does not call it absent', () => {
+    // A 413, a permission error or a dead socket resolved to the defaults with
+    // the reason recorded where nothing rendered it, so a desk that could not
+    // open its own file looked exactly like a desk with no file.
+    renderAdmin(effectiveConfig(undefined, undefined, 'the file is too large to read'))
+    expect(screen.getByText(/could not be read, and the desk is on its defaults/)).toBeTruthy()
+    expect(screen.getByText('the file is too large to read')).toBeTruthy()
+  })
+
+  it('says why no file was read where the file is simply absent', () => {
+    renderAdmin(effectiveConfig(undefined, 'no configuration was read: no such file'))
+    expect(screen.getByText('no configuration was read: no such file')).toBeTruthy()
+    expect(screen.queryByText(/could not be read, and the desk/)).toBeNull()
   })
 
   it('reports a refused configuration by naming every problem, and stays on defaults', () => {

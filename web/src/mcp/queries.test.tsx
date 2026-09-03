@@ -129,6 +129,41 @@ describe('useGraphDocument', () => {
   })
 })
 
+describe('usePacks', () => {
+  it('does not call the tool again when another route mounts after a refusal', async () => {
+    // `retry: false` is the client's default and was doing its job; the
+    // re-call came from `retryOnMount`, which re-runs an errored query with no
+    // data the moment a second observer subscribes. The rail holds one
+    // observer for the life of the desk and every route mounts a second, so a
+    // listing the runtime had refused was called once per navigation for as
+    // long as it kept failing.
+    const { wrapper, calls } = harness({
+      list_packs: () => {
+        throw new Error('the runtime refused')
+      }
+    })
+    const first = renderHook(() => usePacks(), { wrapper })
+    await waitFor(() => expect(first.result.current.isError).toBe(true))
+    expect(calls.filter((call) => call.name === 'list_packs')).toHaveLength(1)
+
+    // A second observer — what a route change is, with the rail's still there.
+    const second = renderHook(() => usePacks(), { wrapper })
+    await waitFor(() => expect(second.result.current.isError).toBe(true))
+    expect(calls.filter((call) => call.name === 'list_packs')).toHaveLength(1)
+  })
+
+  it('still answers a later observer from the cache when the listing succeeded', async () => {
+    const { wrapper, calls } = harness({
+      list_packs: () => ({ text: JSON.stringify({ packs: [{ id: 'intake-triage' }] }) })
+    })
+    const first = renderHook(() => usePacks(), { wrapper })
+    await waitFor(() => expect(first.result.current.isSuccess).toBe(true))
+    const second = renderHook(() => usePacks(), { wrapper })
+    await waitFor(() => expect(second.result.current.data!.packs).toHaveLength(1))
+    expect(calls.filter((call) => call.name === 'list_packs')).toHaveLength(1)
+  })
+})
+
 describe('the tool call under every query', () => {
   it("reports a refusal as the runtime refusing, in the runtime's own words", async () => {
     const { wrapper } = harness({

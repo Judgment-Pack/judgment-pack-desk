@@ -80,6 +80,45 @@ describe('the desk shortcuts', () => {
     expect(screen.getByRole('button', { name: 'Console' })).toBeTruthy()
   })
 
+  it('rejects every modifier the chord does not declare', () => {
+    // Read loosely, `Mod+B` also claimed Ctrl+Shift+B — a chord this desk
+    // never declared and the browser or the operating system may own — and
+    // firing on it also called `preventDefault`, so the shifted spelling took
+    // the key away from whatever else wanted it. Ctrl **and** Meta together is
+    // the same argument: `mod` is Ctrl *or* Cmd, and both at once is a third
+    // chord rather than either of them.
+    render(<Harness />)
+    fireEvent.keyDown(document, { key: 'b', ctrlKey: true, shiftKey: true })
+    fireEvent.keyDown(document, { key: 'B', ctrlKey: true, shiftKey: true })
+    fireEvent.keyDown(document, { key: 'i', ctrlKey: true, altKey: true, shiftKey: true })
+    fireEvent.keyDown(document, { key: 'j', metaKey: true, altKey: true, shiftKey: true })
+    fireEvent.keyDown(document, { key: 'b', ctrlKey: true, metaKey: true })
+    fireEvent.keyDown(document, { key: 'i', ctrlKey: true, metaKey: true, altKey: true })
+    expect(fired()).toEqual([])
+  })
+
+  it('leaves an undeclared chord entirely to the browser', () => {
+    // The other half of the same rule, and the one a counter cannot see: a
+    // chord this does not handle must reach the page unprevented.
+    const shifted = new KeyboardEvent('keydown', {
+      key: 'b',
+      ctrlKey: true,
+      shiftKey: true,
+      cancelable: true
+    })
+    expect(shortcutFor(shifted)).toBeUndefined()
+    document.dispatchEvent(shifted)
+    expect(shifted.defaultPrevented).toBe(false)
+  })
+
+  it('still binds Mod+Alt on the exact chord, with Alt and nothing else', () => {
+    render(<Harness />)
+    fireEvent.keyDown(document, { key: 'b', metaKey: true })
+    fireEvent.keyDown(document, { key: 'i', ctrlKey: true, altKey: true })
+    fireEvent.keyDown(document, { key: 'j', metaKey: true, altKey: true })
+    expect(fired()).toEqual(['rail', 'inspector', 'console'])
+  })
+
   it('binds neither Mod+J nor Alt+digit, which browsers have already claimed', () => {
     render(<Harness />)
     fireEvent.keyDown(document, { key: 'j', ctrlKey: true })

@@ -9,24 +9,36 @@
  * configures SSO and believes it has gated the desk has been misled by the
  * shell.
  *
- * **The exposed session type has exactly two members**, and that is the
- * enforcement rather than the convention: `identity.provider === null` is
- * local, anything else is a provider, and there is no third shape for a
- * supplied issuer to occupy. An issuer someone else operates and an issuer you
- * run are the same object with a different URL.
+ * **The exposed state is a nullable provider, and there is no discriminator.**
+ * This used to be a `mode`-tagged union — `{ mode: 'local' }` or
+ * `{ mode: 'provider' }` — which is the very shape the configuration schema
+ * refuses by name one layer down. A rule that holds in the file and not in the
+ * type it decodes to is a rule the next branch is written against: `mode` is a
+ * place to put a third member, and nothing but review stood between two
+ * members and three. So the state carries the provider or `null`, every reader
+ * branches on nullness, and there is no tag for a third case to occupy.
  */
 import { createContext, useContext, useMemo, type ReactNode } from 'react'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 
-export type IdentitySession =
-  | { mode: 'local'; displayName: string }
-  | { mode: 'provider'; issuerHost: string; label: string | null }
+/** What the desk shows about a configured issuer. Display only, both members. */
+export interface ProviderIdentity {
+  issuerHost: string
+  label: string | null
+}
 
-const LOCAL: IdentitySession = { mode: 'local', displayName: 'local user' }
+export interface IdentityState {
+  /** Null exactly where `identity.provider` is null. There is no third value. */
+  provider: ProviderIdentity | null
+  /** The local display name, which is what the header shows where there is none. */
+  displayName: string
+}
 
-const IdentityContext = createContext<IdentitySession>(LOCAL)
+const LOCAL: IdentityState = { provider: null, displayName: 'local user' }
 
-export function useIdentity(): IdentitySession {
+const IdentityContext = createContext<IdentityState>(LOCAL)
+
+export function useIdentity(): IdentityState {
   return useContext(IdentityContext)
 }
 
@@ -48,22 +60,25 @@ export function issuerHost(issuer: string): string {
 export function IdentityProvider({ children }: { children: ReactNode }) {
   const { config } = useEffectiveConfig()
   const provider = config.identity.provider
-  const session = useMemo<IdentitySession>(
-    () =>
-      provider === null
-        ? { mode: 'local', displayName: config.user.displayName }
-        : { mode: 'provider', issuerHost: issuerHost(provider.issuer), label: provider.label },
+  const state = useMemo<IdentityState>(
+    () => ({
+      provider:
+        provider === null
+          ? null
+          : { issuerHost: issuerHost(provider.issuer), label: provider.label },
+      displayName: config.user.displayName
+    }),
     [provider, config.user.displayName]
   )
-  return <IdentityContext.Provider value={session}>{children}</IdentityContext.Provider>
+  return <IdentityContext.Provider value={state}>{children}</IdentityContext.Provider>
 }
 
-/** For a test that wants one session without a config behind it. */
+/** For a test that wants one identity without a config behind it. */
 export function IdentityFixture({
   value,
   children
 }: {
-  value: IdentitySession
+  value: IdentityState
   children: ReactNode
 }) {
   return <IdentityContext.Provider value={value}>{children}</IdentityContext.Provider>

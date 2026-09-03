@@ -10,7 +10,7 @@ import {
   type FileListing
 } from '../files/client'
 import { useFileContent, useFileListing, useWriteFile } from '../files/queries'
-import { publishDirty, takeRequestedOpen, useRequestedOpen } from '../shell/authorBridge'
+import { useOpenRequests, usePublishedDirty } from '../shell/authorBridge'
 
 /**
  * The authoring shell: pick a file, edit its bytes, save them (issue #14,
@@ -52,32 +52,10 @@ export function AuthorView() {
   // survive: unmounting would throw the buffer away before the user is told.
   const listedNow = files.some((file) => file.path === selected)
 
-  // The two lines the shell needs from this view, and nothing else changes
-  // here. `dirty` is component-local and the selection has no URL parameter,
-  // so the rail's dot and the Create-pack dialog's open-the-new-file cannot
-  // work without them.
-  useEffect(() => {
-    publishDirty(dirty)
-    return () => publishDirty(false)
-  }, [dirty])
-  // Driven by the published value rather than by mount, because creating a
-  // pack while this view is already open navigates to the route it is already
-  // on: the element does not remount, and a `[]`-dependency effect would never
-  // run again. It routes through `choose` so the dirty-buffer question is
-  // asked here too, rather than only where a file is clicked.
-  //
-  // Still an effect and not a lazy `useState` initializer: StrictMode invokes
-  // an initializer twice and would swallow a consume-once take in the run
-  // whose state React discards. An effect's mount → cleanup → mount preserves
-  // state, so the second run simply finds nothing to do.
-  const requestedOpen = useRequestedOpen()
-  useEffect(() => {
-    const requested = takeRequestedOpen()
-    if (requested) choose(requested)
-    // `choose` is re-created every render and is not a dependency: this effect
-    // fires on a new request, never on a re-render of the editor.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestedOpen])
+  // The one thing the shell needs from this view. Both hooks live in
+  // `authorBridge.ts` beside the state they publish to, so what this view
+  // carries for the shell is one import and two calls.
+  usePublishedDirty(dirty)
 
   // Two guards, because they cover two different exits and neither covers the
   // other. `beforeunload` is the browser's, and it fires only when the document
@@ -117,6 +95,11 @@ export function AuthorView() {
     setDirty(false)
     setSelected(path)
   }
+
+  // Routed through `choose`, so the dirty-buffer question is asked for a file
+  // the Create dialog opened exactly as it is for one the viewer clicked. It
+  // is called here rather than above because `choose` is declared above it.
+  useOpenRequests(choose)
 
   return (
     <article className="detail authoring">

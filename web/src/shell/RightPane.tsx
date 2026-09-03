@@ -13,13 +13,18 @@
  * that swallowed Escape would be worse. That is the one place the rule "Escape
  * does not close a pane" does not hold, and it is in the README for the same
  * reason it is here.
+ *
+ * **This file does not own the slot.** The portal target is published upwards
+ * through a callback ref, because the context that carries it has to sit above
+ * `<main>` for a route to reach it — a provider around this pane alone was one
+ * routes could never see. The ref is a callback and not an effect, so it fires
+ * on every mount and every unmount: a drawer that starts closed publishes
+ * `null` and publishes the element when it opens, and a breakpoint swap
+ * replaces a detached node rather than keeping it.
  */
 import { Dialog, VisuallyHidden } from 'radix-ui'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { InspectorSlotContext, type InspectorSlot } from './InspectorSlot'
+import { type CSSProperties, type ReactNode, type RefObject } from 'react'
 import { IconClose } from './icons'
-
-export const INSPECTOR_WIDTH = 360
 
 const EMPTY_STATE = 'Select a row, a node or a file to inspect it here.'
 
@@ -27,29 +32,26 @@ export function RightPane({
   open,
   onClose,
   asDrawer,
+  width,
+  publishTarget,
+  openerRef,
   children
 }: {
   open: boolean
   onClose: () => void
   asDrawer: boolean
+  /** The configured pixel width, in both forms. */
+  width: number
+  /** Called with the portal target on mount and with null on unmount. */
+  publishTarget: (target: HTMLDivElement | null) => void
+  /**
+   * The header control that opened the drawer. Radix restores focus to its own
+   * `Dialog.Trigger`, and this pane has none — the opener is a toggle in the
+   * header, two grid cells away — so the restoration is wired by hand.
+   */
+  openerRef: RefObject<HTMLButtonElement | null>
   children?: ReactNode
 }) {
-  const targetRef = useRef<HTMLDivElement | null>(null)
-  const [target, setTarget] = useState<HTMLElement | null>(null)
-  const [tab, setTab] = useState<string | null>(null)
-
-  // The target is published after mount, so a route that portals into it on
-  // its own first render finds an element rather than null on the next.
-  useEffect(() => setTarget(targetRef.current), [])
-
-  const slot: InspectorSlot = {
-    open,
-    size: open ? INSPECTOR_WIDTH : 0,
-    tab,
-    setTab,
-    target
-  }
-
   const body = (
     <>
       <div className="desk-pane-head">
@@ -65,7 +67,7 @@ export function RightPane({
       </div>
       {/* Always mounted, so a route's portal target never disappears under it.
           Phase A publishes nothing into it, so the empty state stands. */}
-      <div ref={targetRef} className="desk-inspector-slot" />
+      <div ref={publishTarget} className="desk-inspector-slot" />
       <p className="desk-pane-empty">{EMPTY_STATE}</p>
       {children}
     </>
@@ -73,35 +75,36 @@ export function RightPane({
 
   if (asDrawer) {
     return (
-      <InspectorSlotContext.Provider value={slot}>
-        <Dialog.Root open={open} onOpenChange={(next) => !next && onClose()}>
-          <Dialog.Portal>
-            <Dialog.Overlay className="desk-overlay" />
-            {/* The id is on both forms, because the header's toggle points at
-                it with `aria-controls` in both — and a dangling reference
-                offers assistive technology a broken relationship rather than
-                none. Only one form is ever mounted, so the id stays unique. */}
-            <Dialog.Content
-              className="desk-drawer desk-drawer-right"
-              id="desk-inspector"
-              aria-label="Inspector"
-            >
-              <VisuallyHidden.Root>
-                <Dialog.Title>Inspector</Dialog.Title>
-              </VisuallyHidden.Root>
-              {body}
-            </Dialog.Content>
-          </Dialog.Portal>
-        </Dialog.Root>
-      </InspectorSlotContext.Provider>
+      <Dialog.Root open={open} onOpenChange={(next) => !next && onClose()}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="desk-overlay" />
+          {/* The id is on both forms, and the header emits `aria-controls`
+              only where the form carrying it is mounted: a closed drawer's
+              portal is not in the document, and pointing at an id that is not
+              there offers assistive technology a broken relationship. */}
+          <Dialog.Content
+            className="desk-drawer desk-drawer-right"
+            id="desk-inspector"
+            aria-label="Inspector"
+            style={{ '--drawer-w': `${width}px` } as CSSProperties}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault()
+              openerRef.current?.focus()
+            }}
+          >
+            <VisuallyHidden.Root>
+              <Dialog.Title>Inspector</Dialog.Title>
+            </VisuallyHidden.Root>
+            {body}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     )
   }
 
   return (
-    <InspectorSlotContext.Provider value={slot}>
-      <aside className="desk-inspector" aria-label="Inspector" id="desk-inspector" hidden={!open}>
-        {body}
-      </aside>
-    </InspectorSlotContext.Provider>
+    <aside className="desk-inspector" aria-label="Inspector" id="desk-inspector" hidden={!open}>
+      {body}
+    </aside>
   )
 }
