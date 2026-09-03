@@ -19,14 +19,34 @@ it, or from running their matrices where it does not.
 
 **A shell around all of it.** A header, a left rail, an Inspector, a Console and
 a status strip — described under [Shell](#shell). The rail's first entry creates
-a pack: it writes the file and forms no opinion about it. The starting bytes are
-the runtime's own example, the runtime's own schema, or an empty file — the desk
-ships no template, because a desk-authored skeleton would be the desk asserting
-what a pack is. The write is the ordinary `PUT /api/file` with `baseSha256: ""`,
-so a file that is already there is refused rather than overwritten. **The parent
-directory has to exist**: the chassis writes files and creates no directories,
-so the path field is seeded with `packs/` only where the project already keeps a
-file there.
+a pack, and asks three things: a **name**, a **description**, and a
+**template**. The name gives the id, the id gives the file name, and where that
+file goes is `storage.packs` in `jpack-desk.json` — configuration, not a
+question for whoever is creating a pack. The templates are the runtime's own
+examples plus an empty pack derived from the runtime's own schema; the desk
+ships none of its own, because a desk-authored skeleton would be the desk
+asserting what a pack is.
+
+The id is derived live and shown under the field: diacritics folded, every run
+outside `a–z0–9` becoming one `-`. A name that cannot become the runtime's
+`decisionId` is refused rather than repaired, and the refusal states the
+alphabet — a name written in another script is made of letters, and telling its
+author otherwise would be false. The empty pack is offered **only** where the
+runtime serves a schema to derive it from, because a skeleton with no
+`specVersion` is not an incomplete pack but a file nothing can read as one; and
+the dialog says beside it that an empty pack is a start rather than a finished
+one, because it carries the schema's required members and no more.
+
+Two writes, in this order, and nothing is sent until everything that could
+refuse has been asked. The pack is written with `PUT /api/file`,
+`baseSha256: ""` and `createParents: true` — so a file already under that name
+is refused rather than overwritten, and a missing `packs/` is created. Then
+`jpack.json` is amended with one entry, written against the digest the read
+that answered the id question returned, so a change made while the dialog was
+open is refused rather than overwritten. Where the second write fails, the pack
+file is on disk and nothing names it: the dialog says exactly that and stays on
+screen to say it, because the file API has no delete verb and claiming an
+unwind would be worse than the residue.
 
 **A pack browser:**
 
@@ -482,7 +502,14 @@ the file name inside `dir`. Every member is optional and takes the default
 above. `dir` is project-relative and slash-separated, and is refused here for
 the same lexical shape the file API would refuse anyway — so Admin names the
 key that is wrong rather than the dialog failing later on a path nobody chose to
-look at. `idBase` must parse as a URI, because a pack document's `id` member is
+look at. That includes the directories the chassis excludes from its endpoints
+altogether (`.git`, `node_modules`, `dist`, `.venv`, `vendor`, and a staging
+name): `"dir": "dist"` is a plausible thing to type, and a configuration that
+decodes clean while making every create fail is worse than one refused where it
+was written. The list is mirrored from `internal/desk/watch.go` and held to it
+by a test that reads that file.
+
+`idBase` must parse as a URI, because a pack document's `id` member is
 `format: uri`, and it is **normalised at decode** to end in `/` (or left alone
 where it ends in `#`), so a pack's id is a plain concatenation everywhere it is
 used and Admin shows the prefix that will actually be written.
@@ -812,13 +839,25 @@ as stale creates nothing. A parent that is a regular file is refused, and by the
 current-bytes read rather than by this branch: opening through it is `ENOTDIR`,
 which is one of the refusals that reads as the containment error.
 
+**Bounded by what the listing can report.** A create is refused past the walk's
+depth limit with a `400`. `GET /api/files` gives up there and reports the tree
+as partial, so a write allowed past that point would land a file this API's own
+listing can never name — and there is no delete verb to take it back.
+
 **There is no unwind.** If the directories are created and the write then fails,
 an empty directory is left behind. Removing it would need a delete verb this API
 does not have, applied to a directory another process may have populated in the
-interval; an empty directory is inert and the next attempt uses it. The mode is
-`0o777` masked by the umask — the ordinary convention for a directory in the
-user's own project, which is committed to their repository and read by their
-other tools.
+interval; an empty directory is inert and the next attempt uses it.
+
+**Modes come from the umask, and this API has no opinion of its own.** A created
+directory is `0o777` masked by the umask and a created *file* is `0o666` masked
+by the same umask — the ordinary convention in the user's own project, which is
+committed to their repository and read by their other tools. A file the desk
+brought into existence used to keep the staging file's `0o600`, so one request
+made a world-readable directory holding an owner-only document; the staging file
+is now created `0o666` and the kernel applies the umask. A file that already
+exists still keeps its own mode across a save, so a document somebody narrowed
+on purpose is not opened up by editing it.
 
 **Atomic replace, scoped honestly.** The bytes are staged in the target's own
 directory through the same pinned root — rename is atomic only within a
@@ -944,7 +983,8 @@ web/                 Vite + React + TypeScript SPA
                      a description and a template, and decides the file's
                      location from configuration
   src/ui/            the styled primitives: Button, Field, Input, TextArea,
-                     Select and Dialog, one CSS module each (see Styling)
+                     Select, Dialog and Alert, one CSS module each (see
+                     Styling)
   src/packs/         what a new pack is called and where it goes: the slug
                      rule, the template shaping, and the jpack.json amendment
   src/config/        the jpack-desk.json schema, its strict decoder, the one
@@ -956,23 +996,32 @@ web/                 Vite + React + TypeScript SPA
 
 ## Styling
 
-Four rules, and one test that holds all four
+Four rules **for `src/ui/`**, and one test that holds all four
 (`web/src/ui/convention.test.ts`, which reads the source because vitest runs
 with `css: false` and a component whose stylesheet was deleted renders exactly
-like one whose stylesheet is intact):
+like one whose stylesheet is intact). The scope is the point: these are the
+terms the primitives are built on, not a claim about every file in the app.
 
 - **The tokens in `styles.css` are the only source of colour and radius.** A
-  component's module spells no colour of its own — no hex, no `rgb()`, no
-  `hsl()` — because a second palette is one the theme attribute does not reach.
-  The modal scrim is `--overlay` for exactly this reason.
+  module spells no colour of its own — no hex, no `rgb()`, no `hsl()` — and no
+  radius of its own either: `--radius` and `--radius-sm`, never `4px`. A second
+  palette is one the theme attribute does not reach; a literal radius is a
+  second answer to a question the tokens already answer. The modal scrim is
+  `--overlay` for the same reason.
 - **A component under `src/ui/` owns its own `X.module.css`, and no other sheet
   styles it.** One component, one module, no orphan of either.
 - **`shell.css` owns the five regions' layout and nothing a component renders.**
   No module touches `--rail-current`, `--inspector-current`, `--console-current`
   or `grid-template-areas`.
-- **There are no inline styles for UI.** An inline style beats every sheet
-  without `!important` and cannot be themed, which makes it the one way a
-  component can quietly opt out of the tokens.
+- **No component under `src/ui/` carries an inline style.** An inline style
+  beats every sheet without `!important` and cannot be themed, which makes it
+  the one way a component can quietly opt out of the tokens. Three files outside
+  `src/ui/` do carry one, and each writes a value only the running page knows:
+  `shell/AppShell.tsx` and `shell/RightPane.tsx` set custom properties the
+  sheets then read (`--rail-current`, `--drawer-w`), and
+  `components/GraphWalkDiagram.tsx` sets a max-width measured from the
+  container. Naming them is what keeps the rule above true rather than
+  approximately true.
 
 Only class selectors appear at a module's top level. A bare element selector
 inside a CSS module is **not** hashed — it is global — so one `button { … }`
@@ -984,8 +1033,9 @@ hashed at build time so they cannot collide with the ~60 names `styles.css`
 already owns. That is why there is no import-order rule in `main.tsx` to
 remember and no layer to keep in sync.
 
-Only the Create-pack dialog is built from these primitives today. The other
-views keep the sheets they have; migrating them is its own piece of work.
+Only the Create-pack dialog is built from these primitives today — `Button`,
+`Field`, `Input`, `TextArea`, `Select`, `Dialog` and `Alert`. The other views
+keep the sheets they have; migrating them is its own piece of work.
 
 ## Tests
 
