@@ -58,7 +58,13 @@ export function Select({
   const offered = useMemo(() => new Set(options.map((option) => option.value)), [options])
   return (
     <RadixSelect.Root
-      value={value}
+      // **Never undefined.** A caller with nothing selected yet — a listing
+      // still in flight — used to hand Radix `undefined`, which makes the
+      // component uncontrolled; the first real value then switched it to
+      // controlled, and React warns about exactly that for the reason it is
+      // worth warning about. The empty string is "controlled, and nothing is
+      // selected", which is the state that was meant.
+      value={value ?? ''}
       onValueChange={(next) => {
         if (offered.has(next)) onValueChange(next)
       }}

@@ -398,6 +398,25 @@ describe('the templates it offers', () => {
   })
 
   it('offers nothing and selects nothing while the templates are still being asked', async () => {
+    // **And says nothing to the console while doing it.** A `value` of
+    // `undefined` makes Radix's Select uncontrolled, and the first real value
+    // switches it to controlled — React warns, and a warning nobody asserts
+    // on is a warning that stays. The listener is installed for the whole
+    // case, because the transition happens when the listing settles.
+    const noise: unknown[][] = []
+    const realError = console.error
+    const realWarn = console.warn
+    console.error = (...args: unknown[]) => void noise.push(args)
+    console.warn = (...args: unknown[]) => void noise.push(args)
+    try {
+      await pendingTemplates(noise)
+    } finally {
+      console.error = realError
+      console.warn = realWarn
+    }
+  })
+
+  async function pendingTemplates(noise: unknown[][]) {
     // Empty used to be offered on the strength of the capability flag alone
     // and selected as `options[0]` before any listing answered — so the field
     // showed a template that might not resolve, and swapped under the viewer
@@ -427,7 +446,9 @@ describe('the templates it offers', () => {
     await waitFor(() =>
       expect(screen.getByLabelText('Template').textContent).toContain('minimal')
     )
-  })
+    // Nothing was said to the console at any point in the transition.
+    expect(noise.map((args) => String(args[0] ?? ''))).toEqual([])
+  }
 
   it('routes a literal example named empty to get_example, not to the schema', async () => {
     // The sentinel used to be the bare string `empty`, which is a name a

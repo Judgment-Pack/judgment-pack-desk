@@ -16,7 +16,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { colourProblem, declarationsIn } from './declarations'
+import { colourProblem, colourProblemsIn, declarationsIn } from './declarations'
 
 const UI = import.meta.dirname
 const read = (name: string) => readFileSync(join(UI, name), 'utf8')
@@ -94,13 +94,15 @@ describe('the styling convention', () => {
     // whether the *property name* contained "background" or "color" — so
     // `border: 1px solid red`, `outline: 2px solid red` and a named colour in
     // a `box-shadow` all passed the rule that exists to catch them.
-    for (const declaration of declarationsIn(read(name))) {
-      const problem = colourProblem(declaration)
-      expect(
-        problem,
-        `${name}: ${declaration.property}: ${declaration.value} — ${problem}`
-      ).toBeUndefined()
-    }
+    //
+    // Whole-sheet rather than per-declaration, because two of the ways a
+    // module can hold a colour of its own are invisible in one declaration: a
+    // `var()` fallback, and a custom property the module defines itself.
+    const problems = colourProblemsIn(read(name))
+    expect(
+      problems,
+      `${name}: ${problems.map((entry) => `${entry.where} — ${entry.problem}`).join('; ')}`
+    ).toEqual([])
   })
 })
 
@@ -156,6 +158,55 @@ describe('the colour rule catches what it used to miss', () => {
     ['a border with no colour at all from a token', '.a { border-top: 1px solid; }']
   ])('catches %s', (_what, sheet) => {
     expect(caught(sheet).length).toBeGreaterThan(0)
+  })
+
+  /**
+   * The two shapes a per-declaration rule cannot see.
+   *
+   * Both satisfy every clause read one declaration at a time — the value uses
+   * a `var()`, and a custom property's definition is not a colour-bearing
+   * declaration — and both are a second palette the theme attribute never
+   * reaches.
+   */
+  const sheetProblems = (sheet: string) => colourProblemsIn(sheet).map((entry) => entry.problem)
+
+  it.each([
+    ['a named colour as a var() fallback', '.a { color: var(--ink, red); }'],
+    ['a hex as a var() fallback', '.a { background: var(--surface, #ff0000); }'],
+    [
+      'a colour function nested in a fallback',
+      '.a { color: var(--ink, var(--fallback, rgb(1 2 3))); }'
+    ],
+    ['a fallback inside a shorthand', '.a { border: 1px solid var(--border, red); }'],
+    [
+      'a module-local colour property',
+      ':root { --local-ink: red; } .a { color: var(--local-ink); }'
+    ],
+    [
+      'a module-local property holding a hex',
+      '.a { --mine: #ff0000; } .b { box-shadow: 0 0 2px var(--mine); }'
+    ]
+  ])('catches %s', (_what, sheet) => {
+    expect(sheetProblems(sheet).length).toBeGreaterThan(0)
+  })
+
+  it.each([
+    ['a token with a token fallback', '.a { color: var(--ink, var(--ink-soft)); }'],
+    ['a token with a colourless fallback', '.a { outline: var(--focus, none); }'],
+    ['a module-local length', '.a { --gap: 4px; padding: var(--gap); }'],
+    ['a plain token', '.a { color: var(--ink); }']
+  ])('leaves %s alone', (_what, sheet) => {
+    expect(sheetProblems(sheet)).toEqual([])
+  })
+
+  it('names where the colour actually came from', () => {
+    // The message points at the definition and not only at the use: a
+    // module-local property can be used in five places and defined in one.
+    const [fallback] = colourProblemsIn('.a { color: var(--ink, red); }')
+    expect(fallback!.problem).toContain('var() fallback')
+    const found = colourProblemsIn(':root { --local-ink: red; } .a { color: var(--local-ink); }')
+    expect(found.some((entry) => entry.where === '--local-ink')).toBe(true)
+    expect(found.some((entry) => entry.problem.includes('module-local --local-ink'))).toBe(true)
   })
 
   it.each([

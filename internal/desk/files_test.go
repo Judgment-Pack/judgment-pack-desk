@@ -2504,3 +2504,175 @@ func TestRefusalsCarryAStableCode(t *testing.T) {
 		}
 	})
 }
+
+// TestEveryCodeHasAStatusAndAWitness holds the contract the codes are for.
+//
+// Two halves, and the second is the one that was missing. The matrix is
+// asserted total in both directions — no code without a status, no status for a
+// code that does not exist — and then **every code is produced by an actual
+// request**, so a constant nobody can reach is a constant that fails here
+// rather than a line in a comment.
+//
+// `CodeInternal` is the one exception and is asserted as such: it is the answer
+// for a failure with no better one, so a request that reliably produces it
+// would be a bug rather than a contract.
+func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on Windows")
+	}
+
+	t.Run("the matrix is total", func(t *testing.T) {
+		for _, code := range allCodes {
+			if _, ok := codeStatus[code]; !ok {
+				t.Errorf("%s has no status", code)
+			}
+		}
+		declared := make(map[string]bool, len(allCodes))
+		for _, code := range allCodes {
+			declared[code] = true
+		}
+		for code := range codeStatus {
+			if !declared[code] {
+				t.Errorf("codeStatus carries %s, which is not a declared code", code)
+			}
+		}
+	})
+
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "plain.json", "{}")
+	writeProjectFile(t, project, "obstruction", "not a directory")
+	writeProjectFile(t, project, "binary.json", "\xff\xfe not text")
+	if err := os.Symlink("plain.json", filepath.Join(project, "link.json")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	for _, dir := range []string{"node_modules", "packs"} {
+		if err := os.Mkdir(filepath.Join(project, dir), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	deep := make([]string, 0, maxWalkDepth+1)
+	for i := 0; i <= maxWalkDepth; i++ {
+		deep = append(deep, fmt.Sprintf("d%d", i))
+	}
+
+	// One request per code, and the map is keyed by code so a missing entry is
+	// a missing witness rather than a silently shorter table.
+	witnesses := map[string]func(t *testing.T) (int, map[string]any){
+		CodeOutsideRoot: func(t *testing.T) (int, map[string]any) {
+			return putJSON(t, ts, WriteRequest{Path: "../x.json", Content: "{}"})
+		},
+		CodeSymlink: func(t *testing.T) (int, map[string]any) {
+			return putJSON(t, ts, WriteRequest{Path: "link.json", Content: "{}", Override: true})
+		},
+		CodeNotFound: func(t *testing.T) (int, map[string]any) {
+			return getJSON(t, ts, "/api/file?token="+testToken+"&path=absent.json")
+		},
+		CodeDirectoryMissing: func(t *testing.T) (int, map[string]any) {
+			return putJSON(t, ts, WriteRequest{Path: "nope/x.json", Content: "{}"})
+		},
+		CodeParentIsAFile: func(t *testing.T) (int, map[string]any) {
+			return putJSON(t, ts, WriteRequest{
+				Path: "obstruction/x.json", Content: "{}", CreateParents: true,
+			})
+		},
+		CodeTooDeep: func(t *testing.T) (int, map[string]any) {
+			return putJSON(t, ts, WriteRequest{
+				Path: strings.Join(deep, "/") + "/x.json", Content: "{}", CreateParents: true,
+			})
+		},
+		CodeExists: func(t *testing.T) (int, map[string]any) {
+			return putJSON(t, ts, WriteRequest{Path: "plain.json", Content: "{}", BaseSHA256: ""})
+		},
+		CodeStale: func(t *testing.T) (int, map[string]any) {
+			return putJSON(t, ts, WriteRequest{
+				Path: "plain.json", Content: "{}", BaseSHA256: strings.Repeat("a", 64),
+			})
+		},
+		CodeTooLarge: func(t *testing.T) (int, map[string]any) {
+			return putJSON(t, ts, WriteRequest{
+				Path: "plain.json", Content: strings.Repeat("x", maxFileBytes+1),
+			})
+		},
+		CodeNotUTF8: func(t *testing.T) (int, map[string]any) {
+			return getJSON(t, ts, "/api/file?token="+testToken+"&path=binary.json")
+		},
+		CodeNotAFile: func(t *testing.T) (int, map[string]any) {
+			// An ordinary directory asked for as a file. Not `node_modules`:
+			// that is refused earlier, by name, as an excluded directory.
+			return getJSON(t, ts, "/api/file?token="+testToken+"&path=packs")
+		},
+		CodeUnauthorized: func(t *testing.T) (int, map[string]any) {
+			return getJSON(t, ts, "/api/file?path=plain.json")
+		},
+		CodeForbidden: func(t *testing.T) (int, map[string]any) {
+			// An origin the desk does not accept. The token case is its own
+			// code now, because one code answering both 401 and 403 is not a
+			// matrix.
+			req, err := http.NewRequest(http.MethodGet,
+				ts.URL+"/api/file?token="+testToken+"&path=plain.json", nil)
+			if err != nil {
+				t.Fatalf("request: %v", err)
+			}
+			req.Header.Set("Origin", "https://elsewhere.example")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			defer resp.Body.Close()
+			var body map[string]any
+			_ = json.NewDecoder(resp.Body).Decode(&body)
+			return resp.StatusCode, body
+		},
+		CodeBadRequest: func(t *testing.T) (int, map[string]any) {
+			// A missing path. It used to answer 403 with this code, which is
+			// the status and the code disagreeing about one refusal.
+			return getJSON(t, ts, "/api/file?token="+testToken)
+		},
+		CodeStagingFile: func(t *testing.T) (int, map[string]any) {
+			return putJSON(t, ts, WriteRequest{
+				Path: stagingPrefix + "leftover.json", Content: "{}",
+			})
+		},
+		CodeExcludedDirectory: func(t *testing.T) (int, map[string]any) {
+			return putJSON(t, ts, WriteRequest{Path: "node_modules/x.json", Content: "{}"})
+		},
+	}
+
+	for _, code := range allCodes {
+		if code == CodeInternal {
+			// Deliberately unwitnessed: it is the answer for a failure with no
+			// better one, and a request that reliably produced it would be a
+			// defect rather than a contract. It is in the matrix so that an
+			// unlabelled error still carries *a* code.
+			if _, ok := codeStatus[code]; !ok {
+				t.Errorf("%s is not in the matrix", code)
+			}
+			continue
+		}
+		request, ok := witnesses[code]
+		if !ok {
+			t.Errorf("%s has no request that produces it", code)
+			continue
+		}
+		t.Run(code, func(t *testing.T) {
+			status, body := request(t)
+			got, _ := body["code"].(string)
+			if got != code {
+				t.Fatalf("code %q, want %q (status %d, %v)", got, code, status, body)
+			}
+			// **The status the matrix says, and not the one the call site felt
+			// like.** This is the assertion the `bad-request`/403 mismatch
+			// could not survive.
+			if status != codeStatus[code] {
+				t.Fatalf("status %d, want %d for %s", status, codeStatus[code], code)
+			}
+			// And never the containment sentence for a refusal that is not one.
+			if code != CodeOutsideRoot {
+				if message, _ := body["error"].(string); strings.Contains(message, "not inside the project") {
+					t.Fatalf("%s reported as a containment failure: %q", code, message)
+				}
+			}
+		})
+	}
+}

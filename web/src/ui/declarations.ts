@@ -182,19 +182,167 @@ const COLOUR_FUNCTIONS = /\b(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix
  */
 export function colourProblem(declaration: Declaration): string | undefined {
   if (!carriesColour(declaration.property)) return undefined
-  const value = declaration.value.trim()
+  return colourProblemIn(declaration.value.trim())
+}
+
+/**
+ * The same question about one value, so a `var()` fallback can be asked it too.
+ *
+ * Recursion is the point. `var(--ink, red)` is a declaration that uses a token
+ * *and* names a colour, and the check that removed the whole `var(…)` before
+ * looking for names could not see the second half — so `color: var(--ink, red)`
+ * passed a rule whose entire job is to catch a literal. A fallback is a colour
+ * this sheet chose; that it is only used when the token is missing does not
+ * make it not a second palette.
+ */
+function colourProblemIn(value: string): string | undefined {
   if (value === '') return undefined
   if (COLOURLESS.has(value.toLowerCase())) return undefined
   if (/#[0-9a-fA-F]{3,8}\b/.test(value)) return 'a hex colour'
   if (COLOUR_FUNCTIONS.test(value)) return 'a colour function'
-  // Words outside `var(…)`, so a token's own name cannot be mistaken for one.
-  const outside = value.replace(/var\([^)]*\)/g, ' ')
-  const named = outside
-    .split(/[^a-zA-Z-]+/)
-    .filter(Boolean)
-    .find((word) => NAMED.has(word.toLowerCase()))
+
+  // Every `var()` in the value, with its own fallback asked the same question.
+  const references = varReferences(value)
+  for (const reference of references) {
+    if (reference.fallback === undefined) continue
+    const problem = colourProblemIn(reference.fallback.trim())
+    if (problem !== undefined) return `${problem} in a var() fallback`
+  }
+
+  // Words outside every `var(…)`, so a token's own name cannot be mistaken
+  // for one.
+  const named = wordsOutsideVar(value).find((word) => NAMED.has(word.toLowerCase()))
   if (named !== undefined) return `the named colour ${named}`
   // Everything colour-bearing has to *have* a colour from somewhere, and the
   // only place it may come from is a token.
-  return value.includes('var(--') ? undefined : 'no token'
+  return references.length > 0 ? undefined : 'no token'
+}
+
+/** One `var()` reference: the custom property it names, and its fallback. */
+export interface VarReference {
+  name: string
+  fallback: string | undefined
+}
+
+/**
+ * Every `var()` in a value, with balanced parentheses.
+ *
+ * `[^)]*` cannot do this: a fallback is allowed to contain another `var()`, and
+ * `var(--a, var(--b, red))` ends at the *first* `)` under that pattern — which
+ * hides the `red` from every check downstream.
+ */
+export function varReferences(value: string): VarReference[] {
+  const found: VarReference[] = []
+  for (let index = value.indexOf('var('); index !== -1; index = value.indexOf('var(', index + 1)) {
+    let depth = 0
+    let end = -1
+    for (let scan = index + 3; scan < value.length; scan += 1) {
+      if (value[scan] === '(') depth += 1
+      if (value[scan] === ')') {
+        depth -= 1
+        if (depth === 0) {
+          end = scan
+          break
+        }
+      }
+    }
+    if (end === -1) break
+    const inside = value.slice(index + 4, end)
+    const comma = splitOnce(inside)
+    found.push({ name: comma.name.trim(), fallback: comma.fallback })
+  }
+  return found
+}
+
+/** `--name, fallback` split on the first top-level comma. */
+function splitOnce(inside: string): { name: string; fallback: string | undefined } {
+  let depth = 0
+  for (let index = 0; index < inside.length; index += 1) {
+    if (inside[index] === '(') depth += 1
+    if (inside[index] === ')') depth -= 1
+    if (inside[index] === ',' && depth === 0) {
+      return { name: inside.slice(0, index), fallback: inside.slice(index + 1) }
+    }
+  }
+  return { name: inside, fallback: undefined }
+}
+
+/** The bare words of a value, with every balanced `var(…)` removed. */
+function wordsOutsideVar(value: string): string[] {
+  let stripped = ''
+  let index = 0
+  while (index < value.length) {
+    if (value.startsWith('var(', index)) {
+      let depth = 0
+      let scan = index + 3
+      for (; scan < value.length; scan += 1) {
+        if (value[scan] === '(') depth += 1
+        if (value[scan] === ')') {
+          depth -= 1
+          if (depth === 0) break
+        }
+      }
+      stripped += ' '
+      index = scan + 1
+      continue
+    }
+    stripped += value[index]
+    index += 1
+  }
+  return stripped.split(/[^a-zA-Z-]+/).filter(Boolean)
+}
+
+/**
+ * The colour problems a whole sheet carries, custom properties included.
+ *
+ * **A module-local custom property is not a token.** `--local-ink: red` followed
+ * by `color: var(--local-ink)` satisfies every per-declaration rule — the
+ * declaration takes its colour from a `var()`, and the definition is not a
+ * colour-bearing property — and is a second palette all the same, one the theme
+ * attribute does not reach. So a custom property defined *in the module* is
+ * inspected as though it were the value it stands for, and a colour-bearing
+ * declaration that resolves only through one is reported at the definition.
+ *
+ * A `var(--x)` naming a property this sheet does **not** define is a token from
+ * `styles.css`, which is the whole point of the convention and is left alone.
+ */
+export function colourProblemsIn(sheet: string): { where: string; problem: string }[] {
+  const declarations = declarationsIn(sheet)
+  const local = new Map<string, string>()
+  for (const declaration of declarations) {
+    if (declaration.property.startsWith('--')) local.set(declaration.property, declaration.value)
+  }
+  const problems: { where: string; problem: string }[] = []
+  for (const declaration of declarations) {
+    // A local custom property is judged by what it holds, whatever it is
+    // called: `--local-ink: red` is a literal wherever it is later used.
+    if (declaration.property.startsWith('--')) {
+      const problem = colourProblemIn(declaration.value.trim())
+      // Only a *colour* is a problem here. A local `--gap: 4px` is ordinary.
+      if (problem !== undefined && problem !== 'no token') {
+        problems.push({ where: declaration.property, problem })
+      }
+      continue
+    }
+    const direct = colourProblem(declaration)
+    if (direct !== undefined) {
+      problems.push({ where: declaration.property, problem: direct })
+      continue
+    }
+    if (!carriesColour(declaration.property)) continue
+    // And a colour-bearing declaration whose only source is a local property
+    // is reported too, because the module decided that colour.
+    for (const reference of varReferences(declaration.value)) {
+      const held = local.get(reference.name)
+      if (held === undefined) continue
+      const problem = colourProblemIn(held.trim())
+      if (problem !== undefined && problem !== 'no token') {
+        problems.push({
+          where: declaration.property,
+          problem: `${problem} through the module-local ${reference.name}`
+        })
+      }
+    }
+  }
+  return problems
 }

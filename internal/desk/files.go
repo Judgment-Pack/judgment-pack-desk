@@ -138,14 +138,70 @@ const (
 	CodeNotUTF8 = "not-utf8"
 	// CodeNotAFile is a directory, FIFO, device or socket asked for as a file.
 	CodeNotAFile = "not-a-file"
-	// CodeForbidden is a path inside the project this process may not open.
+	// CodeUnauthorized is a request with no session token, or the wrong one.
+	//
+	// Split from CodeForbidden because a code that maps to two statuses is not
+	// a matrix: the token check answers 401 and the origin check answers 403,
+	// and they were one code. A client retrying with a token and a client that
+	// must change its origin are given different answers now.
+	CodeUnauthorized = "unauthorized"
+	// CodeForbidden is a request from an origin this desk does not accept, or
+	// a path inside the project this process may not open.
 	CodeForbidden = "forbidden"
 	// CodeBadRequest is a request this API could not read at all.
 	CodeBadRequest = "bad-request"
+	// CodeStagingFile is a path naming one of this desk's own staging files.
+	//
+	// Its own code because it is not a containment failure and not a missing
+	// file: it is a name reserved by the desk, and the fix is to pick another.
+	// It used to fall through to CodeInternal, which tells a client nothing
+	// and tells it in a way that reads like a bug here.
+	CodeStagingFile = "staging-file"
+	// CodeExcludedDirectory is a path under a directory this desk never reads
+	// or writes — `node_modules`, `.git`, the staging tree.
+	CodeExcludedDirectory = "excluded-directory"
 	// CodeInternal is everything with no better answer. A client that branches
 	// on this is a client guessing, which is what the others are for.
 	CodeInternal = "internal"
 )
+
+// codeStatus is the whole code-to-status matrix, in one place.
+//
+// It was three places: a literal beside each `writeJSONError` call, a special
+// case in `statusForRefusal`, and whatever the caller happened to pass. That is
+// how `path is required` came to carry `bad-request` and answer 403 — the code
+// said one thing and the status said another, about the same refusal.
+//
+// **Every declared code has an entry.** A test walks this map against the
+// declared constants in both directions, so a code added without a status, or
+// a status for a code that does not exist, fails rather than defaults.
+var codeStatus = map[string]int{
+	CodeOutsideRoot:       http.StatusForbidden,
+	CodeSymlink:           http.StatusForbidden,
+	CodeNotFound:          http.StatusNotFound,
+	CodeDirectoryMissing:  http.StatusNotFound,
+	CodeParentIsAFile:     http.StatusNotFound,
+	CodeTooDeep:           http.StatusBadRequest,
+	CodeExists:            http.StatusConflict,
+	CodeStale:             http.StatusConflict,
+	CodeTooLarge:          http.StatusRequestEntityTooLarge,
+	CodeNotUTF8:           http.StatusUnsupportedMediaType,
+	CodeNotAFile:          http.StatusBadRequest,
+	CodeUnauthorized:      http.StatusUnauthorized,
+	CodeForbidden:         http.StatusForbidden,
+	CodeBadRequest:        http.StatusBadRequest,
+	CodeStagingFile:       http.StatusForbidden,
+	CodeExcludedDirectory: http.StatusForbidden,
+	CodeInternal:          http.StatusInternalServerError,
+}
+
+// allCodes is every code this API declares, for the tests that walk them.
+var allCodes = []string{
+	CodeOutsideRoot, CodeSymlink, CodeNotFound, CodeDirectoryMissing,
+	CodeParentIsAFile, CodeTooDeep, CodeExists, CodeStale, CodeTooLarge,
+	CodeNotUTF8, CodeNotAFile, CodeUnauthorized, CodeForbidden, CodeBadRequest,
+	CodeStagingFile, CodeExcludedDirectory, CodeInternal,
+}
 
 // coded carries a refusal's stable code alongside its sentence.
 //
@@ -167,14 +223,15 @@ func withCode(code string, err error) error { return coded{code: code, err: err}
 // codeOf reports the code a refusal carries, or CodeInternal where it carries
 // none. An unlabelled error is a bug rather than a category, and answering
 // "internal" says that without inventing a classification for it.
-// statusForRefusal is the status a path refusal deserves.
+// statusForRefusal is the status a refusal's own code says it deserves.
 //
-// Containment is a 403 and stays one. A component of the path being a regular
-// file is a 404: there is nothing at that path and there cannot be, which is
-// what "not found" means — answering 403 would say the desk declined to look.
+// One lookup rather than a ladder of special cases, so a code and the status
+// beside it cannot disagree. An unknown code — which can only be a code from a
+// newer chassis reaching older code — is a 403: refusing is the safe answer to
+// a refusal this build does not recognise.
 func statusForRefusal(err error) int {
-	if codeOf(err) == CodeParentIsAFile {
-		return http.StatusNotFound
+	if status, ok := codeStatus[codeOf(err)]; ok {
+		return status
 	}
 	return http.StatusForbidden
 }
@@ -288,8 +345,18 @@ type WriteRequest struct {
 	//     symlink — whatever it points at, including a target inside the root,
 	//     because this desk's rule is stricter than os.Root's. That walk stops
 	//     at the first component that does not exist, which is exactly where
-	//     MkdirAll begins: a symlinked parent is refused before one directory
-	//     is created, and there is no window in which a create follows a link.
+	//     MkdirAll begins, so a symlinked parent that was there when the walk
+	//     ran is refused before one directory is created.
+	//
+	//     **That is a statement about a link that already existed, and not
+	//     about a window.** A link introduced between the walk and this call
+	//     is followed, which is the inward-link race refuseSymlinkedPath
+	//     documents and TestSwapAfterTheSymlinkWalkStaysInsideTheRoot asserts.
+	//     Containment still holds — MkdirAll goes through the pinned root, so
+	//     an outward link cannot be followed at any moment — but the desk's own
+	//     stricter rule is best effort against a local writer racing it, and
+	//     saying "no window" here contradicted the residual documented two
+	//     hundred lines down and in the README.
 	//   - It sits after the stale-digest check and inside the per-path write
 	//     lock, so a write refused as stale creates nothing and two concurrent
 	//     creates of one path are serialized exactly as two saves are.
@@ -383,7 +450,8 @@ func wireRelativePath(rel string) (string, error) {
 		return "", errOutsideProject
 	}
 	if strings.HasPrefix(path.Base(clean), stagingPrefix) {
-		return "", fmt.Errorf("%s is a staging file this desk owns, not a document", clean)
+		return "", withCode(CodeStagingFile, fmt.Errorf(
+			"%s is a staging file this desk owns, not a document", clean))
 	}
 	// The excluded directories are excluded from the *endpoints*, not only from
 	// the listing. Documenting an exclusion that a direct GET or PUT walks
@@ -392,7 +460,8 @@ func wireRelativePath(rel string) (string, error) {
 	// collected either.
 	for _, part := range strings.Split(clean, "/") {
 		if isExcludedName(part) {
-			return "", fmt.Errorf("%s is under %s, which this desk does not edit", clean, part)
+			return "", withCode(CodeExcludedDirectory, fmt.Errorf(
+				"%s is under %s, which this desk does not edit", clean, part))
 		}
 	}
 	return clean, nil
@@ -801,7 +870,11 @@ func (s *Server) handleFileRead(w http.ResponseWriter, r *http.Request) {
 	}
 	clean, err := wireRelativePath(r.URL.Query().Get("path"))
 	if err != nil {
-		writeJSONError(w, http.StatusForbidden, err)
+		// The status comes from the refusal's own code. A hard-coded 403 here
+		// answered "not inside the project" for `path is required`, which is a
+		// malformed request and a 400 — the code said one thing and the status
+		// said another about the same refusal.
+		writeJSONError(w, statusForRefusal(err), err)
 		return
 	}
 	afterResolve(clean)
@@ -846,7 +919,7 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 	}
 	clean, err := wireRelativePath(req.Path)
 	if err != nil {
-		writeJSONError(w, http.StatusForbidden, err)
+		writeJSONError(w, statusForRefusal(err), err)
 		return
 	}
 
@@ -1145,7 +1218,8 @@ func (s *Server) removeStaleStaging() {
 // what keeps a new endpoint from being a new place to forget one of them.
 func (s *Server) guard(w http.ResponseWriter, r *http.Request) bool {
 	if !s.authorized(r) {
-		writeJSONCoded(w, http.StatusUnauthorized, CodeForbidden, "missing or invalid session token")
+		writeJSONCoded(w, http.StatusUnauthorized, CodeUnauthorized,
+			"missing or invalid session token")
 		return false
 	}
 	if !s.originAllowed(r) {

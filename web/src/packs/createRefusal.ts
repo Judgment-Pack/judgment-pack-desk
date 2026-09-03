@@ -17,6 +17,50 @@
  */
 import { FileRequestError, StaleWrite } from '../files/client'
 
+/**
+ * Every code the chassis declares, mirrored so the two can be checked against
+ * each other.
+ *
+ * `internal/desk/files.go` is the authority; this is a copy, and a copy that
+ * silently drifts is worse than none. The test walks this list against the Go
+ * constants in the source and fails on either side gaining a member the other
+ * does not have — which is how a code the dialog has never heard of gets
+ * noticed at the moment it is added rather than the first time a user meets it.
+ */
+export const CHASSIS_CODES = [
+  'outside-root',
+  'symlink',
+  'not-found',
+  'directory-missing',
+  'parent-is-a-file',
+  'too-deep',
+  'exists',
+  'stale',
+  'too-large',
+  'not-utf8',
+  'not-a-file',
+  'unauthorized',
+  'forbidden',
+  'bad-request',
+  'staging-file',
+  'excluded-directory',
+  'internal'
+] as const
+
+export type ChassisCode = (typeof CHASSIS_CODES)[number]
+
+/**
+ * The codes this dialog deliberately handles as **control flow** rather than
+ * as a refusal to report.
+ *
+ * `not-found` is the whole of it: the create sequence *asks* whether a file is
+ * there and reads a 404 as "no", so it never reaches a sentence. Naming it here
+ * is what keeps that from looking like an omission — the exhaustiveness test
+ * below requires every other code to have a sentence, and requires these to
+ * have none.
+ */
+export const CONTROL_FLOW_CODES = ['not-found'] as const
+
 /** The chassis codes this dialog has a sentence for. */
 export const CREATE_REFUSALS: Readonly<Record<string, string>> = {
   // The parent the configuration names is not there and could not be made.
@@ -36,7 +80,16 @@ export const CREATE_REFUSALS: Readonly<Record<string, string>> = {
   stale: 'Something else changed that file while this was open. Nothing was created.',
   'too-large': 'The pack this template would create is too large to write. Nothing was created.',
   'not-utf8': 'That file is not text this desk can read. Nothing was created.',
-  forbidden: 'This desk was not allowed to write there. Nothing was created.'
+  'not-a-file': 'Something that is not a file is in the way. Nothing was created.',
+  unauthorized:
+    'This desk’s session is no longer accepted — reload the page. Nothing was created.',
+  forbidden: 'This desk was not allowed to write there. Nothing was created.',
+  'bad-request': 'This desk sent a request the chassis could not read. Nothing was created.',
+  'staging-file':
+    'That name is one this desk reserves for its own temporary files — try another. Nothing was created.',
+  'excluded-directory':
+    'The folder configured for packs is one this desk never reads or writes. Nothing was created.',
+  internal: 'The chassis could not complete the write. Nothing was created.'
 }
 
 /**

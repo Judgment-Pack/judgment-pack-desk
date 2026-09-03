@@ -341,7 +341,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if parent := path.Dir(clean); false && parent != "." {'
   mutate go "the guard drops the token check" "$F" \
     '	if !s.authorized(r) {
-		writeJSONCoded(w, http.StatusUnauthorized, CodeForbidden, "missing or invalid session token")
+		writeJSONCoded(w, http.StatusUnauthorized, CodeUnauthorized,
+			"missing or invalid session token")
 		return false
 	}' \
     ''
@@ -454,6 +455,43 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 			code = CodeExists
 		}' \
     '		code := CodeStale'
+
+  # ---- Codex round 2 -----------------------------------------------------
+
+  # A staging or excluded-directory refusal used to carry no code at all and
+  # arrive at the client as `internal`, which says "a bug here" about a name
+  # the desk simply reserves.
+  mutate go "a staging-file refusal carries no code" "$F" \
+    '		return "", withCode(CodeStagingFile, fmt.Errorf(
+			"%s is a staging file this desk owns, not a document", clean))' \
+    '		return "", fmt.Errorf("%s is a staging file this desk owns, not a document", clean)'
+  mutate go "an excluded-directory refusal carries no code" "$F" \
+    '			return "", withCode(CodeExcludedDirectory, fmt.Errorf(
+				"%s is under %s, which this desk does not edit", clean, part))' \
+    '			return "", fmt.Errorf("%s is under %s, which this desk does not edit", clean, part)'
+  # The status used to be a literal at each call site, so `path is required`
+  # carried `bad-request` and answered 403.
+  mutate go "the status is not the one the code names" "$F" \
+    '	if status, ok := codeStatus[codeOf(err)]; ok {
+		return status
+	}
+	return http.StatusForbidden' \
+    '	return http.StatusForbidden'
+  mutate go "a malformed request is answered as a containment failure" "$F" \
+    '		writeJSONError(w, statusForRefusal(err), err)
+		return
+	}
+	afterResolve(clean)' \
+    '		writeJSONError(w, http.StatusForbidden, err)
+		return
+	}
+	afterResolve(clean)'
+  # One code answering both 401 and 403 is not a matrix.
+  mutate go "the token and the origin share one code again" "$F" \
+    '		writeJSONCoded(w, http.StatusUnauthorized, CodeUnauthorized,
+			"missing or invalid session token")' \
+    '		writeJSONCoded(w, http.StatusUnauthorized, CodeForbidden,
+			"missing or invalid session token")'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -495,6 +533,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   UD=web/src/ui/Dialog.tsx
   LR=web/src/shell/LeftRail.tsx
   FC=web/src/files/client.ts
+  SEL=web/src/ui/Select.tsx
   ST=web/src/mcp/starters.ts
 
   # The rail's graph gate. `useConfiguredGraphs` falls back to a whole-project
@@ -1418,8 +1457,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "    if (segment === '' || segment === '.') continue" \
     "    if (segment === '') continue"
   mutate web "two spellings of one file are compared case-sensitively" "$PP" \
-    '  return left === right || left.toLowerCase() === right.toLowerCase()' \
-    '  return left === right'
+    '  if (a === b) return true
+  const left = [...a]' \
+    '  if (a !== b) return false
+  const left = [...a]'
   mutate web "the candidate path is never asked about directly" "$X" \
     '        await readFile(path)
         setFailure({ lead: PACK_FILE_TAKEN })
@@ -1494,6 +1535,77 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "a shorthand is not somewhere a colour can be written" "$DL" \
     "  return COLOUR_BEARING.has(property) || property.endsWith('-color')" \
     "  return property === 'color' || property === 'background'"
+
+  # ---- Codex round 2 -----------------------------------------------------
+
+  # 1. `toLowerCase()` is not `strings.EqualFold`: `ſ` and `ς` lowercase to
+  # themselves, so neither ever met the letter it folds with.
+  mutate web "paths are folded by lowercasing rather than by orbit" "$PP" \
+    '  return ORBIT_OF.get(rune) ?? rune.toLowerCase()' \
+    '  return rune.toLowerCase()'
+  mutate web "the fold table loses the letters JavaScript will not close" "$PP" \
+    "  ['s', 'S', '\\u017F']," \
+    "  ['s', 'S'],"
+  mutate web "an uppercase clause folds the Turkish dotless i into i" "$PP" \
+    '  return a === b || foldRune(a) === foldRune(b)' \
+    '  return a === b || foldRune(a) === foldRune(b) || a.toUpperCase() === b.toUpperCase()'
+  mutate web "folding compares UTF-16 units rather than code points" "$PP" \
+    '  const left = [...a]
+  const right = [...b]' \
+    "  const left = a.split('')
+  const right = b.split('')"
+  mutate web "samePath stops folding altogether" "$PP" \
+    '  return left === right || equalFold(left, right)' \
+    '  return left === right'
+
+  # 2. `undefined` makes Radix's Select uncontrolled; the first real value
+  # switches it, and React warns.
+  mutate web "the Select goes uncontrolled while the listing is in flight" "$SEL" \
+    "      value={value ?? ''}" \
+    '      value={value}'
+
+  # 3. The set is mirrored on the client, and the mirror has to be complete.
+  mutate web "a chassis code has no Create sentence" "$CR" \
+    "  'not-a-file': 'Something that is not a file is in the way. Nothing was created.'," \
+    ''
+  mutate web "the mirrored code set drifts from the chassis'" "$CR" \
+    "  'excluded-directory'," \
+    ''
+  mutate web "an intentional control-flow code is treated as an omission" "$CR" \
+    "export const CONTROL_FLOW_CODES = ['not-found'] as const" \
+    "export const CONTROL_FLOW_CODES = [] as const"
+
+  # 5. The rule stripped each `var()` before looking for names, and accepted
+  # any value that merely contained one.
+  mutate web "a var() fallback is not inspected" "$DL" \
+    '    const problem = colourProblemIn(reference.fallback.trim())
+    if (problem !== undefined) return `${problem} in a var() fallback`' \
+    '    void reference'
+  mutate web "a var() reference stops at the first closing paren" "$DL" \
+    '      if (value[scan] === '"'"')'"'"') {
+        depth -= 1
+        if (depth === 0) {
+          end = scan
+          break
+        }
+      }' \
+    '      if (value[scan] === '"'"')'"'"') {
+        end = scan
+        break
+      }'
+  mutate web "a module-local colour property is a token" "$DL" \
+    '      const problem = colourProblemIn(held.trim())
+      if (problem !== undefined && problem !== '"'"'no token'"'"') {' \
+    '      const problem = colourProblemIn(held.trim())
+      if (false) {'
+  mutate web "a module-local colour definition is never inspected" "$DL" \
+    '      const problem = colourProblemIn(declaration.value.trim())
+      // Only a *colour* is a problem here. A local `--gap: 4px` is ordinary.
+      if (problem !== undefined && problem !== '"'"'no token'"'"') {
+        problems.push({ where: declaration.property, problem })
+      }
+      continue' \
+    '      continue'
 fi
 
 restore
