@@ -1,0 +1,754 @@
+/* The shell's own sheet: the five regions, and nothing a route renders.
+   Every selector is `.desk-*`, so it cannot collide with the ~60 class names
+   `styles.css` already owns.
+
+   **The whole file is one cascade layer, and `styles.css` is deliberately
+   left unlayered.** The spec asked for `@layer components` around the existing
+   sheet; that would be a second edit to a file this work must not touch, and
+   the property it wanted comes for free the other way round: an unlayered
+   author rule beats every layered one, so a `.desk-*` selector can never win a
+   collision with an existing rule by accident. Important declarations invert
+   layer order, which is why `[hidden] { display: none !important }` below
+   still beats an unlayered `display:` — and the closed Inspector depends on
+   exactly that.
+
+   No palette here at all, dark or light. The theme plumbing — the
+   `prefers-color-scheme` block, the `[data-theme]` block, and the note that
+   both carry the light values because the dark palette is its own piece of
+   work — lives beside the tokens it redefines, in `styles.css`, because a
+   layered `:root` here would lose to that unlayered one whatever its
+   specificity. */
+
+@layer shell {
+  :root {
+    /* Geometry. Every one is pixel-exact, which is why collapse is a custom
+       property on a grid and not a percentage in a resize library. */
+    --header-h: 48px;
+    --rail-w: 248px;
+    --rail-w-icon: 56px;
+    --inspector-w: 360px;
+    --console-h: 240px;
+    --strip-h: 28px;
+
+    /* What collapse writes. Each is one of the two values above. */
+    --rail-current: var(--rail-w);
+    --inspector-current: 0px;
+    --console-current: 0px;
+
+    /* The caps, and the second line of the same defence.
+       The decoder refuses an absurd pane size by name, which is the right
+       place for it — but a size legal on a 27-inch monitor is still able to
+       eat the frame on a phone, and the frame no longer scrolls. So each pane
+       is additionally capped against the viewport it is actually in: neither
+       side column may take more than 40% of the width, which leaves main at
+       least 20% with both open, and the console may not grow past what leaves
+       `--main-floor` of route visible under the header and above the strip.
+       `max(0px, …)` keeps the track non-negative on a viewport shorter than
+       the reserve, where a bare `calc` would make the whole declaration
+       invalid and take the grid with it.
+
+       And the console has a **floor that beats the cap**: on a viewport too
+       short for the reserve the cap reaches zero, and a console the viewer
+       has opened would then render at no height at all while its toggle still
+       said expanded. An open console gets at least the smallest height the
+       decoder will accept for one, and main — which scrolls — takes the
+       squeeze instead. Collapsed is still exactly zero, because
+       `--console-current` is `0px` then and `min()` picks it.
+
+       The floor is itself bounded by `--console-room`, the height that
+       actually exists between the header and the strip, and that ordering is
+       the point: a bare 80px floor on a 109px viewport pushed the strip out of
+       the frame — trading the defect this fixes for the one the cap exists to
+       prevent. The strip is never what gives way. Where there is less room
+       than a floor, the console takes all of it.
+
+       **The `dvh` value is behind `@supports` and not a second declaration.**
+       A custom property is not validated at parse time: `100dvh` is a valid
+       token stream to a browser that has never heard of `dvh`, so a second
+       declaration here *wins*, and the invalidity only surfaces later — at
+       substitution, where it takes the whole `grid-template-rows` with it.
+       The usual two-declaration fallback works for a real property like
+       `height` below and does not work here. */
+    --main-floor: 120px;
+    --side-cap: 40vw;
+    --console-floor: 80px;
+    --console-room: max(0px, calc(100vh - var(--header-h) - var(--strip-h)));
+    --console-cap: max(0px, calc(100vh - var(--header-h) - var(--strip-h) - var(--main-floor)));
+
+    --z-drawer: 40;
+    --z-menu: 50;
+    --z-dialog: 60;
+  }
+
+  /* The guarded half of the pair above. A browser with `dvh` measures against
+     the viewport that excludes the mobile URL bar; one without keeps the `vh`
+     value, because this override never reaches it. */
+  @supports (height: 100dvh) {
+    :root {
+      --console-room: max(0px, calc(100dvh - var(--header-h) - var(--strip-h)));
+      --console-cap: max(
+        0px,
+        calc(100dvh - var(--header-h) - var(--strip-h) - var(--main-floor))
+      );
+    }
+  }
+
+  /* The frame ------------------------------------------------------------ */
+
+  /* A **definite** height, not a minimum, and that word is the whole rule.
+     `min-height` leaves the grid's available space indefinite, so the
+     `minmax(0, 1fr)` row grows to whatever the tallest route renders (CSS Grid
+     Level 2, flexible tracks with indefinite available space): `.desk-main`
+     then never becomes the scroll container it is written to be, and the
+     always-visible 28px strip is pushed below the fold by a long Admin page or
+     a thirty-pack rail. `dvh` second, so a browser that has it uses the
+     viewport that excludes the mobile URL bar and one that does not keeps
+     `vh`. `overflow: hidden` on the frame, because the scrolling belongs to
+     the panes — every one of which carries `min-height: 0`. */
+  .desk {
+    display: grid;
+    grid-template-columns:
+      min(var(--rail-current), var(--side-cap))
+      minmax(0, 1fr)
+      min(var(--inspector-current), var(--side-cap));
+    grid-template-rows:
+      var(--header-h)
+      minmax(0, 1fr)
+      min(
+        var(--console-current),
+        max(var(--console-cap), min(var(--console-floor), var(--console-room)))
+      )
+      var(--strip-h);
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .desk-head {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0 0.75rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    min-width: 0;
+  }
+
+  .desk-rail {
+    grid-column: 1;
+    /* Down to the last line, not to row 4: the strip occupies row 4 in column
+       2 only, and a rail that stopped above it left a 248x28 unpainted notch
+       in the corner where its own surface and its right border ended. */
+    grid-row: 2 / -1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.75rem;
+    overflow: hidden auto;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    min-width: 0;
+  }
+
+  /* The one scroll container, and **column 2 only**. Spanning 2/4 put main in
+     the same grid cell as the inspector, which paints an opaque surface over
+     it: the right 360px of every route was occluded the moment the Inspector
+     was opened. Measured in Chrome before and after; the check is in the PR.
+
+     `.desk-measure` reproduces `.app-body` exactly — `max-width: 60rem` and
+     the same `2rem 1.5rem 4rem`, under `box-sizing: border-box` — so the
+     rendered content column is 57rem on every route, as it was at main. The
+     padding is on the measure and not on the scroll container so that the two
+     together are one element's worth of geometry rather than two. */
+  .desk-main {
+    grid-column: 2;
+    grid-row: 2;
+    overflow: auto;
+    scrollbar-gutter: stable;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+  }
+
+  .desk-measure {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 4rem;
+  }
+
+  .desk-inspector {
+    grid-column: 3;
+    grid-row: 2;
+    overflow: auto;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .desk-console {
+    grid-column: 2 / 4;
+    grid-row: 3;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    min-width: 0;
+    min-height: 0;
+  }
+
+  /* Its own grid row, and a direct child of the grid — so it is the
+     `contentinfo` landmark that `.app-foot` was. The declarations are
+     `.app-foot`'s, carried over. */
+  .desk-strip {
+    grid-column: 2 / 4;
+    grid-row: 4;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0 1.5rem;
+    border-top: 1px solid var(--border);
+    color: var(--ink-faint);
+    font-size: 0.82rem;
+  }
+
+  .desk-strip-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+  }
+
+  /* The connection sentence is the part that gives way. It used to be the
+     other way round: `overflow: hidden` sat on the lane and the nowrap
+     connection text came first, so at a phone width the cue that the
+     configuration was refused was the half pushed out of sight — a warning
+     that disappears exactly where the screen is smallest. */
+  .desk-strip-connection {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The configuration cue. A link, because it goes to the page that names the
+     problem — never a colour the shell decided on its own. It never shrinks
+     and never wraps: it is the shorter string and the more important one. */
+  .desk-strip-warn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    color: var(--warn);
+  }
+
+  /* Two spellings of one cue, and only one of them is ever painted.
+     `configuration refused — see Admin` is about 263px in the strip's own
+     face; a 320px viewport leaves roughly 232px between the padding, the gap
+     and the console button. Unshrinkable and unwrappable, it painted straight
+     across that button and off the edge of a frame that clips. So the narrow
+     spelling is a short one — and the accessible name is unchanged in both,
+     because it is on the link, not in the text. */
+  .desk-strip-warn-short {
+    display: none;
+  }
+
+  @media (max-width: 599px) {
+    .desk-strip-warn-full {
+      display: none;
+    }
+
+    .desk-strip-warn-short {
+      display: inline;
+    }
+  }
+
+  /* Header --------------------------------------------------------------- */
+
+  .desk-brand {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .desk-head-left,
+  .desk-head-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .desk-head-left {
+    flex: 1 1 auto;
+  }
+
+  /* The badge never ellipsizes; the organization name goes first. */
+  .desk-head-right {
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+
+  .desk-orgmark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+    border-radius: 5px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 700;
+    overflow: hidden;
+  }
+
+  .desk-orgmark img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .desk-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+    max-width: 22ch;
+    padding: 0.1rem 0.4rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: none;
+    color: var(--ink-soft);
+    font: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+
+  .desk-chip:hover {
+    border-color: var(--border);
+  }
+
+  .desk-chip-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .desk-user {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.1rem 0.4rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: none;
+    color: var(--ink-soft);
+    font: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+    min-width: 0;
+  }
+
+  .desk-user:hover {
+    border-color: var(--border);
+  }
+
+  .desk-user-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 16ch;
+  }
+
+  .desk-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 auto;
+    border-radius: 99px;
+    background: var(--border);
+    color: var(--ink-soft);
+    font-size: 10px;
+    font-weight: 700;
+    overflow: hidden;
+  }
+
+  .desk-tag {
+    flex: 0 0 auto;
+    padding: 0.05rem 0.35rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 99px;
+    font-size: 0.7rem;
+    color: var(--ink-faint);
+  }
+
+  /* Controls ------------------------------------------------------------- */
+
+  .desk-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 auto;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: none;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+
+  .desk-icon-button:hover {
+    border-color: var(--border);
+    color: var(--ink);
+  }
+
+  .desk-icon-button[data-state='on'],
+  .desk-icon-button[aria-pressed='true'] {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .desk-rule {
+    flex: 0 0 auto;
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+  }
+
+  .desk-rule-h {
+    width: 100%;
+    height: 1px;
+    margin: 0.4rem 0;
+    background: var(--border);
+  }
+
+  /* Rail ----------------------------------------------------------------- */
+
+  .desk-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.5rem;
+    border-radius: 6px;
+    border-left: 3px solid transparent;
+    color: var(--ink-soft);
+    text-decoration: none;
+    font-size: 0.88rem;
+    background: none;
+    border-top: 0;
+    border-right: 0;
+    border-bottom: 0;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .desk-nav-item:hover {
+    background: var(--bg);
+    color: var(--ink);
+  }
+
+  .desk-nav-item[aria-current='page'] {
+    background: var(--accent-soft);
+    border-left-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .desk-nav-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .desk-nav-child {
+    padding-left: 1.5rem;
+    font-size: 0.82rem;
+  }
+
+  .desk-create {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    width: 100%;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    font: inherit;
+    font-size: 0.88rem;
+    cursor: pointer;
+  }
+
+  .desk-spacer {
+    margin-top: auto;
+  }
+
+  /* Admin and its sections menu are one row. `.desk-nav-item` is `display:
+     flex`, i.e. block-level, so without this the chevron dropped onto its own
+     line below the link and read as a stray unlabelled button. */
+  .desk-admin-row {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .desk-admin-row .desk-nav-item {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .desk-dirty {
+    width: 6px;
+    height: 6px;
+    border-radius: 99px;
+    background: var(--warn);
+    flex: 0 0 auto;
+  }
+
+  /* Icon mode: 56px, labels gone, tooltips and aria-labels carrying them. */
+  .desk-rail[data-mode='icons'] {
+    align-items: center;
+    padding: 0.75rem 0.5rem;
+  }
+
+  .desk-rail[data-mode='icons'] .desk-nav-label,
+  .desk-rail[data-mode='icons'] .desk-nav-child {
+    display: none;
+  }
+
+  .desk-rail[data-mode='icons'] .desk-nav-item,
+  .desk-rail[data-mode='icons'] .desk-create {
+    width: 32px;
+    justify-content: center;
+    padding: 0.4rem 0;
+  }
+
+  /* At 56px the rail has 40px of inner width, which will not hold a 32px nav
+     item and a 24px trigger side by side. The sections menu is hidden there
+     rather than squeezed: every one of its destinations is a heading on the
+     page the Admin link itself opens, so nothing is unreachable. */
+  .desk-rail[data-mode='icons'] .desk-admin-row .desk-icon-button {
+    display: none;
+  }
+
+  /* Panes ---------------------------------------------------------------- */
+
+  .desk-pane-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  .desk-pane-empty {
+    padding: 2rem 1rem;
+    color: var(--ink-faint);
+    font-size: 0.82rem;
+    text-align: center;
+  }
+
+  /* The middle link of the console's flex chain, and it was missing.
+     `.desk-console` is a fixed-height flex column and `.desk-console-body`
+     claims `flex: 1`, but `Tabs.Root` between them is an ordinary block: the
+     body had no flex parent and no constrained height, so a log longer than
+     the pane was clipped by `.desk-console`'s `overflow: hidden` rather than
+     scrolled. Three declarations, and the fourth — `min-height: 0` — is what
+     lets it shrink below its content instead of pushing the tab list out. */
+  .desk-console-tabs {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .desk-console-body {
+    flex: 1;
+    overflow: auto;
+    min-height: 0;
+  }
+
+  .desk-log {
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    list-style: none;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--ink-soft);
+  }
+
+  .desk-log li {
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  .desk-tablist {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.35rem 0.75rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .desk-tab {
+    padding: 0.2rem 0.5rem;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--ink-faint);
+    font: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+
+  .desk-tab[data-state='active'] {
+    color: var(--ink);
+    border-bottom-color: var(--accent);
+  }
+
+  /* Overlays ------------------------------------------------------------- */
+
+  .desk-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgb(0 0 0 / 25%);
+    z-index: var(--z-drawer);
+  }
+
+  /* `--drawer-w` is written inline by the pane that renders the drawer, so
+     the Inspector's drawer form is the width its configuration asks for
+     rather than a second number nobody set. The fallback is the value that
+     was hard-coded here. */
+  .desk-drawer {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    width: min(var(--drawer-w, 320px), 85vw);
+    padding: 0.75rem;
+    overflow: auto;
+    background: var(--surface);
+    z-index: var(--z-dialog);
+  }
+
+  /* The rail drawer's own head, which exists for one control: a visible way
+     out. Escape closed it and the overlay closed it, and neither is an
+     affordance a viewer can see. */
+  .desk-drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-bottom: 0.25rem;
+  }
+
+  .desk-drawer-left {
+    left: 0;
+    border-right: 1px solid var(--border);
+  }
+
+  .desk-drawer-right {
+    right: 0;
+    border-left: 1px solid var(--border);
+  }
+
+  .desk-dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(520px, 92vw);
+    padding: 1rem 1.25rem 1.25rem;
+    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    z-index: var(--z-dialog);
+  }
+
+  .desk-menu {
+    min-width: 200px;
+    padding: 0.3rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: 0 6px 24px rgb(0 0 0 / 10%);
+    z-index: var(--z-menu);
+  }
+
+  .desk-menu-note {
+    padding: 0.4rem 0.5rem;
+    color: var(--ink-faint);
+    font-size: 0.75rem;
+    line-height: 1.4;
+  }
+
+  .desk-menu-item {
+    display: block;
+    width: 100%;
+    padding: 0.3rem 0.5rem;
+    border: 0;
+    border-radius: 5px;
+    background: none;
+    color: var(--ink);
+    font: inherit;
+    font-size: 0.85rem;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .desk-menu-item[data-highlighted] {
+    background: var(--accent-soft);
+    color: var(--accent);
+    outline: none;
+  }
+
+  /* Skip link. A plain class, not `VisuallyHidden`: that primitive applies
+     clip/1px/absolute as *inline* styles, which a `:focus` class rule cannot
+     beat without `!important` on every property. */
+  .desk-skip {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: calc(var(--z-dialog) + 1);
+    padding: 0.5rem 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    border-radius: 0 0 var(--radius) 0;
+  }
+
+  .desk-skip:focus {
+    left: 0;
+  }
+
+  /* Closed is the `hidden` attribute plus this, because the attribute alone
+     is beaten by any authored `display`. Important, so it wins from inside a
+     layer too. */
+  [hidden] {
+    display: none !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .desk,
+    .desk-rail,
+    .desk-inspector,
+    .desk-console {
+      transition-duration: 0s !important;
+    }
+  }
+}

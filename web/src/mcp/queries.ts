@@ -90,12 +90,25 @@ async function callToolJSON<T>(
   return { parsed, raw, structured }
 }
 
-/** The project's declared packs, as the runtime resolves them. */
+/**
+ * The project's declared packs, as the runtime resolves them.
+ *
+ * `retryOnMount: false` is the one option this query sets, and it is not a
+ * retry policy — the client's default is already `retry: false`. It is about
+ * *mounting*: a query in an error state with no data re-runs when another
+ * observer subscribes, and the rail holds one observer for the life of the
+ * desk while every route mounts a second. So a listing the runtime had refused
+ * was called again on every navigation, once per route change, for as long as
+ * it kept failing. A successful listing is cached and was never the problem.
+ * The reconnect path is untouched: `McpProvider` invalidates every query when
+ * the socket comes back, and the notices offer an explicit retry.
+ */
 export function usePacks(): UseQueryResult<PackInventory, Error> {
   const { client, status } = useMcp()
   return useQuery({
     queryKey: ['list_packs'],
     enabled: status === 'ready' && client !== null,
+    retryOnMount: false,
     queryFn: async ({ signal }) => {
       const { parsed } = await callToolJSON<PackInventory>(client!, 'list_packs', {}, signal)
       return parsed

@@ -10,6 +10,7 @@ import {
   type FileListing
 } from '../files/client'
 import { useFileContent, useFileListing, useWriteFile } from '../files/queries'
+import { useOpenRequests, usePublishedDirty } from '../shell/authorBridge'
 
 /**
  * The authoring shell: pick a file, edit its bytes, save them (issue #14,
@@ -51,6 +52,11 @@ export function AuthorView() {
   // survive: unmounting would throw the buffer away before the user is told.
   const listedNow = files.some((file) => file.path === selected)
 
+  // The one thing the shell needs from this view. Both hooks live in
+  // `authorBridge.ts` beside the state they publish to, so what this view
+  // carries for the shell is one import and two calls.
+  usePublishedDirty(dirty)
+
   // Two guards, because they cover two different exits and neither covers the
   // other. `beforeunload` is the browser's, and it fires only when the document
   // itself goes — a reload, a close, a link off the site. Everything inside this
@@ -89,6 +95,11 @@ export function AuthorView() {
     setDirty(false)
     setSelected(path)
   }
+
+  // Routed through `choose`, so the dirty-buffer question is asked for a file
+  // the Create dialog opened exactly as it is for one the viewer clicked. It
+  // is called here rather than above because `choose` is declared above it.
+  useOpenRequests(choose)
 
   return (
     <article className="detail authoring">

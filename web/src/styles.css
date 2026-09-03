@@ -28,6 +28,63 @@
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
+/* The dark palette's plumbing, and — stated plainly — none of its values.
+   ---------------------------------------------------------------------------
+   `appearance.theme` in `jpack-desk.json` writes `data-theme` on the root
+   element: `light` and `dark` pin a palette, `system` removes the attribute
+   and lets `prefers-color-scheme` decide. Those are the two selectors below,
+   and both are needed: without the media block a viewer's own OS setting is
+   ignored, and without the attribute block an explicit choice cannot beat it.
+
+   **Every declaration below is the light value above it.** That is not an
+   oversight and it is not a placeholder that will be forgotten: the three
+   condition verdict colours carry meaning and cannot be mechanically inverted
+   (the spec's open question 10), and a dark palette that re-authored the
+   neutrals while leaving `--true`/`--false`/`--unknown` at their light values
+   would be a half-dark desk shipped as a whole one. So this piece of work
+   ships the structure — the selectors, the attribute, the one place to edit —
+   and the next one ships the colours. Choosing dark today sets the attribute
+   and changes no colour, which is exactly what Admin and the README say it
+   does.
+
+   The verdict tokens are deliberately absent from both blocks, so they keep
+   their single definition on `:root` and cannot drift. Every colour token has
+   its definition on bare `:root`; nothing below is a token's only home. */
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #f7f7f5;
+    --surface: #ffffff;
+    --border: #e2e2dd;
+    --border-strong: #cfcfc7;
+    --ink: #1b1b19;
+    --ink-soft: #5c5c55;
+    --ink-faint: #86867d;
+    --accent: #2f5d50;
+    --accent-soft: #e8f0ed;
+    --danger: #8c2f2f;
+    --danger-soft: #fbeceb;
+    --warn: #8a5b12;
+    --warn-soft: #fbf3e3;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --border: #e2e2dd;
+  --border-strong: #cfcfc7;
+  --ink: #1b1b19;
+  --ink-soft: #5c5c55;
+  --ink-faint: #86867d;
+  --accent: #2f5d50;
+  --accent-soft: #e8f0ed;
+  --danger: #8c2f2f;
+  --danger-soft: #fbeceb;
+  --warn: #8a5b12;
+  --warn-soft: #fbf3e3;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -54,46 +111,6 @@ code {
 
 a {
   color: var(--accent);
-}
-
-/* Layout ------------------------------------------------------------------ */
-
-.app {
-  display: flex;
-  min-height: 100vh;
-  flex-direction: column;
-}
-
-.app-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.85rem 1.5rem;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-}
-
-.brand {
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-  text-decoration: none;
-}
-
-.app-body {
-  flex: 1;
-  width: 100%;
-  max-width: 60rem;
-  margin: 0 auto;
-  padding: 2rem 1.5rem 4rem;
-}
-
-.app-foot {
-  padding: 0.75rem 1.5rem;
-  border-top: 1px solid var(--border);
-  color: var(--ink-faint);
-  font-size: 0.82rem;
 }
 
 /* Status ------------------------------------------------------------------ */

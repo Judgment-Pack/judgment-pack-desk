@@ -34,8 +34,23 @@ export type ToolHandler = (
   args: Record<string, unknown>
 ) => ToolAnswer | Promise<ToolAnswer>
 
+/**
+ * Optional extras a stub may answer.
+ *
+ * Additive and default-off, so every existing caller is unaffected: a client
+ * with no `prompts` answers an empty listing, which is what a runtime without
+ * prompts looks like from here.
+ */
+export interface StubExtras {
+  /** One entry per advertised prompt: its name, and the text it carries. */
+  prompts?: Record<string, { description?: string; text: string }>
+}
+
 /** A client that answers from handlers, and remembers what it was asked. */
-export function stubClient(handlers: Record<string, ToolHandler>): {
+export function stubClient(
+  handlers: Record<string, ToolHandler>,
+  extras: StubExtras = {}
+): {
   client: Client
   calls: { name: string; args: Record<string, unknown> }[]
 } {
@@ -51,6 +66,17 @@ export function stubClient(handlers: Record<string, ToolHandler>): {
         content: answer.text === undefined ? [] : [{ type: 'text', text: answer.text }],
         structuredContent: answer.structured,
         isError: answer.isError ?? false
+      }
+    },
+    async listPrompts() {
+      return { prompts: Object.keys(extras.prompts ?? {}).map((name) => ({ name })) }
+    },
+    async getPrompt(params: { name: string }) {
+      const prompt = (extras.prompts ?? {})[params.name]
+      if (!prompt) throw new Error(`no stub answers the prompt ${params.name}`)
+      return {
+        description: prompt.description,
+        messages: [{ role: 'user', content: { type: 'text', text: prompt.text } }]
       }
     }
   }

@@ -17,6 +17,17 @@ where the project has one: `list_packs` reports a matrix flag per pack, and the
 configured graphs come from `experimental_list_graphs` where the runtime serves
 it, or from running their matrices where it does not.
 
+**A shell around all of it.** A header, a left rail, an Inspector, a Console and
+a status strip — described under [Shell](#shell). The rail's first entry creates
+a pack: it writes the file and forms no opinion about it. The starting bytes are
+the runtime's own example, the runtime's own schema, or an empty file — the desk
+ships no template, because a desk-authored skeleton would be the desk asserting
+what a pack is. The write is the ordinary `PUT /api/file` with `baseSha256: ""`,
+so a file that is already there is refused rather than overwritten. **The parent
+directory has to exist**: the chassis writes files and creates no directories,
+so the path field is seeded with `packs/` only where the project already keeps a
+file there.
+
 **A pack browser:**
 
 - `/packs/:id` fetches one document with `get_pack` and renders it: the
@@ -296,6 +307,282 @@ A project that configures no graph is an answer rather than an error: the walk
 reports `skipped` with no entries, the home page offers no graph entry, and the
 graphs page says the project configures none.
 
+**A shell around all of it.** Six regions — a header, a navigation rail, the
+routes above, an Inspector, a Console and the status strip that is its
+collapsed face — plus two pages of their own: `/admin`, which renders the desk's
+configuration read-only, and `/help`, which names what this runtime advertises
+and renders its own authoring prompt as text. The shell **derives no verdict**:
+no status colour in the rail, no rollup count, no "N failing" pill anywhere. A
+red badge in a nav rail would be a gate the runtime never issued.
+
+## Shell
+
+**Six regions**, on a CSS grid of a **definite** viewport height —
+`height: 100dvh` and not `min-height`, so the content row divides the viewport
+instead of growing to fit a long page, `.desk-main` is the one scroll container,
+and the 28px strip stays on screen. The three pane sizes in the table are the
+configured values, written onto the grid as `--rail-w`, `--inspector-w` and
+`--console-h`; collapse writes one of two values into a second custom property
+and never a third number.
+
+A route publishes into the Inspector by portalling into the element
+`useInspectorSlot()` hands it. The context sits **above `<main>`**, so a route
+can reach it, and the pane publishes its target through a callback ref — so a
+drawer that starts closed reports no target rather than a detached one.
+
+| Region | Default | Collapse | Landmark |
+|---|---|---|---|
+| Header | Always visible, 48px | Never | `banner` |
+| Left rail | Expanded, `panes.left.width` (248px) | → 56px icon rail; a drawer below 900px | `navigation`, named "Project" |
+| Main | Always visible | Never | `main`, `id="main"`, the skip link's target |
+| Inspector | Closed, `panes.inspector.width` (360px) | → 0px; a drawer below 1100px | `complementary`, named "Inspector" |
+| Console | Collapsed to the 28px strip, `panes.console.height` (240px) | → the strip, never below it | `region`, named "Console" |
+| Status strip | Always visible, 28px | Never | `contentinfo` |
+
+A collapsed pane is **removed from the accessibility tree**, not merely made
+invisible: closed is the `hidden` attribute plus `[hidden] { display: none
+!important }` in the shell sheet, so a viewer who has closed the Inspector
+cannot tab into it.
+
+**Below 900px the rail is an overlay drawer, opened from the header.** In drawer
+form the rail draws no collapse toggle, so the opener has to live outside it —
+a control inside a closed drawer opens nothing. It is the `Project navigation`
+button at the left of the header, present only at that width, carrying
+`aria-expanded` always and `aria-controls="desk-rail"` **only while the drawer
+is open** — a closed `Dialog` unmounts its portal, so the id is not in the
+document and naming it would offer assistive technology a broken relationship
+rather than none. The same holds for the Inspector's toggle below 1100px. Both
+drawers hand focus back to the header control that opened them, by reference:
+neither has a `Dialog.Trigger` to restore to, because both openers are in the
+header two grid cells away. The drawer carries the
+`navigation` landmark with it, so the region table above holds at every width,
+and it carries a visible close button — Escape and the overlay are not
+affordances a viewer can see. **Every navigation inside it closes it**: the
+drawer is modal, so a link that navigated and left it standing put the
+destination behind an overlay.
+Both drawers are **modal**: while one is open the page beneath it is
+`aria-hidden`, which is what a modal is for and is why the landmark count is not
+the same in that state.
+
+**Shortcuts.** `Mod` is Ctrl or Cmd.
+
+| Chord | Does |
+|---|---|
+| `Mod+B` | Collapse or expand the navigation rail |
+| `Mod+Alt+I` | Open or close the Inspector |
+| `Mod+Alt+J` | Open or close the Console |
+
+Every one is suppressed while focus is in an `input`, a `textarea` or a
+`contenteditable` — which is exactly the authoring editor — and every one has a
+visible button, so a chord the browser claims costs a click and not a feature.
+**Every modifier a chord does not declare is rejected**: Ctrl+Shift+B is not
+`Mod+B`, and Ctrl+Cmd+B is neither of the two spellings of `Mod` — an undeclared
+chord is left to the browser unprevented rather than claimed and swallowed.
+On macOS, Cmd+Alt+I and Cmd+Alt+J are the browser's own developer-tools chords
+and Cmd+B is Firefox's bookmarks sidebar; the Ctrl spelling works everywhere.
+`Mod+J` (Downloads) and `Alt+<digit>` (Firefox tab switching) are deliberately
+not bound, and `F6` is left to the browser.
+
+A pane is not a dialog, so `Escape` does not close one — with one exception,
+stated rather than hidden: below 1100px the Inspector renders as a drawer, and a
+drawer *is* a dialog, so Escape closes it there. Swapping to the drawer remounts
+the subtree, so inspector-local state resets at that breakpoint.
+
+**What is remembered is what somebody chose.** A layout that came from the
+configuration file or from the built-in defaults is not written down: it is
+re-derived on every load from inputs that are still there, and a record of it
+would be preferred over the file on the next visit — which is how a `panes`
+block becomes permanently inert on a browser that opened the desk once before
+the file existed. The record appears the first time a pane is moved by hand.
+
+**Where it is kept.** Which panes are open is per viewer and per project, in
+`localStorage` under
+
+```
+jpack-desk:shell:v1:<projectKey>
+```
+
+where `projectKey` is a slug of **the project root the chassis pins at
+startup** plus an FNV-1a hash of the whole of it. It is that root and not the
+runtime's `configPath`, because a project with no `jpack.json` reports no config
+path — so every configless project on one origin used to map to the literal
+`default` and share a single record, two directories with one layout between
+them. The literal `default` remains and now means exactly one thing: the file
+listing has not answered yet, and **nothing is written under it**.
+
+One desk on one origin serves whichever project it was started against, and a
+layout chosen for a three-pack project is not the one chosen for a forty-pack
+one. Only the collapse flags and the console's channel are stored — no widths,
+because nothing on this desk can yet change one, and a stored number no viewer
+could have chosen would be a record of a choice nobody made — and **only for the
+panes the viewer has actually moved**, one bit each. A record that carried all
+three because one was toggled would be two built-in defaults outranking the
+configuration file for ever. Every read and write is in `try/catch`: a private
+window and a browser with site data blocked *throw* on the accessor rather than
+answering null. **Admin › Panes** clears exactly that one key, cancelling any
+write already on its way, and reports what happened rather than assuming.
+
+Reduced motion is respected: `prefers-reduced-motion: reduce` sets every pane
+transition to zero, and collapse is instant.
+
+**Theme.** `appearance.theme` writes `data-theme` on the root element —
+`light` and `dark` pin a palette, `system` removes the attribute and leaves
+`prefers-color-scheme` to answer. What it selects today is a palette whose
+values are the light ones: this phase ships the plumbing — the two selectors in
+`styles.css` and the attribute — and none of the dark values, because the three
+condition verdict colours carry meaning, cannot be mechanically inverted, and a
+desk that re-authored its neutrals around them would be half dark. So choosing
+dark changes the attribute and no colour. `appearance.density` is recorded and
+validated and is read by nothing yet.
+
+## Configuration
+
+One optional file in the project root, read through the **existing** file API
+like any other project file — no new endpoint, no new proxy entry, and no Go
+change.
+
+```json
+{
+  "deskConfigVersion": 1,
+  "organization": { "name": "Acme Co.", "mark": null },
+  "user": { "displayName": "local user" },
+  "appearance": { "theme": "system", "density": "comfortable" },
+  "panes": {
+    "left":      { "mode": "expanded", "width": 248 },
+    "inspector": { "open": false, "width": 360 },
+    "console":   { "open": false, "height": 240 }
+  }
+}
+```
+
+Each pane dimension is bounded, and **zero is refused like anything else**: a
+pane the file declares `open` at zero pixels is an open pane nobody can see
+with a toggle that appears to do nothing, and an enormous one pushes the strip
+out of a frame that does not scroll.
+
+| key | minimum | maximum |
+|---|---|---|
+| `panes.left.width` | 160 | 640 |
+| `panes.inspector.width` | 240 | 720 |
+| `panes.console.height` | 80 | 720 |
+
+A value outside its range is refused by name like every other problem, and the
+whole file with it. Beside that the sheet caps each pane against the viewport
+it is actually in — neither side column past `40vw`, so main keeps at least
+20% with both open, and the console no further than leaves 120px of route
+under the header and above the strip — because a size that is legal on a
+monitor is still able to eat the frame on a phone.
+
+**A cap is not the same as a configured value, and Admin says both.** An
+accepted 720px Inspector renders 440px at a 1100px window; the Inspector's
+*drawer* form is 320px unless the file states a width. Admin › Panes prints
+the configured number, the range it had to be inside, the cap that applies, and
+the **measured** width or height of each pane that is on screen — and says
+"not mounted at this width" or "collapsed" rather than reporting a number
+nothing has. `useInspectorSlot().size` is measured on the same terms, so a
+route laying something out beside the pane is laying it out against the width
+the pane actually has, updated as the window is dragged.
+
+**On a viewport too short for the reserve, the routes give way and the console
+does not.** An open console never renders below 80px — the smallest height the
+schema accepts for one — even where the cap would otherwise reach zero, because
+a pane of no height whose toggle still says it is open is a control that lies.
+`.desk-main` scrolls; it is the one that can afford to lose the pixels. The
+one thing that never gives way is the strip: where the viewport has less room
+between the header and the strip than the floor asks for, the console takes all
+of it and no more. At a 203px viewport an open console renders 80px with 47px
+of route above it; at 109px it renders 33px, which is everything there is. A
+*collapsed* console is still exactly 0px, and the strip is its collapsed face
+as always.
+
+Every key is optional except `deskConfigVersion`. `organization.name` is a
+non-empty string or `null`; `null` is how a file asks for the desk's own name,
+and `""` is refused by name rather than rendering a blank brand. `appearance` is
+decoded and validated; `theme` is applied as above and `density` is not read
+yet, which Admin › Appearance also says. `organization.mark` is `null`,
+an inline `<svg …>` string, or a `data:` URI of at most 65,536 bytes of UTF-8
+(measured with `TextEncoder`, not in UTF-16 code units — the two disagree by up
+to **three** to one on a mark carrying non-ASCII; three and not four, because a
+four-byte astral character costs two UTF-16 units and is therefore only 2:1,
+while the three-byte character that costs one unit is the worst case), carried in the JSON
+itself and encoded to a `data:` URI in the browser — **never** injected as
+markup, and never a file path (the file API refuses non-UTF-8, so it could not
+carry a raster image, and no endpoint is being added for a logo). Absent an
+organization name, the header reads `judgment‑pack desk` — never an invented
+company, and never a name taken from a token claim.
+
+**Precedence, as phase A resolves it**: project file → built-in default, and
+for the three pane flags one layer in front of both — this browser's record of
+what the viewer chose, for the panes they chose it for. There are no shell
+flags on the command line; the desk-level `desk.json` is not read; and a layer
+that does not exist is not part of a precedence order, however plausibly it
+would fit. What arrives later — desk-level values, and whatever reads them —
+goes between the project file and the built-ins, and this line changes in the
+commit that adds it.
+
+The desk-level `desk.json` — the only place an identity provider may be
+configured — is **not read yet**; whether the page learns it through a
+read-only `GET /api/desk-config` or is told at connect time is an open question,
+and Admin › Identity provider says so in words rather than leaving the reader to
+infer it.
+
+**Any problem refuses the whole file**, and every refusal names its key.
+Partial acceptance would let a typo'd key sit there doing nothing while its
+siblings applied, which reads as a setting that does not work rather than a
+spelling that is wrong. An unknown key — at the top level or nested — is refused
+by name. `identity` in the *project* file is refused by name with its own
+reason: a project is a shared checkout, and committing an issuer would push one
+operator's directory onto every clone. **There is no `clientSecret` key in the
+schema at all**, so one pasted in is refused by name rather than silently
+persisted. A missing file is the defaults, with no banner and no error — a
+*refused* file is the defaults too, and the two are told apart on the status
+strip, which reads `configuration refused — see Admin` and links to the page
+that names every problem. Without that cue a mistyped key looked exactly like
+having written no file at all from every surface except `/admin`.
+
+A third state sits beside those two and gets its own cue: a file that **could
+not be read**. A 404 is an absent file and stays silent; a 413, a permission
+refusal or a non-UTF-8 body is a configuration that exists and was not
+honoured; and a socket that never answered establishes only that **absence was
+not established** — it is not evidence that the file is there. The strip reads
+`configuration could not be read — see Admin` for all of them, and Admin
+separates the two provenances: where the chassis answered, its status is named
+and its reason is quoted as the chassis'; where nothing answered, the reason
+shown is the browser's own and is said to be. Reporting any of this as the
+defaults, silently, is a desk describing itself as unconfigured when it is
+merely unread.
+
+On a phone the strip paints a short spelling of that cue — `config refused`,
+`config unread` — because the full sentence is wider than a 320px strip has
+left beside the console button, and a link that neither shrinks nor wraps
+painted straight across it. The link's accessible name is the full sentence at
+every width.
+
+**Admin never PUTs configuration.** It renders effective values, their source,
+the path they came from and the exact JSON to paste, and its only control that
+changes **persisted desk-layout state** clears the pane record above; the Copy
+button beside each paste block changes the clipboard and its own transient
+"copied" label, which is why the claim is scoped to persisted layout rather
+than to state in general.
+
+That is a claim about **Admin**, and it is deliberately not the broader one it
+used to make. `jpack-desk.json` is an ordinary project file — the desk reads it
+through the same `GET /api/file` every other file goes through — so the generic
+Author editor lists it and can write it exactly like any project file. Saying
+"nothing is ever PUT to a configuration file" was a sentence this repository's
+own file API refutes; what is true is that no *configuration surface* writes
+it, and the editor that can is the one that treats it as bytes and forms no
+opinion about what they mean. `runtime.jpackBin` and
+`project.dir` are not in the schema at all: the chassis executes the binary it
+was given, so a config-supplied path would be a way to run code on this machine
+by editing a file.
+
+**Identity is display, never a gate.** `identity.provider` is one nullable
+field — null, or an object. There is no `kind`, no vendor string and no third
+shape, and that absence is what stops an issuer someone else operates from
+acquiring anything an issuer you run yourself lacks. Configuring one changes
+what the header shows and nothing about who may reach the desk.
+
 ## Requirements
 
 - Go 1.25 or newer (`go.mod` declares it; CI reads that file)
@@ -371,7 +658,10 @@ not; they are the page, and the page can do nothing without one of the two.
 - **A session token.** A random 192-bit token is generated at startup and
   printed in the URL. Both capabilities require it as `?token=`, compared in
   constant time. (Length is still observable, which does not matter: the format
-  is fixed and public, and the value is the secret.)
+  is fixed and public, and the value is the secret.) The page copies it into
+  `sessionStorage` under `jpack-desk-token` on first load, and it leaves the
+  address bar at the first in-app navigation — nothing rewrites the URL on load,
+  so a sentence claiming it disappears immediately would be false.
 - **An origin check.** A request whose `Origin` is not the origin the page was
   served from is refused — **scheme and host both**, and an `Origin` carrying a
   path, query, fragment or userinfo is refused outright rather than matched on
@@ -407,7 +697,11 @@ The chassis holds no credential and opens no outbound connection. It writes to
 the project only through the file API, only inside the project root, and only
 where a request carried the token and an acceptable origin. The runtime
 subprocess inherits the project directory as its working directory and is killed
-when the socket that started it closes.
+when the socket that started it closes. That sentence still holds with the shell
+in place: the desk reads its configuration through the file API it already had,
+and identity is display only. The change that would falsify it is wiring an
+identity provider — discovery, JWKS, a redirect — and the PR that does it must
+amend this paragraph in the same commit.
 
 ## Authoring (issue #14, phase 1)
 
@@ -650,10 +944,19 @@ web/                 Vite + React + TypeScript SPA
                      divergent digest pairs already asked about
   src/files/         the chassis file API: the client, and its query hooks
   src/routes/        project home, pack detail, evaluation, matrix, graphs,
-                     the authoring shell
+                     the authoring shell, the read-only Admin page and
+                     Help & About
   src/components/    the semantic document, evaluation, coverage, row and
                      graph-walk views, plus the trace and handoff-target
                      renderers both the pack and graph surfaces share
+  src/shell/         the six regions, the pane state and its per-project
+                     record, the three shortcuts, the icon set, the console's
+                     ring buffer, the fragment-scrolling hook the section menus
+                     need, and the Create-pack dialog
+  src/config/        the jpack-desk.json schema, its strict decoder, the one
+                     query that reads it, and the theme attribute it writes
+  src/identity/      the identity slot: one nullable field, and the header
+                     control that renders it
   scripts/smoke.ts   the desk's own client, driven outside a browser
 ```
 

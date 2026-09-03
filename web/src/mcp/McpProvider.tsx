@@ -2,6 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import type { Notification } from '@modelcontextprotocol/sdk/types.js'
 import { useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { recordFileChange } from '../shell/consoleLog'
 import { UNKNOWN_CAPABILITIES, type RuntimeCapabilities, listAllTools, readCapabilities } from './capabilities'
 import { DeskWebSocketTransport } from './transport'
 
@@ -174,6 +175,13 @@ export function McpProvider({ children }: { children: ReactNode }) {
       // does not know, so no schema has to be invented for it here.
       client.fallbackNotificationHandler = async (notification: Notification) => {
         if (notification.method !== 'desk/fileChanged') return
+        // The one place the shell reaches into this provider. The chassis
+        // sends `{"method":"desk/fileChanged","params":{"path":relPath}}` and
+        // this handler is the only thing that ever sees it — deriving
+        // "something invalidated" from the query cache instead would name no
+        // path, and a channel labelled Files would then say less than its
+        // label claims. The path, and nothing else.
+        recordFileChange(String((notification.params as { path?: unknown })?.path ?? ''))
         // The runtime reads the project tree on every call, so any change under
         // it can make any cached answer stale. Cancel before invalidating:
         // invalidation alone reuses a fetch already in flight, and an answer

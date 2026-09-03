@@ -37,7 +37,12 @@ describe('readCapabilities', () => {
       graphInventorySupported: true,
       // The 0.19.0 runtime's own matrix tool advertises this; the 0.18.0-era
       // fixture above does not, and the two must not be read as one.
-      graphTracesSupported: false
+      graphTracesSupported: false,
+      // Neither example tool is in this fixture, and `get_schema` is not
+      // either — the authoring surface is a different question from the graph
+      // one, and this fixture answers only the graph one.
+      exampleSupported: false,
+      schemaSupported: false
     })
   })
 
@@ -146,9 +151,39 @@ describe('readCapabilities', () => {
       rehearsalSupported: false,
       graphDocumentSupported: false,
       graphInventorySupported: false,
-      graphTracesSupported: false
+      graphTracesSupported: false,
+      exampleSupported: false,
+      schemaSupported: false
     })
     expect(UNKNOWN_CAPABILITIES.known).toBe(false)
+  })
+
+  it('reads the example pair as one capability, because get_example needs a name', () => {
+    // `get_example` requires `name`, and the only non-inventing source of a
+    // name is `list_examples`. Either tool alone leaves the desk unable to
+    // ask, which is the same as unadvertised — so the flag is the pair.
+    expect(readCapabilities([...RELEASED, { name: 'list_examples' }])).toMatchObject({
+      exampleSupported: false
+    })
+    expect(readCapabilities([...RELEASED, { name: 'get_example' }])).toMatchObject({
+      exampleSupported: false
+    })
+    expect(
+      readCapabilities([...RELEASED, { name: 'list_examples' }, { name: 'get_example' }])
+    ).toMatchObject({ exampleSupported: true })
+  })
+
+  it('reads the schema tool by name, and apart from the example pair', () => {
+    expect(readCapabilities(RELEASED)).toMatchObject({ schemaSupported: false })
+    expect(readCapabilities([...RELEASED, { name: 'get_schema' }])).toMatchObject({
+      schemaSupported: true,
+      exampleSupported: false
+    })
+  })
+
+  it('leaves both authoring flags off in the unknown state', () => {
+    expect(UNKNOWN_CAPABILITIES.exampleSupported).toBe(false)
+    expect(UNKNOWN_CAPABILITIES.schemaSupported).toBe(false)
   })
 })
 

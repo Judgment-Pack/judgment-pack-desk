@@ -153,7 +153,11 @@ mutate() { # mutate <lang> <name> <file> <needle> <replacement>
 # A baseline that is not green makes every row meaningless: an unrelated failing
 # test "catches" every mutation, and the table reads as total coverage.
 echo "checking the unmutated baseline at ${commit:0:7}…" >&2
-baseline_go="$(run_go)"
+# Each half's baseline is taken only where that half's rows will run. `web`
+# promised web-only and spent forty seconds in `go test` before every run,
+# and a Go toolchain that is not installed failed a mode that needs none.
+baseline_go=""
+if [ "$which" = all ] || [ "$which" = go ]; then baseline_go="$(run_go)"; fi
 baseline_web=""
 if [ "$which" = all ] || [ "$which" = web ]; then baseline_web="$(run_web)"; fi
 if [ -n "$baseline_go" ] || [ -n "$baseline_web" ]; then
@@ -214,23 +218,30 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "override is ignored" "$F" \
     '	if !req.Override && !strings.EqualFold' \
     '	if !false && !strings.EqualFold'
+  # Repaired: the needle named `defer s.writes.Unlock()`, which this file has
+  # never carried — the lock is released explicitly before the response is
+  # encoded, which is what the row below it is about. Broken at `origin/main`
+  # too, so every run of this half reported one row that mutated nothing.
   mutate go "the compare-and-commit is not serialized" "$F" \
     '	s.writes.Lock()
-	defer s.writes.Unlock()' \
-    ''
+	status, body := s.commitWriteLocked(clean, req)
+	s.writes.Unlock()' \
+    '	status, body := s.commitWriteLocked(clean, req)'
+  # Repaired: the refusal moved inside `commitWriteLocked` and answers with a
+  # body rather than writing to the ResponseWriter, so the needle named a
+  # handler shape that no longer exists. Broken at `origin/main` too.
   mutate go "the write path drops the symlink refusal" "$F" \
     '	if err := s.refuseSymlinkedPath(clean); err != nil {
-		writeJSONError(w, http.StatusForbidden, err.Error())
-		return
-	}
-
-	// What is there now, under the lock.' \
-    '	// What is there now, under the lock.'
+		return http.StatusForbidden, errorBody(err)
+	}' \
+    ''
+  # Repaired: the test is `isExcludedName(part)`, not a `skipDirs` map lookup.
+  # Broken at `origin/main` too.
   mutate go "excluded directories are not endpoint exclusions" "$F" \
     '	for _, part := range strings.Split(clean, "/") {
-		if skipDirs[part] {' \
+		if isExcludedName(part) {' \
     '	for _, part := range strings.Split(clean, "/") {
-		if false && skipDirs[part] {'
+		if false && isExcludedName(part) {'
   mutate go "the listing hides that it is partial" "$F" \
     '	if len(problems) > 0 {' \
     '	if false {'
@@ -327,9 +338,11 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if u.Scheme == "" || u.Host == "" {
 		return false
 	}'
+  # Repaired: the variable is `childInfo`, not `info`. Broken at `origin/main`
+  # too — a one-word drift that made the row silently inoperable.
   mutate go "the listing classifies by pathname, not through the root" "$F" \
-    '			info, lerr := s.root.Lstat(osPath(child))' \
-    '			info, lerr := os.Lstat(filepath.Join(s.cfg.ProjectDir, osPath(child)))'
+    '			childInfo, lerr := s.root.Lstat(osPath(child))' \
+    '			childInfo, lerr := os.Lstat(filepath.Join(s.cfg.ProjectDir, osPath(child)))'
   mutate go "the project root is re-resolved per request" "$F" \
     '	f, err := s.root.OpenFile(osPath(clean), os.O_RDONLY|openNonBlocking, 0)' \
     '	f, err := os.OpenFile(filepath.Join(s.cfg.ProjectDir, osPath(clean)), os.O_RDONLY|openNonBlocking, 0)'
@@ -338,6 +351,205 @@ fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
   C=web/src/files/client.ts
+  L=web/src/shell/LeftRail.tsx
+  K=web/src/shell/shortcuts.ts
+  P=web/src/shell/paneState.ts
+  S=web/src/shell/StatusStrip.tsx
+  R=web/src/shell/RightPane.tsx
+  M=web/src/mcp/McpProvider.tsx
+  D=web/src/config/deskConfig.ts
+  H=web/src/shell/HeaderBar.tsx
+  U=web/src/identity/UserControl.tsx
+  N=web/src/shell/AppShell.tsx
+  X=web/src/shell/CreatePackDialog.tsx
+  Y=web/src/mcp/capabilities.ts
+  W=web/src/config/DeskConfigProvider.tsx
+  V=web/src/routes/AdminView.tsx
+  Q=web/src/shell/useHashTarget.ts
+  B=web/src/shell/authorBridge.ts
+  I=web/src/identity/IdentityProvider.tsx
+  E=web/src/shell/RightPane.tsx
+  G=web/src/shell.css
+  T=web/src/shell/BottomPane.tsx
+  J=web/src/mcp/queries.ts
+  Z=web/src/config/queries.ts
+  O=web/src/shell/measured.ts
+
+  # The rail's graph gate. `useConfiguredGraphs` falls back to a whole-project
+  # `experimental_test_graphs` walk against any runtime without the inventory
+  # tool, and in the rail that would fire on every route. Aliased at the import
+  # so the mutation is one line and still compiles.
+  mutate web "rail calls the whole-project graph walk" "$L" \
+    "import { useGraphInventory, usePacks } from '../mcp/queries'" \
+    "import { useConfiguredGraphs as useGraphInventory, usePacks } from '../mcp/queries'"
+  mutate web "shortcuts fire inside the editor" "$K" \
+    "  if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') return true
+  if (element.isContentEditable === true) return true
+  return Boolean(element.closest?.('[contenteditable]:not([contenteditable=\"false\"])'))" \
+    "  return false"
+  mutate web "pane state is not persisted" "$P" \
+    '      writeShellState(storageKey, state, chosen)' \
+    '      void state'
+  # The other half of the same effect: a record nobody chose must not be
+  # written, because the seed prefers a stored record over the configured one —
+  # so a shell that persisted its own defaults would shadow the file for ever.
+  mutate web "an unchosen layout is persisted anyway" "$P" \
+    '      if (!chosen.left && !chosen.inspector && !chosen.console) return
+      writeShellState(storageKey, state, chosen)' \
+    '      writeShellState(storageKey, state, { left: true, inspector: true, console: true })'
+  mutate web "a throwing localStorage takes the shell down" "$P" \
+    '  let raw: string | null = null
+  try {
+    raw = window.localStorage.getItem(key)
+  } catch {
+    return undefined
+  }' \
+    '  const raw: string | null = window.localStorage.getItem(key)'
+  mutate web "the reset clears more than one key" "$P" \
+    '    window.localStorage.removeItem(key)' \
+    '    window.localStorage.clear()'
+  mutate web "a record from another shell version is restored anyway" "$P" \
+    '  if (record.v !== RECORD_VERSION) return undefined' \
+    '  if (false) return undefined'
+  mutate web "the configured pane default never arrives" "$P" \
+    '    if (seededFrom.current === signature) return' \
+    '    if (true) return'
+  mutate web "re-seeding overrides a layout the viewer chose" "$P" \
+    '  const toggleConsole = useCallback(() => {
+    touched.current.console = true' \
+    '  const toggleConsole = useCallback(() => {'
+  mutate web "the restored layout is not clamped to the viewport" "$P" \
+    '    left: { mode: viewport.railIsDrawer ? '"'"'icons'"'"' : merged.left.mode },
+    inspector: { open: viewport.inspectorIsDrawer ? false : merged.inspector.open },' \
+    '    left: merged.left,
+    inspector: merged.inspector,'
+  mutate web "the strip stops naming the runtime" "$S" \
+    '            connected to <code>{server.name}</code> {server.version}' \
+    '            connected to <code>{server.name}</code>'
+  # A refused configuration is the built-in defaults — correct, and until this
+  # cue it was indistinguishable from having no configuration file at all
+  # anywhere except /admin.
+  mutate web "a refused configuration is silent outside Admin" "$S" \
+    '        {problems.length > 0 && (' \
+    '        {false && ('
+  mutate web "main remounts on a pane change" "$N" \
+    '      <main id="main" tabIndex={-1} className="desk-main">' \
+    '      <main id="main" key={String(shell.console.open)} tabIndex={-1} className="desk-main">'
+  mutate web "the closed inspector stays tabbable" "$R" \
+    '      id="desk-inspector"
+      hidden={!open}
+    >' \
+    '      id="desk-inspector"
+    >'
+  mutate web "the file channel is fed by nothing" "$M" \
+    "        recordFileChange(String((notification.params as { path?: unknown })?.path ?? ''))" \
+    '        void recordFileChange'
+  mutate web "a config problem no longer refuses the whole file" "$D" \
+    '  if (problems.length > 0) return { values: undefined, problems, declaredPanes }' \
+    '  if (false) return { values: undefined, problems, declaredPanes }'
+  mutate web "an unknown config key is accepted silently" "$D" \
+    "    problems.push({ key, reason: 'unknown key' })" \
+    '    void key'
+  mutate web "identity may be configured in the shared project file" "$D" \
+    "const PROJECT_KEYS: readonly string[] = COMMON_KEYS" \
+    "const PROJECT_KEYS: readonly string[] = [...COMMON_KEYS, 'identity']"
+  mutate web "the provider object admits a discriminator" "$D" \
+    "    ['label', 'issuer', 'clientId', 'scopes', 'audience', 'claims', 'showRemoteAvatar', 'signOut']," \
+    "    ['label', 'issuer', 'clientId', 'scopes', 'audience', 'claims', 'showRemoteAvatar', 'signOut', 'kind', 'mode', 'operator', 'vendor', 'clientSecret'],"
+  mutate web "the header invents an organization name" "$H" \
+    "  const name = config.organization.name ?? DESK_FALLBACK_NAME" \
+    "  const name = config.organization.name ?? 'Acme Co.'"
+  mutate web "the NONE menu offers a Sign out" "$U" \
+    "          <DropdownMenu.Item asChild className=\"desk-menu-item\">
+            <Link to=\"/help\">About</Link>
+          </DropdownMenu.Item>" \
+    "          <DropdownMenu.Item asChild className=\"desk-menu-item\">
+            <Link to=\"/help\">About</Link>
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className=\"desk-menu-item\">Sign out</DropdownMenu.Item>"
+  mutate web "create sends a base digest it did not read" "$X" \
+    "      { path: trimmed, content: starting, baseSha256: '' }," \
+    "      { path: trimmed, content: starting, baseSha256: 'x' },"
+  mutate web "create overrides an existing file" "$X" \
+    "      { path: trimmed, content: starting, baseSha256: '' }," \
+    "      { path: trimmed, content: starting, baseSha256: '', override: true },"
+  mutate web "the dialog invents a starting template" "$X" \
+    "    choice.kind === 'example' ? example.data : choice.kind === 'schema' ? schema.data : ''" \
+    "    choice.kind === 'example' ? example.data : choice.kind === 'schema' ? schema.data : '{\"packId\":\"\"}'"
+  # Below 900px the rail is a Dialog drawer and renders no collapse toggle, so
+  # the header's opener is the only pointer affordance there is. Without it the
+  # whole left menu is reachable by Mod+B alone, on the width whose likeliest
+  # device has no keyboard.
+  mutate web "the rail drawer has no opener" "$H" \
+    '        {railIsDrawer && (' \
+    '        {false && ('
+  mutate web "the rail drawer carries no landmark" "$L" \
+    '            <nav aria-label="Project">
+              <RailBody
+                mode="expanded"
+                onToggle={onToggle}
+                showCollapse={false}
+                onNavigate={() => onDrawerOpenChange(false)}
+              />
+            </nav>' \
+    '            <RailBody
+              mode="expanded"
+              onToggle={onToggle}
+              showCollapse={false}
+              onNavigate={() => onDrawerOpenChange(false)}
+            />'
+  mutate web "the inspector drawer answers to no id" "$R" \
+    '            id="desk-inspector"
+            aria-label="Inspector"' \
+    '            aria-label="Inspector"'
+  mutate web "the brand leaves the router on every click" "$H" \
+    '        <Link className="desk-brand" to="/">' \
+    '        <Link className="desk-brand" to="/" reloadDocument>'
+  mutate web "an empty organization name is accepted" "$D" \
+    "      const name = organizationName(organization.name, problems)" \
+    "      const name = optionalString(organization.name, 'organization.name', problems)"
+  mutate web "the identity slot admits a discriminator one level up" "$D" \
+    "    const identity = section(record.identity, 'identity', ['provider'], problems)" \
+    "    const identity = section(record.identity, 'identity', ['provider', 'kind', 'mode', 'operator', 'vendor', 'clientSecret'], problems)"
+  mutate web "the control states a session verdict it never checked" "$U" \
+    "  const name = provider === null ? displayName : (provider.label ?? provider.issuerHost)" \
+    "  const name = provider === null ? displayName : (provider.label ?? 'signed out')"
+  mutate web "the configured theme is decoded and never applied" "$W" \
+    '  useAppliedTheme(value.config.appearance.theme)' \
+    '  void value.config.appearance.theme'
+  mutate web "the copy button reports a copy it did not make" "$V" \
+    '          const written = navigator.clipboard?.writeText(text)
+          if (!written) {
+            setCopied(false)
+            return
+          }
+          written.then(
+            () => setCopied(true),
+            () => setCopied(false)
+          )' \
+    '          void navigator.clipboard?.writeText(text)
+          setCopied(true)'
+  mutate web "the section links go nowhere" "$Q" \
+    '    target?.scrollIntoView()' \
+    '    void target'
+  # The dialog's seeded path. The chassis creates no directories and answers
+  # 404 for a missing parent, so a default of `packs/` in a project with a flat
+  # layout is a dead end offered as a convenience.
+  mutate web "the dialog seeds a directory the project may not have" "$X" \
+    "    () => ((files.data?.files ?? []).some((file) => file.path.startsWith(PATH_PREFIX)) ? PATH_PREFIX : '')," \
+    "    () => PATH_PREFIX,"
+  mutate web "the create dialog is mounted on every route" "$L" \
+    '      {creating && <CreatePackDialog open onOpenChange={setCreating} />}' \
+    '      <CreatePackDialog open={creating} onOpenChange={setCreating} />'
+  # `navigate('/author')` from `/author` matches the same element, so a
+  # mount-only take never runs again: the editor stayed where it was and the
+  # request was left in module state for an unrelated mount to consume.
+  mutate web "create leaves its request behind when the editor is already open" "$B" \
+    '  }, [requestedOpen])' \
+    '  }, [])'
+  mutate web "the example capability is read from one tool" "$Y" \
+    "    exampleSupported: names.has('list_examples') && names.has('get_example')," \
+    "    exampleSupported: names.has('get_example'),"
 
   mutate web "dirty means 'something was typed'" "$A" \
     '    () => buffer !== undefined && base !== undefined && buffer !== base.content,' \
@@ -360,9 +572,16 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "a failed listing refresh unmounts the editor" "$A" \
     '      {listing.error && !listing.data ? (' \
     '      {listing.error ? ('
-  mutate web "a failed reload installs stale cached bytes" "$A" \
-    '      if (result.isSuccess && result.data) {' \
-    '      if (result.data) {'
+  # REMOVED: "a failed reload installs stale cached bytes". Broken at main
+  # (441a99c) and broken here — its needle, `if (result.isSuccess && result.data)`,
+  # appears nowhere in AuthorView.tsx and did not before this branch either, so
+  # the row could only ever report MUTATION DID NOT APPLY. It is deleted rather
+  # than rewritten to something that happens to fail: the claim it names is
+  # already held, exactly and by name, by "reload trusts refetch rather than its
+  # own read" below — which breaks the direct `readFile(path)` into a
+  # `refetch()` and is caught by "reloads from its own request, not from
+  # whatever the cache holds". A row whose claim is covered twice, once
+  # inoperably, is one row.
   mutate web "in-app navigation is not blocked" "$A" \
     '  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
     dirty && currentLocation.pathname !== nextLocation.pathname
@@ -420,6 +639,391 @@ if [ "$which" = all ] || [ "$which" = web ]; then
           ? 'Something else wrote to it while this edit was open.'
           : 'The file is no longer on disk — something else deleted or moved it.'}{' '}" \
     "        {'Something else wrote to it while this edit was open.'}{' '}"
+
+  # ---- Codex round 1 -----------------------------------------------------
+  # One row per safeguard the review's findings put in. Each names the defect
+  # it restores rather than the code it edits.
+
+  # 1. The slot. A provider around the Inspector alone is a sibling of the
+  # routes, so `useInspectorSlot()` in a route read the closed default for
+  # ever and every portal was a no-op.
+  mutate web "routes read the Inspector slot's closed default" "$N" \
+    '    <InspectorSlotContext.Provider value={slot}>' \
+    '    <InspectorSlotContext.Provider value={{ ...slot, target: null }}>'
+  mutate web "the pane publishes no portal target" "$E" \
+    '      <div ref={publishTarget} className="desk-inspector-slot" />' \
+    '      <div className="desk-inspector-slot" />'
+
+  # 2. A grid with an indefinite height grows to fit its content: main never
+  # becomes the scroll container and the always-visible strip goes below the
+  # fold on a long page.
+  mutate web "the frame has no definite height" "$G" \
+    '    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;' \
+    '    min-height: 100vh;'
+  mutate web "a scrolling pane cannot shrink below its content" "$G" \
+    '    scrollbar-gutter: stable;
+    min-width: 0;
+    min-height: 0;' \
+    '    scrollbar-gutter: stable;
+    min-width: 0;'
+
+  # 3. The three configured sizes were decoded, shown on Admin as effective,
+  # and applied to nothing.
+  mutate web "the configured rail width is decoded and never applied" "$N" \
+    "    '--rail-w': \`\${config.panes.left.width}px\`," \
+    "    '--rail-w': '248px',"
+  mutate web "the configured console height is decoded and never applied" "$N" \
+    "    '--console-h': \`\${config.panes.console.height}px\`," \
+    "    '--console-h': '240px',"
+  mutate web "the inspector drawer is a width nobody configured" "$E" \
+    "                : ({ '--drawer-w': \`\${declaredWidth}px\` } as CSSProperties)" \
+    '                : undefined'
+
+  # 4. One global touched bit made a single toggle speak for all three panes:
+  # the other two were serialized from the built-in defaults, and a stored
+  # record outranks the configuration file for ever after.
+  mutate web "an untouched pane is persisted along with the touched one" "$P" \
+    '  const left = touched.left ? state.left : kept.left
+  const inspector = touched.inspector ? state.inspector : kept.inspector
+  const consoleSection = touched.console ? state.console : kept.console' \
+    '  const left = state.left
+  const inspector = state.inspector
+  const consoleSection = state.console'
+  mutate web "one moved pane suppresses the re-seed for every pane" "$P" \
+    '    if (chosen.left && chosen.inspector && chosen.console) return' \
+    '    if (chosen.left || chosen.inspector || chosen.console) return'
+
+  # 5. The key came from the runtime's `configPath`, which a project with no
+  # `jpack.json` does not have — so every configless project on one origin
+  # shared the single literal `default` record.
+  mutate web "the layout key is not the project the chassis pinned" "$N" \
+    '      projectIdentity={listing.data?.root}' \
+    '      projectIdentity={undefined}'
+  mutate web "a layout is written under the provisional key" "$P" \
+    '    if (!keyResolved) return
+    const timer = setTimeout(() => {' \
+    '    const timer = setTimeout(() => {'
+
+  # 6. Admin removed the key itself and reported success unconditionally: a
+  # pending write rewrote it, an early press cleared `default`, and a storage
+  # that refused the deletion was reported as "Cleared."
+  mutate web "the reset clears a key that is not this project's" "$P" \
+    "    if (!keyResolved) return 'unresolved'" \
+    '    if (false) return undefined as never'
+  mutate web "the reset reports a deletion it did not verify" "$P" \
+    '    return window.localStorage.getItem(key) === null' \
+    '    return true'
+  # The claim is "a write already on its way does not undo the reset". The
+  # explicit `clearTimeout` cannot be the row that holds it: the reset also
+  # changes state, so React runs the write effect's cleanup and cancels the
+  # very same timer — removing the explicit cancel leaves the suite green, and
+  # a row that reports that is a row claiming coverage it does not have. What
+  # actually makes the pending write harmless is the touched reset beside it,
+  # so that is what this breaks.
+  mutate web "the reset leaves the panes marked as chosen" "$P" \
+    '    touched.current = { ...NOTHING_TOUCHED }' \
+    ''
+
+  # 7. The re-seed excluded the viewport deliberately, so a desk opened narrow
+  # left an untouched rail at 56px and a configured-open Inspector shut once
+  # the window was widened.
+  mutate web "widening never gives an untouched pane its layout back" "$P" \
+    '  const viewportSignature = `${viewport.railIsDrawer}|${viewport.inspectorIsDrawer}`' \
+    "  const viewportSignature = ''"
+
+  # 8. The tab root between the console and its body was an ordinary block, so
+  # a log longer than the pane was clipped rather than scrolled.
+  mutate web "the console log is clipped rather than scrolled" "$T" \
+    '        className="desk-console-tabs"' \
+    '        '
+  mutate web "the console's flex chain is declared for nothing" "$G" \
+    '  .desk-console-tabs {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }' \
+    '  .desk-console-tabs {
+    display: block;
+  }'
+
+  # 11. The rail drawer is modal, so a link that navigated and left it standing
+  # put the destination behind an overlay — including where the viewer was
+  # already on that route.
+  mutate web "the rail drawer stays open over the page it navigated to" "$L" \
+    '                onNavigate={() => onDrawerOpenChange(false)}' \
+    '                onNavigate={undefined}'
+
+  # 12. A closed Dialog unmounts its portal, so an unconditional `aria-controls`
+  # named an id that is not in the document; and neither drawer had a trigger
+  # for Radix to restore focus to.
+  mutate web "the rail opener points at an element that is not there" "$H" \
+    "            aria-controls={railDrawerOpen ? 'desk-rail' : undefined}" \
+    '            aria-controls="desk-rail"'
+  mutate web "the inspector toggle points at an unmounted drawer" "$H" \
+    "          aria-controls={!inspectorIsDrawer || inspectorOpen ? 'desk-inspector' : undefined}" \
+    '          aria-controls="desk-inspector"'
+  mutate web "closing the rail drawer drops focus on the body" "$L" \
+    '            onCloseAutoFocus={(event) => {
+              event.preventDefault()
+              openerRef?.current?.focus()
+            }}' \
+    ''
+  mutate web "closing the inspector drawer drops focus on the body" "$E" \
+    '            onCloseAutoFocus={(event) => {
+              event.preventDefault()
+              openerRef.current?.focus()
+            }}' \
+    ''
+  mutate web "the rail drawer has no visible way out" "$L" \
+    '            <div className="desk-drawer-head">
+              <Dialog.Close asChild>
+                <button type="button" className="desk-icon-button" aria-label="Close navigation">
+                  <IconClose />
+                </button>
+              </Dialog.Close>
+            </div>' \
+    ''
+
+  # 13. A 413, a permission refusal or a dead socket resolved to the defaults
+  # with the reason recorded where nothing rendered it, so a desk that could
+  # not open its own file looked exactly like a desk with no file.
+  mutate web "an unreadable configuration is reported as an absent one" "$Z" \
+    '      if (cause.status === 404) return effectiveConfig(undefined, reasonFor(cause))' \
+    '      if (true) return effectiveConfig(undefined, reasonFor(cause))'
+  mutate web "an unreadable configuration is silent outside Admin" "$S" \
+    '        {problems.length === 0 && readFailure !== undefined && (' \
+    '        {false && ('
+  mutate web "the strip's warning is the half that disappears" "$G" \
+    '  .desk-strip-warn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    color: var(--warn);
+  }' \
+    '  .desk-strip-warn {
+    color: var(--warn);
+  }'
+
+  # 14. The identity slot's guard was a blacklist of five names, so the rule it
+  # held was "not these five" rather than "one field".
+  mutate web "the identity type grows a second field" "$D" \
+    'export interface IdentityConfig {
+  provider: IdentityProviderConfig | null
+}' \
+    'export interface IdentityConfig {
+  provider: IdentityProviderConfig | null
+  strategy?: string
+}'
+  mutate web "the provider object grows a ninth member" "$D" \
+    '  showRemoteAvatar: boolean
+  signOut: '"'"'local'"'"' | '"'"'provider'"'"'
+}' \
+    '  showRemoteAvatar: boolean
+  signOut: '"'"'local'"'"' | '"'"'provider'"'"'
+  strategy?: string
+}'
+  mutate web "the identity state carries a discriminator again" "$I" \
+    '  /** Null exactly where `identity.provider` is null. There is no third value. */
+  provider: ProviderIdentity | null' \
+    "  mode?: 'local' | 'provider'
+  provider: ProviderIdentity | null"
+
+  # 15. `retryOnMount` re-runs an errored query when a second observer
+  # subscribes, and every route change is a second observer beside the rail's.
+  mutate web "a refused pack listing is called again on every route change" "$J" \
+    '    retryOnMount: false,' \
+    ''
+
+  # 16. Read loosely, `Mod+B` also claimed Ctrl+Shift+B — and firing on it
+  # prevented the default, so the shifted spelling took the key from whatever
+  # else wanted it.
+  mutate web "a shifted chord fires a shortcut it never declared" "$K" \
+    '  if (event.shiftKey) return undefined' \
+    ''
+  mutate web "Ctrl and Meta together are read as one modifier" "$K" \
+    '  const mod = event.ctrlKey !== event.metaKey' \
+    '  const mod = event.ctrlKey || event.metaKey'
+
+  # 18. The mark's bound is documented in bytes; counted in UTF-16 code units
+  # it is up to three times looser on a mark that is not ASCII — three and not
+  # four, because a four-byte astral character costs two UTF-16 units.
+  mutate web "the mark's size bound is counted in code units" "$D" \
+    '  const bytes = new TextEncoder().encode(value).length' \
+    '  const bytes = value.length'
+
+  # ---- Codex round 2 -----------------------------------------------------
+
+  # 1. The outgoing record started at `{v}`, so a Console toggle erased a rail
+  # and an Inspector the viewer had chosen on an earlier visit.
+  mutate web "a write erases the choices an earlier visit made" "$P" \
+    '  const kept = readShellState(key) ?? {}' \
+    '  const kept: Partial<ShellState> = {}'
+
+  # 2. Zero renders an "open" pane nobody can see; an enormous one pushes the
+  # strip out of a frame that does not scroll.
+  mutate web "a pane dimension of zero or twenty thousand is accepted" "$D" \
+    '  const bounds = PANE_BOUNDS[key]' \
+    '  const bounds = undefined as { min: number; max: number } | undefined'
+  mutate web "a configured pane may take the whole frame" "$G" \
+    '    grid-template-columns:
+      min(var(--rail-current), var(--side-cap))
+      minmax(0, 1fr)
+      min(var(--inspector-current), var(--side-cap));' \
+    '    grid-template-columns: var(--rail-current) minmax(0, 1fr) var(--inspector-current);'
+  mutate web "the console may grow past the route it sits under" "$G" \
+    '      min(
+        var(--console-current),
+        max(var(--console-cap), min(var(--console-floor), var(--console-room)))
+      )' \
+    '      var(--console-current)'
+  mutate web "the caps reserve no room for main at all" "$G" \
+    '    --main-floor: 120px;
+    --side-cap: 40vw;' \
+    '    --main-floor: 0px;
+    --side-cap: 100vw;'
+
+  # 3. The write was gated and the read was not: a stale `default` record
+  # applied one project's layout to another while the listing was in flight,
+  # and permanently where it failed.
+  mutate web "the provisional record is read even though it is not written" "$P" \
+    '  const storedForKey = () => (keyResolved ? readShellState(storageKey) : undefined)' \
+    '  const storedForKey = () => readShellState(storageKey)'
+
+  # 4. The full cue is wider than a 320px strip has beside the console button,
+  # and it neither shrinks nor wraps.
+  mutate web "the narrow strip paints the full sentence over the console control" "$S" \
+    '      <span className="desk-strip-warn-short" aria-hidden="true">
+        {short}
+      </span>' \
+    ''
+  mutate web "the short cue is never the one painted" "$G" \
+    '  @media (max-width: 599px) {
+    .desk-strip-warn-full {
+      display: none;
+    }
+
+    .desk-strip-warn-short {
+      display: inline;
+    }
+  }' \
+    ''
+  mutate web "the cue's accessible name is whichever spelling is painted" "$S" \
+    '    <Link className="desk-strip-warn" to="/admin" aria-label={full}>' \
+    '    <Link className="desk-strip-warn" to="/admin">'
+
+  # 5. The live layout was cleared even where the deletion was refused, so
+  # Admin said "the layout is unchanged" over panes that had visibly moved.
+  mutate web "a refused deletion still moves the panes" "$P" \
+    "    if (!resetShellState(storageKey)) return 'refused'" \
+    '    const refusedDeletion = !resetShellState(storageKey)'
+
+  # 6. The column's default is 360px and the drawer's has always been 320px.
+  mutate web "an unconfigured desk's drawer moves to the column's width" "$E" \
+    '              declaredWidth === undefined
+                ? undefined
+                : ({ '"'"'--drawer-w'"'"': `${declaredWidth}px` } as CSSProperties)' \
+    '              ({ '"'"'--drawer-w'"'"': `${declaredWidth ?? 360}px` } as CSSProperties)'
+  mutate web "the decoder cannot say which dimensions the file stated" "$D" \
+    "        leftWidth: declares(left, 'width')," \
+    '        leftWidth: true,'
+
+  # 7. "The reason is the chassis' own" was false for a browser error: nothing
+  # answered, so nothing the chassis said is being quoted.
+  mutate web "a browser error is attributed to the chassis" "$Z" \
+    '    if (cause instanceof FileRequestError) {' \
+    '    if (false) {'
+  mutate web "Admin sources every unread reason to the chassis" "$V" \
+    "          ) : readFailure.source === 'chassis' ? (" \
+    '          ) : true ? ('
+
+  # ---- Codex round 3 -----------------------------------------------------
+
+  # 1. A custom property is not validated at parse time, so a second `dvh`
+  # declaration wins on a browser that has never heard of `dvh` — and the
+  # invalidity then surfaces at substitution, taking grid-template-rows with it.
+  mutate web "the dvh cap is a second declaration rather than a guarded one" "$G" \
+    '  @supports (height: 100dvh) {
+    :root {
+      --console-room: max(0px, calc(100dvh - var(--header-h) - var(--strip-h)));
+      --console-cap: max(
+        0px,
+        calc(100dvh - var(--header-h) - var(--strip-h) - var(--main-floor))
+      );
+    }
+  }' \
+    ''
+  mutate web "the vh cap is the one that never applies" "$G" \
+    '    --console-cap: max(0px, calc(100vh - var(--header-h) - var(--strip-h) - var(--main-floor)));' \
+    '    --console-cap: max(0px, calc(100dvh - var(--header-h) - var(--strip-h) - var(--main-floor)));'
+
+  # 2. On a viewport too short for the reserve the cap reaches zero, and an
+  # open console renders at no height with a toggle still saying it is open.
+  mutate web "an open console can be capped down to no height at all" "$G" \
+    '        max(var(--console-cap), min(var(--console-floor), var(--console-room)))' \
+    '        var(--console-cap)'
+  # The other half, and the one the first fix got wrong on its own: a bare
+  # 80px floor on a 109px viewport pushed the strip out of a frame that does
+  # not scroll — trading this defect for the one the cap exists to prevent.
+  mutate web "the console floor may push the strip out of the frame" "$G" \
+    '        max(var(--console-cap), min(var(--console-floor), var(--console-room)))' \
+    '        max(var(--console-cap), var(--console-floor))'
+  mutate web "the room the console may take reserves main's share too" "$G" \
+    '    --console-room: max(0px, calc(100vh - var(--header-h) - var(--strip-h)));' \
+    '    --console-room: max(0px, calc(100vh - var(--header-h) - var(--strip-h) - var(--main-floor)));'
+  mutate web "the console floor is smaller than a console" "$G" \
+    '    --console-floor: 80px;' \
+    '    --console-floor: 0px;'
+
+  # 3. `slot.size` promises a route the pane's width; the configured number is
+  # capped by the sheet and ignored outright by the drawer form.
+  mutate web "the slot reports a configured width the pane does not have" "$N" \
+    '      size: shell.inspector.open ? (inspectorBox?.width ?? 0) : 0,' \
+    '      size: shell.inspector.open ? inspectorWidth : 0,'
+  mutate web "the pane is never published for measurement" "$E" \
+    '      ref={publishPane}
+      className="desk-inspector"' \
+    '      className="desk-inspector"'
+  mutate web "a measured box is taken once and never again" "$O" \
+    '    const observer = new ResizeObserver(read)
+    observer.observe(element)
+    return () => observer.disconnect()' \
+    ''
+
+  # 4. Admin printed a decoded number with nothing said about what bounds it,
+  # what the frame does to it, or what is actually on screen.
+  mutate web "Admin names no accepted range at all" "$V" \
+    "const PANE_DIMENSIONS = [
+  { key: 'panes.left.width' },
+  { key: 'panes.inspector.width' },
+  { key: 'panes.console.height' }
+] as const" \
+    'const PANE_DIMENSIONS = [] as const'
+  mutate web "Admin calls a configured number the rendered one" "$V" \
+    '        Rail: <code>{config.panes.left.mode}</code>, configured{'"'"' '"'"'}
+        <strong>{config.panes.left.width}px</strong> — rendered{'"'"' '"'"'}
+        <Rendered box={rendered.rail} axis="width" />' \
+    '        Rail: <code>{config.panes.left.mode}</code>, {config.panes.left.width}px'
+  mutate web "an absent pane is reported as a pane of zero" "$V" \
+    "  if (box === undefined) return <span className=\"quiet\">not mounted at this width</span>" \
+    '  if (box === undefined) return <strong>0px</strong>'
+
+  # 5. A 200 whose body is not the envelope this API promises is still an
+  # answer — losing its status put it in the transport-failure bucket.
+  mutate web "a malformed answer loses the fact that it was an answer" "$C" \
+    '      throw new FileRequestError(
+        response.status,
+        `the desk answered ${response.status} with text that is not JSON`,
+        '"'"'desk'"'"'
+      )' \
+    '      throw new Error(`the desk answered ${response.status} with text that is not JSON`)'
+  mutate web "every answered reason is quoted as the chassis' own" "$C" \
+    "    throw new FileRequestError(response.status, message, 'chassis')" \
+    "    throw new FileRequestError(response.status, message, 'desk')"
+  mutate web "provenance is inferred from the status again" "$V" \
+    '          {!readFailure.responseReceived ? (' \
+    '          {false ? ('
 fi
 
 restore

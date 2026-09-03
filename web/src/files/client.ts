@@ -58,6 +58,35 @@ export interface FileContent {
 }
 
 /**
+ * A response was received and the desk cannot use it.
+ *
+ * Two facts, carried rather than inferred. **The status** is why this type
+ * exists at all: "there is no such file" and "the file is there and could not
+ * be read" are different, and a caller handed only a sentence cannot tell them
+ * apart — which is how a permission error, a file past the read cap and a
+ * non-UTF-8 file all became indistinguishable from an absent configuration.
+ *
+ * **The source** is the second, and it is the one a status cannot stand in
+ * for. A `200` whose body is not the envelope this API promises is still an
+ * answer — the request completed, the chassis replied — but the sentence
+ * describing it was written *here*, not by the chassis. Reading provenance off
+ * "is there a status?" put that case in the transport-failure bucket and had
+ * Admin say the request never got an answer, which is false.
+ */
+export class FileRequestError extends Error {
+  readonly status: number
+  /** `chassis` where the message is its own `{error}`; `desk` where it is ours. */
+  readonly source: 'chassis' | 'desk'
+
+  constructor(status: number, message: string, source: 'chassis' | 'desk') {
+    super(message)
+    this.name = 'FileRequestError'
+    this.status = status
+    this.source = source
+  }
+}
+
+/**
  * A write refused because the file on disk is not the file the edit started
  * from.
  *
@@ -112,7 +141,13 @@ async function answer<T>(response: Response): Promise<T> {
   }
   if (response.ok) {
     if (body === undefined) {
-      throw new Error(`the desk answered ${response.status} with text that is not JSON`)
+      // An answer, and an unusable one. The status is kept because a response
+      // *was* received; the source is `desk` because this sentence is ours.
+      throw new FileRequestError(
+        response.status,
+        `the desk answered ${response.status} with text that is not JSON`,
+        'desk'
+      )
     }
     return body as T
   }
@@ -120,7 +155,16 @@ async function answer<T>(response: Response): Promise<T> {
     throw new StaleWrite(body as ConstructorParameters<typeof StaleWrite>[0])
   }
   const message = (body as { error?: string } | undefined)?.error
-  throw new Error(message ?? `the desk answered ${response.status} ${response.statusText}`)
+  if (message !== undefined) {
+    throw new FileRequestError(response.status, message, 'chassis')
+  }
+  // No `{error}` envelope to quote, so the sentence is the status line and it
+  // is ours — stated as a status rather than dressed up as the chassis'.
+  throw new FileRequestError(
+    response.status,
+    `the desk answered ${response.status} ${response.statusText}`,
+    'desk'
+  )
 }
 
 /** Every regular file in the project tree. */
