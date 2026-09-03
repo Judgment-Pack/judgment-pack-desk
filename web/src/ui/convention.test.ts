@@ -73,6 +73,20 @@ describe('the styling convention', () => {
     }
   })
 
+  it.each(modules)('%s takes every radius from a token', (name) => {
+    // The README says the tokens are the only source of colour *and radius*,
+    // and before this rule existed one module spelled `border-radius: 4px`
+    // while the colour rule below reported the file clean. A claim with no
+    // holder is how that happens.
+    const sheet = read(name)
+    for (const [, value] of read(name).matchAll(/border-radius:\s*([^;]+);/g)) {
+      const words = value!.trim()
+      if (words === '0' || words === 'inherit') continue
+      expect(words, `${name}: border-radius: ${words}`).toContain('var(--')
+    }
+    expect(sheet).not.toMatch(/border-radius:\s*\d/)
+  })
+
   it.each(modules)('%s takes every colour from a token', (name) => {
     const sheet = read(name)
     const declarations = [...sheet.matchAll(/(background|color|border[a-z-]*|outline[a-z-]*):\s*([^;]+);/g)]

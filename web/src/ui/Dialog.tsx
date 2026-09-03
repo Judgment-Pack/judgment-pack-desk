@@ -6,6 +6,14 @@
  * description is optional because not every dialog has something to say that
  * the fields do not already say better.
  *
+ * **No description means no `aria-describedby`, not an empty one.** Radix
+ * tracks whether a `Description` was rendered and omits the attribute when
+ * none was, so a dialog with nothing to add simply has nothing to add. The
+ * shape this replaced rendered an empty `<Description />` "to mean there is
+ * none", which left every dialog pointing a screen reader at an empty
+ * paragraph — the same defect `Field` documents at length and refuses, two
+ * files away.
+ *
  * `Dialog.Close` is re-exported rather than wrapped: a Cancel is a close, and
  * a caller composing one out of `Close` + `Button asChild` is doing the plain
  * thing rather than working around a wrapper that took no `asChild`.
@@ -39,12 +47,7 @@ export function Dialog({
             <RadixDialog.Description className={styles.description}>
               {description}
             </RadixDialog.Description>
-          ) : (
-            // Radix warns when a Content carries no Description. Saying
-            // "there is none" is the documented way to mean it, and it is not
-            // the same as rendering an empty one.
-            <RadixDialog.Description />
-          )}
+          ) : null}
           {children}
         </RadixDialog.Content>
       </RadixDialog.Portal>

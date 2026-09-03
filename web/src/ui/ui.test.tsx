@@ -12,7 +12,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useEffect, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Alert } from './Alert'
 import { Button } from './Button'
+import { Dialog } from './Dialog'
 import { Field } from './Field'
 import { Input } from './Input'
 import { Select } from './Select'
@@ -204,5 +206,59 @@ describe('Select', () => {
 
     fireEvent.keyDown(document.activeElement!, { key: 'Enter' })
     expect(trigger.textContent).toContain('condition-branches')
+  })
+})
+
+describe('Dialog', () => {
+  it('is a dialog named by its title', () => {
+    render(
+      <Dialog open onOpenChange={() => {}} title="Create a pack">
+        <p>fields</p>
+      </Dialog>
+    )
+    expect(screen.getByRole('dialog', { name: 'Create a pack' })).toBeTruthy()
+  })
+
+  it('describes itself with the description it was given', () => {
+    render(
+      <Dialog open onOpenChange={() => {}} title="Create a pack" description="Three questions.">
+        <p>fields</p>
+      </Dialog>
+    )
+    const described = screen.getByRole('dialog').getAttribute('aria-describedby')
+    expect(described).toBeTruthy()
+    expect(document.getElementById(described!)?.textContent).toBe('Three questions.')
+  })
+
+  it('names no description it did not render', () => {
+    // The mirror of the Field case above, and the same rule: this used to
+    // render an empty `<Description />` "to mean there is none", which left
+    // every dialog with no description pointing a reader at an empty
+    // paragraph. Radix omits the attribute when no Description was rendered,
+    // which is what "there is none" actually looks like on the wire.
+    render(
+      <Dialog open onOpenChange={() => {}} title="Create a pack">
+        <p>fields</p>
+      </Dialog>
+    )
+    expect(screen.getByRole('dialog').getAttribute('aria-describedby')).toBeNull()
+  })
+})
+
+describe('Alert', () => {
+  it('announces itself, and keeps the reason its own element', () => {
+    // Two statements: what the desk says, and what the failure itself said.
+    // Keeping them apart is what lets the second be read on its own rather
+    // than as a tail of the first.
+    render(<Alert reason="could not stage the write">The pack could not be created.</Alert>)
+    const alert = screen.getByRole('alert')
+    expect(alert.textContent).toBe('The pack could not be created. could not stage the write')
+    expect(screen.getByText('could not stage the write')).not.toBe(alert)
+  })
+
+  it('renders no empty element for a reason it was not given', () => {
+    render(<Alert>The pack could not be created.</Alert>)
+    expect(screen.getByRole('alert').textContent).toBe('The pack could not be created.')
+    expect(screen.getByRole('alert').querySelector('span')).toBeNull()
   })
 })
