@@ -368,6 +368,13 @@ describe('choosing a member with the pane closed', () => {
     await screen.findByRole('heading', { level: 1 })
     await waitFor(() => expect(revealed).toEqual(['reveal']))
   })
+
+  it('opens it on arrival at an address that already carries one', async () => {
+    // `?at` is what the desk writes, so it is what a copied link carries.
+    const { revealed } = draw(SERVED, {}, '/packs/vendor-onboarding?at=%2Frules%2F0')
+    await screen.findByRole('heading', { level: 1 })
+    expect(revealed).toEqual(['reveal'])
+  })
 })
 
 describe('the Checks panel while the check is in flight', () => {

@@ -25,7 +25,7 @@
  * with it; the mode helper lands with the forms, so it is written once against
  * a real caller.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { ErrorBox, Loading } from '../components/primitives'
 import { useFileContent } from '../files/queries'
@@ -63,6 +63,15 @@ export function PackView() {
     // closed pane and changed nothing on screen but the block's own border.
     slot.reveal()
   }
+
+  // Arriving with a selection is arriving at a link someone sent, so the pane
+  // it addresses is opened once, on mount. Only on mount: reopening it on every
+  // later render would fight a viewer who had closed it.
+  const arrivedSelected = useRef(at !== null)
+  useEffect(() => {
+    if (arrivedSelected.current) slot.reveal()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // The bytes the check ran over: the file's where they loaded, the served
   // document's where they did not. Which one it is is printed, because the two

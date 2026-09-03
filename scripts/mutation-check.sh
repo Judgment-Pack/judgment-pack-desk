@@ -1844,6 +1844,9 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '    // closed pane and changed nothing on screen but the block'"'"'s own border.
     slot.reveal()' \
     '    void slot'
+  mutate web "an address that arrives with a selection opens no pane" "$PV" \
+    '    if (arrivedSelected.current) slot.reveal()' \
+    '    void arrivedSelected'
   mutate web "the shell ignores a route asking to open the Inspector" "$AS" \
     '    if (!inspectorOpen) toggleInspector()' \
     '    void inspectorOpen'
