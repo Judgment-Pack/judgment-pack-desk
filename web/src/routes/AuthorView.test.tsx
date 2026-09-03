@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react
 import { Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { connected, renderConnected } from '../testing/harness'
+import { forgetAuthorBridge, requestOpen } from '../shell/authorBridge'
 import { AuthorView } from './AuthorView'
 
 /**
@@ -102,6 +103,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  forgetAuthorBridge()
   vi.unstubAllGlobals()
 })
 
@@ -898,5 +900,37 @@ describe('the authoring shell, against answers that arrive out of order', () => 
     await screen.findByText(/Could not reload/)
     expect((screen.getByLabelText('File contents') as HTMLTextAreaElement).value).toBe(EDITED)
     expect(container.textContent).toContain('unsaved changes')
+  })
+})
+
+/**
+ * The open-request bridge, driven at the module rather than through a view.
+ *
+ * **Nothing in the desk requests an open today.** The Create-pack dialog was
+ * the one producer, and it now opens the new pack's own page instead of the
+ * editor. The mechanism is kept — it is the maintainer's, and removing a
+ * documented module is their call, not this change's — so this is what holds
+ * it: the contract is a module contract, and it is tested as one.
+ *
+ * The property is that the view answers a request that arrives **while it is
+ * already mounted**. `navigate('/author')` from `/author` matches the same
+ * route element, so the view does not remount and a mount-only take would
+ * never run again — which is exactly the bug this bridge was built to fix.
+ */
+describe('the open-request bridge', () => {
+  it('opens a file requested while the editor is already mounted', async () => {
+    chassis({
+      files: () => ({ status: 200, body: LISTING }),
+      file: () => ({ status: 200, body: READ })
+    })
+    render()
+    await screen.findByText('packs/vendor-onboarding.pack.json')
+    // Nothing is open: the view mounted before any request existed.
+    expect(screen.queryByLabelText('File contents')).toBeNull()
+
+    act(() => requestOpen('packs/vendor-onboarding.pack.json'))
+
+    const box = (await screen.findByLabelText('File contents')) as HTMLTextAreaElement
+    expect(box.value).toBe(LOADED)
   })
 })

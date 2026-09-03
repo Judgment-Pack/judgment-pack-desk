@@ -10,8 +10,35 @@
  * **The options do not exist until the trigger is opened.** That is Radix, not
  * this file, and it is why an assertion about what a select offers has to open
  * it first; `testing/radixGround.test.tsx` writes that down once.
+ *
+ * **The trigger's text is passed in, not read off an item.** By default
+ * `Select.Value` renders the selected *item's* text, which requires that item
+ * to have mounted — and items mount only while the list is open. So a value
+ * that changes while the list is closed (a default that arrives once the
+ * runtime has answered, say) leaves the trigger blank until the first open.
+ * Resolving the label from `options` here removes that dependency entirely:
+ * the trigger says what is selected whether or not it has ever been opened.
+ *
+ * **A value the caller never offered is not a choice, and is dropped.** This
+ * is not defensiveness; it is repairing a specific, reproducible Radix
+ * behaviour that only appears *inside a form*. There, `Select.Root` mirrors its
+ * value into a hidden native `<select>` and dispatches `change` on it whenever
+ * the value changes. The options of that native select come from the `Item`s
+ * that have registered — and items mount only while the list is open. So a
+ * controlled value that changes while the list is closed sets
+ * `select.value = "…"` against a select with no such option, which leaves it
+ * `""`, and the dispatched `change` reports `""` straight back through
+ * `onValueChange`. A caller that stores what it is handed then loses the
+ * selection it just made, and the trigger goes blank.
+ *
+ * That is exactly what a default arriving from the runtime does: the dialog
+ * starts on "Empty pack", the example listing answers, the default moves to
+ * the first example, and one tick later the choice is `""`. Dropping a value
+ * that is not in `options` fixes it precisely — none of these options is ever
+ * `""`, so nothing a person can actually pick is filtered.
  */
 import { Select as RadixSelect } from 'radix-ui'
+import { useMemo } from 'react'
 import { IconChevronDown } from '../shell/icons'
 import styles from './Select.module.css'
 
@@ -36,10 +63,18 @@ export function Select({
   'aria-describedby'?: string
   'aria-invalid'?: boolean
 }) {
+  const offered = useMemo(() => new Set(options.map((option) => option.value)), [options])
   return (
-    <RadixSelect.Root value={value} onValueChange={onValueChange}>
+    <RadixSelect.Root
+      value={value}
+      onValueChange={(next) => {
+        if (offered.has(next)) onValueChange(next)
+      }}
+    >
       <RadixSelect.Trigger id={id} className={styles.trigger} {...described}>
-        <RadixSelect.Value placeholder={placeholder} />
+        <RadixSelect.Value placeholder={placeholder}>
+          {options.find((option) => option.value === value)?.label}
+        </RadixSelect.Value>
         <RadixSelect.Icon className={styles.icon}>
           <IconChevronDown />
         </RadixSelect.Icon>

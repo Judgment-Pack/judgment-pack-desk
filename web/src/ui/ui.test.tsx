@@ -10,7 +10,7 @@
  * by reading the source.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Button } from './Button'
 import { Field } from './Field'
@@ -135,6 +135,58 @@ describe('Select', () => {
       'condition-branches',
       'Empty pack'
     ])
+  })
+
+  /**
+   * The regression this primitive exists to hold.
+   *
+   * Inside a form, Radix mirrors the value into a hidden native `<select>` and
+   * dispatches `change` on it whenever the value changes. That select's options
+   * are the items that have registered, and items mount only while the list is
+   * open — so a controlled value that changes while it is closed is set against
+   * a select with no such option, lands as `""`, and is reported straight back
+   * through `onValueChange`. Without the guard the caller stores `""`, the
+   * choice is lost and the trigger goes blank; the create dialog hit exactly
+   * this the moment its default moved to the runtime's first example.
+   */
+  it('keeps a value that changes while closed, inside a form', async () => {
+    const seen: string[] = []
+    function LateDefault() {
+      const [options, setOptions] = useState([{ value: 'empty', label: 'Empty pack' }])
+      const [choice, setChoice] = useState<string | undefined>(undefined)
+      useEffect(() => {
+        setOptions([
+          { value: 'minimal-expense-approval', label: 'minimal-expense-approval' },
+          { value: 'empty', label: 'Empty pack' }
+        ])
+      }, [])
+      const value = choice ?? options[0]!.value
+      return (
+        <form>
+          <Field label="Template">
+            {(wiring) => (
+              <Select
+                {...wiring}
+                value={value}
+                onValueChange={(next) => {
+                  seen.push(next)
+                  setChoice(next)
+                }}
+                options={options}
+              />
+            )}
+          </Field>
+        </form>
+      )
+    }
+    render(<LateDefault />)
+    await waitFor(() =>
+      expect(screen.getByLabelText('Template').textContent).toContain('minimal-expense-approval')
+    )
+    // And it stays: nothing reported a choice nobody made.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(screen.getByLabelText('Template').textContent).toContain('minimal-expense-approval')
+    expect(seen).toEqual([])
   })
 
   it('selects with the keyboard and reports the new choice on the trigger', async () => {
