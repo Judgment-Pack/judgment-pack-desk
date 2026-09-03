@@ -226,6 +226,110 @@ describe('decodeDeskConfig', () => {
   })
 })
 
+describe('the storage member', () => {
+  const withStorage = (packs: unknown) =>
+    decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1, storage: { packs } }), 'project')
+
+  it('is the defaults when the member is absent entirely', () => {
+    const decoded = decodeDeskConfig('{"deskConfigVersion":1}', 'project')
+    expect(decoded.problems).toEqual([])
+    expect(decoded.values?.storage).toBeUndefined()
+    expect(effectiveConfig(decoded).config.storage).toEqual({
+      packs: { kind: 'filesystem', dir: 'packs', idBase: 'https://example.invalid/judgment-packs/' }
+    })
+  })
+
+  it('takes the defaults for the members a partial storage.packs leaves out', () => {
+    const decoded = withStorage({ dir: 'decisions' })
+    expect(decoded.problems).toEqual([])
+    expect(decoded.values?.storage).toEqual({
+      packs: {
+        kind: 'filesystem',
+        dir: 'decisions',
+        idBase: 'https://example.invalid/judgment-packs/'
+      }
+    })
+  })
+
+  it('refuses an unknown key by its path', () => {
+    const decoded = withStorage({ dir: 'packs', bucket: 'acme-packs' })
+    expect(decoded.values).toBeUndefined()
+    expect(decoded.problems).toEqual([{ key: 'storage.packs.bucket', reason: 'unknown key' }])
+  })
+
+  it('names both future kinds when a kind other than filesystem is asked for', () => {
+    // `oneOf` would say `must be one of "filesystem"`, which tells whoever
+    // typed "database" nothing about why.
+    const decoded = withStorage({ kind: 'database' })
+    expect(decoded.values).toBeUndefined()
+    expect(keys(decoded.problems)).toEqual(['storage.packs.kind'])
+    const reason = decoded.problems[0]!.reason
+    expect(reason).toContain('must be "filesystem"')
+    expect(reason).toContain('"database" and "cloud storage" are not available yet')
+  })
+
+  it('refuses a directory that escapes, is absolute, or is not a directory name', () => {
+    for (const dir of ['../elsewhere', '/etc/packs', 'packs/../..', 'a\\b', 'C:/packs', '', '   ']) {
+      const decoded = withStorage({ dir })
+      expect(decoded.values, `dir ${JSON.stringify(dir)} was accepted`).toBeUndefined()
+      expect(keys(decoded.problems)).toEqual(['storage.packs.dir'])
+    }
+  })
+
+  it('trims a trailing separator rather than refusing it', () => {
+    expect(withStorage({ dir: 'packs/' }).values?.storage?.packs.dir).toBe('packs')
+    expect(withStorage({ dir: 'a/b//' }).values?.storage?.packs.dir).toBe('a/b')
+  })
+
+  it('requires idBase to parse as a URI, because a pack’s id member is one', () => {
+    const decoded = withStorage({ idBase: 'not a uri' })
+    expect(decoded.values).toBeUndefined()
+    expect(keys(decoded.problems)).toEqual(['storage.packs.idBase'])
+    expect(decoded.problems[0]!.reason).toContain('must be a URI')
+  })
+
+  it('normalises idBase to end in a separator, once and here', () => {
+    // Every use is then a bare `idBase + slug`, and Admin shows the prefix
+    // that will actually be written rather than the one that was typed.
+    expect(withStorage({ idBase: 'https://acme.example/packs' }).values?.storage?.packs.idBase).toBe(
+      'https://acme.example/packs/'
+    )
+    expect(withStorage({ idBase: 'https://acme.example/packs/' }).values?.storage?.packs.idBase).toBe(
+      'https://acme.example/packs/'
+    )
+    // A fragment base is already a separator and is left exactly as written.
+    expect(withStorage({ idBase: 'https://acme.example/p#' }).values?.storage?.packs.idBase).toBe(
+      'https://acme.example/p#'
+    )
+  })
+
+  it('refuses the whole file for one storage problem, like every other section', () => {
+    const decoded = decodeDeskConfig(
+      JSON.stringify({
+        deskConfigVersion: 1,
+        organization: { name: 'Acme Co.' },
+        storage: { packs: { kind: 'cloud storage' } }
+      }),
+      'project'
+    )
+    expect(decoded.values).toBeUndefined()
+    expect(effectiveConfig(decoded).config.organization.name).toBeNull()
+  })
+
+  it('refuses storage that is not an object, and packs that is not one', () => {
+    expect(
+      keys(decodeDeskConfig('{"deskConfigVersion":1,"storage":[]}', 'project').problems)
+    ).toEqual(['storage'])
+    expect(keys(withStorage('packs').problems)).toEqual(['storage.packs'])
+  })
+
+  it('badges storage as coming from the project file when it supplied one', () => {
+    const effective = effectiveConfig(withStorage({ dir: 'decisions' }))
+    expect(effective.sources.storage).toBe('project file')
+    expect(effective.config.storage.packs.dir).toBe('decisions')
+  })
+})
+
 describe('effectiveConfig', () => {
   it('is the built-in defaults when nothing was read, with no problems', () => {
     const effective = effectiveConfig(undefined)

@@ -73,6 +73,29 @@ export interface PanesConfig {
   console: { open: boolean; height: number }
 }
 
+/**
+ * Where this project's packs live, and what a new pack's id is built from.
+ *
+ * **`kind` admits only `"filesystem"`.** The desk creates a pack by writing a
+ * file through the chassis file API, and there is no other mechanism here — no
+ * database client, no cloud SDK, no credential slot to put one in. So the two
+ * future kinds are named in the refusal and in Admin, and nothing in the desk
+ * branches on this member: a create writes a file, always, and the create UI
+ * never asks which kind is configured.
+ *
+ * `idBase` is normalised at decode to end in `/` (or left alone where it ends
+ * in `#`), so a pack's id is a bare concatenation at every use and Admin shows
+ * the prefix that will actually be written rather than the one that was typed.
+ */
+export interface StorageConfig {
+  packs: {
+    kind: 'filesystem'
+    /** Project-relative, slash-separated, no trailing separator. */
+    dir: string
+    idBase: string
+  }
+}
+
 export interface DeskConfig {
   deskConfigVersion: 1
   organization: OrganizationConfig
@@ -80,6 +103,7 @@ export interface DeskConfig {
   identity: IdentityConfig
   appearance: AppearanceConfig
   panes: PanesConfig
+  storage: StorageConfig
 }
 
 export const DESK_DEFAULTS: DeskConfig = {
@@ -92,6 +116,13 @@ export const DESK_DEFAULTS: DeskConfig = {
     left: { mode: 'expanded', width: 248 },
     inspector: { open: false, width: 360 },
     console: { open: false, height: 240 }
+  },
+  storage: {
+    packs: {
+      kind: 'filesystem',
+      dir: 'packs',
+      idBase: 'https://example.invalid/judgment-packs/'
+    }
   }
 }
 
@@ -115,7 +146,19 @@ export interface ConfigProblem {
 }
 
 /** Which top-level keys each location may carry. */
-const COMMON_KEYS = ['deskConfigVersion', 'organization', 'user', 'appearance', 'panes'] as const
+// `storage` is a COMMON key rather than a project-only one: where a project's
+// packs live is a property of the project exactly as `panes` and `appearance`
+// are, and the desk-level file is not read at all in phase A — so a
+// PROJECT_KEYS-only special case would be a second `identity`-shaped exception
+// bought for nothing. Stated here rather than left to be inferred.
+const COMMON_KEYS = [
+  'deskConfigVersion',
+  'organization',
+  'user',
+  'appearance',
+  'panes',
+  'storage'
+] as const
 const PROJECT_KEYS: readonly string[] = COMMON_KEYS
 const DESK_KEYS: readonly string[] = [...COMMON_KEYS, 'identity']
 
@@ -273,8 +316,108 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
     }
   }
 
+  if ('storage' in record) {
+    const storage = section(record.storage, 'storage', ['packs'], problems)
+    if (storage) {
+      const packs =
+        'packs' in storage
+          ? section(storage.packs, 'storage.packs', ['kind', 'dir', 'idBase'], problems)
+          : undefined
+      values.storage = {
+        packs: {
+          kind: (packs && storageKind(packs.kind, problems)) ?? DESK_DEFAULTS.storage.packs.kind,
+          dir: (packs && packDir(packs.dir, problems)) ?? DESK_DEFAULTS.storage.packs.dir,
+          idBase: (packs && idBase(packs.idBase, problems)) ?? DESK_DEFAULTS.storage.packs.idBase
+        }
+      }
+    }
+  }
+
   if (problems.length > 0) return { values: undefined, problems }
   return { values, problems: [] }
+}
+
+/**
+ * The one storage kind there is.
+ *
+ * Its own function rather than `oneOf`, so the refusal can name the two kinds
+ * that are not available yet. `oneOf` would report `must be one of
+ * "filesystem"`, which is true and tells a reader who typed `"database"`
+ * nothing about why.
+ */
+function storageKind(
+  value: unknown,
+  problems: ConfigProblem[]
+): 'filesystem' | undefined {
+  if (value === undefined) return undefined
+  if (value !== 'filesystem') {
+    problems.push({
+      key: 'storage.packs.kind',
+      reason:
+        `must be "filesystem"; "database" and "cloud storage" are not available yet, ` +
+        `found ${describe(value)}`
+    })
+    return undefined
+  }
+  return 'filesystem'
+}
+
+/**
+ * The directory new packs are written into, project-relative.
+ *
+ * The lexical shape the chassis will refuse anyway (`wireRelativePath`):
+ * refusing it here means Admin names the key that is wrong instead of the
+ * dialog failing on the write with a path nobody chose to look at. A trailing
+ * separator is trimmed rather than refused — `"packs/"` is unambiguous and
+ * means what it says — so `dir` never doubles a slash at use.
+ */
+function packDir(value: unknown, problems: ConfigProblem[]): string | undefined {
+  if (value === undefined) return undefined
+  const bad = (reason: string): undefined => {
+    problems.push({ key: 'storage.packs.dir', reason })
+    return undefined
+  }
+  if (typeof value !== 'string') return bad(`must be a string; found ${describe(value)}`)
+  const trimmed = value.trim().replace(/\/+$/, '')
+  if (trimmed === '') return bad('must name a directory inside the project')
+  if (trimmed.startsWith('/')) return bad('must be relative to the project, not absolute')
+  if (trimmed.includes('\\') || trimmed.includes(':')) {
+    return bad('must be slash-separated and carry no backslash or colon')
+  }
+  if (trimmed.split('/').some((part) => part === '..' || part === '.' || part === '')) {
+    return bad('must not contain an empty, "." or ".." path segment')
+  }
+  return trimmed
+}
+
+/**
+ * The prefix a new pack's `id` is built from.
+ *
+ * The JPS `id` member is `format: uri`, so this must parse as one. It is
+ * normalised to end in a separator here and nowhere else: every use is then a
+ * bare `idBase + slug`, and Admin displays the prefix that will actually be
+ * written rather than the one that happened to be typed.
+ */
+function idBase(value: unknown, problems: ConfigProblem[]): string | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || value.trim() === '') {
+    problems.push({
+      key: 'storage.packs.idBase',
+      reason: `must be a non-empty string; found ${describe(value)}`
+    })
+    return undefined
+  }
+  const trimmed = value.trim()
+  try {
+    new URL(trimmed)
+  } catch {
+    problems.push({
+      key: 'storage.packs.idBase',
+      reason: `must be a URI, because a pack's id member is one; found ${describe(value)}`
+    })
+    return undefined
+  }
+  return trimmed.endsWith('/') || trimmed.endsWith('#') ? trimmed : `${trimmed}/`
 }
 
 function refuse(problem: ConfigProblem): DecodedConfig {
@@ -556,14 +699,16 @@ export function effectiveConfig(decoded: DecodedConfig | undefined, note?: strin
       // in words rather than leaving the reader to infer it.
       identity: values?.identity ?? DESK_DEFAULTS.identity,
       appearance: values?.appearance ?? DESK_DEFAULTS.appearance,
-      panes: values?.panes ?? DESK_DEFAULTS.panes
+      panes: values?.panes ?? DESK_DEFAULTS.panes,
+      storage: values?.storage ?? DESK_DEFAULTS.storage
     },
     sources: {
       organization: from('organization'),
       user: from('user'),
       identity: 'default',
       appearance: from('appearance'),
-      panes: from('panes')
+      panes: from('panes'),
+      storage: from('storage')
     },
     problems: decoded?.problems ?? [],
     path: PROJECT_CONFIG_PATH,
