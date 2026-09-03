@@ -660,13 +660,20 @@ if [ "$which" = all ] || [ "$which" = web ]; then
       .catch(() => {})
     void Promise.resolve(base)'
   # Create a pack: the sequence, the entry it writes, and the name it refuses.
+  # Repaired: the registration no longer builds an `amended` local — the entry
+  # is composed inline on the configuration read in (0b), because that read
+  # moved in front of the pack write. The row is the same safeguard against the
+  # same defect; only the shape it names moved.
   mutate web "create writes the pack and never registers it" "$X" \
     '        await writeFile({
           path: PROJECT_FILE,
-          content: serialiseProjectConfig(read.content, amended),
+          content: serialiseProjectConfig(
+            read.content,
+            withPack(current, slug, packEntryFor(path, description))
+          ),
           baseSha256: read.sha256
         })' \
-    '        void amended'
+    '        void current'
   mutate web "the registration writes a digest it did not read" "$X" \
     '          baseSha256: read.sha256' \
     "          baseSha256: ''"
@@ -679,9 +686,16 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "a 409 on jpack.json is reported as an ordinary failure" "$X" \
     '          reason: cause instanceof StaleWrite ? STALE_PROJECT_FILE : reasonOf(cause)' \
     '          reason: reasonOf(cause)'
-  mutate web "the form error is not a live region" "$X" \
-    '          <p role="alert">' \
-    '          <p>'
+  # Repaired, and narrowed: the `role="alert"` half moved into the `Alert`
+  # primitive when the dialog stopped rendering bare markup, and it is held
+  # there by "the form-level failure is not announced". What is left for this
+  # row is the half that is still this file's: that a failure is rendered at
+  # all, rather than set in state and shown to nobody.
+  mutate web "the create dialog renders no failure at all" "$X" \
+    '        {(failure ?? blocked) && (
+          <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>
+        )}' \
+    ''
   mutate web "the registration replaces the file rather than amending it" "$JC" \
     '  return { ...config, packs: { ...packs, [slug]: entry } }' \
     '  return { packs: { [slug]: entry } }'
