@@ -237,7 +237,14 @@ describe('(3) no issuer literal in the source — a WEAK, enumerated guard', () 
     // deliberately allows the repository links Help & About renders.
     const allowed = [
       'https://github.com/Judgment-Pack/judgment-pack-desk',
-      'https://github.com/Judgment-Pack/judgment-pack-runtime'
+      'https://github.com/Judgment-Pack/judgment-pack-runtime',
+      // The default `storage.packs.idBase`. Not an issuer and not reachable:
+      // `.invalid` is reserved by RFC 2606 precisely so a placeholder can
+      // never resolve. It is the prefix a new pack's `id` is built from — a
+      // name in a document, never a URL anything fetches — and it is spelled
+      // out here rather than allowed by pattern so that a second literal
+      // still has to come past this list.
+      'https://example.invalid/judgment-packs/'
     ]
     for (const source of sourcesUnder('shell', 'identity', 'config', 'routes')) {
       if (source.path.includes('.test.')) continue

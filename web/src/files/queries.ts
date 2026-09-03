@@ -38,6 +38,8 @@ export interface WriteInput {
   content: string
   baseSha256: string
   override?: boolean
+  /** Make the missing directories of `path` first. Off unless a caller asks. */
+  createParents?: boolean
 }
 
 /**

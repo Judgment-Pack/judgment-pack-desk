@@ -7,10 +7,15 @@
  * wrote it, as a setting that does not work rather than a spelling that is
  * wrong. And it would half-honour a file with a pasted secret in it.
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   DESK_DEFAULTS,
+  EXCLUDED_DIRECTORIES,
+  MAX_PACK_DIR_DEPTH,
   PANE_BOUNDS,
+  STAGING_PREFIX,
   decodeDeskConfig,
   effectiveConfig,
   type ConfigProblem
@@ -205,6 +210,23 @@ describe('decodeDeskConfig', () => {
     expect(decoded.problems.find((p) => p.key === 'appearance.theme')!.reason).toContain('"midnight"')
   })
 
+  it('refuses a packs directory deeper than the listing walks', () => {
+    // The chassis refuses the write at this bound; refusing the *configuration*
+    // is what lets Admin name the key that is wrong instead of the dialog
+    // failing later on a path nobody chose to look at.
+    const dirOf = (depth: number) =>
+      decodeDeskConfig(
+        JSON.stringify({
+          deskConfigVersion: 1,
+          storage: { packs: { dir: Array.from({ length: depth }, (_, i) => `d${i}`).join('/') } }
+        }),
+        'project'
+      )
+    expect(dirOf(MAX_PACK_DIR_DEPTH).problems).toEqual([])
+    expect(keys(dirOf(MAX_PACK_DIR_DEPTH + 1).problems)).toEqual(['storage.packs.dir'])
+    expect(dirOf(MAX_PACK_DIR_DEPTH + 1).problems[0]!.reason).toContain('directories deep')
+  })
+
   it('refuses a pane dimension of zero, and one past its documented maximum', () => {
     // **Zero is the dangerous value**, not a harmless one: a pane the file
     // declares `open` at zero pixels renders as an open pane nobody can see,
@@ -297,6 +319,144 @@ describe('decodeDeskConfig', () => {
     )
     expect(decoded.problems).toEqual([])
     expect(decoded.values?.user?.displayName).toBe('desk operator')
+  })
+})
+
+describe('the storage member', () => {
+  const withStorage = (packs: unknown) =>
+    decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1, storage: { packs } }), 'project')
+
+  it('is the defaults when the member is absent entirely', () => {
+    const decoded = decodeDeskConfig('{"deskConfigVersion":1}', 'project')
+    expect(decoded.problems).toEqual([])
+    expect(decoded.values?.storage).toBeUndefined()
+    expect(effectiveConfig(decoded).config.storage).toEqual({
+      packs: { kind: 'filesystem', dir: 'packs', idBase: 'https://example.invalid/judgment-packs/' }
+    })
+  })
+
+  it('takes the defaults for the members a partial storage.packs leaves out', () => {
+    const decoded = withStorage({ dir: 'decisions' })
+    expect(decoded.problems).toEqual([])
+    expect(decoded.values?.storage).toEqual({
+      packs: {
+        kind: 'filesystem',
+        dir: 'decisions',
+        idBase: 'https://example.invalid/judgment-packs/'
+      }
+    })
+  })
+
+  it('refuses an unknown key by its path', () => {
+    const decoded = withStorage({ dir: 'packs', bucket: 'acme-packs' })
+    expect(decoded.values).toBeUndefined()
+    expect(decoded.problems).toEqual([{ key: 'storage.packs.bucket', reason: 'unknown key' }])
+  })
+
+  it('names both future kinds when a kind other than filesystem is asked for', () => {
+    // `oneOf` would say `must be one of "filesystem"`, which tells whoever
+    // typed "database" nothing about why.
+    const decoded = withStorage({ kind: 'database' })
+    expect(decoded.values).toBeUndefined()
+    expect(keys(decoded.problems)).toEqual(['storage.packs.kind'])
+    const reason = decoded.problems[0]!.reason
+    expect(reason).toContain('must be "filesystem"')
+    expect(reason).toContain('"database" and "cloud storage" are not available yet')
+  })
+
+  it('refuses a directory that escapes, is absolute, or is not a directory name', () => {
+    for (const dir of ['../elsewhere', '/etc/packs', 'packs/../..', 'a\\b', 'C:/packs', '', '   ']) {
+      const decoded = withStorage({ dir })
+      expect(decoded.values, `dir ${JSON.stringify(dir)} was accepted`).toBeUndefined()
+      expect(keys(decoded.problems)).toEqual(['storage.packs.dir'])
+    }
+  })
+
+  it('refuses a directory the desk never reads or writes', () => {
+    // `"dir": "dist"` used to decode clean: Admin advertised it as the pack
+    // location and every create then failed at the write, because the chassis
+    // excludes those names from its endpoints altogether. A configuration that
+    // is accepted and cannot work is worse than one refused where it was
+    // written.
+    for (const dir of ['dist', 'node_modules', '.git', 'a/vendor/b', 'DIST', '.venv/x']) {
+      const decoded = withStorage({ dir })
+      expect(decoded.values, `dir ${JSON.stringify(dir)} was accepted`).toBeUndefined()
+      expect(keys(decoded.problems)).toEqual(['storage.packs.dir'])
+      expect(decoded.problems[0]!.reason).toContain('never reads or writes')
+    }
+    // And a staging name, which `wireRelativePath` refuses for the same reason.
+    expect(withStorage({ dir: '.jpack-desk-abc' }).values).toBeUndefined()
+    // A directory that merely contains one of those words is fine: the test is
+    // per whole path segment, as the chassis' own is.
+    expect(withStorage({ dir: 'distribution' }).values?.storage?.packs.dir).toBe('distribution')
+    expect(withStorage({ dir: 'my-vendor-packs' }).values?.storage?.packs.dir).toBe('my-vendor-packs')
+  })
+
+  it('names the same directories the chassis excludes, and cannot drift from them', () => {
+    // The list is mirrored rather than fetched, so this reads the Go source
+    // that owns it. Two answers about what the desk edits is the failure mode
+    // worth preventing; one answer plus this assertion is not.
+    const watch = readFileSync(join(import.meta.dirname, '../../../internal/desk/watch.go'), 'utf8')
+    const block = watch.match(/var skipDirs = map\[string\]bool\{([^}]*)\}/)
+    expect(block, 'skipDirs is no longer a map literal in watch.go').toBeTruthy()
+    const named = [...block![1]!.matchAll(/"([^"]+)":/g)].map((match) => match[1]!)
+    expect(named.sort()).toEqual([...EXCLUDED_DIRECTORIES].sort())
+
+    const files = readFileSync(join(import.meta.dirname, '../../../internal/desk/files.go'), 'utf8')
+    expect(files).toContain(`const stagingPrefix = "${STAGING_PREFIX}"`)
+  })
+
+  it('trims a trailing separator rather than refusing it', () => {
+    expect(withStorage({ dir: 'packs/' }).values?.storage?.packs.dir).toBe('packs')
+    expect(withStorage({ dir: 'a/b//' }).values?.storage?.packs.dir).toBe('a/b')
+  })
+
+  it('requires idBase to parse as a URI, because a pack’s id member is one', () => {
+    const decoded = withStorage({ idBase: 'not a uri' })
+    expect(decoded.values).toBeUndefined()
+    expect(keys(decoded.problems)).toEqual(['storage.packs.idBase'])
+    expect(decoded.problems[0]!.reason).toContain('must be a URI')
+  })
+
+  it('normalises idBase to end in a separator, once and here', () => {
+    // Every use is then a bare `idBase + slug`, and Admin shows the prefix
+    // that will actually be written rather than the one that was typed.
+    expect(withStorage({ idBase: 'https://acme.example/packs' }).values?.storage?.packs.idBase).toBe(
+      'https://acme.example/packs/'
+    )
+    expect(withStorage({ idBase: 'https://acme.example/packs/' }).values?.storage?.packs.idBase).toBe(
+      'https://acme.example/packs/'
+    )
+    // A fragment base is already a separator and is left exactly as written.
+    expect(withStorage({ idBase: 'https://acme.example/p#' }).values?.storage?.packs.idBase).toBe(
+      'https://acme.example/p#'
+    )
+  })
+
+  it('refuses the whole file for one storage problem, like every other section', () => {
+    const decoded = decodeDeskConfig(
+      JSON.stringify({
+        deskConfigVersion: 1,
+        organization: { name: 'Acme Co.' },
+        storage: { packs: { kind: 'cloud storage' } }
+      }),
+      'project'
+    )
+    expect(decoded.values).toBeUndefined()
+    expect(effectiveConfig(decoded).config.organization.name).toBeNull()
+  })
+
+  it('refuses storage that is not an object, and packs that is not one', () => {
+    expect(
+      keys(decodeDeskConfig('{"deskConfigVersion":1,"storage":[]}', 'project').problems)
+    ).toEqual(['storage'])
+    expect(keys(withStorage('packs').problems)).toEqual(['storage.packs'])
+  })
+
+  it('badges storage as coming from the project file when it supplied one', () => {
+    const effective = effectiveConfig(withStorage({ dir: 'decisions' }))
+    expect(effective.sources.storage).toBe('project file')
+    expect(effective.config.storage.packs.dir).toBe('decisions')
   })
 })
 

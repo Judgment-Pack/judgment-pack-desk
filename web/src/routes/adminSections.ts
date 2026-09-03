@@ -7,8 +7,8 @@
  * satisfy a menu: users, roles and invitations belong to whatever identity
  * provider a deployment configures, and hiding Admin from some viewers would
  * claim a role model the desk has never defined. The list is an array rather
- * than six headings scattered through a component so that adding one is a
- * reviewable line rather than a paragraph someone slipped in.
+ * than a set of headings scattered through a component, so that adding one is
+ * a reviewable line rather than a paragraph someone slipped in.
  *
  * Every section is about **this machine's desk**, and every one of them is
  * read-only in phase A.
@@ -23,6 +23,8 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
   { id: 'identity-provider', title: 'Identity provider' },
   { id: 'runtime', title: 'Runtime' },
   { id: 'project', title: 'Project' },
+  // After Project, because it is about where this project's packs live.
+  { id: 'storage', title: 'Storage' },
   { id: 'appearance', title: 'Appearance' },
   { id: 'panes', title: 'Panes' }
 ]

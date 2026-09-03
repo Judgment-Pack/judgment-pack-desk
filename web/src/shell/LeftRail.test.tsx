@@ -173,6 +173,7 @@ describe('the left rail', () => {
       'Identity provider',
       'Runtime',
       'Project',
+      'Storage',
       'Appearance',
       'Panes'
     ])

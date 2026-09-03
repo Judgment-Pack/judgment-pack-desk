@@ -74,6 +74,16 @@ export function usePublishedDirty(dirty: boolean): void {
  * initializer twice, and a consume-once take would be swallowed by the run
  * whose state React throws away. An effect's mount → cleanup → mount cycle
  * preserves state, so the second run simply finds nothing to do.
+ *
+ * **There is no producer at the moment, and that is deliberate.** The Create-
+ * pack dialog was the one caller; it now opens the new pack's own page instead,
+ * which is what the redesign asks for. The mechanism and its consumer are kept
+ * rather than deleted because the next thing to open a file in the editor —
+ * "edit this pack", a file the console names — wants exactly this shape, and
+ * because what it holds is a bug that a `[]`-dependency effect reintroduces on
+ * sight. `AuthorView.test.tsx` drives it directly, so what is held here is
+ * held by a test and not by a caller; deleting both is a one-line change
+ * whenever the maintainer decides it should go.
  */
 let requestedOpen: string | undefined
 const openListeners = new Set<() => void>()

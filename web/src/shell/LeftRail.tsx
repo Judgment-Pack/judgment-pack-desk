@@ -157,12 +157,17 @@ function RailBody({
   const graphs = useGraphInventory()
   const [creating, setCreating] = useState(false)
   const toggleRef = useRef<HTMLButtonElement | null>(null)
+  // The Create button, so the dialog can put focus back on it. Radix restores
+  // focus to its own `Dialog.Trigger`; this dialog is opened from here and has
+  // none, so without the ref every exit dropped focus on `<body>`.
+  const createRef = useRef<HTMLButtonElement | null>(null)
 
   return (
     <>
       <Labelled icons={icons} label="Create a pack">
         <button
           type="button"
+          ref={createRef}
           className="desk-create"
           aria-label="Create a pack"
           onClick={() => setCreating(true)}
@@ -176,7 +181,18 @@ function RailBody({
           and refetched on every `desk/fileChanged`, for a dialog nobody had
           opened. That is the same objection this file raises about the graph
           walk, one order of magnitude smaller, and it gets the same answer. */}
-      {creating && <CreatePackDialog open onOpenChange={setCreating} />}
+      {creating && (
+        <CreatePackDialog
+          open
+          onOpenChange={setCreating}
+          // A created pack navigates, and in drawer form this rail is a modal
+          // dialog over the page it navigated to. `onNavigate` is what every
+          // link here already calls; a successful create is a navigation like
+          // any other and closes the drawer the same way.
+          onCreated={onNavigate}
+          openerRef={createRef}
+        />
+      )}
 
       <PacksGroup icons={icons} onNavigate={onNavigate} />
 

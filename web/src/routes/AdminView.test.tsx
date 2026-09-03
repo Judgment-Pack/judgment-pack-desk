@@ -15,7 +15,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
-import { PANE_BOUNDS, effectiveConfig } from '../config/deskConfig'
+import { PANE_BOUNDS, decodeDeskConfig, effectiveConfig } from '../config/deskConfig'
 import { McpContext } from '../mcp/McpProvider'
 import { ShellStateProvider, projectKey, shellStateKey } from '../shell/paneState'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
@@ -79,13 +79,140 @@ function renderAdmin(
   )
 }
 
+/** One file listing, or a refusal, for the Storage section to describe. */
+function servesListing(options: {
+  files?: { path: string; bytes: number; sha256: string }[]
+  partial?: string[]
+  fail?: boolean
+}) {
+  vi.stubGlobal('fetch', async () =>
+    options.fail
+      ? {
+          ok: false,
+          status: 503,
+          statusText: '',
+          text: async () => JSON.stringify({ error: 'the project could not be read' })
+        }
+      : {
+          ok: true,
+          status: 200,
+          statusText: '',
+          text: async () =>
+            JSON.stringify({
+              root: '/p',
+              files: options.files ?? [],
+              ...(options.partial ? { partial: options.partial } : {})
+            })
+        }
+  )
+}
+
 describe('the Admin page', () => {
-  it('renders the six sections in order, with those exact headings', () => {
+  it('renders every section in order, with those exact headings and no others', () => {
+    // The whole list, not a slice of it. `slice(0, 6)` said nothing about a
+    // seventh section and nothing about a heading nobody declared; this fails
+    // if a section is added without being declared, declared without being
+    // rendered, or rendered out of order.
     renderAdmin()
     const headings = screen
       .getAllByRole('heading', { level: 2 })
       .map((heading) => heading.textContent)
-    expect(headings.slice(0, 6)).toEqual(ADMIN_SECTIONS.map((section) => section.title))
+    expect(headings).toEqual([
+      ...ADMIN_SECTIONS.map((section) => section.title),
+      // The paste block at the foot, which is not a section of the page.
+      'The whole file'
+    ])
+  })
+
+  it('names the storage kind, the location, the id prefix and where it read them', () => {
+    const decoded = decodeDeskConfig(
+      JSON.stringify({
+        deskConfigVersion: 1,
+        storage: { packs: { dir: 'decisions', idBase: 'https://acme.example/d' } }
+      }),
+      'project'
+    )
+    renderAdmin(effectiveConfig(decoded))
+    expect(screen.getByText('filesystem')).toBeTruthy()
+    expect(screen.getByText('decisions')).toBeTruthy()
+    // The prefix as it will actually be written — normalised at decode.
+    expect(screen.getByText('https://acme.example/d/')).toBeTruthy()
+    expect(screen.getAllByText(/source: project file/).length).toBeGreaterThan(0)
+  })
+
+  it('shows the built-in location and prefix where the project configured none', () => {
+    renderAdmin()
+    expect(screen.getByText('packs')).toBeTruthy()
+    expect(screen.getByText('https://example.invalid/judgment-packs/')).toBeTruthy()
+  })
+
+  it('says a location holds files only where the listing shows one', async () => {
+    // The listing reports regular files only, so the page can say a location
+    // holds files and can never claim an empty one exists.
+    servesListing({ files: [{ path: 'packs/a.pack.json', bytes: 1, sha256: 'aa' }] })
+    renderAdmin()
+    expect(await screen.findByText('holds files')).toBeTruthy()
+  })
+
+  it('says only that no file is under it, which is what the listing can show', async () => {
+    // The listing reports regular files only, so an empty directory is
+    // invisible to it. "The first pack creates it" was a claim about a
+    // directory the page has no evidence about either way.
+    servesListing({ files: [{ path: 'jpack.json', bytes: 1, sha256: 'aa' }] })
+    renderAdmin()
+    expect(
+      await screen.findByText('no file is under it — the first pack asks for it to be created')
+    ).toBeTruthy()
+  })
+
+  it('tells the four states apart that used to share one sentence', async () => {
+    // Pending, failed, incomplete and obstructed all rendered as "no file
+    // under it yet — the first pack creates it". Three of those are not that,
+    // and the last one is a promise a rename is the only way to keep.
+    const cases: [Parameters<typeof servesListing>[0], string][] = [
+      [{ fail: true }, 'the file listing failed, so nothing is known about it'],
+      [
+        { files: [{ path: 'jpack.json', bytes: 1, sha256: 'aa' }], partial: ['packs: permission denied'] },
+        'the file listing came back incomplete, so nothing is known about it'
+      ],
+      [
+        { files: [{ path: 'packs', bytes: 1, sha256: 'aa' }] },
+        'a file is there under that exact name — nothing can be created inside it'
+      ],
+      [
+        { files: [{ path: 'packs/a.pack.json', bytes: 1, sha256: 'aa' }] },
+        'holds files'
+      ]
+    ]
+    for (const [listing, says] of cases) {
+      servesListing(listing)
+      renderAdmin()
+      expect(await screen.findByText(says), says).toBeTruthy()
+      cleanup()
+    }
+  })
+
+  it('says the listing has not answered rather than describing what it has not seen', async () => {
+    // A request that never resolves. Nothing is known, and nothing is claimed.
+    vi.stubGlobal('fetch', () => new Promise(() => {}))
+    renderAdmin()
+    expect(await screen.findByText('the file listing has not answered yet')).toBeTruthy()
+  })
+
+  it('names the two future kinds as coming soon, as text and not as controls', () => {
+    renderAdmin()
+    expect(screen.getByText('database — coming soon')).toBeTruthy()
+    expect(screen.getByText('cloud storage — coming soon')).toBeTruthy()
+    // Neither is a control, and neither is a disabled one — which the page's
+    // "exactly one interactive control" case is what actually proves.
+    expect(screen.queryByRole('option', { name: /database/ })).toBeNull()
+    expect(screen.queryByRole('radio')).toBeNull()
+  })
+
+  it('says the future kinds change nothing about creating a pack', () => {
+    renderAdmin()
+    expect(screen.getByText(/not available yet/)).toBeTruthy()
+    expect(screen.getByText(/creates a pack by writing a file, always/)).toBeTruthy()
   })
 
   it('carries the standing disclaimer character for character', () => {

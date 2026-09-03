@@ -20,9 +20,29 @@
  * `Avatar.Image`: it appears a tick later. Every avatar assertion in this repo
  * therefore uses `findBy*`; a `getBy*` would pass or fail on how long an
  * earlier `await` happened to take.
+ * **A `Select`'s options do not exist until its trigger is opened**, and the
+ * trigger reports the current choice as its own text. So "what does this
+ * select offer" cannot be asked of a closed one — which is why the Create-pack
+ * dialog's template cases open it first, and why the eleven cases written
+ * against a native `<select>` could not be adjusted to it.
+ * **An arrow key moves a `Select`'s focus inside a `setTimeout`.** The handler
+ * on the content computes the candidates and then defers `focusFirst`, so an
+ * assertion on the next line reads the focus the key was pressed from. Every
+ * keyboard case here waits for the move instead. Opening focuses the
+ * *selected* item, not the first one, which is what makes the direction of an
+ * arrow assertion meaningful.
+ * **Inside a `<form>`, a `Select` reports back a value nobody chose.** Radix
+ * mirrors the value into a hidden native `<select>` and dispatches `change` on
+ * it whenever the value changes; that select's options are the items that have
+ * registered, and items mount only while the list is open. So a controlled
+ * value changed while closed is set against a select with no matching option,
+ * lands as `""`, and arrives at `onValueChange` as `""`. It takes the option
+ * set changing *with* the value to produce it — the two cases below are that
+ * pair. `src/ui/Select.tsx` drops a value it never offered because of this,
+ * and these cases are why.
  */
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { Avatar, Collapsible, Dialog, DropdownMenu, Separator, Tabs, Toggle, Tooltip, VisuallyHidden } from 'radix-ui'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { Avatar, Collapsible, Dialog, DropdownMenu, Select, Separator, Tabs, Toggle, Tooltip, VisuallyHidden } from 'radix-ui'
 import { afterEach, describe, expect, it } from 'vitest'
 
 afterEach(cleanup)
@@ -121,6 +141,120 @@ describe('the Radix primitives this shell is built on', () => {
     expect(screen.queryByText('LU')).toBeNull()
     const fallback = await screen.findByText('LU')
     expect(fallback.tagName).toBe('SPAN')
+  })
+
+  it('hides a Select’s options until it opens, and moves focus a tick after an arrow', async () => {
+    render(
+      <Select.Root defaultValue="empty">
+        <Select.Trigger aria-label="Template">
+          <Select.Value />
+        </Select.Trigger>
+        <Select.Portal>
+          <Select.Content>
+            <Select.Viewport>
+              <Select.Item value="minimal">
+                <Select.ItemText>minimal-expense-approval</Select.ItemText>
+              </Select.Item>
+              <Select.Item value="empty">
+                <Select.ItemText>Empty pack</Select.ItemText>
+              </Select.Item>
+            </Select.Viewport>
+          </Select.Content>
+        </Select.Portal>
+      </Select.Root>
+    )
+    const trigger = screen.getByRole('combobox', { name: 'Template' })
+    // Closed: the trigger carries the choice and there are no options at all.
+    expect(trigger.textContent).toContain('Empty pack')
+    expect(screen.queryAllByRole('option')).toHaveLength(0)
+
+    fireEvent.click(trigger)
+    const options = await screen.findAllByRole('option')
+    expect(options.map((option) => option.textContent)).toEqual([
+      'minimal-expense-approval',
+      'Empty pack'
+    ])
+    // Opening focuses the selected item, not the first one.
+    expect(document.activeElement?.textContent).toBe('Empty pack')
+
+    // And the arrow's focus move is deferred — asserted on the next line it
+    // would still read "Empty pack", which is the trap this case records.
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' })
+    await waitFor(() =>
+      expect(document.activeElement?.textContent).toBe('minimal-expense-approval')
+    )
+  })
+
+  it('reports "" from a Select whose value changed while closed, inside a form', async () => {
+    const seen: string[] = []
+    // The real shape: the options arrive with the new default, exactly as a
+    // runtime's example listing does.
+    function Bare({ value, names }: { value: string; names: string[] }) {
+      return (
+        <form>
+          <Select.Root value={value} onValueChange={(next) => seen.push(next)}>
+            <Select.Trigger aria-label="Template">
+              <Select.Value />
+            </Select.Trigger>
+            <Select.Portal>
+              <Select.Content>
+                <Select.Viewport>
+                  {names.map((name) => (
+                    <Select.Item key={name} value={name}>
+                      <Select.ItemText>{name}</Select.ItemText>
+                    </Select.Item>
+                  ))}
+                </Select.Viewport>
+              </Select.Content>
+            </Select.Portal>
+          </Select.Root>
+        </form>
+      )
+    }
+    const { rerender } = render(<Bare value="empty" names={['empty']} />)
+    rerender(<Bare value="minimal" names={['minimal', 'empty']} />)
+    // Not "minimal" — the empty string, reported back from a native select
+    // whose options are one render behind the value being set on it.
+    await waitFor(() => expect(seen).toContain(''))
+    expect(seen).not.toContain('minimal')
+    // A caller that stores what it is handed now holds "", and the next render
+    // is the blank trigger the create dialog showed before `ui/Select.tsx`
+    // started dropping values it never offered.
+  })
+
+  it('does not report "" when the value changes and the option set does not', async () => {
+    // The other half, and the reason the case above builds the options up
+    // rather than holding them still: it is the option set changing with the
+    // value that puts the native select a render behind. A value moving
+    // between options that were both already there is reported to nobody.
+    const seen: string[] = []
+    function Steady({ value }: { value: string }) {
+      return (
+        <form>
+          <Select.Root value={value} onValueChange={(next) => seen.push(next)}>
+            <Select.Trigger aria-label="Steady">
+              <Select.Value />
+            </Select.Trigger>
+            <Select.Portal>
+              <Select.Content>
+                <Select.Viewport>
+                  <Select.Item value="a">
+                    <Select.ItemText>alpha</Select.ItemText>
+                  </Select.Item>
+                  <Select.Item value="b">
+                    <Select.ItemText>beta</Select.ItemText>
+                  </Select.Item>
+                </Select.Viewport>
+              </Select.Content>
+            </Select.Portal>
+          </Select.Root>
+        </form>
+      )
+    }
+    const { rerender } = render(<Steady value="a" />)
+    rerender(<Steady value="b" />)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(seen).toEqual([])
   })
 
   it('gives a Toggle aria-pressed', () => {

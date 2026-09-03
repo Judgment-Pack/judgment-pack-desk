@@ -1,0 +1,59 @@
+/* Every colour is a token from styles.css. No literal belongs in this file:
+   the palette has one home, and a component that spelled its own would not
+   follow the theme attribute that home reads. */
+
+.button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: 32px;
+  padding: 0 0.85rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.button:disabled {
+  background: var(--border);
+  border-color: var(--border-strong);
+  color: var(--ink-faint);
+  cursor: not-allowed;
+}
+
+.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.primary:not(:disabled):hover {
+  border-color: var(--ink);
+}
+
+.secondary:not(:disabled):hover {
+  border-color: var(--ink-soft);
+}
+
+.quiet {
+  border-color: transparent;
+  background: none;
+  color: var(--ink-soft);
+}
+
+.quiet:not(:disabled):hover {
+  color: var(--ink);
+  background: var(--surface);
+}

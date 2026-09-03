@@ -1,241 +1,552 @@
 /**
- * Create pack: it writes bytes and forms no opinion.
+ * Create a pack: a name, a description, and a template.
  *
- * **The desk ships no template.** Starting bytes are the runtime's own
- * example, the runtime's own schema, or an empty file — a desk-authored
- * skeleton would be the desk asserting what a pack is. Where the runtime
- * advertises neither tool the dialog says so in one line and offers the empty
- * file.
+ * Where the file goes is not a question for whoever is creating a pack. The
+ * admin configured `storage.packs` once; the name gives the id, the id gives
+ * the file name, and the rest is arithmetic. So this dialog asks for the three
+ * things only a person can answer and decides the other two.
  *
- * **The dialog runs no model.** Where the runtime advertises `author_pack`,
- * Help & About renders that prompt's text for a person to carry to whatever
- * agent they run; this dialog links there and does nothing else about it.
+ * # What happens on Create, and what is said when it does not
  *
- * The path field is free text. It is seeded with `packs/` — a prefix, not a
- * name, so the desk invents nothing — **only where the project already has a
- * file under `packs/`**, and with nothing otherwise. That rule exists because
- * the chassis creates no directories: `files.go` stats the parent and answers
- * 404 with "the directory packs does not exist in the project; create it
- * first", and a dialog whose default path 404s on first use in a flat project
- * is a dead end offered as a convenience. The helper lines say both things —
- * that the location and the suffix are this dialog's idea, and that the parent
- * directory has to be there already.
+ * 0. **Everything that can refuse this is asked first, before anything is
+ *    written.** The listing has to have answered; the project has to have a
+ *    `jpack.json` (`packs` carries `minProperties: 1`, so this can only ever
+ *    amend one and never write one from nothing); that file has to read and
+ *    parse; and the id has to be free *in the file as it is now* — not as it
+ *    was when this dialog opened. A refusal here leaves nothing behind.
+ * 1. The pack file is written, asking for its parent to be made.
+ * 2. The entry is added to the configuration read in (0) and written with the
+ *    digest that read returned — so a change made in between is refused rather
+ *    than overwritten.
+ * 3. The caches are invalidated and the new pack's page is opened.
  *
- * The write is the existing `PUT /api/file` with `baseSha256: ''`, the
- * documented "I believe this file does not exist" case, and **no `override`**.
- * A 409 is reported as what it is; overriding a file the user did not know was
- * there is not a convenience, it is a lost document.
+ * **Why the read moved in front of the write.** With it after, the only
+ * collision check was against a cached listing, and `withPack` replaces the
+ * key it is given: creating `vendor-onboarding` in a project that already had
+ * one — registered under a filename this desk does not write, so no file
+ * collided — silently unregistered the original document and reported success.
+ * The freshly read file is the only thing entitled to answer "is this id
+ * taken", and asking it before the write is also what keeps an unreadable or
+ * unparseable configuration from producing an orphan.
+ *
+ * **If 1 succeeds and 2 fails, the pack file is on disk and nothing names it.**
+ * The dialog says exactly that, and stays on screen to say it: dismissal is
+ * held while the sequence runs, because a dialog that unmounts mid-flight
+ * reports the residue to nobody. There is no unwind to perform — the file API
+ * has no delete verb — and claiming one would be worse than the residue.
  */
 import { useQueryClient } from '@tanstack/react-query'
-import { Dialog } from 'radix-ui'
-import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { StaleWrite } from '../files/client'
-import { useFileListing, useWriteFile } from '../files/queries'
+import { useEffect, useMemo, useState, type RefObject } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useEffectiveConfig } from '../config/DeskConfigProvider'
+import { FileRequestError, readFile, writeFile, type FileContent } from '../files/client'
+import { useFileContent, useFileListing } from '../files/queries'
 import { useMcp } from '../mcp/McpProvider'
-import { useExample, useExampleListing, useSchema } from '../mcp/starters'
-import { requestOpen } from './authorBridge'
+import { RuntimeRefusal, useExample, useExampleListing, useSchema } from '../mcp/starters'
+import {
+  existingPackKeys,
+  existingPackPaths,
+  packEntryFor,
+  parseProjectConfig,
+  serialiseProjectConfig,
+  withPack,
+  type ProjectConfig
+} from '../packs/jpackConfig'
+import { codeOf, refusalDetail, refusalLead } from '../packs/createRefusal'
+import { collisionIn, emptyPackFrom, packPathFor, shapeTemplate, slugFor } from '../packs/newPack'
+import { Alert } from '../ui/Alert'
+import { Button } from '../ui/Button'
+import { Dialog, DialogActions, DialogClose } from '../ui/Dialog'
+import { Field } from '../ui/Field'
+import { Input } from '../ui/Input'
+import { Select } from '../ui/Select'
+import { TextArea } from '../ui/TextArea'
 
-const PATH_PREFIX = 'packs/'
-const PATH_HELP =
-  'A convenience of this dialog: nothing in JPS requires this location or this suffix.'
-const PARENT_DIR_NOTE =
-  'The parent directory has to exist already — the chassis writes files and creates no ' +
-  'directories, and it refuses a path whose directory is not there.'
-const NO_STARTER =
-  'This runtime advertises no example and no schema, so the only starting point the desk can ' +
-  'offer without inventing one is an empty file.'
-const SCHEMA_LABEL = "The runtime's JPS schema — a reference to author against, not a pack"
+const PROJECT_FILE = 'jpack.json'
 
-type Choice = { kind: 'example'; name: string } | { kind: 'schema' } | { kind: 'empty' }
+/**
+ * The two kinds of option, namespaced.
+ *
+ * A bare `"empty"` sentinel is a value a runtime can legitimately serve as an
+ * example name, and one that did produced two options with the same value —
+ * whichever the viewer picked was routed to `get_schema`. The prefix makes the
+ * two spaces disjoint, and the example half is encoded so a name carrying the
+ * separator cannot spell its way into the other one.
+ */
+const SCHEMA_EMPTY = 'schema:empty'
+const EMPTY_LABEL = 'Empty pack'
+const exampleValue = (name: string) => `example:${encodeURIComponent(name)}`
+const exampleNameOf = (value: string): string | undefined =>
+  value.startsWith('example:') ? decodeURIComponent(value.slice('example:'.length)) : undefined
 
-function encodeChoice(choice: Choice): string {
-  return choice.kind === 'example' ? `example:${choice.name}` : choice.kind
-}
-
-function decodeChoice(value: string): Choice {
-  if (value.startsWith('example:')) return { kind: 'example', name: value.slice('example:'.length) }
-  return value === 'schema' ? { kind: 'schema' } : { kind: 'empty' }
-}
+const UNREADABLE_PROJECT =
+  'This project’s files could not be read, so nothing was created.'
+const NO_PROJECT_FILE =
+  'This project has no jpack.json, so a new pack cannot be registered. Nothing was created.'
+const UNREADABLE_PROJECT_FILE =
+  'This project’s jpack.json could not be read, so a new pack cannot be registered. Nothing was created.'
+const STALE_PROJECT_FILE = 'jpack.json changed while creating — reload and try again'
+const PACK_FILE_TAKEN = 'Something is already there under that name — try another.'
+const ORPHANED =
+  'The pack was created but could not be registered. Nothing else was changed.'
+const NO_TEMPLATE = 'There is no template to start from here.'
+const TEMPLATES_PENDING = 'Asking the runtime what it can start from…'
+const PARTIAL_PROJECT =
+  'This project\u2019s file listing is incomplete, so this dialog cannot tell whether that name is free. Nothing was created.'
+const DIALOG_DESCRIPTION =
+  'The name gives the pack\u2019s id and its file name; the template is the runtime\u2019s own.'
 
 export function CreatePackDialog({
   open,
-  onOpenChange
+  onOpenChange,
+  onCreated,
+  openerRef
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /**
+   * Called once, after a pack has been created and the route changed.
+   *
+   * The rail below 900px is a **modal** drawer, and closing this dialog left
+   * that drawer standing over the page it had just navigated to. Closing the
+   * dialog is not closing the thing the dialog was inside, and only the rail
+   * knows what that is.
+   */
+  onCreated?: () => void
+  /** The control that opened this, so focus goes back to it on every exit. */
+  openerRef?: RefObject<HTMLElement | null>
 }) {
-  const { exampleSupported, schemaSupported } = useMcp()
-  const listing = useExampleListing()
-  const files = useFileListing()
-  const write = useWriteFile()
+  const { config } = useEffectiveConfig()
+  const { dir, idBase } = config.storage.packs
+  const { known, exampleSupported, schemaSupported } = useMcp()
+  const listing = useFileListing()
+  const project = useFileContent(PROJECT_FILE)
+  const examples = useExampleListing()
+  // Asked as soon as the dialog is open rather than when Empty is picked: the
+  // option cannot be offered until a skeleton has come out of it, so waiting
+  // for the pick would mean the option never appears.
+  const schema0 = useSchema(schemaSupported)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
 
-  const [path, setPath] = useState('')
-  const [pathEdited, setPathEdited] = useState(false)
-  const [selection, setSelection] = useState<string | undefined>(undefined)
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [choice, setChoice] = useState<string | undefined>(undefined)
+  const [busy, setBusy] = useState(false)
+  const [failure, setFailure] = useState<{ lead: string; reason?: string } | undefined>(undefined)
 
-  const examples = useMemo(() => listing.data?.examples ?? [], [listing.data])
+  const offered = useMemo(() => examples.data?.examples ?? [], [examples.data])
 
   /**
-   * `packs/` only where the project already keeps one there.
+   * What is known about the runtime's templates, as one of four states.
    *
-   * The listing is the project's own answer, not a guess: a project with a
-   * flat layout gets an empty field and writes where it actually writes, and a
-   * project with a `packs/` directory gets the prefix it uses. A failed or
-   * pending listing is the flat case, because an unanswered question is not
-   * evidence that a directory exists.
+   * These were one state before, and collapsing them is what made a slow
+   * runtime look like a broken one. `[]` meant "pending", "refused" and "this
+   * runtime carries none" indistinguishably; Empty was selected the instant
+   * the capability flag said `get_schema` existed, before any schema had been
+   * fetched, so the first thing a viewer saw was a template that might not
+   * resolve. They are named here so every consumer below branches on the fact
+   * rather than on an empty array.
    */
-  const seed = useMemo(
-    () => ((files.data?.files ?? []).some((file) => file.path.startsWith(PATH_PREFIX)) ? PATH_PREFIX : ''),
-    [files.data]
+  const examplesState: 'unsupported' | 'pending' | 'error' | 'settled' = !exampleSupported
+    ? 'unsupported'
+    : examples.isPending
+      ? 'pending'
+      : examples.isError
+        ? 'error'
+        : 'settled'
+
+  // The schema half of the same question. `useSchema` is enabled below only
+  // once it is needed, so "pending" here means *asked and not yet answered*.
+  const emptyReady = schemaSupported && schema0.isSuccess && emptyPackFrom(schema0.data) !== undefined
+  const emptyState: 'unsupported' | 'pending' | 'error' | 'unusable' | 'ready' = !schemaSupported
+    ? 'unsupported'
+    : schema0.isPending
+      ? 'pending'
+      : schema0.isError
+        ? 'error'
+        : emptyReady
+          ? 'ready'
+          : 'unusable'
+
+  /**
+   * The offered options.
+   *
+   * **Empty appears only once a schema has actually produced a skeleton.** It
+   * used to appear on the strength of the capability flag alone, which is a
+   * claim about a tool existing rather than about a template existing — and a
+   * skeleton with no `specVersion` is not an incomplete pack but a file nothing
+   * can read as one.
+   */
+  const options = useMemo(
+    () => [
+      ...(examplesState === 'settled'
+        ? offered.map((entry) => ({ value: exampleValue(entry.name), label: entry.name }))
+        : []),
+      ...(emptyState === 'ready' ? [{ value: SCHEMA_EMPTY, label: EMPTY_LABEL }] : [])
+    ],
+    [examplesState, emptyState, offered]
   )
+
+  /**
+   * Nothing is selected while anything is still being asked.
+   *
+   * The default used to be `options[0]`, and with Empty appearing first on a
+   * runtime whose example listing had not answered, that meant Empty was
+   * selected — and then silently replaced when the examples arrived. A viewer
+   * watching the field change under them is a worse answer than a field that
+   * says it is waiting.
+   */
+  const templatesPending = examplesState === 'pending' || emptyState === 'pending'
+  const selected = choice ?? (templatesPending ? undefined : options[0]?.value)
+  const isEmpty = selected === SCHEMA_EMPTY
+  const exampleName = selected === undefined ? undefined : exampleNameOf(selected)
+
+  const example = useExample(exampleName)
+  const schema = schema0
+
   useEffect(() => {
-    if (pathEdited) return
-    setPath(seed)
-  }, [seed, pathEdited])
-
-  // The runtime's own first example, else the schema, else empty — the
-  // precedence in one place, and the runtime's ordering never re-sorted here.
-  const defaultChoice = useMemo<Choice>(() => {
-    if (exampleSupported && examples.length > 0) return { kind: 'example', name: examples[0]!.name }
-    if (schemaSupported) return { kind: 'schema' }
-    return { kind: 'empty' }
-  }, [exampleSupported, examples, schemaSupported])
-
-  const choice = selection === undefined ? defaultChoice : decodeChoice(selection)
-  const example = useExample(choice.kind === 'example' ? choice.name : undefined)
-  const schema = useSchema(choice.kind === 'schema')
-
-  useEffect(() => {
-    if (!open) {
-      setPath('')
-      setPathEdited(false)
-      setSelection(undefined)
-      write.reset()
-    }
-    // `write` is a stable mutation object; resetting it is the point of the
-    // effect and listing it would loop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (open) return
+    setName('')
+    setDescription('')
+    setChoice(undefined)
+    setBusy(false)
+    setFailure(undefined)
   }, [open])
 
-  const starting =
-    choice.kind === 'example' ? example.data : choice.kind === 'schema' ? schema.data : ''
-  const startingError = choice.kind === 'example' ? example.error : schema.error
-  const startingPending =
-    (choice.kind === 'example' && example.isPending) || (choice.kind === 'schema' && schema.isPending)
+  const derived = slugFor(name)
+  const slug = 'slug' in derived ? derived.slug : undefined
+  const path = slug === undefined ? undefined : packPathFor(dir, slug)
 
-  const trimmed = path.trim()
-  const ready = trimmed !== '' && !trimmed.endsWith('/') && starting !== undefined
+  const taken = useMemo(() => {
+    if (slug === undefined || path === undefined) return undefined
+    return collisionIn(slug, { ...projectFacts(project.data?.content), files: pathsIn(listing.data), path })
+  }, [slug, path, project.data, listing.data])
 
-  const stale = write.error instanceof StaleWrite ? write.error : undefined
-  const failure = write.error && !stale ? write.error : undefined
+  // A template the runtime is still fetching is not a refusal, and one it
+  // refused is: the two are kept apart so a slow answer never reads as a
+  // failure.
+  const template = selected === undefined ? undefined : isEmpty ? emptyPackFrom(schema.data) : example.data
+  const templateError = isEmpty ? schema.error : example.error
 
-  const create = () => {
-    if (!ready || starting === undefined) return
-    write.mutate(
-      { path: trimmed, content: starting, baseSha256: '' },
-      {
-        onSuccess: () => {
-          void queryClient.invalidateQueries({ queryKey: ['desk-files'] })
-          requestOpen(trimmed)
-          onOpenChange(false)
-          navigate('/author')
+  /**
+   * What to say under the Template field, and the four facts it is made of.
+   *
+   * Read in order, because they are answers to different questions and only
+   * one of them is a refusal:
+   *
+   * 1. Something is still being asked. Not a problem, and said as a wait.
+   * 2. The listing itself was refused. That is the runtime's own sentence and
+   *    it used to be dropped on the floor: `examples.error` was never read, so
+   *    a refused listing looked like a runtime carrying no examples.
+   * 3. Nothing is offered, and the capability listing has actually **answered**
+   *    — `known`, not `status === 'ready'`. A connection that is up but whose
+   *    tool listing failed advertises nothing, and calling that "no template
+   *    here" is a claim about the runtime made from the desk's own ignorance.
+   * 4. A specific template was picked and could not be read.
+   */
+  const templateProblem = templatesPending
+    ? undefined
+    : examplesState === 'error'
+      ? examples.error instanceof RuntimeRefusal && !examples.error.reported
+        ? 'The runtime refused to list its examples.'
+        : `The runtime refused to list its examples — ${examples.error?.message ?? ''}`
+      : emptyState === 'error'
+        ? schema.error instanceof RuntimeRefusal && !schema.error.reported
+          ? 'The runtime refused to serve its schema.'
+          : `The runtime refused to serve its schema — ${schema.error?.message ?? ''}`
+        : options.length === 0
+          ? known
+            ? NO_TEMPLATE
+            : undefined
+          : templateError
+            ? // The runtime's own sentence where it gave one. Where it refused
+              // without saying why, this dialog says less rather than putting
+              // the name of a tool call in front of somebody creating a pack.
+              templateError instanceof RuntimeRefusal && !templateError.reported
+              ? 'This template could not be read.'
+              : `This template could not be read — ${templateError.message}`
+            : undefined
+
+  const nameProblem = name.trim() === '' ? undefined : 'problem' in derived ? derived.problem : taken
+
+  // A listing that failed is not a project with no files in it. `retry: false`
+  // means one failed request is the final answer, so this is said as soon as it
+  // is known rather than discovered by pressing a button — and `ready` requires
+  // the listing to have *succeeded*, so "this project has no jpack.json" is
+  // only ever said about a project whose files this dialog actually read.
+  /**
+   * An incomplete listing is not a project this dialog has read.
+   *
+   * `FileListing.partial` means `files` is *not all of them* — an unreadable
+   * subtree, a tree past the walk's budget. Every question this dialog asks the
+   * listing ("is jpack.json there", "is something already at that path") is a
+   * question about absence, and absence is exactly what a partial answer cannot
+   * establish. It used to be ignored, so a project whose `packs/` could not be
+   * walked could be told it had no `jpack.json`.
+   */
+  const partial = (listing.data?.partial ?? []).length > 0
+
+  const blocked = listing.isError
+    ? { lead: UNREADABLE_PROJECT, reason: reasonOf(listing.error) }
+    : partial
+      ? { lead: PARTIAL_PROJECT, reason: (listing.data?.partial ?? []).join(', ') }
+      : undefined
+
+  const ready =
+    slug !== undefined &&
+    taken === undefined &&
+    template !== undefined &&
+    !busy &&
+    listing.isSuccess &&
+    !partial
+
+  const invalidate = (keys: readonly (readonly unknown[])[]) => {
+    for (const key of keys) void queryClient.invalidateQueries({ queryKey: key })
+  }
+
+  const create = async () => {
+    if (!ready || slug === undefined || path === undefined || template === undefined) return
+    setFailure(undefined)
+    setBusy(true)
+    try {
+      // (0a) The configuration as it is now, read directly and **first**.
+      //
+      // The cached listing used to answer "is there a `jpack.json`" before
+      // this ran, which is a question about absence asked of a source that
+      // cannot establish absence: a listing is a snapshot, and a partial one is
+      // explicitly not all the files. So the read itself decides, and only its
+      // own 404 means the project has no configuration. Everything else — a
+      // permission refusal, a socket that never answered — is "could not be
+      // read", which is a different sentence and a different fix.
+      const files = pathsIn(listing.data)
+      let read: FileContent
+      let current: ProjectConfig
+      try {
+        read = await readFile(PROJECT_FILE)
+        current = parseProjectConfig(read.content)
+      } catch (cause) {
+        const absent = cause instanceof FileRequestError && cause.status === 404
+        setFailure(
+          absent
+            ? { lead: NO_PROJECT_FILE }
+            : { lead: UNREADABLE_PROJECT_FILE, reason: reasonOf(cause) }
+        )
+        return
+      }
+      const clash = collisionIn(slug, {
+        keys: existingPackKeys(current),
+        paths: existingPackPaths(current),
+        files,
+        path
+      })
+      if (clash !== undefined) {
+        setFailure({ lead: clash })
+        return
+      }
+
+      // (0b) And the file itself, asked directly.
+      //
+      // The listing is a snapshot and the paths in it are spellings; this is
+      // the one question with an authoritative answer available, so it is
+      // asked. A 404 is the only answer that means "nothing is there" —
+      // anything else is a path this desk cannot write and should not try to,
+      // and the write's own refusal would arrive after the point of no return
+      // for the second write.
+      try {
+        await readFile(path)
+        setFailure({ lead: PACK_FILE_TAKEN })
+        return
+      } catch (cause) {
+        if (!(cause instanceof FileRequestError) || cause.status !== 404) {
+          setFailure({
+            lead: refusalLead(cause) ?? 'That location could not be used.',
+            reason: refusalDetail(cause)
+          })
+          return
         }
       }
-    )
+
+      // (0c) The document itself, before anything is sent: a template that is
+      // not a JSON object cannot become a pack, and finding that out after the
+      // write would be an orphan for a reason known in advance.
+      let content: string
+      try {
+        content = shapeTemplate(template, { name, description, slug, idBase })
+      } catch (cause) {
+        setFailure({ lead: 'This template could not be used.', reason: reasonOf(cause) })
+        return
+      }
+
+      // (1) The pack itself, and **what the chassis says it wrote**.
+      //
+      // The answer is a read-back from the disk after the rename, and its
+      // `path` is the canonical spelling the chassis resolved the request to.
+      // Discarding it and registering the requested spelling is how an entry
+      // ends up naming a path the runtime cleans to something else — the same
+      // aliasing defect the collision check had, arriving from the other side.
+      let landed: FileContent
+      try {
+        landed = await writeFile({ path, content, baseSha256: '', createParents: true })
+      } catch (cause) {
+        setFailure({
+          // The chassis' stable code chooses a sentence about creating a pack;
+          // its own words go underneath. "The directory packs does not exist in
+          // the project; create it first" is a good sentence for an editor and
+          // the wrong one to put in front of somebody who typed a name.
+          lead: refusalLead(cause) ?? 'The pack could not be created.',
+          reason: refusalDetail(cause)
+        })
+        invalidate([['desk-files']])
+        return
+      }
+
+      // (2) The entry, naming the file that was actually written, against the
+      // digest the read in (0a) returned.
+      try {
+        await writeFile({
+          path: PROJECT_FILE,
+          content: serialiseProjectConfig(
+            read.content,
+            withPack(current, slug, packEntryFor(landed.path, description))
+          ),
+          baseSha256: read.sha256
+        })
+      } catch (cause) {
+        setFailure({
+          lead: ORPHANED,
+          // A conflict here is the one refusal with a fix worth naming —
+          // reload and try again. Everything else keeps the chassis' own
+          // words, because the lead already says what happened and the detail
+          // is the only place the *why* survives.
+          reason: codeOf(cause) === 'stale' ? STALE_PROJECT_FILE : refusalDetail(cause)
+        })
+        invalidate([['desk-files'], ['desk-file', PROJECT_FILE]])
+        return
+      }
+
+      // (3) Everything that answered before this pack existed.
+      invalidate([['desk-files'], ['desk-file', PROJECT_FILE], ['list_packs'], ['desk-config']])
+      onOpenChange(false)
+      navigate(`/packs/${slug}`)
+      // Closing this dialog is not closing the thing it was inside. Below
+      // 900px the rail is a modal drawer, and it stayed over the page this
+      // just navigated to.
+      onCreated?.()
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="desk-overlay" />
-        <Dialog.Content className="desk-dialog">
-          <Dialog.Title>Create a pack</Dialog.Title>
-          <Dialog.Description className="quiet">
-            The desk writes the bytes; the runtime judges them. Nothing here validates anything.
-          </Dialog.Description>
-
-          <p>
-            <label htmlFor="desk-create-path">Path</label>
-            <br />
-            <input
-              id="desk-create-path"
-              className="desk-input"
-              value={path}
-              onChange={(event) => {
-                setPathEdited(true)
-                setPath(event.target.value)
-              }}
+    <Dialog
+      open={open}
+      // Escape and the overlay are dismissals like any other, and the rail
+      // unmounts this component when it closes. A dismissal mid-sequence would
+      // take the only place the outcome is reported off the screen — including
+      // the one outcome that leaves something behind.
+      onOpenChange={(next) => {
+        if (!next && busy) return
+        onOpenChange(next)
+      }}
+      title="Create a pack"
+      description={DIALOG_DESCRIPTION}
+      openerRef={openerRef}
+    >
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          void create()
+        }}
+      >
+        <Field
+          label="Name (required)"
+          hint={slug === undefined ? undefined : `id: ${slug}`}
+          error={nameProblem}
+        >
+          {(wiring) => (
+            <Input
+              {...wiring}
+              autoFocus
+              required
+              value={name}
+              onChange={(event) => setName(event.target.value)}
             />
-          </p>
-          <p className="quiet">{PATH_HELP}</p>
-          <p className="quiet">{PARENT_DIR_NOTE}</p>
-
-          <p>
-            <label htmlFor="desk-create-start">Starting bytes</label>
-            <br />
-            <select
-              id="desk-create-start"
-              value={encodeChoice(choice)}
-              onChange={(event) => setSelection(event.target.value)}
-            >
-              {exampleSupported &&
-                examples.map((entry) => (
-                  <option key={entry.name} value={`example:${entry.name}`}>
-                    {entry.focus ? `${entry.name} — ${entry.focus}` : entry.name}
-                  </option>
-                ))}
-              {schemaSupported && <option value="schema">{SCHEMA_LABEL}</option>}
-              <option value="empty">Empty file</option>
-            </select>
-          </p>
-          {!exampleSupported && !schemaSupported && <p className="quiet">{NO_STARTER}</p>}
-          {!exampleSupported && schemaSupported && (
-            <p className="quiet">
-              This runtime does not advertise the <code>list_examples</code> /{' '}
-              <code>get_example</code> pair, so no example source is available — the schema and an
-              empty file are what it offers.
-            </p>
           )}
-          {startingError && (
-            <p className="note note-warn" role="status">
-              The starting bytes could not be read — {startingError.message}
-            </p>
-          )}
+        </Field>
 
-          {stale && (
-            <p className="note note-warn" role="status">
-              A file already exists at that path.
-            </p>
+        <Field label="Description">
+          {(wiring) => (
+            <TextArea
+              {...wiring}
+              rows={3}
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+            />
           )}
-          {failure && (
-            <p className="note note-warn" role="status">
-              The file could not be created — {failure.message}
-            </p>
+        </Field>
+
+        {/* No hint under this field. The one that was here said checks would
+            report an empty pack incomplete — a disclaimer, and a verdict the
+            shell derived without asking the runtime. The runtime reports the
+            document's status on the page this opens, which is the thing
+            entitled to. */}
+        <Field label="Template" error={templateProblem}>
+          {(wiring) => (
+            <Select
+              {...wiring}
+              value={selected}
+              onValueChange={setChoice}
+              options={options}
+              placeholder={templatesPending ? TEMPLATES_PENDING : '—'}
+            />
           )}
+        </Field>
 
-          <p>
-            <button
-              type="button"
-              onClick={create}
-              disabled={!ready || write.isPending || startingPending}
-            >
-              Create
-            </button>{' '}
-            <Dialog.Close>Cancel</Dialog.Close>
-          </p>
+        {(failure ?? blocked) && (
+          <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>
+        )}
 
-          <p className="quiet">
-            Authoring method is the runtime's, not the desk's:{' '}
-            <Link to="/help#authoring-method" onClick={() => onOpenChange(false)}>
-              Help &amp; About › Authoring method
-            </Link>
-            . The desk holds no model key and runs no prompt.
-          </p>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        <DialogActions>
+          <DialogClose asChild>
+            <Button variant="secondary" disabled={busy}>
+              Cancel
+            </Button>
+          </DialogClose>
+          <Button variant="primary" type="submit" disabled={!ready}>
+            Create pack
+          </Button>
+        </DialogActions>
+      </form>
+    </Dialog>
   )
+}
+
+/** The paths a listing reports, or none where it has not answered. */
+function pathsIn(listing: { files: { path: string }[] } | undefined): string[] {
+  return (listing?.files ?? []).map((file) => file.path)
+}
+
+/**
+ * The keys and paths the cached configuration names, for the live refusal
+ * under the field.
+ *
+ * Best effort, and only that: an unreadable or unparseable file yields nothing
+ * here, because a name is not wrong because a file elsewhere is — and because
+ * the create sequence reads that file itself and refuses on what it finds.
+ * This is the hint; step (0b) is the answer.
+ */
+function projectFacts(text: string | undefined): { keys: string[]; paths: string[] } {
+  if (text === undefined) return { keys: [], paths: [] }
+  try {
+    const config = parseProjectConfig(text)
+    return { keys: existingPackKeys(config), paths: existingPackPaths(config) }
+  } catch {
+    return { keys: [], paths: [] }
+  }
+}
+
+/** The message the failure carries, never a sentence invented over it. */
+function reasonOf(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }

@@ -23,7 +23,18 @@
   --false-soft: #eeeeea;
   --unknown: #6b4a86;
   --unknown-soft: #f1ecf7;
+  /* The scrim behind a modal. Deliberately here and not in a component's own
+     sheet: `src/ui/` takes every colour from this file and spells none of its
+     own, and a dimming layer is a colour like any other. Like the three
+     verdict tokens it has one definition, on bare `:root` — a scrim is black
+     at 25% in either palette. */
+  --overlay: rgb(0 0 0 / 25%);
   --radius: 8px;
+  /* The small radius, for a control inside a control — a menu item in a
+     popup, a badge inside a panel. One definition, so that `src/ui/` takes
+     every radius from this file the way it takes every colour: a literal in a
+     module is a second answer to a question the tokens already answer. */
+  --radius-sm: 4px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }

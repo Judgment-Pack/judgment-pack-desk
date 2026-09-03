@@ -29,6 +29,26 @@ export interface ExampleListing {
 }
 
 /**
+ * A tool call the runtime refused.
+ *
+ * `reported` is the whole point: an in-band refusal may or may not carry a
+ * sentence, and the two are not the same fact. Where it carries one, that
+ * sentence is the runtime's and is shown. Where it does not, this class has to
+ * say *something* — and a caller must be able to tell that the something is
+ * this file's filler rather than an answer, so it can say less instead of
+ * putting a tool name in front of somebody creating a pack.
+ */
+export class RuntimeRefusal extends Error {
+  readonly reported: boolean
+
+  constructor(tool: string, text: string) {
+    super(text || `the ${tool} call was refused, with no reason given`)
+    this.name = 'RuntimeRefusal'
+    this.reported = text !== ''
+  }
+}
+
+/**
  * One tool call's text half.
  *
  * A local reader rather than a shared one: `queries.ts` keeps its own, and
@@ -51,7 +71,7 @@ async function callText(
     )
     .map((block) => block.text)
     .join('')
-  if (result.isError) throw new Error(text || `the runtime refused ${name}`)
+  if (result.isError) throw new RuntimeRefusal(name, text)
   return text
 }
 
