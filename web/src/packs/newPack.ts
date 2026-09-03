@@ -160,17 +160,17 @@ export function shapeTemplate(
  */
 export function emptyPackFrom(schemaText: string | undefined): string | undefined {
   const schema = readSchema(schemaText)
-  if (!schema) return undefined
   const skeleton: Record<string, unknown> = {}
-  for (const name of schema.required) {
-    skeleton[name] = emptyFor(schema.properties[name], schema.defs)
+  for (const name of schema?.required ?? []) {
+    skeleton[name] = emptyFor(schema!.properties[name], schema!.defs)
   }
-  // No `specVersion`, no document. The member is the one thing that says which
-  // version of the format these members are written to, and a file without it
-  // is not an incomplete pack — it is not a pack. Where the schema does not
-  // supply one (or there is no schema to read), this returns nothing and the
-  // dialog offers no empty template rather than writing a file that can never
-  // be read as one.
+  // No `specVersion`, no document — one guard for both ways of getting there.
+  // The member is the one thing that says which version of the format these
+  // members are written to, and a file without it is not an incomplete pack: it
+  // is not a pack. Where there is no schema to read the skeleton is `{}`, which
+  // fails this the same way a schema that yields no `specVersion` does, and the
+  // dialog then offers no empty template rather than writing a file that
+  // nothing can read as one.
   if (typeof skeleton.specVersion !== 'string' || skeleton.specVersion === '') return undefined
   return `${JSON.stringify(skeleton, null, 2)}\n`
 }

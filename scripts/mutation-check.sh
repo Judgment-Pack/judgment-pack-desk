@@ -363,6 +363,14 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		_ = s.root.MkdirAll(osPath(parent), 0o777)
 	}
 	if !req.Override && !strings.EqualFold(strings.TrimSpace(req.BaseSHA256), actual) {'
+  # Verification round: the bound, and the mode a create publishes.
+  mutate go "createParents is not bounded by what the listing can walk" "$F" \
+    '			if strings.Count(parent, "/")+1 > maxWalkDepth {' \
+    '			if false {'
+  mutate go "a created file keeps the staging mode instead of taking the umask" "$F" \
+    '		f, err := s.root.OpenFile(osPath(full), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o666)' \
+    '		f, err := s.root.OpenFile(osPath(full), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)'
+
   # Deliberately not mutated: "a parent that is a regular file is created over",
   # which would be `case derr == nil || !req.CreateParents:` -> `case
   # !req.CreateParents:`. That branch is unreachable through the handler and was
@@ -406,6 +414,9 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   FD=web/src/ui/Field.tsx
   SEL=web/src/ui/Select.tsx
   DG=web/src/ui/Dialog.tsx
+  AL=web/src/ui/Alert.tsx
+  SELCSS=web/src/ui/Select.module.css
+  ST=web/src/mcp/starters.ts
 
   # The rail's graph gate. `useConfiguredGraphs` falls back to a whole-project
   # `experimental_test_graphs` walk against any runtime without the inventory
@@ -741,8 +752,13 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "an escaping pack directory is accepted" "$D" \
     "  if (trimmed.split('/').some((part) => part === '..' || part === '.' || part === '')) {" \
     '  if (false) {'
+  # The needle is double-quoted (it carries a `'`), so the backticks and the `$`
+  # are escaped: unescaped, bash ran `${trimmed}` as a command substitution,
+  # died under `set -u`, and passed a *truncated* needle — which still matched,
+  # and produced a tagged template on a string. The row then reported
+  # "discriminating" for a TypeError rather than for the missing normalisation.
   mutate web "the id prefix is not normalised, so ids run together" "$D" \
-    "  return trimmed.endsWith('/') || trimmed.endsWith('#') ? trimmed : `${trimmed}/`" \
+    "  return trimmed.endsWith('/') || trimmed.endsWith('#') ? trimmed : \`\${trimmed}/\`" \
     '  return trimmed'
 
   mutate web "deleted and changed are no longer distinguished" "$A" \
@@ -962,6 +978,120 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the mark's size bound is counted in code units" "$D" \
     '  const bytes = new TextEncoder().encode(value).length' \
     '  const bytes = value.length'
+
+  # ---- Verification round ------------------------------------------------
+  # One row per safeguard this round's findings put in. Named after the defect
+  # each restores, not the code each edits.
+
+  # The order of the create sequence, which is the whole of what makes it safe.
+  mutate web "the id is not re-checked against the file as it is now" "$X" \
+    '        keys: existingPackKeys(current),' \
+    '        keys: [],'
+  mutate web "a file another entry already claims is written over" "$X" \
+    '        paths: existingPackPaths(current),' \
+    '        paths: [],'
+  mutate web "an unreadable jpack.json is discovered after the pack is written" "$X" \
+    '      let read: FileContent
+      let current: ProjectConfig
+      try {
+        read = await readFile(PROJECT_FILE)
+        current = parseProjectConfig(read.content)
+      } catch (cause) {
+        setFailure({ lead: UNREADABLE_PROJECT_FILE, reason: reasonOf(cause) })
+        return
+      }' \
+    '      let read: FileContent = { path: PROJECT_FILE, bytes: 0, sha256: "", content: "{}" }
+      let current: ProjectConfig = {}
+      try {
+        read = await readFile(PROJECT_FILE)
+        current = parseProjectConfig(read.content)
+      } catch {
+        /* the mutant finds out later */
+      }'
+  mutate web "a template that is not a document is sent anyway" "$X" \
+    '      let content: string
+      try {
+        content = shapeTemplate(template, { name, description, slug, idBase })
+      } catch (cause) {
+        setFailure({ lead: '"'"'This template could not be used.'"'"', reason: reasonOf(cause) })
+        return
+      }' \
+    '      const content = shapeTemplate(template, { name, description, slug, idBase })'
+
+  # A listing that failed is not a project with no files in it.
+  mutate web "a listing that failed is reported as a project with no jpack.json" "$X" \
+    '  const blocked = listing.isError' \
+    '  const blocked = false'
+  mutate web "Create is offered against a listing that never answered" "$X" \
+    '    listing.isSuccess' \
+    '    !listing.isPending'
+
+  # The dialog stays on screen for as long as it is the only place the outcome
+  # is stated.
+  mutate web "the dialog can be dismissed mid-sequence" "$X" \
+    '        if (!next && busy) return' \
+    '        void busy'
+  mutate web "Cancel stays live while the sequence runs" "$X" \
+    '            <Button variant="secondary" disabled={busy}>' \
+    '            <Button variant="secondary">'
+
+  # What a refusal says.
+  mutate web "a taken pack file is reported in an editor's words" "$X" \
+    '          reason: cause instanceof StaleWrite ? PACK_FILE_TAKEN : reasonOf(cause)' \
+    '          reason: reasonOf(cause)'
+  mutate web "the amended configuration is left in the cache as it was" "$X" \
+    "      invalidate([['desk-files'], ['desk-file', PROJECT_FILE], ['list_packs'], ['desk-config']])" \
+    "      invalidate([['desk-files'], ['list_packs'], ['desk-config']])"
+
+  # The templates: what is offered, and what is said about it.
+  mutate web "the empty pack is offered with no schema to derive it from" "$X" \
+    '      ...(schemaSupported ? [{ value: EMPTY, label: EMPTY_LABEL }] : [])' \
+    '      ...[{ value: EMPTY, label: EMPTY_LABEL }]'
+  mutate web "the empty pack is offered as a finished document" "$X" \
+    '          hint={isEmpty && template !== undefined ? EMPTY_IS_A_START : undefined}' \
+    '          hint={undefined}'
+  mutate web "a refusal with no reason given is quoted at the user anyway" "$ST" \
+    "    this.reported = text !== ''" \
+    '    this.reported = true'
+
+  # The slug rule, and the two sentences it says.
+  mutate web "a name too long for the file it names is accepted" "$NP" \
+    '  if (slug.length > MAX_SLUG_LENGTH) {' \
+    '  if (false) {'
+  mutate web "diacritics are dropped rather than folded" "$NP" \
+    "    .normalize('NFKD')
+    .replace(/\p{Diacritic}/gu, '')
+" \
+    ''
+  mutate web "an empty pack with no specVersion is written" "$NP" \
+    "  if (typeof skeleton.specVersion !== 'string' || skeleton.specVersion === '') return undefined" \
+    '  if (false) return undefined'
+  mutate web "a file another pack already names is not a collision" "$NP" \
+    '  if (project.paths.includes(project.path)) {' \
+    '  if (false) {'
+
+  # The file the amendment is written back into.
+  mutate web "a CRLF jpack.json is rewritten with the platform's line ending" "$JC" \
+    "  const eol = source.includes('\r\n') ? '\r\n' : '\n'" \
+    "  const eol = '\n'"
+
+  # The location a pack goes to.
+  mutate web "a directory the desk never writes into is accepted as the location" "$D" \
+    '  if (skipped !== undefined) {' \
+    '  if (false) {'
+
+  # The primitives.
+  mutate web "a dialog with no description points a reader at an empty one" "$DG" \
+    '          ) : null}' \
+    '          ) : (
+            <RadixDialog.Description />
+          )}'
+  mutate web "the form-level failure is not announced" "$AL" \
+    '    <p role="alert" className={styles.alert}>' \
+    '    <p className={styles.alert}>'
+  mutate web "a module spells a radius of its own" "$SELCSS" \
+    '  border-radius: var(--radius-sm);' \
+    '  border-radius: 4px;'
 fi
 
 restore
