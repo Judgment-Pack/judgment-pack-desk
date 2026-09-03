@@ -17,9 +17,16 @@
  * `Dialog.Close` is re-exported rather than wrapped: a Cancel is a close, and
  * a caller composing one out of `Close` + `Button asChild` is doing the plain
  * thing rather than working around a wrapper that took no `asChild`.
+ *
+ * **Focus goes back where it came from, and that needs a ref.** Radix restores
+ * focus to its own `Dialog.Trigger`; a dialog opened from a button somewhere
+ * else has none, so Radix prevented the default restoration and then focused
+ * nothing — closing with Cancel, with Escape or by succeeding dropped focus on
+ * `<body>`. `openerRef` is the button that opened it, and `onCloseAutoFocus`
+ * puts focus back on it however the dialog closed.
  */
 import { Dialog as RadixDialog } from 'radix-ui'
-import type { ReactNode } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import styles from './Dialog.module.css'
 
 export const DialogClose = RadixDialog.Close
@@ -29,19 +36,39 @@ export function Dialog({
   onOpenChange,
   title,
   description,
+  openerRef,
   children
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
   description?: ReactNode
+  /**
+   * The control that opened this dialog, so focus can go back to it.
+   *
+   * Optional, and absent means "leave Radix's own restoration alone" — which
+   * is right for a dialog that really does have a `Dialog.Trigger`. Where it is
+   * given, the default is prevented and this element is focused instead, on
+   * every way out: Cancel, Escape, the overlay, and a successful submit.
+   */
+  openerRef?: RefObject<HTMLElement | null>
   children: ReactNode
 }) {
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className={styles.overlay} />
-        <RadixDialog.Content className={styles.content}>
+        <RadixDialog.Content
+          className={styles.content}
+          onCloseAutoFocus={
+            openerRef === undefined
+              ? undefined
+              : (event) => {
+                  event.preventDefault()
+                  openerRef.current?.focus()
+                }
+          }
+        >
           <RadixDialog.Title className={styles.title}>{title}</RadixDialog.Title>
           {description ? (
             <RadixDialog.Description className={styles.description}>

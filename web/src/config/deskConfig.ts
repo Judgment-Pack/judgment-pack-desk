@@ -418,6 +418,16 @@ export const EXCLUDED_DIRECTORIES = ['.git', 'node_modules', 'dist', '.venv', 'v
 export const STAGING_PREFIX = '.jpack-desk-'
 
 /**
+ * The deepest `storage.packs.dir` the chassis will write into.
+ *
+ * `maxWalkDepth` in `internal/desk/files.go`, and the two are one number: the
+ * listing gives up there and reports the tree as partial, and a write allowed
+ * past it lands a file this API's own listing can never name. There is a test
+ * on each side at the boundary.
+ */
+export const MAX_PACK_DIR_DEPTH = 64
+
+/**
  * The directory new packs are written into, project-relative.
  *
  * The lexical shape the chassis will refuse anyway (`wireRelativePath`):
@@ -456,6 +466,16 @@ function packDir(value: unknown, problems: ConfigProblem[]): string | undefined 
     )
   if (skipped !== undefined) {
     return bad(`must not name ${skipped}, which the desk never reads or writes`)
+  }
+  // The same bound the chassis holds writes to, refused where it was written
+  // rather than on the write. `GET /api/files` gives up at this depth and
+  // reports the tree as partial, so a pack created below it is a file the
+  // desk's own listing can never name — and Admin can say which key is wrong,
+  // where the dialog could only say that a write failed.
+  if (trimmed.split('/').length > MAX_PACK_DIR_DEPTH) {
+    return bad(
+      `must be at most ${MAX_PACK_DIR_DEPTH} directories deep; the file listing gives up there`
+    )
   }
   return trimmed
 }

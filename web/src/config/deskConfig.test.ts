@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DESK_DEFAULTS,
   EXCLUDED_DIRECTORIES,
+  MAX_PACK_DIR_DEPTH,
   PANE_BOUNDS,
   STAGING_PREFIX,
   decodeDeskConfig,
@@ -207,6 +208,23 @@ describe('decodeDeskConfig', () => {
     )
     expect(keys(decoded.problems).sort()).toEqual(['appearance.theme', 'panes.left.width'])
     expect(decoded.problems.find((p) => p.key === 'appearance.theme')!.reason).toContain('"midnight"')
+  })
+
+  it('refuses a packs directory deeper than the listing walks', () => {
+    // The chassis refuses the write at this bound; refusing the *configuration*
+    // is what lets Admin name the key that is wrong instead of the dialog
+    // failing later on a path nobody chose to look at.
+    const dirOf = (depth: number) =>
+      decodeDeskConfig(
+        JSON.stringify({
+          deskConfigVersion: 1,
+          storage: { packs: { dir: Array.from({ length: depth }, (_, i) => `d${i}`).join('/') } }
+        }),
+        'project'
+      )
+    expect(dirOf(MAX_PACK_DIR_DEPTH).problems).toEqual([])
+    expect(keys(dirOf(MAX_PACK_DIR_DEPTH + 1).problems)).toEqual(['storage.packs.dir'])
+    expect(dirOf(MAX_PACK_DIR_DEPTH + 1).problems[0]!.reason).toContain('directories deep')
   })
 
   it('refuses a pane dimension of zero, and one past its documented maximum', () => {

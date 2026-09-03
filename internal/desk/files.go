@@ -63,6 +63,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"unicode/utf8"
 )
 
@@ -95,6 +96,100 @@ const (
 // would narrate the shape of the filesystem to whoever asked.
 var errOutsideProject = errors.New("path is not inside the project")
 
+// The stable `code` beside every refusal's sentence.
+//
+// **A code is not a second copy of the message.** The message is for a person
+// reading a diagnostic; the code is for a client that has to *decide* — and a
+// client deciding by matching English is a client that breaks when a sentence
+// is improved. The desk's Create dialog is the concrete caller: it turns each
+// of these into a sentence about creating a pack, which is a different sentence
+// from the one a file editor wants for the same refusal.
+//
+// The set is deliberately small and deliberately not a taxonomy of the
+// filesystem. `CodeOutsideRoot` stays the single containment answer for every
+// way of leaving the project, for the reason `errOutsideProject` gives; what is
+// split out of it is only what a caller can *act* on differently.
+const (
+	// CodeOutsideRoot is the one containment refusal, however it was reached.
+	CodeOutsideRoot = "outside-root"
+	// CodeSymlink is a path some component of which is a symbolic link.
+	CodeSymlink = "symlink"
+	// CodeNotFound is a path with nothing at it.
+	CodeNotFound = "not-found"
+	// CodeDirectoryMissing is a write whose parent directory is not there.
+	CodeDirectoryMissing = "directory-missing"
+	// CodeParentIsAFile is a write whose parent exists and is not a directory.
+	//
+	// Split from CodeOutsideRoot because it is not a containment failure at
+	// all: the open fails with ENOTDIR, which used to be answered as "path is
+	// not inside the project" and sent whoever read it hunting a security
+	// problem that was not there. The fix is a rename away, and the code says
+	// so.
+	CodeParentIsAFile = "parent-is-a-file"
+	// CodeTooDeep is a create past the depth the listing walks.
+	CodeTooDeep = "too-deep"
+	// CodeExists is a create refused because something is already there.
+	CodeExists = "exists"
+	// CodeStale is a replace refused because the file changed underneath it.
+	CodeStale = "stale"
+	// CodeTooLarge is a read or write past the byte bound.
+	CodeTooLarge = "too-large"
+	// CodeNotUTF8 is a file whose bytes are not text this editor will load.
+	CodeNotUTF8 = "not-utf8"
+	// CodeNotAFile is a directory, FIFO, device or socket asked for as a file.
+	CodeNotAFile = "not-a-file"
+	// CodeForbidden is a path inside the project this process may not open.
+	CodeForbidden = "forbidden"
+	// CodeBadRequest is a request this API could not read at all.
+	CodeBadRequest = "bad-request"
+	// CodeInternal is everything with no better answer. A client that branches
+	// on this is a client guessing, which is what the others are for.
+	CodeInternal = "internal"
+)
+
+// coded carries a refusal's stable code alongside its sentence.
+//
+// The code travels with the error rather than being re-derived at the edge,
+// because the edge does not know what it is looking at: by the time a failure
+// reaches the handler it is a sentence, and classifying a sentence is exactly
+// the string-matching this exists to stop a client doing.
+type coded struct {
+	code string
+	err  error
+}
+
+func (c coded) Error() string { return c.err.Error() }
+func (c coded) Unwrap() error { return c.err }
+
+// withCode labels one refusal.
+func withCode(code string, err error) error { return coded{code: code, err: err} }
+
+// codeOf reports the code a refusal carries, or CodeInternal where it carries
+// none. An unlabelled error is a bug rather than a category, and answering
+// "internal" says that without inventing a classification for it.
+// statusForRefusal is the status a path refusal deserves.
+//
+// Containment is a 403 and stays one. A component of the path being a regular
+// file is a 404: there is nothing at that path and there cannot be, which is
+// what "not found" means — answering 403 would say the desk declined to look.
+func statusForRefusal(err error) int {
+	if codeOf(err) == CodeParentIsAFile {
+		return http.StatusNotFound
+	}
+	return http.StatusForbidden
+}
+
+func codeOf(err error) string {
+	var c coded
+	if errors.As(err, &c) {
+		return c.code
+	}
+	if errors.Is(err, errOutsideProject) {
+		return CodeOutsideRoot
+	}
+	return CodeInternal
+}
+
 // testHookAfterResolve runs between validating a path and acting on it, and is
 // nil outside tests.
 //
@@ -107,6 +202,20 @@ var testHookAfterResolve func(rel string)
 func afterResolve(rel string) {
 	if testHookAfterResolve != nil {
 		testHookAfterResolve(rel)
+	}
+}
+
+// testHookAfterSymlinkWalk runs immediately after the symlink walk has passed
+// and before anything acts on the path, and is nil outside tests.
+//
+// It exists to exercise the residual the walk cannot close: a swap performed
+// *after* the check. The older hook fires before the walk, which tests that the
+// walk sees a symlink that is already there — a real property, and not this one.
+var testHookAfterSymlinkWalk func(rel string)
+
+func afterSymlinkWalk(rel string) {
+	if testHookAfterSymlinkWalk != nil {
+		testHookAfterSymlinkWalk(rel)
 	}
 }
 
@@ -209,7 +318,13 @@ type WriteRequest struct {
 // conflict is the body of a refused stale write. Both digests are reported so
 // the client can say what it had, what is there, and reload.
 type conflict struct {
-	Error          string `json:"error"`
+	Error string `json:"error"`
+	// Code is CodeExists where the writer stated no base digest — a create
+	// that found something already there — and CodeStale where it stated one
+	// that no longer matches. Both are the same 409 and the same sentence for
+	// an editor; they are different sentences for whoever is creating a pack,
+	// and a client must not have to infer which by reading English.
+	Code           string `json:"code"`
 	Path           string `json:"path"`
 	ExpectedSHA256 string `json:"expectedSha256"`
 	ActualSHA256   string `json:"actualSha256"`
@@ -242,7 +357,7 @@ func digestOf(data []byte) string {
 // difference from the containment argument entirely.
 func wireRelativePath(rel string) (string, error) {
 	if rel == "" {
-		return "", errors.New("path is required")
+		return "", withCode(CodeBadRequest, errors.New("path is required"))
 	}
 	if strings.ContainsRune(rel, 0) {
 		return "", errOutsideProject
@@ -294,6 +409,28 @@ func wireRelativePath(rel string) (string, error) {
 // Each component is checked through the pinned root, deepest last, and a
 // component that does not exist ends the walk: there is nothing to follow, and
 // a write is allowed to create it.
+// refuseSymlinkedPath refuses a path any component of which is a symbolic link.
+//
+// **What this promises, and what it does not.** Every operation on the far side
+// of it goes through the pinned `os.Root`, so containment does not rest on this
+// walk at all: a component swapped for a symlink pointing *out* of the project,
+// at any moment, is refused by the root itself — the walk is not what keeps the
+// desk inside the project, and there is a test that swaps after this returns to
+// say so.
+//
+// What this walk adds is the desk's own stricter rule: it edits no path that
+// passes through a link, even one that stays inside the project. That rule is
+// **checked here and enforced nowhere else**, so it is time-of-check to
+// time-of-use against a writer racing it on the same machine: an in-root
+// symlink introduced between this walk and the write is followed, and the file
+// lands at the link's target — still inside the project, still somewhere the
+// listing can name, and not where the caller asked.
+//
+// That residual is not closed by descending with no-follow handles today, and
+// pretending otherwise in a comment would be worse than the gap. It is scoped
+// rather than fixed: the threat model is a local writer with write access to
+// the project directory, who does not need to race anything to move a file the
+// desk just wrote. The README says the same thing in the same words.
 func (s *Server) refuseSymlinkedPath(clean string) error {
 	parts := strings.Split(clean, "/")
 	for i := range parts {
@@ -302,10 +439,19 @@ func (s *Server) refuseSymlinkedPath(clean string) error {
 			if errors.Is(err, fs.ErrNotExist) {
 				return nil
 			}
+			// **ENOTDIR is not a containment failure**, and answering it as
+			// one sent whoever read that message hunting a security problem
+			// that is not there. A component of the path is a regular file;
+			// the fix is a rename, and the code says which.
+			if errors.Is(err, syscall.ENOTDIR) {
+				return withCode(CodeParentIsAFile, fmt.Errorf(
+					"a component of %s is a file, not a directory", clean))
+			}
 			return errOutsideProject
 		}
 		if info.Mode()&fs.ModeSymlink != 0 {
-			return fmt.Errorf("%s passes through a symbolic link, which this desk does not edit", clean)
+			return withCode(CodeSymlink, fmt.Errorf(
+				"%s passes through a symbolic link, which this desk does not edit", clean))
 		}
 	}
 	return nil
@@ -356,14 +502,23 @@ func (s *Server) readThroughRoot(clean string) ([]byte, int, error) {
 	f, err := s.root.OpenFile(osPath(clean), os.O_RDONLY|openNonBlocking, 0)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, http.StatusNotFound, fmt.Errorf("no such file in the project: %s", clean)
+			return nil, http.StatusNotFound,
+				withCode(CodeNotFound, fmt.Errorf("no such file in the project: %s", clean))
 		}
 		// A file inside the project that this process may not open is not a
 		// containment failure, and saying so would send someone hunting a
 		// security problem that is not there — the same mistake a missing
 		// parent directory used to produce on the write path.
 		if errors.Is(err, fs.ErrPermission) {
-			return nil, http.StatusForbidden, fmt.Errorf("%s cannot be read: %w", clean, fs.ErrPermission)
+			return nil, http.StatusForbidden,
+				withCode(CodeForbidden, fmt.Errorf("%s cannot be read: %w", clean, fs.ErrPermission))
+		}
+		// The same ENOTDIR distinction the symlink walk draws, for the same
+		// reason: a regular file where a directory was expected is a naming
+		// problem, not an escape.
+		if errors.Is(err, syscall.ENOTDIR) {
+			return nil, http.StatusNotFound, withCode(CodeParentIsAFile, fmt.Errorf(
+				"a component of %s is a file, not a directory", clean))
 		}
 		// Everything else is the one containment refusal, deliberately not
 		// itemized: which rule stopped it is not the caller's business.
@@ -376,11 +531,11 @@ func (s *Server) readThroughRoot(clean string) ([]byte, int, error) {
 		return nil, http.StatusInternalServerError, err
 	}
 	if info.IsDir() {
-		return nil, http.StatusBadRequest, fmt.Errorf("%s is a directory", clean)
+		return nil, http.StatusBadRequest, withCode(CodeNotAFile, fmt.Errorf("%s is a directory", clean))
 	}
 	if !info.Mode().IsRegular() {
-		return nil, http.StatusBadRequest,
-			fmt.Errorf("%s is not a regular file, so this editor will not read it", clean)
+		return nil, http.StatusBadRequest, withCode(CodeNotAFile, fmt.Errorf(
+			"%s is not a regular file, so this editor will not read it", clean))
 	}
 	// Bounded by the reader, not by the size the metadata claimed: a file that
 	// grows between the stat and the read would otherwise be unbounded.
@@ -389,8 +544,8 @@ func (s *Server) readThroughRoot(clean string) ([]byte, int, error) {
 		return nil, http.StatusInternalServerError, err
 	}
 	if len(data) > maxFileBytes {
-		return nil, http.StatusRequestEntityTooLarge,
-			fmt.Errorf("%s is larger than %d bytes, which is the most this editor reads", clean, maxFileBytes)
+		return nil, http.StatusRequestEntityTooLarge, withCode(CodeTooLarge, fmt.Errorf(
+			"%s is larger than %d bytes, which is the most this editor reads", clean, maxFileBytes))
 	}
 	return data, http.StatusOK, nil
 }
@@ -401,8 +556,8 @@ func contentOf(clean string, data []byte) (*FileContent, int, error) {
 	// that are not. Handing back a silently mangled document would be worse
 	// than handing back nothing, and far worse if the editor then saved it.
 	if !utf8.Valid(data) {
-		return nil, http.StatusUnsupportedMediaType,
-			fmt.Errorf("%s is not UTF-8 text, so this editor will not load it", clean)
+		return nil, http.StatusUnsupportedMediaType, withCode(CodeNotUTF8, fmt.Errorf(
+			"%s is not UTF-8 text, so this editor will not load it", clean))
 	}
 	return &FileContent{
 		Path:    clean,
@@ -646,23 +801,23 @@ func (s *Server) handleFileRead(w http.ResponseWriter, r *http.Request) {
 	}
 	clean, err := wireRelativePath(r.URL.Query().Get("path"))
 	if err != nil {
-		writeJSONError(w, http.StatusForbidden, err.Error())
+		writeJSONError(w, http.StatusForbidden, err)
 		return
 	}
 	afterResolve(clean)
 
 	if err := s.refuseSymlinkedPath(clean); err != nil {
-		writeJSONError(w, http.StatusForbidden, err.Error())
+		writeJSONError(w, statusForRefusal(err), err)
 		return
 	}
 	data, status, err := s.readThroughRoot(clean)
 	if err != nil {
-		writeJSONError(w, status, err.Error())
+		writeJSONError(w, status, err)
 		return
 	}
 	content, status, err := contentOf(clean, data)
 	if err != nil {
-		writeJSONError(w, status, err.Error())
+		writeJSONError(w, status, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, content)
@@ -680,17 +835,18 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 	}
 	var req WriteRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, maxFileBytes*2)).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("could not read the request: %v", err))
+		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,
+			fmt.Sprintf("could not read the request: %v", err))
 		return
 	}
 	if len(req.Content) > maxFileBytes {
-		writeJSONError(w, http.StatusRequestEntityTooLarge,
+		writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge,
 			fmt.Sprintf("this editor writes at most %d bytes", maxFileBytes))
 		return
 	}
 	clean, err := wireRelativePath(req.Path)
 	if err != nil {
-		writeJSONError(w, http.StatusForbidden, err.Error())
+		writeJSONError(w, http.StatusForbidden, err)
 		return
 	}
 
@@ -724,8 +880,9 @@ func (s *Server) commitWriteLocked(clean string, req WriteRequest) (int, any) {
 	afterLockEntry(clean)
 
 	if err := s.refuseSymlinkedPath(clean); err != nil {
-		return http.StatusForbidden, errorBody(err)
+		return statusForRefusal(err), errorBody(err)
 	}
+	afterSymlinkWalk(clean)
 
 	// What is there now, under the lock.
 	//
@@ -751,9 +908,17 @@ func (s *Server) commitWriteLocked(clean string, req WriteRequest) (int, any) {
 	// client is told both digests rather than having its work quietly overwrite
 	// someone else's.
 	if !req.Override && !strings.EqualFold(strings.TrimSpace(req.BaseSHA256), actual) {
+		// A create is a write that stated no base: it believed nothing was
+		// there. Finding something is "exists", not "stale" — nothing went
+		// stale, the writer was simply wrong about an empty space.
+		code := CodeStale
+		if strings.TrimSpace(req.BaseSHA256) == "" && exists {
+			code = CodeExists
+		}
 		return http.StatusConflict, conflict{
 			Error: "the file on disk is not the file this edit started from; " +
 				"reload it, or write again with override",
+			Code:           code,
 			Path:           clean,
 			ExpectedSHA256: strings.ToLower(strings.TrimSpace(req.BaseSHA256)),
 			ActualSHA256:   actual,
@@ -766,26 +931,32 @@ func (s *Server) commitWriteLocked(clean string, req WriteRequest) (int, any) {
 	// they live in, and saying so plainly is better than a mkdir nobody asked
 	// for.
 	if parent := path.Dir(clean); parent != "." {
+		// **The depth bound is checked first, and unconditionally.** It used
+		// to sit inside the "the parent is missing" branch, so a write into 65
+		// directories that already existed succeeded — into a subtree
+		// `GET /api/files` gives up on and reports as partial. The bound is
+		// not about creating directories; it is about not writing a file this
+		// API's own listing can never name, and an existing parent does not
+		// make that file findable.
+		if strings.Count(parent, "/")+1 > maxWalkDepth {
+			return http.StatusBadRequest, codedBody(CodeTooDeep, fmt.Sprintf(
+				"this API writes at most %d levels of directory deep", maxWalkDepth))
+		}
 		info, derr := s.root.Stat(osPath(parent))
 		switch {
 		case derr == nil && info.IsDir():
 			// Already there. Nothing to do, and nothing to create.
-		case derr == nil || !req.CreateParents:
-			// Present but not a directory, or missing with no request to make
-			// it: the existing refusal, unchanged. `derr == nil` here is
-			// "exists and is not a directory" — a regular file cannot be turned
-			// into a directory, so CreateParents is not a licence to try.
-			return http.StatusNotFound, map[string]string{"error": fmt.Sprintf(
-				"the directory %s does not exist in the project; create it first", parent)}
+		case derr == nil:
+			// Present and not a directory. A regular file cannot be turned
+			// into one, so CreateParents is not a licence to try — and this is
+			// not a containment failure, which is why it has its own code
+			// rather than the one every escape shares.
+			return http.StatusNotFound, codedBody(CodeParentIsAFile, fmt.Sprintf(
+				"%s is a file, not a directory, so nothing can be written inside it", parent))
+		case !req.CreateParents:
+			return http.StatusNotFound, codedBody(CodeDirectoryMissing, fmt.Sprintf(
+				"the directory %s does not exist in the project; create it first", parent))
 		default:
-			// Not deeper than the listing walks. See CreateParents above: the
-			// walk gives up at maxWalkDepth and says so, and a create this API
-			// allowed past that point would put a file where its own listing
-			// can never name it.
-			if strings.Count(parent, "/")+1 > maxWalkDepth {
-				return http.StatusBadRequest, map[string]string{"error": fmt.Sprintf(
-					"this API creates at most %d levels of directory", maxWalkDepth)}
-			}
 			if err := s.root.MkdirAll(osPath(parent), 0o777); err != nil {
 				return http.StatusInternalServerError, errorBody(err)
 			}
@@ -811,7 +982,17 @@ func (s *Server) commitWriteLocked(clean string, req WriteRequest) (int, any) {
 	return http.StatusOK, content
 }
 
-func errorBody(err error) map[string]string { return map[string]string{"error": err.Error()} }
+// errorBody is the envelope every refusal is sent in: the sentence a person
+// reads, and the code a client decides on.
+func errorBody(err error) map[string]string {
+	return map[string]string{"error": err.Error(), "code": codeOf(err)}
+}
+
+// codedBody is errorBody for a refusal assembled at the call site rather than
+// raised as an error.
+func codedBody(code, message string) map[string]string {
+	return map[string]string{"error": message, "code": code}
+}
 
 /* Atomic replace ---------------------------------------------------------- */
 
@@ -964,11 +1145,11 @@ func (s *Server) removeStaleStaging() {
 // what keeps a new endpoint from being a new place to forget one of them.
 func (s *Server) guard(w http.ResponseWriter, r *http.Request) bool {
 	if !s.authorized(r) {
-		writeJSONError(w, http.StatusUnauthorized, "missing or invalid session token")
+		writeJSONCoded(w, http.StatusUnauthorized, CodeForbidden, "missing or invalid session token")
 		return false
 	}
 	if !s.originAllowed(r) {
-		writeJSONError(w, http.StatusForbidden,
+		writeJSONCoded(w, http.StatusForbidden, CodeForbidden,
 			fmt.Sprintf("origin %q is not permitted", r.Header.Get("Origin")))
 		return false
 	}
@@ -982,6 +1163,13 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-func writeJSONError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
+// writeJSONError sends one refusal, code and all. The code is taken from the
+// error itself where the caller has one; callers with only a sentence use
+// writeJSONCoded and say which code it is.
+func writeJSONError(w http.ResponseWriter, status int, err error) {
+	writeJSON(w, status, errorBody(err))
+}
+
+func writeJSONCoded(w http.ResponseWriter, status int, code, message string) {
+	writeJSON(w, status, codedBody(code, message))
 }

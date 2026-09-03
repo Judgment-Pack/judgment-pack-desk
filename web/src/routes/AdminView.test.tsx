@@ -79,6 +79,34 @@ function renderAdmin(
   )
 }
 
+/** One file listing, or a refusal, for the Storage section to describe. */
+function servesListing(options: {
+  files?: { path: string; bytes: number; sha256: string }[]
+  partial?: string[]
+  fail?: boolean
+}) {
+  vi.stubGlobal('fetch', async () =>
+    options.fail
+      ? {
+          ok: false,
+          status: 503,
+          statusText: '',
+          text: async () => JSON.stringify({ error: 'the project could not be read' })
+        }
+      : {
+          ok: true,
+          status: 200,
+          statusText: '',
+          text: async () =>
+            JSON.stringify({
+              root: '/p',
+              files: options.files ?? [],
+              ...(options.partial ? { partial: options.partial } : {})
+            })
+        }
+  )
+}
+
 describe('the Admin page', () => {
   it('renders every section in order, with those exact headings and no others', () => {
     // The whole list, not a slice of it. `slice(0, 6)` said nothing about a
@@ -121,32 +149,54 @@ describe('the Admin page', () => {
   it('says a location holds files only where the listing shows one', async () => {
     // The listing reports regular files only, so the page can say a location
     // holds files and can never claim an empty one exists.
-    vi.stubGlobal('fetch', async () => ({
-      ok: true,
-      status: 200,
-      statusText: '',
-      text: async () =>
-        JSON.stringify({
-          root: '/p',
-          files: [{ path: 'packs/a.pack.json', bytes: 1, sha256: 'aa' }]
-        })
-    }))
+    servesListing({ files: [{ path: 'packs/a.pack.json', bytes: 1, sha256: 'aa' }] })
     renderAdmin()
     expect(await screen.findByText('holds files')).toBeTruthy()
   })
 
-  it('says the location is not there yet where the listing shows nothing under it', async () => {
-    vi.stubGlobal('fetch', async () => ({
-      ok: true,
-      status: 200,
-      statusText: '',
-      text: async () =>
-        JSON.stringify({ root: '/p', files: [{ path: 'jpack.json', bytes: 1, sha256: 'aa' }] })
-    }))
+  it('says only that no file is under it, which is what the listing can show', async () => {
+    // The listing reports regular files only, so an empty directory is
+    // invisible to it. "The first pack creates it" was a claim about a
+    // directory the page has no evidence about either way.
+    servesListing({ files: [{ path: 'jpack.json', bytes: 1, sha256: 'aa' }] })
     renderAdmin()
     expect(
-      await screen.findByText('no file under it yet — the first pack creates it')
+      await screen.findByText('no file is under it — the first pack asks for it to be created')
     ).toBeTruthy()
+  })
+
+  it('tells the four states apart that used to share one sentence', async () => {
+    // Pending, failed, incomplete and obstructed all rendered as "no file
+    // under it yet — the first pack creates it". Three of those are not that,
+    // and the last one is a promise a rename is the only way to keep.
+    const cases: [Parameters<typeof servesListing>[0], string][] = [
+      [{ fail: true }, 'the file listing failed, so nothing is known about it'],
+      [
+        { files: [{ path: 'jpack.json', bytes: 1, sha256: 'aa' }], partial: ['packs: permission denied'] },
+        'the file listing came back incomplete, so nothing is known about it'
+      ],
+      [
+        { files: [{ path: 'packs', bytes: 1, sha256: 'aa' }] },
+        'a file is there under that exact name — nothing can be created inside it'
+      ],
+      [
+        { files: [{ path: 'packs/a.pack.json', bytes: 1, sha256: 'aa' }] },
+        'holds files'
+      ]
+    ]
+    for (const [listing, says] of cases) {
+      servesListing(listing)
+      renderAdmin()
+      expect(await screen.findByText(says), says).toBeTruthy()
+      cleanup()
+    }
+  })
+
+  it('says the listing has not answered rather than describing what it has not seen', async () => {
+    // A request that never resolves. Nothing is known, and nothing is claimed.
+    vi.stubGlobal('fetch', () => new Promise(() => {}))
+    renderAdmin()
+    expect(await screen.findByText('the file listing has not answered yet')).toBeTruthy()
   })
 
   it('names the two future kinds as coming soon, as text and not as controls', () => {

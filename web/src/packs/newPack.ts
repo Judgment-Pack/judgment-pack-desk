@@ -12,6 +12,45 @@
  * into `a-2024-review` would be the desk inventing half the id.
  */
 import { NEW_PACK_VERSION } from './jpackConfig'
+import { claimedBy, samePath } from './packPath'
+
+/**
+ * The Latin letters NFKD does not take apart, and what each becomes.
+ *
+ * NFKD plus `\p{Diacritic}` handles a letter that decomposes into a base and a
+ * mark: `ü` is `u` + a diaeresis, so stripping the mark leaves `u`. It does
+ * nothing for a letter whose diacritic is *part of the glyph* — `ł`, `ø`, `đ`
+ * are single code points with no decomposition — and nothing for a ligature or
+ * an eszett. Those fell through to the `[^a-z0-9]` sweep and were **deleted**:
+ * `Łódź` became `odz`, `Smørrebrød` became `sm-rrebr-d`, `Straße` became
+ * `stra-e`. Dropping a letter is the one thing the comment above promised not
+ * to do, and it produced ids nobody would recognise as their own name.
+ *
+ * These are the standard transliterations, not inventions: `ß` → `ss` is the
+ * uppercase spelling German itself uses, `æ`/`œ` → `ae`/`oe` is how those
+ * ligatures are written apart, and `ł ø đ þ ð` → `l o d th d` is the usual
+ * romanisation. Anything Latin and not on this list is **refused by name**
+ * rather than deleted, which is the rule the script check already applies to
+ * every other alphabet.
+ */
+const TRANSLITERATED: ReadonlyMap<string, string> = new Map([
+  ['ł', 'l'],
+  ['ø', 'o'],
+  ['ß', 'ss'],
+  ['æ', 'ae'],
+  ['œ', 'oe'],
+  ['đ', 'd'],
+  ['ð', 'd'],
+  ['þ', 'th'],
+  ['ŋ', 'ng'],
+  ['ħ', 'h'],
+  ['ı', 'i'],
+  ['ĸ', 'k'],
+  ['ŧ', 't']
+])
+
+/** Every Latin letter, so a refusal can name the ones it could not carry. */
+const LATIN_LETTER = /\p{Script=Latin}/u
 
 /** A slug, or the reason there is not one. Never both. */
 export type SlugResult = { slug: string } | { problem: string }
@@ -44,12 +83,32 @@ export const MAX_SLUG_LENGTH = 245
  * letters. The sentence states the alphabet instead.
  */
 export function slugFor(name: string): SlugResult {
-  const slug = name
+  const folded = name
     .normalize('NFKD')
     .replace(/\p{Diacritic}/gu, '')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+  // The letters NFKD leaves whole, spelled out rather than swept away by the
+  // `[^a-z0-9]` pass below. See TRANSLITERATED: deleting a letter is worse
+  // than transposing one, and worse still than saying so.
+  const transliterated = [...folded]
+    .map((character) => TRANSLITERATED.get(character) ?? character)
+    .join('')
+
+  // **A Latin letter this desk cannot carry is named, not dropped.** The
+  // alphabet sentence below is true of a name written in another script; it is
+  // not true of `Ǆurđević`, which is made of Latin letters and would otherwise
+  // lose one silently. The check is after transliteration, so it only ever
+  // reports what is genuinely left over.
+  const unsupported = [
+    ...new Set([...transliterated].filter((character) => !/[a-z0-9]/.test(character) && LATIN_LETTER.test(character)))
+  ]
+  if (unsupported.length > 0) {
+    return {
+      problem: `A name cannot carry ${unsupported.join(' ')} — an id is a–z and 0–9 only, and this desk will not drop a letter to make one.`
+    }
+  }
+
+  const slug = transliterated.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
   if (slug === '') {
     return { problem: 'A name needs at least one letter a–z or digit 0–9 — an id can carry no others.' }
   }
@@ -83,6 +142,12 @@ export function packPathFor(dir: string, slug: string): string {
  * another angle — an entry naming a file that has not been written is an
  * ordinary state for a project under construction, and creating a second pack
  * over it would unregister the first.
+ *
+ * **Paths are compared the way the runtime compares them**, not as strings.
+ * `packs/./new.pack.json` and `packs/new.pack.json` are one file to
+ * `Project.DeclaresPath`, and were two here — so an entry spelled the first way
+ * evaded both path questions, and two ids ended up resolving to one document.
+ * `samePath` mirrors that rule, case-fold and all; see `packPath.ts`.
  */
 export function collisionIn(
   slug: string,
@@ -96,10 +161,10 @@ export function collisionIn(
   if (project.keys.includes(slug)) {
     return `This project already has a pack called ${slug}.`
   }
-  if (project.paths.includes(project.path)) {
+  if (claimedBy(project.paths, project.path)) {
     return `Another pack in this project already uses that file.`
   }
-  if (project.files.includes(project.path)) {
+  if (project.files.some((file) => samePath(file, project.path))) {
     return `There is already a file where this pack would be written.`
   }
   return undefined

@@ -66,8 +66,9 @@ report() { # report <name> <result-line>
 # survived — it has not been tested. Reporting any of those as "nothing failed"
 # would be the most dangerous thing this script could do, so each is named.
 run_go() {
-  local out named
+  local out code named
   out="$(go test ./internal/desk -count=1 -timeout 45s 2>&1)"
+  code=$?
   if grep -q 'build failed\|cannot use\|undefined:\|declared and not used\|syntax error' <<<"$out"; then
     echo "INCONCLUSIVE — did not compile"
     return
@@ -81,8 +82,26 @@ run_go() {
     return
   fi
   named="$(grep -E '^--- FAIL|^    --- FAIL' <<<"$out" | sed 's/^ *--- FAIL: //;s/ (.*//' | sort -u | paste -sd', ' -)"
-  if [ -z "$named" ] && grep -q '^FAIL' <<<"$out"; then
-    echo "INCONCLUSIVE — failed without naming a test"
+  # **The exit status is the last word, and it was not consulted at all.**
+  # Every branch above reads the *output*, so a failure whose output does not
+  # match one of those patterns — `go` not on PATH, a package that will not
+  # load, a suite with no tests in it — was reported as the empty string, which
+  # this table reads as "the mutation survived". A run that ended nonzero and
+  # named no test did not survive anything; it did not run.
+  if [ -z "$named" ] && [ "$code" -ne 0 ]; then
+    echo "INCONCLUSIVE — go test exited $code naming no failing test"
+    return
+  fi
+  if [ -z "$named" ] && ! grep -qE '^(ok|---|PASS)' <<<"$out"; then
+    echo "INCONCLUSIVE — go test reported no result at all"
+    return
+  fi
+  # A package that ran no tests exits zero and prints `ok`. For this package
+  # that is not a pass: the suite is what the mutation is being measured
+  # against, and a build that compiled the tests away would otherwise read as
+  # "nothing failed".
+  if grep -q 'no tests to run' <<<"$out"; then
+    echo "INCONCLUSIVE — go test ran no tests"
     return
   fi
   echo "$named"
@@ -110,6 +129,22 @@ run_web() {
   named="$(grep -E '^ *× ' <<<"$out" | sed 's/^ *× //;s/ [0-9]*ms$//' | sort -u | paste -sd', ' -)"
   if [ -z "$named" ] && grep -qE 'Tests +[0-9]+ failed' <<<"$out"; then
     echo "INCONCLUSIVE — failed without naming a test"
+    return
+  fi
+  # **Nonzero and naming nothing is not survival.** The status was captured and
+  # then only ever compared to 124: a suite that failed to start, a `vitest`
+  # that is not installed, a config that will not load — each exits nonzero,
+  # prints nothing this function recognises, and was reported as the empty
+  # string, which the table reads as "nothing failed". A 41-file startup
+  # failure was accepted as a clean baseline that way.
+  if [ -z "$named" ] && [ "$code" -ne 0 ]; then
+    echo "INCONCLUSIVE — the web suite exited $code naming no failing test"
+    return
+  fi
+  # And a run that passed *no* tests is not a run either. `Tests  no tests`
+  # is what a filter that matches nothing prints, and it exits zero.
+  if [ -z "$named" ] && ! grep -qE 'Tests +[0-9]+ passed' <<<"$out"; then
+    echo "INCONCLUSIVE — the web suite ran no tests"
     return
   fi
   echo "$named"
@@ -165,6 +200,7 @@ if [ -n "$baseline_go" ] || [ -n "$baseline_web" ]; then
   echo "  go:  ${baseline_go:-clean}" >&2
   echo "  web: ${baseline_web:-clean}" >&2
   exit 2
+
 fi
 
 echo "mutation check against $commit"
@@ -232,7 +268,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # handler shape that no longer exists. Broken at `origin/main` too.
   mutate go "the write path drops the symlink refusal" "$F" \
     '	if err := s.refuseSymlinkedPath(clean); err != nil {
-		return http.StatusForbidden, errorBody(err)
+		return statusForRefusal(err), errorBody(err)
 	}' \
     ''
   # Repaired: the test is `isExcludedName(part)`, not a `skipDirs` map lookup.
@@ -305,13 +341,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if parent := path.Dir(clean); false && parent != "." {'
   mutate go "the guard drops the token check" "$F" \
     '	if !s.authorized(r) {
-		writeJSONError(w, http.StatusUnauthorized, "missing or invalid session token")
+		writeJSONCoded(w, http.StatusUnauthorized, CodeForbidden, "missing or invalid session token")
 		return false
 	}' \
     ''
   mutate go "the guard drops the origin check" "$F" \
     '	if !s.originAllowed(r) {
-		writeJSONError(w, http.StatusForbidden,
+		writeJSONCoded(w, http.StatusForbidden, CodeForbidden,
 			fmt.Sprintf("origin %q is not permitted", r.Header.Get("Origin")))
 		return false
 	}' \
@@ -352,8 +388,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 
   # createParents. The opt-in, its containment, and its position in the order.
   mutate go "createParents is not opt-in (every write creates its parents)" "$F" \
-    '		case derr == nil || !req.CreateParents:' \
-    '		case derr == nil:'
+    '		case !req.CreateParents:' \
+    '		case false:'
   mutate go "createParents resolves a pathname instead of the pinned root" "$F" \
     '			if err := s.root.MkdirAll(osPath(parent), 0o777); err != nil {' \
     '			if err := os.MkdirAll(filepath.Join(s.cfg.ProjectDir, osPath(parent)), 0o777); err != nil {'
@@ -365,8 +401,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	if !req.Override && !strings.EqualFold(strings.TrimSpace(req.BaseSHA256), actual) {'
   # Verification round: the bound, and the mode a create publishes.
   mutate go "createParents is not bounded by what the listing can walk" "$F" \
-    '			if strings.Count(parent, "/")+1 > maxWalkDepth {' \
-    '			if false {'
+    '		if strings.Count(parent, "/")+1 > maxWalkDepth {' \
+    '		if false {'
   mutate go "a created file keeps the staging mode instead of taking the umask" "$F" \
     '		f, err := s.root.OpenFile(osPath(full), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o666)' \
     '		f, err := s.root.OpenFile(osPath(full), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)'
@@ -381,8 +417,44 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # safeguard that is real but held one layer up, which is a worse statement
   # than this note. `TestCreateParentsRefusesAParentThatIsAFile` pins the
   # behaviour, with and without the member.
-fi
 
+  # ---- Codex round 1 on the Create redesign ------------------------------
+
+  # 8. The bound used to sit inside the create-the-parent branch, so a write
+  # into 65 directories that already existed went through. This puts it back
+  # there rather than removing it — the row above already breaks it outright,
+  # and what this one is about is *where* it runs.
+  mutate go "the depth bound skips a parent that already exists" "$F" \
+    '		if strings.Count(parent, "/")+1 > maxWalkDepth {
+			return http.StatusBadRequest, codedBody(CodeTooDeep, fmt.Sprintf(
+				"this API writes at most %d levels of directory deep", maxWalkDepth))
+		}
+		info, derr := s.root.Stat(osPath(parent))' \
+    '		info, derr := s.root.Stat(osPath(parent))
+		if _, missing := s.root.Stat(osPath(parent)); missing != nil {
+			if strings.Count(parent, "/")+1 > maxWalkDepth {
+				return http.StatusBadRequest, codedBody(CodeTooDeep, fmt.Sprintf(
+					"this API writes at most %d levels of directory deep", maxWalkDepth))
+			}
+		}'
+
+  # 12. A code is what a client decides on; a sentence is what a person reads.
+  mutate go "a refusal carries no code for a client to act on" "$F" \
+    '	return map[string]string{"error": err.Error(), "code": codeOf(err)}' \
+    '	return map[string]string{"error": err.Error()}'
+  mutate go "ENOTDIR is reported as a containment failure again" "$F" \
+    '			if errors.Is(err, syscall.ENOTDIR) {
+				return withCode(CodeParentIsAFile, fmt.Errorf(
+					"a component of %s is a file, not a directory", clean))
+			}' \
+    ''
+  mutate go "a create that found something is called stale" "$F" \
+    '		code := CodeStale
+		if strings.TrimSpace(req.BaseSHA256) == "" && exists {
+			code = CodeExists
+		}' \
+    '		code := CodeStale'
+fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
   C=web/src/files/client.ts
@@ -417,6 +489,12 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   DG=web/src/ui/Dialog.tsx
   AL=web/src/ui/Alert.tsx
   SELCSS=web/src/ui/Select.module.css
+  PP=web/src/packs/packPath.ts
+  CR=web/src/packs/createRefusal.ts
+  DL=web/src/ui/declarations.ts
+  UD=web/src/ui/Dialog.tsx
+  LR=web/src/shell/LeftRail.tsx
+  FC=web/src/files/client.ts
   ST=web/src/mcp/starters.ts
 
   # The rail's graph gate. `useConfiguredGraphs` falls back to a whole-project
@@ -568,8 +646,12 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '    target?.scrollIntoView()' \
     '    void target'
   mutate web "the create dialog is mounted on every route" "$L" \
-    '      {creating && <CreatePackDialog open onOpenChange={setCreating} />}' \
-    '      <CreatePackDialog open={creating} onOpenChange={setCreating} />'
+    '      {creating && (
+        <CreatePackDialog
+          open' \
+    '      {true && (
+        <CreatePackDialog
+          open={creating}'
   # `navigate('/author')` from `/author` matches the same element, so a
   # mount-only take never runs again: the editor stayed where it was and the
   # request was left in module state for an unrelated mount to consume.
@@ -673,7 +755,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
           path: PROJECT_FILE,
           content: serialiseProjectConfig(
             read.content,
-            withPack(current, slug, packEntryFor(path, description))
+            withPack(current, slug, packEntryFor(landed.path, description))
           ),
           baseSha256: read.sha256
         })' \
@@ -682,14 +764,16 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '          baseSha256: read.sha256' \
     "          baseSha256: ''"
   mutate web "createParents is not sent" "$X" \
-    "        await writeFile({ path, content, baseSha256: '', createParents: true })" \
-    "        await writeFile({ path, content, baseSha256: '', createParents: false })"
+    "        landed = await writeFile({ path, content, baseSha256: '', createParents: true })" \
+    "        landed = await writeFile({ path, content, baseSha256: '', createParents: false })"
   mutate web "the pack is written before the project is known to have a jpack.json" "$X" \
-    '      if (!files.includes(PROJECT_FILE)) {' \
-    '      if (false) {'
+    '        read = await readFile(PROJECT_FILE)
+        current = parseProjectConfig(read.content)' \
+    '        read = { path: PROJECT_FILE, bytes: 0, sha256: '"'"''"'"', content: '"'"'{}'"'"' }
+        current = parseProjectConfig(read.content)'
   mutate web "a 409 on jpack.json is reported as an ordinary failure" "$X" \
-    '          reason: cause instanceof StaleWrite ? STALE_PROJECT_FILE : reasonOf(cause)' \
-    '          reason: reasonOf(cause)'
+    "          reason: codeOf(cause) === 'stale' ? STALE_PROJECT_FILE : refusalDetail(cause)" \
+    '          reason: refusalDetail(cause)'
   # Repaired, and narrowed: the `role="alert"` half moved into the `Alert`
   # primitive when the dialog stopped rendering bare markup, and it is held
   # there by "the form-level failure is not announced". What is left for this
@@ -719,7 +803,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  if (project.keys.includes(slug)) {' \
     '  if (false) {'
   mutate web "the slug is not checked against existing files" "$NP" \
-    '  if (project.files.includes(project.path)) {' \
+    '  if (project.files.some((file) => samePath(file, project.path))) {' \
     '  if (false) {'
   mutate web "a slug that does not begin with a letter is accepted" "$NP" \
     "  if (!/^[a-z]/.test(slug)) return { problem: 'A name must start with a letter.' }" \
@@ -750,11 +834,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '        onValueChange(next)'
   # Admin's storage section, and the decoder behind it.
   mutate web "Admin claims a location the listing does not show" "$V" \
-    '  const holdsFiles = (listing.data?.files ?? []).some((file) =>
-    file.path.startsWith(`${packDir}/`)
-  )' \
-    '  const holdsFiles = true
-  void packDir'
+    "  if (files.some((file) => file.path.startsWith(\`\${dir}/\`))) return 'holds-files'" \
+    "  if (true) return 'holds-files'"
   mutate web "a future storage kind becomes a control" "$V" \
     '<span>database — coming soon</span>' \
     '<input type="radio" disabled readOnly aria-label="database — coming soon" />'
@@ -1164,8 +1245,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
       )' \
     '      throw new Error(`the desk answered ${response.status} with text that is not JSON`)'
   mutate web "every answered reason is quoted as the chassis' own" "$C" \
-    "    throw new FileRequestError(response.status, message, 'chassis')" \
-    "    throw new FileRequestError(response.status, message, 'desk')"
+    "      'chassis'," \
+    "      'desk',"
   mutate web "provenance is inferred from the status again" "$V" \
     '          {!readFailure.responseReceived ? (' \
     '          {false ? ('
@@ -1181,21 +1262,16 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '        paths: existingPackPaths(current),' \
     '        paths: [],'
   mutate web "an unreadable jpack.json is discovered after the pack is written" "$X" \
-    '      let read: FileContent
-      let current: ProjectConfig
-      try {
-        read = await readFile(PROJECT_FILE)
-        current = parseProjectConfig(read.content)
-      } catch (cause) {
-        setFailure({ lead: UNREADABLE_PROJECT_FILE, reason: reasonOf(cause) })
+    '      } catch (cause) {
+        const absent = cause instanceof FileRequestError && cause.status === 404
+        setFailure(
+          absent
+            ? { lead: NO_PROJECT_FILE }
+            : { lead: UNREADABLE_PROJECT_FILE, reason: reasonOf(cause) }
+        )
         return
       }' \
-    '      let read: FileContent = { path: PROJECT_FILE, bytes: 0, sha256: "", content: "{}" }
-      let current: ProjectConfig = {}
-      try {
-        read = await readFile(PROJECT_FILE)
-        current = parseProjectConfig(read.content)
-      } catch {
+    '      } catch {
         /* the mutant finds out later */
       }'
   mutate web "a template that is not a document is sent anyway" "$X" \
@@ -1227,22 +1303,21 @@ if [ "$which" = all ] || [ "$which" = web ]; then
 
   # What a refusal says.
   mutate web "a taken pack file is reported in an editor's words" "$X" \
-    '          reason: cause instanceof StaleWrite ? PACK_FILE_TAKEN : reasonOf(cause)' \
-    '          reason: reasonOf(cause)'
+    "          lead: refusalLead(cause) ?? 'The pack could not be created.'," \
+    "          lead: 'The pack could not be created.',"
   mutate web "the amended configuration is left in the cache as it was" "$X" \
     "      invalidate([['desk-files'], ['desk-file', PROJECT_FILE], ['list_packs'], ['desk-config']])" \
     "      invalidate([['desk-files'], ['list_packs'], ['desk-config']])"
 
   # The templates: what is offered, and what is said about it.
-  mutate web "a runtime that has not answered is reported as one with no templates" "$X" \
-    "      ? status === 'ready'" \
-    '      ? true'
-  mutate web "the empty pack is offered with no schema to derive it from" "$X" \
-    '      ...(schemaSupported ? [{ value: EMPTY, label: EMPTY_LABEL }] : [])' \
-    '      ...[{ value: EMPTY, label: EMPTY_LABEL }]'
-  mutate web "the empty pack is offered as a finished document" "$X" \
-    '          hint={isEmpty && template !== undefined ? EMPTY_IS_A_START : undefined}' \
-    '          hint={undefined}'
+  # Superseded by the round-1 rows above, which break the same three claims
+  # against the code that now holds them: "absence is claimed from a capability
+  # listing that never answered", "Empty is offered before a schema has produced
+  # a skeleton", and "the dialog states a verdict about the pack it is
+  # creating". Kept as one row rather than three that name nothing.
+  mutate web "nothing is selected while the templates are still being asked" "$X" \
+    '  const selected = choice ?? (templatesPending ? undefined : options[0]?.value)' \
+    '  const selected = choice ?? options[0]?.value'
   mutate web "a refusal with no reason given is quoted at the user anyway" "$ST" \
     "    this.reported = text !== ''" \
     '    this.reported = true'
@@ -1260,7 +1335,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "  if (typeof skeleton.specVersion !== 'string' || skeleton.specVersion === '') return undefined" \
     '  if (false) return undefined'
   mutate web "a file another pack already names is not a collision" "$NP" \
-    '  if (project.paths.includes(project.path)) {' \
+    '  if (claimedBy(project.paths, project.path)) {' \
     '  if (false) {'
 
   # The file the amendment is written back into.
@@ -1285,6 +1360,140 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "a module spells a radius of its own" "$SELCSS" \
     '  border-radius: var(--radius-sm);' \
     '  border-radius: 4px;'
+
+  # ---- Codex round 1 on the Create redesign ------------------------------
+
+  # 1. The write answers with the path the chassis resolved the request to;
+  # registering the requested spelling names a file the runtime cleans away.
+  mutate web "the registration names the path that was asked for, not the one written" "$X" \
+    '            withPack(current, slug, packEntryFor(landed.path, description))' \
+    '            withPack(current, slug, packEntryFor(path, description))'
+
+  # 2. Pending, refused and settled-empty were one state, and Empty was
+  # offered on the strength of a capability flag rather than a skeleton.
+  mutate web "a pending template listing is an empty one again" "$X" \
+    "  const templatesPending = examplesState === 'pending' || emptyState === 'pending'" \
+    '  const templatesPending = false'
+  mutate web "Empty is offered before a schema has produced a skeleton" "$X" \
+    "      ...(emptyState === 'ready' ? [{ value: SCHEMA_EMPTY, label: EMPTY_LABEL }] : [])" \
+    '      ...(schemaSupported ? [{ value: SCHEMA_EMPTY, label: EMPTY_LABEL }] : [])'
+  mutate web "a refused example listing is dropped on the floor" "$X" \
+    "    : examplesState === 'error'" \
+    '    : false'
+  mutate web "absence is claimed from a capability listing that never answered" "$X" \
+    '          ? known
+            ? NO_TEMPLATE
+            : undefined' \
+    '          ? NO_TEMPLATE'
+
+  # 3. The rail below 900px is a modal drawer, and the dialog is inside it.
+  mutate web "a created pack leaves the rail drawer standing over it" "$LR" \
+    '          onCreated={onNavigate}' \
+    '          onCreated={undefined}'
+  mutate web "the dialog never says it created anything" "$X" \
+    '      onCreated?.()' \
+    ''
+
+  # 4. Radix restores focus to its own trigger; this dialog has none.
+  mutate web "closing Create drops focus on the body" "$UD" \
+    '          onCloseAutoFocus={
+            openerRef === undefined
+              ? undefined
+              : (event) => {
+                  event.preventDefault()
+                  openerRef.current?.focus()
+                }
+          }' \
+    ''
+  mutate web "the Create button is never held for focus restoration" "$LR" \
+    '          openerRef={createRef}' \
+    '          openerRef={undefined}'
+
+  # 5. The runtime cleans interior `./`, `//` and surviving `..` and folds
+  # case; comparing raw spellings let an alias through.
+  mutate web "declared paths are compared as raw strings again" "$NP" \
+    '  if (claimedBy(project.paths, project.path)) {' \
+    '  if (project.paths.includes(project.path)) {'
+  mutate web "the path cleaner leaves an interior dot segment alone" "$PP" \
+    "    if (segment === '' || segment === '.') continue" \
+    "    if (segment === '') continue"
+  mutate web "two spellings of one file are compared case-sensitively" "$PP" \
+    '  return left === right || left.toLowerCase() === right.toLowerCase()' \
+    '  return left === right'
+  mutate web "the candidate path is never asked about directly" "$X" \
+    '        await readFile(path)
+        setFailure({ lead: PACK_FILE_TAKEN })
+        return' \
+    '        void path'
+
+  # 6. `partial` means the listing is not all the files, and every question
+  # this dialog asks it is a question about absence.
+  mutate web "an incomplete listing is treated as a complete one" "$X" \
+    '  const partial = (listing.data?.partial ?? []).length > 0' \
+    '  const partial = false'
+  mutate web "no jpack.json is claimed for any failed read" "$X" \
+    '        const absent = cause instanceof FileRequestError && cause.status === 404' \
+    '        const absent = true'
+
+  mutate web "an over-deep packs directory decodes clean" "$D" \
+    '  if (trimmed.split('"'"'/'"'"').length > MAX_PACK_DIR_DEPTH) {' \
+    '  if (false) {'
+
+  # 9. Pending, failed, incomplete and obstructed shared one sentence.
+  mutate web "a file at the pack location is not seen at all" "$V" \
+    "  if (files.some((file) => file.path === dir)) return 'obstructed'" \
+    "  if (false) return 'obstructed'"
+  mutate web "a listing that has not answered describes the location anyway" "$V" \
+    "  if (listing.isPending) return 'pending'" \
+    "  if (false) return 'pending'"
+
+  # 10. `empty` is a name a runtime may legitimately serve.
+  #
+  # The mutation is on the **example** half, not the sentinel. Both spaces are
+  # namespaced now, so renaming the sentinel alone moves the collision rather
+  # than restoring it — the bug was that example values were bare runtime
+  # names, and this is what puts that back.
+  mutate web "an example's value is the bare name the runtime gave it" "$X" \
+    'const exampleValue = (name: string) => `example:${encodeURIComponent(name)}`' \
+    'const exampleValue = (name: string) => name'
+
+  # 11. A disclaimer, and a verdict the shell derived without asking.
+  mutate web "the dialog states a verdict about the pack it is creating" "$X" \
+    '        <Field label="Template" error={templateProblem}>' \
+    '        <Field label="Template" error={templateProblem} hint="checks report it incomplete until you fill it in">'
+
+  mutate web "the chassis sentence is put in front of whoever typed a name" "$X" \
+    '          lead: refusalLead(cause) ?? '"'"'The pack could not be created.'"'"',' \
+    "          lead: 'The pack could not be created.',"
+  mutate web "a code this desk does not know invents a sentence" "$CR" \
+    '  return code === undefined ? undefined : CREATE_REFUSALS[code]' \
+    "  return CREATE_REFUSALS[code ?? ''] ?? 'That could not be done.'"
+  mutate web "the chassis code never reaches the client" "$FC" \
+    '      typeof envelope?.code === '"'"'string'"'"' ? envelope.code : undefined' \
+    '      undefined'
+
+  # 14. "Name" with no required and no description.
+  mutate web "the required field is not marked required" "$X" \
+    '          label="Name (required)"' \
+    '          label="Name"'
+
+  # 15. NFKD does not decompose these, so they were deleted.
+  mutate web "a letter with no decomposition is dropped rather than carried" "$NP" \
+    "  const transliterated = [...folded]
+    .map((character) => TRANSLITERATED.get(character) ?? character)
+    .join('')" \
+    '  const transliterated = folded'
+  mutate web "an unsupported Latin letter is deleted rather than named" "$NP" \
+    '  if (unsupported.length > 0) {' \
+    '  if (false) {'
+
+  # 16. The rule matched border/outline and then skipped them.
+  mutate web "a named colour is not a colour" "$DL" \
+    '  if (named !== undefined) return `the named colour ${named}`' \
+    '  if (false) return undefined'
+  mutate web "a shorthand is not somewhere a colour can be written" "$DL" \
+    "  return COLOUR_BEARING.has(property) || property.endsWith('-color')" \
+    "  return property === 'color' || property === 'background'"
 fi
 
 restore

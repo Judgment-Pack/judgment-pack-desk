@@ -88,6 +88,56 @@ describe('slugFor', () => {
   })
 })
 
+describe('slugFor and the letters NFKD leaves whole', () => {
+  // NFKD plus a diacritic sweep handles a letter that decomposes. It does
+  // nothing for a letter whose mark is part of the glyph, and those were being
+  // deleted by the `[^a-z0-9]` pass — `Łódź` came out `odz`, which is not a
+  // transposition of anybody's name but a different word.
+  it('transliterates the standard cases rather than dropping them', () => {
+    expect(slugFor('Łódź')).toEqual({ slug: 'lodz' })
+    expect(slugFor('Smørrebrød')).toEqual({ slug: 'smorrebrod' })
+    expect(slugFor('Straße')).toEqual({ slug: 'strasse' })
+    expect(slugFor('Æther œuvre')).toEqual({ slug: 'aether-oeuvre' })
+    expect(slugFor('Þorsteinn Ðjúpur')).toEqual({ slug: 'thorsteinn-djupur' })
+    expect(slugFor('Đakovo')).toEqual({ slug: 'dakovo' })
+  })
+
+  it('still folds the letters that do decompose', () => {
+    expect(slugFor('Überprüfung')).toEqual({ slug: 'uberprufung' })
+    expect(slugFor('Évaluation')).toEqual({ slug: 'evaluation' })
+  })
+
+  it('folds the Latin digraphs NFKD does take apart', () => {
+    // `Ǆ` and `Ǉ` are single code points that decompose into two letters, so
+    // they need no table — and asserting them here says which half of this
+    // rule is NFKD's and which is the desk's.
+    expect(slugFor('Ǆungla')).toEqual({ slug: 'dzungla' })
+    expect(slugFor('Ǉubljana')).toEqual({ slug: 'ljubljana' })
+  })
+
+  it('names a Latin letter it cannot carry instead of deleting it', () => {
+    // The alphabet sentence is true of another script and false of this: `ə`
+    // is a Latin letter, it has no decomposition and no standard single
+    // romanisation, and deleting it silently is the defect. So it is refused
+    // by name, and whoever typed it can decide what they meant.
+    const refused = slugFor('Azərbaycan')
+    expect('problem' in refused).toBe(true)
+    if ('problem' in refused) {
+      expect(refused.problem).toContain('cannot carry')
+      expect(refused.problem).toContain('ə')
+      expect(refused.problem).toContain('will not drop a letter')
+    }
+  })
+
+  it('keeps saying the alphabet for a name in another script', () => {
+    const refused = slugFor('決裁レビュー')
+    expect('problem' in refused).toBe(true)
+    if ('problem' in refused) {
+      expect(refused.problem).toContain('at least one letter')
+    }
+  })
+})
+
 describe('packPathFor', () => {
   it('puts the slug in the configured directory under a .pack.json suffix', () => {
     expect(packPathFor('packs', 'vendor-onboarding')).toBe('packs/vendor-onboarding.pack.json')

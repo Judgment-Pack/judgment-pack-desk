@@ -2081,17 +2081,19 @@ func TestCreateParentsDoesNotCreateOnARefusedWrite(t *testing.T) {
 }
 
 // TestCreateParentsRefusesAParentThatIsAFile pins that a regular file is never
-// created over, and — the part worth writing down — that the refusal does not
-// come from the parent block at all.
+// created over, and — the part worth writing down — that the refusal says what
+// it actually is.
 //
-// Opening `packs/x.pack.json` where `packs` is a regular file is ENOTDIR, and
-// `readThroughRoot` maps everything that is neither "not found" nor a
-// permission error onto the one containment refusal. So the current-bytes read
-// answers 403 before the parent block is reached, and it did so before
-// `createParents` existed — the probe that established this ran against the
-// unmutated chassis. The assertion is therefore "identical with and without the
-// member", which is the property that matters: the opt-in buys no new power
-// over a path that is already refused.
+// Opening `packs/x.pack.json` where `packs` is a regular file is ENOTDIR. That
+// used to be folded into the one containment refusal, so the API answered
+// "path is not inside the project" about a path that is squarely inside it and
+// sent whoever read that hunting a security problem that is not there. It is
+// its own code now: a component of the path is a file, the fix is a rename,
+// and neither the status nor the sentence pretends otherwise.
+//
+// The assertion stays "identical with and without `createParents`", which is
+// the property that matters: the opt-in buys no new power over a path that is
+// already refused.
 func TestCreateParentsRefusesAParentThatIsAFile(t *testing.T) {
 	for _, ask := range []bool{false, true} {
 		t.Run(fmt.Sprintf("createParents=%v", ask), func(t *testing.T) {
@@ -2101,11 +2103,18 @@ func TestCreateParentsRefusesAParentThatIsAFile(t *testing.T) {
 			status, body := putJSON(t, ts, WriteRequest{
 				Path: "packs/x.pack.json", Content: "{}", CreateParents: ask,
 			})
-			if status != http.StatusForbidden {
+			if status != http.StatusNotFound {
 				t.Fatalf("status %d, %v", status, body)
 			}
-			if message, _ := body["error"].(string); message != "path is not inside the project" {
-				t.Fatalf("the refusal changed: %q", message)
+			if code, _ := body["code"].(string); code != CodeParentIsAFile {
+				t.Fatalf("code %q, want %q", code, CodeParentIsAFile)
+			}
+			message, _ := body["error"].(string)
+			if strings.Contains(message, "not inside the project") {
+				t.Fatalf("ENOTDIR reported as a containment failure: %q", message)
+			}
+			if !strings.Contains(message, "file, not a directory") {
+				t.Fatalf("the refusal does not say what it is: %q", message)
 			}
 			// The file is a file still: nothing replaced it, and nothing was
 			// created under a name that is not a directory.
@@ -2263,4 +2272,235 @@ func TestCreateParentsIsBoundedByTheWalk(t *testing.T) {
 	if partial, ok := listing["partial"].([]any); ok && len(partial) > 0 {
 		t.Fatalf("the listing this create allowed is partial: %v", partial)
 	}
+}
+
+// TestSwapAfterTheSymlinkWalkStaysInsideTheRoot exercises the residual the
+// symlink walk cannot close, and pins the line between what is guaranteed and
+// what is not.
+//
+// The older swap test fires its hook *before* the walk, so what it proves is
+// that the walk sees a symlink that is already there. That is a real property
+// and it is not this one. This hook fires after the walk has passed, which is
+// the time-of-check to time-of-use window a racing local writer actually has.
+//
+// **What must hold — and does:** an outward swap is still contained. Every
+// operation past the walk goes through the pinned `os.Root`, which refuses a
+// component that has become a link out of the project whether or not the walk
+// saw it. Containment does not rest on the walk.
+//
+// **What must not be claimed:** the desk's own stricter "no path through a
+// link" rule is checked in that walk and enforced nowhere else, so an *inward*
+// swap — a link to another directory inside the same project — is followed, and
+// the bytes land at the link's target. Still inside the project, still nameable
+// by the listing, and not where the caller asked. The second subtest asserts
+// that outcome rather than a guarantee the code does not make, so that a future
+// change closing the gap fails here and has to say so.
+func TestSwapAfterTheSymlinkWalkStaysInsideTheRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on Windows")
+	}
+
+	swapAfterWalk := func(t *testing.T, project, victim, target string) {
+		var once sync.Once
+		testHookAfterSymlinkWalk = func(string) {
+			once.Do(func() {
+				full := filepath.Join(project, victim)
+				if err := os.RemoveAll(full); err != nil {
+					t.Errorf("remove: %v", err)
+					return
+				}
+				if err := os.Symlink(target, full); err != nil {
+					t.Errorf("symlink: %v", err)
+				}
+			})
+		}
+		t.Cleanup(func() { testHookAfterSymlinkWalk = nil })
+	}
+
+	t.Run("outward swap is contained by the root", func(t *testing.T) {
+		_, ts, project := filesServer(t)
+		if err := os.Mkdir(filepath.Join(project, "a"), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		outside := t.TempDir()
+		swapAfterWalk(t, project, "a", outside)
+
+		status, body := putJSON(t, ts, WriteRequest{
+			Path: "a/c.pack.json", Content: "{}", CreateParents: true,
+		})
+		if status == http.StatusOK {
+			t.Fatalf("an outward swap was written through: %v", body)
+		}
+		// The only thing that matters: nothing left the project.
+		if entries, err := os.ReadDir(outside); err == nil && len(entries) != 0 {
+			t.Fatalf("the escape target was populated: %v", entries)
+		}
+	})
+
+	t.Run("inward swap is followed, and that is the stated residual", func(t *testing.T) {
+		_, ts, project := filesServer(t)
+		for _, dir := range []string{"a", "elsewhere"} {
+			if err := os.Mkdir(filepath.Join(project, dir), 0o755); err != nil {
+				t.Fatalf("mkdir %s: %v", dir, err)
+			}
+		}
+		// A relative link, so it resolves inside the root exactly as a local
+		// writer's would.
+		swapAfterWalk(t, project, "a", "elsewhere")
+
+		status, body := putJSON(t, ts, WriteRequest{
+			Path: "a/c.pack.json", Content: "{}", CreateParents: true,
+		})
+		if status != http.StatusOK {
+			t.Fatalf("status %d, %v", status, body)
+		}
+		// It landed at the link's target rather than where it was asked for.
+		// This is the residual `refuseSymlinkedPath` documents and the README
+		// scopes; it is asserted so that closing the gap has to change this
+		// test and say why.
+		landed := filepath.Join(project, "elsewhere", "c.pack.json")
+		if _, err := os.Stat(landed); err != nil {
+			t.Fatalf("the write did not follow the inward link: %v", err)
+		}
+		// And it is still inside the project, which is the guarantee that does
+		// hold: `os.Root` kept it in, the walk simply did not keep it put.
+		resolved, err := filepath.EvalSymlinks(landed)
+		if err != nil {
+			t.Fatalf("resolve: %v", err)
+		}
+		root, err := filepath.EvalSymlinks(project)
+		if err != nil {
+			t.Fatalf("resolve root: %v", err)
+		}
+		if !strings.HasPrefix(resolved, root+string(filepath.Separator)) {
+			t.Fatalf("the write left the project: %s", resolved)
+		}
+	})
+}
+
+// TestDepthBoundHoldsForExistingParentsToo pins the half that was conditional.
+//
+// The bound used to be checked only where the parent had to be created, so a
+// write into 65 directories that already existed succeeded — into a subtree
+// `GET /api/files` gives up on and reports as partial. A file the API's own
+// listing can never name is the thing the bound exists to prevent, and an
+// existing parent does not make it findable.
+func TestDepthBoundHoldsForExistingParentsToo(t *testing.T) {
+	segments := func(n int) string {
+		parts := make([]string, 0, n)
+		for i := 0; i < n; i++ {
+			parts = append(parts, fmt.Sprintf("d%d", i))
+		}
+		return strings.Join(parts, "/")
+	}
+
+	// maxWalkDepth directories of parent is the deepest a file may sit in;
+	// one more is refused. Both are checked with the parents already on disk
+	// and with them missing, because those used to be different rules.
+	for _, existing := range []bool{true, false} {
+		for _, depth := range []int{maxWalkDepth, maxWalkDepth + 1} {
+			name := fmt.Sprintf("existing=%v depth=%d", existing, depth)
+			t.Run(name, func(t *testing.T) {
+				_, ts, project := filesServer(t)
+				parent := segments(depth)
+				if existing {
+					if err := os.MkdirAll(filepath.Join(project, filepath.FromSlash(parent)), 0o755); err != nil {
+						t.Fatalf("mkdir: %v", err)
+					}
+				}
+				status, body := putJSON(t, ts, WriteRequest{
+					Path: parent + "/x.pack.json", Content: "{}", CreateParents: true,
+				})
+				if depth <= maxWalkDepth {
+					if status != http.StatusOK {
+						t.Fatalf("status %d, %v", status, body)
+					}
+					return
+				}
+				if status != http.StatusBadRequest {
+					t.Fatalf("status %d, %v", status, body)
+				}
+				if code, _ := body["code"].(string); code != CodeTooDeep {
+					t.Fatalf("code %q, want %q", code, CodeTooDeep)
+				}
+				// And nothing was written at the refused depth.
+				if _, err := os.Stat(filepath.Join(project, filepath.FromSlash(parent), "x.pack.json")); err == nil {
+					t.Fatal("a file was written past the bound")
+				}
+			})
+		}
+	}
+}
+
+// TestRefusalsCarryAStableCode pins the machine-readable half of the envelope.
+//
+// A client that decides by matching English is a client that breaks when a
+// sentence is improved, and the Create dialog has to turn each of these into a
+// different sentence from the one a file editor wants. So every refusal a
+// caller can act on differently carries its own code, and the codes are pinned
+// here rather than left to be discovered.
+func TestRefusalsCarryAStableCode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on Windows")
+	}
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "plain.json", "{}")
+	writeProjectFile(t, project, "obstruction", "not a directory")
+	if err := os.Symlink("plain.json", filepath.Join(project, "link.json")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		request WriteRequest
+		status  int
+		code    string
+	}{
+		{"outside the root", WriteRequest{Path: "../x.json", Content: "{}"},
+			http.StatusForbidden, CodeOutsideRoot},
+		{"through a symlink", WriteRequest{Path: "link.json", Content: "{}", Override: true},
+			http.StatusForbidden, CodeSymlink},
+		{"parent is a file", WriteRequest{Path: "obstruction/x.json", Content: "{}", CreateParents: true},
+			http.StatusNotFound, CodeParentIsAFile},
+		{"directory missing", WriteRequest{Path: "nope/x.json", Content: "{}"},
+			http.StatusNotFound, CodeDirectoryMissing},
+		{"already there", WriteRequest{Path: "plain.json", Content: "{}", BaseSHA256: ""},
+			http.StatusConflict, CodeExists},
+		{"stale", WriteRequest{Path: "plain.json", Content: "{}", BaseSHA256: strings.Repeat("a", 64)},
+			http.StatusConflict, CodeStale},
+		{"too large", WriteRequest{Path: "plain.json", Content: strings.Repeat("x", maxFileBytes+1)},
+			http.StatusRequestEntityTooLarge, CodeTooLarge},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			status, body := putJSON(t, ts, c.request)
+			if status != c.status {
+				t.Fatalf("status %d, want %d (%v)", status, c.status, body)
+			}
+			if code, _ := body["code"].(string); code != c.code {
+				t.Fatalf("code %q, want %q (%v)", code, c.code, body)
+			}
+		})
+	}
+
+	t.Run("not utf-8 on read", func(t *testing.T) {
+		writeProjectFile(t, project, "binary.json", "\xff\xfe not text")
+		status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path=binary.json")
+		if status != http.StatusUnsupportedMediaType {
+			t.Fatalf("status %d, %v", status, body)
+		}
+		if code, _ := body["code"].(string); code != CodeNotUTF8 {
+			t.Fatalf("code %q, want %q", code, CodeNotUTF8)
+		}
+	})
+
+	t.Run("not found on read", func(t *testing.T) {
+		status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path=absent.json")
+		if status != http.StatusNotFound {
+			t.Fatalf("status %d, %v", status, body)
+		}
+		if code, _ := body["code"].(string); code != CodeNotFound {
+			t.Fatalf("code %q, want %q", code, CodeNotFound)
+		}
+	})
 }

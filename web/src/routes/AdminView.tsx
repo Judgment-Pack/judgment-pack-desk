@@ -59,19 +59,8 @@ export function AdminView() {
   // `.desk-main` is — so without this they changed the URL and moved nothing.
   useHashTarget()
 
-  /**
-   * Whether the configured pack location has anything in it.
-   *
-   * Derived from the file listing, which reports **regular files only** — so
-   * this can say a location holds files and can never say an empty one exists.
-   * A page whose whole argument is that it does not state what it did not
-   * observe must not claim a directory it has no evidence for, and a listing
-   * that failed or has not answered is not evidence either.
-   */
   const packDir = config.storage.packs.dir
-  const holdsFiles = (listing.data?.files ?? []).some((file) =>
-    file.path.startsWith(`${packDir}/`)
-  )
+  const packLocation = packLocationState(packDir, listing)
 
   return (
     <article className="detail">
@@ -221,7 +210,7 @@ export function AdminView() {
         <span className="quiet">a file in this project, written through the file API</span>
         <br />
         Packs are written to: <code>{config.storage.packs.dir}</code>{' '}
-        <span className="quiet">{holdsFiles ? 'holds files' : 'no file under it yet — the first pack creates it'}</span>
+        <span className="quiet">{PACK_LOCATION_SAYS[packLocation]}</span>
         <br />
         Pack id prefix: <code>{config.storage.packs.idBase}</code>
         <br />
@@ -421,6 +410,49 @@ function Rendered({ box, axis }: { box: MeasuredBox | undefined; axis: 'width' |
   const value = box[axis]
   if (value === 0) return <span className="quiet">collapsed</span>
   return <strong>{value}px</strong>
+}
+
+/**
+ * What is known about the configured pack location, as one of six states.
+ *
+ * These were two — "holds files" and "no file under it yet, the first pack
+ * creates it" — and the second was said about a listing that had not answered,
+ * one that failed, one that came back incomplete, and one where a regular file
+ * sits exactly at the location and *nothing* can be created inside it. Four
+ * different facts, one sentence, and three of them false.
+ *
+ * The listing reports **regular files only**, so an empty directory is
+ * invisible to it: "absent" here means "no file is under it", which is the
+ * honest limit of the evidence and is worded as such. What the listing *can*
+ * see, and what nothing was reading, is a regular file at the location itself.
+ */
+type PackLocation = 'pending' | 'failed' | 'partial' | 'obstructed' | 'holds-files' | 'no-file-under-it'
+
+const PACK_LOCATION_SAYS: Record<PackLocation, string> = {
+  pending: 'the file listing has not answered yet',
+  failed: 'the file listing failed, so nothing is known about it',
+  partial: 'the file listing came back incomplete, so nothing is known about it',
+  obstructed: 'a file is there under that exact name — nothing can be created inside it',
+  'holds-files': 'holds files',
+  'no-file-under-it': 'no file is under it — the first pack asks for it to be created'
+}
+
+function packLocationState(
+  dir: string,
+  listing: { isPending: boolean; isError: boolean; data?: { files: { path: string }[]; partial?: string[] } }
+): PackLocation {
+  if (listing.isPending) return 'pending'
+  if (listing.isError) return 'failed'
+  const files = listing.data?.files ?? []
+  // A regular file exactly at the location. The listing sees this and nothing
+  // was asking it, so Admin promised the first pack would create a directory
+  // that a rename is the only way to get.
+  if (files.some((file) => file.path === dir)) return 'obstructed'
+  if (files.some((file) => file.path.startsWith(`${dir}/`))) return 'holds-files'
+  // Only now does absence mean anything, and only because the listing is
+  // complete: a partial one is explicitly not all the files.
+  if ((listing.data?.partial ?? []).length > 0) return 'partial'
+  return 'no-file-under-it'
 }
 
 function SourceBadge({ source, path }: { source: string; path: string }) {

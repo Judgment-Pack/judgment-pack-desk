@@ -31,16 +31,27 @@ The id is derived live and shown under the field: diacritics folded, every run
 outside `a–z0–9` becoming one `-`. A name that cannot become the runtime's
 `decisionId` is refused rather than repaired, and the refusal states the
 alphabet — a name written in another script is made of letters, and telling its
-author otherwise would be false. The empty pack is offered **only** where the
-runtime serves a schema to derive it from, because a skeleton with no
-`specVersion` is not an incomplete pack but a file nothing can read as one; and
-the dialog says beside it that an empty pack is a start rather than a finished
-one, because it carries the schema's required members and no more.
+author otherwise would be false. A Latin letter that neither decomposes nor has
+a standard transliteration is **named in the refusal rather than deleted**:
+`Łódź` is `lodz` and `Straße` is `strasse`, but `Azərbaycan` is refused saying
+which letter it could not carry, because silently dropping one produces an id
+nobody would recognise as their own name.
+
+The empty pack is offered **only once `get_schema` has actually answered with a
+skeleton that carries a `specVersion`** — not on the strength of the tool being
+advertised, which is a claim about a tool rather than about a template, and a
+file with no `specVersion` is not an incomplete pack but one nothing can read
+as a pack at all. While either listing is still being asked the field says so
+and selects nothing; a listing the runtime *refused* says that instead, in the
+runtime's own words. Nothing is said about what checks will make of the result:
+that is the runtime's verdict to report, on the page this opens.
 
 Two writes, in this order, and nothing is sent until everything that could
 refuse has been asked. The pack is written with `PUT /api/file`,
 `baseSha256: ""` and `createParents: true` — so a file already under that name
-is refused rather than overwritten, and a missing `packs/` is created. Then
+is refused rather than overwritten, and **the missing configured parent
+directory** is created: `storage.packs.dir`, whatever it is set to and however
+deeply it nests, not the literal `packs/`. Then
 `jpack.json` is amended with one entry, written against the digest the read
 that answered the id question returned, so a change made while the dialog was
 open is refused rather than overwritten. Where the second write fails, the pack
@@ -898,14 +909,40 @@ file into is one it will not create), **after** the symlink refusal — whose wa
 stops at the first component that does not exist, which is exactly where
 `MkdirAll` begins, so a symlinked parent is refused before one directory exists
 — and **after** the stale-digest check inside the write lock, so a write refused
-as stale creates nothing. A parent that is a regular file is refused, and by the
-current-bytes read rather than by this branch: opening through it is `ENOTDIR`,
-which is one of the refusals that reads as the containment error.
+as stale creates nothing. A parent that is a regular file is refused with its
+own code and its own sentence: opening through it is `ENOTDIR`, which is a
+naming problem a rename fixes and **not** a containment failure. It used to be
+answered as "path is not inside the project", which sent whoever read it
+hunting a security problem that is not there.
 
-**Bounded by what the listing can report.** A create is refused past the walk's
-depth limit with a `400`. `GET /api/files` gives up there and reports the tree
-as partial, so a write allowed past that point would land a file this API's own
-listing can never name — and there is no delete verb to take it back.
+**What the symlink walk promises, and what it does not.** Containment does not
+rest on it: every operation past it goes through the pinned `os.Root`, so a
+component swapped for a link pointing *out* of the project — at any moment,
+including after the walk has passed — is refused by the root itself. There is a
+test that performs exactly that swap after the walk and asserts nothing left the
+project.
+
+What the walk adds is the desk's own stricter rule, that it edits no path
+passing through a link even one that stays inside the project. That rule is
+checked in the walk and enforced nowhere else, so it is time-of-check to
+time-of-use against a local writer racing it: an **inward** symlink introduced
+between the walk and the write is followed, and the bytes land at the link's
+target — still inside the project, still nameable by the listing, and not where
+the caller asked. That residual is asserted by a test rather than papered over,
+and it is scoped rather than closed: the threat model is a writer who already
+has write access to the project directory and does not need to race anything to
+move a file the desk just wrote.
+
+**Bounded by what the listing can report, whether or not anything is created.**
+A write past the walk's depth limit is refused with a `400`, and the check runs
+**before** the "the parent is already there" fast path — it used to sit inside
+the create-the-parent branch, so a write into 65 directories that already
+existed succeeded. `GET /api/files` gives up at that depth and reports the tree
+as partial, so a write allowed past it lands a file this API's own listing can
+never name, and there is no delete verb to take it back. An existing parent does
+not make that file findable. `storage.packs.dir` is refused at decode for the
+same bound, so the configuration names the problem rather than the dialog
+failing on the write.
 
 **There is no unwind.** If the directories are created and the write then fails,
 an empty directory is left behind. Removing it would need a delete verb this API
@@ -1066,11 +1103,22 @@ like one whose stylesheet is intact). The scope is the point: these are the
 terms the primitives are built on, not a claim about every file in the app.
 
 - **The tokens in `styles.css` are the only source of colour and radius.** A
-  module spells no colour of its own — no hex, no `rgb()`, no `hsl()` — and no
-  radius of its own either: `--radius` and `--radius-sm`, never `4px`. A second
-  palette is one the theme attribute does not reach; a literal radius is a
-  second answer to a question the tokens already answer. The modal scrim is
-  `--overlay` for the same reason.
+  module spells no colour of its own — no hex, no `rgb()`, no `hsl()`, and no
+  named colour either — and no radius of its own: `--radius` and `--radius-sm`,
+  never `4px`. A second palette is one the theme attribute does not reach; a
+  literal radius is a second answer to a question the tokens already answer. The
+  modal scrim is `--overlay` for the same reason.
+
+  The colour half is checked by **parsing** each sheet's declarations rather
+  than matching property names, and the difference is not academic: the rule
+  this replaced matched `border`/`outline` declarations and then skipped them,
+  because it asked whether the property name contained "background" or "color".
+  `border: 1px solid red`, `outline: 2px solid red` and a named colour in a
+  `box-shadow` all passed the rule that exists to catch them. Every shorthand
+  that admits a `<color>` is checked now, every `-color` longhand with it, and
+  the named colours are checked as names — and the parser is itself proven
+  against deliberately broken fixtures, because a rule that only ever sees clean
+  sheets proves nothing about the rule.
 - **A component under `src/ui/` owns its own `X.module.css`, and no other sheet
   styles it.** One component, one module, no orphan of either.
 - **`shell.css` owns the five regions' layout and nothing a component renders.**

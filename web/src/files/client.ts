@@ -77,12 +77,28 @@ export class FileRequestError extends Error {
   readonly status: number
   /** `chassis` where the message is its own `{error}`; `desk` where it is ours. */
   readonly source: 'chassis' | 'desk'
+  /**
+   * The chassis' stable code for this refusal, where it sent one.
+   *
+   * **The thing a caller is meant to branch on.** The message is written for a
+   * person reading a diagnostic and is improved when it reads badly; a caller
+   * that matched it would break on the improvement. Undefined where the
+   * sentence is this desk's own rather than an envelope from the chassis, and
+   * for anything older than the codes.
+   */
+  readonly code: string | undefined
 
-  constructor(status: number, message: string, source: 'chassis' | 'desk') {
+  constructor(
+    status: number,
+    message: string,
+    source: 'chassis' | 'desk',
+    code?: string
+  ) {
     super(message)
     this.name = 'FileRequestError'
     this.status = status
     this.source = source
+    this.code = code
   }
 }
 
@@ -101,6 +117,16 @@ export class StaleWrite extends Error {
   readonly expectedSha256: string
   readonly actualSha256: string
   readonly exists: boolean
+  /**
+   * `exists` or `stale`, from the chassis, where it sent one.
+   *
+   * The same 409 answers two different questions. A write that stated no base
+   * digest believed nothing was there: finding something is `exists`, and
+   * nothing went stale. A write that stated one and no longer matches is
+   * `stale`. An editor wants one sentence for both; whoever is creating a pack
+   * wants two, and neither should have to infer which by reading English.
+   */
+  readonly code: string | undefined
 
   constructor(body: {
     error?: string
@@ -108,6 +134,7 @@ export class StaleWrite extends Error {
     expectedSha256?: string
     actualSha256?: string
     exists?: boolean
+    code?: string
   }) {
     super(body.error ?? 'the file on disk is not the file this edit started from')
     this.name = 'StaleWrite'
@@ -115,6 +142,7 @@ export class StaleWrite extends Error {
     this.expectedSha256 = body.expectedSha256 ?? ''
     this.actualSha256 = body.actualSha256 ?? ''
     this.exists = body.exists ?? false
+    this.code = body.code
   }
 }
 
@@ -154,9 +182,15 @@ async function answer<T>(response: Response): Promise<T> {
   if (response.status === 409 && body !== undefined) {
     throw new StaleWrite(body as ConstructorParameters<typeof StaleWrite>[0])
   }
-  const message = (body as { error?: string } | undefined)?.error
+  const envelope = body as { error?: string; code?: string } | undefined
+  const message = envelope?.error
   if (message !== undefined) {
-    throw new FileRequestError(response.status, message, 'chassis')
+    throw new FileRequestError(
+      response.status,
+      message,
+      'chassis',
+      typeof envelope?.code === 'string' ? envelope.code : undefined
+    )
   }
   // No `{error}` envelope to quote, so the sentence is the status line and it
   // is ours — stated as a status rather than dressed up as the chassis'.

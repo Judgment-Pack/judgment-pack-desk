@@ -16,6 +16,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { colourProblem, declarationsIn } from './declarations'
 
 const UI = import.meta.dirname
 const read = (name: string) => readFileSync(join(UI, name), 'utf8')
@@ -88,13 +89,17 @@ describe('the styling convention', () => {
   })
 
   it.each(modules)('%s takes every colour from a token', (name) => {
-    const sheet = read(name)
-    const declarations = [...sheet.matchAll(/(background|color|border[a-z-]*|outline[a-z-]*):\s*([^;]+);/g)]
-    for (const [, property, value] of declarations) {
-      if (!/\b(background|color)\b/.test(property!)) continue
-      const words = value!.trim()
-      if (words === 'none' || words === 'transparent' || words === 'inherit') continue
-      expect(words, `${name}: ${property}: ${words}`).toContain('var(--')
+    // **Parsed, not pattern-matched.** The rule this replaces matched
+    // `border`/`outline` declarations and then skipped them, because it asked
+    // whether the *property name* contained "background" or "color" — so
+    // `border: 1px solid red`, `outline: 2px solid red` and a named colour in
+    // a `box-shadow` all passed the rule that exists to catch them.
+    for (const declaration of declarationsIn(read(name))) {
+      const problem = colourProblem(declaration)
+      expect(
+        problem,
+        `${name}: ${declaration.property}: ${declaration.value} — ${problem}`
+      ).toBeUndefined()
     }
   })
 })
@@ -113,5 +118,74 @@ describe('what the other sheets keep', () => {
     for (const name of modules) {
       expect(read(name)).not.toContain('@layer')
     }
+  })
+})
+
+/**
+ * The convention's own instrument, checked against deliberate failures.
+ *
+ * A rule that passes over clean sheets proves nothing about the rule: the one
+ * it replaces did exactly that for as long as it existed. So each shape it
+ * used to miss is written out here as a fixture and asserted to be caught, and
+ * the shapes that are legitimate are asserted to be left alone.
+ */
+describe('the colour rule catches what it used to miss', () => {
+  const caught = (sheet: string) =>
+    declarationsIn(sheet)
+      .map((declaration) => colourProblem(declaration))
+      .filter((problem): problem is string => problem !== undefined)
+
+  it.each([
+    ['a hex in a shorthand', '.a { border: 1px solid #ff0000; }'],
+    ['a named colour in a border', '.a { border: 1px solid red; }'],
+    ['a named colour in an outline', '.a { outline: 2px solid red; }'],
+    ['a named colour in a shadow', '.a { box-shadow: 0 1px 2px rebeccapurple; }'],
+    ['a colour function in a shadow', '.a { box-shadow: 0 1px 2px rgb(0 0 0 / 10%); }'],
+    // A second layer added later, beside a token that is doing its job. The
+    // value contains `var(--`, so the "took its colour from somewhere" clause
+    // is satisfied and only the named-colour clause can catch this one.
+    [
+      'a named colour beside a token',
+      '.a { box-shadow: 0 1px 2px var(--shadow), 0 2px 4px red; }'
+    ],
+    ['a named colour beside a token in a border', '.a { border: 1px solid var(--border) red; }'],
+    ['a bare named colour', '.a { color: hotpink; }'],
+    ['a longhand nobody enumerated', '.a { caret-color: red; }'],
+    ['a fill on an icon', '.a { fill: black; }'],
+    ['a colour inside a nested block', '@media (min-width: 1px) { .a { color: red; } }'],
+    ['a border with no colour at all from a token', '.a { border-top: 1px solid; }']
+  ])('catches %s', (_what, sheet) => {
+    expect(caught(sheet).length).toBeGreaterThan(0)
+  })
+
+  it.each([
+    ['a token in a shorthand', '.a { border: 1px solid var(--border); }'],
+    ['a token in a shadow', '.a { box-shadow: 0 1px 2px var(--shadow); }'],
+    ['transparent', '.a { background: transparent; }'],
+    ['none', '.a { outline: none; }'],
+    ['currentColor', '.a { fill: currentColor; }'],
+    ['a property that carries no colour', '.a { padding: 4px 8px; margin: 0 auto; }'],
+    ['a token whose name contains a colour word', '.a { color: var(--ink-red); }'],
+    ['a commented-out literal', '.a { /* color: red; */ color: var(--ink); }'],
+    ['a string that happens to say red', '.a::after { content: "red"; }']
+  ])('leaves %s alone', (_what, sheet) => {
+    expect(caught(sheet)).toEqual([])
+  })
+
+  it('reads a declaration at every nesting depth', () => {
+    const sheet = `
+      .a { color: var(--ink); }
+      @media (min-width: 40rem) {
+        .b { background: var(--surface); }
+        @supports (display: grid) {
+          .c { border: 1px solid var(--border); }
+        }
+      }
+    `
+    expect(declarationsIn(sheet).map((declaration) => declaration.property)).toEqual([
+      'color',
+      'background',
+      'border'
+    ])
   })
 })
