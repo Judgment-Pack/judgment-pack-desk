@@ -13,13 +13,14 @@
  */
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { McpContext } from '../mcp/McpProvider'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { AppShell } from './AppShell'
-import { useInspectorSlot } from './InspectorSlot'
+import { useInspectorPortal, useInspectorSlot } from './InspectorSlot'
 import { forgetAuthorBridge } from './authorBridge'
 import { forgetConsole } from './consoleLog'
 
@@ -117,6 +118,55 @@ function viewport(width: number) {
     }
   }
 }
+
+/**
+ * A route that publishes through the hook, and can stop.
+ *
+ * The publisher is its own component, mounted conditionally, because that is
+ * the shape a route has: the hook is called unconditionally by whatever is
+ * mounted, and "not publishing" is that thing not being mounted.
+ */
+function Publisher() {
+  return useInspectorPortal(<p>published from the route</p>)
+}
+
+function ClaimingRoute() {
+  const [publishing, setPublishing] = useState(true)
+  return (
+    <>
+      <h1>a route</h1>
+      <button type="button" onClick={() => setPublishing((on) => !on)}>
+        toggle the publisher
+      </button>
+      {publishing && <Publisher />}
+    </>
+  )
+}
+
+function renderClaiming() {
+  const router = createMemoryRouter(
+    [
+      {
+        path: '*',
+        element: (
+          <McpContext.Provider value={connected({ client: PROJECT.client })}>
+            <AppShell>
+              <ClaimingRoute />
+            </AppShell>
+          </McpContext.Provider>
+        )
+      }
+    ],
+    { initialEntries: ['/'] }
+  )
+  return render(
+    <QueryClientProvider client={testQueryClient()}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  )
+}
+
+const EMPTY_STATE = 'Select a row, a node or a file to inspect it here.'
 
 /** A route that publishes into the pane, exactly as a real one would. */
 function PublishingRoute() {
@@ -232,6 +282,26 @@ describe('a route publishing into the Inspector', () => {
     // detached element behind.
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByText('published from the route')).toBeNull())
+  })
+
+  it('takes the empty state away while something is published, and brings it back', async () => {
+    // The paragraph used to be unconditional, so the first route to publish
+    // showed its panel *and* the empty state underneath it. A portal cannot
+    // tell React it happened, so the pane counts claims instead.
+    viewport(1400)
+    observedResize()
+    renderClaiming()
+    await waitFor(() => expect(screen.getByText('published from the route')).toBeTruthy())
+    expect(screen.queryByText(EMPTY_STATE)).toBeNull()
+
+    // Unmounting the publisher releases the claim, and the empty state is back.
+    fireEvent.click(screen.getByRole('button', { name: 'toggle the publisher' }))
+    await waitFor(() => expect(screen.getByText(EMPTY_STATE)).toBeTruthy())
+    expect(screen.queryByText('published from the route')).toBeNull()
+
+    // And it goes away again, so this is a count rather than a one-way latch.
+    fireEvent.click(screen.getByRole('button', { name: 'toggle the publisher' }))
+    await waitFor(() => expect(screen.queryByText(EMPTY_STATE)).toBeNull())
   })
 
   it('follows the pane across a breakpoint swap, publishing into the new element', async () => {

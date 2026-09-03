@@ -61,14 +61,14 @@ unwind would be worse than the residue.
 
 **A pack browser:**
 
-- `/packs/:id` fetches one document with `get_pack` and renders it: the
-  decision, outcomes, applicability, evidence requirements, rules, exceptions,
-  escalation, sources and metadata — plus a **Raw JSON** tab holding the
-  document exactly as it is on disk.
+- `/packs` lists the project's packs in a pane beside the document, and
+  `/packs/:id` reads one — the whole document, in the order the file writes it,
+  with every member the file leaves out stated as left out. Described under
+  [Pack view](#pack-view).
 
-Conditions are shown as formatted JSON rather than paraphrased into English. A
-paraphrase of a policy condition would be a claim about what the policy means,
-and only the document gets to make that claim.
+Conditions are rendered as an indented tree and never paraphrased into English.
+A paraphrase of a policy condition would be a claim about what the policy
+means, and only the document gets to make that claim.
 
 **An evaluation and trace view:**
 
@@ -356,10 +356,24 @@ configured values, written onto the grid as `--rail-w`, `--inspector-w` and
 `--console-h`; collapse writes one of two values into a second custom property
 and never a third number.
 
-A route publishes into the Inspector by portalling into the element
-`useInspectorSlot()` hands it. The context sits **above `<main>`**, so a route
-can reach it, and the pane publishes its target through a callback ref — so a
-drawer that starts closed reports no target rather than a detached one.
+A route publishes into the Inspector through `useInspectorPortal(node)`, which
+portals into the element the slot hands it and **claims the slot while it is
+there**. The context sits above `<main>`, so a route can reach it, and the pane
+publishes its target through a callback ref — a drawer that starts closed
+reports no target rather than a detached one, and a route that is told there is
+nowhere to publish renders nothing.
+
+The claim exists because a portal cannot tell React it happened: the pane used
+to render its empty-state paragraph unconditionally, so the first route to
+publish showed its panel *and* the empty state underneath it. A CSS `:empty`
+sibling rule would have been shorter and is rejected — vitest runs with
+`css: false`, so nothing in this repo could hold it and the mutation harness
+could not discriminate it.
+
+**A route may add a landmark inside `main`.** The packs pane is a list of
+navigations, so `<nav aria-label="Packs">` is the correct markup for it; the six
+regions below are the *shell's*, each still exactly one, and a test holds that
+with the pack route mounted.
 
 | Region | Default | Collapse | Landmark |
 |---|---|---|---|
@@ -465,6 +479,132 @@ condition verdict colours carry meaning, cannot be mechanically inverted, and a
 desk that re-authored its neutrals around them would be half dark. So choosing
 dark changes the attribute and no colour. `appearance.density` is recorded and
 validated and is read by nothing yet.
+
+## Pack view
+
+`/packs` is a layout: the project's packs on the left, the selected one beside
+them. The pane survives every change to the selection, so a filter and a scroll
+position are not lost by opening a pack.
+
+**The document reads in the file's own order.** A pack that writes `rules`
+before `outcomes` renders rules first, because that is the document someone
+wrote and a page that re-sorted would be showing one nobody did. The order the
+schema declares is used for exactly one thing: where to put the line for a
+member the file does **not** declare.
+
+**An omitted optional member gets a line saying it is omitted**, spliced in at
+the position the schema's order gives it — so `applicability`'s "not declared"
+sits between the decision and the evidence requirements. This is the difference
+between "the pack does not narrow its own scope" and "the page did not draw
+that part", and the view this replaced could not tell them apart: its section
+wrapper returned nothing when it had nothing to render.
+
+Three things the old view dropped are here: `metadata.reviews`, the per-member
+`extensions` objects (eight `$defs` may carry one, plus the root), and the
+condition tree. Reviews are **rendered and never written**: this surface has no
+reviewer identity, so a review it wrote would be signed by nobody.
+
+### One address space
+
+Every block carries its RFC 6901 pointer, and that one string is five things:
+
+| Where | As |
+|---|---|
+| The renderer | `data-pointer="/rules/1"` |
+| The DOM | the element's `id`, verbatim |
+| A deep link | `#/rules/1` — scrolls to the block, focuses it, selects it |
+| The Inspector | the `?at` search parameter |
+| A diagnostic | `instancePath`, which is the same string from the runtime |
+
+The escaping mirrors the runtime's own `carrier.Pointer` byte for byte: `~` to
+`~0`, `/` to `~1`, and the document itself is the empty string. Two consequences
+are written into `packs/pointers.ts` because both are silent: an id containing
+`/` or `~` is legal HTML and is **not** a valid CSS selector, so every lookup
+goes through `getElementById` and never `querySelector`; and a fragment is
+percent-decoded before it is compared.
+
+Selection is held in the **route** and never in the pane: `RightPane` swaps its
+wrapper at 1100px and remounts the subtree, so a selection the pane held would
+be lost at that width. Selecting writes with `replace`, because choosing what to
+inspect is not a navigation and must not fill the Back stack.
+
+### The Inspector's three panels
+
+- **Member** — the pointer, the member's own JSON subtree pretty-printed in a
+  container that scrolls sideways, and the provenance beside it: the declared
+  path, the byte count, the digest of the loaded document, and the line
+  "matches the file the editor holds" **only when the two digests are equal**.
+  `get_pack`'s `sha256` and the chassis' file read are two answers about one
+  file, and only equality proves they describe one revision.
+- **References** — what the member names and what names it, in both directions,
+  computed from the document. Where an id resolves to nothing the line says "no
+  declared outcome carries this id" and stops: `JPS-SEMANTIC-UNRESOLVED-OUTCOME`
+  is the runtime's to issue, and the desk must not shadow it with a word of its
+  own.
+- **Checks** — the diagnostics anchored at or under the pointer, each printing
+  the runtime's own `code`, `layer`, `severity` and `codeStability`, with the
+  pointer at the foot; then which bytes were checked. An empty set is **not** a
+  clean bill and the panel does not dress it as one.
+
+### The packs pane
+
+240px in main's left: a filter over the pack id, a sort (name ascending and
+descending, and nothing else — `list_packs` reports no date and no size, so any
+other order would be one the desk invented), the rows with their versions, and
+"Show all N" past the first screenful. Rows are links, so tab order is native;
+the arrow keys, Home and End move focus between them and the window follows.
+
+Past a screenful the list is windowed — a fixed row height, an overscan, and no
+new dependency. **A viewport that cannot be measured renders every row**, which
+is the case in jsdom, where nothing is laid out and every measured height is
+zero.
+
+A refused listing shows the failure. "This project declares no packs" and "the
+listing did not answer" are different statements and only one is about the
+project — which is why the rail's Packs entry carries a count only where the
+listing actually answered, and never a `0`.
+
+The pane is a `<nav aria-label="Packs">`, because it is a list of navigations.
+That is a **seventh** landmark on the page while this route is open, inside
+`main`; the shell's own six are unchanged, and a test holds that each of them is
+still exactly one.
+
+### Checks and layers
+
+The check runs on load, over the file's bytes where they loaded and over the
+served document where they did not — and the strip says which. The query is
+keyed on the **bytes and the connection epoch**: identical bytes answer
+differently on a runtime bundling different specification artifacts, so a report
+cached across a reconnect would be a different binary's opinion of the same
+file. `validate` is sent `{document}` and nothing else; omitting `through` is
+what makes the runtime run its own default, which is the whole ladder.
+
+The sentence is derived from the payload's own `layers` rows and quotes its
+`status` word verbatim. **A layer the payload does not list is one that did not
+run**: the ladder short-circuits, so a carrier failure reports `[carrier
+failed]` alone and a structural failure returns before the semantic layer. Two
+`unsupported` shapes must not be confused and each has a test — a specification
+version the runtime does not bundle reports one layer row and a `capability`
+diagnostic whose layer appears in no row at all, while an unsupported required
+extension reports all three layers passing.
+
+Diagnostics anchor on an exact `instancePath` match, else on the nearest
+**rendered** ancestor with the diagnostic's own pointer printed verbatim beside
+it, else on the document strip. That ancestor walk is what makes a *missing*
+member reportable: the runtime reports one at the pointer including the absent
+name, so `/rules/0/when` on a rule with no `when` lands on that rule's card. A
+diagnostic computed against different bytes is **never re-anchored** — deleting
+`rules[0]` moves every `/rules/N` — the check is marked stale and its anchors
+are dropped. Where `diagnosticsTruncated` is set the runtime stopped at its own
+limit of 100, and the panel says the list was cut rather than that nothing else
+was found.
+
+### What this page will not say
+
+No desk-computed verdict of any kind: no conformance claim, no lock state, no
+health, no pass/fail chip. The runtime judges documents and this page quotes it.
+Nothing about the reviewed set appears here at all — no tool reports it, so the
+desk cannot know it and must not compute it.
 
 ## Configuration
 
@@ -1070,12 +1210,13 @@ web/                 Vite + React + TypeScript SPA
                      probe-name and graph-document readers, and the ledger of
                      divergent digest pairs already asked about
   src/files/         the chassis file API: the client, and its query hooks
-  src/routes/        project home, pack detail, evaluation, matrix, graphs,
-                     the authoring shell, the read-only Admin page and
-                     Help & About
-  src/components/    the semantic document, evaluation, coverage, row and
-                     graph-walk views, plus the trace and handoff-target
-                     renderers both the pack and graph surfaces share
+  src/routes/        project home, the packs layout and its two children
+                     (the "select a pack" page and the pack document),
+                     evaluation, matrix, graphs, the authoring shell, the
+                     read-only Admin page and Help & About
+  src/components/    evaluation, coverage, row and graph-walk views, plus the
+                     trace and handoff-target renderers both the pack and graph
+                     surfaces share
   src/shell/         the six regions, the pane state and its per-project
                      record, the three shortcuts, the icon set, the console's
                      ring buffer, the fragment-scrolling hook the section menus
@@ -1083,10 +1224,19 @@ web/                 Vite + React + TypeScript SPA
                      a description and a template, and decides the file's
                      location from configuration
   src/ui/            the styled primitives: Button, Field, Input, TextArea,
-                     Select, Dialog and Alert, one CSS module each (see
+                     Select, Tabs, Dialog and Alert, one CSS module each (see
                      Styling)
-  src/packs/         what a new pack is called and where it goes: the slug
-                     rule, the template shaping, and the jpack.json amendment
+  src/packs/         the pack surface: the RFC 6901 pointer module, the
+                     span-preserving document writer, the validate reader, the
+                     cross-reference reader, the packs pane and its windowing
+                     hook, the scroll-spy — and what a new pack is called and
+                     where it goes (the slug rule, the template shaping, and
+                     the jpack.json amendment)
+    document/        the reading document: the member order the schema
+                     declares, the block wrapper that carries every pointer,
+                     the omitted-member line, the unparaphrased condition tree
+                     and one component per member kind
+    inspector/       the three panels: Member, References, Checks
   src/config/        the jpack-desk.json schema, its strict decoder, the one
                      query that reads it, and the theme attribute it writes
   src/identity/      the identity slot: one nullable field, and the header
@@ -1096,11 +1246,18 @@ web/                 Vite + React + TypeScript SPA
 
 ## Styling
 
-Four rules **for `src/ui/`**, and one test that holds all four
+Four rules and one test that holds all four
 (`web/src/ui/convention.test.ts`, which reads the source because vitest runs
 with `css: false` and a component whose stylesheet was deleted renders exactly
-like one whose stylesheet is intact). The scope is the point: these are the
-terms the primitives are built on, not a claim about every file in the app.
+like one whose stylesheet is intact).
+
+**Three of them run over every `*.module.css` under `web/src`**, and one — the
+component/module pairing — stays scoped to `src/ui`. The split is the point. The
+pairing is a claim about how the *primitives* are built. Colour, radius and
+bare-selector are not: a hex in `packs/PacksPane.module.css` is exactly the
+second palette a hex in `ui/Button.module.css` would be, and a bare `li { … }`
+there is just as global. Until this widening those three simply did not reach a
+module written anywhere else.
 
 - **The tokens in `styles.css` are the only source of colour and radius.** A
   module spells no colour of its own — no hex, no `rgb()`, no `hsl()`, and no
@@ -1123,16 +1280,23 @@ terms the primitives are built on, not a claim about every file in the app.
   styles it.** One component, one module, no orphan of either.
 - **`shell.css` owns the five regions' layout and nothing a component renders.**
   No module touches `--rail-current`, `--inspector-current`, `--console-current`
-  or `grid-template-areas`.
+  or `grid-template-areas`. A route that needs a region's measurement reads a
+  token: `--main-room` is the height between the header and the strip less
+  whatever the console is taking, which is what the packs pane needs to be
+  sticky rather than a second scroll region. It is defined beside the geometry
+  it is made of, with its `dvh` value behind `@supports` for the reason the
+  sheet already states — a custom property is not validated at parse time, so a
+  second declaration would win and fail later at substitution.
 - **No component under `src/ui/` carries an inline style.** An inline style
   beats every sheet without `!important` and cannot be themed, which makes it
-  the one way a component can quietly opt out of the tokens. Three files outside
+  the one way a component can quietly opt out of the tokens. Four files outside
   `src/ui/` do carry one, and each writes a value only the running page knows:
   `shell/AppShell.tsx` and `shell/RightPane.tsx` set custom properties the
-  sheets then read (`--rail-current`, `--drawer-w`), and
+  sheets then read (`--rail-current`, `--drawer-w`),
   `components/GraphWalkDiagram.tsx` sets a max-width measured from the
-  container. Naming them is what keeps the rule above true rather than
-  approximately true.
+  container, and `packs/PacksPane.tsx` sets the heights of the two spacers a
+  windowed list reserves for the rows it is not rendering. Naming them is what
+  keeps the rule above true rather than approximately true.
 
 Only class selectors appear at a module's top level. A bare element selector
 inside a CSS module is **not** hashed — it is global — so one `button { … }`
@@ -1144,9 +1308,10 @@ hashed at build time so they cannot collide with the ~60 names `styles.css`
 already owns. That is why there is no import-order rule in `main.tsx` to
 remember and no layer to keep in sync.
 
-Only the Create-pack dialog is built from these primitives today — `Button`,
-`Field`, `Input`, `TextArea`, `Select`, `Dialog` and `Alert`. The other views
-keep the sheets they have; migrating them is its own piece of work.
+The Create-pack dialog and the pack surface are built from these primitives
+today — `Button`, `Field`, `Input`, `TextArea`, `Select`, `Tabs`, `Dialog` and
+`Alert`. The other views keep the sheets they have; migrating them is its own
+piece of work.
 
 ## Tests
 

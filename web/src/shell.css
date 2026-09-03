@@ -75,6 +75,17 @@
     --console-room: max(0px, calc(100vh - var(--header-h) - var(--strip-h)));
     --console-cap: max(0px, calc(100vh - var(--header-h) - var(--strip-h) - var(--main-floor)));
 
+    /* How much room a route inside main actually has, top to bottom.
+       A route with a sticky column of its own — the packs pane — needs the
+       height between the header and the strip, less whatever the console is
+       currently taking. It is here rather than in the pane's module because
+       `shell.css` owns the regions' layout and every one of these terms is a
+       region's: the pane reads the token and computes none of it. */
+    --main-room: max(
+      0px,
+      calc(100vh - var(--header-h) - var(--strip-h) - var(--console-current))
+    );
+
     --z-drawer: 40;
     --z-menu: 50;
     --z-dialog: 60;
@@ -86,6 +97,10 @@
   @supports (height: 100dvh) {
     :root {
       --console-room: max(0px, calc(100dvh - var(--header-h) - var(--strip-h)));
+      --main-room: max(
+        0px,
+        calc(100dvh - var(--header-h) - var(--strip-h) - var(--console-current))
+      );
       --console-cap: max(
         0px,
         calc(100dvh - var(--header-h) - var(--strip-h) - var(--main-floor))
@@ -557,6 +572,17 @@
     border-bottom: 1px solid var(--border);
     font-size: 0.82rem;
     font-weight: 600;
+  }
+
+  /* The Packs entry's count. Absent, never zero, where the listing failed or
+     has not answered — see LeftRail. */
+  .desk-nav-count {
+    margin-left: auto;
+    padding: 0 0.3rem;
+    border-radius: var(--radius-sm);
+    background: var(--false-soft);
+    color: var(--ink-faint);
+    font-size: 0.72rem;
   }
 
   .desk-pane-empty {

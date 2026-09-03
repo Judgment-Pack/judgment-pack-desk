@@ -1,0 +1,151 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pointer {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+  overflow-wrap: anywhere;
+}
+
+.json {
+  overflow-x: auto;
+  max-height: 18rem;
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: 0.75rem;
+}
+
+.groupHead {
+  margin: 0.5rem 0 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.provenance {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr);
+  gap: 0.4rem;
+}
+
+.row dt {
+  color: var(--ink-faint);
+}
+
+.row dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.bound {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--accent);
+}
+
+.empty {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+}
+
+.references {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.78rem;
+}
+
+.reference {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.relation {
+  color: var(--ink-faint);
+}
+
+.id {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+
+.unresolved {
+  color: var(--ink-soft);
+}
+
+.diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.diagnostic {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.diagnosticHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.code {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.word {
+  font-size: 0.7rem;
+  color: var(--ink-faint);
+}
+
+.message {
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.stale {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--warn);
+}
+
+.footer {
+  margin: 0.5rem 0 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}

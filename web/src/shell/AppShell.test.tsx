@@ -14,6 +14,7 @@ import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { McpContext, type McpConnection } from '../mcp/McpProvider'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
+import { PacksPane } from '../packs/PacksPane'
 import { AppShell } from './AppShell'
 import { forgetConsole } from './consoleLog'
 import { forgetAuthorBridge } from './authorBridge'
@@ -101,6 +102,33 @@ describe('the shell frame', () => {
     expect(screen.getAllByRole('complementary', { name: 'Inspector' })).toHaveLength(1)
     expect(screen.getAllByRole('region', { name: 'Console' })).toHaveLength(1)
     expect(screen.getAllByRole('contentinfo')).toHaveLength(1)
+  })
+
+  it('keeps its own six landmarks with the packs route mounted inside main', async () => {
+    // The packs pane is a list of navigations, so `<nav aria-label="Packs">`
+    // is the correct markup — and it means a route adds a landmark inside
+    // main. What must stay true is that the *shell's* six are still exactly
+    // one each: a second unnamed navigation, or a second complementary, would
+    // be a page whose regions a screen reader cannot tell apart.
+    renderShell(
+      <AppShell>
+        <PacksPane />
+      </AppShell>
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Inspector' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
+    await screen.findByRole('navigation', { name: 'Packs' })
+
+    expect(screen.getAllByRole('banner')).toHaveLength(1)
+    expect(screen.getAllByRole('navigation', { name: 'Project' })).toHaveLength(1)
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(screen.getAllByRole('complementary', { name: 'Inspector' })).toHaveLength(1)
+    expect(screen.getAllByRole('region', { name: 'Console' })).toHaveLength(1)
+    expect(screen.getAllByRole('contentinfo')).toHaveLength(1)
+    // And every navigation on the page is named, so the two are distinguishable.
+    for (const landmark of screen.getAllByRole('navigation')) {
+      expect(landmark.getAttribute('aria-label')).toBeTruthy()
+    }
   })
 
   it('puts the skip link first and points it at main', () => {

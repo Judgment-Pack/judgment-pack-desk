@@ -75,7 +75,7 @@ describe('the left rail', () => {
     // A runtime with no graph tools at all: exactly the case where
     // `useConfiguredGraphs` falls back to running every graph's matrix.
     renderRail(stub, { graphInventorySupported: false })
-    await screen.findByRole('link', { name: 'intake-triage' })
+    await screen.findByRole('link', { name: 'Packs' })
     expect(stub.calls.map((call) => call.name)).toEqual(['list_packs'])
     expect(stub.calls.every((call) => call.name !== 'experimental_test_graphs')).toBe(true)
   })
@@ -109,32 +109,26 @@ describe('the left rail', () => {
     expect(screen.getByRole('link', { name: 'Graphs' })).toBeTruthy()
   })
 
-  it('lists the project’s packs and links each to its own page', async () => {
+
+
+
+  it('is one destination with a count, not a list', async () => {
+    // The list moved into main's left pane. A project can carry hundreds of
+    // packs and a rail cannot: the old entry capped at thirty and handed the
+    // rest to the project home, which is a list that stops being one exactly
+    // when it would start being useful.
     renderRail(packs(['intake-triage', 'vendor-onboarding']))
-    expect((await screen.findByRole('link', { name: 'intake-triage' })).getAttribute('href')).toBe(
-      '/packs/intake-triage'
-    )
-    expect(screen.getByRole('link', { name: 'vendor-onboarding' })).toBeTruthy()
+    const link = await screen.findByRole('link', { name: 'Packs' })
+    expect(link.getAttribute('href')).toBe('/packs')
+    await waitFor(() => expect(link.textContent).toContain('2'))
+    expect(screen.queryByRole('link', { name: 'intake-triage' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'show all →' })).toBeNull()
   })
 
-  it('expands the selected pack to the three destinations PackDetail offers', async () => {
-    renderRail(packs(['intake-triage']), {}, '/packs/intake-triage')
-    await screen.findByRole('link', { name: 'intake-triage' })
-    expect(screen.getByRole('link', { name: 'Document' })).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'Evaluate' })).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'Matrix' })).toBeTruthy()
-  })
-
-  it('caps the list at thirty and hands the rest to the project home', async () => {
-    const many = Array.from({ length: 42 }, (_, index) => `pack-${index}`)
-    renderRail(packs(many))
-    await screen.findByRole('link', { name: 'pack-0' })
-    expect(screen.queryByRole('link', { name: 'pack-29' })).toBeTruthy()
-    expect(screen.queryByRole('link', { name: 'pack-30' })).toBeNull()
-    expect(screen.getByRole('link', { name: 'show all →' })).toBeTruthy()
-  })
-
-  it('shows a failed listing as the failure, not as an empty project', async () => {
+  it('shows a failed listing as the failure, and claims no count', async () => {
+    // "This project declares no packs" and "the listing did not answer" are
+    // two different statements, and a `0` here would be the first one said
+    // about a project the desk knows nothing about.
     const stub = stubClient({
       list_packs: () => {
         throw new Error('the runtime refused the listing')
@@ -142,7 +136,7 @@ describe('the left rail', () => {
     })
     renderRail(stub)
     await screen.findByText(/the runtime refused the listing/)
-    expect(screen.queryByRole('link', { name: 'show all →' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Packs' }).textContent).not.toContain('0')
   })
 
   it('marks the active route with aria-current', async () => {

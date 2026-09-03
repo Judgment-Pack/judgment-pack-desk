@@ -120,6 +120,18 @@ function ShellFrame({
   const [inspectorTarget, setInspectorTarget] = useState<HTMLElement | null>(null)
   const [inspectorPane, setInspectorPane] = useState<HTMLElement | null>(null)
   const [inspectorTab, setInspectorTab] = useState<string | null>(null)
+  /**
+   * How many routes are publishing into the slot right now.
+   *
+   * A portal writes into a DOM node that is not React's child here, so the
+   * pane cannot see its own contents; this count is how it learns. Held in the
+   * frame beside the target, because both describe the same slot.
+   */
+  const [inspectorClaims, setInspectorClaims] = useState(0)
+  const claim = useCallback(() => {
+    setInspectorClaims((count) => count + 1)
+    return () => setInspectorClaims((count) => Math.max(0, count - 1))
+  }, [])
   const publishTarget = useCallback((target: HTMLDivElement | null) => {
     setInspectorTarget(target)
   }, [])
@@ -142,9 +154,10 @@ function ShellFrame({
       size: shell.inspector.open ? (inspectorBox?.width ?? 0) : 0,
       tab: inspectorTab,
       setTab: setInspectorTab,
-      target: inspectorTarget
+      target: inspectorTarget,
+      claim
     }),
-    [shell.inspector.open, inspectorBox, inspectorTab, inspectorTarget]
+    [shell.inspector.open, inspectorBox, inspectorTab, inspectorTarget, claim]
   )
 
   useEffect(
@@ -216,6 +229,7 @@ function ShellFrame({
           publishTarget={publishTarget}
           publishPane={publishPane}
           openerRef={inspectorOpenerRef}
+          showEmpty={inspectorClaims === 0}
         />
 
         <BottomPane

@@ -14,17 +14,44 @@
  * cheap enough to hold.
  */
 import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { colourProblem, colourProblemsIn, declarationsIn } from './declarations'
 
 const UI = import.meta.dirname
+const SRC = join(UI, '..')
 const read = (name: string) => readFileSync(join(UI, name), 'utf8')
 
 const components = readdirSync(UI).filter(
   (name) => name.endsWith('.tsx') && !name.includes('.test.')
 )
 const modules = readdirSync(UI).filter((name) => name.endsWith('.module.css'))
+
+/**
+ * **Every** CSS module under `web/src`, not only the primitives'.
+ *
+ * The pairing rule below stays scoped to `src/ui` — one component, one module
+ * — because that is a claim about how the primitives are built. The colour,
+ * radius and bare-selector rules are not: a hex in `packs/PacksPane.module.css`
+ * is exactly the second palette a hex in `ui/Button.module.css` would be, and
+ * a bare `li { … }` there is just as global. Before this widening those three
+ * rules simply did not reach a module written anywhere else, and this PR
+ * writes three of them. A claim with no holder is how a rule quietly stops
+ * being true.
+ */
+function everyModule(directory: string): string[] {
+  const found: string[] = []
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name)
+    if (entry.isDirectory()) found.push(...everyModule(path))
+    else if (entry.name.endsWith('.module.css')) found.push(path)
+  }
+  return found
+}
+
+const allModules = everyModule(SRC).sort()
+const readModule = (path: string) => readFileSync(path, 'utf8')
+const shortName = (path: string) => relative(SRC, path)
 
 describe('the styling convention', () => {
   it('has a component and a module for each, and no orphan of either', () => {
@@ -51,20 +78,22 @@ describe('the styling convention', () => {
     expect(sheets).toEqual([`./${name.replace(/\.tsx$/, '.module.css')}`])
   })
 
-  it.each(modules)('%s spells no colour of its own', (name) => {
+  it.each(allModules.map(shortName))('%s spells no colour of its own', (short) => {
     // `styles.css` is the only source of colour. A literal here would be a
     // second palette that the theme attribute does not reach.
-    const sheet = read(name)
+    const name = short
+    const sheet = readModule(join(SRC, short))
     expect(sheet).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
     for (const fn of ['rgb(', 'rgba(', 'hsl(', 'hsla(', 'color(', 'oklch(']) {
       expect(sheet, `${name} carries ${fn}`).not.toContain(fn)
     }
   })
 
-  it.each(modules)('%s selects only through its own classes', (name) => {
+  it.each(allModules.map(shortName))('%s selects only through its own classes', (short) => {
     // A bare element selector inside a module is global — it is not hashed —
     // so one `button { … }` here would restyle every button in the desk.
-    const sheet = read(name).replace(/\/\*[\s\S]*?\*\//g, '')
+    const name = short
+    const sheet = readModule(join(SRC, short)).replace(/\/\*[\s\S]*?\*\//g, '')
     const selectors = [...sheet.matchAll(/(^|\})\s*([^{}@]+)\{/g)].map((match) => match[2]!.trim())
     expect(selectors.length).toBeGreaterThan(0)
     for (const selector of selectors) {
@@ -74,13 +103,14 @@ describe('the styling convention', () => {
     }
   })
 
-  it.each(modules)('%s takes every radius from a token', (name) => {
+  it.each(allModules.map(shortName))('%s takes every radius from a token', (short) => {
     // The README says the tokens are the only source of colour *and radius*,
     // and before this rule existed one module spelled `border-radius: 4px`
     // while the colour rule below reported the file clean. A claim with no
     // holder is how that happens.
-    const sheet = read(name)
-    for (const [, value] of read(name).matchAll(/border-radius:\s*([^;]+);/g)) {
+    const name = short
+    const sheet = readModule(join(SRC, short))
+    for (const [, value] of sheet.matchAll(/border-radius:\s*([^;]+);/g)) {
       const words = value!.trim()
       if (words === '0' || words === 'inherit') continue
       expect(words, `${name}: border-radius: ${words}`).toContain('var(--')
@@ -88,7 +118,8 @@ describe('the styling convention', () => {
     expect(sheet).not.toMatch(/border-radius:\s*\d/)
   })
 
-  it.each(modules)('%s takes every colour from a token', (name) => {
+  it.each(allModules.map(shortName))('%s takes every colour from a token', (short) => {
+    const name = short
     // **Parsed, not pattern-matched.** The rule this replaces matched
     // `border`/`outline` declarations and then skipped them, because it asked
     // whether the *property name* contained "background" or "color" — so
@@ -98,7 +129,7 @@ describe('the styling convention', () => {
     // Whole-sheet rather than per-declaration, because two of the ways a
     // module can hold a colour of its own are invisible in one declaration: a
     // `var()` fallback, and a custom property the module defines itself.
-    const problems = colourProblemsIn(read(name))
+    const problems = colourProblemsIn(readModule(join(SRC, short)))
     expect(
       problems,
       `${name}: ${problems.map((entry) => `${entry.where} — ${entry.problem}`).join('; ')}`
@@ -108,8 +139,9 @@ describe('the styling convention', () => {
 
 describe('what the other sheets keep', () => {
   it('leaves layout of the five regions to shell.css, not to a component', () => {
-    for (const name of modules) {
-      const sheet = read(name)
+    for (const path of allModules) {
+      const name = shortName(path)
+      const sheet = readModule(path)
       for (const region of ['--rail-current', '--inspector-current', '--console-current', 'grid-template-areas']) {
         expect(sheet, `${name} lays out a region`).not.toContain(region)
       }
@@ -117,9 +149,16 @@ describe('what the other sheets keep', () => {
   })
 
   it('adds no cascade layer, because an unlayered module already wins', () => {
-    for (const name of modules) {
-      expect(read(name)).not.toContain('@layer')
+    for (const path of allModules) {
+      expect(readModule(path), shortName(path)).not.toContain('@layer')
     }
+  })
+
+  it('reaches modules written outside src/ui', () => {
+    // The widening itself, held: a rule that only ever globbed `src/ui` would
+    // pass this file for ever while a module elsewhere spelled a colour.
+    expect(allModules.length).toBeGreaterThan(modules.length)
+    expect(allModules.some((path) => !shortName(path).startsWith('ui/'))).toBe(true)
   })
 })
 

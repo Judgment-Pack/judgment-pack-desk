@@ -14,6 +14,14 @@
  * does not close a pane" does not hold, and it is in the README for the same
  * reason it is here.
  *
+ * **The empty state stands only where nothing is published.** It used to be
+ * unconditional, so the first route to publish showed its panel *and* the
+ * "select a row" paragraph underneath it. A portal cannot tell React it
+ * happened, so this cannot be read off the children; the frame counts claims
+ * and hands the answer down. A CSS `:empty` sibling rule would have been
+ * shorter and is rejected in `InspectorSlot.tsx` for a reason worth repeating
+ * here: vitest runs with `css: false`, so nothing in this repo could hold it.
+ *
  * **This file does not own the slot.** The portal target is published upwards
  * through a callback ref, because the context that carries it has to sit above
  * `<main>` for a route to reach it — a provider around this pane alone was one
@@ -36,6 +44,7 @@ export function RightPane({
   publishTarget,
   publishPane,
   openerRef,
+  showEmpty,
   children
 }: {
   open: boolean
@@ -68,6 +77,8 @@ export function RightPane({
    * header, two grid cells away — so the restoration is wired by hand.
    */
   openerRef: RefObject<HTMLButtonElement | null>
+  /** False while a route is publishing into the slot. */
+  showEmpty: boolean
   children?: ReactNode
 }) {
   const body = (
@@ -83,10 +94,10 @@ export function RightPane({
           <IconClose />
         </button>
       </div>
-      {/* Always mounted, so a route's portal target never disappears under it.
-          Phase A publishes nothing into it, so the empty state stands. */}
+      {/* Always mounted, so a route's portal target never disappears under
+          it — including while nothing is published. */}
       <div ref={publishTarget} className="desk-inspector-slot" />
-      <p className="desk-pane-empty">{EMPTY_STATE}</p>
+      {showEmpty && <p className="desk-pane-empty">{EMPTY_STATE}</p>}
       {children}
     </>
   )

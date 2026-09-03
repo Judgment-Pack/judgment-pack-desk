@@ -535,6 +535,18 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   FC=web/src/files/client.ts
   SEL=web/src/ui/Select.tsx
   ST=web/src/mcp/starters.ts
+  DT=web/src/packs/documentText.ts
+  CK=web/src/packs/checks.ts
+  QR=web/src/mcp/queries.ts
+  CAP=web/src/mcp/capabilities.ts
+  OM=web/src/packs/document/OmittedMember.tsx
+  MB=web/src/packs/document/members.ts
+  CT=web/src/packs/document/ConditionTree.tsx
+  RP=web/src/shell/RightPane.tsx
+  WR=web/src/packs/useWindowedRows.ts
+  RL=web/src/shell/LeftRail.tsx
+  CV=web/src/ui/convention.test.ts
+  PPC=web/src/packs/PacksPane.module.css
 
   # The rail's graph gate. `useConfiguredGraphs` falls back to a whole-project
   # `experimental_test_graphs` walk against any runtime without the inventory
@@ -1212,6 +1224,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  @supports (height: 100dvh) {
     :root {
       --console-room: max(0px, calc(100dvh - var(--header-h) - var(--strip-h)));
+      --main-room: max(
+        0px,
+        calc(100dvh - var(--header-h) - var(--strip-h) - var(--console-current))
+      );
       --console-cap: max(
         0px,
         calc(100dvh - var(--header-h) - var(--strip-h) - var(--main-floor))
@@ -1606,6 +1622,135 @@ if [ "$which" = all ] || [ "$which" = web ]; then
       }
       continue' \
     '      continue'
+  # ---------------------------------------------------------------------------
+  # The pack view (issue: pack view phase 1). Each row breaks one claim the
+  # document, the writer, the check reader or the pane makes.
+  # ---------------------------------------------------------------------------
+
+  # 7. The writer. A splice that re-serializes is a whole-file diff dressed as
+  # a one-field edit, which is exactly what ADR-0019 makes a human read.
+  mutate web "the splice reserializes the whole document" "$DT" \
+    '  return text.slice(0, span.valueStart) + json + text.slice(span.valueEnd)' \
+    '  const whole = JSON.parse(text)
+  void span
+  void pointer
+  void json
+  return JSON.stringify(whole, null, 2)'
+  mutate web "removing a member leaves its comma" "$DT" \
+    '  let scan = end
+  while (scan < text.length && isSpace(text[scan]!)) scan += 1
+  if (text[scan] === '"'"','"'"') {' \
+    '  let scan = end
+  while (scan < text.length && isSpace(text[scan]!)) scan += 1
+  if (false) {'
+  mutate web "duplicate members are read last-wins" "$DT" \
+    '  const problems: Disagreement[] = []
+  for (const duplicate of index.duplicates) {' \
+    '  const problems: Disagreement[] = []
+  if (text.length >= 0) return problems
+  for (const duplicate of index.duplicates) {'
+
+  # 6. The check reader. A layer nothing listed is a layer that did not run.
+  mutate web "a layer nothing listed is reported as passed" "$CK" \
+    "  const named = rows
+    .map((row) => row.name)
+    .filter((name): name is string => typeof name === 'string')" \
+    "  const named = [...LADDER] as string[]"
+  mutate web "a diagnostic re-anchors after the bytes move" "$CK" \
+    '  if (checkedBytes === undefined || currentBytes === undefined) return false
+  return checkedBytes !== currentBytes' \
+    '  void checkedBytes
+  void currentBytes
+  return false'
+  mutate web "a diagnostic with no exact match is dropped" "$CK" \
+    '    for (const ancestor of parentPointers(named)) {
+      if (rendered.has(ancestor)) {
+        return { diagnostic, anchor: ancestor, named, approximate: true }
+      }
+    }' \
+    '    void parentPointers'
+  # The Checks tab's filter. Equality alone told a reader selecting a rule card
+  # "No other diagnostic names this member." over a rule the runtime had just
+  # refused at `/rules/0/when/value` — the one sentence this tab exists to
+  # never say by accident.
+  mutate web "a diagnostic under the selected member is hidden" "$CK" \
+    '    (entry) => entry.anchor === pointer || entry.anchor.startsWith(`${pointer}/`)' \
+    '    (entry) => entry.anchor === pointer'
+  mutate web "one rule's pointer is read as a prefix of another's" "$CK" \
+    'entry.anchor.startsWith(`${pointer}/`)' \
+    'entry.anchor.startsWith(pointer)'
+  mutate web "an empty document is sent to be refused" "$QR" \
+    "      documentText !== undefined &&
+      documentText !== ''," \
+    '      documentText !== undefined,'
+  mutate web "a truncated list still claims nothing else was found" "$CK" \
+    "  if (report?.diagnosticsTruncated !== true) return undefined" \
+    "  if (report !== undefined) return undefined"
+
+  # 5. The check query. Identical bytes answer differently on a runtime
+  # bundling different artifacts, so the epoch is half the key.
+  mutate web "the check query is keyed on the buffer alone" "$QR" \
+    "    queryKey: ['validate', connectionEpoch, documentText ?? null]," \
+    "    queryKey: ['validate', documentText ?? null],"
+  mutate web "validate is assumed present" "$CAP" \
+    "    validateSupported: names.has('validate')" \
+    "    validateSupported: true"
+
+  # 9. The document. An omission stated is the whole point of the rewrite.
+  mutate web "an omitted member renders nothing" "$OM" \
+    '  return (
+    <Block pointer={pointer} className={styles.omitted}>' \
+    '  if (label !== undefined) return null
+  return (
+    <Block pointer={pointer} className={styles.omitted}>'
+  mutate web "members render in canonical order rather than the document's" "$MB" \
+    '  const order = MEMBER_UNITS.filter((unit) => unitIsPresent(document, unit)).sort(
+    (left, right) => positionOf(left) - positionOf(right)
+  )' \
+    '  const order = MEMBER_UNITS.filter((unit) => unitIsPresent(document, unit))
+  void positionOf'
+  mutate web "the condition tree paraphrases" "$CT" \
+    '        <Block pointer={`${at}/operator`} as="span" className={styles.op}>
+          {String(node.operator ?? '"''"')}
+        </Block>{'"' '"'}
+        <Block pointer={`${at}/value`} as="code" className={styles.literal}>
+          {JSON.stringify(node.value)}
+        </Block>' \
+    '        <Block pointer={`${at}/operator`} as="span" className={styles.op}>
+          is greater than
+        </Block>{'"' '"'}
+        <Block pointer={`${at}/value`} as="code" className={styles.literal}>
+          {String(node.value)}
+        </Block>'
+
+  # 12. The pane's empty state used to stand beside every published panel.
+  mutate web "the empty state stands beside a published panel" "$RP" \
+    '      {showEmpty && <p className="desk-pane-empty">{EMPTY_STATE}</p>}' \
+    '      <p className="desk-pane-empty">{EMPTY_STATE}</p>'
+
+  # 14. jsdom lays nothing out, so a measured height of zero must render every
+  # row — otherwise every test of the pane asserts against an empty list.
+  mutate web "the windowed list renders nothing when the viewport cannot be measured" "$WR" \
+    '  if (height <= 0 || rowHeight <= 0) {
+    return { start: 0, end: count, padTop: 0, padBottom: 0 }
+  }' \
+    '  if (false) {
+    return { start: 0, end: count, padTop: 0, padBottom: 0 }
+  }'
+
+  # 16. A `0` beside Packs is a claim about a project the desk knows nothing
+  # about.
+  mutate web "the rail claims a count for a listing that never answered" "$RL" \
+    '  const count = error === null && data !== undefined ? (data.packs ?? []).length : undefined' \
+    '  const count = (data?.packs ?? []).length'
+
+  # 8. The widened convention rule, and a module outside src/ui to break it on.
+  mutate web "a module outside src/ui may spell a colour" "$CV" \
+    "const allModules = everyModule(SRC).sort()" \
+    "const allModules = everyModule(join(SRC, 'ui')).sort()"
+  mutate web "a colour in a module outside src/ui goes unreported" "$PPC" \
+    "  color: var(--danger);" \
+    "  color: #ff0000;"
 fi
 
 restore

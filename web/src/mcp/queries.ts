@@ -19,7 +19,8 @@ import type {
   PackInventory,
   PackTest,
   RefusalEnvelope,
-  ServedGraph
+  ServedGraph,
+  ValidationReport
 } from './types'
 
 /**
@@ -130,6 +131,60 @@ export function usePack(packId: string | undefined): UseQueryResult<LoadedPack, 
         signal
       )
       return { document: parsed, raw, meta: (structured ?? {}) as PackFileMeta }
+    }
+  })
+}
+
+/**
+ * One document, checked.
+ *
+ * **A query and not a mutation.** `validate` evaluates nothing, holds no
+ * credential and writes nothing — it reads a document's text and reports what
+ * the ladder found. Nothing is appended to an audit directory and no reviewed
+ * set is consulted, which is the distinction `experimental_evaluate` does not
+ * draw.
+ *
+ * **`document` and nothing else.** `through` is omitted deliberately: the
+ * runtime's own default is `semantic`, so omitting it runs the whole ladder,
+ * and sending a value would make the desk decide how far to check. An empty
+ * document is refused by the runtime by name, so the query is disabled rather
+ * than sending one.
+ *
+ * **The key is the bytes *and* the connection epoch.** Identical bytes answer
+ * differently on a runtime bundling different specification artifacts — the
+ * `unsupported` status with a `capability`-layer diagnostic at `/specVersion`
+ * is exactly that answer — so a cached report that survived a reconnect would
+ * describe a different binary's opinion of the same file. `useGraphDocument`
+ * states the same rule one connection short of this.
+ *
+ * The whole document text is in the key. At pack sizes that is nothing; a
+ * digest key would need `crypto.subtle`, which jsdom does not provide, so the
+ * exact bytes are the honest key here.
+ */
+export function useValidate(
+  documentText: string | undefined
+): UseQueryResult<ValidationReport, Error> {
+  const { client, status, validateSupported, connectionEpoch } = useMcp()
+  return useQuery({
+    queryKey: ['validate', connectionEpoch, documentText ?? null],
+    // `documentText` must be bytes, not merely defined: the runtime refuses an
+    // empty document by name, and a call made only to be refused would put a
+    // refusal on screen where the honest answer is that there is nothing to
+    // check yet.
+    enabled:
+      status === 'ready' &&
+      client !== null &&
+      validateSupported &&
+      documentText !== undefined &&
+      documentText !== '',
+    queryFn: async ({ signal }) => {
+      const { parsed } = await callToolJSON<ValidationReport>(
+        client!,
+        'validate',
+        { document: documentText },
+        signal
+      )
+      return parsed
     }
   })
 }

@@ -1,0 +1,369 @@
+.document {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.block {
+  scroll-margin-top: 1rem;
+}
+
+.block:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.heading {
+  margin: 0 0 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.subheading {
+  margin: 0.75rem 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.note {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+/* Identity ---------------------------------------------------------------- */
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+}
+
+.eyebrowTitle {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.eyebrowPart {
+  font-size: 0.75rem;
+}
+
+.identityId {
+  margin: 0;
+}
+
+.identityDescription {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+
+/* Decision ---------------------------------------------------------------- */
+
+.decision {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.question {
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: 1.25;
+  font-weight: 600;
+}
+
+.standfirst {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+}
+
+/* Outline ----------------------------------------------------------------- */
+
+.outline {
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.outlineList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.78rem;
+}
+
+.outlineItem {
+  display: inline-flex;
+}
+
+.outlineLink {
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+
+.outlineLink:hover {
+  color: var(--ink);
+  text-decoration-line: underline;
+}
+
+.outlineLink[aria-current] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.outlineCount {
+  color: var(--ink-faint);
+}
+
+.outlineAbsent {
+  color: var(--ink-faint);
+}
+
+/* Omission ---------------------------------------------------------------- */
+
+.omitted {
+  padding: 0.5rem 0;
+  border-left: 2px solid var(--border);
+  padding-left: 0.75rem;
+}
+
+.omittedLine {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+}
+
+.omittedTag {
+  padding: 0 0.35rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+}
+
+/* Chips, cards, fields ---------------------------------------------------- */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.chipLabel {
+  font-weight: 600;
+}
+
+.chipNote {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.id {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.literal {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.tag {
+  padding: 0 0.35rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.72rem;
+}
+
+.tagQuiet {
+  padding: 0 0.35rem;
+  border-radius: var(--radius-sm);
+  background: var(--false-soft);
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+}
+
+.fieldLabel {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.fields {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr);
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.field dt {
+  color: var(--ink-faint);
+}
+
+.field dd {
+  margin: 0;
+}
+
+.refs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.rationale {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.outcomeLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.outcomeRef {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.citation {
+  margin: 0;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+/* The condition tree ------------------------------------------------------ */
+
+.tree {
+  display: flex;
+  flex-direction: column;
+  overflow-x: auto;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.treeRow {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  white-space: pre;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+
+.indent {
+  white-space: pre;
+}
+
+.op {
+  color: var(--ink-soft);
+}
+
+.factPath {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+
+/* Extensions -------------------------------------------------------------- */
+
+.extensions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.extensionList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8rem;
+}

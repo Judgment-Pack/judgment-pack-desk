@@ -1,0 +1,20 @@
+{
+  "rules": [
+    {
+      "id": "always",
+      "description": "Proceed.",
+      "when": { "op": "literal", "value": true },
+      "outcome": "proceed",
+      "onUnknown": "escalate"
+    }
+  ],
+  "outcomes": [{ "id": "proceed", "label": "Proceed" }],
+  "title": "A pack whose members are not in the schema's order",
+  "decision": {
+    "intent": "Decide the one thing this pack decides.",
+    "question": "Does this request proceed?"
+  },
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/reordered",
+  "version": "0.1.0"
+}

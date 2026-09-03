@@ -15,20 +15,25 @@
  * "N failing" pill. A red pill in a nav rail is a gate the runtime never
  * issued.
  *
+ * **The rail holds navigation only.** It used to list the project's packs,
+ * capped at thirty, with the selected one expanded into three child links —
+ * a list that stops being a list at the point a project gets big enough to
+ * need one. The list moved into main's left pane, where it can be filtered,
+ * sorted and scrolled; Packs is one destination here, carrying a count.
+ *
  * The structure is a typed array, so adding an entry is visible in review.
  * There is no Recents, no Favourites and no Starred: each is per-viewer
  * retained state, and each arrives as its own two-line change if it ever
  * should.
  */
-import { Collapsible, Dialog, DropdownMenu, Separator, Tooltip, VisuallyHidden } from 'radix-ui'
+import { Dialog, DropdownMenu, Separator, Tooltip, VisuallyHidden } from 'radix-ui'
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import { useGraphInventory, usePacks } from '../mcp/queries'
 import { ADMIN_SECTIONS } from '../routes/adminSections'
 import { CreatePackDialog } from './CreatePackDialog'
 import { useAuthorDirty } from './authorBridge'
 import {
-  IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
   IconClose,
@@ -41,9 +46,6 @@ import {
   IconPlus
 } from './icons'
 import type { LeftRailMode } from './paneState'
-
-/** How many packs the group lists before it hands over to the project home. */
-const PACK_CAP = 30
 
 interface RailItem {
   to: string
@@ -304,86 +306,36 @@ function Labelled({
 }
 
 /**
- * The Packs group.
+ * The Packs destination.
  *
- * A failed listing shows the failure rather than an empty list: "this project
- * declares no packs" and "the listing did not answer" are two different
- * statements, and only one of them is about the project.
+ * One entry, and a count beside it — **and no count at all** where the listing
+ * failed or has not answered. `0` would be a claim about the project, and the
+ * one thing the desk knows in that state is that it does not know. That rule
+ * came here with the list it used to draw, and the failure is still shown as
+ * the failure rather than as an empty project.
  */
 function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => void }) {
   const { data, error } = usePacks()
-  const location = useLocation()
-  const [open, setOpen] = useState(true)
-  const packs = data?.packs ?? []
-  const shown = packs.slice(0, PACK_CAP)
-
-  if (icons) {
-    return (
-      <Labelled icons label="Packs">
-        <NavLink className="desk-nav-item" to="/" aria-label="Packs" onClick={onNavigate}>
-          <IconPack />
-        </NavLink>
-      </Labelled>
-    )
-  }
+  const count = error === null && data !== undefined ? (data.packs ?? []).length : undefined
 
   return (
-    <Collapsible.Root open={open} onOpenChange={setOpen}>
-      <Collapsible.Trigger className="desk-nav-item" aria-label="Packs">
-        <IconPack />
-        <span className="desk-nav-label">Packs</span>
-        <IconChevronDown />
-      </Collapsible.Trigger>
-      <Collapsible.Content>
-        {error ? (
-          <p className="desk-pane-empty">The pack listing did not answer — {error.message}</p>
-        ) : (
-          <>
-            {shown.map((pack) => {
-              const base = `/packs/${encodeURIComponent(pack.id)}`
-              const selected = location.pathname.startsWith(base)
-              return (
-                <div key={pack.id}>
-                  <NavLink className="desk-nav-item" to={base} onClick={onNavigate}>
-                    <span className="desk-nav-label">{pack.id}</span>
-                  </NavLink>
-                  {selected && (
-                    <>
-                      <NavLink
-                        className="desk-nav-item desk-nav-child"
-                        to={base}
-                        end
-                        onClick={onNavigate}
-                      >
-                        <span className="desk-nav-label">Document</span>
-                      </NavLink>
-                      <NavLink
-                        className="desk-nav-item desk-nav-child"
-                        to={`${base}/evaluate`}
-                        onClick={onNavigate}
-                      >
-                        <span className="desk-nav-label">Evaluate</span>
-                      </NavLink>
-                      <NavLink
-                        className="desk-nav-item desk-nav-child"
-                        to={`${base}/matrix`}
-                        onClick={onNavigate}
-                      >
-                        <span className="desk-nav-label">Matrix</span>
-                      </NavLink>
-                    </>
-                  )}
-                </div>
-              )
-            })}
-            {packs.length > PACK_CAP && (
-              <NavLink className="desk-nav-item desk-nav-child" to="/" onClick={onNavigate}>
-                <span className="desk-nav-label">show all →</span>
-              </NavLink>
-            )}
-          </>
-        )}
-      </Collapsible.Content>
-    </Collapsible.Root>
+    <>
+      <Labelled icons={icons} label="Packs">
+        <NavLink
+          className="desk-nav-item"
+          to="/packs"
+          aria-label="Packs"
+          onClick={onNavigate}
+          title={error ? error.message : undefined}
+        >
+          <IconPack />
+          {!icons && <span className="desk-nav-label">Packs</span>}
+          {!icons && count !== undefined && <span className="desk-nav-count">{count}</span>}
+        </NavLink>
+      </Labelled>
+      {!icons && error && (
+        <p className="desk-pane-empty">The pack listing did not answer — {error.message}</p>
+      )}
+    </>
   )
 }
