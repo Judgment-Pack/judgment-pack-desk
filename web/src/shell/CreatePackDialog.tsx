@@ -88,7 +88,7 @@ export function CreatePackDialog({
 }) {
   const { config } = useEffectiveConfig()
   const { dir, idBase } = config.storage.packs
-  const { exampleSupported, schemaSupported } = useMcp()
+  const { status, exampleSupported, schemaSupported } = useMcp()
   const listing = useFileListing()
   const project = useFileContent(PROJECT_FILE)
   const examples = useExampleListing()
@@ -145,8 +145,15 @@ export function CreatePackDialog({
   const template = selected === undefined ? undefined : isEmpty ? emptyPackFrom(schema.data) : example.data
   const templateError = isEmpty ? schema.error : example.error
   const templateProblem =
+    // A runtime that has not answered advertises nothing, which is not the
+    // same fact as a runtime that advertises neither tool. Only the second is
+    // "there is no template here"; the first is a connection the status strip
+    // is already reporting, and saying it twice as a refusal would make a slow
+    // answer read as a failure.
     options.length === 0
-      ? NO_TEMPLATE
+      ? status === 'ready'
+        ? NO_TEMPLATE
+        : undefined
       : templateError
         ? // The runtime's own sentence where it gave one. Where it refused
           // without saying why, this dialog says less rather than putting the

@@ -1044,6 +1044,9 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "      invalidate([['desk-files'], ['list_packs'], ['desk-config']])"
 
   # The templates: what is offered, and what is said about it.
+  mutate web "a runtime that has not answered is reported as one with no templates" "$X" \
+    "      ? status === 'ready'" \
+    '      ? true'
   mutate web "the empty pack is offered with no schema to derive it from" "$X" \
     '      ...(schemaSupported ? [{ value: EMPTY, label: EMPTY_LABEL }] : [])' \
     '      ...[{ value: EMPTY, label: EMPTY_LABEL }]'

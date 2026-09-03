@@ -341,6 +341,19 @@ describe('the templates it offers', () => {
     expect(bare.calls).toEqual([])
   })
 
+  it('says nothing about templates while the runtime has not answered', async () => {
+    // A runtime that has not answered advertises nothing, which is not the
+    // same fact as one that advertises neither tool. Reporting the first as
+    // "there is no template to start from here" makes a slow answer read as a
+    // failure — the thing the two template queries are kept apart to avoid.
+    serveProject({ project: PROJECT })
+    renderDialog(stubClient({}), { status: 'connecting', exampleSupported: false, schemaSupported: false })
+    await screen.findByLabelText('Template')
+    expect(screen.queryByText('There is no template to start from here.')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Vendor Onboarding' } })
+    expect(createButton().disabled).toBe(true)
+  })
+
   it('offers the empty pack where the schema is advertised and no examples are', async () => {
     serveProject({ project: PROJECT })
     const schemaOnly = stubClient({ get_schema: () => ({ text: SCHEMA }) })
