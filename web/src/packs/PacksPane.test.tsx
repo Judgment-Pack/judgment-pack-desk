@@ -135,6 +135,35 @@ describe('the packs pane', () => {
     await screen.findByText('This project declares no packs.')
   })
 
+  it('claims no version for a pack whose document the listing could not read', async () => {
+    // `list_packs` still lists such a pack — with `packId` and `packVersion` as
+    // **empty strings** — and puts the reason in `detail`. The row used to
+    // render a bare "v" beside the name: a version member asserted for a
+    // document nothing could read.
+    const stub = stubClient({
+      list_packs: () => ({
+        text: JSON.stringify({
+          status: 'valid',
+          packs: [
+            { id: 'good-pack', packId: 'good-pack', packVersion: '1.0.0' },
+            {
+              id: 'broken-json',
+              packId: '',
+              packVersion: '',
+              detail: 'The file could not be used: pack document is not acceptable JSON.'
+            }
+          ]
+        })
+      })
+    })
+    draw(stub)
+    const row = await screen.findByRole('link', { name: /broken-json/ })
+    expect(row.textContent).not.toContain('v')
+    // The runtime's own sentence, quoted rather than summarised.
+    expect(row.textContent).toContain('not acceptable JSON')
+    expect(screen.getByRole('link', { name: /good-pack/ }).textContent).toContain('v1.0.0')
+  })
+
   it('is a named navigation, because it is a list of navigations', async () => {
     draw(packs(['a-pack']))
     expect(screen.getByRole('navigation', { name: 'Packs' })).toBeTruthy()

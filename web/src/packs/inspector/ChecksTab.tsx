@@ -9,8 +9,16 @@
  *
  * **An empty set is not a clean bill**, and the panel does not dress it as
  * one. It says no other diagnostic named this member — and it does not even
- * say that where `diagnosticsTruncated` is set, because the runtime stopped at
- * its own limit and the desk cannot claim what is not there.
+ * say that in three cases, because in each of them the empty set is not an
+ * answer:
+ *
+ * - `diagnosticsTruncated` is set, so the runtime stopped at its own limit and
+ *   the desk cannot claim what is not there;
+ * - the check has not answered yet, so there is nothing to have named anything
+ *   — the panel said "no other diagnostic names this member" for the whole of
+ *   every page load, while the strip beside it said "Checking…";
+ * - the check is stale, so its anchors describe bytes that have moved and
+ *   nothing below is anchored to what is on screen.
  *
  * The footer names which bytes were checked. In read mode that is the file's
  * bytes, or the served document where the file could not be read; the "bytes
@@ -23,6 +31,7 @@ export function ChecksTab({
   diagnostics,
   truncation,
   stale,
+  pending,
   checkedWhat,
   unavailable
 }: {
@@ -31,6 +40,8 @@ export function ChecksTab({
   truncation: string | undefined
   /** True where the check describes bytes other than the ones on screen. */
   stale: boolean
+  /** True while the check is still in flight, and has named nothing yet. */
+  pending: boolean
   /** Which bytes the check ran over. */
   checkedWhat: string
   /** Why there is no check at all, where there is none. */
@@ -71,10 +82,12 @@ export function ChecksTab({
           ))}
         </ul>
       )}
-      {truncation === undefined ? (
-        <p className={styles.empty}>No other diagnostic names this member.</p>
-      ) : (
+      {pending ? (
+        <p className={styles.empty}>The check has not answered yet.</p>
+      ) : truncation !== undefined ? (
         <p className={styles.empty}>{truncation}</p>
+      ) : stale ? null : (
+        <p className={styles.empty}>No other diagnostic names this member.</p>
       )}
       <p className={styles.footer}>{checkedWhat}</p>
     </div>

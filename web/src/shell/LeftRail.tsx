@@ -313,6 +313,11 @@ function Labelled({
  * one thing the desk knows in that state is that it does not know. That rule
  * came here with the list it used to draw, and the failure is still shown as
  * the failure rather than as an empty project.
+ *
+ * The count is **in the accessible name**, not only in the markup. Every rail
+ * entry carries an `aria-label`, which replaces its contents for a screen
+ * reader — so a count rendered as a child of one is a number only a sighted
+ * reader gets. The name says it instead.
  */
 function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => void }) {
   const { data, error } = usePacks()
@@ -324,7 +329,7 @@ function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => 
         <NavLink
           className="desk-nav-item"
           to="/packs"
-          aria-label="Packs"
+          aria-label={count === undefined ? 'Packs' : `Packs, ${count}`}
           onClick={onNavigate}
           title={error ? error.message : undefined}
         >

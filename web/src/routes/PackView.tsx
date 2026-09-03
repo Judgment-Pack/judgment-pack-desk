@@ -26,13 +26,13 @@
  * a real caller.
  */
 import { useEffect, useMemo, useState } from 'react'
-import { useLocation, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { ErrorBox, Loading } from '../components/primitives'
 import { useFileContent } from '../files/queries'
 import { useMcp } from '../mcp/McpProvider'
-import { usePack, useValidate } from '../mcp/queries'
+import { usePack, usePacks, useValidate } from '../mcp/queries'
 import { agreesWithParse, indexDocument } from '../packs/documentText'
-import { anchor, isStale, layersReached, truncationNote } from '../packs/checks'
+import { anchor, layersReached, truncationNote } from '../packs/checks'
 import { PackDocumentView } from '../packs/document/PackDocumentView'
 import { SelectionContext } from '../packs/document/Block'
 import { PackInspector } from '../packs/inspector/PackInspector'
@@ -48,6 +48,7 @@ export function PackView() {
   const [params, setParams] = useSearchParams()
   const { known, validateSupported } = useMcp()
   const pack = usePack(packId)
+  const listing = usePacks()
   const meta = pack.data?.meta
   const file = useFileContent(meta?.path)
   const slot = useInspectorSlot()
@@ -57,6 +58,10 @@ export function PackView() {
     const next = new URLSearchParams(params)
     next.set('at', pointer)
     setParams(next, { replace: true })
+    // Selecting is asking to inspect. With the pane closed — the shell's
+    // default in a fresh profile — this otherwise filled a panel behind a
+    // closed pane and changed nothing on screen but the block's own border.
+    slot.reveal()
   }
 
   // The bytes the check ran over: the file's where they loaded, the served
@@ -89,7 +94,13 @@ export function PackView() {
   }, [documentKey, at])
 
   const anchored = useMemo(() => anchor(check.data, rendered), [check.data, rendered])
-  const stale = isStale(checkedText, fileText ?? pack.data?.raw)
+  // **Never stale in read mode, by construction**, and said here rather than
+  // computed: the check's query key *is* the buffer, so a report only ever
+  // exists for the bytes on screen. `isStale` is the rule the editor phase
+  // wires up, where the buffer moves under a report that has already answered;
+  // calling it here with one expression on both sides would read as a live
+  // guard and could never fire.
+  const stale = false
 
   // The deep link. `getElementById`, never `querySelector`: a pointer contains
   // `/` and `~`, which are legal in an id and are not a selector.
@@ -103,6 +114,7 @@ export function PackView() {
     const next = new URLSearchParams(params)
     next.set('at', pointer)
     setParams(next, { replace: true })
+    slot.reveal()
     // The fragment is the trigger and the only one: a re-render must not drag
     // the reader back to a member they have scrolled away from.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -131,9 +143,10 @@ export function PackView() {
         meta={pack.data.meta}
         fileSha256={file.data?.sha256}
         fileBytes={file.data?.bytes}
-        anchored={stale ? [] : anchored}
+        anchored={anchored}
         truncation={truncationNote(check.data)}
         stale={stale}
+        pending={check.isPending}
         checkedWhat={checkedWhat}
         unavailable={checkUnavailable(known, validateSupported, check.error)}
         tab={slot.tab}
@@ -146,21 +159,59 @@ export function PackView() {
   if (pack.error) return <ErrorBox title={`Could not load pack ${packId}`} error={pack.error} />
   if (!pack.data) return null
 
+  const rootAnchored = anchored.filter((entry) => entry.anchor === '')
+
   const digestsDisagree =
     meta?.sha256 !== undefined &&
     file.data?.sha256 !== undefined &&
     meta.sha256 !== file.data.sha256
 
+  // The document is one of three views on a pack, and this is the only one with
+  // a route to the other two. `PackDetail` carried the links and the rail
+  // carried a per-pack Evaluate child; both went with this rewrite, and the
+  // what-if view was reachable only by typing its URL.
+  const hasMatrix = (listing.data?.packs ?? []).some(
+    (summary) => summary.id === packId && summary.matrix === true
+  )
+
   return (
     <SelectionContext.Provider value={{ at, select }}>
       {inspector}
       <PackDocumentView document={pack.data.document} active={active}>
+        <p className={styles.elsewhere}>
+          <Link className={styles.elsewhereLink} to={`/packs/${encodeURIComponent(packId ?? '')}/evaluate`}>
+            Try it
+          </Link>
+          {hasMatrix && (
+            <Link className={styles.elsewhereLink} to={`/packs/${encodeURIComponent(packId ?? '')}/matrix`}>
+              Test matrix
+            </Link>
+          )}
+        </p>
         <div className={styles.strip}>
           <p className={styles.check}>
             {checkUnavailable(known, validateSupported, check.error) ??
               (check.isPending ? 'Checking…' : layersReached(check.data).text)}
           </p>
           <p className={styles.checkWhat}>{checkedWhat}</p>
+          {/*
+            The diagnostics that landed on the document itself. `anchor()` sends
+            a diagnostic here when neither its own pointer nor any ancestor of
+            it is on the page — a pack with no `specVersion` is refused at
+            `/specVersion`, and nothing renders that member — and the strip is
+            the block whose pointer is the empty string. Until this list, those
+            were counted in the sentence above and printed nowhere at all.
+          */}
+          {rootAnchored.length > 0 && (
+            <ul className={styles.rootDiagnostics}>
+              {rootAnchored.map((entry, index) => (
+                <li key={`${entry.diagnostic.code}-${index}`}>
+                  <code>{entry.diagnostic.code}</code> {entry.diagnostic.message}{' '}
+                  <code>{entry.named === '' ? 'the document' : entry.named}</code>
+                </li>
+              ))}
+            </ul>
+          )}
           {digestsDisagree && (
             <p className={styles.warning} role="status">
               The runtime served bytes with a different digest from the file on disk. These are

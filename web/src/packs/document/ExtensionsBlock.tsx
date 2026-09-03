@@ -7,6 +7,7 @@
  * its own pointer, because a namespaced member someone put in a pack is part
  * of what the pack says.
  */
+import { child } from '../pointers'
 import { Block } from './Block'
 import styles from './PackDocument.module.css'
 
@@ -28,7 +29,9 @@ export function ExtensionsBlock({
       <ul className={styles.extensionList}>
         {Object.entries(extensions).map(([name, value]) => (
           <li key={name}>
-            <Block pointer={`${at}/${name.replaceAll('~', '~0').replaceAll('/', '~1')}`} as="div">
+            {/* The key is document data, so the escaping goes through the
+                one function that has a test, and never a template literal. */}
+            <Block pointer={child(at, name)} as="div">
               <code className={styles.id}>{name}</code>{' '}
               <code className={styles.literal}>{JSON.stringify(value)}</code>
             </Block>

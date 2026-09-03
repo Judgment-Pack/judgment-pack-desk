@@ -37,6 +37,7 @@ export function PackInspector({
   anchored,
   truncation,
   stale,
+  pending,
   checkedWhat,
   unavailable,
   tab,
@@ -52,6 +53,8 @@ export function PackInspector({
   anchored: readonly AnchoredDiagnostic[]
   truncation: string | undefined
   stale: boolean
+  /** True while the check is still in flight. */
+  pending: boolean
   checkedWhat: string
   unavailable?: string
   tab: string | null
@@ -98,6 +101,7 @@ export function PackInspector({
               diagnostics={diagnosticsFor(anchored, at)}
               truncation={truncation}
               stale={stale}
+              pending={pending}
               checkedWhat={checkedWhat}
               unavailable={unavailable}
             />

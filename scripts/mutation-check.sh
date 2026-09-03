@@ -199,8 +199,15 @@ if [ -n "$baseline_go" ] || [ -n "$baseline_web" ]; then
   echo "the unmutated suite is not green — every row below would be meaningless" >&2
   echo "  go:  ${baseline_go:-clean}" >&2
   echo "  web: ${baseline_web:-clean}" >&2
+  # **And say so on stdout, in the table's own shape.** This used to write only
+  # to stderr and exit, so a caller running one row at a time and collecting
+  # rows with `grep '^|'` recorded a *silent gap*: the row it asked for produced
+  # no line at all, which reads exactly like a row nobody ran on purpose. A run
+  # that skipped its rows must be visible in the table it did not fill in.
+  echo "| mutation | test that failed |"
+  echo "| --- | --- |"
+  report "${only:-every row}" "**BASELINE NOT GREEN — not run**"
   exit 2
-
 fi
 
 echo "mutation check against $commit"
@@ -547,6 +554,19 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   RL=web/src/shell/LeftRail.tsx
   CV=web/src/ui/convention.test.ts
   PPC=web/src/packs/PacksPane.module.css
+  RF=web/src/packs/references.ts
+  IS=web/src/shell/InspectorSlot.tsx
+  SPY=web/src/packs/useDocumentSpy.ts
+  AB=web/src/packs/document/ApplicabilityBlock.tsx
+  CTAB=web/src/packs/inspector/ChecksTab.tsx
+  PV=web/src/routes/PackView.tsx
+  BK=web/src/packs/document/Block.tsx
+  PDV=web/src/packs/document/PackDocumentView.tsx
+  MO=web/src/packs/document/MemberOutline.tsx
+  PN=web/src/packs/PacksPane.tsx
+  PT=web/src/packs/pointers.ts
+  AS=web/src/shell/AppShell.tsx
+  FX=web/src/packs/__fixtures__/full.pack.json
 
   # The rail's graph gate. `useConfiguredGraphs` falls back to a whole-project
   # `experimental_test_graphs` walk against any runtime without the inventory
@@ -1743,6 +1763,126 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the rail claims a count for a listing that never answered" "$RL" \
     '  const count = error === null && data !== undefined ? (data.packs ?? []).length : undefined' \
     '  const count = (data?.packs ?? []).length'
+
+
+  # ---------------------------------------------------------------------------
+  # The verification round. Each row breaks one claim a review found the desk
+  # making without holding.
+  # ---------------------------------------------------------------------------
+
+  # The References panel. `escalation.triggers` is a closed enum of five reason
+  # words, so reading one as an evidence-requirement id printed a
+  # dangling-reference claim on every conformant pack.
+  mutate web "escalation triggers are read as evidence requirement ids" "$RF" \
+    '  // The fallback outcome names an outcome like any other reference does.' \
+    '  if (at === pointer(['"'"'escalation'"'"'])) {
+    for (const id of document.escalation?.triggers ?? []) {
+      lines.push(named('"'"'trigger'"'"', id, evidenceAt, '"'"'evidence requirement'"'"'))
+    }
+  }
+
+  // The fallback outcome names an outcome like any other reference does.'
+  mutate web "a rule with no outcome still gets an unresolved-id line" "$RF" \
+    "      if (typeof rule.outcome === 'string') {" \
+    '      if (true) {'
+  # And the fixture the whole reference model is read against.
+  mutate web "a fixture may assert a shape the spec forbids" "$FX" \
+    '  "triggers": ["missing-required-evidence", "unknown"],' \
+    '  "triggers": ["screening-report"],'
+
+  # The writer's span index — the whole reason the module exists. A
+  # first-occurrence replace passes every other case in that file, because the
+  # two pointers they exercise hold text that is unique in the document.
+  mutate web "the splice replaces the first matching text rather than the span" "$DT" \
+    '  return text.slice(0, span.valueStart) + json + text.slice(span.valueEnd)' \
+    '  return text.replace(text.slice(span.valueStart, span.valueEnd), json)'
+
+  # The slot. A claim without a publication suppresses the pane's empty state
+  # and puts nothing in its place.
+  mutate web "the slot is claimed for a node that is not there" "$IS" \
+    "  const publishing = target !== null && node !== null && node !== undefined" \
+    '  const publishing = target !== null'
+
+  # The scroll-spy. `?at` addresses every block; the outline lists twelve units.
+  mutate web "a selection under a member marks no outline entry" "$SPY" \
+    '  const inOutline = selected === null ? undefined : outlineUnitFor(pointers, selected)
+  return inOutline ?? seen' \
+    '  void outlineUnitFor
+  return selected ?? seen'
+
+  # One address, one element.
+  mutate web "applicability renders two elements at one pointer" "$AB" \
+    '    <section>' \
+    '    <section id={at} data-pointer={at}>'
+
+  # The Checks tab. An empty set is not an answer while the check is in flight,
+  # and it is not one about bytes that have moved either.
+  mutate web "a check that has not answered reads as a clean bill" "$CTAB" \
+    '      {pending ? (' \
+    '      {pending && false ? ('
+  mutate web "a stale check still issues its clean bill" "$CTAB" \
+    '      ) : stale ? null : (' \
+    '      ) : stale && false ? null : ('
+  mutate web "the route never says the check is still running" "$PV" \
+    '        pending={check.isPending}' \
+    '        pending={false}'
+
+  # A diagnostic that named no rendered member.
+  mutate web "a diagnostic anchored on the document is counted and never printed" "$PV" \
+    '          {rootAnchored.length > 0 && (' \
+    '          {false && ('
+
+  # The two other views on this pack, which nothing else links to.
+  mutate web "the what-if view loses its last way in" "$PV" \
+    '          <Link className={styles.elsewhereLink} to={`/packs/${encodeURIComponent(packId ?? '"''"')}/evaluate`}>
+            Try it
+          </Link>' \
+    '          {null}'
+
+  # Selecting with the pane closed.
+  mutate web "selecting fills a panel behind a closed pane" "$PV" \
+    '    // closed pane and changed nothing on screen but the block'"'"'s own border.
+    slot.reveal()' \
+    '    void slot'
+  mutate web "the shell ignores a route asking to open the Inspector" "$AS" \
+    '    if (!inspectorOpen) toggleInspector()' \
+    '    void inspectorOpen'
+
+  # The document's one tab stop, and what it is for.
+  mutate web "no block is reachable by keyboard" "$BK" \
+    '      tabIndex={cursor.at === pointer ? 0 : -1}' \
+    '      tabIndex={-1}'
+  mutate web "the arrow keys move nothing" "$PDV" \
+    "  if (event.key === 'ArrowDown') next = Math.min(last, current + 1)" \
+    '  if (false) next = current'
+  mutate web "Enter on a block selects nothing" "$PDV" \
+    "  if (event.key === 'Enter' || event.key === ' ') {" \
+    '  if (false) {'
+
+  # Two paths to one act, one history entry, one address.
+  mutate web "an outline entry fills the Back stack" "$MO" \
+    '                to={{ search, hash: `#${entry.pointer}` }}
+                // Choosing what to inspect is not a navigation, and the block
+                // beside it replaces. Two paths to one act, one history entry.
+                replace' \
+    '                to={{ hash: `#${entry.pointer}` }}'
+
+  # A version the listing did not answer with.
+  mutate web "an empty version is drawn as a version" "$PN" \
+    '                  {isSpelled(pack.packVersion) ? (' \
+    '                  {pack.packVersion !== undefined ? ('
+
+  # The pointer escaping, at the one call site whose step is document data.
+  mutate web "a pointer step is concatenated rather than escaped" "$PT" \
+    '  const parts = parsePointer(at)
+  if (parts === undefined) return at
+  return pointer([...parts, step])' \
+    '  return `${at}/${String(step)}`'
+
+  # The rail's count, in the place assistive technology reads it.
+  mutate web "the rail count is invisible to a screen reader" "$RL" \
+    "          aria-label={count === undefined ? 'Packs' : \`Packs, \${count}\`}" \
+    '          aria-label="Packs"'
 
   # 8. The widened convention rule, and a module outside src/ui to break it on.
   mutate web "a module outside src/ui may spell a colour" "$CV" \

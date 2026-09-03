@@ -63,7 +63,8 @@ unwind would be worse than the residue.
 
 - `/packs` lists the project's packs in a pane beside the document, and
   `/packs/:id` reads one — the whole document, in the order the file writes it,
-  with every member the file leaves out stated as left out. Described under
+  with every member the file leaves out stated as left out, and links from it to
+  the what-if view and the test matrix. Described under
   [Pack view](#pack-view).
 
 Conditions are rendered as an indented tree and never paraphrased into English.
@@ -370,10 +371,11 @@ sibling rule would have been shorter and is rejected — vitest runs with
 `css: false`, so nothing in this repo could hold it and the mutation harness
 could not discriminate it.
 
-**A route may add a landmark inside `main`.** The packs pane is a list of
-navigations, so `<nav aria-label="Packs">` is the correct markup for it; the six
-regions below are the *shell's*, each still exactly one, and a test holds that
-with the pack route mounted.
+**A route may add a landmark inside `main`.** The pack route adds two: the
+packs pane is a list of navigations, so `<nav aria-label="Packs">` is the
+correct markup for it, and the document carries its own `<nav aria-label=
+"Members">` outline. The six regions below are the *shell's*, each still exactly
+one, and a test holds that with both of the route's own landmarks mounted.
 
 | Region | Default | Collapse | Landmark |
 |---|---|---|---|
@@ -504,6 +506,12 @@ Three things the old view dropped are here: `metadata.reviews`, the per-member
 condition tree. Reviews are **rendered and never written**: this surface has no
 reviewer identity, so a review it wrote would be signed by nobody.
 
+The fixtures the whole of this is asserted against are documents `jpack spec
+validate` accepts, and a test holds every enum-valued member of each of them
+against the spec's own closed lists. They were not: `full.pack.json` wrote an
+evidence-requirement id into `escalation.triggers`, which is what made the wrong
+reference model above look correct and froze it in a passing test.
+
 ### One address space
 
 Every block carries its RFC 6901 pointer, and that one string is five things:
@@ -526,7 +534,24 @@ percent-decoded before it is compared.
 Selection is held in the **route** and never in the pane: `RightPane` swaps its
 wrapper at 1100px and remounts the subtree, so a selection the pane held would
 be lost at that width. Selecting writes with `replace`, because choosing what to
-inspect is not a navigation and must not fill the Back stack.
+inspect is not a navigation and must not fill the Back stack — from a block and
+from an outline entry alike, and both carry the rest of the address through. One
+element carries one pointer, and a test holds that no pointer appears twice.
+
+Selecting also **opens the Inspector** where it is closed, which is the shell's
+default in a fresh profile. It is a response to a gesture and not a seed: a
+reader who picks a member has said what the pane is for, and without it the
+panel filled behind a closed pane and the only thing that changed on screen was
+the block's own border.
+
+**The document is one tab stop**, not ninety-seven. A roving tab index puts
+`tabIndex={0}` on exactly one block: the arrow keys move it in document order,
+Home and End reach the ends, and Enter or Space selects. Otherwise the only
+keyboard route into `?at` was the outline, which addresses the twelve member
+units and nothing under them — no rule card, no condition operand, no review. No
+`role` is claimed for a block: these are the document's own regions, nested
+inside one another, and `role="button"` on a container holding more of them
+would be a lie about both.
 
 ### The Inspector's three panels
 
@@ -540,11 +565,16 @@ inspect is not a navigation and must not fill the Back stack.
   computed from the document. Where an id resolves to nothing the line says "no
   declared outcome carries this id" and stops: `JPS-SEMANTIC-UNRESOLVED-OUTCOME`
   is the runtime's to issue, and the desk must not shadow it with a word of its
-  own.
+  own. A member that names **no id at all** produces no line: `escalation.
+  triggers` is a closed enum of five reason words, not a list of ids, and
+  resolving one printed a dangling-reference claim on every conformant pack.
 - **Checks** — the diagnostics anchored at or under the pointer, each printing
   the runtime's own `code`, `layer`, `severity` and `codeStability`, with the
   pointer at the foot; then which bytes were checked. An empty set is **not** a
-  clean bill and the panel does not dress it as one.
+  clean bill and the panel does not dress it as one — and it does not say even
+  that much while the check is still in flight, where the list was truncated, or
+  where the check is stale, because in each of those the empty set is not an
+  answer.
 
 ### The packs pane
 
@@ -552,7 +582,15 @@ inspect is not a navigation and must not fill the Back stack.
 descending, and nothing else — `list_packs` reports no date and no size, so any
 other order would be one the desk invented), the rows with their versions, and
 "Show all N" past the first screenful. Rows are links, so tab order is native;
-the arrow keys, Home and End move focus between them and the window follows.
+the arrow keys step between them, and Home and End reach the ends of **what is
+rendered** — past a window that is not the end of the list, and reaching further
+means scrolling first, which is what a pointer does anyway.
+
+A pack whose document the listing could not read is still listed, with `packId`
+and `packVersion` sent as **empty strings** and the reason in `detail`. Such a
+row carries the runtime's own sentence instead of a version: an empty version is
+not a version, and a bare "v" asserted a member of a document nothing could
+read.
 
 Past a screenful the list is windowed — a fixed row height, an overscan, and no
 new dependency. **A viewport that cannot be measured renders every row**, which
@@ -566,8 +604,10 @@ listing actually answered, and never a `0`.
 
 The pane is a `<nav aria-label="Packs">`, because it is a list of navigations.
 That is a **seventh** landmark on the page while this route is open, inside
-`main`; the shell's own six are unchanged, and a test holds that each of them is
-still exactly one.
+`main`, and the document's own member outline is an **eighth** — three
+navigations in all, each named, so a screen reader can tell them apart. The
+shell's own six are unchanged, and a test mounts both of the route's landmarks
+and holds that each of the six is still exactly one.
 
 ### Checks and layers
 
@@ -588,9 +628,19 @@ version the runtime does not bundle reports one layer row and a `capability`
 diagnostic whose layer appears in no row at all, while an unsupported required
 extension reports all three layers passing.
 
+The document is one of three views on a pack, and it carries the links to the
+other two: **Try it** to `/packs/:id/evaluate`, and **Test matrix** where the
+listing says the pack declares one. Both were reachable only from the view this
+replaced.
+
 Diagnostics anchor on an exact `instancePath` match, else on the nearest
 **rendered** ancestor with the diagnostic's own pointer printed verbatim beside
-it, else on the document strip. That ancestor walk is what makes a *missing*
+it, else on the document strip — which **prints them**, under the layer
+sentence, with the runtime's code, message and the pointer it named. A pack with
+no `specVersion` is refused at `/specVersion` and the eyebrow renders that
+member only when it is there, so its diagnostic reaches the strip and nothing
+else; counting it in the sentence and printing it nowhere would be a page that
+says a member is wrong and never says which. That ancestor walk is what makes a *missing*
 member reportable: the runtime reports one at the pointer including the absent
 name, so `/rules/0/when` on a rule with no `when` lands on that rule's card. A
 diagnostic computed against different bytes is **never re-anchored** — deleting
@@ -1232,10 +1282,14 @@ web/                 Vite + React + TypeScript SPA
                      hook, the scroll-spy — and what a new pack is called and
                      where it goes (the slug rule, the template shaping, and
                      the jpack.json amendment)
+    __fixtures__/    the documents every case here is asserted against, each
+                     one the runtime accepts, held to the spec's own enums by
+                     a test
     document/        the reading document: the member order the schema
                      declares, the block wrapper that carries every pointer,
-                     the omitted-member line, the unparaphrased condition tree
-                     and one component per member kind
+                     the roving tab stop and its key handling, the
+                     omitted-member line, the unparaphrased condition tree and
+                     one component per member kind
     inspector/       the three panels: Member, References, Checks
   src/config/        the jpack-desk.json schema, its strict decoder, the one
                      query that reads it, and the theme attribute it writes

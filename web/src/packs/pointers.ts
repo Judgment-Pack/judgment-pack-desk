@@ -47,6 +47,22 @@ export function pointer(parts: readonly (string | number)[]): string {
 }
 
 /**
+ * One step down from a pointer, escaping the step.
+ *
+ * The reason this exists rather than a template literal: an extension's key is
+ * **document data**. A namespaced `example.owner` needs no escaping and a key
+ * carrying `/` or `~` does, and a call site that got it wrong would address a
+ * block nothing anchors on — silently, because a diagnostic that anchors on
+ * nothing is a diagnostic the desk stops reporting. A constant step is safe
+ * either way and goes through here too, so there is one spelling.
+ */
+export function child(at: string, step: string | number): string {
+  const parts = parsePointer(at)
+  if (parts === undefined) return at
+  return pointer([...parts, step])
+}
+
+/**
  * The inverse. Anything that is neither empty nor `/`-prefixed is refused
  * rather than repaired: a value that is not a pointer names nothing, and
  * guessing which member it meant would put a diagnostic on the wrong block.

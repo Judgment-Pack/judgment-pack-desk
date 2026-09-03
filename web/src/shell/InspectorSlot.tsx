@@ -53,6 +53,17 @@ export interface InspectorSlot {
    * panel. Returns nothing; the release is the effect's cleanup.
    */
   claim: () => () => void
+  /**
+   * Open the pane, because the viewer just asked to inspect something.
+   *
+   * A no-op where it is already open. This is a response to a gesture and not
+   * a seed: the shell's rule is that a *restored* layout must not be overridden
+   * by a default, and a reader who clicks a member of the document has said
+   * what they want the pane for. Without it, selecting wrote a pointer into the
+   * address, filled a panel nobody could see, and changed nothing on screen but
+   * one border.
+   */
+  reveal: () => void
 }
 
 const CLOSED: InspectorSlot = {
@@ -61,7 +72,8 @@ const CLOSED: InspectorSlot = {
   tab: null,
   setTab: () => {},
   target: null,
-  claim: () => () => {}
+  claim: () => () => {},
+  reveal: () => {}
 }
 
 export const InspectorSlotContext = createContext<InspectorSlot>(CLOSED)
@@ -81,13 +93,21 @@ export function useInspectorSlot(): InspectorSlot {
  * A closed drawer publishes **no target**, so nothing is rendered and nothing
  * is claimed — the route is told there is nowhere to publish rather than
  * handed a detached node.
+ *
+ * **A null node is not a publication either.** A route calls this hook
+ * unconditionally, above its own early returns, and hands `null` while its data
+ * is loading or after the load failed. Claiming on the target alone suppressed
+ * the pane's empty state for the whole of that time — and for ever on a route
+ * whose load failed — leaving the pane with a heading and nothing under it. So
+ * the claim and the portal are the same condition, which is what the paragraph
+ * above says they are.
  */
 export function useInspectorPortal(node: ReactNode): ReactPortal | null {
   const { target, claim } = useInspectorSlot()
-  const publishing = target !== null
+  const publishing = target !== null && node !== null && node !== undefined
   useEffect(() => {
     if (!publishing) return
     return claim()
   }, [publishing, claim])
-  return target === null ? null : createPortal(node, target)
+  return publishing ? createPortal(node, target) : null
 }

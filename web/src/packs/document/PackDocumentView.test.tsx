@@ -5,12 +5,13 @@
  * asserted is a document someone could have authored — including its member
  * order, which one of these cases is entirely about.
  */
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { PackDocument } from '../../mcp/types'
+import { SelectionContext } from './Block'
 import { PackDocumentView } from './PackDocumentView'
 
 afterEach(cleanup)
@@ -97,6 +98,21 @@ describe('the full document', () => {
     }
   })
 
+  it('gives each pointer exactly one element', () => {
+    // One address, one element. `applicability` used to render two — the
+    // member's own wrapper and the root row of the condition tree inside it —
+    // so the document carried a duplicate id, `getElementById` answered by
+    // tree order, and one selection put `aria-current` on both. The assertion
+    // above cannot see that: both duplicates have an id equal to their own
+    // pointer.
+    const { container } = draw(full)
+    const all = pointers(container)
+    const seen = new Map<string, number>()
+    for (const pointer of all) seen.set(pointer, (seen.get(pointer) ?? 0) + 1)
+    expect([...seen].filter(([, count]) => count > 1)).toEqual([])
+    expect(seen.has('/applicability')).toBe(true)
+  })
+
   it('tags the fallback outcome from the document’s own member', () => {
     draw(full)
     expect(screen.getByText('fallback')).toBeTruthy()
@@ -161,5 +177,87 @@ describe('the minimal document', () => {
     expect(outline.textContent).toContain('Outcomes 2')
     expect(outline.textContent).toContain('Rules 2')
     expect(outline.textContent).toContain('Exceptions 1')
+  })
+})
+
+describe('reaching a member without a mouse', () => {
+  /** The document, with the selection captured. */
+  function drive(at: string | null = null) {
+    const chosen: string[] = []
+    const view = render(
+      <MemoryRouter>
+        <SelectionContext.Provider value={{ at, select: (pointer) => chosen.push(pointer) }}>
+          <PackDocumentView document={full} active={null} />
+        </SelectionContext.Provider>
+      </MemoryRouter>
+    )
+    const blocks = [...view.container.querySelectorAll<HTMLElement>('[data-pointer]')].filter(
+      (element) => element.getAttribute('data-pointer') !== ''
+    )
+    return { chosen, blocks, ...view }
+  }
+
+  const stops = (blocks: HTMLElement[]) =>
+    blocks.filter((element) => element.getAttribute('tabindex') === '0')
+
+  it('is one tab stop and not ninety-seven', () => {
+    // Every block used to carry `tabIndex={-1}` and a click handler, so the
+    // only keyboard route into `?at` was the outline — twelve member units and
+    // nothing under them.
+    const { blocks } = drive()
+    expect(blocks.length).toBeGreaterThan(50)
+    expect(stops(blocks)).toHaveLength(1)
+    expect(stops(blocks)[0]!.getAttribute('data-pointer')).toBe('/title')
+  })
+
+  it('follows the selection, so a deep link is where Tab comes back to', () => {
+    const { blocks } = drive('/rules/0')
+    expect(stops(blocks)[0]!.getAttribute('data-pointer')).toBe('/rules/0')
+  })
+
+  it('moves the stop and the focus with the arrow keys', () => {
+    const { blocks } = drive()
+    const first = blocks[0]!
+    first.focus()
+    fireEvent.keyDown(first, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(blocks[1])
+    expect(stops(blocks).map((element) => element.getAttribute('data-pointer'))).toEqual([
+      blocks[1]!.getAttribute('data-pointer')
+    ])
+
+    fireEvent.keyDown(blocks[1]!, { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(first)
+  })
+
+  it('reaches the ends with Home and End', () => {
+    const { blocks } = drive()
+    blocks[0]!.focus()
+    fireEvent.keyDown(blocks[0]!, { key: 'End' })
+    expect(document.activeElement).toBe(blocks[blocks.length - 1])
+    fireEvent.keyDown(blocks[blocks.length - 1]!, { key: 'Home' })
+    expect(document.activeElement).toBe(blocks[0])
+  })
+
+  it('selects the block under the stop with Enter and with Space', () => {
+    const { chosen, blocks } = drive()
+    const operand = blocks.find(
+      (element) => element.getAttribute('data-pointer') === '/rules/1/when/conditions/0/value'
+    )!
+    operand.focus()
+    fireEvent.keyDown(operand, { key: 'Enter' })
+    fireEvent.keyDown(operand, { key: ' ' })
+    expect(chosen).toEqual([
+      '/rules/1/when/conditions/0/value',
+      '/rules/1/when/conditions/0/value'
+    ])
+  })
+
+  it('leaves the outline’s own links alone', () => {
+    // Enter on a link is the link's. Arrowing out of one would be a surprise.
+    const { chosen } = drive()
+    const link = screen.getAllByRole('link')[0]!
+    fireEvent.keyDown(link, { key: 'Enter' })
+    fireEvent.keyDown(link, { key: 'ArrowDown' })
+    expect(chosen).toEqual([])
   })
 })

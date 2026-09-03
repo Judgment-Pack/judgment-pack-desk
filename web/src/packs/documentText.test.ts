@@ -55,6 +55,32 @@ describe('a one-field edit', () => {
     expect(after).toEqual(before)
   })
 
+  it('edits the span and not the first text that matches it', () => {
+    // The one case that discriminates a positional splice from a string
+    // replace. `/rules/0/outcome` holds `"decline"`, and the *first* occurrence
+    // of those bytes in the file is `/outcomes/1/id` — the outcome declaration
+    // the whole document points at. A `text.replace(...)` writer passes every
+    // other assertion in this file, because the two pointers those exercise
+    // hold text that is unique, and silently renames the outcome instead.
+    const text = read('full.pack.json')
+    const index = indexDocument(text)
+    const span = spanAt(index, '/rules/0/outcome')!
+    expect(text.indexOf('"decline"')).toBeLessThan(span.valueStart)
+
+    const edited = replaceValue(text, index, '/rules/0/outcome', '"approve"')
+    const before = JSON.parse(text)
+    const after = JSON.parse(edited)
+    expect(after.outcomes[1].id).toBe('decline')
+    expect(after.rules[0].outcome).toBe('approve')
+    before.rules[0].outcome = 'approve'
+    expect(after).toEqual(before)
+
+    // And the bytes outside the span are the file's own, on both sides.
+    expect(edited.slice(0, span.valueStart)).toBe(text.slice(0, span.valueStart))
+    const tail = text.length - span.valueEnd
+    expect(edited.slice(edited.length - tail)).toBe(text.slice(span.valueEnd))
+  })
+
   it('is not a re-serialization: the file’s own shape survives', () => {
     const text = read('full.pack.json')
     const index = indexDocument(text)

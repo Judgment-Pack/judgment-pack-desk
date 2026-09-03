@@ -75,7 +75,7 @@ describe('the left rail', () => {
     // A runtime with no graph tools at all: exactly the case where
     // `useConfiguredGraphs` falls back to running every graph's matrix.
     renderRail(stub, { graphInventorySupported: false })
-    await screen.findByRole('link', { name: 'Packs' })
+    await screen.findByRole('link', { name: /^Packs/ })
     expect(stub.calls.map((call) => call.name)).toEqual(['list_packs'])
     expect(stub.calls.every((call) => call.name !== 'experimental_test_graphs')).toBe(true)
   })
@@ -118,9 +118,13 @@ describe('the left rail', () => {
     // rest to the project home, which is a list that stops being one exactly
     // when it would start being useful.
     renderRail(packs(['intake-triage', 'vendor-onboarding']))
-    const link = await screen.findByRole('link', { name: 'Packs' })
+    const link = await screen.findByRole('link', { name: /^Packs/ })
     expect(link.getAttribute('href')).toBe('/packs')
-    await waitFor(() => expect(link.textContent).toContain('2'))
+    // The **accessible name**, not the markup. Every rail entry carries an
+    // `aria-label`, which replaces its contents, so a count that lived only in
+    // a child span was a number no screen reader ever reached.
+    await waitFor(() => expect(link.getAttribute('aria-label')).toBe('Packs, 2'))
+    expect(link.textContent).toContain('2')
     expect(screen.queryByRole('link', { name: 'intake-triage' })).toBeNull()
     expect(screen.queryByRole('link', { name: 'show all →' })).toBeNull()
   })
@@ -136,7 +140,11 @@ describe('the left rail', () => {
     })
     renderRail(stub)
     await screen.findByText(/the runtime refused the listing/)
-    expect(screen.getByRole('link', { name: 'Packs' }).textContent).not.toContain('0')
+    const link = screen.getByRole('link', { name: /^Packs/ })
+    expect(link.textContent).not.toContain('0')
+    // And the name says no number either, which is the same claim in the place
+    // assistive technology reads it.
+    expect(link.getAttribute('aria-label')).toBe('Packs')
   })
 
   it('marks the active route with aria-current', async () => {

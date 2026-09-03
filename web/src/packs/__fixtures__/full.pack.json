@@ -47,7 +47,7 @@
     {
       "id": "insurance-rule",
       "title": "Insurance requirements",
-      "locator": { "kind": "document", "value": "policies/insurance.pdf" }
+      "locator": { "kind": "path", "value": "policies/insurance.pdf" }
     }
   ],
   "outcomes": [
@@ -112,7 +112,7 @@
       "id": "vendor-waiver",
       "description": "A signed waiver suspends the approval rule.",
       "when": { "op": "fact", "path": "/request/waiver", "operator": "equals", "value": "signed" },
-      "effect": "suppress",
+      "effect": "suppress-rule",
       "targetRule": "approve-when-clear",
       "onUnknown": "escalate",
       "sourceRefs": ["onboarding-policy"],
@@ -121,8 +121,8 @@
   ],
   "fallbackOutcome": "decline",
   "escalation": {
-    "triggers": ["screening-report"],
-    "target": { "kind": "role", "name": "onboarding reviewer" },
+    "triggers": ["missing-required-evidence", "unknown"],
+    "target": { "kind": "human-role", "name": "onboarding reviewer" },
     "message": "Send this to the onboarding reviewer with the screening report attached.",
     "extensions": { "example.channel": "queue" }
   },

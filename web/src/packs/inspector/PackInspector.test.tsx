@@ -68,6 +68,7 @@ function draw(
     anchored: anchor(REPORT, RENDERED),
     truncation: truncationNote(REPORT),
     stale: false,
+    pending: false,
     checkedWhat: 'checked against the bytes of packs/vendor-onboarding.pack.json',
     tab: 'member' as string | null,
     onTabChange: vi.fn(),
@@ -184,9 +185,23 @@ describe('the Checks panel', () => {
 
   it('says a check ran over other bytes rather than re-anchoring it', () => {
     draw('/rules/1', { tab: 'checks', stale: true, anchored: [] })
-    expect(screen.getByRole('tabpanel').textContent).toContain(
-      'computed against other bytes'
-    )
+    const panel = screen.getByRole('tabpanel')
+    expect(panel.textContent).toContain('computed against other bytes')
+    // And it does not put a clean bill under that banner. Nothing below is
+    // anchored to what is on screen, so "no other diagnostic names this
+    // member" would be a claim about bytes that are gone.
+    expect(panel.textContent).not.toContain('No other diagnostic names this member.')
+  })
+
+  it('says the check has not answered rather than that nothing was found', () => {
+    // Exactly the props a check still in flight produces: no report, so no
+    // diagnostics, no truncation note and no reason it is unavailable. The
+    // panel printed a clean bill for the whole of every page load, while the
+    // strip beside it said "Checking…".
+    draw('/outcomes/0', { tab: 'checks', pending: true, anchored: [], truncation: undefined })
+    const panel = screen.getByRole('tabpanel')
+    expect(panel.textContent).toContain('The check has not answered yet.')
+    expect(panel.textContent).not.toContain('No other diagnostic names this member.')
   })
 
   it('says why there is no check, where there is none', () => {

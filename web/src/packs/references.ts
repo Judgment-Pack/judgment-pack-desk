@@ -12,6 +12,15 @@
  * Both directions, because a reader looking at an outcome wants to know what
  * produces it as much as a reader looking at a rule wants to know what it
  * produces.
+ *
+ * **`escalation.triggers` produces no line, because it names no id.** It is a
+ * closed enum of five reason words — `not-applicable`,
+ * `missing-required-evidence`, `unknown`, `conflict`, `no-match`
+ * (`$defs/escalation` in the bundled `jps/0.2.0-draft` schema) — and reading
+ * one as an evidence-requirement id printed "no declared evidence requirement
+ * carries this id" on every conformant pack: a dangling-reference claim about
+ * a document that made none. The Escalation block prints the words verbatim
+ * and that is the whole of what they are.
  */
 import type { Condition, PackDocument } from '../mcp/types'
 import { pointer } from './pointers'
@@ -60,11 +69,20 @@ export function referencesFor(document: PackDocument | undefined, at: string): R
   if (ruleIndex !== undefined) {
     const rule = document.rules?.[ruleIndex]
     if (rule !== undefined) {
-      lines.push(named('outcome', rule.outcome, outcomeAt, 'outcome'))
-      for (const id of rule.evidenceRequirementRefs ?? []) {
-        lines.push(named('evidence', id, evidenceAt, 'evidence requirement'))
+      // Guarded, though the type says otherwise: this panel reads documents
+      // mid-draft, and `outcome` is exactly the member a draft has not written
+      // yet. An unguarded push printed an empty id beside "no declared outcome
+      // carries this id" — a sentence about a lookup nobody asked for. Absence
+      // is the runtime's diagnostic to issue, at `/rules/N/outcome`.
+      if (typeof rule.outcome === 'string') {
+        lines.push(named('outcome', rule.outcome, outcomeAt, 'outcome'))
       }
-      for (const id of rule.sourceRefs ?? []) lines.push(named('sources', id, sourceAt, 'source'))
+      for (const id of rule.evidenceRequirementRefs ?? []) {
+        if (typeof id === 'string') lines.push(named('evidence', id, evidenceAt, 'evidence requirement'))
+      }
+      for (const id of rule.sourceRefs ?? []) {
+        if (typeof id === 'string') lines.push(named('sources', id, sourceAt, 'source'))
+      }
       for (const [index, exception] of (document.exceptions ?? []).entries()) {
         if (exception.targetRule === rule.id) {
           lines.push({ relation: 'cited by', id: exception.id, target: pointer(['exceptions', index]) })
@@ -130,11 +148,6 @@ export function referencesFor(document: PackDocument | undefined, at: string): R
           lines.push({ relation: 'tested by condition', id: requirement.id, target: node.pointer })
         }
       }
-      for (const trigger of document.escalation?.triggers ?? []) {
-        if (trigger === requirement.id) {
-          lines.push({ relation: 'escalation trigger', id: requirement.id, target: pointer(['escalation']) })
-        }
-      }
     }
   }
 
@@ -157,13 +170,6 @@ export function referencesFor(document: PackDocument | undefined, at: string): R
           })
         }
       }
-    }
-  }
-
-  // The escalation's own triggers.
-  if (at === pointer(['escalation'])) {
-    for (const id of document.escalation?.triggers ?? []) {
-      lines.push(named('trigger', id, evidenceAt, 'evidence requirement'))
     }
   }
 

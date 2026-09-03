@@ -8,7 +8,10 @@
       "onUnknown": "escalate"
     }
   ],
-  "outcomes": [{ "id": "proceed", "label": "Proceed" }],
+  "outcomes": [
+    { "id": "proceed", "label": "Proceed" },
+    { "id": "hold", "label": "Hold" }
+  ],
   "title": "A pack whose members are not in the schema's order",
   "decision": {
     "intent": "Decide the one thing this pack decides.",

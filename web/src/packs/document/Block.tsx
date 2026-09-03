@@ -2,8 +2,19 @@
  * The wrapper every rendered thing goes through, and the selection it carries.
  *
  * One element, one pointer, four uses: `data-pointer` for the renderer, the
- * element `id` for a deep link, `tabIndex={-1}` so a deep link can move focus
- * there, and a click that writes the pointer into `?at` for the Inspector.
+ * element `id` for a deep link, a tab index so focus can be moved there, and a
+ * click that writes the pointer into `?at` for the Inspector.
+ *
+ * **Selecting is not mouse-only.** Ninety-odd blocks cannot each be a tab stop
+ * — a reader would Tab through the whole document to reach the header — so the
+ * document is one stop with a **roving tab index**: exactly one block carries
+ * `tabIndex={0}` and the rest carry `-1`, the arrow keys move that stop, and
+ * Enter or Space selects. `PackDocumentView` owns the cursor and the key
+ * handling, because both are facts about the document as a whole; this
+ * component only reads which block is the current stop. No `role` is claimed:
+ * these are the document's own regions, nested inside one another, and
+ * `role="button"` on a container holding more of them would be a lie about
+ * both.
  *
  * **The selection lives in the route.** `RightPane` swaps its wrapper at
  * 1100px and remounts the subtree, so a selection held in the pane is lost at
@@ -35,6 +46,20 @@ export function useDocumentSelection(): DocumentSelection {
   return useContext(SelectionContext)
 }
 
+/** Which block is the document's one tab stop, and how to move it. */
+export interface DocumentCursor {
+  /** The pointer of the block carrying `tabIndex={0}`, or null before one does. */
+  at: string | null
+  /** Put the stop on this block, because focus or a click just went there. */
+  move: (pointer: string) => void
+}
+
+export const CursorContext = createContext<DocumentCursor>({ at: null, move: () => {} })
+
+export function useDocumentCursor(): DocumentCursor {
+  return useContext(CursorContext)
+}
+
 export function Block({
   pointer,
   as,
@@ -50,13 +75,14 @@ export function Block({
   children: ReactNode
 }) {
   const { at, select } = useDocumentSelection()
+  const cursor = useDocumentCursor()
   const selected = at === pointer
   const Tag = (as ?? 'section') as ElementType
   return (
     <Tag
       id={elementIdFor(pointer)}
       data-pointer={pointer}
-      tabIndex={-1}
+      tabIndex={cursor.at === pointer ? 0 : -1}
       aria-current={selected ? 'true' : undefined}
       aria-label={label}
       className={[styles.block, selected ? styles.selected : undefined, className]
@@ -67,6 +93,7 @@ export function Block({
         // operand, not the rule that contains it.
         event.stopPropagation()
         select(pointer)
+        cursor.move(pointer)
       }}
     >
       {children}

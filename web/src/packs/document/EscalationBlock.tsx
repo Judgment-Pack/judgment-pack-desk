@@ -1,4 +1,11 @@
-/** Where the pack sends a decision it will not make, and what triggers that. */
+/**
+ * Where the pack sends a decision it will not make, and what triggers that.
+ *
+ * A trigger is one of five **reason words** the spec closes the list of, not an
+ * id of anything: `not-applicable`, `missing-required-evidence`, `unknown`,
+ * `conflict`, `no-match`. So it is drawn as a word and not as an id chip, and
+ * the References panel resolves nothing from it — see `packs/references.ts`.
+ */
 import type { Escalation } from '../../mcp/types'
 import { Block } from './Block'
 import { ExtensionsBlock } from './ExtensionsBlock'
@@ -23,9 +30,9 @@ export function EscalationBlock({ escalation, at }: { escalation: Escalation; at
           <dd>
             <Block pointer={`${at}/triggers`} as="span" className={styles.refs}>
               {(escalation.triggers ?? []).map((trigger) => (
-                <code key={trigger} className={styles.id}>
+                <span key={trigger} className={styles.tagQuiet}>
                   {trigger}
-                </code>
+                </span>
               ))}
             </Block>
           </dd>

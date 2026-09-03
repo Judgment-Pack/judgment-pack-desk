@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { elementIdFor, parentPointers, parsePointer, pointer, pointerFromHash } from './pointers'
+import { child, elementIdFor, parentPointers, parsePointer, pointer, pointerFromHash } from './pointers'
 
 describe('the pointer escaping', () => {
   it('matches the runtime’s own, byte for byte', () => {
@@ -72,5 +72,19 @@ describe('the fragment', () => {
     expect(pointerFromHash('#%E0%A4%A')).toBeUndefined()
     expect(pointerFromHash('#')).toBeUndefined()
     expect(pointerFromHash('')).toBeUndefined()
+  })
+})
+
+describe('one step down', () => {
+  it('escapes the step, which is document data where it is an extension key', () => {
+    expect(child('/extensions', 'example.pipeline')).toBe('/extensions/example.pipeline')
+    expect(child('/extensions', 'a/b')).toBe('/extensions/a~1b')
+    expect(child('/extensions', 'a~b')).toBe('/extensions/a~0b')
+    expect(child('', 'rules')).toBe('/rules')
+    expect(child('/rules', 0)).toBe('/rules/0')
+  })
+
+  it('refuses to build on something that is not a pointer', () => {
+    expect(child('rules', 'when')).toBe('rules')
   })
 })

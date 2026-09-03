@@ -172,15 +172,20 @@ describe('creating a pack from the rail at 800px, where the rail is a drawer', (
     await waitFor(() => expect(create.disabled).toBe(false))
     fireEvent.click(create)
 
-    // Two writes, the pack then the registration.
-    await waitFor(() => expect(sent).toHaveLength(2))
+    // Two writes, the pack then the registration. Given room: this is two
+    // sequential round trips through the query client behind a modal drawer,
+    // and under the mutation harness's back-to-back full-suite runs the
+    // default second was occasionally not enough — which failed the harness's
+    // baseline gate and made rows that had nothing to do with this file
+    // unrunnable.
+    await waitFor(() => expect(sent).toHaveLength(2), { timeout: 5000 })
     expect(sent.map((write) => write.path)).toEqual([
       'packs/vendor-onboarding.pack.json',
       'jpack.json'
     ])
 
     // The route changed, and nothing modal is left over it.
-    await waitFor(() => expect(seen).toContain('/packs/vendor-onboarding'))
+    await waitFor(() => expect(seen).toContain('/packs/vendor-onboarding'), { timeout: 5000 })
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Create a pack' })).toBeNull())
     await waitFor(() =>
       expect(screen.queryByRole('navigation', { name: 'Project' })).toBeNull()

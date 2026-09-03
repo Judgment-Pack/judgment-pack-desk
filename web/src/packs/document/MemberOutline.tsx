@@ -11,7 +11,7 @@
  * because the desk already has a rail and a pane, and a third fixed column
  * would leave the document less room than the frame it sits in.
  */
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import styles from './PackDocument.module.css'
 
 export interface OutlineEntry {
@@ -29,6 +29,11 @@ export function MemberOutline({
   entries: readonly OutlineEntry[]
   active: string | null
 }) {
+  // The current search, carried through. A `to` object naming only a hash
+  // clears the query, and the two ways of choosing what to inspect — an
+  // outline entry and a block — would then produce different addresses for the
+  // same choice, one of them missing the token the URL was opened with.
+  const { search } = useLocation()
   return (
     <nav className={styles.outline} aria-label="Members">
       <ul className={styles.outlineList}>
@@ -37,7 +42,10 @@ export function MemberOutline({
             {entry.present ? (
               <Link
                 className={styles.outlineLink}
-                to={{ hash: `#${entry.pointer}` }}
+                to={{ search, hash: `#${entry.pointer}` }}
+                // Choosing what to inspect is not a navigation, and the block
+                // beside it replaces. Two paths to one act, one history entry.
+                replace
                 aria-current={active === entry.pointer ? 'true' : undefined}
               >
                 {entry.label}

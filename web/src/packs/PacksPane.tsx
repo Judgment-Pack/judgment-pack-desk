@@ -32,6 +32,11 @@ import { Select } from '../ui/Select'
 import styles from './PacksPane.module.css'
 import { moveFocus, useWindowedRows } from './useWindowedRows'
 
+/** A member the listing actually answered with, rather than left empty. */
+function isSpelled(value: string | undefined): value is string {
+  return typeof value === 'string' && value !== ''
+}
+
 /** One row's height, in pixels, and the number the window arithmetic uses. */
 const ROW_HEIGHT = 40
 
@@ -112,8 +117,24 @@ export function PacksPane() {
               <li key={pack.id} className={styles.row}>
                 <NavLink className={styles.link} to={`/packs/${encodeURIComponent(pack.id)}`}>
                   <span className={styles.name}>{pack.id}</span>
-                  {pack.packVersion !== undefined && (
+                  {/* An **empty** version is not a version. `list_packs` lists
+                      a pack whose document it could not read with `packId` and
+                      `packVersion` as empty strings and the reason in
+                      `detail`, and a bare "v" beside the name asserted a member
+                      of a document nothing could read. */}
+                  {isSpelled(pack.packVersion) ? (
                     <span className={styles.version}>v{pack.packVersion}</span>
+                  ) : (
+                    /* The runtime's own sentence, where it sent one. Quoted and
+                       not summarised: what the desk knows about this pack is
+                       exactly what the listing said about it. On one line, so
+                       every row is still the height the window arithmetic
+                       assumes. */
+                    isSpelled(pack.detail) && (
+                      <span className={styles.rowDetail} title={pack.detail}>
+                        {pack.detail}
+                      </span>
+                    )
                   )}
                 </NavLink>
               </li>

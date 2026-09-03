@@ -13,10 +13,19 @@
  * fallback's fiction. Following the selection is true in both worlds: a
  * selected member *is* the one being attended to.
  *
+ * **The selection is resolved to the outline's own unit before it is
+ * preferred.** The outline addresses twelve member units; `?at` addresses every
+ * block in the document, which is ninety-odd. Returning the selection verbatim
+ * meant that selecting a rule card, a chip, a condition operand — or following
+ * `#/rules/0`, which is the ordinary way in — returned a pointer no outline
+ * entry carries, so no entry was marked *and* the observer's answer was thrown
+ * away for the rest of the visit. `/rules/0` is a reader looking at Rules.
+ *
  * This is named in the PR body as not directly testable: what the tests hold
  * is the fallback, not the observing path.
  */
 import { useEffect, useState } from 'react'
+import { parentPointers } from './pointers'
 
 export function useDocumentSpy(
   pointers: readonly string[],
@@ -52,6 +61,18 @@ export function useDocumentSpy(
   }, [key])
 
   // The selection wins where there is one: a reader who has just clicked a
-  // member is looking at that member whatever the scroll position says.
-  return selected ?? seen
+  // member is looking at that member whatever the scroll position says — but
+  // only once it has been resolved to the unit the outline can mark. A
+  // selection under no listed unit leaves the observer's answer standing.
+  const inOutline = selected === null ? undefined : outlineUnitFor(pointers, selected)
+  return inOutline ?? seen
+}
+
+/** The listed unit a pointer sits at or under, or undefined. */
+function outlineUnitFor(pointers: readonly string[], selected: string): string | undefined {
+  if (pointers.includes(selected)) return selected
+  for (const ancestor of parentPointers(selected)) {
+    if (pointers.includes(ancestor)) return ancestor
+  }
+  return undefined
 }

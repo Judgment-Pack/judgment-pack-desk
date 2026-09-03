@@ -148,6 +148,18 @@ function ShellFrame({
    * old value was laying it out against a width nothing on screen had.
    */
   const inspectorBox = useMeasuredBox(inspectorPane)
+  /**
+   * Opening the pane because a route was asked to inspect something.
+   *
+   * A gesture, not a seed. `toggleInspector` marks the pane as chosen, which is
+   * correct here: the reader picked a member and the panel is what they picked
+   * it for.
+   */
+  const inspectorOpen = shell.inspector.open
+  const toggleInspector = shell.toggleInspector
+  const reveal = useCallback(() => {
+    if (!inspectorOpen) toggleInspector()
+  }, [inspectorOpen, toggleInspector])
   const slot = useMemo<InspectorSlot>(
     () => ({
       open: shell.inspector.open,
@@ -155,9 +167,10 @@ function ShellFrame({
       tab: inspectorTab,
       setTab: setInspectorTab,
       target: inspectorTarget,
-      claim
+      claim,
+      reveal
     }),
-    [shell.inspector.open, inspectorBox, inspectorTab, inspectorTarget, claim]
+    [shell.inspector.open, inspectorBox, inspectorTab, inspectorTarget, claim, reveal]
   )
 
   useEffect(

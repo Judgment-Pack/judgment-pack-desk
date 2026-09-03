@@ -64,11 +64,47 @@ describe('an evidence requirement’s references', () => {
       id: 'screening-report',
       target: '/rules/0/when'
     })
-    expect(lines).toContainEqual({
-      relation: 'escalation trigger',
-      id: 'screening-report',
-      target: '/escalation'
-    })
+  })
+})
+
+describe('the escalation', () => {
+  it('resolves nothing from its triggers, which name no id', () => {
+    // `triggers` is a closed enum of five reason words. Reading one as an
+    // evidence-requirement id printed "no declared evidence requirement
+    // carries this id" on every conformant pack — a dangling-reference claim
+    // about a document that made none.
+    const lines = referencesFor(full, '/escalation')
+    expect(lines.some((line) => line.unresolved !== undefined)).toBe(false)
+    for (const trigger of full.escalation!.triggers!) {
+      expect(lines.some((line) => line.id === trigger)).toBe(false)
+    }
+  })
+
+  it('is not reported back from an evidence requirement either', () => {
+    // The same wrong model, run backwards: `unknown`, `conflict` and
+    // `no-match` are all legal `localId` spellings, so a requirement carrying
+    // one used to grow a fabricated "escalation trigger" line.
+    const named: PackDocument = {
+      ...full,
+      evidenceRequirements: [
+        { ...full.evidenceRequirements![0]!, id: 'unknown' }
+      ]
+    }
+    const lines = referencesFor(named, '/evidenceRequirements/0')
+    expect(lines.some((line) => line.relation === 'escalation trigger')).toBe(false)
+  })
+})
+
+describe('a rule mid-draft', () => {
+  it('says nothing about an outcome the document has not written', () => {
+    // `outcome` is exactly the member a draft omits, and the panel used to
+    // print an empty id beside "no declared outcome carries this id".
+    const drafting = {
+      ...full,
+      rules: [{ ...full.rules[0]!, outcome: undefined as unknown as string }]
+    } as PackDocument
+    const lines = referencesFor(drafting, '/rules/0')
+    expect(lines.some((line) => line.relation === 'outcome')).toBe(false)
   })
 })
 

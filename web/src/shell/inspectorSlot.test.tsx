@@ -13,7 +13,7 @@
  */
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -126,8 +126,8 @@ function viewport(width: number) {
  * the shape a route has: the hook is called unconditionally by whatever is
  * mounted, and "not publishing" is that thing not being mounted.
  */
-function Publisher() {
-  return useInspectorPortal(<p>published from the route</p>)
+function Publisher({ node }: { node?: ReactNode }) {
+  return useInspectorPortal(node === undefined ? <p>published from the route</p> : node)
 }
 
 function ClaimingRoute() {
@@ -140,6 +140,45 @@ function ClaimingRoute() {
       </button>
       {publishing && <Publisher />}
     </>
+  )
+}
+
+/**
+ * A route that calls the hook while it has nothing to publish.
+ *
+ * This is the ordinary shape: the hook is called above the early returns, so
+ * it runs on the pending render and on the failed one, and is handed `null`
+ * both times.
+ */
+function NothingYetRoute() {
+  return (
+    <>
+      <h1>a route</h1>
+      <Publisher node={null} />
+    </>
+  )
+}
+
+function renderNothingYet() {
+  const router = createMemoryRouter(
+    [
+      {
+        path: '*',
+        element: (
+          <McpContext.Provider value={connected({ client: PROJECT.client })}>
+            <AppShell>
+              <NothingYetRoute />
+            </AppShell>
+          </McpContext.Provider>
+        )
+      }
+    ],
+    { initialEntries: ['/'] }
+  )
+  return render(
+    <QueryClientProvider client={testQueryClient()}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
   )
 }
 
@@ -178,6 +217,9 @@ function PublishingRoute() {
       <p data-testid="slot-open">{String(slot.open)}</p>
       <button type="button" onClick={() => slot.setTab('rows')}>
         select the rows tab
+      </button>
+      <button type="button" onClick={() => slot.reveal()}>
+        reveal the inspector
       </button>
       <p data-testid="slot-tab">{slot.tab ?? 'none'}</p>
       {slot.target !== null && createPortal(<p>published from the route</p>, slot.target)}
@@ -302,6 +344,35 @@ describe('a route publishing into the Inspector', () => {
     // And it goes away again, so this is a count rather than a one-way latch.
     fireEvent.click(screen.getByRole('button', { name: 'toggle the publisher' }))
     await waitFor(() => expect(screen.queryByText(EMPTY_STATE)).toBeNull())
+  })
+
+  it('opens the pane when a route says the viewer asked to inspect something', async () => {
+    // A gesture, not a seed. Selecting a member with the pane closed — the
+    // shell's default in a fresh profile — otherwise filled a panel nobody
+    // could see.
+    viewport(1400)
+    observedResize()
+    renderDesk()
+    expect(screen.getByTestId('slot-open').textContent).toBe('false')
+    fireEvent.click(screen.getByRole('button', { name: 'reveal the inspector' }))
+    await waitFor(() => expect(screen.getByTestId('slot-open').textContent).toBe('true'))
+
+    // And it does not toggle: a second ask on an open pane is not a close.
+    fireEvent.click(screen.getByRole('button', { name: 'reveal the inspector' }))
+    expect(screen.getByTestId('slot-open').textContent).toBe('true')
+  })
+
+  it('leaves the empty state standing while it has nothing to publish', async () => {
+    // The claim used to be made on the target alone, so a route that called
+    // the hook before its data arrived suppressed the empty state and put
+    // nothing in its place — a pane with a heading and nothing under it, for
+    // the whole of a load and for ever after one that failed.
+    viewport(1400)
+    observedResize()
+    renderNothingYet()
+    await screen.findByRole('heading', { name: 'a route' })
+    await waitFor(() => expect(screen.getByText(EMPTY_STATE)).toBeTruthy())
+    expect(screen.queryByText('published from the route')).toBeNull()
   })
 
   it('follows the pane across a breakpoint swap, publishing into the new element', async () => {

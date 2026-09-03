@@ -18,11 +18,22 @@
  * `data-pointer` and as its element id. That is the address a diagnostic
  * anchors on, a deep link reaches, the Inspector selects, and — next phase — a
  * form field writes through.
+ *
+ * **The document is one tab stop.** Ninety-odd blocks cannot each be one, so a
+ * roving tab index puts `tabIndex={0}` on exactly one of them and the arrow
+ * keys move it: Down and Up step through the blocks in document order, Home and
+ * End reach the ends, Enter and Space select. Without it the only keyboard
+ * route into `?at` was the outline, which addresses the twelve member units and
+ * nothing under them — no rule card, no condition operand, no review. The
+ * handler is here rather than on each block because "the next block" is a fact
+ * about the document, and it reads the rendered order off the DOM for the same
+ * reason the diagnostic anchoring does: a derivation would be a second model of
+ * this file, free to drift from it.
  */
-import type { ReactNode } from 'react'
+import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { PackDocument } from '../../mcp/types'
 import { ApplicabilityBlock } from './ApplicabilityBlock'
-import { Block } from './Block'
+import { Block, CursorContext, useDocumentSelection } from './Block'
 import { DecisionBlock } from './DecisionBlock'
 import { EscalationBlock } from './EscalationBlock'
 import { EvidenceBlock } from './EvidenceBlock'
@@ -70,15 +81,76 @@ export function PackDocumentView({
     count: unitCount(doc, unit)
   }))
 
+  const { at, select } = useDocumentSelection()
+  const article = useRef<HTMLElement | null>(null)
+  const [moved, setMoved] = useState<string | null>(null)
+  // Before anything has moved the stop, it follows the selection — so a deep
+  // link's block is where Tab comes back to — and before there is a selection
+  // it is the document's first member.
+  const cursor = moved ?? at ?? order[0]?.pointer ?? null
+
   return (
-    <article className={styles.document} data-pointer="">
-      <MemberOutline entries={entries} active={active} />
-      {children}
-      {order.map((unit) => (
-        <MemberBlock key={unit.id} unit={unit} document={doc} />
-      ))}
-    </article>
+    <CursorContext.Provider value={{ at: cursor, move: setMoved }}>
+      <article
+        ref={article}
+        className={styles.document}
+        data-pointer=""
+        onKeyDown={(event) => onDocumentKey(event, article.current, select, setMoved)}
+      >
+        <MemberOutline entries={entries} active={active} />
+        {children}
+        {order.map((unit) => (
+          <MemberBlock key={unit.id} unit={unit} document={doc} />
+        ))}
+      </article>
+    </CursorContext.Provider>
   )
+}
+
+/**
+ * The document's keyboard: move the stop, or select where it is.
+ *
+ * Anything inside a control of its own — the outline's links, and whatever the
+ * check strip carries — is left alone: Enter on a link is the link's, and
+ * arrowing out of one would be a surprise.
+ */
+function onDocumentKey(
+  event: KeyboardEvent<HTMLElement>,
+  article: HTMLElement | null,
+  select: (pointer: string) => void,
+  move: (pointer: string) => void
+): void {
+  if (article === null) return
+  const target = event.target as HTMLElement
+  if (typeof target.closest !== 'function') return
+  if (target.closest('a, button, input, select, textarea, [role="tab"]') !== null) return
+  const here = target.getAttribute('data-pointer')
+  if (here === null || here === '') return
+
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    select(here)
+    move(here)
+    return
+  }
+
+  const blocks = [...article.querySelectorAll<HTMLElement>('[data-pointer]')].filter(
+    (element) => element.getAttribute('data-pointer') !== ''
+  )
+  const current = blocks.indexOf(target)
+  if (current < 0) return
+  const last = blocks.length - 1
+  let next: number | undefined
+  if (event.key === 'ArrowDown') next = Math.min(last, current + 1)
+  else if (event.key === 'ArrowUp') next = Math.max(0, current - 1)
+  else if (event.key === 'Home') next = 0
+  else if (event.key === 'End') next = last
+  if (next === undefined) return
+  event.preventDefault()
+  const destination = blocks[next]
+  if (destination === undefined) return
+  move(destination.getAttribute('data-pointer')!)
+  destination.focus()
 }
 
 function MemberBlock({ unit, document: doc }: { unit: MemberUnit; document: PackDocument }) {

@@ -140,6 +140,13 @@ export interface PackSummary {
   matrix?: boolean
   description?: string
   expectedVersionStatus?: string
+  /**
+   * The runtime's own sentence about a pack it could not use.
+   *
+   * `list_packs` still lists the entry — with `packId` and `packVersion` as
+   * **empty strings** rather than absent — and puts the reason here.
+   */
+  detail?: string
   evidenceRequirements?: string[]
   consultedFactPaths?: string[]
   facts?: { key: string; source?: string; hint?: string }[]
