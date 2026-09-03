@@ -189,11 +189,20 @@ type WriteRequest struct {
 	// fails, an empty directory is left behind. Removing it would need a delete
 	// verb this API does not have, applied to a directory another process may
 	// have populated in the interval; an empty directory is inert and the next
-	// attempt uses it. The mode is 0o777 masked by the process umask — the
-	// ordinary convention for a directory in the user's own project, which is
-	// committed to their repository and read by their other tools. 0o700 would
-	// be this desk setting access control on the user's project, which it does
-	// nowhere else.
+	// attempt uses it.
+	//
+	// The mode is 0o777 masked by the process umask — the ordinary convention
+	// for a directory in the user's own project, which is committed to their
+	// repository and read by their other tools. The *file* written into it is
+	// created the same way, 0o666 masked by the same umask (see createStaging),
+	// so a directory and the document inside it do not disagree about who may
+	// read them. Neither is this desk deciding access control: the umask the
+	// desk was started under is the user's own answer to that question.
+	//
+	// **Bounded by what the listing can report.** A create is refused past
+	// maxWalkDepth, because GET /api/files stops there and reports the tree as
+	// partial: a write that succeeded into a directory the listing cannot reach
+	// would leave the API describing a project it had itself made undescribable.
 	CreateParents bool `json:"createParents"`
 }
 
@@ -769,6 +778,14 @@ func (s *Server) commitWriteLocked(clean string, req WriteRequest) (int, any) {
 			return http.StatusNotFound, map[string]string{"error": fmt.Sprintf(
 				"the directory %s does not exist in the project; create it first", parent)}
 		default:
+			// Not deeper than the listing walks. See CreateParents above: the
+			// walk gives up at maxWalkDepth and says so, and a create this API
+			// allowed past that point would put a file where its own listing
+			// can never name it.
+			if strings.Count(parent, "/")+1 > maxWalkDepth {
+				return http.StatusBadRequest, map[string]string{"error": fmt.Sprintf(
+					"this API creates at most %d levels of directory", maxWalkDepth)}
+			}
 			if err := s.root.MkdirAll(osPath(parent), 0o777); err != nil {
 				return http.StatusInternalServerError, errorBody(err)
 			}
@@ -839,7 +856,9 @@ func (s *Server) atomicWrite(clean string, data []byte) error {
 	// Mode first, then the flush, so nothing about the file is still pending
 	// when the rename publishes it. Only the POSIX rwx bits are carried across:
 	// owner, group, ACLs, extended attributes and the inode identity are not,
-	// because a replace is a new file by construction.
+	// because a replace is a new file by construction. Where the target does
+	// not exist there is nothing to carry, and the staging file's own mode —
+	// 0o666 masked by the umask, see createStaging — is what gets published.
 	if info, serr := s.root.Stat(osPath(clean)); serr == nil {
 		if cerr := f.Chmod(info.Mode().Perm()); cerr != nil {
 			f.Close()
@@ -871,6 +890,15 @@ func (s *Server) atomicWrite(clean string, data []byte) error {
 // that descriptor and never reopens it. `os.Root` has no CreateTemp, so the
 // exclusivity is asked for directly — O_EXCL is what makes a name collision a
 // retry rather than a silent overwrite of somebody's staged edit.
+//
+// **0o666, masked by the umask — not 0o600.** This mode is the one a *new*
+// file keeps: atomicWrite carries a mode across only for a file that already
+// exists, so for a create there is nothing to carry and the staging mode is
+// the published mode. 0o600 made every file this API brought into existence
+// owner-only, in a project whose other files are whatever the user's umask
+// makes them and whose directories this same request creates 0o777-masked. The
+// umask is the user's answer to who may read their project; asking the kernel
+// to apply it here is how this API stops having an opinion of its own.
 func (s *Server) createStaging(dir string) (*os.File, string, error) {
 	for attempt := 0; attempt < 10; attempt++ {
 		var raw [12]byte
@@ -882,7 +910,7 @@ func (s *Server) createStaging(dir string) (*os.File, string, error) {
 		if dir != "." {
 			full = path.Join(dir, name)
 		}
-		f, err := s.root.OpenFile(osPath(full), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+		f, err := s.root.OpenFile(osPath(full), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o666)
 		if err == nil {
 			return f, full, nil
 		}

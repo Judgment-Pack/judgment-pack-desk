@@ -2119,3 +2119,148 @@ func TestCreateParentsRefusesAParentThatIsAFile(t *testing.T) {
 		})
 	}
 }
+
+// TestCreatedFileTakesTheUmaskLikeItsDirectory is the row the review put in:
+// before it, one request created a directory 0o755 and a file 0o600 inside it,
+// and the comment justifying the directory's mode said this desk sets no access
+// control on the user's project — which the file contradicted.
+//
+// The expectation is measured, not written down: a probe file created with
+// 0o666 through the ordinary API tells this process what its own umask does,
+// so the assertion holds on a machine with any umask rather than only on 022.
+func TestCreatedFileTakesTheUmaskLikeItsDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mode semantics differ on Windows")
+	}
+	want := modeUnderUmask(t)
+
+	s, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", "{}")
+
+	status, body := putJSON(t, ts, WriteRequest{
+		Path: "packs/new.pack.json", Content: `{"id":"a"}`, CreateParents: true,
+	})
+	if status != http.StatusOK {
+		t.Fatalf("create: status %d, %v", status, body)
+	}
+	info, err := os.Stat(filepath.Join(project, "packs", "new.pack.json"))
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode().Perm() != want {
+		t.Fatalf("a created file is %v, and a file this process creates 0o666 is %v",
+			info.Mode().Perm(), want)
+	}
+	// And the directory that holds it agrees rather than being more open than
+	// the document inside it.
+	dir, err := os.Stat(filepath.Join(project, "packs"))
+	if err != nil {
+		t.Fatalf("stat the directory: %v", err)
+	}
+	// Compared on the read bits alone: a directory also carries x where a file
+	// does not, and the claim is only that neither is narrower than the other
+	// about who may look.
+	if dir.Mode().Perm()&0o444 != info.Mode().Perm()&0o444 {
+		t.Fatalf("directory %v and file %v disagree about who may read them",
+			dir.Mode().Perm(), info.Mode().Perm())
+	}
+	if !dirExists(t, s, "packs") {
+		t.Fatal("the directory was not created through the root")
+	}
+}
+
+// modeUnderUmask reports what this process's umask does to 0o666 — the mode a
+// created file is asked for — without changing the umask, which is per-process
+// and would race every other test in the package.
+func modeUnderUmask(t *testing.T) os.FileMode {
+	t.Helper()
+	probe := filepath.Join(t.TempDir(), "probe")
+	f, err := os.OpenFile(probe, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o666)
+	if err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("probe close: %v", err)
+	}
+	info, err := os.Stat(probe)
+	if err != nil {
+		t.Fatalf("probe stat: %v", err)
+	}
+	return info.Mode().Perm()
+}
+
+// TestReplacingAFileStillDoesNotWidenItsMode is the other half: the create case
+// takes the umask, and the replace case still carries the existing mode across,
+// so a document somebody narrowed on purpose is not opened up by a save.
+func TestReplacingAFileStillDoesNotWidenItsMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mode semantics differ on Windows")
+	}
+	_, ts, project := filesServer(t)
+	abs := writeProjectFile(t, project, "packs/a.pack.json", "{}")
+	if err := os.Chmod(abs, 0o600); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	if status, body := putJSON(t, ts, WriteRequest{
+		Path: "packs/a.pack.json", Content: `{"id":"a"}`, BaseSHA256: digestOf([]byte("{}")),
+	}); status != http.StatusOK {
+		t.Fatalf("write: status %d, %v", status, body)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("a save widened a file the user had narrowed: %v", info.Mode().Perm())
+	}
+}
+
+// TestCreateParentsIsBoundedByTheWalk pins that this API cannot write itself
+// out of its own listing. `GET /api/files` gives up at maxWalkDepth and reports
+// the tree as partial; a create allowed past that point would land a file the
+// listing can never name, and no delete verb exists to take it back.
+func TestCreateParentsIsBoundedByTheWalk(t *testing.T) {
+	s, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", "{}")
+
+	deep := make([]string, 0, maxWalkDepth+1)
+	for i := 0; i <= maxWalkDepth; i++ {
+		deep = append(deep, fmt.Sprintf("d%d", i))
+	}
+	status, body := putJSON(t, ts, WriteRequest{
+		Path:          strings.Join(deep, "/") + "/x.pack.json",
+		Content:       "{}",
+		CreateParents: true,
+	})
+	if status != http.StatusBadRequest {
+		t.Fatalf("status %d, %v", status, body)
+	}
+	message, _ := body["error"].(string)
+	if !strings.Contains(message, "at most") {
+		t.Fatalf("the refusal does not say what the bound is: %q", message)
+	}
+	// Nothing at all, not even the first level: the bound is checked before
+	// MkdirAll, so a refused create leaves the tree as it found it.
+	if dirExists(t, s, "d0") {
+		t.Fatal("a refused create made directories anyway")
+	}
+
+	// And the depth the walk can report is still allowed, so the bound is the
+	// listing's own and not one invented a level early.
+	ok := make([]string, 0, maxWalkDepth-1)
+	for i := 0; i < maxWalkDepth-1; i++ {
+		ok = append(ok, fmt.Sprintf("e%d", i))
+	}
+	status, body = putJSON(t, ts, WriteRequest{
+		Path:          strings.Join(ok, "/") + "/x.pack.json",
+		Content:       "{}",
+		CreateParents: true,
+	})
+	if status != http.StatusOK {
+		t.Fatalf("a create the listing could report was refused: status %d, %v", status, body)
+	}
+	_, listing := getJSON(t, ts, "/api/files?token="+testToken)
+	if partial, ok := listing["partial"].([]any); ok && len(partial) > 0 {
+		t.Fatalf("the listing this create allowed is partial: %v", partial)
+	}
+}
