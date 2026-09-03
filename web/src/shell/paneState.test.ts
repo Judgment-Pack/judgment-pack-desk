@@ -157,6 +157,55 @@ describe('writeShellState', () => {
     writeShellState(key, STATE, { ...NOTHING_TOUCHED, left: true })
     expect(readShellState(key)).toEqual({ left: { mode: 'icons' } })
   })
+
+  it('keeps the sections an earlier visit chose, and overrides only this visit’s', () => {
+    // Starting the outgoing record at `{v}` erased them: with a stored rail
+    // and Inspector on disk, toggling only the Console rewrote the key as
+    // `{"v":1,"console":…}` and threw both away — so the next narrow→wide
+    // cycle restored defaults rather than the layout the viewer had chosen.
+    const key = shellStateKey('p')
+    window.localStorage.setItem(
+      key,
+      JSON.stringify({ v: 1, left: { mode: 'icons' }, inspector: { open: true } })
+    )
+    writeShellState(
+      key,
+      {
+        left: { mode: 'expanded' },
+        inspector: { open: false },
+        console: { open: true, tab: 'files' }
+      },
+      { ...NOTHING_TOUCHED, console: true }
+    )
+    expect(JSON.parse(window.localStorage.getItem(key)!)).toEqual({
+      v: 1,
+      left: { mode: 'icons' },
+      inspector: { open: true },
+      console: { open: true, tab: 'files' }
+    })
+  })
+
+  it('carries forward nothing from a record it cannot read', () => {
+    // The base is taken through the same validator, so a corrupt or
+    // wrong-version record is discarded rather than merged into the new one.
+    const key = shellStateKey('p')
+    window.localStorage.setItem(key, JSON.stringify({ v: 99, left: { mode: 'icons' } }))
+    writeShellState(key, STATE, { ...NOTHING_TOUCHED, console: true })
+    expect(JSON.parse(window.localStorage.getItem(key)!)).toEqual({
+      v: 1,
+      console: { open: true, tab: 'files' }
+    })
+  })
+
+  it('overrides a stored section the viewer has moved again', () => {
+    const key = shellStateKey('p')
+    window.localStorage.setItem(key, JSON.stringify({ v: 1, left: { mode: 'expanded' } }))
+    writeShellState(key, STATE, { ...NOTHING_TOUCHED, left: true })
+    expect(JSON.parse(window.localStorage.getItem(key)!)).toEqual({
+      v: 1,
+      left: { mode: 'icons' }
+    })
+  })
 })
 
 describe('resetShellState', () => {

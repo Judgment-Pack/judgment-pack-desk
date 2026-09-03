@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DESK_DEFAULTS,
+  PANE_BOUNDS,
   decodeDeskConfig,
   effectiveConfig,
   type ConfigProblem
@@ -178,7 +179,9 @@ describe('decodeDeskConfig', () => {
     expect(mark('data:image/svg+xml,%3Csvg%3E%3C/svg%3E').problems).toEqual([])
     expect(keys(mark(`<svg>${'x'.repeat(70000)}</svg>`).problems)).toEqual(['organization.mark'])
     // Measured in **bytes of UTF-8**, not UTF-16 code units. A mark whose
-    // text is not ASCII weighs up to four times what `String.length` reports,
+    // text is not ASCII weighs up to three times what `String.length` reports
+    // — three and not four, because the four-byte astral characters cost two
+    // UTF-16 units each and are therefore only 2:1 —
     // so a limit documented as 64KB and counted in code units is a limit
     // nobody can check against the file on disk. 30,000 three-byte characters
     // is 90,000 bytes and 30,013 code units: refused one way, accepted the
@@ -200,6 +203,67 @@ describe('decodeDeskConfig', () => {
     )
     expect(keys(decoded.problems).sort()).toEqual(['appearance.theme', 'panes.left.width'])
     expect(decoded.problems.find((p) => p.key === 'appearance.theme')!.reason).toContain('"midnight"')
+  })
+
+  it('refuses a pane dimension of zero, and one past its documented maximum', () => {
+    // **Zero is the dangerous value**, not a harmless one: a pane the file
+    // declares `open` at zero pixels renders as an open pane nobody can see,
+    // with a toggle that appears to do nothing. And an enormous one is the
+    // same defect from the other end — the frame is clipped and does not
+    // scroll, so a 20,000px console pushes the status strip out of it.
+    const dimension = (path: 'left' | 'inspector' | 'console', field: string, value: number) =>
+      decodeDeskConfig(
+        JSON.stringify({ deskConfigVersion: 1, panes: { [path]: { [field]: value } } }),
+        'project'
+      )
+    for (const [path, field, key] of [
+      ['left', 'width', 'panes.left.width'],
+      ['inspector', 'width', 'panes.inspector.width'],
+      ['console', 'height', 'panes.console.height']
+    ] as const) {
+      const bounds = PANE_BOUNDS[key]!
+      expect(keys(dimension(path, field, 0).problems), `${key} at zero`).toEqual([key])
+      expect(keys(dimension(path, field, bounds.min - 1).problems), `${key} below`).toEqual([key])
+      expect(keys(dimension(path, field, bounds.max + 1).problems), `${key} above`).toEqual([key])
+      // The endpoints themselves are legal: the bound is inclusive, and a
+      // refusal that moved by one would be a different rule than the one
+      // Admin and the README print.
+      expect(dimension(path, field, bounds.min).problems, `${key} at min`).toEqual([])
+      expect(dimension(path, field, bounds.max).problems, `${key} at max`).toEqual([])
+      // And the refusal names the range rather than saying only "invalid".
+      expect(dimension(path, field, 0).problems[0]!.reason).toContain(
+        `between ${bounds.min} and ${bounds.max}`
+      )
+    }
+  })
+
+  it('records which pane dimensions the file stated, and which it inherited', () => {
+    // `PanesConfig` cannot answer this — every field is filled in from the
+    // defaults, so "the file said 360" and "the file said nothing" are the
+    // same value. The Inspector's drawer form is 320px by its own baseline and
+    // must not move to the column's 360px on a desk that configures nothing.
+    const decoded = decodeDeskConfig(
+      JSON.stringify({ deskConfigVersion: 1, panes: { inspector: { open: true } } }),
+      'project'
+    )
+    expect(decoded.problems).toEqual([])
+    expect(decoded.declaredPanes).toEqual({
+      leftWidth: false,
+      inspectorWidth: false,
+      consoleHeight: false
+    })
+    expect(decodeDeskConfig(JSON.stringify(VALID), 'project').declaredPanes).toEqual({
+      leftWidth: true,
+      inspectorWidth: true,
+      consoleHeight: true
+    })
+    // And a file that was refused declared nothing, because it contributed
+    // nothing: the desk is on the built-in defaults, dimensions included.
+    expect(effectiveConfig(decodeDeskConfig('{ not json', 'project')).declaredPanes).toEqual({
+      leftWidth: false,
+      inspectorWidth: false,
+      consoleHeight: false
+    })
   })
 
   it('refuses an empty organization name, exactly as it refuses an empty display name', () => {

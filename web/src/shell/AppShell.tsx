@@ -91,7 +91,7 @@ function ShellFrame({
   children: ReactNode
 }) {
   const shell = useShellState()
-  const { config } = useEffectiveConfig()
+  const { config, declaredPanes } = useEffectiveConfig()
   const [railDrawerOpen, setRailDrawerOpen] = useState(false)
 
   /**
@@ -198,7 +198,7 @@ function ShellFrame({
           open={shell.inspector.open}
           onClose={shell.toggleInspector}
           asDrawer={inspectorIsDrawer}
-          width={inspectorWidth}
+          declaredWidth={declaredPanes.inspectorWidth ? inspectorWidth : undefined}
           publishTarget={publishTarget}
           openerRef={inspectorOpenerRef}
         />

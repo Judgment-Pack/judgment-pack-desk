@@ -441,8 +441,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "        recordFileChange(String((notification.params as { path?: unknown })?.path ?? ''))" \
     '        void recordFileChange'
   mutate web "a config problem no longer refuses the whole file" "$D" \
-    '  if (problems.length > 0) return { values: undefined, problems }' \
-    '  if (false) return { values: undefined, problems }'
+    '  if (problems.length > 0) return { values: undefined, problems, declaredPanes }' \
+    '  if (false) return { values: undefined, problems, declaredPanes }'
   mutate web "an unknown config key is accepted silently" "$D" \
     "    problems.push({ key, reason: 'unknown key' })" \
     '    void key'
@@ -674,19 +674,19 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "    '--console-h': \`\${config.panes.console.height}px\`," \
     "    '--console-h': '240px',"
   mutate web "the inspector drawer is a width nobody configured" "$E" \
-    "            style={{ '--drawer-w': \`\${width}px\` } as CSSProperties}" \
-    '            '
+    "                : ({ '--drawer-w': \`\${declaredWidth}px\` } as CSSProperties)" \
+    '                : undefined'
 
   # 4. One global touched bit made a single toggle speak for all three panes:
   # the other two were serialized from the built-in defaults, and a stored
   # record outranks the configuration file for ever after.
   mutate web "an untouched pane is persisted along with the touched one" "$P" \
-    '  if (touched.left) record.left = state.left
-  if (touched.inspector) record.inspector = state.inspector
-  if (touched.console) record.console = state.console' \
-    '  record.left = state.left
-  record.inspector = state.inspector
-  record.console = state.console'
+    '  const left = touched.left ? state.left : kept.left
+  const inspector = touched.inspector ? state.inspector : kept.inspector
+  const consoleSection = touched.console ? state.console : kept.console' \
+    '  const left = state.left
+  const inspector = state.inspector
+  const consoleSection = state.console'
   mutate web "one moved pane suppresses the re-seed for every pane" "$P" \
     '    if (chosen.left && chosen.inspector && chosen.console) return' \
     '    if (chosen.left || chosen.inspector || chosen.console) return'
@@ -787,8 +787,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # with the reason recorded where nothing rendered it, so a desk that could
   # not open its own file looked exactly like a desk with no file.
   mutate web "an unreadable configuration is reported as an absent one" "$Z" \
-    '    if (cause instanceof FileRequestError && cause.status === 404) {' \
-    '    if (true) {'
+    '      if (cause.status === 404) return effectiveConfig(undefined, reasonFor(cause))' \
+    '      if (true) return effectiveConfig(undefined, reasonFor(cause))'
   mutate web "an unreadable configuration is silent outside Admin" "$S" \
     '        {problems.length === 0 && readFailure !== undefined && (' \
     '        {false && ('
@@ -847,6 +847,88 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the mark's size bound is counted in code units" "$D" \
     '  const bytes = new TextEncoder().encode(value).length' \
     '  const bytes = value.length'
+
+  # ---- Codex round 2 -----------------------------------------------------
+
+  # 1. The outgoing record started at `{v}`, so a Console toggle erased a rail
+  # and an Inspector the viewer had chosen on an earlier visit.
+  mutate web "a write erases the choices an earlier visit made" "$P" \
+    '  const kept = readShellState(key) ?? {}' \
+    '  const kept: Partial<ShellState> = {}'
+
+  # 2. Zero renders an "open" pane nobody can see; an enormous one pushes the
+  # strip out of a frame that does not scroll.
+  mutate web "a pane dimension of zero or twenty thousand is accepted" "$D" \
+    '  const bounds = PANE_BOUNDS[key]' \
+    '  const bounds = undefined as { min: number; max: number } | undefined'
+  mutate web "a configured pane may take the whole frame" "$G" \
+    '    grid-template-columns:
+      min(var(--rail-current), var(--side-cap))
+      minmax(0, 1fr)
+      min(var(--inspector-current), var(--side-cap));' \
+    '    grid-template-columns: var(--rail-current) minmax(0, 1fr) var(--inspector-current);'
+  mutate web "the console may grow past the route it sits under" "$G" \
+    '      min(var(--console-current), var(--console-cap))' \
+    '      var(--console-current)'
+  mutate web "the caps reserve no room for main at all" "$G" \
+    '    --main-floor: 120px;
+    --side-cap: 40vw;' \
+    '    --main-floor: 0px;
+    --side-cap: 100vw;'
+
+  # 3. The write was gated and the read was not: a stale `default` record
+  # applied one project's layout to another while the listing was in flight,
+  # and permanently where it failed.
+  mutate web "the provisional record is read even though it is not written" "$P" \
+    '  const storedForKey = () => (keyResolved ? readShellState(storageKey) : undefined)' \
+    '  const storedForKey = () => readShellState(storageKey)'
+
+  # 4. The full cue is wider than a 320px strip has beside the console button,
+  # and it neither shrinks nor wraps.
+  mutate web "the narrow strip paints the full sentence over the console control" "$S" \
+    '      <span className="desk-strip-warn-short" aria-hidden="true">
+        {short}
+      </span>' \
+    ''
+  mutate web "the short cue is never the one painted" "$G" \
+    '  @media (max-width: 599px) {
+    .desk-strip-warn-full {
+      display: none;
+    }
+
+    .desk-strip-warn-short {
+      display: inline;
+    }
+  }' \
+    ''
+  mutate web "the cue's accessible name is whichever spelling is painted" "$S" \
+    '    <Link className="desk-strip-warn" to="/admin" aria-label={full}>' \
+    '    <Link className="desk-strip-warn" to="/admin">'
+
+  # 5. The live layout was cleared even where the deletion was refused, so
+  # Admin said "the layout is unchanged" over panes that had visibly moved.
+  mutate web "a refused deletion still moves the panes" "$P" \
+    "    if (!resetShellState(storageKey)) return 'refused'" \
+    '    const refusedDeletion = !resetShellState(storageKey)'
+
+  # 6. The column's default is 360px and the drawer's has always been 320px.
+  mutate web "an unconfigured desk's drawer moves to the column's width" "$E" \
+    '              declaredWidth === undefined
+                ? undefined
+                : ({ '"'"'--drawer-w'"'"': `${declaredWidth}px` } as CSSProperties)' \
+    '              ({ '"'"'--drawer-w'"'"': `${declaredWidth ?? 360}px` } as CSSProperties)'
+  mutate web "the decoder cannot say which dimensions the file stated" "$D" \
+    "        leftWidth: declares(left, 'width')," \
+    '        leftWidth: true,'
+
+  # 7. "The reason is the chassis' own" was false for a browser error: nothing
+  # answered, so nothing the chassis said is being quoted.
+  mutate web "a browser error is attributed to the chassis" "$Z" \
+    '    if (cause instanceof FileRequestError) {' \
+    '    if (false) {'
+  mutate web "Admin sources every unread reason to the chassis" "$V" \
+    '          {readFailureStatus === undefined ? (' \
+    '          {false ? ('
 fi
 
 restore

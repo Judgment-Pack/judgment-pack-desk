@@ -39,6 +39,19 @@ export const CONFIG_REFUSED_CUE = 'configuration refused — see Admin'
  */
 export const CONFIG_UNREAD_CUE = 'configuration could not be read — see Admin'
 
+/**
+ * The same two cues, in the spelling a phone has room for.
+ *
+ * The full sentence is about 263px wide in the strip's own face and a 320px
+ * viewport leaves roughly 232px beside the console button, so the link — which
+ * neither shrinks nor wraps, deliberately — painted across the button and off
+ * the edge of a frame that clips. The short spelling is what is *painted*
+ * there; the accessible name is the full sentence at every width, because it
+ * is on the link rather than in its text.
+ */
+export const CONFIG_REFUSED_SHORT = 'config refused'
+export const CONFIG_UNREAD_SHORT = 'config unread'
+
 export function StatusStrip({
   consoleOpen,
   onToggleConsole
@@ -59,14 +72,10 @@ export function StatusStrip({
           <span className="desk-strip-connection">not connected</span>
         )}
         {problems.length > 0 && (
-          <Link className="desk-strip-warn" to="/admin">
-            {CONFIG_REFUSED_CUE}
-          </Link>
+          <ConfigCue full={CONFIG_REFUSED_CUE} short={CONFIG_REFUSED_SHORT} />
         )}
         {problems.length === 0 && readFailure !== undefined && (
-          <Link className="desk-strip-warn" to="/admin">
-            {CONFIG_UNREAD_CUE}
-          </Link>
+          <ConfigCue full={CONFIG_UNREAD_CUE} short={CONFIG_UNREAD_SHORT} />
         )}
       </span>
       <button
@@ -80,5 +89,27 @@ export function StatusStrip({
         <IconPanelBottom />
       </button>
     </footer>
+  )
+}
+
+/**
+ * One cue, two spellings, one accessible name.
+ *
+ * Both spellings are in the DOM and CSS paints exactly one of them, because
+ * the alternative — choosing in JavaScript off a `matchMedia` — makes the
+ * strip re-render on every drag of a window edge for a string. The name is on
+ * the link, so it is the full sentence whichever is painted, and both spans
+ * are `aria-hidden` so the short one never reaches the accessible name.
+ */
+function ConfigCue({ full, short }: { full: string; short: string }) {
+  return (
+    <Link className="desk-strip-warn" to="/admin" aria-label={full}>
+      <span className="desk-strip-warn-full" aria-hidden="true">
+        {full}
+      </span>
+      <span className="desk-strip-warn-short" aria-hidden="true">
+        {short}
+      </span>
+    </Link>
   )
 }

@@ -96,6 +96,24 @@ describe('the desk-config read', () => {
     expect(effective.sources.organization).toBe('project file')
   })
 
+  it('keeps the chassis’ status where the chassis answered, and none where it did not', async () => {
+    // A refusal the chassis issued is a statement about the file; a socket
+    // that never answered is not — it establishes only that absence was not
+    // established. Admin sources the reason accordingly, so the two cases have
+    // to be distinguishable here.
+    respond(413, { error: 'the file is too large to read' })
+    const refused = await loadDeskConfig()
+    expect(refused.readFailureStatus).toBe(413)
+    expect(refused.readFailure).toContain('too large')
+
+    vi.stubGlobal('fetch', async () => {
+      throw new TypeError('Failed to fetch')
+    })
+    const unreachable = await loadDeskConfig()
+    expect(unreachable.readFailure).toContain('Failed to fetch')
+    expect(unreachable.readFailureStatus).toBeUndefined()
+  })
+
   it('resolves to the defaults when the fetch itself throws', async () => {
     vi.stubGlobal('fetch', async () => {
       throw new TypeError('Failed to fetch')

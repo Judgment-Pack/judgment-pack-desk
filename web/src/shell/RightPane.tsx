@@ -32,7 +32,7 @@ export function RightPane({
   open,
   onClose,
   asDrawer,
-  width,
+  declaredWidth,
   publishTarget,
   openerRef,
   children
@@ -40,8 +40,16 @@ export function RightPane({
   open: boolean
   onClose: () => void
   asDrawer: boolean
-  /** The configured pixel width, in both forms. */
-  width: number
+  /**
+   * The width the project file **stated**, or undefined where it stated none.
+   *
+   * Undefined is not "use the default" — it is "do not write a width at all",
+   * so `.desk-drawer`'s own 320px fallback stands. The column form's default
+   * is 360px and the drawer's has always been 320px; supplying the effective
+   * value unconditionally moved every unconfigured desk's drawer to 360px,
+   * which is a behaviour change dressed as applying configuration.
+   */
+  declaredWidth: number | undefined
   /** Called with the portal target on mount and with null on unmount. */
   publishTarget: (target: HTMLDivElement | null) => void
   /**
@@ -86,7 +94,11 @@ export function RightPane({
             className="desk-drawer desk-drawer-right"
             id="desk-inspector"
             aria-label="Inspector"
-            style={{ '--drawer-w': `${width}px` } as CSSProperties}
+            style={
+              declaredWidth === undefined
+                ? undefined
+                : ({ '--drawer-w': `${declaredWidth}px` } as CSSProperties)
+            }
             onCloseAutoFocus={(event) => {
               event.preventDefault()
               openerRef.current?.focus()

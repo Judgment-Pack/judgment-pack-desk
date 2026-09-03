@@ -455,6 +455,24 @@ change.
 }
 ```
 
+Each pane dimension is bounded, and **zero is refused like anything else**: a
+pane the file declares `open` at zero pixels is an open pane nobody can see
+with a toggle that appears to do nothing, and an enormous one pushes the strip
+out of a frame that does not scroll.
+
+| key | minimum | maximum |
+|---|---|---|
+| `panes.left.width` | 160 | 640 |
+| `panes.inspector.width` | 240 | 720 |
+| `panes.console.height` | 80 | 720 |
+
+A value outside its range is refused by name like every other problem, and the
+whole file with it. Beside that the sheet caps each pane against the viewport
+it is actually in — neither side column past `40vw`, so main keeps at least
+20% with both open, and the console no further than leaves 120px of route
+under the header and above the strip — because a size that is legal on a
+monitor is still able to eat the frame on a phone.
+
 Every key is optional except `deskConfigVersion`. `organization.name` is a
 non-empty string or `null`; `null` is how a file asks for the desk's own name,
 and `""` is refused by name rather than rendering a blank brand. `appearance` is
@@ -462,7 +480,9 @@ decoded and validated; `theme` is applied as above and `density` is not read
 yet, which Admin › Appearance also says. `organization.mark` is `null`,
 an inline `<svg …>` string, or a `data:` URI of at most 65,536 bytes of UTF-8
 (measured with `TextEncoder`, not in UTF-16 code units — the two disagree by up
-to four to one on a mark carrying non-ASCII), carried in the JSON
+to **three** to one on a mark carrying non-ASCII; three and not four, because a
+four-byte astral character costs two UTF-16 units and is therefore only 2:1,
+while the three-byte character that costs one unit is the worst case), carried in the JSON
 itself and encoded to a `data:` URI in the browser — **never** injected as
 markup, and never a file path (the file API refuses non-UTF-8, so it could not
 carry a raster image, and no endpoint is being added for a logo). Absent an
@@ -500,16 +520,28 @@ having written no file at all from every surface except `/admin`.
 
 A third state sits beside those two and gets its own cue: a file that **could
 not be read**. A 404 is an absent file and stays silent; a 413, a permission
-refusal, a non-UTF-8 body or a socket that never answered is a configuration
-that exists and was not honoured, and the strip reads `configuration could not
-be read — see Admin` instead. Reporting that as the defaults, silently, is a
-desk describing itself as unconfigured when it is misconfigured.
+refusal or a non-UTF-8 body is a configuration that exists and was not
+honoured; and a socket that never answered establishes only that **absence was
+not established** — it is not evidence that the file is there. The strip reads
+`configuration could not be read — see Admin` for all of them, and Admin
+separates the two provenances: where the chassis answered, its status is named
+and its reason is quoted as the chassis'; where nothing answered, the reason
+shown is the browser's own and is said to be. Reporting any of this as the
+defaults, silently, is a desk describing itself as unconfigured when it is
+merely unread.
+
+On a phone the strip paints a short spelling of that cue — `config refused`,
+`config unread` — because the full sentence is wider than a 320px strip has
+left beside the console button, and a link that neither shrinks nor wraps
+painted straight across it. The link's accessible name is the full sentence at
+every width.
 
 **Nothing is ever PUT to a configuration file.** Admin renders effective values,
 their source, the path they came from and the exact JSON to paste. Its only
-configuration- or state-changing control clears the pane record above; the Copy
-button beside each paste block is interactive too, and copies rather than
-changes. `runtime.jpackBin` and
+control that changes **persisted desk-layout state** clears the pane record
+above; the Copy button beside each paste block changes the clipboard and its
+own transient "copied" label, which is why the claim is scoped to persisted
+layout rather than to state in general. `runtime.jpackBin` and
 `project.dir` are not in the schema at all: the chassis executes the binary it
 was given, so a config-supplied path would be a way to run code on this machine
 by editing a file.
