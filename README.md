@@ -307,9 +307,9 @@ A project that configures no graph is an answer rather than an error: the walk
 reports `skipped` with no entries, the home page offers no graph entry, and the
 graphs page says the project configures none.
 
-**A shell around all of it.** Five regions — a header, a navigation rail, the
-routes above, an Inspector and a Console whose collapsed face is the status
-strip — plus two pages of their own: `/admin`, which renders the desk's
+**A shell around all of it.** Six regions — a header, a navigation rail, the
+routes above, an Inspector, a Console and the status strip that is its
+collapsed face — plus two pages of their own: `/admin`, which renders the desk's
 configuration read-only, and `/help`, which names what this runtime advertises
 and renders its own authoring prompt as text. The shell **derives no verdict**:
 no status colour in the rail, no rollup count, no "N failing" pill anywhere. A
@@ -317,15 +317,26 @@ red badge in a nav rail would be a gate the runtime never issued.
 
 ## Shell
 
-**Five regions**, on a CSS grid.
+**Six regions**, on a CSS grid of a **definite** viewport height —
+`height: 100dvh` and not `min-height`, so the content row divides the viewport
+instead of growing to fit a long page, `.desk-main` is the one scroll container,
+and the 28px strip stays on screen. The three pane sizes in the table are the
+configured values, written onto the grid as `--rail-w`, `--inspector-w` and
+`--console-h`; collapse writes one of two values into a second custom property
+and never a third number.
+
+A route publishes into the Inspector by portalling into the element
+`useInspectorSlot()` hands it. The context sits **above `<main>`**, so a route
+can reach it, and the pane publishes its target through a callback ref — so a
+drawer that starts closed reports no target rather than a detached one.
 
 | Region | Default | Collapse | Landmark |
 |---|---|---|---|
 | Header | Always visible, 48px | Never | `banner` |
-| Left rail | Expanded, 248px | → 56px icon rail; a drawer below 900px | `navigation`, named "Project" |
+| Left rail | Expanded, `panes.left.width` (248px) | → 56px icon rail; a drawer below 900px | `navigation`, named "Project" |
 | Main | Always visible | Never | `main`, `id="main"`, the skip link's target |
-| Inspector | Closed | → 0px; a drawer below 1100px | `complementary`, named "Inspector" |
-| Console | Collapsed to the 28px strip | → the strip, never below it | `region`, named "Console" |
+| Inspector | Closed, `panes.inspector.width` (360px) | → 0px; a drawer below 1100px | `complementary`, named "Inspector" |
+| Console | Collapsed to the 28px strip, `panes.console.height` (240px) | → the strip, never below it | `region`, named "Console" |
 | Status strip | Always visible, 28px | Never | `contentinfo` |
 
 A collapsed pane is **removed from the accessibility tree**, not merely made
@@ -337,8 +348,18 @@ cannot tab into it.
 form the rail draws no collapse toggle, so the opener has to live outside it —
 a control inside a closed drawer opens nothing. It is the `Project navigation`
 button at the left of the header, present only at that width, carrying
-`aria-expanded` and `aria-controls="desk-rail"`. The drawer carries the
-`navigation` landmark with it, so the region table above holds at every width.
+`aria-expanded` always and `aria-controls="desk-rail"` **only while the drawer
+is open** — a closed `Dialog` unmounts its portal, so the id is not in the
+document and naming it would offer assistive technology a broken relationship
+rather than none. The same holds for the Inspector's toggle below 1100px. Both
+drawers hand focus back to the header control that opened them, by reference:
+neither has a `Dialog.Trigger` to restore to, because both openers are in the
+header two grid cells away. The drawer carries the
+`navigation` landmark with it, so the region table above holds at every width,
+and it carries a visible close button — Escape and the overlay are not
+affordances a viewer can see. **Every navigation inside it closes it**: the
+drawer is modal, so a link that navigated and left it standing put the
+destination behind an overlay.
 Both drawers are **modal**: while one is open the page beneath it is
 `aria-hidden`, which is what a modal is for and is why the landmark count is not
 the same in that state.
@@ -354,6 +375,9 @@ the same in that state.
 Every one is suppressed while focus is in an `input`, a `textarea` or a
 `contenteditable` — which is exactly the authoring editor — and every one has a
 visible button, so a chord the browser claims costs a click and not a feature.
+**Every modifier a chord does not declare is rejected**: Ctrl+Shift+B is not
+`Mod+B`, and Ctrl+Cmd+B is neither of the two spellings of `Mod` — an undeclared
+chord is left to the browser unprevented rather than claimed and swallowed.
 On macOS, Cmd+Alt+I and Cmd+Alt+J are the browser's own developer-tools chords
 and Cmd+B is Firefox's bookmarks sidebar; the Ctrl spelling works everywhere.
 `Mod+J` (Downloads) and `Alt+<digit>` (Firefox tab switching) are deliberately
@@ -378,16 +402,25 @@ the file existed. The record appears the first time a pane is moved by hand.
 jpack-desk:shell:v1:<projectKey>
 ```
 
-where `projectKey` is a slug of the `configPath` the runtime reports plus an
-FNV-1a hash of the whole of it, or the literal `default` where the runtime
-reported none. One desk on one origin serves whichever project it was started
-against, and a layout chosen for a three-pack project is not the one chosen for
-a forty-pack one. Only the collapse flags and the console's channel are stored —
-no widths, because nothing on this desk can yet change one, and a stored number
-no viewer could have chosen would be a record of a choice nobody made. Every
-read and write is in `try/catch`: a private window and a browser with site data
-blocked *throw* on the accessor rather than answering null. **Admin › Panes**
-clears exactly that one key. Nothing about the layout is ever sent anywhere.
+where `projectKey` is a slug of **the project root the chassis pins at
+startup** plus an FNV-1a hash of the whole of it. It is that root and not the
+runtime's `configPath`, because a project with no `jpack.json` reports no config
+path — so every configless project on one origin used to map to the literal
+`default` and share a single record, two directories with one layout between
+them. The literal `default` remains and now means exactly one thing: the file
+listing has not answered yet, and **nothing is written under it**.
+
+One desk on one origin serves whichever project it was started against, and a
+layout chosen for a three-pack project is not the one chosen for a forty-pack
+one. Only the collapse flags and the console's channel are stored — no widths,
+because nothing on this desk can yet change one, and a stored number no viewer
+could have chosen would be a record of a choice nobody made — and **only for the
+panes the viewer has actually moved**, one bit each. A record that carried all
+three because one was toggled would be two built-in defaults outranking the
+configuration file for ever. Every read and write is in `try/catch`: a private
+window and a browser with site data blocked *throw* on the accessor rather than
+answering null. **Admin › Panes** clears exactly that one key, cancelling any
+write already on its way, and reports what happened rather than assuming.
 
 Reduced motion is respected: `prefers-reduced-motion: reduce` sets every pane
 transition to zero, and collapse is instant.
@@ -427,15 +460,25 @@ non-empty string or `null`; `null` is how a file asks for the desk's own name,
 and `""` is refused by name rather than rendering a blank brand. `appearance` is
 decoded and validated; `theme` is applied as above and `density` is not read
 yet, which Admin › Appearance also says. `organization.mark` is `null`,
-an inline `<svg …>` string, or a `data:` URI of at most 64KB, carried in the JSON
+an inline `<svg …>` string, or a `data:` URI of at most 65,536 bytes of UTF-8
+(measured with `TextEncoder`, not in UTF-16 code units — the two disagree by up
+to four to one on a mark carrying non-ASCII), carried in the JSON
 itself and encoded to a `data:` URI in the browser — **never** injected as
 markup, and never a file path (the file API refuses non-UTF-8, so it could not
 carry a raster image, and no endpoint is being added for a logo). Absent an
 organization name, the header reads `judgment‑pack desk` — never an invented
 company, and never a name taken from a token claim.
 
-**Precedence** for every value: flag → project file → desk-level file → built-in
-default. The desk-level `desk.json` — the only place an identity provider may be
+**Precedence, as phase A resolves it**: project file → built-in default, and
+for the three pane flags one layer in front of both — this browser's record of
+what the viewer chose, for the panes they chose it for. There are no shell
+flags on the command line; the desk-level `desk.json` is not read; and a layer
+that does not exist is not part of a precedence order, however plausibly it
+would fit. What arrives later — desk-level values, and whatever reads them —
+goes between the project file and the built-ins, and this line changes in the
+commit that adds it.
+
+The desk-level `desk.json` — the only place an identity provider may be
 configured — is **not read yet**; whether the page learns it through a
 read-only `GET /api/desk-config` or is told at connect time is an open question,
 and Admin › Identity provider says so in words rather than leaving the reader to
@@ -455,9 +498,18 @@ strip, which reads `configuration refused — see Admin` and links to the page
 that names every problem. Without that cue a mistyped key looked exactly like
 having written no file at all from every surface except `/admin`.
 
+A third state sits beside those two and gets its own cue: a file that **could
+not be read**. A 404 is an absent file and stays silent; a 413, a permission
+refusal, a non-UTF-8 body or a socket that never answered is a configuration
+that exists and was not honoured, and the strip reads `configuration could not
+be read — see Admin` instead. Reporting that as the defaults, silently, is a
+desk describing itself as unconfigured when it is misconfigured.
+
 **Nothing is ever PUT to a configuration file.** Admin renders effective values,
-their source, the path they came from and the exact JSON to paste, and its one
-interactive control clears the pane record above. `runtime.jpackBin` and
+their source, the path they came from and the exact JSON to paste. Its only
+configuration- or state-changing control clears the pane record above; the Copy
+button beside each paste block is interactive too, and copies rather than
+changes. `runtime.jpackBin` and
 `project.dir` are not in the schema at all: the chassis executes the binary it
 was given, so a config-supplied path would be a way to run code on this machine
 by editing a file.
@@ -834,7 +886,7 @@ web/                 Vite + React + TypeScript SPA
   src/components/    the semantic document, evaluation, coverage, row and
                      graph-walk views, plus the trace and handoff-target
                      renderers both the pack and graph surfaces share
-  src/shell/         the five regions, the pane state and its per-project
+  src/shell/         the six regions, the pane state and its per-project
                      record, the three shortcuts, the icon set, the console's
                      ring buffer, the fragment-scrolling hook the section menus
                      need, and the Create-pack dialog

@@ -177,6 +177,16 @@ describe('decodeDeskConfig', () => {
     expect(mark('<svg viewBox="0 0 1 1"></svg>').problems).toEqual([])
     expect(mark('data:image/svg+xml,%3Csvg%3E%3C/svg%3E').problems).toEqual([])
     expect(keys(mark(`<svg>${'x'.repeat(70000)}</svg>`).problems)).toEqual(['organization.mark'])
+    // Measured in **bytes of UTF-8**, not UTF-16 code units. A mark whose
+    // text is not ASCII weighs up to four times what `String.length` reports,
+    // so a limit documented as 64KB and counted in code units is a limit
+    // nobody can check against the file on disk. 30,000 three-byte characters
+    // is 90,000 bytes and 30,013 code units: refused one way, accepted the
+    // other.
+    const wide = `<svg>${'あ'.repeat(30000)}</svg>`
+    expect(wide.length).toBeLessThan(65536)
+    expect(keys(mark(wide).problems)).toEqual(['organization.mark'])
+    expect(mark(wide).problems[0]!.reason).toContain('bytes of UTF-8')
   })
 
   it('refuses a mistyped value, naming the key and what it found', () => {

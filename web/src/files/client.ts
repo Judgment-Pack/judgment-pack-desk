@@ -58,6 +58,25 @@ export interface FileContent {
 }
 
 /**
+ * A refusal from the file API, carrying the status it came with.
+ *
+ * The status is the whole reason this type exists. "There is no such file" and
+ * "the file is there and could not be read" are two different facts, and a
+ * caller handed only a sentence cannot tell them apart — which is how a
+ * permission error, a file past the read cap and a non-UTF-8 file all became
+ * indistinguishable from an absent configuration.
+ */
+export class FileRequestError extends Error {
+  readonly status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'FileRequestError'
+    this.status = status
+  }
+}
+
+/**
  * A write refused because the file on disk is not the file the edit started
  * from.
  *
@@ -120,7 +139,10 @@ async function answer<T>(response: Response): Promise<T> {
     throw new StaleWrite(body as ConstructorParameters<typeof StaleWrite>[0])
   }
   const message = (body as { error?: string } | undefined)?.error
-  throw new Error(message ?? `the desk answered ${response.status} ${response.statusText}`)
+  throw new FileRequestError(
+    response.status,
+    message ?? `the desk answered ${response.status} ${response.statusText}`
+  )
 }
 
 /** Every regular file in the project tree. */

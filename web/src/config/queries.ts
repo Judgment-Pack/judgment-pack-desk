@@ -23,7 +23,7 @@
  * rejection that has nothing to do with the case under test.
  */
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
-import { readFile } from '../files/client'
+import { FileRequestError, readFile } from '../files/client'
 import {
   PROJECT_CONFIG_PATH,
   decodeDeskConfig,
@@ -38,16 +38,27 @@ export async function loadDeskConfig(signal?: AbortSignal): Promise<EffectiveCon
   try {
     text = (await readFile(PROJECT_CONFIG_PATH, signal)).content
   } catch (cause) {
-    // A missing file is defaults with no banner and no error — the ordinary
-    // case, and the one every desk is in until someone writes the file.
-    return effectiveConfig(undefined, reasonFor(cause))
+    // **Absence and unreadability are different answers.** A 404 is a project
+    // that has not written the file: defaults, no banner, no error, and the
+    // state every desk is in until someone writes one. Everything else — a
+    // file past the 4 MiB read cap, a non-UTF-8 file, a permission refusal, a
+    // socket that never answered — is a configuration that exists and was not
+    // honoured, and reporting that as "no file" is the desk describing itself
+    // as unconfigured when it is misconfigured.
+    if (cause instanceof FileRequestError && cause.status === 404) {
+      return effectiveConfig(undefined, reasonFor(cause))
+    }
+    return effectiveConfig(undefined, undefined, messageOf(cause))
   }
   return effectiveConfig(decodeDeskConfig(text, 'project'))
 }
 
+function messageOf(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
+}
+
 function reasonFor(cause: unknown): string {
-  const message = cause instanceof Error ? cause.message : String(cause)
-  return `no configuration was read: ${message}`
+  return `no configuration was read: ${messageOf(cause)}`
 }
 
 export function useDeskConfig(): UseQueryResult<EffectiveConfig, Error> {

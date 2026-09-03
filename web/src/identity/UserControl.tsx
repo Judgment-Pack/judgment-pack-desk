@@ -46,13 +46,17 @@ export function monogram(name: string): string {
 }
 
 export function UserControl() {
-  const session = useIdentity()
+  const { provider, displayName } = useIdentity()
   // Where a provider is configured and carries no label, the name falls back
   // to the issuer's host — something the desk read out of the file. It does
   // **not** fall back to "signed out": that is a verdict about a session, and
   // phase A performs no discovery, holds no token and computes no expiry, so
   // it is a state this desk has not established and must not assert.
-  const name = session.mode === 'local' ? session.displayName : (session.label ?? session.issuerHost)
+  //
+  // Branched on nullness, not on a tag. There is no `mode` to read here
+  // because there is no `mode` in the state, which is the same absence the
+  // configuration schema keeps one layer down.
+  const name = provider === null ? displayName : (provider.label ?? provider.issuerHost)
 
   return (
     <DropdownMenu.Root>
@@ -61,17 +65,17 @@ export function UserControl() {
           <Avatar.Fallback delayMs={0}>{monogram(name)}</Avatar.Fallback>
         </Avatar.Root>
         <span className="desk-user-name">{name}</span>
-        {session.mode === 'local' ? (
+        {provider === null ? (
           <span className="desk-tag">local</span>
         ) : (
-          <span className="desk-tag">{session.issuerHost}</span>
+          <span className="desk-tag">{provider.issuerHost}</span>
         )}
         <IconChevronDown />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content className="desk-menu" align="end" sideOffset={6}>
           <DropdownMenu.Label className="desk-menu-note">
-            {session.mode === 'local' ? NONE_MENU_SENTENCE : PROVIDER_PHASE_NOTE}
+            {provider === null ? NONE_MENU_SENTENCE : PROVIDER_PHASE_NOTE}
           </DropdownMenu.Label>
           <DropdownMenu.Label className="desk-menu-note">{TOKEN_SENTENCE}</DropdownMenu.Label>
           <DropdownMenu.Separator className="desk-rule-h" />

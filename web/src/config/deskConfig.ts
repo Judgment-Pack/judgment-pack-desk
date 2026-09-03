@@ -123,7 +123,15 @@ const IDENTITY_AT_PROJECT =
   'identity may only be configured in the desk-level desk.json — a project is a shared ' +
   'checkout, and committing an issuer would push one operator’s directory onto every clone'
 
-/** The largest organization mark this will take, in UTF-16 code units. */
+/**
+ * The largest organization mark this will take, in **bytes** of UTF-8.
+ *
+ * Measured with `TextEncoder`, not `String.length`. The two disagree by up to
+ * four to one on a mark carrying non-ASCII — an `<svg>` with a `<title>` in
+ * Japanese, a base64 `data:` URI is ASCII and unaffected — and a limit
+ * documented as 64KB while counted in UTF-16 code units is a limit nobody can
+ * check against the file on disk.
+ */
 const MAX_MARK_BYTES = 65536
 
 export interface DecodedConfig {
@@ -362,10 +370,11 @@ function markValue(value: unknown, problems: ConfigProblem[]): string | null | u
     })
     return undefined
   }
-  if (value.length > MAX_MARK_BYTES) {
+  const bytes = new TextEncoder().encode(value).length
+  if (bytes > MAX_MARK_BYTES) {
     problems.push({
       key: 'organization.mark',
-      reason: `must be at most ${MAX_MARK_BYTES} characters; found ${value.length}`
+      reason: `must be at most ${MAX_MARK_BYTES} bytes of UTF-8; found ${bytes}`
     })
     return undefined
   }
@@ -528,10 +537,22 @@ export interface EffectiveConfig {
   /** The project-relative path the project file is read from. */
   path: string
   /**
-   * Why no file was read, where none was. Not an error the page reports — an
-   * absent config is defaults with no banner — but Admin says which it is.
+   * Why no file was read, where none was **absent**. Not an error the page
+   * reports — an absent config is defaults with no banner — but Admin says
+   * which it is.
    */
   note?: string
+  /**
+   * The file is there and could not be read.
+   *
+   * Kept apart from `note` because the two are different facts and only one of
+   * them is ordinary. A 404 is a project that has not written the file; a 413,
+   * a permission error, a non-UTF-8 body or a dead socket is a file that exists
+   * and was not honoured — and reporting that as the defaults, silently, is a
+   * desk that looks configured-by-nothing when it is configured-and-unread.
+   * Rendered on Admin and cued on the status strip.
+   */
+  readFailure?: string
 }
 
 export const PROJECT_CONFIG_PATH = 'jpack-desk.json'
@@ -542,7 +563,11 @@ export const PROJECT_CONFIG_PATH = 'jpack-desk.json'
  * A refused file contributes nothing at all: `values` is undefined, every
  * source badge reads `default`, and the problems travel to Admin.
  */
-export function effectiveConfig(decoded: DecodedConfig | undefined, note?: string): EffectiveConfig {
+export function effectiveConfig(
+  decoded: DecodedConfig | undefined,
+  note?: string,
+  readFailure?: string
+): EffectiveConfig {
   const values = decoded?.values
   const from = <K extends keyof Omit<DeskConfig, 'deskConfigVersion'>>(key: K): ValueSource =>
     values?.[key] === undefined ? 'default' : 'project file'
@@ -567,6 +592,7 @@ export function effectiveConfig(decoded: DecodedConfig | undefined, note?: strin
     },
     problems: decoded?.problems ?? [],
     path: PROJECT_CONFIG_PATH,
-    note
+    note,
+    readFailure
   }
 }

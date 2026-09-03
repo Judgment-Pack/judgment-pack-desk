@@ -56,6 +56,7 @@ function renderHeaderIn(path: string, overrides: Partial<DeskConfig> = {}) {
               <IdentityProvider>
                 <HeaderBar
                   inspectorOpen={false}
+                  inspectorIsDrawer={false}
                   consoleOpen={false}
                   onToggleInspector={() => {}}
                   onToggleConsole={() => {}}

@@ -7,14 +7,20 @@
  * local state in `AuthorView`, fed by `FileEditor`'s `onDirty`, and the file
  * selection has no URL parameter to carry it. The alternative is to drop both
  * features in phase A and say so; that is a choice for the maintainer, not
- * something to decide silently by writing the easier code. What it costs is
- * eight lines in `AuthorView.tsx` — one import and two effects — and nothing
- * else in that file changes.
+ * something to decide silently by writing the easier code.
+ *
+ * **What it costs `AuthorView.tsx` is three lines** — one import and two hook
+ * calls — and the effects those hooks wrap live here, with the state they
+ * publish to. That is not tidying: the cost of this deviation is the number
+ * quoted in the argument for it, and the argument said eight while the file
+ * carried ten lines of effects, their dependency rulings and their eslint
+ * suppressions. Moving them here makes the sentence above true by measurement
+ * rather than by rounding.
  *
  * The module shape is `refetchLedger.ts`'s: module state, a subscription, and
  * an explicit `forget…()` for tests.
  */
-import { useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 
 let dirty = false
 const dirtyListeners = new Set<() => void>()
@@ -37,6 +43,18 @@ function readDirty(): boolean {
 
 export function useAuthorDirty(): boolean {
   return useSyncExternalStore(subscribeDirty, readDirty, readDirty)
+}
+
+/**
+ * Publish one view's unsaved state for the rail to read, and withdraw it on
+ * unmount — a dot left standing after the editor is gone is a claim about a
+ * buffer that no longer exists.
+ */
+export function usePublishedDirty(dirty: boolean): void {
+  useEffect(() => {
+    publishDirty(dirty)
+    return () => publishDirty(false)
+  }, [dirty])
 }
 
 /**
@@ -82,6 +100,31 @@ function readOpen(): string | undefined {
 /** The pending request, as a value a component re-renders on. */
 export function useRequestedOpen(): string | undefined {
   return useSyncExternalStore(subscribeOpen, readOpen, readOpen)
+}
+
+/**
+ * Hand each pending open request to one consumer, once.
+ *
+ * Driven by the published value rather than by mount, because creating a pack
+ * while the editor is already open navigates to the route it is already on:
+ * the element does not remount, and a `[]`-dependency effect would never run
+ * again. The request then sat in module state until an unrelated mount
+ * consumed it.
+ *
+ * Still an effect and not a lazy `useState` initializer: StrictMode invokes an
+ * initializer twice and would swallow a consume-once take in the run whose
+ * state React discards. An effect's mount → cleanup → mount preserves state,
+ * so the second run simply finds nothing to do.
+ */
+export function useOpenRequests(open: (path: string) => void): void {
+  const requestedOpen = useRequestedOpen()
+  useEffect(() => {
+    const requested = takeRequestedOpen()
+    if (requested) open(requested)
+    // `open` is re-created on every render of the view and is deliberately not
+    // a dependency: this fires on a new request, never on a re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedOpen])
 }
 
 export function takeRequestedOpen(): string | undefined {

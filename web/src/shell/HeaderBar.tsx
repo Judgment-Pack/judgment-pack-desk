@@ -17,6 +17,7 @@
  * never to an invented company.
  */
 import { Avatar, DropdownMenu, Separator, Toggle } from 'radix-ui'
+import { type RefObject } from 'react'
 import { Link } from 'react-router-dom'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { DESK_FALLBACK_NAME } from '../config/deskConfig'
@@ -44,21 +45,29 @@ export function markToDataUri(mark: string | null): string | undefined {
 
 export function HeaderBar({
   inspectorOpen,
+  inspectorIsDrawer,
   consoleOpen,
   onToggleInspector,
   onToggleConsole,
+  inspectorOpenerRef,
   railIsDrawer,
   railDrawerOpen,
-  onOpenRail
+  onOpenRail,
+  railOpenerRef
 }: {
   inspectorOpen: boolean
+  /** True below 1100px, where the Inspector is a drawer rather than a column. */
+  inspectorIsDrawer: boolean
   consoleOpen: boolean
   onToggleInspector: () => void
   onToggleConsole: () => void
+  /** Held by the frame, so a closed drawer can hand focus back to it. */
+  inspectorOpenerRef?: RefObject<HTMLButtonElement | null>
   /** True below 900px, where the rail is an overlay rather than a column. */
   railIsDrawer: boolean
   railDrawerOpen: boolean
   onOpenRail: () => void
+  railOpenerRef?: RefObject<HTMLButtonElement | null>
 }) {
   const { config } = useEffectiveConfig()
   const name = config.organization.name ?? DESK_FALLBACK_NAME
@@ -74,10 +83,16 @@ export function HeaderBar({
         {railIsDrawer && (
           <button
             type="button"
+            ref={railOpenerRef}
             className="desk-icon-button"
             aria-label="Project navigation"
             aria-expanded={railDrawerOpen}
-            aria-controls="desk-rail"
+            /* Only while the drawer is actually in the document. A closed
+               `Dialog` unmounts its portal, so an unconditional IDREF here
+               named an element that does not exist — which offers assistive
+               technology a broken relationship rather than none. `aria-expanded`
+               carries the state either way. */
+            aria-controls={railDrawerOpen ? 'desk-rail' : undefined}
             onClick={onOpenRail}
           >
             <IconPanelLeft />
@@ -112,9 +127,13 @@ export function HeaderBar({
         <ConnectionBadge />
         <Separator.Root className="desk-rule" decorative orientation="vertical" />
         <Toggle.Root
+          ref={inspectorOpenerRef}
           className="desk-icon-button"
           aria-label="Inspector"
-          aria-controls="desk-inspector"
+          /* In column form the panel is always in the document — `hidden`, not
+             absent — so the reference resolves whether it is open or shut.
+             In drawer form it exists only while it is open. */
+          aria-controls={!inspectorIsDrawer || inspectorOpen ? 'desk-inspector' : undefined}
           pressed={inspectorOpen}
           onPressedChange={onToggleInspector}
         >

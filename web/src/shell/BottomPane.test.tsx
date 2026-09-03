@@ -39,6 +39,25 @@ describe('the console', () => {
     ])
   })
 
+  it('puts the log inside a flex column, so a long one scrolls rather than clips', () => {
+    // The DOM half of the console's flex chain. `.desk-console` is a fixed
+    // height flex column with `overflow: hidden` and `.desk-console-body`
+    // claims `flex: 1`; the tab root between them was an ordinary block, so
+    // the body had no flex parent and no constrained height and entries past
+    // the pane's height were simply cut off. The declarations are asserted in
+    // `shellSheet.test.ts`; what is asserted here is that they select
+    // something — a rule with no element is not a fix.
+    const { container } = renderConsole()
+    const console_ = container.querySelector('.desk-console')!
+    const tabs = console_.querySelector('.desk-console-tabs')!
+    expect(tabs).toBeTruthy()
+    // The chain, link by link: console › tab root › body, each the next one's
+    // parent, with nothing unstyled in between.
+    const body = container.querySelector('.desk-console-body')!
+    expect(tabs.parentElement).toBe(console_)
+    expect(body.parentElement).toBe(tabs)
+  })
+
   it('records one line per connection transition, not two under StrictMode', () => {
     const { rerender } = renderConsole()
     const value = connected()

@@ -11,17 +11,48 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { McpContext, type McpConnection } from '../mcp/McpProvider'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { AppShell } from './AppShell'
 import { forgetConsole } from './consoleLog'
 import { forgetAuthorBridge } from './authorBridge'
+import { projectKey, shellStateKey } from './paneState'
+
+/** The chassis' project root, which is what keys this desk's pane record. */
+const ROOT = '/home/someone/a-project'
+
+/**
+ * The file API, answering the two things the shell asks it for: the listing,
+ * whose `root` is the project identity, and `jpack-desk.json`, which is absent
+ * here. Without the first the key stays provisional and nothing is written
+ * under it — which is the behaviour, not a limitation of the stub.
+ */
+beforeEach(() => {
+  vi.stubGlobal('fetch', async (url: string) => {
+    const path = String(url)
+    if (path.includes('/api/files')) {
+      return {
+        ok: true,
+        status: 200,
+        statusText: '',
+        text: async () => JSON.stringify({ root: ROOT, files: [] })
+      }
+    }
+    return {
+      ok: false,
+      status: 404,
+      statusText: '',
+      text: async () => JSON.stringify({ error: 'no such file' })
+    }
+  })
+})
 
 afterEach(() => {
   cleanup()
   forgetConsole()
   forgetAuthorBridge()
+  vi.unstubAllGlobals()
   window.localStorage.clear()
 })
 
@@ -172,14 +203,14 @@ describe('the shell frame', () => {
         <h1>a route</h1>
       </AppShell>
     )
-    // The key is only known once list_packs has answered with a configPath.
-    await screen.findByText('/p/jpack.json', { exact: false }).catch(() => undefined)
     fireEvent.click(screen.getByRole('button', { name: 'Console' }))
     await waitFor(() => {
       const keys = Object.keys(window.localStorage).filter((key) =>
         key.startsWith('jpack-desk:shell:v1:')
       )
-      expect(keys.length).toBe(1)
+      // The chassis' root, not the runtime's config path: two projects with no
+      // `jpack.json` used to share the single literal `default` record.
+      expect(keys).toEqual([shellStateKey(projectKey(ROOT))])
       expect(window.localStorage.getItem(keys[0]!)).toContain('"open":true')
     })
     unmount()
@@ -190,5 +221,41 @@ describe('the shell frame', () => {
       </AppShell>
     )
     await waitFor(() => expect(screen.getByRole('region', { name: 'Console' })).toBeTruthy())
+  })
+
+  it('writes nothing at all while the project identity is provisional', async () => {
+    // The listing never answers, so the key is the literal `default` — which
+    // is not this project's record and is whichever project answers slowly
+    // next. A layout written there is one desk's choice stored under another
+    // desk's name.
+    vi.stubGlobal('fetch', () => new Promise(() => {}))
+    renderShell(
+      <AppShell>
+        <h1>a route</h1>
+      </AppShell>
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(
+      Object.keys(window.localStorage).filter((key) => key.startsWith('jpack-desk:shell:'))
+    ).toEqual([])
+  })
+
+  it('stores only the pane the viewer moved, not the two they did not', async () => {
+    // One global touched bit made a single toggle speak for all three: the
+    // rail's mode and the Inspector's flag were serialized from the built-in
+    // defaults, and a stored record outranks `panes` in the configuration file
+    // for ever after.
+    renderShell(
+      <AppShell>
+        <h1>a route</h1>
+      </AppShell>
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
+    await waitFor(() => {
+      const stored = window.localStorage.getItem(shellStateKey(projectKey(ROOT)))
+      expect(stored).not.toBeNull()
+      expect(JSON.parse(stored!)).toEqual({ v: 1, console: { open: true, tab: 'connection' } })
+    })
   })
 })

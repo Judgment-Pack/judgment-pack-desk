@@ -21,7 +21,7 @@
  * should.
  */
 import { Collapsible, Dialog, DropdownMenu, Separator, Tooltip, VisuallyHidden } from 'radix-ui'
-import { useRef, useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useGraphInventory, usePacks } from '../mcp/queries'
 import { ADMIN_SECTIONS } from '../routes/adminSections'
@@ -31,6 +31,7 @@ import {
   IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
+  IconClose,
   IconGear,
   IconGraph,
   IconHelp,
@@ -62,29 +63,58 @@ export function LeftRail({
   onToggle,
   asDrawer,
   drawerOpen,
-  onDrawerOpenChange
+  onDrawerOpenChange,
+  openerRef
 }: {
   mode: LeftRailMode
   onToggle: () => void
   asDrawer: boolean
   drawerOpen: boolean
   onDrawerOpenChange: (open: boolean) => void
+  /**
+   * The header button that opened the drawer. This drawer has no
+   * `Dialog.Trigger` — the opener is two grid cells away — so Radix has no ref
+   * to restore focus to and it is restored by hand.
+   */
+  openerRef?: RefObject<HTMLButtonElement | null>
 }) {
   if (asDrawer) {
     return (
       <Dialog.Root open={drawerOpen} onOpenChange={onDrawerOpenChange}>
         <Dialog.Portal>
           <Dialog.Overlay className="desk-overlay" />
-          <Dialog.Content className="desk-drawer desk-drawer-left" id="desk-rail">
+          <Dialog.Content
+            className="desk-drawer desk-drawer-left"
+            id="desk-rail"
+            onCloseAutoFocus={(event) => {
+              event.preventDefault()
+              openerRef?.current?.focus()
+            }}
+          >
             <VisuallyHidden.Root>
               <Dialog.Title>Project navigation</Dialog.Title>
             </VisuallyHidden.Root>
+            {/* A visible way out. Escape closed it and the overlay closed it,
+                and neither is something a viewer can see — on the width whose
+                likeliest device has no keyboard at all. */}
+            <div className="desk-drawer-head">
+              <Dialog.Close asChild>
+                <button type="button" className="desk-icon-button" aria-label="Close navigation">
+                  <IconClose />
+                </button>
+              </Dialog.Close>
+            </div>
             {/* The landmark travels with the rail. Without this the drawer
                 form offered no `navigation` at all, so the desk below 900px
                 had one fewer landmark than the README's region table says it
                 has — and the difference was the breakpoint, not the state. */}
             <nav aria-label="Project">
-              <RailBody mode="expanded" onToggle={onToggle} showCollapse={false} />
+              <RailBody
+                mode="expanded"
+                onToggle={onToggle}
+                showCollapse={false}
+                onNavigate={() => onDrawerOpenChange(false)}
+              />
             </nav>
           </Dialog.Content>
         </Dialog.Portal>
@@ -101,11 +131,22 @@ export function LeftRail({
 function RailBody({
   mode,
   onToggle,
-  showCollapse
+  showCollapse,
+  onNavigate
 }: {
   mode: LeftRailMode
   onToggle: () => void
   showCollapse: boolean
+  /**
+   * Dismiss the thing this rail is inside, where it is inside one.
+   *
+   * In drawer form the rail is a **modal** dialog: the page beneath it is
+   * `aria-hidden`, so a NavLink that navigated and left the drawer standing
+   * put the destination behind an overlay the viewer had to dismiss to see
+   * what they had just asked for. Undefined in column form, where there is
+   * nothing to dismiss.
+   */
+  onNavigate?: () => void
 }) {
   const icons = mode === 'icons'
   const dirty = useAuthorDirty()
@@ -137,7 +178,7 @@ function RailBody({
           walk, one order of magnitude smaller, and it gets the same answer. */}
       {creating && <CreatePackDialog open onOpenChange={setCreating} />}
 
-      <PacksGroup icons={icons} />
+      <PacksGroup icons={icons} onNavigate={onNavigate} />
 
       <Separator.Root className="desk-rule-h" decorative />
 
@@ -147,6 +188,7 @@ function RailBody({
             className="desk-nav-item"
             to={item.to}
             aria-label={item.label}
+            onClick={onNavigate}
             title={item.to === '/graphs' && graphs.error ? graphs.error.message : undefined}
           >
             {item.icon}
@@ -163,7 +205,7 @@ function RailBody({
 
       <div className="desk-admin-row">
         <Labelled icons={icons} label="Admin">
-          <NavLink className="desk-nav-item" to="/admin" aria-label="Admin">
+          <NavLink className="desk-nav-item" to="/admin" aria-label="Admin" onClick={onNavigate}>
             <IconGear />
             {!icons && <span className="desk-nav-label">Admin</span>}
           </NavLink>
@@ -176,7 +218,9 @@ function RailBody({
             <DropdownMenu.Content className="desk-menu" side="top" align="start" sideOffset={6}>
               {ADMIN_SECTIONS.map((section) => (
                 <DropdownMenu.Item asChild key={section.id} className="desk-menu-item">
-                  <NavLink to={`/admin#${section.id}`}>{section.title}</NavLink>
+                  <NavLink to={`/admin#${section.id}`} onClick={onNavigate}>
+                    {section.title}
+                  </NavLink>
                 </DropdownMenu.Item>
               ))}
             </DropdownMenu.Content>
@@ -185,7 +229,7 @@ function RailBody({
       </div>
 
       <Labelled icons={icons} label="Help & About">
-        <NavLink className="desk-nav-item" to="/help" aria-label="Help & About">
+        <NavLink className="desk-nav-item" to="/help" aria-label="Help & About" onClick={onNavigate}>
           <IconHelp />
           {!icons && <span className="desk-nav-label">Help &amp; About</span>}
         </NavLink>
@@ -250,7 +294,7 @@ function Labelled({
  * declares no packs" and "the listing did not answer" are two different
  * statements, and only one of them is about the project.
  */
-function PacksGroup({ icons }: { icons: boolean }) {
+function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => void }) {
   const { data, error } = usePacks()
   const location = useLocation()
   const [open, setOpen] = useState(true)
@@ -260,7 +304,7 @@ function PacksGroup({ icons }: { icons: boolean }) {
   if (icons) {
     return (
       <Labelled icons label="Packs">
-        <NavLink className="desk-nav-item" to="/" aria-label="Packs">
+        <NavLink className="desk-nav-item" to="/" aria-label="Packs" onClick={onNavigate}>
           <IconPack />
         </NavLink>
       </Labelled>
@@ -284,18 +328,31 @@ function PacksGroup({ icons }: { icons: boolean }) {
               const selected = location.pathname.startsWith(base)
               return (
                 <div key={pack.id}>
-                  <NavLink className="desk-nav-item" to={base}>
+                  <NavLink className="desk-nav-item" to={base} onClick={onNavigate}>
                     <span className="desk-nav-label">{pack.id}</span>
                   </NavLink>
                   {selected && (
                     <>
-                      <NavLink className="desk-nav-item desk-nav-child" to={base} end>
+                      <NavLink
+                        className="desk-nav-item desk-nav-child"
+                        to={base}
+                        end
+                        onClick={onNavigate}
+                      >
                         <span className="desk-nav-label">Document</span>
                       </NavLink>
-                      <NavLink className="desk-nav-item desk-nav-child" to={`${base}/evaluate`}>
+                      <NavLink
+                        className="desk-nav-item desk-nav-child"
+                        to={`${base}/evaluate`}
+                        onClick={onNavigate}
+                      >
                         <span className="desk-nav-label">Evaluate</span>
                       </NavLink>
-                      <NavLink className="desk-nav-item desk-nav-child" to={`${base}/matrix`}>
+                      <NavLink
+                        className="desk-nav-item desk-nav-child"
+                        to={`${base}/matrix`}
+                        onClick={onNavigate}
+                      >
                         <span className="desk-nav-label">Matrix</span>
                       </NavLink>
                     </>
@@ -304,7 +361,7 @@ function PacksGroup({ icons }: { icons: boolean }) {
               )
             })}
             {packs.length > PACK_CAP && (
-              <NavLink className="desk-nav-item desk-nav-child" to="/">
+              <NavLink className="desk-nav-item desk-nav-child" to="/" onClick={onNavigate}>
                 <span className="desk-nav-label">show all →</span>
               </NavLink>
             )}

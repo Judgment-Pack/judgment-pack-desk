@@ -60,12 +60,23 @@ export function isTypingTarget(target: EventTarget | null): boolean {
   return Boolean(element.closest?.('[contenteditable]:not([contenteditable="false"])'))
 }
 
-/** Which action a keydown asks for, or undefined. */
+/**
+ * Which action a keydown asks for, or undefined.
+ *
+ * **Every modifier a chord does not declare is rejected**, not ignored. Read
+ * loosely, `Mod+B` also claimed Ctrl+Shift+B — a chord this desk never
+ * declared, which the browser and the operating system are entitled to own —
+ * and worse, claiming it called `preventDefault` on it, so the shifted spelling
+ * of a shortcut fired the action and took the key away from whatever else
+ * wanted it. Ctrl and Meta together are rejected on the same ground: `mod` is
+ * "Ctrl **or** Cmd", and Ctrl+Cmd+B is a third chord, not either of them.
+ */
 export function shortcutFor(event: KeyboardEvent): keyof ShortcutActions | undefined {
   if (event.repeat || event.defaultPrevented) return undefined
   if (isTypingTarget(event.target)) return undefined
-  const mod = event.metaKey || event.ctrlKey
+  const mod = event.ctrlKey !== event.metaKey
   if (!mod) return undefined
+  if (event.shiftKey) return undefined
   const key = event.key.toLowerCase()
   if (!event.altKey && key === 'b') return 'toggleRail'
   if (event.altKey && key === 'i') return 'toggleInspector'
