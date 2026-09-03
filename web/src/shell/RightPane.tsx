@@ -34,6 +34,7 @@ export function RightPane({
   asDrawer,
   declaredWidth,
   publishTarget,
+  publishPane,
   openerRef,
   children
 }: {
@@ -52,6 +53,15 @@ export function RightPane({
   declaredWidth: number | undefined
   /** Called with the portal target on mount and with null on unmount. */
   publishTarget: (target: HTMLDivElement | null) => void
+  /**
+   * Called with the pane itself, on the same terms.
+   *
+   * The frame measures it: the slot promises a route "the pane's width", and
+   * the configured number is not that — the sheet caps it against the
+   * viewport, and the drawer form ignores it entirely unless the file stated
+   * one. What is published is the element; the measurement is the frame's.
+   */
+  publishPane: (pane: HTMLElement | null) => void
   /**
    * The header control that opened the drawer. Radix restores focus to its own
    * `Dialog.Trigger`, and this pane has none — the opener is a toggle in the
@@ -91,6 +101,7 @@ export function RightPane({
               portal is not in the document, and pointing at an id that is not
               there offers assistive technology a broken relationship. */}
           <Dialog.Content
+            ref={publishPane}
             className="desk-drawer desk-drawer-right"
             id="desk-inspector"
             aria-label="Inspector"
@@ -115,7 +126,13 @@ export function RightPane({
   }
 
   return (
-    <aside className="desk-inspector" aria-label="Inspector" id="desk-inspector" hidden={!open}>
+    <aside
+      ref={publishPane}
+      className="desk-inspector"
+      aria-label="Inspector"
+      id="desk-inspector"
+      hidden={!open}
+    >
       {body}
     </aside>
   )

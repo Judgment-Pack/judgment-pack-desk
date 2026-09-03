@@ -768,6 +768,29 @@ function isAcceptableIssuer(issuer: string): boolean {
   return url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')
 }
 
+/**
+ * A read that did not produce a file, with its provenance **carried** rather
+ * than inferred.
+ *
+ * Every member is here because inferring it from a sibling was wrong at least
+ * once. `responseReceived` was read off "is there a status?", which put a
+ * `200` carrying a body this API does not promise into the transport-failure
+ * bucket and had Admin say the request never got an answer. `source` is who
+ * wrote `reason`: the chassis' own `{error}`, this desk's sentence about a
+ * response it cannot use, or the browser's about a request that never
+ * completed. A page that attributes a sentence has to know who said it.
+ */
+export interface ReadFailure {
+  /** The reason, verbatim, whoever wrote it. */
+  reason: string
+  /** True where an HTTP response arrived at all. */
+  responseReceived: boolean
+  /** The status, present exactly where `responseReceived` is true. */
+  status?: number
+  /** Who authored `reason`. */
+  source: 'chassis' | 'desk' | 'browser'
+}
+
 /** Which file an effective value came from. */
 export type ValueSource = 'project file' | 'default'
 
@@ -785,27 +808,17 @@ export interface EffectiveConfig {
    */
   note?: string
   /**
-   * The file is there and could not be read.
+   * The read did not produce a file, and it was not a 404.
    *
    * Kept apart from `note` because the two are different facts and only one of
-   * them is ordinary. A 404 is a project that has not written the file; a 413,
-   * a permission error, a non-UTF-8 body or a dead socket is a file that exists
-   * and was not honoured — and reporting that as the defaults, silently, is a
-   * desk that looks configured-by-nothing when it is configured-and-unread.
-   * Rendered on Admin and cued on the status strip.
+   * them is ordinary. A 404 is a project that has not written the file. A 413,
+   * a permission error or a non-UTF-8 body is a file that exists and was not
+   * honoured; a dead socket establishes only that **absence was not
+   * established**, which is weaker and is said as such. Reporting any of them
+   * as the defaults, silently, is a desk that looks configured-by-nothing when
+   * it is merely unread. Rendered on Admin and cued on the status strip.
    */
-  readFailure?: string
-  /**
-   * The HTTP status the chassis answered with, where it answered at all.
-   *
-   * Absent means the request never got a reply — a dead socket, a refused
-   * connection, an aborted fetch — and that is a different claim: a status
-   * came from the chassis and says something about the file, whereas a
-   * transport failure says only that **absence was not established**. Admin
-   * attributes the reason accordingly rather than calling every one of them
-   * "the chassis' own".
-   */
-  readFailureStatus?: number
+  readFailure?: ReadFailure
   /** Which pane dimensions the project file stated, rather than inherited. */
   declaredPanes: DeclaredPanes
 }
@@ -821,8 +834,7 @@ export const PROJECT_CONFIG_PATH = 'jpack-desk.json'
 export function effectiveConfig(
   decoded: DecodedConfig | undefined,
   note?: string,
-  readFailure?: string,
-  readFailureStatus?: number
+  readFailure?: ReadFailure
 ): EffectiveConfig {
   const values = decoded?.values
   const from = <K extends keyof Omit<DeskConfig, 'deskConfigVersion'>>(key: K): ValueSource =>
@@ -852,7 +864,6 @@ export function effectiveConfig(
     path: PROJECT_CONFIG_PATH,
     note,
     readFailure,
-    readFailureStatus,
     // A refused file contributes nothing, its dimensions included: the desk is
     // on the built-in defaults, and none of them was declared.
     declaredPanes:

@@ -500,6 +500,28 @@ it is actually in — neither side column past `40vw`, so main keeps at least
 under the header and above the strip — because a size that is legal on a
 monitor is still able to eat the frame on a phone.
 
+**A cap is not the same as a configured value, and Admin says both.** An
+accepted 720px Inspector renders 440px at a 1100px window; the Inspector's
+*drawer* form is 320px unless the file states a width. Admin › Panes prints
+the configured number, the range it had to be inside, the cap that applies, and
+the **measured** width or height of each pane that is on screen — and says
+"not mounted at this width" or "collapsed" rather than reporting a number
+nothing has. `useInspectorSlot().size` is measured on the same terms, so a
+route laying something out beside the pane is laying it out against the width
+the pane actually has, updated as the window is dragged.
+
+**On a viewport too short for the reserve, the routes give way and the console
+does not.** An open console never renders below 80px — the smallest height the
+schema accepts for one — even where the cap would otherwise reach zero, because
+a pane of no height whose toggle still says it is open is a control that lies.
+`.desk-main` scrolls; it is the one that can afford to lose the pixels. The
+one thing that never gives way is the strip: where the viewport has less room
+between the header and the strip than the floor asks for, the console takes all
+of it and no more. At a 203px viewport an open console renders 80px with 47px
+of route above it; at 109px it renders 33px, which is everything there is. A
+*collapsed* console is still exactly 0px, and the strip is its collapsed face
+as always.
+
 Every key is optional except `deskConfigVersion`. `organization.name` is a
 non-empty string or `null`; `null` is how a file asks for the desk's own name,
 and `""` is refused by name rather than rendering a blank brand. `appearance` is
@@ -587,12 +609,21 @@ left beside the console button, and a link that neither shrinks nor wraps
 painted straight across it. The link's accessible name is the full sentence at
 every width.
 
-**Nothing is ever PUT to a configuration file.** Admin renders effective values,
-their source, the path they came from and the exact JSON to paste. Its only
-control that changes **persisted desk-layout state** clears the pane record
-above; the Copy button beside each paste block changes the clipboard and its
-own transient "copied" label, which is why the claim is scoped to persisted
-layout rather than to state in general. `runtime.jpackBin` and
+**Admin never PUTs configuration.** It renders effective values, their source,
+the path they came from and the exact JSON to paste, and its only control that
+changes **persisted desk-layout state** clears the pane record above; the Copy
+button beside each paste block changes the clipboard and its own transient
+"copied" label, which is why the claim is scoped to persisted layout rather
+than to state in general.
+
+That is a claim about **Admin**, and it is deliberately not the broader one it
+used to make. `jpack-desk.json` is an ordinary project file — the desk reads it
+through the same `GET /api/file` every other file goes through — so the generic
+Author editor lists it and can write it exactly like any project file. Saying
+"nothing is ever PUT to a configuration file" was a sentence this repository's
+own file API refutes; what is true is that no *configuration surface* writes
+it, and the editor that can is the one that treats it as bytes and forms no
+opinion about what they mean. `runtime.jpackBin` and
 `project.dir` are not in the schema at all: the chassis executes the binary it
 was given, so a config-supplied path would be a way to run code on this machine
 by editing a file.

@@ -44,6 +44,47 @@ afterEach(() => {
   window.localStorage.clear()
 })
 
+/**
+ * A `ResizeObserver` that actually observes, and a way to drive it.
+ *
+ * `testing/setup.ts` shims one that does nothing, which is right for every
+ * test that only needs the global to exist — but `slot.size` is now a
+ * *measurement*, and jsdom performs no layout, so a no-op observer and a
+ * rect of zero would let a broken measurement pass. This stub records what was
+ * observed and lets a case say "this element is now 360px wide", which is the
+ * only way the assertion can discriminate here.
+ */
+function observedResize() {
+  const watched: { element: Element; notify: () => void }[] = []
+  class Stub {
+    private readonly notify: () => void
+    constructor(callback: () => void) {
+      this.notify = callback
+    }
+    observe(element: Element) {
+      watched.push({ element, notify: this.notify })
+    }
+    unobserve() {}
+    disconnect() {}
+  }
+  vi.stubGlobal('ResizeObserver', Stub)
+  return {
+    /** Give every observed element a width, and tell its observer. */
+    resizeTo(width: number) {
+      act(() => {
+        for (const { element, notify } of watched) {
+          ;(element as HTMLElement).getBoundingClientRect = () =>
+            ({ width, height: 0, top: 0, left: 0, right: width, bottom: 0, x: 0, y: 0 }) as DOMRect
+          notify()
+        }
+      })
+    },
+    get observedCount() {
+      return watched.length
+    }
+  }
+}
+
 /** One viewport, movable, so a breakpoint swap can be driven. */
 function viewport(width: number) {
   const listeners = new Set<() => void>()
@@ -120,6 +161,7 @@ function renderDesk() {
 describe('a route publishing into the Inspector', () => {
   it('reaches the pane at the widest breakpoint, where the panel is a column', async () => {
     viewport(1400)
+    const resize = observedResize()
     renderDesk()
     // The column form is always mounted — `hidden` while closed — so the
     // target is a real element before the pane is ever opened.
@@ -133,7 +175,34 @@ describe('a route publishing into the Inspector', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Inspector' }))
     await waitFor(() => expect(screen.getByTestId('slot-open').textContent).toBe('true'))
-    expect(screen.getByTestId('slot-size').textContent).toBe('360')
+
+    // **Measured, not configured.** The pane is observed, and the size a route
+    // reads is whatever the pane is — not `panes.inspector.width`, which the
+    // sheet caps against the viewport and the drawer form ignores unless the
+    // file stated one. Nothing has laid out in jsdom, so it is zero until the
+    // observer says otherwise.
+    expect(resize.observedCount).toBeGreaterThan(0)
+    expect(screen.getByTestId('slot-size').textContent).toBe('0')
+    resize.resizeTo(440)
+    await waitFor(() => expect(screen.getByTestId('slot-size').textContent).toBe('440'))
+    // And it follows the pane rather than latching: a dragged window changes
+    // the cap, with no React state change to hang a recalculation off.
+    resize.resizeTo(300)
+    await waitFor(() => expect(screen.getByTestId('slot-size').textContent).toBe('300'))
+  })
+
+  it('reports zero for a closed pane however wide the last measurement was', async () => {
+    viewport(1400)
+    const resize = observedResize()
+    renderDesk()
+    fireEvent.click(screen.getByRole('button', { name: 'Inspector' }))
+    await waitFor(() => expect(screen.getByTestId('slot-open').textContent).toBe('true'))
+    resize.resizeTo(440)
+    await waitFor(() => expect(screen.getByTestId('slot-size').textContent).toBe('440'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Inspector' }))
+    await waitFor(() => expect(screen.getByTestId('slot-open').textContent).toBe('false'))
+    expect(screen.getByTestId('slot-size').textContent).toBe('0')
   })
 
   it('carries the tab the route selected, through the shell and back', () => {

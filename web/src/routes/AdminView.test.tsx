@@ -1,18 +1,21 @@
 /**
  * Admin: six headed sections, a sentence carried verbatim, and exactly one
- * interactive control.
+ * control that changes persisted desk-layout state.
  *
- * The last of those is the assertion worth having. A read-only page that grew
- * a control would be a page that writes configuration, which is a decision
- * nobody has taken — and the one control it does have clears a single
- * `localStorage` key, not the origin's storage.
+ * The last of those is the assertion worth having, and it is scoped rather
+ * than rounded. A read-only page that grew a *configuration* control would be
+ * a page that writes configuration, which is a decision nobody has taken. It
+ * is not the claim that nothing on the page is interactive: the Copy buttons
+ * are, and they change the clipboard and their own transient label. What holds
+ * is that the pane reset is the only control that touches anything persisted,
+ * and it clears a single `localStorage` key rather than the origin's storage.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
-import { decodeDeskConfig, effectiveConfig } from '../config/deskConfig'
+import { PANE_BOUNDS, decodeDeskConfig, effectiveConfig } from '../config/deskConfig'
 import { McpContext } from '../mcp/McpProvider'
 import { ShellStateProvider, projectKey, shellStateKey } from '../shell/paneState'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
@@ -26,6 +29,14 @@ afterEach(() => {
 })
 
 const QUIET = stubClient({ list_packs: () => ({ text: JSON.stringify({ packs: [] }) }) })
+
+/** One chassis refusal, with its provenance carried as the reader gets it. */
+const CHASSIS_413 = {
+  reason: 'the file is too large to read',
+  responseReceived: true,
+  status: 413,
+  source: 'chassis'
+} as const
 
 /** The chassis' project root, and the key the record therefore lives under. */
 const ROOT = '/home/someone/a-project'
@@ -231,25 +242,48 @@ describe('the Admin page', () => {
     // A 413, a permission error or a dead socket resolved to the defaults with
     // the reason recorded where nothing rendered it, so a desk that could not
     // open its own file looked exactly like a desk with no file.
-    renderAdmin(effectiveConfig(undefined, undefined, 'the file is too large to read'))
+    renderAdmin(effectiveConfig(undefined, undefined, CHASSIS_413))
     expect(screen.getByText(/could not be read, and the desk is on its defaults/)).toBeTruthy()
     expect(screen.getByText('the file is too large to read')).toBeTruthy()
   })
 
   it('sources an unread reason to whoever actually said it', () => {
-    // "The reason is the chassis' own" was false for a browser error such as
-    // `Failed to fetch`: nothing answered, so nothing the chassis said is
-    // being quoted, and the read establishes only that absence was not
-    // established.
-    renderAdmin(effectiveConfig(undefined, undefined, 'the file is too large to read', 413))
+    // Three provenances, three sentences, and each one carried rather than
+    // inferred. "The reason is the chassis' own" was false for a browser
+    // error; "the request never got an answer" is false for a 200 whose body
+    // this desk cannot use, which is what inferring from a status produced.
+    renderAdmin(effectiveConfig(undefined, undefined, CHASSIS_413))
     expect(screen.getByText(/The chassis answered/)).toBeTruthy()
     expect(screen.getByText('413')).toBeTruthy()
+    expect(screen.queryByText(/this desk’s sentence|this desk's sentence/)).toBeNull()
     cleanup()
 
-    renderAdmin(effectiveConfig(undefined, undefined, 'Failed to fetch'))
+    renderAdmin(
+      effectiveConfig(undefined, undefined, {
+        reason: 'Failed to fetch',
+        responseReceived: false,
+        source: 'browser'
+      })
+    )
     expect(screen.getByText(/The request never got an answer/)).toBeTruthy()
     expect(screen.getByText(/the reason below is the browser/)).toBeTruthy()
     expect(screen.queryByText(/The chassis answered/)).toBeNull()
+    cleanup()
+
+    // The case the inference got wrong: an answer arrived, and the sentence
+    // about it is this desk's rather than the chassis'.
+    renderAdmin(
+      effectiveConfig(undefined, undefined, {
+        reason: 'the desk answered 200 with text that is not JSON',
+        responseReceived: true,
+        status: 200,
+        source: 'desk'
+      })
+    )
+    expect(screen.getByText(/The chassis answered/)).toBeTruthy()
+    expect(screen.getByText('200')).toBeTruthy()
+    expect(screen.getByText(/sentence about that answer/)).toBeTruthy()
+    expect(screen.queryByText(/The request never got an answer/)).toBeNull()
   })
 
   it('says why no file was read where the file is simply absent', () => {
@@ -294,6 +328,83 @@ describe('the Admin page', () => {
       expect(scrolled).toContain('panes')
     } finally {
       Element.prototype.scrollIntoView = original
+    }
+  })
+
+  it('prints every accepted range, inclusive, and the caps that follow them', () => {
+    // Admin printed a decoded number and said nothing about what bounds it or
+    // what the frame then does to it, so an operator could not tell an
+    // accepted value from a rendered one or know why 720 was refused.
+    renderAdmin()
+    for (const [key, bounds] of Object.entries(PANE_BOUNDS)) {
+      expect(screen.getByText(`${key}: ${bounds.min}–${bounds.max}px`)).toBeTruthy()
+    }
+    const caps = screen.getByText(/capped against the viewport it is actually in/)
+    // Read off the paragraph rather than through a text matcher: `40vw`,
+    // `120px` and `80px` are each inside their own `<code>`, so the sentence
+    // is split across elements and no single node carries it.
+    const text = caps.closest('p')!.textContent ?? ''
+    expect(text).toContain('40vw')
+    expect(text).toContain('120px')
+    // And the short-viewport rule, which is the one that is not a cap.
+    expect(text).toContain('never falls below')
+    expect(text).toContain('80px')
+  })
+
+  it('labels the configured numbers as configured, and measures the rendered ones', () => {
+    // The mismatch this fixes: an accepted 720px Inspector renders 440px at
+    // 1100px, and an undeclared drawer renders 320px while Admin said 360.
+    // Printing one and calling it the other is a page reporting a width
+    // nothing on screen has.
+    const { container } = renderAdmin()
+    expect(container.textContent).toContain('configured')
+    expect(container.textContent).toContain('rendered')
+    expect(screen.getByText(/Configured is not rendered/)).toBeTruthy()
+    // No pane is in this document at all — Admin is rendered on its own here —
+    // so every rendered figure says so rather than reporting a zero.
+    expect(screen.getAllByText('not mounted at this width')).toHaveLength(3)
+  })
+
+  it('measures a pane that is there, and calls a mounted-but-collapsed one collapsed', () => {
+    // Three answers and not two: absent, collapsed, and a number. `hidden`
+    // plus `display: none` is a real element of zero size, and reporting that
+    // as `0px` beside a configured 360 reads as a measurement rather than a
+    // state.
+    const observed: { element: Element; notify: () => void }[] = []
+    class Stub {
+      private readonly notify: () => void
+      constructor(callback: () => void) {
+        this.notify = callback
+      }
+      observe(element: Element) {
+        observed.push({ element, notify: this.notify })
+      }
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', Stub)
+
+    const rail = document.createElement('nav')
+    rail.id = 'desk-rail'
+    const inspector = document.createElement('aside')
+    inspector.id = 'desk-inspector'
+    for (const element of [rail, inspector]) document.body.append(element)
+    // 251 rather than 248: the configured rail width is 248 and appears in the
+    // same paragraph, so a matching number would not tell a measurement from
+    // the configured value it is there to be different from.
+    rail.getBoundingClientRect = () =>
+      ({ width: 251, height: 600, top: 0, left: 0, right: 251, bottom: 600, x: 0, y: 0 }) as DOMRect
+
+    try {
+      renderAdmin()
+      expect(screen.getByText('251px')).toBeTruthy()
+      // The Inspector is mounted and measures zero — collapsed, not absent.
+      expect(screen.getByText('collapsed')).toBeTruthy()
+      // The console is not in the document at all.
+      expect(screen.getAllByText('not mounted at this width')).toHaveLength(1)
+    } finally {
+      rail.remove()
+      inspector.remove()
     }
   })
 

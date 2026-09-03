@@ -40,24 +40,38 @@ export async function loadDeskConfig(signal?: AbortSignal): Promise<EffectiveCon
   try {
     text = (await readFile(PROJECT_CONFIG_PATH, signal)).content
   } catch (cause) {
-    // **Absence and unreadability are different answers.** A 404 is a project
-    // that has not written the file: defaults, no banner, no error, and the
-    // state every desk is in until someone writes one. Everything else — a
-    // file past the 4 MiB read cap, a non-UTF-8 file, a permission refusal, a
-    // socket that never answered — is a configuration that exists and was not
-    // honoured, and reporting that as "no file" is the desk describing itself
-    // as unconfigured when it is misconfigured.
+    // **Absence and every other failure are different answers.** A 404 is a
+    // project that has not written the file: defaults, no banner, no error,
+    // and the state every desk is in until someone writes one. Everything
+    // else is a read that did not produce one, and reporting that as "no file"
+    // is the desk describing itself as unconfigured when it is merely unread.
+    // Not all of "everything else" says the same thing about the file, either:
+    // a 413 or a permission refusal is the chassis speaking about something it
+    // found, while a socket that never answered establishes only that absence
+    // was **not** established — which is weaker, and is why the provenance
+    // below is carried rather than summarised into one sentence.
     //
-    // And a status is kept where there was one. A refusal the chassis answered
-    // is a statement about the file; a socket that never answered is not — it
-    // establishes only that absence was *not* established, and attributing the
-    // browser's `Failed to fetch` to the chassis would be the desk sourcing a
-    // sentence to a party that never spoke.
+    // And the provenance is **carried, not inferred**. A refusal the chassis
+    // answered is a statement about the file; a `200` whose body is not the
+    // envelope this API promises is still an answer, but the sentence about it
+    // is the desk's; and a socket that never answered is neither — it
+    // establishes only that absence was *not* established. Reading all three
+    // off "is there a status?" put the middle one in the last bucket and had
+    // Admin say the request never got an answer.
     if (cause instanceof FileRequestError) {
       if (cause.status === 404) return effectiveConfig(undefined, reasonFor(cause))
-      return effectiveConfig(undefined, undefined, messageOf(cause), cause.status)
+      return effectiveConfig(undefined, undefined, {
+        reason: cause.message,
+        responseReceived: true,
+        status: cause.status,
+        source: cause.source
+      })
     }
-    return effectiveConfig(undefined, undefined, messageOf(cause))
+    return effectiveConfig(undefined, undefined, {
+      reason: messageOf(cause),
+      responseReceived: false,
+      source: 'browser'
+    })
   }
   return effectiveConfig(decodeDeskConfig(text, 'project'))
 }
