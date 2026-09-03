@@ -214,23 +214,31 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "override is ignored" "$F" \
     '	if !req.Override && !strings.EqualFold' \
     '	if !false && !strings.EqualFold'
+  # Repaired: the needle was written against a `defer s.writes.Unlock()` that
+  # this file has not had since the lock stopped spanning the response
+  # encoding. It could only report MUTATION DID NOT APPLY, at main and here.
   mutate go "the compare-and-commit is not serialized" "$F" \
     '	s.writes.Lock()
-	defer s.writes.Unlock()' \
-    ''
+	status, body := s.commitWriteLocked(clean, req)
+	s.writes.Unlock()' \
+    '	status, body := s.commitWriteLocked(clean, req)'
+  # Repaired: the refusal moved into `commitWriteLocked` and answers with a
+  # status pair rather than a ResponseWriter, so the old needle named a shape
+  # the write path no longer has. (The `writeJSONError` spelling still exists —
+  # on the *read* path — which is why this one names the return.)
   mutate go "the write path drops the symlink refusal" "$F" \
     '	if err := s.refuseSymlinkedPath(clean); err != nil {
-		writeJSONError(w, http.StatusForbidden, err.Error())
-		return
+		return http.StatusForbidden, errorBody(err)
 	}
-
-	// What is there now, under the lock.' \
-    '	// What is there now, under the lock.'
+' \
+    ''
+  # Repaired: the check became `isExcludedName(part)` when case-folding was
+  # added, and the needle still said `skipDirs[part]`.
   mutate go "excluded directories are not endpoint exclusions" "$F" \
     '	for _, part := range strings.Split(clean, "/") {
-		if skipDirs[part] {' \
+		if isExcludedName(part) {' \
     '	for _, part := range strings.Split(clean, "/") {
-		if false && skipDirs[part] {'
+		if false && isExcludedName(part) {'
   mutate go "the listing hides that it is partial" "$F" \
     '	if len(problems) > 0 {' \
     '	if false {'
@@ -327,12 +335,39 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if u.Scheme == "" || u.Host == "" {
 		return false
 	}'
+  # Repaired: the variable is `childInfo`, and the pinned field is
+  # `s.projectDir` (ProjectDir with its symlinks resolved once) rather than
+  # `s.cfg.ProjectDir`.
   mutate go "the listing classifies by pathname, not through the root" "$F" \
-    '			info, lerr := s.root.Lstat(osPath(child))' \
-    '			info, lerr := os.Lstat(filepath.Join(s.cfg.ProjectDir, osPath(child)))'
+    '			childInfo, lerr := s.root.Lstat(osPath(child))' \
+    '			childInfo, lerr := os.Lstat(filepath.Join(s.projectDir, osPath(child)))'
   mutate go "the project root is re-resolved per request" "$F" \
     '	f, err := s.root.OpenFile(osPath(clean), os.O_RDONLY|openNonBlocking, 0)' \
     '	f, err := os.OpenFile(filepath.Join(s.cfg.ProjectDir, osPath(clean)), os.O_RDONLY|openNonBlocking, 0)'
+
+  # createParents. The opt-in, its containment, and its position in the order.
+  mutate go "createParents is not opt-in (every write creates its parents)" "$F" \
+    '		case derr == nil || !req.CreateParents:' \
+    '		case derr == nil:'
+  mutate go "createParents resolves a pathname instead of the pinned root" "$F" \
+    '			if err := s.root.MkdirAll(osPath(parent), 0o777); err != nil {' \
+    '			if err := os.MkdirAll(filepath.Join(s.projectDir, osPath(parent)), 0o777); err != nil {'
+  mutate go "parents are created before the stale-digest check" "$F" \
+    '	if !req.Override && !strings.EqualFold(strings.TrimSpace(req.BaseSHA256), actual) {' \
+    '	if parent := path.Dir(clean); parent != "." && req.CreateParents {
+		_ = s.root.MkdirAll(osPath(parent), 0o777)
+	}
+	if !req.Override && !strings.EqualFold(strings.TrimSpace(req.BaseSHA256), actual) {'
+  # Deliberately not mutated: "a parent that is a regular file is created over",
+  # which would be `case derr == nil || !req.CreateParents:` -> `case
+  # !req.CreateParents:`. That branch is unreachable through the handler and was
+  # before this change too: opening `packs/x` where `packs` is a regular file is
+  # ENOTDIR, and `readThroughRoot` maps everything that is neither ErrNotExist
+  # nor ErrPermission onto the one containment refusal — so the current-bytes
+  # read answers 403 first. The row would report NOT DISCRIMINATING for a
+  # safeguard that is real but held one layer up, which is a worse statement
+  # than this note. `TestCreateParentsRefusesAParentThatIsAFile` pins the
+  # behaviour, with and without the member.
 fi
 
 if [ "$which" = all ] || [ "$which" = web ]; then
@@ -353,6 +388,11 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   W=web/src/config/DeskConfigProvider.tsx
   V=web/src/routes/AdminView.tsx
   Q=web/src/shell/useHashTarget.ts
+  J=web/src/packs/jpackConfig.ts
+  NP=web/src/packs/newPack.ts
+  UI=web/src/ui/Button.tsx
+  FD=web/src/ui/Field.tsx
+  SEL=web/src/ui/Select.tsx
 
   # The rail's graph gate. `useConfiguredGraphs` falls back to a whole-project
   # `experimental_test_graphs` walk against any runtime without the inventory
@@ -443,15 +483,6 @@ if [ "$which" = all ] || [ "$which" = web ]; then
             <Link to=\"/help\">About</Link>
           </DropdownMenu.Item>
           <DropdownMenu.Item className=\"desk-menu-item\">Sign out</DropdownMenu.Item>"
-  mutate web "create sends a base digest it did not read" "$X" \
-    "      { path: trimmed, content: starting, baseSha256: '' }," \
-    "      { path: trimmed, content: starting, baseSha256: 'x' },"
-  mutate web "create overrides an existing file" "$X" \
-    "      { path: trimmed, content: starting, baseSha256: '' }," \
-    "      { path: trimmed, content: starting, baseSha256: '', override: true },"
-  mutate web "the dialog invents a starting template" "$X" \
-    "    choice.kind === 'example' ? example.data : choice.kind === 'schema' ? schema.data : ''" \
-    "    choice.kind === 'example' ? example.data : choice.kind === 'schema' ? schema.data : '{\"packId\":\"\"}'"
   # Below 900px the rail is a Dialog drawer and renders no collapse toggle, so
   # the header's opener is the only pointer affordance there is. Without it the
   # whole left menu is reachable by Mod+B alone, on the width whose likeliest
@@ -498,12 +529,6 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the section links go nowhere" "$Q" \
     '    target?.scrollIntoView()' \
     '    void target'
-  # The dialog's seeded path. The chassis creates no directories and answers
-  # 404 for a missing parent, so a default of `packs/` in a project with a flat
-  # layout is a dead end offered as a convenience.
-  mutate web "the dialog seeds a directory the project may not have" "$X" \
-    "    () => ((files.data?.files ?? []).some((file) => file.path.startsWith(PATH_PREFIX)) ? PATH_PREFIX : '')," \
-    "    () => PATH_PREFIX,"
   mutate web "the create dialog is mounted on every route" "$L" \
     '      {creating && <CreatePackDialog open onOpenChange={setCreating} />}' \
     '      <CreatePackDialog open={creating} onOpenChange={setCreating} />'
@@ -600,6 +625,106 @@ if [ "$which" = all ] || [ "$which" = web ]; then
       .then((fresh) => { setBase(fresh); setBuffer(fresh.content) })
       .catch(() => {})
     void Promise.resolve(base)'
+  # Create a pack: the sequence, the entry it writes, and the name it refuses.
+  mutate web "create writes the pack and never registers it" "$X" \
+    '        await writeFile({
+          path: PROJECT_FILE,
+          content: serialiseProjectConfig(read.content, amended),
+          baseSha256: read.sha256
+        })' \
+    '        void amended'
+  mutate web "the registration writes a digest it did not read" "$X" \
+    '          baseSha256: read.sha256' \
+    "          baseSha256: ''"
+  mutate web "createParents is not sent" "$X" \
+    "        await writeFile({ path, content, baseSha256: '', createParents: true })" \
+    "        await writeFile({ path, content, baseSha256: '', createParents: false })"
+  mutate web "the pack is written before the project is known to have a jpack.json" "$X" \
+    '      if (!files.includes(PROJECT_FILE)) {' \
+    '      if (false) {'
+  mutate web "a 409 on jpack.json is reported as an ordinary failure" "$X" \
+    '          reason: cause instanceof StaleWrite ? STALE_PROJECT_FILE : reasonOf(cause)' \
+    '          reason: reasonOf(cause)'
+  mutate web "the form error is not a live region" "$X" \
+    '          <p role="alert">' \
+    '          <p>'
+  mutate web "the registration replaces the file rather than amending it" "$J" \
+    '  return { ...config, packs: { ...packs, [slug]: entry } }' \
+    '  return { packs: { [slug]: entry } }'
+  mutate web "the registration bumps configVersion" "$J" \
+    '  return { ...config, packs: { ...packs, [slug]: entry } }' \
+    "  return { ...config, configVersion: '3', packs: { ...packs, [slug]: entry } }"
+  mutate web "a blank description is written as an empty string" "$J" \
+    "    ...(trimmed === '' ? {} : { description: trimmed })," \
+    '    description: trimmed,'
+  mutate web "expectedVersion no longer matches the document's own version" "$J" \
+    '    expectedVersion: NEW_PACK_VERSION' \
+    "    expectedVersion: '0.2.0'"
+  mutate web "the amended file is reformatted rather than followed" "$J" \
+    '  const encoded = JSON.stringify(config, null, indentOf(source))' \
+    '  const encoded = JSON.stringify(config, null, 4)'
+  mutate web "the slug is not checked against existing pack keys" "$NP" \
+    '  if (project.keys.includes(slug)) {' \
+    '  if (false) {'
+  mutate web "the slug is not checked against existing files" "$NP" \
+    '  if (project.files.includes(project.path)) {' \
+    '  if (false) {'
+  mutate web "a slug that does not begin with a letter is accepted" "$NP" \
+    "  if (!/^[a-z]/.test(slug)) return { problem: 'A name must start with a letter.' }" \
+    "  if (false) return { problem: 'A name must start with a letter.' }"
+  mutate web "the template's specVersion is overwritten" "$NP" \
+    '    version: NEW_PACK_VERSION
+  }' \
+    "    version: NEW_PACK_VERSION,
+    specVersion: '0.1.0-desk'
+  }"
+  mutate web "the empty pack invents outcomes to satisfy minItems" "$NP" \
+    "    case 'array':
+      return []" \
+    "    case 'array':
+      return [{ id: 'approve' }, { id: 'decline' }]"
+  # The primitives. Each row is one thing a caller cannot see for itself.
+  mutate web "the primary button is not a submit (Enter does nothing)" "$UI" \
+    "      type={type ?? 'button'}" \
+    '      type="button"'
+  mutate web "the field's hint is not announced" "$FD" \
+    "        'aria-describedby': described.length > 0 ? described.join(' ') : undefined," \
+    "        'aria-describedby': undefined,"
+  mutate web "the field describes an element it did not render" "$FD" \
+    '  const described = [hint ? hintId : undefined, error ? errorId : undefined].filter(Boolean)' \
+    '  const described = [hintId, errorId]'
+  mutate web "the select reports back a value nobody offered" "$SEL" \
+    '        if (offered.has(next)) onValueChange(next)' \
+    '        onValueChange(next)'
+  mutate web "the select's trigger reads its label off an item that may never mount" "$SEL" \
+    '          {options.find((option) => option.value === value)?.label}' \
+    '          {undefined}'
+  # Admin's storage section, and the decoder behind it.
+  mutate web "Admin claims a location the listing does not show" "$V" \
+    '  const holdsFiles = (listing.data?.files ?? []).some((file) =>
+    file.path.startsWith(`${packDir}/`)
+  )' \
+    '  const holdsFiles = true
+  void packDir'
+  mutate web "a future storage kind becomes a control" "$V" \
+    '<span>database — coming soon</span>' \
+    '<input type="radio" disabled readOnly aria-label="database — coming soon" />'
+  mutate web "an unknown storage key is accepted" "$D" \
+    "          ? section(storage.packs, 'storage.packs', ['kind', 'dir', 'idBase'], problems)" \
+    "          ? section(storage.packs, 'storage.packs', ['kind', 'dir', 'idBase', 'bucket'], problems)"
+  mutate web "a storage kind other than filesystem is accepted" "$D" \
+    "  if (value !== 'filesystem') {" \
+    '  if (false) {'
+  mutate web "storage defaults are not applied when the member is absent" "$D" \
+    '      storage: values?.storage ?? DESK_DEFAULTS.storage' \
+    '      storage: values?.storage!'
+  mutate web "an escaping pack directory is accepted" "$D" \
+    "  if (trimmed.split('/').some((part) => part === '..' || part === '.' || part === '')) {" \
+    '  if (false) {'
+  mutate web "the id prefix is not normalised, so ids run together" "$D" \
+    "  return trimmed.endsWith('/') || trimmed.endsWith('#') ? trimmed : `${trimmed}/`" \
+    '  return trimmed'
+
   mutate web "deleted and changed are no longer distinguished" "$A" \
     "        {stale.exists
           ? 'Something else wrote to it while this edit was open.'
