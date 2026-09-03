@@ -153,3 +153,58 @@ describe('the document itself', () => {
     expect(referencesFor(undefined, '/rules/0')).toEqual([])
   })
 })
+
+describe('an id the document declares twice', () => {
+  // A last-wins map left one pointer behind, so a rule naming `approve` linked
+  // to `/outcomes/1` as though the document had said which one it meant. It
+  // had said the id twice, which is a different fact and the runtime's to
+  // refuse — until it does, this panel says what is there.
+  const ambiguous = {
+    outcomes: [{ id: 'approve' }, { id: 'approve' }, { id: 'decline' }],
+    rules: [{ id: 'r0', outcome: 'approve' }, { id: 'r1', outcome: 'decline' }]
+  } as unknown as PackDocument
+
+  it('offers every place it is declared, and picks none', () => {
+    const [line] = referencesFor(ambiguous, '/rules/0')
+    expect(line!.relation).toBe('outcome')
+    expect(line!.id).toBe('approve')
+    expect(line!.target).toBeUndefined()
+    expect(line!.candidates).toEqual(['/outcomes/0', '/outcomes/1'])
+  })
+
+  it('still resolves an id that is declared once', () => {
+    const [line] = referencesFor(ambiguous, '/rules/1')
+    expect(line!.target).toBe('/outcomes/2')
+    expect(line!.candidates).toBeUndefined()
+  })
+
+  it('still says nothing carries an id nothing declares', () => {
+    const missing = {
+      outcomes: [{ id: 'approve' }],
+      rules: [{ id: 'r0', outcome: 'nowhere' }]
+    } as unknown as PackDocument
+    const [line] = referencesFor(missing, '/rules/0')
+    expect(line!.unresolved).toContain('no declared outcome carries this id')
+    expect(line!.candidates).toBeUndefined()
+  })
+})
+
+describe('a reference address is an address', () => {
+  const document = {
+    outcomes: [{ id: 'approve' }],
+    rules: [{ id: 'r0', outcome: 'approve' }]
+  } as unknown as PackDocument
+
+  it.each(['/rules/01', '/rules/1e0', '/rules/-0', '/rules/'])(
+    'reads no rule at %s',
+    (bad) => {
+      // `^\d+$` took `01` for an index, which is the same leading-zero hole
+      // the evaluator had, arriving from the other side.
+      expect(referencesFor(document, bad)).toEqual([])
+    }
+  )
+
+  it('still reads the rule the address does name', () => {
+    expect(referencesFor(document, '/rules/0')).toHaveLength(1)
+  })
+})

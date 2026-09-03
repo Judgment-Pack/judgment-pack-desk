@@ -155,11 +155,12 @@ function ShellFrame({
    * correct here: the reader picked a member and the panel is what they picked
    * it for.
    */
-  const inspectorOpen = shell.inspector.open
-  const toggleInspector = shell.toggleInspector
-  const reveal = useCallback(() => {
-    if (!inspectorOpen) toggleInspector()
-  }, [inspectorOpen, toggleInspector])
+  // **Set, not flip.** "If closed, toggle" is the same gesture read twice, and
+  // React's StrictMode runs an effect twice on purpose — so an arrival that
+  // opened the pane immediately closed it again, and the link somebody sent
+  // landed on a closed Inspector. `openInspector` is idempotent, so calling it
+  // twice is calling it once and calling it on an open pane does nothing.
+  const reveal = shell.openInspector
   const slot = useMemo<InspectorSlot>(
     () => ({
       open: shell.inspector.open,

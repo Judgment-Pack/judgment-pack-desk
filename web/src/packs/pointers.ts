@@ -66,14 +66,83 @@ export function child(at: string, step: string | number): string {
  * The inverse. Anything that is neither empty nor `/`-prefixed is refused
  * rather than repaired: a value that is not a pointer names nothing, and
  * guessing which member it meant would put a diagnostic on the wrong block.
+ *
+ * **An illegal escape is refused too**, and that is the half this used to
+ * repair. RFC 6901 admits exactly two escapes, `~0` and `~1`; `replaceAll`
+ * left every other `~` in place, so `~2` and a trailing bare `~` parsed as
+ * ordinary characters and named a member nobody wrote. A pointer that is not a
+ * pointer has to name nothing, or a diagnostic lands on whatever it happens to
+ * resemble.
  */
 export function parsePointer(text: string): string[] | undefined {
   if (text === '') return []
   if (!text.startsWith('/')) return undefined
-  return text
-    .slice(1)
-    .split('/')
-    .map((token) => token.replaceAll('~1', '/').replaceAll('~0', '~'))
+  const tokens = text.slice(1).split('/')
+  const parts: string[] = []
+  for (const token of tokens) {
+    // Every `~` must be followed by `0` or `1`. Scanned rather than matched by
+    // a regex so the unescaping and the validation are one pass and cannot
+    // disagree about what they saw.
+    let decoded = ''
+    for (let index = 0; index < token.length; index += 1) {
+      const char = token[index]!
+      if (char !== '~') {
+        decoded += char
+        continue
+      }
+      const next = token[index + 1]
+      if (next === '0') decoded += '~'
+      else if (next === '1') decoded += '/'
+      else return undefined
+      index += 1
+    }
+    parts.push(decoded)
+  }
+  return parts
+}
+
+/** Whether one token is a legal RFC 6901 array index: no `01`, no `1e0`, no `-0`. */
+function arrayIndex(token: string): number | undefined {
+  if (!/^(0|[1-9][0-9]*)$/.test(token)) return undefined
+  return Number(token)
+}
+
+/**
+ * The value one pointer names inside a document, or undefined.
+ *
+ * **The one evaluator.** There were three, and they disagreed in ways that
+ * showed the Inspector a subtree the address did not name: `Number(part)`
+ * accepted `01`, `1e0`, `-0` and the empty string as array indices, so
+ * `/rules/01` and `/rules/1e0` both selected rule one; `part in value` consults
+ * the prototype chain, so `/constructor` and `/toString` selected properties
+ * that are in no JSON document. An address either names something in this
+ * document or names nothing, and there is one place that decides which.
+ */
+export function valueAt(document: unknown, at: string): unknown {
+  const parts = parsePointer(at)
+  if (parts === undefined) return undefined
+  let value: unknown = document
+  for (const part of parts) {
+    if (Array.isArray(value)) {
+      const index = arrayIndex(part)
+      // Bounds-checked: `/rules/9` in a document with two rules names nothing,
+      // and `undefined` from a read past the end is not the same answer.
+      if (index === undefined || index >= value.length) return undefined
+      value = value[index]
+      continue
+    }
+    if (typeof value === 'object' && value !== null && Object.hasOwn(value, part)) {
+      value = (value as Record<string, unknown>)[part]
+      continue
+    }
+    return undefined
+  }
+  return value
+}
+
+/** Whether a pointer names something this document actually declares. */
+export function declaredAt(document: unknown, at: string): boolean {
+  return valueAt(document, at) !== undefined
 }
 
 /**

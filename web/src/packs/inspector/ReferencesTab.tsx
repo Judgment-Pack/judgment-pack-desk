@@ -26,7 +26,31 @@ export function ReferencesTab({
         <li key={`${reference.relation}-${reference.id}-${index}`} className={styles.reference}>
           <span className={styles.relation}>{reference.relation}</span>
           <span aria-hidden="true"> </span>
-          {reference.target === undefined ? (
+          {reference.candidates !== undefined ? (
+            // **Every candidate, and no choice between them.** A last-wins map
+            // linked one of two identically named outcomes as though the
+            // document had said which; it had said the id twice. The runtime
+            // refuses a duplicate id — until it does, this says what is there
+            // and offers each place to go and look.
+            <>
+              <code className={styles.id}>{reference.id}</code>
+              <span className={styles.unresolved}>
+                {' '}
+                is declared {reference.candidates.length} times — this document does not say which
+              </span>
+              {reference.candidates.map((candidate) => (
+                <span key={candidate}>
+                  {' '}
+                  <Link
+                    to={`/packs/${encodeURIComponent(packId)}?at=${encodeURIComponent(candidate)}`}
+                    replace
+                  >
+                    <code className={styles.id}>{candidate}</code>
+                  </Link>
+                </span>
+              ))}
+            </>
+          ) : reference.target === undefined ? (
             <>
               <code className={styles.id}>{reference.id}</code>
               <span className={styles.unresolved}> {reference.unresolved}</span>

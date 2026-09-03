@@ -494,9 +494,25 @@ wrote and a page that re-sorted would be showing one nobody did. The order the
 schema declares is used for exactly one thing: where to put the line for a
 member the file does **not** declare.
 
+**Every top-level member finds its own place, the five identity members
+included.** They were drawn as one unit positioned at the earliest of the five,
+so a document writing `decision` before `specVersion`, `id` and `version` had
+those three moved in front of `decision` — the page re-sorting, in the one
+place its own test was written not to look. Grouping them under a single
+`Identity` outline entry is a **nav** decision and is made in the nav: five
+near-identical entries would be a worse nav, and that is not a reason to move
+anything on the page.
+
 **An omitted optional member gets a line saying it is omitted**, spliced in at
 the position the schema's order gives it — so `applicability`'s "not declared"
-sits between the decision and the evidence requirements. This is the difference
+sits between the decision and the evidence requirements, and `/description` has
+one too: while the identity members were one unit the unit was present because
+`title` was, so nothing ever said the description was absent. A **required**
+member that is missing gets no such line: its absence is a refusal rather than
+an omission, the runtime issues one at that pointer, and a block there would
+take that diagnostic off the strip — where every reader sees it — and put it
+behind a selection nobody has made. Every outline entry is a link, omissions
+included, because the omission block is a place on the page like any other. This is the difference
 between "the pack does not narrow its own scope" and "the page did not draw
 that part", and the view this replaced could not tell them apart: its section
 wrapper returned nothing when it had nothing to render.
@@ -507,8 +523,13 @@ condition tree. Reviews are **rendered and never written**: this surface has no
 reviewer identity, so a review it wrote would be signed by nobody.
 
 The fixtures the whole of this is asserted against are documents `jpack spec
-validate` accepts, and a test holds every enum-valued member of each of them
-against the spec's own closed lists. They were not: `full.pack.json` wrote an
+validate` **reads**, and a test holds every enum-valued member of each of them
+against the spec's own closed lists. Two of the three are accepted outright;
+`full.pack.json` is structurally accepted and then refused as `unsupported`
+with exit 2, deliberately — it declares `example.review-window` as a *required*
+extension, which is the case that exists to show a runtime refusing a document
+it can read perfectly well. Saying all three were "accepted" was a claim about
+an exit code none of them had in common. They were not: `full.pack.json` wrote an
 evidence-requirement id into `escalation.triggers`, which is what made the wrong
 reference model above look correct and froze it in a passing test.
 
@@ -525,11 +546,24 @@ Every block carries its RFC 6901 pointer, and that one string is five things:
 | A diagnostic | `instancePath`, which is the same string from the runtime |
 
 The escaping mirrors the runtime's own `carrier.Pointer` byte for byte: `~` to
-`~0`, `/` to `~1`, and the document itself is the empty string. Two consequences
-are written into `packs/pointers.ts` because both are silent: an id containing
-`/` or `~` is legal HTML and is **not** a valid CSS selector, so every lookup
-goes through `getElementById` and never `querySelector`; and a fragment is
-percent-decoded before it is compared.
+`~0`, `/` to `~1`, and the document itself is the empty string. Three
+consequences are written into `packs/pointers.ts` because all three are silent:
+
+- An id containing `/` or `~` is legal HTML and is **not** a valid CSS
+  selector, so **every lookup by pointer value uses `getElementById`** and
+  never `querySelector`. Fixed selectors — `[data-pointer]`, `a`, the article
+  itself — are enumerated with `querySelectorAll` in a few places, which
+  interpolates nothing and cannot hit this; the rule is about pointer values,
+  and stating it as "no `querySelector` anywhere" was a claim the code does not
+  make.
+- A fragment is percent-decoded before it is compared.
+- **An address that is not an address names nothing.** RFC 6901 admits exactly
+  two escapes, and `~2` or a bare trailing `~` is neither — those parsed as
+  ordinary characters and named a member nobody wrote. An array index must be
+  `0` or a digit string with no leading zero, and is bounds-checked; a member
+  is looked up as an **own** property, so `/constructor` and `/toString` name
+  nothing rather than selecting something no JSON document has. One evaluator
+  decides all of it, because three of them disagreed.
 
 Selection is held in the **route** and never in the pane: `RightPane` swaps its
 wrapper at 1100px and remounts the subtree, so a selection the pane held would
@@ -581,10 +615,19 @@ would be a lie about both.
 240px in main's left: a filter over the pack id, a sort (name ascending and
 descending, and nothing else — `list_packs` reports no date and no size, so any
 other order would be one the desk invented), the rows with their versions, and
-"Show all N" past the first screenful. Rows are links, so tab order is native;
-the arrow keys step between them, and Home and End reach the ends of **what is
-rendered** — past a window that is not the end of the list, and reaching further
-means scrolling first, which is what a pointer does anyway.
+"Show all N" past the first screenful, offered only while the listing has
+**currently** succeeded — a refetch error keeps the last good data, and a button
+underneath a failure sentence offering to show all N of a listing the pane had
+just said it could not read is an offer about nothing.
+
+Rows are links, so tab order is native; the arrow keys step between them and
+Home and End reach the ends of **the list**, not of the window. A destination
+that is not rendered is scrolled into view and focused in the render that brings
+it in: navigating by the rendered anchors clamped every key to the window, so
+with 300 rows in a 400px viewport focus stopped at row 21 and ArrowDown from
+there prevented the default and moved nothing. Filtering resets the scroll,
+because a window computed from the old position can begin past the end of the
+new list and render no rows at all.
 
 A pack whose document the listing could not read is still listed, with `packId`
 and `packVersion` sent as **empty strings** and the reason in `detail`. Such a
@@ -620,7 +663,11 @@ file. `validate` is sent `{document}` and nothing else; omitting `through` is
 what makes the runtime run its own default, which is the whole ladder.
 
 The sentence is derived from the payload's own `layers` rows and quotes its
-`status` word verbatim. **A layer the payload does not list is one that did not
+`status` word verbatim — **every row it was given, and the status, in one
+shape whatever happened**. A failure used to be printed as the failing layer
+alone: `invalid` with `[carrier passed, structural failed]` came out as
+`structural — 1 diagnostic`, naming neither the verdict the runtime reached nor
+the layer that ran. **A layer the payload does not list is one that did not
 run**: the ladder short-circuits, so a carrier failure reports `[carrier
 failed]` alone and a structural failure returns before the semantic layer. Two
 `unsupported` shapes must not be confused and each has a test — a specification
@@ -637,15 +684,27 @@ Diagnostics anchor on an exact `instancePath` match, else on the nearest
 **rendered** ancestor with the diagnostic's own pointer printed verbatim beside
 it, else on the document strip — which **prints them**, under the layer
 sentence, with the runtime's code, message and the pointer it named. A pack with
-no `specVersion` is refused at `/specVersion` and the eyebrow renders that
-member only when it is there, so its diagnostic reaches the strip and nothing
-else; counting it in the sentence and printing it nowhere would be a page that
-says a member is wrong and never says which. That ancestor walk is what makes a *missing*
+no `specVersion` is refused at `/specVersion` and nothing draws a required
+member that is not there, so its diagnostic reaches the strip and nothing else;
+counting it in the sentence and printing it nowhere would be a page that says a
+member is wrong and never says which. That ancestor walk is what makes a *missing*
 member reportable: the runtime reports one at the pointer including the absent
 name, so `/rules/0/when` on a rule with no `when` lands on that rule's card. A
 diagnostic computed against different bytes is **never re-anchored** — deleting
-`rules[0]` moves every `/rules/N` — the check is marked stale and its anchors
-are dropped. Where `diagnosticsTruncated` is set the runtime stopped at its own
+`rules[0]` moves every `/rules/N`, so a `/rules/0` diagnostic would land on a
+rule that is not the rule it is about, which is worse than no diagnostic at all
+because it looks like an answer. The report carries the exact bytes it checked
+and they are compared with the bytes on screen; where they differ the check is
+stale, the strip says so, and **no** diagnostic is anchored — not the ones that
+still resolve, because nothing in a pointer says which of them would still be
+right. The check runs over the file on disk where it loaded and over the served
+document where it did not, and those are two artifacts: the digest warning is
+about two answers from two sources and can be quiet while these bytes still
+differ.
+
+An empty document is not checked at all, and the strip says so in words: the
+call is disabled, and a disabled query has no data for ever — which the strip
+used to read as "Checking…" and print until the page was left. Where `diagnosticsTruncated` is set the runtime stopped at its own
 limit of 100, and the panel says the list was cut rather than that nothing else
 was found.
 

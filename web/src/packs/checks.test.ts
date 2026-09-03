@@ -13,7 +13,7 @@ import { anchor, diagnosticsFor, isStale, layersReached, truncationNote } from '
 const passed = (name: string) => ({ name, status: 'passed' })
 
 describe('which layers ran', () => {
-  it('names the layer that failed and the ones that never ran', () => {
+  it('names the status, every row it was given, and the layers that never ran', () => {
     const report: ValidationReport = {
       status: 'invalid',
       layers: [passed('carrier'), { name: 'structural', status: 'failed' }],
@@ -27,8 +27,13 @@ describe('which layers ran', () => {
         }
       ]
     }
-    expect(layersReached(report).text).toBe(
-      'structural — 1 diagnostic. The semantic layer did not run.'
+    // The old sentence was `structural — 1 diagnostic.`: it named neither the
+    // verdict the runtime reached nor the carrier layer that actually ran, so
+    // a reader learned less from a failure than from a pass.
+    const sentence = layersReached(report)
+    expect(sentence.status).toBe('invalid')
+    expect(sentence.text).toBe(
+      'invalid — carrier passed, structural failed, 1 diagnostic. The semantic layer did not run.'
     )
   })
 
@@ -47,7 +52,7 @@ describe('which layers ran', () => {
       ]
     }
     expect(layersReached(report).text).toBe(
-      'carrier — 1 diagnostic. The structural and semantic layers did not run.'
+      'invalid — carrier failed, 1 diagnostic. The structural and semantic layers did not run.'
     )
   })
 

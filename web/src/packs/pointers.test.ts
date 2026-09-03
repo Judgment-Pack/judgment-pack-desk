@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { child, elementIdFor, parentPointers, parsePointer, pointer, pointerFromHash } from './pointers'
+import {
+  child,
+  elementIdFor,
+  parentPointers,
+  parsePointer,
+  pointer,
+  pointerFromHash,
+  valueAt
+} from './pointers'
 
 describe('the pointer escaping', () => {
   it('matches the runtime’s own, byte for byte', () => {
@@ -86,5 +94,78 @@ describe('one step down', () => {
 
   it('refuses to build on something that is not a pointer', () => {
     expect(child('rules', 'when')).toBe('rules')
+  })
+})
+
+describe('an address that is not an address names nothing', () => {
+  // RFC 6901 admits exactly two escapes. `replaceAll` left every other `~`
+  // alone, so `~2` and a trailing bare `~` parsed as ordinary characters and
+  // named a member nobody wrote — silently, which is the whole danger.
+  it.each(['/~2', '/~', '/a~', '/~x', '/rules/~9/id', '/~~'])(
+    'refuses the illegal escape in %s',
+    (bad) => {
+      expect(parsePointer(bad)).toBeUndefined()
+    }
+  )
+
+  it('still accepts the two escapes that exist', () => {
+    expect(parsePointer('/~0')).toEqual(['~'])
+    expect(parsePointer('/~1')).toEqual(['/'])
+    expect(parsePointer('/a~1b~0c')).toEqual(['a/b~c'])
+    expect(parsePointer('/~01')).toEqual(['~1'])
+  })
+
+  it('refuses an illegal escape arriving through a fragment', () => {
+    expect(valueAt({ '~2': 1 }, pointerFromHash('#/~2') ?? '/~2')).toBeUndefined()
+  })
+})
+
+describe('valueAt, the one evaluator', () => {
+  const document = {
+    rules: [{ id: 'r0' }, { id: 'r1' }],
+    title: 'a pack',
+    'a/b': 1,
+    'a~b': 2
+  }
+
+  it('reads what the address names', () => {
+    expect(valueAt(document, '')).toBe(document)
+    expect(valueAt(document, '/title')).toBe('a pack')
+    expect(valueAt(document, '/rules/0/id')).toBe('r0')
+    expect(valueAt(document, '/rules/1/id')).toBe('r1')
+    expect(valueAt(document, '/a~1b')).toBe(1)
+    expect(valueAt(document, '/a~0b')).toBe(2)
+  })
+
+  it.each(['/rules/01', '/rules/1e0', '/rules/-0', '/rules/', '/rules/+1', '/rules/1.0', '/rules/ 1'])(
+    'refuses %s rather than selecting a real element',
+    (bad) => {
+      // `Number(part)` took every one of these for an index, so `/rules/01`
+      // and `/rules/1e0` both selected rule one and `/rules/` selected rule
+      // zero. An address either names something or names nothing.
+      expect(valueAt(document, bad)).toBeUndefined()
+    }
+  )
+
+  it('bounds-checks an index rather than reading past the end', () => {
+    expect(valueAt(document, '/rules/2')).toBeUndefined()
+    expect(valueAt(document, '/rules/9')).toBeUndefined()
+  })
+
+  it.each(['/constructor', '/toString', '/__proto__', '/rules/0/hasOwnProperty'])(
+    'refuses %s, which is in no JSON document',
+    (inherited) => {
+      // `part in value` consults the prototype chain, so the Inspector
+      // selected properties the document does not have and rendered them as
+      // though it did.
+      expect(valueAt(document, inherited)).toBeUndefined()
+    }
+  )
+
+  it('reads an own member that happens to share a prototype name', () => {
+    // The rule is "own property", not "not that name": a document may declare
+    // `constructor` and it is then a member like any other.
+    const declared = JSON.parse('{"constructor":{"x":1}}') as unknown
+    expect(valueAt(declared, '/constructor/x')).toBe(1)
   })
 })

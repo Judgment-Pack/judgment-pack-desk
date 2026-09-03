@@ -1,0 +1,185 @@
+/**
+ * The window, with a viewport that has a size.
+ *
+ * **Every other test of this list runs against jsdom's zero heights**, which
+ * take the hook's "nothing measurable, render everything" branch — so they
+ * exercise the fallback and never the arithmetic. The measurement is stubbed
+ * here instead: `clientHeight` is defined on the node and `scrollTop` is
+ * written, which is exactly what the hook reads. That makes 300 rows in a 400px
+ * viewport a real window, and it is the only way the defects below can fail.
+ */
+import { act, cleanup, render, screen } from '@testing-library/react'
+import { useState } from 'react'
+import { afterEach, describe, expect, it } from 'vitest'
+import { moveFocus, useWindowedRows } from './useWindowedRows'
+
+afterEach(cleanup)
+
+const ROW = 40
+const VIEWPORT = 400
+
+/** A list whose scrolling element reports a real height. */
+function List({ count, rowHeight = ROW }: { count: number; rowHeight?: number }) {
+  const window = useWindowedRows(count, rowHeight)
+  const [node, setNode] = useState<HTMLElement | null>(null)
+  return (
+    <div>
+      <div
+        data-testid="list"
+        ref={(element) => {
+          if (element !== null && element !== node) {
+            Object.defineProperty(element, 'clientHeight', { value: VIEWPORT, configurable: true })
+            setNode(element)
+          }
+          window.ref(element)
+        }}
+      >
+        <div data-testid="padTop" style={{ height: window.padTop }} />
+        <ul>
+          {Array.from({ length: window.end - window.start }, (_, offset) => (
+            <li key={window.start + offset} data-row={window.start + offset}>
+              row {window.start + offset}
+            </li>
+          ))}
+        </ul>
+        <div data-testid="padBottom" style={{ height: window.padBottom }} />
+      </div>
+      <p data-testid="window">{`${window.start}:${window.end}:${window.padTop}`}</p>
+    </div>
+  )
+}
+
+const listNode = () => screen.getByTestId('list')
+const windowOf = () => screen.getByTestId('window').textContent!.split(':').map(Number)
+
+/** Scroll the element the way a wheel does, and let the listener see it. */
+function scrollTo(top: number) {
+  act(() => {
+    const node = listNode()
+    Object.defineProperty(node, 'scrollTop', { value: top, configurable: true, writable: true })
+    node.dispatchEvent(new Event('scroll'))
+  })
+}
+
+describe('a window over a viewport that has a height', () => {
+  it('renders a screenful and not three hundred rows', () => {
+    render(<List count={300} />)
+    const [start, end] = windowOf()
+    expect(start).toBe(0)
+    // A 400px viewport at 40px a row is ten rows, plus the overscan.
+    expect(end).toBeGreaterThan(10)
+    expect(end).toBeLessThan(30)
+  })
+
+  it('moves the window down as the list is scrolled', () => {
+    render(<List count={300} />)
+    scrollTo(4000)
+    const [start, end, padTop] = windowOf()
+    expect(start).toBeGreaterThan(90)
+    expect(end).toBeGreaterThan(start!)
+    expect(padTop).toBe(start! * ROW)
+  })
+
+  it('renders rows after a filter empties the list beneath the scroll', () => {
+    // Scrolled to the bottom of 300 rows and then filtered to one, the window
+    // used to be computed from the old scroll position — `{start: 244, end: 1}`
+    // — so the list rendered *nothing* and a reader with one match saw an
+    // empty pane.
+    const { rerender } = render(<List count={300} />)
+    scrollTo(10000)
+    expect(windowOf()[0]).toBeGreaterThan(200)
+    act(() => {
+      rerender(<List count={1} />)
+    })
+    const [start, end] = windowOf()
+    expect(start).toBe(0)
+    expect(end).toBe(1)
+    expect(screen.getByText('row 0')).toBeTruthy()
+  })
+
+  it('clamps the scroll position to the shorter list', () => {
+    const { rerender } = render(<List count={300} />)
+    scrollTo(10000)
+    act(() => {
+      rerender(<List count={3} />)
+    })
+    // Three rows at 40px is shorter than the viewport, so the top is the only
+    // position there is.
+    expect(listNode().scrollTop).toBe(0)
+  })
+
+  it('keeps scrolling after the list is unmounted and mounted again', () => {
+    // The listener effect used to depend on the ref object and the row count,
+    // and neither changes when a failed refetch removes the list and a
+    // same-count retry mounts a new node — so the listener stayed on a
+    // detached element and scrolling did nothing, for ever.
+    const { rerender } = render(<List count={300} />)
+    scrollTo(4000)
+    expect(windowOf()[0]).toBeGreaterThan(90)
+
+    act(() => {
+      rerender(<p>the listing did not answer</p>)
+    })
+    act(() => {
+      rerender(<List count={300} />)
+    })
+    // A new node, and it scrolls.
+    scrollTo(6000)
+    expect(windowOf()[0]).toBeGreaterThan(140)
+  })
+
+  it('renders every row where nothing can be measured', () => {
+    // The fallback, still. jsdom lays nothing out, and a window computed from
+    // a height of zero has no rows in it — which is not "the list is short".
+    function Unmeasured() {
+      const window = useWindowedRows(300, ROW)
+      return <p data-testid="window">{`${window.start}:${window.end}`}</p>
+    }
+    render(<Unmeasured />)
+    expect(screen.getByTestId('window').textContent).toBe('0:300')
+  })
+})
+
+describe('the keyboard reaches the whole list', () => {
+  it('steps and jumps over every row, not only the rendered ones', () => {
+    // `moveFocus` used to be given the rendered anchors, so with 300 rows in a
+    // 400px viewport focus stopped at row 21: End reached the last *rendered*
+    // row, and ArrowDown from there called preventDefault and moved nothing.
+    const prevented: string[] = []
+    const key = (name: string, current: number) =>
+      moveFocus({ key: name, preventDefault: () => prevented.push(name) }, 300, current)
+
+    expect(key('ArrowDown', 20)).toBe(21)
+    expect(key('ArrowDown', 21)).toBe(22)
+    expect(key('End', 21)).toBe(299)
+    expect(key('Home', 299)).toBe(0)
+    // And it still stops at the ends rather than running off them.
+    expect(key('ArrowDown', 299)).toBe(299)
+    expect(key('ArrowUp', 0)).toBe(0)
+  })
+
+  it('asks for nothing from an empty list', () => {
+    expect(moveFocus({ key: 'End', preventDefault: () => {} }, 0, 0)).toBeUndefined()
+  })
+
+  it('leaves every other key to the browser', () => {
+    let prevented = false
+    const result = moveFocus(
+      { key: 'a', preventDefault: () => (prevented = true) },
+      300,
+      5
+    )
+    expect(result).toBeUndefined()
+    expect(prevented).toBe(false)
+  })
+})
+
+describe('scrolling a row into view', () => {
+  it('brings an off-window row in, so focus can follow it', () => {
+    render(<List count={300} />)
+    // Row 250 is nowhere near the first screenful.
+    expect(screen.queryByText('row 250')).toBeNull()
+    scrollTo(250 * ROW)
+    expect(screen.getByText('row 250')).toBeTruthy()
+  })
+})

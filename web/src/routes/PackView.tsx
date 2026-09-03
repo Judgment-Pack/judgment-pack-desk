@@ -32,7 +32,7 @@ import { useFileContent } from '../files/queries'
 import { useMcp } from '../mcp/McpProvider'
 import { usePack, usePacks, useValidate } from '../mcp/queries'
 import { agreesWithParse, indexDocument } from '../packs/documentText'
-import { anchor, layersReached, truncationNote } from '../packs/checks'
+import { anchor, isStale, layersReached, truncationNote } from '../packs/checks'
 import { PackDocumentView } from '../packs/document/PackDocumentView'
 import { SelectionContext } from '../packs/document/Block'
 import { PackInspector } from '../packs/inspector/PackInspector'
@@ -44,7 +44,7 @@ import styles from './PackView.module.css'
 
 export function PackView() {
   const { packId } = useParams<{ packId: string }>()
-  const { hash } = useLocation()
+  const { hash, key: locationKey } = useLocation()
   const [params, setParams] = useSearchParams()
   const { known, validateSupported } = useMcp()
   const pack = usePack(packId)
@@ -58,20 +58,37 @@ export function PackView() {
     const next = new URLSearchParams(params)
     next.set('at', pointer)
     setParams(next, { replace: true })
-    // Selecting is asking to inspect. With the pane closed — the shell's
-    // default in a fresh profile — this otherwise filled a panel behind a
-    // closed pane and changed nothing on screen but the block's own border.
-    slot.reveal()
+    // The reveal is not here. Selecting writes `?at`, which is a navigation —
+    // a replacing one, but a new history entry all the same — and the effect
+    // below opens the pane for exactly that. Two callers meant two calls, and
+    // while `reveal` is idempotent now and two is harmless, one path is one
+    // rule: the pane opens when the address gains a selection, however it
+    // gained one.
   }
 
-  // Arriving with a selection is arriving at a link someone sent, so the pane
-  // it addresses is opened once, on mount. Only on mount: reopening it on every
-  // later render would fight a viewer who had closed it.
-  const arrivedSelected = useRef(at !== null)
+  /**
+   * Arriving with a selection is arriving at a link someone sent, so the pane
+   * it addresses is opened.
+   *
+   * **Once per arrival, and an arrival is a `location.key`.** Mount was the
+   * wrong unit in both directions. `/packs/a` → `/packs/a?at=/rules/0` reuses
+   * this component, so a link followed from the References panel — or from
+   * anywhere inside the same pack — mounted nothing and revealed nothing. And
+   * StrictMode mounts twice, which made two calls out of one arrival; that half
+   * is now harmless because `reveal` sets rather than flips, but the unit is
+   * still wrong.
+   *
+   * The key changes on every history entry and on nothing else, so this fires
+   * for a navigation and not for a rerender — which is what keeps it from
+   * fighting a viewer who has closed the pane and stayed where they are.
+   */
+  const revealedFor = useRef<string | undefined>(undefined)
   useEffect(() => {
-    if (arrivedSelected.current) slot.reveal()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    if (at === null) return
+    if (revealedFor.current === locationKey) return
+    revealedFor.current = locationKey
+    slot.reveal()
+  }, [at, locationKey, slot])
 
   // The bytes the check ran over: the file's where they loaded, the served
   // document's where they did not. Which one it is is printed, because the two
@@ -102,14 +119,32 @@ export function PackView() {
     setRendered((previous) => (sameSet(previous, found) ? previous : found))
   }, [documentKey, at])
 
-  const anchored = useMemo(() => anchor(check.data, rendered), [check.data, rendered])
-  // **Never stale in read mode, by construction**, and said here rather than
-  // computed: the check's query key *is* the buffer, so a report only ever
-  // exists for the bytes on screen. `isStale` is the rule the editor phase
-  // wires up, where the buffer moves under a report that has already answered;
-  // calling it here with one expression on both sides would read as a live
-  // guard and could never fire.
-  const stale = false
+  /**
+   * Whether this report is about the bytes on screen.
+   *
+   * **It was hard-coded false, and that was a claim rather than a check.** The
+   * check runs over the file on disk where it loaded and over the served
+   * document where it did not; the page draws the served document either way.
+   * Where the chassis read revision B after `get_pack` served A, every one of
+   * B's diagnostics was anchored onto A's blocks — a `/rules/0` diagnostic
+   * landing on a rule that is not the rule it is about, which is worse than no
+   * diagnostic at all because it looks like an answer.
+   *
+   * The report carries the bytes it checked, and they are compared with the
+   * bytes being rendered. Not the digests: the digest warning below is about
+   * two answers from two sources, and it is possible for that to be quiet while
+   * these bytes still differ.
+   */
+  const servedText = pack.data?.raw
+  const stale = isStale(check.data?.checkedBytes, servedText)
+
+  // **No diagnostics at all while stale.** Not "fewer", not "the ones that
+  // still anchor": every one of them is about a document that is not the one on
+  // the page, and there is no way to tell from a pointer which of them would
+  // still be right. The strip says the report is about other bytes; the blocks
+  // say nothing.
+  const report = stale ? undefined : check.data?.report
+  const anchored = useMemo(() => anchor(report, rendered), [report, rendered])
 
   // The deep link. `getElementById`, never `querySelector`: a pointer contains
   // `/` and `~`, which are legal in an id and are not a selector.
@@ -153,11 +188,11 @@ export function PackView() {
         fileSha256={file.data?.sha256}
         fileBytes={file.data?.bytes}
         anchored={anchored}
-        truncation={truncationNote(check.data)}
+        truncation={truncationNote(report)}
         stale={stale}
-        pending={check.isPending}
+        pending={check.fetchStatus === 'fetching'}
         checkedWhat={checkedWhat}
-        unavailable={checkUnavailable(known, validateSupported, check.error)}
+        unavailable={checkUnavailable(known, validateSupported, check.error, checkedText)}
         tab={slot.tab}
         onTabChange={slot.setTab}
       />
@@ -199,8 +234,15 @@ export function PackView() {
         </p>
         <div className={styles.strip}>
           <p className={styles.check}>
-            {checkUnavailable(known, validateSupported, check.error) ??
-              (check.isPending ? 'Checking…' : layersReached(check.data).text)}
+            {checkUnavailable(known, validateSupported, check.error, checkedText) ??
+              // Progress is `fetchStatus`, which is about a request being in
+              // flight. `isPending` is about there being no data, which a
+              // disabled query satisfies for ever.
+              (check.fetchStatus === 'fetching'
+                ? 'Checking…'
+                : stale
+                  ? 'This check ran over different bytes from the ones shown, so nothing it found is placed on this document.'
+                  : layersReached(check.data?.report).text)}
           </p>
           <p className={styles.checkWhat}>{checkedWhat}</p>
           {/*
@@ -247,11 +289,19 @@ export function PackView() {
 function checkUnavailable(
   known: boolean,
   validateSupported: boolean,
-  error: Error | null
+  error: Error | null,
+  bytes: string | undefined
 ): string | undefined {
   if (error !== null) return `The check did not answer — ${error.message}`
   if (!known) return 'The runtime has not said what it can do, so this document is unchecked.'
   if (!validateSupported) return 'This runtime does not offer validate, so this document is unchecked.'
+  // **Empty bytes are a reason, not a wait.** `useValidate` disables itself for
+  // an empty buffer, and a disabled query reports `isPending` for ever — so the
+  // strip said "Checking…" about a check that was never going to start. There
+  // is nothing to check, and that is a sentence.
+  if (bytes === undefined || bytes === '') {
+    return 'There are no bytes to check yet, so this document is unchecked.'
+  }
   return undefined
 }
 

@@ -169,3 +169,101 @@ describe('the packs pane', () => {
     expect(screen.getByRole('navigation', { name: 'Packs' })).toBeTruthy()
   })
 })
+
+describe('a listing that failed after it had succeeded', () => {
+  it('takes its “Show all” offer away with it', async () => {
+    // react-query keeps the last good data through a refetch error, so the
+    // pane printed the failure sentence and left a button underneath offering
+    // to show all N of a listing it had just said it could not read.
+    let answer: () => { text: string } = () => ({
+      text: JSON.stringify({
+        status: 'valid',
+        packs: Array.from({ length: 30 }, (_, index) => ({
+          id: `pack-${String(index).padStart(2, '0')}`,
+          packVersion: '1.0.0'
+        }))
+      })
+    })
+    const stub = stubClient({ list_packs: () => answer() })
+    const queryClient = testQueryClient()
+    const router = createMemoryRouter(
+      [
+        {
+          path: '*',
+          element: (
+            <McpContext.Provider value={connected({ client: stub.client })}>
+              <PacksPane />
+            </McpContext.Provider>
+          )
+        }
+      ],
+      { initialEntries: ['/packs'] }
+    )
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    )
+    expect(await screen.findByRole('button', { name: 'Show all 30' })).toBeTruthy()
+
+    // The same listing, refused this time.
+    answer = () => {
+      throw new Error('the project could not be read')
+    }
+    await queryClient.refetchQueries({ queryKey: ['list_packs'] })
+
+    await waitFor(() =>
+      expect(screen.getByText(/the project could not be read/)).toBeTruthy()
+    )
+    // And no offer to show all of something the pane cannot read.
+    expect(screen.queryByRole('button', { name: /Show all/ })).toBeNull()
+  })
+
+  it('comes back when the same listing answers again', async () => {
+    // The retry mounts a new list node at the same length. The scroll listener
+    // used to stay on the detached one, so the pane came back and scrolled no
+    // more; `useWindowedRows.test.tsx` holds that half directly.
+    let fail = false
+    const rows = Array.from({ length: 30 }, (_, index) => ({
+      id: `pack-${String(index).padStart(2, '0')}`,
+      packVersion: '1.0.0'
+    }))
+    const stub = stubClient({
+      list_packs: () => {
+        if (fail) throw new Error('the project could not be read')
+        return { text: JSON.stringify({ status: 'valid', packs: rows }) }
+      }
+    })
+    const queryClient = testQueryClient()
+    const router = createMemoryRouter(
+      [
+        {
+          path: '*',
+          element: (
+            <McpContext.Provider value={connected({ client: stub.client })}>
+              <PacksPane />
+            </McpContext.Provider>
+          )
+        }
+      ],
+      { initialEntries: ['/packs'] }
+    )
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    )
+    await screen.findByRole('button', { name: 'Show all 30' })
+
+    fail = true
+    await queryClient.refetchQueries({ queryKey: ['list_packs'] })
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Show all/ })).toBeNull())
+
+    fail = false
+    await queryClient.refetchQueries({ queryKey: ['list_packs'] })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Show all 30' })).toBeTruthy()
+    )
+    expect(screen.getByRole('link', { name: /pack-00/ })).toBeTruthy()
+  })
+})

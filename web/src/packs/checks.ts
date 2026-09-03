@@ -40,8 +40,9 @@ export interface LayerSentence {
  *
  * Three shapes have to come out right and each has a test:
  *
- * - `[carrier passed, structural failed]` — the semantic layer did not run,
- *   and the sentence says so by name.
+ * - `[carrier passed, structural failed]` — every row is printed with the
+ *   status the payload gave it, the report's own status leads the sentence,
+ *   and the semantic layer is named as not having run.
  * - `status: "unsupported"` with `[carrier passed]` and a `capability`-layer
  *   diagnostic at `/specVersion` (`validator.go:203-210`) — a diagnostic whose
  *   layer appears in **no** layer row. The sentence quotes the status and does
@@ -58,28 +59,16 @@ export function layersReached(report: ValidationReport | undefined): LayerSenten
   const named = rows
     .map((row) => row.name)
     .filter((name): name is string => typeof name === 'string')
-  const failed = rows.find((row) => row.status === 'failed')
 
-  if (failed?.name !== undefined) {
-    const missed = LADDER.filter((layer) => !named.includes(layer))
-    const tail =
-      missed.length === 0
-        ? ''
-        : ` The ${listOf(missed)} layer${missed.length === 1 ? '' : 's'} did not run.`
-    return { status: report.status, text: `${failed.name} — ${diagnostics}.${tail}` }
-  }
-
-  // Nothing failed. The status is the runtime's word for what that means, and
-  // it is quoted rather than translated: `valid`, `unsupported`, or a word a
-  // later runtime uses that this desk has never seen. The rows are printed
-  // with the statuses the payload gave them and no others.
+  // **One shape, whatever happened.** There were two, and the failed-layer one
+  // dropped both the report's own status and every row that was not the
+  // failure: a payload saying `invalid` with `carrier passed, structural
+  // failed` printed `structural — 1 diagnostic`, which names neither the
+  // verdict the runtime reached nor the layer that did run. Every supplied row
+  // is spelled with the status the payload gave it, in the payload's order,
+  // and the status is quoted rather than translated — `valid`, `unsupported`,
+  // or a word a later runtime uses that this desk has never seen.
   const status = report.status ?? 'no status'
-  if (rows.length === 0) {
-    return {
-      status: report.status,
-      text: `${status} — ${diagnostics}. This answer lists no layer.`
-    }
-  }
   const spelled = rows
     .map((row) => `${row.name ?? 'an unnamed layer'} ${row.status ?? 'with no status'}`)
     .join(', ')
@@ -88,6 +77,12 @@ export function layersReached(report: ValidationReport | undefined): LayerSenten
     missed.length === 0
       ? ''
       : ` The ${listOf(missed)} layer${missed.length === 1 ? '' : 's'} did not run.`
+  if (rows.length === 0) {
+    return {
+      status: report.status,
+      text: `${status} — ${diagnostics}. This answer lists no layer.`
+    }
+  }
   return { status: report.status, text: `${status} — ${spelled}, ${diagnostics}.${tail}` }
 }
 

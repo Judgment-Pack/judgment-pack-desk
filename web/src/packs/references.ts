@@ -23,7 +23,7 @@
  * and that is the whole of what they are.
  */
 import type { Condition, PackDocument } from '../mcp/types'
-import { pointer } from './pointers'
+import { parsePointer, pointer } from './pointers'
 
 /** One line of a References panel. */
 export interface Reference {
@@ -31,8 +31,19 @@ export interface Reference {
   relation: string
   /** The id as the document spells it. */
   id: string
-  /** Where the referent is, when this document declares it. */
+  /** Where the referent is, when this document declares it exactly once. */
   target?: string
+  /**
+   * Every place this id is declared, when the document declares it more than
+   * once.
+   *
+   * A duplicate id is a document the runtime will refuse, and until it does the
+   * desk has to say what it sees. Picking one — which a last-wins map did
+   * silently — is the desk inventing a resolution the document does not have,
+   * and picking it *by position* means the answer changes if the members are
+   * reordered.
+   */
+  candidates?: string[]
   /** Said instead of a target, where the document declares no such id. */
   unresolved?: string
 }
@@ -40,26 +51,25 @@ export interface Reference {
 /** Every reference at and around one pointer, both directions. */
 export function referencesFor(document: PackDocument | undefined, at: string): Reference[] {
   if (document === undefined || at === '') return []
-  const outcomeAt = new Map((document.outcomes ?? []).map((outcome, index) => [outcome.id, pointer(['outcomes', index])]))
-  const evidenceAt = new Map(
-    (document.evidenceRequirements ?? []).map((requirement, index) => [
-      requirement.id,
-      pointer(['evidenceRequirements', index])
-    ])
-  )
-  const sourceAt = new Map((document.sources ?? []).map((source, index) => [source.id, pointer(['sources', index])]))
-  const ruleAt = new Map((document.rules ?? []).map((rule, index) => [rule.id, pointer(['rules', index])]))
+  const outcomeAt = declaredAt(document.outcomes, 'outcomes')
+  const evidenceAt = declaredAt(document.evidenceRequirements, 'evidenceRequirements')
+  const sourceAt = declaredAt(document.sources, 'sources')
+  const ruleAt = declaredAt(document.rules, 'rules')
 
   const named = (
     relation: string,
     id: string,
-    where: Map<string, string>,
+    where: Map<string, string[]>,
     kind: string
   ): Reference => {
-    const target = where.get(id)
-    return target === undefined
-      ? { relation, id, unresolved: `no declared ${kind} carries this id` }
-      : { relation, id, target }
+    const targets = where.get(id) ?? []
+    if (targets.length === 0) {
+      return { relation, id, unresolved: `no declared ${kind} carries this id` }
+    }
+    // Exactly one is the ordinary case and reads as a link. More than one is a
+    // document that does not say which, and neither does this.
+    if (targets.length === 1) return { relation, id, target: targets[0] }
+    return { relation, id, candidates: targets }
   }
 
   const lines: Reference[] = []
@@ -181,12 +191,42 @@ export function referencesFor(document: PackDocument | undefined, at: string): R
   return lines
 }
 
-/** The array index a pointer sits at or under, for one top-level member. */
+/**
+ * Where each declared id lives — **every** place, not the last one.
+ *
+ * A `Map` built by `new Map(entries)` is last-wins, so two outcomes named
+ * `approve` left one pointer behind and a rule referring to `approve` linked to
+ * `/outcomes/1` as though the document had said so. It had not: it had said the
+ * id twice, which is a different fact and one the reader has to see.
+ */
+function declaredAt(
+  entries: readonly { id?: string }[] | undefined,
+  member: string
+): Map<string, string[]> {
+  const where = new Map<string, string[]>()
+  ;(entries ?? []).forEach((entry, index) => {
+    if (typeof entry?.id !== 'string') return
+    const at = pointer([member, index])
+    const existing = where.get(entry.id)
+    if (existing === undefined) where.set(entry.id, [at])
+    else existing.push(at)
+  })
+  return where
+}
+
+/**
+ * The array index a pointer sits at or under, for one top-level member.
+ *
+ * `^\d+$` accepted `01`, which is not an RFC 6901 index — the same leading-zero
+ * hole the evaluator had, arriving from the other side. The pointer is parsed
+ * properly and the token held to the grammar, so `/rules/01` names nothing here
+ * exactly as it names nothing there.
+ */
 function indexUnder(at: string, member: string): number | undefined {
-  const prefix = `/${member}/`
-  if (!at.startsWith(prefix)) return undefined
-  const token = at.slice(prefix.length).split('/')[0]
-  if (token === undefined || !/^\d+$/.test(token)) return undefined
+  const parts = parsePointer(at)
+  if (parts === undefined || parts.length < 2 || parts[0] !== member) return undefined
+  const token = parts[1]!
+  if (!/^(0|[1-9][0-9]*)$/.test(token)) return undefined
   return Number(token)
 }
 

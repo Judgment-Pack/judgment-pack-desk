@@ -272,6 +272,16 @@ export type ResetOutcome = 'cleared' | 'refused' | 'unresolved'
 export interface ShellStateApi extends ShellState {
   toggleRail: () => void
   toggleInspector: () => void
+  /**
+   * Open the Inspector, whether or not it is already open.
+   *
+   * **Idempotent, which a toggle is not.** "If closed, toggle" is the same
+   * gesture read twice — and React's StrictMode runs an effect twice on
+   * purpose, so an arrival that opened the pane immediately closed it again.
+   * A caller that wants it open says so; one that wants it flipped has
+   * `toggleInspector` and is a viewer pressing a button.
+   */
+  openInspector: () => void
   toggleConsole: () => void
   setConsoleTab: (tab: ConsoleTab) => void
   /** The key this project's record lives under, for Admin › Panes. */
@@ -293,6 +303,7 @@ const DEFAULT_API: ShellStateApi = {
   ...BUILT_IN_SHELL_STATE,
   toggleRail: () => {},
   toggleInspector: () => {},
+  openInspector: () => {},
   toggleConsole: () => {},
   setConsoleTab: () => {},
   storageKey: shellStateKey('default'),
@@ -494,6 +505,14 @@ export function ShellStateProvider({
     touched.current.inspector = true
     setState((previous) => ({ ...previous, inspector: { open: !previous.inspector.open } }))
   }, [])
+  const openInspector = useCallback(() => {
+    touched.current.inspector = true
+    // `open: true`, not `!open`. Running this twice leaves the pane open, and
+    // running it on a pane the viewer already opened changes nothing.
+    setState((previous) =>
+      previous.inspector.open ? previous : { ...previous, inspector: { open: true } }
+    )
+  }, [])
   const toggleConsole = useCallback(() => {
     touched.current.console = true
     setState((previous) => ({
@@ -511,6 +530,7 @@ export function ShellStateProvider({
       ...state,
       toggleRail,
       toggleInspector,
+      openInspector,
       toggleConsole,
       setConsoleTab,
       storageKey,
@@ -521,6 +541,7 @@ export function ShellStateProvider({
       state,
       toggleRail,
       toggleInspector,
+      openInspector,
       toggleConsole,
       setConsoleTab,
       storageKey,

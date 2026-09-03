@@ -161,9 +161,24 @@ export function usePack(packId: string | undefined): UseQueryResult<LoadedPack, 
  * digest key would need `crypto.subtle`, which jsdom does not provide, so the
  * exact bytes are the honest key here.
  */
+export interface ValidationResult {
+  report: ValidationReport
+  /**
+   * The exact bytes this report is about.
+   *
+   * Carried with the answer rather than inferred from the query key, because
+   * the caller anchors diagnostics onto a *rendered* document and those are two
+   * different artifacts: the check runs over the file on disk where it loaded,
+   * and the page draws the document `get_pack` served. A report is only ever
+   * safe to anchor if these bytes are the bytes on screen, and the only way to
+   * know that is to have them both.
+   */
+  checkedBytes: string
+}
+
 export function useValidate(
   documentText: string | undefined
-): UseQueryResult<ValidationReport, Error> {
+): UseQueryResult<ValidationResult, Error> {
   const { client, status, validateSupported, connectionEpoch } = useMcp()
   return useQuery({
     queryKey: ['validate', connectionEpoch, documentText ?? null],
@@ -184,7 +199,7 @@ export function useValidate(
         { document: documentText },
         signal
       )
-      return parsed
+      return { report: parsed, checkedBytes: documentText! }
     }
   })
 }

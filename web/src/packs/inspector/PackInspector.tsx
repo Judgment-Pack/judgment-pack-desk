@@ -18,7 +18,7 @@ import { Tabs } from '../../ui/Tabs'
 import type { PackDocument, PackFileMeta } from '../../mcp/types'
 import type { AnchoredDiagnostic } from '../checks'
 import { diagnosticsFor } from '../checks'
-import { parsePointer } from '../pointers'
+import { valueAt } from '../pointers'
 import { referencesFor } from '../references'
 import { ChecksTab } from './ChecksTab'
 import { MemberTab } from './MemberTab'
@@ -112,23 +112,13 @@ export function PackInspector({
   )
 }
 
-/** The value one pointer names inside the served document, or undefined. */
-export function subtreeAt(document: unknown, pointer: string): unknown {
-  const parts = parsePointer(pointer)
-  if (parts === undefined) return undefined
-  let value: unknown = document
-  for (const part of parts) {
-    if (Array.isArray(value)) {
-      const index = Number(part)
-      if (!Number.isInteger(index)) return undefined
-      value = value[index]
-      continue
-    }
-    if (typeof value === 'object' && value !== null && part in (value as object)) {
-      value = (value as Record<string, unknown>)[part]
-      continue
-    }
-    return undefined
-  }
-  return value
-}
+/**
+ * The value one pointer names inside the served document, or undefined.
+ *
+ * Re-exported rather than reimplemented. This file had its own walk, and it
+ * differed from the other two in ways that showed a subtree the address did not
+ * name — `Number(part)` took `01` and `1e0` for indices, and `in` consults the
+ * prototype chain, so `/constructor` selected something no JSON document has.
+ * There is one evaluator now and this is a name for it.
+ */
+export const subtreeAt = valueAt

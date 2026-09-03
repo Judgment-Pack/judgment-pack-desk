@@ -39,18 +39,29 @@ import { EscalationBlock } from './EscalationBlock'
 import { EvidenceBlock } from './EvidenceBlock'
 import { ExceptionsBlock } from './ExceptionsBlock'
 import { ExtensionsBlock } from './ExtensionsBlock'
-import { IdentityBlock } from './IdentityBlock'
+import {
+  DescriptionBlock,
+  IdBlock,
+  SpecVersionBlock,
+  TitleBlock,
+  VersionBlock
+} from './IdentityBlock'
 import { MemberOutline, type OutlineEntry } from './MemberOutline'
 import { MetadataBlock } from './MetadataBlock'
 import { OutcomesBlock } from './OutcomesBlock'
 import { OmittedMember } from './OmittedMember'
 import { RulesBlock } from './RulesBlock'
 import { SourcesBlock } from './SourcesBlock'
-import { readingOrder, unitCount, unitIsPresent, type MemberUnit } from './members'
+import { outlineUnits, readingOrder, unitCount, unitIsPresent, type MemberUnit } from './members'
 import styles from './PackDocument.module.css'
 
 /** What an absent member means, in the document's own vocabulary. */
 const ABSENCE_NOTE: Record<string, string> = {
+  // `description` is optional in the schema, and its absence had no line at
+  // all while the five identity members were drawn as one unit: the unit was
+  // present because `title` was, so nothing ever said the description was not
+  // there. An optional member's absence is a fact about the document.
+  description: 'the pack carries no description.',
   applicability: 'the pack does not narrow its own scope.',
   evidenceRequirements: 'the pack requires no evidence.',
   sources: 'the pack cites nothing.',
@@ -73,11 +84,16 @@ export function PackDocumentView({
   children?: ReactNode
 }) {
   const order = readingOrder(doc)
-  const entries: OutlineEntry[] = order.map((unit) => ({
+  // The nav is not the page. Reading order is one unit per member, in the
+  // document's own order; the outline collapses the identity members into one
+  // entry, at the position of the first of them.
+  const entries: OutlineEntry[] = outlineUnits(doc, order).map((unit) => ({
     id: unit.id,
     label: unit.label,
     pointer: unit.pointer,
-    present: unitIsPresent(doc, unit),
+    present: unit.members.some(
+      (member) => (doc as unknown as Record<string, unknown>)[member] !== undefined
+    ),
     count: unitCount(doc, unit)
   }))
 
@@ -155,13 +171,30 @@ function onDocumentKey(
 
 function MemberBlock({ unit, document: doc }: { unit: MemberUnit; document: PackDocument }) {
   if (!unitIsPresent(doc, unit)) {
+    // A required member that is absent renders nothing: its absence is a
+    // refusal the runtime issues at that pointer, and a block here would take
+    // that diagnostic off the strip — where every reader sees it — and put it
+    // behind a selection nobody has made.
+    if (unit.required === true) return null
     return (
-      <OmittedMember pointer={unit.pointer} label={unit.label} note={ABSENCE_NOTE[unit.id]} />
+      <OmittedMember
+        pointer={unit.pointer}
+        label={unit.blockLabel ?? unit.label}
+        note={ABSENCE_NOTE[unit.id]}
+      />
     )
   }
   switch (unit.id) {
-    case 'identity':
-      return <IdentityBlock document={doc} />
+    case 'title':
+      return <TitleBlock document={doc} />
+    case 'version':
+      return <VersionBlock document={doc} />
+    case 'specVersion':
+      return <SpecVersionBlock document={doc} />
+    case 'id':
+      return <IdBlock document={doc} />
+    case 'description':
+      return <DescriptionBlock document={doc} />
     case 'decision':
       return <DecisionBlock decision={doc.decision} at="/decision" />
     case 'applicability':

@@ -143,6 +143,19 @@
   color: var(--ink-faint);
 }
 
+/* An omission's entry is a link like any other and is quieter than the rest,
+   because it names a statement of absence rather than a member. It keeps the
+   focus and current-marking behaviour the present ones have. */
+.outlineAbsentLink {
+  composes: outlineLink;
+  color: var(--ink-faint);
+}
+
+.outlineAbsentLink[aria-current] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* Omission ---------------------------------------------------------------- */
 
 .omitted {

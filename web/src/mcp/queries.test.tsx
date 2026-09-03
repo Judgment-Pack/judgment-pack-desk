@@ -223,7 +223,22 @@ describe('useValidate', () => {
     const { result } = renderHook(() => useValidate('{"a":1}'), { wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(calls).toEqual([{ name: 'validate', args: { document: '{"a":1}' } }])
-    expect(result.current.data!.status).toBe('valid')
+    expect(result.current.data!.report.status).toBe('valid')
+  })
+
+  it('carries the exact bytes the report is about', async () => {
+    // The caller anchors these diagnostics onto a rendered document, and the
+    // two are different artifacts: the check runs over the file on disk where
+    // it loaded and over the served document where it did not. A report is only
+    // safe to anchor if these bytes *are* the bytes on screen, and the only way
+    // to know that is to have them both.
+    const { wrapper } = harness(
+      { validate: () => ({ text: CLEAN }) },
+      { validateSupported: true }
+    )
+    const { result } = renderHook(() => useValidate('{"a":1}'), { wrapper })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data!.checkedBytes).toBe('{"a":1}')
   })
 
   it('keys the check by the bytes and by the connection', async () => {

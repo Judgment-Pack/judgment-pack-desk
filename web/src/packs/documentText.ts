@@ -137,7 +137,13 @@ export function indexDocument(text: string): DocumentIndex {
     let value: unknown
     if (char === '{') {
       at += 1
-      const object: Record<string, unknown> = {}
+      // **Null-prototype, and that is not fastidiousness.** A member literally
+      // named `__proto__` assigned into `{}` invokes the prototype setter and
+      // stores nothing, so the scanner's reading silently lacked a member
+      // `JSON.parse` has — and the disagreement gate below, which exists to
+      // catch exactly that, compared with `in` and found the inherited one. A
+      // document could then be edited through a reading that did not match it.
+      const object: Record<string, unknown> = Object.create(null) as Record<string, unknown>
       const seen = new Set<string>()
       skip()
       if (text[at] === '}') {
@@ -273,24 +279,42 @@ export function replaceValue(
  * The comma is taken **after** the member where there is one and **before** it
  * otherwise, so the last member of an object leaves no dangling comma and the
  * only member of an object leaves an empty one.
+ *
+ * **What is removed is the deleted member's own layout, never its neighbour's.**
+ * Taking the whitespace *after* the forward comma looks equivalent and is not:
+ * that whitespace belongs to the member that follows. Removing `/a` from
+ * `{⏎\t"a":1,⏎␣␣␣␣␣␣"b":2⏎}` used to give `{⏎\t"b":2⏎}` — `b` lost its own six
+ * spaces and inherited `a`'s tab, so a document with unequal indentation was
+ * silently reformatted by a delete. The span taken is instead the run of
+ * whitespace *before* the member, the member, and the comma after it; the next
+ * member's own indentation is never inside it.
  */
 export function removeMember(text: string, index: DocumentIndex, pointer: string): string {
   const span = spanAt(index, pointer)
   if (span === undefined || pointer === '') return text
   let start = span.memberStart
   let end = span.memberEnd
+
+  // The layout this member was written with, which goes with it.
+  let back = start - 1
+  while (back >= 0 && isSpace(text[back]!)) back -= 1
+  const layoutStart = back + 1
+
   let scan = end
   while (scan < text.length && isSpace(text[scan]!)) scan += 1
   if (text[scan] === ',') {
-    // Take the comma and the whitespace after it, so the member that follows
-    // keeps the indentation it was written with.
-    scan += 1
-    while (scan < text.length && isSpace(text[scan]!)) scan += 1
-    end = scan
+    // A member with something after it: its own preceding layout, itself, and
+    // the comma. Whatever whitespace follows that comma is the next member's
+    // and is left exactly where it was.
+    start = layoutStart
+    end = scan + 1
+  } else if (text[back] === ',') {
+    // The last member: the comma before it goes instead, and the whitespace
+    // between that comma and this member goes with it.
+    start = back
   } else {
-    let back = start - 1
-    while (back >= 0 && isSpace(text[back]!)) back -= 1
-    if (text[back] === ',') start = back
+    // The only member: its layout goes, leaving the braces as they were.
+    start = layoutStart
   }
   return text.slice(0, start) + text.slice(end)
 }
@@ -372,7 +396,11 @@ function firstDifference(mine: unknown, theirs: unknown, path: string[]): Disagr
     }
     const names = new Set([...Object.keys(mine), ...Object.keys(theirs)])
     for (const name of names) {
-      if (!(name in mine) || !(name in theirs)) {
+      // Own properties only. `in` walks the prototype chain, so `__proto__`,
+      // `constructor` and `toString` were "carried" by a reading that carries
+      // no such member — which is how the one gate against a mismatched
+      // reading reported agreement on a document it disagreed about.
+      if (!Object.hasOwn(mine, name) || !Object.hasOwn(theirs, name)) {
         return {
           pointer: pointerOf([...path, name]),
           reason: `only one reading carries the member ${JSON.stringify(name)}`

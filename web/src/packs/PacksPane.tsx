@@ -23,7 +23,7 @@
  * that is the correct markup — and it means a route adds a landmark inside
  * main, which the README's region table now says.
  */
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { usePacks } from '../mcp/queries'
 import { Field } from '../ui/Field'
@@ -49,7 +49,7 @@ const SORTS = [
 ]
 
 export function PacksPane() {
-  const { data, error, isPending } = usePacks()
+  const { data, error, isPending, isSuccess } = usePacks()
   const [filter, setFilter] = useState('')
   const [sort, setSort] = useState('name-asc')
   const [expanded, setExpanded] = useState(false)
@@ -67,7 +67,24 @@ export function PacksPane() {
   }, [data, filter, sort])
 
   const shown = expanded ? packs : packs.slice(0, FIRST_SCREENFUL)
-  const window = useWindowedRows(list, shown.length, ROW_HEIGHT)
+  const window = useWindowedRows(shown.length, ROW_HEIGHT)
+
+  /**
+   * A row the keyboard asked for that was not on screen yet.
+   *
+   * Focus cannot be given to an element that is not rendered, so a key that
+   * reaches past the window scrolls first and the row is focused in the render
+   * that brings it in. State rather than a frame callback, because the render
+   * is what this is waiting for and React is the thing that knows when it
+   * happened.
+   */
+  const [wanted, setWanted] = useState<number | undefined>(undefined)
+  useEffect(() => {
+    if (wanted === undefined) return
+    const row = list.current?.querySelector(`[data-row="${wanted}"]`)
+    if (row instanceof HTMLElement) row.focus()
+    setWanted(undefined)
+  }, [wanted, window.start, window.end])
 
   return (
     <nav className={styles.pane} aria-label="Packs">
@@ -101,21 +118,50 @@ export function PacksPane() {
             : 'No pack id contains that.'}
         </p>
       ) : (
-        <div className={styles.list} ref={list}>
+        <div
+          className={styles.list}
+          ref={(node) => {
+            list.current = node
+            window.ref(node)
+          }}
+        >
           <div style={{ height: window.padTop }} aria-hidden="true" />
           <ul
             className={styles.rows}
             onKeyDown={(event) => {
-              const rows = [...(list.current?.querySelectorAll('a') ?? [])] as HTMLElement[]
-              const current = rows.indexOf(document.activeElement as HTMLElement)
-              if (current < 0) return
-              const next = moveFocus(event, rows, current)
-              if (next !== undefined) rows[next]?.focus()
+              // **Absolute indices, over the whole list.** The rendered
+              // anchors are the window, and navigating by them clamped every
+              // key to it: End reached the last *rendered* row and ArrowDown
+              // from there prevented the default and moved nothing, so the
+              // keyboard could not leave the first screenful of a list a
+              // pointer scrolls freely.
+              const focused = document.activeElement as HTMLElement | null
+              const pointer = focused?.getAttribute('data-row')
+              if (pointer === null || pointer === undefined) return
+              const current = Number(pointer)
+              if (!Number.isInteger(current)) return
+              const next = moveFocus(event, shown.length, current)
+              if (next === undefined) return
+              // Off-window destinations are scrolled to first: a row that is
+              // not rendered cannot be focused, and the window follows the
+              // scroll rather than the other way round.
+              window.scrollRowIntoView(next)
+              const already = list.current?.querySelector(`[data-row="${next}"]`)
+              if (already instanceof HTMLElement) already.focus()
+              // Not rendered yet: the scroll above moves the window, and the
+              // row is focused in the render that brings it in.
+              else setWanted(next)
             }}
           >
-            {shown.slice(window.start, window.end).map((pack) => (
+            {shown.slice(window.start, window.end).map((pack, offset) => (
               <li key={pack.id} className={styles.row}>
-                <NavLink className={styles.link} to={`/packs/${encodeURIComponent(pack.id)}`}>
+                <NavLink
+                  className={styles.link}
+                  // The row's own index in the whole list, so the keyboard can
+                  // ask for a row that is not on screen.
+                  data-row={window.start + offset}
+                  to={`/packs/${encodeURIComponent(pack.id)}`}
+                >
                   <span className={styles.name}>{pack.id}</span>
                   {/* An **empty** version is not a version. `list_packs` lists
                       a pack whose document it could not read with `packId` and
@@ -144,7 +190,13 @@ export function PacksPane() {
         </div>
       )}
 
-      {!expanded && packs.length > FIRST_SCREENFUL && (
+      {/*
+        **Gated on a listing that succeeded just now.** react-query keeps the
+        last good data through a refetch error, so a failed refresh left this
+        button under the failure sentence offering to show all N of a listing
+        the pane had just said it could not read.
+      */}
+      {isSuccess && !expanded && packs.length > FIRST_SCREENFUL && (
         <button type="button" className={styles.more} onClick={() => setExpanded(true)}>
           Show all {packs.length}
         </button>

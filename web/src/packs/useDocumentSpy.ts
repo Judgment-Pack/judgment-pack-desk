@@ -34,6 +34,13 @@ export function useDocumentSpy(
   const [seen, setSeen] = useState<string | null>(null)
   const key = pointers.join(' ')
 
+  // A different document, or a different set of listed units, is a different
+  // question — and an answer carried over from the last one would mark a unit
+  // that is no longer on the page. Reset before observing, not after.
+  useEffect(() => {
+    setSeen(null)
+  }, [key])
+
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') return
     const root = document.querySelector('.desk-main')
@@ -60,12 +67,21 @@ export function useDocumentSpy(
     return () => observer.disconnect()
   }, [key])
 
-  // The selection wins where there is one: a reader who has just clicked a
-  // member is looking at that member whatever the scroll position says — but
-  // only once it has been resolved to the unit the outline can mark. A
-  // selection under no listed unit leaves the observer's answer standing.
+  /**
+   * **What is on screen wins; the selection is the fallback.**
+   *
+   * This was the other way round, and it made the outline stop following the
+   * page. `?at` persists — it is how the Inspector knows what it is looking at,
+   * and it survives every scroll — so a selection, once made, answered for ever
+   * and no observer update could ever be seen. A reader who picked `/rules/0`
+   * and then scrolled to `/sources` watched the outline keep marking rules.
+   *
+   * The selection still answers before anything has been observed, which is the
+   * case that matters on arrival: a link with `?at` marks its member before the
+   * reader has scrolled at all.
+   */
   const inOutline = selected === null ? undefined : outlineUnitFor(pointers, selected)
-  return inOutline ?? seen
+  return seen ?? inOutline ?? null
 }
 
 /** The listed unit a pointer sits at or under, or undefined. */

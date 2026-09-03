@@ -150,3 +150,95 @@ describe('the two readings of one file', () => {
     expect(agreesWithParse(text, index).length).toBeGreaterThan(0)
   })
 })
+
+describe('removal keeps every surviving byte of layout', () => {
+  // Taking the whitespace *after* the forward comma looks equivalent to taking
+  // the whitespace before the member and is not: that whitespace belongs to the
+  // member that follows. A document whose members are not indented identically
+  // was silently reformatted by a delete.
+  it('leaves the next member’s own indentation alone', () => {
+    const text = '{\n\t"a":1,\n      "b":2\n}'
+    const index = indexDocument(text)
+    expect(removeMember(text, index, '/a')).toBe('{\n      "b":2\n}')
+  })
+
+  it('does the same with CRLF endings', () => {
+    const text = '{\r\n\t"a":1,\r\n      "b":2\r\n}'
+    const index = indexDocument(text)
+    expect(removeMember(text, index, '/a')).toBe('{\r\n      "b":2\r\n}')
+  })
+
+  it('keeps the layout of a member in the middle of three', () => {
+    const text = '{\n  "a": 1,\n\t\t"b": 2,\n      "c": 3\n}'
+    const index = indexDocument(text)
+    expect(removeMember(text, index, '/b')).toBe('{\n  "a": 1,\n      "c": 3\n}')
+  })
+
+  it('takes the comma before it when it is the last member', () => {
+    const text = '{\n  "a": 1,\n      "b": 2\n}'
+    const index = indexDocument(text)
+    expect(removeMember(text, index, '/b')).toBe('{\n  "a": 1\n}')
+  })
+
+  it('leaves an empty object when it was the only member', () => {
+    const text = '{\n  "a": 1\n}'
+    const index = indexDocument(text)
+    expect(removeMember(text, index, '/a')).toBe('{\n}')
+  })
+
+  it('removes a nested member without touching its siblings’ layout', () => {
+    const text = '{\n  "r": {\n\t"x": 1,\n        "y": 2\n  }\n}'
+    const index = indexDocument(text)
+    expect(removeMember(text, index, '/r/x')).toBe('{\n  "r": {\n        "y": 2\n  }\n}')
+  })
+
+  it('still parses to the document the removal describes', () => {
+    // The bytes are the point, and so is the result still being JSON.
+    const text = '{\r\n\t"a":1,\r\n      "b":2\r\n}'
+    const after = removeMember(text, indexDocument(text), '/a')
+    expect(JSON.parse(after)).toEqual({ b: 2 })
+  })
+})
+
+describe('a member named __proto__ is a member like any other', () => {
+  // The scanner assigned dynamic keys into `{}`, so a literal `__proto__`
+  // invoked the prototype setter and stored nothing — and the gate that exists
+  // to catch a reading that disagrees with `JSON.parse` compared with `in`,
+  // which found the inherited one and reported agreement.
+  it('is carried by the scanner’s own reading', () => {
+    const text = '{"__proto__":{"x":1},"a":2}'
+    const index = indexDocument(text)
+    expect(spanAt(index, '/__proto__')).toBeDefined()
+    expect(spanAt(index, '/__proto__/x')).toBeDefined()
+  })
+
+  it('is not reported as a disagreement when both readings carry it', () => {
+    const text = '{"__proto__":{"x":1},"a":2}'
+    expect(agreesWithParse(text, indexDocument(text))).toEqual([])
+  })
+
+  it('is edited at its own span, like any other member', () => {
+    const text = '{"__proto__":{"x":1},"a":2}'
+    const index = indexDocument(text)
+    const after = replaceValue(text, index, '/__proto__/x', '9')
+    expect(after).toBe('{"__proto__":{"x":9},"a":2}')
+  })
+
+  it('is the same member under its escaped spelling', () => {
+    // `_` is `_`. A document may spell the name either way and both are
+    // one member; a reading that saw only one of them would edit the wrong one.
+    const escaped = '{"\\u005f\\u005fproto\\u005f\\u005f":{"x":1},"a":2}'
+    const index = indexDocument(escaped)
+    expect(spanAt(index, '/__proto__')).toBeDefined()
+    expect(agreesWithParse(escaped, index)).toEqual([])
+  })
+
+  it('still reports a duplicate of it, so the gate has not merely stopped firing', () => {
+    // The point is not that `__proto__` is now quiet — it is that the reading
+    // sees it. A document declaring it twice is a document `JSON.parse` reads
+    // last-wins and this reads first-wins, and that disagreement must survive.
+    const text = '{"__proto__":1,"__proto__":2}'
+    const problems = agreesWithParse(text, indexDocument(text))
+    expect(problems.map((problem) => problem.pointer)).toContain('/__proto__')
+  })
+})

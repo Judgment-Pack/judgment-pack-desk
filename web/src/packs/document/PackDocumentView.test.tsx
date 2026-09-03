@@ -120,14 +120,42 @@ describe('the full document', () => {
 })
 
 describe('a document whose members are not in the schema’s order', () => {
-  it('renders the present ones in the document’s own order', () => {
+  it('renders every present member in the document’s own order', () => {
     // `rules` before `outcomes` is how someone wrote this file, and a page
     // that re-sorted would be showing a document nobody wrote.
+    //
+    // **Every top-level member, not a chosen few.** The list this compares
+    // used to name four pointers and leave the identity members out — and the
+    // identity members were exactly the ones being reordered, because five of
+    // them were drawn as one unit positioned at the earliest of the five. So
+    // the assertion that existed to catch reordering was written around the
+    // reordering that was happening. It is `Object.keys` now: whatever the
+    // document declares, in the order it declares it.
     const { container } = draw(reordered)
-    const order = pointers(container).filter((pointer) =>
-      ['/rules', '/outcomes', '/title', '/decision'].includes(pointer)
+    const declared = Object.keys(reordered as unknown as Record<string, unknown>).map((key) => `/${key}`)
+    const drawn = pointers(container).filter((pointer) => declared.includes(pointer))
+    expect(drawn).toEqual(declared)
+  })
+
+  it('places every omission where the schema would have put it', () => {
+    // The other half of the same claim: the pointers on the page are the
+    // document's own members in the document's order, plus a line for each
+    // canonical member it omits — and nothing else at the top level.
+    const { container } = draw(reordered)
+    const declared = new Set(
+      Object.keys(reordered as unknown as Record<string, unknown>).map((key) => `/${key}`)
     )
-    expect(order).toEqual(['/rules', '/outcomes', '/title', '/decision'])
+    const topLevel = pointers(container).filter((pointer) => /^\/[^/]+$/.test(pointer))
+    for (const pointer of declared) {
+      expect(topLevel, `${pointer} is drawn`).toContain(pointer)
+    }
+    // Every top-level pointer that is not declared is an omission line saying
+    // so, rather than a block invented by the view.
+    const omitted = topLevel.filter((pointer) => !declared.has(pointer))
+    for (const pointer of omitted) {
+      const block = document.getElementById(pointer)
+      expect(block?.textContent, pointer).toContain('not declared')
+    }
   })
 
   it('splices each omitted member’s line in at its canonical position', () => {
@@ -151,13 +179,18 @@ describe('the minimal document', () => {
       '/fallbackOutcome',
       '/escalation',
       '/metadata',
-      '/extensions'
+      '/extensions',
+      // **`/description` is the ninth**, and it had no line at all while the
+      // five identity members were drawn as one unit: the unit was present
+      // because `title` was, so nothing ever said the description was absent.
+      // An optional member's absence is a fact about the document.
+      '/description'
     ]) {
       expect(found.has(pointer), pointer).toBe(true)
     }
-    // Eight optional members, eight statements of absence. The view this
+    // Nine optional members, nine statements of absence. The view this
     // replaces rendered nothing at all for any of them.
-    expect(screen.getAllByText('not declared')).toHaveLength(8)
+    expect(screen.getAllByText('not declared')).toHaveLength(9)
   })
 
   it('marks the same members “not declared” in the outline', () => {
@@ -165,10 +198,20 @@ describe('the minimal document', () => {
     const outline = screen.getByRole('navigation', { name: 'Members' })
     expect(outline.textContent).toContain('Applicability — not declared')
     expect(outline.textContent).toContain('Escalation — not declared')
-    // A present member is a link; an absent one is not, because a link to a
-    // block that is not there is a link that does nothing.
+    // **Every entry is a link, absent ones included.** The document renders an
+    // addressed block for an omitted member — that is what `OmittedMember` is
+    // for — so an entry that could not reach it was the only line in this nav
+    // naming something you could not go to. The words stay: the link goes to
+    // the statement of absence, and the entry still says which it is.
     expect(screen.getByRole('link', { name: /Rules/ })).toBeTruthy()
-    expect(outline.querySelectorAll('a')).toHaveLength(4)
+    const absent = screen.getByRole('link', { name: /Applicability/ })
+    expect(absent.textContent).toContain('not declared')
+    expect(absent.getAttribute('href')).toContain('#/applicability')
+    // The block it names is on the page and carries that pointer.
+    expect(document.getElementById('/applicability')).toBeTruthy()
+    expect(outline.querySelectorAll('a').length).toBe(
+      outline.querySelectorAll('li').length
+    )
   })
 
   it('counts the lists it lists', () => {
@@ -207,7 +250,12 @@ describe('reaching a member without a mouse', () => {
     const { blocks } = drive()
     expect(blocks.length).toBeGreaterThan(50)
     expect(stops(blocks)).toHaveLength(1)
-    expect(stops(blocks)[0]!.getAttribute('data-pointer')).toBe('/title')
+    // The document's own first member, whichever it is. The full fixture
+    // writes `specVersion` first; the stop follows the document rather than a
+    // fixed idea of which member comes first.
+    expect(stops(blocks)[0]!.getAttribute('data-pointer')).toBe(
+      `/${Object.keys(full as unknown as Record<string, unknown>)[0]}`
+    )
   })
 
   it('follows the selection, so a deep link is where Tab comes back to', () => {

@@ -3,7 +3,8 @@
  * the address space joining the document to the Inspector.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
@@ -91,7 +92,7 @@ function draw(
   handlers: Record<string, ToolHandler>,
   overrides: Partial<McpConnection> = {},
   path = '/packs/vendor-onboarding',
-  pane: { inspector?: boolean; tab?: string | null } = {}
+  pane: { inspector?: boolean; tab?: string | null; strict?: boolean } = {}
 ) {
   const stub = stubClient(handlers)
   const revealed: string[] = []
@@ -114,11 +115,15 @@ function draw(
     ],
     { initialEntries: [path] }
   )
-  const view = render(
+  const tree = (
     <QueryClientProvider client={testQueryClient()}>
       <RouterProvider router={router} />
     </QueryClientProvider>
   )
+  // **StrictMode on request**, because production runs in it: `main.tsx`
+  // wraps the app, and an effect that is not idempotent is a defect only
+  // visible there. A test that never renders in StrictMode cannot see it.
+  const view = render(pane.strict === true ? <StrictMode>{tree}</StrictMode> : tree)
   return { ...view, router, calls: stub.calls, revealed }
 }
 
@@ -277,12 +282,13 @@ describe('the other two views on this pack', () => {
   })
 })
 
-describe('a diagnostic about a member the page does not render', () => {
+describe('a diagnostic about a member the document omits', () => {
   it('is printed on the strip rather than counted and dropped', async () => {
-    // A pack with no `specVersion` is refused at `/specVersion`, and the
-    // eyebrow renders that member only when it is there — so the diagnostic's
-    // nearest rendered ancestor is the document itself. It was counted in the
-    // layer sentence and printed nowhere at all.
+    // A pack with no `specVersion` is refused at `/specVersion`, and nothing
+    // draws a required member that is not there — its absence is a refusal
+    // rather than an omission, and a block would take this diagnostic off the
+    // strip and put it behind a selection nobody has made. So the nearest
+    // rendered ancestor is the document itself, and the strip prints it.
     const without = JSON.parse(PACK_TEXT) as Record<string, unknown>
     delete without.specVersion
     const text = JSON.stringify(without, null, 2)
@@ -321,6 +327,48 @@ describe('a diagnostic about a member the page does not render', () => {
     // about and no block on the page carries it.
     expect(screen.getByText('/specVersion')).toBeTruthy()
     expect(document.getElementById('/specVersion')).toBeNull()
+  })
+
+  it('is printed on the strip where nothing on the page carries its pointer', async () => {
+    // The root-anchoring path, with an address the page genuinely does not
+    // render. A diagnostic whose pointer and every ancestor of it are absent
+    // from the document has nowhere to land but the strip — and it used to be
+    // counted in the layer sentence and printed nowhere at all.
+    chassis(PACK_TEXT, DIGEST)
+    draw({
+      get_pack: () => ({
+        text: PACK_TEXT,
+        structured: { path: PATH, bytes: PACK_TEXT.length, sha256: DIGEST }
+      }),
+      validate: () => ({
+        text: JSON.stringify({
+          outputVersion: '2',
+          status: 'invalid',
+          layers: [
+            { name: 'carrier', status: 'passed' },
+            { name: 'structural', status: 'failed' }
+          ],
+          diagnostics: [
+            {
+              code: 'JPS-STRUCTURE-UNKNOWN-MEMBER',
+              codeStability: 'provisional',
+              layer: 'structural',
+              severity: 'error',
+              instancePath: '/nonesuch/0/deeper',
+              message: 'This member is not in the schema.'
+            }
+          ],
+          diagnosticsTruncated: false
+        })
+      })
+    })
+    await screen.findByRole('heading', { level: 1 })
+    await waitFor(() => expect(screen.getByText(/JPS-STRUCTURE-UNKNOWN-MEMBER/)).toBeTruthy())
+    expect(screen.getByText('This member is not in the schema.')).toBeTruthy()
+    // Named at its own pointer, verbatim, because no block on the page carries
+    // it and inventing a nearer one would put it on the wrong member.
+    expect(screen.getByText('/nonesuch/0/deeper')).toBeTruthy()
+    expect(document.getElementById('/nonesuch/0/deeper')).toBeNull()
   })
 })
 
@@ -413,5 +461,62 @@ describe('the Checks panel while the check is in flight', () => {
     )
     await screen.findByText(/the runtime refused the pack/)
     expect(slotTarget!.textContent).toBe('')
+  })
+})
+
+describe('arriving at an address that names a member', () => {
+  it('opens the Inspector once, in StrictMode, where production runs', async () => {
+    // Reveal was "if closed, toggle" — the same gesture read twice. StrictMode
+    // runs an effect twice on purpose, so an arrival made two toggles out of
+    // one arrival and left the pane exactly as it found it: closed. The link
+    // somebody sent landed on a closed Inspector.
+    const { revealed } = draw(SERVED, {}, '/packs/vendor-onboarding?at=/rules/0', {
+      strict: true
+    })
+    await screen.findByRole('heading', { level: 1 })
+    await waitFor(() => expect(revealed.length).toBeGreaterThan(0))
+    // Whatever the count, the pane is asked to *open* and never to flip: a
+    // second call is idempotent, which is the property that matters.
+    expect(revealed.every((call) => call === 'reveal')).toBe(true)
+  })
+
+  it('opens it again for a link to another member of the same pack', async () => {
+    // `/packs/a` → `/packs/a?at=/rules/0` reuses this component, so a mount
+    // -only effect made *zero* calls: a References link, or any deep link
+    // followed from inside the pack, opened nothing at all.
+    const { revealed, router } = draw(SERVED, {}, '/packs/vendor-onboarding')
+    await screen.findByRole('heading', { level: 1 })
+    expect(revealed).toEqual([])
+
+    await act(async () => {
+      await router.navigate('/packs/vendor-onboarding?at=/rules/0')
+    })
+    await waitFor(() => expect(revealed).toEqual(['reveal']))
+
+    // And a second address, in the same pack, is a second arrival.
+    await act(async () => {
+      await router.navigate('/packs/vendor-onboarding?at=/outcomes/0')
+    })
+    await waitFor(() => expect(revealed).toEqual(['reveal', 'reveal']))
+  })
+
+  it('does not reopen it on a rerender that changes no address', async () => {
+    // The other half: this must not fight a viewer who has closed the pane and
+    // stayed where they are. The unit is a history entry, not a render.
+    const { revealed, rerender, router } = draw(
+      SERVED,
+      {},
+      '/packs/vendor-onboarding?at=/rules/0'
+    )
+    await screen.findByRole('heading', { level: 1 })
+    await waitFor(() => expect(revealed).toEqual(['reveal']))
+    await act(async () => {
+      rerender(
+        <QueryClientProvider client={testQueryClient()}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      )
+    })
+    expect(revealed).toEqual(['reveal'])
   })
 })

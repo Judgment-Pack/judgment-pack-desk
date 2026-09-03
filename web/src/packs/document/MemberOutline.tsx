@@ -39,23 +39,32 @@ export function MemberOutline({
       <ul className={styles.outlineList}>
         {entries.map((entry) => (
           <li key={entry.id} className={styles.outlineItem}>
-            {entry.present ? (
-              <Link
-                className={styles.outlineLink}
-                to={{ search, hash: `#${entry.pointer}` }}
-                // Choosing what to inspect is not a navigation, and the block
-                // beside it replaces. Two paths to one act, one history entry.
-                replace
-                aria-current={active === entry.pointer ? 'true' : undefined}
-              >
-                {entry.label}
-                {entry.count !== undefined && (
+            {/*
+              **An omission is a place too.** Every entry is a link, present or
+              not, because the document renders an addressed block for an
+              omitted member — that is what `OmittedMember` is for — and an
+              outline entry that could not reach it was the only line in this
+              nav that named something you could not go to. "not declared" is
+              kept: the link goes to the statement of absence, and the entry
+              still says which it is.
+            */}
+            <Link
+              className={entry.present ? styles.outlineLink : styles.outlineAbsentLink}
+              to={{ search, hash: `#${entry.pointer}` }}
+              // Choosing what to inspect is not a navigation, and the block
+              // beside it replaces. Two paths to one act, one history entry.
+              replace
+              aria-current={active === entry.pointer ? 'true' : undefined}
+            >
+              {entry.label}
+              {entry.present ? (
+                entry.count !== undefined && (
                   <span className={styles.outlineCount}> {entry.count}</span>
-                )}
-              </Link>
-            ) : (
-              <span className={styles.outlineAbsent}>{entry.label} — not declared</span>
-            )}
+                )
+              ) : (
+                <span className={styles.outlineAbsent}> — not declared</span>
+              )}
+            </Link>
           </li>
         ))}
       </ul>
