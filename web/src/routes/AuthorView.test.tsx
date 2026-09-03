@@ -176,7 +176,11 @@ describe('the authoring shell', () => {
       content: EDITED,
       // The digest of the bytes this edit started from — not of the buffer.
       baseSha256: LOADED_SHA,
-      override: false
+      override: false,
+      // A save asks for no directories. The member exists for the Create-pack
+      // dialog, which writes into a `packs/` that may not be there yet; the
+      // editor only ever saves a file it already listed.
+      createParents: false
     })
     expect(container.textContent).toContain('read it back off the disk')
     expect(container.textContent).toContain(EDITED_SHA.slice(0, 12))

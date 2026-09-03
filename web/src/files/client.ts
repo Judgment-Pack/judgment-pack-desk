@@ -141,12 +141,19 @@ export async function readFile(path: string, signal?: AbortSignal): Promise<File
  * regardless — it is the user's deliberate choice and never a default, because
  * a client that always sent it would have no concurrency story, only an
  * unstated one.
+ *
+ * `createParents` asks the chassis to make the missing directories of `path`
+ * inside the project before writing. Off unless a caller asks, on the same
+ * terms and for the same reason as `override`: a client that always sent it
+ * would be creating directories on every save, and the refusal a caller wants
+ * for an ordinary save is the one this member turns off.
  */
 export async function writeFile(input: {
   path: string
   content: string
   baseSha256: string
   override?: boolean
+  createParents?: boolean
 }): Promise<FileContent> {
   const response = await fetch(endpoint('/api/file'), {
     method: 'PUT',
@@ -155,7 +162,8 @@ export async function writeFile(input: {
       path: input.path,
       content: input.content,
       baseSha256: input.baseSha256,
-      override: input.override ?? false
+      override: input.override ?? false,
+      createParents: input.createParents ?? false
     })
   })
   return answer<FileContent>(response)
