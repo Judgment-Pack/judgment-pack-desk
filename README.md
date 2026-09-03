@@ -418,6 +418,13 @@ change.
     "left":      { "mode": "expanded", "width": 248 },
     "inspector": { "open": false, "width": 360 },
     "console":   { "open": false, "height": 240 }
+  },
+  "storage": {
+    "packs": {
+      "kind": "filesystem",
+      "dir": "packs",
+      "idBase": "https://example.invalid/judgment-packs/"
+    }
   }
 }
 ```
@@ -433,6 +440,23 @@ markup, and never a file path (the file API refuses non-UTF-8, so it could not
 carry a raster image, and no endpoint is being added for a logo). Absent an
 organization name, the header reads `judgment‑pack desk` — never an invented
 company, and never a name taken from a token claim.
+
+**`storage.packs` is where a new pack goes**, and it is the whole reason the
+Create-pack dialog has no path field: the name gives the id, and the id gives
+the file name inside `dir`. Every member is optional and takes the default
+above. `dir` is project-relative and slash-separated, and is refused here for
+the same lexical shape the file API would refuse anyway — so Admin names the
+key that is wrong rather than the dialog failing later on a path nobody chose to
+look at. `idBase` must parse as a URI, because a pack document's `id` member is
+`format: uri`, and it is **normalised at decode** to end in `/` (or left alone
+where it ends in `#`), so a pack's id is a plain concatenation everywhere it is
+used and Admin shows the prefix that will actually be written.
+
+`kind` admits only `"filesystem"` today, and its refusal names the other two by
+name: `"database"` and `"cloud storage"` are **not available yet**. Admin lists
+them as coming soon, as text rather than as disabled controls, and **nothing in
+the desk branches on this member** — a pack is created by writing a file,
+always. The create UI never asks which kind is configured.
 
 **Precedence** for every value: flag → project file → desk-level file → built-in
 default. The desk-level `desk.json` — the only place an identity provider may be
@@ -627,7 +651,7 @@ place to forget one:
 | --- | --- |
 | `GET /api/files` | the project's regular files, with sizes and digests |
 | `GET /api/file?path=…` | one file's bytes |
-| `PUT /api/file` | replace one file's bytes |
+| `PUT /api/file` | replace one file's bytes, optionally creating its parents |
 
 **Containment is a held directory descriptor, not a path check.** The chassis
 opens the project directory once with `os.Root` when it starts and closes it
@@ -710,12 +734,39 @@ Otherwise it is the user's own files on the user's own machine, and this API is
 their hand, not a policy layer. It does not consult `jpack.json` and forms no
 opinion about what any file is.
 
-**Writing requires an existing directory.** A `PUT` whose parent directory is
-not there answers `404` naming it, rather than creating the tree or reporting a
-containment failure — this API writes files, and a missing directory is not an
-escape. The conflict check runs first, so a write that also carries a stale
-`baseSha256` gets its `409` before that `404`: the `404` is what a
-believed-new or overriding write receives.
+**Writing requires an existing directory, unless the write asks otherwise.** A
+`PUT` whose parent directory is not there answers `404` naming it, rather than
+reporting a containment failure — a missing directory is not an escape. The
+conflict check runs first, so a write that also carries a stale `baseSha256`
+gets its `409` before that `404`: the `404` is what a believed-new or
+overriding write receives.
+
+**`createParents` is the opt-in.** A request carrying `"createParents": true`
+has the missing directories of its path made before the file is written; with
+the member absent or false nothing is created and the `404` above is what comes
+back. It exists because the desk decides a new pack's location from
+configuration, so the Create-pack dialog can name `packs/…` in a project that
+has no `packs/` yet.
+
+Containment is not extended by it — a fourth verb is added to the handle that
+already carries the other three. `Root.MkdirAll` resolves each component against
+the same pinned `*os.Root`, so the thing checked is the thing created. It runs
+**after** the lexical check (so a directory this API would refuse to write a
+file into is one it will not create), **after** the symlink refusal — whose walk
+stops at the first component that does not exist, which is exactly where
+`MkdirAll` begins, so a symlinked parent is refused before one directory exists
+— and **after** the stale-digest check inside the write lock, so a write refused
+as stale creates nothing. A parent that is a regular file is refused, and by the
+current-bytes read rather than by this branch: opening through it is `ENOTDIR`,
+which is one of the refusals that reads as the containment error.
+
+**There is no unwind.** If the directories are created and the write then fails,
+an empty directory is left behind. Removing it would need a delete verb this API
+does not have, applied to a directory another process may have populated in the
+interval; an empty directory is inert and the next attempt uses it. The mode is
+`0o777` masked by the umask — the ordinary convention for a directory in the
+user's own project, which is committed to their repository and read by their
+other tools.
 
 **Atomic replace, scoped honestly.** The bytes are staged in the target's own
 directory through the same pinned root — rename is atomic only within a
@@ -837,13 +888,52 @@ web/                 Vite + React + TypeScript SPA
   src/shell/         the five regions, the pane state and its per-project
                      record, the three shortcuts, the icon set, the console's
                      ring buffer, the fragment-scrolling hook the section menus
-                     need, and the Create-pack dialog
+                     need, and the Create-pack dialog — which asks for a name,
+                     a description and a template, and decides the file's
+                     location from configuration
+  src/ui/            the styled primitives: Button, Field, Input, TextArea,
+                     Select and Dialog, one CSS module each (see Styling)
+  src/packs/         what a new pack is called and where it goes: the slug
+                     rule, the template shaping, and the jpack.json amendment
   src/config/        the jpack-desk.json schema, its strict decoder, the one
                      query that reads it, and the theme attribute it writes
   src/identity/      the identity slot: one nullable field, and the header
                      control that renders it
   scripts/smoke.ts   the desk's own client, driven outside a browser
 ```
+
+## Styling
+
+Four rules, and one test that holds all four
+(`web/src/ui/convention.test.ts`, which reads the source because vitest runs
+with `css: false` and a component whose stylesheet was deleted renders exactly
+like one whose stylesheet is intact):
+
+- **The tokens in `styles.css` are the only source of colour and radius.** A
+  component's module spells no colour of its own — no hex, no `rgb()`, no
+  `hsl()` — because a second palette is one the theme attribute does not reach.
+  The modal scrim is `--overlay` for exactly this reason.
+- **A component under `src/ui/` owns its own `X.module.css`, and no other sheet
+  styles it.** One component, one module, no orphan of either.
+- **`shell.css` owns the five regions' layout and nothing a component renders.**
+  No module touches `--rail-current`, `--inspector-current`, `--console-current`
+  or `grid-template-areas`.
+- **There are no inline styles for UI.** An inline style beats every sheet
+  without `!important` and cannot be themed, which makes it the one way a
+  component can quietly opt out of the tokens.
+
+Only class selectors appear at a module's top level. A bare element selector
+inside a CSS module is **not** hashed — it is global — so one `button { … }`
+there would restyle every button in the desk.
+
+Modules need no cascade layer of their own. They are unlayered author rules, so
+they beat every `@layer shell` rule by construction, and their class names are
+hashed at build time so they cannot collide with the ~60 names `styles.css`
+already owns. That is why there is no import-order rule in `main.tsx` to
+remember and no layer to keep in sync.
+
+Only the Create-pack dialog is built from these primitives today. The other
+views keep the sheets they have; migrating them is its own piece of work.
 
 ## Tests
 
