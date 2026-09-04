@@ -214,6 +214,21 @@ describe('the minimal document', () => {
     )
   })
 
+  it('names Identity once, however many members it collects', () => {
+    // **The grouping is the nav's, and only the nav's.** Five near-identical
+    // entries would be a worse nav, which is a reason to collapse them *here*
+    // and not a reason to move anything on the page: the five are five units
+    // in the document's own order, and this line is where they become one.
+    draw(full)
+    const outline = screen.getByRole('navigation', { name: 'Members' })
+    const labels = [...outline.querySelectorAll('a')].map((entry) => entry.textContent ?? '')
+    expect(labels.filter((label) => label.startsWith('Identity'))).toHaveLength(1)
+    // And each of them is still its own addressed block on the page.
+    for (const pointer of ['/specVersion', '/id', '/version', '/title']) {
+      expect(document.getElementById(pointer), pointer).toBeTruthy()
+    }
+  })
+
   it('counts the lists it lists', () => {
     draw(full)
     const outline = screen.getByRole('navigation', { name: 'Members' })

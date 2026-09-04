@@ -4,7 +4,7 @@
  */
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { StrictMode } from 'react'
+import { StrictMode, useState } from 'react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
@@ -88,6 +88,39 @@ function recordingSlot(revealed: string[], inspector: boolean, tab: string | nul
   }
 }
 
+/**
+ * The route under a slot that is **a new object on every render**.
+ *
+ * That is what a shell does: `AppShell` memoises its slot on the pane's own
+ * state, so opening or closing the Inspector hands the route a different
+ * object at the same address. A slot built once and reused would make the
+ * arrival effect's dependencies stable for the life of the test, and an effect
+ * that reopened the pane on every render would go unnoticed — which is the
+ * defect the `location.key` guard exists to prevent.
+ */
+function Slotted({
+  revealed,
+  inspector,
+  tab
+}: {
+  revealed: string[]
+  inspector: boolean
+  tab: string | null
+}) {
+  // The viewer's own hand on the pane, which is the case that matters: closing
+  // it re-renders the shell at the same address and hands the route a slot it
+  // has not seen before.
+  const [open, setOpen] = useState(inspector)
+  return (
+    <InspectorSlotContext.Provider value={recordingSlot(revealed, open, tab)}>
+      <button type="button" onClick={() => setOpen(false)}>
+        close the inspector
+      </button>
+      <PackView />
+    </InspectorSlotContext.Provider>
+  )
+}
+
 function draw(
   handlers: Record<string, ToolHandler>,
   overrides: Partial<McpConnection> = {},
@@ -104,11 +137,11 @@ function draw(
           <McpContext.Provider
             value={connected({ client: stub.client, validateSupported: true, ...overrides })}
           >
-            <InspectorSlotContext.Provider
-              value={recordingSlot(revealed, pane.inspector === true, pane.tab ?? null)}
-            >
-              <PackView />
-            </InspectorSlotContext.Provider>
+            <Slotted
+              revealed={revealed}
+              inspector={pane.inspector === true}
+              tab={pane.tab ?? null}
+            />
           </McpContext.Provider>
         )
       }
@@ -398,6 +431,100 @@ describe('the outline', () => {
   })
 })
 
+describe('a check that ran over other bytes', () => {
+  // The file on disk moved on after `get_pack` served the page: `rules[0]` is
+  // gone, so every `/rules/N` in the check names a different rule from the one
+  // the page draws under that pointer.
+  const MOVED = (() => {
+    const document = JSON.parse(PACK_TEXT) as { rules: unknown[] }
+    document.rules = document.rules.slice(1)
+    return JSON.stringify(document, null, 2)
+  })()
+  const MOVED_DIGEST = 'd4d4d4'.padEnd(64, '0')
+  const REFUSED = JSON.stringify({
+    outputVersion: '2',
+    status: 'invalid',
+    layers: [
+      { name: 'carrier', status: 'passed' },
+      { name: 'structural', status: 'passed' },
+      { name: 'semantic', status: 'failed' }
+    ],
+    diagnostics: [
+      {
+        code: 'JPS-SEMANTIC-UNREACHABLE-RULE',
+        codeStability: 'provisional',
+        layer: 'semantic',
+        severity: 'error',
+        instancePath: '/rules/0',
+        message: 'This rule can never fire.'
+      }
+    ],
+    diagnosticsTruncated: false
+  })
+
+  it('is anchored nowhere, and the strip says which bytes it was about', async () => {
+    // **The one this whole comparison exists for.** `/rules/0` resolves on the
+    // page, so a report anchored without asking would print a real diagnostic
+    // on a rule that is not the rule it is about — which is worse than none,
+    // because it looks like an answer.
+    chassis(MOVED, MOVED_DIGEST)
+    draw(
+      {
+        get_pack: () => ({
+          text: PACK_TEXT,
+          structured: { path: PATH, bytes: PACK_TEXT.length, sha256: DIGEST }
+        }),
+        validate: () => ({ text: REFUSED })
+      },
+      {},
+      '/packs/vendor-onboarding?at=/rules/0',
+      { inspector: true, tab: 'checks' }
+    )
+    await screen.findByRole('heading', { level: 1 })
+    await waitFor(() =>
+      expect(screen.getByText(/ran over different bytes from the ones shown/)).toBeTruthy()
+    )
+    // The panel is open on that very rule and says the same thing rather than
+    // listing what the check found.
+    expect(screen.getByText(/computed against other bytes/)).toBeTruthy()
+    expect(screen.queryByText('JPS-SEMANTIC-UNREACHABLE-RULE')).toBeNull()
+    expect(screen.queryByText('This rule can never fire.')).toBeNull()
+    // And it does not answer "No other diagnostic names this member" either:
+    // that is a clean bill drawn from a report about other bytes.
+    expect(screen.queryByText(/No other diagnostic names this member/)).toBeNull()
+  })
+
+  it('still anchors where the bytes are the same', async () => {
+    // The control. Same document from both sources, and the diagnostic reaches
+    // the panel for the member it names.
+    chassis(PACK_TEXT, DIGEST)
+    draw(
+      { ...SERVED, validate: () => ({ text: REFUSED }) },
+      {},
+      '/packs/vendor-onboarding?at=/rules/0',
+      { inspector: true, tab: 'checks' }
+    )
+    await screen.findByRole('heading', { level: 1 })
+    await waitFor(() => expect(screen.getByText('This rule can never fire.')).toBeTruthy())
+    expect(screen.queryByText(/ran over different bytes/)).toBeNull()
+  })
+})
+
+describe('a document with no bytes in it', () => {
+  it('says there is nothing to check rather than checking for ever', async () => {
+    // `useValidate` disables itself for an empty buffer, and a disabled query
+    // reports `isPending` for ever — so the strip printed "Checking…" about a
+    // check that was never going to start, for the whole of the visit.
+    chassis('', DIGEST)
+    draw(SERVED)
+    await screen.findByRole('heading', { level: 1 })
+    await waitFor(() =>
+      expect(screen.getByText(/no bytes to check yet/)).toBeTruthy()
+    )
+    expect(screen.queryByText('Checking…')).toBeNull()
+  })
+})
+
 describe('choosing a member with the pane closed', () => {
   beforeEach(() => chassis(PACK_TEXT, DIGEST))
 
@@ -516,6 +643,22 @@ describe('arriving at an address that names a member', () => {
           <RouterProvider router={router} />
         </QueryClientProvider>
       )
+    })
+    expect(revealed).toEqual(['reveal'])
+  })
+
+  it('does not reopen the pane the viewer just closed', async () => {
+    // **The case the guard is for.** Closing the Inspector re-renders the shell
+    // and hands the route a new slot object at the same address; an arrival
+    // effect that fires on that runs "open it" the instant the viewer shuts it,
+    // and no amount of clicking can close a pane that reopens itself.
+    const { revealed } = draw(SERVED, {}, '/packs/vendor-onboarding?at=/rules/0', {
+      inspector: true
+    })
+    await screen.findByRole('heading', { level: 1 })
+    await waitFor(() => expect(revealed).toEqual(['reveal']))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'close the inspector' }))
     })
     expect(revealed).toEqual(['reveal'])
   })

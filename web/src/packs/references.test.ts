@@ -190,9 +190,16 @@ describe('an id the document declares twice', () => {
 })
 
 describe('a reference address is an address', () => {
+  // **Two rules, deliberately.** With one, `/rules/01` reads index 1 under the
+  // loose grammar and finds nothing there — so a document with a single rule
+  // cannot tell a reader that refuses the address from one that accepts it and
+  // then runs off the end.
   const document = {
-    outcomes: [{ id: 'approve' }],
-    rules: [{ id: 'r0', outcome: 'approve' }]
+    outcomes: [{ id: 'approve' }, { id: 'decline' }],
+    rules: [
+      { id: 'r0', outcome: 'approve' },
+      { id: 'r1', outcome: 'decline' }
+    ]
   } as unknown as PackDocument
 
   it.each(['/rules/01', '/rules/1e0', '/rules/-0', '/rules/'])(
@@ -205,6 +212,11 @@ describe('a reference address is an address', () => {
   )
 
   it('still reads the rule the address does name', () => {
-    expect(referencesFor(document, '/rules/0')).toHaveLength(1)
+    expect(referencesFor(document, '/rules/0')).toEqual([
+      { relation: 'outcome', id: 'approve', target: '/outcomes/0' }
+    ])
+    expect(referencesFor(document, '/rules/1')).toEqual([
+      { relation: 'outcome', id: 'decline', target: '/outcomes/1' }
+    ])
   })
 })

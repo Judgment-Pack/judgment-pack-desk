@@ -233,6 +233,23 @@ describe('a member named __proto__ is a member like any other', () => {
     expect(agreesWithParse(escaped, index)).toEqual([])
   })
 
+  it('is not carried by a reading that only inherits it', () => {
+    // **The gate's own half of the pair, on a reading the fixed scanner cannot
+    // produce.** With `Object.create(null)` above, every member the scanner has
+    // is its own, so nothing this file can write from bytes tells `in` from
+    // `Object.hasOwn` — and the gate is exactly what would catch a scanner that
+    // went back to `{}`. The reading is built directly instead: a member that
+    // is inherited and not owned is a member this reading does not carry, and
+    // saying otherwise is how the one comparison against `JSON.parse` reported
+    // agreement about a document it disagreed on.
+    const text = '{"a":1}'
+    const inherited = Object.create({ a: 1 }) as Record<string, unknown>
+    const problems = agreesWithParse(text, { ...indexDocument(text), value: inherited })
+    expect(problems).toHaveLength(1)
+    expect(problems[0]!.reason).toContain('only one reading carries the member')
+    expect(problems[0]!.pointer).toBe('/a')
+  })
+
   it('still reports a duplicate of it, so the gate has not merely stopped firing', () => {
     // The point is not that `__proto__` is now quiet — it is that the reading
     // sees it. A document declaring it twice is a document `JSON.parse` reads

@@ -8,7 +8,7 @@
  * written, which is exactly what the hook reads. That makes 300 rows in a 400px
  * viewport a real window, and it is the only way the defects below can fail.
  */
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { moveFocus, useWindowedRows } from './useWindowedRows'
@@ -18,32 +18,60 @@ afterEach(cleanup)
 const ROW = 40
 const VIEWPORT = 400
 
-/** A list whose scrolling element reports a real height. */
-function List({ count, rowHeight = ROW }: { count: number; rowHeight?: number }) {
+/**
+ * A list whose scrolling element reports a real height.
+ *
+ * `present` removes the scrolling element **without unmounting the hook**,
+ * which is what a failed refetch does to the pane: `PacksPane` stays mounted
+ * and swaps the list for a failure sentence. Unmounting the whole component
+ * instead resets the hook's state, and a test that does that cannot see a hook
+ * holding on to the element it was given first.
+ */
+function List({
+  count,
+  rowHeight = ROW,
+  present = true,
+  bring
+}: {
+  count: number
+  rowHeight?: number
+  present?: boolean
+  bring?: number
+}) {
   const window = useWindowedRows(count, rowHeight)
   const [node, setNode] = useState<HTMLElement | null>(null)
   return (
     <div>
-      <div
-        data-testid="list"
-        ref={(element) => {
-          if (element !== null && element !== node) {
-            Object.defineProperty(element, 'clientHeight', { value: VIEWPORT, configurable: true })
-            setNode(element)
-          }
-          window.ref(element)
-        }}
-      >
-        <div data-testid="padTop" style={{ height: window.padTop }} />
-        <ul>
-          {Array.from({ length: window.end - window.start }, (_, offset) => (
-            <li key={window.start + offset} data-row={window.start + offset}>
-              row {window.start + offset}
-            </li>
-          ))}
-        </ul>
-        <div data-testid="padBottom" style={{ height: window.padBottom }} />
-      </div>
+      {present && (
+        <div
+          data-testid="list"
+          ref={(element) => {
+            if (element !== null && element !== node) {
+              Object.defineProperty(element, 'clientHeight', {
+                value: VIEWPORT,
+                configurable: true
+              })
+              setNode(element)
+            }
+            window.ref(element)
+          }}
+        >
+          <div data-testid="padTop" style={{ height: window.padTop }} />
+          <ul>
+            {Array.from({ length: window.end - window.start }, (_, offset) => (
+              <li key={window.start + offset} data-row={window.start + offset}>
+                row {window.start + offset}
+              </li>
+            ))}
+          </ul>
+          <div data-testid="padBottom" style={{ height: window.padBottom }} />
+        </div>
+      )}
+      {bring !== undefined && (
+        <button type="button" onClick={() => window.scrollRowIntoView(bring)}>
+          bring {bring} in
+        </button>
+      )}
       <p data-testid="window">{`${window.start}:${window.end}:${window.padTop}`}</p>
     </div>
   )
@@ -108,21 +136,27 @@ describe('a window over a viewport that has a height', () => {
     expect(listNode().scrollTop).toBe(0)
   })
 
-  it('keeps scrolling after the list is unmounted and mounted again', () => {
+  it('keeps scrolling after the list is taken away and put back', () => {
     // The listener effect used to depend on the ref object and the row count,
     // and neither changes when a failed refetch removes the list and a
     // same-count retry mounts a new node — so the listener stayed on a
     // detached element and scrolling did nothing, for ever.
+    //
+    // **The hook stays mounted throughout**, because that is the case: the pane
+    // swaps the list for a failure sentence and keeps its own state. A test
+    // that unmounts the component gets a fresh hook and can see none of this.
     const { rerender } = render(<List count={300} />)
+    const first = listNode()
     scrollTo(4000)
     expect(windowOf()[0]).toBeGreaterThan(90)
 
     act(() => {
-      rerender(<p>the listing did not answer</p>)
+      rerender(<List count={300} present={false} />)
     })
     act(() => {
       rerender(<List count={300} />)
     })
+    expect(listNode()).not.toBe(first)
     // A new node, and it scrolls.
     scrollTo(6000)
     expect(windowOf()[0]).toBeGreaterThan(140)
@@ -176,10 +210,36 @@ describe('the keyboard reaches the whole list', () => {
 
 describe('scrolling a row into view', () => {
   it('brings an off-window row in, so focus can follow it', () => {
-    render(<List count={300} />)
-    // Row 250 is nowhere near the first screenful.
+    // The keyboard's half of the fix: a row that is not rendered cannot be
+    // focused, so the destination is scrolled to first and focused in the
+    // render that brings it. Asserted through `scrollRowIntoView` itself — a
+    // test that only scrolls the element exercises the listener and not this.
+    render(<List count={300} bring={250} />)
     expect(screen.queryByText('row 250')).toBeNull()
-    scrollTo(250 * ROW)
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'bring 250 in' }))
+    })
+    expect(listNode().scrollTop).toBeGreaterThan(0)
     expect(screen.getByText('row 250')).toBeTruthy()
+  })
+
+  it('leaves a row that is already on screen where it is', () => {
+    render(<List count={300} bring={2} />)
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'bring 2 in' }))
+    })
+    expect(listNode().scrollTop).toBe(0)
+    expect(screen.getByText('row 2')).toBeTruthy()
+  })
+
+  it('scrolls back up for a row above the window', () => {
+    render(<List count={300} bring={5} />)
+    scrollTo(8000)
+    expect(screen.queryByText('row 5')).toBeNull()
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'bring 5 in' }))
+    })
+    expect(listNode().scrollTop).toBe(5 * ROW)
+    expect(screen.getByText('row 5')).toBeTruthy()
   })
 })
