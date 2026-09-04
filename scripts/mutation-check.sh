@@ -2605,9 +2605,12 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the page draws a buffer that is another file's" "$PV" \
     "  const onPath = path !== undefined && buffer.base?.path === path" \
     "  const onPath = path !== undefined"
-  mutate web "a save sends the bytes of whatever file the buffer holds" "$PV" \
-    '      if (buffer.base.path !== path) return' \
-    '      void path'
+  # **`save`'s own path check has no row, deliberately.** It is defence behind
+  # the gate above: `bufferText` is undefined while the buffer is another file's,
+  # so the first guard in `save` returns before the equality is reached and no
+  # single mutation can tell the two apart. The gate has the row; the route test
+  # asserts that a remap writes nothing; and the check stays, because a second
+  # reader of one rule is what this whole finding was about.
   # `write.isPending` is state and arrives a render later, so two chords inside
   # one frame both read "not saving".
   mutate web "two chords in one frame issue two writes against one base" "$PV" \

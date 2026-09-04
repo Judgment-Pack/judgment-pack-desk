@@ -73,6 +73,22 @@ describe('bytes shaped like nothing this desk expects', () => {
     expect(screen.getByRole('toolbar', { name: 'Editing' })).toBeTruthy()
   })
 
+  it('draws a rule that is not an object as its bytes, not as a card', async () => {
+    // The list is a list — the member-level guard has nothing to say about it —
+    // and one element of it is `null`. `RuleCard` reads `rule.id`.
+    const parsed = JSON.parse(PACK_TEXT) as { rules: unknown[] }
+    parsed.rules = [parsed.rules[0], null]
+    const wrong = `${JSON.stringify(parsed, null, 2)}\n`
+    chassis({ content: wrong, sha256: PACK_DIGEST })
+    drawPack(served(wrong), { path: EDIT })
+    await screen.findByRole('navigation', { name: 'Members' })
+    const said = await screen.findByText(/not the shape the form edits/)
+    expect(said.textContent).toContain('/rules/1')
+    expect(document.getElementById('/rules/1')).toBeTruthy()
+    // The rule beside it is still a card with fields in it.
+    expect(screen.getByDisplayValue('screen-first')).toBeTruthy()
+  })
+
   it('says which member is not the shape the form edits, rather than crashing', async () => {
     // **Form availability asked whether the two readings agreed and nothing
     // else.** `"rules": {}` agrees perfectly — it is valid JSON both readings
@@ -387,6 +403,57 @@ describe('a file that moved after it was loaded', () => {
     expect(screen.getByText(/the bytes you loaded from/)).toBeTruthy()
     // And the way to the bytes that are there now is offered rather than taken.
     expect(screen.getByRole('button', { name: 'Reload' })).toBeTruthy()
+  })
+})
+
+describe('when both answers move and the editor does not', () => {
+  it('withdraws the binding, which is the only thing that can', async () => {
+    // **The two digests agreeing is not the question.** A file written by
+    // somebody else invalidates both answers, so `get_pack` and the file read
+    // agree with each other about revision two — while the editor is holding
+    // revision one. Comparing those two alone said "matches the file the editor
+    // holds" over bytes the editor had never read.
+    let text = PACK_TEXT
+    let digest = PACK_DIGEST
+    const answers: Record<string, ToolHandler> = {
+      get_pack: () => ({
+        text,
+        structured: { path: PACK_PATH, bytes: text.length, sha256: digest }
+      }),
+      list_packs: () => ({
+        text: JSON.stringify({ packs: [{ id: 'vendor-onboarding', path: PACK_PATH }] })
+      }),
+      validate: () => ({ text: CLEAN_REPORT })
+    }
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    const { queryClient } = drawPack(answers, {
+      path: '/packs/vendor-onboarding?edit=1&at=%2Ftitle',
+      inspector: true,
+      tab: 'member'
+    })
+    await screen.findByRole('navigation', { name: 'Members' })
+    await waitFor(() =>
+      expect(screen.getByText('matches the file the editor holds')).toBeTruthy()
+    )
+
+    text = `${PACK_TEXT}\n`
+    digest = 'd2d2d2'.padEnd(64, '0')
+    act(() => {
+      queryClient.setQueryData(['desk-file', PACK_PATH], {
+        path: PACK_PATH,
+        bytes: text.length,
+        sha256: digest,
+        content: text
+      })
+    })
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['get_pack'] })
+    })
+
+    await waitFor(() =>
+      expect(screen.queryByText('matches the file the editor holds')).toBeNull()
+    )
+    expect(screen.getByText(/showing the revision it loaded/)).toBeTruthy()
   })
 })
 

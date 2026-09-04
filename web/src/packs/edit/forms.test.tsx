@@ -277,21 +277,23 @@ describe('text that is not written yet is work', () => {
   })
 
   it('retires a draft for good once the bytes it started from move', async () => {
-    // Retirement was an equality mask over a map that kept everything: a raw
-    // edit away from the operand and an Undo back to it made the draft match
-    // again, and text abandoned two actions ago reappeared in the field.
+    // **Retirement was an equality mask over a map that kept everything.** The
+    // draft is left standing here — nothing writes it — and the bytes under it
+    // are moved by an Undo, which is the case the mask could not tell from a
+    // draft that is still about what is on screen.
     await draft()
     const operand = within(document.getElementById(OPERAND)!).getByDisplayValue('"green"')
-    fireEvent.change(operand, { target: { value: '{"shade"' } })
+    fireEvent.change(operand, { target: { value: '"amber"' } })
+    await waitFor(async () => expect(await bytes()).toContain('"value": "amber"'))
+    fireEvent.click(screen.getByRole('radio', { name: 'Form' }))
+
+    // Text that is not JSON, over the bytes that are there now.
+    const held = within(document.getElementById(OPERAND)!).getByDisplayValue('"amber"')
+    fireEvent.change(held, { target: { value: '{"shade"' } })
     await waitFor(() => expect(screen.getByText('1 field is not written yet')).toBeTruthy())
 
-    // The bytes under it move, which retires the draft…
-    fireEvent.change(within(document.getElementById(OPERAND)!).getByDisplayValue('{"shade"'), {
-      target: { value: '"amber"' }
-    })
-    await waitFor(() => expect(screen.queryByText('1 field is not written yet')).toBeNull())
-
-    // …and Undo puts the bytes back without putting the abandoned text back.
+    // Undo moves the bytes the draft was about, and the draft goes with them —
+    // it is deleted, not merely hidden.
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
     await waitFor(() =>
       expect(
@@ -299,6 +301,7 @@ describe('text that is not written yet is work', () => {
       ).toBeTruthy()
     )
     expect(screen.queryByText('1 field is not written yet')).toBeNull()
+    expect(screen.queryByText(/Not written yet/)).toBeNull()
   })
 })
 

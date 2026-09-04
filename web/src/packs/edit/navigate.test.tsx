@@ -11,7 +11,15 @@
  */
 import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { chassis, drawPack, forgetSlot, servedPacks, PACK_DIGEST, PACK_PATH } from './editHarness'
+import {
+  chassis,
+  drawPack,
+  forgetSlot,
+  servedPacks,
+  CLEAN_REPORT,
+  PACK_DIGEST,
+  PACK_PATH
+} from './editHarness'
 import { forgetAuthorBridge } from '../../shell/authorBridge'
 
 const BRAVO_PATH = 'packs/bravo.pack.json'
@@ -130,6 +138,95 @@ describe('the gap between the two answers', () => {
     expect(log.writes[0]!.path).toBe(PACK_PATH)
     expect(log.writes[0]!.baseSha256).toBe(PACK_DIGEST)
     expect(log.writes[0]!.content).toContain('Alpha pack, again')
+  })
+})
+
+describe('a path that moves under one address', () => {
+  it('holds the new file rather than replacing unsaved work, and sends nothing to it', async () => {
+    // Nobody navigated: the listing re-answers, or `get_pack` names a different
+    // file, and `path` moves under an address that has not changed. Seeding on
+    // that replaced an author's edits with another document's bytes — and until
+    // it did, Save was sending *these* bytes to *that* path.
+    let servedPath = PACK_PATH
+    const log = chassis({
+      content: ALPHA,
+      sha256: PACK_DIGEST,
+      also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } }
+    })
+    const handlers = {
+      get_pack: () => ({
+        text: ALPHA,
+        structured: { path: servedPath, bytes: ALPHA.length, sha256: PACK_DIGEST }
+      }),
+      list_packs: () => ({
+        text: JSON.stringify({ packs: [{ id: 'alpha', path: servedPath }] })
+      }),
+      validate: () => ({ text: CLEAN_REPORT })
+    }
+    const { queryClient } = drawPack(handlers, { path: '/packs/alpha?edit=1' })
+    const title = await screen.findByDisplayValue('Alpha pack')
+    fireEvent.change(title, { target: { value: 'Alpha pack, revised' } })
+
+    servedPath = BRAVO_PATH
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['get_pack'] })
+    })
+
+    // The other file is an offer, and the edit is neither drawn nor taken: the
+    // page will not show one file's bytes under another file's address, and it
+    // will not throw them away to show the new one.
+    await waitFor(() =>
+      expect(screen.getByText(/This page is now about a different file/)).toBeTruthy()
+    )
+    expect(screen.queryByDisplayValue('Alpha pack, revised')).toBeNull()
+
+    // A save writes nothing: these bytes belong to a path this page is no
+    // longer about.
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await act(async () => {})
+    expect(log.writes).toHaveLength(0)
+
+    // And the work is still there when the address is about that file again.
+    servedPath = PACK_PATH
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['get_pack'] })
+    })
+    await waitFor(() => expect(screen.getByDisplayValue('Alpha pack, revised')).toBeTruthy())
+  })
+
+  it('takes the other file only when the offer is accepted', async () => {
+    let servedPath = PACK_PATH
+    chassis({
+      content: ALPHA,
+      sha256: PACK_DIGEST,
+      also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } }
+    })
+    const handlers = {
+      get_pack: () => ({
+        text: servedPath === PACK_PATH ? ALPHA : BRAVO,
+        structured: {
+          path: servedPath,
+          bytes: ALPHA.length,
+          sha256: servedPath === PACK_PATH ? PACK_DIGEST : BRAVO_DIGEST
+        }
+      }),
+      list_packs: () => ({
+        text: JSON.stringify({ packs: [{ id: 'alpha', path: servedPath }] })
+      }),
+      validate: () => ({ text: CLEAN_REPORT })
+    }
+    const { queryClient } = drawPack(handlers, { path: '/packs/alpha?edit=1' })
+    const title = await screen.findByDisplayValue('Alpha pack')
+    fireEvent.change(title, { target: { value: 'Alpha pack, revised' } })
+
+    servedPath = BRAVO_PATH
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['get_pack'] })
+    })
+    const take = await screen.findByRole('button', { name: 'Open it and lose these changes' })
+    fireEvent.click(take)
+    await waitFor(() => expect(screen.getByDisplayValue('Bravo pack')).toBeTruthy())
+    expect(screen.queryByText(/This page is now about a different file/)).toBeNull()
   })
 })
 
