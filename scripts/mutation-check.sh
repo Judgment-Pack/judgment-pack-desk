@@ -565,6 +565,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   MO=web/src/packs/document/MemberOutline.tsx
   PN=web/src/packs/PacksPane.tsx
   PT=web/src/packs/pointers.ts
+  RTAB=web/src/packs/inspector/ReferencesTab.tsx
+  CTB=web/src/packs/inspector/ChecksTab.tsx
   AS=web/src/shell/AppShell.tsx
   FX=web/src/packs/__fixtures__/full.pack.json
 
@@ -1767,6 +1769,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # The five identity members are five units, so each finds its own place in the
   # document order. The nav collapses them again — a nav question answered in
   # the nav, not by moving three members in front of a fourth.
+  # The spy answers in reading-unit pointers and the nav lists Identity once, so
+  # four of the five equalled no entry and marked nothing at all.
+  mutate web "an identity member marks no outline entry" "$PV" \
+    '  const active = seen === null ? null : (representative.get(seen) ?? seen)' \
+    '  const active = seen
+  void representative'
+  mutate web "a grouped unit is looked up under its own id" "$MB" \
+    '    const listed = entries.find((entry) => entry.id === (unit.group ?? unit.id))' \
+    '    const listed = entries.find((entry) => entry.id === unit.id)'
   mutate web "the outline lists each identity member separately" "$MB" \
     '  const entries: MemberUnit[] = []
   const placed = new Set<string>()' \
@@ -1777,9 +1788,31 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # refusal the runtime issues at that pointer and a block here takes that
   # diagnostic off the strip — where every reader sees it — and puts it behind a
   # selection nobody has made.
-  mutate web "an absent required member is drawn as an omission block" "$PDV" \
-    '    if (unit.required === true) return null' \
-    '    if (false) return null'
+  # A missing required member is a refusal the runtime issues at that pointer,
+  # not an omission this page states — and a "not declared" line for one takes
+  # that diagnostic off the strip and hides it behind a selection nobody made.
+  # It also used to be *first* in reading order, which put the document's one
+  # tab stop on a pointer with no element behind it.
+  mutate web "an absent required member gets an omission line" "$MB" \
+    '    if (unit.required === true) continue' \
+    '    if (false) continue'
+  # Three of the seven roots the schema requires were marked optional here.
+  mutate web "the rules member is treated as optional" "$MB" \
+    "  {
+    id: 'rules',
+    label: 'Rules',
+    members: ['rules'],
+    pointer: '/rules',
+    counted: true,
+    required: true
+  }," \
+    "  { id: 'rules', label: 'Rules', members: ['rules'], pointer: '/rules', counted: true },"
+  # Every omission at the end would have passed the ordering test this replaces:
+  # it filtered every omission out of the actual output before comparing.
+  mutate web "an omission is drawn after the members rather than in its place" "$MB" \
+    '    order.splice(anchor + 1, 0, unit)' \
+    '    void anchor
+    order.push(unit)'
   mutate web "the condition tree paraphrases" "$CT" \
     '        <Block pointer={`${at}/operator`} as="span" className={styles.op}>
           {String(node.operator ?? '"''"')}
@@ -1872,14 +1905,16 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     if (existing === undefined) where.set(entry.id, [at])
     else existing.push(at)' \
     '    where.set(entry.id, [at])'
-  mutate web "a rule index is read with a looser grammar than the evaluator uses" "$RF" \
-    '  const token = parts[1]!
-  if (!/^(0|[1-9][0-9]*)$/.test(token)) return undefined' \
-    '  const token = parts[1]!
-  if (!/^[0-9]+$/.test(token)) return undefined'
+  # **One evaluator, or two panels disagree about one address.** This read the
+  # index out of token one and never looked further, so `/rules/0/nonesuch` and
+  # `/rules/0/constructor` printed rule zero's references beside a member panel
+  # showing nothing at all.
+  mutate web "an address the document does not carry still answers" "$RF" \
+    '  if (valueAt(document, at) === undefined) return []' \
+    '  void valueAt'
   mutate web "a rule with no outcome still gets an unresolved-id line" "$RF" \
-    "      if (typeof rule.outcome === 'string') {" \
-    '      if (true) {'
+    "    if (typeof rule.outcome === 'string') {" \
+    '    if (true) {'
   # And the fixture the whole reference model is read against.
   mutate web "a fixture may assert a shape the spec forbids" "$FX" \
     '  "triggers": ["missing-required-evidence", "unknown"],' \
@@ -1912,9 +1947,24 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "what was seen in one document is kept for the next" "$SPY" \
     '  useEffect(() => {
     setSeen(null)
-  }, [key])' \
+  }, [key, revision])' \
     '  useEffect(() => {
     void key
+  }, [key, revision])'
+  # **The member list is not the document.** A refetch of another revision with
+  # the same top-level members left the answer standing and the observer
+  # watching element objects the render had already replaced.
+  mutate web "the reset is keyed on the member list rather than the document" "$SPY" \
+    '  useEffect(() => {
+    setSeen(null)
+  }, [key, revision])' \
+    '  useEffect(() => {
+    setSeen(null)
+  }, [key])'
+  mutate web "the observer outlives the document it was built for" "$SPY" \
+    '    return () => observer.disconnect()
+  }, [key, revision])' \
+    '    return () => observer.disconnect()
   }, [key])'
 
   # One address, one element.
@@ -1931,8 +1981,24 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '      ) : stale ? null : (' \
     '      ) : stale && false ? null : ('
   mutate web "the route never says the check is still running" "$PV" \
-    "        pending={check.fetchStatus === 'fetching'}" \
-    "        pending={false}"
+    '        pending={fetching}' \
+    '        pending={false}'
+  # "checked against the bytes of x" printed under "this document is unchecked"
+  # is one of the two lying, and the reader cannot tell which.
+  mutate web "a check that never ran is still said to have run" "$PV" \
+    '  const provenance =
+    unavailable !== undefined
+      ? undefined
+      : fetching
+        ? `checking against ${whichBytes}`
+        : check.data !== undefined
+          ? `checked against ${whichBytes}`
+          : undefined' \
+    '  const provenance = `checked against ${whichBytes}`'
+  mutate web "the panel invents provenance it was not given" "$CTB" \
+    '      {checkedWhat !== undefined && <p className={styles.footer}>{checkedWhat}</p>}' \
+    "      <p className={styles.footer}>{checkedWhat ?? 'checked against the bytes on screen'}</p>"
+
   # **The High.** `stale` was hard-coded false, so a report over the file on
   # disk was anchored onto the served document: a `/rules/0` diagnostic landing
   # on a rule that is not the rule it is about.
@@ -1968,10 +2034,20 @@ if [ "$which" = all ] || [ "$which" = web ]; then
 
   # Selecting with the pane closed.
   mutate web "an address that arrives with a selection opens no pane" "$PV" \
-    '    revealedFor.current = locationKey
+    '    if (at === null) return
     slot.reveal()' \
-    '    revealedFor.current = locationKey
+    '    if (at === null) return
     void slot'
+  # **Back is an arrival.** Recording only the keys that revealed meant an entry
+  # without `?at` returned before writing anything down, so Back to the selected
+  # entry before it looked like the rerender it is not.
+  mutate web "an arrival with no selection is not recorded as visited" "$PV" \
+    '    if (visited.current === locationKey) return
+    visited.current = locationKey
+    if (at === null) return' \
+    '    if (at === null) return
+    if (visited.current === locationKey) return
+    visited.current = locationKey'
   # A mount-only effect made *zero* calls for /packs/a -> /packs/a?at=/rules/0,
   # which reuses this component: every References link opened nothing.
   mutate web "a selection arriving in an address the route is already at opens nothing" "$PV" \
@@ -1981,7 +2057,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # The other half: this must not fight a viewer who closed the pane and stayed
   # where they are. The unit is a history entry, not a render.
   mutate web "every rerender reopens a pane the viewer closed" "$PV" \
-    '    if (revealedFor.current === locationKey) return' \
+    '    if (visited.current === locationKey) return' \
     '    if (false) return'
   # "If closed, toggle" is one gesture read twice, and StrictMode — which
   # production runs in — runs an effect twice on purpose.
@@ -2053,6 +2129,26 @@ if [ "$which" = all ] || [ "$which" = web ]; then
             )}"
 
   # A version the listing did not answer with.
+  # A row the keyboard asks for that is not rendered is focused in the render
+  # that brings it in — the step between `moveFocus` and `scrollRowIntoView`,
+  # which each had a test and the thing between them did not.
+  mutate web "a row that is not rendered yet is never focused" "$PN" \
+    '              else setWanted(next)' \
+    '              else void next'
+  mutate web "a shorter row height leaves the scroll where it was" "$WR" \
+    '  }, [node, count, rowHeight])' \
+    '  }, [node, count])'
+  # The data model kept every candidate and had a row for it; what a reader sees
+  # was held by nothing, and a panel quietly linking the first would have passed.
+  mutate web "the panel picks one of two identically named outcomes" "$RTAB" \
+    '          {reference.candidates !== undefined ? (' \
+    '          {false ? ('
+  # The enum walk descended through composite nodes while checking only the
+  # operators inside `fact` ones.
+  mutate web "a composite condition may be spelled any way at all" "$FX" \
+    '"op": "all"' \
+    '"op": "alll"'
+
   # react-query keeps the last good data through a refetch error, so a failed
   # refresh left this button under the failure sentence offering to show all N
   # of a listing the pane had just said it could not read.
