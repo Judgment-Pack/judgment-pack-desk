@@ -512,10 +512,11 @@ member that is missing gets no such line: its absence is a refusal rather than
 an omission, the runtime issues one at that pointer, and a block there would
 take that diagnostic off the strip — where every reader sees it — and put it
 behind a selection nobody has made. Every outline entry is a link, omissions
-included, because the omission block is a place on the page like any other. This is the difference
-between "the pack does not narrow its own scope" and "the page did not draw
-that part", and the view this replaced could not tell them apart: its section
-wrapper returned nothing when it had nothing to render.
+included, because the omission block is a place on the page like any other.
+This is the difference between "the pack does not narrow its own scope" and
+"the page did not draw that part", and the view this replaced could not tell
+them apart: its section wrapper returned nothing when it had nothing to
+render.
 
 Three things the old view dropped are here: `metadata.reviews`, the per-member
 `extensions` objects (eight `$defs` may carry one, plus the root), and the
@@ -704,9 +705,11 @@ differ.
 
 An empty document is not checked at all, and the strip says so in words: the
 call is disabled, and a disabled query has no data for ever — which the strip
-used to read as "Checking…" and print until the page was left. Where `diagnosticsTruncated` is set the runtime stopped at its own
-limit of 100, and the panel says the list was cut rather than that nothing else
-was found.
+used to read as "Checking…" and print until the page was left.
+
+Where `diagnosticsTruncated` is set the runtime stopped at its own limit of
+100, and the panel says the list was cut rather than that nothing else was
+found.
 
 ### What this page will not say
 
