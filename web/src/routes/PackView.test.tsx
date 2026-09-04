@@ -70,6 +70,40 @@ function chassis(content: string | undefined, sha256: string) {
  * about a panel passes `inspector: true` and gets a real element, torn down
  * with the render.
  */
+/**
+ * An `IntersectionObserver` a test drives.
+ *
+ * jsdom has none and lays nothing out, so the spy's observing path is invisible
+ * to every other case in this file — which is exactly where the outline lost
+ * four of its five identity members.
+ */
+function observable() {
+  const callbacks: ((entries: { target: Element; isIntersecting: boolean }[]) => void)[] = []
+  class Stub {
+    constructor(callback: (entries: { target: Element; isIntersecting: boolean }[]) => void) {
+      callbacks.push(callback)
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  vi.stubGlobal('IntersectionObserver', Stub)
+  return {
+    show(...pointers: string[]) {
+      act(() => {
+        for (const callback of callbacks) {
+          callback(
+            pointers.map((pointer) => ({
+              target: { getAttribute: () => pointer } as unknown as Element,
+              isIntersecting: true
+            }))
+          )
+        }
+      })
+    }
+  }
+}
+
 let slotTarget: HTMLElement | null = null
 
 function recordingSlot(revealed: string[], inspector: boolean, tab: string | null): InspectorSlot {
@@ -431,6 +465,83 @@ describe('the outline', () => {
   })
 })
 
+describe('which bytes the page says it checked', () => {
+  const PAST = /checked against/
+  const PRESENT = /checking against/
+
+  it('says nothing at all where the runtime does not offer validate', async () => {
+    chassis(PACK_TEXT, DIGEST)
+    draw(SERVED, { validateSupported: false })
+    await screen.findByRole('heading', { level: 1 })
+    expect(screen.getByText(/does not offer validate/)).toBeTruthy()
+    // "checked against the bytes of packs/x.pack.json" under "this document is
+    // unchecked" is one of the two lying, and the reader cannot tell which.
+    expect(screen.queryByText(PAST)).toBeNull()
+    expect(screen.queryByText(PRESENT)).toBeNull()
+  })
+
+  it('says nothing where the runtime has not said what it can do', async () => {
+    chassis(PACK_TEXT, DIGEST)
+    draw(SERVED, { known: false })
+    await screen.findByRole('heading', { level: 1 })
+    expect(screen.getByText(/has not said what it can do/)).toBeTruthy()
+    expect(screen.queryByText(PAST)).toBeNull()
+  })
+
+  it('says nothing where there are no bytes to check', async () => {
+    chassis('', DIGEST)
+    draw(SERVED)
+    await screen.findByRole('heading', { level: 1 })
+    await waitFor(() => expect(screen.getByText(/no bytes to check yet/)).toBeTruthy())
+    expect(screen.queryByText(PAST)).toBeNull()
+  })
+
+  it('is in the present tense while the check is in flight', async () => {
+    chassis(PACK_TEXT, DIGEST)
+    draw({ ...SERVED, validate: () => new Promise<never>(() => {}) })
+    await screen.findByRole('heading', { level: 1 })
+    await waitFor(() => expect(screen.getByText('Checking…')).toBeTruthy())
+    expect(screen.getByText(PRESENT)).toBeTruthy()
+    expect(screen.queryByText(PAST)).toBeNull()
+  })
+
+  it('is in the past tense once a report has arrived', async () => {
+    chassis(PACK_TEXT, DIGEST)
+    draw(SERVED)
+    await screen.findByRole('heading', { level: 1 })
+    await waitFor(() => expect(screen.getByText(PAST)).toBeTruthy())
+    expect(screen.getByText(PAST).textContent).toContain(PATH)
+  })
+})
+
+describe('the outline entry an identity member marks', () => {
+  const IDENTITY = ['/specVersion', '/id', '/version', '/title', '/description']
+
+  it.each(IDENTITY)('is Identity, for a selection at %s', async (pointer) => {
+    // The outline lists `Identity` once and the page draws the five separately,
+    // so four of the five equalled no entry and marked nothing at all.
+    chassis(PACK_TEXT, DIGEST)
+    draw(SERVED, {}, `/packs/vendor-onboarding?at=${encodeURIComponent(pointer)}`)
+    await screen.findByRole('heading', { level: 1 })
+    const entry = screen.getByRole('link', { name: /Identity/ })
+    await waitFor(() => expect(entry.getAttribute('aria-current')).toBe('true'))
+    const current = screen
+      .getByRole('navigation', { name: 'Members' })
+      .querySelectorAll('[aria-current]')
+    expect(current).toHaveLength(1)
+  })
+
+  it.each(IDENTITY)('is Identity, for an observer reporting %s on screen', async (pointer) => {
+    chassis(PACK_TEXT, DIGEST)
+    const viewport = observable()
+    draw(SERVED)
+    await screen.findByRole('heading', { level: 1 })
+    viewport.show(pointer)
+    const entry = screen.getByRole('link', { name: /Identity/ })
+    await waitFor(() => expect(entry.getAttribute('aria-current')).toBe('true'))
+  })
+})
+
 describe('a check that ran over other bytes', () => {
   // The file on disk moved on after `get_pack` served the page: `rules[0]` is
   // gone, so every `/rules/N` in the check names a different rule from the one
@@ -645,6 +756,28 @@ describe('arriving at an address that names a member', () => {
       )
     })
     expect(revealed).toEqual(['reveal'])
+  })
+
+  it('opens it again when Back returns to an address that carries one', async () => {
+    // **Every arrival is recorded, not only the ones that revealed.** Select a
+    // member (entry K), follow a link inside the pack that carries no selection
+    // (entry U), close the pane, press Back: U returned before writing anything
+    // down, so K still looked like the last entry this had handled and Back —
+    // an arrival at an address naming a member — opened nothing.
+    const { revealed, router } = draw(SERVED, {}, '/packs/vendor-onboarding?at=/rules/0')
+    await screen.findByRole('heading', { level: 1 })
+    await waitFor(() => expect(revealed).toEqual(['reveal']))
+
+    await act(async () => {
+      await router.navigate('/packs/vendor-onboarding')
+    })
+    expect(revealed).toEqual(['reveal'])
+
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    await waitFor(() => expect(revealed).toEqual(['reveal', 'reveal']))
+    expect(router.state.location.search).toContain('at=')
   })
 
   it('does not reopen the pane the viewer just closed', async () => {

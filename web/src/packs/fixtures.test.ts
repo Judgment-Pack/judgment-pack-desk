@@ -11,6 +11,11 @@
  * enum-valued member of every fixture must be spelled the way the bundled
  * `jps/0.2.0-draft` schema spells it, and the closed lists below are that
  * schema's own, copied from `internal/artifacts/jps/0.2.0-draft/schema.json`.
+ * **Including a condition node's own `op`**, at every depth: the walk collected
+ * the operators *inside* `fact` nodes and never checked the word that says
+ * which kind of node it is, so `"op": "alll"` — a tree the runtime refuses and
+ * this desk's renderer draws as nothing at all — survived the test that exists
+ * to catch exactly that.
  * Checked against `jpack 0.19.0 spec validate`, which reports all three
  * fixtures conformant — `full` reaching `unsupported` only for the required
  * extension the runtime does not bundle, with carrier, structural and semantic
@@ -59,7 +64,15 @@ const ENUMS: { where: (document: Record<string, unknown>) => unknown[]; allowed:
     allowed: ['approved', 'changes-requested', 'rejected']
   },
   {
-    where: (doc) => operators(doc),
+    // **Every condition node's own `op`.** This list was the one closed enum the
+    // walk below collected values *inside* and never checked itself: a fixture
+    // spelling `"op": "alll"` — a tree the runtime refuses and the desk's own
+    // renderer draws as nothing — passed every assertion here.
+    where: (doc) => conditions(doc).map((node) => node.op),
+    allowed: ['literal', 'all', 'any', 'not', 'fact', 'evidence-present']
+  },
+  {
+    where: (doc) => conditions(doc).filter((node) => node.op === 'fact').map((node) => node.operator),
     allowed: [
       'equals',
       'not-equals',
@@ -113,13 +126,13 @@ function at(value: unknown, name: string): unknown {
     : undefined
 }
 
-/** Every `fact` node's operator, wherever a condition tree carries one. */
-function operators(document: Record<string, unknown>): unknown[] {
-  const found: unknown[] = []
+/** Every condition node in the document, at whatever depth a tree carries it. */
+function conditions(document: Record<string, unknown>): Record<string, unknown>[] {
+  const found: Record<string, unknown>[] = []
   const walk = (node: unknown) => {
     if (typeof node !== 'object' || node === null) return
     const value = node as Record<string, unknown>
-    if (value.op === 'fact') found.push(value.operator)
+    found.push(value)
     for (const child of list(value.conditions)) walk(child)
     if (value.condition !== undefined) walk(value.condition)
   }

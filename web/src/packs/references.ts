@@ -23,7 +23,14 @@
  * and that is the whole of what they are.
  */
 import type { Condition, PackDocument } from '../mcp/types'
-import { parsePointer, pointer } from './pointers'
+import { parsePointer, pointer, valueAt } from './pointers'
+
+/** The entry types the panel reads, named once rather than at five call sites. */
+type Rule = NonNullable<PackDocument['rules']>[number]
+type Exception = NonNullable<PackDocument['exceptions']>[number]
+type Outcome = NonNullable<PackDocument['outcomes']>[number]
+type EvidenceRequirement = NonNullable<PackDocument['evidenceRequirements']>[number]
+type Source = NonNullable<PackDocument['sources']>[number]
 
 /** One line of a References panel. */
 export interface Reference {
@@ -51,6 +58,13 @@ export interface Reference {
 /** Every reference at and around one pointer, both directions. */
 export function referencesFor(document: PackDocument | undefined, at: string): Reference[] {
   if (document === undefined || at === '') return []
+  // **An address this document does not answer names nothing here either.**
+  // This panel used to read the array index out of the pointer itself and index
+  // straight into the member, so `/rules/0/constructor`, `/rules/0/nonesuch`
+  // and `/rules/0/outcome/nope` each printed rule zero's references while the
+  // document block beside them showed nothing at all — two panels about one
+  // address, disagreeing, and a README claiming one evaluator decides.
+  if (valueAt(document, at) === undefined) return []
   const outcomeAt = declaredAt(document.outcomes, 'outcomes')
   const evidenceAt = declaredAt(document.evidenceRequirements, 'evidenceRequirements')
   const sourceAt = declaredAt(document.sources, 'sources')
@@ -75,110 +89,97 @@ export function referencesFor(document: PackDocument | undefined, at: string): R
   const lines: Reference[] = []
 
   // A rule.
-  const ruleIndex = indexUnder(at, 'rules')
-  if (ruleIndex !== undefined) {
-    const rule = document.rules?.[ruleIndex]
-    if (rule !== undefined) {
-      // Guarded, though the type says otherwise: this panel reads documents
-      // mid-draft, and `outcome` is exactly the member a draft has not written
-      // yet. An unguarded push printed an empty id beside "no declared outcome
-      // carries this id" — a sentence about a lookup nobody asked for. Absence
-      // is the runtime's diagnostic to issue, at `/rules/N/outcome`.
-      if (typeof rule.outcome === 'string') {
-        lines.push(named('outcome', rule.outcome, outcomeAt, 'outcome'))
-      }
-      for (const id of rule.evidenceRequirementRefs ?? []) {
-        if (typeof id === 'string') lines.push(named('evidence', id, evidenceAt, 'evidence requirement'))
-      }
-      for (const id of rule.sourceRefs ?? []) {
-        if (typeof id === 'string') lines.push(named('sources', id, sourceAt, 'source'))
-      }
-      for (const [index, exception] of (document.exceptions ?? []).entries()) {
-        if (exception.targetRule === rule.id) {
-          lines.push({ relation: 'cited by', id: exception.id, target: pointer(['exceptions', index]) })
-        }
+  const rule = entryUnder(document, at, 'rules') as Rule | undefined
+  if (rule !== undefined) {
+    // Guarded, though the type says otherwise: this panel reads documents
+    // mid-draft, and `outcome` is exactly the member a draft has not written
+    // yet. An unguarded push printed an empty id beside "no declared outcome
+    // carries this id" — a sentence about a lookup nobody asked for. Absence
+    // is the runtime's diagnostic to issue, at `/rules/N/outcome`.
+    if (typeof rule.outcome === 'string') {
+      lines.push(named('outcome', rule.outcome, outcomeAt, 'outcome'))
+    }
+    for (const id of rule.evidenceRequirementRefs ?? []) {
+      if (typeof id === 'string') lines.push(named('evidence', id, evidenceAt, 'evidence requirement'))
+    }
+    for (const id of rule.sourceRefs ?? []) {
+      if (typeof id === 'string') lines.push(named('sources', id, sourceAt, 'source'))
+    }
+    for (const [index, exception] of (document.exceptions ?? []).entries()) {
+      if (exception.targetRule === rule.id) {
+        lines.push({ relation: 'cited by', id: exception.id, target: pointer(['exceptions', index]) })
       }
     }
   }
 
   // An exception.
-  const exceptionIndex = indexUnder(at, 'exceptions')
-  if (exceptionIndex !== undefined) {
-    const exception = document.exceptions?.[exceptionIndex]
-    if (exception !== undefined) {
-      if (exception.targetRule !== undefined) {
-        lines.push(named('target rule', exception.targetRule, ruleAt, 'rule'))
-      }
-      if (exception.outcome !== undefined) {
-        lines.push(named('outcome', exception.outcome, outcomeAt, 'outcome'))
-      }
-      for (const id of exception.sourceRefs ?? []) lines.push(named('sources', id, sourceAt, 'source'))
+  const exception = entryUnder(document, at, 'exceptions') as Exception | undefined
+  if (exception !== undefined) {
+    if (exception.targetRule !== undefined) {
+      lines.push(named('target rule', exception.targetRule, ruleAt, 'rule'))
     }
+    if (exception.outcome !== undefined) {
+      lines.push(named('outcome', exception.outcome, outcomeAt, 'outcome'))
+    }
+    for (const id of exception.sourceRefs ?? []) lines.push(named('sources', id, sourceAt, 'source'))
   }
 
   // An outcome: what produces it, and whether it is the fallback.
-  const outcomeIndex = indexUnder(at, 'outcomes')
-  if (outcomeIndex !== undefined) {
-    const outcome = document.outcomes?.[outcomeIndex]
-    if (outcome !== undefined) {
-      for (const [index, rule] of (document.rules ?? []).entries()) {
-        if (rule.outcome === outcome.id) {
-          lines.push({ relation: 'produced by rule', id: rule.id, target: pointer(['rules', index]) })
-        }
+  const outcome = entryUnder(document, at, 'outcomes') as Outcome | undefined
+  if (outcome !== undefined) {
+    for (const [index, rule] of (document.rules ?? []).entries()) {
+      if (rule.outcome === outcome.id) {
+        lines.push({ relation: 'produced by rule', id: rule.id, target: pointer(['rules', index]) })
       }
-      for (const [index, exception] of (document.exceptions ?? []).entries()) {
-        if (exception.outcome === outcome.id) {
-          lines.push({
-            relation: 'produced by exception',
-            id: exception.id,
-            target: pointer(['exceptions', index])
-          })
-        }
+    }
+    for (const [index, exception] of (document.exceptions ?? []).entries()) {
+      if (exception.outcome === outcome.id) {
+        lines.push({
+          relation: 'produced by exception',
+          id: exception.id,
+          target: pointer(['exceptions', index])
+        })
       }
-      if (document.fallbackOutcome === outcome.id) {
-        lines.push({ relation: 'fallback outcome', id: outcome.id, target: pointer(['fallbackOutcome']) })
-      }
+    }
+    if (document.fallbackOutcome === outcome.id) {
+      lines.push({ relation: 'fallback outcome', id: outcome.id, target: pointer(['fallbackOutcome']) })
     }
   }
 
   // An evidence requirement: the rules that reference it, and the
   // `evidence-present` condition nodes that name it — which is a fact the
   // condition tree already holds and nothing else reports.
-  const evidenceIndex = indexUnder(at, 'evidenceRequirements')
-  if (evidenceIndex !== undefined) {
-    const requirement = document.evidenceRequirements?.[evidenceIndex]
-    if (requirement !== undefined) {
-      for (const [index, rule] of (document.rules ?? []).entries()) {
-        if ((rule.evidenceRequirementRefs ?? []).includes(requirement.id)) {
-          lines.push({ relation: 'required by rule', id: rule.id, target: pointer(['rules', index]) })
-        }
+  const requirement = entryUnder(document, at, 'evidenceRequirements') as
+    | EvidenceRequirement
+    | undefined
+  if (requirement !== undefined) {
+    for (const [index, rule] of (document.rules ?? []).entries()) {
+      if ((rule.evidenceRequirementRefs ?? []).includes(requirement.id)) {
+        lines.push({ relation: 'required by rule', id: rule.id, target: pointer(['rules', index]) })
       }
-      for (const node of evidencePresentNodes(document)) {
-        if (node.id === requirement.id) {
-          lines.push({ relation: 'tested by condition', id: requirement.id, target: node.pointer })
-        }
+    }
+    for (const node of evidencePresentNodes(document)) {
+      if (node.id === requirement.id) {
+        lines.push({ relation: 'tested by condition', id: requirement.id, target: node.pointer })
       }
     }
   }
 
   // A source: its citers.
-  const sourceIndex = indexUnder(at, 'sources')
-  if (sourceIndex !== undefined) {
-    const source = document.sources?.[sourceIndex]
-    if (source !== undefined) {
-      for (const [index, rule] of (document.rules ?? []).entries()) {
-        if ((rule.sourceRefs ?? []).includes(source.id)) {
-          lines.push({ relation: 'cited by rule', id: rule.id, target: pointer(['rules', index]) })
-        }
+  const source = entryUnder(document, at, 'sources') as Source | undefined
+  if (source !== undefined) {
+    for (const [index, rule] of (document.rules ?? []).entries()) {
+      if ((rule.sourceRefs ?? []).includes(source.id)) {
+        lines.push({ relation: 'cited by rule', id: rule.id, target: pointer(['rules', index]) })
       }
-      for (const [index, exception] of (document.exceptions ?? []).entries()) {
-        if ((exception.sourceRefs ?? []).includes(source.id)) {
-          lines.push({
-            relation: 'cited by exception',
-            id: exception.id,
-            target: pointer(['exceptions', index])
-          })
-        }
+    }
+    for (const [index, exception] of (document.exceptions ?? []).entries()) {
+      if ((exception.sourceRefs ?? []).includes(source.id)) {
+        lines.push({
+          relation: 'cited by exception',
+          id: exception.id,
+          target: pointer(['exceptions', index])
+        })
       }
     }
   }
@@ -215,19 +216,21 @@ function declaredAt(
 }
 
 /**
- * The array index a pointer sits at or under, for one top-level member.
+ * The collection entry a pointer sits at or under, read by the one evaluator.
  *
- * `^\d+$` accepted `01`, which is not an RFC 6901 index — the same leading-zero
- * hole the evaluator had, arriving from the other side. The pointer is parsed
- * properly and the token held to the grammar, so `/rules/01` names nothing here
- * exactly as it names nothing there.
+ * There was a private index reader here — parse the pointer, take token one,
+ * hold it to the array grammar, index the member directly. Two readers of one
+ * address space is one too many however carefully the second is written: this
+ * one accepted `/rules/0/nonesuch` because it never looked past token one, so
+ * the panel answered for an address `valueAt` says does not exist. The entry is
+ * fetched at its own pointer now, which is bounds-checked, own-property-checked
+ * and escape-checked exactly once, in `pointers.ts`.
  */
-function indexUnder(at: string, member: string): number | undefined {
+function entryUnder(document: PackDocument, at: string, member: string): unknown {
   const parts = parsePointer(at)
   if (parts === undefined || parts.length < 2 || parts[0] !== member) return undefined
-  const token = parts[1]!
-  if (!/^(0|[1-9][0-9]*)$/.test(token)) return undefined
-  return Number(token)
+  const entry = valueAt(document, pointer([member, parts[1]!]))
+  return typeof entry === 'object' && entry !== null ? entry : undefined
 }
 
 /** Every `evidence-present` node in the document, with its own pointer. */

@@ -20,9 +20,10 @@
  * - the check is stale, so its anchors describe bytes that have moved and
  *   nothing below is anchored to what is on screen.
  *
- * The footer names which bytes were checked. In read mode that is the file's
- * bytes, or the served document where the file could not be read; the "bytes
- * now in the editor" wording arrives with the editor.
+ * The footer names which bytes were checked — or are being checked, while one
+ * is in flight — and says nothing where no check has run. In read mode those
+ * are the file's bytes, or the served document where the file could not be
+ * read; the "bytes now in the editor" wording arrives with the editor.
  */
 import type { AnchoredDiagnostic } from '../checks'
 import styles from './PackInspector.module.css'
@@ -42,8 +43,12 @@ export function ChecksTab({
   stale: boolean
   /** True while the check is still in flight, and has named nothing yet. */
   pending: boolean
-  /** Which bytes the check ran over. */
-  checkedWhat: string
+  /**
+   * Which bytes the check ran over, or is running over — and **nothing at all**
+   * where no check has happened. A footer in the past tense under a panel that
+   * has nothing to report is a sentence about a check nobody made.
+   */
+  checkedWhat?: string
   /** Why there is no check at all, where there is none. */
   unavailable?: string
 }) {
@@ -89,7 +94,7 @@ export function ChecksTab({
       ) : stale ? null : (
         <p className={styles.empty}>No other diagnostic names this member.</p>
       )}
-      <p className={styles.footer}>{checkedWhat}</p>
+      {checkedWhat !== undefined && <p className={styles.footer}>{checkedWhat}</p>}
     </div>
   )
 }

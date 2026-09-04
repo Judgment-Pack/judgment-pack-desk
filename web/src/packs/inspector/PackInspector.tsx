@@ -55,7 +55,13 @@ export function PackInspector({
   stale: boolean
   /** True while the check is still in flight. */
   pending: boolean
-  checkedWhat: string
+  /**
+   * Which bytes the check is about, where a check has happened or is happening.
+   *
+   * Optional, because "checked against the bytes of x" printed under "this
+   * document is unchecked" is a claim about a check that did not run.
+   */
+  checkedWhat?: string
   unavailable?: string
   tab: string | null
   onTabChange: (tab: string) => void

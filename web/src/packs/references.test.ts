@@ -211,6 +211,33 @@ describe('a reference address is an address', () => {
     }
   )
 
+  it.each([
+    '/rules/0/nonesuch',
+    '/rules/0/constructor',
+    '/rules/0/outcome/nope',
+    '/rules/0/hasOwnProperty',
+    '/rules/2',
+    '/rules/0/~2',
+    '/outcomes/0/toString'
+  ])('answers nothing for %s, which the document does not carry', (bad) => {
+    // **One evaluator, or the two panels contradict each other.** This read the
+    // index out of token one and never looked further, so every address under
+    // `/rules/0` — including members no JSON document has — printed rule zero's
+    // references while the block beside it showed nothing at all.
+    expect(referencesFor(document, bad)).toEqual([])
+  })
+
+  it.each(['/rules/1/when', '/rules/1/when/conditions/0', '/rules/1/when/conditions/0/value'])(
+    'still answers for %s, which is a block inside the rule',
+    (deep) => {
+      // The panel is opened from a selection, and a selection is any block —
+      // a condition operand as readily as the rule card. Rejecting an address
+      // the document does not carry must not reject the ones it does.
+      const lines = referencesFor(full, deep)
+      expect(lines).toContainEqual({ relation: 'outcome', id: 'approve', target: '/outcomes/0' })
+    }
+  )
+
   it('still reads the rule the address does name', () => {
     expect(referencesFor(document, '/rules/0')).toEqual([
       { relation: 'outcome', id: 'approve', target: '/outcomes/0' }

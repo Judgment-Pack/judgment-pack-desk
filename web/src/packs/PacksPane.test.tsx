@@ -13,7 +13,32 @@ import { McpContext } from '../mcp/McpProvider'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { PacksPane } from './PacksPane'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  unmeasure?.()
+  unmeasure = undefined
+})
+
+/**
+ * A viewport with a height, for the one case that needs real virtualisation.
+ *
+ * jsdom lays nothing out, so every other case here takes the hook's
+ * render-everything fallback — which is deliberate, and is also why the pane's
+ * own keyboard path over a *windowed* list was never exercised: with all the
+ * rows rendered, focusing the destination never has to wait for one.
+ */
+let unmeasure: (() => void) | undefined
+function measured(height: number) {
+  const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight')
+  Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+    configurable: true,
+    get: () => height
+  })
+  unmeasure = () => {
+    if (original === undefined) delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientHeight
+    else Object.defineProperty(HTMLElement.prototype, 'clientHeight', original)
+  }
+}
 
 function packs(ids: string[]) {
   return stubClient({
@@ -117,6 +142,32 @@ describe('the packs pane', () => {
     fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' })
     // Already at the top: focus stays rather than wrapping to the bottom.
     expect(document.activeElement?.textContent).toContain('a-pack')
+  })
+
+  it('reaches the last row of a windowed list, and focuses it there', async () => {
+    // **The integrated path, over a list that really is windowed.** `moveFocus`
+    // and `scrollRowIntoView` each had a test and the thing between them did
+    // not: the destination is not rendered when End is pressed, so it is
+    // scrolled to and focused in the render that brings it in. With 300 rows in
+    // a 400px viewport that is the ordinary case, and under jsdom's zero
+    // heights it never happens at all.
+    const many = Array.from({ length: 300 }, (_, index) => `pack-${String(index).padStart(3, '0')}`)
+    measured(400)
+    draw(packs(many))
+    await screen.findByRole('link', { name: /pack-000/ })
+    fireEvent.click(screen.getByRole('button', { name: 'Show all 300' }))
+    // A screenful and its overscan, not three hundred: this is the arithmetic
+    // and not the fallback.
+    await waitFor(() => expect(screen.getAllByRole('link').length).toBeLessThan(40))
+    expect(screen.queryByRole('link', { name: /pack-299/ })).toBeNull()
+
+    const first = screen.getByRole('link', { name: /pack-000/ })
+    first.focus()
+    fireEvent.keyDown(first, { key: 'End' })
+    await waitFor(() => expect(document.activeElement?.textContent).toContain('pack-299'))
+
+    fireEvent.keyDown(document.activeElement!, { key: 'Home' })
+    await waitFor(() => expect(document.activeElement?.textContent).toContain('pack-000'))
   })
 
   it('shows a refused listing as the failure, not as an empty project', async () => {

@@ -58,6 +58,13 @@ export interface MemberUnit {
   /**
    * True where the schema requires this member.
    *
+   * **Seven of them**: `specVersion`, `id`, `version`, `title`, `decision`,
+   * `outcomes` and `rules` — the root `required` list in the bundled
+   * `jps/0.2.0-draft` schema, which `PackDocument` also spells as
+   * non-optional. Four were marked here and three were not, so a pack missing
+   * its decision, its outcomes or its rules drew "not declared" over the
+   * refusal the runtime issues at that pointer.
+   *
    * An omission line states an **optional** member's absence: "the pack cites
    * nothing" is a fact about a document that is complete without sources. A
    * required member that is missing is not an omission, it is a refusal — the
@@ -141,7 +148,7 @@ export const MEMBER_UNITS: readonly MemberUnit[] = [
     pointer: '/description',
     group: 'identity'
   },
-  { id: 'decision', label: 'Decision', members: ['decision'], pointer: '/decision' },
+  { id: 'decision', label: 'Decision', members: ['decision'], pointer: '/decision', required: true },
   {
     id: 'applicability',
     label: 'Applicability',
@@ -156,8 +163,22 @@ export const MEMBER_UNITS: readonly MemberUnit[] = [
     counted: true
   },
   { id: 'sources', label: 'Sources', members: ['sources'], pointer: '/sources', counted: true },
-  { id: 'outcomes', label: 'Outcomes', members: ['outcomes'], pointer: '/outcomes', counted: true },
-  { id: 'rules', label: 'Rules', members: ['rules'], pointer: '/rules', counted: true },
+  {
+    id: 'outcomes',
+    label: 'Outcomes',
+    members: ['outcomes'],
+    pointer: '/outcomes',
+    counted: true,
+    required: true
+  },
+  {
+    id: 'rules',
+    label: 'Rules',
+    members: ['rules'],
+    pointer: '/rules',
+    counted: true,
+    required: true
+  },
   {
     id: 'exceptions',
     label: 'Exceptions',
@@ -188,10 +209,11 @@ export function unitIsPresent(document: PackDocument, unit: MemberUnit): boolean
  *
  * The document's order is the one that is read, because a pack that puts
  * `rules` before `outcomes` is a pack whose author put them that way, and the
- * page has no business re-arranging what someone wrote. An absent unit has no
- * position of its own, so it takes the one the schema would give it — after
- * the nearest earlier unit, which is why the walk below is in schema order and
- * chains: two absent neighbours end up in their own relative order too.
+ * page has no business re-arranging what someone wrote. An absent **optional**
+ * unit has no position of its own, so it takes the one the schema would give
+ * it — after the nearest earlier unit, which is why the walk below is in schema
+ * order and chains: two absent neighbours end up in their own relative order
+ * too. An absent **required** unit gets no line at all; see `required`.
  */
 export function readingOrder(document: PackDocument): MemberUnit[] {
   const documentOrder = Object.keys(document)
@@ -208,6 +230,14 @@ export function readingOrder(document: PackDocument): MemberUnit[] {
 
   for (const [index, unit] of MEMBER_UNITS.entries()) {
     if (order.includes(unit)) continue
+    // **Only optional members get a line.** A required member that is absent is
+    // not an omission but a refusal, issued by the runtime at that member's own
+    // pointer, and a block here would take that diagnostic off the strip — where
+    // every reader sees it — and hide it behind a selection nobody has made. It
+    // is decided here, once: a document missing `decision` used to put a "not
+    // declared" line first in reading order, which also made the page's single
+    // tab stop a pointer with no element behind it.
+    if (unit.required === true) continue
     let anchor = -1
     for (let earlier = index - 1; earlier >= 0; earlier -= 1) {
       const at = order.indexOf(MEMBER_UNITS[earlier]!)
@@ -262,4 +292,27 @@ export function outlineUnits(document: PackDocument, order: readonly MemberUnit[
     })
   }
   return entries
+}
+
+/**
+ * Which outline entry each reading unit is listed under.
+ *
+ * The spy answers in **reading-unit** pointers — `/specVersion`, `/id`,
+ * `/version`, `/title`, `/description` — and the outline lists one `Identity`
+ * entry addressed by whichever of the five is present. Comparing the two
+ * directly meant four of the five could never mark anything: a reader looking
+ * at the version, or a link to `/id`, left the nav with no current entry at
+ * all. The grouping happens in one place, so its inverse belongs beside it.
+ */
+export function outlineRepresentatives(
+  document: PackDocument,
+  order: readonly MemberUnit[]
+): Map<string, string> {
+  const entries = outlineUnits(document, order)
+  const representative = new Map<string, string>()
+  for (const unit of order) {
+    const listed = entries.find((entry) => entry.id === (unit.group ?? unit.id))
+    if (listed !== undefined) representative.set(unit.pointer, listed.pointer)
+  }
+  return representative
 }

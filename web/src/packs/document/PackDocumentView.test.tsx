@@ -119,51 +119,127 @@ describe('the full document', () => {
   })
 })
 
-describe('a document whose members are not in the schema’s order', () => {
-  it('renders every present member in the document’s own order', () => {
-    // `rules` before `outcomes` is how someone wrote this file, and a page
-    // that re-sorted would be showing a document nobody wrote.
-    //
-    // **Every top-level member, not a chosen few.** The list this compares
-    // used to name four pointers and leave the identity members out — and the
-    // identity members were exactly the ones being reordered, because five of
-    // them were drawn as one unit positioned at the earliest of the five. So
-    // the assertion that existed to catch reordering was written around the
-    // reordering that was happening. It is `Object.keys` now: whatever the
-    // document declares, in the order it declares it.
-    const { container } = draw(reordered)
-    const declared = Object.keys(reordered as unknown as Record<string, unknown>).map((key) => `/${key}`)
-    const drawn = pointers(container).filter((pointer) => declared.includes(pointer))
-    expect(drawn).toEqual(declared)
+/**
+ * The schema's root order and its required list, written out here rather than
+ * imported from `members.ts`.
+ *
+ * A test that imports the list the view sorts by is a restatement of the view,
+ * and would agree with it however wrong both were. These two arrays are copied
+ * from `internal/artifacts/jps/0.2.0-draft/schema.json` — `properties` order
+ * and root `required` — and they are the thing the page is being held to.
+ */
+const SCHEMA_ORDER = [
+  'specVersion',
+  'id',
+  'version',
+  'title',
+  'description',
+  'decision',
+  'applicability',
+  'evidenceRequirements',
+  'sources',
+  'outcomes',
+  'rules',
+  'exceptions',
+  'fallbackOutcome',
+  'escalation',
+  'metadata',
+  'extensions'
+]
+const REQUIRED = ['specVersion', 'id', 'version', 'title', 'decision', 'outcomes', 'rules']
+const OPTIONAL = SCHEMA_ORDER.filter((member) => !REQUIRED.includes(member))
+
+/**
+ * The complete top-level sequence this document should draw: its own members in
+ * its own order, with each omitted **optional** member spliced in after the
+ * nearest earlier member the schema puts before it, and a missing required
+ * member drawn not at all.
+ */
+function expectedTopLevel(document: PackDocument): string[] {
+  const declared = Object.keys(document as unknown as Record<string, unknown>)
+  const order = declared.filter((key) => SCHEMA_ORDER.includes(key)).map((key) => `/${key}`)
+  for (const [index, member] of SCHEMA_ORDER.entries()) {
+    if (declared.includes(member) || REQUIRED.includes(member)) continue
+    let anchor = -1
+    for (let earlier = index - 1; earlier >= 0; earlier -= 1) {
+      const at = order.indexOf(`/${SCHEMA_ORDER[earlier]}`)
+      if (at >= 0) {
+        anchor = at
+        break
+      }
+    }
+    order.splice(anchor + 1, 0, `/${member}`)
+  }
+  return order
+}
+
+/** Every top-level pointer the page drew, in the order it drew them. */
+function topLevel(container: HTMLElement): string[] {
+  return pointers(container).filter((pointer) => /^\/[^/]+$/.test(pointer))
+}
+
+describe('the order the page draws', () => {
+  // **One comparison, and nothing filtered out of the actual output.** There
+  // were three assertions here and each looked away from something: the first
+  // removed every omission before comparing, the second only checked
+  // containment, and the third named three pointers by hand. Moving every
+  // omission line to the end of the document would have passed all three.
+  it.each([
+    ['full', full],
+    ['minimal', minimal],
+    ['reordered', reordered]
+  ])('is the document’s own, with the optional omissions spliced in (%s)', (_name, document) => {
+    const { container } = draw(document)
+    expect(topLevel(container)).toEqual(expectedTopLevel(document))
   })
 
-  it('places every omission where the schema would have put it', () => {
-    // The other half of the same claim: the pointers on the page are the
-    // document's own members in the document's order, plus a line for each
-    // canonical member it omits — and nothing else at the top level.
+  it('is the document’s order and not the schema’s, where they differ', () => {
+    // The point of the `reordered` fixture: it writes `decision` before
+    // `specVersion`, `id` and `version`, and the page used to move those three
+    // in front of it.
+    const declared = Object.keys(reordered as unknown as Record<string, unknown>)
+    expect(declared.indexOf('decision')).toBeLessThan(declared.indexOf('specVersion'))
     const { container } = draw(reordered)
-    const declared = new Set(
-      Object.keys(reordered as unknown as Record<string, unknown>).map((key) => `/${key}`)
-    )
-    const topLevel = pointers(container).filter((pointer) => /^\/[^/]+$/.test(pointer))
-    for (const pointer of declared) {
-      expect(topLevel, `${pointer} is drawn`).toContain(pointer)
-    }
-    // Every top-level pointer that is not declared is an omission line saying
-    // so, rather than a block invented by the view.
-    const omitted = topLevel.filter((pointer) => !declared.has(pointer))
-    for (const pointer of omitted) {
-      const block = document.getElementById(pointer)
-      expect(block?.textContent, pointer).toContain('not declared')
-    }
+    const drawn = topLevel(container)
+    expect(drawn.indexOf('/decision')).toBeLessThan(drawn.indexOf('/specVersion'))
+  })
+})
+
+describe('a document missing one of its members', () => {
+  const without = (member: string) => {
+    const copy = JSON.parse(JSON.stringify(full)) as Record<string, unknown>
+    delete copy[member]
+    return copy as unknown as PackDocument
+  }
+
+  it.each(REQUIRED)('draws no block where required %s is missing', (member) => {
+    // The absence of a required member is a refusal, issued by the runtime at
+    // that pointer and printed on the strip where every reader sees it. A "not
+    // declared" line here would take that diagnostic off the strip and hide it
+    // behind a selection nobody has made.
+    const { container } = draw(without(member))
+    expect(topLevel(container)).not.toContain(`/${member}`)
+    expect(document.getElementById(`/${member}`)).toBeNull()
   })
 
-  it('splices each omitted member’s line in at its canonical position', () => {
-    const { container } = draw(minimal)
-    const order = pointers(container).filter((pointer) =>
-      ['/decision', '/applicability', '/evidenceRequirements'].includes(pointer)
+  it.each(OPTIONAL)('states the absence of optional %s', (member) => {
+    const { container } = draw(without(member))
+    expect(topLevel(container)).toContain(`/${member}`)
+    expect(document.getElementById(`/${member}`)?.textContent).toContain('not declared')
+  })
+
+  it.each(REQUIRED)('still has exactly one tab stop without %s', (member) => {
+    // `readingOrder` used to put a missing required member first, and the stop
+    // is the first unit in reading order — so deleting `specVersion` left the
+    // document's one tab stop on a pointer with no element behind it, and the
+    // keyboard could not reach the document at all.
+    const { container } = draw(without(member))
+    const blocks = [...container.querySelectorAll<HTMLElement>('[data-pointer]')].filter(
+      (element) => element.getAttribute('data-pointer') !== ''
     )
-    expect(order).toEqual(['/decision', '/applicability', '/evidenceRequirements'])
+    const stops = blocks.filter((element) => element.getAttribute('tabindex') === '0')
+    expect(stops).toHaveLength(1)
+    expect(document.getElementById(stops[0]!.getAttribute('data-pointer')!)).toBeTruthy()
   })
 })
 

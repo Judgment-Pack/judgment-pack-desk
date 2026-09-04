@@ -36,7 +36,7 @@ import { anchor, isStale, layersReached, truncationNote } from '../packs/checks'
 import { PackDocumentView } from '../packs/document/PackDocumentView'
 import { SelectionContext } from '../packs/document/Block'
 import { PackInspector } from '../packs/inspector/PackInspector'
-import { readingOrder } from '../packs/document/members'
+import { outlineRepresentatives, readingOrder } from '../packs/document/members'
 import { pointerFromHash } from '../packs/pointers'
 import { useDocumentSpy } from '../packs/useDocumentSpy'
 import { useInspectorPortal, useInspectorSlot } from '../shell/InspectorSlot'
@@ -82,11 +82,18 @@ export function PackView() {
    * for a navigation and not for a rerender — which is what keeps it from
    * fighting a viewer who has closed the pane and stayed where they are.
    */
-  const revealedFor = useRef<string | undefined>(undefined)
+  const visited = useRef<string | undefined>(undefined)
   useEffect(() => {
+    // **Every arrival is recorded, whether or not it carries a selection.** It
+    // used to record only the ones that revealed, so an entry without `?at`
+    // returned before writing anything down: select a member (entry K), follow a
+    // link that drops the selection (entry U), close the pane, press Back to K —
+    // and K was still the last key this remembered, so the arrival that Back
+    // *is* looked like the rerender it is not, and the pane stayed shut on an
+    // address that names a member.
+    if (visited.current === locationKey) return
+    visited.current = locationKey
     if (at === null) return
-    if (revealedFor.current === locationKey) return
-    revealedFor.current = locationKey
     slot.reveal()
   }, [at, locationKey, slot])
 
@@ -96,10 +103,10 @@ export function PackView() {
   // say which would be a sentence about neither.
   const fileText = file.data?.content
   const checkedText = fileText ?? pack.data?.raw
-  const checkedWhat =
+  const whichBytes =
     fileText !== undefined
-      ? `checked against the bytes of ${meta?.path ?? 'the file on disk'}`
-      : 'checked against the document the runtime served'
+      ? `the bytes of ${meta?.path ?? 'the file on disk'}`
+      : 'the document the runtime served'
   const check = useValidate(checkedText)
 
   // Which blocks are actually on screen. Read off the DOM rather than derived
@@ -138,6 +145,29 @@ export function PackView() {
   const servedText = pack.data?.raw
   const stale = isStale(check.data?.checkedBytes, servedText)
 
+  /**
+   * Which bytes the check is about — in the tense of what has actually
+   * happened.
+   *
+   * "checked against the bytes of packs/x.pack.json" was printed unconditionally
+   * and stood beside "This runtime does not offer validate, so this document is
+   * unchecked", beside "There are no bytes to check yet", and under "Checking…".
+   * A line that says a check ran, next to a line that says no check ran, is one
+   * of them lying and the reader cannot tell which. So: nothing at all where
+   * there is no check, the present tense while one is in flight, and the past
+   * tense only for a report that has arrived.
+   */
+  const unavailable = checkUnavailable(known, validateSupported, check.error, checkedText)
+  const fetching = check.fetchStatus === 'fetching'
+  const provenance =
+    unavailable !== undefined
+      ? undefined
+      : fetching
+        ? `checking against ${whichBytes}`
+        : check.data !== undefined
+          ? `checked against ${whichBytes}`
+          : undefined
+
   // **No diagnostics at all while stale.** Not "fewer", not "the ones that
   // still anchor": every one of them is about a document that is not the one on
   // the page, and there is no way to tell from a pointer which of them would
@@ -164,11 +194,30 @@ export function PackView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hash, documentKey])
 
-  const outlinePointers = useMemo(
-    () => (pack.data === undefined ? [] : readingOrder(pack.data.document).map((unit) => unit.pointer)),
+  const order = useMemo(
+    () => (pack.data === undefined ? [] : readingOrder(pack.data.document)),
     [pack.data]
   )
-  const active = useDocumentSpy(outlinePointers, at)
+  const outlinePointers = useMemo(() => order.map((unit) => unit.pointer), [order])
+  /**
+   * The outline lists `Identity` once and the page draws its five members
+   * separately, so the spy answers in pointers the nav does not carry.
+   *
+   * `MemberOutline` marks the entry whose pointer *equals* the active one, and
+   * four of the five identity members equal no entry — so reading the version,
+   * or following a link to `/id`, left the nav marking nothing at all. The
+   * answer is translated to the entry that lists it; the entry is the thing the
+   * reader sees.
+   */
+  const representative = useMemo(
+    () =>
+      pack.data === undefined
+        ? new Map<string, string>()
+        : outlineRepresentatives(pack.data.document, order),
+    [pack.data, order]
+  )
+  const seen = useDocumentSpy(outlinePointers, at, documentKey)
+  const active = seen === null ? null : (representative.get(seen) ?? seen)
 
   // The desk's own reading of the file bytes, compared to `JSON.parse`'s. A
   // disagreement is what withholds form mode next phase, and the sentence is
@@ -190,9 +239,9 @@ export function PackView() {
         anchored={anchored}
         truncation={truncationNote(report)}
         stale={stale}
-        pending={check.fetchStatus === 'fetching'}
-        checkedWhat={checkedWhat}
-        unavailable={checkUnavailable(known, validateSupported, check.error, checkedText)}
+        pending={fetching}
+        checkedWhat={provenance}
+        unavailable={unavailable}
         tab={slot.tab}
         onTabChange={slot.setTab}
       />
@@ -234,17 +283,17 @@ export function PackView() {
         </p>
         <div className={styles.strip}>
           <p className={styles.check}>
-            {checkUnavailable(known, validateSupported, check.error, checkedText) ??
+            {unavailable ??
               // Progress is `fetchStatus`, which is about a request being in
               // flight. `isPending` is about there being no data, which a
               // disabled query satisfies for ever.
-              (check.fetchStatus === 'fetching'
+              (fetching
                 ? 'Checking…'
                 : stale
                   ? 'This check ran over different bytes from the ones shown, so nothing it found is placed on this document.'
                   : layersReached(check.data?.report).text)}
           </p>
-          <p className={styles.checkWhat}>{checkedWhat}</p>
+          {provenance !== undefined && <p className={styles.checkWhat}>{provenance}</p>}
           {/*
             The diagnostics that landed on the document itself. `anchor()` sends
             a diagnostic here when neither its own pointer nor any ancestor of

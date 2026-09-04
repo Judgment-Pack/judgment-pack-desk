@@ -20,16 +20,25 @@ afterEach(() => {
 /** An observer a test drives, standing in for a viewport nobody scrolls. */
 function observable() {
   const callbacks: ((entries: { target: Element; isIntersecting: boolean }[]) => void)[] = []
+  const watched: Element[] = []
+  let disconnects = 0
   class Stub {
     constructor(callback: (entries: { target: Element; isIntersecting: boolean }[]) => void) {
       callbacks.push(callback)
     }
-    observe() {}
+    observe(element: Element) {
+      watched.push(element)
+    }
     unobserve() {}
-    disconnect() {}
+    disconnect() {
+      disconnects += 1
+    }
   }
   vi.stubGlobal('IntersectionObserver', Stub)
   return {
+    /** Every element handed to an observer, in order, across observers. */
+    watched: () => [...watched],
+    disconnects: () => disconnects,
     /** Report exactly these pointers as on screen. */
     show(...pointers: string[]) {
       act(() => {
@@ -60,9 +69,29 @@ function observable() {
 
 const POINTERS = ['/title', '/decision', '/rules', '/sources']
 
-function Spy({ pointers, selected }: { pointers: string[]; selected: string | null }) {
-  const active = useDocumentSpy(pointers, selected)
-  return <p data-testid="active">{active ?? 'none'}</p>
+function Spy({
+  pointers,
+  selected,
+  revision = 'the first revision'
+}: {
+  pointers: string[]
+  selected: string | null
+  revision?: string
+}) {
+  const active = useDocumentSpy(pointers, selected, revision)
+  return (
+    <div>
+      {/*
+        The elements the hook looks up by id. Without them `observe` is never
+        called and a test cannot tell an observer that was rebuilt from one that
+        was not — which is how a reset keyed on the wrong thing went unnoticed.
+      */}
+      {pointers.map((pointer) => (
+        <div key={pointer} id={pointer} data-pointer={pointer} />
+      ))}
+      <p data-testid="active">{active ?? 'none'}</p>
+    </div>
+  )
 }
 
 const active = () => screen.getByTestId('active').textContent
@@ -111,6 +140,35 @@ describe('the outline follows the page', () => {
     expect(active()).toBe('/sources')
     viewport.hide('/sources')
     expect(active()).toBe('/title')
+  })
+
+  it('starts again when the document changes under an identical member list', () => {
+    // **The pointer list is not the document.** A refetch that returns another
+    // revision with the same top-level members left this hook untouched: the
+    // answer from the old document stood, and the observer went on watching
+    // element objects the render had already replaced — reporting about nodes
+    // that are not on the page.
+    const viewport = observable()
+    const { rerender } = render(
+      <Spy pointers={POINTERS} selected={null} revision="the first revision" />
+    )
+    viewport.show('/sources')
+    expect(active()).toBe('/sources')
+    const before = viewport.watched().length
+    expect(before).toBe(POINTERS.length)
+
+    act(() => {
+      rerender(<Spy pointers={POINTERS} selected={null} revision="the second revision" />)
+    })
+    expect(active()).toBe('none')
+    expect(viewport.disconnects()).toBe(1)
+    // A second observer, watching the elements that are on the page now — so a
+    // render that replaces them is watched rather than remembered.
+    const after = viewport.watched().slice(before)
+    expect(after).toHaveLength(POINTERS.length)
+    for (const [index, element] of after.entries()) {
+      expect(element).toBe(document.getElementById(POINTERS[index]!))
+    }
   })
 
   it('forgets what it saw when the document changes', () => {

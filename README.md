@@ -525,7 +525,9 @@ reviewer identity, so a review it wrote would be signed by nobody.
 
 The fixtures the whole of this is asserted against are documents `jpack spec
 validate` **reads**, and a test holds every enum-valued member of each of them
-against the spec's own closed lists. Two of the three are accepted outright;
+against the spec's own closed lists — including each condition node's own `op`,
+at every depth, which the walk used to descend through while checking only the
+operators inside `fact` nodes. Two of the three are accepted outright;
 `full.pack.json` is structurally accepted and then refused as `unsupported`
 with exit 2, deliberately — it declares `example.review-window` as a *required*
 extension, which is the case that exists to show a runtime refusing a document

@@ -29,7 +29,18 @@ import { parentPointers } from './pointers'
 
 export function useDocumentSpy(
   pointers: readonly string[],
-  selected: string | null
+  selected: string | null,
+  /**
+   * What makes this document *this* document — its raw bytes, or any key that
+   * changes when the bytes do.
+   *
+   * **The pointer list is not that key.** A refetch that returns a different
+   * revision with the same top-level members leaves `pointers.join(' ')`
+   * identical, so neither effect below re-ran: the answer from the old document
+   * stood, and the observer kept watching element objects the render had
+   * already replaced — it was reporting on nodes that are not on the page.
+   */
+  revision: string
 ): string | null {
   const [seen, setSeen] = useState<string | null>(null)
   const key = pointers.join(' ')
@@ -39,7 +50,7 @@ export function useDocumentSpy(
   // that is no longer on the page. Reset before observing, not after.
   useEffect(() => {
     setSeen(null)
-  }, [key])
+  }, [key, revision])
 
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') return
@@ -65,7 +76,7 @@ export function useDocumentSpy(
       if (element !== null) observer.observe(element)
     }
     return () => observer.disconnect()
-  }, [key])
+  }, [key, revision])
 
   /**
    * **What is on screen wins; the selection is the fallback.**

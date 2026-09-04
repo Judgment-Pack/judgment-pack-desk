@@ -136,6 +136,24 @@ describe('a window over a viewport that has a height', () => {
     expect(listNode().scrollTop).toBe(0)
   })
 
+  it('clamps the scroll when the rows get shorter under the same count', () => {
+    // The other half of the clamp: `count` is unchanged and `rowHeight` is not.
+    // 300 rows at 40px is 12,000px of list; at 20px it is 6,000, and a viewer
+    // scrolled to the bottom of the first is 6,000px past the end of the second.
+    const { rerender } = render(<List count={300} />)
+    scrollTo(11600)
+    expect(windowOf()[0]).toBeGreaterThan(280)
+
+    act(() => {
+      rerender(<List count={300} rowHeight={20} />)
+    })
+    // 300 × 20 − 400 of viewport is the last position there is.
+    expect(listNode().scrollTop).toBe(5600)
+    const [start, end] = windowOf()
+    expect(start).toBeLessThan(300)
+    expect(end).toBe(300)
+  })
+
   it('keeps scrolling after the list is taken away and put back', () => {
     // The listener effect used to depend on the ref object and the row count,
     // and neither changes when a failed refetch removes the list and a

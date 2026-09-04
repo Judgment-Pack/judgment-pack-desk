@@ -171,11 +171,10 @@ function onDocumentKey(
 
 function MemberBlock({ unit, document: doc }: { unit: MemberUnit; document: PackDocument }) {
   if (!unitIsPresent(doc, unit)) {
-    // A required member that is absent renders nothing: its absence is a
-    // refusal the runtime issues at that pointer, and a block here would take
-    // that diagnostic off the strip — where every reader sees it — and put it
-    // behind a selection nobody has made.
-    if (unit.required === true) return null
+    // Only an optional member reaches this: `readingOrder` leaves a missing
+    // required one out of the list entirely, because its absence is a refusal
+    // the runtime issues at that pointer rather than an omission this page
+    // states. Asserted there, and this is the shape that follows from it.
     return (
       <OmittedMember
         pointer={unit.pointer}

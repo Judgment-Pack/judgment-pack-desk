@@ -145,6 +145,32 @@ describe('the References panel', () => {
   })
 })
 
+describe('an id the document declares twice', () => {
+  it('offers every place it is declared and links to none of them as the answer', () => {
+    // **The panel's own half of this.** The data model kept every candidate and
+    // there was a test for that; what a reader sees was held by nothing, and a
+    // panel that quietly linked the first candidate would have passed it.
+    const twice: PackDocument = {
+      ...full,
+      outcomes: [
+        { ...full.outcomes[0]!, id: 'approve' },
+        { ...full.outcomes[1]!, id: 'approve' }
+      ]
+    }
+    draw('/rules/1', { document: twice, tab: 'references' })
+    const panel = screen.getByRole('tabpanel')
+    expect(panel.textContent).toContain('is declared 2 times')
+    expect(panel.textContent).toContain('this document does not say which')
+    // Both places, each reachable, and no single link standing for "the" target.
+    const links = [...panel.querySelectorAll('a')].map((link) => link.getAttribute('href') ?? '')
+    expect(links.some((href) => href.includes(encodeURIComponent('/outcomes/0')))).toBe(true)
+    expect(links.some((href) => href.includes(encodeURIComponent('/outcomes/1')))).toBe(true)
+    // The unambiguous line beside it still resolves, so this is the ambiguity
+    // and not a panel that has stopped linking.
+    expect(links.some((href) => href.includes(encodeURIComponent('/exceptions/0')))).toBe(true)
+  })
+})
+
 describe('the Checks panel', () => {
   it('prints code, layer, severity, provisional and the pointer verbatim', () => {
     draw('/rules/1/when/conditions/0/value', { tab: 'checks' })
@@ -181,6 +207,16 @@ describe('the Checks panel', () => {
     expect(screen.getByRole('tabpanel').textContent).toContain(
       'checked against the bytes of packs/vendor-onboarding.pack.json'
     )
+  })
+
+  it('names none where no check has run', () => {
+    // The route passes no provenance while the check is unavailable or in
+    // flight, because "checked against these bytes" under a panel that has
+    // nothing to report is a sentence about a check nobody made.
+    draw('/outcomes/0', { tab: 'checks', pending: true, anchored: [], checkedWhat: undefined })
+    const panel = screen.getByRole('tabpanel')
+    expect(panel.textContent).toContain('The check has not answered yet.')
+    expect(panel.textContent).not.toContain('checked against')
   })
 
   it('says a check ran over other bytes rather than re-anchoring it', () => {
