@@ -191,3 +191,15 @@ export function diagnosticsFor(
     (entry) => entry.anchor === pointer || entry.anchor.startsWith(`${pointer}/`)
   )
 }
+
+/**
+ * What the strip says about a report the editor has typed past.
+ *
+ * Distinct from the other stale sentence, because the two are different
+ * events: a report about a revision the page never showed is a disagreement
+ * between two sources, and this one is a check that is simply behind somebody's
+ * hands. Both drop every anchor, for the one reason — a pointer computed
+ * against other bytes names a member that has moved.
+ */
+export const CHECK_BEHIND_BUFFER =
+  'This check ran over bytes the editor has moved past, so nothing it found is placed on this document.'

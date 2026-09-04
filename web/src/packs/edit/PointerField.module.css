@@ -1,0 +1,53 @@
+.field {
+  display: block;
+}
+
+.diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.diagnostic {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.code {
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+}
+
+.severity {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+}
+
+.named {
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}
+
+/* The reference lists: a checkbox per candidate the document declares. */
+.list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+}
+
+.listRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+}
+
+.listEmpty {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+}

@@ -1,0 +1,251 @@
+/**
+ * Saving: what is sent, what is compared, and what is never allowed to decide.
+ *
+ * **The check does not gate the save.** The chassis writes bytes and the
+ * runtime judges them, in that order. A desk that refused to write a document
+ * with an outstanding diagnostic would be deciding what may exist on the user's
+ * disk — and an author halfway through fixing one could not save their work.
+ *
+ * **The base moves only where the viewer acts.** A watcher refetch that
+ * rebased would make Save overwrite bytes nobody saw, without the 409 that
+ * exists to prevent exactly that.
+ */
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { chassis, drawPack, forgetSlot, served, PACK_DIGEST, PACK_PATH } from './editHarness'
+import { forgetAuthorBridge } from '../../shell/authorBridge'
+
+const PACK_TEXT = readFileSync(
+  join(import.meta.dirname, '..', '__fixtures__', 'full.pack.json'),
+  'utf8'
+)
+
+const JSON_MODE = '/packs/vendor-onboarding?edit=1&shape=json'
+
+const REFUSED = JSON.stringify({
+  outputVersion: '2',
+  status: 'invalid',
+  layers: [
+    { name: 'carrier', status: 'passed' },
+    { name: 'structural', status: 'failed' }
+  ],
+  diagnostics: [
+    {
+      code: 'JPS-STRUCTURE-DECIMAL-OPERAND',
+      layer: 'structural',
+      severity: 'error',
+      instancePath: '/rules/1/when/conditions/0/value',
+      message: 'An ordered comparison takes a decimal string.'
+    }
+  ],
+  diagnosticsTruncated: false
+})
+
+afterEach(() => {
+  cleanup()
+  forgetSlot()
+  forgetAuthorBridge()
+  vi.unstubAllGlobals()
+})
+
+async function editable(): Promise<HTMLTextAreaElement> {
+  const area = (await screen.findByLabelText("The document's bytes")) as HTMLTextAreaElement
+  await waitFor(() => expect(area.readOnly).toBe(false))
+  return area
+}
+
+describe('what a save sends', () => {
+  it('writes the buffer against the digest the editor loaded', async () => {
+    const log = chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(log.writes).toHaveLength(1))
+    expect(log.writes[0]).toMatchObject({
+      path: PACK_PATH,
+      content: `${PACK_TEXT}\n`,
+      baseSha256: PACK_DIGEST,
+      override: false
+    })
+  })
+
+  it('is not gated on the check — an outstanding diagnostic stays on screen', async () => {
+    const log = chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    drawPack(served(PACK_TEXT, REFUSED), { path: JSON_MODE })
+    const raw = await editable()
+    await waitFor(() =>
+      expect(screen.getByText(/An ordered comparison takes a decimal string/)).toBeTruthy()
+    )
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    const save = await screen.findByRole('button', { name: 'Save' })
+    expect(save.hasAttribute('disabled')).toBe(false)
+    fireEvent.click(save)
+    await waitFor(() => expect(log.writes).toHaveLength(1))
+    // Still there afterwards: the runtime's opinion of the bytes did not stop
+    // them being written and is not withdrawn by their having been.
+    await waitFor(() =>
+      expect(screen.getByText(/An ordered comparison takes a decimal string/)).toBeTruthy()
+    )
+  })
+
+  it('re-asks the runtime about the pack once the bytes have landed', async () => {
+    const log = chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    const { calls } = drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    const before = calls.filter((call) => call.name === 'get_pack').length
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(log.writes).toHaveLength(1))
+    // `get_pack` and `list_packs` are both answers about a file that has just
+    // changed; leaving them cached is a page describing a revision that is gone.
+    await waitFor(() =>
+      expect(calls.filter((call) => call.name === 'get_pack').length).toBeGreaterThan(before)
+    )
+    expect(calls.some((call) => call.name === 'list_packs')).toBe(true)
+  })
+
+  it('goes clean once the read-back matches what was submitted', async () => {
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    await waitFor(() => expect(screen.getByText('unsaved')).toBeTruthy())
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(screen.getByText('saved')).toBeTruthy())
+  })
+})
+
+describe('a file that moved underneath the edit', () => {
+  const ON_DISK = 'e1e1e1'.padEnd(64, '0')
+
+  it('reports the refusal with both digests, and never writes', async () => {
+    const log = chassis({
+      content: PACK_TEXT,
+      sha256: PACK_DIGEST,
+      staleWith: { sha256: ON_DISK }
+    })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('This file changed since you opened it. Nothing was written.')
+    // Both digests, behind the disclosure rather than ahead of the sentence.
+    expect(alert.textContent).toContain(PACK_DIGEST.slice(0, 12))
+    expect(alert.textContent).toContain(ON_DISK.slice(0, 12))
+    // The draft is intact: the buffer still carries the edit.
+    expect((screen.getByLabelText("The document's bytes") as HTMLTextAreaElement).value).toBe(
+      `${PACK_TEXT}\n`
+    )
+    expect(log.writes.every((write) => write.override === false)).toBe(true)
+  })
+
+  it('offers Overwrite as the quiet control and never as the primary one', async () => {
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST, staleWith: { sha256: ON_DISK } })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    const alert = await screen.findByRole('alert')
+    const overwrite = within(alert, 'Overwrite anyway')
+    const reload = within(alert, 'Reload')
+    // A client whose primary button overwrote would have no concurrency story,
+    // only an unstated one.
+    expect(overwrite.className).not.toContain('primary')
+    expect(reload.className).toContain('primary')
+  })
+
+  it('sends override only when the viewer asks for it by name', async () => {
+    const log = chassis({
+      content: PACK_TEXT,
+      sha256: PACK_DIGEST,
+      staleWith: { sha256: ON_DISK }
+    })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    const alert = await screen.findByRole('alert')
+    fireEvent.click(within(alert, 'Overwrite anyway'))
+    await waitFor(() => expect(log.writes).toHaveLength(2))
+    expect(log.writes[1]!.override).toBe(true)
+  })
+
+  it('says what Reload discards, and takes the file on disk', async () => {
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST, staleWith: { sha256: ON_DISK } })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('Reload takes the file on disk and discards these edits')
+    fireEvent.click(within(alert, 'Reload'))
+    await waitFor(() =>
+      expect((screen.getByLabelText("The document's bytes") as HTMLTextAreaElement).value).toBe(
+        PACK_TEXT
+      )
+    )
+  })
+})
+
+describe('the keyboard, and the guard', () => {
+  it('saves on Mod+S from inside the text field the shell suppresses in', async () => {
+    const log = chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    await waitFor(() => expect(screen.getByText('unsaved')).toBeTruthy())
+    fireEvent.keyDown(raw, { key: 's', ctrlKey: true })
+    await waitFor(() => expect(log.writes).toHaveLength(1))
+  })
+
+  it('does not discard on Escape', async () => {
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    await waitFor(() => expect(screen.getByText('unsaved')).toBeTruthy())
+    fireEvent.keyDown(raw, { key: 'Escape' })
+    // A key that threw away an edit without asking is a key nobody presses
+    // twice.
+    expect(screen.getByText('unsaved')).toBeTruthy()
+    expect((screen.getByLabelText("The document's bytes") as HTMLTextAreaElement).value).toBe(
+      `${PACK_TEXT}\n`
+    )
+  })
+
+  it('never prompts on a mode toggle, and prompts on leaving the pack', async () => {
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    const asked: string[] = []
+    vi.stubGlobal('confirm', (question: string) => {
+      asked.push(question)
+      return false
+    })
+    const { router } = drawPack(served(PACK_TEXT), { path: JSON_MODE, nav: true })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    await waitFor(() => expect(screen.getByText('unsaved')).toBeTruthy())
+    // The mode is a search parameter and the blocker's predicate is the
+    // pathname: this is the same page.
+    fireEvent.click(screen.getByRole('radio', { name: 'Form' }))
+    await waitFor(() => expect(router.state.location.search).toContain('edit=1'))
+    expect(asked).toEqual([])
+    // A pathname change with a dirty buffer is the exit the guard exists for.
+    fireEvent.click(screen.getByRole('link', { name: 'go elsewhere' }))
+    await waitFor(() => expect(asked).toHaveLength(1))
+    expect(asked[0]).toContain('unsaved')
+    expect(router.state.location.pathname).toBe('/packs/vendor-onboarding')
+  })
+})
+
+/** One button inside a panel, by the words on it. */
+function within(root: HTMLElement, label: string): HTMLElement {
+  const found = [...root.querySelectorAll('button')].find(
+    (button) => button.textContent?.trim() === label
+  )
+  if (found === undefined) throw new Error(`no button labelled ${label}`)
+  return found
+}

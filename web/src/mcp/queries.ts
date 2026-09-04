@@ -388,10 +388,24 @@ export function useConfiguredGraphs(): {
   }
 }
 
+/**
+ * Where the pack comes from: a project decision id, or the document itself.
+ *
+ * The tool takes `pack` as JSON text **XOR** `pack_id`. Its `required` list is
+ * `["facts"]` alone and the rule is enforced by the handler by hand — both are
+ * refused, and neither is refused — so a caller that could send the two
+ * members independently could send a call the runtime rejects on an argument
+ * mistake rather than on anything about the pack. A discriminated union makes
+ * that unrepresentable here.
+ */
+export type EvaluateSource =
+  /** The project's decision id; the runtime resolves it through jpack.json. */
+  | { source: 'pack_id'; packId: string }
+  /** The document as JSON text — the draft in the editor, unsaved. */
+  | { source: 'pack'; pack: string }
+
 /** The documents one evaluation is run over. */
 export interface EvaluateInput {
-  /** The project's decision id; the runtime resolves it through jpack.json. */
-  packId: string
   /** One JSON facts document, as JSON text. */
   facts: string
   /**
@@ -422,19 +436,28 @@ export interface EvaluateInput {
  * appends a decision nobody took (ADR-0028).
  */
 export function buildEvaluateArguments(
-  input: EvaluateInput,
+  input: EvaluateInput & EvaluateSource,
   rehearsalSupported: boolean
 ): Record<string, unknown> {
-  const args: Record<string, unknown> = { pack_id: input.packId, facts: input.facts }
+  // **One of the two, never both and never neither.** The union is what makes
+  // that so; this is where it reaches the wire.
+  const args: Record<string, unknown> =
+    input.source === 'pack'
+      ? { pack: input.pack, facts: input.facts }
+      : { pack_id: input.packId, facts: input.facts }
   if (input.evidence !== undefined) args.evidence = input.evidence
   if (rehearsalSupported) args.rehearsal = true
   return args
 }
 
-export function useEvaluate(): UseMutationResult<EvaluationRun, Error, EvaluateInput> {
+export function useEvaluate(): UseMutationResult<
+  EvaluationRun,
+  Error,
+  EvaluateInput & EvaluateSource
+> {
   const { client, rehearsalSupported } = useMcp()
   return useMutation({
-    mutationFn: async (input: EvaluateInput) => {
+    mutationFn: async (input: EvaluateInput & EvaluateSource) => {
       if (!client) throw new Error('the desk is not connected to the runtime')
       const args = buildEvaluateArguments(input, rehearsalSupported)
       const { parsed, raw } = await callToolJSON<Evaluation>(

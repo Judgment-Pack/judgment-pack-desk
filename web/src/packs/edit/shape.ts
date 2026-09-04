@@ -147,3 +147,133 @@ export const CONDITION_MEMBERS: Record<string, readonly string[]> = {
   fact: ['op', 'path', 'operator', 'value'],
   'evidence-present': ['op', 'evidenceRequirement']
 }
+
+/**
+ * The order each container declares its members in, from the schema's own
+ * `properties` order — the same mirroring `document/members.ts` does for the
+ * root, extended to the eight `$defs` a form writes into.
+ *
+ * It answers one question and only one: **where a member that is not there yet
+ * goes**. A form field for an absent member has to write it somewhere, and the
+ * two alternatives are both worse than asking the schema. Appending puts
+ * `onUnknown` after `extensions`, which is a document no author would write.
+ * Guessing from the neighbours reproduces whatever order the file already has,
+ * which is fine until the file has one member.
+ *
+ * It is **not** a rule about existing members. A document that writes `rules`
+ * before `outcomes` keeps that order for ever — nothing here re-sorts anything
+ * — because a page that re-ordered what somebody wrote would be showing a
+ * document nobody has.
+ */
+export const MEMBER_ORDER: readonly { shape: RegExp; members: readonly string[] }[] = [
+  // the root's own `properties`
+  {
+    shape: /^$/,
+    members: [
+      'specVersion',
+      'id',
+      'version',
+      'title',
+      'description',
+      'decision',
+      'applicability',
+      'evidenceRequirements',
+      'sources',
+      'outcomes',
+      'rules',
+      'exceptions',
+      'fallbackOutcome',
+      'escalation',
+      'metadata',
+      'extensions'
+    ]
+  },
+  { shape: /^\/decision$/, members: ['intent', 'question', 'extensions'] },
+  {
+    shape: /^\/evidenceRequirements\/\d+$/,
+    members: ['id', 'description', 'required', 'kind', 'extensions']
+  },
+  {
+    shape: /^\/sources\/\d+$/,
+    members: ['id', 'title', 'publisher', 'publishedAt', 'locator', 'citation', 'rights', 'extensions']
+  },
+  { shape: /^\/sources\/\d+\/locator$/, members: ['kind', 'value'] },
+  { shape: /^\/sources\/\d+\/citation$/, members: ['location', 'excerpt'] },
+  { shape: /^\/outcomes\/\d+$/, members: ['id', 'label', 'description', 'extensions'] },
+  {
+    shape: /^\/rules\/\d+$/,
+    members: [
+      'id',
+      'description',
+      'when',
+      'outcome',
+      'onUnknown',
+      'evidenceRequirementRefs',
+      'sourceRefs',
+      'rationale',
+      'extensions'
+    ]
+  },
+  {
+    shape: /^\/exceptions\/\d+$/,
+    members: [
+      'id',
+      'description',
+      'when',
+      'effect',
+      'targetRule',
+      'outcome',
+      'onUnknown',
+      'sourceRefs',
+      'extensions'
+    ]
+  },
+  { shape: /^\/escalation$/, members: ['triggers', 'target', 'message', 'extensions'] },
+  { shape: /^\/escalation\/target$/, members: ['kind', 'name'] },
+  {
+    shape: /^\/metadata$/,
+    members: ['authors', 'createdAt', 'license', 'requiredExtensions', 'reviews', 'extensions']
+  }
+]
+
+/** The schema's member order for one container, or nothing where it declares none. */
+export function memberOrder(containerPointer: string): readonly string[] {
+  return MEMBER_ORDER.find((entry) => entry.shape.test(containerPointer))?.members ?? []
+}
+
+/**
+ * What an *add* writes for a member the document omits — the schema's required
+ * members, empty.
+ *
+ * A line saying a member is not declared needs somewhere for the author to go,
+ * and the only thing to write is what the schema says the member must carry.
+ * An empty object would render a block with no fields in it, because a field
+ * whose container is absent has nothing to splice into; a skeleton renders the
+ * fields and lets `validate` name every one of them that is still empty.
+ *
+ * **Nothing here is a value.** Every string is empty and every list is empty;
+ * the one word that is not — `escalation.target.kind` — is the first of a
+ * closed enum, offered because a `kind` member has to say one of three things
+ * and none of them is nothing. All of it is the author's to change and the
+ * runtime's to judge.
+ */
+export const STARTERS: readonly { shape: RegExp; json: string }[] = [
+  { shape: /^\/description$/, json: '""' },
+  // $defs/condition's simplest node, which is the one the builder can edit.
+  { shape: /^\/applicability$/, json: '{ "op": "literal", "value": true }' },
+  { shape: /^\/evidenceRequirements$/, json: '[]' },
+  { shape: /^\/sources$/, json: '[]' },
+  { shape: /^\/exceptions$/, json: '[]' },
+  { shape: /^\/fallbackOutcome$/, json: '""' },
+  {
+    shape: /^\/escalation$/,
+    json: '{ "triggers": [], "target": { "kind": "human-role", "name": "" } }'
+  },
+  { shape: /^\/metadata$/, json: '{}' },
+  { shape: /^\/extensions$/, json: '{}' }
+]
+
+/** The bytes an *add* writes at this pointer, where the desk knows a shape. */
+export function starterFor(pointer: string): string | undefined {
+  return STARTERS.find((entry) => entry.shape.test(pointer))?.json
+}

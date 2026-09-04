@@ -15,16 +15,18 @@
  *
  * `shape.ts` says what a member may hold. This says how it is written.
  */
+import { pointer as pointerOf, parsePointer } from '../pointers'
 import {
   indexDocument,
   insertMember,
   moveElement,
   removeMember,
   replaceValue,
+  spanAt,
   type DocumentIndex,
   type Placement
 } from '../documentText'
-import { isNonEmptyString } from './shape'
+import { isNonEmptyString, memberOrder } from './shape'
 
 /** The buffer and this desk's reading of it, always in step. */
 export interface Buffered {
@@ -35,6 +37,21 @@ export interface Buffered {
 /** Read a buffer once. Every write below returns one of these. */
 export function buffered(text: string): Buffered {
   return { text, index: indexDocument(text) }
+}
+
+/**
+ * The **exact bytes** one member is written with, or undefined where the
+ * document does not carry it.
+ *
+ * A control over a value that may be any JSON — a `fact` node's operand under
+ * `equals` — has to show what is on disk rather than a re-serialization of it,
+ * or the author's own `5000`, `"5000"` and `5.0` all display alike and the
+ * first keystroke rewrites bytes nobody touched.
+ */
+export function bytesAt(current: Buffered, pointer: string): string | undefined {
+  const span = spanAt(current.index, pointer)
+  if (span === undefined) return undefined
+  return current.text.slice(span.valueStart, span.valueEnd)
 }
 
 function rewritten(text: string): Buffered {
@@ -52,9 +69,67 @@ function rewritten(text: string): Buffered {
  */
 export function setString(current: Buffered, pointer: string, value: string): Buffered {
   if (value === '' && isNonEmptyString(pointer)) {
+    if (spanAt(current.index, pointer) === undefined) return current
     return rewritten(removeMember(current.text, current.index, pointer))
   }
-  return rewritten(replaceValue(current.text, current.index, pointer, JSON.stringify(value)))
+  return place(current, pointer, JSON.stringify(value))
+}
+
+/**
+ * Write one member's bytes, wherever it is — including where it is **not**.
+ *
+ * `replaceValue` splices a span, and a member the document does not declare
+ * has no span: it returned the text unchanged, which is a form field that
+ * silently does nothing. That is the ordinary case for the fields this editor
+ * has to show, because the ones an author reaches for are the ones their draft
+ * omitted — `onUnknown` on an exception is required and is the member most
+ * drafts of one leave out, and the diagnostic that names it anchors on a field
+ * that has to be writable or the diagnostic is a dead end.
+ *
+ * So an absent member is **inserted**, at the position the schema's own
+ * property order gives it, in the layout the container already uses. Nothing
+ * else moves: `insertMember` takes a neighbour's own leading run verbatim, and
+ * every byte outside the inserted span is untouched.
+ */
+function place(current: Buffered, pointer: string, json: string): Buffered {
+  if (spanAt(current.index, pointer) !== undefined) {
+    return rewritten(replaceValue(current.text, current.index, pointer, json))
+  }
+  const parts = parsePointer(pointer)
+  if (parts === undefined || parts.length === 0) return current
+  const name = parts[parts.length - 1]!
+  const container = pointerOf(parts.slice(0, -1))
+  const containerSpan = spanAt(current.index, container)
+  // No container either — an absent rule's absent member. One missing member is
+  // a field; a missing object is a different edit, and inventing the object
+  // around it would write members the author never asked for.
+  if (containerSpan === undefined) return current
+  if (current.text[containerSpan.valueStart] !== '{') return current
+  return rewritten(
+    insertMember(current.text, current.index, container, name, json, placeFor(current, container, name))
+  )
+}
+
+/**
+ * Where a member the document does not declare goes: after the nearest earlier
+ * member the **schema** lists that this document actually has.
+ *
+ * The schema's order is asked rather than the document's, because the document
+ * has nothing to say about a member it does not carry. Where the container
+ * declares no order this desk knows — an `extensions` object, whose keys are
+ * the author's own — the member goes last, which is the only position that
+ * asserts nothing.
+ */
+function placeFor(current: Buffered, container: string, name: string): Placement {
+  const order = memberOrder(container)
+  const at = order.indexOf(name)
+  if (at < 0) return { last: true }
+  const parts = parsePointer(container) ?? []
+  for (let earlier = at - 1; earlier >= 0; earlier -= 1) {
+    const sibling = pointerOf([...parts, order[earlier]!])
+    if (spanAt(current.index, sibling) !== undefined) return { after: sibling }
+  }
+  return { first: true }
 }
 
 /**
@@ -65,12 +140,15 @@ export function setString(current: Buffered, pointer: string, value: string): Bu
  * caller offers a blank option — removes it rather than writing `""`.
  */
 export function setEnum(current: Buffered, pointer: string, value: string): Buffered {
-  if (value === '') return rewritten(removeMember(current.text, current.index, pointer))
-  return rewritten(replaceValue(current.text, current.index, pointer, JSON.stringify(value)))
+  if (value === '') {
+    if (spanAt(current.index, pointer) === undefined) return current
+    return rewritten(removeMember(current.text, current.index, pointer))
+  }
+  return place(current, pointer, JSON.stringify(value))
 }
 
 export function setBoolean(current: Buffered, pointer: string, value: boolean): Buffered {
-  return rewritten(replaceValue(current.text, current.index, pointer, value ? 'true' : 'false'))
+  return place(current, pointer, value ? 'true' : 'false')
 }
 
 /**
@@ -83,7 +161,7 @@ export function setBoolean(current: Buffered, pointer: string, value: boolean): 
  * issues by name rather than an omission the desk decides on their behalf.
  */
 export function setStringList(current: Buffered, pointer: string, values: readonly string[]): Buffered {
-  return rewritten(replaceValue(current.text, current.index, pointer, JSON.stringify(values)))
+  return place(current, pointer, JSON.stringify(values))
 }
 
 /**
@@ -96,7 +174,7 @@ export function setStringList(current: Buffered, pointer: string, values: readon
  * runtime does not share.
  */
 export function setRawJson(current: Buffered, pointer: string, json: string): Buffered {
-  return rewritten(replaceValue(current.text, current.index, pointer, json))
+  return place(current, pointer, json)
 }
 
 /** Take one member out, with exactly one adjacent comma. */

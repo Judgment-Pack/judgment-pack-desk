@@ -11,10 +11,14 @@
  * which is a nav question and is answered where nav is decided.
  */
 import type { PackDocument } from '../../mcp/types'
+import { useEditing } from '../edit/editingContext'
+import { StringField, TextField } from '../edit/fields'
 import { Block } from './Block'
 import styles from './PackDocument.module.css'
 
 export function TitleBlock({ document: doc }: { document: PackDocument }) {
+  const { editing } = useEditing()
+  if (editing) return <StringField pointer="/title" label="title" />
   return (
     <Block pointer="/title" className={styles.identity}>
       <p className={styles.eyebrow}>
@@ -25,6 +29,8 @@ export function TitleBlock({ document: doc }: { document: PackDocument }) {
 }
 
 export function VersionBlock({ document: doc }: { document: PackDocument }) {
+  const { editing } = useEditing()
+  if (editing) return <StringField pointer="/version" label="version" />
   return (
     <Block pointer="/version" className={styles.identity}>
       <p className={styles.eyebrow}>
@@ -35,6 +41,12 @@ export function VersionBlock({ document: doc }: { document: PackDocument }) {
 }
 
 export function SpecVersionBlock({ document: doc }: { document: PackDocument }) {
+  const { editing } = useEditing()
+  // Editable, and deliberately a plain field rather than a list to choose
+  // from. The runtime refuses a version it does not bundle, by name, at this
+  // pointer — so a Select over the versions this desk happens to know would be
+  // this desk deciding which specifications exist.
+  if (editing) return <StringField pointer="/specVersion" label="specVersion" />
   return (
     <Block pointer="/specVersion" className={styles.identity}>
       <p className={styles.eyebrow}>
@@ -45,6 +57,8 @@ export function SpecVersionBlock({ document: doc }: { document: PackDocument }) 
 }
 
 export function IdBlock({ document: doc }: { document: PackDocument }) {
+  const { editing } = useEditing()
+  if (editing) return <StringField pointer="/id" label="id" />
   return (
     <Block pointer="/id" className={styles.identity}>
       <p className={styles.identityId}>
@@ -55,6 +69,8 @@ export function IdBlock({ document: doc }: { document: PackDocument }) {
 }
 
 export function DescriptionBlock({ document: doc }: { document: PackDocument }) {
+  const { editing } = useEditing()
+  if (editing) return <TextField pointer="/description" label="description" />
   return (
     <Block pointer="/description" className={styles.identity}>
       <p className={styles.identityDescription}>{doc.description}</p>

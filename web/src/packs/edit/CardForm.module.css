@@ -1,0 +1,54 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.when {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.whenLabel {
+  margin: 0;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+}
+
+.absent {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.absentTag {
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}
+
+.moves {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.position {
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}
+
+.announcement {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}

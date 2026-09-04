@@ -60,6 +60,18 @@ export function useDocumentCursor(): DocumentCursor {
   return useContext(CursorContext)
 }
 
+/** Whether a click landed on something that is its own control. */
+function insideControl(target: unknown): boolean {
+  if (target === null || typeof target !== 'object') return false
+  const element = target as { closest?: (selector: string) => unknown }
+  if (typeof element.closest !== 'function') return false
+  return (
+    element.closest(
+      'a, button, input, select, textarea, label, [role="combobox"], [role="radio"], [role="checkbox"]'
+    ) !== null
+  )
+}
+
 export function Block({
   pointer,
   as,
@@ -88,10 +100,18 @@ export function Block({
       className={[styles.block, selected ? styles.selected : undefined, className]
         .filter(Boolean)
         .join(' ')}
-      onClick={(event: { stopPropagation: () => void }) => {
+      onClick={(event: { stopPropagation: () => void; target: unknown }) => {
         // The innermost block wins: a click on a condition operand selects the
         // operand, not the rule that contains it.
         event.stopPropagation()
+        // **A block that wraps a control does not steal the click.** In edit
+        // mode a block's contents are an input, a select or a button, and
+        // clicking one of those is a gesture about that control — typing into
+        // a field must not also move the Inspector's selection and the
+        // document's tab stop out from under the caret. The key handler in
+        // `PackDocumentView` already skips these elements; this is the click
+        // path, which did not.
+        if (insideControl(event.target)) return
         select(pointer)
         cursor.move(pointer)
       }}

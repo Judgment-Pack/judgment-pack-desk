@@ -22,7 +22,9 @@ import {
   ENUMS,
   LOCAL_ID,
   isNonEmptyString,
-  operandControl
+  memberOrder,
+  operandControl,
+  starterFor
 } from './shape'
 
 const FIXTURES = join(import.meta.dirname, '..', '__fixtures__')
@@ -146,3 +148,92 @@ function conditions(document: Record<string, unknown>): Record<string, unknown>[
   for (const exception of list(document.exceptions)) walk(at(exception, 'when'))
   return found
 }
+
+/**
+ * Where a member that is not there yet goes, and what an *add* writes.
+ *
+ * Both are read off the schema rather than decided here: the order is the
+ * container's own `properties` order, and a starter is the required members it
+ * declares, empty.
+ */
+describe('the schema’s member order', () => {
+  it('gives the root the order the fixtures are written in', () => {
+    // The fixtures are documents `jpack spec validate` accepts, and the
+    // reordered one is deliberately not in schema order — so the *conformant,
+    // conventionally ordered* fixture is what this is held against.
+    const order = memberOrder('')
+    const written = Object.keys(load('full.pack.json'))
+    const positions = written.map((name) => order.indexOf(name))
+    expect(positions.every((position) => position >= 0)).toBe(true)
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions)
+  })
+
+  it.each([
+    ['/rules/0', ['id', 'description', 'when', 'outcome', 'onUnknown']],
+    ['/exceptions/3', ['id', 'description', 'when', 'effect']],
+    ['/sources/1', ['id', 'title', 'publisher']],
+    ['/escalation', ['triggers', 'target', 'message']],
+    ['/decision', ['intent', 'question', 'extensions']]
+  ])('knows %s', (container, expected) => {
+    const order = memberOrder(container)
+    expect(order.slice(0, expected.length)).toEqual(expected)
+  })
+
+  it('has nothing to say about a container it has never seen', () => {
+    // An `extensions` object's keys are the author's own, so the only honest
+    // position for a new one is last — which is what an empty order produces.
+    expect(memberOrder('/extensions')).toEqual([])
+    expect(memberOrder('/rules/0/extensions')).toEqual([])
+  })
+
+  it('places every rule member the exceptions fixture writes', () => {
+    for (const exception of list(load('exceptions.pack.json').exceptions)) {
+      for (const name of Object.keys(exception as Record<string, unknown>)) {
+        expect(memberOrder('/exceptions/0')).toContain(name)
+      }
+    }
+  })
+})
+
+describe('what an add writes', () => {
+  it('is JSON, and carries no value of its own', () => {
+    for (const pointer of [
+      '/description',
+      '/applicability',
+      '/evidenceRequirements',
+      '/sources',
+      '/exceptions',
+      '/fallbackOutcome',
+      '/escalation',
+      '/metadata',
+      '/extensions'
+    ]) {
+      const starter = starterFor(pointer)
+      expect(starter, pointer).toBeDefined()
+      expect(() => JSON.parse(starter!)).not.toThrow()
+    }
+    expect(starterFor('/description')).toBe('""')
+    expect(starterFor('/evidenceRequirements')).toBe('[]')
+  })
+
+  it('writes the required members of an object, empty', () => {
+    // `escalation` requires `triggers` and `target`, and a `target` requires
+    // both of its own members. An empty object would render a block with no
+    // fields in it, because a field whose container is absent has nothing to
+    // splice into.
+    const escalation = JSON.parse(starterFor('/escalation')!) as {
+      triggers: unknown[]
+      target: { kind: string; name: string }
+    }
+    expect(escalation.triggers).toEqual([])
+    expect(escalation.target.name).toBe('')
+    // The one word that is not empty is a closed enum's first value, because a
+    // `kind` has to say one of three things and none of them is nothing.
+    expect(ENUMS.targetKind).toContain(escalation.target.kind)
+  })
+
+  it('offers nothing for a member this desk knows no shape for', () => {
+    expect(starterFor('/rules')).toBeUndefined()
+    expect(starterFor('/decision')).toBeUndefined()
+  })
+})

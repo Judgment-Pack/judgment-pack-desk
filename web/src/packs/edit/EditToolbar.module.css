@@ -1,0 +1,7 @@
+.dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  flex: 0 0 auto;
+  border-radius: var(--radius-sm);
+  background: var(--warn);
+}

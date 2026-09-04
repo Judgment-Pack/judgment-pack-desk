@@ -128,3 +128,54 @@ describe('moving a rule', () => {
     expect(after.text.slice(span.valueStart, span.valueEnd)).toBe('"approve-when-clear"')
   })
 })
+
+/**
+ * The member that is not there yet.
+ *
+ * `replaceValue` splices a span, and an absent member has none: it returned
+ * the text unchanged, which is a form field that silently does nothing. The
+ * fields an editor actually reaches for are the ones the draft omitted — an
+ * exception's `onUnknown` is required and is the member most drafts of one
+ * leave out — so a write has to be able to put one in.
+ */
+describe('writing a member the document does not carry', () => {
+  const MINIMAL = read('minimal.pack.json')
+
+  it('inserts it at the position the schema’s own property order gives it', () => {
+    const before = buffered(MINIMAL)
+    expect(spanAt(before.index, '/description')).toBeUndefined()
+    const after = setString(before, '/description', 'What this pack is for.')
+    const text = after.text
+    // Between `title` and `decision`, which is where the root's `properties`
+    // order puts it — not appended after `rules`, which is a document no
+    // author would write.
+    expect(text.indexOf('"description"')).toBeGreaterThan(text.indexOf('"title"'))
+    expect(text.indexOf('"description"')).toBeLessThan(text.indexOf('"decision"'))
+    expect((after.index.value as { description: string }).description).toBe('What this pack is for.')
+  })
+
+  it('takes a neighbour’s own layout rather than inventing one', () => {
+    const after = setString(buffered(MINIMAL), '/description', 'x')
+    const indent = /\n(\s*)"title"/.exec(MINIMAL)![1]
+    expect(after.text).toContain(`\n${indent}"description": "x"`)
+  })
+
+  it('writes the required member an exception omits, at its own pointer', () => {
+    const without = read('exceptions.pack.json').replace(/\n\s*"onUnknown": "[a-z]+",/, '')
+    const after = setEnum(buffered(without), '/exceptions/0/onUnknown', 'escalate')
+    const value = after.index.value as { exceptions: { onUnknown: string }[] }
+    expect(value.exceptions[0]!.onUnknown).toBe('escalate')
+  })
+
+  it('writes nothing where the container itself is absent', () => {
+    // One missing member is a field. A missing object is a different edit, and
+    // inventing the object around it would write members nobody asked for.
+    const before = buffered(MINIMAL)
+    expect(setString(before, '/escalation/message', 'anything').text).toBe(MINIMAL)
+  })
+
+  it('does not write an empty string for a nonEmptyString that is simply absent', () => {
+    const before = buffered(MINIMAL)
+    expect(setString(before, '/description', '').text).toBe(MINIMAL)
+  })
+})

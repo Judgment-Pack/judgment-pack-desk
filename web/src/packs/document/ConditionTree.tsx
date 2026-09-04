@@ -21,6 +21,7 @@
  */
 import type { ReactNode } from 'react'
 import type { Condition } from '../../mcp/types'
+import { conditionKind } from '../edit/conditionOps'
 import { Block } from './Block'
 import styles from './PackDocument.module.css'
 
@@ -41,7 +42,15 @@ function ConditionNode({
   at: string
   depth: number
 }) {
-  if (typeof condition !== 'object' || condition === null || Array.isArray(condition)) {
+  // **The one discrimination.** `edit/conditionOps.ts` decides what kind a node
+  // is, and the builder reads it from there too: two spellings of "what makes a
+  // node a `fact`" is a tree that draws one thing while the form edits another,
+  // which for a condition is the difference between the policy on screen and
+  // the policy on disk.
+  const kind = conditionKind(condition)
+  if (kind === 'other') {
+    // A node this desk has never seen — or a value that is not a node at all.
+    // Printed, not dropped.
     return (
       <Row at={at} depth={depth}>
         <code className={styles.literal}>{JSON.stringify(condition)}</code>
@@ -50,7 +59,7 @@ function ConditionNode({
   }
   const node = condition as Condition
 
-  if (node.op === 'all' || node.op === 'any') {
+  if (kind === 'all' || kind === 'any') {
     const children = Array.isArray(node.conditions) ? node.conditions : []
     return (
       <>
@@ -69,7 +78,7 @@ function ConditionNode({
     )
   }
 
-  if (node.op === 'not') {
+  if (kind === 'not') {
     return (
       <>
         <Row at={at} depth={depth}>
@@ -80,7 +89,7 @@ function ConditionNode({
     )
   }
 
-  if (node.op === 'fact') {
+  if (kind === 'fact') {
     return (
       <Row at={at} depth={depth}>
         <Block pointer={`${at}/path`} as="code" className={styles.factPath}>
@@ -96,7 +105,7 @@ function ConditionNode({
     )
   }
 
-  if (node.op === 'evidence-present') {
+  if (kind === 'evidence-present') {
     return (
       <Row at={at} depth={depth}>
         <span className={styles.op}>evidence-present</span>{' '}
@@ -107,7 +116,7 @@ function ConditionNode({
     )
   }
 
-  if (node.op === 'literal') {
+  if (kind === 'literal') {
     return (
       <Row at={at} depth={depth}>
         <span className={styles.op}>literal</span>{' '}
@@ -118,12 +127,7 @@ function ConditionNode({
     )
   }
 
-  // A kind this desk has never seen. Printed, not dropped.
-  return (
-    <Row at={at} depth={depth}>
-      <code className={styles.literal}>{JSON.stringify(condition)}</code>
-    </Row>
-  )
+  return null
 }
 
 function Row({

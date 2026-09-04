@@ -1,0 +1,65 @@
+.tree {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.node {
+  display: block;
+}
+
+.frame {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.kindLabel {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+}
+
+.children {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-left: 0.9rem;
+  border-left: 2px solid var(--border);
+}
+
+.fact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.empty {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+}
+
+.unknown {
+  margin: 0;
+  overflow-x: auto;
+  font-size: 0.78rem;
+}
+
+.unknownNote {
+  margin: 0.2rem 0 0;
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}
