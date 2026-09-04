@@ -130,18 +130,24 @@ describe('the packs pane', () => {
   })
 
   it('moves focus between rows with the arrow keys, Home and End', async () => {
+    // **The destination element itself, not text that contains its name.**
+    // Focus lost to `document.body` leaves `activeElement.textContent`
+    // carrying every rendered row, so `toContain('b-pack')` passed with focus
+    // on nothing at all: taking focus and dropping it again left all 1,043
+    // tests green. Identity is the only assertion that says focus is *there*.
     draw(packs(['a-pack', 'b-pack', 'c-pack']))
     const first = await screen.findByRole('link', { name: /a-pack/ })
+    const row = (name: string) => screen.getByRole('link', { name: new RegExp(name) })
     first.focus()
     fireEvent.keyDown(first, { key: 'ArrowDown' })
-    expect(document.activeElement?.textContent).toContain('b-pack')
+    expect(document.activeElement).toBe(row('b-pack'))
     fireEvent.keyDown(document.activeElement!, { key: 'End' })
-    expect(document.activeElement?.textContent).toContain('c-pack')
+    expect(document.activeElement).toBe(row('c-pack'))
     fireEvent.keyDown(document.activeElement!, { key: 'Home' })
-    expect(document.activeElement?.textContent).toContain('a-pack')
+    expect(document.activeElement).toBe(row('a-pack'))
     fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' })
     // Already at the top: focus stays rather than wrapping to the bottom.
-    expect(document.activeElement?.textContent).toContain('a-pack')
+    expect(document.activeElement).toBe(row('a-pack'))
   })
 
   it('reaches the last row of a windowed list, and focuses it there', async () => {
@@ -164,10 +170,17 @@ describe('the packs pane', () => {
     const first = screen.getByRole('link', { name: /pack-000/ })
     first.focus()
     fireEvent.keyDown(first, { key: 'End' })
-    await waitFor(() => expect(document.activeElement?.textContent).toContain('pack-299'))
+    // The row that was brought in, and focus on that element — a window whose
+    // rows are all inside `document.body` makes a text match true the moment
+    // the destination is *rendered*, whether or not anything focused it.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('link', { name: /pack-299/ }))
+    )
 
     fireEvent.keyDown(document.activeElement!, { key: 'Home' })
-    await waitFor(() => expect(document.activeElement?.textContent).toContain('pack-000'))
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('link', { name: /pack-000/ }))
+    )
   })
 
   it('shows a refused listing as the failure, not as an empty project', async () => {
