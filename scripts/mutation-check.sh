@@ -2042,14 +2042,17 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '      {false && ('
 
   # The two other views on this pack, which nothing else links to.
+  # Re-pinned: the two standing links and the way into edit mode moved out of
+  # the document view, so they can also stand beside the raw bytes — which is
+  # the only view of a file the runtime will not serve.
   mutate web "the what-if view loses its last way in" "$PV" \
-    '                    <Link
-                      className={styles.elsewhereLink}
-                      to={`/packs/${encodeURIComponent(packId ?? '"''"')}/evaluate`}
-                    >
-                      Try it
-                    </Link>' \
-    '                    {null}'
+    '      <Link
+        className={styles.elsewhereLink}
+        to={`/packs/${encodeURIComponent(packId ?? '"''"')}/evaluate`}
+      >
+        Try it
+      </Link>' \
+    '      {null}'
 
   # Selecting with the pane closed.
   mutate web "an address that arrives with a selection opens no pane" "$PV" \
@@ -2290,15 +2293,25 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '    setStack([])
     onDiscard?.()' \
     '    setStack([])'
-  # **Repaired.** The obvious mutant — dropping the `base === undefined` guard
+  # **Repaired, and re-pinned.** The obvious mutant — dropping the guard
   # outright — rebases on every render and hangs the suite, which the harness
   # reports as INCONCLUSIVE: caught, and caught in a way that names no test.
-  # This one is the defect itself and nothing else: a watcher answer carrying
-  # different bytes silently becomes the base, so the save that follows
-  # overwrites a change nobody saw without the 409 that exists to prevent it.
+  # This one is the defect itself and nothing else: the seed is keyed on the
+  # bytes rather than on the path, so a watcher answer carrying different bytes
+  # silently becomes the base and the save that follows overwrites a change
+  # nobody saw, without the 409 that exists to prevent it.
   mutate web "the base moves on a watcher refetch" "$BUF" \
-    '    if (loaded !== undefined && base === undefined) {' \
-    '    if (loaded !== undefined && loaded.content !== base?.content) {'
+    '    if (loaded === undefined || seeded.current === loaded.path) return' \
+    '    if (loaded === undefined || seeded.current === loaded.content) return'
+  # The other half of the same line, and the defect this PR's round found: the
+  # buffer seeded once and never again, so another pack drew the first one.
+  mutate web "the buffer stays on the pack it opened" "$BUF" \
+    '    if (loaded === undefined || seeded.current === loaded.path) return' \
+    '    if (loaded === undefined || seeded.current !== undefined) return'
+  mutate web "the undo stack survives a change of pack" "$BUF" \
+    '    setStack([])
+  }, [loaded])' \
+    '  }, [loaded])'
 
   # The builder shapes and never refuses, and it never retypes what an author
   # wrote.
@@ -2352,18 +2365,26 @@ if [ "$which" = all ] || [ "$which" = web ]; then
       if ((check.data?.report.diagnostics?.length ?? 0) > 0) return
       // The check runs before the save'
   mutate web "Mod+S is swallowed inside the field it exists to fire in" "$PV" \
-    '    if (!editing || !buffer.dirty) return
-    event.preventDefault()' \
-    '    if (!editing || !buffer.dirty) return
-    if ((event.target as HTMLElement).tagName === "TEXTAREA") return
-    event.preventDefault()'
+    '      if (event.altKey || event.shiftKey) return
+      event.preventDefault()' \
+    '      if (event.altKey || event.shiftKey) return
+      if ((event.target as HTMLElement).tagName === "TEXTAREA") return
+      event.preventDefault()'
+  # And the other end of the same chord: `document.body` is where focus sits
+  # the moment edit mode opens, because the Edit button unmounts itself.
+  mutate web "Mod+S is a subtree’s chord again, so the body reaches nothing" "$PV" \
+    '      if (event.altKey || event.shiftKey) return
+      event.preventDefault()' \
+    '      if (event.altKey || event.shiftKey) return
+      if (event.target === document.body) return
+      event.preventDefault()'
   mutate web "Escape discards the buffer" "$PV" \
-    '  const onEditorKey = (event: KeyboardEvent<HTMLElement>) => {' \
-    '  const onEditorKey = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key === "Escape") {
-      buffer.discard()
-      return
-    }'
+    '    const onKey = (event: globalThis.KeyboardEvent) => {' \
+    '    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        buffer.discard()
+        return
+      }'
 
   # A diagnostic that is on screen and not described to its control is a
   # diagnostic a screen reader never reaches.
@@ -2435,6 +2456,128 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the packs pane never takes focus to the row it arrowed to" "$PN" \
     '              if (already instanceof HTMLElement) already.focus()' \
     '              if (already instanceof HTMLElement) void already'
+
+  # ---------------------------------------------------------------------
+  # The verification round. Each row is one finding, broken again.
+  # ---------------------------------------------------------------------
+  ECX=web/src/packs/edit/editingContext.ts
+  FLD=web/src/packs/edit/fields.tsx
+  MTB=web/src/packs/inspector/MemberTab.tsx
+  ETB=web/src/packs/edit/EditToolbar.tsx
+  SHP=web/src/packs/edit/shape.ts
+  RCD=web/src/packs/document/RuleCard.tsx
+
+  # The buffer is a document somebody is halfway through writing, and every
+  # reader of it has to be able to say so.
+  mutate web "a member that is not a list is mapped over anyway" "$ECX" \
+    '    (Array.isArray(entries) ? (entries as { id?: unknown }[]) : [])' \
+    '    ((entries ?? []) as { id?: unknown }[])'
+
+  # The page is over the file, and everything it says about the file has to be
+  # about the bytes the editor holds.
+  mutate web "the provenance line survives an unsaved edit" "$MTB" \
+    '  const bound =
+    dirty !== true &&
+    meta.sha256 !== undefined &&' \
+    '  const bound =
+    meta.sha256 !== undefined &&'
+
+  # A control over a member the document does not carry writes nothing, and a
+  # form that draws one is a form that takes a keystroke and loses it.
+  mutate web "a field over an absent object is drawn as writable" "$FLD" \
+    '  if (valueAt(buffer.index.value, pointer) !== undefined) return <>{children}</>' \
+    '  if (valueAt(buffer.index.value, pointer) !== NOT_DECLARED) return <>{children}</>'
+  mutate web "the blank option is the empty string ui/Select says is never offered" "$FLD" \
+    "            ...(optional === true ? [{ value: NOT_DECLARED, label: 'not declared' }] : []),
+            ...declared.map((word) => ({ value: word, label: word }))," \
+    "            ...(optional === true ? [{ value: '', label: 'not declared' }] : []),
+            ...declared.map((word) => ({ value: word, label: word })),"
+
+  # A node the document does not carry is not a kind this desk has never seen.
+  mutate web "a removed condition is called a kind this desk does not know" "$CB" \
+    '  if (node === undefined) {' \
+    '  if (node === undefined && depth < 0) {'
+  # The unwritten operand, which both exits from the form used to lose.
+  mutate web "an unwritten operand is the field’s own again" "$CB" \
+    '    hold(at, { text: next, from: held })' \
+    '    hold(at, null)'
+  mutate web "the toolbar says nothing about a field that is not written" "$ETB" \
+    '          {unwritten > 0 && (' \
+    '          {unwritten > 99 && ('
+
+  # One word, spliced, where the new kind needs no member the old node lacks.
+  mutate web "a kind change re-serializes a subtree it only renamed" "$COP" \
+    '  if (carriesExactly(before, members)) return setOp(current, pointer, kind)' \
+    '  if (carriesExactly(before, members) && kind === "nothing") return setOp(current, pointer, kind)'
+
+  # A move exchanges bodies. The whitespace belongs to the position.
+  mutate web "a move drops the run in front of a comma" "$DT" \
+    "      const separator = position === bodies.length - 1 ? '' : \`\${slot.trail},\`" \
+    "      const separator = position === bodies.length - 1 ? '' : ','"
+  mutate web "an element drags its own indentation across a move" "$DT" \
+    '  const rebuilt = bodies' \
+    '  const [carried] = parts.splice(from, 1)
+  parts.splice(to, 0, carried!)
+  const rebuilt = bodies'
+
+  # The mirrored schema, and the objects an offer writes.
+  mutate web "the mirrored nonEmptyString list loses a member" "$SHP" \
+    '  /^\/metadata\/authors\/\d+$/,
+' \
+    ''
+  mutate web "there is nothing to write for an absent required object" "$SHP" \
+    "  { shape: /^\/escalation\/target$/, json: '{ \"kind\": \"human-role\", \"name\": \"\" }' }" \
+    "  { shape: /^\/escalation\/nowhere$/, json: '{ \"kind\": \"human-role\", \"name\": \"\" }' }"
+
+  # The chord is on the element the move focuses.
+  mutate web "the move chord is bound inside the card again" "$RCD" \
+    '      <Block pointer={at} as="li" className={styles.card} onKeyDown={order?.onKeyDown}>' \
+    '      <Block pointer={at} as="li" className={styles.card}>'
+
+  # The confirmation is about the bytes it confirmed.
+  mutate web "the rehearsal confirmation is a flag again" "$TIP" \
+    '  const armed = armedFor !== null && armedFor === buffer' \
+    '  const armed = armedFor !== null'
+
+  # Both digests, whole, for a reader comparing against sha256sum.
+  mutate web "the stale-write alert carries only the twelve characters it prints" "$SWA" \
+    '            <code title={stale.expectedSha256}>sha256 {digest(stale.expectedSha256)}</code>' \
+    '            <code>sha256 {digest(stale.expectedSha256)}</code>'
+
+  # A pattern is not something to read aloud.
+  mutate web "the id hint prints the pattern at the author" "$CF" \
+    "const ID_HINT = 'lowercase letters, digits and hyphens; starts with a letter.'" \
+    "const ID_HINT = 'a local id — ^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\$'"
+
+  # The route: the refusal, the path, the mode, the measurement, the key.
+  mutate web "a refusal replaces the page that could repair it" "$PV" \
+    '  if (pack.error && file.data === undefined) {' \
+    '  if (pack.error) {'
+  mutate web "the path is only ever the one get_pack names" "$PV" \
+    '  const path = meta?.path ?? summary?.path' \
+    '  const path = meta?.path'
+  mutate web "read mode hands over an editable buffer" "$PV" \
+    '                  readOnly={!editing || buffer.base === undefined}' \
+    '                  readOnly={buffer.base === undefined}'
+  mutate web "the last write’s verdict follows the viewer to another pack" "$PV" \
+    '    if (first) return
+    reset()' \
+    '    if (first) return'
+  mutate web "the what-if placement measures the box it resizes" "$PV" \
+    '        <div className={styles.workspace} ref={setFrame}>
+          <div className={styles.column}>' \
+    '        <div className={styles.workspace}>
+          <div className={styles.column} ref={setFrame}>'
+  mutate web "the outline is rebuilt on every keystroke" "$PV" \
+    "  const documentKey = \`\${idle.checkedText ?? shownText ?? ''}|\${editing ? shape : 'read'}\`" \
+    "  const documentKey = \`\${shownText ?? ''}|\${editing ? shape : 'read'}\`"
+  mutate web "a deep link stops at the group instead of the control" "$PV" \
+    "    const control = element.querySelector('input, textarea, [role=\"combobox\"]')" \
+    "    const control = element.querySelector('nothing-at-all')"
+  mutate web "a field group cannot take focus at all" "$PF" \
+    '      tabIndex={-1}
+      className={styles.field}' \
+    '      className={styles.field}'
 fi
 
 restore
