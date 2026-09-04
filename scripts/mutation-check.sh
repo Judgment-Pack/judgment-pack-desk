@@ -2287,9 +2287,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '    setStack([])
     onDiscard?.()' \
     '    setStack([])'
+  # **Repaired.** The obvious mutant — dropping the `base === undefined` guard
+  # outright — rebases on every render and hangs the suite, which the harness
+  # reports as INCONCLUSIVE: caught, and caught in a way that names no test.
+  # This one is the defect itself and nothing else: a watcher answer carrying
+  # different bytes silently becomes the base, so the save that follows
+  # overwrites a change nobody saw without the 409 that exists to prevent it.
   mutate web "the base moves on a watcher refetch" "$BUF" \
     '    if (loaded !== undefined && base === undefined) {' \
-    '    if (loaded !== undefined) {'
+    '    if (loaded !== undefined && loaded.content !== base?.content) {'
 
   # The builder shapes and never refuses, and it never retypes what an author
   # wrote.

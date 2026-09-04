@@ -428,32 +428,32 @@ export function PackView() {
               the two standing links, below.
             */}
             {editing && (
-            <EditToolbar
-              editing={editing}
-              shape={shape}
-              shapeAvailable={formAvailable}
-              dirty={buffer.dirty}
-              saving={editor.write.isPending}
-              checking={fetching}
-              tryingIt={tryingIt}
-              canUndo={buffer.canUndo}
-              onEditing={(next) => setParams(withEditing(params, next), { replace: true })}
-              onShape={(next) => setParams(withShape(params, next), { replace: true })}
-              onCheck={idle.checkNow}
-              onTryIt={() => {
-                setTryingIt((was) => {
-                  const next = !was
-                  // Where the pane cannot fit beside the editor it takes the
-                  // Inspector's place, and a closed Inspector has nowhere to
-                  // publish into.
-                  if (next && !roomInMain) slot.reveal()
-                  return next
-                })
-              }}
-              onUndo={buffer.undo}
-              onDiscard={buffer.discard}
-              onSave={() => save()}
-            />
+              <EditToolbar
+                editing={editing}
+                shape={shape}
+                shapeAvailable={formAvailable}
+                dirty={buffer.dirty}
+                saving={editor.write.isPending}
+                checking={fetching}
+                tryingIt={tryingIt}
+                canUndo={buffer.canUndo}
+                onEditing={(next) => setParams(withEditing(params, next), { replace: true })}
+                onShape={(next) => setParams(withShape(params, next), { replace: true })}
+                onCheck={idle.checkNow}
+                onTryIt={() => {
+                  setTryingIt((was) => {
+                    const next = !was
+                    // Where the pane cannot fit beside the editor it takes the
+                    // Inspector's place, and a closed Inspector has nowhere to
+                    // publish into.
+                    if (next && !roomInMain) slot.reveal()
+                    return next
+                  })
+                }}
+                onUndo={buffer.undo}
+                onDiscard={buffer.discard}
+                onSave={() => save()}
+              />
             )}
             {staleWrite !== undefined && (
               <StaleWriteAlert
