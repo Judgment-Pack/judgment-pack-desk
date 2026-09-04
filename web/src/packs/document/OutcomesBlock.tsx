@@ -13,6 +13,7 @@ import { StringField, TextField } from '../edit/fields'
 import { Block } from './Block'
 import { ExtensionsBlock } from './ExtensionsBlock'
 import styles from './PackDocument.module.css'
+import { MisshapenMember, isRecord } from './MisshapenMember'
 
 export function OutcomesBlock({
   outcomes,
@@ -28,7 +29,19 @@ export function OutcomesBlock({
     <Block pointer={at}>
       <h2 className={styles.heading}>Outcomes</h2>
       <ul className={styles.chips}>
-        {outcomes.map((outcome, index) => (
+        {outcomes.map((outcome, index) =>
+          // Not an object: there are no fields to draw and nothing to point a
+          // control at. The bytes are printed at their own pointer instead.
+          !isRecord(outcome) ? (
+            <li key={`misshapen-${index}`}>
+              <MisshapenMember
+                pointer={`${at}/${index}`}
+                label={`Outcome ${index + 1}`}
+                expected="an object"
+                value={outcome}
+              />
+            </li>
+          ) : (
           <li key={`${outcome.id}-${index}`}>
             <Block pointer={`${at}/${index}`} as="div" className={styles.chip}>
               {editing ? (
@@ -46,7 +59,8 @@ export function OutcomesBlock({
               <ExtensionsBlock extensions={outcome.extensions} at={`${at}/${index}/extensions`} />
             </Block>
           </li>
-        ))}
+          )
+        )}
       </ul>
     </Block>
   )

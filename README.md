@@ -427,8 +427,12 @@ visible button, so a chord the browser claims costs a click and not a feature.
 `Mod+S` is on the list and is deliberately **not** installed by
 `installShortcuts`, and the two facts are one fact: save is the chord that has
 to fire *inside* a text field, which is where that rule silences everything
-else. It is registered by the pack editor on its own subtree, so the shell's
-rule stays as written and the label says where this one applies.
+else. The pack editor registers it on `document` for exactly as long as edit
+mode is on screen — not on a subtree, because `document.body` is where focus
+sits the moment the mode opens (the Edit button unmounts itself) and from a
+subtree listener the chord neither saved nor called `preventDefault`, so the
+browser's own "Save page as…" opened over unsaved work. The shell's rule stays
+as written and the label says where this one applies.
 **Every modifier a chord does not declare is rejected**: Ctrl+Shift+B is not
 `Mod+B`, and Ctrl+Cmd+B is neither of the two spellings of `Mod` — an undeclared
 chord is left to the browser unprevented rather than claimed and swallowed.
@@ -921,8 +925,13 @@ node kind it has never seen. Each is a line in the JSON view.
 
 No desk-computed verdict of any kind: no conformance claim, no lock state, no
 health, no pass/fail chip. The runtime judges documents and this page quotes it.
-Nothing about the reviewed set appears here at all — no tool reports it, so the
-desk cannot know it and must not compute it.
+**Nothing about this pack's standing in the reviewed set appears here** — not
+whether it is in the set, not whether the entry is current, not whether an edit
+would invalidate it. No tool reports any of that, so the desk cannot know it and
+must not compute it. The one thing it does say is that the set **exists**, which
+is the file listing's own answer and nobody's inference: where the listing
+contains `jpack.lock.json`, one line says the project keeps a reviewed set and
+that updating it is the project's own step.
 
 The editor adds four more. **No English paraphrase of a condition**: `"5000"`
 keeps its quotes and `greater-than` stays the document's word, in the reading
@@ -1690,9 +1699,13 @@ as it should about why it is one.
 
 The editor's own suites are named after the claim each holds.
 `packs/documentText.test.ts` and `packs/edit/writes.test.ts` hold the splices:
-every byte outside a touched span identical, a neighbour's indentation never
-inherited, a blanked `nonEmptyString` removed rather than emptied, and a member
-that is not there yet written at the position the schema gives it.
+every byte outside a touched span identical, a blanked `nonEmptyString` removed
+rather than emptied, and a member that is not there yet written at the position
+the schema gives it — behind **a neighbour's own leading run, reused verbatim**.
+That run is copied and never invented, and it is never used to reformat a member
+that was already there: an insertion changes the bytes it inserts and nothing
+else, which is why a document indented with tabs stays indented with tabs and a
+document nobody indented stays on one line.
 `packs/edit/shape.test.ts` holds the mirrored schema against the fixtures'
 own values. `packs/edit/useDocumentBuffer.test.ts` holds dirty as a byte
 comparison, one undo entry per action, and a discard that clears the last

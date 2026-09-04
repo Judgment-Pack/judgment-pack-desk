@@ -116,6 +116,104 @@ describe('what a save sends', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
     await waitFor(() => expect(screen.getByText('saved')).toBeTruthy())
   })
+
+  it('says what the save did, in the chassis’ own figures', async () => {
+    // `useFileEditing` has computed this since it was lifted out of
+    // `AuthorView` and the pack editor rendered neither half of it: a save that
+    // landed said nothing, and a read-back that was **not** what was sent said
+    // nothing either.
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(screen.getByText(/Saved, and verified/)).toBeTruthy())
+    expect(screen.getByText(/byte for byte what was sent/)).toBeTruthy()
+  })
+
+  it('keeps what was typed while the write was in flight', async () => {
+    // **The author is free to keep typing during a PUT**, and every keystroke
+    // after the request is work the save did not carry. `rebase` replaced the
+    // buffer with the landed bytes unconditionally, so the sentence typed while
+    // the save was in the air disappeared at the moment the page said the save
+    // had succeeded — and the buffer went clean, so nothing offered it back.
+    const log = chassis({ content: PACK_TEXT, sha256: PACK_DIGEST, holdWrite: true })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    const submitted = `${PACK_TEXT}\n`
+    fireEvent.change(raw, { target: { value: submitted } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(log.writes).toHaveLength(1))
+
+    // Typed while the PUT is in the air.
+    const later = `${PACK_TEXT}\n\n`
+    fireEvent.change(screen.getByLabelText("The document's bytes"), { target: { value: later } })
+    log.releaseWrite()
+
+    await waitFor(() => expect(screen.getByText(/Saved, and verified/)).toBeTruthy())
+    // The later text is still there, and it is dirty against what landed —
+    // which is the true state: those bytes are not on disk.
+    expect((screen.getByLabelText("The document's bytes") as HTMLTextAreaElement).value).toBe(later)
+    expect(screen.getByText('unsaved')).toBeTruthy()
+    // And saving again sends the later bytes against the digest that landed.
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(log.writes).toHaveLength(2))
+    expect(log.writes[1]!.content).toBe(later)
+    expect(log.writes[1]!.baseSha256).not.toBe(PACK_DIGEST)
+  })
+})
+
+describe('a save that was refused for some other reason', () => {
+  it('says so, rather than stopping saying “Saving…”', async () => {
+    // Only `StaleWrite` was rendered. A path that is not writable, a chassis
+    // that is not there, a body that did not parse — the button stopped saying
+    // "Saving…" and the page said nothing at all.
+    chassis({
+      content: PACK_TEXT,
+      sha256: PACK_DIGEST,
+      failWrite: { status: 500, error: 'the chassis could not write the file' }
+    })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(screen.getByText(`Could not save ${PACK_PATH}`)).toBeTruthy()
+    )
+    expect(screen.getByText(/the chassis could not write the file/)).toBeTruthy()
+    // The edit is still here: nothing was written and nothing was taken away.
+    expect((screen.getByLabelText("The document's bytes") as HTMLTextAreaElement).value).toBe(
+      `${PACK_TEXT}\n`
+    )
+  })
+
+  it('says a reload failed, and keeps the conflict on screen', async () => {
+    // Reload cleared the conflict before its own read had answered, so a read
+    // that failed left the page with no notice, no error and a Save that would
+    // 409 again — it had forgotten the one fact the author needed.
+    const log = chassis({
+      content: PACK_TEXT,
+      sha256: PACK_DIGEST,
+      staleWith: { sha256: 'e1e1e1'.padEnd(64, '0') }
+    })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    const alert = await screen.findByRole('alert')
+    log.breakReads()
+    fireEvent.click(within(alert, 'Reload'))
+    await waitFor(() =>
+      expect(screen.getByText(`Could not reload ${PACK_PATH}`)).toBeTruthy()
+    )
+    // The conflict is still stated, because it is still true — beside the
+    // failure, not replaced by it.
+    const standing = screen.getAllByRole('alert').map((node) => node.textContent ?? '')
+    expect(standing.some((text) => text.includes('Nothing was written'))).toBe(true)
+    expect((screen.getByLabelText("The document's bytes") as HTMLTextAreaElement).value).toBe(
+      `${PACK_TEXT}\n`
+    )
+  })
 })
 
 describe('a file that moved underneath the edit', () => {
@@ -217,6 +315,47 @@ describe('the keyboard, and the guard', () => {
     await waitFor(() => expect(screen.getByText('unsaved')).toBeTruthy())
     fireEvent.keyDown(raw, { key: 's', ctrlKey: true })
     await waitFor(() => expect(log.writes).toHaveLength(1))
+  })
+
+  it('sends one write for a chord pressed twice, and one for a key held down', async () => {
+    // **The button disables while saving and the chord read only `dirty`**,
+    // which is state and arrives a render later: two presses inside one frame
+    // both saw a clean-looking "not saving" and issued two PUTs against one
+    // base — the second of which the chassis answers with a 409 this page then
+    // explains to the author as somebody else's edit.
+    const log = chassis({ content: PACK_TEXT, sha256: PACK_DIGEST, holdWrite: true })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    await waitFor(() => expect(screen.getByText('unsaved')).toBeTruthy())
+
+    fireEvent.keyDown(raw, { key: 's', ctrlKey: true })
+    fireEvent.keyDown(raw, { key: 's', ctrlKey: true })
+    // A key held down: the operating system saying it is still down, not the
+    // author asking again.
+    fireEvent.keyDown(raw, { key: 's', ctrlKey: true, repeat: true })
+    await waitFor(() => expect(log.writes).toHaveLength(1))
+    log.releaseWrite()
+    await waitFor(() => expect(screen.getByText('saved')).toBeTruthy())
+    expect(log.writes).toHaveLength(1)
+  })
+
+  it('leaves a chord another handler has already answered alone', async () => {
+    const log = chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    await waitFor(() => expect(screen.getByText('unsaved')).toBeTruthy())
+    const answered = new KeyboardEvent('keydown', {
+      key: 's',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true
+    })
+    answered.preventDefault()
+    raw.dispatchEvent(answered)
+    await Promise.resolve()
+    expect(log.writes).toHaveLength(0)
   })
 
   it('does not discard on Escape', async () => {

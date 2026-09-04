@@ -161,6 +161,147 @@ describe('an operand holding text that is not JSON', () => {
   })
 })
 
+describe('what the form can now reach', () => {
+  /** A draft that declares the three members this describe is about. */
+  const WIDER = `${JSON.stringify(
+    {
+      ...(JSON.parse(DRAFT) as Record<string, unknown>),
+      applicability: { op: 'literal', value: true },
+      fallbackOutcome: 'proceed',
+      metadata: {
+        authors: ['a named author'],
+        createdAt: '2026-01-31T09:00:00Z',
+        license: 'CC-BY-4.0',
+        requiredExtensions: ['example.review-window'],
+        reviews: [
+          {
+            reviewer: 'a named reviewer',
+            disposition: 'approved',
+            reviewedAt: '2026-02-01T09:00:00Z'
+          }
+        ]
+      }
+    },
+    null,
+    2
+  )}\n`
+
+  async function wider(): Promise<void> {
+    chassis({ content: WIDER, sha256: PACK_DIGEST })
+    drawPack(served(WIDER), { path: EDIT })
+    await screen.findByRole('navigation', { name: 'Members' })
+  }
+
+  it('edits applicability with the same builder a rule’s when gets', async () => {
+    // It is the same kind of object, and it was the one condition in the
+    // document the form could only read — so declaring it from the omission
+    // line handed the author a starter they could not then change.
+    await wider()
+    const group = document.getElementById('/applicability')!
+    const kind = within(group).getAllByRole('combobox')[0]!
+    expect(kind).toBeTruthy()
+    fireEvent.click(kind)
+    fireEvent.click(await screen.findByRole('option', { name: 'all' }))
+    await waitFor(async () => expect(await bytes()).toContain('"op": "all"'))
+  })
+
+  it('chooses the fallback outcome from the outcomes the pack declares', async () => {
+    await wider()
+    const group = document.getElementById('/fallbackOutcome')!
+    const select = within(group).getByRole('combobox')
+    fireEvent.click(select)
+    // "not declared" is a choice, because the member is optional.
+    expect(await screen.findByRole('option', { name: 'not declared' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('option', { name: 'not declared' }))
+    await waitFor(async () => expect(await bytes()).not.toContain('"fallbackOutcome"'))
+  })
+
+  it('edits the metadata that is not a review, and writes no review', async () => {
+    // The stated exclusion has always named `metadata.reviews` alone; the block
+    // made the whole object read-only, so a licence could be added in the JSON
+    // view and not in the form, for no reason either view could state.
+    await wider()
+    const licence = within(document.getElementById('/metadata/license')!).getByRole('textbox')
+    fireEvent.change(licence, { target: { value: 'Apache-2.0' } })
+    await waitFor(async () => expect(await bytes()).toContain('"license": "Apache-2.0"'))
+  })
+
+  it('leaves the reviews as a record and offers nothing that writes one', async () => {
+    await wider()
+    const reviews = document.getElementById('/metadata/reviews')!
+    expect(within(reviews).getByText('a named reviewer')).toBeTruthy()
+    expect(within(reviews).queryAllByRole('textbox')).toHaveLength(0)
+    expect(within(reviews).queryAllByRole('button')).toHaveLength(0)
+    expect(within(reviews).getByText(/does not write one/)).toBeTruthy()
+  })
+})
+
+describe('text that is not written yet is work', () => {
+  const OPERAND = '/rules/1/when/value'
+
+  it('enables Discard, and Discard takes the text with it', async () => {
+    // **Byte-dirty stays a byte comparison** — a save writes bytes — but a form
+    // whose only edit is an operand that does not parse yet has work in it, and
+    // Discard was disabled beside a field the author could see was unfinished.
+    await draft()
+    const operand = within(document.getElementById(OPERAND)!).getByDisplayValue('"green"')
+    fireEvent.change(operand, { target: { value: '{"shade"' } })
+    await waitFor(() => expect(screen.getByText('1 field is not written yet')).toBeTruthy())
+    // The bytes have not moved, and there is still something to throw away.
+    expect(screen.queryByText('unsaved')).toBeNull()
+    const discard = screen.getByRole('button', { name: 'Discard' })
+    expect(discard.hasAttribute('disabled')).toBe(false)
+
+    fireEvent.click(discard)
+    await waitFor(() => expect(screen.queryByText('1 field is not written yet')).toBeNull())
+    expect(
+      within(document.getElementById(OPERAND)!).getByDisplayValue('"green"')
+    ).toBeTruthy()
+  })
+
+  it('asks before leaving, because leaving would take it', async () => {
+    chassis({ content: DRAFT, sha256: PACK_DIGEST })
+    drawPack(served(DRAFT), { path: EDIT, nav: true })
+    await screen.findByRole('navigation', { name: 'Members' })
+    const operand = within(document.getElementById(OPERAND)!).getByDisplayValue('"green"')
+    fireEvent.change(operand, { target: { value: '{"shade"' } })
+    await waitFor(() => expect(screen.getByText('1 field is not written yet')).toBeTruthy())
+    const asked: string[] = []
+    vi.stubGlobal('confirm', (message: string) => {
+      asked.push(message)
+      return false
+    })
+    fireEvent.click(screen.getByRole('link', { name: 'go elsewhere' }))
+    await waitFor(() => expect(asked).toHaveLength(1))
+    expect(asked[0]).toContain('unsaved changes')
+  })
+
+  it('retires a draft for good once the bytes it started from move', async () => {
+    // Retirement was an equality mask over a map that kept everything: a raw
+    // edit away from the operand and an Undo back to it made the draft match
+    // again, and text abandoned two actions ago reappeared in the field.
+    await draft()
+    const operand = within(document.getElementById(OPERAND)!).getByDisplayValue('"green"')
+    fireEvent.change(operand, { target: { value: '{"shade"' } })
+    await waitFor(() => expect(screen.getByText('1 field is not written yet')).toBeTruthy())
+
+    // The bytes under it move, which retires the draft…
+    fireEvent.change(within(document.getElementById(OPERAND)!).getByDisplayValue('{"shade"'), {
+      target: { value: '"amber"' }
+    })
+    await waitFor(() => expect(screen.queryByText('1 field is not written yet')).toBeNull())
+
+    // …and Undo puts the bytes back without putting the abandoned text back.
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    await waitFor(() =>
+      expect(
+        within(document.getElementById(OPERAND)!).getByDisplayValue('"green"')
+      ).toBeTruthy()
+    )
+    expect(screen.queryByText('1 field is not written yet')).toBeNull()
+  })
+})
+
 describe('a deep link to a field with nothing focusable in it', () => {
   it('lands on the group, which is the address the link named', async () => {
     // A draft that declares no requirements gives this field no candidates, so

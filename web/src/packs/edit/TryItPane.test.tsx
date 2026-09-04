@@ -227,11 +227,38 @@ describe('what a run answers with', () => {
     const view = render(<Harness buffer={PACK_TEXT} />)
     fireEvent.click(screen.getByRole('button', { name: 'Run' }))
     await waitFor(() => expect(screen.getAllByText(/approve/).length).toBeGreaterThan(0))
-    expect(screen.queryByText(/The editor has moved since this ran/)).toBeNull()
+    expect(screen.queryByText(/has changed since this ran/)).toBeNull()
     view.rerender(<Harness buffer={`${PACK_TEXT}\n`} />)
     // A disposition is the answer to the bytes that were sent, and nothing in
     // it says which of the bytes since then it would still be the answer to.
-    expect(screen.getByText(/The editor has moved since this ran/)).toBeTruthy()
+    expect(screen.getByText(/has changed since this ran/)).toBeTruthy()
+  })
+
+  it('goes stale when the facts move, which are sent too', async () => {
+    // The bytes were the only input the staleness ever watched, and they are
+    // not the only input: facts and evidence are sent with them, and an answer
+    // to other facts is not an answer to these.
+    const stub = stubClient(ANSWERS)
+    render(
+      <QueryClientProvider client={testQueryClient()}>
+        <McpContext.Provider value={connected({ client: stub.client, rehearsalSupported: true })}>
+          <TryItPane
+            buffer={PACK_TEXT}
+            packId="vendor-onboarding"
+            rehearsalSupported
+            connected
+            onClose={() => {}}
+          />
+        </McpContext.Provider>
+      </QueryClientProvider>
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await waitFor(() => expect(screen.getAllByText(/approve/).length).toBeGreaterThan(0))
+    expect(screen.queryByText(/has changed since this ran/)).toBeNull()
+    fireEvent.change(screen.getByLabelText('Facts'), {
+      target: { value: '{"request": {"amount": "1"}}' }
+    })
+    expect(screen.getByText(/has changed since this ran/)).toBeTruthy()
   })
 
   it('renders a preflight refusal as the runtime’s answer, with no disposition', async () => {
@@ -262,6 +289,106 @@ describe('what a run answers with', () => {
     expect(screen.getByText(/A refusal carries no disposition/)).toBeTruthy()
     // Mid-edit a refusal is the ordinary answer. It is not dressed as one.
     expect(screen.queryByText(/outcomeId/)).toBeNull()
+  })
+
+  it('replaces the answer before it, rather than standing beside it', async () => {
+    // **Two answers about two different sets of bytes, on screen at once.** The
+    // result was held until the next *success* and the refusal came from the
+    // mutation, so a run that was refused after one that was not printed a
+    // disposition above "the runtime refused this run" — with nothing saying
+    // which of them was current.
+    let refuse = false
+    const stub = stubClient({
+      experimental_evaluate: () =>
+        refuse
+          ? {
+              isError: true,
+              text: 'the pack is not conformant',
+              structured: {
+                evaluationError: {
+                  class: 'invalid-input',
+                  phase: 'preflight',
+                  evaluatorSpecVersion: '0.2.0-draft'
+                },
+                diagnostics: []
+              }
+            }
+          : { text: JSON.stringify(PAYLOAD) }
+    })
+    render(
+      <QueryClientProvider client={testQueryClient()}>
+        <McpContext.Provider value={connected({ client: stub.client, rehearsalSupported: true })}>
+          <TryItPane
+            buffer={PACK_TEXT}
+            packId="vendor-onboarding"
+            rehearsalSupported
+            connected
+            onClose={() => {}}
+          />
+        </McpContext.Provider>
+      </QueryClientProvider>
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await waitFor(() => expect(screen.getAllByText(/approve/).length).toBeGreaterThan(0))
+
+    refuse = true
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await waitFor(() => expect(screen.getByText('class: invalid-input')).toBeTruthy())
+    expect(screen.queryByText(/outcomeId/)).toBeNull()
+    expect(screen.queryByText('packVersion 1.2.0')).toBeNull()
+  })
+
+  it('is stale when what was refused is no longer what would be sent', async () => {
+    // A refusal is the runtime's answer to bytes, exactly as a disposition is.
+    // It never went stale at all, so an answer about a document the author had
+    // since fixed stood there saying it was not conformant.
+    const stub = stubClient({
+      experimental_evaluate: () => ({
+        isError: true,
+        text: 'the pack is not conformant',
+        structured: {
+          evaluationError: {
+            class: 'invalid-input',
+            phase: 'preflight',
+            evaluatorSpecVersion: '0.2.0-draft'
+          },
+          diagnostics: []
+        }
+      })
+    })
+    const Harness = ({ buffer }: { buffer: string }) => (
+      <QueryClientProvider client={testQueryClient()}>
+        <McpContext.Provider value={connected({ client: stub.client, rehearsalSupported: true })}>
+          <TryItPane
+            buffer={buffer}
+            packId="vendor-onboarding"
+            rehearsalSupported
+            connected
+            onClose={() => {}}
+          />
+        </McpContext.Provider>
+      </QueryClientProvider>
+    )
+    const view = render(<Harness buffer={PACK_TEXT} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await waitFor(() => expect(screen.getByText('class: invalid-input')).toBeTruthy())
+    expect(screen.queryByText(/has changed since this ran/)).toBeNull()
+    view.rerender(<Harness buffer={`${PACK_TEXT}\n`} />)
+    expect(screen.getByText(/has changed since this ran/)).toBeTruthy()
+  })
+
+  it('says which source a run was from, whatever the toggle says now', async () => {
+    // The pill read the *current* toggle, so flipping it relabelled an answer
+    // that was never about it: a run of the draft became "from the pack on
+    // disk" without anything having run.
+    draw(ANSWERS)
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await waitFor(() => expect(screen.getByText('from the draft in the editor')).toBeTruthy())
+    fireEvent.click(screen.getByRole('radio', { name: 'the saved pack' }))
+    expect(screen.getByText('from the draft in the editor')).toBeTruthy()
+    expect(screen.queryByText('from the pack on disk')).toBeNull()
+    // And it is stale, because the source is part of what would be sent.
+    expect(screen.getByText(/has changed since this ran/)).toBeTruthy()
   })
 })
 

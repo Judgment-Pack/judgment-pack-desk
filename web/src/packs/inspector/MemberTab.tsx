@@ -29,6 +29,7 @@ export function MemberTab({
   meta,
   fileSha256,
   fileBytes,
+  baseSha256,
   dirty
 }: {
   pointer: string
@@ -38,6 +39,16 @@ export function MemberTab({
   /** The digest the chassis reported for the same path, where it answered. */
   fileSha256: string | undefined
   fileBytes: number | undefined
+  /**
+   * The digest of the revision the editor actually loaded.
+   *
+   * A third answer, and the one the subtree above is drawn from. The other two
+   * move with a watcher refetch and this one deliberately does not, so a file
+   * changed underneath an open editor made the other two agree with each other
+   * about bytes that are **not** on screen — and the sentence below said the
+   * page matched a file it had never read.
+   */
+  baseSha256?: string | undefined
   /** True where the editor holds bytes that are not on disk. */
   dirty?: boolean
 }) {
@@ -45,7 +56,8 @@ export function MemberTab({
     dirty !== true &&
     meta.sha256 !== undefined &&
     fileSha256 !== undefined &&
-    meta.sha256 === fileSha256
+    meta.sha256 === fileSha256 &&
+    (baseSha256 === undefined || baseSha256 === fileSha256)
 
   return (
     <div className={styles.panel}>
@@ -95,6 +107,12 @@ export function MemberTab({
       {dirty === true && (
         <p className={styles.unbound}>
           These figures are the file on disk. The editor holds changes that are not in it.
+        </p>
+      )}
+      {dirty !== true && baseSha256 !== undefined && fileSha256 !== undefined && baseSha256 !== fileSha256 && (
+        <p className={styles.unbound}>
+          These figures are the file on disk. The editor is showing the revision it loaded,
+          which is not that one.
         </p>
       )}
     </div>

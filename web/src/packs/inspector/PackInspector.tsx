@@ -33,6 +33,7 @@ export function PackInspector({
   at,
   meta,
   fileSha256,
+  baseSha256,
   fileBytes,
   dirty,
   anchored,
@@ -50,6 +51,8 @@ export function PackInspector({
   at: string | null
   meta: PackFileMeta
   fileSha256: string | undefined
+  /** The digest of the revision the editor loaded, where it holds one. */
+  baseSha256?: string | undefined
   fileBytes: number | undefined
   /** True where the editor holds bytes that are on no disk yet. */
   dirty?: boolean
@@ -93,6 +96,7 @@ export function PackInspector({
               subtree={subtreeAt(doc, at)}
               meta={meta}
               fileSha256={fileSha256}
+              baseSha256={baseSha256}
               fileBytes={fileBytes}
               dirty={dirty}
             />

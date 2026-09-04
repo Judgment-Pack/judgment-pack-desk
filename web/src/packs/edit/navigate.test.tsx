@@ -64,6 +64,75 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('the gap between the two answers', () => {
+  it('draws no pack and saves nothing while the buffer is another file’s', async () => {
+    // **`get_pack` and the file read do not land together.** `path` moves the
+    // moment the runtime answers about Bravo, and the buffer is still Alpha
+    // until Bravo's bytes arrive — a window in which the page drew Alpha's
+    // document under Bravo's address and Save combined Bravo's path with
+    // Alpha's bytes and Alpha's digest. A 409 catches that only where the
+    // digests differ, and the 409 itself offers *Overwrite anyway*.
+    const log = chassis({
+      content: ALPHA,
+      sha256: PACK_DIGEST,
+      also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } },
+      hold: [BRAVO_PATH]
+    })
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const title = await screen.findByDisplayValue('Alpha pack')
+    fireEvent.change(title, { target: { value: 'Alpha pack, revised' } })
+
+    vi.stubGlobal('confirm', () => true)
+    await act(async () => {
+      await router.navigate('/packs/bravo?edit=1')
+    })
+
+    // Alpha is gone from the page the moment the address is not Alpha's…
+    await waitFor(() => expect(screen.queryByDisplayValue('Alpha pack, revised')).toBeNull())
+    // …and a save in the gap writes nothing at all, by either route.
+    fireEvent.keyDown(document, { key: 's', ctrlKey: true })
+    const save = screen.queryByRole('button', { name: 'Save' })
+    if (save !== null) fireEvent.click(save)
+    await act(async () => {})
+    expect(log.writes).toHaveLength(0)
+
+    // And when Bravo's bytes do arrive, this is Bravo's editor.
+    log.release(BRAVO_PATH)
+    const bravo = await screen.findByDisplayValue('Bravo pack')
+    fireEvent.change(bravo, { target: { value: 'Bravo pack, revised' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(log.writes).toHaveLength(1))
+    expect(log.writes[0]!.path).toBe(BRAVO_PATH)
+    expect(log.writes[0]!.baseSha256).toBe(BRAVO_DIGEST)
+    expect(log.writes[0]!.content).not.toContain('Alpha')
+  })
+
+  it('comes back to the first pack as the first pack, not as the second', async () => {
+    // A→B→A, which is the ordinary shape of following a link and pressing Back.
+    const log = chassis({
+      content: ALPHA,
+      sha256: PACK_DIGEST,
+      also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } }
+    })
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    await screen.findByDisplayValue('Alpha pack')
+    await act(async () => {
+      await router.navigate('/packs/bravo?edit=1')
+    })
+    await screen.findByDisplayValue('Bravo pack')
+    await act(async () => {
+      await router.navigate('/packs/alpha?edit=1')
+    })
+    const back = await screen.findByDisplayValue('Alpha pack')
+    fireEvent.change(back, { target: { value: 'Alpha pack, again' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(log.writes).toHaveLength(1))
+    expect(log.writes[0]!.path).toBe(PACK_PATH)
+    expect(log.writes[0]!.baseSha256).toBe(PACK_DIGEST)
+    expect(log.writes[0]!.content).toContain('Alpha pack, again')
+  })
+})
+
 describe('the buffer follows the address', () => {
   it('draws the pack the URL names after moving to another one', async () => {
     bothOnDisk()

@@ -40,6 +40,22 @@ import type { EvaluationRun } from '../../mcp/types'
 import { valueAt } from '../pointers'
 import styles from './TryItPane.module.css'
 
+/** Everything one attempt sent, captured with it. */
+interface Sent {
+  source: 'pack' | 'pack_id'
+  /** The editor's bytes at the moment of the run, which a `pack` run sends. */
+  bytes: string
+  /** The project's decision id, which a `pack_id` run sends. */
+  packId: string
+  facts: string
+  evidence: string | undefined
+}
+
+/** The last run, and what the runtime made of it. */
+type Attempt =
+  | { kind: 'success'; run: EvaluationRun; sent: Sent }
+  | { kind: 'refusal'; error: Error; sent: Sent }
+
 /** What one declared requirement may be said to be. */
 const AVAILABILITY = ['present', 'absent', 'unknown'] as const
 type Availability = (typeof AVAILABILITY)[number]
@@ -64,7 +80,22 @@ export function TryItPane({
   const [source, setSource] = useState<'pack' | 'pack_id'>('pack')
   const [facts, setFacts] = useState('{}')
   const [availability, setAvailability] = useState<Record<string, Availability>>({})
-  const [ran, setRan] = useState<{ run: EvaluationRun; bytes: string } | null>(null)
+  /**
+   * **The last attempt, whichever way it went.**
+   *
+   * A success and a refusal used to be two states rendered independently — the
+   * result held until the next *success*, the error held by the mutation — so
+   * a run that was refused after one that was not printed both: a disposition
+   * over here, and "the runtime refused this run" under it, about two different
+   * sets of bytes. And the pill said which source the run was from by reading
+   * the *current* toggle, so flipping it relabelled an answer that was never
+   * about it.
+   *
+   * One attempt, replaced when the next one starts, carrying everything that
+   * was sent. What it says about itself is read from that and from nothing on
+   * screen.
+   */
+  const [attempt, setAttempt] = useState<Attempt | null>(null)
   // The second click, where the runtime does not take the declaration. It is
   // armed by the first and disarmed by anything that changes what would be
   // sent, so a confirmation cannot outlive the thing it confirmed.
@@ -89,7 +120,6 @@ export function TryItPane({
   const requirements = useMemo(() => draftRequirements(buffer), [buffer])
 
   const factsError = jsonError(facts)
-  const stale = ran !== null && ran.bytes !== buffer
 
   const evidence = useMemo(() => {
     // Only the rows the author actually set, and only for requirements the
@@ -113,14 +143,33 @@ export function TryItPane({
       return
     }
     setArmedFor(null)
-    const bytes = buffer
+    // Everything this run is about, captured with it. The answer is labelled
+    // from here and goes stale against here, so nothing on screen can relabel
+    // it afterwards.
+    const sent: Sent = { source, bytes: buffer, packId, facts, evidence }
+    setAttempt(null)
     evaluate.mutate(
       source === 'pack'
-        ? { source: 'pack', pack: bytes, facts, evidence }
+        ? { source: 'pack', pack: sent.bytes, facts, evidence }
         : { source: 'pack_id', packId, facts, evidence },
-      { onSuccess: (completed) => setRan({ run: completed, bytes }) }
+      {
+        onSuccess: (completed) => setAttempt({ kind: 'success', run: completed, sent }),
+        onError: (error: Error) => setAttempt({ kind: 'refusal', error, sent })
+      }
     )
   }
+
+  // Whether any of what was submitted has moved since. A refusal goes stale for
+  // exactly the reasons an answer does: it is the runtime's answer to those
+  // bytes, those facts and that evidence, and to nothing else.
+  const stale =
+    attempt !== null &&
+    (attempt.sent.source !== source ||
+      attempt.sent.facts !== facts ||
+      attempt.sent.evidence !== evidence ||
+      (attempt.sent.source === 'pack'
+        ? attempt.sent.bytes !== buffer
+        : attempt.sent.packId !== packId))
 
   return (
     <aside className={styles.pane} aria-label="Try it">
@@ -203,29 +252,39 @@ export function TryItPane({
         </p>
       )}
 
-      {evaluate.error && <RefusalPanel error={evaluate.error} title="The runtime refused this run" />}
-
-      {ran !== null && (
+      {attempt !== null && (
         <div className={styles.result}>
           <p className={styles.resultHead}>
+            {attempt.kind === 'success' && (
+              <span className={styles.pill}>
+                {attempt.run.payload.rehearsal === true
+                  ? 'rehearsal'
+                  : 'recorded where audit is declared'}
+              </span>
+            )}
             <span className={styles.pill}>
-              {ran.run.payload.rehearsal === true ? 'rehearsal' : 'recorded where audit is declared'}
-            </span>
-            <span className={styles.pill}>
-              {source === 'pack' ? 'from the draft in the editor' : 'from the pack on disk'}
+              {attempt.sent.source === 'pack'
+                ? 'from the draft in the editor'
+                : 'from the pack on disk'}
             </span>
           </p>
           {stale && (
             <p className={styles.staleNote} role="status">
-              The editor has moved since this ran. This is the answer to the bytes that were sent,
-              and nothing here is about the bytes on screen now.
+              What would be sent has changed since this ran. This is the answer to what was sent,
+              and nothing here is about what is on screen now.
             </p>
           )}
-          <EvaluationView payload={ran.run.payload} />
-          <p className={styles.foot}>
-            <code>{ran.run.payload.packId}</code>
-            <span>packVersion {ran.run.payload.packVersion}</span>
-          </p>
+          {attempt.kind === 'success' ? (
+            <>
+              <EvaluationView payload={attempt.run.payload} />
+              <p className={styles.foot}>
+                <code>{attempt.run.payload.packId}</code>
+                <span>packVersion {attempt.run.payload.packVersion}</span>
+              </p>
+            </>
+          ) : (
+            <RefusalPanel error={attempt.error} title="The runtime refused this run" />
+          )}
         </div>
       )}
     </aside>

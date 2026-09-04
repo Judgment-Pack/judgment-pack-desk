@@ -22,6 +22,7 @@
  * The runtime's own answer about it is whatever `validate` says.
  */
 import { indexDocument, insertMember, removeMember, spanAt } from '../documentText'
+import { pointer as pointerOf, parsePointer } from '../pointers'
 import { CONDITION_MEMBERS, ENUMS } from './shape'
 import { buffered, type Buffered } from './writes'
 
@@ -49,6 +50,19 @@ export const NEW_NODE = { op: 'literal', value: true }
 /** Add one condition to an `all` or `any` group, in the layout it already uses. */
 export function addChild(current: Buffered, groupPointer: string): Buffered {
   const at = `${groupPointer}/conditions`
+  const held = spanAt(current.index, at) === undefined ? undefined : nodeAt(current, at)
+  if (held !== undefined && !Array.isArray(held)) {
+    // **`"conditions": {}` is valid JSON and not a list.** `insertMember`
+    // refuses a container that is not an array, so the button drew, took the
+    // click, and changed nothing at all. An author who pressed *add* asked for
+    // a condition: this is the one edit that says so out loud, and it is
+    // theirs to undo — the bytes it replaces are one action back on the stack.
+    const span = spanAt(current.index, at)!
+    const written = serialize([NEW_NODE], layoutOf(current, at))
+    return buffered(
+      current.text.slice(0, span.valueStart) + written + current.text.slice(span.valueEnd)
+    )
+  }
   if (spanAt(current.index, at) === undefined) {
     // The group carries no `conditions` yet. It is written as a one-element
     // array rather than an empty one: an author who pressed *add* asked for a
@@ -78,7 +92,20 @@ export function addChild(current: Buffered, groupPointer: string): Buffered {
 
 /** One level further in than a layout, for a container with nothing inside it. */
 function deeper(layout: Layout): Layout {
-  return layout.step === '' ? layout : { base: layout.base + layout.step, step: layout.step }
+  return layout.step === ''
+    ? layout
+    : { base: layout.base + layout.step, step: layout.step, eol: layout.eol }
+}
+
+/**
+ * The author's own bytes, moved right — **without touching their line endings**.
+ *
+ * A CRLF document's lines end `\r\n`, and splitting on `\n` alone would leave
+ * the `\r` at the end of each line and put the indentation after it. So the
+ * split is on the document's own ending.
+ */
+function indent(text: string, prefix: string, eol: string): string {
+  return text.split(eol).join(`${eol}${prefix}`)
 }
 
 /**
@@ -101,10 +128,10 @@ export function wrapInGroup(current: Buffered, pointer: string, op: 'all' | 'any
           '{',
           `${layout.base}${layout.step}"op": ${JSON.stringify(op)},`,
           `${layout.base}${layout.step}"conditions": [`,
-          `${layout.base}${layout.step}${layout.step}${shift(raw, `${layout.step}${layout.step}`)}`,
+          `${layout.base}${layout.step}${layout.step}${indent(raw, `${layout.step}${layout.step}`, layout.eol)}`,
           `${layout.base}${layout.step}]`,
           `${layout.base}}`
-        ].join('\n')
+        ].join(layout.eol)
   return buffered(
     current.text.slice(0, span.valueStart) + written + current.text.slice(span.valueEnd)
   )
@@ -133,14 +160,15 @@ export function removeNode(current: Buffered, pointer: string): Buffered {
  * and the old node had nothing for is written empty, and `validate` is what
  * says whether the result is a document.
  *
- * **Where the new kind needs no member the old node lacks, only the one word
- * moves.** `all` → `any` is the change most often wanted and it needs no new
- * bytes at all: carrying the subtree through the serializer would re-emit
- * every nested condition, re-indent them, and turn the author's `5.0` into
- * `5` — a one-word edit arriving as the whole-subtree diff ADR-0019 makes a
- * human read. So that case splices `op` the way `setOperator` splices
- * `operator`, and the serializer is reached only where the node has no bytes
- * for a member the new kind requires.
+ * **Nothing the author wrote is re-serialized, in any case.** This used to
+ * rebuild the whole node from JavaScript values wherever the member sets
+ * differed, and a rebuild goes through `JSON.stringify` over values the scanner
+ * produced with `Number()`: `9007199254740993` came back as
+ * `9007199254740992`, `5.0` as `5`, an escaped `\u00e9` as the character, and
+ * every line as an LF in a document written with CRLF. It is three splices
+ * instead — the word, the members the new kind has nowhere to put, and the ones
+ * it requires that the node has nothing for — so a member both kinds carry
+ * keeps its own bytes because nothing ever reads them.
  */
 export function changeKind(current: Buffered, pointer: string, kind: string): Buffered {
   const span = spanAt(current.index, pointer)
@@ -148,46 +176,88 @@ export function changeKind(current: Buffered, pointer: string, kind: string): Bu
   const members = CONDITION_MEMBERS[kind]
   if (members === undefined) return current
   const before = current.index.value === undefined ? undefined : nodeAt(current, pointer)
-  const held = (name: string): unknown =>
-    typeof before === 'object' && before !== null && !Array.isArray(before)
-      ? (before as Record<string, unknown>)[name]
-      : undefined
 
-  if (carriesExactly(before, members)) return setOp(current, pointer, kind)
-
-  const next: Record<string, unknown> = {}
-  for (const name of members) {
-    if (name === 'op') {
-      next.op = kind
-      continue
-    }
-    const carried = held(name)
-    if (carried !== undefined) {
-      next[name] = carried
-      continue
-    }
-    next[name] = blank(name)
+  // Not an object at all — a node whose bytes are `null`, a list, a number.
+  // There is nothing to splice into and nothing of the author's to carry, so
+  // this is the one path that writes a node from values, and every value in it
+  // is this desk's own.
+  if (typeof before !== 'object' || before === null || Array.isArray(before)) {
+    const written = serialize(skeleton(kind, members), layoutOf(current, pointer))
+    return buffered(
+      current.text.slice(0, span.valueStart) + written + current.text.slice(span.valueEnd)
+    )
   }
-  const layout = layoutOf(current, pointer)
-  const written = serialize(next, layout)
-  return buffered(
-    current.text.slice(0, span.valueStart) + written + current.text.slice(span.valueEnd)
-  )
+
+  const present = Object.keys(before as Record<string, unknown>)
+  let next = current
+
+  // 1. The word itself.
+  next = present.includes('op')
+    ? setOp(next, pointer, kind)
+    : buffered(
+        insertMember(next.text, next.index, pointer, 'op', JSON.stringify(kind), { first: true })
+      )
+
+  // 2. The members the new kind has nowhere to put. Only those: a `value` that
+  //    both kinds carry keeps **its own bytes**, which is the whole point —
+  //    `9007199254740993` is not `9007199254740992`, `5.0` is not `5`, and a
+  //    `\u00e9` an author escaped is not the character it stands for.
+  for (const name of present) {
+    if (name === 'op' || members.includes(name)) continue
+    next = buffered(removeMember(next.text, next.index, memberPointer(pointer, name)))
+  }
+
+  // 3. The members the new kind requires and this node has nothing for. Written
+  //    empty, because what they should say is the author's to decide and the
+  //    runtime's to judge.
+  for (const name of members) {
+    if (name === 'op' || present.includes(name)) continue
+    next = buffered(
+      insertMember(
+        next.text,
+        next.index,
+        pointer,
+        name,
+        serialize(blank(name), deeper(layoutOf(next, pointer))),
+        placeAfter(next, pointer, members, name)
+      )
+    )
+  }
+  return next
+}
+
+/** One member of a node, addressed. */
+function memberPointer(pointer: string, name: string): string {
+  const parts = parsePointer(pointer)
+  return parts === undefined ? `${pointer}/${name}` : pointerOf([...parts, name])
 }
 
 /**
- * Whether this node already carries exactly the members the new kind declares
- * — no more and no fewer, so nothing is added and nothing is dropped.
+ * Where a member this kind requires goes: after the nearest earlier member the
+ * kind declares that the node actually carries, and first where there is none.
  *
- * The *names* are compared and never the values: a node's own `conditions` are
- * whatever the author wrote, and this is the question of whether any byte
- * outside `op` has to move.
+ * The kind's own order is asked rather than the node's, because the node has
+ * nothing to say about a member it does not have.
  */
-function carriesExactly(node: unknown, members: readonly string[]): boolean {
-  if (typeof node !== 'object' || node === null || Array.isArray(node)) return false
-  const names = Object.keys(node as Record<string, unknown>)
-  if (names.length !== members.length) return false
-  return names.every((name) => members.includes(name))
+function placeAfter(
+  current: Buffered,
+  pointer: string,
+  members: readonly string[],
+  name: string
+): { after: string } | { first: true } {
+  const at = members.indexOf(name)
+  for (let earlier = at - 1; earlier >= 0; earlier -= 1) {
+    const sibling = memberPointer(pointer, members[earlier]!)
+    if (spanAt(current.index, sibling) !== undefined) return { after: sibling }
+  }
+  return { first: true }
+}
+
+/** A whole node of one kind, from this desk's own values and nobody else's. */
+function skeleton(kind: string, members: readonly string[]): Record<string, unknown> {
+  const written: Record<string, unknown> = {}
+  for (const name of members) written[name] = name === 'op' ? kind : blank(name)
+  return written
 }
 
 /** Write this node's `op` and leave every other byte where it is. */
@@ -260,6 +330,14 @@ interface Layout {
   base: string
   /** One level of this document's own indentation, or `''` for inline. */
   step: string
+  /**
+   * This document's own line ending.
+   *
+   * `JSON.stringify(value, null, step)` emits LF, and a document written with
+   * CRLF got LF lines spliced into it — a file with two kinds of line ending,
+   * from one form control, in a diff a human is required to read.
+   */
+  eol: string
 }
 
 /**
@@ -277,14 +355,22 @@ interface Layout {
  * from becoming six lines because its operator changed.
  */
 function layoutOf(current: Buffered, pointer: string): Layout {
+  const eol = lineEnding(current.text)
   const span = spanAt(current.index, pointer)
-  if (span === undefined) return { base: '', step: '' }
+  if (span === undefined) return { base: '', step: '', eol }
   let back = span.memberStart - 1
   while (back >= 0 && /[ \t\n\r]/.test(current.text[back]!)) back -= 1
   const leading = current.text.slice(back + 1, span.memberStart)
   const newline = leading.lastIndexOf('\n')
-  if (newline < 0) return { base: '', step: '' }
-  return { base: leading.slice(newline + 1), step: indentUnit(current.text) }
+  if (newline < 0) return { base: '', step: '', eol }
+  return { base: leading.slice(newline + 1), step: indentUnit(current.text), eol }
+}
+
+/** This document's own line ending, from the first one it uses. */
+function lineEnding(text: string): string {
+  const found = text.indexOf('\n')
+  if (found < 0) return '\n'
+  return text[found - 1] === '\r' ? '\r\n' : '\n'
 }
 
 /** This document's own indentation, from its first indented line. */
@@ -303,10 +389,10 @@ function indentUnit(text: string): string {
  */
 function serialize(value: unknown, layout: Layout): string {
   if (layout.step === '') return JSON.stringify(value)
-  return shift(JSON.stringify(value, null, layout.step), layout.base)
+  return shift(JSON.stringify(value, null, layout.step), layout.base, layout.eol)
 }
 
-/** Every line after the first, moved right by one prefix. */
-function shift(text: string, prefix: string): string {
-  return text.split('\n').join(`\n${prefix}`)
+/** Every line after the first, moved right by one prefix and ended as the document ends its lines. */
+function shift(text: string, prefix: string, eol: string): string {
+  return text.split('\n').join(`${eol}${prefix}`)
 }

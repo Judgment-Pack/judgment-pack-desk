@@ -7,7 +7,7 @@
  * expects, bytes the runtime refuses outright, focus resting where no handler
  * is listening. None of these is an error page.
  */
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -71,6 +71,60 @@ describe('bytes shaped like nothing this desk expects', () => {
     await waitFor(() => expect(raw.value).toBe(wrong))
     expect(screen.getByLabelText("The document's bytes")).toBeTruthy()
     expect(screen.getByRole('toolbar', { name: 'Editing' })).toBeTruthy()
+  })
+
+  it('says which member is not the shape the form edits, rather than crashing', async () => {
+    // **Form availability asked whether the two readings agreed and nothing
+    // else.** `"rules": {}` agrees perfectly — it is valid JSON both readings
+    // read the same way — and selecting Form reached `rules.map` and took the
+    // route down with it.
+    const parsed = JSON.parse(PACK_TEXT) as Record<string, unknown>
+    parsed.rules = { oops: true }
+    const wrong = `${JSON.stringify(parsed, null, 2)}\n`
+    chassis({ content: wrong, sha256: PACK_DIGEST })
+    drawPack(served(wrong), { path: EDIT })
+    await screen.findByRole('navigation', { name: 'Members' })
+    const said = await screen.findByText(/not the shape the form edits/)
+    expect(said.textContent).toContain('/rules')
+    // The block is addressed, so a diagnostic about it still lands here and the
+    // outline entry still reaches it.
+    expect(document.getElementById('/rules')).toBeTruthy()
+    // And the rest of the document is still drawn.
+    expect(screen.getByDisplayValue('Vendor onboarding')).toBeTruthy()
+  })
+
+  it('states a member that is present and not an object, instead of writing nowhere', async () => {
+    // `"locator": null` drew every field of a locator, took a keystroke, and
+    // moved no bytes: `writes.place` splices into a container and there is
+    // none. Nothing on screen said so.
+    const parsed = JSON.parse(PACK_TEXT) as { sources: Record<string, unknown>[] }
+    parsed.sources[0]!.locator = null
+    const wrong = `${JSON.stringify(parsed, null, 2)}\n`
+    chassis({ content: wrong, sha256: PACK_DIGEST })
+    drawPack(served(wrong), { path: EDIT })
+    await screen.findByRole('navigation', { name: 'Members' })
+    const said = await screen.findAllByText(/not the shape this form edits/)
+    expect(said.length).toBeGreaterThan(0)
+  })
+
+  it('draws the buffer’s own bytes and never the served document', async () => {
+    // `drawn` fell back to the served pack whenever the buffer did not scan, so
+    // saving bytes the runtime refuses and returning to Read put the **old**
+    // document on screen — over a file that no longer holds it, with the JSON
+    // view the only place the truth was.
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editableBytes()
+    fireEvent.change(raw, { target: { value: '{ this is not json' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'Form' }))
+    await waitFor(() =>
+      expect((screen.getByLabelText("The document's bytes") as HTMLTextAreaElement).value).toBe(
+        '{ this is not json'
+      )
+    )
+    // Not the served document's title, which is what a fallback would draw.
+    expect(screen.queryByText('Vendor onboarding')).toBeNull()
+    expect(screen.getByText(/not a document this desk can edit as a form/)).toBeTruthy()
   })
 })
 
@@ -216,6 +270,34 @@ describe('where Try it opens, measured', () => {
     unmeasure = undefined
   })
 
+  it('fits at the shell’s own maximum, and not one pixel below it', async () => {
+    // **The number in the predicate and the width the pane takes were eight
+    // pixels apart.** The shell's `60rem` box less its `1.5rem` padding either
+    // side is exactly 912, which fits 384 + 16 + 512 — and the page said it did
+    // not, so the side-by-side branch was unreachable on every ordinary screen.
+    measured(912, 512)
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT })
+    await screen.findByRole('navigation', { name: 'Members' })
+    fireEvent.click(screen.getByRole('button', { name: 'Try it' }))
+    const pane = await screen.findByRole('complementary', { name: 'Try it' })
+    expect(String(pane.parentElement?.className)).toContain('pane')
+    expect(revealed).toEqual([])
+  })
+
+  it('takes the Inspector’s place one pixel below it', async () => {
+    measured(911, 511)
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT, inspector: true })
+    await screen.findByRole('navigation', { name: 'Members' })
+    fireEvent.click(screen.getByRole('button', { name: 'Try it' }))
+    const pane = await screen.findByRole('complementary', { name: 'Try it' })
+    // Published into the slot rather than placed beside the editor, and the
+    // pane is asked to open because a closed one has nowhere to publish into.
+    expect(String(pane.parentElement?.className)).not.toContain('pane')
+    expect(revealed).toEqual(['reveal'])
+  })
+
   it('asks the frame, whose width the placement does not change', async () => {
     // 1000 of workspace leaves 592 for the editor once the pane's 392 and the
     // gap are taken. The column is 600 *because the pane is there* — reading
@@ -261,6 +343,50 @@ describe('the outline while the author types', () => {
     fireEvent.change(title, { target: { value: 'Vendor onboarding, revised' } })
     expect(screen.getByDisplayValue('Vendor onboarding, revised')).toBeTruthy()
     expect(built.length).toBe(before)
+  })
+})
+
+describe('a file that moved after it was loaded', () => {
+  it('says which revision is on screen, and offers the one on disk', async () => {
+    // **A watcher refetch moves the file query and deliberately not the base**
+    // — that is what makes a stale write a 409 instead of a silent overwrite.
+    // So a clean buffer can be a *previous* revision, and the page called it
+    // "the bytes of packs/vendor-onboarding.pack.json" while the Inspector said
+    // it matched a file it had never read.
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    const { queryClient } = drawPack(served(PACK_TEXT), {
+      path: '/packs/vendor-onboarding?edit=1&at=%2Ftitle',
+      inspector: true,
+      tab: 'member'
+    })
+    await screen.findByRole('navigation', { name: 'Members' })
+    await waitFor(() =>
+      expect(screen.getByText('matches the file the editor holds')).toBeTruthy()
+    )
+
+    // Somebody else wrote the file. This is what the watcher's invalidation
+    // does: the query answers with the new revision and the editor keeps the
+    // one it loaded.
+    const moved = `${PACK_TEXT}\n`
+    act(() => {
+      queryClient.setQueryData(['desk-file', PACK_PATH], {
+        path: PACK_PATH,
+        bytes: moved.length,
+        sha256: 'd1d1d1'.padEnd(64, '0'),
+        content: moved
+      })
+    })
+
+    await waitFor(() =>
+      expect(screen.getByText(/The file on disk has changed since this was loaded/)).toBeTruthy()
+    )
+    // The binding is withdrawn, and what is on screen is named as the revision
+    // it is rather than as the file.
+    expect(screen.queryByText('matches the file the editor holds')).toBeNull()
+    expect(screen.getByText(/showing the revision it loaded/)).toBeTruthy()
+    expect(screen.getByText(/the bytes you loaded from/)).toBeTruthy()
+    // And the way to the bytes that are there now is offered rather than taken.
+    expect(screen.getByRole('button', { name: 'Reload' })).toBeTruthy()
   })
 })
 

@@ -331,7 +331,32 @@ export function AbsentObject({
   children: ReactNode
 }) {
   const { buffer, write } = useEditing()
-  if (valueAt(buffer.index.value, pointer) !== undefined) return <>{children}</>
+  const held = valueAt(buffer.index.value, pointer)
+  if (held !== undefined && (typeof held !== 'object' || held === null || Array.isArray(held))) {
+    // **Present, and not an object.** `writes.place` splices into a container
+    // and there is none here, so every field below took a keystroke and moved
+    // no bytes with nothing on screen saying so. The bytes are named at their
+    // own pointer and left alone: replacing them would be this form deciding
+    // that what the author wrote was a mistake.
+    return (
+      <div
+        id={elementIdFor(pointer)}
+        data-pointer={pointer}
+        tabIndex={-1}
+        className={styles.absentGroup}
+      >
+        <p className={styles.absentLabel}>{label}</p>
+        <p className={styles.absentLine}>
+          <span className={styles.absentTag}>not the shape this form edits</span>
+          <code>{JSON.stringify(held)}</code>
+        </p>
+        <p className={styles.absentLine}>
+          The JSON view holds these bytes, which is where they can be changed.
+        </p>
+      </div>
+    )
+  }
+  if (held !== undefined) return <>{children}</>
   const starter = starterFor(pointer)
   return (
     <div

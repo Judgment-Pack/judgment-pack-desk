@@ -39,8 +39,34 @@ export interface DocumentBuffer {
   canUndo: boolean
   /** Put the buffer back to the base, and forget the stack. */
   discard: () => void
-  /** Take a fresh revision as the base: load, explicit reload, saved. */
+  /** Take a fresh revision as the base: an initial load, or an explicit reload. */
   rebase: (fresh: FileContent) => void
+  /**
+   * Move the base onto what a save landed, **keeping work the save did not
+   * carry**.
+   *
+   * The live text is replaced only where it is still the bytes that were
+   * submitted *and* the chassis read those bytes back. Anything else — text
+   * typed while the PUT was in flight, a read-back that is not what was sent —
+   * leaves the buffer where it is, dirty against the new base, because the
+   * alternative is an editor that throws away an author's last sentence
+   * whenever a save is slower than they are.
+   */
+  landed: (fresh: FileContent, submitted: string) => void
+  /**
+   * A revision for **another path**, held because this buffer has unsaved
+   * work.
+   *
+   * The path a page is about can move under a route that has not navigated:
+   * the listing re-answers, `get_pack` names a different file. Seeding on that
+   * silently replaced an author's edits with another document's bytes, so it
+   * is offered instead of taken.
+   */
+  waiting: FileContent | undefined
+  /** Take the waiting revision, discarding what is in the buffer. */
+  takeWaiting: () => void
+  /** Forget this document entirely, so the next file seeds cleanly. */
+  forget: () => void
 }
 
 /** One entry on the stack: the bytes, and what was being typed into. */
@@ -84,22 +110,54 @@ export function useDocumentBuffer(
   //
   // The path is what is compared, never the content: two revisions of one file
   // have the same path, which is exactly the case that must not rebase.
-  const seeded = useRef<string | undefined>(undefined)
-  useEffect(() => {
-    if (loaded === undefined || seeded.current === loaded.path) return
-    seeded.current = loaded.path
-    setBase(loaded)
-    setText(loaded.content)
-    // The stack is about the document it was built over. An entry from the
-    // previous pack would put that pack's bytes into this one.
-    setStack([])
-  }, [loaded])
-
   // The bytes a commit is pushing *away from*, readable without asking React
   // for them inside another updater — an updater that calls a setter is not
   // the pure function React is entitled to call twice.
   const current = useRef<string | undefined>(undefined)
   current.current = text
+
+  const seeded = useRef<string | undefined>(undefined)
+  const [waiting, setWaiting] = useState<FileContent | undefined>(undefined)
+  /**
+   * Bumped by `forget`, so the seeding effect runs again for a file it has
+   * already seen.
+   *
+   * A route that leaves a pack and comes back gets the same `FileContent`
+   * object out of the query cache, and an effect keyed on that object alone
+   * never fires again — the buffer stayed forgotten and the editor had nothing
+   * to edit.
+   */
+  const [generation, setGeneration] = useState(0)
+  // Whether there is work to lose, readable from the effect below without
+  // making it depend on the text: it must run when the *file* changes and not
+  // on every keystroke.
+  const dirtyNow = useRef(false)
+
+  const adopt = useCallback((fresh: FileContent) => {
+    seeded.current = fresh.path
+    setBase(fresh)
+    current.current = fresh.content
+    setText(fresh.content)
+    // The stack is about the document it was built over. An entry from the
+    // previous pack would put that pack's bytes into this one.
+    setStack([])
+    setWaiting(undefined)
+  }, [])
+
+  useEffect(() => {
+    void generation
+    if (loaded === undefined || seeded.current === loaded.path) return
+    // **A different file arriving over unsaved work is a question, not an
+    // answer.** A route that navigated has already asked it — the dirty guard
+    // is on the pathname — but a path that moves *under* one address has asked
+    // nobody, and taking the new bytes there discards an edit with nothing on
+    // screen having offered to keep it.
+    if (seeded.current !== undefined && dirtyNow.current) {
+      setWaiting(loaded)
+      return
+    }
+    adopt(loaded)
+  }, [loaded, generation, adopt])
 
   const commit = useCallback((next: string, options?: { coalesceKey?: string }) => {
     const previous = current.current
@@ -143,18 +201,42 @@ export function useDocumentBuffer(
     onDiscard?.()
   }, [base, onDiscard])
 
-  const rebase = useCallback((fresh: FileContent) => {
-    // This file is now seeded, whichever way it got here — so a watcher answer
-    // arriving after a save or a reload is still a refetch and still does not
-    // re-seed.
+  // This file is now seeded, whichever way it got here — so a watcher answer
+  // arriving after a save or a reload is still a refetch and still does not
+  // re-seed.
+  const rebase = adopt
+
+  const landed = useCallback((fresh: FileContent, submitted: string) => {
     seeded.current = fresh.path
     setBase(fresh)
+    setWaiting(undefined)
+    // **Only a save that carried everything replaces the buffer.** The author
+    // is free to keep typing while the PUT is in flight, and every one of those
+    // keystrokes is work this save did not send; so is a read-back that is not
+    // what was sent. Either way the text stays exactly where it is and `dirty`
+    // says what is true of it against the revision that landed.
+    if (current.current !== submitted || fresh.content !== submitted) return
     current.current = fresh.content
     setText(fresh.content)
     setStack([])
   }, [])
 
+  const takeWaiting = useCallback(() => {
+    if (waiting !== undefined) adopt(waiting)
+  }, [waiting, adopt])
+
+  const forget = useCallback(() => {
+    seeded.current = undefined
+    setGeneration((count) => count + 1)
+    setBase(undefined)
+    current.current = undefined
+    setText(undefined)
+    setStack([])
+    setWaiting(undefined)
+  }, [])
+
   const dirty = text !== undefined && base !== undefined && text !== base.content
+  dirtyNow.current = dirty
 
   return useMemo(
     () => ({
@@ -165,8 +247,25 @@ export function useDocumentBuffer(
       undo,
       canUndo: stack.length > 0,
       discard,
-      rebase
+      rebase,
+      landed,
+      waiting,
+      takeWaiting,
+      forget
     }),
-    [base, text, dirty, commit, undo, stack.length, discard, rebase]
+    [
+      base,
+      text,
+      dirty,
+      commit,
+      undo,
+      stack.length,
+      discard,
+      rebase,
+      landed,
+      waiting,
+      takeWaiting,
+      forget
+    ]
   )
 }

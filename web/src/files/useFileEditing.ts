@@ -60,6 +60,8 @@ export interface FileEditing {
     override?: boolean
     createParents?: boolean
     onSaved?: (landed: FileContent) => void
+    /** However it ended — so a caller holding a single-flight latch can let go. */
+    onSettled?: () => void
   }) => void
   /** Read the file again and hand back what is on disk now. */
   reload: (path: string, onLoaded: (fresh: FileContent) => void) => void
@@ -84,13 +86,18 @@ export function useFileEditing(): FileEditing {
 
   const reload = useCallback(
     (path: string, onLoaded: (fresh: FileContent) => void) => {
-      write.reset()
-      setOutcome(undefined)
       setReloadError(undefined)
+      // **The conflict stands until the read lands.** Clearing it first left a
+      // failed reload with nothing on screen at all: no stale-write notice, no
+      // error, and a Save button that would 409 again — the page had forgotten
+      // the one fact the author needed. The verdict and the conflict are
+      // cleared on success, which is where they stop being true.
       // A direct read, not a refetch: see the module doc. Only this request's
       // own answer counts.
       void readFile(path)
         .then((fresh) => {
+          write.reset()
+          setOutcome(undefined)
           onLoaded(fresh)
           queryClient.setQueryData(['desk-file', path], fresh)
         })
@@ -110,6 +117,7 @@ export function useFileEditing(): FileEditing {
       override?: boolean
       createParents?: boolean
       onSaved?: (landed: FileContent) => void
+      onSettled?: () => void
     }) => {
       // A previous verdict does not survive into a new attempt: leaving
       // "Saved, and verified" on screen while the next save is pending or
@@ -131,6 +139,7 @@ export function useFileEditing(): FileEditing {
           createParents: input.createParents
         },
         {
+          onSettled: () => input.onSettled?.(),
           onSuccess: (landed) => {
             setOutcome({ submitted, landed })
             input.onSaved?.(landed)

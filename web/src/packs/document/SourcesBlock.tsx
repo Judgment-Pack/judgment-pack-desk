@@ -6,6 +6,7 @@ import { ENUMS } from '../edit/shape'
 import { Block } from './Block'
 import { ExtensionsBlock } from './ExtensionsBlock'
 import styles from './PackDocument.module.css'
+import { MisshapenMember, isRecord } from './MisshapenMember'
 
 export function SourcesBlock({ sources, at }: { sources: Source[]; at: string }) {
   const { editing } = useEditing()
@@ -13,7 +14,19 @@ export function SourcesBlock({ sources, at }: { sources: Source[]; at: string })
     <Block pointer={at}>
       <h2 className={styles.heading}>Sources</h2>
       <ul className={styles.cards}>
-        {sources.map((source, index) => (
+        {sources.map((source, index) =>
+          // Not an object: there are no fields to draw and nothing to point a
+          // control at. The bytes are printed at their own pointer instead.
+          !isRecord(source) ? (
+            <li key={`misshapen-${index}`}>
+              <MisshapenMember
+                pointer={`${at}/${index}`}
+                label={`Source ${index + 1}`}
+                expected="an object"
+                value={source}
+              />
+            </li>
+          ) : (
           <li key={`${source.id}-${index}`}>
             <Block pointer={`${at}/${index}`} as="div" className={styles.card}>
               {editing ? (
@@ -24,7 +37,8 @@ export function SourcesBlock({ sources, at }: { sources: Source[]; at: string })
               <ExtensionsBlock extensions={source.extensions} at={`${at}/${index}/extensions`} />
             </Block>
           </li>
-        ))}
+          )
+        )}
       </ul>
     </Block>
   )

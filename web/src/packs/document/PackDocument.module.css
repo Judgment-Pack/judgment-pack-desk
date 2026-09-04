@@ -40,6 +40,20 @@
   color: var(--ink-soft);
 }
 
+/* A member whose bytes are not the shape the controls edit, printed as they
+   are. It scrolls sideways rather than wrapping: a long line is long, and
+   wrapping it would move line breaks that are somebody's. */
+.raw {
+  margin: 0;
+  overflow-x: auto;
+  padding: 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 0.76rem;
+}
+
 /* Identity ---------------------------------------------------------------- */
 
 .identity {

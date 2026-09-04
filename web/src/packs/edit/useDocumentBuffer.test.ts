@@ -134,7 +134,6 @@ describe('discard and rebase', () => {
       ({ answer }: { answer: FileContent }) => useDocumentBuffer(answer),
       { initialProps: { answer: file('{"a": 1}') } }
     )
-    act(() => result.current.commit('{"a": 2}'))
     const other = file('{"b": 9}', 'packs/other.pack.json')
     rerender({ answer: other })
     expect(result.current.text).toBe('{"b": 9}')
@@ -143,5 +142,102 @@ describe('discard and rebase', () => {
     // The stack was about the document that is no longer on screen; one Undo
     // would otherwise put the first pack's bytes into the second one.
     expect(result.current.canUndo).toBe(false)
+    expect(result.current.waiting).toBeUndefined()
+  })
+
+  it('holds a different file rather than replacing unsaved work', () => {
+    // **A path can move under an address nobody navigated**: the listing
+    // re-answers, `get_pack` names another file. Seeding on that replaced an
+    // author's edits with another document's bytes, with nothing on screen
+    // having offered to keep them.
+    const { result, rerender } = renderHook(
+      ({ answer }: { answer: FileContent }) => useDocumentBuffer(answer),
+      { initialProps: { answer: file('{"a": 1}') } }
+    )
+    act(() => result.current.commit('{"a": 2}'))
+    const other = file('{"b": 9}', 'packs/other.pack.json')
+    rerender({ answer: other })
+
+    expect(result.current.text).toBe('{"a": 2}')
+    expect(result.current.base?.path).toBe('packs/x.pack.json')
+    expect(result.current.dirty).toBe(true)
+    expect(result.current.waiting).toBe(other)
+
+    // And it is an offer, so taking it is an act.
+    act(() => result.current.takeWaiting())
+    expect(result.current.text).toBe('{"b": 9}')
+    expect(result.current.base).toBe(other)
+    expect(result.current.waiting).toBeUndefined()
+    expect(result.current.canUndo).toBe(false)
+  })
+
+  it('forgets a document the route has left, and seeds again from the file', () => {
+    // What the route calls when the address moves to another pack: the edits go
+    // and the buffer is whatever the file query is answering with now. Coming
+    // back to a pack hands the hook the *same* `FileContent` object out of the
+    // cache, so this has to seed again rather than wait for an object that will
+    // never change.
+    const { result, rerender } = renderHook(
+      ({ answer }: { answer: FileContent }) => useDocumentBuffer(answer),
+      { initialProps: { answer: file('{"a": 1}') } }
+    )
+    act(() => result.current.commit('{"a": 2}'))
+    act(() => result.current.forget())
+    expect(result.current.text).toBe('{"a": 1}')
+    expect(result.current.dirty).toBe(false)
+    expect(result.current.canUndo).toBe(false)
+
+    // And a buffer whose edits were forgotten holds nothing back: this is the
+    // other pack arriving after a navigation the guard already asked about.
+    act(() => result.current.commit('{"a": 3}'))
+    act(() => result.current.forget())
+    const other = file('{"b": 9}', 'packs/other.pack.json')
+    rerender({ answer: other })
+    expect(result.current.text).toBe('{"b": 9}')
+    expect(result.current.waiting).toBeUndefined()
+  })
+})
+
+describe('what a save lands on', () => {
+  it('replaces the buffer where the save carried everything', () => {
+    const { result } = renderHook(() => useDocumentBuffer(file('{"a": 1}')))
+    act(() => result.current.commit('{"a": 2}'))
+    const landed = { ...file('{"a": 2}'), sha256: 'b'.repeat(64) }
+    act(() => result.current.landed(landed, '{"a": 2}'))
+    expect(result.current.base).toBe(landed)
+    expect(result.current.text).toBe('{"a": 2}')
+    expect(result.current.dirty).toBe(false)
+    expect(result.current.canUndo).toBe(false)
+  })
+
+  it('keeps what was typed while the write was in flight', () => {
+    // **The author is free to keep typing during a PUT.** Every keystroke after
+    // the request is work the save did not send, and a rebase that replaced the
+    // buffer with the landed bytes deleted it — silently, at the moment the
+    // page said the save had succeeded.
+    const { result } = renderHook(() => useDocumentBuffer(file('{"a": 1}')))
+    act(() => result.current.commit('{"a": 2}'))
+    const submitted = '{"a": 2}'
+    act(() => result.current.commit('{"a": 3}'))
+    const landed = { ...file(submitted), sha256: 'b'.repeat(64) }
+    act(() => result.current.landed(landed, submitted))
+    expect(result.current.base).toBe(landed)
+    expect(result.current.text).toBe('{"a": 3}')
+    expect(result.current.dirty).toBe(true)
+    // And the way back to it is still there.
+    expect(result.current.canUndo).toBe(true)
+  })
+
+  it('keeps the submitted bytes where the read-back is not them', () => {
+    // The write completed and the disk does not hold what was sent. The base is
+    // what landed — that is what a further save must state — and the editor
+    // still holds what was sent, dirty against it.
+    const { result } = renderHook(() => useDocumentBuffer(file('{"a": 1}')))
+    act(() => result.current.commit('{"a": 2}'))
+    const landed = { ...file('{"a": 99}'), sha256: 'c'.repeat(64) }
+    act(() => result.current.landed(landed, '{"a": 2}'))
+    expect(result.current.base).toBe(landed)
+    expect(result.current.text).toBe('{"a": 2}')
+    expect(result.current.dirty).toBe(true)
   })
 })

@@ -13,6 +13,8 @@
  * plain paragraph and roots the tree at `/rules/N/when`; this does the same.
  */
 import type { Condition } from '../../mcp/types'
+import { ConditionBuilder } from '../edit/ConditionBuilder'
+import { useEditing } from '../edit/editingContext'
 import { ConditionTree } from './ConditionTree'
 import styles from './PackDocument.module.css'
 
@@ -23,11 +25,23 @@ export function ApplicabilityBlock({
   applicability: Condition
   at: string
 }) {
+  const { editing } = useEditing()
   return (
     <section>
       <h2 className={styles.heading}>Applicability</h2>
       <p className={styles.note}>The pack decides only where this holds.</p>
-      <ConditionTree condition={applicability} at={at} />
+      {/*
+        **The same builder a rule's `when` gets.** It is the same kind of object
+        and editing it should not depend on where it sits — and this was the one
+        condition in the document the form could only read, so an author who
+        declared it from the omission line above was handed a starter they could
+        not then change.
+      */}
+      {editing ? (
+        <ConditionBuilder at={at} />
+      ) : (
+        <ConditionTree condition={applicability} at={at} />
+      )}
     </section>
   )
 }

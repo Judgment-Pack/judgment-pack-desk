@@ -26,6 +26,7 @@ export function EditToolbar({
   shape,
   shapeAvailable,
   dirty,
+  discardable,
   saving,
   checking,
   tryingIt,
@@ -44,6 +45,8 @@ export function EditToolbar({
   /** False where the bytes cannot be read as a document: raw only. */
   shapeAvailable: boolean
   dirty: boolean
+  /** Whether there is anything to throw away: bytes, or text not written yet. */
+  discardable: boolean
   saving: boolean
   checking: boolean
   tryingIt: boolean
@@ -136,7 +139,13 @@ export function EditToolbar({
             </Button>
           </ToolbarItem>
           <ToolbarItem>
-            <Button variant="quiet" onClick={onDiscard} disabled={!dirty || saving}>
+            {/*
+              **Discard is about work, not about bytes.** An operand holding
+              text that is not JSON yet moves no bytes, so a form whose only
+              edit was one of those had a disabled Discard beside a field the
+              author could see was unfinished.
+            */}
+            <Button variant="quiet" onClick={onDiscard} disabled={!discardable || saving}>
               Discard
             </Button>
           </ToolbarItem>

@@ -178,6 +178,95 @@ describe('changing a node’s kind', () => {
   })
 })
 
+describe('adding a child where `conditions` is not a list', () => {
+  it('writes the list the author asked for, rather than doing nothing', () => {
+    // **`"conditions": {}` is valid JSON and not an array.** `insertMember`
+    // refuses a container that is not one, so the button drew, took the click,
+    // and changed nothing at all — a control that is not a control. An author
+    // who pressed *add* asked for a condition.
+    const doc = '{\n  "when": {\n    "op": "all",\n    "conditions": {}\n  }\n}'
+    const next = addChild(buffered(doc), '/when')
+    const value = next.index.value as { when: { conditions: unknown[] } }
+    expect(Array.isArray(value.when.conditions)).toBe(true)
+    expect(value.when.conditions).toHaveLength(1)
+    expect(value.when.conditions[0]).toEqual({ op: 'literal', value: true })
+    // Everything outside that member is byte for byte what it was.
+    const span = buffered(doc).index.spans.get('/when/conditions')!
+    const [head, tail] = outside(doc, span.valueStart, span.valueEnd)
+    expect(next.text.startsWith(head)).toBe(true)
+    expect(next.text.endsWith(tail)).toBe(true)
+  })
+})
+
+describe('a kind change over bytes JavaScript cannot hold', () => {
+  /** A `fact` whose operand is a number no double can represent. */
+  const lines = [
+    '{',
+    '  "when": {',
+    '    "op": "fact",',
+    '    "path": "/amount",',
+    '    "operator": "greater-than",',
+    '    "value": 9007199254740993',
+    '  }',
+    '}'
+  ]
+  const doc = lines.join('\n')
+
+  it('keeps an integer past 2^53 exactly as it was written', () => {
+    // **This is why nothing of the author's is re-serialized.** The scanner
+    // reads a number through `Number()`, so the *value* is already
+    // 9007199254740992 — and a writer that emitted the value wrote a different
+    // policy than the one on disk, from a control the author never touched.
+    const next = changeKind(buffered(doc), '/when', 'literal')
+    expect(next.text).toContain('"value": 9007199254740993')
+    expect(next.text).not.toContain('9007199254740992')
+    expect(next.text).toBe(
+      ['{', '  "when": {', '    "op": "literal",', '    "value": 9007199254740993', '  }', '}'].join(
+        '\n'
+      )
+    )
+  })
+
+  it('keeps 5.0 as 5.0, and an escape as the escape it is', () => {
+    const written = [
+      '{',
+      '  "when": {',
+      '    "op": "fact",',
+      '    "path": "/amount",',
+      '    "operator": "greater-than",',
+      '    "value": 5.0',
+      '  },',
+      '  "note": "caf\\u00e9"',
+      '}'
+    ].join('\n')
+    const next = changeKind(buffered(written), '/when', 'literal')
+    expect(next.text).toContain('"value": 5.0')
+    expect(next.text).toContain('caf\\u00e9')
+  })
+
+  it('writes the document’s own line ending, not this module’s', () => {
+    // A `fact` becoming a `not` is the case that must write bytes: `condition`
+    // is a member the old node has nothing for. `JSON.stringify` emits LF, and
+    // a CRLF document got LF lines spliced into it — one file, two kinds of
+    // line ending, from one control.
+    const crlf = lines.join('\r\n')
+    const next = changeKind(buffered(crlf), '/when', 'not')
+    expect(next.text).toContain('"condition"')
+    // Every line still ends the way the document ends its lines.
+    expect(/[^\r]\n/.test(next.text)).toBe(false)
+    expect(next.text.split('\r\n').length).toBeGreaterThan(lines.length)
+  })
+
+  it('keeps a carried member’s bytes when the member sets differ', () => {
+    // `fact` → `literal` drops `path` and `operator` and keeps `value`. The
+    // node is not rebuilt: the bytes of the member both kinds carry are the
+    // author's own, byte for byte.
+    const next = changeKind(buffered(doc), '/when', 'literal')
+    const node = next.index.value as { when: Record<string, unknown> }
+    expect(Object.keys(node.when)).toEqual(['op', 'value'])
+  })
+})
+
 describe('changing the operator', () => {
   it('writes the operator and leaves the operand exactly as it was', () => {
     const at = `${WHEN}/conditions/0`

@@ -6,6 +6,7 @@ import { ENUMS } from '../edit/shape'
 import { Block } from './Block'
 import { ExtensionsBlock } from './ExtensionsBlock'
 import styles from './PackDocument.module.css'
+import { MisshapenMember, isRecord } from './MisshapenMember'
 
 export function EvidenceBlock({
   requirements,
@@ -19,7 +20,19 @@ export function EvidenceBlock({
     <Block pointer={at}>
       <h2 className={styles.heading}>Evidence requirements</h2>
       <ul className={styles.cards}>
-        {requirements.map((requirement, index) => (
+        {requirements.map((requirement, index) =>
+          // Not an object: there are no fields to draw and nothing to point a
+          // control at. The bytes are printed at their own pointer instead.
+          !isRecord(requirement) ? (
+            <li key={`misshapen-${index}`}>
+              <MisshapenMember
+                pointer={`${at}/${index}`}
+                label={`Requirement ${index + 1}`}
+                expected="an object"
+                value={requirement}
+              />
+            </li>
+          ) : (
           <li key={`${requirement.id}-${index}`}>
             <Block pointer={`${at}/${index}`} as="div" className={styles.card}>
               {editing ? (
@@ -44,7 +57,8 @@ export function EvidenceBlock({
               />
             </Block>
           </li>
-        ))}
+          )
+        )}
       </ul>
     </Block>
   )

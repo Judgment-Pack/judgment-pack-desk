@@ -48,6 +48,18 @@ export interface ChassisLog {
     createParents: boolean
   }[]
   reads: number
+  /**
+   * Answer a read this chassis was told to hold.
+   *
+   * A file read that answers immediately cannot express the gap the route
+   * lives in: `get_pack(B)` returns and the page knows B's path while the
+   * buffer is still A's, which is where a save used to send A's bytes to B.
+   */
+  release: (path: string) => void
+  /** Answer the write this chassis was told to hold. */
+  releaseWrite: () => void
+  /** Refuse every read from here on, which is what a reload has to survive. */
+  breakReads: () => void
 }
 
 /**
@@ -68,10 +80,37 @@ export function chassis(options: {
   /** Other files on this disk, by path. */
   also?: Record<string, { content: string; sha256: string }>
   files?: { path: string; bytes: number; sha256: string }[]
+  /** Paths whose reads wait until the case releases them. */
+  hold?: string[]
+  /** Hold the write until the case releases it, so a case can type during a PUT. */
+  holdWrite?: boolean
+  /** Refuse the write with something that is not a conflict. */
+  failWrite?: { status: number; error: string }
   /** Refuse the next write with a 409, and say what is on disk now. */
   staleWith?: { sha256: string; exists?: boolean }
 }): ChassisLog {
-  const log: ChassisLog = { writes: [], reads: 0 }
+  const gates = new Map<string, { wait: Promise<void>; open: () => void }>()
+  for (const path of options.hold ?? []) {
+    let open = () => {}
+    const wait = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    gates.set(path, { wait, open })
+  }
+  let openWrite = () => {}
+  const writeGate = new Promise<void>((resolve) => {
+    openWrite = resolve
+  })
+  let readsBroken = false
+  const log: ChassisLog = {
+    writes: [],
+    reads: 0,
+    release: (path) => gates.get(path)?.open(),
+    releaseWrite: () => openWrite(),
+    breakReads: () => {
+      readsBroken = true
+    }
+  }
   const disk = new Map<string, { content: string; sha256: string }>([
     [PACK_PATH, { content: options.content, sha256: options.sha256 }],
     ...Object.entries(options.also ?? {})
@@ -91,6 +130,16 @@ export function chassis(options: {
     if (address.includes('/api/file?') && init?.method === undefined) {
       log.reads += 1
       const wanted = decodeURIComponent(/[?&]path=([^&]*)/.exec(address)?.[1] ?? '')
+      const gate = gates.get(wanted)
+      if (gate !== undefined) await gate.wait
+      if (readsBroken) {
+        return {
+          ok: false,
+          status: 500,
+          statusText: 'Internal Server Error',
+          text: async () => JSON.stringify({ error: 'the chassis could not read the file' })
+        }
+      }
       const held = disk.get(wanted)
       if (held === undefined) {
         return {
@@ -116,6 +165,15 @@ export function chassis(options: {
         createParents: boolean
       }
       log.writes.push(body)
+      if (options.holdWrite === true) await writeGate
+      if (options.failWrite !== undefined) {
+        return {
+          ok: false,
+          status: options.failWrite.status,
+          statusText: 'Error',
+          text: async () => JSON.stringify({ error: options.failWrite!.error })
+        }
+      }
       if (options.staleWith !== undefined && !body.override) {
         return {
           ok: false,

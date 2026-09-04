@@ -11,6 +11,7 @@ import { useEditing } from '../edit/editingContext'
 import { Block } from './Block'
 import { RuleCard } from './RuleCard'
 import styles from './PackDocument.module.css'
+import { MisshapenMember, isRecord } from './MisshapenMember'
 
 export function RulesBlock({ rules, at }: { rules: Rule[]; at: string }) {
   const { editing } = useEditing()
@@ -20,7 +21,19 @@ export function RulesBlock({ rules, at }: { rules: Rule[]; at: string }) {
       <h2 className={styles.heading}>Rules — document order</h2>
       {editing && <OrderAnnouncement text={announcement} />}
       <ol className={styles.cards}>
-        {rules.map((rule, index) => (
+        {rules.map((rule, index) =>
+          // A rule that is not an object has no fields to draw and no card to
+          // put them in — `rule.id` on a `null` is where the route used to end.
+          !isRecord(rule) ? (
+            <li key={`misshapen-${index}`}>
+              <MisshapenMember
+                pointer={`${at}/${index}`}
+                label={`Rule ${index + 1}`}
+                expected="an object"
+                value={rule}
+              />
+            </li>
+          ) : (
           <RuleCard
             key={`${rule.id}-${index}`}
             rule={rule}
@@ -31,7 +44,8 @@ export function RulesBlock({ rules, at }: { rules: Rule[]; at: string }) {
                 : undefined
             }
           />
-        ))}
+          )
+        )}
       </ol>
     </Block>
   )

@@ -38,9 +38,11 @@
  * the authority this whole surface exists not to be.
  */
 import { useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { ErrorBox, Loading } from '../components/primitives'
+import { AlertPanel } from '../ui/AlertPanel'
+import { Button } from '../ui/Button'
 import { StaleWrite } from '../files/client'
 import { useFileContent, useFileListing } from '../files/queries'
 import { useFileEditing } from '../files/useFileEditing'
@@ -78,8 +80,17 @@ import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useMeasuredBox } from '../shell/measured'
 import styles from './PackView.module.css'
 
-/** What the what-if pane needs, and what the editor must keep beside it. */
-const PANE_WIDTH = 392
+/**
+ * What the what-if pane needs, and what the editor must keep beside it.
+ *
+ * **One number, and the stylesheet reads it from here.** The predicate said 392
+ * and `.pane` was `24rem`, which is 384: the arithmetic asked for eight pixels
+ * that were never taken, so at the shell's own maximum — a 60rem box less its
+ * padding is exactly 912 — the pane fitted and the page said it did not. The
+ * width is set as a custom property on the workspace and `.pane` is `width:
+ * var(--tryit-pane-width)`, so the two cannot drift again.
+ */
+const PANE_WIDTH = 384
 const EDITOR_FLOOR = 512
 /** The `1rem` between the two, from `.workspace`'s own gap. */
 const PANE_GAP = 16
@@ -117,7 +128,19 @@ export function PackView() {
   // together here rather than each holding half of it.
   const editor = useFileEditing()
   const buffer = useDocumentBuffer(file.data, editor.reset)
-  const bufferText = buffer.text
+  /**
+   * **The path is part of the buffer's identity.**
+   *
+   * `path` moves the moment `get_pack(B)` answers, while the buffer still
+   * holds A until B's file read lands and the seeding effect runs. In that gap
+   * the page drew A's document under B's address and Save combined B's path
+   * with A's bytes and A's digest — which a 409 usually catches and equal
+   * digests, or the Overwrite the 409 itself offers, does not. Nothing is
+   * drawn from the buffer, and nothing may be written from it, until the two
+   * agree.
+   */
+  const onPath = path !== undefined && buffer.base?.path === path
+  const bufferText = onPath ? buffer.text : undefined
 
   /**
    * Text an author has typed into an operand that is not JSON yet.
@@ -154,6 +177,25 @@ export function PackView() {
     setDrafts(new Map())
   }, [path, reset])
 
+  /**
+   * A different **pack** is a different document, and this one is put down.
+   *
+   * The dirty guard is on the pathname, so arriving at another pack's address
+   * is a navigation the viewer has already been asked about. What is left is to
+   * forget the buffer rather than hold it as work to be rescued — that offer
+   * belongs to a path that moved under *one* address, which nobody was asked
+   * about (`buffer.waiting`).
+   */
+  const forget = buffer.forget
+  const openedPack = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (packId === undefined || openedPack.current === packId) return
+    const first = openedPack.current === undefined
+    openedPack.current = packId
+    if (first) return
+    forget()
+  }, [packId, forget])
+
   // This desk's reading of the bytes on screen, computed once per revision of
   // them. Every form field reads its value out of this and every write splices
   // into it.
@@ -186,11 +228,27 @@ export function PackView() {
   // document where it did not.
   const servedText = pack.data?.raw
   const shownText = bufferText ?? servedText
+  /**
+   * Whether the revision this editor loaded is still the one on disk.
+   *
+   * A watcher refetch moves the file query and deliberately does **not** move
+   * the base — that is the whole of the stale-write story — so a clean buffer
+   * can be a *previous* revision of the file while the page calls it "the bytes
+   * of packs/x.pack.json". It is the bytes that were loaded, and where the disk
+   * has moved on this says so and offers the read.
+   */
+  const behindDisk =
+    onPath &&
+    buffer.base !== undefined &&
+    file.data !== undefined &&
+    file.data.sha256 !== buffer.base.sha256
   const whichBytes =
     bufferText !== undefined
       ? buffer.dirty
         ? 'the bytes in the editor'
-        : `the bytes of ${path ?? 'the file on disk'}`
+        : behindDisk
+          ? `the bytes you loaded from ${path ?? 'the file on disk'}`
+          : `the bytes of ${path ?? 'the file on disk'}`
       : 'the document the runtime served'
 
   // What is sent, and when. The first bytes go at once; every later change
@@ -225,8 +283,9 @@ export function PackView() {
    * it, and the served document is the fallback — with the JSON view holding
    * the bytes that do not scan and saying where they stop.
    */
-  const drawn: PackDocument | undefined =
-    (read?.index.value as PackDocument | undefined) ?? pack.data?.document
+  const drawn: PackDocument | undefined = onPath
+    ? (read?.index.value as PackDocument | undefined)
+    : pack.data?.document
 
   // Which blocks are actually on screen. Read off the DOM rather than derived
   // from the document, because "nearest **rendered** ancestor" is a claim about
@@ -360,34 +419,73 @@ export function PackView() {
    * and a kind change all retire a draft, and counting a retired one would say
    * a field is unwritten when nothing on screen says so.
    */
-  const unwritten = useMemo(() => {
-    if (read === undefined) return 0
-    let held = 0
-    for (const [pointer, draft] of drafts) {
-      if ((bytesAt(read, pointer) ?? '') === draft.from) held += 1
-    }
-    return held
-  }, [drafts, read])
+  /**
+   * A draft is retired **permanently** when the bytes it started from move.
+   *
+   * It was an equality mask over a map that kept everything: a raw edit away
+   * from the operand and an Undo back to it made `from` match again, and text
+   * an author had abandoned two actions ago reappeared in a field. Retirement
+   * is a deletion, so what is gone is gone.
+   */
+  useEffect(() => {
+    if (read === undefined) return
+    setDrafts((held) => {
+      let changed = false
+      const next = new Map(held)
+      for (const [pointer, draft] of held) {
+        if ((bytesAt(read, pointer) ?? '') === draft.from) continue
+        next.delete(pointer)
+        changed = true
+      }
+      return changed ? next : held
+    })
+  }, [read])
+
+  const unwritten = drafts.size
 
   /* Saving ----------------------------------------------------------------- */
 
   const dirty = buffer.dirty
   const staleWrite = editor.write.error instanceof StaleWrite ? editor.write.error : undefined
+  // A refusal that is not a conflict — the path is not writable, the chassis is
+  // not there, the body did not parse. It was rendered nowhere at all: the
+  // button stopped saying "Saving…" and the page said nothing about why.
+  const saveFailure = editor.write.error !== null && staleWrite === undefined ? editor.write.error : undefined
+  const reloadNow = useCallback(() => {
+    if (path === undefined) return
+    editor.reload(path, (fresh) => buffer.rebase(fresh))
+  }, [path, editor, buffer])
 
+  const saving = useRef(false)
   const save = useCallback(
     (override?: boolean) => {
       if (path === undefined || bufferText === undefined || buffer.base === undefined) return
+      // **One save at a time, decided synchronously.** `write.isPending` is
+      // state and arrives a render later, so two chords inside one frame both
+      // read "not saving" and issue two PUTs against one base — the second of
+      // which the chassis answers with a 409 this page then explains as
+      // somebody else's edit.
+      if (saving.current) return
+      // The bytes are the ones sent, and they are checked against the path they
+      // are being sent to: `path` moves with `get_pack` and the buffer moves
+      // with the file read, so the two are not always about one file.
+      if (buffer.base.path !== path) return
+      const submitted = bufferText
+      saving.current = true
       // The check runs before the save and does **not** gate it. Sending the
       // buffer now means the diagnostics on screen afterwards are about the
       // bytes that were written rather than about whatever was last idle.
       idle.checkNow()
       editor.save({
         path,
-        content: bufferText,
+        content: submitted,
         baseSha256: buffer.base.sha256,
         override,
+        onSettled: () => {
+          saving.current = false
+        },
         onSaved: (landed) => {
-          buffer.rebase(landed)
+          buffer.landed(landed, submitted)
           // The runtime is now serving a file it has already read. These three
           // are what would otherwise keep answering about the old revision.
           void queryClient.invalidateQueries({ queryKey: ['list_packs'] })
@@ -424,6 +522,12 @@ export function PackView() {
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return
       if (event.altKey || event.shiftKey) return
+      // **Held down is one save.** A key repeat is the operating system saying
+      // the key is still down, not the author asking again; and an event
+      // another handler has already answered is not this page's to answer
+      // twice. `save` itself refuses to overlap, and these two keep the
+      // refusals from happening at all.
+      if (event.repeat || event.defaultPrevented) return
       event.preventDefault()
       if (dirty) saveNow.current()
     }
@@ -431,8 +535,23 @@ export function PackView() {
     return () => document.removeEventListener('keydown', onKey)
   }, [editing, dirty])
 
-  usePublishedDirty(path ?? `pack:${packId ?? ''}`, buffer.dirty)
-  useDirtyGuard(buffer.dirty, LEAVING)
+  /**
+   * What the viewer would lose by leaving — which is **not only bytes**.
+   *
+   * Text typed into an operand that is not JSON yet lives beside the buffer, so
+   * a form whose only edit was one of those was byte-clean: Discard was
+   * disabled, the rail showed nothing, and navigating away took the work with
+   * no question asked. Dirty stays a byte comparison, because a save writes
+   * bytes; this is the wider question of whether there is anything to lose.
+   */
+  const hasWork = dirty || unwritten > 0
+  const discardAll = useCallback(() => {
+    buffer.discard()
+    setDrafts(new Map())
+  }, [buffer])
+
+  usePublishedDirty(path ?? `pack:${packId ?? ''}`, hasWork)
+  useDirtyGuard(hasWork, LEAVING)
 
   /* Try it ----------------------------------------------------------------- */
 
@@ -479,6 +598,7 @@ export function PackView() {
           meta={pack.data.meta}
           fileSha256={file.data?.sha256}
           fileBytes={file.data?.bytes}
+          baseSha256={onPath ? buffer.base?.sha256 : undefined}
           dirty={dirty}
           anchored={anchored}
           truncation={truncationNote(report)}
@@ -587,7 +707,11 @@ export function PackView() {
     <SelectionContext.Provider value={{ at, select }}>
       <EditingContext.Provider value={session}>
         {inspector}
-        <div className={styles.workspace} ref={setFrame}>
+        <div
+          className={styles.workspace}
+          ref={setFrame}
+          style={{ '--tryit-pane-width': `${PANE_WIDTH}px` } as CSSProperties}
+        >
           <div className={styles.column}>
             {/*
               The toolbar is edit mode's. A reading page carrying a Check
@@ -601,6 +725,7 @@ export function PackView() {
                 shape={shape}
                 shapeAvailable={formAvailable}
                 dirty={buffer.dirty}
+                discardable={hasWork}
                 saving={editor.write.isPending}
                 checking={fetching}
                 tryingIt={tryingIt}
@@ -620,7 +745,7 @@ export function PackView() {
                   })
                 }}
                 onUndo={buffer.undo}
-                onDiscard={buffer.discard}
+                onDiscard={discardAll}
                 onSave={() => save()}
               />
             )}
@@ -630,16 +755,89 @@ export function PackView() {
                 error={pack.error}
               />
             )}
+            {/*
+              A revision for another file, held rather than taken. The path a
+              page is about can move under an address nobody navigated — the
+              listing re-answers, `get_pack` names a different file — and taking
+              those bytes over unsaved work replaces one document with another
+              with nothing on screen having asked.
+            */}
+            {buffer.waiting !== undefined && (
+              <AlertPanel
+                heading="This page is now about a different file"
+                actions={
+                  <Button variant="quiet" onClick={buffer.takeWaiting}>
+                    Open it and lose these changes
+                  </Button>
+                }
+              >
+                <p>
+                  The editor is holding unsaved changes to{' '}
+                  <code>{buffer.base?.path ?? 'a file'}</code>, and this address now names{' '}
+                  <code>{buffer.waiting.path}</code>. Nothing has been replaced and nothing has
+                  been written.
+                </p>
+              </AlertPanel>
+            )}
+            {/*
+              The file moved after these bytes were loaded. The base deliberately
+              does not follow a watcher refetch — that is what makes a stale
+              write a 409 rather than a silent overwrite — so the honest sentence
+              is that this is the revision the editor loaded.
+            */}
+            {behindDisk && staleWrite === undefined && (
+              <AlertPanel
+                heading="The file on disk has changed since this was loaded"
+                actions={
+                  <Button variant="quiet" onClick={reloadNow}>
+                    {dirty ? 'Reload, losing these changes' : 'Reload'}
+                  </Button>
+                }
+              >
+                <p>
+                  What is on screen is the revision this editor loaded. Saving from here states
+                  the digest it started from, so the chassis will refuse the write rather than
+                  overwrite whatever landed since.
+                </p>
+              </AlertPanel>
+            )}
             {staleWrite !== undefined && (
               <StaleWriteAlert
                 stale={staleWrite}
                 pending={editor.write.isPending}
-                onReload={() => {
-                  if (path === undefined) return
-                  editor.reload(path, (fresh) => buffer.rebase(fresh))
-                }}
+                onReload={reloadNow}
                 onOverwrite={() => save(true)}
               />
+            )}
+            {saveFailure !== undefined && (
+              <ErrorBox title={`Could not save ${path ?? 'this pack'}`} error={saveFailure} />
+            )}
+            {editor.reloadError !== undefined && (
+              <ErrorBox title={`Could not reload ${path ?? 'this pack'}`} error={editor.reloadError} />
+            )}
+            {/*
+              What the save actually did, which is the chassis' read-back and not
+              an assumption. A read-back that is not what was sent leaves the
+              buffer holding the submitted bytes, dirty over the revision that
+              landed — so the sentence and the buffer say the same thing.
+            */}
+            {editor.outcome !== undefined && staleWrite === undefined && (
+              <p className={editor.verified ? styles.saved : styles.warning} role="status">
+                {editor.verified ? (
+                  <>
+                    <strong>Saved, and verified.</strong> The chassis replaced the file and read
+                    it back off the disk: {editor.outcome.landed.bytes} bytes, sha256{' '}
+                    <code>{editor.outcome.landed.sha256.slice(0, 12)}…</code>, byte for byte what
+                    was sent.
+                  </>
+                ) : (
+                  <>
+                    <strong>Saved, and the read-back does not match.</strong> The write completed
+                    and the bytes now on disk are not the bytes that were sent. What is in this
+                    editor is what was sent; reload before editing further.
+                  </>
+                )}
+              </p>
             )}
             {drawn === undefined || rawMode ? (
               <>
@@ -650,7 +848,7 @@ export function PackView() {
                   path={path}
                   dirty={buffer.dirty}
                   problem={withheld}
-                  readOnly={!editing || buffer.base === undefined}
+                  readOnly={!editing || !onPath}
                   onChange={(next) => commit(next, { coalesceKey: 'raw' })}
                 />
               </>
