@@ -569,6 +569,9 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   CTB=web/src/packs/inspector/ChecksTab.tsx
   AS=web/src/shell/AppShell.tsx
   FX=web/src/packs/__fixtures__/full.pack.json
+  CS=web/src/packs/CheckStrip.tsx
+  FE=web/src/files/useFileEditing.ts
+  DGD=web/src/shell/useDirtyGuard.ts
 
   # The rail's graph gate. `useConfiguredGraphs` falls back to a whole-project
   # `experimental_test_graphs` walk against any runtime without the inventory
@@ -741,15 +744,20 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the base rebases onto background refetches" "$A" \
     '  const [base, setBase] = useState<FileContent | undefined>(undefined)' \
     '  const [baseIgnored, setBase] = useState<FileContent | undefined>(undefined); void baseIgnored; const base = loaded.data'
-  mutate web "the write carries the wrong base digest" "$A" \
-    '      { path, content: submitted, baseSha256: base.sha256, override },' \
-    '      { path, content: submitted, baseSha256: "", override },'
-  mutate web "the read-back is assumed, not verified" "$A" \
+  # **These five moved with the code they are about.** The save discipline was
+  # lifted out of `AuthorView.FileEditor` into `files/useFileEditing.ts` so a
+  # second editor could hold the same rules rather than a second spelling of
+  # them; each row now breaks the one copy, and `AuthorView.test.tsx` failing
+  # alongside the new suites is what says the extraction kept its behaviour.
+  mutate web "the write carries the wrong base digest" "$FE" \
+    '          baseSha256: input.baseSha256,' \
+    "          baseSha256: '',"
+  mutate web "the read-back is assumed, not verified" "$FE" \
     '  const verified = outcome !== undefined && outcome.landed.content === outcome.submitted' \
     '  const verified = outcome !== undefined'
-  mutate web "verification compares against the live buffer" "$A" \
-    '  const verified = outcome !== undefined && outcome.landed.content === outcome.submitted' \
-    '  const verified = outcome !== undefined && outcome.landed.content === buffer'
+  mutate web "verification compares against the live buffer" "$FE" \
+    '            setOutcome({ submitted, landed })' \
+    '            setOutcome({ submitted: landed.content, landed })'
   mutate web "a deleted file unmounts the editor" "$A" \
     '          {selected ? (' \
     '          {selected && listedNow ? ('
@@ -766,22 +774,22 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # `refetch()` and is caught by "reloads from its own request, not from
   # whatever the cache holds". A row whose claim is covered twice, once
   # inoperably, is one row.
-  mutate web "in-app navigation is not blocked" "$A" \
-    '  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
-    dirty && currentLocation.pathname !== nextLocation.pathname
+  mutate web "in-app navigation is not blocked" "$DGD" \
+    '  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      dirty && currentLocation.pathname !== nextLocation.pathname
   )' \
     '  const blocker = useBlocker(() => false)'
-  mutate web "the caches are left disagreeing with the read-back" "$A" \
-    "$(printf '          queryClient.setQueryData([%sdesk-file%s, path], landed)' "'" "'")" \
-    '          void landed'
-  mutate web "a previous verdict survives the next save" "$A" \
-    '    setOutcome(undefined)
-    // The snapshot is captured here, with the request.' \
-    '    // The snapshot is captured here, with the request.'
+  mutate web "the caches are left disagreeing with the read-back" "$FE" \
+    "$(printf '            queryClient.setQueryData([%sdesk-file%s, input.path], landed)' "'" "'")" \
+    '            void landed'
+  mutate web "a previous verdict survives the next save" "$FE" \
+    '      setOutcome(undefined)
+      // Captured here, with the request.' \
+    '      // Captured here, with the request.'
   mutate web "discard leaves the conflict standing" "$A" \
     '              setBuffer(base.content)
-              setOutcome(undefined)
-              write.reset()' \
+              editing.reset()' \
     '              setBuffer(base.content)'
   mutate web "switching files does not ask about unsaved work" "$A" \
     '    if (
@@ -809,15 +817,20 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the partial warning is not shown" "$A" \
     '            {partial.length > 0 && (' \
     '            {false && (' 
-  mutate web "the save read-back installs over a newer read" "$A" \
-    '          if (state !== undefined && state.dataUpdatedAt > startedAt) return' \
-    '          void state'
-  mutate web "reload trusts refetch rather than its own read" "$A" \
-    '    void readFile(path)' \
-    '    void loaded.refetch().then((r) => r.data!)
-      .then((fresh) => { setBase(fresh); setBuffer(fresh.content) })
-      .catch(() => {})
-    void Promise.resolve(base)'
+  mutate web "the save read-back installs over a newer read" "$FE" \
+    '            if (state !== undefined && state.dataUpdatedAt > startedAt) return' \
+    '            void state'
+  # A `refetch` reports success from cache when the watcher's broad
+  # `cancelQueries` cancels the request in flight, so its success is not proof
+  # that anything was fetched — and installing cached bytes as the new base is
+  # a reload that replaces an edit with what it was already showing.
+  mutate web "reload trusts refetch rather than its own read" "$FE" \
+    '      void readFile(path)
+        .then((fresh) => {' \
+    "      void Promise.resolve(
+        (queryClient.getQueryData(['desk-file', path]) ?? {}) as FileContent
+      )
+        .then((fresh) => {"
   # Create a pack: the sequence, the entry it writes, and the name it refuses.
   # Repaired: the registration no longer builds an `amended` local — the entry
   # is composed inline on the configuration read in (0b), because that read
@@ -2003,10 +2016,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # disk was anchored onto the served document: a `/rules/0` diagnostic landing
   # on a rule that is not the rule it is about.
   mutate web "the page never asks whether the check ran over these bytes" "$PV" \
-    '  const stale = isStale(check.data?.checkedBytes, servedText)' \
+    '  const stale = isStale(check.data?.checkedBytes, shownText)' \
     '  const stale = false
   void isStale
-  void servedText'
+  void shownText'
   # And the other half: knowing it is stale and anchoring anyway. Not "fewer"
   # diagnostics and not "the ones that still resolve" — none of them.
   mutate web "a stale report is anchored onto the document anyway" "$PV" \
@@ -2021,16 +2034,19 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  void bytes'
 
   # A diagnostic that named no rendered member.
-  mutate web "a diagnostic anchored on the document is counted and never printed" "$PV" \
-    '          {rootAnchored.length > 0 && (' \
-    '          {false && ('
+  mutate web "a diagnostic anchored on the document is counted and never printed" "$CS" \
+    '      {rootAnchored.length > 0 && (' \
+    '      {false && ('
 
   # The two other views on this pack, which nothing else links to.
   mutate web "the what-if view loses its last way in" "$PV" \
-    '          <Link className={styles.elsewhereLink} to={`/packs/${encodeURIComponent(packId ?? '"''"')}/evaluate`}>
-            Try it
-          </Link>' \
-    '          {null}'
+    '                    <Link
+                      className={styles.elsewhereLink}
+                      to={`/packs/${encodeURIComponent(packId ?? '"''"')}/evaluate`}
+                    >
+                      Try it
+                    </Link>' \
+    '                    {null}'
 
   # Selecting with the pane closed.
   mutate web "an address that arrives with a selection opens no pane" "$PV" \
@@ -2200,6 +2216,216 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "a colour in a module outside src/ui goes unreported" "$PPC" \
     "  color: var(--danger);" \
     "  color: #ff0000;"
+
+  # 9. Edit mode (issue: pack view phase 2). Each row breaks one claim the
+  # editor makes about the bytes it writes, the check it quotes, or the run it
+  # asks for.
+  WRT=web/src/packs/edit/writes.ts
+  BUF=web/src/packs/edit/useDocumentBuffer.ts
+  COP=web/src/packs/edit/conditionOps.ts
+  CB=web/src/packs/edit/ConditionBuilder.tsx
+  CF=web/src/packs/edit/CardForm.tsx
+  PF=web/src/packs/edit/PointerField.tsx
+  TIP=web/src/packs/edit/TryItPane.tsx
+  SWA=web/src/packs/edit/StaleWriteAlert.tsx
+  LL=web/src/packs/edit/LockLine.tsx
+  ABR=web/src/shell/authorBridge.ts
+
+  # **The splice, which is the whole mechanism.** A writer that re-serialized
+  # would pass every assertion about the *value* and hand a reviewer a diff of
+  # every line for a one-word change — which is the diff ADR-0019 makes a human
+  # read.
+  mutate web "the writer re-serializes the document instead of splicing it" "$DT" \
+    '  return text.slice(0, span.valueStart) + json + text.slice(span.valueEnd)' \
+    '  const whole = JSON.parse(text) as unknown
+  const parts = pointer === "" ? [] : pointer.slice(1).split("/")
+  let holder: Record<string, unknown> = whole as Record<string, unknown>
+  for (const part of parts.slice(0, -1)) holder = holder[part] as Record<string, unknown>
+  if (parts.length > 0) holder[parts[parts.length - 1]!] = JSON.parse(json) as unknown
+  return JSON.stringify(whole, null, 2)'
+  mutate web "an added member invents its own indentation" "$DT" \
+    '  const layout = leadingLayout(text, model.memberStart)' \
+    "  const layout = '\\n  '"
+  mutate web "a move leaves the array exactly as it was" "$DT" \
+    '  if (from === to) return text' \
+    '  if (from !== to) return text'
+
+  # Blanking a `nonEmptyString`. `""` is a document the runtime refuses by name;
+  # the member's absence is a document that is merely smaller.
+  mutate web "blanking a nonEmptyString writes an empty string" "$WRT" \
+    "  if (value === '' && isNonEmptyString(pointer)) {" \
+    "  if (value === '\\u0000' && isNonEmptyString(pointer)) {"
+  # The field an author reaches for is the one their draft omitted.
+  mutate web "a member that is not there yet is written nowhere" "$WRT" \
+    '  if (spanAt(current.index, pointer) !== undefined) {
+    return rewritten(replaceValue(current.text, current.index, pointer, json))
+  }' \
+    '  if (spanAt(current.index, pointer) !== undefined) {
+    return rewritten(replaceValue(current.text, current.index, pointer, json))
+  }
+  return current'
+  mutate web "a new member is appended rather than placed by the schema" "$WRT" \
+    '  const order = memberOrder(container)
+  const at = order.indexOf(name)
+  if (at < 0) return { last: true }' \
+    '  const order = memberOrder(container)
+  const at = order.indexOf(name)
+  if (at >= -1) return { last: true }'
+
+  # The buffer. Dirty is bytes, undo is actions, and the base is the viewer's.
+  mutate web "dirty is a parse comparison rather than a byte one" "$BUF" \
+    '  const dirty = text !== undefined && base !== undefined && text !== base.content' \
+    '  const dirty =
+    text !== undefined && base !== undefined && text.replace(/\s+/g, "") !== base.content.replace(/\s+/g, "")'
+  mutate web "undo pushes one entry per keystroke" "$BUF" \
+    '      if (key !== undefined && top !== undefined && top.coalesceKey === key) return entries' \
+    "      if (key === '\\u0000' && top !== undefined && top.coalesceKey === key) return entries"
+  mutate web "undo lies about how far back it can go" "$BUF" \
+    '      return grown.length > UNDO_DEPTH ? grown.slice(grown.length - UNDO_DEPTH) : grown' \
+    '      return grown'
+  mutate web "discard leaves the last save attempt’s verdict standing" "$BUF" \
+    '    setStack([])
+    onDiscard?.()' \
+    '    setStack([])'
+  mutate web "the base moves on a watcher refetch" "$BUF" \
+    '    if (loaded !== undefined && base === undefined) {' \
+    '    if (loaded !== undefined) {'
+
+  # The builder shapes and never refuses, and it never retypes what an author
+  # wrote.
+  mutate web "an ordered comparison emits a number rather than a decimal string" "$CB" \
+    '            write((current) => setRawJson(current, at, JSON.stringify(event.target.value)), {' \
+    '            write((current) => setRawJson(current, at, event.target.value), {'
+  mutate web "the form refuses an empty in list" "$CB" \
+    '    if (isJson(next)) {' \
+    "    if (isJson(next) && next.trim() !== '[]') {"
+  mutate web "changing the operator retypes the author’s operand" "$COP" \
+    '  const span = spanAt(current.index, at)!
+  return buffered(
+    current.text.slice(0, span.valueStart) +
+      JSON.stringify(operator) +
+      current.text.slice(span.valueEnd)
+  )' \
+    '  const span = spanAt(current.index, at)!
+  const written =
+    current.text.slice(0, span.valueStart) +
+      JSON.stringify(operator) +
+      current.text.slice(span.valueEnd)
+  const next = buffered(written)
+  return operator === "in" ? setRawJson(next, `${at}/value`, "[]") : next'
+  mutate web "a kind change throws away the operand the author wrote" "$COP" \
+    '    const carried = held(name)
+    if (carried !== undefined) {
+      next[name] = carried
+      continue
+    }' \
+    '    const carried = held(name)
+    if (carried !== undefined && name !== "value") {
+      next[name] = carried
+      continue
+    }'
+  mutate web "a wrap re-serializes the child instead of moving its bytes" "$COP" \
+    '  const raw = current.text.slice(span.valueStart, span.valueEnd)' \
+    '  const raw = JSON.stringify(JSON.parse(current.text.slice(span.valueStart, span.valueEnd)))'
+
+  # The page and the form are over the same bytes. This is the riskiest claim
+  # in the whole change and it has its own row.
+  mutate web "the page draws the served document while the form writes the buffer" "$PV" \
+    '    (read?.index.value as PackDocument | undefined) ?? pack.data?.document' \
+    '    pack.data?.document'
+  mutate web "form mode is offered over a document the two readings disagree about" "$PV" \
+    '  const formAvailable = disagreement.length === 0 && read?.index.value !== undefined' \
+    '  const formAvailable = read?.index.value !== undefined'
+  mutate web "the check gates the save" "$PV" \
+    '      if (path === undefined || bufferText === undefined || buffer.base === undefined) return
+      // The check runs before the save' \
+    '      if (path === undefined || bufferText === undefined || buffer.base === undefined) return
+      if ((check.data?.report.diagnostics?.length ?? 0) > 0) return
+      // The check runs before the save'
+  mutate web "Mod+S is swallowed inside the field it exists to fire in" "$PV" \
+    '    if (!editing || !buffer.dirty) return
+    event.preventDefault()' \
+    '    if (!editing || !buffer.dirty) return
+    if ((event.target as HTMLElement).tagName === "TEXTAREA") return
+    event.preventDefault()'
+  mutate web "Escape discards the buffer" "$PV" \
+    '  const onEditorKey = (event: KeyboardEvent<HTMLElement>) => {' \
+    '  const onEditorKey = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === "Escape") {
+      buffer.discard()
+      return
+    }'
+
+  # A diagnostic that is on screen and not described to its control is a
+  # diagnostic a screen reader never reaches.
+  mutate web "a diagnostic is printed beside its field rather than described to it" "$PF" \
+    '      <Field
+        label={label}
+        hint={hint}
+        error={found.length === 0 ? undefined : <Diagnostics found={found} />}
+      >
+        {children}
+      </Field>' \
+    '      <Field label={label} hint={hint}>
+        {children}
+      </Field>
+      {found.length > 0 && <Diagnostics found={found} />}'
+
+  # A reorder moves every `/rules/N` pointer at once.
+  mutate web "focus does not follow a rule that moved" "$CF" \
+    '    document.getElementById(`${arrayPointer}/${landed.at}`)?.focus()' \
+    '    document.getElementById(`${arrayPointer}/${landed.at}`)'
+
+  # The one call that can append a record nobody asked for.
+  mutate web "a draft run sends both pack and pack_id" "$QR" \
+    '    input.source === '"'"'pack'"'"'
+      ? { pack: input.pack, facts: input.facts }' \
+    '    input.source === '"'"'pack'"'"'
+      ? { pack: input.pack, pack_id: '"'"'vendor-onboarding'"'"', facts: input.facts }'
+  mutate web "a draft run drops the rehearsal declaration" "$QR" \
+    '  if (rehearsalSupported) args.rehearsal = true' \
+    "  if (rehearsalSupported && input.source === 'pack_id') args.rehearsal = true"
+  mutate web "an unadvertised rehearsal is probed silently" "$TIP" \
+    '  const needsConfirmation = source === '"'"'pack'"'"' && !rehearsalSupported' \
+    '  const needsConfirmation = false'
+  mutate web "a run stays fresh after the buffer moves" "$TIP" \
+    '  const stale = ran !== null && ran.bytes !== buffer' \
+    '  const stale = false'
+  mutate web "the foot prints the project’s decision id rather than the payload’s" "$TIP" \
+    '            <code>{ran.run.payload.packId}</code>' \
+    '            <code>{packId}</code>'
+
+  # Nothing was written, and the control that would write anyway is not the
+  # primary one.
+  mutate web "Overwrite anyway is the primary control" "$SWA" \
+    '          <Button variant="quiet" disabled={pending} onClick={onOverwrite}>' \
+    '          <Button variant="primary" disabled={pending} onClick={onOverwrite}>'
+
+  # The desk computes no lock state, and says nothing where it knows nothing.
+  mutate web "the lock line states a verdict about the reviewed set" "$LL" \
+    '      This project keeps a reviewed set. Updating it is the project&rsquo;s own step.' \
+    '      This pack is in the reviewed set, and the set is up to date.'
+  mutate web "the lock line shows with no lock file listed" "$LL" \
+    '  const listed = paths.some((path) => path === LOCK_FILE || path.endsWith(`/${LOCK_FILE}`))' \
+    '  const listed = paths.length >= 0'
+
+  # The mode is a search parameter for exactly one reason.
+  mutate web "a mode toggle prompts about unsaved bytes" "$DGD" \
+    '      dirty && currentLocation.pathname !== nextLocation.pathname' \
+    '      dirty &&
+      (currentLocation.pathname !== nextLocation.pathname ||
+        currentLocation.search !== nextLocation.search)'
+  mutate web "the rail dot is one global flag again" "$ABR" \
+    '  if (next) dirtyPaths.set(path, true)
+  else dirtyPaths.delete(path)' \
+    '  dirtyPaths.clear()
+  if (next) dirtyPaths.set(path, true)'
+
+  # Carried low from phase 1: the pane's keyboard, held by the element focus
+  # landed on rather than by text that happens to contain the row's name.
+  mutate web "the packs pane never takes focus to the row it arrowed to" "$PN" \
+    '              if (already instanceof HTMLElement) already.focus()' \
+    '              if (already instanceof HTMLElement) void already'
 fi
 
 restore
