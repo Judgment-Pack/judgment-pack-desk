@@ -2303,15 +2303,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # follows overwrites a change nobody saw, without the 409 that exists to
   # prevent exactly that.
   mutate web "the base moves on a watcher refetch" "$BUF" \
-    '    void generation
-    if (loaded === undefined || seeded.current === loaded.path) return' \
-    '    void generation
-    if (loaded === undefined || seeded.current === loaded.content) return'
+    '    if (loaded === undefined) return
+    if (seeded.current === loaded.path) {' \
+    '    if (loaded === undefined) return
+    if (seeded.current === loaded.content) {'
   # The other half of the same line, and the defect this PR's round found: the
   # buffer seeded once and never again, so another pack drew the first one.
   mutate web "the buffer stays on the pack it opened" "$BUF" \
-    '    if (loaded === undefined || seeded.current === loaded.path) return' \
-    '    if (loaded === undefined || seeded.current !== undefined) return'
+    '    if (seeded.current === loaded.path) {' \
+    '    if (seeded.current !== undefined) {'
   mutate web "the undo stack survives a change of pack" "$BUF" \
     "    // previous pack would put that pack's bytes into this one.
     setStack([])" \
@@ -2350,19 +2350,18 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # in the whole change and it has its own row.
   mutate web "the page draws the served document while the form writes the buffer" "$PV" \
     '  const drawn: PackDocument | undefined = onPath
-    ? (read?.index.value as PackDocument | undefined)
-    : pack.data?.document' \
-    '  const drawn: PackDocument | undefined = pack.data?.document
-  void onPath'
+    ? isRecord(read?.index.value)' \
+    '  const drawn: PackDocument | undefined = false
+    ? isRecord(read?.index.value)'
   mutate web "form mode is offered over a document the two readings disagree about" "$PV" \
-    '  const formAvailable = disagreement.length === 0 && read?.index.value !== undefined' \
-    '  const formAvailable = read?.index.value !== undefined'
+    '  const formAvailable = disagreement.length === 0 && isRecord(read?.index.value)' \
+    '  const formAvailable = isRecord(read?.index.value)'
   mutate web "the check gates the save" "$PV" \
     '      const submitted = bufferText
-      saving.current = true' \
+      saving.current = path' \
     '      if ((check.data?.report.diagnostics?.length ?? 0) > 0) return
       const submitted = bufferText
-      saving.current = true'
+      saving.current = path'
   mutate web "Mod+S is swallowed inside the field it exists to fire in" "$PV" \
     '      if (event.repeat || event.defaultPrevented) return
       event.preventDefault()' \
@@ -2500,7 +2499,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  if (node === undefined && depth < 0) {'
   # The unwritten operand, which both exits from the form used to lose.
   mutate web "an unwritten operand is the field’s own again" "$CB" \
-    '    hold(at, { text: next, from: held })' \
+    '    hold(at, { text: next, from: held, owner: ownerOf(buffer, at) })' \
     '    hold(at, null)'
   mutate web "the toolbar says nothing about a field that is not written" "$ETB" \
     '          {unwritten > 0 && (' \
@@ -2605,6 +2604,115 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the page draws a buffer that is another file's" "$PV" \
     "  const onPath = path !== undefined && buffer.base?.path === path" \
     "  const onPath = path !== undefined"
+  # ---- the third reading: an answer that arrives after the page has moved ----
+  MSHP=web/src/packs/document/MisshapenMember.tsx
+  MDBLK=web/src/packs/document/MetadataBlock.tsx
+  EXTB=web/src/packs/document/ExtensionsBlock.tsx
+  PINS=web/src/packs/inspector/PackInspector.tsx
+
+  # A reload is a read that takes as long as it takes. Ask for one on A,
+  # navigate to B, edit B — and A's answer landed in B.
+  mutate web "a read that answers late is installed wherever the page is now" "$PV" \
+    '      if (ticket.packId !== packNow.current) return' \
+    '      void packNow'
+  mutate web "the buffer takes a revision it is no longer about" "$BUF" \
+    '      if (expect !== undefined) {
+        if (expect.generation !== generationNow.current) return
+        if (seeded.current !== undefined && seeded.current !== expect.path) return
+        if (fresh.path !== expect.path) return
+      }' \
+    '      void expect'
+  mutate web "an earlier reload answers over a later one" "$FE" \
+    '          if (ticket !== reloads.current) return
+          write.reset()' \
+    '          write.reset()'
+  mutate web "a failed reload names whatever file is on screen" "$FE" \
+    '          setReloadError({
+            path,
+            error: cause instanceof Error ? cause : new Error(String(cause))
+          })' \
+    '          setReloadError({
+            path: "the file on disk",
+            error: cause instanceof Error ? cause : new Error(String(cause))
+          })'
+  # Unwritten operand text is work the buffer cannot see for itself.
+  mutate web "a file is adopted over text nobody has written yet" "$BUF" \
+    '    if (seeded.current !== undefined && (dirtyNow.current || otherWork.current)) {' \
+    '    if (seeded.current !== undefined && dirtyNow.current) {'
+  mutate web "the drafts are dropped before the file is taken" "$BUF" \
+    '    onAdopt.current?.()' \
+    '    void onAdopt'
+  # A→B→A, and the offer B left behind.
+  mutate web "an offer outlives the address that produced it" "$BUF" \
+    '      setWaiting((held) => (held === undefined ? held : undefined))
+      return' \
+    '      return'
+  mutate web "an offer off the address may still be accepted" "$BUF" \
+    '    if (waiting === undefined || loaded?.path !== waiting.path) return' \
+    '    if (waiting === undefined) return'
+  # A document is an object. Each of `null`, `[]`, `"a pack"` and `7` scans,
+  # agrees with `JSON.parse`, and reaches `Object.keys`.
+  mutate web "bytes that are not a document are handed to the readers" "$PV" \
+    '    ? isRecord(read?.index.value)
+      ? (read.index.value as unknown as PackDocument)
+      : undefined' \
+    '    ? (read?.index.value as unknown as PackDocument | undefined)'
+  mutate web "a served document that is not one is handed to the readers" "$PV" \
+    '    : isRecord(served)
+      ? (served as PackDocument)
+      : undefined' \
+    '    : (served as PackDocument | undefined)'
+  mutate web "the form is offered over bytes that are not a document" "$PV" \
+    '  const formAvailable = disagreement.length === 0 && isRecord(read?.index.value)' \
+    '  const formAvailable = disagreement.length === 0 && read?.index.value !== undefined'
+  # And the same question wherever a component reaches *through* a member.
+  mutate web "a nested member of any shape is reached through" "$MSHP" \
+    "  const right = expects === 'list' ? Array.isArray(value) : isRecord(value)" \
+    '  const right = true'
+  mutate web "reviews that are not a list are mapped over" "$MDBLK" \
+    '  if (!Array.isArray(metadata.reviews)) {' \
+    '  if (false) {'
+  mutate web "extensions that are not an object are enumerated" "$EXTB" \
+    '  if (!isRecord(extensions)) {' \
+    '  if (false) {'
+  # Two clicks in one frame are two audit records on a runtime that does not
+  # take the rehearsal declaration.
+  mutate web "Try it runs twice for one press of the button" "$TIP" \
+    '    if (!runnable || running.current) return' \
+    '    if (!runnable) return'
+  # The latch, and the two ways it has to be let go.
+  mutate web "a save left in flight by a navigation wedges every later one" "$PV" \
+    '    reset()
+    saving.current = undefined' \
+    '    reset()'
+  mutate web "the latch is released only through the mutation observer" "$FE" \
+    '        .finally(() => input.onSettled?.())' \
+    '        .finally(() => {})'
+  # The Inspector: a defined base, and no served fallback behind the buffer.
+  mutate web "an absent base digest is read as a match" "$MTB" \
+    '    baseSha256 !== undefined &&
+    meta.sha256 === fileSha256 &&' \
+    '    meta.sha256 === fileSha256 &&'
+  mutate web "the Inspector falls back to the document the runtime served" "$PV" \
+    '          document={drawn}' \
+    '          document={drawn ?? pack.data.document}'
+  mutate web "the Inspector says nothing about having no document" "$PINS" \
+    '  if (doc === undefined) {' \
+    '  if (false) {'
+  # A list whose values are the author's own.
+  mutate web "an author cannot be added to a list that is not there" "$FLD" \
+    "          <Button variant=\"quiet\" onClick={() => put([...strings, ''])}>" \
+    '          <Button variant="quiet" onClick={() => put(strings)}>'
+  # A pointer is a position, not an identity.
+  mutate web "a draft follows its pointer onto another rule" "$PV" \
+    '          (bytesAt(read, pointer) ?? '"'"''"'"') === draft.from &&
+          ownerOf(read, pointer) === draft.owner' \
+    '          (bytesAt(read, pointer) ?? '"'"''"'"') === draft.from' \
+  # What the page says the editor holds after a save that landed other bytes.
+  mutate web "the editor is said to hold what was sent, whatever it holds" "$PV" \
+    '                    {bufferText === editor.outcome.submitted' \
+    '                    {true'
+
   # **`save`'s own path check has no row, deliberately.** It is defence behind
   # the gate above: `bufferText` is undefined while the buffer is another file's,
   # so the first guard in `save` returns before the equality is reached and no
@@ -2614,7 +2722,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # `write.isPending` is state and arrives a render later, so two chords inside
   # one frame both read "not saving".
   mutate web "two chords in one frame issue two writes against one base" "$PV" \
-    '      if (saving.current) return' \
+    '      if (saving.current !== undefined) return' \
     '      void saving'
   mutate web "a key held down saves once a frame" "$PV" \
     '      if (event.repeat || event.defaultPrevented) return' \
@@ -2631,7 +2739,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   void file.data'
   mutate web "the Inspector binds the page to a file it has not read" "$MTB" \
     '    meta.sha256 === fileSha256 &&
-    (baseSha256 === undefined || baseSha256 === fileSha256)' \
+    baseSha256 === fileSha256' \
     '    meta.sha256 === fileSha256'
   # Only `StaleWrite` was rendered: every other refusal stopped the button and
   # said nothing.
@@ -2652,7 +2760,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '    if (current.current !== submitted || fresh.content !== submitted) return' \
     '    void submitted'
   mutate web "a path that moves under one address replaces unsaved work" "$BUF" \
-    '    if (seeded.current !== undefined && dirtyNow.current) {
+    '    if (seeded.current !== undefined && (dirtyNow.current || otherWork.current)) {
       setWaiting(loaded)
       return
     }' \
@@ -2723,9 +2831,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     setDrafts(new Map())' \
     '    buffer.discard()'
   mutate web "a draft is masked rather than retired" "$PV" \
-    '        if ((bytesAt(read, pointer) ?? '"'"''"'"') === draft.from) continue
+    '          ownerOf(read, pointer) === draft.owner
+        ) {
+          continue
+        }
         next.delete(pointer)' \
-    '        if ((bytesAt(read, pointer) ?? '"'"''"'"') === draft.from) continue
+    '          ownerOf(read, pointer) === draft.owner
+        ) {
+          continue
+        }
         void pointer'
   # The pane's width, which the predicate and the stylesheet disagreed about.
   mutate web "the pane asks for eight pixels it does not take" "$PV" \
