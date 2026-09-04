@@ -29,10 +29,12 @@ export function EditToolbar({
   saving,
   checking,
   tryingIt,
+  canUndo,
   onEditing,
   onShape,
   onCheck,
   onTryIt,
+  onUndo,
   onDiscard,
   onSave
 }: {
@@ -44,10 +46,13 @@ export function EditToolbar({
   saving: boolean
   checking: boolean
   tryingIt: boolean
+  /** False where the stack is empty, which is what it says rather than lying. */
+  canUndo: boolean
   onEditing: (editing: boolean) => void
   onShape: (shape: EditShape) => void
   onCheck: () => void
   onTryIt: () => void
+  onUndo: () => void
   onDiscard: () => void
   onSave: () => void
 }) {
@@ -107,6 +112,19 @@ export function EditToolbar({
       <ToolbarSpacer />
       {editing && (
         <>
+          {/*
+            The buffer keeps a capped stack of snapshots, one per committed
+            action with typing coalesced per field. A control is what makes it
+            a feature: a stack nothing can reach is a claim the surface does
+            not deliver. It is a **button** and not a chord, because `Mod+Z`
+            inside a text field is the field's own undo and taking it away
+            would trade per-character undo for per-action undo without asking.
+          */}
+          <ToolbarItem>
+            <Button variant="quiet" onClick={onUndo} disabled={!canUndo || saving}>
+              Undo
+            </Button>
+          </ToolbarItem>
           <ToolbarItem>
             <Button variant="quiet" onClick={onDiscard} disabled={!dirty || saving}>
               Discard

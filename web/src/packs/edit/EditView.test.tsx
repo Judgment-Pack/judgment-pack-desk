@@ -51,16 +51,32 @@ describe('the mode is the address', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy()
   })
 
+  it('carries no toolbar in read mode, and one control into edit', async () => {
+    // A reading page with a Check button and a Save that can never be pressed
+    // is chrome about a mode nobody is in.
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    const { router } = drawPack(served(PACK_TEXT), { path: '/packs/vendor-onboarding' })
+    await screen.findByRole('navigation', { name: 'Members' })
+    expect(screen.queryByRole('toolbar', { name: 'Editing' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    await waitFor(() => expect(screen.getByRole('toolbar', { name: 'Editing' })).toBeTruthy())
+    // The mode is a search parameter and the write replaces: choosing how to
+    // look at a document is not a navigation.
+    expect(router.state.location.pathname).toBe('/packs/vendor-onboarding')
+    expect(router.state.location.search).toContain('edit=1')
+  })
+
   it('keeps the selection and the mount when the mode is toggled', async () => {
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     const { router } = drawPack(served(PACK_TEXT), {
       path: '/packs/vendor-onboarding?at=%2Frules%2F1'
     })
     await screen.findByRole('navigation', { name: 'Members' })
-    fireEvent.click(screen.getByRole('radio', { name: 'Edit' }))
-    await waitFor(() =>
-      expect(router.state.location.search).toContain('edit=1')
-    )
+    // The way in from the reading page is the control beside the standing
+    // links; the toolbar's own segmented pair is the way back out.
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    await waitFor(() => expect(router.state.location.search).toContain('edit=1'))
     // **The pathname never moves**, which is the entire reason the mode is a
     // search parameter: `useDirtyGuard`'s predicate is the pathname alone, so
     // a mode written into the path would prompt on every toggle.
@@ -106,6 +122,25 @@ describe('both views are one buffer', () => {
     // Every byte outside the spliced span survives: the splice is the whole
     // mechanism, and a re-serialization would have re-indented the file.
     expect(raw.value.replace('Vendor onboarding, revised', 'Vendor onboarding')).toBe(PACK_TEXT)
+  })
+
+  it('takes back one committed action at a time', async () => {
+    // The stack is one snapshot per *action* with typing coalesced per field,
+    // so Undo is the action it looks like rather than a character eraser.
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    drawPack(served(PACK_TEXT), { path: EDIT })
+    await screen.findByRole('navigation', { name: 'Members' })
+    const undo = screen.getByRole('button', { name: 'Undo' })
+    expect(undo.hasAttribute('disabled')).toBe(true)
+    const title = await screen.findByDisplayValue('Vendor onboarding')
+    fireEvent.change(title, { target: { value: 'One' } })
+    fireEvent.change(screen.getByDisplayValue('One'), { target: { value: 'Two' } })
+    await waitFor(() => expect(screen.getByDisplayValue('Two')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    // Two keystrokes into one field is one action, so one Undo is the whole of
+    // it — back to the bytes the field started from.
+    await waitFor(() => expect(screen.getByDisplayValue('Vendor onboarding')).toBeTruthy())
+    expect(screen.getByRole('button', { name: 'Undo' }).hasAttribute('disabled')).toBe(true)
   })
 
   it('marks the buffer unsaved on a byte change and clean after a discard', async () => {

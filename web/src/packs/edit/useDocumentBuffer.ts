@@ -65,6 +65,10 @@ export function useDocumentBuffer(
   const [base, setBase] = useState<FileContent | undefined>(undefined)
   const [text, setText] = useState<string | undefined>(undefined)
   const [stack, setStack] = useState<Snapshot[]>([])
+  // The stack as of this render, readable from a callback without making that
+  // callback depend on it.
+  const stackNow = useRef<Snapshot[]>(stack)
+  stackNow.current = stack
 
   // The first successful load seeds both, once. A later answer about the same
   // file is a watcher refetch and must not move the base — that is the whole
@@ -104,13 +108,16 @@ export function useDocumentBuffer(
   }, [])
 
   const undo = useCallback(() => {
-    setStack((entries) => {
-      const top = entries[entries.length - 1]
-      if (top === undefined) return entries
-      current.current = top.text
-      setText(top.text)
-      return entries.slice(0, -1)
-    })
+    // **The updater is pure.** React is entitled to call an updater twice —
+    // StrictMode does — and one that called another setter would fire that
+    // setter twice for one action. So the top is read from the ref that
+    // already tracks the stack, and both setters are called from here.
+    const entries = stackNow.current
+    const top = entries[entries.length - 1]
+    if (top === undefined) return
+    current.current = top.text
+    setText(top.text)
+    setStack(entries.slice(0, -1))
   }, [])
 
   const discard = useCallback(() => {

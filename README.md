@@ -733,6 +733,11 @@ digest-binding failure one component further in; the served document is the
 fallback only where the file did not load or its bytes do not scan, and the
 digest sentence still says when the two sources disagree.
 
+The toolbar is edit mode's: a reading page carrying a Check button and a Save
+that can never be pressed is chrome about a mode nobody is in. The way *in* is
+one control beside the two standing links, and it writes `?edit` with
+`replace: true` for the same reason selecting a member does.
+
 **Forms in place.** A member's card becomes its form where it stands, and it
 keeps the block's pointer as its `data-pointer` and element id — so a
 diagnostic still anchors *on the field*, a deep link still reaches it, and the
@@ -759,7 +764,12 @@ removes the member rather than writing `""`, and a member the document does not
 carry yet is *inserted* — at the position the schema's own property order gives
 it, in the layout a neighbour already uses. Dirty is a **byte** comparison, so
 a whitespace-only change is unsaved. Undo is a capped stack of buffer
-snapshots, one per committed action, with typing coalesced per field; Discard
+snapshots, one per committed action, with typing coalesced per field — so a
+sentence typed into a description is one Undo and not nine — and it is a
+toolbar **button** rather than a chord, because `Mod+Z` inside a text field is
+that field's own undo and taking it away would trade per-character undo for
+per-action undo without asking. Past the cap the oldest entry is dropped and
+the control goes disabled rather than the stack lying about its depth. Discard
 restores the base and clears the last save attempt's verdict.
 
 **The condition builder** draws the schema's five node kinds — `literal`,

@@ -421,6 +421,13 @@ export function PackView() {
         {inspector}
         <div className={styles.workspace}>
           <div className={styles.column} ref={setColumn} onKeyDown={onEditorKey}>
+            {/*
+              The toolbar is edit mode's. A reading page carrying a Check
+              button and a Save that can never be pressed is chrome about a
+              mode nobody is in; the way *into* the mode is one control beside
+              the two standing links, below.
+            */}
+            {editing && (
             <EditToolbar
               editing={editing}
               shape={shape}
@@ -429,6 +436,7 @@ export function PackView() {
               saving={editor.write.isPending}
               checking={fetching}
               tryingIt={tryingIt}
+              canUndo={buffer.canUndo}
               onEditing={(next) => setParams(withEditing(params, next), { replace: true })}
               onShape={(next) => setParams(withShape(params, next), { replace: true })}
               onCheck={idle.checkNow}
@@ -442,9 +450,11 @@ export function PackView() {
                   return next
                 })
               }}
+              onUndo={buffer.undo}
               onDiscard={buffer.discard}
               onSave={() => save()}
             />
+            )}
             {staleWrite !== undefined && (
               <StaleWriteAlert
                 stale={staleWrite}
@@ -472,6 +482,19 @@ export function PackView() {
               <PackDocumentView document={drawn ?? pack.data.document} active={active}>
                 {!editing && (
                   <p className={styles.elsewhere}>
+                    {/*
+                      A button and not a link: switching mode is `replace`, for
+                      the reason selecting a member is — how you are looking at
+                      a document is not a navigation and must not fill the Back
+                      stack.
+                    */}
+                    <button
+                      type="button"
+                      className={styles.elsewhereLink}
+                      onClick={() => setParams(withEditing(params, true), { replace: true })}
+                    >
+                      Edit
+                    </button>
                     <Link
                       className={styles.elsewhereLink}
                       to={`/packs/${encodeURIComponent(packId ?? '')}/evaluate`}
