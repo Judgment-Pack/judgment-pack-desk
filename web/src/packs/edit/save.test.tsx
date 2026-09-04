@@ -383,6 +383,14 @@ describe('the keyboard, and the guard', () => {
     log.releaseWrite()
     await waitFor(() => expect(screen.getByText('saved')).toBeTruthy())
     expect(log.writes).toHaveLength(1)
+
+    // And the latch is let go when the write settles, so the next save is a
+    // save: a latch released only through the mutation's observer stayed shut.
+    fireEvent.change(screen.getByLabelText("The document's bytes"), {
+      target: { value: `${PACK_TEXT}\n\n` }
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(log.writes).toHaveLength(2))
   })
 
   it('leaves a chord another handler has already answered alone', async () => {

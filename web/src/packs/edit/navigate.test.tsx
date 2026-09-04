@@ -425,9 +425,9 @@ describe('a read that lands after the page has moved on', () => {
     await act(async () => {
       await router.navigate('/packs/alpha?edit=1')
     })
-    log.releaseWrite()
-    await act(async () => {})
-
+    // **The write is never released.** A request that never answers is exactly
+    // the case a latch has to survive: the page has left the file it was for,
+    // and the save that follows is about the file the page is on now.
     const back = await screen.findByDisplayValue('Alpha pack')
     fireEvent.change(back, { target: { value: 'Alpha pack, again' } })
     fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
