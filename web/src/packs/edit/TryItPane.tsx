@@ -29,7 +29,7 @@
  * is the answer to the bytes that were sent, and there is no way to tell from
  * a disposition which of the bytes since then it would still be the answer to.
  */
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { EvaluationView } from '../../components/EvaluationView'
 import { RefusalPanel } from '../../components/RefusalPanel'
 import { Button } from '../../ui/Button'
@@ -40,16 +40,17 @@ import type { EvaluationRun } from '../../mcp/types'
 import { valueAt } from '../pointers'
 import styles from './TryItPane.module.css'
 
-/** Everything one attempt sent, captured with it. */
-interface Sent {
-  source: 'pack' | 'pack_id'
-  /** The editor's bytes at the moment of the run, which a `pack` run sends. */
-  bytes: string
-  /** The project's decision id, which a `pack_id` run sends. */
-  packId: string
-  facts: string
-  evidence: string | undefined
-}
+/**
+ * Everything one attempt sent, captured with it — **discriminated by the source
+ * it was sent from**.
+ *
+ * `pack` XOR `pack_id` is the call's own rule, and a capture carrying both
+ * invites a comparison against the one that was not sent: a `pack_id` run went
+ * stale because the editor moved, which it was never about.
+ */
+type Sent =
+  | { source: 'pack'; bytes: string; facts: string; evidence: string | undefined }
+  | { source: 'pack_id'; packId: string; facts: string; evidence: string | undefined }
 
 /** The last run, and what the runtime made of it. */
 type Attempt =
@@ -136,8 +137,19 @@ export function TryItPane({
   const needsConfirmation = source === 'pack' && !rehearsalSupported
   const runnable = connected && factsError === null && !evaluate.isPending
 
+  /**
+   * **One run at a time, decided synchronously.**
+   *
+   * `evaluate.isPending` is rendered state and arrives a render later, so two
+   * clicks inside one frame both passed `runnable` and both called the tool —
+   * and on a runtime that does not take the rehearsal declaration, that is two
+   * records appended to a project's audit directory for one press of a button
+   * the author pressed twice.
+   */
+  const running = useRef(false)
+
   const run = () => {
-    if (!runnable) return
+    if (!runnable || running.current) return
     if (needsConfirmation && !armed) {
       setArmedFor(buffer)
       return
@@ -146,15 +158,22 @@ export function TryItPane({
     // Everything this run is about, captured with it. The answer is labelled
     // from here and goes stale against here, so nothing on screen can relabel
     // it afterwards.
-    const sent: Sent = { source, bytes: buffer, packId, facts, evidence }
-    setAttempt(null)
-    evaluate.mutate(
+    const sent: Sent =
       source === 'pack'
+        ? { source: 'pack', bytes: buffer, facts, evidence }
+        : { source: 'pack_id', packId, facts, evidence }
+    setAttempt(null)
+    running.current = true
+    evaluate.mutate(
+      sent.source === 'pack'
         ? { source: 'pack', pack: sent.bytes, facts, evidence }
-        : { source: 'pack_id', packId, facts, evidence },
+        : { source: 'pack_id', packId: sent.packId, facts, evidence },
       {
         onSuccess: (completed) => setAttempt({ kind: 'success', run: completed, sent }),
-        onError: (error: Error) => setAttempt({ kind: 'refusal', error, sent })
+        onError: (error: Error) => setAttempt({ kind: 'refusal', error, sent }),
+        onSettled: () => {
+          running.current = false
+        }
       }
     )
   }
@@ -170,6 +189,7 @@ export function TryItPane({
       (attempt.sent.source === 'pack'
         ? attempt.sent.bytes !== buffer
         : attempt.sent.packId !== packId))
+
 
   return (
     <aside className={styles.pane} aria-label="Try it">

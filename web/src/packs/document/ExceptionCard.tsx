@@ -7,6 +7,7 @@ import { Block } from './Block'
 import { ConditionTree } from './ConditionTree'
 import { ExtensionsBlock } from './ExtensionsBlock'
 import styles from './PackDocument.module.css'
+import { Shaped } from './MisshapenMember'
 
 export function ExceptionCard({
   exception,
@@ -83,7 +84,14 @@ export function ExceptionCard({
           on unknown: {exception.onUnknown}
         </Block>
       </p>
-      {(exception.sourceRefs?.length ?? 0) > 0 && (
+      {exception.sourceRefs !== undefined && (
+        <Shaped
+          pointer={`${at}/sourceRefs`}
+          label="sources"
+          expects="list"
+          value={exception.sourceRefs}
+        >
+      {Array.isArray(exception.sourceRefs) && exception.sourceRefs!.length > 0 && (
         <Block pointer={`${at}/sourceRefs`} as="p" className={styles.refs}>
           <span className={styles.fieldLabel}>sources</span>
           {exception.sourceRefs!.map((ref) => (
@@ -92,6 +100,8 @@ export function ExceptionCard({
             </code>
           ))}
         </Block>
+      )}
+        </Shaped>
       )}
       <ExtensionsBlock extensions={exception.extensions} at={`${at}/extensions`} />
     </Block>

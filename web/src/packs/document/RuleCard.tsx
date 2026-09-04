@@ -14,6 +14,7 @@ import { Block } from './Block'
 import { ConditionTree } from './ConditionTree'
 import { ExtensionsBlock } from './ExtensionsBlock'
 import styles from './PackDocument.module.css'
+import { Shaped } from './MisshapenMember'
 
 export function RuleCard({
   rule,
@@ -81,7 +82,14 @@ export function RuleCard({
           on unknown: {rule.onUnknown}
         </Block>
       </p>
-      {(rule.evidenceRequirementRefs?.length ?? 0) > 0 && (
+      {rule.evidenceRequirementRefs !== undefined && (
+        <Shaped
+          pointer={`${at}/evidenceRequirementRefs`}
+          label="evidence"
+          expects="list"
+          value={rule.evidenceRequirementRefs}
+        >
+      {Array.isArray(rule.evidenceRequirementRefs) && rule.evidenceRequirementRefs!.length > 0 && (
         <Block pointer={`${at}/evidenceRequirementRefs`} as="p" className={styles.refs}>
           <span className={styles.fieldLabel}>evidence</span>
           {rule.evidenceRequirementRefs!.map((ref) => (
@@ -91,7 +99,16 @@ export function RuleCard({
           ))}
         </Block>
       )}
-      {(rule.sourceRefs?.length ?? 0) > 0 && (
+        </Shaped>
+      )}
+      {rule.sourceRefs !== undefined && (
+        <Shaped
+          pointer={`${at}/sourceRefs`}
+          label="sources"
+          expects="list"
+          value={rule.sourceRefs}
+        >
+      {Array.isArray(rule.sourceRefs) && rule.sourceRefs!.length > 0 && (
         <Block pointer={`${at}/sourceRefs`} as="p" className={styles.refs}>
           <span className={styles.fieldLabel}>sources</span>
           {rule.sourceRefs!.map((ref) => (
@@ -100,6 +117,8 @@ export function RuleCard({
             </code>
           ))}
         </Block>
+      )}
+        </Shaped>
       )}
       {rule.rationale !== undefined && (
         <Block pointer={`${at}/rationale`} as="p" className={styles.rationale}>

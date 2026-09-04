@@ -6,7 +6,7 @@ import { ENUMS } from '../edit/shape'
 import { Block } from './Block'
 import { ExtensionsBlock } from './ExtensionsBlock'
 import styles from './PackDocument.module.css'
-import { MisshapenMember, isRecord } from './MisshapenMember'
+import { MisshapenMember, Shaped, isRecord } from './MisshapenMember'
 
 export function SourcesBlock({ sources, at }: { sources: Source[]; at: string }) {
   const { editing } = useEditing()
@@ -68,10 +68,18 @@ function SourceReading({ at, source }: { at: string; source: Source }) {
           <div className={styles.field}>
             <dt>Locator</dt>
             <dd>
-              <Block pointer={`${at}/locator`} as="span">
-                <code className={styles.literal}>{source.locator.value}</code>{' '}
-                <span className={styles.tagQuiet}>{source.locator.kind}</span>
-              </Block>
+              {/* `"locator": null` is valid JSON, and `.value` on it is a crash. */}
+              <Shaped
+                pointer={`${at}/locator`}
+                label="locator"
+                expects="object"
+                value={source.locator}
+              >
+                <Block pointer={`${at}/locator`} as="span">
+                  <code className={styles.literal}>{source.locator?.value}</code>{' '}
+                  <span className={styles.tagQuiet}>{source.locator?.kind}</span>
+                </Block>
+              </Shaped>
             </dd>
           </div>
         )}
@@ -83,10 +91,17 @@ function SourceReading({ at, source }: { at: string; source: Source }) {
         )}
       </dl>
       {source.citation !== undefined && (
-        <Block pointer={`${at}/citation`} as="blockquote" className={styles.citation}>
-          <p>{source.citation.excerpt}</p>
-          <cite>{source.citation.location}</cite>
-        </Block>
+        <Shaped
+          pointer={`${at}/citation`}
+          label="citation"
+          expects="object"
+          value={source.citation}
+        >
+          <Block pointer={`${at}/citation`} as="blockquote" className={styles.citation}>
+            <p>{source.citation?.excerpt}</p>
+            <cite>{source.citation?.location}</cite>
+          </Block>
+        </Shaped>
       )}
     </>
   )

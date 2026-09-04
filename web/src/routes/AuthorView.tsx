@@ -349,7 +349,9 @@ function FileEditor({
           />
         )}
         {failure && <ErrorBox title={`Could not save ${path}`} error={failure} />}
-        {reloadError && <ErrorBox title={`Could not reload ${path}`} error={reloadError} />}
+        {reloadError && (
+          <ErrorBox title={`Could not reload ${reloadError.path}`} error={reloadError.error} />
+        )}
 
         {outcome && !stale && (
           <p className={verified ? 'note' : 'note note-warn'}>

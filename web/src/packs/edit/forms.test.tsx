@@ -226,6 +226,56 @@ describe('what the form can now reach', () => {
     await waitFor(async () => expect(await bytes()).toContain('"license": "Apache-2.0"'))
   })
 
+  it('writes a list of authors the document does not have yet', async () => {
+    // **A closed set of candidates is the wrong control for an open list.**
+    // With `candidates={[]}` there was nothing to tick: an absent `authors`
+    // could not be written at all, and an existing entry could only be removed.
+    const noAuthors = `${JSON.stringify(
+      {
+        ...(JSON.parse(DRAFT) as Record<string, unknown>),
+        metadata: { license: 'CC-BY-4.0' }
+      },
+      null,
+      2
+    )}\n`
+    chassis({ content: noAuthors, sha256: PACK_DIGEST })
+    drawPack(served(noAuthors), { path: EDIT })
+    await screen.findByRole('navigation', { name: 'Members' })
+    const group = document.getElementById('/metadata/authors')
+    expect(group).toBeTruthy()
+    fireEvent.click(within(group!).getByRole('button', { name: 'Add an author' }))
+    await waitFor(() =>
+      expect(within(document.getElementById('/metadata/authors')!).getByLabelText('authors 1')).toBeTruthy()
+    )
+    fireEvent.change(
+      within(document.getElementById('/metadata/authors')!).getByLabelText('authors 1'),
+      { target: { value: 'a named author' } }
+    )
+    await waitFor(async () => expect(await bytes()).toContain('"a named author"'))
+  })
+
+  it('renames and removes an entry the document already carries', async () => {
+    await wider()
+    const authors = () => document.getElementById('/metadata/authors')!
+    fireEvent.change(within(authors()).getByLabelText('authors 1'), {
+      target: { value: 'another author' }
+    })
+    await waitFor(async () => expect(await bytes()).toContain('"another author"'))
+    fireEvent.click(screen.getByRole('radio', { name: 'Form' }))
+
+    fireEvent.click(within(authors()).getByRole('button', { name: 'Remove' }))
+    await waitFor(async () => expect(await bytes()).toContain('"authors": []'))
+  })
+
+  it('does the same for the required extension names', async () => {
+    await wider()
+    const required = () => document.getElementById('/metadata/requiredExtensions')!
+    fireEvent.change(within(required()).getByLabelText('required extensions 1'), {
+      target: { value: 'example.other-window' }
+    })
+    await waitFor(async () => expect(await bytes()).toContain('"example.other-window"'))
+  })
+
   it('leaves the reviews as a record and offers nothing that writes one', async () => {
     await wider()
     const reviews = document.getElementById('/metadata/reviews')!
@@ -274,6 +324,57 @@ describe('text that is not written yet is work', () => {
     fireEvent.click(screen.getByRole('link', { name: 'go elsewhere' }))
     await waitFor(() => expect(asked).toHaveLength(1))
     expect(asked[0]).toContain('unsaved changes')
+  })
+
+  it('does not follow the pointer onto another rule when the two swap', async () => {
+    // **A pointer is a position, not an identity.** Moving rule 1 above rule 0
+    // leaves `/rules/0/when/value` naming a different rule's operand, and where
+    // the two operands read the same the byte comparison saw nothing move: the
+    // draft stayed, and finishing it wrote the rule the author was not editing.
+    const twins = `${JSON.stringify(
+      {
+        ...(JSON.parse(DRAFT) as Record<string, unknown>),
+        rules: [
+          {
+            id: 'first',
+            description: 'The first rule.',
+            when: { op: 'fact', path: '/request/tag', operator: 'equals', value: 'green' },
+            outcome: 'proceed',
+            onUnknown: 'escalate'
+          },
+          {
+            id: 'second',
+            description: 'The second rule.',
+            when: { op: 'fact', path: '/request/tag', operator: 'equals', value: 'green' },
+            outcome: 'proceed',
+            onUnknown: 'escalate'
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`
+    chassis({ content: twins, sha256: PACK_DIGEST })
+    drawPack(served(twins), { path: EDIT })
+    await screen.findByRole('navigation', { name: 'Members' })
+
+    const operand = within(document.getElementById('/rules/0/when/value')!).getByDisplayValue(
+      '"green"'
+    )
+    fireEvent.change(operand, { target: { value: '{"shade"' } })
+    await waitFor(() => expect(screen.getByText('1 field is not written yet')).toBeTruthy())
+
+    // The rules exchange places. The bytes at `/rules/0/when/value` are exactly
+    // what they were — that is the point — and the rule around them is not.
+    const first = within(document.getElementById('/rules/0')!).getByDisplayValue('first')
+    fireEvent.keyDown(first, { key: 'ArrowDown', altKey: true })
+    await waitFor(() =>
+      expect(
+        within(document.getElementById('/rules/0')!).queryByDisplayValue('second')
+      ).toBeTruthy()
+    )
+    expect(screen.queryByText('1 field is not written yet')).toBeNull()
+    expect(screen.queryByText(/Not written yet/)).toBeNull()
   })
 
   it('retires a draft for good once the bytes it started from move', async () => {

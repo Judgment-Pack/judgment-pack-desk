@@ -56,6 +56,8 @@ export interface ChassisLog {
    * buffer is still A's, which is where a save used to send A's bytes to B.
    */
   release: (path: string) => void
+  /** Hold this path's reads from here on, until they are released. */
+  hold: (path: string) => void
   /** Answer the write this chassis was told to hold. */
   releaseWrite: () => void
   /** Refuse every read from here on, which is what a reload has to survive. */
@@ -86,6 +88,8 @@ export function chassis(options: {
   holdWrite?: boolean
   /** Refuse the write with something that is not a conflict. */
   failWrite?: { status: number; error: string }
+  /** What the disk holds afterwards, where that is not what was sent. */
+  landsAs?: (content: string) => string
   /** Refuse the next write with a 409, and say what is on disk now. */
   staleWith?: { sha256: string; exists?: boolean }
 }): ChassisLog {
@@ -102,9 +106,17 @@ export function chassis(options: {
     openWrite = resolve
   })
   let readsBroken = false
+  const gateFor = (path: string) => {
+    let open = () => {}
+    const wait = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    gates.set(path, { wait, open })
+  }
   const log: ChassisLog = {
     writes: [],
     reads: 0,
+    hold: (path) => gateFor(path),
     release: (path) => gates.get(path)?.open(),
     releaseWrite: () => openWrite(),
     breakReads: () => {
@@ -190,9 +202,10 @@ export function chassis(options: {
             })
         }
       }
+      const written = options.landsAs === undefined ? body.content : options.landsAs(body.content)
       const landed = {
-        content: body.content,
-        sha256: `${body.content.length}`.padEnd(64, 'f')
+        content: written,
+        sha256: `${written.length}`.padEnd(64, 'f')
       }
       disk.set(body.path, landed)
       return ok({

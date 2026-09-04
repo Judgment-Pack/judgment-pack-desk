@@ -7,7 +7,7 @@
  * disposition; and the foot printing the payload's **own** `packId` rather
  * than the project's decision id.
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -289,6 +289,35 @@ describe('what a run answers with', () => {
     expect(screen.getByText(/A refusal carries no disposition/)).toBeTruthy()
     // Mid-edit a refusal is the ordinary answer. It is not dressed as one.
     expect(screen.queryByText(/outcomeId/)).toBeNull()
+  })
+
+  it('sends one call for two clicks in one frame', async () => {
+    // **`evaluate.isPending` is rendered state**, so two clicks inside one frame
+    // both passed the enabled check and both called the tool — and on a runtime
+    // that does not take the rehearsal declaration that is two records appended
+    // to a project's audit directory for one button pressed twice.
+    const stub = stubClient({
+      experimental_evaluate: () => new Promise<never>(() => {})
+    })
+    render(
+      <QueryClientProvider client={testQueryClient()}>
+        <McpContext.Provider value={connected({ client: stub.client, rehearsalSupported: true })}>
+          <TryItPane
+            buffer={PACK_TEXT}
+            packId="vendor-onboarding"
+            rehearsalSupported
+            connected
+            onClose={() => {}}
+          />
+        </McpContext.Provider>
+      </QueryClientProvider>
+    )
+    const run = screen.getByRole('button', { name: 'Run' })
+    fireEvent.click(run)
+    fireEvent.click(run)
+    fireEvent.click(run)
+    await act(async () => {})
+    expect(stub.calls).toHaveLength(1)
   })
 
   it('replaces the answer before it, rather than standing beside it', async () => {

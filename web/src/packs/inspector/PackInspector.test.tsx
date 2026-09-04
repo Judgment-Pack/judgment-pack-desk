@@ -64,6 +64,9 @@ function draw(
     at,
     meta: META,
     fileSha256: META.sha256,
+    // The revision the editor is holding. All three digests are the question:
+    // the runtime's, the file's, and the one on screen.
+    baseSha256: META.sha256,
     fileBytes: META.bytes,
     anchored: anchor(REPORT, RENDERED),
     truncation: truncationNote(REPORT),
@@ -106,6 +109,15 @@ describe('the Member panel', () => {
     cleanup()
     // And where the file did not answer at all there is nothing to bind to.
     draw('/rules/1', { fileSha256: undefined })
+    expect(screen.queryByText('matches the file the editor holds')).toBeNull()
+  })
+
+  it('says nothing about a binding where the editor holds no revision', () => {
+    // **An absent base was read as agreement.** The other two digests agreeing
+    // with each other says the runtime and the chassis describe one file; it
+    // says nothing about what is on screen, and where the editor has not loaded
+    // that file there is no third answer to agree with.
+    draw('/rules/1', { baseSha256: undefined })
     expect(screen.queryByText('matches the file the editor holds')).toBeNull()
   })
 

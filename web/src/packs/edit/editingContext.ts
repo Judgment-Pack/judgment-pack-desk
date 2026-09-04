@@ -16,6 +16,7 @@
 import { createContext, useContext } from 'react'
 import type { AnchoredDiagnostic } from '../checks'
 import type { Buffered } from './writes'
+import { parsePointer, pointer as pointerOf } from '../pointers'
 
 export interface DeclaredIds {
   /** `outcomes[].id`, for the Select a rule's outcome is chosen from. */
@@ -75,6 +76,32 @@ export interface PendingText {
    * would be a stale word over a member it is no longer about.
    */
   from: string
+  /**
+   * The bytes of the card this member sits in — the rule or the exception.
+   *
+   * **A pointer is a position, not an identity.** Moving rule 1 above rule 0
+   * leaves `/rules/0/when/value` naming a different rule's operand, and where
+   * the two operands read the same the byte comparison above sees nothing move:
+   * the draft stayed, and finishing it wrote the *other* rule. The owner's own
+   * bytes change when a move exchanges them, which is what says the member this
+   * draft is about has gone somewhere else.
+   */
+  owner: string
+}
+
+/**
+ * The bytes of the card one pointer sits inside — `/rules/N`, `/exceptions/N` —
+ * or the empty string where it sits in neither.
+ */
+export function ownerOf(
+  buffer: { text: string; index: { spans: ReadonlyMap<string, { valueStart: number; valueEnd: number }> } },
+  pointer: string
+): string {
+  const parts = parsePointer(pointer)
+  if (parts === undefined || parts.length < 2) return ''
+  if (parts[0] !== 'rules' && parts[0] !== 'exceptions') return ''
+  const span = buffer.index.spans.get(pointerOf([parts[0]!, parts[1]!]))
+  return span === undefined ? '' : buffer.text.slice(span.valueStart, span.valueEnd)
 }
 
 const NOT_EDITING: EditingSession = {

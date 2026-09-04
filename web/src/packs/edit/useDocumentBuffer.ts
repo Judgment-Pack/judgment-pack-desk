@@ -39,8 +39,19 @@ export interface DocumentBuffer {
   canUndo: boolean
   /** Put the buffer back to the base, and forget the stack. */
   discard: () => void
-  /** Take a fresh revision as the base: an initial load, or an explicit reload. */
-  rebase: (fresh: FileContent) => void
+  /**
+   * Take a fresh revision as the base: an initial load, or an explicit reload.
+   *
+   * `expect` is the identity the caller believed it was reloading — the path it
+   * asked for and the generation the buffer was on. A read that resolves after
+   * the page has moved on is answering about a document nobody is looking at,
+   * and installing it replaced another pack's dirty buffer with it.
+   */
+  rebase: (fresh: FileContent, expect?: BufferIdentity) => void
+  /** What this buffer is about now, for a caller that must outlive an await. */
+  identity: BufferIdentity | undefined
+  /** Bumped whenever this buffer is put down; part of `identity`. */
+  generation: number
   /**
    * Move the base onto what a save landed, **keeping work the save did not
    * carry**.
@@ -69,6 +80,12 @@ export interface DocumentBuffer {
   forget: () => void
 }
 
+/** Which document a buffer is holding, and which incarnation of it. */
+export interface BufferIdentity {
+  path: string
+  generation: number
+}
+
 /** One entry on the stack: the bytes, and what was being typed into. */
 interface Snapshot {
   text: string
@@ -86,7 +103,27 @@ export function useDocumentBuffer(
    * bytes nobody is proposing. `AuthorView`'s Discard already clears both for
    * this reason; this is the same rule with the two halves in two modules.
    */
-  onDiscard?: () => void
+  onDiscard?: () => void,
+  options?: {
+    /**
+     * Work this hook cannot see, which still has to be lost before a different
+     * file may be taken.
+     *
+     * Operand text an author has typed but not written lives beside the bytes,
+     * so a buffer that asked only "are the bytes dirty" adopted another
+     * document over it and the text went with nothing having asked.
+     */
+    otherWork?: boolean
+    /**
+     * Called when a new file actually becomes the buffer.
+     *
+     * Whatever the caller holds *about* a document — the unwritten drafts —
+     * goes then, and not a moment before: the route used to clear them the
+     * instant the path moved, which threw them away while the buffer itself was
+     * still asking whether the new file could be taken at all.
+     */
+    onAdopt?: () => void
+  }
 ): DocumentBuffer {
   const [base, setBase] = useState<FileContent | undefined>(undefined)
   const [text, setText] = useState<string | undefined>(undefined)
@@ -133,6 +170,12 @@ export function useDocumentBuffer(
   // on every keystroke.
   const dirtyNow = useRef(false)
 
+  // Read from effects and callbacks that must not re-run on every keystroke.
+  const otherWork = useRef(false)
+  otherWork.current = options?.otherWork === true
+  const onAdopt = useRef<(() => void) | undefined>(undefined)
+  onAdopt.current = options?.onAdopt
+
   const adopt = useCallback((fresh: FileContent) => {
     seeded.current = fresh.path
     setBase(fresh)
@@ -142,17 +185,26 @@ export function useDocumentBuffer(
     // previous pack would put that pack's bytes into this one.
     setStack([])
     setWaiting(undefined)
+    onAdopt.current?.()
   }, [])
 
   useEffect(() => {
     void generation
-    if (loaded === undefined || seeded.current === loaded.path) return
+    if (loaded === undefined) return
+    if (seeded.current === loaded.path) {
+      // **Back on the file this buffer is about.** A→B→A left B waiting behind
+      // the page, and its offer — "open it and lose these changes" — was still
+      // on screen: pressing it discarded a dirty A and adopted a document the
+      // address is not about.
+      setWaiting((held) => (held === undefined ? held : undefined))
+      return
+    }
     // **A different file arriving over unsaved work is a question, not an
     // answer.** A route that navigated has already asked it — the dirty guard
     // is on the pathname — but a path that moves *under* one address has asked
     // nobody, and taking the new bytes there discards an edit with nothing on
     // screen having offered to keep it.
-    if (seeded.current !== undefined && dirtyNow.current) {
+    if (seeded.current !== undefined && (dirtyNow.current || otherWork.current)) {
       setWaiting(loaded)
       return
     }
@@ -204,7 +256,24 @@ export function useDocumentBuffer(
   // This file is now seeded, whichever way it got here — so a watcher answer
   // arriving after a save or a reload is still a refetch and still does not
   // re-seed.
-  const rebase = adopt
+  //
+  // **An identity may be stated, and a stale one is refused.** A reload is a
+  // read that takes as long as it takes; between the ask and the answer the
+  // page can be about another pack, with its own unsaved work. Installing the
+  // answer there replaced that work with a document nobody asked for.
+  const generationNow = useRef(generation)
+  generationNow.current = generation
+  const rebase = useCallback(
+    (fresh: FileContent, expect?: BufferIdentity) => {
+      if (expect !== undefined) {
+        if (expect.generation !== generationNow.current) return
+        if (seeded.current !== undefined && seeded.current !== expect.path) return
+        if (fresh.path !== expect.path) return
+      }
+      adopt(fresh)
+    },
+    [adopt]
+  )
 
   const landed = useCallback((fresh: FileContent, submitted: string) => {
     seeded.current = fresh.path
@@ -222,8 +291,12 @@ export function useDocumentBuffer(
   }, [])
 
   const takeWaiting = useCallback(() => {
-    if (waiting !== undefined) adopt(waiting)
-  }, [waiting, adopt])
+    // Only the file the address is about now. The offer can outlive the address
+    // that produced it — A→B→A — and taking it then would discard the work in
+    // front of the viewer for a document they are not looking at.
+    if (waiting === undefined || loaded?.path !== waiting.path) return
+    adopt(waiting)
+  }, [waiting, loaded, adopt])
 
   const forget = useCallback(() => {
     seeded.current = undefined
@@ -248,6 +321,8 @@ export function useDocumentBuffer(
       canUndo: stack.length > 0,
       discard,
       rebase,
+      identity: seeded.current === undefined ? undefined : { path: seeded.current, generation },
+      generation,
       landed,
       waiting,
       takeWaiting,
@@ -262,6 +337,7 @@ export function useDocumentBuffer(
       stack.length,
       discard,
       rebase,
+      generation,
       landed,
       waiting,
       takeWaiting,

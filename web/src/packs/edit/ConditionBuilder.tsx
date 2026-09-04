@@ -48,7 +48,7 @@ import {
   wrapInGroup,
   type ConditionKind
 } from './conditionOps'
-import { useEditing } from './editingContext'
+import { ownerOf, useEditing } from './editingContext'
 import { PointerField } from './PointerField'
 import { DECIMAL_STRING, ENUMS, operandControl } from './shape'
 import { bytesAt, setRawJson, type Buffered } from './writes'
@@ -361,7 +361,9 @@ function JsonOperand({
       write((current) => setRawJson(current, at, next), { coalesceKey: at })
       return
     }
-    hold(at, { text: next, from: held })
+    // The card this operand belongs to, so a draft cannot follow the pointer
+    // onto another rule when the two exchange places.
+    hold(at, { text: next, from: held, owner: ownerOf(buffer, at) })
   }
 
   return (

@@ -736,13 +736,22 @@ selection, same buffer — and `?at` and `?edit` are both written with
 `replace: true`, because how you are looking at a document is not a
 navigation.
 
-**The buffer is the document.** Both modes draw `indexDocument(buffer).value`
-rather than the parsed pack `get_pack` served, so a keystroke in the JSON view
-moves the reading document above it and a form edit is in the bytes the moment
-it is made. A page over one revision while the form writes into another is the
-digest-binding failure one component further in; the served document is the
-fallback only where the file did not load or its bytes do not scan, and the
-digest sentence still says when the two sources disagree.
+**The buffer is the document, and nothing stands behind it.** Both modes draw
+`indexDocument(buffer).value` rather than the parsed pack `get_pack` served, so
+a keystroke in the JSON view moves the reading document above it and a form edit
+is in the bytes the moment it is made. A page over one revision while the form
+writes into another is the digest-binding failure one component further in.
+
+The served document is drawn **only before a file has been loaded at all** — the
+read has not answered, or the listing names no path. Once the editor holds
+bytes, those bytes are the page whatever they say: bytes that do not scan are
+the JSON view with the position they stop at, bytes that scan into something
+that is not an object are the JSON view too, and a member of the wrong shape
+states itself at its own pointer with its bytes in it. Falling back to the
+runtime's last good answer there would draw a document that is on no disk, over
+a file that no longer holds it — and the Inspector beside it would list members
+and references the file does not carry. The digest sentence still says when the
+two sources disagree.
 
 **And the buffer follows the address.** `/packs/:packId` is one element inside
 the packs layout, so another pack is another *parameter* and nothing unmounts —

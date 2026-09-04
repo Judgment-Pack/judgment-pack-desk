@@ -28,7 +28,7 @@
  * hold the bytes.
  */
 import { useQueryClient } from '@tanstack/react-query'
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { readFile, type FileContent, type FileEntry, type FileListing } from './client'
 import { useWriteFile } from './queries'
 
@@ -44,7 +44,14 @@ export interface FileEditing {
   /** The write mutation, for `isPending` and `error`. */
   write: ReturnType<typeof useWriteFile>
   outcome: SaveOutcome | undefined
-  reloadError: Error | undefined
+  /**
+   * The failed reload, and **which file it was for**.
+   *
+   * A read takes as long as it takes, and the page can be about another pack by
+   * the time it fails. "Could not reload <the path on screen now>" was then a
+   * sentence about a file nothing had tried to read.
+   */
+  reloadError: { path: string; error: Error } | undefined
   /** The read-back is byte for byte what was sent. */
   verified: boolean
   /**
@@ -73,7 +80,12 @@ export function useFileEditing(): FileEditing {
   const write = useWriteFile()
   const queryClient = useQueryClient()
   const [outcome, setOutcome] = useState<SaveOutcome | undefined>(undefined)
-  const [reloadError, setReloadError] = useState<Error | undefined>(undefined)
+  const [reloadError, setReloadError] = useState<{ path: string; error: Error } | undefined>(
+    undefined
+  )
+  // Only the last reload asked for counts. An earlier one resolving afterwards
+  // is answering a question that has been replaced.
+  const reloads = useRef(0)
 
   const reset = useCallback(() => {
     setOutcome(undefined)
@@ -86,6 +98,7 @@ export function useFileEditing(): FileEditing {
 
   const reload = useCallback(
     (path: string, onLoaded: (fresh: FileContent) => void) => {
+      const ticket = (reloads.current += 1)
       setReloadError(undefined)
       // **The conflict stands until the read lands.** Clearing it first left a
       // failed reload with nothing on screen at all: no stale-write notice, no
@@ -96,13 +109,18 @@ export function useFileEditing(): FileEditing {
       // own answer counts.
       void readFile(path)
         .then((fresh) => {
+          if (ticket !== reloads.current) return
           write.reset()
           setOutcome(undefined)
           onLoaded(fresh)
           queryClient.setQueryData(['desk-file', path], fresh)
         })
         .catch((cause: unknown) => {
-          setReloadError(cause instanceof Error ? cause : new Error(String(cause)))
+          if (ticket !== reloads.current) return
+          setReloadError({
+            path,
+            error: cause instanceof Error ? cause : new Error(String(cause))
+          })
         })
       // eslint-disable-next-line react-hooks/exhaustive-deps
     },
@@ -130,16 +148,22 @@ export function useFileEditing(): FileEditing {
       // When this save was issued, measured against the file query's own clock.
       const startedAt =
         queryClient.getQueryState(['desk-file', input.path])?.dataUpdatedAt ?? 0
-      write.mutate(
-        {
-          path: input.path,
-          content: submitted,
-          baseSha256: input.baseSha256,
-          override: input.override,
-          createParents: input.createParents
-        },
-        {
-          onSettled: () => input.onSettled?.(),
+      // **`mutateAsync`, not `mutate`, for the settlement.** A per-mutation
+      // `onSettled` is delivered through the observer, and `write.reset()` —
+      // which the route calls when the path changes — detaches it: a save in
+      // flight across that never settled, so a caller holding a single-flight
+      // latch held it for ever and every later Save returned silently. The
+      // promise resolves either way, whatever happens to the observer.
+      void write
+        .mutateAsync(
+          {
+            path: input.path,
+            content: submitted,
+            baseSha256: input.baseSha256,
+            override: input.override,
+            createParents: input.createParents
+          },
+          {
           onSuccess: (landed) => {
             setOutcome({ submitted, landed })
             input.onSaved?.(landed)
@@ -169,8 +193,12 @@ export function useFileEditing(): FileEditing {
                   }
             )
           }
-        }
-      )
+          }
+        )
+        // The mutation's own error is rendered from `write.error`; this catch
+        // exists so a rejected promise is not an unhandled one.
+        .catch(() => {})
+        .finally(() => input.onSettled?.())
       // eslint-disable-next-line react-hooks/exhaustive-deps
     },
     [queryClient]

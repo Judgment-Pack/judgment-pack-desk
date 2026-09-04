@@ -17,10 +17,11 @@
  */
 import type { PackMetadata } from '../../mcp/types'
 import { useEditing } from '../edit/editingContext'
-import { StringField, StringListField } from '../edit/fields'
+import { StringField, StringsField } from '../edit/fields'
 import { Block } from './Block'
 import { ExtensionsBlock } from './ExtensionsBlock'
 import styles from './PackDocument.module.css'
+import { MisshapenMember, Shaped, isRecord } from './MisshapenMember'
 
 export function MetadataBlock({ metadata, at }: { metadata: PackMetadata; at: string }) {
   const reviews = metadata.reviews ?? []
@@ -29,17 +30,17 @@ export function MetadataBlock({ metadata, at }: { metadata: PackMetadata; at: st
     return (
       <Block pointer={at}>
         <h2 className={styles.heading}>Metadata</h2>
-        <StringListField pointer={`${at}/authors`} label="authors" candidates={[]} />
+        <StringsField pointer={`${at}/authors`} label="authors" what="an author" />
         <StringField
           pointer={`${at}/createdAt`}
           label="created"
           hint="an RFC 3339 date-time, for example 2026-01-31T09:00:00Z."
         />
         <StringField pointer={`${at}/license`} label="license" />
-        <StringListField
+        <StringsField
           pointer={`${at}/requiredExtensions`}
           label="required extensions"
-          candidates={[]}
+          what="an extension name"
           hint="namespaced extension names this pack cannot be evaluated without."
         />
         <Reviews reviews={reviews} metadata={metadata} at={at} />
@@ -55,9 +56,16 @@ export function MetadataBlock({ metadata, at }: { metadata: PackMetadata; at: st
           <div className={styles.field}>
             <dt>Authors</dt>
             <dd>
-              <Block pointer={`${at}/authors`} as="span">
-                {metadata.authors.join(', ')}
-              </Block>
+              <Shaped
+                pointer={`${at}/authors`}
+                label="authors"
+                expects="list"
+                value={metadata.authors}
+              >
+                <Block pointer={`${at}/authors`} as="span">
+                  {(Array.isArray(metadata.authors) ? metadata.authors : []).join(', ')}
+                </Block>
+              </Shaped>
             </dd>
           </div>
         )}
@@ -85,13 +93,23 @@ export function MetadataBlock({ metadata, at }: { metadata: PackMetadata; at: st
           <div className={styles.field}>
             <dt>Required extensions</dt>
             <dd>
+              <Shaped
+                pointer={`${at}/requiredExtensions`}
+                label="required extensions"
+                expects="list"
+                value={metadata.requiredExtensions}
+              >
               <Block pointer={`${at}/requiredExtensions`} as="span" className={styles.refs}>
-                {metadata.requiredExtensions.map((name) => (
+                {(Array.isArray(metadata.requiredExtensions)
+                  ? metadata.requiredExtensions
+                  : []
+                ).map((name) => (
                   <code key={name} className={styles.id}>
                     {name}
                   </code>
                 ))}
               </Block>
+              </Shaped>
             </dd>
           </div>
         )}
@@ -113,6 +131,17 @@ function Reviews({
   at: string
 }) {
   if (metadata.reviews === undefined) return null
+  if (!Array.isArray(metadata.reviews)) {
+    return (
+      <MisshapenMember
+        pointer={`${at}/reviews`}
+        label="reviews"
+        expected="a list"
+        value={metadata.reviews}
+        compact
+      />
+    )
+  }
   return (
     <Block pointer={`${at}/reviews`}>
       <h3 className={styles.subheading}>Reviews</h3>
@@ -121,7 +150,18 @@ function Reviews({
         review written here would be signed by nobody.
       </p>
       <ul className={styles.cards}>
-        {reviews.map((review, index) => (
+        {reviews.map((review, index) =>
+          !isRecord(review) ? (
+            <li key={`misshapen-${index}`}>
+              <MisshapenMember
+                pointer={`${at}/reviews/${index}`}
+                label={`Review ${index + 1}`}
+                expected="an object"
+                value={review}
+                compact
+              />
+            </li>
+          ) : (
           <li key={`${review.reviewer}-${index}`}>
             <Block pointer={`${at}/reviews/${index}`} as="div" className={styles.card}>
               <p className={styles.cardHead}>
@@ -132,7 +172,8 @@ function Reviews({
               {review.note !== undefined && <p>{review.note}</p>}
             </Block>
           </li>
-        ))}
+          )
+        )}
       </ul>
     </Block>
   )

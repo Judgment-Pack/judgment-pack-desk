@@ -72,7 +72,19 @@ export function PackInspector({
   tab: string | null
   onTabChange: (tab: string) => void
 }) {
-  if (at === null || doc === undefined) {
+  if (doc === undefined) {
+    // **No fallback to the served pack.** The page is over the bytes the editor
+    // holds, and where those are not a document there is no member to inspect —
+    // showing the runtime's last good answer here would put members and
+    // references on screen that the file no longer carries.
+    return (
+      <p className={styles.empty}>
+        The bytes in the editor are not a document this desk can read, so there is no member to
+        inspect. The JSON view holds them.
+      </p>
+    )
+  }
+  if (at === null) {
     return (
       <p className={styles.empty}>
         Select a member of the document to inspect it here.

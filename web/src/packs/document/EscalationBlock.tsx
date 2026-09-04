@@ -14,6 +14,7 @@ import { ENUMS } from '../edit/shape'
 import { Block } from './Block'
 import { ExtensionsBlock } from './ExtensionsBlock'
 import styles from './PackDocument.module.css'
+import { Shaped } from './MisshapenMember'
 
 export function EscalationBlock({ escalation, at }: { escalation: Escalation; at: string }) {
   const { editing } = useEditing()
@@ -59,13 +60,23 @@ export function EscalationBlock({ escalation, at }: { escalation: Escalation; at
           <div className={styles.field}>
             <dt>Triggers</dt>
             <dd>
-              <Block pointer={`${at}/triggers`} as="span" className={styles.refs}>
-                {(escalation.triggers ?? []).map((trigger) => (
-                  <span key={trigger} className={styles.tagQuiet}>
-                    {trigger}
-                  </span>
-                ))}
-              </Block>
+              {/* Five reason words in a list, or bytes that are not that. */}
+              <Shaped
+                pointer={`${at}/triggers`}
+                label="triggers"
+                expects="list"
+                value={escalation.triggers ?? []}
+              >
+                <Block pointer={`${at}/triggers`} as="span" className={styles.refs}>
+                  {(Array.isArray(escalation.triggers) ? escalation.triggers : []).map(
+                    (trigger) => (
+                      <span key={trigger} className={styles.tagQuiet}>
+                        {trigger}
+                      </span>
+                    )
+                  )}
+                </Block>
+              </Shaped>
             </dd>
           </div>
           {escalation.message !== undefined && (

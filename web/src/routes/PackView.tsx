@@ -24,13 +24,17 @@
  * scroll, the selection and the buffer — and so the dirty blocker, whose
  * predicate is the pathname alone, never asks about it.
  *
- * **The document on screen is the buffer.** Both modes draw
- * `indexDocument(buffer).value`, so a keystroke in the JSON view and an edit in
- * a form move the reading document the same way, and the form is never over one
- * revision while the page is over another. The served document is the fallback
- * where the file did not load or its bytes do not scan — and the digest
- * sentence still says when the runtime served a different revision from the one
- * the editor holds.
+ * **The document on screen is the buffer, and there is no fallback behind it.**
+ * Both modes draw `indexDocument(buffer).value`, so a keystroke in the JSON
+ * view and an edit in a form move the reading document the same way, and the
+ * form is never over one revision while the page is over another. The served
+ * document is drawn only **before a file has been loaded at all** — the file
+ * read has not answered, or there is no path to read. Once the editor holds
+ * bytes they are what the page is about, whatever they say: bytes that do not
+ * scan are the JSON view, bytes that scan into something that is not a document
+ * are the JSON view too, and a member of the wrong shape states itself where it
+ * sits. Falling back to the runtime's answer there would put a document nobody
+ * has on disk on screen, over a file that no longer holds it.
  *
  * **Save is never gated on the check.** The chassis writes bytes and the
  * runtime judges them, in that order. Outstanding diagnostics stay on screen
@@ -54,11 +58,13 @@ import { CHECK_BEHIND_BUFFER, anchor, isStale, truncationNote } from '../packs/c
 import type { AnchoredDiagnostic } from '../packs/checks'
 import { CheckStrip } from '../packs/CheckStrip'
 import { PackDocumentView } from '../packs/document/PackDocumentView'
+import { isRecord } from '../packs/document/MisshapenMember'
 import { SelectionContext } from '../packs/document/Block'
 import { EditToolbar } from '../packs/edit/EditToolbar'
 import {
   EditingContext,
   declaredIds,
+  ownerOf,
   type EditingSession,
   type PendingText
 } from '../packs/edit/editingContext'
@@ -127,21 +133,6 @@ export function PackView() {
   // buffer's discard clears that verdict, which is why the two are wired
   // together here rather than each holding half of it.
   const editor = useFileEditing()
-  const buffer = useDocumentBuffer(file.data, editor.reset)
-  /**
-   * **The path is part of the buffer's identity.**
-   *
-   * `path` moves the moment `get_pack(B)` answers, while the buffer still
-   * holds A until B's file read lands and the seeding effect runs. In that gap
-   * the page drew A's document under B's address and Save combined B's path
-   * with A's bytes and A's digest — which a 409 usually catches and equal
-   * digests, or the Overwrite the 409 itself offers, does not. Nothing is
-   * drawn from the buffer, and nothing may be written from it, until the two
-   * agree.
-   */
-  const onPath = path !== undefined && buffer.base?.path === path
-  const bufferText = onPath ? buffer.text : undefined
-
   /**
    * Text an author has typed into an operand that is not JSON yet.
    *
@@ -157,14 +148,42 @@ export function PackView() {
       return next
     })
   }, [])
+  const forgetDrafts = useCallback(() => setDrafts(new Map()), [])
+  /**
+   * **The drafts are work, and the buffer has to know.** They live beside the
+   * bytes, so a buffer asking only "are the bytes dirty" adopted another
+   * document over an unfinished operand without anyone being asked — and they
+   * go when a new file is actually taken, rather than the moment a path moves.
+   */
+  const buffer = useDocumentBuffer(file.data, editor.reset, {
+    otherWork: drafts.size > 0,
+    onAdopt: forgetDrafts
+  })
+  /**
+   * **The path is part of the buffer's identity.**
+   *
+   * `path` moves the moment `get_pack(B)` answers, while the buffer still
+   * holds A until B's file read lands and the seeding effect runs. In that gap
+   * the page drew A's document under B's address and Save combined B's path
+   * with A's bytes and A's digest — which a 409 usually catches and equal
+   * digests, or the Overwrite the 409 itself offers, does not. Nothing is
+   * drawn from the buffer, and nothing may be written from it, until the two
+   * agree.
+   */
+  const onPath = path !== undefined && buffer.base?.path === path
+  const bufferText = onPath ? buffer.text : undefined
 
   /**
    * What one file's page must forget when the address moves to another.
    *
-   * The buffer re-seeds itself (`useDocumentBuffer`); what is left is the last
-   * write's verdict and the unwritten operands, both of which are about
-   * pointers into a document that is no longer on screen. A stale-write alert
-   * carried across would name a conflict on a file nobody is looking at.
+   * The last write's verdict, which is about a file nobody is looking at any
+   * more — a stale-write alert carried across would name a conflict on another
+   * pack — and the single-flight latch, which belongs to the save that was in
+   * flight for the file this page has left.
+   *
+   * **Not the drafts.** They are work, and the buffer is what decides whether
+   * work may be replaced; clearing them here threw them away while the buffer
+   * was still asking. They go when a file is actually adopted (`onAdopt`).
    */
   const reset = editor.reset
   const opened = useRef<string | undefined>(undefined)
@@ -174,7 +193,7 @@ export function PackView() {
     opened.current = path
     if (first) return
     reset()
-    setDrafts(new Map())
+    saving.current = undefined
   }, [path, reset])
 
   /**
@@ -194,7 +213,11 @@ export function PackView() {
     openedPack.current = packId
     if (first) return
     forget()
-  }, [packId, forget])
+    // A different pack is a different document and the guard has already asked
+    // about it. Every pointer these drafts name is in a document nobody is
+    // looking at.
+    forgetDrafts()
+  }, [packId, forget, forgetDrafts])
 
   // This desk's reading of the bytes on screen, computed once per revision of
   // them. Every form field reads its value out of this and every write splices
@@ -269,7 +292,13 @@ export function PackView() {
     () => (bufferText === undefined || read === undefined ? [] : agreesWithParse(bufferText, read.index)),
     [bufferText, read]
   )
-  const formAvailable = disagreement.length === 0 && read?.index.value !== undefined
+  /**
+   * **A document is an object.** `null`, `[]`, `"a string"` and `7` are each
+   * valid JSON that scans, agrees with `JSON.parse`, and is not a pack — and
+   * every reader below starts with `Object.keys` or a member lookup. Bytes that
+   * are not a record reach the JSON view and the strip and nothing else.
+   */
+  const formAvailable = disagreement.length === 0 && isRecord(read?.index.value)
   const shape = formAvailable ? askedShape : 'json'
   const withheld = formAvailable ? undefined : formWithheld(read, bufferText, disagreement)
 
@@ -283,9 +312,17 @@ export function PackView() {
    * it, and the served document is the fallback — with the JSON view holding
    * the bytes that do not scan and saying where they stop.
    */
+  const served = pack.data?.document
   const drawn: PackDocument | undefined = onPath
-    ? (read?.index.value as PackDocument | undefined)
-    : pack.data?.document
+    ? isRecord(read?.index.value)
+      ? (read.index.value as unknown as PackDocument)
+      : undefined
+    // Before a file has been loaded at all, the runtime's answer is what there
+    // is — and it is held to the same question: `get_pack` can serve `null`,
+    // and `Object.keys(null)` is where the route ended.
+    : isRecord(served)
+      ? (served as PackDocument)
+      : undefined
 
   // Which blocks are actually on screen. Read off the DOM rather than derived
   // from the document, because "nearest **rendered** ancestor" is a claim about
@@ -433,7 +470,17 @@ export function PackView() {
       let changed = false
       const next = new Map(held)
       for (const [pointer, draft] of held) {
-        if ((bytesAt(read, pointer) ?? '') === draft.from) continue
+        // **The bytes at the pointer and the card they sit in.** A pointer is a
+        // position: moving rule 1 above rule 0 leaves `/rules/0/when/value`
+        // naming another rule's operand, and where the two read the same the
+        // byte comparison alone saw nothing move — the draft stayed, and
+        // finishing it wrote the rule the author was not editing.
+        if (
+          (bytesAt(read, pointer) ?? '') === draft.from &&
+          ownerOf(read, pointer) === draft.owner
+        ) {
+          continue
+        }
         next.delete(pointer)
         changed = true
       }
@@ -451,12 +498,42 @@ export function PackView() {
   // not there, the body did not parse. It was rendered nowhere at all: the
   // button stopped saying "Saving…" and the page said nothing about why.
   const saveFailure = editor.write.error !== null && staleWrite === undefined ? editor.write.error : undefined
+  /**
+   * Reload, with the identity of what is being reloaded travelling with it.
+   *
+   * A read takes as long as it takes. Holding Reload on pack A, moving to B and
+   * editing it, and *then* letting A's read land replaced B's dirty buffer with
+   * A's bytes — no confirmation, no undo, and the alert about it named B. The
+   * ticket says which pack, which path and which incarnation of the buffer the
+   * read was for, and the buffer refuses one that no longer holds.
+   */
+  const rebase = buffer.rebase
   const reloadNow = useCallback(() => {
-    if (path === undefined) return
-    editor.reload(path, (fresh) => buffer.rebase(fresh))
-  }, [path, editor, buffer])
+    if (path === undefined || buffer.identity === undefined) return
+    const ticket = { packId, identity: buffer.identity }
+    editor.reload(path, (fresh) => {
+      if (ticket.packId !== packNow.current) return
+      rebase(fresh, ticket.identity)
+    })
+  }, [path, packId, editor, buffer.identity, rebase])
 
-  const saving = useRef(false)
+  /**
+   * The pack this page is about **right now**, for a callback that outlives a
+   * render.
+   */
+  const packNow = useRef<string | undefined>(packId)
+  packNow.current = packId
+
+  /**
+   * The path a save is in flight for, or nothing.
+   *
+   * **Scoped to the file, and released on settlement.** It was a boolean
+   * released by the mutation's own `onSettled`, which react-query delivers
+   * through the observer — and `write.reset()` on a path change detaches that
+   * observer, so a save in flight across the change never settled and the latch
+   * was held for ever: every later Save returned silently, on every pack.
+   */
+  const saving = useRef<string | undefined>(undefined)
   const save = useCallback(
     (override?: boolean) => {
       if (path === undefined || bufferText === undefined || buffer.base === undefined) return
@@ -465,13 +542,13 @@ export function PackView() {
       // read "not saving" and issue two PUTs against one base — the second of
       // which the chassis answers with a 409 this page then explains as
       // somebody else's edit.
-      if (saving.current) return
+      if (saving.current !== undefined) return
       // The bytes are the ones sent, and they are checked against the path they
       // are being sent to: `path` moves with `get_pack` and the buffer moves
       // with the file read, so the two are not always about one file.
       if (buffer.base.path !== path) return
       const submitted = bufferText
-      saving.current = true
+      saving.current = path
       // The check runs before the save and does **not** gate it. Sending the
       // buffer now means the diagnostics on screen afterwards are about the
       // bytes that were written rather than about whatever was last idle.
@@ -482,7 +559,9 @@ export function PackView() {
         baseSha256: buffer.base.sha256,
         override,
         onSettled: () => {
-          saving.current = false
+          // Only the save this latch was taken for releases it: a settlement
+          // arriving after the page moved on is about another file.
+          if (saving.current === path) saving.current = undefined
         },
         onSaved: (landed) => {
           buffer.landed(landed, submitted)
@@ -593,7 +672,7 @@ export function PackView() {
     ) : pack.data === undefined ? null : (
         <PackInspector
           packId={packId ?? ''}
-          document={drawn ?? pack.data.document}
+          document={drawn}
           at={at}
           meta={pack.data.meta}
           fileSha256={file.data?.sha256}
@@ -813,7 +892,10 @@ export function PackView() {
               <ErrorBox title={`Could not save ${path ?? 'this pack'}`} error={saveFailure} />
             )}
             {editor.reloadError !== undefined && (
-              <ErrorBox title={`Could not reload ${path ?? 'this pack'}`} error={editor.reloadError} />
+              <ErrorBox
+                title={`Could not reload ${editor.reloadError.path}`}
+                error={editor.reloadError.error}
+              />
             )}
             {/*
               What the save actually did, which is the chassis' read-back and not
@@ -833,8 +915,11 @@ export function PackView() {
                 ) : (
                   <>
                     <strong>Saved, and the read-back does not match.</strong> The write completed
-                    and the bytes now on disk are not the bytes that were sent. What is in this
-                    editor is what was sent; reload before editing further.
+                    and the bytes now on disk are not the bytes that were sent.{' '}
+                    {bufferText === editor.outcome.submitted
+                      ? 'What is in this editor is what was sent'
+                      : 'This editor was not replaced, and holds neither of them'}
+                    ; reload before editing further.
                   </>
                 )}
               </p>

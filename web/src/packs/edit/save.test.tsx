@@ -163,6 +163,51 @@ describe('what a save sends', () => {
   })
 })
 
+describe('what the page says a save left behind', () => {
+  it('does not claim the editor holds what was sent when it holds something else', async () => {
+    // Both halves at once: the read-back is not what was sent **and** the author
+    // kept typing while the PUT was in the air. The sentence said "what is in
+    // this editor is what was sent", which is then true of neither.
+    const log = chassis({
+      content: PACK_TEXT,
+      sha256: PACK_DIGEST,
+      holdWrite: true,
+      landsAs: (content) => `${content}// touched by something else\n`
+    })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(log.writes).toHaveLength(1))
+    fireEvent.change(screen.getByLabelText("The document's bytes"), {
+      target: { value: `${PACK_TEXT}\n\n` }
+    })
+    log.releaseWrite()
+
+    await waitFor(() =>
+      expect(screen.getByText(/read-back does not match/)).toBeTruthy()
+    )
+    expect(screen.getByText(/holds neither of them/)).toBeTruthy()
+    expect(screen.queryByText(/What is in this editor is what was sent/)).toBeNull()
+  })
+
+  it('says the editor holds what was sent where it does', async () => {
+    const log = chassis({
+      content: PACK_TEXT,
+      sha256: PACK_DIGEST,
+      landsAs: (content) => `${content}// touched by something else\n`
+    })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(log.writes).toHaveLength(1))
+    await waitFor(() =>
+      expect(screen.getByText(/What is in this editor is what was sent/)).toBeTruthy()
+    )
+  })
+})
+
 describe('a save that was refused for some other reason', () => {
   it('says so, rather than stopping saying “Saving…”', async () => {
     // Only `StaleWrite` was rendered. A path that is not writable, a chassis

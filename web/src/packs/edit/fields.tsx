@@ -270,6 +270,74 @@ export function StringListField({
   )
 }
 
+/**
+ * A list of **free-form** strings: authors, required extension names.
+ *
+ * `StringListField` above offers a closed set to tick — the ids a document
+ * declares, the five trigger words — and that is the right control for a
+ * reference. It is the wrong one for a list whose values are the author's own:
+ * with `candidates={[]}` an absent list could not be populated at all and an
+ * existing entry could only be removed, never corrected. Each row is an input
+ * with its own Remove, and one Add writes an empty entry to type into.
+ *
+ * Every keystroke writes, coalesced per row, so what is on screen is in the
+ * buffer a save would send — there is no draft state here for the same reason
+ * the operand's exists: an unwritten field is a claim the toolbar has to make.
+ */
+export function StringsField({
+  pointer,
+  label,
+  what,
+  hint
+}: {
+  pointer: string
+  label: string
+  /** The word for one entry — "an author", "an extension name". */
+  what: string
+  hint?: ReactNode
+}) {
+  const { buffer, write } = useEditing()
+  const held = valueAt(buffer.index.value, pointer)
+  const entries = Array.isArray(held) ? held : []
+  const strings = entries.map((entry) => (typeof entry === 'string' ? entry : JSON.stringify(entry)))
+  const put = (next: string[], key?: string) =>
+    write((current) => setStringList(current, pointer, next), key === undefined ? undefined : { coalesceKey: key })
+  return (
+    <PointerField pointer={pointer} label={label} hint={hint}>
+      {(wiring) => (
+        <div className={styles.list} id={wiring.id} aria-describedby={wiring['aria-describedby']}>
+          {strings.length === 0 && (
+            <p className={styles.listEmpty}>The document declares none.</p>
+          )}
+          {strings.map((entry, index) => (
+            <div className={styles.listRow} key={`${pointer}/${index}`}>
+              <Input
+                aria-label={`${label} ${index + 1}`}
+                value={entry}
+                onChange={(event) =>
+                  put(
+                    strings.map((held, at) => (at === index ? event.target.value : held)),
+                    `${pointer}/${index}`
+                  )
+                }
+              />
+              <Button
+                variant="quiet"
+                onClick={() => put(strings.filter((_, at) => at !== index))}
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+          <Button variant="quiet" onClick={() => put([...strings, ''])}>
+            Add {what}
+          </Button>
+        </div>
+      )}
+    </PointerField>
+  )
+}
+
 /** A boolean member, offered as the two words the document would spell. */
 export function BooleanField({
   pointer,

@@ -73,6 +73,69 @@ describe('bytes shaped like nothing this desk expects', () => {
     expect(screen.getByRole('toolbar', { name: 'Editing' })).toBeTruthy()
   })
 
+  it.each([
+    ['null', 'null'],
+    ['a list', '[]'],
+    ['a string', '"a pack"'],
+    ['a number', '7']
+  ])('holds a document that is %s without drawing anything from it', async (_what, bytes) => {
+    // **A document is an object.** Each of these is valid JSON that scans and
+    // agrees with `JSON.parse`; the form was offered over all four, and the
+    // first reader through — `Object.keys(document)` — took the route down.
+    chassis({ content: bytes, sha256: PACK_DIGEST })
+    drawPack(served(bytes), { path: EDIT })
+    const raw = (await screen.findByLabelText("The document's bytes")) as HTMLTextAreaElement
+    expect(raw.value).toBe(bytes)
+    // The form is not on offer, and the page says why in the words of what is
+    // wrong rather than crashing on the way to finding out.
+    expect(screen.queryByRole('navigation', { name: 'Members' })).toBeNull()
+    expect(screen.getByRole('toolbar', { name: 'Editing' })).toBeTruthy()
+  })
+
+  it.each([
+    ['/sources/0/locator', (doc: Record<string, unknown>) => {
+      ;(doc.sources as Record<string, unknown>[])[0]!.locator = null
+    }],
+    ['/sources/0/citation', (doc: Record<string, unknown>) => {
+      ;(doc.sources as Record<string, unknown>[])[0]!.citation = 'see page 4'
+    }],
+    ['/metadata/authors', (doc: Record<string, unknown>) => {
+      ;(doc.metadata as Record<string, unknown>).authors = 'a named author'
+    }],
+    ['/metadata/requiredExtensions', (doc: Record<string, unknown>) => {
+      ;(doc.metadata as Record<string, unknown>).requiredExtensions = {}
+    }],
+    ['/metadata/reviews', (doc: Record<string, unknown>) => {
+      ;(doc.metadata as Record<string, unknown>).reviews = 'approved'
+    }],
+    ['/metadata/reviews/0', (doc: Record<string, unknown>) => {
+      ;(doc.metadata as Record<string, unknown>).reviews = [null]
+    }],
+    ['/extensions', (doc: Record<string, unknown>) => {
+      doc.extensions = null
+    }],
+    ['/escalation/triggers', (doc: Record<string, unknown>) => {
+      ;(doc.escalation as Record<string, unknown>).triggers = 'no-match'
+    }],
+    ['/rules/0/sourceRefs', (doc: Record<string, unknown>) => {
+      ;(doc.rules as Record<string, unknown>[])[0]!.sourceRefs = 'handbook'
+    }]
+  ])('draws %s as the bytes it is, wherever it sits', async (pointer, break_) => {
+    // Each of these is a member the page reaches *through* — `.value` on a
+    // locator, `.map` on a list of names — and each is valid JSON somebody can
+    // have on disk. The reading view is where those reaches are, and this desk
+    // can now write the file that puts them there.
+    const parsed = JSON.parse(PACK_TEXT) as Record<string, unknown>
+    break_(parsed)
+    const wrong = `${JSON.stringify(parsed, null, 2)}\n`
+    chassis({ content: wrong, sha256: PACK_DIGEST })
+    drawPack(served(wrong), { path: '/packs/vendor-onboarding' })
+    await screen.findByRole('navigation', { name: 'Members' })
+    const said = await screen.findAllByText(/not the shape this page draws/)
+    expect(said.some((node) => node.textContent?.includes(pointer))).toBe(true)
+    expect(document.getElementById(pointer)).toBeTruthy()
+  })
+
   it('draws a rule that is not an object as its bytes, not as a card', async () => {
     // The list is a list — the member-level guard has nothing to say about it —
     // and one element of it is `null`. `RuleCard` reads `rule.id`.
@@ -82,14 +145,14 @@ describe('bytes shaped like nothing this desk expects', () => {
     chassis({ content: wrong, sha256: PACK_DIGEST })
     drawPack(served(wrong), { path: EDIT })
     await screen.findByRole('navigation', { name: 'Members' })
-    const said = await screen.findByText(/not the shape the form edits/)
+    const said = await screen.findByText(/not the shape this page draws/)
     expect(said.textContent).toContain('/rules/1')
     expect(document.getElementById('/rules/1')).toBeTruthy()
     // The rule beside it is still a card with fields in it.
     expect(screen.getByDisplayValue('screen-first')).toBeTruthy()
   })
 
-  it('says which member is not the shape the form edits, rather than crashing', async () => {
+  it('says which member is not the shape this page draws, rather than crashing', async () => {
     // **Form availability asked whether the two readings agreed and nothing
     // else.** `"rules": {}` agrees perfectly — it is valid JSON both readings
     // read the same way — and selecting Form reached `rules.map` and took the
@@ -100,7 +163,7 @@ describe('bytes shaped like nothing this desk expects', () => {
     chassis({ content: wrong, sha256: PACK_DIGEST })
     drawPack(served(wrong), { path: EDIT })
     await screen.findByRole('navigation', { name: 'Members' })
-    const said = await screen.findByText(/not the shape the form edits/)
+    const said = await screen.findByText(/not the shape this page draws/)
     expect(said.textContent).toContain('/rules')
     // The block is addressed, so a diagnostic about it still lands here and the
     // outline entry still reaches it.
@@ -403,6 +466,27 @@ describe('a file that moved after it was loaded', () => {
     expect(screen.getByText(/the bytes you loaded from/)).toBeTruthy()
     // And the way to the bytes that are there now is offered rather than taken.
     expect(screen.getByRole('button', { name: 'Reload' })).toBeTruthy()
+  })
+})
+
+describe('the Inspector over bytes that are not a document', () => {
+  it('says it has none rather than showing the one the runtime served', async () => {
+    // **No fallback here either.** With the buffer no longer parsing, the panel
+    // went on listing the served pack's members and references — a document
+    // that is on no disk, beside an editor holding the bytes that replaced it.
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    drawPack(served(PACK_TEXT), {
+      path: '/packs/vendor-onboarding?edit=1&shape=json&at=%2Ftitle',
+      inspector: true,
+      tab: 'member'
+    })
+    const raw = await editableBytes()
+    expect(screen.getByText('Provenance')).toBeTruthy()
+    fireEvent.change(raw, { target: { value: '{ this is not json' } })
+    await waitFor(() =>
+      expect(screen.getByText(/not a document this desk can read/)).toBeTruthy()
+    )
+    expect(screen.queryByText('Provenance')).toBeNull()
   })
 })
 

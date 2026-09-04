@@ -9,7 +9,7 @@
  * buffer seeded once drew pack A under pack B's URL, and its Save sent A's
  * bytes, A's digest and B's path.
  */
-import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor, within as inside } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   chassis,
@@ -49,6 +49,23 @@ const pack = (id: string, title: string) =>
   )}\n`
 
 const ALPHA = pack('alpha', 'Alpha pack')
+/** Alpha again, with a `fact` operand — the one control that holds a draft. */
+const ALPHA_FACT = `${JSON.stringify(
+  {
+    ...(JSON.parse(ALPHA) as Record<string, unknown>),
+    rules: [
+      {
+        id: 'alpha-rule',
+        description: 'Alpha pack rule',
+        when: { op: 'fact', path: '/request/amount', operator: 'equals', value: '5000' },
+        outcome: 'proceed',
+        onUnknown: 'escalate'
+      }
+    ]
+  },
+  null,
+  2
+)}\n`
 const BRAVO = pack('bravo', 'Bravo pack')
 
 const PACKS = [
@@ -194,6 +211,105 @@ describe('a path that moves under one address', () => {
     await waitFor(() => expect(screen.getByDisplayValue('Alpha pack, revised')).toBeTruthy())
   })
 
+  it('holds a file that would replace unwritten text, and keeps the text', async () => {
+    // **Unwritten operand text is work the buffer cannot see.** With only a
+    // draft and no byte change the buffer adopted the other document, and the
+    // route had already thrown the draft away the moment the path moved — so
+    // the work went with nothing having asked about it.
+    let servedPath = PACK_PATH
+    chassis({
+      content: ALPHA_FACT,
+      sha256: PACK_DIGEST,
+      also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } }
+    })
+    const handlers = {
+      get_pack: () => ({
+        text: servedPath === PACK_PATH ? ALPHA_FACT : BRAVO,
+        structured: {
+          path: servedPath,
+          bytes: ALPHA_FACT.length,
+          sha256: servedPath === PACK_PATH ? PACK_DIGEST : BRAVO_DIGEST
+        }
+      }),
+      list_packs: () => ({
+        text: JSON.stringify({ packs: [{ id: 'alpha', path: servedPath }] })
+      }),
+      validate: () => ({ text: CLEAN_REPORT })
+    }
+    const { queryClient } = drawPack(handlers, { path: '/packs/alpha?edit=1' })
+    await screen.findByDisplayValue('Alpha pack')
+
+    const operand = inside(document.getElementById('/rules/0/when/value')!).getByDisplayValue(
+      '"5000"'
+    )
+    fireEvent.change(operand, { target: { value: '{"shade"' } })
+    await waitFor(() => expect(screen.getByText('1 field is not written yet')).toBeTruthy())
+    // The bytes have not moved: this is work and it is not dirtiness.
+    expect(screen.queryByLabelText('unsaved changes')).toBeNull()
+
+    servedPath = BRAVO_PATH
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['get_pack'] })
+    })
+
+    await waitFor(() =>
+      expect(screen.getByText(/This page is now about a different file/)).toBeTruthy()
+    )
+    // Held, and the text is still there to come back to.
+    expect(screen.getByText('1 field is not written yet')).toBeTruthy()
+
+    // Taking the offer is what spends it.
+    fireEvent.click(screen.getByRole('button', { name: 'Open it and lose these changes' }))
+    await waitFor(() => expect(screen.getByDisplayValue('Bravo pack')).toBeTruthy())
+    expect(screen.queryByText('1 field is not written yet')).toBeNull()
+  })
+
+  it('forgets an offer the address has come back from', async () => {
+    // A→B→A left B waiting behind the page, and its offer — "open it and lose
+    // these changes" — was still on screen: pressing it discarded a dirty A for
+    // a document the address is not about.
+    let servedPath = PACK_PATH
+    chassis({
+      content: ALPHA,
+      sha256: PACK_DIGEST,
+      also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } }
+    })
+    const handlers = {
+      get_pack: () => ({
+        text: servedPath === PACK_PATH ? ALPHA : BRAVO,
+        structured: {
+          path: servedPath,
+          bytes: ALPHA.length,
+          sha256: servedPath === PACK_PATH ? PACK_DIGEST : BRAVO_DIGEST
+        }
+      }),
+      list_packs: () => ({
+        text: JSON.stringify({ packs: [{ id: 'alpha', path: servedPath }] })
+      }),
+      validate: () => ({ text: CLEAN_REPORT })
+    }
+    const { queryClient } = drawPack(handlers, { path: '/packs/alpha?edit=1' })
+    const title = await screen.findByDisplayValue('Alpha pack')
+    fireEvent.change(title, { target: { value: 'Alpha pack, revised' } })
+
+    servedPath = BRAVO_PATH
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['get_pack'] })
+    })
+    await screen.findByText(/This page is now about a different file/)
+
+    servedPath = PACK_PATH
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['get_pack'] })
+    })
+    await waitFor(() => expect(screen.getByDisplayValue('Alpha pack, revised')).toBeTruthy())
+    // The offer is gone with the address that produced it.
+    expect(screen.queryByText(/This page is now about a different file/)).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: 'Open it and lose these changes' })
+    ).toBeNull()
+  })
+
   it('takes the other file only when the offer is accepted', async () => {
     let servedPath = PACK_PATH
     chassis({
@@ -227,6 +343,96 @@ describe('a path that moves under one address', () => {
     fireEvent.click(take)
     await waitFor(() => expect(screen.getByDisplayValue('Bravo pack')).toBeTruthy())
     expect(screen.queryByText(/This page is now about a different file/)).toBeNull()
+  })
+})
+
+describe('a read that lands after the page has moved on', () => {
+  it('does not put pack A into pack B, and names A when it fails', async () => {
+    // **A reload is a read that takes as long as it takes.** Ask for one on A,
+    // navigate to B, edit B — and when A's read lands, the buffer took it: B's
+    // dirty bytes became A's clean ones, with no undo and nothing having asked.
+    const log = chassis({
+      content: ALPHA,
+      sha256: PACK_DIGEST,
+      also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } },
+      staleWith: { sha256: 'c0c0c0'.padEnd(64, '0') }
+    })
+    vi.stubGlobal('confirm', () => true)
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+
+    // A conflict on A, which is what puts Reload on screen.
+    const alpha = await screen.findByDisplayValue('Alpha pack')
+    fireEvent.change(alpha, { target: { value: 'Alpha pack, revised' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    const alert = await screen.findByRole('alert')
+
+    // The read for it is held, and the page leaves while it is in the air.
+    log.hold(PACK_PATH)
+    fireEvent.click(inside(alert).getByRole('button', { name: 'Reload' }))
+    await act(async () => {
+      await router.navigate('/packs/bravo?edit=1')
+    })
+    const bravo = await screen.findByDisplayValue('Bravo pack')
+    fireEvent.change(bravo, { target: { value: 'Bravo pack, revised' } })
+
+    log.release(PACK_PATH)
+    await act(async () => {})
+
+    // B is still B, still dirty, and Alpha is nowhere on this page.
+    expect(screen.getByDisplayValue('Bravo pack, revised')).toBeTruthy()
+    expect(screen.queryByDisplayValue('Alpha pack')).toBeNull()
+    expect(screen.getByLabelText('unsaved changes')).toBeTruthy()
+  })
+
+  it('names the file a failed reload was for, not the one on screen', async () => {
+    const log = chassis({
+      content: ALPHA,
+      sha256: PACK_DIGEST,
+      also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } },
+      staleWith: { sha256: 'c0c0c0'.padEnd(64, '0') }
+    })
+    drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const alpha = await screen.findByDisplayValue('Alpha pack')
+    fireEvent.change(alpha, { target: { value: 'Alpha pack, revised' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    const alert = await screen.findByRole('alert')
+    log.breakReads()
+    fireEvent.click(inside(alert).getByRole('button', { name: 'Reload' }))
+    await waitFor(() => expect(screen.getByText(`Could not reload ${PACK_PATH}`)).toBeTruthy())
+  })
+
+  it('keeps saving after a write is left in flight by a navigation', async () => {
+    // `write.reset()` on a path change detaches the mutation's observer, so a
+    // per-mutation `onSettled` never arrived: the single-flight latch was held
+    // for ever and every later Save returned silently — on every pack.
+    const log = chassis({
+      content: ALPHA,
+      sha256: PACK_DIGEST,
+      also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } },
+      holdWrite: true
+    })
+    vi.stubGlobal('confirm', () => true)
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const alpha = await screen.findByDisplayValue('Alpha pack')
+    fireEvent.change(alpha, { target: { value: 'Alpha pack, revised' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(log.writes).toHaveLength(1))
+
+    await act(async () => {
+      await router.navigate('/packs/bravo?edit=1')
+    })
+    await screen.findByDisplayValue('Bravo pack')
+    await act(async () => {
+      await router.navigate('/packs/alpha?edit=1')
+    })
+    log.releaseWrite()
+    await act(async () => {})
+
+    const back = await screen.findByDisplayValue('Alpha pack')
+    fireEvent.change(back, { target: { value: 'Alpha pack, again' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(log.writes).toHaveLength(2))
+    expect(log.writes[1]!.content).toContain('Alpha pack, again')
   })
 })
 
