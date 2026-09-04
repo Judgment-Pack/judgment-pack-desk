@@ -375,6 +375,17 @@ describe('moveElement', () => {
     expect(moved).toBe('[\n\t2,\n      1\n]')
   })
 
+  it('keeps the whitespace a position had in front of its comma', () => {
+    // `{ "id": "one" } ,` is legal JSON and that space is a byte the author
+    // wrote. Joining the rebuilt bodies with a bare comma dropped it — an edit
+    // changing a byte it did not name, in the one module whose whole claim is
+    // that it does not.
+    const text = '{\n  "rules": [\n    { "id": "one" } ,\n    { "id": "two" }\n  ]\n}'
+    const index = indexDocument(text)
+    const moved = moveElement(text, index, '/rules', 0, 1)
+    expect(moved).toBe('{\n  "rules": [\n    { "id": "two" } ,\n    { "id": "one" }\n  ]\n}')
+  })
+
   it('changes nothing for a move that goes nowhere or off the end', () => {
     const text = read('full.pack.json')
     const index = indexDocument(text)

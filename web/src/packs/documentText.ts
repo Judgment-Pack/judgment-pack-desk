@@ -24,7 +24,7 @@
  * members* — a neighbour's own leading layout, taken verbatim — which is the
  * same rule `removeMember` already holds when it refuses to take the next
  * member's indentation. `moveElement` is array reordering, which is a splice
- * once it is stated as one: two element spans exchanged, each carrying its own
+ * once it is stated as one: two element bodies exchanged inside the array's own
  * layout, for the §7-significant order of `rules`.
  */
 
@@ -400,14 +400,19 @@ export function insertMember(
 }
 
 /**
- * Move one element of an array to another index, each keeping its own layout.
+ * Move one element of an array to another index. **The whitespace belongs to
+ * the slot; only the bodies change places.**
  *
  * Rule order is §7-significant: `rules[1]` firing before `rules[2]` is a fact
  * about the document, so moving a rule is an edit to what the pack decides and
  * not a tidy. It is a splice like every other edit here — the element's bytes
- * are lifted out of their place and put back at another one — and the layout
- * that travels with an element is the run in front of it, so a document with
- * unequal indentation is not levelled by a move.
+ * are lifted out of their place and put back at another one — and the run in
+ * front of a position, and the run between a position and its comma, stay
+ * where they are. So an array written with unequal indentation keeps the shape
+ * it was written in: the element that lands in slot 1 is written where slot 1
+ * was, rather than dragging its old column across and leaving the array
+ * ragged in a new place. It is the array's shape that survives a move, not
+ * each element's own.
  *
  * Out-of-range indices and a move to where the element already is return the
  * text unchanged: nothing happened, and inventing a change would be a diff
@@ -426,11 +431,14 @@ export function moveElement(
   if (from === to) return text
   if (from < 0 || to < 0 || from >= elements.length || to >= elements.length) return text
 
-  // Each element as its own bytes, and the layout in front of each as its own
-  // string. Rebuilding the array from these is the only way two elements can
-  // exchange places without either of them inheriting the other's indentation.
-  const parts = elements.map((span) => ({
+  // Each element as its own bytes, and the whitespace around each position as
+  // its own strings: the run in front of it, and the run between it and the
+  // comma that follows. Both are the *position's* and neither travels with a
+  // body — see the note above — and both are re-emitted verbatim, so a move
+  // changes nothing outside the bodies it exchanged.
+  const parts = elements.map((span, position) => ({
     layout: leadingLayout(text, span.memberStart),
+    trail: trailingLayout(text, span.memberEnd, position === elements.length - 1),
     body: text.slice(span.memberStart, span.memberEnd)
   }))
   const bodies = parts.map((part) => part.body)
@@ -441,8 +449,12 @@ export function moveElement(
   const last = elements[elements.length - 1]!
   const start = first.memberStart - parts[0]!.layout.length
   const rebuilt = bodies
-    .map((body, position) => parts[position]!.layout + body)
-    .join(',')
+    .map((body, position) => {
+      const slot = parts[position]!
+      const separator = position === bodies.length - 1 ? '' : `${slot.trail},`
+      return slot.layout + body + separator
+    })
+    .join('')
   return text.slice(0, start) + rebuilt + text.slice(last.memberEnd)
 }
 
@@ -459,6 +471,22 @@ function childSpans(index: DocumentIndex, container: string, array: boolean): Sp
   }
   found.sort((left, right) => left.memberStart - right.memberStart)
   return found
+}
+
+/**
+ * The run of whitespace between one element and the comma after it.
+ *
+ * `{ "id": "one" } ,` is legal JSON, and that space is a byte the author wrote.
+ * Joining the rebuilt bodies with a bare `,` dropped it — an edit changing a
+ * byte it did not name, in the one module whose whole claim is that it does
+ * not. The last element has no comma of its own, and everything after it is
+ * outside the region this rebuilds.
+ */
+function trailingLayout(text: string, memberEnd: number, last: boolean): string {
+  if (last) return ''
+  let ahead = memberEnd
+  while (ahead < text.length && isSpace(text[ahead]!)) ahead += 1
+  return text[ahead] === ',' ? text.slice(memberEnd, ahead) : ''
 }
 
 /** The run of whitespace immediately in front of one member. */

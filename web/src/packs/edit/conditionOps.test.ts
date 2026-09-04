@@ -132,6 +132,24 @@ describe('changing a node’s kind', () => {
     expect(value.rules[1]!.when.conditions).toHaveLength(2)
   })
 
+  it('moves one word when all becomes any, and no other byte', () => {
+    // The change most often wanted, and the one that needs no new bytes at
+    // all: every member the new kind declares is already there. Carried
+    // through the serializer it re-emitted the whole subtree — every nested
+    // condition re-indented, and `"5000"` and `5.0` re-printed by
+    // `JSON.stringify` — so a one-word edit arrived as the whole-subtree diff
+    // a reviewer has to read.
+    const before = start()
+    const span = before.index.spans.get(`${WHEN}/op`)!
+    const next = changeKind(before, WHEN, 'any')
+    const [head, tail] = outside(PACK, span.valueStart, span.valueEnd)
+    expect(next.text.startsWith(head)).toBe(true)
+    expect(next.text.endsWith(tail)).toBe(true)
+    // Which is to say: exactly the four characters of the word changed.
+    expect(next.text.length).toBe(PACK.length)
+    expect(next.text).toBe(`${head}"any"${tail}`)
+  })
+
   it('writes the new kind’s members empty where the old node had none', () => {
     const next = changeKind(start(), `${WHEN}/conditions/0`, 'evidence-present')
     const value = next.index.value as {

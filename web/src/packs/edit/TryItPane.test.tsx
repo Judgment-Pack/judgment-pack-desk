@@ -54,8 +54,9 @@ function draw(
   options: { rehearsalSupported?: boolean; buffer?: string } = {}
 ) {
   const stub = stubClient(handlers)
-  const view = render(
-    <QueryClientProvider client={testQueryClient()}>
+  const queryClient = testQueryClient()
+  const paint = (buffer: string) => (
+    <QueryClientProvider client={queryClient}>
       <McpContext.Provider
         value={connected({
           client: stub.client,
@@ -63,7 +64,7 @@ function draw(
         })}
       >
         <TryItPane
-          buffer={options.buffer ?? PACK_TEXT}
+          buffer={buffer}
           packId="vendor-onboarding"
           rehearsalSupported={options.rehearsalSupported ?? true}
           connected
@@ -72,7 +73,11 @@ function draw(
       </McpContext.Provider>
     </QueryClientProvider>
   )
-  return { ...view, calls: stub.calls }
+  const view = render(paint(options.buffer ?? PACK_TEXT))
+  // The buffer is the one input this pane does not own: the author is typing
+  // in the editor beside it. A case that cannot move it cannot ask what the
+  // pane does when it moves.
+  return { ...view, calls: stub.calls, retype: (buffer: string) => view.rerender(paint(buffer)) }
 }
 
 const ANSWERS: Record<string, ToolHandler> = {
@@ -133,6 +138,24 @@ describe('the rehearsal declaration', () => {
     // A confirmation cannot outlive the thing it confirmed.
     expect(screen.getByRole('button', { name: 'Run' })).toBeTruthy()
     expect(calls).toHaveLength(0)
+  })
+
+  it('disarms it when the editor moves, which is most of what would be sent', async () => {
+    // The confirmation was a flag, and the flag survived every keystroke in
+    // the editor beside the pane — so the second press recorded a run over
+    // bytes nobody was asked about.
+    const { calls, retype } = draw(ANSWERS, { rehearsalSupported: false })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    expect(screen.getByRole('button', { name: 'Run and record it' })).toBeTruthy()
+    retype(`${PACK_TEXT}\n`)
+    expect(screen.getByRole('button', { name: 'Run' })).toBeTruthy()
+    expect(screen.queryByText(/appends one record to it/)).toBeNull()
+    expect(calls).toHaveLength(0)
+    // And the confirmation that follows is about the bytes on screen now.
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Run and record it' }))
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]!.args.pack).toBe(`${PACK_TEXT}\n`)
   })
 })
 

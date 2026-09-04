@@ -43,7 +43,17 @@ export function PointerField({
   const { diagnosticsAt } = useEditing()
   const found = diagnosticsAt(pointer)
   return (
-    <div id={elementIdFor(pointer)} data-pointer={pointer} className={styles.field}>
+    // `tabIndex={-1}` so a deep link can land here. `#/rules/0/description`
+    // is answered by `getElementById(...).focus()`, and focus on a plain `div`
+    // is a no-op — in the reading view the same address is a `Block`, which
+    // carries the roving tab index and takes it. The route prefers this
+    // field's own control and falls back to the group.
+    <div
+      id={elementIdFor(pointer)}
+      data-pointer={pointer}
+      tabIndex={-1}
+      className={styles.field}
+    >
       <Field
         label={label}
         hint={hint}

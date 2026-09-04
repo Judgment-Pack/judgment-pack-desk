@@ -740,6 +740,17 @@ digest-binding failure one component further in; the served document is the
 fallback only where the file did not load or its bytes do not scan, and the
 digest sentence still says when the two sources disagree.
 
+**And the buffer follows the address.** `/packs/:packId` is one element inside
+the packs layout, so another pack is another *parameter* and nothing unmounts —
+which is what lets the mode toggle keep the mount, the scroll and the buffer.
+Everything the page holds about a file therefore has to follow the address
+itself: the buffer is seeded once **per path**, and the last write's verdict and
+any unwritten operands are dropped when the path moves. A watcher refetch
+carries the same path and still does not rebase, which is the rule the base
+depends on. The Inspector's provenance group says the same thing from the other
+side: while the buffer is dirty it stops claiming the file matches what the
+editor holds, and says the figures are the file on disk instead.
+
 The toolbar is edit mode's: a reading page carrying a Check button and a Save
 that can never be pressed is chrome about a mode nobody is in. The way *in* is
 one control beside the two standing links, and it writes `?edit` with
@@ -754,7 +765,20 @@ message, printed under the control and named in the description, so a screen
 reader reaching the input is told what the runtime said rather than that
 something is invalid. Phase 2 covers the flat members — identity, decision,
 outcomes, evidence requirements, sources, escalation — and rules and
-exceptions.
+exceptions. What a field *says* before the runtime answers is said in words: an
+id's hint is "lowercase letters, digits and hyphens", not the pattern, because
+the pattern is `shape.ts`'s and a regular expression is not something to read
+aloud.
+
+**A member the document does not carry is stated, not drawn.** A field whose
+container is absent has no span to splice into — a missing object is a different
+edit, and inventing one would write members nobody asked for — so a control for
+it would take a keystroke and move no bytes. `source.locator`,
+`source.citation`, `escalation.target` and a rule's `when` are each drawn as
+"not declared" with an offer to write the schema's own required members, empty;
+the fields appear once the object does. A condition removed from a `not` is the
+same case, and it is offered a condition back rather than being described as a
+node kind this desk does not know.
 
 **Form | JSON is a third view of the same buffer**, kept in sync both ways over
 a monospace textarea with a scroll-synced, `aria-hidden` line gutter and no
@@ -794,7 +818,13 @@ deliberate exception to "every keystroke reaches the buffer": the operand
 controls that take arbitrary JSON hold what is typed until it parses, because
 writing each intermediate keystroke would withhold form mode with a parse error
 in the middle of a word. Nothing is refused and nothing is corrected — the
-field says it is not written yet and names the bytes still on disk.
+field says it is not written yet and names the bytes still on disk, the text is
+held by the editing session so it survives the switch to the JSON view and
+back, and the toolbar says how many fields are in that state beside the unsaved
+dot. Changing a node's *kind* moves one word where the new kind needs no member
+the old node lacks, which is what `all` → `any` is: re-serializing the subtree
+for it would re-indent every nested condition and re-print the author's own
+number literals.
 
 **Rule order is §7-significant**, so it moves by keyboard and not by drag: two
 buttons on each card and `Alt+ArrowUp` / `Alt+ArrowDown` inside it, through the
@@ -832,8 +862,14 @@ which is the pack document's `id`, a URI, and not the project's decision id.
 A preflight refusal is rendered as the runtime's answer, class and phase and
 diagnostics, with no disposition anywhere near it; mid-edit that is the
 ordinary answer rather than an error. The result is stale the moment the buffer
-moves, and says so. The pane sits beside the editor where the editor keeps
-512px, and takes the Inspector's place where it does not.
+moves, and says so, and the confirmation for an unadvertised rehearsal
+remembers the bytes it confirmed rather than being a flag — the editor beside
+the pane is most of what would be sent. The pane sits beside the editor where
+the editor keeps 512px, and takes the Inspector's place where it does not. The
+**workspace** is what is measured, not the editor column: the column is the
+pane's flex sibling, so placing the pane shrinks the box the decision was read
+from, and a predicate whose input depends on its own output has no fixed point
+across a wide band of ordinary widths.
 
 **Save** is `PUT /api/file {path, content, baseSha256}`, and the base moves
 only on load, on an explicit reload, and on a successful save — never on a
@@ -844,10 +880,20 @@ buffer, so typing after a save cannot turn a true "verified" into a false "does
 not match". **It is never gated on the check**: the chassis writes bytes and
 the runtime judges them, in that order, and outstanding diagnostics stay on
 screen through the save. A 409 shows both digests behind a `digests`
-disclosure, distinguishes `exists` from `stale` from the chassis' own code, and
-offers Reload — which says that it discards — and *Overwrite anyway*, which is
-never the primary control. On success `list_packs`, `get_pack` and the
+disclosure — printed short and carried whole, so a reader can compare one
+against `sha256sum` — distinguishes `exists` from `stale` from the chassis' own
+code, and offers Reload — which says that it discards — and *Overwrite anyway*,
+which is never the primary control. On success `list_packs`, `get_pack` and the
 `validate` queries are invalidated.
+
+**A refusal does not take the page away.** Save writes bytes the runtime may
+then refuse to serve, so `get_pack` failing is a state this editor can produce —
+and the way out of it is the editor. The refusal is printed above the bytes
+rather than in place of them: the file API returns whatever is on disk, the path
+comes from the listing where `get_pack` cannot name it, and the JSON view stands
+in both modes (read-only until the mode is Edit). Bytes shaped like nothing the
+desk expects — `rules` pasted as an object — are read as what they are rather
+than taking the route down with the unsaved buffer inside it.
 
 **The lock line.** Where `jpack.lock.json` is in the file listing, one
 sentence: the project keeps a reviewed set, and updating it is the project's
@@ -857,12 +903,15 @@ reports lock state, the Evaluation payload carries no lock member, and `packs
 lock` is a CLI verb (ADR-0019), so the desk cannot know it and computes none of
 it.
 
-**Keyboard.** `Mod+S` saves, and it is registered by the editor on its own
-subtree rather than through the shell's `installShortcuts` — every shell chord
-is suppressed inside a text field, which is exactly where save has to fire, so
-the shell's rule stays as written and the published shortcut list says where
-this one applies. `Alt+ArrowUp` / `Alt+ArrowDown` move a rule. Escape does not
-discard.
+**Keyboard.** `Mod+S` saves. It is registered by the editor rather than through
+the shell's `installShortcuts` — every shell chord is suppressed inside a text
+field, which is exactly where save has to fire — and it is bound for as long as
+edit mode is on screen rather than to a subtree: `document.body` is a reachable
+resting place for focus, and it is where focus sits the moment edit mode opens,
+because the Edit button unmounts itself. The chord is claimed there too, so the
+browser's own "Save page as…" never opens over unsaved work. `Alt+ArrowUp` /
+`Alt+ArrowDown` move a rule, from the card itself — which is the element the
+move focuses, so the chord works twice in a row. Escape does not discard.
 
 What phase 2 does **not** do: add or remove an entry in a list (an outcome, a
 requirement, a source, a rule), write `metadata.reviews`, or edit a condition
@@ -1655,12 +1704,22 @@ edited. `packs/edit/EditView.test.tsx` holds the one buffer — a JSON keystroke
 moving the reading document, a form edit moving the bytes, form mode withheld
 over a document the two readings disagree about, a diagnostic reaching its
 field by `aria-describedby`, and a rule reorder that marks the check stale
-rather than re-anchoring it. `packs/edit/save.test.tsx` holds the save: not
-gated on the check, 409 with both digests and a non-primary Overwrite, `Mod+S`
-inside the field the shell suppresses in, and a `?edit` toggle that never
-prompts. `packs/edit/TryItPane.test.tsx` holds `pack` XOR `pack_id`, the
+rather than re-anchoring it. `packs/edit/navigate.test.tsx` holds the buffer
+following the address on the route that does not remount — the second pack's
+members drawn, the second pack's bytes, digest and path sent, and nothing of a
+discarded edit left on the pack that follows it. `packs/edit/forms.test.tsx`
+holds what a form does about a member that is not there and about text it has
+not written. `packs/edit/resilience.test.tsx` holds the states this editor can
+itself produce: a list pasted as an object, a pack the runtime will not serve,
+`Mod+S` from `document.body`, the move chord fired twice from one card, the
+what-if placement measured off the frame, and the Inspector's provenance while
+the buffer is dirty. `packs/edit/save.test.tsx` holds the save: not
+gated on the check, 409 with both digests whole and a non-primary Overwrite,
+`Mod+S` inside the field the shell suppresses in, and a `?edit` toggle that
+never prompts. `packs/edit/TryItPane.test.tsx` holds `pack` XOR `pack_id`, the
 rehearsal declaration exactly where advertised, the explicit click where it is
-not, and a refusal rendered with no disposition. `packs/edit/lockLine.test.tsx`
+not, a confirmation that does not outlive the bytes it confirmed, and a refusal
+rendered with no disposition. `packs/edit/lockLine.test.tsx`
 holds the one sentence, and that no lock, conformance, health or pass/fail word
 appears anywhere on the page. `files/useFileEditing.test.ts` and
 `shell/useDirtyGuard.test.tsx` hold the discipline lifted out of the authoring

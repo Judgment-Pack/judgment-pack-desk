@@ -115,8 +115,11 @@ run_web() {
   # and make a mutation nothing catches look caught.
   #
   # Bounded, because a mutation can hang a render as easily as a handler, and an
-  # unbounded run would stall the whole table rather than report the hang.
-  out="$(timeout 300 npm --prefix web test 2>&1)"
+  # unbounded run would stall the whole table rather than report the hang. The
+  # bound is well clear of a clean run — the suite takes under a minute — and
+  # clear of the per-case ceiling in `vitest.config.ts` times the handful of
+  # cases one mutation can hang, so a hang is still reported as a hang.
+  out="$(timeout 900 npm --prefix web test 2>&1)"
   local code=$?
   if [ "$code" -eq 124 ]; then
     echo "INCONCLUSIVE — web suite timed out"

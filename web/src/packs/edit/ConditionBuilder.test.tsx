@@ -14,7 +14,12 @@ import { join } from 'node:path'
 import { useMemo, useState } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ConditionBuilder } from './ConditionBuilder'
-import { EditingContext, declaredIds, type EditingSession } from './editingContext'
+import {
+  EditingContext,
+  declaredIds,
+  type EditingSession,
+  type PendingText
+} from './editingContext'
 import { buffered, type Buffered } from './writes'
 
 const PACK = readFileSync(
@@ -27,6 +32,10 @@ afterEach(cleanup)
 /** The builder over one buffer, with the buffer readable by the case. */
 function Harness({ at, text, onText }: { at: string; text: string; onText: (next: string) => void }) {
   const [held, setHeld] = useState(text)
+  // The unwritten operands live with the session in the route, so they live
+  // with the session here: a harness that held them in the field would be
+  // holding a different rule from the page.
+  const [drafts, setDrafts] = useState<ReadonlyMap<string, PendingText>>(new Map())
   const read: Buffered = useMemo(() => buffered(held), [held])
   const session: EditingSession = {
     editing: true,
@@ -37,7 +46,15 @@ function Harness({ at, text, onText }: { at: string; text: string; onText: (next
       onText(next)
     },
     diagnosticsAt: () => [],
-    ids: declaredIds((read.index.value ?? {}) as never, ['/request/amount'])
+    ids: declaredIds((read.index.value ?? {}) as never, ['/request/amount']),
+    pending: drafts,
+    hold: (pointer, draft) =>
+      setDrafts((was) => {
+        const next = new Map(was)
+        if (draft === null) next.delete(pointer)
+        else next.set(pointer, draft)
+        return next
+      })
   }
   return (
     <EditingContext.Provider value={session}>

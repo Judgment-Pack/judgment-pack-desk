@@ -20,15 +20,29 @@
  * the intermediate states every edit passes through.
  */
 import type { ReactNode } from 'react'
+import { Button } from '../../ui/Button'
 import { Input } from '../../ui/Input'
 import { SegmentedControl } from '../../ui/SegmentedControl'
 import { Select } from '../../ui/Select'
 import { TextArea } from '../../ui/TextArea'
-import { valueAt } from '../pointers'
+import { elementIdFor, valueAt } from '../pointers'
 import { useEditing } from './editingContext'
 import { PointerField } from './PointerField'
-import { setBoolean, setEnum, setString, setStringList } from './writes'
+import { starterFor } from './shape'
+import { setBoolean, setEnum, setRawJson, setString, setStringList } from './writes'
 import styles from './PointerField.module.css'
+
+/**
+ * What a Select offers for "the document does not say".
+ *
+ * Not the empty string. `ui/Select` drops a value it never offered, because
+ * Radix reports `""` straight back through `onValueChange` when a controlled
+ * value changes while the list is closed — and that guard is written down as
+ * safe precisely because no option is ever `""`. An optional member's blank
+ * option would have broken that invariant from the outside, so the blank
+ * carries a value nothing else can spell and it is mapped back here.
+ */
+const NOT_DECLARED = '\u0000not-declared'
 
 /** The string a control shows for a member the document may not declare. */
 function stringAt(document: unknown, pointer: string): string {
@@ -140,11 +154,13 @@ export function EnumField({
           value={value}
           placeholder="not declared"
           options={[
-            ...(optional === true ? [{ value: '', label: 'not declared' }] : []),
+            ...(optional === true ? [{ value: NOT_DECLARED, label: 'not declared' }] : []),
             ...declared.map((word) => ({ value: word, label: word })),
             ...options.map((word) => ({ value: word, label: word }))
           ]}
-          onValueChange={(next) => write((current) => setEnum(current, pointer, next))}
+          onValueChange={(next) =>
+            write((current) => setEnum(current, pointer, next === NOT_DECLARED ? '' : next))
+          }
         />
       )}
     </PointerField>
@@ -184,11 +200,13 @@ export function IdRefField({
           value={value}
           placeholder="not declared"
           options={[
-            ...(optional === true ? [{ value: '', label: 'not declared' }] : []),
+            ...(optional === true ? [{ value: NOT_DECLARED, label: 'not declared' }] : []),
             ...ids.map((id) => ({ value: id, label: id })),
             ...dangling.map((id) => ({ value: id, label: `${id} — not declared here` }))
           ]}
-          onValueChange={(next) => write((current) => setEnum(current, pointer, next))}
+          onValueChange={(next) =>
+            write((current) => setEnum(current, pointer, next === NOT_DECLARED ? '' : next))
+          }
         />
       )}
     </PointerField>
@@ -282,5 +300,58 @@ export function BooleanField({
         </div>
       )}
     </PointerField>
+  )
+}
+
+/**
+ * A member that is an **object**, or the line saying the document has none.
+ *
+ * A field whose container is absent has nothing to splice into: `writes.place`
+ * inserts a missing member but bails where the container itself has no span,
+ * because inventing the object around it would write members the author never
+ * asked for. Drawn unconditionally, those fields took a keystroke and moved no
+ * bytes, with nothing on screen saying so — and `source.locator` and
+ * `escalation.target` are both `required`, so a draft missing one is exactly
+ * what an author opens the editor to fix.
+ *
+ * So the absence is stated and offered, which is `CardForm`'s `when` rule for
+ * the one composite member that already had it. What the button writes is the
+ * schema's own required members, empty, from `shape.STARTERS`.
+ */
+export function AbsentObject({
+  pointer,
+  label,
+  what,
+  children
+}: {
+  pointer: string
+  label: string
+  /** The words after "Write" — "a locator", "a target". */
+  what: string
+  children: ReactNode
+}) {
+  const { buffer, write } = useEditing()
+  if (valueAt(buffer.index.value, pointer) !== undefined) return <>{children}</>
+  const starter = starterFor(pointer)
+  return (
+    <div
+      id={elementIdFor(pointer)}
+      data-pointer={pointer}
+      tabIndex={-1}
+      className={styles.absentGroup}
+    >
+      <p className={styles.absentLabel}>{label}</p>
+      <p className={styles.absentLine}>
+        <span className={styles.absentTag}>not declared</span>
+        {starter !== undefined && (
+          <Button
+            variant="quiet"
+            onClick={() => write((current) => setRawJson(current, pointer, starter))}
+          >
+            Write {what}
+          </Button>
+        )}
+      </p>
+    </div>
   )
 }

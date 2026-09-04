@@ -63,3 +63,16 @@
   font-size: 0.72rem;
   color: var(--ink-faint);
 }
+
+/* A node the document does not carry, and the offer to write one. */
+.absent {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.absentTag {
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}

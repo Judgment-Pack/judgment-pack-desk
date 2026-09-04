@@ -132,6 +132,15 @@ export function removeNode(current: Buffered, pointer: string): Buffered {
  * one a form that retyped would make destructive. What the new kind requires
  * and the old node had nothing for is written empty, and `validate` is what
  * says whether the result is a document.
+ *
+ * **Where the new kind needs no member the old node lacks, only the one word
+ * moves.** `all` → `any` is the change most often wanted and it needs no new
+ * bytes at all: carrying the subtree through the serializer would re-emit
+ * every nested condition, re-indent them, and turn the author's `5.0` into
+ * `5` — a one-word edit arriving as the whole-subtree diff ADR-0019 makes a
+ * human read. So that case splices `op` the way `setOperator` splices
+ * `operator`, and the serializer is reached only where the node has no bytes
+ * for a member the new kind requires.
  */
 export function changeKind(current: Buffered, pointer: string, kind: string): Buffered {
   const span = spanAt(current.index, pointer)
@@ -143,6 +152,8 @@ export function changeKind(current: Buffered, pointer: string, kind: string): Bu
     typeof before === 'object' && before !== null && !Array.isArray(before)
       ? (before as Record<string, unknown>)[name]
       : undefined
+
+  if (carriesExactly(before, members)) return setOp(current, pointer, kind)
 
   const next: Record<string, unknown> = {}
   for (const name of members) {
@@ -161,6 +172,31 @@ export function changeKind(current: Buffered, pointer: string, kind: string): Bu
   const written = serialize(next, layout)
   return buffered(
     current.text.slice(0, span.valueStart) + written + current.text.slice(span.valueEnd)
+  )
+}
+
+/**
+ * Whether this node already carries exactly the members the new kind declares
+ * — no more and no fewer, so nothing is added and nothing is dropped.
+ *
+ * The *names* are compared and never the values: a node's own `conditions` are
+ * whatever the author wrote, and this is the question of whether any byte
+ * outside `op` has to move.
+ */
+function carriesExactly(node: unknown, members: readonly string[]): boolean {
+  if (typeof node !== 'object' || node === null || Array.isArray(node)) return false
+  const names = Object.keys(node as Record<string, unknown>)
+  if (names.length !== members.length) return false
+  return names.every((name) => members.includes(name))
+}
+
+/** Write this node's `op` and leave every other byte where it is. */
+function setOp(current: Buffered, pointer: string, kind: string): Buffered {
+  const at = `${pointer}/op`
+  const span = spanAt(current.index, at)
+  if (span === undefined) return current
+  return buffered(
+    current.text.slice(0, span.valueStart) + JSON.stringify(kind) + current.text.slice(span.valueEnd)
   )
 }
 

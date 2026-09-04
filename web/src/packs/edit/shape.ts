@@ -53,6 +53,7 @@ const NON_EMPTY_STRINGS: readonly RegExp[] = [
   /^\/escalation\/message$/,
   /^\/escalation\/target\/name$/,
   // $defs/metadata
+  /^\/metadata\/authors\/\d+$/,
   /^\/metadata\/license$/,
   /^\/metadata\/reviews\/\d+\/(reviewer|note)$/
 ]
@@ -270,7 +271,15 @@ export const STARTERS: readonly { shape: RegExp; json: string }[] = [
     json: '{ "triggers": [], "target": { "kind": "human-role", "name": "" } }'
   },
   { shape: /^\/metadata$/, json: '{}' },
-  { shape: /^\/extensions$/, json: '{}' }
+  { shape: /^\/extensions$/, json: '{}' },
+  // The two composite members inside a source, and the escalation's target.
+  // Each is `required` where its container is there, so a draft that omits one
+  // is exactly what an author opens the editor to fix — and a field whose
+  // container has no bytes has nothing to splice into, so the object is what
+  // has to be written first.
+  { shape: /^\/sources\/\d+\/locator$/, json: '{ "kind": "uri", "value": "" }' },
+  { shape: /^\/sources\/\d+\/citation$/, json: '{ "location": "", "excerpt": "" }' },
+  { shape: /^\/escalation\/target$/, json: '{ "kind": "human-role", "name": "" }' }
 ]
 
 /** The bytes an *add* writes at this pointer, where the desk knows a shape. */

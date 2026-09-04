@@ -49,6 +49,32 @@ export interface EditingSession {
   diagnosticsAt: (pointer: string) => AnchoredDiagnostic[]
   /** The ids the document itself declares, for the Selects over them. */
   ids: DeclaredIds
+  /**
+   * Text an author has typed into an operand that is not JSON yet, by pointer.
+   *
+   * It lives here rather than in the field because the two ways out of a form
+   * — switching to the JSON view, and saving — both leave the field behind. A
+   * draft held in `useState` was silently gone on the first and silently
+   * absent from the second, so the count in the toolbar and the text itself
+   * both survive the mode toggle. Nothing here is written to the buffer and
+   * nothing here is refused: it is the author's own bytes, waiting to parse.
+   */
+  pending: ReadonlyMap<string, PendingText>
+  /** Hold what was typed at one pointer, or let it go once it is written. */
+  hold: (pointer: string, draft: PendingText | null) => void
+}
+
+/** One unwritten operand: what was typed, and the bytes it started from. */
+export interface PendingText {
+  text: string
+  /**
+   * The member's own bytes when the draft began.
+   *
+   * A draft is only about the bytes it started from: undo, the JSON view and a
+   * kind change all move them underneath it, and a draft that outlived that
+   * would be a stale word over a member it is no longer about.
+   */
+  from: string
 }
 
 const NOT_EDITING: EditingSession = {
@@ -56,7 +82,9 @@ const NOT_EDITING: EditingSession = {
   buffer: { text: '', index: { spans: new Map(), duplicates: [] } },
   write: () => {},
   diagnosticsAt: () => [],
-  ids: { outcomes: [], evidence: [], sources: [], rules: [], factPaths: [] }
+  ids: { outcomes: [], evidence: [], sources: [], rules: [], factPaths: [] },
+  pending: new Map(),
+  hold: () => {}
 }
 
 export const EditingContext = createContext<EditingSession>(NOT_EDITING)
@@ -65,19 +93,30 @@ export function useEditing(): EditingSession {
   return useContext(EditingContext)
 }
 
-/** The ids one document declares, read off the document being rendered. */
+/**
+ * The ids one document declares, read off the document being rendered.
+ *
+ * **Every member is read as whatever it is.** This runs over the buffer, and
+ * the buffer is a document somebody is in the middle of writing: `rules` can be
+ * an object, `outcomes` a number, `sources` a string, for exactly as long as it
+ * takes to finish a paste. `?? []` catches only null and undefined, so an
+ * object here threw out of a memo the route computes in every mode and took the
+ * whole page down — with the unsaved buffer, which is the one thing on the page
+ * that exists nowhere else. Reading defensively is what `draftRequirements`,
+ * `childCount` and `listAt` already do; this was the one reader that did not.
+ */
 export function declaredIds(
   document: {
-    outcomes?: { id?: string }[]
-    evidenceRequirements?: { id?: string }[]
-    sources?: { id?: string }[]
-    rules?: { id?: string }[]
+    outcomes?: unknown
+    evidenceRequirements?: unknown
+    sources?: unknown
+    rules?: unknown
   },
   factPaths: readonly string[] = []
 ): DeclaredIds {
-  const ids = (entries: { id?: string }[] | undefined) =>
-    (entries ?? [])
-      .map((entry) => entry?.id)
+  const ids = (entries: unknown) =>
+    (Array.isArray(entries) ? (entries as { id?: unknown }[]) : [])
+      .map((entry) => (typeof entry === 'object' && entry !== null ? entry.id : undefined))
       .filter((id): id is string => typeof id === 'string' && id !== '')
   return {
     outcomes: ids(document.outcomes),

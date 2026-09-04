@@ -8,9 +8,13 @@
  * **Overwrite anyway is never the default** — a client whose primary button
  * overwrote would have no concurrency story, only an unstated one.
  *
- * Both digests are behind a disclosure. Each is a fact the reader may need and
+ * Both digests are behind a disclosure, and each is printed short with the
+ * **whole** value on the element itself. Each is a fact the reader may need and
  * neither is the first thing to say: sixty-four hex characters ahead of "this
- * file changed and nothing was written" buries the sentence that matters.
+ * file changed and nothing was written" buries the sentence that matters. But a
+ * reader comparing against `sha256sum` needs all sixty-four, and twelve
+ * characters that exist nowhere else on the page cannot be compared with
+ * anything.
  *
  * `exists` is the chassis' own, not inferred: a write that stated no base
  * digest believed nothing was there, and finding something is a different
@@ -39,10 +43,11 @@ export function StaleWriteAlert({
       detail={
         <>
           <span>
-            this edit started from <code>sha256 {digest(stale.expectedSha256)}</code>
+            this edit started from{' '}
+            <code title={stale.expectedSha256}>sha256 {digest(stale.expectedSha256)}</code>
           </span>
           <span>
-            on disk now <code>sha256 {digest(stale.actualSha256)}</code>
+            on disk now <code title={stale.actualSha256}>sha256 {digest(stale.actualSha256)}</code>
           </span>
         </>
       }

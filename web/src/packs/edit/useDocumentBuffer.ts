@@ -70,16 +70,30 @@ export function useDocumentBuffer(
   const stackNow = useRef<Snapshot[]>(stack)
   stackNow.current = stack
 
-  // The first successful load seeds both, once. A later answer about the same
-  // file is a watcher refetch and must not move the base — that is the whole
-  // of the stale-write story, and it is stated here as well as in
-  // `useFileEditing` because this hook can be driven on its own.
+  // **The buffer follows the file, and it is seeded once per file.**
+  //
+  // A later answer about the *same* file is a watcher refetch and must not move
+  // the base — that is the whole of the stale-write story, and it is stated
+  // here as well as in `useFileEditing` because this hook can be driven on its
+  // own. A later answer about a *different* file is not a refetch at all: it is
+  // another document, and a buffer that kept the first one would draw pack A
+  // under pack B's address and send A's bytes to B's path on the next save.
+  // `AuthorView` holds the same rule by remounting its editor per file
+  // (`key={selected}`); this hook holds it without a remount, so the mode
+  // toggle can keep the mount, the scroll and the buffer.
+  //
+  // The path is what is compared, never the content: two revisions of one file
+  // have the same path, which is exactly the case that must not rebase.
+  const seeded = useRef<string | undefined>(undefined)
   useEffect(() => {
-    if (loaded !== undefined && base === undefined) {
-      setBase(loaded)
-      setText(loaded.content)
-    }
-  }, [loaded, base])
+    if (loaded === undefined || seeded.current === loaded.path) return
+    seeded.current = loaded.path
+    setBase(loaded)
+    setText(loaded.content)
+    // The stack is about the document it was built over. An entry from the
+    // previous pack would put that pack's bytes into this one.
+    setStack([])
+  }, [loaded])
 
   // The bytes a commit is pushing *away from*, readable without asking React
   // for them inside another updater — an updater that calls a setter is not
@@ -130,6 +144,10 @@ export function useDocumentBuffer(
   }, [base, onDiscard])
 
   const rebase = useCallback((fresh: FileContent) => {
+    // This file is now seeded, whichever way it got here — so a watcher answer
+    // arriving after a save or a reload is still a refetch and still does not
+    // re-seed.
+    seeded.current = fresh.path
     setBase(fresh)
     current.current = fresh.content
     setText(fresh.content)

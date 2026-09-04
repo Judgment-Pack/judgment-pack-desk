@@ -39,6 +39,7 @@ import { TextArea } from '../../ui/TextArea'
 import { Block } from '../document/Block'
 import { valueAt } from '../pointers'
 import {
+  NEW_NODE,
   addChild,
   changeKind,
   conditionKind,
@@ -75,6 +76,32 @@ function ConditionNode({
   const node = valueAt(buffer.index.value, at)
   const kind = conditionKind(node)
   const [collapsed, setCollapsed] = useState(false)
+
+  /**
+   * A node the document does not carry at all.
+   *
+   * Removing a `not`'s only child takes its required `condition` out, and the
+   * builder then draws this pointer with nothing at it. Left to the `other`
+   * branch below, that reads as a condition kind this desk does not
+   * understand — with an empty `<code>` above the sentence — and the form
+   * offers no way back. It is not an unknown kind; it is a member that is not
+   * there, and the way back is to write one.
+   */
+  if (node === undefined) {
+    return (
+      <Block pointer={at} as="div" className={styles.node}>
+        <p className={styles.absent}>
+          <span className={styles.absentTag}>not declared</span>
+          <Button
+            variant="quiet"
+            onClick={() => write((current) => setRawJson(current, at, JSON.stringify(NEW_NODE)))}
+          >
+            Write a condition
+          </Button>
+        </p>
+      </Block>
+    )
+  }
 
   if (kind === 'other') {
     return (
@@ -314,22 +341,27 @@ function JsonOperand({
   rows: number
   hint: ReactNode
 }) {
-  const { buffer, write } = useEditing()
+  const { buffer, write, pending: drafts, hold } = useEditing()
   const held = bytesAt(buffer, at) ?? ''
-  const [draft, setDraft] = useState<{ text: string; from: string } | null>(null)
+  const draft = drafts.get(at)
   // A draft is only about the bytes it started from. Anything that moves them
   // underneath it — undo, the JSON view, a kind change — retires it, rather
   // than leaving a stale word over a member it is no longer about.
-  const pending = draft !== null && draft.from === held
+  //
+  // **It is held by the session and not by this component.** The two ways out
+  // of a form — the JSON view, and a save — both unmount the field, and a
+  // draft in `useState` went with it silently; the toolbar now counts what is
+  // unwritten and the text survives the mode toggle.
+  const pending = draft !== undefined && draft.from === held
   const shown = pending ? draft.text : held
 
   const change = (next: string) => {
     if (isJson(next)) {
-      setDraft(null)
+      hold(at, null)
       write((current) => setRawJson(current, at, next), { coalesceKey: at })
       return
     }
-    setDraft({ text: next, from: held })
+    hold(at, { text: next, from: held })
   }
 
   return (

@@ -30,6 +30,7 @@ export function EditToolbar({
   checking,
   tryingIt,
   canUndo,
+  unwritten = 0,
   onEditing,
   onShape,
   onCheck,
@@ -48,6 +49,15 @@ export function EditToolbar({
   tryingIt: boolean
   /** False where the stack is empty, which is what it says rather than lying. */
   canUndo: boolean
+  /**
+   * How many operands hold text that is not JSON yet, and so is not in the
+   * buffer a save would send.
+   *
+   * Said beside the unsaved dot rather than used to refuse anything. Nothing
+   * here is a gate: an author may save a document with an operand half typed,
+   * and the only failure is that the text goes without being mentioned.
+   */
+  unwritten?: number
   onEditing: (editing: boolean) => void
   onShape: (shape: EditShape) => void
   onCheck: () => void
@@ -136,6 +146,11 @@ export function EditToolbar({
             </Button>
           </ToolbarItem>
           {dirty && <span className={styles.dot} aria-label="unsaved changes" role="img" />}
+          {unwritten > 0 && (
+            <span className={styles.unwritten}>
+              {unwritten === 1 ? '1 field is not written yet' : `${unwritten} fields are not written yet`}
+            </span>
+          )}
         </>
       )}
     </Toolbar>

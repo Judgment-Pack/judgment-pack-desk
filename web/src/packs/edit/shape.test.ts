@@ -112,6 +112,12 @@ describe('the shapes offered, which are never gates', () => {
     // An id is a `localId`, not a `nonEmptyString`.
     expect(isNonEmptyString('/rules/0/id')).toBe(false)
     expect(isNonEmptyString('/rules/0/outcome')).toBe(false)
+    // `$defs/metadata.authors.items` is one of the twenty-two, and it was the
+    // one this list had not mirrored. Nothing reaches it today — metadata has
+    // no form — and a silent gap in a mirrored list is exactly what the next
+    // form to be written would read.
+    expect(isNonEmptyString('/metadata/authors/0')).toBe(true)
+    expect(isNonEmptyString('/metadata/authors')).toBe(false)
   })
 
   it('holds the id and decimal patterns the schema spells', () => {
@@ -230,6 +236,23 @@ describe('what an add writes', () => {
     // The one word that is not empty is a closed enum's first value, because a
     // `kind` has to say one of three things and none of them is nothing.
     expect(ENUMS.targetKind).toContain(escalation.target.kind)
+  })
+
+  it('writes the composite members a required object needs, wherever it sits', () => {
+    // `source.locator` and `escalation.target` are `required`, and a draft
+    // that omits one is what an author opens the editor to fix. Their fields
+    // have nothing to splice into while the object is absent, so the object is
+    // what the offer writes.
+    const locator = JSON.parse(starterFor('/sources/3/locator')!) as {
+      kind: string
+      value: string
+    }
+    expect(ENUMS.locatorKind).toContain(locator.kind)
+    expect(locator.value).toBe('')
+    const target = JSON.parse(starterFor('/escalation/target')!) as { kind: string; name: string }
+    expect(ENUMS.targetKind).toContain(target.kind)
+    expect(target.name).toBe('')
+    expect(JSON.parse(starterFor('/sources/0/citation')!)).toEqual({ location: '', excerpt: '' })
   })
 
   it('offers nothing for a member this desk knows no shape for', () => {

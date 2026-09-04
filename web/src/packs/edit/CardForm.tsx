@@ -27,11 +27,19 @@ import { ConditionBuilder } from './ConditionBuilder'
 import { NEW_NODE } from './conditionOps'
 import { useEditing } from './editingContext'
 import { EnumField, IdRefField, StringField, StringListField, TextField } from './fields'
-import { ENUMS, LOCAL_ID } from './shape'
+import { ENUMS } from './shape'
 import { moveRule, setRawJson } from './writes'
 import styles from './CardForm.module.css'
 
-const ID_HINT = `a local id — ${LOCAL_ID.source}`
+/**
+ * The `localId` shape, said in words.
+ *
+ * `shape.LOCAL_ID` is the pattern and it stays there for the check to be read
+ * against; printing it here put a regular expression on the page and into a
+ * screen reader, which is not how anything else on this surface talks. What
+ * refuses an id is the runtime, by code, at the pointer.
+ */
+const ID_HINT = 'lowercase letters, digits and hyphens; starts with a letter.'
 
 /** One rule's card, as its form. */
 export function RuleForm({ at }: { at: string }) {

@@ -54,21 +54,35 @@ export interface ChassisLog {
  * The chassis, as a fetch stub.
  *
  * `disk` is mutable so a case can move the file underneath an open editor,
- * which is the whole of the stale-write story. `staleOnce` refuses the next
+ * which is the whole of the stale-write story. `staleWith` refuses the next
  * write with a 409 carrying both digests, exactly as the chassis does.
+ *
+ * **A read is answered by path.** It used to answer every read with the one
+ * file whatever was asked for, which is a chassis that cannot tell two files
+ * apart — so a case navigating between packs was measuring the stub rather
+ * than the page. `also` carries the other files a case needs.
  */
 export function chassis(options: {
   content: string
   sha256: string
+  /** Other files on this disk, by path. */
+  also?: Record<string, { content: string; sha256: string }>
   files?: { path: string; bytes: number; sha256: string }[]
   /** Refuse the next write with a 409, and say what is on disk now. */
   staleWith?: { sha256: string; exists?: boolean }
 }): ChassisLog {
   const log: ChassisLog = { writes: [], reads: 0 }
-  const disk = { content: options.content, sha256: options.sha256 }
-  const files = options.files ?? [
-    { path: PACK_PATH, bytes: options.content.length, sha256: options.sha256 }
-  ]
+  const disk = new Map<string, { content: string; sha256: string }>([
+    [PACK_PATH, { content: options.content, sha256: options.sha256 }],
+    ...Object.entries(options.also ?? {})
+  ])
+  const files =
+    options.files ??
+    [...disk].map(([path, held]) => ({
+      path,
+      bytes: held.content.length,
+      sha256: held.sha256
+    }))
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const address = String(url)
     if (address.includes('/api/files?')) {
@@ -76,11 +90,21 @@ export function chassis(options: {
     }
     if (address.includes('/api/file?') && init?.method === undefined) {
       log.reads += 1
+      const wanted = decodeURIComponent(/[?&]path=([^&]*)/.exec(address)?.[1] ?? '')
+      const held = disk.get(wanted)
+      if (held === undefined) {
+        return {
+          ok: false,
+          status: 404,
+          statusText: 'Not Found',
+          text: async () => JSON.stringify({ error: 'no such file' })
+        }
+      }
       return ok({
-        path: PACK_PATH,
-        bytes: disk.content.length,
-        sha256: disk.sha256,
-        content: disk.content
+        path: wanted,
+        bytes: held.content.length,
+        sha256: held.sha256,
+        content: held.content
       })
     }
     if (address.includes('/api/file') && init?.method === 'PUT') {
@@ -108,13 +132,16 @@ export function chassis(options: {
             })
         }
       }
-      disk.content = body.content
-      disk.sha256 = `${body.content.length}`.padEnd(64, 'f')
+      const landed = {
+        content: body.content,
+        sha256: `${body.content.length}`.padEnd(64, 'f')
+      }
+      disk.set(body.path, landed)
       return ok({
         path: body.path,
-        bytes: disk.content.length,
-        sha256: disk.sha256,
-        content: disk.content
+        bytes: landed.content.length,
+        sha256: landed.sha256,
+        content: landed.content
       })
     }
     return {
@@ -219,6 +246,44 @@ export function served(text: string, report = CLEAN_REPORT): Record<string, Tool
             evidenceRequirements: ['screening-report', 'insurance-cert']
           }
         ]
+      })
+    }),
+    validate: () => ({ text: report })
+  }
+}
+
+/** One pack the runtime serves, for a case that needs more than one. */
+export interface ServedPack {
+  id: string
+  path: string
+  text: string
+  sha256: string
+}
+
+/**
+ * Two or more packs, answered by id.
+ *
+ * `/packs/:packId` is one element inside a layout route, so moving between
+ * packs changes the parameter without remounting anything — which is exactly
+ * the case a single-pack stub cannot express.
+ */
+export function servedPacks(
+  packs: readonly ServedPack[],
+  report = CLEAN_REPORT
+): Record<string, ToolHandler> {
+  const find = (args: Record<string, unknown>) =>
+    packs.find((entry) => entry.id === args.pack_id) ?? packs[0]!
+  return {
+    get_pack: (args) => {
+      const wanted = find(args)
+      return {
+        text: wanted.text,
+        structured: { path: wanted.path, bytes: wanted.text.length, sha256: wanted.sha256 }
+      }
+    },
+    list_packs: () => ({
+      text: JSON.stringify({
+        packs: packs.map((entry) => ({ id: entry.id, path: entry.path }))
       })
     }),
     validate: () => ({ text: report })

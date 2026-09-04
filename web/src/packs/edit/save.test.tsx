@@ -143,6 +143,23 @@ describe('a file that moved underneath the edit', () => {
     expect(log.writes.every((write) => write.override === false)).toBe(true)
   })
 
+  it('carries both digests whole, not only the twelve characters it prints', async () => {
+    // Twelve characters do tell these two apart on this page, and they are the
+    // right thing to *print* — sixty-four hex characters ahead of "nothing was
+    // written" buries the sentence. But a reader comparing against `sha256sum`
+    // or a git object needs all sixty-four, and a prefix that exists nowhere
+    // else in the document cannot be compared with anything.
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST, staleWith: { sha256: ON_DISK } })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    const alert = await screen.findByRole('alert')
+    const titles = [...alert.querySelectorAll('code')].map((code) => code.getAttribute('title'))
+    expect(titles).toContain(PACK_DIGEST)
+    expect(titles).toContain(ON_DISK)
+  })
+
   it('offers Overwrite as the quiet control and never as the primary one', async () => {
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST, staleWith: { sha256: ON_DISK } })
     drawPack(served(PACK_TEXT), { path: JSON_MODE })

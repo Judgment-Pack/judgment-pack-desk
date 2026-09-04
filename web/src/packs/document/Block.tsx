@@ -26,7 +26,13 @@
  * CSS selector, so every lookup goes through `document.getElementById` — see
  * `packs/pointers.ts`.
  */
-import { createContext, useContext, type ElementType, type ReactNode } from 'react'
+import {
+  createContext,
+  useContext,
+  type ElementType,
+  type KeyboardEvent,
+  type ReactNode
+} from 'react'
 import { elementIdFor } from '../pointers'
 import styles from './PackDocument.module.css'
 
@@ -77,6 +83,7 @@ export function Block({
   as,
   className,
   label,
+  onKeyDown,
   children
 }: {
   pointer: string
@@ -84,6 +91,16 @@ export function Block({
   className?: string
   /** An accessible name, where the element is a landmark-ish region. */
   label?: string
+  /**
+   * A chord this block owns, on the block itself.
+   *
+   * It has to be here rather than on a wrapper inside, because this is the
+   * element focus is moved to — the roving tab stop, and the element a reorder
+   * focuses afterwards. A handler on a child never hears a keydown on its own
+   * parent, so a chord bound one level in worked once and then went dead the
+   * moment its own effect moved focus to the block.
+   */
+  onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void
   children: ReactNode
 }) {
   const { at, select } = useDocumentSelection()
@@ -97,6 +114,7 @@ export function Block({
       tabIndex={cursor.at === pointer ? 0 : -1}
       aria-current={selected ? 'true' : undefined}
       aria-label={label}
+      onKeyDown={onKeyDown}
       className={[styles.block, selected ? styles.selected : undefined, className]
         .filter(Boolean)
         .join(' ')}

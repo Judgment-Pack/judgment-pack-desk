@@ -34,6 +34,7 @@ export function PackInspector({
   meta,
   fileSha256,
   fileBytes,
+  dirty,
   anchored,
   truncation,
   stale,
@@ -50,6 +51,8 @@ export function PackInspector({
   meta: PackFileMeta
   fileSha256: string | undefined
   fileBytes: number | undefined
+  /** True where the editor holds bytes that are on no disk yet. */
+  dirty?: boolean
   anchored: readonly AnchoredDiagnostic[]
   truncation: string | undefined
   stale: boolean
@@ -91,6 +94,7 @@ export function PackInspector({
               meta={meta}
               fileSha256={fileSha256}
               fileBytes={fileBytes}
+              dirty={dirty}
             />
           )
         },

@@ -9,7 +9,7 @@
  */
 import type { Escalation } from '../../mcp/types'
 import { useEditing } from '../edit/editingContext'
-import { EnumField, StringField, StringListField, TextField } from '../edit/fields'
+import { AbsentObject, EnumField, StringField, StringListField, TextField } from '../edit/fields'
 import { ENUMS } from '../edit/shape'
 import { Block } from './Block'
 import { ExtensionsBlock } from './ExtensionsBlock'
@@ -27,14 +27,22 @@ export function EscalationBlock({ escalation, at }: { escalation: Escalation; at
             label="triggers"
             candidates={ENUMS.triggers}
           />
-          <Block pointer={`${at}/target`} as="div">
-            <EnumField
-              pointer={`${at}/target/kind`}
-              label="target kind"
-              options={ENUMS.targetKind}
-            />
-            <StringField pointer={`${at}/target/name`} label="target name" />
-          </Block>
+          {/*
+            The target is `required` and it is a member a draft escalation
+            leaves out. Its two fields have nothing to splice into while the
+            object is absent, so the absence is stated and offered rather than
+            drawn as two controls that take a keystroke and write nothing.
+          */}
+          <AbsentObject pointer={`${at}/target`} label="target" what="a target">
+            <Block pointer={`${at}/target`} as="div">
+              <EnumField
+                pointer={`${at}/target/kind`}
+                label="target kind"
+                options={ENUMS.targetKind}
+              />
+              <StringField pointer={`${at}/target/name`} label="target name" />
+            </Block>
+          </AbsentObject>
           <TextField pointer={`${at}/message`} label="message" rows={2} />
         </>
       ) : (

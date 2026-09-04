@@ -33,7 +33,13 @@ export function RuleCard({
   const { editing } = useEditing()
   if (editing) {
     return (
-      <Block pointer={at} as="li" className={styles.card}>
+      /*
+        The chord is on the card itself, which is the element the move effect
+        focuses. Bound one level in, it fired once and then never again: the
+        second press came from the `li` the first press had moved focus to,
+        and a keydown on the `li` never reaches a handler on its child.
+      */
+      <Block pointer={at} as="li" className={styles.card} onKeyDown={order?.onKeyDown}>
         <p className={styles.cardHead}>
           {order !== undefined && (
             <MoveControls
@@ -44,9 +50,7 @@ export function RuleCard({
             />
           )}
         </p>
-        <div onKeyDown={order?.onKeyDown}>
-          <RuleForm at={at} />
-        </div>
+        <RuleForm at={at} />
         <ExtensionsBlock extensions={rule.extensions} at={`${at}/extensions`} />
       </Block>
     )

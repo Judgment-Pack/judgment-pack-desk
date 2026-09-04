@@ -10,8 +10,8 @@ import { describe, expect, it, vi } from 'vitest'
 import type { FileContent } from '../../files/client'
 import { UNDO_DEPTH, useDocumentBuffer } from './useDocumentBuffer'
 
-const file = (content: string): FileContent => ({
-  path: 'packs/x.pack.json',
+const file = (content: string, path = 'packs/x.pack.json'): FileContent => ({
+  path,
   bytes: content.length,
   sha256: 'a'.repeat(64),
   content
@@ -123,6 +123,25 @@ describe('discard and rebase', () => {
     act(() => result.current.rebase(saved))
     expect(result.current.base).toBe(saved)
     expect(result.current.dirty).toBe(false)
+    expect(result.current.canUndo).toBe(false)
+  })
+
+  it('takes a different file as a different document, edits and all', () => {
+    // Not a refetch: another *file*. The pack route does not remount between
+    // packs, so a buffer that seeded once kept the first pack's bytes — drawn
+    // under the second pack's address, and sent to the second pack's path.
+    const { result, rerender } = renderHook(
+      ({ answer }: { answer: FileContent }) => useDocumentBuffer(answer),
+      { initialProps: { answer: file('{"a": 1}') } }
+    )
+    act(() => result.current.commit('{"a": 2}'))
+    const other = file('{"b": 9}', 'packs/other.pack.json')
+    rerender({ answer: other })
+    expect(result.current.text).toBe('{"b": 9}')
+    expect(result.current.base).toBe(other)
+    expect(result.current.dirty).toBe(false)
+    // The stack was about the document that is no longer on screen; one Undo
+    // would otherwise put the first pack's bytes into the second one.
     expect(result.current.canUndo).toBe(false)
   })
 })

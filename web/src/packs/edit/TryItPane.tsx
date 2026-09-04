@@ -68,7 +68,16 @@ export function TryItPane({
   // The second click, where the runtime does not take the declaration. It is
   // armed by the first and disarmed by anything that changes what would be
   // sent, so a confirmation cannot outlive the thing it confirmed.
-  const [armed, setArmed] = useState(false)
+  //
+  // **It remembers the bytes rather than being a flag.** The buffer is most of
+  // what would be sent and it is the one input this pane does not own: the
+  // author is typing in the editor beside it, and a flag stayed armed through
+  // every keystroke — so the second press recorded a run over bytes nobody was
+  // asked about. Comparing the bytes makes the confirmation about the thing it
+  // confirmed; the three handlers below still clear it, because the facts, the
+  // evidence and the source are sent too and none of them is in `buffer`.
+  const [armedFor, setArmedFor] = useState<string | null>(null)
+  const armed = armedFor !== null && armedFor === buffer
 
   /**
    * The requirements the **draft** declares, not the served pack's.
@@ -100,10 +109,10 @@ export function TryItPane({
   const run = () => {
     if (!runnable) return
     if (needsConfirmation && !armed) {
-      setArmed(true)
+      setArmedFor(buffer)
       return
     }
-    setArmed(false)
+    setArmedFor(null)
     const bytes = buffer
     evaluate.mutate(
       source === 'pack'
@@ -127,7 +136,7 @@ export function TryItPane({
         value={source}
         onValueChange={(next) => {
           setSource(next === 'pack' ? 'pack' : 'pack_id')
-          setArmed(false)
+          setArmedFor(null)
         }}
         segments={[
           { value: 'pack', label: 'these edits' },
@@ -153,7 +162,7 @@ export function TryItPane({
         spellCheck={false}
         onChange={(event) => {
           setFacts(event.target.value)
-          setArmed(false)
+          setArmedFor(null)
         }}
       />
       <p className={styles.status}>{factsError ?? 'valid JSON'}</p>
@@ -170,7 +179,7 @@ export function TryItPane({
                   value={availability[id] ?? 'unknown'}
                   onValueChange={(next) => {
                     setAvailability((was) => ({ ...was, [id]: next as Availability }))
-                    setArmed(false)
+                    setArmedFor(null)
                   }}
                   segments={AVAILABILITY.map((word) => ({ value: word, label: word }))}
                 />
