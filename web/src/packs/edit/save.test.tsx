@@ -10,7 +10,7 @@
  * rebased would make Save overwrite bytes nobody saw, without the 409 that
  * exists to prevent exactly that.
  */
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -229,6 +229,43 @@ describe('a save that was refused for some other reason', () => {
     // The edit is still here: nothing was written and nothing was taken away.
     expect((screen.getByLabelText("The document's bytes") as HTMLTextAreaElement).value).toBe(
       `${PACK_TEXT}\n`
+    )
+  })
+
+  it('does not let an earlier reload answer over a later one', async () => {
+    // Two reads for one file, answered **out of order** — a slow first request
+    // and a fast second one is the ordinary shape of a network. The last read
+    // asked for is the answer; an earlier one landing afterwards would install
+    // bytes the viewer asked to move on from.
+    const log = chassis({
+      content: PACK_TEXT,
+      sha256: PACK_DIGEST,
+      staleWith: { sha256: 'e1e1e1'.padEnd(64, '0') }
+    })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    const alert = await screen.findByRole('alert')
+
+    // The first Reload is held…
+    const releaseFirst = log.hold(PACK_PATH)
+    fireEvent.click(within(alert, 'Reload'))
+    // …the file moves on disk, and a second Reload is held behind it.
+    log.write(PACK_PATH, `${PACK_TEXT}// the newer bytes\n`)
+    const releaseSecond = log.hold(PACK_PATH)
+    fireEvent.click(within(screen.getByRole('alert'), 'Reload'))
+
+    // The later read answers first, and the earlier one lands after it.
+    releaseSecond()
+    await act(async () => {})
+    releaseFirst()
+    await act(async () => {})
+
+    await waitFor(() =>
+      expect((screen.getByLabelText("The document's bytes") as HTMLTextAreaElement).value).toContain(
+        '// the newer bytes'
+      )
     )
   })
 

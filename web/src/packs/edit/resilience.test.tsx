@@ -86,6 +86,9 @@ describe('bytes shaped like nothing this desk expects', () => {
     drawPack(served(bytes), { path: EDIT })
     const raw = (await screen.findByLabelText("The document's bytes")) as HTMLTextAreaElement
     expect(raw.value).toBe(bytes)
+    // The bytes are the editor's — this is the buffer, not the served answer —
+    // which is what makes the guard above the one being tested.
+    await waitFor(() => expect(raw.readOnly).toBe(false))
     // The form is not on offer, and the page says why in the words of what is
     // wrong rather than crashing on the way to finding out.
     expect(screen.queryByRole('navigation', { name: 'Members' })).toBeNull()

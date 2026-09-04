@@ -60,14 +60,19 @@ const BRAVO = pack('bravo', 'Bravo pack')
  * has nothing to say. Adoption is then the only thing that can clear the draft,
  * which is what these cases are about.
  */
-const withFact = (source: string, id: string) =>
+const withFact = (source: string) =>
   `${JSON.stringify(
     {
       ...(JSON.parse(source) as Record<string, unknown>),
+      // **The same rule, byte for byte, in both packs.** The retirement rule
+      // compares the operand's bytes *and* the card they sit in; where the other
+      // document holds both unchanged it has nothing to say, and adoption is the
+      // only thing left that can clear the draft. That is what these cases are
+      // about, so the two documents differ only in their identity above.
       rules: [
         {
-          id: `${id}-rule`,
-          description: `${id} rule`,
+          id: 'the-rule',
+          description: 'The rule.',
           when: { op: 'fact', path: '/request/amount', operator: 'equals', value: '5000' },
           outcome: 'proceed',
           onUnknown: 'escalate'
@@ -77,8 +82,8 @@ const withFact = (source: string, id: string) =>
     null,
     2
   )}\n`
-const ALPHA_FACT = withFact(ALPHA, 'alpha')
-const BRAVO_FACT = withFact(BRAVO, 'bravo')
+const ALPHA_FACT = withFact(ALPHA)
+const BRAVO_FACT = withFact(BRAVO)
 
 const PACKS = [
   { id: 'alpha', path: PACK_PATH, text: ALPHA, sha256: PACK_DIGEST },

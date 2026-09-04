@@ -56,12 +56,20 @@ export interface ChassisLog {
    * buffer is still A's, which is where a save used to send A's bytes to B.
    */
   release: (path: string) => void
-  /** Hold this path's reads from here on, until they are released. */
-  hold: (path: string) => void
+  /**
+   * Hold this path's reads from here on, and hand back the release.
+   *
+   * Each call replaces the gate, so two reads can be held separately and
+   * answered **out of order** — which is the only way to ask what a page does
+   * when an earlier read lands after a later one.
+   */
+  hold: (path: string) => () => void
   /** Answer the write this chassis was told to hold. */
   releaseWrite: () => void
   /** Refuse every read from here on, which is what a reload has to survive. */
   breakReads: () => void
+  /** Move the file on disk, as something outside this page would. */
+  write: (path: string, content: string) => void
 }
 
 /**
@@ -112,6 +120,7 @@ export function chassis(options: {
       open = resolve
     })
     gates.set(path, { wait, open })
+    return open
   }
   const log: ChassisLog = {
     writes: [],
@@ -121,6 +130,9 @@ export function chassis(options: {
     releaseWrite: () => openWrite(),
     breakReads: () => {
       readsBroken = true
+    },
+    write: (path, content) => {
+      disk.set(path, { content, sha256: `${content.length}`.padEnd(64, 'e') })
     }
   }
   const disk = new Map<string, { content: string; sha256: string }>([
