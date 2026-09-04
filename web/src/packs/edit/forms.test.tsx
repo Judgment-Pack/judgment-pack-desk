@@ -58,9 +58,9 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-async function draft(): Promise<void> {
+async function draft(path = EDIT): Promise<void> {
   chassis({ content: DRAFT, sha256: PACK_DIGEST })
-  drawPack(served(DRAFT), { path: EDIT })
+  drawPack(served(DRAFT), { path })
   await screen.findByRole('navigation', { name: 'Members' })
 }
 
@@ -158,6 +158,22 @@ describe('an operand holding text that is not JSON', () => {
     })
     await waitFor(() => expect(screen.queryByText('1 field is not written yet')).toBeNull())
     expect(await bytes()).toContain('"value": {"shade": "green"}')
+  })
+})
+
+describe('a deep link to a field with nothing focusable in it', () => {
+  it('lands on the group, which is the address the link named', async () => {
+    // A draft that declares no requirements gives this field no candidates, so
+    // it renders one sentence and no control. In the reading view the same
+    // address is a `Block` and takes focus itself; a field group is a plain
+    // `div`, and `focus()` on one without a tab index is a no-op — the scroll
+    // still happens, so the failure is silent.
+    await draft(`${EDIT}#/rules/0/evidenceRequirementRefs`)
+    await waitFor(() =>
+      expect(document.activeElement?.getAttribute('data-pointer')).toBe(
+        '/rules/0/evidenceRequirementRefs'
+      )
+    )
   })
 })
 

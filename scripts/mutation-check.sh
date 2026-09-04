@@ -2293,16 +2293,20 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '    setStack([])
     onDiscard?.()' \
     '    setStack([])'
-  # **Repaired, and re-pinned.** The obvious mutant — dropping the guard
-  # outright — rebases on every render and hangs the suite, which the harness
-  # reports as INCONCLUSIVE: caught, and caught in a way that names no test.
-  # This one is the defect itself and nothing else: the seed is keyed on the
-  # bytes rather than on the path, so a watcher answer carrying different bytes
-  # silently becomes the base and the save that follows overwrites a change
-  # nobody saw, without the 409 that exists to prevent it.
+  # **Repaired twice, and re-pinned.** Dropping the guard outright rebases on
+  # every render and exhausts a worker's heap, which the harness reports as
+  # INCONCLUSIVE: caught, and caught in a way that names no test. Keying the
+  # guard on the content while still *recording* the path does the same thing,
+  # because the two never match. Keying **both** on the content settles after
+  # one re-seed and is the defect itself and nothing else: a watcher answer
+  # carrying different bytes silently becomes the base, so the save that
+  # follows overwrites a change nobody saw, without the 409 that exists to
+  # prevent exactly that.
   mutate web "the base moves on a watcher refetch" "$BUF" \
-    '    if (loaded === undefined || seeded.current === loaded.path) return' \
-    '    if (loaded === undefined || seeded.current === loaded.content) return'
+    '    if (loaded === undefined || seeded.current === loaded.path) return
+    seeded.current = loaded.path' \
+    '    if (loaded === undefined || seeded.current === loaded.content) return
+    seeded.current = loaded.content'
   # The other half of the same line, and the defect this PR's round found: the
   # buffer seeded once and never again, so another pack drew the first one.
   mutate web "the buffer stays on the pack it opened" "$BUF" \

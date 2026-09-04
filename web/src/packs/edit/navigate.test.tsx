@@ -48,11 +48,12 @@ const PACKS = [
   { id: 'bravo', path: BRAVO_PATH, text: BRAVO, sha256: BRAVO_DIGEST }
 ]
 
-function bothOnDisk() {
+function bothOnDisk(staleWith?: { sha256: string }) {
   return chassis({
     content: ALPHA,
     sha256: PACK_DIGEST,
-    also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } }
+    also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } },
+    staleWith
   })
 }
 
@@ -97,6 +98,25 @@ describe('the buffer follows the address', () => {
     expect(written.baseSha256).toBe(BRAVO_DIGEST)
     expect(written.content).toContain('"title": "Bravo pack, revised"')
     expect(written.content).not.toContain('Alpha')
+  })
+
+  it('leaves the last write’s refusal on the pack it was about', async () => {
+    // A conflict is about one file. Left standing over the next pack it names
+    // a file nobody is looking at — and its *Overwrite anyway* would send
+    // these bytes to that path.
+    bothOnDisk({ sha256: 'c0c0c0'.padEnd(64, '0') })
+    vi.stubGlobal('confirm', () => true)
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const title = await screen.findByDisplayValue('Alpha pack')
+    fireEvent.change(title, { target: { value: 'Alpha pack, edited' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('This file changed since you opened it')
+    await act(async () => {
+      await router.navigate('/packs/bravo?edit=1')
+    })
+    await waitFor(() => expect(screen.getByDisplayValue('Bravo pack')).toBeTruthy())
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('leaves nothing of a discarded edit on the pack that follows it', async () => {

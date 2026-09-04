@@ -55,22 +55,27 @@ describe('bytes shaped like nothing this desk expects', () => {
   })
 
   it('holds a pasted object where an array was, without taking the page down', async () => {
-    // One paste, valid JSON, wrong shape — and the JSON view is the one mode
-    // whose whole purpose is to hold bytes the desk cannot otherwise read. The
-    // route element unmounting takes the unsaved buffer with it, and there is
-    // nowhere else it exists.
+    // **Valid JSON, wrong shape**, which is the whole case: bytes that do not
+    // scan withhold form mode and never reach the readers below, so a paste
+    // that merely broke the syntax would pass either way. The JSON view is the
+    // one mode whose purpose is to hold bytes the desk cannot otherwise read,
+    // and the route element unmounting takes the unsaved buffer with it —
+    // there is nowhere else it exists.
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     drawPack(served(PACK_TEXT), { path: JSON_MODE })
     const raw = await editableBytes()
-    const wrong = PACK_TEXT.replace(/"rules": \[/, '"rules": { "oops": true, "was": [')
+    const parsed = JSON.parse(PACK_TEXT) as Record<string, unknown>
+    parsed.rules = { oops: true }
+    const wrong = `${JSON.stringify(parsed, null, 2)}\n`
     fireEvent.change(raw, { target: { value: wrong } })
     await waitFor(() => expect(raw.value).toBe(wrong))
     expect(screen.getByLabelText("The document's bytes")).toBeTruthy()
+    expect(screen.getByRole('toolbar', { name: 'Editing' })).toBeTruthy()
   })
 })
 
 /** `get_pack` refusing the file the editor can still read off the disk. */
-function refusing(text: string): Record<string, ToolHandler> {
+function refusing(): Record<string, ToolHandler> {
   return {
     get_pack: () => ({
       text: 'pack document is not acceptable JSON: Input is not valid JSON at line 1, column 3',
@@ -79,8 +84,7 @@ function refusing(text: string): Record<string, ToolHandler> {
     list_packs: () => ({
       text: JSON.stringify({ packs: [{ id: 'vendor-onboarding', path: PACK_PATH }] })
     }),
-    validate: () => ({ text: CLEAN_REPORT }),
-    __text: () => ({ text })
+    validate: () => ({ text: CLEAN_REPORT })
   }
 }
 
@@ -93,7 +97,7 @@ describe('a pack the runtime will not serve', () => {
     // the whole route left the author with a JSON view they could not reach
     // and nothing on screen saying where to go.
     chassis({ content: BROKEN, sha256: PACK_DIGEST })
-    drawPack(refusing(BROKEN), { path: JSON_MODE })
+    drawPack(refusing(), { path: JSON_MODE })
     const raw = await editableBytes()
     expect(raw.value).toBe(BROKEN)
     expect(screen.getByText(/pack document is not acceptable JSON/)).toBeTruthy()
@@ -103,7 +107,7 @@ describe('a pack the runtime will not serve', () => {
 
   it('offers the way in from read mode, where nothing can be drawn', async () => {
     chassis({ content: BROKEN, sha256: PACK_DIGEST })
-    drawPack(refusing(BROKEN), { path: '/packs/vendor-onboarding' })
+    drawPack(refusing(), { path: '/packs/vendor-onboarding' })
     const raw = (await screen.findByLabelText("The document's bytes")) as HTMLTextAreaElement
     // Read means read: the bytes are shown and not editable until the mode is.
     expect(raw.readOnly).toBe(true)
