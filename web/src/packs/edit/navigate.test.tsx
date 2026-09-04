@@ -49,24 +49,36 @@ const pack = (id: string, title: string) =>
   )}\n`
 
 const ALPHA = pack('alpha', 'Alpha pack')
-/** Alpha again, with a `fact` operand — the one control that holds a draft. */
-const ALPHA_FACT = `${JSON.stringify(
-  {
-    ...(JSON.parse(ALPHA) as Record<string, unknown>),
-    rules: [
-      {
-        id: 'alpha-rule',
-        description: 'Alpha pack rule',
-        when: { op: 'fact', path: '/request/amount', operator: 'equals', value: '5000' },
-        outcome: 'proceed',
-        onUnknown: 'escalate'
-      }
-    ]
-  },
-  null,
-  2
-)}\n`
 const BRAVO = pack('bravo', 'Bravo pack')
+
+/**
+ * The two packs, each with a `fact` operand — the one control that holds a
+ * draft — and **the same bytes at the same pointer**.
+ *
+ * That is deliberate: the retirement rule compares the bytes a draft started
+ * from, and where the other document holds the same bytes at that pointer it
+ * has nothing to say. Adoption is then the only thing that can clear the draft,
+ * which is what these cases are about.
+ */
+const withFact = (source: string, id: string) =>
+  `${JSON.stringify(
+    {
+      ...(JSON.parse(source) as Record<string, unknown>),
+      rules: [
+        {
+          id: `${id}-rule`,
+          description: `${id} rule`,
+          when: { op: 'fact', path: '/request/amount', operator: 'equals', value: '5000' },
+          outcome: 'proceed',
+          onUnknown: 'escalate'
+        }
+      ]
+    },
+    null,
+    2
+  )}\n`
+const ALPHA_FACT = withFact(ALPHA, 'alpha')
+const BRAVO_FACT = withFact(BRAVO, 'bravo')
 
 const PACKS = [
   { id: 'alpha', path: PACK_PATH, text: ALPHA, sha256: PACK_DIGEST },
@@ -220,11 +232,11 @@ describe('a path that moves under one address', () => {
     chassis({
       content: ALPHA_FACT,
       sha256: PACK_DIGEST,
-      also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } }
+      also: { [BRAVO_PATH]: { content: BRAVO_FACT, sha256: BRAVO_DIGEST } }
     })
     const handlers = {
       get_pack: () => ({
-        text: servedPath === PACK_PATH ? ALPHA_FACT : BRAVO,
+        text: servedPath === PACK_PATH ? ALPHA_FACT : BRAVO_FACT,
         structured: {
           path: servedPath,
           bytes: ALPHA_FACT.length,

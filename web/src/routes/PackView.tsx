@@ -510,19 +510,13 @@ export function PackView() {
   const rebase = buffer.rebase
   const reloadNow = useCallback(() => {
     if (path === undefined || buffer.identity === undefined) return
-    const ticket = { packId, identity: buffer.identity }
-    editor.reload(path, (fresh) => {
-      if (ticket.packId !== packNow.current) return
-      rebase(fresh, ticket.identity)
-    })
-  }, [path, packId, editor, buffer.identity, rebase])
-
-  /**
-   * The pack this page is about **right now**, for a callback that outlives a
-   * render.
-   */
-  const packNow = useRef<string | undefined>(packId)
-  packNow.current = packId
+    // **The identity travels with the read**, and the buffer is the one place
+    // that decides whether it still holds. Leaving a pack bumps the generation
+    // and re-seeds on the new path, so a ticket taken before that is refused —
+    // by `rebase`, once, rather than by two readers that could disagree.
+    const ticket = buffer.identity
+    editor.reload(path, (fresh) => rebase(fresh, ticket))
+  }, [path, editor, buffer.identity, rebase])
 
   /**
    * The path a save is in flight for, or nothing.

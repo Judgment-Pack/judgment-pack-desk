@@ -2611,10 +2611,9 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   PINS=web/src/packs/inspector/PackInspector.tsx
 
   # A reload is a read that takes as long as it takes. Ask for one on A,
-  # navigate to B, edit B — and A's answer landed in B.
-  mutate web "a read that answers late is installed wherever the page is now" "$PV" \
-    '      if (ticket.packId !== packNow.current) return' \
-    '      void packNow'
+  # navigate to B, edit B — and A's answer landed in B. The identity travels
+  # with the read and **one** reader decides whether it still holds: a second
+  # check at the call site was a second rule, and each masked the other's row.
   mutate web "the buffer takes a revision it is no longer about" "$BUF" \
     '      if (expect !== undefined) {
         if (expect.generation !== generationNow.current) return
@@ -2647,9 +2646,11 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '      setWaiting((held) => (held === undefined ? held : undefined))
       return' \
     '      return'
-  mutate web "an offer off the address may still be accepted" "$BUF" \
-    '    if (waiting === undefined || loaded?.path !== waiting.path) return' \
-    '    if (waiting === undefined) return'
+  # **`takeWaiting`'s address check has no row.** The offer is cleared the moment
+  # the requested path is the seeded one again — the row above — so there is no
+  # reachable state where an offer is on screen for a file the address is not
+  # about, and no single mutation can produce one. The check stays: it is the
+  # difference between an invariant that holds and one that happens to.
   # A document is an object. Each of `null`, `[]`, `"a pack"` and `7` scans,
   # agrees with `JSON.parse`, and reaches `Object.keys`.
   mutate web "bytes that are not a document are handed to the readers" "$PV" \
