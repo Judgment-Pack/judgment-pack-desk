@@ -160,9 +160,26 @@ describe('the left rail', () => {
     renderRail(packs([]))
     expect(screen.queryByLabelText('unsaved changes')).toBeNull()
     fireEvent.click(document.body)
-    publishDirty(true)
+    publishDirty('jpack.json', true)
     await waitFor(() => expect(screen.getByLabelText('unsaved changes')).toBeTruthy())
-    publishDirty(false)
+    publishDirty('jpack.json', false)
+    await waitFor(() => expect(screen.queryByLabelText('unsaved changes')).toBeNull())
+  })
+
+  it('keeps the dot while any editor is dirty, and drops it when none is', async () => {
+    // **The dot means "something has unsaved bytes", and there are two
+    // editors now.** With one module-level flag the last publisher decided for
+    // both: a pack editor mounting clean withdrew the dot the authoring view
+    // was holding.
+    renderRail(packs([]))
+    fireEvent.click(document.body)
+    publishDirty('jpack.json', true)
+    publishDirty('packs/vendor-onboarding.pack.json', true)
+    await waitFor(() => expect(screen.getByLabelText('unsaved changes')).toBeTruthy())
+    publishDirty('packs/vendor-onboarding.pack.json', false)
+    // One editor is still dirty, so the dot stands.
+    await waitFor(() => expect(screen.getByLabelText('unsaved changes')).toBeTruthy())
+    publishDirty('jpack.json', false)
     await waitFor(() => expect(screen.queryByLabelText('unsaved changes')).toBeNull())
   })
 
