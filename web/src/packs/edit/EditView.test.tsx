@@ -321,6 +321,71 @@ describe('what an omitted member offers', () => {
   })
 })
 
+/**
+ * Where the what-if pane goes, which is a **measurement** and not a guess.
+ *
+ * jsdom lays nothing out, so every box is zero wide and the branch that puts
+ * the pane beside the editor never runs unless a case supplies a width. Both
+ * branches are driven here: a case that only ever exercised the zero would be
+ * asserting a rule that is dead in CI and live in a browser.
+ */
+describe('where Try it opens', () => {
+  let unmeasure: (() => void) | undefined
+  const measured = (width: number) => {
+    const original = HTMLElement.prototype.getBoundingClientRect
+    HTMLElement.prototype.getBoundingClientRect = function rect() {
+      return { width, height: 800, top: 0, left: 0, right: width, bottom: 800, x: 0, y: 0, toJSON: () => ({}) } as DOMRect
+    }
+    unmeasure = () => {
+      HTMLElement.prototype.getBoundingClientRect = original
+    }
+  }
+  afterEach(() => {
+    unmeasure?.()
+    unmeasure = undefined
+  })
+
+  it('opens beside the editor where the editor keeps its floor', async () => {
+    // 1400 wide leaves 1008 for the editor once the pane's 392 is taken, which
+    // is over the 512 floor.
+    measured(1400)
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT })
+    await screen.findByRole('navigation', { name: 'Members' })
+    fireEvent.click(screen.getByRole('button', { name: 'Try it' }))
+    const pane = await screen.findByRole('complementary', { name: 'Try it' })
+    // Inside main, not in the Inspector — and the Inspector is not opened for
+    // it, because nothing needs to move.
+    expect(pane.closest('[data-pointer=""]')).toBeNull()
+    expect(document.body.contains(pane)).toBe(true)
+    expect(revealed).toEqual([])
+  })
+
+  it('takes the Inspector’s place where the editor would not keep it', async () => {
+    // 700 wide leaves 308 for the editor, which is under the floor.
+    measured(700)
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT, inspector: true })
+    await screen.findByRole('navigation', { name: 'Members' })
+    fireEvent.click(screen.getByRole('button', { name: 'Try it' }))
+    await screen.findByRole('complementary', { name: 'Try it' })
+    // The pane it replaces is the Inspector's, so the Inspector's own panels
+    // are not on screen beside it.
+    expect(screen.queryByRole('tab', { name: 'Member' })).toBeNull()
+    void revealed
+  })
+
+  it('asks a closed Inspector to open, because it has nowhere else to go', async () => {
+    measured(700)
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT })
+    await screen.findByRole('navigation', { name: 'Members' })
+    expect(revealed).toEqual([])
+    fireEvent.click(screen.getByRole('button', { name: 'Try it' }))
+    expect(revealed).toContain('reveal')
+  })
+})
+
 describe('the file the editor holds', () => {
   it('reads the file once and never rebases on a watcher answer', async () => {
     const log = chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })

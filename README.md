@@ -418,10 +418,17 @@ the same in that state.
 | `Mod+B` | Collapse or expand the navigation rail |
 | `Mod+Alt+I` | Open or close the Inspector |
 | `Mod+Alt+J` | Open or close the Console |
+| `Mod+S` | Save, while editing a pack |
 
-Every one is suppressed while focus is in an `input`, a `textarea` or a
-`contenteditable` — which is exactly the authoring editor — and every one has a
+Every **shell** chord is suppressed while focus is in an `input`, a `textarea`
+or a `contenteditable` — which is exactly an editor — and every one has a
 visible button, so a chord the browser claims costs a click and not a feature.
+
+`Mod+S` is on the list and is deliberately **not** installed by
+`installShortcuts`, and the two facts are one fact: save is the chord that has
+to fire *inside* a text field, which is where that rule silences everything
+else. It is registered by the pack editor on its own subtree, so the shell's
+rule stays as written and the label says where this one applies.
 **Every modifier a chord does not declare is rejected**: Ctrl+Shift+B is not
 `Mod+B`, and Ctrl+Cmd+B is neither of the two spellings of `Mod` — an undeclared
 chord is left to the browser unprevented rather than claimed and swallowed.
