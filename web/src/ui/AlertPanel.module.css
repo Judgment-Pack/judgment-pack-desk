@@ -1,0 +1,45 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--warn-soft);
+  color: var(--ink);
+}
+
+.heading {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.body {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.details {
+  font-size: 0.76rem;
+}
+
+.summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding-top: 0.3rem;
+  font-family: var(--mono);
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  gap: 0.4rem;
+}

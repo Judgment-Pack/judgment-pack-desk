@@ -13,11 +13,15 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { useEffect, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Alert } from './Alert'
+import { AlertPanel } from './AlertPanel'
 import { Button } from './Button'
+import { CodeArea } from './CodeArea'
 import { Dialog } from './Dialog'
 import { Field } from './Field'
 import { Input } from './Input'
 import { Select } from './Select'
+import { SegmentedControl } from './SegmentedControl'
+import { SuggestInput } from './SuggestInput'
 
 afterEach(cleanup)
 
@@ -260,5 +264,129 @@ describe('Alert', () => {
     render(<Alert>The pack could not be created.</Alert>)
     expect(screen.getByRole('alert').textContent).toBe('The pack could not be created.')
     expect(screen.getByRole('alert').querySelector('span')).toBeNull()
+  })
+})
+
+describe('SegmentedControl', () => {
+  it('never empties when the current choice is pressed again', () => {
+    // Radix reports a deselect as `""`, which would leave the toolbar showing
+    // neither Edit nor Read. There is no such mode.
+    const seen: string[] = []
+    render(
+      <SegmentedControl
+        label="Mode"
+        value="edit"
+        onValueChange={(next) => seen.push(next)}
+        segments={[
+          { value: 'edit', label: 'Edit' },
+          { value: 'read', label: 'Read' }
+        ]}
+      />
+    )
+    fireEvent.click(screen.getByRole('radio', { name: 'Edit' }))
+    expect(seen).toEqual([])
+    fireEvent.click(screen.getByRole('radio', { name: 'Read' }))
+    expect(seen).toEqual(['read'])
+  })
+
+  it('carries the group name and says which segment is on', () => {
+    render(
+      <SegmentedControl
+        label="Shape"
+        value="json"
+        onValueChange={() => {}}
+        segments={[
+          { value: 'form', label: 'Form' },
+          { value: 'json', label: 'JSON' }
+        ]}
+      />
+    )
+    // A single-value ToggleGroup is a radiogroup, and each segment a radio.
+    expect(screen.getByRole('radiogroup', { name: 'Shape' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'JSON' }).getAttribute('data-state')).toBe('on')
+  })
+})
+
+describe('CodeArea', () => {
+  it('numbers the lines the text has, hidden from a reader that has the text', () => {
+    render(<CodeArea aria-label="Document" value={'{\n  "a": 1\n}'} onChange={() => {}} />)
+    const gutter = screen.getByTestId('code-gutter')
+    expect(gutter.getAttribute('aria-hidden')).toBe('true')
+    expect(gutter.textContent).toBe('123')
+  })
+
+  it('does not open a line for a trailing newline', () => {
+    // `"a\n"` is one line. Numbering the empty tail 2 puts a number beside
+    // nothing, and a parse error reported at line 2 would then point at it.
+    render(<CodeArea aria-label="Document" value={'a\n'} onChange={() => {}} />)
+    expect(screen.getByTestId('code-gutter').textContent).toBe('1')
+  })
+
+  it('scrolls the gutter with the text', () => {
+    render(<CodeArea aria-label="Document" value={'a\nb\nc'} onChange={() => {}} />)
+    const area = screen.getByLabelText('Document')
+    const gutter = screen.getByTestId('code-gutter')
+    area.scrollTop = 40
+    fireEvent.scroll(area)
+    expect(gutter.scrollTop).toBe(40)
+  })
+})
+
+describe('SuggestInput', () => {
+  it('keeps a value that is in no list it offered', () => {
+    // The suggestions are what this project already consults, and a rule about
+    // a fact nothing consults yet is the ordinary case for a new rule.
+    const seen: string[] = []
+    render(
+      <SuggestInput
+        aria-label="Fact path"
+        suggestions={['/request/amount']}
+        value=""
+        onChange={(event) => seen.push(event.target.value)}
+      />
+    )
+    fireEvent.change(screen.getByLabelText('Fact path'), { target: { value: '/vendor/tier' } })
+    expect(seen).toEqual(['/vendor/tier'])
+  })
+
+  it('offers the suggestions through a list the input names', () => {
+    const { container } = render(
+      <SuggestInput aria-label="Fact path" suggestions={['/request/amount', '/request/type']} value="" onChange={() => {}} />
+    )
+    const list = screen.getByLabelText('Fact path').getAttribute('list')
+    expect(list).toBeTruthy()
+    const datalist = container.querySelector(`#${CSS.escape(list!)}`)
+    expect([...datalist!.querySelectorAll('option')].map((option) => option.getAttribute('value'))).toEqual([
+      '/request/amount',
+      '/request/type'
+    ])
+  })
+})
+
+describe('AlertPanel', () => {
+  it('is one block-level announcement carrying its detail behind a disclosure', () => {
+    render(
+      <AlertPanel
+        heading="This file changed since you opened it. Nothing was written."
+        detailLabel="digests"
+        detail={<span>sha256 aaa</span>}
+        actions={<Button>Reload</Button>}
+      >
+        Your draft is intact.
+      </AlertPanel>
+    )
+    const alert = screen.getByRole('alert')
+    expect(alert.tagName).toBe('DIV')
+    expect(alert.textContent).toContain('This file changed since you opened it.')
+    // A `<details>` and a button inside a `<p>` is markup the browser
+    // re-parents, which is why this is not `Alert`.
+    expect(alert.querySelector('details')).toBeTruthy()
+    expect(alert.querySelector('button')).toBeTruthy()
+    expect(screen.getByText('digests')).toBeTruthy()
+  })
+
+  it('renders no disclosure where it was given no detail', () => {
+    render(<AlertPanel heading="Not saved.">Nothing was written.</AlertPanel>)
+    expect(screen.getByRole('alert').querySelector('details')).toBeNull()
   })
 })
