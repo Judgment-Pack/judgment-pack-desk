@@ -16,7 +16,7 @@
  * which kind of node it is, so `"op": "alll"` — a tree the runtime refuses and
  * this desk's renderer draws as nothing at all — survived the test that exists
  * to catch exactly that.
- * Checked against `jpack 0.19.0 spec validate`, which reports all three
+ * Checked against `jpack 0.19.0 spec validate`, which reports all four
  * fixtures conformant — `full` reaching `unsupported` only for the required
  * extension the runtime does not bundle, with carrier, structural and semantic
  * all passed.
@@ -85,7 +85,15 @@ const ENUMS: { where: (document: Record<string, unknown>) => unknown[]; allowed:
   }
 ]
 
-const CONFORMANT = ['full.pack.json', 'minimal.pack.json', 'reordered.pack.json']
+const CONFORMANT = [
+  'full.pack.json',
+  'minimal.pack.json',
+  'reordered.pack.json',
+  // The three `effect` values, one exception each, so the card that renders
+  // them is asserted against a document that carries all three rather than
+  // against the one `suppress-rule` `full.pack.json` happens to hold.
+  'exceptions.pack.json'
+]
 
 describe('every fixture a behaviour is asserted against', () => {
   it.each(CONFORMANT)('spells each enum-valued member the way the spec does (%s)', (name) => {

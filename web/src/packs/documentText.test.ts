@@ -12,6 +12,8 @@ import { describe, expect, it } from 'vitest'
 import {
   agreesWithParse,
   indexDocument,
+  insertMember,
+  moveElement,
   removeMember,
   replaceValue,
   spanAt
@@ -257,5 +259,129 @@ describe('a member named __proto__ is a member like any other', () => {
     const text = '{"__proto__":1,"__proto__":2}'
     const problems = agreesWithParse(text, indexDocument(text))
     expect(problems.map((problem) => problem.pointer)).toContain('/__proto__')
+  })
+})
+
+/**
+ * Adding a member, in the layout the document already uses.
+ *
+ * The house style is the container's own: a neighbour's leading run, taken
+ * verbatim. That is the same rule the delete holds in the other direction, and
+ * it is the rule that keeps a one-member addition from reformatting a document
+ * whose indentation is not uniform.
+ */
+describe('insertMember', () => {
+  it('takes a neighbour’s own layout run rather than inventing one', () => {
+    const text = read('full.pack.json')
+    const index = indexDocument(text)
+    const added = insertMember(text, index, '/decision', 'extensions', '{}', { last: true })
+    // The document's members sit at four spaces inside `decision`; the added
+    // member sits at four spaces too, and nobody wrote that number here.
+    expect(added).toContain('\n    "extensions": {}')
+    expect(JSON.parse(added).decision.extensions).toEqual({})
+  })
+
+  it('never inherits a neighbour’s indentation where the two differ', () => {
+    // Unequal indentation on purpose: `a` is written with a tab and `b` with
+    // six spaces. A writer with a house style levels one of them on the first
+    // edit; this one takes the layout of the member it is written beside.
+    const text = '{\n\t"a": 1,\n      "b": 2\n}'
+    const index = indexDocument(text)
+    const afterA = insertMember(text, index, '', 'c', '3', { after: '/a' })
+    expect(afterA).toBe('{\n\t"a": 1,\n      "c": 3,\n      "b": 2\n}')
+    const atEnd = insertMember(text, index, '', 'c', '3', { last: true })
+    expect(atEnd).toBe('{\n\t"a": 1,\n      "b": 2,\n      "c": 3\n}')
+  })
+
+  it('writes exactly one adjacent comma, wherever the member lands', () => {
+    const text = '{\n  "a": 1,\n  "b": 2\n}'
+    const index = indexDocument(text)
+    for (const placement of [{ first: true } as const, { last: true } as const, { after: '/a' } as const]) {
+      const added = insertMember(text, index, '', 'c', '3', placement)
+      expect(added.match(/,/g)?.length).toBe(2)
+      expect(added).not.toContain(',,')
+      expect(() => JSON.parse(added)).not.toThrow()
+    }
+  })
+
+  it('claims no style for a container that has shown none', () => {
+    const text = '{"a": {}}'
+    const index = indexDocument(text)
+    expect(insertMember(text, index, '/a', 'b', '1')).toBe('{"a": { "b": 1 }}')
+  })
+
+  it('leaves every byte outside the insertion identical', () => {
+    const text = read('full.pack.json')
+    const index = indexDocument(text)
+    const span = spanAt(index, '/rules/1')!
+    const added = insertMember(text, index, '/rules/1', 'rationale', '"Another sentence."', {
+      last: true
+    })
+    expect(added.slice(0, span.memberStart)).toBe(text.slice(0, span.memberStart))
+    const tail = text.length - span.memberEnd
+    expect(added.slice(added.length - tail)).toBe(text.slice(span.memberEnd))
+  })
+
+  it('adds an array element with the elements’ own layout', () => {
+    const text = read('full.pack.json')
+    const index = indexDocument(text)
+    const added = insertMember(text, index, '/outcomes', undefined, '{ "id": "defer", "label": "Defer" }')
+    expect(JSON.parse(added).outcomes.map((outcome: { id: string }) => outcome.id)).toEqual([
+      'approve',
+      'decline',
+      'defer'
+    ])
+  })
+})
+
+/**
+ * Moving a rule, which is an edit to what the pack decides.
+ *
+ * Order is §7-significant, so this is not a tidy: the bytes move, and each
+ * element keeps the layout it was written with.
+ */
+describe('moveElement', () => {
+  it('exchanges two element spans, each keeping its own layout', () => {
+    const text = read('full.pack.json')
+    const index = indexDocument(text)
+    const moved = moveElement(text, index, '/rules', 1, 0)
+    const after = JSON.parse(moved)
+    expect(after.rules.map((rule: { id: string }) => rule.id)).toEqual([
+      'approve-when-clear',
+      'screen-first'
+    ])
+    // Every other member of the document is untouched, member for member.
+    const before = JSON.parse(text)
+    before.rules = [before.rules[1], before.rules[0]]
+    expect(after).toEqual(before)
+  })
+
+  it('leaves every byte outside the array identical', () => {
+    const text = read('full.pack.json')
+    const index = indexDocument(text)
+    const span = spanAt(index, '/rules')!
+    const moved = moveElement(text, index, '/rules', 0, 1)
+    expect(moved.slice(0, span.valueStart)).toBe(text.slice(0, span.valueStart))
+    const tail = text.length - span.valueEnd
+    expect(moved.slice(moved.length - tail)).toBe(text.slice(span.valueEnd))
+  })
+
+  it('does not level unequal indentation', () => {
+    const text = '[\n\t1,\n      2\n]'
+    const index = indexDocument(text)
+    // Each element carries the layout of the position it lands in, and no
+    // position gains or loses one: the array is the two runs it always had.
+    const moved = moveElement(text, index, '', 0, 1)
+    expect(moved).toBe('[\n\t2,\n      1\n]')
+  })
+
+  it('changes nothing for a move that goes nowhere or off the end', () => {
+    const text = read('full.pack.json')
+    const index = indexDocument(text)
+    expect(moveElement(text, index, '/rules', 1, 1)).toBe(text)
+    expect(moveElement(text, index, '/rules', 0, 9)).toBe(text)
+    expect(moveElement(text, index, '/rules', -1, 0)).toBe(text)
+    // Not an array at all.
+    expect(moveElement(text, index, '/decision', 0, 1)).toBe(text)
   })
 })
