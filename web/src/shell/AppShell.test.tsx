@@ -14,10 +14,23 @@ import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { McpContext, type McpConnection } from '../mcp/McpProvider'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import type { PackDocument } from '../mcp/types'
+import { PacksPane } from '../packs/PacksPane'
+import { PackDocumentView } from '../packs/document/PackDocumentView'
 import { AppShell } from './AppShell'
 import { forgetConsole } from './consoleLog'
 import { forgetAuthorBridge } from './authorBridge'
 import { projectKey, shellStateKey } from './paneState'
+
+/** A document to mount beside the pane, so the route's own outline is present. */
+const MINIMAL = JSON.parse(
+  readFileSync(
+    join(import.meta.dirname, '..', 'packs', '__fixtures__', 'minimal.pack.json'),
+    'utf8'
+  )
+) as PackDocument
 
 /** The chassis' project root, which is what keys this desk's pane record. */
 const ROOT = '/home/someone/a-project'
@@ -101,6 +114,45 @@ describe('the shell frame', () => {
     expect(screen.getAllByRole('complementary', { name: 'Inspector' })).toHaveLength(1)
     expect(screen.getAllByRole('region', { name: 'Console' })).toHaveLength(1)
     expect(screen.getAllByRole('contentinfo')).toHaveLength(1)
+  })
+
+  it('keeps its own six landmarks with the packs route mounted inside main', async () => {
+    // The packs pane is a list of navigations, so `<nav aria-label="Packs">`
+    // is the correct markup — and it means a route adds a landmark inside
+    // main. What must stay true is that the *shell's* six are still exactly
+    // one each: a second unnamed navigation, or a second complementary, would
+    // be a page whose regions a screen reader cannot tell apart.
+    //
+    // **Both** of the route's landmarks are mounted here. The pane alone was
+    // not the route: the document carries its own member outline, which is a
+    // second navigation inside main, and a naming loop that never saw it was
+    // asserting about a page this route does not render.
+    renderShell(
+      <AppShell>
+        <PacksPane />
+        <PackDocumentView document={MINIMAL} active={null} />
+      </AppShell>
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Inspector' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
+    await screen.findByRole('navigation', { name: 'Packs' })
+    expect(screen.getByRole('navigation', { name: 'Members' })).toBeTruthy()
+
+    expect(screen.getAllByRole('banner')).toHaveLength(1)
+    expect(screen.getAllByRole('navigation', { name: 'Project' })).toHaveLength(1)
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(screen.getAllByRole('complementary', { name: 'Inspector' })).toHaveLength(1)
+    expect(screen.getAllByRole('region', { name: 'Console' })).toHaveLength(1)
+    expect(screen.getAllByRole('contentinfo')).toHaveLength(1)
+    // And every navigation on the page is named, so the three are
+    // distinguishable: the rail's Project, the pane's Packs, and the
+    // document's Members.
+    const navigations = screen.getAllByRole('navigation')
+    expect(navigations.map((landmark) => landmark.getAttribute('aria-label'))).toEqual([
+      'Project',
+      'Packs',
+      'Members'
+    ])
   })
 
   it('puts the skip link first and points it at main', () => {

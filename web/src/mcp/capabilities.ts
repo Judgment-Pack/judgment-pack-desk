@@ -74,6 +74,19 @@ export interface RuntimeCapabilities {
    * against, not a pack, and the Create-pack dialog labels it as one.
    */
   schemaSupported: boolean
+  /**
+   * True when `validate` is advertised.
+   *
+   * A **name** question and not a schema question: the tool either exists or
+   * does not, and its one required argument is the document itself. The desk
+   * sends no `through`, so nothing about the ladder is a capability here —
+   * omitting it is what makes the runtime run its own default, which is the
+   * whole ladder.
+   *
+   * False with `known` false is not "this runtime cannot check a document"; it
+   * is "the listing has not answered". The check strip says which.
+   */
+  validateSupported: boolean
 }
 
 /**
@@ -89,7 +102,8 @@ export const UNKNOWN_CAPABILITIES: RuntimeCapabilities = {
   graphInventorySupported: false,
   graphTracesSupported: false,
   exampleSupported: false,
-  schemaSupported: false
+  schemaSupported: false,
+  validateSupported: false
 }
 
 /** One row of a `tools/list` answer, narrowed to what capability reading uses. */
@@ -171,7 +185,8 @@ export function readCapabilities(tools: readonly AdvertisedTool[]): RuntimeCapab
     graphInventorySupported: names.has('experimental_list_graphs'),
     graphTracesSupported: takes('experimental_test_graphs', 'include_traces'),
     exampleSupported: names.has('list_examples') && names.has('get_example'),
-    schemaSupported: names.has('get_schema')
+    schemaSupported: names.has('get_schema'),
+    validateSupported: names.has('validate')
   }
 }
 

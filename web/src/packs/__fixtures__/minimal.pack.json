@@ -1,0 +1,23 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/minimal",
+  "version": "0.1.0",
+  "title": "A minimal pack",
+  "decision": {
+    "intent": "Decide the one thing this pack decides.",
+    "question": "Does this request proceed?"
+  },
+  "outcomes": [
+    { "id": "proceed", "label": "Proceed" },
+    { "id": "hold", "label": "Hold" }
+  ],
+  "rules": [
+    {
+      "id": "always",
+      "description": "Proceed.",
+      "when": { "op": "literal", "value": true },
+      "outcome": "proceed",
+      "onUnknown": "escalate"
+    }
+  ]
+}

@@ -17,11 +17,18 @@
  * The context value is **metadata only**: whether the pane is open, how wide
  * it is, which tab is selected. No node, ever.
  *
- * Phase A ships the mechanism and the empty state. No route publishes into it
- * yet, so `target` is a real element that nothing has portalled into — which
- * is exactly the state a route's first publisher will find.
+ * **A portal cannot tell React it happened.** `createPortal` writes into a DOM
+ * node that is not this component's child, so the pane has no way to know
+ * whether anything is in its slot — and it rendered an empty-state paragraph
+ * unconditionally, which stood underneath the first published panel. A CSS
+ * `:empty` sibling rule is the tempting fix and is rejected: vitest runs with
+ * `css: false`, so no stylesheet is processed in this repo's tests, and the
+ * mutation harness could not discriminate a rule nothing evaluates. So the
+ * slot counts **claims** instead — a publisher claims on mount and releases on
+ * unmount — and the frame hands the count to the pane.
  */
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useEffect, type ReactNode, type ReactPortal } from 'react'
+import { createPortal } from 'react-dom'
 
 export interface InspectorSlot {
   open: boolean
@@ -39,6 +46,24 @@ export interface InspectorSlot {
   setTab: (tab: string | null) => void
   /** The portal target, or null before the shell has mounted it. */
   target: HTMLElement | null
+  /**
+   * Say that something is published into the slot, for as long as it is.
+   *
+   * Held by the frame, so the pane can stop rendering its empty state beside a
+   * panel. Returns nothing; the release is the effect's cleanup.
+   */
+  claim: () => () => void
+  /**
+   * Open the pane, because the viewer just asked to inspect something.
+   *
+   * A no-op where it is already open. This is a response to a gesture and not
+   * a seed: the shell's rule is that a *restored* layout must not be overridden
+   * by a default, and a reader who clicks a member of the document has said
+   * what they want the pane for. Without it, selecting wrote a pointer into the
+   * address, filled a panel nobody could see, and changed nothing on screen but
+   * one border.
+   */
+  reveal: () => void
 }
 
 const CLOSED: InspectorSlot = {
@@ -46,11 +71,43 @@ const CLOSED: InspectorSlot = {
   size: 0,
   tab: null,
   setTab: () => {},
-  target: null
+  target: null,
+  claim: () => () => {},
+  reveal: () => {}
 }
 
 export const InspectorSlotContext = createContext<InspectorSlot>(CLOSED)
 
 export function useInspectorSlot(): InspectorSlot {
   return useContext(InspectorSlotContext)
+}
+
+/**
+ * Publish one node into the Inspector, and claim the slot while it is there.
+ *
+ * The claim and the portal are one call because they are one fact: something
+ * is in the pane. A route that claimed without publishing would suppress the
+ * empty state and show nothing, and a route that published without claiming is
+ * the bug this exists to fix.
+ *
+ * A closed drawer publishes **no target**, so nothing is rendered and nothing
+ * is claimed — the route is told there is nowhere to publish rather than
+ * handed a detached node.
+ *
+ * **A null node is not a publication either.** A route calls this hook
+ * unconditionally, above its own early returns, and hands `null` while its data
+ * is loading or after the load failed. Claiming on the target alone suppressed
+ * the pane's empty state for the whole of that time — and for ever on a route
+ * whose load failed — leaving the pane with a heading and nothing under it. So
+ * the claim and the portal are the same condition, which is what the paragraph
+ * above says they are.
+ */
+export function useInspectorPortal(node: ReactNode): ReactPortal | null {
+  const { target, claim } = useInspectorSlot()
+  const publishing = target !== null && node !== null && node !== undefined
+  useEffect(() => {
+    if (!publishing) return
+    return claim()
+  }, [publishing, claim])
+  return publishing ? createPortal(node, target) : null
 }

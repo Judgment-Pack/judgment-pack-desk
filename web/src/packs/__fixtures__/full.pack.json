@@ -1,0 +1,152 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/vendor-onboarding",
+  "version": "1.2.0",
+  "title": "Vendor onboarding",
+  "description": "Synthetic fixture. It authorizes nothing and decides nothing outside this test suite.",
+  "decision": {
+    "intent": "Decide whether the vendor proceeds to onboarding once screening is known.",
+    "question": "Should this vendor be onboarded, given the screening decision's outcome?",
+    "extensions": {
+      "example.owner": "the onboarding desk"
+    }
+  },
+  "applicability": {
+    "op": "fact",
+    "path": "/request/region",
+    "operator": "equals",
+    "value": "eu"
+  },
+  "evidenceRequirements": [
+    {
+      "id": "screening-report",
+      "description": "The upstream screening decision's produced outcome.",
+      "required": true,
+      "kind": "attestation",
+      "extensions": {
+        "example.retention": "P90D"
+      }
+    },
+    {
+      "id": "insurance-cert",
+      "description": "A current certificate of insurance.",
+      "required": false,
+      "kind": "document"
+    }
+  ],
+  "sources": [
+    {
+      "id": "onboarding-policy",
+      "title": "Vendor onboarding policy",
+      "publisher": "Example Co.",
+      "publishedAt": "2026-01-04",
+      "locator": { "kind": "uri", "value": "https://example.invalid/policy/onboarding" },
+      "citation": { "location": "§4.2", "excerpt": "A vendor cleared by screening may be onboarded." },
+      "rights": "internal use only"
+    },
+    {
+      "id": "insurance-rule",
+      "title": "Insurance requirements",
+      "locator": { "kind": "path", "value": "policies/insurance.pdf" }
+    }
+  ],
+  "outcomes": [
+    { "id": "approve", "label": "Approve", "description": "Screening cleared the vendor." },
+    { "id": "decline", "label": "Decline", "description": "Screening matched the vendor." }
+  ],
+  "rules": [
+    {
+      "id": "screen-first",
+      "description": "Decline where the screening decision matched the vendor.",
+      "when": {
+        "op": "evidence-present",
+        "evidenceRequirement": "screening-report"
+      },
+      "outcome": "decline",
+      "onUnknown": "escalate",
+      "evidenceRequirementRefs": ["screening-report"],
+      "sourceRefs": ["onboarding-policy"],
+      "rationale": "A screening that resolved nothing is not a clearance."
+    },
+    {
+      "id": "approve-when-clear",
+      "description": "Approve the vendor when the request clears every threshold.",
+      "when": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "fact",
+            "path": "/request/amount",
+            "operator": "greater-than",
+            "value": "5000"
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "fact",
+                "path": "/request/type",
+                "operator": "equals",
+                "value": "data-access"
+              },
+              {
+                "op": "not",
+                "condition": { "op": "literal", "value": false }
+              }
+            ]
+          }
+        ]
+      },
+      "outcome": "approve",
+      "onUnknown": "escalate",
+      "evidenceRequirementRefs": ["screening-report", "insurance-cert"],
+      "sourceRefs": ["onboarding-policy", "insurance-rule"],
+      "rationale": "The onboarding policy clears a screened vendor above the threshold.",
+      "extensions": {
+        "example.review-window": "P14D"
+      }
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "vendor-waiver",
+      "description": "A signed waiver suspends the approval rule.",
+      "when": { "op": "fact", "path": "/request/waiver", "operator": "equals", "value": "signed" },
+      "effect": "suppress-rule",
+      "targetRule": "approve-when-clear",
+      "onUnknown": "escalate",
+      "sourceRefs": ["onboarding-policy"],
+      "extensions": { "example.expires": "2027-01-01" }
+    }
+  ],
+  "fallbackOutcome": "decline",
+  "escalation": {
+    "triggers": ["missing-required-evidence", "unknown"],
+    "target": { "kind": "human-role", "name": "onboarding reviewer" },
+    "message": "Send this to the onboarding reviewer with the screening report attached.",
+    "extensions": { "example.channel": "queue" }
+  },
+  "metadata": {
+    "authors": ["the onboarding desk"],
+    "createdAt": "2026-01-04T09:00:00Z",
+    "license": "CC-BY-4.0",
+    "requiredExtensions": ["example.review-window"],
+    "reviews": [
+      {
+        "reviewer": "a named reviewer",
+        "reviewedAt": "2026-02-01T10:30:00Z",
+        "disposition": "approved",
+        "note": "Checked against the January policy."
+      },
+      {
+        "reviewer": "a second reviewer",
+        "reviewedAt": "2026-02-03T08:00:00Z",
+        "disposition": "changes-requested"
+      }
+    ],
+    "extensions": { "example.ticket": "OPS-142" }
+  },
+  "extensions": {
+    "example.pipeline": "onboarding"
+  }
+}

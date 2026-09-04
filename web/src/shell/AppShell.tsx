@@ -120,6 +120,18 @@ function ShellFrame({
   const [inspectorTarget, setInspectorTarget] = useState<HTMLElement | null>(null)
   const [inspectorPane, setInspectorPane] = useState<HTMLElement | null>(null)
   const [inspectorTab, setInspectorTab] = useState<string | null>(null)
+  /**
+   * How many routes are publishing into the slot right now.
+   *
+   * A portal writes into a DOM node that is not React's child here, so the
+   * pane cannot see its own contents; this count is how it learns. Held in the
+   * frame beside the target, because both describe the same slot.
+   */
+  const [inspectorClaims, setInspectorClaims] = useState(0)
+  const claim = useCallback(() => {
+    setInspectorClaims((count) => count + 1)
+    return () => setInspectorClaims((count) => Math.max(0, count - 1))
+  }, [])
   const publishTarget = useCallback((target: HTMLDivElement | null) => {
     setInspectorTarget(target)
   }, [])
@@ -136,15 +148,30 @@ function ShellFrame({
    * old value was laying it out against a width nothing on screen had.
    */
   const inspectorBox = useMeasuredBox(inspectorPane)
+  /**
+   * Opening the pane because a route was asked to inspect something.
+   *
+   * A gesture, not a seed. `toggleInspector` marks the pane as chosen, which is
+   * correct here: the reader picked a member and the panel is what they picked
+   * it for.
+   */
+  // **Set, not flip.** "If closed, toggle" is the same gesture read twice, and
+  // React's StrictMode runs an effect twice on purpose — so an arrival that
+  // opened the pane immediately closed it again, and the link somebody sent
+  // landed on a closed Inspector. `openInspector` is idempotent, so calling it
+  // twice is calling it once and calling it on an open pane does nothing.
+  const reveal = shell.openInspector
   const slot = useMemo<InspectorSlot>(
     () => ({
       open: shell.inspector.open,
       size: shell.inspector.open ? (inspectorBox?.width ?? 0) : 0,
       tab: inspectorTab,
       setTab: setInspectorTab,
-      target: inspectorTarget
+      target: inspectorTarget,
+      claim,
+      reveal
     }),
-    [shell.inspector.open, inspectorBox, inspectorTab, inspectorTarget]
+    [shell.inspector.open, inspectorBox, inspectorTab, inspectorTarget, claim, reveal]
   )
 
   useEffect(
@@ -216,6 +243,7 @@ function ShellFrame({
           publishTarget={publishTarget}
           publishPane={publishPane}
           openerRef={inspectorOpenerRef}
+          showEmpty={inspectorClaims === 0}
         />
 
         <BottomPane

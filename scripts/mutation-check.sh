@@ -199,8 +199,15 @@ if [ -n "$baseline_go" ] || [ -n "$baseline_web" ]; then
   echo "the unmutated suite is not green — every row below would be meaningless" >&2
   echo "  go:  ${baseline_go:-clean}" >&2
   echo "  web: ${baseline_web:-clean}" >&2
+  # **And say so on stdout, in the table's own shape.** This used to write only
+  # to stderr and exit, so a caller running one row at a time and collecting
+  # rows with `grep '^|'` recorded a *silent gap*: the row it asked for produced
+  # no line at all, which reads exactly like a row nobody ran on purpose. A run
+  # that skipped its rows must be visible in the table it did not fill in.
+  echo "| mutation | test that failed |"
+  echo "| --- | --- |"
+  report "${only:-every row}" "**BASELINE NOT GREEN — not run**"
   exit 2
-
 fi
 
 echo "mutation check against $commit"
@@ -535,6 +542,33 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   FC=web/src/files/client.ts
   SEL=web/src/ui/Select.tsx
   ST=web/src/mcp/starters.ts
+  DT=web/src/packs/documentText.ts
+  CK=web/src/packs/checks.ts
+  QR=web/src/mcp/queries.ts
+  CAP=web/src/mcp/capabilities.ts
+  OM=web/src/packs/document/OmittedMember.tsx
+  MB=web/src/packs/document/members.ts
+  CT=web/src/packs/document/ConditionTree.tsx
+  RP=web/src/shell/RightPane.tsx
+  WR=web/src/packs/useWindowedRows.ts
+  RL=web/src/shell/LeftRail.tsx
+  CV=web/src/ui/convention.test.ts
+  PPC=web/src/packs/PacksPane.module.css
+  RF=web/src/packs/references.ts
+  IS=web/src/shell/InspectorSlot.tsx
+  SPY=web/src/packs/useDocumentSpy.ts
+  AB=web/src/packs/document/ApplicabilityBlock.tsx
+  CTAB=web/src/packs/inspector/ChecksTab.tsx
+  PV=web/src/routes/PackView.tsx
+  BK=web/src/packs/document/Block.tsx
+  PDV=web/src/packs/document/PackDocumentView.tsx
+  MO=web/src/packs/document/MemberOutline.tsx
+  PN=web/src/packs/PacksPane.tsx
+  PT=web/src/packs/pointers.ts
+  RTAB=web/src/packs/inspector/ReferencesTab.tsx
+  CTB=web/src/packs/inspector/ChecksTab.tsx
+  AS=web/src/shell/AppShell.tsx
+  FX=web/src/packs/__fixtures__/full.pack.json
 
   # The rail's graph gate. `useConfiguredGraphs` falls back to a whole-project
   # `experimental_test_graphs` walk against any runtime without the inventory
@@ -1212,6 +1246,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  @supports (height: 100dvh) {
     :root {
       --console-room: max(0px, calc(100dvh - var(--header-h) - var(--strip-h)));
+      --main-room: max(
+        0px,
+        calc(100dvh - var(--header-h) - var(--strip-h) - var(--console-current))
+      );
       --console-cap: max(
         0px,
         calc(100dvh - var(--header-h) - var(--strip-h) - var(--main-floor))
@@ -1606,6 +1644,562 @@ if [ "$which" = all ] || [ "$which" = web ]; then
       }
       continue' \
     '      continue'
+  # ---------------------------------------------------------------------------
+  # The pack view (issue: pack view phase 1). Each row breaks one claim the
+  # document, the writer, the check reader or the pane makes.
+  # ---------------------------------------------------------------------------
+
+  # 7. The writer. A splice that re-serializes is a whole-file diff dressed as
+  # a one-field edit, which is exactly what ADR-0019 makes a human read.
+  mutate web "the splice reserializes the whole document" "$DT" \
+    '  return text.slice(0, span.valueStart) + json + text.slice(span.valueEnd)' \
+    '  const whole = JSON.parse(text)
+  void span
+  void pointer
+  void json
+  return JSON.stringify(whole, null, 2)'
+  mutate web "removing a member leaves its comma" "$DT" \
+    '  let scan = end
+  while (scan < text.length && isSpace(text[scan]!)) scan += 1
+  if (text[scan] === '"'"','"'"') {' \
+    '  let scan = end
+  while (scan < text.length && isSpace(text[scan]!)) scan += 1
+  if (false) {'
+  # **The layout after the comma belongs to the member that follows.** Taking it
+  # looks equivalent to taking the layout before this one and is not: a document
+  # written with unequal indentation was silently reformatted by a delete.
+  mutate web "a removal takes its neighbour layout rather than its own" "$DT" \
+    '    start = layoutStart
+    end = scan + 1' \
+    '    end = scan + 1
+    while (end < text.length && isSpace(text[end]!)) end += 1'
+  # A dynamic member name assigned into `{}` invokes the prototype setter for
+  # `__proto__` and stores nothing, so the reading carried no such member.
+  mutate web "the scanner assigns member names into a plain object" "$DT" \
+    '      const object: Record<string, unknown> = Object.create(null) as Record<string, unknown>' \
+    '      const object: Record<string, unknown> = {}'
+  # And the one gate that exists to catch a reading that disagrees with
+  # JSON.parse consulted the prototype chain, so it found the inherited member
+  # and reported agreement about a document it disagreed on.
+  mutate web "the disagreement gate walks the prototype chain" "$DT" \
+    '      if (!Object.hasOwn(mine, name) || !Object.hasOwn(theirs, name)) {' \
+    '      if (!(name in mine) || !(name in theirs)) {'
+  mutate web "duplicate members are read last-wins" "$DT" \
+    '  const problems: Disagreement[] = []
+  for (const duplicate of index.duplicates) {' \
+    '  const problems: Disagreement[] = []
+  if (text.length >= 0) return problems
+  for (const duplicate of index.duplicates) {'
+
+  # 6. The check reader. A layer nothing listed is a layer that did not run.
+  mutate web "a layer nothing listed is reported as passed" "$CK" \
+    "  const named = rows
+    .map((row) => row.name)
+    .filter((name): name is string => typeof name === 'string')" \
+    "  const named = [...LADDER] as string[]"
+  mutate web "a diagnostic re-anchors after the bytes move" "$CK" \
+    '  if (checkedBytes === undefined || currentBytes === undefined) return false
+  return checkedBytes !== currentBytes' \
+    '  void checkedBytes
+  void currentBytes
+  return false'
+  mutate web "a diagnostic with no exact match is dropped" "$CK" \
+    '    for (const ancestor of parentPointers(named)) {
+      if (rendered.has(ancestor)) {
+        return { diagnostic, anchor: ancestor, named, approximate: true }
+      }
+    }' \
+    '    void parentPointers'
+  # The Checks tab's filter. Equality alone told a reader selecting a rule card
+  # "No other diagnostic names this member." over a rule the runtime had just
+  # refused at `/rules/0/when/value` — the one sentence this tab exists to
+  # never say by accident.
+  mutate web "a diagnostic under the selected member is hidden" "$CK" \
+    '    (entry) => entry.anchor === pointer || entry.anchor.startsWith(`${pointer}/`)' \
+    '    (entry) => entry.anchor === pointer'
+  mutate web "one rule's pointer is read as a prefix of another's" "$CK" \
+    'entry.anchor.startsWith(`${pointer}/`)' \
+    'entry.anchor.startsWith(pointer)'
+  mutate web "an empty document is sent to be refused" "$QR" \
+    "      documentText !== undefined &&
+      documentText !== ''," \
+    '      documentText !== undefined,'
+  # A payload saying `invalid` with `carrier passed, structural failed` printed
+  # `structural — 1 diagnostic`: neither the verdict the runtime reached nor the
+  # layer that did run.
+  mutate web "the layer sentence drops the status and every row but the failure" "$CK" \
+    '  const spelled = rows
+    .map((row) => `${row.name ?? '"'"'an unnamed layer'"'"'} ${row.status ?? '"'"'with no status'"'"'}`)
+    .join('"'"', '"'"')' \
+    '  const spelled = rows
+    .filter((row) => row.status !== '"'"'passed'"'"')
+    .map((row) => `${row.name ?? '"'"'an unnamed layer'"'"'}`)
+    .join('"'"', '"'"')'
+  mutate web "a truncated list still claims nothing else was found" "$CK" \
+    "  if (report?.diagnosticsTruncated !== true) return undefined" \
+    "  if (report !== undefined) return undefined"
+
+  # 5. The check query. Identical bytes answer differently on a runtime
+  # bundling different artifacts, so the epoch is half the key.
+  mutate web "the check query is keyed on the buffer alone" "$QR" \
+    "    queryKey: ['validate', connectionEpoch, documentText ?? null]," \
+    "    queryKey: ['validate', documentText ?? null],"
+  # A report that does not carry the bytes it ran over cannot be compared with
+  # the bytes on screen, and the comparison is the whole of the anchoring rule.
+  mutate web "the report claims bytes it did not check" "$QR" \
+    '      return { report: parsed, checkedBytes: documentText! }' \
+    "      return { report: parsed, checkedBytes: '' }"
+  mutate web "validate is assumed present" "$CAP" \
+    "    validateSupported: names.has('validate')" \
+    "    validateSupported: true"
+
+  # 9. The document. An omission stated is the whole point of the rewrite.
+  mutate web "an omitted member renders nothing" "$OM" \
+    '  return (
+    <Block pointer={pointer} className={styles.omitted}>' \
+    '  if (label !== undefined) return null
+  return (
+    <Block pointer={pointer} className={styles.omitted}>'
+  mutate web "members render in canonical order rather than the document's" "$MB" \
+    '  const order = MEMBER_UNITS.filter((unit) => unitIsPresent(document, unit)).sort(
+    (left, right) => positionOf(left) - positionOf(right)
+  )' \
+    '  const order = MEMBER_UNITS.filter((unit) => unitIsPresent(document, unit))
+  void positionOf'
+  # The five identity members are five units, so each finds its own place in the
+  # document order. The nav collapses them again — a nav question answered in
+  # the nav, not by moving three members in front of a fourth.
+  # The spy answers in reading-unit pointers and the nav lists Identity once, so
+  # four of the five equalled no entry and marked nothing at all.
+  mutate web "an identity member marks no outline entry" "$PV" \
+    '  const active = seen === null ? null : (representative.get(seen) ?? seen)' \
+    '  const active = seen
+  void representative'
+  mutate web "a grouped unit is looked up under its own id" "$MB" \
+    '    const listed = entries.find((entry) => entry.id === (unit.group ?? unit.id))' \
+    '    const listed = entries.find((entry) => entry.id === unit.id)'
+  mutate web "the outline lists each identity member separately" "$MB" \
+    '  const entries: MemberUnit[] = []
+  const placed = new Set<string>()' \
+    '  const entries: MemberUnit[] = []
+  if (order.length >= 0) return [...order]
+  const placed = new Set<string>()'
+  # An absent **required** member renders nothing, because its absence is a
+  # refusal the runtime issues at that pointer and a block here takes that
+  # diagnostic off the strip — where every reader sees it — and puts it behind a
+  # selection nobody has made.
+  # A missing required member is a refusal the runtime issues at that pointer,
+  # not an omission this page states — and a "not declared" line for one takes
+  # that diagnostic off the strip and hides it behind a selection nobody made.
+  # It also used to be *first* in reading order, which put the document's one
+  # tab stop on a pointer with no element behind it.
+  mutate web "an absent required member gets an omission line" "$MB" \
+    '    if (unit.required === true) continue' \
+    '    if (false) continue'
+  # Three of the seven roots the schema requires were marked optional here.
+  mutate web "the rules member is treated as optional" "$MB" \
+    "  {
+    id: 'rules',
+    label: 'Rules',
+    members: ['rules'],
+    pointer: '/rules',
+    counted: true,
+    required: true
+  }," \
+    "  { id: 'rules', label: 'Rules', members: ['rules'], pointer: '/rules', counted: true },"
+  # Every omission at the end would have passed the ordering test this replaces:
+  # it filtered every omission out of the actual output before comparing.
+  mutate web "an omission is drawn after the members rather than in its place" "$MB" \
+    '    order.splice(anchor + 1, 0, unit)' \
+    '    void anchor
+    order.push(unit)'
+  mutate web "the condition tree paraphrases" "$CT" \
+    '        <Block pointer={`${at}/operator`} as="span" className={styles.op}>
+          {String(node.operator ?? '"''"')}
+        </Block>{'"' '"'}
+        <Block pointer={`${at}/value`} as="code" className={styles.literal}>
+          {JSON.stringify(node.value)}
+        </Block>' \
+    '        <Block pointer={`${at}/operator`} as="span" className={styles.op}>
+          is greater than
+        </Block>{'"' '"'}
+        <Block pointer={`${at}/value`} as="code" className={styles.literal}>
+          {String(node.value)}
+        </Block>'
+
+  # 12. The pane's empty state used to stand beside every published panel.
+  mutate web "the empty state stands beside a published panel" "$RP" \
+    '      {showEmpty && <p className="desk-pane-empty">{EMPTY_STATE}</p>}' \
+    '      <p className="desk-pane-empty">{EMPTY_STATE}</p>'
+
+  # 14. jsdom lays nothing out, so a measured height of zero must render every
+  # row — otherwise every test of the pane asserts against an empty list.
+  mutate web "the windowed list renders nothing when the viewport cannot be measured" "$WR" \
+    '  if (height <= 0 || rowHeight <= 0) {
+    return { ref, scrollRowIntoView, start: 0, end: count, padTop: 0, padBottom: 0 }
+  }' \
+    '  if (false) {
+    return { ref, scrollRowIntoView, start: 0, end: count, padTop: 0, padBottom: 0 }
+  }'
+  # A window computed from a scroll position that belongs to the longer list
+  # begins after the end of the shorter one and renders no rows at all: filter
+  # 300 rows to one while scrolled down and the pane goes blank with a match in
+  # it. Held by the hook test, which measures a viewport jsdom cannot.
+  mutate web "a shorter list keeps the scroll position of the longer one" "$WR" \
+    '    const limit = Math.max(0, count * rowHeight - node.clientHeight)
+    if (node.scrollTop > limit) {' \
+    '    const limit = Math.max(0, count * rowHeight - node.clientHeight)
+    if (false) {'
+  # The listener followed a ref object that never changes, so a list unmounted
+  # by a failed refetch and mounted again at the same length kept its listener
+  # on the detached node: scrolling did nothing, for ever, with no way back but
+  # a reload. Ignoring later nodes is exactly that defect.
+  mutate web "the scroll listener stays on the element that was replaced" "$WR" \
+    '  const ref = useCallback((next: HTMLElement | null) => setNode(next), [])' \
+    '  const ref = useCallback(
+    (next: HTMLElement | null) => setNode((previous) => previous ?? next),
+    []
+  )'
+  # A row the keyboard asks for that is not rendered cannot be focused. The
+  # scroll comes first and the focus follows it in.
+  mutate web "an off-window row is never brought on screen" "$WR" \
+    '      if (top < node.scrollTop) node.scrollTop = top
+      else if (bottom > node.scrollTop + node.clientHeight) {
+        node.scrollTop = bottom - node.clientHeight
+      }' \
+    '      void top
+      void bottom'
+
+  # 16. A `0` beside Packs is a claim about a project the desk knows nothing
+  # about.
+  mutate web "the rail claims a count for a listing that never answered" "$RL" \
+    '  const count = error === null && data !== undefined ? (data.packs ?? []).length : undefined' \
+    '  const count = (data?.packs ?? []).length'
+
+
+  # ---------------------------------------------------------------------------
+  # The verification round. Each row breaks one claim a review found the desk
+  # making without holding.
+  # ---------------------------------------------------------------------------
+
+  # The References panel. `escalation.triggers` is a closed enum of five reason
+  # words, so reading one as an evidence-requirement id printed a
+  # dangling-reference claim on every conformant pack.
+  mutate web "escalation triggers are read as evidence requirement ids" "$RF" \
+    '  // The fallback outcome names an outcome like any other reference does.' \
+    '  if (at === pointer(['"'"'escalation'"'"'])) {
+    for (const id of document.escalation?.triggers ?? []) {
+      lines.push(named('"'"'trigger'"'"', id, evidenceAt, '"'"'evidence requirement'"'"'))
+    }
+  }
+
+  // The fallback outcome names an outcome like any other reference does.'
+  # Two outcomes named `approve` made a rule link to `/outcomes/1` as though the
+  # document had said which. It had not: it had said the id twice.
+  mutate web "a duplicated id is resolved to one of the two" "$RF" \
+    '    if (targets.length === 1) return { relation, id, target: targets[0] }
+    return { relation, id, candidates: targets }' \
+    '    return { relation, id, target: targets[0] }'
+  mutate web "an id declared twice keeps only the last place it was declared" "$RF" \
+    '    const existing = where.get(entry.id)
+    if (existing === undefined) where.set(entry.id, [at])
+    else existing.push(at)' \
+    '    where.set(entry.id, [at])'
+  # **One evaluator, or two panels disagree about one address.** This read the
+  # index out of token one and never looked further, so `/rules/0/nonesuch` and
+  # `/rules/0/constructor` printed rule zero's references beside a member panel
+  # showing nothing at all.
+  mutate web "an address the document does not carry still answers" "$RF" \
+    '  if (valueAt(document, at) === undefined) return []' \
+    '  void valueAt'
+  mutate web "a rule with no outcome still gets an unresolved-id line" "$RF" \
+    "    if (typeof rule.outcome === 'string') {" \
+    '    if (true) {'
+  # And the fixture the whole reference model is read against.
+  mutate web "a fixture may assert a shape the spec forbids" "$FX" \
+    '  "triggers": ["missing-required-evidence", "unknown"],' \
+    '  "triggers": ["screening-report"],'
+
+  # The writer's span index — the whole reason the module exists. A
+  # first-occurrence replace passes every other case in that file, because the
+  # two pointers they exercise hold text that is unique in the document.
+  mutate web "the splice replaces the first matching text rather than the span" "$DT" \
+    '  return text.slice(0, span.valueStart) + json + text.slice(span.valueEnd)' \
+    '  return text.replace(text.slice(span.valueStart, span.valueEnd), json)'
+
+  # The slot. A claim without a publication suppresses the pane's empty state
+  # and puts nothing in its place.
+  mutate web "the slot is claimed for a node that is not there" "$IS" \
+    "  const publishing = target !== null && node !== null && node !== undefined" \
+    '  const publishing = target !== null'
+
+  # The scroll-spy. `?at` addresses every block; the outline lists twelve units.
+  mutate web "a selection under a member marks no outline entry" "$SPY" \
+    '  const inOutline = selected === null ? undefined : outlineUnitFor(pointers, selected)' \
+    '  const inOutline = selected === null ? undefined : selected'
+  # **The selection used to win, and `?at` persists**, so the observer could
+  # never answer again: a reader who selected a rule and scrolled to the sources
+  # watched the outline keep marking Rules for the rest of the visit.
+  mutate web "a standing selection outranks what is on screen" "$SPY" \
+    '  return seen ?? inOutline ?? null' \
+    '  return inOutline ?? seen ?? null'
+  # An answer carried across documents marks a unit that is no longer there.
+  mutate web "what was seen in one document is kept for the next" "$SPY" \
+    '  useEffect(() => {
+    setSeen(null)
+  }, [key, revision])' \
+    '  useEffect(() => {
+    void key
+  }, [key, revision])'
+  # **The member list is not the document.** A refetch of another revision with
+  # the same top-level members left the answer standing and the observer
+  # watching element objects the render had already replaced.
+  mutate web "the reset is keyed on the member list rather than the document" "$SPY" \
+    '  useEffect(() => {
+    setSeen(null)
+  }, [key, revision])' \
+    '  useEffect(() => {
+    setSeen(null)
+  }, [key])'
+  mutate web "the observer outlives the document it was built for" "$SPY" \
+    '    return () => observer.disconnect()
+  }, [key, revision])' \
+    '    return () => observer.disconnect()
+  }, [key])'
+
+  # One address, one element.
+  mutate web "applicability renders two elements at one pointer" "$AB" \
+    '    <section>' \
+    '    <section id={at} data-pointer={at}>'
+
+  # The Checks tab. An empty set is not an answer while the check is in flight,
+  # and it is not one about bytes that have moved either.
+  mutate web "a check that has not answered reads as a clean bill" "$CTAB" \
+    '      {pending ? (' \
+    '      {pending && false ? ('
+  mutate web "a stale check still issues its clean bill" "$CTAB" \
+    '      ) : stale ? null : (' \
+    '      ) : stale && false ? null : ('
+  mutate web "the route never says the check is still running" "$PV" \
+    '        pending={fetching}' \
+    '        pending={false}'
+  # "checked against the bytes of x" printed under "this document is unchecked"
+  # is one of the two lying, and the reader cannot tell which.
+  mutate web "a check that never ran is still said to have run" "$PV" \
+    '  const provenance =
+    unavailable !== undefined
+      ? undefined
+      : fetching
+        ? `checking against ${whichBytes}`
+        : check.data !== undefined
+          ? `checked against ${whichBytes}`
+          : undefined' \
+    '  const provenance = `checked against ${whichBytes}`'
+  mutate web "the panel invents provenance it was not given" "$CTB" \
+    '      {checkedWhat !== undefined && <p className={styles.footer}>{checkedWhat}</p>}' \
+    "      <p className={styles.footer}>{checkedWhat ?? 'checked against the bytes on screen'}</p>"
+
+  # **The High.** `stale` was hard-coded false, so a report over the file on
+  # disk was anchored onto the served document: a `/rules/0` diagnostic landing
+  # on a rule that is not the rule it is about.
+  mutate web "the page never asks whether the check ran over these bytes" "$PV" \
+    '  const stale = isStale(check.data?.checkedBytes, servedText)' \
+    '  const stale = false
+  void isStale
+  void servedText'
+  # And the other half: knowing it is stale and anchoring anyway. Not "fewer"
+  # diagnostics and not "the ones that still resolve" — none of them.
+  mutate web "a stale report is anchored onto the document anyway" "$PV" \
+    '  const report = stale ? undefined : check.data?.report' \
+    '  const report = check.data?.report'
+  # A disabled query reports `isPending` for ever, so an empty buffer said
+  # "Checking…" about a check that was never going to start.
+  mutate web "an empty document is reported as being checked" "$PV" \
+    '  if (bytes === undefined || bytes === '"'"''"'"') {
+    return '"'"'There are no bytes to check yet, so this document is unchecked.'"'"'
+  }' \
+    '  void bytes'
+
+  # A diagnostic that named no rendered member.
+  mutate web "a diagnostic anchored on the document is counted and never printed" "$PV" \
+    '          {rootAnchored.length > 0 && (' \
+    '          {false && ('
+
+  # The two other views on this pack, which nothing else links to.
+  mutate web "the what-if view loses its last way in" "$PV" \
+    '          <Link className={styles.elsewhereLink} to={`/packs/${encodeURIComponent(packId ?? '"''"')}/evaluate`}>
+            Try it
+          </Link>' \
+    '          {null}'
+
+  # Selecting with the pane closed.
+  mutate web "an address that arrives with a selection opens no pane" "$PV" \
+    '    if (at === null) return
+    slot.reveal()' \
+    '    if (at === null) return
+    void slot'
+  # **Back is an arrival.** Recording only the keys that revealed meant an entry
+  # without `?at` returned before writing anything down, so Back to the selected
+  # entry before it looked like the rerender it is not.
+  mutate web "an arrival with no selection is not recorded as visited" "$PV" \
+    '    if (visited.current === locationKey) return
+    visited.current = locationKey
+    if (at === null) return' \
+    '    if (at === null) return
+    if (visited.current === locationKey) return
+    visited.current = locationKey'
+  # A mount-only effect made *zero* calls for /packs/a -> /packs/a?at=/rules/0,
+  # which reuses this component: every References link opened nothing.
+  mutate web "a selection arriving in an address the route is already at opens nothing" "$PV" \
+    '  }, [at, locationKey, slot])' \
+    '    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])'
+  # The other half: this must not fight a viewer who closed the pane and stayed
+  # where they are. The unit is a history entry, not a render.
+  mutate web "every rerender reopens a pane the viewer closed" "$PV" \
+    '    if (visited.current === locationKey) return' \
+    '    if (false) return'
+  # "If closed, toggle" is one gesture read twice, and StrictMode — which
+  # production runs in — runs an effect twice on purpose.
+  mutate web "the shell flips the Inspector where a route asked it to open" "$AS" \
+    '  const reveal = shell.openInspector' \
+    '  const reveal = shell.toggleInspector'
+  mutate web "opening the Inspector is a toggle" "$P" \
+    '    setState((previous) =>
+      previous.inspector.open ? previous : { ...previous, inspector: { open: true } }
+    )' \
+    '    setState((previous) => ({ ...previous, inspector: { open: !previous.inspector.open } }))'
+
+  # The document's one tab stop, and what it is for.
+  mutate web "no block is reachable by keyboard" "$BK" \
+    '      tabIndex={cursor.at === pointer ? 0 : -1}' \
+    '      tabIndex={-1}'
+  mutate web "the arrow keys move nothing" "$PDV" \
+    "  if (event.key === 'ArrowDown') next = Math.min(last, current + 1)" \
+    '  if (false) next = current'
+  mutate web "Enter on a block selects nothing" "$PDV" \
+    "  if (event.key === 'Enter' || event.key === ' ') {" \
+    '  if (false) {'
+
+  # Two paths to one act, one history entry, one address.
+  mutate web "an outline entry fills the Back stack" "$MO" \
+    '              to={{ search, hash: `#${entry.pointer}` }}
+              // Choosing what to inspect is not a navigation, and the block
+              // beside it replaces. Two paths to one act, one history entry.
+              replace' \
+    '              to={{ hash: `#${entry.pointer}` }}'
+  # The document renders an addressed block for an omitted member, so an outline
+  # entry that could not reach it was the only line in this nav naming something
+  # you could not go to. This is that shape, restored.
+  mutate web "an omitted member is the one outline entry you cannot follow" "$MO" \
+    "            <Link
+              className={entry.present ? styles.outlineLink : styles.outlineAbsentLink}
+              to={{ search, hash: \`#\${entry.pointer}\` }}
+              // Choosing what to inspect is not a navigation, and the block
+              // beside it replaces. Two paths to one act, one history entry.
+              replace
+              aria-current={active === entry.pointer ? 'true' : undefined}
+            >
+              {entry.label}
+              {entry.present ? (
+                entry.count !== undefined && (
+                  <span className={styles.outlineCount}> {entry.count}</span>
+                )
+              ) : (
+                <span className={styles.outlineAbsent}> — not declared</span>
+              )}
+            </Link>" \
+    "            {entry.present ? (
+              <Link
+                className={styles.outlineLink}
+                to={{ search, hash: \`#\${entry.pointer}\` }}
+                replace
+                aria-current={active === entry.pointer ? 'true' : undefined}
+              >
+                {entry.label}
+                {entry.count !== undefined && (
+                  <span className={styles.outlineCount}> {entry.count}</span>
+                )}
+              </Link>
+            ) : (
+              <span className={styles.outlineLink}>
+                {entry.label}
+                <span className={styles.outlineAbsent}> — not declared</span>
+              </span>
+            )}"
+
+  # A version the listing did not answer with.
+  # A row the keyboard asks for that is not rendered is focused in the render
+  # that brings it in — the step between `moveFocus` and `scrollRowIntoView`,
+  # which each had a test and the thing between them did not.
+  mutate web "a row that is not rendered yet is never focused" "$PN" \
+    '              else setWanted(next)' \
+    '              else void next'
+  mutate web "a shorter row height leaves the scroll where it was" "$WR" \
+    '  }, [node, count, rowHeight])' \
+    '  }, [node, count])'
+  # The data model kept every candidate and had a row for it; what a reader sees
+  # was held by nothing, and a panel quietly linking the first would have passed.
+  mutate web "the panel picks one of two identically named outcomes" "$RTAB" \
+    '          {reference.candidates !== undefined ? (' \
+    '          {false ? ('
+  # The enum walk descended through composite nodes while checking only the
+  # operators inside `fact` ones.
+  mutate web "a composite condition may be spelled any way at all" "$FX" \
+    '"op": "all"' \
+    '"op": "alll"'
+
+  # react-query keeps the last good data through a refetch error, so a failed
+  # refresh left this button under the failure sentence offering to show all N
+  # of a listing the pane had just said it could not read.
+  mutate web "a failed refresh still offers to show every pack" "$PN" \
+    '      {isSuccess && !expanded && packs.length > FIRST_SCREENFUL && (' \
+    '      {!expanded && packs.length > FIRST_SCREENFUL && ('
+  mutate web "an empty version is drawn as a version" "$PN" \
+    '                  {isSpelled(pack.packVersion) ? (' \
+    '                  {pack.packVersion !== undefined ? ('
+
+  # The pointer escaping, at the one call site whose step is document data.
+  mutate web "a pointer step is concatenated rather than escaped" "$PT" \
+    '  const parts = parsePointer(at)
+  if (parts === undefined) return at
+  return pointer([...parts, step])' \
+    '  return `${at}/${String(step)}`'
+
+  # **One evaluator, three ways it used to be wrong.** A malformed escape read
+  # as ordinary text; `Number(part)` taking `01`, `1e0` and `-0` for indices; and
+  # `in`, which answers for members no JSON document has.
+  mutate web "a malformed escape is read as ordinary text" "$PT" \
+    "      const next = token[index + 1]
+      if (next === '0') decoded += '~'
+      else if (next === '1') decoded += '/'
+      else return undefined" \
+    "      const next = token[index + 1]
+      if (next === '0') decoded += '~'
+      else if (next === '1') decoded += '/'
+      else { decoded += '~'; continue }"
+  mutate web "an array index is read with Number rather than the grammar" "$PT" \
+    '  if (!/^(0|[1-9][0-9]*)$/.test(token)) return undefined
+  return Number(token)' \
+    '  const index = Number(token)
+  if (!Number.isInteger(index) || index < 0) return undefined
+  return index'
+  mutate web "a pointer selects a member from the prototype chain" "$PT" \
+    '    if (typeof value === '"'"'object'"'"' && value !== null && Object.hasOwn(value, part)) {' \
+    '    if (typeof value === '"'"'object'"'"' && value !== null && part in value) {'
+
+  # The rail's count, in the place assistive technology reads it.
+  mutate web "the rail count is invisible to a screen reader" "$RL" \
+    "          aria-label={count === undefined ? 'Packs' : \`Packs, \${count}\`}" \
+    '          aria-label="Packs"'
+
+  # 8. The widened convention rule, and a module outside src/ui to break it on.
+  mutate web "a module outside src/ui may spell a colour" "$CV" \
+    "const allModules = everyModule(SRC).sort()" \
+    "const allModules = everyModule(join(SRC, 'ui')).sort()"
+  mutate web "a colour in a module outside src/ui goes unreported" "$PPC" \
+    "  color: var(--danger);" \
+    "  color: #ff0000;"
 fi
 
 restore

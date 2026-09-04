@@ -4,8 +4,10 @@ import { AuthorView } from './routes/AuthorView'
 import { GraphView } from './routes/GraphView'
 import { HelpAbout } from './routes/HelpAbout'
 import { MatrixView } from './routes/MatrixView'
-import { PackDetail } from './routes/PackDetail'
 import { PackEvaluate } from './routes/PackEvaluate'
+import { PackView } from './routes/PackView'
+import { PacksIndex } from './routes/PacksIndex'
+import { PacksLayout } from './routes/PacksLayout'
 import { ProjectHome } from './routes/ProjectHome'
 import { AppShell } from './shell/AppShell'
 import { BlockedNotice, ConnectionNotices, useBlockingError } from './shell/ConnectionNotices'
@@ -29,7 +31,14 @@ export function App() {
           <Route path="/author" element={<AuthorView />} />
           <Route path="/graphs" element={<GraphView />} />
           <Route path="/graphs/:graphId" element={<GraphView />} />
-          <Route path="/packs/:packId" element={<PackDetail />} />
+          {/* A layout route, so the packs pane survives every change to the
+              child — a different pack, and `?edit` when it lands. Evaluate and
+              Matrix stay outside it: neither was drawn beside a pane, and
+              nesting them would hand them one they never asked for. */}
+          <Route path="/packs" element={<PacksLayout />}>
+            <Route index element={<PacksIndex />} />
+            <Route path=":packId" element={<PackView />} />
+          </Route>
           <Route path="/packs/:packId/evaluate" element={<PackEvaluate />} />
           <Route path="/packs/:packId/matrix" element={<MatrixView />} />
           <Route path="/admin" element={<AdminView />} />

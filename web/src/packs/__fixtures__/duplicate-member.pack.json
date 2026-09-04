@@ -1,0 +1,21 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/duplicated",
+  "version": "0.1.0",
+  "title": "One title",
+  "title": "Another title",
+  "decision": {
+    "intent": "Decide the one thing this pack decides.",
+    "question": "Does this request proceed?"
+  },
+  "outcomes": [{ "id": "proceed", "label": "Proceed" }],
+  "rules": [
+    {
+      "id": "always",
+      "description": "Proceed.",
+      "when": { "op": "literal", "value": true },
+      "outcome": "proceed",
+      "onUnknown": "escalate"
+    }
+  ]
+}

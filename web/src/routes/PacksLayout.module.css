@@ -1,0 +1,35 @@
+/* The pane's width is the one number here, and it is here so there is one
+   place to change it. `--main-room` comes from shell.css: the shell owns the
+   regions' layout and this route reads it. */
+
+.layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.main {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.empty {
+  color: var(--ink-soft);
+}
+
+.empty h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.25rem;
+  color: var(--ink);
+}
+
+.empty p {
+  margin: 0;
+  font-size: 0.9rem;
+}

@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
 import { connected, stubClient, testQueryClient, type ToolHandler } from '../testing/harness'
 import { McpContext, type McpConnection } from './McpProvider'
-import { usePacks, useGraphDocument } from './queries'
+import { usePacks, useGraphDocument, useValidate } from './queries'
 import { ToolRefusal } from './refusal'
 
 /** A graph document, valid, as the runtime's text half carries one. */
@@ -193,5 +193,98 @@ describe('the tool call under every query', () => {
     await waitFor(() => expect(result.current.isError).toBe(true))
     expect(result.current.error!.message).toContain('not JSON')
     expect(result.current.error!.message).not.toContain('no text content')
+  })
+})
+
+
+/** The `validate` answer jpack 0.19.0 gives a clean document. */
+const CLEAN = JSON.stringify({
+  outputVersion: '2',
+  status: 'valid',
+  specVersion: '0.2.0-draft',
+  layers: [
+    { name: 'carrier', status: 'passed' },
+    { name: 'structural', status: 'passed' },
+    { name: 'semantic', status: 'passed' }
+  ],
+  diagnostics: [],
+  diagnosticsTruncated: false
+})
+
+describe('useValidate', () => {
+  it('sends the document and nothing else', async () => {
+    // `through` is omitted deliberately: the runtime's own default is
+    // `semantic`, so omitting it runs the whole ladder. Sending a value would
+    // be the desk deciding how far to check.
+    const { wrapper, calls } = harness(
+      { validate: () => ({ text: CLEAN }) },
+      { validateSupported: true }
+    )
+    const { result } = renderHook(() => useValidate('{"a":1}'), { wrapper })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(calls).toEqual([{ name: 'validate', args: { document: '{"a":1}' } }])
+    expect(result.current.data!.report.status).toBe('valid')
+  })
+
+  it('carries the exact bytes the report is about', async () => {
+    // The caller anchors these diagnostics onto a rendered document, and the
+    // two are different artifacts: the check runs over the file on disk where
+    // it loaded and over the served document where it did not. A report is only
+    // safe to anchor if these bytes *are* the bytes on screen, and the only way
+    // to know that is to have them both.
+    const { wrapper } = harness(
+      { validate: () => ({ text: CLEAN }) },
+      { validateSupported: true }
+    )
+    const { result } = renderHook(() => useValidate('{"a":1}'), { wrapper })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data!.checkedBytes).toBe('{"a":1}')
+  })
+
+  it('keys the check by the bytes and by the connection', async () => {
+    // Identical bytes answer `unsupported` on a runtime bundling different
+    // specification artifacts, so a report cached across a reconnect would be
+    // a different binary's opinion of the same file.
+    const { wrapper, calls, reconnect } = harness(
+      { validate: () => ({ text: CLEAN }) },
+      { validateSupported: true }
+    )
+    const first = renderHook(() => useValidate('{"a":1}'), { wrapper })
+    await waitFor(() => expect(first.result.current.isSuccess).toBe(true))
+    expect(calls).toHaveLength(1)
+
+    // Same bytes, same client, next connection.
+    reconnect({ connectionEpoch: 2, validateSupported: true })
+    first.rerender()
+    await waitFor(() => expect(calls).toHaveLength(2))
+
+    // And different bytes over one connection are a different question.
+    renderHook(() => useValidate('{"a":2}'), { wrapper })
+    await waitFor(() => expect(calls).toHaveLength(3))
+  })
+
+  it('asks nothing of a runtime that does not advertise validate', async () => {
+    const { wrapper, calls } = harness(
+      { validate: () => ({ text: CLEAN }) },
+      { validateSupported: false }
+    )
+    const { result } = renderHook(() => useValidate('{"a":1}'), { wrapper })
+    await waitFor(() => expect(result.current.fetchStatus).toBe('idle'))
+    expect(calls).toHaveLength(0)
+  })
+
+  it('sends no empty document, which the runtime refuses by name', async () => {
+    const { wrapper, calls } = harness(
+      { validate: () => ({ text: CLEAN }) },
+      { validateSupported: true }
+    )
+    const nothing = renderHook(() => useValidate(undefined), { wrapper })
+    await waitFor(() => expect(nothing.result.current.fetchStatus).toBe('idle'))
+    // And the empty string is not "nothing to say yet" either — it is a
+    // document the runtime refuses by name, so asking would put a refusal on
+    // screen in place of the fact that there is nothing to check.
+    const empty = renderHook(() => useValidate(''), { wrapper })
+    await waitFor(() => expect(empty.result.current.fetchStatus).toBe('idle'))
+    expect(calls).toHaveLength(0)
   })
 })

@@ -42,7 +42,8 @@ describe('readCapabilities', () => {
       // either — the authoring surface is a different question from the graph
       // one, and this fixture answers only the graph one.
       exampleSupported: false,
-      schemaSupported: false
+      schemaSupported: false,
+      validateSupported: true
     })
   })
 
@@ -153,7 +154,8 @@ describe('readCapabilities', () => {
       graphInventorySupported: false,
       graphTracesSupported: false,
       exampleSupported: false,
-      schemaSupported: false
+      schemaSupported: false,
+      validateSupported: false
     })
     expect(UNKNOWN_CAPABILITIES.known).toBe(false)
   })
@@ -184,6 +186,26 @@ describe('readCapabilities', () => {
   it('leaves both authoring flags off in the unknown state', () => {
     expect(UNKNOWN_CAPABILITIES.exampleSupported).toBe(false)
     expect(UNKNOWN_CAPABILITIES.schemaSupported).toBe(false)
+  })
+
+  it('reads validate by name, because a tool either exists or does not', () => {
+    // Not a schema question: `validate` takes the document, and the desk sends
+    // no `through` at all, so there is no argument to feature-detect. A
+    // listing without the tool reports false.
+    expect(readCapabilities(RELEASED)).toMatchObject({ validateSupported: true })
+    expect(
+      readCapabilities(RELEASED.filter((tool) => tool.name !== 'validate'))
+    ).toMatchObject({ validateSupported: false })
+  })
+
+  it('leaves validate unknown rather than absent where the listing never answered', () => {
+    // The distinction the whole file is built on: `known: false` means the
+    // desk does not know what this runtime can do. A view that read the false
+    // as "this runtime cannot check a document" would say the document is
+    // unchecked *because of the runtime*, which is a claim about the wrong
+    // thing.
+    expect(UNKNOWN_CAPABILITIES.validateSupported).toBe(false)
+    expect(UNKNOWN_CAPABILITIES.known).toBe(false)
   })
 })
 

@@ -14,15 +14,27 @@ export interface Condition {
   [member: string]: unknown
 }
 
+/**
+ * The eight `$defs` that may carry `extensions` do so on the same terms as the
+ * root: a namespaced object the spec does not interpret, which the runtime
+ * carries and this desk renders rather than drops. Mirrored from the bundled
+ * schema at `internal/artifacts/jps/0.2.0-draft/schema.json` — `decision`,
+ * `evidenceRequirement`, `source`, `outcome`, `rule`, `exception`,
+ * `escalation` and `metadata`, plus the root.
+ */
+export type Extensions = Record<string, unknown>
+
 export interface Decision {
   intent: string
   question: string
+  extensions?: Extensions
 }
 
 export interface Outcome {
   id: string
   label: string
   description?: string
+  extensions?: Extensions
 }
 
 export interface EvidenceRequirement {
@@ -30,6 +42,7 @@ export interface EvidenceRequirement {
   description: string
   required: boolean
   kind?: string
+  extensions?: Extensions
 }
 
 export interface Source {
@@ -40,6 +53,7 @@ export interface Source {
   locator: { kind: string; value: string }
   citation?: { location: string; excerpt: string }
   rights?: string
+  extensions?: Extensions
 }
 
 export interface Rule {
@@ -51,6 +65,7 @@ export interface Rule {
   evidenceRequirementRefs?: string[]
   sourceRefs?: string[]
   rationale?: string
+  extensions?: Extensions
 }
 
 export interface Exception {
@@ -62,12 +77,29 @@ export interface Exception {
   onUnknown: string
   targetRule?: string
   sourceRefs?: string[]
+  extensions?: Extensions
 }
 
 export interface Escalation {
   triggers: string[]
   target: { kind: string; name: string }
   message?: string
+  extensions?: Extensions
+}
+
+/**
+ * One entry of `metadata.reviews`.
+ *
+ * The schema requires `reviewer`, `reviewedAt` and `disposition`, and the
+ * disposition is one of exactly three words. The desk **renders** these and
+ * never writes one: this surface has no reviewer identity, so a review it
+ * wrote would be signed by nobody.
+ */
+export interface PackReview {
+  reviewer: string
+  reviewedAt: string
+  disposition: 'approved' | 'changes-requested' | 'rejected'
+  note?: string
 }
 
 export interface PackMetadata {
@@ -75,7 +107,8 @@ export interface PackMetadata {
   createdAt?: string
   license?: string
   requiredExtensions?: string[]
-  reviews?: unknown
+  reviews?: PackReview[]
+  extensions?: Extensions
 }
 
 export interface PackDocument {
@@ -107,6 +140,13 @@ export interface PackSummary {
   matrix?: boolean
   description?: string
   expectedVersionStatus?: string
+  /**
+   * The runtime's own sentence about a pack it could not use.
+   *
+   * `list_packs` still lists the entry — with `packId` and `packVersion` as
+   * **empty strings** rather than absent — and puts the reason here.
+   */
+  detail?: string
   evidenceRequirements?: string[]
   consultedFactPaths?: string[]
   facts?: { key: string; source?: string; hint?: string }[]
@@ -257,6 +297,68 @@ export interface Diagnostic {
   severity?: string
   instancePath?: string
   message?: string
+}
+
+/**
+ * One layer of the validation ladder, as the payload reports it
+ * (`internal/result/result.go:68-71`).
+ *
+ * **A layer the payload does not list is one that did not run.** The ladder
+ * short-circuits: a carrier failure returns `[carrier failed]` alone, a
+ * structural failure appends `structural failed` and returns before semantic,
+ * and semantic runs only after structural passed. So the rows are the whole of
+ * what may be said about which layers ran, and nothing may be assumed from a
+ * `status` word alone.
+ */
+export interface ValidationLayer {
+  name?: string
+  status?: string
+}
+
+/** Which layers the caller asked for, and whether the whole document was in scope. */
+export interface ValidationScope {
+  requestedThrough?: string
+  fullDocumentConformance?: boolean
+}
+
+/** The extensions a document required, and which of them this runtime knows. */
+export interface ValidationExtensions {
+  required?: string[]
+  supported?: string[]
+  unsupported?: string[]
+}
+
+/** The bundled specification artifacts a check ran against. */
+export interface ValidationArtifact {
+  specVersion?: string
+  bundleDigest?: string
+  provenance?: string
+}
+
+/**
+ * The `validate` payload (`internal/result/result.go:90-101`).
+ *
+ * Every member is optional on read. The desk is built against one runtime and
+ * must render an older runtime's answer without inventing members it did not
+ * send: an absent `layers` is "this runtime said nothing about layers", which
+ * is not "no layer ran".
+ *
+ * `diagnosticsTruncated` means the runtime stopped at its own limit
+ * (`internal/validation/validator.go:21`, `MaxDiagnostics = 100`), so the list
+ * is not all of them and "no diagnostic names this member" is unsafe to say.
+ */
+export interface ValidationReport {
+  outputVersion?: string
+  tool?: { name: string; version: string }
+  command?: string
+  status?: string
+  specVersion?: string
+  validationScope?: ValidationScope
+  layers?: ValidationLayer[]
+  extensions?: ValidationExtensions
+  diagnostics?: Diagnostic[]
+  diagnosticsTruncated?: boolean
+  artifact?: ValidationArtifact
 }
 
 /** The structured content the runtime returns beside a refusal message. */
