@@ -699,9 +699,17 @@ func TestRelayDeliversADeclaredLengthStreamIncrementally(t *testing.T) {
 	})
 	_, ts, _ := relayDesk(t, "openai-compatible", u)
 
-	resp, err := ts.Client().Get(relayURL(ts, "chat/completions"))
+	// **The client needs a deadline, and where it is needed is the Get.** A
+	// buffered relay does not withhold the body — it withholds the *headers*,
+	// because nothing has flushed yet and the answer declares its length, so
+	// the request that a page would experience as "no answer" is the one this
+	// test would experience as a suite that hangs.
+	impatient := *ts.Client()
+	impatient.Timeout = 5 * time.Second
+	resp, err := impatient.Get(relayURL(ts, "chat/completions"))
 	if err != nil {
-		t.Fatalf("get: %v", err)
+		close(released)
+		t.Fatalf("no answer arrived while the endpoint was still writing: %v", err)
 	}
 	defer resp.Body.Close()
 
