@@ -2738,9 +2738,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  const behindDisk = false
   void file.data'
   mutate web "the Inspector binds the page to a file it has not read" "$MTB" \
-    '    meta.sha256 === fileSha256 &&
-    baseSha256 === fileSha256' \
-    '    meta.sha256 === fileSha256'
+    '    baseSha256 === fileSha256' \
+    '    true'
   # Only `StaleWrite` was rendered: every other refusal stopped the button and
   # said nothing.
   mutate web "a save refused for any other reason says nothing" "$PV" \
