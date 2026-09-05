@@ -44,6 +44,8 @@ export const CHASSIS_CODES = [
   'bad-request',
   'staging-file',
   'excluded-directory',
+  'assistant-unconfigured',
+  'assistant-no-key',
   'internal'
 ] as const
 
@@ -60,6 +62,20 @@ export type ChassisCode = (typeof CHASSIS_CODES)[number]
  * have none.
  */
 export const CONTROL_FLOW_CODES = ['not-found'] as const
+
+/**
+ * The codes no create can ever meet, because they belong to another endpoint.
+ *
+ * **This is a third category, and it is here rather than absent because the
+ * alternative was worse.** The code set is the *chassis'*, not the file API's,
+ * and it grew two members that only `POST /api/assistant/probe` answers with.
+ * Giving them a sentence about creating a pack would put text on the page
+ * asserting something that cannot happen; leaving them out would let the
+ * exhaustiveness test below be satisfied by an omission. So they are listed,
+ * with the reason, and every code still has to be in exactly one of the three
+ * lists — "nobody thought about it" is still not a category.
+ */
+export const OTHER_ENDPOINT_CODES = ['assistant-unconfigured', 'assistant-no-key'] as const
 
 /** The chassis codes this dialog has a sentence for. */
 export const CREATE_REFUSALS: Readonly<Record<string, string>> = {

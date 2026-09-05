@@ -502,6 +502,125 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 			"missing or invalid session token")' \
     '		writeJSONCoded(w, http.StatusUnauthorized, CodeForbidden,
 			"missing or invalid session token")'
+
+  # ---- The assistant slot: key custody, and the one outbound request -------
+  #
+  # Every row here breaks a custody claim the README makes in words. The three
+  # that matter most are the first three: where the key lives, who can read it,
+  # and what happens to the old one when a new one is stored.
+  A=internal/desk/assistant.go
+
+  mutate go "the secrets directory is trusted as it was found" "$A" \
+    '	if err := os.Chmod(dir, secretsDirMode); err != nil {
+		return err
+	}
+' \
+    ''
+  mutate go "the key file is readable by everyone on the machine" "$A" \
+    '	secretMode     = 0o600' \
+    '	secretMode     = 0o644'
+  # A truncate-and-write keeps the file it opened, and leaves a window in which
+  # a reader sees neither key whole.
+  mutate go "the key is written in place rather than replaced" "$A" \
+    '	if err := os.Rename(name, s.assistantKeyPath()); err != nil {
+		remove()
+		return err
+	}' \
+    '	remove()
+	if err := os.WriteFile(s.assistantKeyPath(), []byte(key), secretMode); err != nil {
+		return err
+	}'
+  mutate go "the key is logged beside the event" "$A" \
+    '	s.log.Printf("desk: the assistant key was stored on this machine")' \
+    '	s.log.Printf("desk: the assistant key %s was stored on this machine", key)'
+  mutate go "the key is answered to the page instead of its fingerprint" "$A" \
+    '	writeJSON(w, http.StatusOK, AssistantKeyState{Present: key != "", Fingerprint: fingerprint(key)})' \
+    '	writeJSON(w, http.StatusOK, AssistantKeyState{Present: key != "", Fingerprint: key})'
+  # Four and four discloses a short key in full. Eight and not one: at one,
+  # `runes[:4]` on a shorter key panics, and a mutation that crashes the suite
+  # has not been survived — it has not been tested.
+  mutate go "a short key is fingerprinted into the open" "$A" \
+    'const minFingerprintable = 12' \
+    'const minFingerprintable = 8'
+  # A newline in a credential is header injection in the outbound request.
+  mutate go "a control character in a key is carried" "$A" \
+    'func isControl(r rune) bool { return r < 0x20 || r == 0x7f }' \
+    'func isControl(r rune) bool { return false }'
+  mutate go "a key of any size is accepted" "$A" \
+    'const maxKeyBytes = 4 << 10' \
+    'const maxKeyBytes = 1 << 30'
+  mutate go "an empty key is stored" "$A" \
+    '	key := strings.TrimSpace(req.Key)
+	if key == "" {' \
+    '	key := strings.TrimSpace(req.Key)
+	if false {'
+  # A handler that stored and then refused would pass every status assertion.
+  mutate go "the store runs without the token and origin guard" "$A" \
+    'func (s *Server) handleAssistantKeyWrite(w http.ResponseWriter, r *http.Request) {
+	if !s.guard(w, r) {
+		return
+	}
+' \
+    'func (s *Server) handleAssistantKeyWrite(w http.ResponseWriter, r *http.Request) {
+'
+  mutate go "a probe runs with no key to present" "$A" \
+    '	if key == "" {
+		writeJSONCoded(w, http.StatusConflict, CodeAssistantNoKey,' \
+    '	if false {
+		writeJSONCoded(w, http.StatusConflict, CodeAssistantNoKey,'
+  mutate go "the endpoint object takes any member at all" "$A" \
+    '		if !allowed[member] {' \
+    '		if false && !allowed[member] {'
+  mutate go "the tool allow-list is not consulted" "$A" \
+    '	for _, tool := range endpoint.Tools {
+		if !contains(AssistantTools, tool) {' \
+    '	for _, tool := range endpoint.Tools {
+		if false && !contains(AssistantTools, tool) {'
+  # A bearer credential in clear text over a network is a credential given away.
+  mutate go "http is accepted off loopback" "$A" \
+    '	if parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname()) {' \
+    '	if parsed.Scheme == "http" {'
+  # Go strips Authorization across hosts and knows nothing about x-api-key.
+  mutate go "the probe follows a redirect with the credential" "$A" \
+    '	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },' \
+    '	CheckRedirect: nil,'
+  mutate go "the probe is unbounded" "$A" \
+    '	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()' \
+    '	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()'
+  mutate go "a refused credential is reported as reachable" "$A" \
+    '	reachable := response.StatusCode >= 200 && response.StatusCode < 300' \
+    '	reachable := response.StatusCode < 500'
+  # Some endpoints echo the credential back in the name of being helpful.
+  mutate go "an endpoint that echoes the key has it painted on the page" "$A" \
+    '	return strings.ReplaceAll(text, key, "…")' \
+    '	return text'
+  mutate go "the quoted sentence is unbounded" "$A" \
+    'const maxDetail = 200' \
+    'const maxDetail = 20000'
+  mutate go "the anthropic probe sends the other protocol's header" "$A" \
+    '		request.Header.Set("x-api-key", key)' \
+    '		request.Header.Set("Authorization", "Bearer "+key)'
+  mutate go "the version header this protocol requires is dropped" "$A" \
+    '		request.Header.Set("anthropic-version", "2023-06-01")' \
+    '		request.Header.Del("anthropic-version")'
+  mutate go "the anthropic probe is not the smallest request" "$A" \
+    '			"max_tokens": 1,' \
+    '			"max_tokens": 1024,'
+  # "There is none, and it would be here" is an answer, and Admin needs the path.
+  mutate go "an absent desk-level file is a refusal" "$A" \
+    '	if errors.Is(err, os.ErrNotExist) {
+		writeJSON(w, http.StatusOK, DeskLevelConfig{Path: path, Present: false})
+		return
+	}' \
+    '	if errors.Is(err, os.ErrNotExist) {
+		writeJSONCoded(w, http.StatusNotFound, CodeNotFound, "no desk-level configuration file")
+		return
+	}'
+  mutate go "a relative XDG_CONFIG_HOME is honoured" "$A" \
+    '	if xdg := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(xdg) {' \
+    '	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -2870,6 +2989,85 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the pane asks for eight pixels it does not take" "$PV" \
     'const PANE_WIDTH = 384' \
     'const PANE_WIDTH = 392'
+
+  # ---- The assistant slot, on the page side -------------------------------
+  AS=web/src/assistant/AssistantSection.tsx
+  AC=web/src/assistant/client.ts
+  CQ=web/src/config/queries.ts
+
+  # "Unknown key" is true and useless: whoever pasted a key has made a mistake
+  # about where keys live, not about spelling.
+  mutate web "a pasted key is an ordinary unknown key" "$D" \
+    "  return isKeyLike(name) ? KEYS_ARE_NEVER_IN_CONFIGURATION : 'unknown key'" \
+    "  return 'unknown key'"
+  mutate web "the key-shaped rule stops at the top level" "$D" \
+    '      problems.push({ key: `${key}.${member}`, reason: unknownReason(member) })' \
+    "      problems.push({ key: \`\${key}.\${member}\`, reason: 'unknown key' })"
+  mutate web "the tool list is open" "$D" \
+    '      if (!(ASSISTANT_TOOLS as readonly string[]).includes(tool)) {' \
+    '      if (false && (ASSISTANT_TOOLS as readonly string[]).includes(tool)) {'
+  # A project is a shared checkout; committing an endpoint pushes one
+  # operator's model endpoint onto every clone.
+  mutate web "an endpoint may be committed to a project" "$D" \
+    "    if (key === 'assistant' && location === 'project') {
+      problems.push({ key: 'assistant', reason: ASSISTANT_AT_PROJECT })
+      continue
+    }
+" \
+    ''
+  # A defaulted tool list is a capability granted by a file that never
+  # mentioned it.
+  mutate web "an absent tool list grants every tool" "$D" \
+    "  if (endpoint.tools === undefined) {
+    problems.push({
+      key: 'assistant.endpoint.tools'," \
+    "  if (endpoint.tools === undefined) {
+    tools = [...ASSISTANT_TOOLS]
+  } else if (false) {
+    problems.push({
+      key: 'assistant.endpoint.tools',"
+  # The more specific statement wins: a project saying something different is
+  # saying it about itself.
+  mutate web "the desk-level file outranks the project's own" "$D" \
+    '    (values?.[key] ?? deskValues?.[key] ?? DESK_DEFAULTS[key]) as DeskConfig[K]' \
+    '    (deskValues?.[key] ?? values?.[key] ?? DESK_DEFAULTS[key]) as DeskConfig[K]'
+  mutate web "the desk-level file is never read" "$CQ" \
+    '  const deskLevel = loadDeskLevelConfig(signal)' \
+    '  const deskLevel = Promise.resolve(undefined)'
+  # Either file, one cue: the argument does not care which carried the typo.
+  mutate web "the strip is silent about a refused desk-level file" "$S" \
+    '  const refused = problems.length > 0 || (desk?.problems.length ?? 0) > 0' \
+    '  const refused = problems.length > 0'
+  mutate web "the typed key is left in the field after it is stored" "$AS" \
+    "        store.mutate(value, { onSuccess: () => setTyped('') })" \
+    '        store.mutate(value)'
+  mutate web "the key field is an ordinary text input" "$AS" \
+    '          type="password"' \
+    '          type="text"'
+  mutate web "removal is offered where there is nothing to remove" "$AS" \
+    '        {state.present && (' \
+    '        {true && ('
+  # A 401 is a host that is there and a credential it will not take.
+  mutate web "a refused credential is painted as reachable" "$AS" \
+    "      {result.reachable ? 'reachable' : 'not reachable'}" \
+    "      {result.status < 500 ? 'reachable' : 'not reachable'}"
+  mutate web "a status of zero is painted as an answer" "$AS" \
+    "      {result.status === 0 ? 'no answer arrived' : \`answered \${result.status}\`}" \
+    "      {\`answered \${result.status}\`}"
+  # A read that has not answered is not "no key": it is a page that has not
+  # been told.
+  mutate web "an unanswered read is reported as no key" "$AS" \
+    "  if (!answered) return 'not read yet'" \
+    "  if (!answered) return 'none stored on this machine'"
+  # If the probe named a URL, anything holding the token could point the desk
+  # — and the key it holds — at a host of its choosing.
+  mutate web "the probe names its own destination" "$AC" \
+    "    await fetch(chassisUrl('/api/assistant/probe'), { method: 'POST', signal })" \
+    "    await fetch(chassisUrl('/api/assistant/probe'), {
+      method: 'POST',
+      signal,
+      body: JSON.stringify({ url: 'http://127.0.0.1:1/v1' })
+    })"
 fi
 
 restore

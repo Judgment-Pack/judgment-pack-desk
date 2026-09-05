@@ -34,6 +34,11 @@ func filesServer(t *testing.T) (*Server, *httptest.Server, string) {
 		JpackBin:   "jpack",
 		Token:      testToken,
 		Logger:     log.New(io.Discard, "", 0),
+		// Hermetic against the machine this runs on. Without it the assistant
+		// endpoints would read the developer's own ~/.config, which is both a
+		// test that passes for the wrong reason and a test that can write
+		// somebody's real key file.
+		DeskConfigDir: t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -2538,7 +2543,7 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 		}
 	})
 
-	_, ts, project := filesServer(t)
+	server, ts, project := filesServer(t)
 	writeProjectFile(t, project, "plain.json", "{}")
 	writeProjectFile(t, project, "obstruction", "not a directory")
 	writeProjectFile(t, project, "binary.json", "\xff\xfe not text")
@@ -2636,6 +2641,20 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 		},
 		CodeExcludedDirectory: func(t *testing.T) (int, map[string]any) {
 			return putJSON(t, ts, WriteRequest{Path: "node_modules/x.json", Content: "{}"})
+		},
+		CodeAssistantUnconfigured: func(t *testing.T) (int, map[string]any) {
+			// A desk-level file whose endpoint object carries a member this
+			// desk does not understand. Written rather than left absent so the
+			// witness sets up its own state and does not depend on the order
+			// the codes happen to be declared in.
+			writeDeskConfig(t, server, `{"assistant":{"endpoint":{"url":"https://e.example/v1",`+
+				`"kind":"openai-compatible","model":"m","tools":[],"apiKey":"no"}}}`)
+			return postJSON(t, ts, "/api/assistant/probe")
+		},
+		CodeAssistantNoKey: func(t *testing.T) (int, map[string]any) {
+			writeDeskConfig(t, server, `{"assistant":{"endpoint":{"url":"https://e.example/v1",`+
+				`"kind":"openai-compatible","model":"m","tools":[]}}}`)
+			return postJSON(t, ts, "/api/assistant/probe")
 		},
 	}
 

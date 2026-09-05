@@ -160,6 +160,16 @@ const (
 	// CodeExcludedDirectory is a path under a directory this desk never reads
 	// or writes — `node_modules`, `.git`, the staging tree.
 	CodeExcludedDirectory = "excluded-directory"
+	// CodeAssistantUnconfigured is a probe with no usable endpoint to reach.
+	//
+	// One code for "there is no endpoint" and for "the endpoint in the file is
+	// not one this desk can read", because a caller acts identically on both:
+	// go and fix the desk-level file, which the sentence names the member of.
+	// What it is deliberately *not* merged with is the missing key below —
+	// that one is fixed on this page, by storing a key.
+	CodeAssistantUnconfigured = "assistant-unconfigured"
+	// CodeAssistantNoKey is a probe with no credential to present.
+	CodeAssistantNoKey = "assistant-no-key"
 	// CodeInternal is everything with no better answer. A client that branches
 	// on this is a client guessing, which is what the others are for.
 	CodeInternal = "internal"
@@ -192,7 +202,11 @@ var codeStatus = map[string]int{
 	CodeBadRequest:        http.StatusBadRequest,
 	CodeStagingFile:       http.StatusForbidden,
 	CodeExcludedDirectory: http.StatusForbidden,
-	CodeInternal:          http.StatusInternalServerError,
+	// The desk's own state disagrees with the request, and no amount of
+	// retrying the request changes that — 409, like the two write conflicts.
+	CodeAssistantUnconfigured: http.StatusConflict,
+	CodeAssistantNoKey:        http.StatusConflict,
+	CodeInternal:              http.StatusInternalServerError,
 }
 
 // allCodes is every code this API declares, for the tests that walk them.
@@ -200,7 +214,8 @@ var allCodes = []string{
 	CodeOutsideRoot, CodeSymlink, CodeNotFound, CodeDirectoryMissing,
 	CodeParentIsAFile, CodeTooDeep, CodeExists, CodeStale, CodeTooLarge,
 	CodeNotUTF8, CodeNotAFile, CodeUnauthorized, CodeForbidden, CodeBadRequest,
-	CodeStagingFile, CodeExcludedDirectory, CodeInternal,
+	CodeStagingFile, CodeExcludedDirectory,
+	CodeAssistantUnconfigured, CodeAssistantNoKey, CodeInternal,
 }
 
 // coded carries a refusal's stable code alongside its sentence.

@@ -1058,20 +1058,58 @@ them as coming soon, as text rather than as disabled controls, and **nothing in
 the desk branches on this member** — a pack is created by writing a file,
 always. The create UI never asks which kind is configured.
 
-**Precedence, as phase A resolves it**: project file → built-in default, and
-for the three pane flags one layer in front of both — this browser's record of
-what the viewer chose, for the panes they chose it for. There are no shell
-flags on the command line; the desk-level `desk.json` is not read; and a layer
-that does not exist is not part of a precedence order, however plausibly it
-would fit. What arrives later — desk-level values, and whatever reads them —
-goes between the project file and the built-ins, and this line changes in the
-commit that adds it.
+### The desk-level file
 
-The desk-level `desk.json` — the only place an identity provider may be
-configured — is **not read yet**; whether the page learns it through a
-read-only `GET /api/desk-config` or is told at connect time is an open question,
-and Admin › Identity provider says so in words rather than leaving the reader to
-infer it.
+A second optional file, this one on the machine rather than in the project:
+
+```
+~/.config/jpack-desk/desk.json      # $XDG_CONFIG_HOME/jpack-desk/desk.json where that is set
+```
+
+It is read through its own read-only endpoint, `GET /api/desk-config`, under
+the same token and origin guard as everything else — **not** through the file
+API, and that is not an inconsistency. The chassis resolves every file-API path
+through the project's pinned `os.Root`, which is exactly what stops it reading
+anything outside the project; a file in `~/.config` is therefore not
+addressable there and never will be. An absent file is answered `200` with
+`present: false` and the path it would be at, because "there is none, and it
+would be here" is an answer rather than a failure to answer, and Admin needs
+the path in order to tell you where to write one.
+
+It takes every key the project file takes, plus the two that may **only**
+appear here:
+
+```json
+{
+  "deskConfigVersion": 1,
+  "identity": { "provider": null },
+  "assistant": {
+    "endpoint": {
+      "url": "https://api.example.invalid/v1",
+      "kind": "openai-compatible",
+      "model": "a-model",
+      "tools": ["get_schema", "get_example", "validate", "experimental_evaluate"]
+    }
+  }
+}
+```
+
+**Precedence**: project file → desk-level file → built-in default, and for the
+three pane flags one layer in front of all three — this browser's record of
+what the viewer chose, for the panes they chose it for. The project's own file
+wins because it is the more specific statement: the desk-level file is this
+machine's answer for every project it opens, and a project that says something
+different is saying it about itself. Two sections do not take part in that
+order at all, because they exist in only one of the files: `identity` and
+`assistant` are refused by name in a project file, so their only source is the
+desk-level one. There are no shell flags on the command line.
+
+**Each file is refused on its own.** A bad key in one does not refuse the
+other, neither is repaired by the other being fine, and Admin reports each as
+its own with its own path. The status strip's `configuration refused` cue
+fires for either, because the argument the cue exists for — that a mistyped
+key must not look exactly like having written no file — does not care which
+file carried the typo.
 
 **Any problem refuses the whole file**, and every refusal names its key.
 Partial acceptance would let a typo'd key sit there doing nothing while its
@@ -1106,11 +1144,20 @@ painted straight across it. The link's accessible name is the full sentence at
 every width.
 
 **Admin never PUTs configuration.** It renders effective values, their source,
-the path they came from and the exact JSON to paste, and its only control that
-changes **persisted desk-layout state** clears the pane record above; the Copy
+the path they came from and the exact JSON to paste, and its controls that
+change **persisted desk-layout state** are one: the pane record above; the Copy
 button beside each paste block changes the clipboard and its own transient
 "copied" label, which is why the claim is scoped to persisted layout rather
 than to state in general.
+
+**The one thing Admin does write is a key**, on Admin › Assistant, and the
+exception is exactly as wide as its reason. A key must never be pasted into a
+project file — a project is a shared checkout, and a key committed to one is a
+key published to every clone — so it cannot go through the file API, which
+writes only inside the project, and it is not in the configuration schema at
+any depth. It gets its own endpoint instead. Everything else on the page,
+including the endpoint the key belongs to, stays a value you write in a file
+yourself.
 
 That is a claim about **Admin**, and it is deliberately not the broader one it
 used to make. `jpack-desk.json` is an ordinary project file — the desk reads it
@@ -1129,6 +1176,70 @@ field — null, or an object. There is no `kind`, no vendor string and no third
 shape, and that absence is what stops an issuer someone else operates from
 acquiring anything an issuer you run yourself lacks. Configuring one changes
 what the header shows and nothing about who may reach the desk.
+
+**A key is refused by name wherever it is written.** There is no
+`clientSecret` and no `apiKey` in this schema at any depth, and a member whose
+name looks like a credential — `key`, `secret`, `token`, `password`,
+`credential`, `bearer`, `authorization`, in any casing — refuses the whole file
+with a sentence saying that keys are never stored in configuration and where
+the one key this desk holds goes instead. That is deliberately not the "unknown
+key" refusal every other misspelling gets: whoever pasted a key into a
+configuration file has made a mistake about *where keys live*, and a refusal
+that only says the spelling is wrong invites them to go looking for the right
+spelling.
+
+### The assistant slot
+
+`assistant.endpoint` is one nullable field — null, or an object — on the same
+pattern as `identity.provider` and for the same reason. There are three
+**deployment states** and they are not three shapes:
+
+| | |
+| --- | --- |
+| **None** | The default. `endpoint` is null, no key is asked for, and nothing renders an assistant. The runtime's authoring prompts still run in any chat client you already use. |
+| **Bring your own** | An OpenAI-compatible or Anthropic endpoint you already have. The desk stores the endpoint, keeps the key on this machine, and has no relationship with whoever issued it. |
+| **Supplied** | An endpoint someone else operates for you. Configured in exactly the four fields above — **an ordinary endpoint, the same code path**, nothing it can do that yours cannot. |
+
+There is no `vendor`, no `operator`, no `mode` and no third shape, because the
+last two rows are the same object with a different URL in it. The one member
+that does branch is `kind`, and it names the endpoint's **wire protocol**
+rather than who runs it: the two protocols put the credential in different
+headers and the call on a different path, so no single request could satisfy
+both. Nothing in the desk reads the host, compares it to a list, or behaves
+differently for one endpoint than another — which an enforcement test holds in
+place by enumerating every host comparison in the source and requiring each to
+be a loopback name.
+
+`url` must be an `https:` URL, or an `http:` one on `localhost` or
+`127.0.0.1` — a rule about transport, because a bearer credential sent in clear
+text over a network is a credential given away, and one about transport only.
+It is the base the endpoint documents for its own protocol: for
+`openai-compatible` the base carrying `/models` and `/chat/completions`, which
+usually ends in `/v1`; for `anthropic` the base carrying `/v1/messages`. The
+desk appends the path its protocol prescribes and never guesses a version
+segment.
+
+`tools` is required, is validated against a closed list — `get_schema`,
+`get_example`, `validate`, `experimental_evaluate` — and refuses anything else
+by name. It is required rather than defaulted because a defaulted tool list is
+a capability granted by a file that never mentioned it; `[]` is accepted and
+means an assistant that may call nothing. Every one of the four is a **read**:
+three questions put to the runtime and a rehearsal, which consults no reviewed
+set and decides no outcome. The list is mirrored in
+`internal/desk/assistant.go` and held to it by a test that reads that file,
+because both sides refuse by it.
+
+**Admin › Assistant** shows the configured endpoint, its protocol, its model
+and its tools with the file each came from, the exact JSON to paste, the key
+control described under [Security model](#security-model), and a **Check
+reachability** button that reports the desk's own probe word for word.
+
+**What the assistant is, and is not**, in the sentence the page carries: it
+proposes edits to the draft; you accept them; the runtime checks them. It never
+saves a file and never decides an outcome. Nothing in this release renders an
+assistant pane — this is the slot, its configuration and its key custody. The
+pane is the next piece of work, and `useAssistantSlot()` is the one reading it
+will consume.
 
 ## Requirements
 
@@ -1240,15 +1351,89 @@ halves of the desk drifting onto different trees; it does not make the machine
 someone else's problem. That boundary is stated here rather than implied by the
 absence of a caveat.
 
-The chassis holds no credential and opens no outbound connection. It writes to
-the project only through the file API, only inside the project root, and only
-where a request carried the token and an acceptable origin. The runtime
-subprocess inherits the project directory as its working directory and is killed
-when the socket that started it closes. That sentence still holds with the shell
-in place: the desk reads its configuration through the file API it already had,
-and identity is display only. The change that would falsify it is wiring an
-identity provider — discovery, JWKS, a redirect — and the PR that does it must
-amend this paragraph in the same commit.
+It writes to the project only through the file API, only inside the project
+root, and only where a request carried the token and an acceptable origin. The
+runtime subprocess inherits the project directory as its working directory and
+is killed when the socket that started it closes. Identity is display only; the
+change that would falsify that is wiring an identity provider — discovery,
+JWKS, a redirect — and the PR that does it must amend this paragraph in the
+same commit.
+
+### Where the assistant key lives
+
+The paragraph above used to open "the chassis holds no credential and opens no
+outbound connection". It now holds exactly one credential and makes exactly one
+kind of outbound request, and this section is what that sentence was replaced
+with rather than quietly edited around.
+
+**The key is on this machine, in one file, owner-only.**
+
+```
+~/.config/jpack-desk/secrets/assistant     mode 0600, in a directory of mode 0700
+```
+
+`XDG_CONFIG_HOME` is honoured where it is set to an absolute path. The modes
+are set on **every** store rather than only at creation: `MkdirAll` applies the
+umask and does nothing at all to a directory that already exists, so a
+directory found with a wider mode is narrowed rather than trusted. The write is
+staged in the same directory and renamed over the target, so a reader during a
+replace sees the old key or the new one and never half of one.
+
+**It is in no project.** Not in `jpack-desk.json`, not in the desk-level
+`desk.json`, not in any file the file API can reach — and the configuration
+schema has no member it could be written to, at any depth, with a member named
+like a credential refusing the whole file by name.
+
+**It never comes back.** No endpoint returns it. `GET /api/assistant/key`
+answers `{present, fingerprint}`, where the fingerprint is four characters from
+each end and is **empty** for a key shorter than twelve — a key of eight
+characters would be disclosed in full by a four-and-four fingerprint, and a
+redaction that redacts nothing is worse than none. The page therefore never
+holds the key it does not type, and the masked field is never populated from
+anything: there is no value to populate it with.
+
+**It is never logged.** The desk records that a key was stored and that a probe
+was made; it records neither the key nor any fragment of it. A test asserts the
+log buffer contains the event and does not contain the value, so an empty log
+cannot pass for a clean one.
+
+**The probe is made by the desk, not the page**, because the key must not reach
+the page in order to be presented to an endpoint:
+
+| | |
+| --- | --- |
+| `GET /api/desk-config` | the desk-level file's bytes, or that there is none and where it would be |
+| `GET /api/assistant/key` | whether a key is stored, and its fingerprint |
+| `PUT /api/assistant/key` | store one — non-empty, at most 4 KiB, no control character |
+| `DELETE /api/assistant/key` | remove it |
+| `POST /api/assistant/probe` | reach the configured endpoint once and report what came back |
+
+All five are under the same two checks as `/ws` and the file API, through the
+same shared guard, and a request refused by the guard stores nothing — asserted
+by its own test, because a handler that stored and then refused would pass
+every status assertion.
+
+**The probe request carries no destination.** If it took a URL from its body,
+anything holding the session token could point the desk — and the key it holds
+— at a host of its choosing; the destination comes from the file on this
+machine instead, so a request body cannot move it. It sends the smallest
+request the configured protocol defines — a model listing for
+`openai-compatible`, a messages call bounded to one output token for
+`anthropic` — waits at most ten seconds, and **follows no redirect**: Go strips
+`Authorization` across hosts and knows nothing about `x-api-key`, so a followed
+redirect could walk that credential to a host nobody configured. A control
+character in a key is refused at the store for the same class of reason: the
+key is presented in a request header, and a newline in one is header injection.
+
+The answer is `{reachable, status, latencyMs, detail}`, where `reachable` means
+the endpoint answered *successfully* — a 401 is a host that is there and a
+credential it will not take, and calling that reachable would report a desk
+that cannot make one call as ready. `detail` is the endpoint's own sentence,
+bounded to 200 characters and with the key removed from it: some endpoints echo
+the credential back in the name of being helpful, and the desk must not paint
+it on the page because they did. A probe that reaches nothing still answers
+`200`; the two refusals are the states in which the question cannot be asked at
+all — no endpoint configured, and no key stored — and each says which.
 
 ## Authoring (issue #14, phase 1)
 
@@ -1546,6 +1731,7 @@ main.go              flags, embedded assets, HTTP server
 internal/desk/
   server.go          routing, SPA fallback, token and origin checks
   files.go           the file API: containment, atomic save, stale-write refusal
+  assistant.go       the desk-level file, the key this machine keeps, the probe
   relay.go           WebSocket ↔ `jpack mcp` subprocess
   watch.go           project-tree file watching
 scripts/acceptance.sh  the two-run acceptance proof
@@ -1561,7 +1747,9 @@ web/                 Vite + React + TypeScript SPA
   src/routes/        project home, the packs layout and its two children
                      (the "select a pack" page and the pack document),
                      evaluation, matrix, graphs, the authoring shell, the
-                     read-only Admin page and Help & About
+                     Admin page and Help & About — Admin being read-only
+                     everywhere but the key control, and the source badge and
+                     paste block every section of it uses
   src/components/    evaluation, coverage, row and graph-walk views, plus the
                      trace and handoff-target renderers both the pack and graph
                      surfaces share
@@ -1601,10 +1789,15 @@ web/                 Vite + React + TypeScript SPA
                      text operations, the rule and exception forms with their
                      keyboard reordering, the check on idle, the what-if pane,
                      the stale-write alert and the lock line
-  src/config/        the jpack-desk.json schema, its strict decoder, the one
-                     query that reads it, and the theme attribute it writes
+  src/config/        the schema both configuration files share, its strict
+                     decoder, the two queries that read them, the precedence
+                     between them, and the theme attribute it writes
   src/identity/      the identity slot: one nullable field, and the header
                      control that renders it
+  src/assistant/     the assistant slot: one nullable field, the four chassis
+                     calls, the Admin section that configures it and holds the
+                     key, and the one hook a future pane will read — nothing
+                     here renders a pane
   scripts/smoke.ts   the desk's own client, driven outside a browser
 ```
 

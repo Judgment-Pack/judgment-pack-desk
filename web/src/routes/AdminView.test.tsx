@@ -230,20 +230,37 @@ describe('the Admin page', () => {
     }
   })
 
-  it('has exactly one state-changing control, and it is the pane reset', () => {
-    // Not "one interactive control": the page also carries a Copy button
-    // beside every paste block, and calling those nothing was a claim the
-    // page's own markup contradicted. What holds is the narrower statement —
-    // the reset is the only control that changes anything.
+  it('carries exactly four state-changing controls, and names each of them', () => {
+    // This used to say "exactly one". It was true, and the sentence it stood
+    // for — Admin never writes — is still true of every *configuration* value
+    // on this page. What changed is that a key is not a configuration value:
+    // it must never be pasted into a project file, so it cannot be written the
+    // way every other setting is, and Admin gained the one control that writes
+    // it. The assertion is therefore the whole list rather than a count, so a
+    // fifth control cannot be added without appearing here.
     const { container } = renderAdmin()
     const interactive = container.querySelectorAll('button, input, select, textarea')
     const labels = Array.from(interactive).map((element) => element.textContent?.trim())
-    expect(labels.filter((label) => label === 'Reset panes on this machine')).toHaveLength(1)
+    const writes = ['Reset panes on this machine', 'Store key', 'Check reachability']
+    for (const label of writes) {
+      expect(labels.filter((each) => each === label), label).toHaveLength(1)
+    }
+    // Remove key appears only where a key is stored, which is not the case in
+    // this render — so the fourth control is asserted by its absence here and
+    // by its own test in the Assistant section's suite.
+    expect(labels).not.toContain('Remove key')
     // Every other control on the page is a Copy, and a copy changes nothing here.
-    const others = labels.filter((label) => label !== 'Reset panes on this machine')
+    const others = labels.filter((label) => label !== undefined && !writes.includes(label))
     expect(others.length).toBeGreaterThan(0)
-    expect(others.every((label) => label?.includes('Copy'))).toBe(true)
-    expect(container.querySelectorAll('input, select, textarea')).toHaveLength(0)
+    expect(others.every((label) => label === '' || label?.includes('Copy'))).toBe(true)
+    // One field, and it is the key: masked, and never carrying a value the
+    // page was given rather than typed.
+    const fields = container.querySelectorAll('input, select, textarea')
+    expect(fields).toHaveLength(1)
+    expect(fields[0]!.getAttribute('type')).toBe('password')
+    expect((fields[0] as HTMLInputElement).value).toBe('')
+    // And still nothing that is permanently disabled: a control that will
+    // never enable is an affordance that lies about what the page can do.
     expect(container.querySelectorAll('[disabled]')).toHaveLength(0)
   })
 
@@ -352,10 +369,51 @@ describe('the Admin page', () => {
     expect(screen.getByText('colour: unknown key')).toBeTruthy()
   })
 
-  it('says the desk-level file is not read yet, and names the open question', () => {
+  it('says what the desk-level file is for, and no longer that it goes unread', () => {
+    // It is read now, through its own endpoint. The sentence that stood here
+    // described a desk that could not read its own desk-level configuration.
     renderAdmin()
-    expect(screen.getByText(/desk-level desk.json/)).toBeTruthy()
-    expect(screen.getByText(/open question 2/)).toBeTruthy()
+    expect(screen.getByText(/desk-level desk.json is the only place/)).toBeTruthy()
+    expect(screen.queryByText(/open question 2/)).toBeNull()
+    expect(screen.queryByText(/is not read yet/)).toBeNull()
+  })
+
+  it('names the desk-level file it read, and says which state it found', () => {
+    renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: '/home/someone/.config/jpack-desk/desk.json',
+        present: false,
+        note: 'no desk-level configuration file at /home/someone/.config/jpack-desk/desk.json'
+      })
+    )
+    // Named in more than one place — the Project section, and each source
+    // badge for a section only that file can supply — which is the point:
+    // wherever the page mentions it, it mentions the path it actually read.
+    expect(
+      screen.getAllByText('/home/someone/.config/jpack-desk/desk.json').length
+    ).toBeGreaterThan(0)
+    expect(
+      screen.getByText('no file is there — the desk is on its defaults for it')
+    ).toBeTruthy()
+  })
+
+  it('refuses the desk-level file on its own, without blaming the project one', () => {
+    // Two files, two verdicts. A bad key in one must not be reported as the
+    // other's, and neither is repaired by the other being fine.
+    renderAdmin(
+      effectiveConfig(decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1 }), 'project'), undefined, undefined, {
+        path: '/home/someone/.config/jpack-desk/desk.json',
+        present: true,
+        decoded: decodeDeskConfig(
+          JSON.stringify({ deskConfigVersion: 1, assistant: { endpoint: { apiKey: 'sk-oops' } } }),
+          'desk'
+        )
+      })
+    )
+    expect(screen.getByText(/The desk-level configuration was refused/)).toBeTruthy()
+    expect(screen.queryByText(/The project configuration was refused/)).toBeNull()
+    // And the refusal says the thing that is actually wrong.
+    expect(screen.getByText(/assistant.endpoint.apiKey: a key is never stored/)).toBeTruthy()
   })
 
   it('states that identity gates nothing', () => {
