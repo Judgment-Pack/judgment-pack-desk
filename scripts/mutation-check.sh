@@ -842,7 +842,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # row.
   mutate go "a page query parameter is forwarded" "$MR" \
     '		if err != nil || decoded != sessionTokenParameter {' \
-    '		if false {'
+    '		if false && (err != nil || decoded != sessionTokenParameter) {'
   mutate go "the relayed path is never validated" "$MR" \
     '	if reason := relaySuffixProblem(suffix); reason != "" {' \
     '	if reason := ""; reason != "" {'
