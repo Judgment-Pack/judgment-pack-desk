@@ -830,19 +830,19 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '			carried.Set(name, value)' \
     '			_, _ = name, value'
   # This desk's own credential, in the place it is easiest to forget.
-  mutate go "the session token is forwarded to the endpoint" "$MR" \
-    '		decoded, err := url.QueryUnescape(name)
-		if err != nil || decoded == sessionTokenParameter {
-			continue
-		}' \
-    '		_ = name'
-  # **The name is compared the way the guard compares it.** `Query().Get`
-  # percent-decodes a parameter name, so a strip that read the raw name kept
-  # `%74oken=<token>` and sent this desk's own credential to the endpoint on a
-  # request it had just authenticated with it.
-  mutate go "the session token's name is compared without decoding it" "$MR" \
-    '		decoded, err := url.QueryUnescape(name)' \
-    '		decoded, err := name, error(nil)'
+  # **Two rows are gone and this one replaced them.** They broke a *strip* —
+  # the page's query forwarded with this chassis' token taken out of it — and
+  # that arrangement leaked the token three times, three ways, to three
+  # reviewers: `%74oken` (the guard decodes names and a raw compare did not),
+  # `;` (Go rejects such a pair and some servers split on it), and `Token`
+  # (this desk compared case-sensitively and ASP.NET Core folds case). Each fix
+  # was a better comparison and the next parser disagreed somewhere else, so
+  # there is no strip any more: a relayed request carries the session token and
+  # nothing else, and nothing of the page's query is forwarded. One rule, one
+  # row.
+  mutate go "a page query parameter is forwarded" "$MR" \
+    '		if err != nil || decoded != sessionTokenParameter {' \
+    '		if false {'
   mutate go "the relayed path is never validated" "$MR" \
     '	if reason := relaySuffixProblem(suffix); reason != "" {' \
     '	if reason := ""; reason != "" {'
@@ -888,9 +888,14 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     ''
   # The name list cannot cover a header nobody named; the value comparison is
   # what does, and it is its own row because it is its own rule.
+  #
+  # Repaired: the needle named `if value == key {`, which stopped being a line
+  # of its own when the length rule joined it in one predicate. Only the
+  # exact-match arm is broken here — the substring arm has its own row below —
+  # so what fails is the short-key case, where exact equality is the whole rule.
   mutate go "a header whose value is the key is handed back" "$MR" \
-    '			if value == key {' \
-    '			if false && value == key {'
+    '			if value == key || (long && strings.Contains(value, key)) {' \
+    '			if (false && value == key) || (long && strings.Contains(value, key)) {'
   # The page and this chassis share an origin, so a cookie from the endpoint
   # would be stored against the desk.
   mutate go "the endpoint may set a cookie on the desk's origin" "$MR" \

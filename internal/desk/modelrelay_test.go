@@ -20,7 +20,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -468,7 +467,7 @@ func TestRelayAppendsTheSuffixToTheConfiguredPath(t *testing.T) {
 	// gateway routes on: all three are things a configured endpoint may carry
 	// and all three have broken an address before.
 	_, ts, _ := relayDeskAt(t, "openai-compatible", u.server.URL+"/tenant%2Fone/v1?route=eu")
-	resp, _ := relayGet(t, ts, "chat/completions?stream=true")
+	resp, _ := relayGet(t, ts, "chat/completions")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
@@ -476,78 +475,121 @@ func TestRelayAppendsTheSuffixToTheConfiguredPath(t *testing.T) {
 	if seen.path != "/tenant%2Fone/v1/chat/completions" {
 		t.Errorf("path %q — the configured escaping did not survive", seen.path)
 	}
-	// Both queries, the configured one first: one is the endpoint's routing
-	// and one is this request's, and dropping either would be the desk
-	// deciding something about an endpoint it does not read. The session
-	// token, which the page necessarily sent, is in neither.
-	if seen.rawQuery != "route=eu&stream=true" {
-		t.Errorf("query %q, want the configured one and then the page's", seen.rawQuery)
+	// The configured query, and only that: nothing of the page's is forwarded,
+	// the session token it necessarily sent included.
+	if seen.rawQuery != "route=eu" {
+		t.Errorf("query %q, want the configured one alone", seen.rawQuery)
 	}
 }
 
-func TestRelayNeverForwardsTheSessionToken(t *testing.T) {
-	// **The desk's own credential, in the place it is easiest to forget.** The
-	// token travels as `?token=` on every route this chassis serves, so a relay
-	// that forwarded the page's query verbatim would hand this desk's session
-	// token to somebody else's endpoint on every relayed request. Caught by
-	// this test being written before the rule was.
-	u := newUpstream(t, nil)
-	_, ts, _ := relayDesk(t, "openai-compatible", u)
-	resp, body := relayGet(t, ts, "chat/completions?stream=true&token=another")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status %d: %s", resp.StatusCode, body)
-	}
-	seen := u.only(t)
-	if strings.Contains(seen.rawQuery, testToken) {
-		t.Fatalf("the session token reached the endpoint: %q", seen.rawQuery)
-	}
-	// Every parameter of that name, not only the desk's own value: a rule
-	// about what a parameter contains fails the first time one is spelled
-	// differently.
-	if strings.Contains(seen.rawQuery, "token") {
-		t.Errorf("a token parameter reached the endpoint: %q", seen.rawQuery)
-	}
-	// And the page's own routing still travels.
-	if seen.rawQuery != "stream=true" {
-		t.Errorf("query %q, want the page's own parameters kept in order", seen.rawQuery)
-	}
-	if strings.Contains(fmt.Sprint(seen.header), testToken) {
-		t.Errorf("the session token reached the endpoint in a header: %v", seen.header)
-	}
-}
-
-func TestRelayStripsTheSessionTokenBySpellingItTheWayTheGuardDoes(t *testing.T) {
-	// **The guard decodes the parameter name and the strip did not.**
-	// `r.URL.Query().Get("token")` percent-decodes names, so
-	// `?%74oken=<the session token>` authenticates the request — and a strip
-	// that compared the *raw* name to the literal `token` kept it and sent this
-	// desk's own credential to the endpoint on a request the desk had just
-	// authenticated with it. Both readers decode now, and these are the
-	// spellings that say so.
-	for _, spelling := range []string{"token", "%74oken", "tok%65n", "%74%6f%6b%65%6e"} {
-		t.Run(spelling, func(t *testing.T) {
+func TestRelayForwardsNothingOfThePagesQuery(t *testing.T) {
+	// **Three reviewers leaked this desk's session token three different ways,
+	// and each fix was a better comparison.** `?%74oken=` (the guard decodes
+	// names and a raw compare did not), `?x=1;token=…&token=…` (Go rejects a
+	// pair containing `;`; a server that still splits on one does not), and
+	// `?Token=…&token=…` (this desk compared case-sensitively; ASP.NET Core's
+	// query parser folds case). The class exists because the query was
+	// forwarded at all: no comparison this desk can write is the comparison
+	// every parser downstream makes.
+	//
+	// So a relayed request carries the session token and **nothing else**, and
+	// every one of those spellings is now a 400 with nothing sent. The rule
+	// this holds is the strongest one available: not "the token is removed"
+	// but "there is nothing of the page's to remove".
+	for _, testCase := range []struct {
+		name     string
+		query    string
+		accepted bool
+		status   int
+		code     string
+	}{
+		{"the token alone", "token=" + testToken, true, http.StatusOK, ""},
+		// Two of the same name: the guard reads the first, and the only name
+		// present is still `token`.
+		{"the token twice", "token=" + testToken + "&token=" + testToken, true, http.StatusOK, ""},
+		// The case-folding leak, which is the finding this rule closes.
+		{"a capitalised second name", "Token=" + testToken + "&token=" + testToken,
+			false, http.StatusBadRequest, CodeAssistantRelayPath},
+		{"an encoded capital", "%54oken=" + testToken + "&token=" + testToken,
+			false, http.StatusBadRequest, CodeAssistantRelayPath},
+		// And every ordinary parameter a page might reach for.
+		{"a page parameter of its own", "token=" + testToken + "&x=1",
+			false, http.StatusBadRequest, CodeAssistantRelayPath},
+		// No token at all: refused by the guard, which comes first — a request
+		// nothing authenticated never reaches the query rule.
+		{"a page parameter alone", "x=1", false, http.StatusUnauthorized, CodeUnauthorized},
+		{"an empty name", "token=" + testToken + "&=1",
+			false, http.StatusBadRequest, CodeAssistantRelayPath},
+		{"a name that will not decode", "token=" + testToken + "&%zz=2",
+			false, http.StatusBadRequest, CodeAssistantRelayPath},
+		{"a bare flag", "token=" + testToken + "&stream",
+			false, http.StatusBadRequest, CodeAssistantRelayPath},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			counter := countingRelays(t)
 			u := newUpstream(t, nil)
 			_, ts, _ := relayDesk(t, "openai-compatible", u)
-			address := ts.URL + relayPrefix + "models?" + spelling + "=" + testToken +
-				"&stream=true"
-			resp, err := ts.Client().Get(address)
+			resp, err := ts.Client().Get(ts.URL + relayPrefix + "models?" + testCase.query)
 			if err != nil {
 				t.Fatalf("get: %v", err)
 			}
 			defer resp.Body.Close()
-			_, _ = io.Copy(io.Discard, resp.Body)
+			raw, _ := io.ReadAll(resp.Body)
+			body := string(raw)
+			if !testCase.accepted {
+				if resp.StatusCode != testCase.status {
+					t.Fatalf("status %d, want %d: %s", resp.StatusCode, testCase.status, body)
+				}
+				if got := codeOfBody(t, body); got != testCase.code {
+					t.Errorf("code %q, want %q", got, testCase.code)
+				}
+				if calls, to := counter.seen(); calls != 0 {
+					t.Fatalf("a refused query made %d outbound request(s), to %v", calls, to)
+				}
+				return
+			}
 			if resp.StatusCode != http.StatusOK {
-				t.Fatalf("status %d — the guard did not accept %s", resp.StatusCode, spelling)
+				t.Fatalf("status %d, want 200: %s", resp.StatusCode, body)
 			}
-			seen := u.only(t)
-			if strings.Contains(seen.rawQuery, testToken) {
-				t.Fatalf("%s carried the session token to the endpoint: %q",
-					spelling, seen.rawQuery)
+			// Accepted, and still nothing of the page's reaches the endpoint:
+			// the token is not forwarded either.
+			if calls, _ := counter.seen(); calls != 1 {
+				t.Fatalf("%d outbound request(s), want 1", calls)
 			}
-			if seen.rawQuery != "stream=true" {
-				t.Errorf("query %q, want the page's own parameter kept", seen.rawQuery)
+			_, addresses := counter.seen()
+			for _, address := range addresses {
+				if strings.Contains(address, testToken) || strings.Contains(address, "token") {
+					t.Errorf("the session token reached the endpoint: %q", address)
+				}
 			}
 		})
+	}
+}
+
+func TestRelayCarriesTheConfiguredQueryAndOnlyThat(t *testing.T) {
+	// The positive control for the refusal above, and the half that has to keep
+	// working: an endpoint's own routing is out of the file on this machine and
+	// still travels — `?api-version=…` is how a whole vendor addresses its
+	// models — while the token the page necessarily sent does not.
+	u := newUpstream(t, nil)
+	_, ts, _ := relayDeskAt(t, "openai-compatible",
+		u.server.URL+"/v1?api-version=2024-10-21&route=eu%3Bwest")
+	resp, body := relayGet(t, ts, "chat/completions")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	seen := u.only(t)
+	// Byte for byte, escaping and order included. The escaped semicolon is the
+	// case worth naming: it is a value and not a separator to anybody, so a
+	// desk that refused it would be refusing an endpoint's own address.
+	if seen.rawQuery != "api-version=2024-10-21&route=eu%3Bwest" {
+		t.Errorf("query %q, want the configured one unchanged", seen.rawQuery)
+	}
+	if strings.Contains(seen.rawQuery, testToken) || strings.Contains(seen.rawQuery, "token") {
+		t.Errorf("the page's token reached the endpoint: %q", seen.rawQuery)
+	}
+	if strings.Contains(fmt.Sprint(seen.header), testToken) {
+		t.Errorf("the session token reached the endpoint in a header: %v", seen.header)
 	}
 }
 
@@ -584,63 +626,6 @@ func TestRelayRefusesAQueryCarryingASemicolon(t *testing.T) {
 	}
 	if seen := u.arrivals(); len(seen) != 0 {
 		t.Fatalf("the endpoint saw %d request(s)", len(seen))
-	}
-}
-
-func TestRelayCarriesAnEscapedSemicolonLikeAnyOtherCharacter(t *testing.T) {
-	// The positive control for the refusal above, and the line it draws: `%3B`
-	// is a *value* and not a separator to anybody, so refusing it would be this
-	// desk deciding something about an endpoint's own routing. Its own test
-	// because the refusal's is counted at the transport, where nothing reaches
-	// a real endpoint at all.
-	u := newUpstream(t, nil)
-	_, ts, _ := relayDesk(t, "openai-compatible", u)
-	resp, body := relayGet(t, ts, "models?route=eu%3Bwest")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("an escaped semicolon was refused: %d %s", resp.StatusCode, body)
-	}
-	if got := u.only(t).rawQuery; got != "route=eu%3Bwest" {
-		t.Errorf("query %q, want the escaped semicolon carried through", got)
-	}
-}
-
-func TestTheTokenStripAndTheGuardReadOneName(t *testing.T) {
-	// The rule itself, at the two ends that have to agree: whatever
-	// `url.ParseQuery` calls `token`, `withoutSessionToken` drops — and
-	// everything else survives byte for byte and in order.
-	for _, testCase := range []struct{ name, raw, want string }{
-		{"literal", "token=abc", ""},
-		{"encoded name", "%74oken=abc", ""},
-		{"partly encoded", "tok%65n=abc", ""},
-		{"twice", "token=abc&%74oken=abc", ""},
-		{"among others", "a=1&token=abc&b=2", "a=1&b=2"},
-		{"nothing of ours", "a=1&b=2", "a=1&b=2"},
-		// A name that will not decode is dropped: `url.ParseQuery` discards it
-		// too, so it cannot be what authorised anything, and forwarding a
-		// malformed name is a decision this relay has no reason to make.
-		{"undecodable", "a=1&%zz=2", "a=1"},
-		// Escaping and order are untouched for everything kept.
-		{"kept verbatim", "route=eu%2Fwest&q=a+b&flag", "route=eu%2Fwest&q=a+b&flag"},
-		{"a token-shaped value under another name", "next=token", "next=token"},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			if got := withoutSessionToken(testCase.raw); got != testCase.want {
-				t.Errorf("withoutSessionToken(%q) = %q, want %q",
-					testCase.raw, got, testCase.want)
-			}
-			// And the other end: nothing this dropped is a name the guard would
-			// have read as anything but the token.
-			for _, parameter := range strings.Split(testCase.raw, "&") {
-				name, _, _ := strings.Cut(parameter, "=")
-				decoded, err := url.QueryUnescape(name)
-				if err != nil || decoded != sessionTokenParameter {
-					continue
-				}
-				if strings.Contains(testCase.want, parameter) {
-					t.Errorf("%q is the token parameter and was kept", parameter)
-				}
-			}
-		})
 	}
 }
 

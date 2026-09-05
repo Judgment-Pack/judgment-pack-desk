@@ -275,30 +275,6 @@ func relaySuffixProblem(suffix string) string {
 	return ""
 }
 
-// relayQueryProblem refuses a query this desk cannot reason about.
-//
-// **One character, and the reason is that two parsers disagree about it.**
-// `;` was a query separator once, and some servers still read it as one. Go
-// does not: `url.ParseQuery` rejects a pair containing a semicolon, so the
-// guard reads `x=1;token=<the token>&token=<the token>` as *one* `token`
-// parameter and accepts the request — while the strip, which removes the pair
-// it can see, preserves the first one byte for byte and hands the desk's own
-// session token to an endpoint that does split on `;`.
-//
-// The fix is not a third parser. Two readers can only be held to one answer
-// over the inputs they read the same way, so a raw query carrying a literal
-// semicolon is refused here — a property of the request alone, decided before
-// anything is read off this machine. No SDK emits one; `%3B` is untouched,
-// because an escaped semicolon is a value and not a separator to anybody.
-func relayQueryProblem(raw string) string {
-	if strings.ContainsRune(raw, ';') {
-		return "a relayed query may not contain a semicolon: it is a separator to some " +
-			"servers and a value to others, and this desk will not send one it cannot " +
-			"read the same way twice"
-	}
-	return ""
-}
-
 func relayPathRune(r rune) bool {
 	switch {
 	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
@@ -310,55 +286,70 @@ func relayPathRune(r rune) bool {
 	}
 }
 
-// withoutSessionToken removes this chassis' own credential from a query before
-// it is forwarded.
+// relayQueryProblem is the whole of what a page may put in a relayed request's
+// query, and the answer is **nothing**.
 //
-// **The relay's second credential, and the one that is easy to miss.** The
-// session token travels as `?token=` on every route this chassis serves, this
-// one included — so the query a page sends here *always* carries it, and
-// forwarding the query "as-is" would present the desk's own credential to
-// somebody else's endpoint on every single relayed request. It is stripped by
-// **name**, and every parameter of that name, for the same reason the
-// credential headers are: a rule about what a parameter contains is a rule
-// that fails the first time a value is spelled differently.
+// # Why this is a refusal and not a filter
 //
-// **The name is compared after decoding, and that is the whole of the second
-// version of this function.** The guard reads the token with
-// `r.URL.Query().Get("token")`, and `Query` percent-decodes parameter names —
-// so `?%74oken=<the session token>` authorises the request. Comparing the
-// *raw* name to the literal `token` then kept it, and the desk's own credential
-// went to the endpoint on a request the desk had just authenticated with it.
-// One reader decodes and the other did not: that gap is the bug, and the fix is
-// to read the name the way the guard reads it.
+// The page's query used to be forwarded with this chassis' own session token
+// taken out of it, and that arrangement leaked the token three times, three
+// different ways, to three reviewers:
 //
-// A name that will not decode is dropped rather than kept. `url.ParseQuery`
-// discards such a pair too, so it cannot be the parameter that authorised
-// anything, and forwarding a malformed name to an endpoint is a decision this
-// relay has no reason to make.
+//   - `?%74oken=…` — the guard reads names with `url.Query`, which
+//     percent-decodes; a strip comparing raw text did not.
+//   - `?x=1;token=…&token=…` — Go rejects a pair containing `;`, so the guard
+//     sees one `token` parameter; a server that still treats `;` as a separator
+//     sees two.
+//   - `?Token=…&token=…` — the guard's comparison is case-sensitive, and
+//     ASP.NET Core's query parser folds case, so an upstream reads `Token` as
+//     `token`.
 //
-// Everything else survives byte for byte and in order. Re-encoding through
-// `url.Values` would sort the parameters and normalise their escaping, which is
-// a change to somebody else's routing that nobody asked for.
-func withoutSessionToken(raw string) string {
+// Each fix was a better comparison, and each time the next parser disagreed
+// somewhere else. **The class exists because the query was forwarded at all**:
+// no comparison this desk can write is the comparison every parser downstream
+// makes, and a rule that has to be right about all of them is a rule that will
+// be wrong again.
+//
+// So the query is not filtered. A relayed request may carry the session token
+// and **nothing else**: every raw pair's decoded name must be exactly `token`,
+// the spelling the guard reads, and anything else — any name, any case, any
+// encoding, an empty name included — is refused. Refusing is the one rule every
+// parser agrees on, because nothing is sent for them to disagree about.
+//
+// What reaches the endpoint is the configured URL's own query, which
+// `appendPath` carries: the endpoint's routing, out of the file on this
+// machine, exactly as before. The page chooses a **path suffix** and nothing
+// else, and that sentence is now literally true.
+//
+// A literal `;` is refused by name as well, because a pair spelled
+// `token=<the token>;x=1` has the name `token` and would otherwise be accepted
+// — and while nothing of it would be forwarded, a desk that accepted a request
+// two parsers read differently would be a desk with an argument to make about
+// why that is safe. It has none to make now.
+func relayQueryProblem(raw string) string {
 	if raw == "" {
 		return ""
 	}
-	parameters := strings.Split(raw, "&")
-	kept := make([]string, 0, len(parameters))
-	for _, parameter := range parameters {
+	if strings.ContainsRune(raw, ';') {
+		return "a relayed query may not contain a semicolon: it is a separator to some " +
+			"servers and a value to others, and this desk will not send one it cannot " +
+			"read the same way twice"
+	}
+	for _, parameter := range strings.Split(raw, "&") {
 		name, _, _ := strings.Cut(parameter, "=")
 		decoded, err := url.QueryUnescape(name)
-		if err != nil || decoded == sessionTokenParameter {
-			continue
+		if err != nil || decoded != sessionTokenParameter {
+			return "a relayed request carries this desk's session token and no other query " +
+				"parameter: nothing of the page's query is forwarded, because no comparison " +
+				"this desk can write is the one every server downstream makes"
 		}
-		kept = append(kept, parameter)
 	}
-	return strings.Join(kept, "&")
+	return ""
 }
 
 // sessionTokenParameter is the name this chassis authenticates every request
-// with, and therefore the name that must never leave it. Declared once so the
-// guard's spelling and the strip's spelling cannot drift.
+// with, and therefore the only name a relayed request may carry. Declared once
+// so the guard's spelling and this rule's spelling cannot drift.
 const sessionTokenParameter = "token"
 
 // relayTarget is the address one relayed request is sent to.
@@ -369,25 +360,17 @@ const sessionTokenParameter = "token"
 // configured segment into two, which is a different resource with the
 // credential attached.
 //
-// **Two query strings can meet here and both travel.** The configured one is
-// the endpoint's own routing — some gateways route on one — and the page's is
-// this request's, minus the session token this chassis put there. Dropping
-// either would be the desk deciding something about an endpoint it does not
-// read: the configured query first, then the page's, joined the way a query is
-// joined.
-func relayTarget(base, suffix, pageQuery string) (*url.URL, error) {
+// **One query travels and it is the configured one.** It is the endpoint's own
+// routing, out of the file on this machine — some gateways route on one — and
+// `appendPath` carries it across unchanged. Nothing of the page's query is
+// added, because nothing of the page's query is accepted: see
+// `relayQueryProblem`.
+func relayTarget(base, suffix string) (*url.URL, error) {
 	parsed, err := url.Parse(base)
 	if err != nil {
 		return nil, err
 	}
 	appendPath(parsed, "/"+suffix)
-	if pageQuery != "" {
-		if parsed.RawQuery == "" {
-			parsed.RawQuery = pageQuery
-		} else {
-			parsed.RawQuery += "&" + pageQuery
-		}
-	}
 	return parsed, nil
 }
 
@@ -410,9 +393,9 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, http.StatusBadRequest, CodeAssistantRelayPath, reason)
 		return
 	}
-	// The query, on the same footing and for the same reason: a property of
-	// the request alone, and one this desk will not forward because two
-	// parsers read it differently. See `relayQueryProblem`.
+	// The query, on the same footing and decided in the same breath: a
+	// property of the request alone, and the page's half of it is refused
+	// rather than filtered. See `relayQueryProblem`.
 	if reason := relayQueryProblem(r.URL.RawQuery); reason != "" {
 		writeJSONCoded(w, http.StatusBadRequest, CodeAssistantRelayPath, reason)
 		return
@@ -454,7 +437,7 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 			"no relay is defined for that endpoint's wire protocol")
 		return
 	}
-	target, err := relayTarget(endpoint.url, suffix, withoutSessionToken(r.URL.RawQuery))
+	target, err := relayTarget(endpoint.url, suffix)
 	if err != nil {
 		writeJSONCoded(w, http.StatusConflict, CodeAssistantUnconfigured,
 			"the configured endpoint is not an address a request can be sent to")

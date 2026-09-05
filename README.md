@@ -1599,7 +1599,8 @@ no CORS, so a page calling one directly could not read the answer.
 - **The destination cannot come from the page.** It is `configuredEndpoint` —
   the same whole-file decode the probe uses, so a `desk.json` the browser
   refuses authorises no relayed request either. The page chooses a **path
-  suffix** and nothing else.
+  suffix** and nothing else: not the host, not the path around it, and not one
+  parameter of the query.
 - **The suffix is held to a closed class**: one or more segments of
   `[A-Za-z0-9._-]`, no dot segment, no empty segment, at most 256 bytes, and
   **no percent sign** — so the escaped and unescaped readings of an accepted
@@ -1624,21 +1625,29 @@ no CORS, so a page calling one directly could not read the answer.
   through it. With an allow-list the claim is structural, and `Cookie`,
   `Origin` and `Referer` fall out without being named. A page that needs a
   header this list does not carry is a reviewed change to the list.
-- **And the desk's own session token never travels.** It goes as `?token=` on
-  every route this chassis serves, so forwarding the page's query "as-is" would
-  present this desk's credential to somebody else's endpoint on every request.
-  The parameter is dropped **by its decoded name** — the guard reads it with
-  `Query().Get`, which percent-decodes, so `?%74oken=…` authenticates a request,
-  and a strip that compared the raw name would have kept it. Both readers decode
-  now; a name that will not decode is dropped, as `url.ParseQuery` drops it.
-  **The equivalence holds over the accepted set only**, which is why a raw query
-  carrying a literal `;` is refused outright with `assistant-relay-path`: `;`
-  was a separator once and some servers still read it as one, so
-  `x=1;token=…&token=…` is a single `token` parameter to Go's parser and two to
-  theirs — and no third parser closes that. `%3B` is a value to everybody and
-  travels untouched. No SDK emits a bare one.
-- **Both query strings travel**: the configured endpoint's own routing first,
-  then the page's, minus that token.
+- **Nothing of the page's query is forwarded, ever.** A relayed request may
+  carry this chassis' `?token=` and **no other parameter**: every raw pair's
+  decoded name must be exactly `token`, the spelling the guard reads, and
+  anything else — any name, any case, any encoding, an empty name included — is
+  refused with `assistant-relay-path` and nothing sent. A literal `;` is refused
+  with it.
+
+  This was a *filter* first, and the filter leaked this desk's session token
+  three times, three different ways, to three reviewers: `?%74oken=…` (the
+  guard reads names with `url.Query`, which percent-decodes, and a raw compare
+  did not); `?x=1;token=…&token=…` (Go rejects a pair containing `;`, so the
+  guard sees one parameter where a server that still splits on `;` sees two);
+  and `?Token=…&token=…` (this desk compared case-sensitively, and ASP.NET
+  Core's query parser folds case). Each fix was a better comparison, and each
+  time the next parser disagreed somewhere else. **The class existed because
+  the query was forwarded at all** — no comparison this desk can write is the
+  comparison every parser downstream makes — so it is not filtered, it is
+  refused, and refusing is the one rule every parser agrees on because there is
+  nothing left for them to disagree about.
+- **One query reaches the endpoint and it is the configured one** — the
+  endpoint's own routing, out of the file on this machine, carried across byte
+  for byte. So **the page chooses a path suffix and nothing else**, and that
+  sentence is now literally true.
 - **Method and body verbatim**, bounded at 8 MiB — a whole schema, several
   examples and a draft ride in one request — **refused with `too-large`, never
   truncated**. The whole body is read before a byte of it is dispatched, so an
