@@ -34,6 +34,13 @@ func fixtureDir(t *testing.T) string {
 type fixtureVerdict struct {
 	Accepted bool     `json:"accepted"`
 	Keys     []string `json:"keys"`
+	// Engine and Thinking are the decoded values an accepted file yields, the
+	// defaults included. **Present on every accepted verdict**, so a corpus
+	// that proves acceptance parity proves decoding parity too: the two sides
+	// could otherwise agree that a file is legal and disagree about what it
+	// means, and nothing here would say so.
+	Engine   string `json:"engine"`
+	Thinking string `json:"thinking"`
 }
 
 func fixtureVerdicts(t *testing.T) map[string]fixtureVerdict {
@@ -101,6 +108,18 @@ func TestSharedFixturesDecodeAsTheVerdictSays(t *testing.T) {
 			if verdict.Accepted {
 				if decoded.refused() {
 					t.Fatalf("accepted fixture was refused: %v", decoded.Problems)
+				}
+				// The values, not only the verdict. Required rather than
+				// compared-if-present: an omitted pair would exempt a fixture
+				// from the parity this exists to hold.
+				if verdict.Engine == "" || verdict.Thinking == "" {
+					t.Fatalf("expected.json names no engine/thinking for an accepted fixture")
+				}
+				if decoded.Engine != verdict.Engine {
+					t.Errorf("engine %q, want %q", decoded.Engine, verdict.Engine)
+				}
+				if decoded.Thinking != verdict.Thinking {
+					t.Errorf("thinking %q, want %q", decoded.Thinking, verdict.Thinking)
 				}
 				return
 			}

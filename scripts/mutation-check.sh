@@ -585,6 +585,19 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "a thinking tier nothing implements is accepted" "$DF" \
     '	problems = append(problems, oneOf(record, "assistant", "thinking", AssistantThinkingTiers)...)' \
     ''
+  # The corpus proves what a file *decodes to* and not only whether it is
+  # accepted: the two sides could otherwise agree a file is legal and disagree
+  # about what it means, and the fixtures would pass.
+  mutate go "an accepted engine decodes to the default anyway" "$DF" \
+    '	if named, ok := record["engine"].(string); ok && contains(AssistantEngines, named) {
+		slot.engine = named
+	}' \
+    ''
+  mutate go "an accepted thinking tier decodes to the default anyway" "$DF" \
+    '	if named, ok := record["thinking"].(string); ok && contains(AssistantThinkingTiers, named) {
+		slot.thinking = named
+	}' \
+    ''
   # A bearer credential in clear text over a network is a credential given away.
   mutate go "http is accepted off loopback" "$DF" \
     '	if parsed.Scheme == "http" &&
@@ -797,15 +810,16 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # measurement in each case is at the endpoint, which is why they discriminate
   # at all: a test that asserted the handler called `Del` would survive most of
   # these.
-  mutate go "an inbound credential travels to the endpoint" "$MR" \
-    '			for _, header := range inboundCredentialHeaders {
-				out.Header.Del(header)
-			}' \
-    ''
-  mutate go "the page's Origin and Referer travel to the endpoint" "$MR" \
-    '			out.Header.Del("Origin")
-			out.Header.Del("Referer")' \
-    ''
+  # **Two rows are gone and this one replaced them**, which is the point of the
+  # shape that replaced the denylist. There is no loop deleting credential
+  # headers any more and no pair of `Del`s for Origin and Referer: nothing
+  # travels unless it is on the allow-list, so breaking that one check is the
+  # only way to make any of them travel. Rows for code that no longer exists
+  # would have mutated nothing, and rows for redundant `Del`s would have
+  # reported "nothing failed" for ever.
+  mutate go "any header at all is forwarded to the endpoint" "$MR" \
+    '				if !relayedRequestHeader(header) {' \
+    '				if false {'
   # The one thing this route adds. Without it the endpoint is called with no
   # credential at all, which is a page that cannot work rather than a page that
   # is unsafe — but it is the sentence the whole route exists for.
@@ -814,10 +828,18 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '			_, _ = name, value'
   # This desk's own credential, in the place it is easiest to forget.
   mutate go "the session token is forwarded to the endpoint" "$MR" \
-    '		if name, _, _ := strings.Cut(parameter, "="); name == "token" {
+    '		decoded, err := url.QueryUnescape(name)
+		if err != nil || decoded == sessionTokenParameter {
 			continue
 		}' \
     ''
+  # **The name is compared the way the guard compares it.** `Query().Get`
+  # percent-decodes a parameter name, so a strip that read the raw name kept
+  # `%74oken=<token>` and sent this desk's own credential to the endpoint on a
+  # request it had just authenticated with it.
+  mutate go "the session token's name is compared without decoding it" "$MR" \
+    '		decoded, err := url.QueryUnescape(name)' \
+    '		decoded, err := name, error(nil)'
   mutate go "the relayed path is never validated" "$MR" \
     '	if reason := relaySuffixProblem(suffix); reason != "" {' \
     '	if reason := ""; reason != "" {'
@@ -834,13 +856,40 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if r.ContentLength > maxRelayBody {' \
     '	if false {'
   mutate go "an undeclared body length is unbounded" "$MR" \
-    '	r.Body = http.MaxBytesReader(w, r.Body, maxRelayBody)' \
-    '	_ = w'
+    '	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRelayBody))' \
+    '	body, err := io.ReadAll(r.Body)'
+  # **Read whole before a byte is dispatched**, which is what makes "refused,
+  # never truncated" true rather than nearly true: bounding at the reader while
+  # the proxy was already streaming sent the endpoint the first eight
+  # mebibytes of a request this desk then refused.
+  mutate go "an over-size body is streamed upstream before it is refused" "$MR" \
+    '	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRelayBody))
+	_ = controller.SetReadDeadline(time.Time{})' \
+    '	body, err := []byte(nil), error(nil)
+	r.Body = http.MaxBytesReader(w, r.Body, maxRelayBody)
+	_ = controller.SetReadDeadline(time.Time{})'
+  # **The answer can carry the key back**, and the page must not receive it.
+  # The credential this desk sends is the endpoint's own, so an endpoint that
+  # echoes what it was sent would otherwise put the machine-held key into the
+  # browser — the single thing this route exists to prevent.
+  mutate go "the key is handed back in an answer's header" "$MR" \
+    '	for _, name := range reflectedCredentialHeaders {
+		header.Del(name)
+	}' \
+    ''
+  # The name list cannot cover a header nobody named; the value comparison is
+  # what does, and it is its own row because it is its own rule.
+  mutate go "a header whose value is the key is handed back" "$MR" \
+    '			if value == key {
+				header.Del(name)
+				break
+			}' \
+    ''
   # The page and this chassis share an origin, so a cookie from the endpoint
   # would be stored against the desk.
   mutate go "the endpoint may set a cookie on the desk's origin" "$MR" \
-    '			response.Header.Del("Set-Cookie")' \
-    ''
+    '"X-Api-Key", "Api-Key", "X-Goog-Api-Key", "Set-Cookie",' \
+    '"X-Api-Key", "Api-Key", "X-Goog-Api-Key",'
   # A queue rather than a bound: the request past the fourth waits instead of
   # being told. The test uses a client with a timeout for exactly this row, so
   # a queued request fails the suite rather than hanging it.
@@ -867,6 +916,16 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "one relayed request is unbounded in time" "$MR" \
     '	ctx, cancel := context.WithTimeout(r.Context(), relayDeadline)' \
     '	ctx, cancel := context.WithCancel(r.Context())'
+  # Four clients that authenticate and then stop reading held every slot for
+  # ever: the two deadlines cancel the *upstream* context, and neither of them
+  # ends a write to a page that is not listening.
+  mutate go "a page that stops reading holds its slot for ever" "$MR" \
+    '	proxy.ServeHTTP(&deadlineWriter{
+		ResponseWriter: w,
+		controller:     controller,
+		until:          deadline,
+	}, r)' \
+    '	proxy.ServeHTTP(w, r)'
   mutate go "the relay's log line carries the whole address" "$MR" \
     '	s.log.Printf("desk: assistant relay %s answered %d", loggableOrigin(endpoint.url), status)' \
     '	s.log.Printf("desk: assistant relay %s %s answered %d", endpoint.url, suffix, status)'

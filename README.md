@@ -1612,35 +1612,56 @@ no CORS, so a page calling one directly could not read the answer.
   appends `/chat/completions` and an Anthropic one appends `/v1/messages`, and
   each lands unchanged after the configured base — exactly where the probe
   sends its own request.
-- **Stripped by name, before anything is injected**: `Authorization`,
-  `X-Api-Key`, `Api-Key`, `X-Goog-Api-Key`, `Cookie`, `Proxy-Authorization`,
-  plus `Origin`, `Referer`, the hop-by-hop headers and any `X-Forwarded-*` the
-  page set. **And the desk's own session token**, which travels as `?token=` on
-  every route this chassis serves: forwarding the page's query "as-is" would
-  otherwise present this desk's credential to somebody else's endpoint on every
-  request. Everything else — `anthropic-version`, `content-type`, `accept`, a
-  header nobody has thought of yet — arrives unchanged.
+- **It forwards the protocol headers, and only those.** The request travels
+  with an **allow-list**: `Accept`, `Accept-Encoding`, `Accept-Language`,
+  `Content-Type`, `Content-Length`, `User-Agent`, `Anthropic-Version`,
+  `Anthropic-Beta`, `OpenAI-Beta`, `OpenAI-Organization`, `OpenAI-Project`, and
+  the `X-Stainless-*` family both vendors' generated SDKs attach. Everything
+  else is dropped. This was a denylist of credential names and the denylist was
+  the defect: "every inbound credential is stripped" cannot be held by a list
+  somebody thought of — `X-Auth-Token`, `X-Amz-Security-Token`,
+  `Ocp-Apim-Subscription-Key` and whatever a gateway invents next all walked
+  through it. With an allow-list the claim is structural, and `Cookie`,
+  `Origin` and `Referer` fall out without being named. A page that needs a
+  header this list does not carry is a reviewed change to the list.
+- **And the desk's own session token never travels.** It goes as `?token=` on
+  every route this chassis serves, so forwarding the page's query "as-is" would
+  present this desk's credential to somebody else's endpoint on every request.
+  The parameter is dropped **by its decoded name** — the guard reads it with
+  `Query().Get`, which percent-decodes, so `?%74oken=…` authenticates a request,
+  and a strip that compared the raw name would have kept it. Both readers decode
+  now; a name that will not decode is dropped, as `url.ParseQuery` drops it.
 - **Both query strings travel**: the configured endpoint's own routing first,
   then the page's, minus that token.
 - **Method and body verbatim**, bounded at 8 MiB — a whole schema, several
-  examples and a draft ride in one request — and an over-size body is **refused
-  with `too-large`, never truncated**.
+  examples and a draft ride in one request — **refused with `too-large`, never
+  truncated**. The whole body is read before a byte of it is dispatched, so an
+  over-size body of undeclared length reaches the endpoint not at all rather
+  than eight mebibytes at a time; the cost is bounded twice, at 8 MiB a request
+  and four requests in flight, so at most 32 MiB of request bodies are held at
+  once.
 - **Streamed, not buffered.** The answer is flushed as it arrives; a test proves
   the page has the first SSE event in hand *before the endpoint has written the
   second*, which a relay that buffered would fail while still delivering both.
 - **Bounded in time rather than in bytes**, because a model answer has no length
   worth guessing: **ten minutes** for one whole relayed request and **two
   minutes** between two writes from the endpoint. A stream that stalls is cut
-  rather than left holding the page.
+  rather than left holding the page. Writes **to the page** are bounded by the
+  same pair — a page that authenticates and then stops reading would otherwise
+  hold its slot for ever, since neither deadline ends a write to a client that
+  is not listening and this desk's server has no `WriteTimeout` on purpose
+  (`/ws` is a socket it holds open for a session). The whole bound is therefore
+  the overall deadline plus, at most, one idle bound for the final write.
 - **At most four relayed requests in flight**, and past that the answer is an
   immediate `assistant-relay-busy` — a bound, deliberately not a queue, because
   a queue reports a wait as latency.
 - **No redirect is followed**, for the reason the probe does not follow one: Go
   strips `Authorization` across hosts and knows nothing about `x-api-key`.
 - **The answer is forwarded whole** — status, headers and body — minus the
-  hop-by-hop headers and minus `Set-Cookie`: the page and this chassis share an
-  origin, so a cookie from the endpoint would be stored against the desk and
-  sent back to the desk's own endpoints.
+  hop-by-hop headers, minus the credential headers below, and minus
+  `Set-Cookie`: the page and this chassis share an origin, so a cookie from the
+  endpoint would be stored against the desk and sent back to the desk's own
+  endpoints.
 - **Nothing else.** No retry (a retried model request is a second charge on
   somebody's account for an answer nobody saw), no caching, no request
   rewriting, no model-name inspection. A refusal carries `assistant-relay-*`
@@ -1648,6 +1669,27 @@ no CORS, so a page calling one directly could not read the answer.
   diagnostic vocabulary — never anything the endpoint wrote.
 - **The log line is the origin and the status**: no path, no suffix, no header,
   no body, no key.
+
+**An endpoint can hand the key back, and this is the bound on that.** The
+credential the desk sends is the endpoint's own, so an endpoint that echoes what
+it was sent — a debug gateway, a misconfigured proxy, a hostile one — would
+otherwise put the machine-held key straight into the page, which is the single
+thing this route exists to prevent. So the **answer's headers are filtered too**:
+`Authorization`, `Proxy-Authorization`, `WWW-Authenticate`, `Proxy-Authenticate`,
+`X-Api-Key`, `Api-Key`, `X-Goog-Api-Key` and `Set-Cookie` by name, and any header
+at all — under a name nobody listed — whose value **is** the configured key.
+
+**The body is not filtered, and that is a decision rather than an oversight.**
+The relay parses none of the traffic it carries; a streamed answer cannot be
+scrubbed as it passes; and the probe's own ruling already applies — a *derived*
+representation of a credential (base64, percent-encoded, hex, half of it) is not
+detectable by any substitution, so a filter over bodies would be a categorical
+promise held by a `strings.Replace`. An endpoint that writes the key into its own
+body therefore hands it to the page. **The residual is stated rather than
+papered over: the key is the endpoint's own credential, it is presented only to
+the endpoint the desk-level file names, and it is good only at the endpoint that
+already holds it.** What this route guarantees is that the desk never volunteers
+it — not that an endpoint cannot give away a secret it was given.
 
 Nothing in this release calls it. It is the seam the assistant's engine slot
 needs ([ADR-0001](docs/adr/0001-make-the-assistant-engine-a-slot.md)), built

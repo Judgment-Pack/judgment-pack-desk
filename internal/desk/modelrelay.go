@@ -54,6 +54,7 @@ package desk
 // space that endpoint documents.
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -134,18 +135,72 @@ var (
 // redirect could walk the injected credential to a host nobody configured.
 var relayTransport http.RoundTripper
 
-// inboundCredentialHeaders are deleted from every relayed request **by name**,
-// before anything is injected.
+// relayedRequestHeaders is the closed set of request headers that travel to
+// the endpoint. **Everything else is dropped.**
 //
-// By name and not by value: a page that holds no key cannot be trusted to have
-// sent no header, and matching on what a header contains would be this file
-// deciding what a credential looks like. `Api-Key` is Azure's spelling,
-// `X-Goog-Api-Key` is Google's, `Proxy-Authorization` is the one a proxy in
-// front of the endpoint would read, and `Cookie` is here because a cookie is a
-// credential whatever it is called — the page's own session token would
-// otherwise travel to somebody else's endpoint.
-var inboundCredentialHeaders = []string{
-	"Authorization", "X-Api-Key", "Api-Key", "X-Goog-Api-Key", "Cookie", "Proxy-Authorization",
+// **This was a denylist and the denylist was the defect.** "Every inbound
+// credential is stripped" cannot be held by a list of names somebody thought
+// of: `X-Auth-Token`, `X-Access-Token`, `X-Amz-Security-Token`,
+// `Ocp-Apim-Subscription-Key` and whatever a gateway invents next all walked
+// straight through it, and a test that populated its inputs *from* that same
+// list could never have said so. An allow-list is the only shape in which the
+// claim is structural: a credential header nobody has heard of does not travel
+// because it is not on this list, and `Cookie` falls out without being named.
+//
+// What is on it is what the two protocols need to be spoken: the content and
+// negotiation headers, the two `anthropic-*` headers that protocol requires,
+// the beta headers both vendors document, and — through `relayedRequestPrefixes`
+// — the `X-Stainless-*` telemetry the generated SDKs attach to every request.
+// A page that needs a header this list does not carry is a change to this list,
+// reviewed, rather than a header that arrives because nobody forbade it.
+//
+// `Origin` and `Referer` are absent rather than deleted, which is the point of
+// the shape: there is no second rule to keep in step with this one.
+var relayedRequestHeaders = []string{
+	"Accept", "Accept-Encoding", "Accept-Language", "Content-Type", "Content-Length",
+	"User-Agent", "Anthropic-Version", "Anthropic-Beta", "OpenAI-Beta", "OpenAI-Organization",
+	"OpenAI-Project",
+}
+
+// relayedRequestPrefixes are the header families carried whole.
+//
+// One entry: the OpenAI and Anthropic SDKs are Stainless-generated and attach
+// `X-Stainless-Lang`, `-Package-Version`, `-Runtime`, `-Retry-Count` and more
+// to every request. Naming the family rather than the members is what keeps an
+// SDK upgrade from being an outage; it carries no credential, and an endpoint
+// that reads it reads what the client is.
+var relayedRequestPrefixes = []string{"X-Stainless-"}
+
+// relayedRequestHeader reports whether one request header travels.
+func relayedRequestHeader(name string) bool {
+	for _, allowed := range relayedRequestHeaders {
+		if strings.EqualFold(name, allowed) {
+			return true
+		}
+	}
+	for _, prefix := range relayedRequestPrefixes {
+		if len(name) > len(prefix) && strings.EqualFold(name[:len(prefix)], prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// reflectedCredentialHeaders are deleted from every relayed **answer**.
+//
+// **An endpoint can hand the key back.** The one this desk sends is the
+// endpoint's own credential, and an endpoint that echoes what it was sent —
+// a debug gateway, a misconfigured proxy, a hostile one — would otherwise put
+// the machine-held key into the page, which is the single thing this route
+// exists to prevent. So the answer's headers are filtered as well as the
+// request's: these names, and any header whose value **is** the key.
+//
+// The limit is stated rather than glossed, and it is the limit chunk 1 already
+// ruled on for the probe: a *derived* representation — base64, hex, half of it
+// — is not detectable, and a body is not read at all. See the README.
+var reflectedCredentialHeaders = []string{
+	"Authorization", "Proxy-Authorization", "WWW-Authenticate", "Proxy-Authenticate",
+	"X-Api-Key", "Api-Key", "X-Goog-Api-Key", "Set-Cookie",
 }
 
 // credentialHeader is the one header each wire protocol presents a key in.
@@ -234,6 +289,20 @@ func relayPathRune(r rune) bool {
 // credential headers are: a rule about what a parameter contains is a rule
 // that fails the first time a value is spelled differently.
 //
+// **The name is compared after decoding, and that is the whole of the second
+// version of this function.** The guard reads the token with
+// `r.URL.Query().Get("token")`, and `Query` percent-decodes parameter names —
+// so `?%74oken=<the session token>` authorises the request. Comparing the
+// *raw* name to the literal `token` then kept it, and the desk's own credential
+// went to the endpoint on a request the desk had just authenticated with it.
+// One reader decodes and the other did not: that gap is the bug, and the fix is
+// to read the name the way the guard reads it.
+//
+// A name that will not decode is dropped rather than kept. `url.ParseQuery`
+// discards such a pair too, so it cannot be the parameter that authorised
+// anything, and forwarding a malformed name to an endpoint is a decision this
+// relay has no reason to make.
+//
 // Everything else survives byte for byte and in order. Re-encoding through
 // `url.Values` would sort the parameters and normalise their escaping, which is
 // a change to somebody else's routing that nobody asked for.
@@ -244,13 +313,20 @@ func withoutSessionToken(raw string) string {
 	parameters := strings.Split(raw, "&")
 	kept := make([]string, 0, len(parameters))
 	for _, parameter := range parameters {
-		if name, _, _ := strings.Cut(parameter, "="); name == "token" {
+		name, _, _ := strings.Cut(parameter, "=")
+		decoded, err := url.QueryUnescape(name)
+		if err != nil || decoded == sessionTokenParameter {
 			continue
 		}
 		kept = append(kept, parameter)
 	}
 	return strings.Join(kept, "&")
 }
+
+// sessionTokenParameter is the name this chassis authenticates every request
+// with, and therefore the name that must never leave it. Declared once so the
+// guard's spelling and the strip's spelling cannot drift.
+const sessionTokenParameter = "token"
 
 // relayTarget is the address one relayed request is sent to.
 //
@@ -360,7 +436,46 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), relayDeadline)
 	defer cancel()
 	r = r.WithContext(ctx)
-	r.Body = http.MaxBytesReader(w, r.Body, maxRelayBody)
+	deadline := time.Now().Add(relayDeadline)
+	controller := http.NewResponseController(w)
+
+	// **The whole body is read before a byte of it is dispatched**, and that
+	// is what makes "refused, never truncated" true rather than nearly true.
+	// A body of undeclared length was previously bounded at the reader while
+	// the proxy was already streaming it upstream: the endpoint received —
+	// and could act on — the first eight mebibytes of a request this desk then
+	// refused. All or nothing means buffering first.
+	//
+	// The cost is bounded twice: eight mebibytes per request, and four
+	// requests in flight, so at most 32 MiB of request bodies are held by this
+	// process at once. It is read **after** the slot is taken for exactly that
+	// reason — a desk that buffered before the bound could hold as many as the
+	// page cared to send.
+	//
+	// Read under the overall deadline, because a client that dribbles a body
+	// holds a slot for as long as it dribbles.
+	_ = controller.SetReadDeadline(deadline)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRelayBody))
+	_ = controller.SetReadDeadline(time.Time{})
+	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge,
+				fmt.Sprintf("a relayed request body is at most %d bytes; nothing was sent",
+					maxRelayBody))
+			return
+		}
+		// The body did not arrive. Nothing of the request's own words is
+		// repeated: what a reader needs is that it was not forwarded.
+		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,
+			"the request body could not be read, and nothing was sent")
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	// Declared, so the endpoint is sent a length rather than a chunked stream
+	// this desk has already measured.
+	r.ContentLength = int64(len(body))
+	r.TransferEncoding = nil
 
 	status := 0
 	proxy := &httputil.ReverseProxy{
@@ -377,28 +492,33 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 			// Host is this desk's loopback address and is none of the
 			// endpoint's business.
 			out.Host = ""
-			for _, header := range inboundCredentialHeaders {
-				out.Header.Del(header)
+			// **A new header set, built from the allow-list.** Filtering in
+			// place would leave the rule to be read as "these are removed";
+			// building the set says what it is — only these travel. `Origin`,
+			// `Referer`, `Cookie` and every credential header anybody invents
+			// are absent because they were never added.
+			carried := make(http.Header, len(relayedRequestHeaders)+1)
+			for header, values := range out.Header {
+				if !relayedRequestHeader(header) {
+					continue
+				}
+				carried[header] = values
 			}
-			// Where the request was made from is the page's business and not
-			// the endpoint's, and an Origin from a loopback desk would tell it
-			// nothing true anyway.
-			out.Header.Del("Origin")
-			out.Header.Del("Referer")
-			// The one thing this relay adds. Everything else the page wrote is
-			// on its way out untouched.
-			out.Header.Set(name, value)
+			// The one thing this relay adds.
+			carried.Set(name, value)
+			out.Header = carried
 		},
 		Transport:     relayTransport,
 		FlushInterval: -1,
 		ModifyResponse: func(response *http.Response) error {
 			status = response.StatusCode
-			// **A relayed answer may not set a cookie on this desk's origin.**
-			// The page and this chassis share an origin, so a `Set-Cookie` from
-			// the endpoint would be stored against the desk and sent back to
-			// the desk's own endpoints — an endpoint writing into the browser
-			// state of the desk that called it.
-			response.Header.Del("Set-Cookie")
+			// **The answer's headers are filtered too**, and the reason is the
+			// key: an endpoint that echoes what it was sent would otherwise
+			// hand the machine-held credential to the page. `Set-Cookie` is on
+			// that list for a second reason — the page and this chassis share
+			// an origin, so a cookie from the endpoint would be stored against
+			// the desk and sent back to the desk's own endpoints.
+			withoutReflectedCredentials(response.Header, key)
 			response.Body = boundedByIdle(response.Body, cancel)
 			return nil
 		},
@@ -418,7 +538,21 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 				"the configured endpoint could not be reached: "+transportDiagnostic(err))
 		},
 	}
-	proxy.ServeHTTP(w, r)
+	// **Every write to the page is bounded too.** The two deadlines above
+	// cancel the *upstream* context; neither of them ends a write to a client
+	// that has stopped reading, and the outer server has no `WriteTimeout` by
+	// design — `/ws` is a socket it holds open for a session. So four clients
+	// that authenticate and then stop reading could hold all four slots for
+	// ever, and every later request would answer `assistant-relay-busy` about
+	// a desk that was not carrying anything. The connection's write deadline is
+	// extended by the idle bound before each write and never past the overall
+	// one, so a page that stops reading loses its answer and gives back the
+	// slot.
+	proxy.ServeHTTP(&deadlineWriter{
+		ResponseWriter: w,
+		controller:     controller,
+		until:          deadline,
+	}, r)
 	// **Scheme and host only, and no path at all.** The same rule the probe's
 	// line follows and for the same reason: a configured URL may carry a query
 	// string, and a query string is a place people put credentials. The suffix
@@ -426,6 +560,96 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 	// to reconstruct a session from.
 	s.log.Printf("desk: assistant relay %s answered %d", loggableOrigin(endpoint.url), status)
 }
+
+// withoutReflectedCredentials takes the key back out of an answer's headers.
+//
+// Two rules, and the second is why the first is not enough. **By name**, for
+// the headers a credential is conventionally echoed in — a 401 that repeats
+// the `Authorization` it rejected, a gateway that mirrors `x-api-key`, a
+// `WWW-Authenticate` challenge quoting what was presented. And **by value**,
+// exactly: any header at all whose value *is* the configured key, whatever it
+// is called, because an endpoint that wants to hand the key back will not use
+// a name on anybody's list.
+//
+// **Exact equality, and the limit is stated.** A value that merely contains the
+// key — `Bearer <key>` under a name nobody named, base64, hex, half of it — is
+// not caught, and no comparison could catch the derived forms: that is the same
+// ruling chunk 1 took for the probe, where the answer was to stop repeating the
+// endpoint's words at all. Here the words are the page's to have, so the bound
+// is different and is written down in the README: the key is the endpoint's own
+// credential, and it is good only at the endpoint that already holds it.
+func withoutReflectedCredentials(header http.Header, key string) {
+	for _, name := range reflectedCredentialHeaders {
+		header.Del(name)
+	}
+	if key == "" {
+		return
+	}
+	for name, values := range header {
+		for _, value := range values {
+			if value == key {
+				header.Del(name)
+				break
+			}
+		}
+	}
+}
+
+// deadlineWriter bounds how long one write to the page may take.
+//
+// `http.ResponseController` rather than a hijacked connection, because the
+// answer is still an ordinary HTTP response and this is the supported way to
+// reach the deadline behind it. Every write extends it by the idle bound and
+// never past the request's own overall deadline; a write that misses it fails,
+// the proxy's copy ends, the handler returns and the slot is released.
+//
+// `SetWriteDeadline` is best effort: a `ResponseWriter` that cannot support one
+// answers `http.ErrNotSupported`, and the write proceeds unbounded rather than
+// the request being refused for the shape of a writer nobody chose. Under the
+// desk's own server it is supported, and the test that exercises this runs
+// against that server.
+type deadlineWriter struct {
+	http.ResponseWriter
+	controller *http.ResponseController
+	until      time.Time
+}
+
+// extend gives the next write the idle bound, capped at the request's overall
+// deadline — **while that deadline is still ahead.** Past it there is one write
+// left, the refusal this handler is about to make, and a deadline already in
+// the past would fail it before it was attempted: the page would be dropped
+// mid-connection instead of told what happened. So the whole bound is the
+// overall deadline plus, at most, one idle bound for the final write, and that
+// is what the README says.
+func (d *deadlineWriter) extend() {
+	now := time.Now()
+	next := now.Add(relayIdle)
+	if next.After(d.until) && d.until.After(now) {
+		next = d.until
+	}
+	_ = d.controller.SetWriteDeadline(next)
+}
+
+func (d *deadlineWriter) WriteHeader(status int) {
+	d.extend()
+	d.ResponseWriter.WriteHeader(status)
+}
+
+func (d *deadlineWriter) Write(p []byte) (int, error) {
+	d.extend()
+	return d.ResponseWriter.Write(p)
+}
+
+// Flush is what `httputil.ReverseProxy` looks for to stream at all: the
+// wrapper must offer it, or a wrapped writer turns every relayed answer into a
+// buffered one.
+func (d *deadlineWriter) Flush() {
+	d.extend()
+	_ = d.controller.Flush()
+}
+
+// Unwrap lets anything else that wants the real writer find it.
+func (d *deadlineWriter) Unwrap() http.ResponseWriter { return d.ResponseWriter }
 
 // idleBody cancels a relayed request that has stopped moving.
 //

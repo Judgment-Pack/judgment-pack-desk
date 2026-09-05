@@ -457,6 +457,27 @@ var AssistantEngines = []string{"vercel", "builtin"}
 // to choose. Nothing in this release acts on this member either.
 var AssistantThinkingTiers = []string{"off", "on", "ultra"}
 
+// The values a file that names neither member decodes to.
+//
+// Declared here rather than left implicit at the decoder, because they are part
+// of the contract the browser shares: `DESK_DEFAULTS.assistant` in
+// `deskConfig.ts` carries the same two, and the shared fixture corpus now
+// asserts the decoded values on both sides, so a default changed on one side
+// and not the other fails on both.
+const (
+	defaultAssistantEngine   = "vercel"
+	defaultAssistantThinking = "off"
+)
+
+// assistantSlot is what a decode of the `assistant` section yields: the
+// endpoint if there is a usable one, and the two settings with their defaults
+// applied.
+type assistantSlot struct {
+	endpoint *assistantEndpoint
+	engine   string
+	thinking string
+}
+
 // assistantEndpoint is what a clean decode of the whole file yields.
 type assistantEndpoint struct {
 	url   string

@@ -17,13 +17,23 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { decodeDeskConfig } from './deskConfig'
+import { DESK_DEFAULTS, decodeDeskConfig } from './deskConfig'
 
 const FIXTURES = join(import.meta.dirname, 'fixtures', 'desk-config')
 
 interface Verdict {
   accepted: boolean
   keys: string[]
+  /**
+   * The decoded values an accepted file yields, the defaults included.
+   *
+   * **Present on every accepted verdict**, so that this corpus proves decoding
+   * parity and not only acceptance parity: the two decoders could otherwise
+   * agree that `{"engine":"builtin"}` is legal and disagree about what it
+   * decoded to, and nothing here would say so.
+   */
+  engine?: string
+  thinking?: string
 }
 
 const expected = JSON.parse(
@@ -55,6 +65,14 @@ describe('the shared desk-configuration fixtures', () => {
       if (verdict.accepted) {
         expect(decoded.problems, `${name} was refused`).toEqual([])
         expect(decoded.values, `${name} produced no values`).toBeDefined()
+        // The values, not only the verdict. Required rather than
+        // compared-if-present: an omitted pair would exempt a fixture from the
+        // parity this exists to hold.
+        expect(verdict.engine, `${name} has no expected engine`).toBeTypeOf('string')
+        expect(verdict.thinking, `${name} has no expected thinking`).toBeTypeOf('string')
+        const assistant = { ...DESK_DEFAULTS.assistant, ...(decoded.values?.assistant ?? {}) }
+        expect(assistant.engine, `${name}: engine`).toBe(verdict.engine)
+        expect(assistant.thinking, `${name}: thinking`).toBe(verdict.thinking)
         return
       }
       expect(decoded.values, `${name} was accepted`).toBeUndefined()

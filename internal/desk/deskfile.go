@@ -58,6 +58,19 @@ type deskDecode struct {
 	// See the note at the end of `decodeDeskFile` for why it is carried out of
 	// a refused decode rather than dropped.
 	Endpoint *assistantEndpoint
+	// Engine and Thinking are the two settings beside the endpoint, with the
+	// defaults applied where the file names neither.
+	//
+	// **Carried rather than validated and dropped**, and the reason is what
+	// the shared corpus is for. Nothing in the chassis acts on either — the
+	// browser is what shows them — but a decoder that checks a member and
+	// throws the value away can only be held to *acceptance* parity: this side
+	// and the page could agree that `{"engine":"builtin"}` is legal and
+	// disagree about what it decoded to, and the fixtures would pass. Carrying
+	// them makes the corpus a statement about the answer and not only about
+	// the verdict.
+	Engine   string
+	Thinking string
 	Problems []deskProblem
 }
 
@@ -180,7 +193,7 @@ func decodeDeskFile(text []byte) deskDecode {
 		problems = append(problems, deskProblem{Key: key, Reason: "unknown key"})
 	}
 
-	var endpoint *assistantEndpoint
+	slot := assistantSlot{engine: defaultAssistantEngine, thinking: defaultAssistantThinking}
 	if section, present := record["organization"]; present {
 		problems = append(problems, decodeOrganization(section)...)
 	}
@@ -202,7 +215,7 @@ func decodeDeskFile(text []byte) deskDecode {
 	if section, present := record["assistant"]; present {
 		found, assistantProblems := decodeAssistant(section)
 		problems = append(problems, assistantProblems...)
-		endpoint = found
+		slot = found
 	}
 
 	// **The endpoint is carried out even when the file is refused, and the
@@ -216,7 +229,12 @@ func decodeDeskFile(text []byte) deskDecode {
 	//
 	// Nothing may read `Endpoint` without asking `refused()` first;
 	// `configuredEndpoint` is the only caller and does exactly that.
-	return deskDecode{Endpoint: endpoint, Problems: dedupeProblems(withoutRedundantReasons(problems))}
+	return deskDecode{
+		Endpoint: slot.endpoint,
+		Engine:   slot.engine,
+		Thinking: slot.thinking,
+		Problems: dedupeProblems(withoutRedundantReasons(problems)),
+	}
 }
 
 // scanForKeys walks the parsed document and names every credential-shaped
@@ -549,22 +567,32 @@ func acceptableIssuer(issuer string) bool {
 // the browser decodes the same file under the same contract and is what shows
 // them. What this side is for is that a file the browser refuses refuses here
 // too, so an unknown engine authorises no outbound request either.
-func decodeAssistant(value any) (*assistantEndpoint, []deskProblem) {
+func decodeAssistant(value any) (assistantSlot, []deskProblem) {
+	slot := assistantSlot{engine: defaultAssistantEngine, thinking: defaultAssistantThinking}
 	record, problems := object(value, "assistant", []string{"endpoint", "engine", "thinking"})
 	if record == nil {
-		return nil, problems
+		return slot, problems
 	}
 	problems = append(problems, oneOf(record, "assistant", "engine", AssistantEngines)...)
 	problems = append(problems, oneOf(record, "assistant", "thinking", AssistantThinkingTiers)...)
+	// Read back only where the file said something this decoder accepts; a
+	// refused value leaves the default standing, and the file is refused whole
+	// anyway.
+	if named, ok := record["engine"].(string); ok && contains(AssistantEngines, named) {
+		slot.engine = named
+	}
+	if named, ok := record["thinking"].(string); ok && contains(AssistantThinkingTiers, named) {
+		slot.thinking = named
+	}
 	endpoint, present := record["endpoint"]
 	if !present || endpoint == nil {
-		return nil, problems
+		return slot, problems
 	}
 	inner, innerProblems := object(endpoint, "assistant.endpoint",
 		[]string{"url", "kind", "model", "tools"})
 	problems = append(problems, innerProblems...)
 	if inner == nil {
-		return nil, problems
+		return slot, problems
 	}
 
 	raw, ok := inner["url"].(string)
@@ -626,14 +654,15 @@ func decodeAssistant(value any) (*assistantEndpoint, []deskProblem) {
 	// Same rule one level down: the object is handed back whenever it decoded
 	// into something, and whether it may be *used* is `refused()`'s answer.
 	if len(problems) > 0 {
-		return nil, problems
+		return slot, problems
 	}
-	return &assistantEndpoint{
+	slot.endpoint = &assistantEndpoint{
 		url:   normalizedEndpointURL(trimmedURL),
 		kind:  kind,
 		model: trimmedModel,
 		tools: tools,
-	}, problems
+	}
+	return slot, problems
 }
 
 // endpointURLProblem is the transport rule, and the credential rule beside it.
