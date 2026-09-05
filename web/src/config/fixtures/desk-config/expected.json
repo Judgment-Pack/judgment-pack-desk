@@ -3,6 +3,30 @@
     "accepted": true,
     "keys": []
   },
+  "accepted-assistant-engine-builtin": {
+    "accepted": true,
+    "keys": []
+  },
+  "accepted-assistant-engine-vercel": {
+    "accepted": true,
+    "keys": []
+  },
+  "accepted-assistant-slot-without-an-endpoint": {
+    "accepted": true,
+    "keys": []
+  },
+  "accepted-assistant-thinking-off": {
+    "accepted": true,
+    "keys": []
+  },
+  "accepted-assistant-thinking-on": {
+    "accepted": true,
+    "keys": []
+  },
+  "accepted-assistant-thinking-ultra": {
+    "accepted": true,
+    "keys": []
+  },
   "accepted-endpoint": {
     "accepted": true,
     "keys": []
@@ -75,6 +99,18 @@
       "appearance"
     ]
   },
+  "refused-assistant-engine-not-a-string": {
+    "accepted": false,
+    "keys": [
+      "assistant.engine"
+    ]
+  },
+  "refused-assistant-engine-unknown": {
+    "accepted": false,
+    "keys": [
+      "assistant.engine"
+    ]
+  },
   "refused-assistant-not-object": {
     "accepted": false,
     "keys": [
@@ -85,6 +121,18 @@
     "accepted": false,
     "keys": [
       "assistant.mode"
+    ]
+  },
+  "refused-assistant-thinking-not-a-string": {
+    "accepted": false,
+    "keys": [
+      "assistant.thinking"
+    ]
+  },
+  "refused-assistant-thinking-unknown": {
+    "accepted": false,
+    "keys": [
+      "assistant.thinking"
     ]
   },
   "refused-endpoint-blank-model": {

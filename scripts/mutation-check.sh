@@ -576,6 +576,15 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the tool allow-list is not consulted" "$DF" \
     '				if !contains(AssistantTools, name) {' \
     '				if false && !contains(AssistantTools, name) {'
+  # An engine nobody certified, and a tier nothing implements. Both are
+  # settings that read as a grant to whoever wrote them, so both refuse the
+  # whole file rather than falling back to the default.
+  mutate go "an engine nobody certified is accepted" "$DF" \
+    '	problems = append(problems, oneOf(record, "assistant", "engine", AssistantEngines)...)' \
+    ''
+  mutate go "a thinking tier nothing implements is accepted" "$DF" \
+    '	problems = append(problems, oneOf(record, "assistant", "thinking", AssistantThinkingTiers)...)' \
+    ''
   # A bearer credential in clear text over a network is a credential given away.
   mutate go "http is accepted off loopback" "$DF" \
     '	if parsed.Scheme == "http" &&
@@ -3347,6 +3356,16 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "a fragment on the endpoint is accepted" "$D" \
     "  if (url.hash !== '' || raw.includes('#')) {" \
     '  if (false) {'
+  mutate web "the page accepts an engine nobody certified" "$D" \
+    "        engine:
+          oneOf(assistant.engine, 'assistant.engine', ASSISTANT_ENGINES, problems) ??
+          DESK_DEFAULTS.assistant.engine," \
+    '        engine: DESK_DEFAULTS.assistant.engine,'
+  mutate web "the page accepts a thinking tier nothing implements" "$D" \
+    "        thinking:
+          oneOf(assistant.thinking, 'assistant.thinking', ASSISTANT_THINKING, problems) ??
+          DESK_DEFAULTS.assistant.thinking" \
+    '        thinking: DESK_DEFAULTS.assistant.thinking'
   # The typed key, and how long the page holds it.
   # An assignment to the node takes effect at once; a `setState` would not
   # have, which is the whole reason the field is uncontrolled.

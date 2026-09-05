@@ -19,7 +19,11 @@
  */
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { useAssistantKey } from './queries'
-import type { AssistantEndpointConfig } from '../config/deskConfig'
+import type {
+  AssistantEndpointConfig,
+  AssistantEngine,
+  ThinkingTier
+} from '../config/deskConfig'
 
 export interface AssistantSlot {
   /** `configured` exactly where an endpoint is; the key is reported apart. */
@@ -35,6 +39,17 @@ export interface AssistantSlot {
    * name, which is where that decision belongs.
    */
   keyPresent: boolean
+  /**
+   * Which engine would run the loop, and at what depth.
+   *
+   * Reported whatever `state` is, and defaulted rather than optional: "the
+   * file said nothing" and "the file said `vercel`" describe the same desk,
+   * and a consumer that had to tell them apart would be a consumer inventing
+   * a fourth state. Nothing acts on either in this release — `thinking` in
+   * particular is stored and shown, and no request is shaped by it.
+   */
+  engine: AssistantEngine
+  thinking: ThinkingTier
 }
 
 export function useAssistantSlot(): AssistantSlot {
@@ -44,6 +59,8 @@ export function useAssistantSlot(): AssistantSlot {
   return {
     state: endpoint === null ? 'none' : 'configured',
     endpoint,
-    keyPresent: key.data?.present ?? false
+    keyPresent: key.data?.present ?? false,
+    engine: config.assistant.engine,
+    thinking: config.assistant.thinking
   }
 }

@@ -537,11 +537,25 @@ func acceptableIssuer(issuer string) bool {
 }
 
 // decodeAssistant reads the slot, and is the only section that yields a value.
+//
+// **Three members, and two of them say how rather than whether.** `engine` and
+// `thinking` are allowed beside a null endpoint on purpose: they describe how
+// an assistant would run, and a desk that has not configured one yet may still
+// have an opinion about that. Both are optional, both default, and both are
+// refused by name for an unknown value — an engine nobody certified, or a tier
+// nothing implements, is a setting that reads as a grant to whoever wrote it.
+//
+// Neither is carried out of here, because nothing in the chassis reads them:
+// the browser decodes the same file under the same contract and is what shows
+// them. What this side is for is that a file the browser refuses refuses here
+// too, so an unknown engine authorises no outbound request either.
 func decodeAssistant(value any) (*assistantEndpoint, []deskProblem) {
-	record, problems := object(value, "assistant", []string{"endpoint"})
+	record, problems := object(value, "assistant", []string{"endpoint", "engine", "thinking"})
 	if record == nil {
 		return nil, problems
 	}
+	problems = append(problems, oneOf(record, "assistant", "engine", AssistantEngines)...)
+	problems = append(problems, oneOf(record, "assistant", "thinking", AssistantThinkingTiers)...)
 	endpoint, present := record["endpoint"]
 	if !present || endpoint == nil {
 		return nil, problems

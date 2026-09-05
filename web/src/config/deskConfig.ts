@@ -90,6 +90,35 @@ export const ASSISTANT_TOOLS = [
 export type AssistantTool = (typeof ASSISTANT_TOOLS)[number]
 
 /**
+ * The loops that may run the assistant.
+ *
+ * **A name, and no vendor discriminator** — the identity slot's precedent, for
+ * the identity slot's reason. ADR-0001 makes the engine a slot exactly so that
+ * the desk's promises are held *below* whatever runs the loop, and an engine
+ * ships only once it has passed the desk's own conformance session. A value
+ * outside this list refuses the whole file by name, because a configuration
+ * naming an engine nobody certified is a configuration asking for one.
+ *
+ * `vercel` is the default and `builtin` is the keyless fallback. Mirrored from
+ * `AssistantEngines` in `internal/desk/assistant.go` and held to it by a test
+ * that reads that file.
+ */
+export const ASSISTANT_ENGINES = ['vercel', 'builtin'] as const
+export type AssistantEngine = (typeof ASSISTANT_ENGINES)[number]
+
+/**
+ * The depths the engine may be asked to run the model's reasoning at.
+ *
+ * `off` is the default. The two states this tier cannot express — a model that
+ * always thinks, and an endpoint that offers no thinking at all — are the
+ * desk's to *report* when it meets them, and are deliberately not values
+ * anybody can select. Mirrored from `AssistantThinkingTiers` in
+ * `internal/desk/assistant.go`.
+ */
+export const ASSISTANT_THINKING = ['off', 'on', 'ultra'] as const
+export type ThinkingTier = (typeof ASSISTANT_THINKING)[number]
+
+/**
  * A model endpoint, as the desk records it.
  *
  * **There is no vendor, no operator and no mode here, and that absence is the
@@ -117,8 +146,19 @@ export interface AssistantEndpointConfig {
   tools: string[]
 }
 
+/**
+ * The assistant slot: one nullable endpoint, and two settings about how it runs.
+ *
+ * **`engine` and `thinking` say how, never whether**, which is why they are
+ * allowed beside a null endpoint rather than nested inside one. Neither is a
+ * discriminator and neither can acquire an affordance the other values lack:
+ * each is one string from a closed list, on the identity slot's precedent, and
+ * an unknown value refuses the whole file by name.
+ */
 export interface AssistantConfig {
   endpoint: AssistantEndpointConfig | null
+  engine: AssistantEngine
+  thinking: ThinkingTier
 }
 
 export interface AppearanceConfig {
@@ -194,7 +234,7 @@ export const DESK_DEFAULTS: DeskConfig = {
   organization: { name: null, mark: null },
   user: { displayName: 'local user' },
   identity: { provider: null },
-  assistant: { endpoint: null },
+  assistant: { endpoint: null, engine: 'vercel', thinking: 'off' },
   appearance: { theme: 'system', density: 'comfortable' },
   panes: {
     left: { mode: 'expanded', width: 248 },
@@ -450,9 +490,22 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
   }
 
   if ('assistant' in record && location === 'desk') {
-    const assistant = section(record.assistant, 'assistant', ['endpoint'], problems)
+    const assistant = section(
+      record.assistant,
+      'assistant',
+      ['endpoint', 'engine', 'thinking'],
+      problems
+    )
     if (assistant) {
-      values.assistant = { endpoint: endpointValue(assistant.endpoint, problems) }
+      values.assistant = {
+        endpoint: endpointValue(assistant.endpoint, problems),
+        engine:
+          oneOf(assistant.engine, 'assistant.engine', ASSISTANT_ENGINES, problems) ??
+          DESK_DEFAULTS.assistant.engine,
+        thinking:
+          oneOf(assistant.thinking, 'assistant.thinking', ASSISTANT_THINKING, problems) ??
+          DESK_DEFAULTS.assistant.thinking
+      }
     }
   }
 

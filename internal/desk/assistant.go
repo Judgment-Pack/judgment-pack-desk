@@ -426,6 +426,29 @@ var AssistantKinds = []string{"openai-compatible", "anthropic"}
 // tool because proposing an edit is the assistant's whole reach.
 var AssistantTools = []string{"get_schema", "get_example", "validate", "experimental_evaluate"}
 
+// AssistantEngines is the closed set of loops that may run the assistant.
+//
+// **A name, and no vendor discriminator** — the identity slot's precedent, for
+// the identity slot's reason. ADR-0001 makes the engine a slot precisely so
+// that the desk's promises (propose-only, rehearsal-only, the tool allow-list,
+// key custody) are held *below* whatever runs the loop, and an engine ships
+// only once it has passed the desk's own conformance session. A value outside
+// this list is therefore refused by name rather than ignored: a configuration
+// naming an engine nobody certified is a configuration asking for one.
+//
+// `vercel` is the default and `builtin` is the keyless fallback. Nothing in
+// this release reads either: the member is stored and shown.
+var AssistantEngines = []string{"vercel", "builtin"}
+
+// AssistantThinkingTiers is the closed set of depths the engine may be asked
+// to run the model's reasoning at.
+//
+// `off` is the default. The two states the tier cannot express — a model that
+// always thinks, and an endpoint that offers no thinking at all — are the
+// desk's to report at the moment they are discovered, not settings for anyone
+// to choose. Nothing in this release acts on this member either.
+var AssistantThinkingTiers = []string{"off", "on", "ultra"}
+
 // assistantEndpoint is what a clean decode of the whole file yields.
 type assistantEndpoint struct {
 	url   string

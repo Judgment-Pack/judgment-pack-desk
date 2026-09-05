@@ -27,7 +27,10 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  ASSISTANT_ENGINES,
+  ASSISTANT_THINKING,
   ASSISTANT_TOOLS,
+  DESK_DEFAULTS,
   KEYS_ARE_NEVER_IN_CONFIGURATION,
   decodeDeskConfig,
   type AssistantConfig,
@@ -91,14 +94,20 @@ function membersOf(body: string): string[] {
 /** True only where two key sets are the same set, both ways round. */
 type Exactly<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
 
-/** The serialized assistant slot: one nullable field, and no second one. */
-const ASSISTANT_KEYS = ['endpoint'] as const
+/**
+ * The serialized assistant slot: one nullable field and two settings about how
+ * it runs — and **no fourth member**, which is what this set being asserted
+ * whole is for. `engine` and `thinking` say *how*; neither is a discriminator
+ * and neither is a place a supplied endpoint could become a different thing
+ * from one you run yourself.
+ */
+const ASSISTANT_KEYS = ['endpoint', 'engine', 'thinking'] as const
 
 /** The endpoint object's members, exactly as the schema declares them. */
 const ENDPOINT_KEYS = ['url', 'kind', 'model', 'tools'] as const
 
 /** What the future assistant pane reads. */
-const SLOT_KEYS = ['state', 'endpoint', 'keyPresent'] as const
+const SLOT_KEYS = ['state', 'endpoint', 'keyPresent', 'engine', 'thinking'] as const
 
 const assistantKeysAreExact: Exactly<keyof AssistantConfig, (typeof ASSISTANT_KEYS)[number]> = true
 const endpointKeysAreExact: Exactly<
@@ -119,8 +128,8 @@ const GOOD_ENDPOINT = {
   tools: []
 }
 
-describe('(1) the assistant slot is one nullable field with exactly four members', () => {
-  it('declares the assistant key set as exactly endpoint, and no other member', () => {
+describe('(1) the assistant slot is one nullable field, two settings, and four endpoint members', () => {
+  it('declares the assistant key set as exactly endpoint, engine and thinking', () => {
     expect(assistantKeysAreExact).toBe(true)
     expect(membersOf(interfaceBody(read('config/deskConfig.ts'), 'AssistantConfig'))).toEqual([
       ...ASSISTANT_KEYS
@@ -149,6 +158,8 @@ describe('(1) the assistant slot is one nullable field with exactly four members
   it('refuses any member beside the endpoint, by name', () => {
     // The other depth, and the one an inner-object-only guard leaves open: a
     // `kind` here would branch the desk just as effectively as one inside.
+    // `engine` and `thinking` are not in this list because they are declared
+    // members now — and the set above is what says there is no fourth.
     for (const name of ['kind', 'mode', 'operator', 'vendor', 'supplied']) {
       const decoded = decodeDesk({ endpoint: null, [name]: 'v' })
       expect(decoded.values, `assistant.${name} refuses the whole file`).toBeUndefined()
@@ -167,6 +178,75 @@ describe('(1) the assistant slot is one nullable field with exactly four members
     expect(slot).toContain("'none' | 'configured'")
     for (const forbidden of ['bring-your-own', 'supplied', 'byo', 'managed']) {
       expect(slot, `the slot has a ${forbidden} state`).not.toContain(`'${forbidden}'`)
+    }
+  })
+})
+
+describe('(1a) engine and thinking are closed lists that say how, not whether', () => {
+  it('accepts every engine and every tier the desk declares', () => {
+    for (const engine of ASSISTANT_ENGINES) {
+      const decoded = decodeDesk({ endpoint: GOOD_ENDPOINT, engine })
+      expect(decoded.problems, engine).toEqual([])
+      expect(decoded.values?.assistant?.engine).toBe(engine)
+    }
+    for (const thinking of ASSISTANT_THINKING) {
+      const decoded = decodeDesk({ endpoint: GOOD_ENDPOINT, thinking })
+      expect(decoded.problems, thinking).toEqual([])
+      expect(decoded.values?.assistant?.thinking).toBe(thinking)
+    }
+  })
+
+  it('refuses an unknown value, and a wrong type, by its exact key path', () => {
+    // Named the way `assistant.endpoint.kind` is named. An engine nobody
+    // certified is a setting that reads as a grant to whoever wrote it, so it
+    // refuses the whole file rather than falling back to the default.
+    for (const [member, value] of [
+      ['engine', 'langchain'],
+      ['engine', 1],
+      ['engine', null],
+      ['thinking', 'hard'],
+      ['thinking', true]
+    ] as [string, unknown][]) {
+      const decoded = decodeDesk({ endpoint: GOOD_ENDPOINT, [member]: value })
+      expect(decoded.values, `assistant.${member} = ${String(value)} was accepted`).toBeUndefined()
+      expect(decoded.problems.map((problem) => problem.key)).toContain(`assistant.${member}`)
+    }
+  })
+
+  it('allows both beside a null endpoint, because they say how and not whether', () => {
+    const decoded = decodeDesk({ endpoint: null, engine: 'builtin', thinking: 'ultra' })
+    expect(decoded.problems).toEqual([])
+    expect(decoded.values?.assistant).toEqual({
+      endpoint: null,
+      engine: 'builtin',
+      thinking: 'ultra'
+    })
+  })
+
+  it('defaults to vercel and off where the file says nothing', () => {
+    expect(DESK_DEFAULTS.assistant.engine).toBe('vercel')
+    expect(DESK_DEFAULTS.assistant.thinking).toBe('off')
+    const decoded = decodeDesk({ endpoint: GOOD_ENDPOINT })
+    expect(decoded.values?.assistant?.engine).toBe('vercel')
+    expect(decoded.values?.assistant?.thinking).toBe('off')
+  })
+
+  it('is the same pair of lists the chassis refuses by', () => {
+    // Two implementations of one contract drift; the fixtures hold the
+    // verdicts and this holds the vocabularies, read out of the Go source the
+    // same way the tool list is.
+    const source = readFileSync(
+      join(SRC, '..', '..', 'internal', 'desk', 'assistant.go'),
+      'utf8'
+    )
+    for (const [declaration, list] of [
+      ['AssistantEngines', ASSISTANT_ENGINES],
+      ['AssistantThinkingTiers', ASSISTANT_THINKING]
+    ] as [string, readonly string[]][]) {
+      const found = new RegExp(`var ${declaration} = \\[\\]string\\{([^}]*)\\}`).exec(source)
+      expect(found, `${declaration} is declared in internal/desk/assistant.go`).not.toBeNull()
+      const go = [...found![1]!.matchAll(/"([^"]+)"/g)].map((match) => match[1]!)
+      expect(go).toEqual([...list])
     }
   })
 })

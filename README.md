@@ -1199,8 +1199,10 @@ spelling.
 ### The assistant slot
 
 `assistant.endpoint` is one nullable field — null, or an object — on the same
-pattern as `identity.provider` and for the same reason. There are three
-**deployment states** and they are not three shapes:
+pattern as `identity.provider` and for the same reason. Beside it are two
+settings that say **how** an assistant runs rather than whether there is one:
+`assistant.engine` and `assistant.thinking`. There are three **deployment
+states** and they are not three shapes:
 
 | | |
 | --- | --- |
@@ -1243,8 +1245,37 @@ set and decides no outcome. The list is mirrored in
 `internal/desk/assistant.go` and held to it by a test that reads that file,
 because both sides refuse by it.
 
+`engine` names the loop that runs the assistant, and `thinking` the depth it
+runs the model's reasoning at:
+
+```json
+{ "assistant": { "endpoint": { }, "engine": "vercel", "thinking": "off" } }
+```
+
+Both are optional, both default — `vercel` and `off` — and both are allowed
+with `endpoint: null`, because they describe how an assistant would run and a
+desk that has configured none may still have an opinion about that. Each is one
+string from a closed list, on the identity slot's precedent: no discriminator,
+no vendor, and a value outside the list refused **by name** (`assistant.engine`,
+`assistant.thinking`) rather than ignored — a setting that appears to grant
+something is a grant to whoever wrote it.
+
+`engine` admits `vercel`, the default, and `builtin`, a fallback that adds
+nothing to what this desk already ships. The slot exists so that the desk's
+promises — propose-only, rehearsal-only, the tool allow-list, key custody — are
+held *below* whatever runs the loop, and so that an engine ships only once it
+has passed the desk's own conformance session
+([ADR-0001](docs/adr/0001-make-the-assistant-engine-a-slot.md)). `thinking`
+admits `off`, `on` and `ultra`; the two states it cannot express — a model that
+always thinks, and an endpoint that offers no thinking at all — are the desk's
+to report when it meets them rather than settings anyone selects.
+
+**Nothing in this release acts on either.** They are decoded, refused if wrong,
+exposed by `useAssistantSlot()` and shown on Admin. No request is shaped by
+`thinking` and no engine is loaded.
+
 **Admin › Assistant** shows the configured endpoint, its protocol, its model
-and its tools with the file each came from, the exact JSON to paste, the key
+and its tools with the file each came from, the engine and the tier, the exact JSON to paste, the key
 control described under [Security model](#security-model), and a **Check
 reachability** button that reports the desk's own probe. The key and the
 endpoint are separate: removing the endpoint from the file does not remove the

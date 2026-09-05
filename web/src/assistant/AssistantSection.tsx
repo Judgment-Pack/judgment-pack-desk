@@ -61,6 +61,7 @@ export const DEPLOYMENT_STATES: [string, string][] = [
 export function AssistantSection({ id, title }: { id: string; title: string }) {
   const { config, sources, desk } = useEffectiveConfig()
   const endpoint = config.assistant.endpoint
+  const { engine, thinking } = config.assistant
   const key = useAssistantKey()
   const store = useStoreAssistantKey()
   const remove = useRemoveAssistantKey()
@@ -151,6 +152,23 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
         </p>
       )}
 
+      <Fields
+        items={[
+          ['Engine', <code key="engine">{engine}</code>],
+          ['Thinking', <code key="thinking">{thinking}</code>]
+        ]}
+      />
+      <p className="quiet">
+        <strong>Both say how the assistant runs, not whether there is one</strong>, so they are
+        set beside the endpoint rather than inside it and apply with no endpoint configured.{' '}
+        <code>engine</code> names the loop — <code>vercel</code> by default,{' '}
+        <code>builtin</code> for a fallback that adds nothing to what this desk already ships —
+        and every one of them is held to the same promises by the desk rather than by itself.{' '}
+        <code>thinking</code> is the depth: <code>off</code> by default, then <code>on</code> and{' '}
+        <code>ultra</code>. Nothing in this release acts on either; they are read from the file
+        and shown here. A value outside those lists refuses the whole file by name.
+      </p>
+
       <p className="quiet">
         The assistant may be given only these tools:{' '}
         <code>{ASSISTANT_TOOLS.join(', ')}</code>. Every one of them is a question put to the
@@ -169,7 +187,9 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
               kind: 'openai-compatible',
               model: 'a-model',
               tools: [...ASSISTANT_TOOLS]
-            }
+            },
+            engine: 'vercel',
+            thinking: 'off'
           }
         }}
       />
