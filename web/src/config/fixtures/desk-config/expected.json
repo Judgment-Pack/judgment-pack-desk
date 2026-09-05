@@ -1,67 +1,141 @@
 {
   "accepted-appearance-dark-compact": {
     "accepted": true,
-    "keys": []
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
+  },
+  "accepted-assistant-engine-builtin": {
+    "accepted": true,
+    "keys": [],
+    "engine": "builtin",
+    "thinking": "off"
+  },
+  "accepted-assistant-engine-vercel": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
+  },
+  "accepted-assistant-slot-without-an-endpoint": {
+    "accepted": true,
+    "keys": [],
+    "engine": "builtin",
+    "thinking": "ultra"
+  },
+  "accepted-assistant-thinking-off": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
+  },
+  "accepted-assistant-thinking-on": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "on"
+  },
+  "accepted-assistant-thinking-ultra": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "ultra"
   },
   "accepted-endpoint": {
     "accepted": true,
-    "keys": []
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
+  },
+  "accepted-endpoint-every-tool": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
   },
   "accepted-endpoint-loopback-http": {
     "accepted": true,
-    "keys": []
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
   },
   "accepted-endpoint-no-tools-allowed": {
     "accepted": true,
-    "keys": []
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
   },
   "accepted-endpoint-with-query": {
     "accepted": true,
-    "keys": []
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
   },
   "accepted-every-section": {
     "accepted": true,
-    "keys": []
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
   },
   "accepted-identity-issuer-loopback": {
     "accepted": true,
-    "keys": []
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
   },
   "accepted-identity-provider-in-full": {
     "accepted": true,
-    "keys": []
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
   },
   "accepted-identity-provider-nulls": {
     "accepted": true,
-    "keys": []
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
   },
   "accepted-minimal": {
     "accepted": true,
-    "keys": []
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
   },
   "accepted-null-endpoint": {
     "accepted": true,
-    "keys": []
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
   },
   "accepted-organization-mark-data-uri": {
     "accepted": true,
-    "keys": []
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
   },
   "accepted-organization-mark-svg": {
     "accepted": true,
-    "keys": []
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
   },
   "accepted-panes-at-the-bounds": {
     "accepted": true,
-    "keys": []
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
   },
   "accepted-panes-partial": {
     "accepted": true,
-    "keys": []
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
   },
   "accepted-storage-nested-dir": {
     "accepted": true,
-    "keys": []
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
   },
   "refused-appearance-density-unknown": {
     "accepted": false,
@@ -75,6 +149,18 @@
       "appearance"
     ]
   },
+  "refused-assistant-engine-not-a-string": {
+    "accepted": false,
+    "keys": [
+      "assistant.engine"
+    ]
+  },
+  "refused-assistant-engine-unknown": {
+    "accepted": false,
+    "keys": [
+      "assistant.engine"
+    ]
+  },
   "refused-assistant-not-object": {
     "accepted": false,
     "keys": [
@@ -85,6 +171,24 @@
     "accepted": false,
     "keys": [
       "assistant.mode"
+    ]
+  },
+  "refused-assistant-thinking-not-a-string": {
+    "accepted": false,
+    "keys": [
+      "assistant.thinking"
+    ]
+  },
+  "refused-assistant-thinking-unknown": {
+    "accepted": false,
+    "keys": [
+      "assistant.thinking"
+    ]
+  },
+  "refused-endpoint-a-sixth-tool": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.tools"
     ]
   },
   "refused-endpoint-blank-model": {

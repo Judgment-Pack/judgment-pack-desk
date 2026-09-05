@@ -739,10 +739,15 @@ func TestProbeRefusesWithoutAKey(t *testing.T) {
 	}
 }
 
-func TestTheToolAllowListIsTheFourReadOnlyOnes(t *testing.T) {
+func TestTheToolAllowListIsTheFiveReadOnlyOnes(t *testing.T) {
 	// Held here as a declaration a reader can check against the page's own
 	// list, which `assistant/enforcement.test.ts` reads out of this file.
-	want := []string{"get_schema", "get_example", "validate", "experimental_evaluate"}
+	// `list_examples` is on it because the runtime's own `author_pack` prompt
+	// tells the model to call it: a list without it grants a capability the
+	// prompt then asks for and cannot have.
+	want := []string{
+		"get_schema", "list_examples", "get_example", "validate", "experimental_evaluate",
+	}
 	if len(AssistantTools) != len(want) {
 		t.Fatalf("AssistantTools = %v", AssistantTools)
 	}

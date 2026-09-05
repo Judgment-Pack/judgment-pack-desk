@@ -95,6 +95,11 @@ type Server struct {
 	// it simply will not keep one, and says which directory is the reason. See
 	// custody.go.
 	assistant *assistantStore
+	// relaySlots bounds how many model-relay requests are in flight at once.
+	// A buffered channel rather than a semaphore type: taking a slot without
+	// waiting is one `select` with a `default`, which is exactly the "a bound,
+	// not a queue" the relay promises. See modelrelay.go.
+	relaySlots chan struct{}
 	// writes serializes the compare-and-commit of every write. One mutex, not
 	// one per path: a per-path key is a *spelling*, and two spellings of one
 	// file on a case-insensitive filesystem would take different locks and both
@@ -144,6 +149,7 @@ func New(cfg Config) (*Server, error) {
 		root:       root,
 		projectDir: resolved,
 		configDir:  configDirFor(cfg.DeskConfigDir),
+		relaySlots: make(chan struct{}, maxRelayInFlight),
 	}
 	// Validated and pinned once. Doing it per request would let the authority
 	// itself be retargeted between requests, which is the same argument the
@@ -176,6 +182,12 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("PUT /api/assistant/key", s.handleAssistantKeyWrite)
 	s.mux.HandleFunc("DELETE /api/assistant/key", s.handleAssistantKeyDelete)
 	s.mux.HandleFunc("POST /api/assistant/probe", s.handleAssistantProbe)
+	// The model relay: the one route that carries traffic this chassis does
+	// not read. It exists because the page runs the assistant's loop and the
+	// key must never reach the page, so the request that presents it has to be
+	// made here. Every method, because the protocols on the other side define
+	// their own. See modelrelay.go for the whole argument.
+	s.mux.HandleFunc(relayPrefix+"{suffix...}", s.handleModelRelay)
 	s.mux.HandleFunc("/", s.handleStatic)
 
 	w, werr := newWatcher(resolved, s.log, s.broadcastFileChange)
@@ -212,10 +224,16 @@ func (s *Server) Close() error {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
 
+// sessionTokenParameter is the name this chassis authenticates every request
+// with, and therefore the only query parameter name a relayed request may
+// carry. Declared once, here, beside the guard that reads it, so the guard's
+// spelling and the relay's rule cannot drift apart.
+const sessionTokenParameter = "token"
+
 // authorized reports whether the request carries the session token. The
 // comparison is constant-time so that a wrong token leaks no prefix.
 func (s *Server) authorized(r *http.Request) bool {
-	got := r.URL.Query().Get("token")
+	got := r.URL.Query().Get(sessionTokenParameter)
 	if got == "" {
 		return false
 	}

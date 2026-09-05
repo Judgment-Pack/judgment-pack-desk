@@ -421,10 +421,62 @@ var AssistantKinds = []string{"openai-compatible", "anthropic"}
 //
 // Held here as well as in the page's decoder because both sides refuse by it,
 // and a test reads this declaration to hold the two lists to one answer. Every
-// one of them is a **read** of the runtime: three questions and a rehearsal.
+// one of them is a **read** of the runtime: four questions and a rehearsal.
 // There is no write tool on the list because the runtime has none, and no file
 // tool because proposing an edit is the assistant's whole reach.
-var AssistantTools = []string{"get_schema", "get_example", "validate", "experimental_evaluate"}
+//
+// **`list_examples` is on it because the runtime's own prompt calls it.** The
+// `author_pack` prompt tells the model to list the examples before asking for
+// one, so a list without it grants a capability the prompt then asks for and
+// cannot have — an assistant refused by its own instructions. It is a read
+// like the rest: the names of the examples the runtime serves.
+var AssistantTools = []string{
+	"get_schema", "list_examples", "get_example", "validate", "experimental_evaluate",
+}
+
+// AssistantEngines is the closed set of loops that may run the assistant.
+//
+// **A name, and no vendor discriminator** — the identity slot's precedent, for
+// the identity slot's reason. ADR-0001 makes the engine a slot precisely so
+// that the desk's promises (propose-only, rehearsal-only, the tool allow-list,
+// key custody) are held *below* whatever runs the loop, and an engine ships
+// only once it has passed the desk's own conformance session. A value outside
+// this list is therefore refused by name rather than ignored: a configuration
+// naming an engine nobody certified is a configuration asking for one.
+//
+// `vercel` is the default and `builtin` is the keyless fallback. Nothing in
+// this release reads either: the member is stored and shown.
+var AssistantEngines = []string{"vercel", "builtin"}
+
+// AssistantThinkingTiers is the closed set of depths the engine may be asked
+// to run the model's reasoning at.
+//
+// `off` is the default. The two states the tier cannot express — a model that
+// always thinks, and an endpoint that offers no thinking at all — are the
+// desk's to report at the moment they are discovered, not settings for anyone
+// to choose. Nothing in this release acts on this member either.
+var AssistantThinkingTiers = []string{"off", "on", "ultra"}
+
+// The values a file that names neither member decodes to.
+//
+// Declared here rather than left implicit at the decoder, because they are part
+// of the contract the browser shares: `DESK_DEFAULTS.assistant` in
+// `deskConfig.ts` carries the same two, and the shared fixture corpus now
+// asserts the decoded values on both sides, so a default changed on one side
+// and not the other fails on both.
+const (
+	defaultAssistantEngine   = "vercel"
+	defaultAssistantThinking = "off"
+)
+
+// assistantSlot is what a decode of the `assistant` section yields: the
+// endpoint if there is a usable one, and the two settings with their defaults
+// applied.
+type assistantSlot struct {
+	endpoint *assistantEndpoint
+	engine   string
+	thinking string
+}
 
 // assistantEndpoint is what a clean decode of the whole file yields.
 type assistantEndpoint struct {
@@ -774,6 +826,23 @@ func transportDiagnostic(err error) string {
 	return DiagnosticUnexpected
 }
 
+// attachCredential presents the key the way this protocol requires.
+//
+// **The table it reads is `credentialHeader`, in `modelrelay.go`, and it is
+// the only one.** The probe and the relay present the same credential to the
+// same endpoint; two tables would be two answers about what an `anthropic`
+// endpoint is sent, and the one that was wrong would be wrong with a key in
+// it. A kind neither of them defines attaches nothing at all rather than
+// guessing — `decodeDeskFile` refuses every such kind by name, so reaching
+// here with one is a bug rather than a configuration.
+func attachCredential(header http.Header, kind, key string) {
+	name, value, ok := credentialHeader(kind, key)
+	if !ok {
+		return
+	}
+	header.Set(name, value)
+}
+
 func probeRequest(ctx context.Context, endpoint assistantEndpoint, key string) (*http.Request, error) {
 	switch endpoint.kind {
 	case "openai-compatible":
@@ -782,7 +851,7 @@ func probeRequest(ctx context.Context, endpoint assistantEndpoint, key string) (
 		if err != nil {
 			return nil, err
 		}
-		request.Header.Set("Authorization", "Bearer "+key)
+		attachCredential(request.Header, endpoint.kind, key)
 		return request, nil
 	case "anthropic":
 		payload, err := json.Marshal(map[string]any{
@@ -798,7 +867,7 @@ func probeRequest(ctx context.Context, endpoint assistantEndpoint, key string) (
 		if err != nil {
 			return nil, err
 		}
-		request.Header.Set("x-api-key", key)
+		attachCredential(request.Header, endpoint.kind, key)
 		// The version this protocol requires on every request. It is a
 		// property of the wire, not a model or a vendor choice, and an
 		// endpoint speaking this protocol refuses a request without it.

@@ -111,6 +111,22 @@ function renderSection(
   )
 }
 
+/**
+ * The value shown against one field label.
+ *
+ * By the label rather than by the value, because a value like `vercel` also
+ * appears in the prose and in the paste block — a bare text query would find
+ * three of them and prove none.
+ */
+function fieldValue(container: HTMLElement, label: string): string | undefined {
+  for (const field of container.querySelectorAll('dl.fields .field')) {
+    if (field.querySelector('dt')?.textContent === label) {
+      return field.querySelector('dd')?.textContent ?? undefined
+    }
+  }
+  return undefined
+}
+
 /** Every value React Query is currently holding on behalf of a mutation. */
 function retainedVariables(client: QueryClient): unknown[] {
   return client
@@ -138,10 +154,12 @@ describe('the Assistant section', () => {
     const { container } = renderSection()
     // Read off the list itself rather than by text: "None" is also the word
     // the two-settings sentence above uses, and a text query that matched
-    // both would pass without the list existing at all.
-    const states = Array.from(container.querySelectorAll('dl.fields dt')).map(
-      (term) => term.textContent
-    )
+    // both would pass without the list existing at all. The **first** list,
+    // because the section carries a second one for the engine and the tier
+    // and a third for the endpoint's own members.
+    const states = Array.from(
+      container.querySelector('dl.fields')?.querySelectorAll('dt') ?? []
+    ).map((term) => term.textContent)
     expect(states).toEqual(['None', 'Bring your own', 'Supplied'])
     // Supplied is an ordinary endpoint. That is the whole claim, and it is
     // made in words on the page rather than left to be inferred.
@@ -451,26 +469,65 @@ describe('the Assistant section', () => {
     expect(await screen.findByText(/no key is stored on this machine/)).toBeTruthy()
   })
 
-  it('names the four tools it may be given, and says what each of them is', () => {
+  it('names the five tools it may be given, and says what each of them is', () => {
     stubChassis({})
     renderSection()
     expect(
-      screen.getByText('get_schema, get_example, validate, experimental_evaluate')
+      screen.getByText(
+        'get_schema, list_examples, get_example, validate, experimental_evaluate'
+      )
     ).toBeTruthy()
     expect(screen.getByText(/consults no reviewed set and decides no outcome/)).toBeTruthy()
+  })
+
+  it('shows the engine and the tier, read-only, with no control to change them', () => {
+    stubChassis({})
+    const { container } = renderSection(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: DESK_PATH,
+        present: true,
+        decoded: decodeDeskConfig(
+          JSON.stringify({
+            deskConfigVersion: 1,
+            assistant: { endpoint: ENDPOINT, engine: 'builtin', thinking: 'ultra' }
+          }),
+          'desk'
+        )
+      })
+    )
+    expect(fieldValue(container, 'Engine')).toBe('builtin')
+    expect(fieldValue(container, 'Thinking')).toBe('ultra')
+    expect(screen.getByText(/Nothing in this release acts on either/)).toBeTruthy()
+    // The one write control on Admin is the key, and this section did not
+    // grow a second one: a select or a radio here would be the desk editing a
+    // file it has always said a person edits.
+    expect(container.querySelectorAll('select').length).toBe(0)
+    expect(container.querySelectorAll('input').length).toBe(1)
+  })
+
+  it('shows the defaults where the file names neither', () => {
+    stubChassis({})
+    const { container } = renderSection(configured())
+    expect(fieldValue(container, 'Engine')).toBe('vercel')
+    expect(fieldValue(container, 'Thinking')).toBe('off')
   })
 
   it('offers a paste block with no key member in it, and says why', () => {
     stubChassis({})
     const { container } = renderSection()
     const pasted = container.querySelector('figure.json code')!.textContent!
-    const json = JSON.parse(pasted) as { assistant: { endpoint: Record<string, unknown> } }
+    const json = JSON.parse(pasted) as {
+      assistant: { endpoint: Record<string, unknown> } & Record<string, unknown>
+    }
     expect(Object.keys(json.assistant.endpoint).sort()).toEqual([
       'kind',
       'model',
       'tools',
       'url'
     ])
+    // And the two settings beside it, so a reader who pastes the block gets
+    // the whole slot rather than discovering the other half in the README.
+    expect(Object.keys(json.assistant).sort()).toEqual(['endpoint', 'engine', 'thinking'])
     expect(screen.getByText(/The key is not in that block/)).toBeTruthy()
   })
 

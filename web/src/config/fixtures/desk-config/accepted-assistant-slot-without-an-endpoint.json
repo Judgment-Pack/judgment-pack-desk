@@ -1,0 +1,8 @@
+{
+  "deskConfigVersion": 1,
+  "assistant": {
+    "endpoint": null,
+    "engine": "builtin",
+    "thinking": "ultra"
+  }
+}

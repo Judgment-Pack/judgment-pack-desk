@@ -51,6 +51,23 @@ function Reading() {
   )
 }
 
+/** One reading component, over a configuration, with the key read stubbed. */
+function renderSettings(value: EffectiveConfig, Component: () => React.JSX.Element) {
+  vi.stubGlobal('fetch', async () => ({
+    ok: true,
+    status: 200,
+    statusText: '',
+    text: async () => JSON.stringify({ present: false, fingerprint: '' })
+  }))
+  return render(
+    <QueryClientProvider client={testQueryClient()}>
+      <DeskConfigFixture value={value}>
+        <Component />
+      </DeskConfigFixture>
+    </QueryClientProvider>
+  )
+}
+
 function renderSlot(value: EffectiveConfig, keyPresent: boolean) {
   vi.stubGlobal('fetch', async () => ({
     ok: true,
@@ -105,6 +122,39 @@ describe('useAssistantSlot', () => {
     // gates on this — the desk refuses a probe with no key by name, which is
     // where that decision belongs.
     expect(screen.getByRole('status').textContent).toBe('configured|a-model|no key')
+  })
+
+  it('reports the engine and the tier, defaulted where the file says nothing', async () => {
+    // **Defaulted rather than optional.** "The file said nothing" and "the
+    // file said vercel" describe the same desk, and a consumer that had to
+    // tell them apart would be a consumer inventing a fourth state.
+    function Settings() {
+      const slot = useAssistantSlot()
+      return (
+        <output>
+          {slot.engine}|{slot.thinking}
+        </output>
+      )
+    }
+    const render1 = renderSettings(effectiveConfig(undefined), Settings)
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('vercel|off'))
+    render1.unmount()
+
+    renderSettings(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: '/home/someone/.config/jpack-desk/desk.json',
+        present: true,
+        decoded: decodeDeskConfig(
+          JSON.stringify({
+            deskConfigVersion: 1,
+            assistant: { endpoint: null, engine: 'builtin', thinking: 'ultra' }
+          }),
+          'desk'
+        )
+      }),
+      Settings
+    )
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('builtin|ultra'))
   })
 
   it('is read by nothing that renders a tab', () => {

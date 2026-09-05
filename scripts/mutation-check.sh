@@ -516,6 +516,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   A=internal/desk/assistant.go
   CU=internal/desk/custody.go
   DF=internal/desk/deskfile.go
+  MR=internal/desk/modelrelay.go
 
   mutate go "the key file is readable by everyone on the machine" "$CU" \
     '	custodyFileMode = 0o600' \
@@ -575,6 +576,28 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the tool allow-list is not consulted" "$DF" \
     '				if !contains(AssistantTools, name) {' \
     '				if false && !contains(AssistantTools, name) {'
+  # An engine nobody certified, and a tier nothing implements. Both are
+  # settings that read as a grant to whoever wrote them, so both refuse the
+  # whole file rather than falling back to the default.
+  mutate go "an engine nobody certified is accepted" "$DF" \
+    '	problems = append(problems, oneOf(record, "assistant", "engine", AssistantEngines)...)' \
+    ''
+  mutate go "a thinking tier nothing implements is accepted" "$DF" \
+    '	problems = append(problems, oneOf(record, "assistant", "thinking", AssistantThinkingTiers)...)' \
+    ''
+  # The corpus proves what a file *decodes to* and not only whether it is
+  # accepted: the two sides could otherwise agree a file is legal and disagree
+  # about what it means, and the fixtures would pass.
+  mutate go "an accepted engine decodes to the default anyway" "$DF" \
+    '	if named, ok := record["engine"].(string); ok && contains(AssistantEngines, named) {
+		slot.engine = named
+	}' \
+    ''
+  mutate go "an accepted thinking tier decodes to the default anyway" "$DF" \
+    '	if named, ok := record["thinking"].(string); ok && contains(AssistantThinkingTiers, named) {
+		slot.thinking = named
+	}' \
+    ''
   # A bearer credential in clear text over a network is a credential given away.
   mutate go "http is accepted off loopback" "$DF" \
     '	if parsed.Scheme == "http" &&
@@ -601,9 +624,14 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # exists any more — nothing an endpoint writes is repeated at all — and the
   # property that replaced them is held by "the endpoint's own body travels to
   # the page" below. Named here so their absence is a statement.
-  mutate go "the anthropic probe sends the other protocol's header" "$A" \
-    '		request.Header.Set("x-api-key", key)' \
-    '		request.Header.Set("Authorization", "Bearer "+key)'
+  # Retargeted: the credential is attached from one table now, read by the
+  # probe and by the model relay, so this row breaks the table rather than one
+  # of its two callers. Breaking a copy would leave the other one right.
+  mutate go "the anthropic protocol is given the other one's header" "$MR" \
+    '	case "anthropic":
+		return "x-api-key", key, true' \
+    '	case "anthropic":
+		return "Authorization", "Bearer " + key, true'
   mutate go "the version header this protocol requires is dropped" "$A" \
     '		request.Header.Set("anthropic-version", "2023-06-01")' \
     '		request.Header.Del("anthropic-version")'
@@ -774,6 +802,197 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		for index, element := range typed {' \
     '	case []any:
 		for index, element := range typed[:0] {'
+
+  # ---- The model relay: the page's traffic, this machine's key -------------
+  #
+  # Every row here breaks a sentence the README makes about what the relay
+  # takes off a request, what it puts on, and what it will not carry. The
+  # measurement in each case is at the endpoint, which is why they discriminate
+  # at all: a test that asserted the handler called `Del` would survive most of
+  # these.
+  # **Two rows are gone and this one replaced them**, which is the point of the
+  # shape that replaced the denylist. There is no loop deleting credential
+  # headers any more and no pair of `Del`s for Origin and Referer: nothing
+  # travels unless it is on the allow-list, so breaking that one check is the
+  # only way to make any of them travel. Rows for code that no longer exists
+  # would have mutated nothing, and rows for redundant `Del`s would have
+  # reported "nothing failed" for ever.
+  mutate go "any header at all is forwarded to the endpoint" "$MR" \
+    '				if !relayedRequestHeader(header) {' \
+    '				if false {'
+  # The one thing this route adds. Without it the endpoint is called with no
+  # credential at all, which is a page that cannot work rather than a page that
+  # is unsafe — but it is the sentence the whole route exists for.
+  # Repaired: the needle named `out.Header.Set`, which this file stopped saying
+  # when the outbound headers became an allow-list built into a new set. A row
+  # that cannot apply is a row reporting nothing.
+  mutate go "the configured key is never attached" "$MR" \
+    '			carried.Set(name, value)' \
+    '			_, _ = name, value'
+  # This desk's own credential, in the place it is easiest to forget.
+  # **Two rows are gone and this one replaced them.** They broke a *strip* —
+  # the page's query forwarded with this chassis' token taken out of it — and
+  # that arrangement leaked the token three times, three ways, to three
+  # reviewers: `%74oken` (the guard decodes names and a raw compare did not),
+  # `;` (Go rejects such a pair and some servers split on it), and `Token`
+  # (this desk compared case-sensitively and ASP.NET Core folds case). Each fix
+  # was a better comparison and the next parser disagreed somewhere else, so
+  # there is no strip any more: a relayed request carries the session token and
+  # nothing else, and nothing of the page's query is forwarded. One rule, one
+  # row.
+  mutate go "a page query parameter is forwarded" "$MR" \
+    '		if err != nil || decoded != sessionTokenParameter {' \
+    '		if false && (err != nil || decoded != sessionTokenParameter) {'
+  mutate go "the relayed path is never validated" "$MR" \
+    '	if reason := relaySuffixProblem(suffix); reason != "" {' \
+    '	if reason := ""; reason != "" {'
+  mutate go "a relayed path may leave the endpoint's path space" "$MR" \
+    '		if segment == "." || segment == ".." {' \
+    '		if false {'
+  # No percent sign is what makes the escaped and the unescaped reading of an
+  # accepted suffix the same string, so `%2e%2e%2f` cannot be a dot segment in
+  # a costume and `a%2Fb` cannot become two.
+  mutate go "any character at all is a relayed path" "$MR" \
+    '			if !relayPathRune(r) {' \
+    '			if false && !relayPathRune(r) {'
+  # Renamed, because the old name was a claim the mutation could not break:
+  # disabling the fast rejection leaves the body bounded at the reader, so the
+  # status is still 413 and nothing outbound still happens. What the fast path
+  # decides is *when* the weighing happens — before the store, the endpoint and
+  # the key are read — and a desk with none of those answers `too-large`
+  # instead of `assistant-unconfigured`, which is what the test measures.
+  mutate go "an over-size body is weighed only after the desk is read" "$MR" \
+    '	if r.ContentLength > maxRelayBody {' \
+    '	if false {'
+  mutate go "an undeclared body length is unbounded" "$MR" \
+    '	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRelayBody))' \
+    '	body, err := io.ReadAll(r.Body)'
+  # **Read whole before a byte is dispatched**, which is what makes "refused,
+  # never truncated" true rather than nearly true: bounding at the reader while
+  # the proxy was already streaming sent the endpoint the first eight
+  # mebibytes of a request this desk then refused.
+  mutate go "an over-size body is streamed upstream before it is refused" "$MR" \
+    '	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRelayBody))
+	_ = controller.SetReadDeadline(time.Time{})' \
+    '	body, err := []byte(nil), error(nil)
+	r.Body = http.MaxBytesReader(w, r.Body, maxRelayBody)
+	_ = controller.SetReadDeadline(time.Time{})'
+  # **The answer can carry the key back**, and the page must not receive it.
+  # The credential this desk sends is the endpoint's own, so an endpoint that
+  # echoes what it was sent would otherwise put the machine-held key into the
+  # browser — the single thing this route exists to prevent.
+  mutate go "the key is handed back in an answer's header" "$MR" \
+    '	for _, name := range reflectedCredentialHeaders {
+		header.Del(name)
+	}' \
+    ''
+  # The name list cannot cover a header nobody named; the value comparison is
+  # what does, and it is its own row because it is its own rule.
+  #
+  # Repaired: the needle named `if value == key {`, which stopped being a line
+  # of its own when the length rule joined it in one predicate. Only the
+  # exact-match arm is broken here — the substring arm has its own row below —
+  # so what fails is the short-key case, where exact equality is the whole rule.
+  mutate go "a header whose value is the key is handed back" "$MR" \
+    '			if value == key || (long && strings.Contains(value, key)) {' \
+    '			if (false && value == key) || (long && strings.Contains(value, key)) {'
+  # The page and this chassis share an origin, so a cookie from the endpoint
+  # would be stored against the desk.
+  mutate go "the endpoint may set a cookie on the desk's origin" "$MR" \
+    '"X-Api-Key", "Api-Key", "X-Goog-Api-Key", "Set-Cookie",' \
+    '"X-Api-Key", "Api-Key", "X-Goog-Api-Key",'
+  # A queue rather than a bound: the request past the fourth waits instead of
+  # being told. The test uses a client with a timeout for exactly this row, so
+  # a queued request fails the suite rather than hanging it.
+  mutate go "the relay queues rather than bounds" "$MR" \
+    '	select {
+	case s.relaySlots <- struct{}{}:
+		defer func() { <-s.relaySlots }()
+	default:' \
+    '	s.relaySlots <- struct{}{}
+	defer func() { <-s.relaySlots }()
+	if false {'
+  # **Held by the declared-length test and not by the SSE one.**
+  # `httputil.ReverseProxy` flushes immediately on its own for a
+  # `text/event-stream` body and for one of unknown length, whatever
+  # FlushInterval says — so the SSE test survives this mutation and reported a
+  # safeguard nothing was holding. What FlushInterval decides is the remaining
+  # case: a streamed answer that declares its Content-Length.
+  mutate go "a relayed answer is buffered rather than streamed" "$MR" \
+    '		FlushInterval: -1,' \
+    '		FlushInterval: 0,'
+  mutate go "a stalled stream is never cut" "$MR" \
+    '			response.Body = boundedByIdle(response.Body, cancel)' \
+    ''
+  mutate go "one relayed request is unbounded in time" "$MR" \
+    '	ctx, cancel := context.WithTimeout(r.Context(), relayDeadline)' \
+    '	ctx, cancel := context.WithCancel(r.Context())'
+  # Four clients that authenticate and then stop reading held every slot for
+  # ever: the two deadlines cancel the *upstream* context, and neither of them
+  # ends a write to a page that is not listening.
+  mutate go "a page that stops reading holds its slot for ever" "$MR" \
+    '	proxy.ServeHTTP(&deadlineWriter{
+		ResponseWriter: w,
+		controller:     controller,
+		until:          deadline,
+	}, r)' \
+    '	proxy.ServeHTTP(w, r)'
+  # Two parsers disagreed about `;` and the desk's own session token went to the
+  # endpoint: Go reads `x=1;token=T&token=T` as one `token` parameter and
+  # accepts it, while a strip that removed the pair it could see preserved the
+  # first one for a server that does split on `;`.
+  mutate go "a query two parsers read differently is forwarded" "$MR" \
+    "$(printf '\tif strings.ContainsRune(raw, %s) {' "';'")" \
+    '	if false {'
+  # The proxy copies the endpoint's trailers to the page after the body, past
+  # every filter on this route.
+  mutate go "the endpoint's trailers are forwarded to the page" "$MR" \
+    '			response.Trailer = nil
+			response.Header.Del("Trailer")' \
+    ''
+  mutate go "a trailer staged by the proxy still reaches the page" "$MR" \
+    '	for name := range header {
+		if strings.HasPrefix(name, http.TrailerPrefix) {
+			header.Del(name)
+		}
+	}' \
+    ''
+  # A 1xx reaches the page through a client trace, before ModifyResponse runs.
+  mutate go "an informational response is forwarded to the page" "$MR" \
+    '	if status < 100 || status >= 200 {' \
+    '	if true {'
+  # A long key is looked for anywhere in a value; below twelve bytes it is
+  # exact equality, because a short key is a substring of ordinary text.
+  mutate go "a long key echoed inside a value is handed back" "$MR" \
+    '			if value == key || (long && strings.Contains(value, key)) {' \
+    '			if value == key || (false && long && strings.Contains(value, key)) {'
+  # **The cap, which is what the finding was about**: without it every write
+  # takes a fresh idle bound, so an idle bound longer than the overall deadline
+  # means the overall deadline bounds nothing and a stalled page holds its slot
+  # for the idle bound instead.
+  mutate go "a write is not capped by the overall deadline" "$MR" \
+    '	if next.After(d.until) {
+		next = d.until
+	}' \
+    ''
+  # **Deliberately not mutated: `relayFinalWrite` itself.** Replacing the five
+  # seconds with the idle bound changes nothing any test can observe, and the
+  # reason is worth writing down rather than leaving as a row that reports
+  # "nothing failed" for ever. The one write it governs is the refusal envelope
+  # on the error path — two hundred bytes onto a socket whose buffer is empty by
+  # construction, because that path runs *instead of* a body rather than after
+  # one. A client would have to have a full receive window and no body to have
+  # filled it, which is not a state this route can produce. The cap above is the
+  # safeguard; the constant is the size of the tail behind it, and it is asserted
+  # by reading rather than by measurement.
+  mutate go "the relay's log line carries the whole address" "$MR" \
+    '	s.log.Printf("desk: assistant relay %s answered %d", loggableOrigin(endpoint.url), status)' \
+    '	s.log.Printf("desk: assistant relay %s %s answered %d", endpoint.url, suffix, status)'
+  mutate go "the relay runs without the session guard" "$MR" \
+    '	if !s.guard(w, r) {
+		return
+	}' \
+    ''
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -3255,6 +3474,16 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "a fragment on the endpoint is accepted" "$D" \
     "  if (url.hash !== '' || raw.includes('#')) {" \
     '  if (false) {'
+  mutate web "the page accepts an engine nobody certified" "$D" \
+    "        engine:
+          oneOf(assistant.engine, 'assistant.engine', ASSISTANT_ENGINES, problems) ??
+          DESK_DEFAULTS.assistant.engine," \
+    '        engine: DESK_DEFAULTS.assistant.engine,'
+  mutate web "the page accepts a thinking tier nothing implements" "$D" \
+    "        thinking:
+          oneOf(assistant.thinking, 'assistant.thinking', ASSISTANT_THINKING, problems) ??
+          DESK_DEFAULTS.assistant.thinking" \
+    '        thinking: DESK_DEFAULTS.assistant.thinking'
   # The typed key, and how long the page holds it.
   # An assignment to the node takes effect at once; a `setState` would not
   # have, which is the whole reason the field is uncontrolled.

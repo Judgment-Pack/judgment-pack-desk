@@ -1,0 +1,18 @@
+{
+  "deskConfigVersion": 1,
+  "assistant": {
+    "endpoint": {
+      "url": "https://api.example.invalid/v1",
+      "kind": "openai-compatible",
+      "model": "a-model",
+      "tools": [
+        "get_schema",
+        "list_examples",
+        "get_example",
+        "validate",
+        "experimental_evaluate",
+        "list_packs"
+      ]
+    }
+  }
+}
