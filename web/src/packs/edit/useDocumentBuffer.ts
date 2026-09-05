@@ -47,7 +47,7 @@ export interface DocumentBuffer {
    * the page has moved on is answering about a document nobody is looking at,
    * and installing it replaced another pack's dirty buffer with it.
    */
-  rebase: (fresh: FileContent, expect?: BufferIdentity) => void
+  rebase: (fresh: FileContent, expect?: BufferIdentity) => boolean
   /** What this buffer is about now, for a caller that must outlive an await. */
   identity: BufferIdentity | undefined
   /** Bumped whenever this buffer is put down; part of `identity`. */
@@ -156,14 +156,20 @@ export function useDocumentBuffer(
   const seeded = useRef<string | undefined>(undefined)
   const [waiting, setWaiting] = useState<FileContent | undefined>(undefined)
   /**
-   * Bumped by `forget`, so the seeding effect runs again for a file it has
-   * already seen.
+   * Which incarnation of this buffer is current.
    *
-   * A route that leaves a pack and comes back gets the same `FileContent`
-   * object out of the query cache, and an effect keyed on that object alone
-   * never fires again — the buffer stayed forgotten and the editor had nothing
-   * to edit.
+   * Bumped by `forget`, so the seeding effect runs again for a file it has
+   * already seen: a route that leaves a pack and comes back gets the same
+   * `FileContent` object out of the query cache, and an effect keyed on that
+   * object alone never fires again.
+   *
+   * **The ref is the authority and the state is only for rendering.** As state
+   * alone, `forget()` merely *scheduled* the increment — so a read that
+   * resolved in the same turn still saw the old number, and `seeded.current`
+   * was already cleared, which took the path check out with it. The forgotten
+   * reload was then adopted.
    */
+  const generationNow = useRef(0)
   const [generation, setGeneration] = useState(0)
   // Whether there is work to lose, readable from the effect below without
   // making it depend on the text: it must run when the *file* changes and not
@@ -261,16 +267,15 @@ export function useDocumentBuffer(
   // read that takes as long as it takes; between the ask and the answer the
   // page can be about another pack, with its own unsaved work. Installing the
   // answer there replaced that work with a document nobody asked for.
-  const generationNow = useRef(generation)
-  generationNow.current = generation
   const rebase = useCallback(
-    (fresh: FileContent, expect?: BufferIdentity) => {
+    (fresh: FileContent, expect?: BufferIdentity): boolean => {
       if (expect !== undefined) {
-        if (expect.generation !== generationNow.current) return
-        if (seeded.current !== undefined && seeded.current !== expect.path) return
-        if (fresh.path !== expect.path) return
+        if (expect.generation !== generationNow.current) return false
+        if (seeded.current !== undefined && seeded.current !== expect.path) return false
+        if (fresh.path !== expect.path) return false
       }
       adopt(fresh)
+      return true
     },
     [adopt]
   )
@@ -291,16 +296,26 @@ export function useDocumentBuffer(
   }, [])
 
   const takeWaiting = useCallback(() => {
-    // Only the file the address is about now. The offer can outlive the address
-    // that produced it — A→B→A — and taking it then would discard the work in
-    // front of the viewer for a document they are not looking at.
+    // Only the file the address is about now.
+    //
+    // **This guards the window between a render and the effect after it.** The
+    // offer is cleared in a passive effect when the address returns, and React
+    // commits the render carrying the new address first — so there is a
+    // committed state in which the button that takes the offer is on screen and
+    // the offer is for a file the page is no longer about. Taking it there
+    // would discard the work in front of the viewer for a document they are not
+    // looking at.
     if (waiting === undefined || loaded?.path !== waiting.path) return
     adopt(waiting)
   }, [waiting, loaded, adopt])
 
   const forget = useCallback(() => {
     seeded.current = undefined
-    setGeneration((count) => count + 1)
+    // Synchronously, because a read can resolve before the next render and the
+    // whole point of a generation is that it says *now* whether this buffer is
+    // still the one that asked.
+    generationNow.current += 1
+    setGeneration(generationNow.current)
     setBase(undefined)
     current.current = undefined
     setText(undefined)
@@ -321,7 +336,10 @@ export function useDocumentBuffer(
       canUndo: stack.length > 0,
       discard,
       rebase,
-      identity: seeded.current === undefined ? undefined : { path: seeded.current, generation },
+      identity:
+        seeded.current === undefined
+          ? undefined
+          : { path: seeded.current, generation: generationNow.current },
       generation,
       landed,
       waiting,

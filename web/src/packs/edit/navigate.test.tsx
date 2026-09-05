@@ -418,6 +418,101 @@ describe('a read that lands after the page has moved on', () => {
     await waitFor(() => expect(screen.getByText(`Could not reload ${PACK_PATH}`)).toBeTruthy())
   })
 
+  it('leaves the file the page is on alone when a stale read lands', async () => {
+    // **A refused reload is refused all the way down.** The read was for A; by
+    // the time it answered the page was on B with a save of its own. The bytes
+    // were correctly not taken — and the mutation was reset and the verdict
+    // dropped before anything asked, so B's save was detached from its observer
+    // and B's "Saved, and verified" disappeared, from a read about another file.
+    const log = chassis({
+      content: ALPHA,
+      sha256: PACK_DIGEST,
+      also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } }
+    })
+    vi.stubGlobal('confirm', () => true)
+    const { router, queryClient } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    await screen.findByDisplayValue('Alpha pack')
+
+    // The file moves under A, which is what puts Reload on screen.
+    act(() => {
+      queryClient.setQueryData(['desk-file', PACK_PATH], {
+        path: PACK_PATH,
+        bytes: ALPHA.length,
+        sha256: 'd0d0d0'.padEnd(64, '0'),
+        content: ALPHA
+      })
+    })
+    const offer = await screen.findByRole('button', { name: 'Reload' })
+    log.hold(PACK_PATH)
+    fireEvent.click(offer)
+
+    // The page leaves for B and saves it, which lands.
+    await act(async () => {
+      await router.navigate('/packs/bravo?edit=1')
+    })
+    const bravo = await screen.findByDisplayValue('Bravo pack')
+    fireEvent.change(bravo, { target: { value: 'Bravo pack, revised' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(screen.getByText(/Saved, and verified/)).toBeTruthy())
+
+    // A's read answers now.
+    log.release(PACK_PATH)
+    await act(async () => {})
+
+    // B's save is still B's save, and B's bytes are still B's bytes.
+    expect(screen.getByText(/Saved, and verified/)).toBeTruthy()
+    expect(screen.getByDisplayValue('Bravo pack, revised')).toBeTruthy()
+    expect(screen.queryByDisplayValue('Alpha pack')).toBeNull()
+  })
+
+  it('refuses a third save while the second is still in the air', async () => {
+    // **A→B→A is an ABA.** The latch was scoped to the path, so A₁ settling
+    // after the page had come back to A released the latch A₂ was holding — and
+    // a third write went out over a PUT that was still in flight.
+    const log = chassis({
+      content: ALPHA,
+      sha256: PACK_DIGEST,
+      also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } },
+      holdWrite: true
+    })
+    vi.stubGlobal('confirm', () => true)
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const alpha = await screen.findByDisplayValue('Alpha pack')
+
+    const releaseFirst = log.holdWrite()
+    fireEvent.change(alpha, { target: { value: 'Alpha, once' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(log.writes).toHaveLength(1))
+
+    await act(async () => {
+      await router.navigate('/packs/bravo?edit=1')
+    })
+    await screen.findByDisplayValue('Bravo pack')
+    await act(async () => {
+      await router.navigate('/packs/alpha?edit=1')
+    })
+
+    log.holdWrite()
+    const back = await screen.findByDisplayValue('Alpha pack')
+    fireEvent.change(back, { target: { value: 'Alpha, twice' } })
+    // The first write is still in the air, and the button says so — the second
+    // save is allowed because leaving the file released the latch that was
+    // taken for it.
+    fireEvent.click(await screen.findByRole('button', { name: /Sav/ }))
+    await waitFor(() => expect(log.writes).toHaveLength(2))
+
+    // The first write settles while the second is still in the air.
+    releaseFirst()
+    await act(async () => {})
+
+    fireEvent.change(screen.getByDisplayValue('Alpha, twice'), {
+      target: { value: 'Alpha, three times' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Sav/ }))
+    await act(async () => {})
+    expect(log.writes).toHaveLength(2)
+  })
+
   it('keeps saving after a write is left in flight by a navigation', async () => {
     // `write.reset()` on a path change detaches the mutation's observer, so a
     // per-mutation `onSettled` never arrived: the single-flight latch was held

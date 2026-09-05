@@ -70,8 +70,16 @@ export interface FileEditing {
     /** However it ended — so a caller holding a single-flight latch can let go. */
     onSettled?: () => void
   }) => void
-  /** Read the file again and hand back what is on disk now. */
-  reload: (path: string, onLoaded: (fresh: FileContent) => void) => void
+  /**
+   * Read the file again and hand back what is on disk now.
+   *
+   * `onLoaded` says whether it **took** the bytes. A reload that the buffer
+   * refuses — because the page has moved to another file since it was asked —
+   * must leave this module's state exactly as it found it: the save in flight
+   * for the file that *is* open, and the verdict of the last one, are not this
+   * answer's to clear.
+   */
+  reload: (path: string, onLoaded: (fresh: FileContent) => boolean) => void
   /** Forget the last attempt's verdict, which a discard does. */
   reset: () => void
 }
@@ -97,7 +105,7 @@ export function useFileEditing(): FileEditing {
   }, [])
 
   const reload = useCallback(
-    (path: string, onLoaded: (fresh: FileContent) => void) => {
+    (path: string, onLoaded: (fresh: FileContent) => boolean) => {
       const ticket = (reloads.current += 1)
       setReloadError(undefined)
       // **The conflict stands until the read lands.** Clearing it first left a
@@ -110,9 +118,15 @@ export function useFileEditing(): FileEditing {
       void readFile(path)
         .then((fresh) => {
           if (ticket !== reloads.current) return
+          // **The buffer decides first.** Resetting the mutation and dropping
+          // the verdict before asking made a refused reload destructive in the
+          // one way that matters: a save in flight for *another* file was
+          // detached from its observer — its `onSaved` never ran — and that
+          // file's "Saved, and verified" disappeared, from a read about a
+          // document nobody was looking at.
+          if (!onLoaded(fresh)) return
           write.reset()
           setOutcome(undefined)
-          onLoaded(fresh)
           queryClient.setQueryData(['desk-file', path], fresh)
         })
         .catch((cause: unknown) => {

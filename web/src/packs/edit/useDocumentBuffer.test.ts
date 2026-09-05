@@ -5,10 +5,11 @@
  * hold them through whatever the view happened to render. `renderHook` drives
  * the rules themselves.
  */
-import { act, renderHook } from '@testing-library/react'
+import { act, render, renderHook } from '@testing-library/react'
+import { createElement, useLayoutEffect } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { FileContent } from '../../files/client'
-import { UNDO_DEPTH, useDocumentBuffer } from './useDocumentBuffer'
+import { UNDO_DEPTH, useDocumentBuffer, type DocumentBuffer } from './useDocumentBuffer'
 
 const file = (content: string, path = 'packs/x.pack.json'): FileContent => ({
   path,
@@ -195,6 +196,90 @@ describe('discard and rebase', () => {
     rerender({ answer: other })
     expect(result.current.text).toBe('{"b": 9}')
     expect(result.current.waiting).toBeUndefined()
+  })
+})
+
+describe('an offer a committed render is still showing', () => {
+  it('is refused once the address it was for is not the address any more', () => {
+    // **The window between a render and the effect that follows it.** `waiting`
+    // is cleared in a passive effect, so React can commit a render carrying the
+    // old offer *and* the new address — and the button that takes the offer is
+    // on screen, and clickable, in exactly that state. A layout effect is that
+    // window: it runs after the commit and before the passive effect.
+    const A = file('{"a": 1}')
+    const B = file('{"b": 9}', 'packs/other.pack.json')
+    const latest: { current: DocumentBuffer | undefined } = { current: undefined }
+    let takeInTheWindow = false
+
+    function Probe({ answer }: { answer: FileContent }) {
+      const buffer = useDocumentBuffer(answer)
+      latest.current = buffer
+      useLayoutEffect(() => {
+        if (takeInTheWindow) buffer.takeWaiting()
+      })
+      return null
+    }
+
+    const view = render(createElement(Probe, { answer: A }))
+    act(() => latest.current!.commit('{"a": 2}'))
+    expect(latest.current!.dirty).toBe(true)
+
+    // A different file over unsaved work is held, not taken.
+    act(() => {
+      view.rerender(createElement(Probe, { answer: B }))
+    })
+    expect(latest.current!.waiting?.path).toBe('packs/other.pack.json')
+    expect(latest.current!.text).toBe('{"a": 2}')
+
+    // The address goes back to A, and the offer is taken **in the window**:
+    // after the commit that carries A, before the effect that clears B.
+    takeInTheWindow = true
+    act(() => {
+      view.rerender(createElement(Probe, { answer: A }))
+    })
+    takeInTheWindow = false
+
+    // The work in front of the viewer is still there, and the file the page is
+    // about is still the file the page is about.
+    expect(latest.current!.text).toBe('{"a": 2}')
+    expect(latest.current!.base?.path).toBe('packs/x.pack.json')
+    expect(latest.current!.waiting).toBeUndefined()
+  })
+})
+
+describe('a read that resolves before the next render', () => {
+  it('is refused where the buffer was put down in the same turn', () => {
+    // **The generation is a ref, not only state.** `forget()` scheduled the
+    // increment, so a read resolving in the same turn still saw the old number —
+    // and `seeded.current` was already cleared, which took the path check out
+    // with it. The forgotten reload was adopted.
+    const { result } = renderHook(() => useDocumentBuffer(file('{"a": 1}')))
+    act(() => result.current.commit('{"a": 2}'))
+    const identity = result.current.identity
+    expect(identity).toBeDefined()
+
+    let took: boolean | undefined
+    act(() => {
+      result.current.forget()
+      // No render between the two: this is what a promise callback does.
+      took = result.current.rebase(file('{"a": 9}'), identity)
+    })
+    expect(took).toBe(false)
+  })
+
+  it('says so, so the caller knows whether its own state may move', () => {
+    const { result } = renderHook(() => useDocumentBuffer(file('{"a": 1}')))
+    const identity = result.current.identity!
+    let took: boolean | undefined
+    act(() => {
+      took = result.current.rebase({ ...file('{"a": 9}'), path: 'packs/other.pack.json' }, identity)
+    })
+    expect(took).toBe(false)
+    act(() => {
+      took = result.current.rebase(file('{"a": 9}'), identity)
+    })
+    expect(took).toBe(true)
+    expect(result.current.text).toBe('{"a": 9}')
   })
 })
 

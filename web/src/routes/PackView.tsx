@@ -519,15 +519,18 @@ export function PackView() {
   }, [path, editor, buffer.identity, rebase])
 
   /**
-   * The path a save is in flight for, or nothing.
+   * The save that is in flight, as an object nothing else can be.
    *
-   * **Scoped to the file, and released on settlement.** It was a boolean
-   * released by the mutation's own `onSettled`, which react-query delivers
-   * through the observer — and `write.reset()` on a path change detaches that
-   * observer, so a save in flight across the change never settled and the latch
-   * was held for ever: every later Save returned silently, on every pack.
+   * **Released on settlement, and only by the flight that took it.** It was a
+   * boolean released by the mutation's own `onSettled`, which react-query
+   * delivers through the observer — and `write.reset()` on a path change
+   * detaches that observer, so a save in flight across the change never settled
+   * and the latch was held for ever. Scoping it to the *path* fixed that and
+   * left an ABA: hold A₁, go A→B→A, start A₂, then let A₁ settle — it matched
+   * the path, released A₂'s latch, and a third write went out over a PUT that
+   * was still in the air. A token is only ever equal to itself.
    */
-  const saving = useRef<string | undefined>(undefined)
+  const saving = useRef<object | undefined>(undefined)
   const save = useCallback(
     (override?: boolean) => {
       if (path === undefined || bufferText === undefined || buffer.base === undefined) return
@@ -542,7 +545,8 @@ export function PackView() {
       // with the file read, so the two are not always about one file.
       if (buffer.base.path !== path) return
       const submitted = bufferText
-      saving.current = path
+      const flight = {}
+      saving.current = flight
       // The check runs before the save and does **not** gate it. Sending the
       // buffer now means the diagnostics on screen afterwards are about the
       // bytes that were written rather than about whatever was last idle.
@@ -553,9 +557,10 @@ export function PackView() {
         baseSha256: buffer.base.sha256,
         override,
         onSettled: () => {
-          // Only the save this latch was taken for releases it: a settlement
-          // arriving after the page moved on is about another file.
-          if (saving.current === path) saving.current = undefined
+          // Only the flight that took the latch releases it. A settlement
+          // arriving after the page moved on — or after another save has taken
+          // it — is about a write nobody is waiting for.
+          if (saving.current === flight) saving.current = undefined
         },
         onSaved: (landed) => {
           buffer.landed(landed, submitted)

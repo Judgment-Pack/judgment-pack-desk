@@ -2358,10 +2358,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  const formAvailable = isRecord(read?.index.value)'
   mutate web "the check gates the save" "$PV" \
     '      const submitted = bufferText
-      saving.current = path' \
+      const flight = {}' \
     '      if ((check.data?.report.diagnostics?.length ?? 0) > 0) return
       const submitted = bufferText
-      saving.current = path'
+      const flight = {}'
   mutate web "Mod+S is swallowed inside the field it exists to fire in" "$PV" \
     '      if (event.repeat || event.defaultPrevented) return
       event.preventDefault()' \
@@ -2616,15 +2616,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # check at the call site was a second rule, and each masked the other's row.
   mutate web "the buffer takes a revision it is no longer about" "$BUF" \
     '      if (expect !== undefined) {
-        if (expect.generation !== generationNow.current) return
-        if (seeded.current !== undefined && seeded.current !== expect.path) return
-        if (fresh.path !== expect.path) return
+        if (expect.generation !== generationNow.current) return false
+        if (seeded.current !== undefined && seeded.current !== expect.path) return false
+        if (fresh.path !== expect.path) return false
       }' \
     '      void expect'
   mutate web "an earlier reload answers over a later one" "$FE" \
     '          if (ticket !== reloads.current) return
-          write.reset()' \
-    '          write.reset()'
+          // **The buffer decides first.**' \
+    '          // **The buffer decides first.**'
   mutate web "a failed reload names whatever file is on screen" "$FE" \
     '          setReloadError({
             path,
@@ -2646,11 +2646,14 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '      setWaiting((held) => (held === undefined ? held : undefined))
       return' \
     '      return'
-  # **`takeWaiting`'s address check has no row.** The offer is cleared the moment
-  # the requested path is the seeded one again — the row above — so there is no
-  # reachable state where an offer is on screen for a file the address is not
-  # about, and no single mutation can produce one. The check stays: it is the
-  # difference between an invariant that holds and one that happens to.
+  # **The offer is cleared in a passive effect**, so React commits the render
+  # that carries the new address first: there is a committed state in which the
+  # button is on screen and the offer is for a file the page has left. Saying
+  # that state was unreachable was wrong — a layout effect is exactly that
+  # window, and this is broken there.
+  mutate web "an offer off the address may still be accepted" "$BUF" \
+    '    if (waiting === undefined || loaded?.path !== waiting.path) return' \
+    '    if (waiting === undefined) return'
   # A document is an object. Each of `null`, `[]`, `"a pack"` and `7` scans,
   # agrees with `JSON.parse`, and reaches `Object.keys`.
   mutate web "bytes that are not a document are handed to the readers" "$PV" \
@@ -2713,6 +2716,28 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '                    {bufferText === editor.outcome.submitted' \
     '                    {true'
 
+  # ---- the fourth reading: what happens before the next render -------------
+  # A refused reload used to reset the mutation and drop the verdict *before*
+  # anything asked, so a save in flight for another file was detached from its
+  # observer and that file's verdict disappeared.
+  mutate web "a refused reload still clears the editor it landed in" "$FE" \
+    '          if (!onLoaded(fresh)) return
+          write.reset()' \
+    '          write.reset()
+          onLoaded(fresh)'
+  # `forget()` only *scheduled* the increment while the generation was state, so
+  # a read resolving in the same turn still saw the old number — and
+  # `seeded.current` was already cleared, which took the path check with it.
+  mutate web "forgetting a buffer leaves its generation for the next render" "$BUF" \
+    '    generationNow.current += 1
+    setGeneration(generationNow.current)' \
+    '    setGeneration((count) => count + 1)'
+  # A→B→A is an ABA: the latch was the path, so the first save settling after
+  # the page came back released the latch the second was holding.
+  mutate web "a settling save releases whichever latch is held" "$PV" \
+    '          if (saving.current === flight) saving.current = undefined' \
+    '          if (saving.current !== undefined) saving.current = undefined'
+
   # **`save`'s own path check has no row, deliberately.** It is defence behind
   # the gate above: `bufferText` is undefined while the buffer is another file's,
   # so the first guard in `save` returns before the equality is reached and no
@@ -2765,7 +2790,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     }' \
     '    void dirtyNow'
   mutate web "a pack the route comes back to has nothing to edit" "$BUF" \
-    '    setGeneration((count) => count + 1)' \
+    '    generationNow.current += 1
+    setGeneration(generationNow.current)' \
     '    void setGeneration'
   # Valid JSON, wrong shape. `rules.map` on an object took the route down.
   mutate web "a member of the wrong shape is handed to the controls anyway" "$PDV" \

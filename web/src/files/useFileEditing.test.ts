@@ -170,7 +170,12 @@ describe('reload', () => {
     const calls = chassis(() => ({ status: 200, body: landed(LOADED) }))
     const { result, queryClient } = harness()
     const fresh: FileContent[] = []
-    act(() => result.current.reload(PATH, (file) => fresh.push(file)))
+    act(() =>
+      result.current.reload(PATH, (file) => {
+        fresh.push(file)
+        return true
+      })
+    )
     await waitFor(() => expect(fresh).toHaveLength(1))
     expect(calls[0]!.method).toBe('GET')
     expect(calls[0]!.url).toContain('/api/file?')
@@ -181,7 +186,12 @@ describe('reload', () => {
     chassis(() => ({ status: 404, body: { error: 'no such file' } }))
     const { result } = harness()
     const fresh: FileContent[] = []
-    act(() => result.current.reload(PATH, (file) => fresh.push(file)))
+    act(() =>
+      result.current.reload(PATH, (file) => {
+        fresh.push(file)
+        return true
+      })
+    )
     await waitFor(() => expect(result.current.reloadError).toBeDefined())
     expect(fresh).toHaveLength(0)
   })

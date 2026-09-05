@@ -232,9 +232,13 @@ function FileEditor({
   const deleted = base !== undefined && (!listed || loaded.isError)
 
   const reload = () => {
+    // This editor is remounted per file (`key={selected}`), so there is no
+    // other document a late answer could land in: it takes every read it asked
+    // for, and says so.
     editing.reload(path, (fresh) => {
       setBase(fresh)
       setBuffer(fresh.content)
+      return true
     })
   }
 

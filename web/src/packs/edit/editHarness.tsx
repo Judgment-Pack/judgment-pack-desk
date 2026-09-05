@@ -66,6 +66,15 @@ export interface ChassisLog {
   hold: (path: string) => () => void
   /** Answer the write this chassis was told to hold. */
   releaseWrite: () => void
+  /**
+   * Hold the **next** write until the returned release is called.
+   *
+   * Each call installs its own gate and a request captures the gate that was
+   * standing when it arrived, so two writes can be held and answered
+   * separately — which is the only way to ask what a page does while one PUT is
+   * still in the air and another has already settled.
+   */
+  holdWrite: () => () => void
   /** Refuse every read from here on, which is what a reload has to survive. */
   breakReads: () => void
   /** Move the file on disk, as something outside this page would. */
@@ -110,9 +119,16 @@ export function chassis(options: {
     gates.set(path, { wait, open })
   }
   let openWrite = () => {}
-  const writeGate = new Promise<void>((resolve) => {
+  let writeGate: Promise<void> | undefined = new Promise<void>((resolve) => {
     openWrite = resolve
   })
+  const holdWrite = () => {
+    let open = () => {}
+    writeGate = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    return open
+  }
   let readsBroken = false
   const gateFor = (path: string) => {
     let open = () => {}
@@ -128,6 +144,7 @@ export function chassis(options: {
     hold: (path) => gateFor(path),
     release: (path) => gates.get(path)?.open(),
     releaseWrite: () => openWrite(),
+    holdWrite,
     breakReads: () => {
       readsBroken = true
     },
@@ -204,7 +221,10 @@ export function chassis(options: {
         createParents: boolean
       }
       log.writes.push(body)
-      if (options.holdWrite === true) await writeGate
+      // The gate that was standing when this write arrived, so a later hold
+      // does not reach back and catch it.
+      const heldBy = writeGate
+      if (options.holdWrite === true && heldBy !== undefined) await heldBy
       if (options.failWrite !== undefined) {
         return {
           ok: false,
