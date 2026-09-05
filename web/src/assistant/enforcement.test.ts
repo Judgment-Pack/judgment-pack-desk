@@ -497,3 +497,82 @@ describe('(7) one member, one refusal', () => {
     expect(decoded.problems.find((problem) => problem.key === 'colour')!.reason).toBe('unknown key')
   })
 })
+
+/**
+ * (8) The engine slot's own boundary.
+ *
+ * ADR-0001 puts the desk's promises **below** whatever runs the loop, and the
+ * sentence it holds them with is "the engine's `callTool` is bound through the
+ * gate and the engine never holds the raw client". That is a claim about a
+ * member set — there is nothing else on the session — so it is asserted whole,
+ * both ways round, exactly as (1) asserts the endpoint's.
+ */
+const SESSION_KEYS = ['prompt', 'tools', 'callTool', 'model', 'thinking', 'signal'] as const
+
+const sessionKeysAreExact: Exactly<
+  keyof import('./engine').AssistantSession,
+  (typeof SESSION_KEYS)[number]
+> = true
+
+describe('(8) the engine is handed a bound callTool and nothing else', () => {
+  it('declares the session member set as exactly those six', () => {
+    // A `client` here — or a `transport`, or a `fetch` — would put a door
+    // beside the ToolGate rather than behind it, and every guarantee the gate
+    // holds would become a guarantee about the door engines happened to use.
+    expect(sessionKeysAreExact).toBe(true)
+    expect(membersOf(interfaceBody(read('assistant/engine.ts'), 'AssistantSession'))).toEqual([
+      ...SESSION_KEYS
+    ])
+  })
+
+  it('declares callTool as a function type, which cannot grow a member', () => {
+    const source = read('assistant/engine.ts')
+    expect(source).toContain(
+      'export type CallTool = (name: string, args: Record<string, unknown>) => Promise<McpToolResult>'
+    )
+  })
+
+  it('imports no MCP client anywhere under engines/', () => {
+    // The weak, enumerated half: an engine that reached for the SDK directly
+    // would open a transport the gate is not on. Listed as weak because a
+    // novel spelling walks past it; the member set above is what holds the
+    // design.
+    const engines = join(SRC, 'assistant', 'engines')
+    const walk = (directory: string): string[] => {
+      const found: string[] = []
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const path = join(directory, entry.name)
+        if (entry.isDirectory()) found.push(...walk(path))
+        else if (entry.name.endsWith('.ts') && !entry.name.includes('.test.')) found.push(path)
+      }
+      return found
+    }
+    const sources = walk(engines)
+    expect(sources.length).toBeGreaterThan(0)
+    for (const path of sources) {
+      const text = readFileSync(path, 'utf8')
+      for (const forbidden of [
+        '@modelcontextprotocol/sdk/client',
+        '@modelcontextprotocol/sdk/shared/transport',
+        'DeskWebSocketTransport',
+        'sessionToken'
+      ]) {
+        expect(text, `${path} reaches for ${forbidden}`).not.toContain(forbidden)
+      }
+    }
+  })
+
+  it('writes no tool schema of its own: the runtime’s served one is the only one', () => {
+    // K2. The model is shown the contract the runtime enforces, or it is shown
+    // nothing — so no engine source may carry a tool name or a schema literal.
+    const providers = join(SRC, 'assistant', 'engines', 'builtin', 'providers')
+    for (const name of readdirSync(providers)) {
+      if (!name.endsWith('.ts') || name.includes('.test.')) continue
+      const text = readFileSync(join(providers, name), 'utf8')
+      for (const tool of ASSISTANT_TOOLS) {
+        expect(text, `${name} names the tool ${tool}`).not.toContain(`'${tool}'`)
+        expect(text, `${name} names the tool ${tool}`).not.toContain(`"${tool}"`)
+      }
+    }
+  })
+})
