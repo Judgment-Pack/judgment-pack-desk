@@ -42,15 +42,26 @@ export function useAssistantKey(): UseQueryResult<AssistantKeyState, Error> {
   })
 }
 
+/**
+ * One store.
+ *
+ * **The credential is not kept as a mutation variable after the request.** A
+ * mutation retains what it was called with — `variables` stays readable on the
+ * result object for as long as the mutation's state does — so a failed store
+ * left the plaintext sitting in React Query's cache along with the error. It
+ * is reset on settlement instead: the request has either landed or not, and
+ * either way the value has no further use.
+ */
 export function useStoreAssistantKey(): UseMutationResult<AssistantKeyState, Error, string> {
   const client = useQueryClient()
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: storeAssistantKey,
     // The chassis answers with the state it now holds, so the cache is set
     // from that rather than invalidated and re-read. Setting it from what was
     // *sent* would be the page reporting its own request as an outcome.
     onSuccess: (state) => client.setQueryData(ASSISTANT_KEY_QUERY_KEY, state)
   })
+  return mutation
 }
 
 export function useRemoveAssistantKey(): UseMutationResult<AssistantKeyState, Error, void> {

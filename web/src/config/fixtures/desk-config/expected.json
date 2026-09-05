@@ -1,0 +1,177 @@
+{
+  "accepted-endpoint": {
+    "accepted": true,
+    "keys": []
+  },
+  "accepted-endpoint-loopback-http": {
+    "accepted": true,
+    "keys": []
+  },
+  "accepted-endpoint-no-tools-allowed": {
+    "accepted": true,
+    "keys": []
+  },
+  "accepted-endpoint-with-query": {
+    "accepted": true,
+    "keys": []
+  },
+  "accepted-every-section": {
+    "accepted": true,
+    "keys": []
+  },
+  "accepted-minimal": {
+    "accepted": true,
+    "keys": []
+  },
+  "accepted-null-endpoint": {
+    "accepted": true,
+    "keys": []
+  },
+  "refused-assistant-sibling": {
+    "accepted": false,
+    "keys": [
+      "assistant.mode"
+    ]
+  },
+  "refused-endpoint-blank-model": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.model"
+    ]
+  },
+  "refused-endpoint-fragment": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-http-off-loopback": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-ipv6-loopback": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-missing-kind": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.kind"
+    ]
+  },
+  "refused-endpoint-missing-tools": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.tools"
+    ]
+  },
+  "refused-endpoint-unknown-kind": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.kind"
+    ]
+  },
+  "refused-endpoint-unknown-member": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.vendor"
+    ]
+  },
+  "refused-endpoint-unknown-tool": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.tools"
+    ]
+  },
+  "refused-endpoint-userinfo": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-identity-issuer": {
+    "accepted": false,
+    "keys": [
+      "identity.provider.issuer"
+    ]
+  },
+  "refused-key-deeply-nested": {
+    "accepted": false,
+    "keys": [
+      "unknown",
+      "unknown.a.b[0].c.bearerToken"
+    ]
+  },
+  "refused-key-in-array": {
+    "accepted": false,
+    "keys": [
+      "unknown",
+      "unknown[0].clientSecret"
+    ]
+  },
+  "refused-key-in-endpoint": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.apiKey"
+    ]
+  },
+  "refused-key-in-unknown-object": {
+    "accepted": false,
+    "keys": [
+      "unknown",
+      "unknown.apiKey"
+    ]
+  },
+  "refused-no-version": {
+    "accepted": false,
+    "keys": [
+      "deskConfigVersion"
+    ]
+  },
+  "refused-not-an-object": {
+    "accepted": false,
+    "keys": [
+      ""
+    ]
+  },
+  "refused-pane-out-of-bounds": {
+    "accepted": false,
+    "keys": [
+      "panes.inspector.width"
+    ]
+  },
+  "refused-storage-excluded-dir": {
+    "accepted": false,
+    "keys": [
+      "storage.packs.dir"
+    ]
+  },
+  "refused-top-level-key": {
+    "accepted": false,
+    "keys": [
+      "apiKey"
+    ]
+  },
+  "refused-unknown-top-level": {
+    "accepted": false,
+    "keys": [
+      "colour"
+    ]
+  },
+  "refused-unrelated-section": {
+    "accepted": false,
+    "keys": [
+      "appearance.theme"
+    ]
+  },
+  "refused-wrong-version": {
+    "accepted": false,
+    "keys": [
+      "deskConfigVersion"
+    ]
+  }
+}

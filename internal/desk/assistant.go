@@ -22,35 +22,37 @@ package desk
 //     endpoint and never sent to the browser, so the request that presents it
 //     to the endpoint has to be made here. That is what the probe is.
 //
-// # What the chassis does not decide
+// # Where the two halves of the argument live
 //
-// It reads exactly one member of the desk-level file — `assistant.endpoint`,
-// the endpoint it is being asked to reach — and forms no opinion about the
-// rest. The verdict on the file as a whole is the page's: `deskConfig.ts`
-// decodes it, refuses it whole for one bad key, names every problem, and Admin
-// renders them. This file is not a second configuration schema; it is the
-// smallest read that lets an outbound request be built without the browser
-// naming its destination.
+// Custody — the validated, pinned directory the key lives in — is `custody.go`.
+// The configuration contract — the whole-file decode this shares with the
+// browser, so that a file Admin refuses cannot authorise an outbound request —
+// is `deskfile.go`. Each has its own long comment; what is left here is the
+// five handlers and the probe.
 //
 // **The browser naming the destination is the thing this avoids.** If the
 // probe took a URL from its request body, anything holding the session token
 // could point this chassis — and the key it holds — at a host of its choosing.
-// The destination therefore comes from a file on this machine, and a request
-// body cannot move it.
+// The destination comes from a file on this machine, decoded under the same
+// contract the page decodes it under, and a request body cannot move it.
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode/utf8"
 )
 
 /* Where this machine keeps its own things ---------------------------------- */
@@ -67,19 +69,11 @@ const (
 	deskConfigName   = "desk.json"
 	secretsDirName   = "secrets"
 	assistantKeyName = "assistant"
-)
-
-// The modes the secret and its directory are held to.
-//
-// Set on **every** store rather than only at creation: `MkdirAll` applies the
-// umask, and a directory that already existed with a wider mode would
-// otherwise be trusted as found. The file mode is set explicitly for the
-// mirror-image reason — `O_CREATE`'s mode is masked too, and a umask can only
-// ever take bits away, so an explicit `Chmod` is what makes 0600 exact rather
-// than "0600 or narrower".
-const (
-	secretsDirMode = 0o700
-	secretMode     = 0o600
+	// keyStagingPrefix names the files a store creates while replacing the
+	// key. Distinct from the project API's staging prefix: nothing walks this
+	// directory, and a shared name would invite one list of exclusions to be
+	// read as covering both.
+	keyStagingPrefix = ".assistant-"
 )
 
 // maxKeyBytes bounds a stored key. An API key is tens of characters; four
@@ -104,13 +98,12 @@ const minFingerprintable = 12
 // asserts its default is ten seconds.
 var probeTimeout = 10 * time.Second
 
-// maxProbeBody bounds how much of an endpoint's answer is read for its
-// sentence. The answer is quoted, not parsed for meaning, and a megabyte of it
-// says nothing the first few kilobytes do not.
+// maxProbeBody bounds how much of an endpoint's answer is read.
+//
+// It is read and **discarded**: the body is drained so the connection can be
+// reused and then thrown away, because nothing an endpoint writes is repeated
+// to anybody. See `ProbeResult`.
 const maxProbeBody = 8 << 10
-
-// maxDetail is how much of that sentence travels to the page, in runes.
-const maxDetail = 200
 
 // configDirFor resolves the desk-level directory.
 //
@@ -141,6 +134,10 @@ func (s *Server) deskConfigPath() string {
 	return filepath.Join(s.configDir, deskConfigName)
 }
 
+// secretsDir and assistantKeyPath are **names, for diagnostics and for tests
+// that inspect the filesystem afterwards**. Nothing opens anything through
+// them: every operation goes through the pinned descriptors in `custody.go`,
+// which is the whole point of that file.
 func (s *Server) secretsDir() string {
 	return filepath.Join(s.configDir, secretsDirName)
 }
@@ -149,9 +146,26 @@ func (s *Server) assistantKeyPath() string {
 	return filepath.Join(s.secretsDir(), assistantKeyName)
 }
 
-// errNoConfigDir is the one thing that stops every endpoint here.
-var errNoConfigDir = errors.New(
-	"this machine has no configuration directory: set XDG_CONFIG_HOME or HOME")
+// stagingName is one unused name for a staged key write.
+func stagingName() (string, error) {
+	var raw [12]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	return keyStagingPrefix + hex.EncodeToString(raw[:]) + ".tmp", nil
+}
+
+// readBounded reads at most limit bytes and refuses anything longer.
+func readBounded(reader io.Reader, limit int) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, int64(limit)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > limit {
+		return nil, fmt.Errorf("more than %d bytes", limit)
+	}
+	return data, nil
+}
 
 /* The desk-level configuration file ---------------------------------------- */
 
@@ -172,6 +186,48 @@ type DeskLevelConfig struct {
 	Content string `json:"content,omitempty"`
 }
 
+// readDeskFile reads the desk-level file through the validated, pinned
+// directory, and answers whether there was one.
+//
+// Through the store's own descriptor rather than a pathname, for the reason
+// `custody.go` gives at length: this file names the endpoint a credential is
+// presented to, so a directory in which its name can be replaced is a
+// directory in which the destination can be. A symlinked `desk.json` is
+// refused along with everything else — the store's validation is what a
+// dotfile tree assembled out of symlinks now has to satisfy, and refusing is
+// the safe answer where it does not.
+func (s *Server) readDeskFile() (present bool, data []byte, err error) {
+	if !s.assistant.usable() {
+		return false, nil, s.assistant.problem
+	}
+	info, err := s.assistant.root.Lstat(deskConfigName)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil, nil
+	}
+	if err != nil {
+		return false, nil, err
+	}
+	if !info.Mode().IsRegular() {
+		// Coded, so the handler answers the status this refusal deserves
+		// rather than the internal one every unclassified read failure gets.
+		// A symlink lands here too: `Lstat` does not follow one, so its mode
+		// is the link's and a link is not a regular file.
+		return false, nil, withCode(CodeNotAFile,
+			fmt.Errorf("%s is not a regular file", s.deskConfigPath()))
+	}
+	file, err := s.assistant.root.OpenFile(
+		deskConfigName, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
+	if err != nil {
+		return false, nil, err
+	}
+	defer file.Close()
+	data, err = readBounded(file, maxFileBytes)
+	if err != nil {
+		return false, nil, err
+	}
+	return true, data, nil
+}
+
 // handleDeskConfig reads the desk-level file.
 //
 // Read-only, and there is no writing counterpart. Everything in that file
@@ -179,45 +235,29 @@ type DeskLevelConfig struct {
 // which is what every other configuration surface on this desk already
 // assumes; the key is the one thing that cannot be written that way, and it
 // has its own endpoint below precisely because it is not in this file.
-//
-// A symlinked `desk.json` is followed rather than refused. It is a fixed path
-// inside the reader's own configuration directory — not a path anyone sent us
-// — and a dotfile tree assembled out of symlinks is how a great many people
-// keep their configuration.
 func (s *Server) handleDeskConfig(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
 		return
 	}
-	if s.configDir == "" {
-		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal, errNoConfigDir.Error())
+	if !s.assistant.usable() {
+		// The custody refusal, verbatim and in full. Admin renders it: a desk
+		// that will not keep a key must say which directory is the reason, or
+		// nobody can repair it.
+		writeJSONCoded(w, http.StatusConflict, CodeAssistantUnusableStore,
+			s.assistant.problem.Error())
 		return
 	}
 	path := s.deskConfigPath()
-	info, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) {
+	present, data, err := s.readDeskFile()
+	if err != nil {
+		s.refuseDeskRead(w, path, err)
+		return
+	}
+	if !present {
 		writeJSON(w, http.StatusOK, DeskLevelConfig{Path: path, Present: false})
 		return
 	}
-	if err != nil {
-		s.refuseDeskRead(w, path, err)
-		return
-	}
-	if !info.Mode().IsRegular() {
-		writeJSONCoded(w, http.StatusBadRequest, CodeNotAFile,
-			fmt.Sprintf("%s is not a regular file", path))
-		return
-	}
-	if info.Size() > maxFileBytes {
-		writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge,
-			fmt.Sprintf("%s is %d bytes, past the %d this desk reads", path, info.Size(), maxFileBytes))
-		return
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		s.refuseDeskRead(w, path, err)
-		return
-	}
-	if !utf8.Valid(data) {
+	if !validUTF8(data) {
 		writeJSONCoded(w, http.StatusUnsupportedMediaType, CodeNotUTF8,
 			fmt.Sprintf("%s is not UTF-8 text", path))
 		return
@@ -231,6 +271,13 @@ func (s *Server) handleDeskConfig(w http.ResponseWriter, r *http.Request) {
 // exists and was not read is not the same fact as no file, and reporting it as
 // the defaults describes the desk as unconfigured when it is merely unread.
 func (s *Server) refuseDeskRead(w http.ResponseWriter, path string, err error) {
+	// A refusal that carries its own code answers with it: the code-to-status
+	// matrix is the one place that decides, and a call site that picked a
+	// status of its own is how a code and a status came to disagree once.
+	if code := codeOf(err); code != CodeInternal {
+		writeJSONError(w, statusForRefusal(err), err)
+		return
+	}
 	if errors.Is(err, os.ErrPermission) {
 		writeJSONCoded(w, http.StatusForbidden, CodeForbidden,
 			fmt.Sprintf("%s could not be read: permission denied", path))
@@ -270,103 +317,30 @@ func fingerprint(key string) string {
 	return string(runes[:4]) + "…" + string(runes[len(runes)-4:])
 }
 
-// readAssistantKey answers the stored key, or the empty string where there is
-// none. An absent key is not an error: it is the state every desk starts in.
-func (s *Server) readAssistantKey() (string, error) {
-	if s.configDir == "" {
-		return "", errNoConfigDir
-	}
-	data, err := os.ReadFile(s.assistantKeyPath())
-	if errors.Is(err, os.ErrNotExist) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	// Trimmed on the way out as well as in, so a file a person wrote by hand
-	// with a trailing newline presents the same key this desk would have
-	// stored from the same paste.
-	return strings.TrimSpace(string(data)), nil
-}
-
-// storeAssistantKey writes the key, atomically, owner-only.
-//
-// The same replace discipline the file API uses — stage in the destination
-// directory, set the mode, flush, rename — for the same reason: a reader
-// during the write sees the old key or the new one, never half of one. The
-// modes are re-asserted on every store rather than assumed from creation.
-func (s *Server) storeAssistantKey(key string) error {
-	if s.configDir == "" {
-		return errNoConfigDir
-	}
-	dir := s.secretsDir()
-	if err := os.MkdirAll(dir, secretsDirMode); err != nil {
-		return err
-	}
-	// MkdirAll applies the umask and does nothing at all to a directory that
-	// already exists. Neither of those produces 0700 on its own.
-	if err := os.Chmod(dir, secretsDirMode); err != nil {
-		return err
-	}
-	staged, err := os.CreateTemp(dir, ".assistant-*.tmp")
-	if err != nil {
-		return err
-	}
-	name := staged.Name()
-	remove := func() { _ = os.Remove(name) }
-	if _, err := staged.WriteString(key); err != nil {
-		staged.Close()
-		remove()
-		return err
-	}
-	if err := staged.Chmod(secretMode); err != nil {
-		staged.Close()
-		remove()
-		return err
-	}
-	if err := staged.Sync(); err != nil {
-		staged.Close()
-		remove()
-		return err
-	}
-	if err := staged.Close(); err != nil {
-		remove()
-		return err
-	}
-	if err := os.Rename(name, s.assistantKeyPath()); err != nil {
-		remove()
-		return err
-	}
-	if d, derr := os.Open(dir); derr == nil {
-		_ = d.Sync()
-		_ = d.Close()
-	}
-	return nil
-}
-
-// removeAssistantKey deletes the key. Deleting one that is not there is not a
-// failure — the caller asked for a state, and that state already holds.
-func (s *Server) removeAssistantKey() error {
-	if s.configDir == "" {
-		return errNoConfigDir
-	}
-	err := os.Remove(s.assistantKeyPath())
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	return err
-}
-
 // keyRequest is the body of a store.
 type keyRequest struct {
 	Key string `json:"key"`
+}
+
+// refuseUnusableStore answers every key endpoint where custody was not
+// established. One place, so a new handler cannot forget it.
+func (s *Server) refuseUnusableStore(w http.ResponseWriter) bool {
+	if s.assistant.usable() {
+		return false
+	}
+	writeJSONCoded(w, http.StatusConflict, CodeAssistantUnusableStore,
+		"this desk is not keeping a key: "+s.assistant.problem.Error())
+	return true
 }
 
 func (s *Server) handleAssistantKeyRead(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
 		return
 	}
-	key, err := s.readAssistantKey()
+	if s.refuseUnusableStore(w) {
+		return
+	}
+	key, err := s.assistant.readKey()
 	if err != nil {
 		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal,
 			fmt.Sprintf("the assistant key could not be read: %v", err))
@@ -377,6 +351,9 @@ func (s *Server) handleAssistantKeyRead(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleAssistantKeyWrite(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
+		return
+	}
+	if s.refuseUnusableStore(w) {
 		return
 	}
 	// Bounded before it is buffered. The envelope allowance is what keeps a
@@ -397,6 +374,25 @@ func (s *Server) handleAssistantKeyWrite(w http.ResponseWriter, r *http.Request)
 			"the request body must be JSON of the shape {\"key\": \"…\"}")
 		return
 	}
+
+	// **The control check runs on the value as it arrived, before anything is
+	// trimmed.** It used to run after `TrimSpace`, which meant a key with a
+	// leading newline or a trailing tab was silently *repaired* into an
+	// acceptable one — so the contract said "no control character" while the
+	// implementation said "no control character in the middle". A credential
+	// is presented in a request header, and a carriage return or newline
+	// inside one is header injection; it is also the shape a mis-paste takes,
+	// so refusing it is the friendly answer as well as the safe one. The
+	// character is named by position, never by value.
+	if index := strings.IndexFunc(req.Key, isControl); index >= 0 {
+		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,
+			fmt.Sprintf("a key may not contain a control character; there is one at position %d, "+
+				"and nothing was stored", index))
+		return
+	}
+	// Only ordinary whitespace is normalised, and only after the check above.
+	// A space either side of a pasted key is a slip; a newline is not, and is
+	// no longer treated as one.
 	key := strings.TrimSpace(req.Key)
 	if key == "" {
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,
@@ -408,19 +404,7 @@ func (s *Server) handleAssistantKeyWrite(w http.ResponseWriter, r *http.Request)
 			fmt.Sprintf("a key must be at most %d bytes; nothing was stored", maxKeyBytes))
 		return
 	}
-	// **A control character in a credential is refused rather than carried.**
-	// The key is presented in a request header, and a carriage return or a
-	// newline inside one is header injection — the outbound request would be a
-	// different request from the one this code reads. It is also the shape a
-	// mis-paste takes, so refusing it is the friendly answer as well as the
-	// safe one. The character is named by position, never by value.
-	if index := strings.IndexFunc(key, isControl); index >= 0 {
-		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,
-			fmt.Sprintf("a key may not contain a control character; there is one at position %d, "+
-				"and nothing was stored", index))
-		return
-	}
-	if err := s.storeAssistantKey(key); err != nil {
+	if err := s.assistant.storeKey(key); err != nil {
 		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal,
 			fmt.Sprintf("the assistant key could not be stored: %v", err))
 		return
@@ -436,7 +420,10 @@ func (s *Server) handleAssistantKeyDelete(w http.ResponseWriter, r *http.Request
 	if !s.guard(w, r) {
 		return
 	}
-	if err := s.removeAssistantKey(); err != nil {
+	if s.refuseUnusableStore(w) {
+		return
+	}
+	if err := s.assistant.removeKey(); err != nil {
 		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal,
 			fmt.Sprintf("the assistant key could not be removed: %v", err))
 		return
@@ -474,7 +461,7 @@ var AssistantKinds = []string{"openai-compatible", "anthropic"}
 // tool because proposing an edit is the assistant's whole reach.
 var AssistantTools = []string{"get_schema", "get_example", "validate", "experimental_evaluate"}
 
-// assistantEndpoint is the one member of the desk-level file this reads.
+// assistantEndpoint is what a clean decode of the whole file yields.
 type assistantEndpoint struct {
 	url   string
 	kind  string
@@ -482,122 +469,60 @@ type assistantEndpoint struct {
 	tools []string
 }
 
-// endpointMembers is the endpoint object's key set, exactly.
-var endpointMembers = []string{"url", "kind", "model", "tools"}
-
-// configuredEndpoint reads `assistant.endpoint` out of the desk-level file.
+// configuredEndpoint decodes the whole desk-level file and answers the
+// endpoint only where nothing at all in that file was refused.
 //
-// Strict about that object and silent about everything else in the file: an
-// unknown member here is refused by name, because a probe built from an object
-// this desk does not fully understand is a request to a destination nobody
-// checked. The rest of the file is the page's to judge.
+// **This is the fix for the disagreement, and the sentence worth keeping in
+// mind is this one**: the page refuses the whole file for one bad key, so a
+// chassis that read only its own member could probe with a configuration the
+// desk had visibly rejected — sending the stored credential on the authority
+// of a file nobody accepted. The two now apply one contract, held together by
+// fixtures both sides read.
 func (s *Server) configuredEndpoint() (assistantEndpoint, error) {
 	var zero assistantEndpoint
-	if s.configDir == "" {
-		return zero, withCode(CodeAssistantUnconfigured, errNoConfigDir)
+	if !s.assistant.usable() {
+		return zero, withCode(CodeAssistantUnusableStore, s.assistant.problem)
 	}
 	path := s.deskConfigPath()
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return zero, withCode(CodeAssistantUnconfigured, fmt.Errorf(
-			"no assistant endpoint is configured: there is no %s", path))
-	}
+	present, data, err := s.readDeskFile()
 	if err != nil {
 		return zero, withCode(CodeAssistantUnconfigured, fmt.Errorf(
 			"no assistant endpoint could be read: %s could not be read: %v", path, err))
 	}
-	var file struct {
-		Assistant *struct {
-			Endpoint json.RawMessage `json:"endpoint"`
-		} `json:"assistant"`
-	}
-	if err := json.Unmarshal(data, &file); err != nil {
+	if !present {
 		return zero, withCode(CodeAssistantUnconfigured, fmt.Errorf(
-			"no assistant endpoint is configured: %s is not JSON this desk could read", path))
+			"no assistant endpoint is configured: there is no %s", path))
 	}
-	if file.Assistant == nil || len(file.Assistant.Endpoint) == 0 ||
-		string(file.Assistant.Endpoint) == "null" {
+	if !validUTF8(data) {
+		return zero, withCode(CodeAssistantUnconfigured, fmt.Errorf(
+			"no assistant endpoint is configured: %s is not UTF-8 text", path))
+	}
+	decoded := decodeDeskFile(data)
+	if decoded.refused() {
+		// Named, and named the same way Admin names them, so the reader is not
+		// asked to reconcile two accounts of one file.
+		return zero, withCode(CodeAssistantUnconfigured, fmt.Errorf(
+			"%s was refused, so no endpoint in it is configured: %s",
+			path, describeProblems(decoded.Problems)))
+	}
+	if decoded.Endpoint == nil {
 		return zero, withCode(CodeAssistantUnconfigured, errors.New(
 			"no assistant endpoint is configured: assistant.endpoint is absent or null"))
 	}
-	var members map[string]json.RawMessage
-	if err := json.Unmarshal(file.Assistant.Endpoint, &members); err != nil {
-		return zero, withCode(CodeAssistantUnconfigured, errors.New(
-			"assistant.endpoint must be an object with url, kind, model and tools"))
-	}
-	allowed := make(map[string]bool, len(endpointMembers))
-	for _, member := range endpointMembers {
-		allowed[member] = true
-	}
-	for member := range members {
-		if !allowed[member] {
-			return zero, withCode(CodeAssistantUnconfigured, fmt.Errorf(
-				"assistant.endpoint.%s is not a member this desk understands; it accepts %s",
-				member, strings.Join(endpointMembers, ", ")))
-		}
-	}
-	var endpoint struct {
-		URL   string   `json:"url"`
-		Kind  string   `json:"kind"`
-		Model string   `json:"model"`
-		Tools []string `json:"tools"`
-	}
-	if err := json.Unmarshal(file.Assistant.Endpoint, &endpoint); err != nil {
-		return zero, withCode(CodeAssistantUnconfigured, fmt.Errorf(
-			"assistant.endpoint could not be read: %v", err))
-	}
-	if !contains(AssistantKinds, endpoint.Kind) {
-		return zero, withCode(CodeAssistantUnconfigured, fmt.Errorf(
-			"assistant.endpoint.kind must be one of %s", strings.Join(AssistantKinds, ", ")))
-	}
-	if endpoint.Model == "" {
-		return zero, withCode(CodeAssistantUnconfigured, errors.New(
-			"assistant.endpoint.model must be a non-empty string"))
-	}
-	for _, tool := range endpoint.Tools {
-		if !contains(AssistantTools, tool) {
-			return zero, withCode(CodeAssistantUnconfigured, fmt.Errorf(
-				"assistant.endpoint.tools names %q, which is not a tool the assistant may call; "+
-					"it accepts %s", tool, strings.Join(AssistantTools, ", ")))
-		}
-	}
-	if err := acceptableEndpointURL(endpoint.URL); err != nil {
-		return zero, withCode(CodeAssistantUnconfigured, err)
-	}
-	return assistantEndpoint{
-		url:   strings.TrimRight(endpoint.URL, "/"),
-		kind:  endpoint.Kind,
-		model: endpoint.Model,
-		tools: endpoint.Tools,
-	}, nil
+	return *decoded.Endpoint, nil
 }
 
-// acceptableEndpointURL holds the endpoint to a transport, and to nothing else.
-//
-// `https:`, or `http:` on loopback so a locally-run endpoint works — the same
-// rule the identity slot's issuer gets, and it is a rule about **transport**
-// rather than about who is at the other end. Nothing here reads the host,
-// compares it to a list, or behaves differently for one endpoint than another.
-// The key is a bearer credential, and sending one in clear text over a network
-// is the one thing a desk that holds a key must not do quietly.
-func acceptableEndpointURL(raw string) error {
-	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Host == "" {
-		return fmt.Errorf("assistant.endpoint.url must be an absolute URL; found %q", raw)
+// describeProblems renders a decode's refusals as one sentence.
+func describeProblems(problems []deskProblem) string {
+	rendered := make([]string, 0, len(problems))
+	for _, problem := range problems {
+		if problem.Key == "" {
+			rendered = append(rendered, problem.Reason)
+			continue
+		}
+		rendered = append(rendered, problem.Key+": "+problem.Reason)
 	}
-	if parsed.Scheme == "https" {
-		return nil
-	}
-	if parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname()) {
-		return nil
-	}
-	return fmt.Errorf(
-		"assistant.endpoint.url must be an https: URL, or an http: URL on localhost or 127.0.0.1; "+
-			"found %q — a key sent in clear text over a network is a key given away", raw)
-}
-
-func isLoopbackHost(host string) bool {
-	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+	return strings.Join(rendered, "; ")
 }
 
 func contains(haystack []string, needle string) bool {
@@ -611,6 +536,40 @@ func contains(haystack []string, needle string) bool {
 
 /* The probe ---------------------------------------------------------------- */
 
+// The diagnostic vocabulary: the whole of what a probe will say about an
+// endpoint's answer.
+//
+// **Nothing an endpoint writes is repeated to anybody**, and that is a change
+// from quoting its own error sentence. The reason is narrow and worth stating:
+// the desk holds a credential, and a body under the endpoint's control can
+// carry a *derived* representation of it — base64, percent-encoded,
+// JSON-escaped, hex, or half of it — which no substitution can reliably find.
+// A scrub that removed the literal value and nothing else was a categorical
+// promise held by a `strings.ReplaceAll`. So the body is drained and
+// discarded, and what travels is one word from this list.
+//
+// The cost is real and is accepted: a reader debugging a misconfigured gateway
+// no longer sees its sentence and must look at the endpoint's own logs. That
+// is the trade, stated rather than glossed.
+const (
+	DiagnosticUnauthorized = "unauthorized"
+	DiagnosticForbidden    = "forbidden"
+	DiagnosticNotFound     = "not-found"
+	DiagnosticTimeout      = "timeout"
+	DiagnosticTLS          = "tls"
+	DiagnosticRefused      = "refused"
+	DiagnosticDNS          = "dns"
+	DiagnosticUnexpected   = "unexpected-status"
+)
+
+// AssistantDiagnostics is the vocabulary, for the test that holds the page's
+// copy of it to this one.
+var AssistantDiagnostics = []string{
+	DiagnosticUnauthorized, DiagnosticForbidden, DiagnosticNotFound,
+	DiagnosticTimeout, DiagnosticTLS, DiagnosticRefused, DiagnosticDNS,
+	DiagnosticUnexpected,
+}
+
 // ProbeResult is what one reachability check establishes.
 //
 // **`reachable` means the endpoint answered this request successfully**, not
@@ -622,9 +581,9 @@ type ProbeResult struct {
 	// Status is the HTTP status, or 0 where no response arrived at all.
 	Status    int   `json:"status"`
 	LatencyMs int64 `json:"latencyMs"`
-	// Detail is the endpoint's own sentence, or the transport's. Empty where
-	// the endpoint answered successfully: there is nothing to quote.
-	Detail string `json:"detail"`
+	// Diagnostic is one word from the fixed vocabulary above, or empty where
+	// the endpoint answered successfully. It is never text the endpoint wrote.
+	Diagnostic string `json:"diagnostic"`
 }
 
 // handleAssistantProbe makes the smallest legitimate request the configured
@@ -632,11 +591,15 @@ type ProbeResult struct {
 //
 // **A probe that reaches nothing still answers 200.** The question is "is this
 // endpoint reachable", and "no" is an answer to it rather than a failure to
-// answer. The refusals here are the two states in which the question cannot be
-// asked at all, and each names which one it is: no endpoint to reach, or no
-// credential to present.
+// answer. The refusals here are the states in which the question cannot be
+// asked at all, and each names which one it is: no usable place to keep a key,
+// no endpoint to reach — including a file that was refused — or no credential
+// to present. **In every one of those, no outbound request is made.**
 func (s *Server) handleAssistantProbe(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
+		return
+	}
+	if s.refuseUnusableStore(w) {
 		return
 	}
 	endpoint, err := s.configuredEndpoint()
@@ -644,7 +607,7 @@ func (s *Server) handleAssistantProbe(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, statusForRefusal(err), err)
 		return
 	}
-	key, err := s.readAssistantKey()
+	key, err := s.assistant.readKey()
 	if err != nil {
 		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal,
 			fmt.Sprintf("the assistant key could not be read: %v", err))
@@ -656,9 +619,29 @@ func (s *Server) handleAssistantProbe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result := probeEndpoint(r.Context(), endpoint, key)
+	// **Scheme and host only.** A configured URL may legitimately carry a
+	// query string — some gateways route on one — and a query string is a
+	// place people put credentials, deliberately or by pasting a presigned
+	// link. Logging the whole URL therefore falsified "the key is never
+	// logged" for a configuration this desk accepts. The origin is enough to
+	// tell one endpoint from another in a log.
 	s.log.Printf("desk: assistant probe %s answered %d in %dms",
-		endpoint.url, result.Status, result.LatencyMs)
+		loggableOrigin(endpoint.url), result.Status, result.LatencyMs)
 	writeJSON(w, http.StatusOK, result)
+}
+
+// loggableOrigin is the most of a configured URL that is ever written down:
+// its scheme, its host and its port.
+//
+// Userinfo and a fragment are refused at decode, so they cannot be here; the
+// query is dropped rather than refused, because it is allowed and is not
+// something to write into a log.
+func loggableOrigin(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed == nil || parsed.Host == "" {
+		return "the configured endpoint"
+	}
+	return parsed.Scheme + "://" + parsed.Host
 }
 
 // probeClient is the client every probe uses.
@@ -693,30 +676,78 @@ func probeEndpoint(ctx context.Context, endpoint assistantEndpoint, key string) 
 
 	request, err := probeRequest(ctx, endpoint, key)
 	if err != nil {
-		return ProbeResult{Detail: truncate(scrub(err.Error(), key))}
+		return ProbeResult{Diagnostic: DiagnosticUnexpected}
 	}
 	started := time.Now()
 	response, err := probeClient.Do(request)
 	elapsed := time.Since(started).Milliseconds()
 	if err != nil {
-		// The transport's own sentence, scrubbed and bounded like any other.
-		// It names the host and the failure; it never carries the credential,
-		// and it is put through the scrub anyway rather than on that belief.
-		return ProbeResult{Status: 0, LatencyMs: elapsed, Detail: truncate(scrub(err.Error(), key))}
+		return ProbeResult{Status: 0, LatencyMs: elapsed, Diagnostic: transportDiagnostic(err)}
 	}
 	defer response.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(response.Body, maxProbeBody))
+	// Drained so the connection can be reused, and discarded because nothing
+	// an endpoint writes is repeated to anybody.
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxProbeBody))
 	reachable := response.StatusCode >= 200 && response.StatusCode < 300
-	detail := ""
+	diagnostic := ""
 	if !reachable {
-		detail = truncate(scrub(sentenceOf(body, response.Status), key))
+		diagnostic = statusDiagnostic(response.StatusCode)
 	}
 	return ProbeResult{
-		Reachable: reachable,
-		Status:    response.StatusCode,
-		LatencyMs: elapsed,
-		Detail:    detail,
+		Reachable:  reachable,
+		Status:     response.StatusCode,
+		LatencyMs:  elapsed,
+		Diagnostic: diagnostic,
 	}
+}
+
+// statusDiagnostic is the word for a status the endpoint answered with.
+func statusDiagnostic(status int) string {
+	switch status {
+	case http.StatusUnauthorized:
+		return DiagnosticUnauthorized
+	case http.StatusForbidden:
+		return DiagnosticForbidden
+	case http.StatusNotFound:
+		return DiagnosticNotFound
+	default:
+		return DiagnosticUnexpected
+	}
+}
+
+// transportDiagnostic is the word for a request that never got an answer.
+//
+// Classified from the error's **type** wherever Go offers one, and only then
+// from its text: a message is a moving target across Go releases and platforms
+// and is not a thing to branch on. Anything unrecognised is
+// `unexpected-status`, which is the residual of this closed vocabulary and is
+// named as such rather than growing an "other" nobody defined.
+func transportDiagnostic(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) || os.IsTimeout(err) {
+		return DiagnosticTimeout
+	}
+	var dns *net.DNSError
+	if errors.As(err, &dns) {
+		return DiagnosticDNS
+	}
+	var verification *tls.CertificateVerificationError
+	var unknownAuthority x509.UnknownAuthorityError
+	var hostname x509.HostnameError
+	var expired x509.CertificateInvalidError
+	var recordHeader tls.RecordHeaderError
+	if errors.As(err, &verification) || errors.As(err, &unknownAuthority) ||
+		errors.As(err, &hostname) || errors.As(err, &expired) ||
+		errors.As(err, &recordHeader) {
+		return DiagnosticTLS
+	}
+	if errors.Is(err, connectionRefused) {
+		return DiagnosticRefused
+	}
+	var opError *net.OpError
+	if errors.As(err, &opError) && opError.Timeout() {
+		return DiagnosticTimeout
+	}
+	return DiagnosticUnexpected
 }
 
 func probeRequest(ctx context.Context, endpoint assistantEndpoint, key string) (*http.Request, error) {
@@ -750,58 +781,7 @@ func probeRequest(ctx context.Context, endpoint assistantEndpoint, key string) (
 		request.Header.Set("content-type", "application/json")
 		return request, nil
 	default:
-		// Unreachable: `configuredEndpoint` refuses every other kind by name.
+		// Unreachable: `decodeDeskFile` refuses every other kind by name.
 		return nil, fmt.Errorf("no probe is defined for %q", endpoint.kind)
 	}
-}
-
-// sentenceOf pulls the endpoint's own message out of its answer.
-//
-// Both protocols put it in `{"error": {"message": …}}`, and some things that
-// speak neither put a bare string in `{"error": …}`. Anything else is quoted
-// as it arrived: the point is to show the reader what the endpoint said, and
-// paraphrasing it would be the desk speaking for a service it does not own.
-func sentenceOf(body []byte, status string) string {
-	trimmed := strings.TrimSpace(string(body))
-	if trimmed == "" {
-		return status
-	}
-	var structured struct {
-		Error json.RawMessage `json:"error"`
-	}
-	if err := json.Unmarshal(body, &structured); err == nil && len(structured.Error) > 0 {
-		var nested struct {
-			Message string `json:"message"`
-		}
-		if err := json.Unmarshal(structured.Error, &nested); err == nil && nested.Message != "" {
-			return nested.Message
-		}
-		var bare string
-		if err := json.Unmarshal(structured.Error, &bare); err == nil && bare != "" {
-			return bare
-		}
-	}
-	return trimmed
-}
-
-// scrub takes the key out of anything about to leave this process.
-//
-// An endpoint that echoes the credential back in its error — and some do, in
-// the name of being helpful — would otherwise have the desk paint it on the
-// page and put it in the log. The key is never *supposed* to be in any of
-// these strings; this is what makes that a property rather than a hope.
-func scrub(text, key string) string {
-	if key == "" {
-		return text
-	}
-	return strings.ReplaceAll(text, key, "…")
-}
-
-// truncate bounds a quoted sentence, in runes.
-func truncate(text string) string {
-	runes := []rune(text)
-	if len(runes) <= maxDetail {
-		return text
-	}
-	return string(runes[:maxDetail]) + "…"
 }

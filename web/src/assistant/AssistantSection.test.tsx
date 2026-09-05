@@ -135,11 +135,24 @@ describe('the Assistant section', () => {
     expect(container.querySelectorAll('[disabled]')).toHaveLength(0)
   })
 
-  it('says there is no assistant where no endpoint is configured', () => {
-    stubChassis({})
+  it('says no endpoint is configured, and does not claim there is no key', () => {
+    // **It used to say "none — no assistant, and no key".** The key is
+    // independent of the endpoint: removing the endpoint from the file does
+    // not remove the key from this machine, so that line asserted something
+    // the page had not established and could be flatly false.
+    stubChassis({ key: { present: true, fingerprint: 'sk-a…wxyz' } })
     renderSection()
-    expect(screen.getByText('none — no assistant, and no key')).toBeTruthy()
+    expect(screen.getByText('none — no endpoint configured')).toBeTruthy()
+    expect(screen.queryByText(/no assistant, and no key/)).toBeNull()
     expect(screen.getByText(/No endpoint is configured/)).toBeTruthy()
+    expect(screen.getByText(/The key and the endpoint are separate/)).toBeTruthy()
+  })
+
+  it('still reports a stored key where no endpoint is configured', async () => {
+    stubChassis({ key: { present: true, fingerprint: 'sk-a…wxyz' } })
+    renderSection()
+    expect(await screen.findByText('stored on this machine — sk-a…wxyz')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Remove key' })).toBeTruthy()
   })
 
   it('shows the configured endpoint, its protocol, its model and its tools', () => {
@@ -233,6 +246,30 @@ describe('the Assistant section', () => {
     expect(await screen.findByText('none stored on this machine')).toBeTruthy()
   })
 
+  it('clears the field before the request, so a failure retains nothing', async () => {
+    // **The failure case, which is the one that mattered.** The field was
+    // cleared by the success callback only, so a network error or a refusal
+    // left the plaintext sitting in a password input and in React state until
+    // somebody noticed. It is copied and cleared synchronously now, before
+    // the request is made.
+    stubChassis({
+      key: { present: false, fingerprint: '' },
+      keyError: { error: 'a key may not contain a control character', code: 'bad-request' }
+    })
+    const { container } = renderSection()
+    await screen.findByText('none stored on this machine')
+    const field = container.querySelector('input') as HTMLInputElement
+    fireEvent.change(field, { target: { value: 'sk-a-real-looking-key-wxyz' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Store key' }))
+
+    // Empty immediately, not after the answer arrives.
+    expect(field.value).toBe('')
+    expect(await screen.findByText(/a key may not contain a control character/)).toBeTruthy()
+    // And nowhere in the rendered page either.
+    expect(container.textContent).not.toContain('sk-a-real-looking-key-wxyz')
+    expect(field.value).toBe('')
+  })
+
   it('reports a refused store as one that did not happen', async () => {
     stubChassis({
       key: { present: false, fingerprint: '' },
@@ -252,7 +289,7 @@ describe('the Assistant section', () => {
     // holding the token could point the desk — and the key it holds — at a
     // host of its choosing.
     const { sent } = stubChassis({
-      probe: { reachable: true, status: 200, latencyMs: 240, detail: '' }
+      probe: { reachable: true, status: 200, latencyMs: 240, diagnostic: '' }
     })
     renderSection(configured())
     fireEvent.click(screen.getByRole('button', { name: 'Check reachability' }))
@@ -264,22 +301,42 @@ describe('the Assistant section', () => {
   })
 
   it('renders a reachable answer with its status and its latency', async () => {
-    stubChassis({ probe: { reachable: true, status: 200, latencyMs: 240, detail: '' } })
+    stubChassis({ probe: { reachable: true, status: 200, latencyMs: 240, diagnostic: '' } })
     renderSection(configured())
     fireEvent.click(screen.getByRole('button', { name: 'Check reachability' }))
     expect(await screen.findByText(/reachable · answered 200 · 240 ms/)).toBeTruthy()
   })
 
-  it('renders a refused credential as not reachable, quoting the endpoint', async () => {
+  it('renders a refused credential as not reachable, from the fixed vocabulary', async () => {
+    // **Not the endpoint's own sentence.** It used to be quoted verbatim with
+    // the key substituted out; a body under the endpoint's control can carry
+    // a derived representation of the credential that no substitution finds,
+    // so the desk discards the body and answers one word from a closed list.
     stubChassis({
-      probe: { reachable: false, status: 401, latencyMs: 88, detail: 'invalid x-api-key' }
+      probe: { reachable: false, status: 401, latencyMs: 88, diagnostic: 'unauthorized' }
     })
     renderSection(configured())
     fireEvent.click(screen.getByRole('button', { name: 'Check reachability' }))
     expect(await screen.findByText(/not reachable · answered 401/)).toBeTruthy()
-    // Verbatim, because the sentence is the endpoint's and paraphrasing it
-    // would be the desk speaking for a service it does not own.
-    expect(screen.getByText('invalid x-api-key')).toBeTruthy()
+    expect(screen.getByText(/the endpoint did not accept the key/)).toBeTruthy()
+  })
+
+  it('renders every word of the vocabulary as a sentence a person can read', async () => {
+    for (const [diagnostic, says] of [
+      ['forbidden', 'the endpoint refused this request'],
+      ['not-found', 'nothing is at that address'],
+      ['timeout', 'no answer within ten seconds'],
+      ['tls', 'the secure connection could not be established'],
+      ['refused', 'nothing is listening there'],
+      ['dns', 'that host name did not resolve'],
+      ['unexpected-status', 'the endpoint answered something unexpected']
+    ] as const) {
+      stubChassis({ probe: { reachable: false, status: 0, latencyMs: 5, diagnostic } })
+      renderSection(configured())
+      fireEvent.click(screen.getByRole('button', { name: 'Check reachability' }))
+      expect(await screen.findByText(new RegExp(says)), diagnostic).toBeTruthy()
+      cleanup()
+    }
   })
 
   it('says no answer arrived where the status is zero', async () => {
@@ -288,7 +345,7 @@ describe('the Assistant section', () => {
         reachable: false,
         status: 0,
         latencyMs: 10_000,
-        detail: 'context deadline exceeded'
+        diagnostic: 'timeout'
       }
     })
     renderSection(configured())

@@ -2647,13 +2647,31 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 			// desk does not understand. Written rather than left absent so the
 			// witness sets up its own state and does not depend on the order
 			// the codes happen to be declared in.
-			writeDeskConfig(t, server, `{"assistant":{"endpoint":{"url":"https://e.example/v1",`+
-				`"kind":"openai-compatible","model":"m","tools":[],"apiKey":"no"}}}`)
+			writeDeskConfig(t, server, `{"deskConfigVersion":1,"assistant":{"endpoint":`+
+				`{"url":"https://e.example/v1","kind":"openai-compatible","model":"m",`+
+				`"tools":[],"apiKey":"no"}}}`)
 			return postJSON(t, ts, "/api/assistant/probe")
 		},
+		CodeAssistantUnusableStore: func(t *testing.T) (int, map[string]any) {
+			// A desk whose configuration directory belongs to somebody else.
+			// Its own server, because the store is validated and pinned once
+			// when the server is built — which is the point of the code.
+			foreign := filepath.Join(t.TempDir(), "not-ours")
+			if err := os.Mkdir(foreign, 0o777); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			// Group- and other-writable with no sticky bit: a directory in
+			// which anybody may replace a name.
+			if err := os.Chmod(foreign, 0o777); err != nil {
+				t.Fatalf("chmod: %v", err)
+			}
+			_, unsafe, _ := assistantServerIn(t, filepath.Join(foreign, "jpack-desk"))
+			return sendJSON(t, unsafe, http.MethodGet, "/api/assistant/key", nil)
+		},
 		CodeAssistantNoKey: func(t *testing.T) (int, map[string]any) {
-			writeDeskConfig(t, server, `{"assistant":{"endpoint":{"url":"https://e.example/v1",`+
-				`"kind":"openai-compatible","model":"m","tools":[]}}}`)
+			writeDeskConfig(t, server, `{"deskConfigVersion":1,"assistant":{"endpoint":`+
+				`{"url":"https://e.example/v1","kind":"openai-compatible","model":"m",`+
+				`"tools":[]}}}`)
 			return postJSON(t, ts, "/api/assistant/probe")
 		},
 	}

@@ -46,6 +46,7 @@ export const CHASSIS_CODES = [
   'excluded-directory',
   'assistant-unconfigured',
   'assistant-no-key',
+  'assistant-unusable-store',
   'internal'
 ] as const
 
@@ -75,7 +76,11 @@ export const CONTROL_FLOW_CODES = ['not-found'] as const
  * with the reason, and every code still has to be in exactly one of the three
  * lists — "nobody thought about it" is still not a category.
  */
-export const OTHER_ENDPOINT_CODES = ['assistant-unconfigured', 'assistant-no-key'] as const
+export const OTHER_ENDPOINT_CODES = [
+  'assistant-unconfigured',
+  'assistant-no-key',
+  'assistant-unusable-store'
+] as const
 
 /** The chassis codes this dialog has a sentence for. */
 export const CREATE_REFUSALS: Readonly<Record<string, string>> = {

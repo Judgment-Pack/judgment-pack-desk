@@ -13,12 +13,15 @@ package desk
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,13 +36,21 @@ import (
 // log this test can read.
 func assistantServer(t *testing.T) (*Server, *httptest.Server, *bytes.Buffer) {
 	t.Helper()
+	return assistantServerIn(t, t.TempDir())
+}
+
+// assistantServerIn is assistantServer with the desk-level directory chosen by
+// the caller, for the cases that have to arrange that directory *before* the
+// store validates and pins it.
+func assistantServerIn(t *testing.T, config string) (*Server, *httptest.Server, *bytes.Buffer) {
+	t.Helper()
 	logged := &bytes.Buffer{}
 	s, err := New(Config{
 		ProjectDir:    t.TempDir(),
 		JpackBin:      "jpack",
 		Token:         testToken,
 		Logger:        log.New(logged, "", 0),
-		DeskConfigDir: t.TempDir(),
+		DeskConfigDir: config,
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -137,21 +148,22 @@ const testKey = "sk-desk-test-0123456789-abcdefghij"
 /* Custody ------------------------------------------------------------------ */
 
 func TestAssistantKeyModeBits(t *testing.T) {
-	s, ts, _ := assistantServer(t)
-
-	// A directory that already exists, wide open. `MkdirAll` does nothing at
-	// all to a directory that is already there, so a store that only ever
-	// created the directory would leave this mode in place — which is the
-	// whole reason the chmod is unconditional.
-	if err := os.MkdirAll(s.secretsDir(), 0o777); err != nil {
+	// A configuration tree that already exists, wide open, **before the desk
+	// starts**. Validation and narrowing happen once, when the store is
+	// pinned, so this is the moment at which a pre-existing loose directory
+	// has to be dealt with — and `Mkdir` does nothing at all to a directory
+	// that is already there, which is why the narrowing is unconditional.
+	config := t.TempDir()
+	if err := os.Mkdir(filepath.Join(config, secretsDirName), 0o777); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.Chmod(s.secretsDir(), 0o777); err != nil {
+	if err := os.Chmod(filepath.Join(config, secretsDirName), 0o777); err != nil {
 		t.Fatalf("chmod: %v", err)
 	}
+	s, ts, _ := assistantServerIn(t, config)
 
-	if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
-		t.Fatalf("store: %d", status)
+	if status, body := storeKey(t, ts, testKey); status != http.StatusOK {
+		t.Fatalf("store: %d %v", status, body)
 	}
 
 	dir, err := os.Stat(s.secretsDir())
@@ -239,7 +251,7 @@ func TestAssistantKeyNeverInTheLog(t *testing.T) {
 	}))
 	defer endpoint.Close()
 	writeDeskConfig(t, s, fmt.Sprintf(
-		`{"assistant":{"endpoint":{"url":%q,"kind":"openai-compatible","model":"m","tools":[]}}}`,
+		`{"deskConfigVersion":1,"assistant":{"endpoint":{"url":%q,"kind":"openai-compatible","model":"m","tools":[]}}}`,
 		endpoint.URL))
 
 	if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
@@ -375,6 +387,50 @@ func TestAssistantKeyRefusals(t *testing.T) {
 		status, body := storeKey(t, ts, "   \t\n  ")
 		if status != http.StatusBadRequest {
 			t.Fatalf("status %d, body %v", status, body)
+		}
+	})
+
+	t.Run("a control character at either edge", func(t *testing.T) {
+		// **These used to be accepted, and silently repaired.** The check ran
+		// after `TrimSpace`, so a leading newline or a trailing tab was
+		// trimmed away and the key stored — which made the stated contract
+		// ("no control character") true only of the middle of a key. A
+		// newline is not a stray space: it is the shape header injection
+		// takes, and it is now refused wherever it sits.
+		for _, tc := range []struct{ name, key string }{
+			{"a leading newline", "\nsk-valid-looking-key"},
+			{"a trailing newline", "sk-valid-looking-key\n"},
+			{"a leading tab", "\tsk-valid-looking-key"},
+			{"a trailing tab", "sk-valid-looking-key\t"},
+			{"a leading carriage return", "\rsk-valid-looking-key"},
+			{"a vertical tab in the middle", "sk-valid\vlooking-key"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				status, body := storeKey(t, ts, tc.key)
+				if status != http.StatusBadRequest {
+					t.Fatalf("status %d, body %v", status, body)
+				}
+				message, _ := body["error"].(string)
+				if !strings.Contains(message, "control character") {
+					t.Errorf("the refusal does not name the reason: %q", message)
+				}
+			})
+		}
+	})
+
+	t.Run("an ordinary space at either edge is trimmed, not refused", func(t *testing.T) {
+		// The other half of the same ruling, said out loud: only ordinary
+		// whitespace is normalised, and only after the control check. A space
+		// either side of a pasted key is a slip; a newline is not.
+		status, body := storeKey(t, ts, "  sk-valid-looking-key  ")
+		if status != http.StatusOK {
+			t.Fatalf("status %d, body %v", status, body)
+		}
+		if body["fingerprint"] != "sk-v…-key" {
+			t.Errorf("fingerprint %v — the key was not trimmed as stated", body["fingerprint"])
+		}
+		if status, _ := sendJSON(t, ts, http.MethodDelete, "/api/assistant/key", nil); status != http.StatusOK {
+			t.Fatal("delete")
 		}
 	})
 
@@ -597,43 +653,43 @@ func TestConfiguredEndpointRefusals(t *testing.T) {
 	for _, tc := range []struct{ name, file, names string }{
 		{
 			"a member the endpoint does not declare",
-			`{"assistant":{"endpoint":{"url":"https://e.example/v1","kind":"anthropic",` +
+			`{"deskConfigVersion":1,"assistant":{"endpoint":{"url":"https://e.example/v1","kind":"anthropic",` +
 				`"model":"m","tools":[],"organization":"acme"}}}`,
 			"organization",
 		},
 		{
 			"a key pasted into the endpoint",
-			`{"assistant":{"endpoint":{"url":"https://e.example/v1","kind":"anthropic",` +
+			`{"deskConfigVersion":1,"assistant":{"endpoint":{"url":"https://e.example/v1","kind":"anthropic",` +
 				`"model":"m","tools":[],"apiKey":"sk-nope"}}}`,
 			"apiKey",
 		},
 		{
 			"a tool outside the allow-list",
-			`{"assistant":{"endpoint":{"url":"https://e.example/v1","kind":"anthropic",` +
+			`{"deskConfigVersion":1,"assistant":{"endpoint":{"url":"https://e.example/v1","kind":"anthropic",` +
 				`"model":"m","tools":["write_file"]}}}`,
 			"write_file",
 		},
 		{
 			"a kind this desk cannot speak",
-			`{"assistant":{"endpoint":{"url":"https://e.example/v1","kind":"gemini",` +
+			`{"deskConfigVersion":1,"assistant":{"endpoint":{"url":"https://e.example/v1","kind":"gemini",` +
 				`"model":"m","tools":[]}}}`,
 			"kind",
 		},
 		{
 			"a URL that is not https and not loopback",
-			`{"assistant":{"endpoint":{"url":"http://models.example/v1","kind":"anthropic",` +
+			`{"deskConfigVersion":1,"assistant":{"endpoint":{"url":"http://models.example/v1","kind":"anthropic",` +
 				`"model":"m","tools":[]}}}`,
 			"url",
 		},
 		{
 			"no model",
-			`{"assistant":{"endpoint":{"url":"https://e.example/v1","kind":"anthropic",` +
+			`{"deskConfigVersion":1,"assistant":{"endpoint":{"url":"https://e.example/v1","kind":"anthropic",` +
 				`"model":"","tools":[]}}}`,
 			"model",
 		},
 		{
 			"a null endpoint",
-			`{"assistant":{"endpoint":null}}`,
+			`{"deskConfigVersion":1,"assistant":{"endpoint":null}}`,
 			"absent or null",
 		},
 		{
@@ -658,7 +714,7 @@ func TestConfiguredEndpointRefusals(t *testing.T) {
 
 func TestProbeRefusesWithoutAKey(t *testing.T) {
 	s, ts, _ := assistantServer(t)
-	writeDeskConfig(t, s, `{"assistant":{"endpoint":{"url":"https://e.example/v1",`+
+	writeDeskConfig(t, s, `{"deskConfigVersion":1,"assistant":{"endpoint":{"url":"https://e.example/v1",`+
 		`"kind":"anthropic","model":"m","tools":[]}}}`)
 	status, body := postJSON(t, ts, "/api/assistant/probe")
 	if status != http.StatusConflict || body["code"] != CodeAssistantNoKey {
@@ -717,15 +773,27 @@ func (s *stubEndpoint) saw() (string, string, http.Header, string) {
 }
 
 // probeAgainst runs one probe end to end through the chassis.
-func probeAgainst(t *testing.T, kind, url string) (int, map[string]any) {
+func probeAgainst(t *testing.T, kind, endpoint string) (int, map[string]any) {
+	t.Helper()
+	status, raw := probeAgainstRaw(t, kind, endpoint)
+	var body map[string]any
+	_ = json.Unmarshal([]byte(raw), &body)
+	return status, body
+}
+
+// probeAgainstRaw is probeAgainst with the answer's bytes, for the assertions
+// about what never travels: a decoded map cannot show what a member contains
+// inside a string this test never thought to look at.
+func probeAgainstRaw(t *testing.T, kind, endpoint string) (int, string) {
 	t.Helper()
 	s, ts, _ := assistantServer(t)
 	writeDeskConfig(t, s, fmt.Sprintf(
-		`{"assistant":{"endpoint":{"url":%q,"kind":%q,"model":"a-model","tools":[]}}}`, url, kind))
+		`{"deskConfigVersion":1,"assistant":{"endpoint":{"url":%q,"kind":%q,`+
+			`"model":"a-model","tools":[]}}}`, endpoint, kind))
 	if status, body := storeKey(t, ts, testKey); status != http.StatusOK {
 		t.Fatalf("store: %d %v", status, body)
 	}
-	return postJSON(t, ts, "/api/assistant/probe")
+	return rawBody(t, ts, http.MethodPost, "/api/assistant/probe", nil)
 }
 
 func TestProbeSpeaksTheOpenAICompatibleProtocol(t *testing.T) {
@@ -747,8 +815,8 @@ func TestProbeSpeaksTheOpenAICompatibleProtocol(t *testing.T) {
 	if body["status"] != float64(200) {
 		t.Errorf("status %v, want 200", body["status"])
 	}
-	if body["detail"] != "" {
-		t.Errorf("detail %q, want empty on a success", body["detail"])
+	if body["diagnostic"] != "" {
+		t.Errorf("diagnostic %q, want empty on a success", body["diagnostic"])
 	}
 
 	method, path, headers, _ := stub.saw()
@@ -823,54 +891,88 @@ func TestProbeReportsARefusedCredential(t *testing.T) {
 	if body["status"] != float64(401) {
 		t.Errorf("status %v, want 401", body["status"])
 	}
-	if body["detail"] != "invalid x-api-key" {
-		t.Errorf("detail %q, want the endpoint's own sentence", body["detail"])
+	// **One word from the fixed vocabulary, and none of what the endpoint
+	// wrote.** The sentence used to be quoted; it is not any more, because a
+	// body under the endpoint's control can carry a derived representation of
+	// the credential that no substitution reliably finds.
+	if body["diagnostic"] != DiagnosticUnauthorized {
+		t.Errorf("diagnostic %q, want %q", body["diagnostic"], DiagnosticUnauthorized)
 	}
 }
 
-func TestProbeQuotesTheEndpointRatherThanParaphrasingIt(t *testing.T) {
-	// A bare `{"error": "…"}`, which is neither protocol's shape and is what
-	// a proxy in front of one tends to answer.
-	stub := newStubEndpoint(t, func(w http.ResponseWriter) {
-		w.WriteHeader(http.StatusBadGateway)
-		_, _ = w.Write([]byte(`{"error":"upstream is down"}`))
-	})
-	_, body := probeAgainst(t, "openai-compatible", stub.server.URL+"/v1")
-	if body["detail"] != "upstream is down" {
-		t.Errorf("detail %q", body["detail"])
-	}
-}
-
-func TestProbeBoundsTheSentenceItQuotes(t *testing.T) {
-	long := strings.Repeat("y", 5000)
-	stub := newStubEndpoint(t, func(w http.ResponseWriter) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(`{"error":{"message":"` + long + `"}}`))
-	})
-	_, body := probeAgainst(t, "openai-compatible", stub.server.URL+"/v1")
-	detail, _ := body["detail"].(string)
-	if count := len([]rune(detail)); count > maxDetail+1 {
-		t.Errorf("detail is %d runes, want at most %d plus the ellipsis", count, maxDetail)
-	}
-	if !strings.HasSuffix(detail, "…") {
-		t.Errorf("a truncated sentence does not say it was truncated: %q", detail[:40])
-	}
-}
-
-func TestProbeScrubsTheKeyOutOfWhatItQuotes(t *testing.T) {
-	// Some endpoints echo the credential back in the name of being helpful.
-	// The desk must not paint it on the page because they did.
+func TestProbeNeverRepeatsWhatTheEndpointWrote(t *testing.T) {
+	// The endpoint echoes the credential back — some do, in the name of being
+	// helpful — and encodes it four ways besides. **None of it may travel.**
+	//
+	// This is why the sentence is no longer quoted at all. The previous design
+	// removed the literal key from the body with one substitution, which is a
+	// categorical promise ("never sent back to the browser") held by a
+	// `strings.ReplaceAll`: base64, percent-encoding, JSON escaping, hex and
+	// any partial echo walked straight past it.
+	encoded := base64.StdEncoding.EncodeToString([]byte(testKey))
+	urlEncoded := url.QueryEscape(testKey)
+	hexed := hex.EncodeToString([]byte(testKey))
+	half := testKey[:len(testKey)/2]
 	stub := newStubEndpoint(t, func(w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"error":{"message":"the key ` + testKey + ` is not valid"}}`))
+		_, _ = w.Write([]byte(`{"error":{"message":"the key ` + testKey + ` (` + encoded + `, ` +
+			urlEncoded + `, ` + hexed + `, ` + half + `) is not valid"}}`))
 	})
-	_, body := probeAgainst(t, "anthropic", stub.server.URL)
-	detail, _ := body["detail"].(string)
-	if strings.Contains(detail, testKey) {
-		t.Errorf("the endpoint's echo of the key reached the page: %q", detail)
+
+	_, raw := probeAgainstRaw(t, "anthropic", stub.server.URL)
+	for name, forbidden := range map[string]string{
+		"the key itself":  testKey,
+		"base64":          encoded,
+		"percent-encoded": urlEncoded,
+		"hex":             hexed,
+		"half of it":      half,
+		"the sentence":    "is not valid",
+	} {
+		if strings.Contains(raw, forbidden) {
+			t.Errorf("%s reached the page: %s", name, raw)
+		}
 	}
-	if !strings.Contains(detail, "is not valid") {
-		t.Errorf("the scrub took the sentence with it: %q", detail)
+	var body map[string]any
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		t.Fatalf("the answer is not JSON: %s", raw)
+	}
+	if body["diagnostic"] != DiagnosticUnauthorized {
+		t.Errorf("diagnostic %q, want %q", body["diagnostic"], DiagnosticUnauthorized)
+	}
+}
+
+func TestProbeDiagnosticsComeFromTheClosedVocabulary(t *testing.T) {
+	// Every answer this can give, and nothing outside the list. A vocabulary
+	// that grew a member nobody declared would be the endpoint's text coming
+	// back by another route.
+	for _, tc := range []struct {
+		name   string
+		status int
+		want   string
+	}{
+		{"unauthorized", http.StatusUnauthorized, DiagnosticUnauthorized},
+		{"forbidden", http.StatusForbidden, DiagnosticForbidden},
+		{"not found", http.StatusNotFound, DiagnosticNotFound},
+		{"anything else", http.StatusBadGateway, DiagnosticUnexpected},
+		{"a redirect", http.StatusFound, DiagnosticUnexpected},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			status := tc.status
+			stub := newStubEndpoint(t, func(w http.ResponseWriter) {
+				if status == http.StatusFound {
+					w.Header().Set("Location", "https://elsewhere.example/")
+				}
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"error":{"message":"never quoted"}}`))
+			})
+			_, body := probeAgainst(t, "openai-compatible", stub.server.URL+"/v1")
+			if body["diagnostic"] != tc.want {
+				t.Errorf("diagnostic %v, want %q", body["diagnostic"], tc.want)
+			}
+			if !contains(AssistantDiagnostics, body["diagnostic"].(string)) {
+				t.Errorf("%q is not in the declared vocabulary", body["diagnostic"])
+			}
+		})
 	}
 }
 
@@ -924,8 +1026,8 @@ func TestProbeIsBounded(t *testing.T) {
 	if elapsed > time.Second {
 		t.Errorf("the probe took %v; the bound did not apply", elapsed)
 	}
-	if detail, _ := body["detail"].(string); detail == "" {
-		t.Error("a probe that timed out says nothing about why")
+	if body["diagnostic"] != DiagnosticTimeout {
+		t.Errorf("diagnostic %v, want %q", body["diagnostic"], DiagnosticTimeout)
 	}
 }
 
@@ -948,8 +1050,9 @@ func TestProbeReportsAnEndpointThatIsNotThere(t *testing.T) {
 	if body["reachable"] != false || body["status"] != float64(0) {
 		t.Errorf("body %v", body)
 	}
-	if detail, _ := body["detail"].(string); detail == "" {
-		t.Error("no sentence about a connection that never opened")
+	if body["diagnostic"] != DiagnosticRefused {
+		t.Errorf("diagnostic %v, want %q — nothing was listening", body["diagnostic"],
+			DiagnosticRefused)
 	}
 }
 

@@ -89,6 +89,12 @@ type Server struct {
 	// where there is no home directory to resolve it against, which each
 	// endpoint that needs it reports as a sentence rather than a dead desk.
 	configDir string
+	// assistant is that directory validated and pinned — or the reason it was
+	// refused. Built once, at startup, and closed with the server. A desk whose
+	// configuration directory is not safe to keep a credential in still runs;
+	// it simply will not keep one, and says which directory is the reason. See
+	// custody.go.
+	assistant *assistantStore
 	// writes serializes the compare-and-commit of every write. One mutex, not
 	// one per path: a per-path key is a *spelling*, and two spellings of one
 	// file on a case-insensitive filesystem would take different locks and both
@@ -139,6 +145,16 @@ func New(cfg Config) (*Server, error) {
 		projectDir: resolved,
 		configDir:  configDirFor(cfg.DeskConfigDir),
 	}
+	// Validated and pinned once. Doing it per request would let the authority
+	// itself be retargeted between requests, which is the same argument the
+	// project root is pinned for.
+	s.assistant = openAssistantStore(s.configDir)
+	if !s.assistant.usable() {
+		// Reported, and not fatal. A desk that refused to start because
+		// somebody's ~/.config is group-writable would be a desk nobody could
+		// use to read a pack; what is withdrawn is the ability to keep a key.
+		s.log.Printf("desk: no assistant key will be kept: %v", s.assistant.problem)
+	}
 	s.removeStaleStaging()
 	if cfg.Static != nil {
 		s.static = http.FileServer(http.FS(cfg.Static))
@@ -184,6 +200,11 @@ func (s *Server) Close() error {
 	if s.root != nil {
 		if rerr := s.root.Close(); err == nil {
 			err = rerr
+		}
+	}
+	if s.assistant != nil {
+		if aerr := s.assistant.Close(); err == nil {
+			err = aerr
 		}
 	}
 	return err

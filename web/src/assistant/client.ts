@@ -29,6 +29,35 @@ export interface AssistantKeyState {
   fingerprint: string
 }
 
+/**
+ * The words a probe may answer with, and the whole of them.
+ *
+ * **Nothing the endpoint wrote is repeated to anybody.** The probe used to
+ * quote the endpoint's own error sentence with the key substituted out of it,
+ * which is a categorical promise ("the key is never sent back to the browser")
+ * held by one `replaceAll`: a body under the endpoint's control can carry a
+ * *derived* representation of the credential — base64, percent-encoded,
+ * JSON-escaped, hex, or half of it — that no substitution reliably finds. So
+ * the body is discarded at the desk and one of these travels instead.
+ *
+ * The cost is real and accepted: a reader debugging a misconfigured gateway no
+ * longer sees its sentence and must look at the endpoint's own logs.
+ *
+ * Held identical to `AssistantDiagnostics` in `internal/desk/assistant.go` by
+ * a test that reads that declaration.
+ */
+export const PROBE_DIAGNOSTICS = [
+  'unauthorized',
+  'forbidden',
+  'not-found',
+  'timeout',
+  'tls',
+  'refused',
+  'dns',
+  'unexpected-status'
+] as const
+export type ProbeDiagnostic = (typeof PROBE_DIAGNOSTICS)[number]
+
 /** What one reachability check established. */
 export interface ProbeResult {
   /**
@@ -39,8 +68,11 @@ export interface ProbeResult {
   /** The HTTP status, or 0 where no response arrived at all. */
   status: number
   latencyMs: number
-  /** The endpoint's own sentence, bounded. Empty on a success. */
-  detail: string
+  /**
+   * One word from `PROBE_DIAGNOSTICS`, or empty on a success. Never text the
+   * endpoint wrote.
+   */
+  diagnostic: string
 }
 
 export async function readAssistantKey(signal?: AbortSignal): Promise<AssistantKeyState> {

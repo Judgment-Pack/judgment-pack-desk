@@ -1213,6 +1213,10 @@ be a loopback name.
 `url` must be an `https:` URL, or an `http:` one on `localhost` or
 `127.0.0.1` — a rule about transport, because a bearer credential sent in clear
 text over a network is a credential given away, and one about transport only.
+It may **not** carry a user, a password or a fragment: a key is never written
+into configuration, and that includes into a URL. It **may** carry a query
+string, because some gateways route on one — and that query string is never
+logged.
 It is the base the endpoint documents for its own protocol: for
 `openai-compatible` the base carrying `/models` and `/chat/completions`, which
 usually ends in `/v1`; for `anthropic` the base carrying `/v1/messages`. The
@@ -1232,7 +1236,10 @@ because both sides refuse by it.
 **Admin › Assistant** shows the configured endpoint, its protocol, its model
 and its tools with the file each came from, the exact JSON to paste, the key
 control described under [Security model](#security-model), and a **Check
-reachability** button that reports the desk's own probe word for word.
+reachability** button that reports the desk's own probe. The key and the
+endpoint are separate: removing the endpoint from the file does not remove the
+key from this machine, so the page says `none — no endpoint configured` and
+lets the key line say whether one is still kept here.
 
 **What the assistant is, and is not**, in the sentence the page carries: it
 proposes edits to the draft; you accept them; the runtime checks them. It never
@@ -1372,12 +1379,45 @@ with rather than quietly edited around.
 ~/.config/jpack-desk/secrets/assistant     mode 0600, in a directory of mode 0700
 ```
 
-`XDG_CONFIG_HOME` is honoured where it is set to an absolute path. The modes
-are set on **every** store rather than only at creation: `MkdirAll` applies the
-umask and does nothing at all to a directory that already exists, so a
-directory found with a wider mode is narrowed rather than trusted. The write is
-staged in the same directory and renamed over the target, so a reader during a
-replace sees the old key or the new one and never half of one.
+`XDG_CONFIG_HOME` is honoured where it is set to an absolute path; a relative
+one is ignored, as the specification says. The write is staged in the same
+directory and renamed over the target, so a reader during a replace sees the
+old key or the new one and never half of one.
+
+**That directory is validated once, at startup, and then held as a
+descriptor** — the same treatment the project gets, and for a sharper reason.
+A pathname is not custody: `os.ReadFile`, `MkdirAll`, `Chmod` and `Rename` all
+follow symbolic links and none of them looks at who owns what it lands in, so
+in a configuration tree another local user can write to, a preplanted
+`secrets/assistant` symlink is enough to make this desk read a file of the
+attacker's choosing as the key — and present it to an endpoint the same
+attacker named in a preplanted `desk.json`. So:
+
+- **Every component of the path is checked before anything is opened**: a real
+  directory rather than a symlink, and not writable by group or others. A
+  *sticky* world-writable ancestor is admitted — `/tmp` is the case, and the
+  sticky bit is exactly the rule that only an entry's owner may replace it.
+- **The desk's own two directories must be owned by the user running the
+  desk**, and are created or narrowed to `0700`. Their ancestors may belong to
+  root as well, because `/` and `/home` do on every ordinary system. One of
+  ours that is merely too loose is narrowed rather than refused; what cannot
+  be repaired — who owns it, whether it is a link — is refused.
+- **The validated directory is then pinned**, and every read, write, rename and
+  mode change goes through that descriptor with no-follow semantics. The key
+  file itself must be a regular file no one else can read; a symlink at its
+  name is refused rather than followed.
+
+**A desk that cannot establish that keeps no key, and says so.** The rest of it
+runs: packs, rehearsals and graphs are unaffected. Admin › Assistant renders
+the refusal, which names the directory that has to be repaired, and every
+assistant endpoint answers `409 assistant-unusable-store` with the same
+sentence.
+
+**The residual is the file API's residual.** None of this defends against a
+hostile local process running *as this user*: it already owns these files and
+can replace them whenever it likes. What validation closes is the window in
+which *another* user's writable directory redirects an open. That boundary is
+stated here rather than implied by the absence of a caveat.
 
 **It is in no project.** Not in `jpack-desk.json`, not in the desk-level
 `desk.json`, not in any file the file API can reach — and the configuration
@@ -1392,10 +1432,16 @@ redaction that redacts nothing is worse than none. The page therefore never
 holds the key it does not type, and the masked field is never populated from
 anything: there is no value to populate it with.
 
-**It is never logged.** The desk records that a key was stored and that a probe
-was made; it records neither the key nor any fragment of it. A test asserts the
-log buffer contains the event and does not contain the value, so an empty log
-cannot pass for a clean one.
+**It is never logged, and neither is a URL that might carry one.** The desk
+records that a key was stored and that a probe was made; it records neither the
+key nor any fragment of it, and a test asserts the log contains the event and
+not the value, so an empty log cannot pass for a clean one. The probe line
+carries the endpoint's **scheme and host only**. A configured URL may carry a
+query string — some gateways route on one — and a query string is a place
+people put credentials, deliberately or by pasting a presigned link, so it is
+never written down. Userinfo and a fragment are refused outright when the file
+is read: a key is never written into configuration, and that includes into a
+URL.
 
 **The probe is made by the desk, not the page**, because the key must not reach
 the page in order to be presented to an endpoint:
@@ -1407,6 +1453,12 @@ the page in order to be presented to an endpoint:
 | `PUT /api/assistant/key` | store one — non-empty, at most 4 KiB, no control character |
 | `DELETE /api/assistant/key` | remove it |
 | `POST /api/assistant/probe` | reach the configured endpoint once and report what came back |
+
+The last four answer `409` with `assistant-unusable-store` where this machine
+has no directory safe to keep a credential in, `assistant-unconfigured` where
+the desk-level file names no endpoint or was refused, and `assistant-no-key`
+where nothing is stored. Each of those is a different repair, which is why they
+are three codes and not one.
 
 All five are under the same two checks as `/ws` and the file API, through the
 same shared guard, and a request refused by the guard stores nothing — asserted
@@ -1421,19 +1473,43 @@ request the configured protocol defines — a model listing for
 `openai-compatible`, a messages call bounded to one output token for
 `anthropic` — waits at most ten seconds, and **follows no redirect**: Go strips
 `Authorization` across hosts and knows nothing about `x-api-key`, so a followed
-redirect could walk that credential to a host nobody configured. A control
-character in a key is refused at the store for the same class of reason: the
-key is presented in a request header, and a newline in one is header injection.
+redirect could walk that credential to a host nobody configured.
 
-The answer is `{reachable, status, latencyMs, detail}`, where `reachable` means
-the endpoint answered *successfully* — a 401 is a host that is there and a
-credential it will not take, and calling that reachable would report a desk
-that cannot make one call as ready. `detail` is the endpoint's own sentence,
-bounded to 200 characters and with the key removed from it: some endpoints echo
-the credential back in the name of being helpful, and the desk must not paint
-it on the page because they did. A probe that reaches nothing still answers
-`200`; the two refusals are the states in which the question cannot be asked at
-all — no endpoint configured, and no key stored — and each says which.
+**A control character in a key is refused wherever it sits**, including at
+either edge. The key is presented in a request header and a newline in one is
+header injection; only *ordinary* whitespace is trimmed, and only after the
+refusal has been decided, so a leading newline is no longer quietly repaired
+into an acceptable key.
+
+**A configuration the desk refuses authorises nothing.** The chassis decodes
+the whole desk-level file under the same contract the browser decodes it under
+— every unknown key refused by name at every level, a credential-shaped member
+refused wherever it appears, all four endpoint members required, one URL rule —
+and any problem anywhere in that file refuses the probe outright, with **no
+outbound request at all**. Before this, the chassis read only
+`assistant.endpoint`: a file carrying a stray `apiKey`, a missing `tools` or a
+whitespace model showed "configuration refused" on Admin while the probe
+happily sent the stored key to the endpoint it named. The two decoders are held
+together by fixtures both read — `web/src/config/fixtures/desk-config/`, with
+one `expected.json` naming each file's verdict and the keys it must refuse — so
+a rule changed on one side and not the other fails on both.
+
+The answer is `{reachable, status, latencyMs, diagnostic}`, where `reachable`
+means the endpoint answered *successfully* — a 401 is a host that is there and
+a credential it will not take, and calling that reachable would report a desk
+that cannot make one call as ready. **`diagnostic` is one word from a closed
+list** — `unauthorized`, `forbidden`, `not-found`, `timeout`, `tls`, `refused`,
+`dns`, `unexpected-status` — and **never text the endpoint wrote**. The
+endpoint's own sentence used to be quoted with the key substituted out of it,
+which is a categorical promise held by one string replacement: a body under the
+endpoint's control can carry a *derived* representation of the credential —
+base64, percent-encoded, JSON-escaped, hex, or half of it — that no
+substitution reliably detects. So the body is drained and discarded. The cost
+is real and accepted: debugging a misconfigured gateway now means reading that
+gateway's own logs. A probe that reaches nothing still answers `200`; the
+refusals are the states in which the question cannot be asked at all — no
+usable place to keep a key, no endpoint configured (a refused file included),
+and no key stored — and each says which.
 
 ## Authoring (issue #14, phase 1)
 
@@ -1732,6 +1808,8 @@ internal/desk/
   server.go          routing, SPA fallback, token and origin checks
   files.go           the file API: containment, atomic save, stale-write refusal
   assistant.go       the desk-level file, the key this machine keeps, the probe
+  custody.go         the credential directory: validated once, then pinned
+  deskfile.go        the desk-level file decoded under the browser's contract
   relay.go           WebSocket ↔ `jpack mcp` subprocess
   watch.go           project-tree file watching
 scripts/acceptance.sh  the two-run acceptance proof
@@ -1792,6 +1870,9 @@ web/                 Vite + React + TypeScript SPA
   src/config/        the schema both configuration files share, its strict
                      decoder, the two queries that read them, the precedence
                      between them, and the theme attribute it writes
+    fixtures/        the desk-configuration fixtures and their one verdict
+                     file, read by this decoder and by the chassis' — two
+                     implementations of one contract, held together
   src/identity/      the identity slot: one nullable field, and the header
                      control that renders it
   src/assistant/     the assistant slot: one nullable field, the four chassis

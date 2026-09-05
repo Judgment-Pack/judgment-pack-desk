@@ -170,6 +170,13 @@ const (
 	CodeAssistantUnconfigured = "assistant-unconfigured"
 	// CodeAssistantNoKey is a probe with no credential to present.
 	CodeAssistantNoKey = "assistant-no-key"
+	// CodeAssistantUnusableStore is a desk that will not keep a key at all.
+	//
+	// Its own code because the fix is nothing like the other two: not a
+	// configuration file to correct and not a key to store, but a directory
+	// on this machine whose ownership or mode makes it unsafe to keep a
+	// credential in. The sentence names the directory; see custody.go.
+	CodeAssistantUnusableStore = "assistant-unusable-store"
 	// CodeInternal is everything with no better answer. A client that branches
 	// on this is a client guessing, which is what the others are for.
 	CodeInternal = "internal"
@@ -204,9 +211,10 @@ var codeStatus = map[string]int{
 	CodeExcludedDirectory: http.StatusForbidden,
 	// The desk's own state disagrees with the request, and no amount of
 	// retrying the request changes that — 409, like the two write conflicts.
-	CodeAssistantUnconfigured: http.StatusConflict,
-	CodeAssistantNoKey:        http.StatusConflict,
-	CodeInternal:              http.StatusInternalServerError,
+	CodeAssistantUnconfigured:  http.StatusConflict,
+	CodeAssistantNoKey:         http.StatusConflict,
+	CodeAssistantUnusableStore: http.StatusConflict,
+	CodeInternal:               http.StatusInternalServerError,
 }
 
 // allCodes is every code this API declares, for the tests that walk them.
@@ -215,7 +223,8 @@ var allCodes = []string{
 	CodeParentIsAFile, CodeTooDeep, CodeExists, CodeStale, CodeTooLarge,
 	CodeNotUTF8, CodeNotAFile, CodeUnauthorized, CodeForbidden, CodeBadRequest,
 	CodeStagingFile, CodeExcludedDirectory,
-	CodeAssistantUnconfigured, CodeAssistantNoKey, CodeInternal,
+	CodeAssistantUnconfigured, CodeAssistantNoKey, CodeAssistantUnusableStore,
+	CodeInternal,
 }
 
 // coded carries a refusal's stable code alongside its sentence.

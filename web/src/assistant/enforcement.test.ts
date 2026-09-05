@@ -33,6 +33,7 @@ import {
   type AssistantConfig,
   type AssistantEndpointConfig
 } from '../config/deskConfig'
+import { PROBE_DIAGNOSTICS } from './client'
 import type { AssistantSlot } from './useAssistantSlot'
 
 const SRC = join(import.meta.dirname, '..')
@@ -343,5 +344,40 @@ describe('(5) no endpoint literal in the source — a WEAK, enumerated guard', (
         ).toBe(true)
       }
     }
+  })
+})
+
+describe('(6) the probe answers from a closed vocabulary, shared with the desk', () => {
+  it('declares the same words the desk declares', () => {
+    // Two lists of one vocabulary drift, and the page's copy is what turns a
+    // word into a sentence a reader sees. Read out of the Go declaration.
+    const source = readFileSync(
+      join(SRC, '..', '..', 'internal', 'desk', 'assistant.go'),
+      'utf8'
+    )
+    const block = /var AssistantDiagnostics = \[\]string\{([\s\S]*?)\}/.exec(source)
+    expect(block, 'AssistantDiagnostics is declared in internal/desk/assistant.go').not.toBeNull()
+    const declared = [...block![1]!.matchAll(/Diagnostic([A-Za-z]+)/g)].map((match) => match[1]!)
+    // The Go side names them by constant; the constants' values are asserted
+    // against this list on that side, and the *count* is asserted here so a
+    // word added there without one here fails.
+    expect(declared.length).toBe(PROBE_DIAGNOSTICS.length)
+    for (const word of PROBE_DIAGNOSTICS) {
+      expect(source, `${word} is not a value in internal/desk/assistant.go`).toContain(`"${word}"`)
+    }
+  })
+
+  it('never renders text the endpoint wrote', () => {
+    // The page has no member to render it from. Asserted against the type's
+    // own declaration, so restoring one would fail here rather than being
+    // noticed by a reader.
+    const client = read('assistant/client.ts')
+    expect(membersOf(interfaceBody(client, 'ProbeResult'))).toEqual([
+      'reachable',
+      'status',
+      'latencyMs',
+      'diagnostic'
+    ])
+    expect(client, 'the probe result still carries a detail member').not.toMatch(/\bdetail\b\s*:/)
   })
 })

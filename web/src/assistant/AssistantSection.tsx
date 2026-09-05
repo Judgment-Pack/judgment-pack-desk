@@ -65,9 +65,31 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
   const store = useStoreAssistantKey()
   const remove = useRemoveAssistantKey()
   const probe = useProbeAssistant()
-  // Held here and never anywhere else: it is cleared the moment the store
-  // answers, and it is not written to any record on this machine.
+  // **Held here, and for as short a time as possible.** The value is copied
+  // and this is cleared *synchronously, before the request is made*, so a
+  // store that fails does not leave the plaintext sitting in a password field
+  // and in React state until somebody notices. It is written to no record on
+  // this machine.
   const [typed, setTyped] = useState('')
+  // The outcome of the last store or removal, kept here rather than read off
+  // the mutation — the mutation is reset on settlement so that it retains no
+  // copy of the credential it was called with, and resetting takes its error
+  // with it.
+  const [storeProblem, setStoreProblem] = useState<string | undefined>(undefined)
+  const [removeProblem, setRemoveProblem] = useState<string | undefined>(undefined)
+
+  const submitKey = () => {
+    const value = typed
+    setTyped('')
+    setStoreProblem(undefined)
+    store.mutate(value, {
+      onError: (error) => setStoreProblem(error.message),
+      // Reset once it has settled, whichever way: a mutation keeps what it
+      // was called with for as long as its state lives, and that is a copy of
+      // a credential nothing further needs.
+      onSettled: () => store.reset()
+    })
+  }
 
   return (
     <>
@@ -79,7 +101,7 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
       <p>
         Assistant:{' '}
         <strong>
-          {endpoint === null ? 'none — no assistant, and no key' : 'a model endpoint'}
+          {endpoint === null ? 'none — no endpoint configured' : 'a model endpoint'}
         </strong>
         <br />
         <SourceBadge source={sources.assistant} path="jpack-desk.json" deskPath={desk?.path} />
@@ -156,20 +178,21 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
       </p>
 
       <KeyControl
-        state={
-          key.data ?? { present: false, fingerprint: '' }
-        }
+        state={key.data ?? { present: false, fingerprint: '' }}
         answered={key.isSuccess}
         failed={key.error}
         typed={typed}
         onType={setTyped}
-        onStore={() => {
-          const value = typed
-          store.mutate(value, { onSuccess: () => setTyped('') })
+        onStore={submitKey}
+        storeProblem={storeProblem}
+        onRemove={() => {
+          setRemoveProblem(undefined)
+          remove.mutate(undefined, {
+            onError: (error) => setRemoveProblem(error.message),
+            onSettled: () => remove.reset()
+          })
         }}
-        storeError={store.error}
-        onRemove={() => remove.mutate()}
-        removeError={remove.error}
+        removeProblem={removeProblem}
       />
 
       <p>
@@ -210,9 +233,9 @@ function KeyControl({
   typed,
   onType,
   onStore,
-  storeError,
+  storeProblem,
   onRemove,
-  removeError
+  removeProblem
 }: {
   state: { present: boolean; fingerprint: string }
   answered: boolean
@@ -220,9 +243,9 @@ function KeyControl({
   typed: string
   onType: (value: string) => void
   onStore: () => void
-  storeError: Error | null
+  storeProblem: string | undefined
   onRemove: () => void
-  removeError: Error | null
+  removeProblem: string | undefined
 }) {
   return (
     <>
@@ -251,23 +274,27 @@ function KeyControl({
           </>
         )}
       </p>
-      {storeError !== null && (
+      {storeProblem !== undefined && (
         <p className="quiet">
-          the key was not stored:{' '}
-          <code className="partial-reason">{storeError.message}</code>
+          the key was not stored: <code className="partial-reason">{storeProblem}</code>
         </p>
       )}
-      {removeError !== null && (
+      {removeProblem !== undefined && (
         <p className="quiet">
-          the key was not removed:{' '}
-          <code className="partial-reason">{removeError.message}</code>
+          the key was not removed: <code className="partial-reason">{removeProblem}</code>
         </p>
       )}
       <p className="quiet">
         What is typed here goes to the desk and is written to one file on this machine, readable
         by you and nobody else. It is never written into a project, never sent back to this page,
         and never printed in the desk&apos;s log. What is shown above is four characters from each
-        end — enough to tell one key from another, and not enough to use.
+        end — enough to tell one key from another, and not enough to use. The field is emptied the
+        moment it is sent, whether the desk took it or refused it.
+      </p>
+      <p className="quiet">
+        <strong>The key and the endpoint are separate.</strong> Removing the endpoint from the
+        file above does not remove the key; the line above is what says whether one is still kept
+        here, and Remove key is what takes it away.
       </p>
     </>
   )
@@ -301,10 +328,29 @@ function keySays(
  * credential is therefore not reachable — a page that called a 401 reachable
  * would report a desk that cannot make one call as ready to work.
  */
+/**
+ * What each word of the probe's vocabulary means, in plain English.
+ *
+ * A lookup rather than the word itself, because `unexpected-status` is not a
+ * sentence and `tls` is not English. An answer outside the list renders as the
+ * word it was given rather than as a blank — the desk does not invent a
+ * meaning for something it did not define.
+ */
+const DIAGNOSTIC_SAYS: Record<string, string> = {
+  unauthorized: 'the endpoint did not accept the key',
+  forbidden: 'the endpoint refused this request',
+  'not-found': 'nothing is at that address',
+  timeout: 'no answer within ten seconds',
+  tls: 'the secure connection could not be established',
+  refused: 'nothing is listening there',
+  dns: 'that host name did not resolve',
+  'unexpected-status': 'the endpoint answered something unexpected'
+}
+
 function ProbeReading({
   result
 }: {
-  result: { reachable: boolean; status: number; latencyMs: number; detail: string }
+  result: { reachable: boolean; status: number; latencyMs: number; diagnostic: string }
 }) {
   return (
     <span className="quiet">
@@ -313,10 +359,10 @@ function ProbeReading({
       {result.status === 0 ? 'no answer arrived' : `answered ${result.status}`}
       {' · '}
       {result.latencyMs} ms
-      {result.detail !== '' && (
+      {result.diagnostic !== '' && (
         <>
           {' · '}
-          <code className="partial-reason">{result.detail}</code>
+          {DIAGNOSTIC_SAYS[result.diagnostic] ?? result.diagnostic}
         </>
       )}
     </span>

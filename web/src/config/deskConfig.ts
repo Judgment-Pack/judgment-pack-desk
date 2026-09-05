@@ -284,6 +284,38 @@ function isKeyLike(name: string): boolean {
   return KEY_LIKE.some((word) => folded.includes(word))
 }
 
+/**
+ * Every credential-shaped member in the document, at any depth, named by path.
+ *
+ * **This runs before schema decoding, and over the parsed document rather than
+ * over the schema.** The rule the file claims to hold is "a key is refused
+ * wherever it is written"; what it actually held was "a key is refused where
+ * this schema already looks", because the check lived inside `section()` and
+ * `section()` only visits objects the schema knows about. So
+ * `{"unknown": {"apiKey": "…"}}` was refused — as `unknown: unknown key` —
+ * and the sentence about where keys live, which is the whole point of the
+ * rule, never appeared. A reader repairing that file would have renamed
+ * `unknown` and pasted the key somewhere else.
+ *
+ * Arrays are walked too, with an index in the path. `[{"apiKey": …}]` is a key
+ * in a configuration file however unlikely the shape, and "any depth" that
+ * stopped at the first array would be another rule with a quiet exception.
+ */
+function scanForKeys(path: string, value: unknown, problems: ConfigProblem[]): void {
+  if (Array.isArray(value)) {
+    value.forEach((element, index) => scanForKeys(`${path}[${index}]`, element, problems))
+    return
+  }
+  if (value === null || typeof value !== 'object') return
+  for (const [name, child] of Object.entries(value as Record<string, unknown>)) {
+    const at = path === '' ? name : `${path}.${name}`
+    if (isKeyLike(name)) {
+      problems.push({ key: at, reason: KEYS_ARE_NEVER_IN_CONFIGURATION })
+    }
+    scanForKeys(at, child, problems)
+  }
+}
+
 /** The reason an unadmitted member is refused with: the specific one first. */
 function unknownReason(name: string): string {
   return isKeyLike(name) ? KEYS_ARE_NEVER_IN_CONFIGURATION : 'unknown key'
@@ -333,6 +365,9 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
   const record = parsed as Record<string, unknown>
   const problems: ConfigProblem[] = []
   let declaredPanes: DeclaredPanes = { ...NOTHING_DECLARED }
+
+  // The credential scan, first and over everything. See `scanForKeys`.
+  scanForKeys('', parsed, problems)
 
   if (!('deskConfigVersion' in record)) {
     problems.push({ key: 'deskConfigVersion', reason: 'required' })
@@ -485,7 +520,18 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
     }
   }
 
-  if (problems.length > 0) return { values: undefined, problems, declaredPanes }
+  // The one overlap the two passes produce: a key-shaped member that is also
+  // an unadmitted member of a section the schema does know about is named by
+  // both. Reported once.
+  const unique: ConfigProblem[] = []
+  const seen = new Set<string>()
+  for (const problem of problems) {
+    const identity = `${problem.key}\u0000${problem.reason}`
+    if (seen.has(identity)) continue
+    seen.add(identity)
+    unique.push(problem)
+  }
+  if (unique.length > 0) return { values: undefined, problems: unique, declaredPanes }
   return { values, problems: [], declaredPanes }
 }
 
@@ -923,13 +969,9 @@ function endpointValue(
       key: 'assistant.endpoint.url',
       reason: `must be a non-empty string; found ${describe(endpoint.url)}`
     })
-  } else if (!isAcceptableEndpointUrl(url)) {
-    problems.push({
-      key: 'assistant.endpoint.url',
-      reason:
-        'must be an https: URL, or an http: URL on localhost or 127.0.0.1 — a key sent in ' +
-        'clear text over a network is a key given away'
-    })
+  } else {
+    const reason = endpointUrlProblem(url)
+    if (reason !== undefined) problems.push({ key: 'assistant.endpoint.url', reason })
   }
 
   const kind = oneOf(endpoint.kind, 'assistant.endpoint.kind', ASSISTANT_KINDS, problems)
@@ -985,16 +1027,51 @@ function endpointValue(
   }
 }
 
-/** The transport rule, shared in spirit with the issuer's and separate in code. */
-function isAcceptableEndpointUrl(raw: string): boolean {
+/**
+ * The transport rule, and the credential rule beside it.
+ *
+ * **`https:`, or `http:` on `localhost` or `127.0.0.1`** — about transport,
+ * because a bearer credential in clear text over a network is a credential
+ * given away, and about transport only: nothing reads the host, compares it to
+ * a list, or behaves differently for one endpoint than another.
+ *
+ * **Userinfo and a fragment are refused by name.** A URL is written into a
+ * configuration file and shown on Admin; a credential smuggled into its
+ * userinfo would be a second, unmanaged place for a secret to live, in the one
+ * file this desk insists holds none — and it would make "the key is never
+ * logged" false for a configuration this schema accepted. A query string is
+ * *allowed*, because some gateways route on one, and is never logged.
+ *
+ * Held identical to `endpointURLProblem` in `internal/desk/deskfile.go` by the
+ * shared fixtures both decoders read.
+ */
+function endpointUrlProblem(raw: string): string | undefined {
   let url: URL
   try {
     url = new URL(raw)
   } catch {
-    return false
+    return `must be an absolute URL; found ${JSON.stringify(raw)}`
   }
-  if (url.protocol === 'https:') return true
-  return url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')
+  if (url.username !== '' || url.password !== '') {
+    return (
+      'must not carry a user or password in the URL — a key is never written into ' +
+      'configuration, and that includes into a URL'
+    )
+  }
+  if (url.hash !== '' || raw.includes('#')) {
+    return (
+      'must not carry a fragment; an endpoint is a location a request is sent to, ' +
+      'and a fragment is never sent'
+    )
+  }
+  if (url.protocol === 'https:') return undefined
+  if (url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')) {
+    return undefined
+  }
+  return (
+    'must be an https: URL, or an http: URL on localhost or 127.0.0.1 — a key sent in ' +
+    'clear text over a network is a key given away'
+  )
 }
 
 function isAcceptableIssuer(issuer: string): boolean {
