@@ -508,7 +508,11 @@ describe('a read that lands after the page has moved on', () => {
     fireEvent.change(screen.getByDisplayValue('Alpha, twice'), {
       target: { value: 'Alpha, three times' }
     })
-    fireEvent.click(screen.getByRole('button', { name: /Sav/ }))
+    // **Through the chord, not the button.** The button disables itself while a
+    // write is pending, which would hide the latch rather than test it; `Mod+S`
+    // fires wherever focus is and asks `save` directly, which is the path the
+    // single-flight rule actually guards.
+    fireEvent.keyDown(document, { key: 's', ctrlKey: true })
     await act(async () => {})
     expect(log.writes).toHaveLength(2)
   })
