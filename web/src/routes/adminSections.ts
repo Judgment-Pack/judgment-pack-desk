@@ -10,8 +10,10 @@
  * than a set of headings scattered through a component, so that adding one is
  * a reviewable line rather than a paragraph someone slipped in.
  *
- * Every section is about **this machine's desk**, and every one of them is
- * read-only in phase A.
+ * Every section is about **this machine's desk**. Every one of them is
+ * read-only except Assistant, which carries the desk's one write control: a
+ * key must never be pasted into a project file, so it cannot be written the
+ * way every other setting is.
  */
 export interface AdminSection {
   id: string
@@ -21,6 +23,9 @@ export interface AdminSection {
 export const ADMIN_SECTIONS: readonly AdminSection[] = [
   { id: 'organization', title: 'Organization' },
   { id: 'identity-provider', title: 'Identity provider' },
+  // After Identity provider, because it is the other desk-level slot and is
+  // built on the same one-nullable-field pattern.
+  { id: 'assistant', title: 'Assistant' },
   { id: 'runtime', title: 'Runtime' },
   { id: 'project', title: 'Project' },
   // After Project, because it is about where this project's packs live.

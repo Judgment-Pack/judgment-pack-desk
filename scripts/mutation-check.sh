@@ -502,6 +502,278 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 			"missing or invalid session token")' \
     '		writeJSONCoded(w, http.StatusUnauthorized, CodeForbidden,
 			"missing or invalid session token")'
+
+  # ---- The assistant slot: key custody, and the one outbound request -------
+  #
+  # Every row here breaks a custody claim the README makes in words. The three
+  # that matter most are the first three: where the key lives, who can read it,
+  # and what happens to the old one when a new one is stored.
+  # The three files the assistant slot lives in, declared together and before
+  # any row uses one. They were declared where each section began, which put
+  # `$CU` after its first use the moment a row was retargeted from
+  # `assistant.go` into `custody.go` — and `set -u` turns that into a run that
+  # fills in no rows at all.
+  A=internal/desk/assistant.go
+  CU=internal/desk/custody.go
+  DF=internal/desk/deskfile.go
+
+  mutate go "the key file is readable by everyone on the machine" "$CU" \
+    '	custodyFileMode = 0o600' \
+    '	custodyFileMode = 0o644'
+  # A truncate-and-write keeps the file it opened, and leaves a window in which
+  # a reader sees neither key whole.
+  mutate go "the key is written in place rather than replaced" "$CU" \
+    '	if err := s.secrets.Rename(name, assistantKeyName); err != nil {
+		remove()
+		return err
+	}' \
+    '	remove()
+	if err := s.secrets.WriteFile(assistantKeyName, []byte(key), custodyFileMode); err != nil {
+		return err
+	}'
+  mutate go "the key is logged beside the event" "$A" \
+    '	s.log.Printf("desk: the assistant key was stored on this machine")' \
+    '	s.log.Printf("desk: the assistant key %s was stored on this machine", key)'
+  mutate go "the key is answered to the page instead of its fingerprint" "$A" \
+    '	writeJSON(w, http.StatusOK, AssistantKeyState{Present: key != "", Fingerprint: fingerprint(key)})' \
+    '	writeJSON(w, http.StatusOK, AssistantKeyState{Present: key != "", Fingerprint: key})'
+  # Four and four discloses a short key in full. Eight and not one: at one,
+  # `runes[:4]` on a shorter key panics, and a mutation that crashes the suite
+  # has not been survived — it has not been tested.
+  mutate go "a short key is fingerprinted into the open" "$A" \
+    'const minFingerprintable = 12' \
+    'const minFingerprintable = 8'
+  # A newline in a credential is header injection in the outbound request.
+  mutate go "a control character in a key is carried" "$A" \
+    'func isControl(r rune) bool { return r < 0x20 || r == 0x7f }' \
+    'func isControl(r rune) bool { return false }'
+  mutate go "a key of any size is accepted" "$A" \
+    'const maxKeyBytes = 4 << 10' \
+    'const maxKeyBytes = 1 << 30'
+  mutate go "an empty key is stored" "$A" \
+    '	key := strings.TrimSpace(req.Key)
+	if key == "" {' \
+    '	key := strings.TrimSpace(req.Key)
+	if false {'
+  # A handler that stored and then refused would pass every status assertion.
+  mutate go "the store runs without the token and origin guard" "$A" \
+    'func (s *Server) handleAssistantKeyWrite(w http.ResponseWriter, r *http.Request) {
+	if !s.guard(w, r) {
+		return
+	}
+' \
+    'func (s *Server) handleAssistantKeyWrite(w http.ResponseWriter, r *http.Request) {
+'
+  mutate go "a probe runs with no key to present" "$A" \
+    '	if key == "" {
+		writeJSONCoded(w, http.StatusConflict, CodeAssistantNoKey,' \
+    '	if false {
+		writeJSONCoded(w, http.StatusConflict, CodeAssistantNoKey,'
+  mutate go "any object takes any member at all" "$DF" \
+    '		if !contains(allowed, member) {' \
+    '		if false && !contains(allowed, member) {'
+  mutate go "the tool allow-list is not consulted" "$DF" \
+    '				if !contains(AssistantTools, name) {' \
+    '				if false && !contains(AssistantTools, name) {'
+  # A bearer credential in clear text over a network is a credential given away.
+  mutate go "http is accepted off loopback" "$DF" \
+    '	if parsed.Scheme == "http" &&
+		(parsed.Hostname() == "localhost" || parsed.Hostname() == "127.0.0.1") {
+		return ""
+	}' \
+    '	if parsed.Scheme == "http" {
+		return ""
+	}'
+  # Go strips Authorization across hosts and knows nothing about x-api-key.
+  mutate go "the probe follows a redirect with the credential" "$A" \
+    '	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },' \
+    '	CheckRedirect: nil,'
+  mutate go "the probe is unbounded" "$A" \
+    '	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()' \
+    '	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()'
+  mutate go "a refused credential is reported as reachable" "$A" \
+    '	reachable := response.StatusCode >= 200 && response.StatusCode < 300' \
+    '	reachable := response.StatusCode < 500'
+  # Deliberately gone rather than retargeted: two rows that broke the old
+  # `scrub` and the old 200-character bound on a quoted sentence. Neither
+  # exists any more — nothing an endpoint writes is repeated at all — and the
+  # property that replaced them is held by "the endpoint's own body travels to
+  # the page" below. Named here so their absence is a statement.
+  mutate go "the anthropic probe sends the other protocol's header" "$A" \
+    '		request.Header.Set("x-api-key", key)' \
+    '		request.Header.Set("Authorization", "Bearer "+key)'
+  mutate go "the version header this protocol requires is dropped" "$A" \
+    '		request.Header.Set("anthropic-version", "2023-06-01")' \
+    '		request.Header.Del("anthropic-version")'
+  mutate go "the anthropic probe is not the smallest request" "$A" \
+    '			"max_tokens": 1,' \
+    '			"max_tokens": 1024,'
+  # "There is none, and it would be here" is an answer, and Admin needs the path.
+  mutate go "an absent desk-level file is a refusal" "$A" \
+    '	if !present {
+		writeJSON(w, http.StatusOK, DeskLevelConfig{Path: path, Present: false})
+		return
+	}' \
+    '	if !present {
+		writeJSONCoded(w, http.StatusNotFound, CodeNotFound, "no desk-level configuration file")
+		return
+	}'
+  mutate go "a relative XDG_CONFIG_HOME is honoured" "$A" \
+    '	if xdg := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(xdg) {' \
+    '	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {'
+
+  # ---- Custody: the directory a credential is kept in ---------------------
+  #
+  # Each of these is an arrangement another local user can make in a
+  # configuration tree they can write to. The first four were all possible at
+  # once before the store was validated and pinned.
+  mutate go "a symlinked directory is walked through" "$CU" \
+    '	if info.Mode()&fs.ModeSymlink != 0 {
+		return fmt.Errorf(
+			"%s is a symbolic link; a key is not kept anywhere reached through one", path)
+	}' \
+    ''
+  mutate go "a directory owned by somebody else is ours" "$CU" \
+    '	if ours && owner != me {' \
+    '	if false && owner != me {'
+  # The sticky exception is what makes /tmp usable; without the guard around
+  # it, every world-writable ancestor is admitted.
+  mutate go "any world-writable ancestor is admitted" "$CU" \
+    '		if info.Mode()&fs.ModeSticky == 0 {' \
+    '		if false {'
+  mutate go "the ancestors are never walked" "$CU" \
+    '	if err := checkAncestors(parent); err != nil {
+		return &assistantStore{dir: dir, problem: err}
+	}' \
+    ''
+  # The narrowing decision moved into `needsNarrowing` when the special bits
+  # were added to it, so one row now breaks it for both of the desk's own
+  # directories rather than one row per site.
+  mutate go "the desk's own directories are left at whatever mode they had" "$CU" \
+    '	return mode.Perm() != custodyDirMode ||
+		mode&(fs.ModeSetuid|fs.ModeSetgid|fs.ModeSticky) != 0' \
+    '	return false'
+  # `Perm()` masks the special bits away, so comparing it alone left a 02700
+  # directory setgid while the README said the mode was 0700.
+  mutate go "the special mode bits are not narrowed away" "$CU" \
+    '	return mode.Perm() != custodyDirMode ||
+		mode&(fs.ModeSetuid|fs.ModeSetgid|fs.ModeSticky) != 0' \
+    '	return mode.Perm() != custodyDirMode'
+  # The key file itself, which is the name an attacker plants a link at.
+  mutate go "a symlinked key file is followed" "$CU" \
+    '	if info.Mode()&fs.ModeSymlink != 0 {
+		return "", fmt.Errorf(
+			"%s is a symbolic link rather than a key, and was not read",' \
+    '	if false {
+		return "", fmt.Errorf(
+			"%s is a symbolic link rather than a key, and was not read",'
+  # **One rule, one row.** It used to be written out at both the name and the
+  # descriptor, which made each copy invisible: break one and the other
+  # refuses the same file a moment later, so the table reported an unheld
+  # safeguard while two things were holding it. It lives in `ownerOnlyFile`
+  # now, and this breaks that.
+  mutate go "a key anyone on the machine can read is still the key" "$CU" \
+    '	if perm := mode.Perm(); perm&0o077 != 0 {' \
+    '	if perm := mode.Perm(); false && perm&0o077 != 0 {'
+  mutate go "a key that is not a regular file is read anyway" "$CU" \
+    '	if !mode.IsRegular() {
+		return fmt.Errorf("%s is not a regular file, and was not read", path)
+	}' \
+    ''
+  # **This row replaced one that did not discriminate**, and the replacement is
+  # the interesting part. The row used to remove `O_NOFOLLOW` from the open, on
+  # the belief that the flag was what refused a link swapped in after the
+  # check. Every test survived it: `os.Root` resolves the final component
+  # itself and the flag never reaches a syscall that would refuse. What
+  # actually closes the window is comparing the opened file to the inspected
+  # one by identity, so that is what is broken here.
+  mutate go "the opened key is not checked against the inspected one" "$CU" \
+    '	if !os.SameFile(info, opened) {
+		return "", fmt.Errorf(' \
+    '	if false {
+		return "", fmt.Errorf('
+  # The same check on the file that names where a credential goes.
+  mutate go "the opened configuration is not checked against the inspected one" "$CU" \
+    '	if !os.SameFile(info, opened) {
+		return false, nil, withCode(CodeForbidden, fmt.Errorf(' \
+    '	if false && !os.SameFile(info, opened) {
+		return false, nil, withCode(CodeForbidden, fmt.Errorf('
+  # Deliberately not mutated: the `usable()` guards inside the store. Removing
+  # one does not produce a wrong answer, it produces a nil-pointer panic — a
+  # refused store holds no descriptors at all — and a mutation that crashes the
+  # suite has not been survived, it has not been tested. The guards are
+  # asserted directly instead, by TestARefusedStoreTouchesTheFilesystemNotAtAll
+  # and TestAnUnusableStoreLeavesTheRestOfTheDeskAlone. Named here so that
+  # their absence from this table is a statement rather than an oversight.
+
+  # ---- The one contract, and the credential in it -------------------------
+  mutate go "the control check runs after the value is trimmed" "$A" \
+    '	if index := strings.IndexFunc(req.Key, isControl); index >= 0 {' \
+    '	if index := strings.IndexFunc(strings.TrimSpace(req.Key), isControl); index >= 0 {'
+  # The HIGH: a file the browser refuses must authorise nothing.
+  mutate go "a refused configuration still authorises a probe" "$A" \
+    '	decoded := decodeDeskFile(data)
+	if decoded.refused() {' \
+    '	decoded := decodeDeskFile(data)
+	if false {'
+  # The body is discarded, and the vocabulary is what travels. Mutated as one
+  # block, because reading the bytes into a variable and never using them is
+  # not the defect — putting them in the answer is.
+  mutate go "the endpoint's own body travels to the page" "$A" \
+    '	_, _ = io.Copy(io.Discard, response.Body)
+	reachable := response.StatusCode >= 200 && response.StatusCode < 300
+	diagnostic := ""
+	if !reachable {
+		// One word, chosen from the status. Never the bytes just discarded.
+		diagnostic = statusDiagnostic(response.StatusCode)
+	}' \
+    '	body, _ := io.ReadAll(response.Body)
+	reachable := response.StatusCode >= 200 && response.StatusCode < 300
+	diagnostic := ""
+	if !reachable {
+		diagnostic = string(body)
+	}'
+  # A configured URL may carry a query string, and a query string is a place
+  # people put credentials.
+  mutate go "the whole endpoint URL is logged" "$A" \
+    '		loggableOrigin(endpoint.url), result.Status, result.LatencyMs)' \
+    '		endpoint.url, result.Status, result.LatencyMs)'
+  mutate go "the logged origin carries the rest of the URL" "$A" \
+    '	return parsed.Scheme + "://" + parsed.Host' \
+    '	return parsed.String()'
+  mutate go "a member refused as a credential is also refused as unknown" "$DF" \
+    '		if problem.Reason != keysAreNeverInConfiguration && credentialed[problem.Key] {
+			continue
+		}' \
+    ''
+  mutate go "the credential scan never runs" "$DF" \
+    '	problems = append(problems, scanForKeys("", parsed)...)' \
+    ''
+  mutate go "a key smuggled into the URL is accepted" "$DF" \
+    '	if parsed.User != nil {' \
+    '	if false {'
+  # Caught by the live drive: the protocol path was appended to the whole URL
+  # string, so a configured query put it after the query.
+  mutate go "the protocol path is appended to the whole URL" "$A" \
+    '	appendPath(parsed, suffix)
+	return parsed.String()' \
+    '	_ = parsed
+	return base + suffix'
+  # `u.Path` is the decoded path; writing it alone re-encodes %2F into a
+  # separator and sends the credential to a different resource.
+  mutate go "an escaped path is re-encoded on the way out" "$A" \
+    '	escaped := strings.TrimRight(u.EscapedPath(), "/") + suffix' \
+    '	escaped := strings.TrimRight(u.Path, "/") + suffix'
+  mutate go "a fragment on the endpoint is accepted" "$DF" \
+    '	if parsed.Fragment != "" || strings.Contains(raw, "#") {' \
+    '	if false {'
+  mutate go "the credential scan does not look inside arrays" "$DF" \
+    '	case []any:
+		for index, element := range typed {' \
+    '	case []any:
+		for index, element := range typed[:0] {'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -520,6 +792,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   Y=web/src/mcp/capabilities.ts
   W=web/src/config/DeskConfigProvider.tsx
   V=web/src/routes/AdminView.tsx
+  VB=web/src/routes/adminBlocks.tsx
   Q=web/src/shell/useHashTarget.ts
   B=web/src/shell/authorBridge.ts
   I=web/src/identity/IdentityProvider.tsx
@@ -631,8 +904,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # cue it was indistinguishable from having no configuration file at all
   # anywhere except /admin.
   mutate web "a refused configuration is silent outside Admin" "$S" \
-    '        {problems.length > 0 && (' \
-    '        {false && ('
+    '        {refused && <ConfigCue full={CONFIG_REFUSED_CUE} short={CONFIG_REFUSED_SHORT} />}' \
+    '        {false && <ConfigCue full={CONFIG_REFUSED_CUE} short={CONFIG_REFUSED_SHORT} />}'
   mutate web "main remounts on a pane change" "$N" \
     '      <main id="main" tabIndex={-1} className="desk-main">' \
     '      <main id="main" key={String(shell.console.open)} tabIndex={-1} className="desk-main">'
@@ -646,8 +919,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "        recordFileChange(String((notification.params as { path?: unknown })?.path ?? ''))" \
     '        void recordFileChange'
   mutate web "a config problem no longer refuses the whole file" "$D" \
-    '  if (problems.length > 0) return { values: undefined, problems, declaredPanes }' \
-    '  if (false) return { values: undefined, problems, declaredPanes }'
+    '  if (unique.length > 0) return { values: undefined, problems: unique, declaredPanes }' \
+    '  if (false) return { values: undefined, problems: unique, declaredPanes }'
   mutate web "an unknown config key is accepted silently" "$D" \
     "    problems.push({ key, reason: 'unknown key' })" \
     '    void key'
@@ -709,7 +982,9 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the configured theme is decoded and never applied" "$W" \
     '  useAppliedTheme(value.config.appearance.theme)' \
     '  void value.config.appearance.theme'
-  mutate web "the copy button reports a copy it did not make" "$V" \
+  # The paste block and the source badge moved into adminBlocks.tsx when the
+  # Assistant section came to need them too.
+  mutate web "the copy button reports a copy it did not make" "$VB" \
     '          const written = navigator.clipboard?.writeText(text)
           if (!written) {
             setCopied(false)
@@ -935,7 +1210,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "  if (value !== 'filesystem') {" \
     '  if (false) {'
   mutate web "storage defaults are not applied when the member is absent" "$D" \
-    '      storage: values?.storage ?? DESK_DEFAULTS.storage' \
+    "      storage: pick('"'storage'"')" \
     '      storage: values?.storage!'
   mutate web "an escaping pack directory is accepted" "$D" \
     "  if (trimmed.split('/').some((part) => part === '..' || part === '.' || part === '')) {" \
@@ -1106,11 +1381,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # with the reason recorded where nothing rendered it, so a desk that could
   # not open its own file looked exactly like a desk with no file.
   mutate web "an unreadable configuration is reported as an absent one" "$Z" \
-    '      if (cause.status === 404) return effectiveConfig(undefined, reasonFor(cause))' \
-    '      if (true) return effectiveConfig(undefined, reasonFor(cause))'
+    '      if (cause.status === 404) {
+        return effectiveConfig(undefined, reasonFor(cause), undefined, await deskLevel)
+      }' \
+    '      if (true) {
+        return effectiveConfig(undefined, reasonFor(cause), undefined, await deskLevel)
+      }'
   mutate web "an unreadable configuration is silent outside Admin" "$S" \
-    '        {problems.length === 0 && readFailure !== undefined && (' \
-    '        {false && ('
+    '        {!refused && unread && (' \
+    '        {false && unread && ('
   mutate web "the strip's warning is the half that disappears" "$G" \
     '  .desk-strip-warn {
     flex: 0 0 auto;
@@ -1246,9 +1525,13 @@ if [ "$which" = all ] || [ "$which" = web ]; then
 
   # 7. "The reason is the chassis' own" was false for a browser error: nothing
   # answered, so nothing the chassis said is being quoted.
+  # Two `instanceof` checks now — the desk-level read has one of its own — so
+  # the needle carries the line that follows to name the project read's.
   mutate web "a browser error is attributed to the chassis" "$Z" \
-    '    if (cause instanceof FileRequestError) {' \
-    '    if (false) {'
+    '    if (cause instanceof FileRequestError) {
+      if (cause.status === 404) {' \
+    '    if (false) {
+      if (cause.status === 404) {'
   mutate web "Admin sources every unread reason to the chassis" "$V" \
     "          ) : readFailure.source === 'chassis' ? (" \
     '          ) : true ? ('
@@ -2870,6 +3153,141 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the pane asks for eight pixels it does not take" "$PV" \
     'const PANE_WIDTH = 384' \
     'const PANE_WIDTH = 392'
+
+  # ---- The assistant slot, on the page side -------------------------------
+  AS=web/src/assistant/AssistantSection.tsx
+  AC=web/src/assistant/client.ts
+  AQ=web/src/assistant/queries.ts
+  CQ=web/src/config/queries.ts
+
+  # **Two rows are gone from here**, and the reason is worth the space. They
+  # broke a helper that chose the credential sentence at the schema walk, on
+  # top of the recursive pre-scan that also produces it — so breaking either
+  # one left the other saying it, and both rows reported an unheld safeguard
+  # while two things held it. There is one producer now (`scanForKeys`, with
+  # its own two rows below) and one rule that keeps a member from being
+  # refused twice, which is what this breaks.
+  mutate web "a member refused as a credential is also refused as unknown" "$D" \
+    '  return problems.filter(
+    (problem) =>
+      problem.reason === KEYS_ARE_NEVER_IN_CONFIGURATION || !credentialed.has(problem.key)
+  )' \
+    '  return problems'
+  mutate web "the tool list is open" "$D" \
+    '      if (!(ASSISTANT_TOOLS as readonly string[]).includes(tool)) {' \
+    '      if (false && (ASSISTANT_TOOLS as readonly string[]).includes(tool)) {'
+  # A project is a shared checkout; committing an endpoint pushes one
+  # operator's model endpoint onto every clone.
+  mutate web "an endpoint may be committed to a project" "$D" \
+    "    if (key === 'assistant' && location === 'project') {
+      problems.push({ key: 'assistant', reason: ASSISTANT_AT_PROJECT })
+      continue
+    }
+" \
+    ''
+  # A defaulted tool list is a capability granted by a file that never
+  # mentioned it.
+  mutate web "an absent tool list grants every tool" "$D" \
+    "  if (endpoint.tools === undefined) {
+    problems.push({
+      key: 'assistant.endpoint.tools'," \
+    "  if (endpoint.tools === undefined) {
+    tools = [...ASSISTANT_TOOLS]
+  } else if (false) {
+    problems.push({
+      key: 'assistant.endpoint.tools',"
+  # The more specific statement wins: a project saying something different is
+  # saying it about itself.
+  mutate web "the desk-level file outranks the project's own" "$D" \
+    '    (values?.[key] ?? deskValues?.[key] ?? DESK_DEFAULTS[key]) as DeskConfig[K]' \
+    '    (deskValues?.[key] ?? values?.[key] ?? DESK_DEFAULTS[key]) as DeskConfig[K]'
+  mutate web "the desk-level file is never read" "$CQ" \
+    '  const deskLevel = loadDeskLevelConfig(signal)' \
+    '  const deskLevel = Promise.resolve(undefined)'
+  # Either file, one cue: the argument does not care which carried the typo.
+  mutate web "the strip is silent about a refused desk-level file" "$S" \
+    '  const refused = problems.length > 0 || (desk?.problems.length ?? 0) > 0' \
+    '  const refused = problems.length > 0'
+  # Deliberately gone rather than retargeted: the row that broke the
+  # success-only clearing of a *controlled* field. There is no controlled
+  # field any more — React batches a `setState`, so the key was still in the
+  # input when `fetch` began — and the clearing it tested is now an assignment
+  # to an uncontrolled node, which "the field is cleared only once the store
+  # has answered" below breaks directly.
+  mutate web "the key field is an ordinary text input" "$AS" \
+    '          type="password"' \
+    '          type="text"'
+  mutate web "removal is offered where there is nothing to remove" "$AS" \
+    '        {state.present && (' \
+    '        {true && ('
+  # A 401 is a host that is there and a credential it will not take.
+  mutate web "a refused credential is painted as reachable" "$AS" \
+    "      {result.reachable ? 'reachable' : 'not reachable'}" \
+    "      {result.status < 500 ? 'reachable' : 'not reachable'}"
+  mutate web "a status of zero is painted as an answer" "$AS" \
+    "      {result.status === 0 ? 'no answer arrived' : \`answered \${result.status}\`}" \
+    "      {\`answered \${result.status}\`}"
+  # A read that has not answered is not "no key": it is a page that has not
+  # been told.
+  mutate web "an unanswered read is reported as no key" "$AS" \
+    "  if (!answered) return 'not read yet'" \
+    "  if (!answered) return 'none stored on this machine'"
+  # If the probe named a URL, anything holding the token could point the desk
+  # — and the key it holds — at a host of its choosing.
+  mutate web "the probe names its own destination" "$AC" \
+    "    await fetch(chassisUrl('/api/assistant/probe'), { method: 'POST', signal })" \
+    "    await fetch(chassisUrl('/api/assistant/probe'), {
+      method: 'POST',
+      signal,
+      body: JSON.stringify({ url: 'http://127.0.0.1:1/v1' })
+    })"
+
+  # The credential scan, and the two URL members a key can hide in.
+  mutate web "the credential scan never runs" "$D" \
+    "  scanForKeys('', parsed, problems)" \
+    ''
+  mutate web "the credential scan does not look inside arrays" "$D" \
+    '    value.forEach((element, index) => scanForKeys(`${path}[${index}]`, element, problems))' \
+    '    void value'
+  mutate web "a key smuggled into the URL is accepted" "$D" \
+    "  if (url.username !== '' || url.password !== '') {" \
+    '  if (false) {'
+  mutate web "a fragment on the endpoint is accepted" "$D" \
+    "  if (url.hash !== '' || raw.includes('#')) {" \
+    '  if (false) {'
+  # The typed key, and how long the page holds it.
+  # An assignment to the node takes effect at once; a `setState` would not
+  # have, which is the whole reason the field is uncontrolled.
+  mutate web "the field is cleared only once the store has answered" "$AS" \
+    "    if (input) input.value = ''" \
+    '    void input'
+  # **This row replaced one that did not discriminate.** It used to remove the
+  # `store.reset()` the section called on settlement, on the belief that
+  # resetting was what stopped React Query retaining the credential. It was
+  # not: `reset()` clears the observer, and the mutation *cache entry* keeps
+  # its variables for minutes afterwards either way — which a test that reads
+  # the cache is what established. The key is not a mutation variable at all
+  # now, so what is broken here is that.
+  # One edit, and it is the defect exactly: the credential becomes something
+  # React Query keeps. The mutation function ignores the argument either way —
+  # what changes is that the cache entry now holds the key, which is what the
+  # cache-reading test looks for.
+  mutate web "the key is handed to the mutation as its variable" "$AQ" \
+    '      mutation.mutate(undefined, {' \
+    '      mutation.mutate(key as unknown as void, {'
+  # Deliberately not mutated: the two places the pending ref is cleared. A ref
+  # is closure state with no reader outside the hook, so breaking it produces
+  # no observable difference for any test to catch — it would be a row that
+  # reports "nothing failed" for ever, which reads as a missing safeguard
+  # rather than an unobservable one. What *is* observable is that the cache
+  # retains nothing, and the row above holds that.
+  # A key is not removed by removing the endpoint, so the page must not say so.
+  mutate web "no endpoint is reported as no key" "$AS" \
+    "          {endpoint === null ? 'none — no endpoint configured' : 'a model endpoint'}" \
+    "          {endpoint === null ? 'none — no assistant, and no key' : 'a model endpoint'}"
+  mutate web "a diagnostic is rendered as the bare word" "$AS" \
+    "      {result.diagnostic !== '' && (" \
+    "      {false && result.diagnostic !== '' && ("
 fi
 
 restore

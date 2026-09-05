@@ -1,0 +1,18 @@
+{
+  "deskConfigVersion": 1,
+  "assistant": {
+    "endpoint": {
+      "url": "https://api.example.invalid/v1",
+      "kind": "openai-compatible",
+      "model": "a-model",
+      "tools": [
+        "validate"
+      ]
+    }
+  },
+  "storage": {
+    "packs": {
+      "dir": "packs/../out"
+    }
+  }
+}

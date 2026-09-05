@@ -51,6 +51,12 @@ type Config struct {
 	Static fs.FS
 	// DevMode additionally accepts the Vite dev-server origin on /ws.
 	DevMode bool
+	// DeskConfigDir overrides where this machine's own desk-level directory
+	// is — the desk.json this desk reads and the key it keeps. Empty is the
+	// answer every running desk uses: ~/.config/jpack-desk, with
+	// XDG_CONFIG_HOME honoured. It exists so a test can be hermetic against
+	// the machine it runs on, and there is no flag that sets it.
+	DeskConfigDir string
 	// Logger receives subprocess stderr and relay diagnostics.
 	Logger *log.Logger
 }
@@ -79,6 +85,16 @@ type Server struct {
 	// after startup would otherwise leave the file API writing the original
 	// tree while each new runtime judged the replacement.
 	projectDir string
+	// configDir is this machine's desk-level directory, resolved once. Empty
+	// where there is no home directory to resolve it against, which each
+	// endpoint that needs it reports as a sentence rather than a dead desk.
+	configDir string
+	// assistant is that directory validated and pinned — or the reason it was
+	// refused. Built once, at startup, and closed with the server. A desk whose
+	// configuration directory is not safe to keep a credential in still runs;
+	// it simply will not keep one, and says which directory is the reason. See
+	// custody.go.
+	assistant *assistantStore
 	// writes serializes the compare-and-commit of every write. One mutex, not
 	// one per path: a per-path key is a *spelling*, and two spellings of one
 	// file on a case-insensitive filesystem would take different locks and both
@@ -127,6 +143,17 @@ func New(cfg Config) (*Server, error) {
 		conns:      make(map[*conn]struct{}),
 		root:       root,
 		projectDir: resolved,
+		configDir:  configDirFor(cfg.DeskConfigDir),
+	}
+	// Validated and pinned once. Doing it per request would let the authority
+	// itself be retargeted between requests, which is the same argument the
+	// project root is pinned for.
+	s.assistant = openAssistantStore(s.configDir)
+	if !s.assistant.usable() {
+		// Reported, and not fatal. A desk that refused to start because
+		// somebody's ~/.config is group-writable would be a desk nobody could
+		// use to read a pack; what is withdrawn is the ability to keep a key.
+		s.log.Printf("desk: no assistant key will be kept: %v", s.assistant.problem)
 	}
 	s.removeStaleStaging()
 	if cfg.Static != nil {
@@ -139,6 +166,16 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("GET /api/files", s.handleFiles)
 	s.mux.HandleFunc("GET /api/file", s.handleFileRead)
 	s.mux.HandleFunc("PUT /api/file", s.handleFileWrite)
+	// The assistant slot. Four endpoints, under the same guard, and each one
+	// exists because the browser cannot do the thing itself: the desk-level
+	// file is outside the project's pinned root, the key must never be pasted
+	// into a project file, and the key must never reach the page. See
+	// assistant.go for the whole argument.
+	s.mux.HandleFunc("GET /api/desk-config", s.handleDeskConfig)
+	s.mux.HandleFunc("GET /api/assistant/key", s.handleAssistantKeyRead)
+	s.mux.HandleFunc("PUT /api/assistant/key", s.handleAssistantKeyWrite)
+	s.mux.HandleFunc("DELETE /api/assistant/key", s.handleAssistantKeyDelete)
+	s.mux.HandleFunc("POST /api/assistant/probe", s.handleAssistantProbe)
 	s.mux.HandleFunc("/", s.handleStatic)
 
 	w, werr := newWatcher(resolved, s.log, s.broadcastFileChange)
@@ -163,6 +200,11 @@ func (s *Server) Close() error {
 	if s.root != nil {
 		if rerr := s.root.Close(); err == nil {
 			err = rerr
+		}
+	}
+	if s.assistant != nil {
+		if aerr := s.assistant.Close(); err == nil {
+			err = aerr
 		}
 	}
 	return err

@@ -147,12 +147,22 @@ describe('the desk reading jpack-desk.json', () => {
     expect(asked.some((url) => url.includes('/api/file') && url.includes('path=jpack-desk.json'))).toBe(
       true
     )
-    // No new endpoint: nothing asks for a desk-config route, and the only
-    // other thing the shell reads is the listing it already shared with
-    // `/author` and the Create dialog.
-    expect(asked.some((url) => url.includes('desk-config'))).toBe(false)
+    // **The desk-level file is asked for too, and through its own endpoint.**
+    // That is not a second way to read a project file: `GET /api/file`
+    // resolves every path through the project's pinned root, so a file in
+    // ~/.config is not addressable there at all. The assertion that used to
+    // stand here — that nothing asks for a desk-config route — was true of a
+    // desk that could not read its own desk-level configuration, and it is
+    // this read that changed rather than the file API.
+    expect(asked.some((url) => url.includes('/api/desk-config'))).toBe(true)
+    // And still no others: three endpoints, all of them the chassis'.
     expect(
-      asked.every((url) => url.includes('/api/file?') || url.includes('/api/files?'))
+      asked.every(
+        (url) =>
+          url.includes('/api/file?') ||
+          url.includes('/api/files?') ||
+          url.includes('/api/desk-config?')
+      )
     ).toBe(true)
   })
 
@@ -340,6 +350,44 @@ describe('the desk reading jpack-desk.json', () => {
     const cue = await screen.findByRole('link', { name: 'configuration refused — see Admin' })
     expect(cue.getAttribute('href')).toBe('/admin')
     expect(screen.getByRole('contentinfo').textContent).toContain('configuration refused')
+  })
+
+  it('says the desk-level file was refused, on the same cue', async () => {
+    // **Either file, one cue.** The argument the cue exists for — that a
+    // mistyped key must not look exactly like having written no file at all —
+    // does not care which of the two files carried the typo, and a strip that
+    // watched only the project's would have left a refused desk-level file
+    // visible on Admin and nowhere else.
+    vi.stubGlobal('fetch', async (url: string) => {
+      const path = String(url)
+      if (path.includes('/api/files')) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: '',
+          text: async () => JSON.stringify({ root: PROJECT_ROOT, files: [] })
+        }
+      }
+      if (path.includes('/api/desk-config')) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: '',
+          text: async () =>
+            JSON.stringify({
+              path: '/home/someone/.config/jpack-desk/desk.json',
+              present: true,
+              // A key pasted where a key may never go.
+              content: JSON.stringify({ deskConfigVersion: 1, assistant: { apiKey: 'sk-oops' } })
+            })
+        }
+      }
+      // The project's own file is perfectly fine, which is the point.
+      return { ok: true, status: 200, statusText: '', text: async () => JSON.stringify(LIVE_ANSWER) }
+    })
+    renderDesk()
+    const cue = await screen.findByRole('link', { name: 'configuration refused — see Admin' })
+    expect(cue.getAttribute('href')).toBe('/admin')
   })
 
   it('says a configuration it could not read is unread, not absent', async () => {

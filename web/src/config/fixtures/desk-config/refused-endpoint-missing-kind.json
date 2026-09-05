@@ -1,0 +1,12 @@
+{
+  "deskConfigVersion": 1,
+  "assistant": {
+    "endpoint": {
+      "url": "https://api.example.invalid/v1",
+      "model": "a-model",
+      "tools": [
+        "validate"
+      ]
+    }
+  }
+}

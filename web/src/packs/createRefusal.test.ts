@@ -15,6 +15,7 @@ import {
   CHASSIS_CODES,
   CONTROL_FLOW_CODES,
   CREATE_REFUSALS,
+  OTHER_ENDPOINT_CODES,
   codeOf,
   refusalDetail,
   refusalLead
@@ -37,17 +38,37 @@ describe('the code set', () => {
   })
 
   it('gives every code either a sentence or a documented reason to have none', () => {
-    // Exhaustive by construction: a code is handled, or it is named as
-    // control flow. There is no third category, and "nobody thought about it"
-    // is what this exists to stop being one.
+    // Exhaustive by construction: a code is handled, or it is named as control
+    // flow, or it is named as belonging to an endpoint no create calls. Three
+    // categories rather than the two this started with, because the code set
+    // is the *chassis'* and it grew members only the assistant probe answers.
+    // What has not changed is that there is no fourth: "nobody thought about
+    // it" is still what this exists to stop being one.
     const controlFlow = new Set<string>(CONTROL_FLOW_CODES)
+    const elsewhere = new Set<string>(OTHER_ENDPOINT_CODES)
     for (const code of CHASSIS_CODES) {
+      if (elsewhere.has(code)) {
+        expect(
+          CREATE_REFUSALS[code],
+          `${code} belongs to another endpoint and has a create sentence`
+        ).toBeUndefined()
+        continue
+      }
       if (controlFlow.has(code)) {
         expect(CREATE_REFUSALS[code], `${code} is control flow and has a sentence`).toBeUndefined()
         continue
       }
       expect(CREATE_REFUSALS[code], `${code} has no Create sentence`).toBeTypeOf('string')
       expect(CREATE_REFUSALS[code]!.length, `${code}'s sentence is empty`).toBeGreaterThan(0)
+    }
+  })
+
+  it('names every listed exception as a code the chassis actually declares', () => {
+    // A list of exceptions is only a documented gap if its members exist. A
+    // stale entry here would silently exempt nothing while looking like it
+    // exempted something.
+    for (const code of [...CONTROL_FLOW_CODES, ...OTHER_ENDPOINT_CODES]) {
+      expect(CHASSIS_CODES as readonly string[], `${code} is not a chassis code`).toContain(code)
     }
   })
 

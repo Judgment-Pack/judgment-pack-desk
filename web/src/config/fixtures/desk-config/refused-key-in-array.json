@@ -1,0 +1,18 @@
+{
+  "deskConfigVersion": 1,
+  "unknown": [
+    {
+      "clientSecret": "sk-nope"
+    }
+  ],
+  "assistant": {
+    "endpoint": {
+      "url": "https://api.example.invalid/v1",
+      "kind": "openai-compatible",
+      "model": "a-model",
+      "tools": [
+        "validate"
+      ]
+    }
+  }
+}

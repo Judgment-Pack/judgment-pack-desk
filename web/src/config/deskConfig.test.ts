@@ -492,3 +492,138 @@ describe('effectiveConfig', () => {
     expect(effective.config.identity.provider).toBeNull()
   })
 })
+
+describe('the desk-level file, and the precedence between the two', () => {
+  const GOOD = {
+    url: 'https://api.example.invalid/v1',
+    kind: 'openai-compatible',
+    model: 'a-model',
+    tools: ['validate']
+  }
+
+  /** One desk-level read, as `queries.ts` assembles it from the endpoint. */
+  function deskRead(file: unknown) {
+    return {
+      path: '/home/someone/.config/jpack-desk/desk.json',
+      present: true,
+      decoded: decodeDeskConfig(JSON.stringify(file), 'desk')
+    }
+  }
+
+  it('takes the assistant from the desk-level file, and badges it as such', () => {
+    const effective = effectiveConfig(
+      undefined,
+      undefined,
+      undefined,
+      deskRead({ deskConfigVersion: 1, assistant: { endpoint: GOOD } })
+    )
+    expect(effective.config.assistant.endpoint).toEqual(GOOD)
+    expect(effective.sources.assistant).toBe('desk file')
+    expect(effective.desk?.path).toBe('/home/someone/.config/jpack-desk/desk.json')
+    expect(effective.desk?.problems).toEqual([])
+  })
+
+  it('lets a project file outrank the desk-level one, section by section', () => {
+    // The more specific statement wins: the desk-level file is this machine's
+    // answer for every project it opens, and a project saying something
+    // different is saying it about itself.
+    const effective = effectiveConfig(
+      decodeDeskConfig(
+        JSON.stringify({ deskConfigVersion: 1, organization: { name: 'This project' } }),
+        'project'
+      ),
+      undefined,
+      undefined,
+      deskRead({
+        deskConfigVersion: 1,
+        organization: { name: 'Every project' },
+        user: { displayName: 'the operator' }
+      })
+    )
+    expect(effective.config.organization.name).toBe('This project')
+    expect(effective.sources.organization).toBe('project file')
+    // And the section the project said nothing about still comes from the
+    // desk-level file rather than falling all the way to the defaults.
+    expect(effective.config.user.displayName).toBe('the operator')
+    expect(effective.sources.user).toBe('desk file')
+  })
+
+  it('refuses each file on its own, and reports each as its own', () => {
+    const effective = effectiveConfig(
+      decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1 }), 'project'),
+      undefined,
+      undefined,
+      deskRead({ deskConfigVersion: 1, assistant: { endpoint: { ...GOOD, vendor: 'acme' } } })
+    )
+    // The project file is fine and stays fine.
+    expect(effective.problems).toEqual([])
+    // The desk-level file is refused whole, so it supplies nothing at all.
+    expect(keys(effective.desk?.problems ?? [])).toEqual(['assistant.endpoint.vendor'])
+    expect(effective.config.assistant.endpoint).toBeNull()
+    expect(effective.sources.assistant).toBe('default')
+  })
+
+  it('reads the declared pane dimensions off whichever file supplied them', () => {
+    // Reading them off the project's decode while the desk-level file
+    // supplied the section would report the Inspector's drawer against a
+    // width that file never stated.
+    const effective = effectiveConfig(
+      undefined,
+      undefined,
+      undefined,
+      deskRead({ deskConfigVersion: 1, panes: { inspector: { width: 420 } } })
+    )
+    expect(effective.config.panes.inspector.width).toBe(420)
+    expect(effective.declaredPanes.inspectorWidth).toBe(true)
+    expect(effective.declaredPanes.leftWidth).toBe(false)
+  })
+
+  it('tells a file that is absent from a read that never happened', () => {
+    // Undefined means nothing asked — the shell's own defaults value. A read
+    // that found no file is present: false with a path, and Admin says which
+    // of the two it is rather than collapsing them.
+    expect(effectiveConfig(undefined).desk).toBeUndefined()
+    const looked = effectiveConfig(undefined, undefined, undefined, {
+      path: '/home/someone/.config/jpack-desk/desk.json',
+      present: false,
+      note: 'no desk-level configuration file at /home/someone/.config/jpack-desk/desk.json'
+    })
+    expect(looked.desk?.present).toBe(false)
+    expect(looked.desk?.note).toContain('no desk-level configuration file')
+    expect(looked.config.assistant.endpoint).toBeNull()
+  })
+
+  it('accepts an http endpoint on loopback and refuses one anywhere else', () => {
+    // A transport rule, not an identity one: a bearer credential in clear
+    // text over a network is a credential given away.
+    for (const url of ['http://localhost:11434/v1', 'http://127.0.0.1:8080/v1']) {
+      const decoded = decodeDeskConfig(
+        JSON.stringify({ deskConfigVersion: 1, assistant: { endpoint: { ...GOOD, url } } }),
+        'desk'
+      )
+      expect(decoded.problems, url).toEqual([])
+    }
+    for (const url of ['http://models.example/v1', 'ftp://models.example', 'not a url']) {
+      const decoded = decodeDeskConfig(
+        JSON.stringify({ deskConfigVersion: 1, assistant: { endpoint: { ...GOOD, url } } }),
+        'desk'
+      )
+      expect(keys(decoded.problems), url).toEqual(['assistant.endpoint.url'])
+    }
+  })
+
+  it('admits the two protocols and refuses any other by name', () => {
+    for (const kind of ['openai-compatible', 'anthropic']) {
+      const decoded = decodeDeskConfig(
+        JSON.stringify({ deskConfigVersion: 1, assistant: { endpoint: { ...GOOD, kind } } }),
+        'desk'
+      )
+      expect(decoded.problems, kind).toEqual([])
+    }
+    const decoded = decodeDeskConfig(
+      JSON.stringify({ deskConfigVersion: 1, assistant: { endpoint: { ...GOOD, kind: 'gemini' } } }),
+      'desk'
+    )
+    expect(keys(decoded.problems)).toEqual(['assistant.endpoint.kind'])
+  })
+})

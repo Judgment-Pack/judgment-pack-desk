@@ -146,10 +146,19 @@ export class StaleWrite extends Error {
   }
 }
 
-function endpoint(path: string, params: Record<string, string> = {}): string {
+/**
+ * One chassis URL, with the session token on it.
+ *
+ * Exported because every chassis endpoint takes the token the same way, and a
+ * second copy of this line elsewhere is a second place for the token to be
+ * forgotten. The assistant slot's calls use it.
+ */
+export function chassisUrl(path: string, params: Record<string, string> = {}): string {
   const query = new URLSearchParams({ token: sessionToken(), ...params })
   return `${path}?${query.toString()}`
 }
+
+const endpoint = chassisUrl
 
 /**
  * Read one answer, with the chassis' own message kept as the reason.
@@ -158,8 +167,12 @@ function endpoint(path: string, params: Record<string, string> = {}): string {
  * to invent a sentence for a status code. Where the body is not that shape —
  * a proxy, a crash — the status line is the honest fallback, and it is stated
  * as a status rather than dressed up as a message from the desk.
+ *
+ * Exported for the same reason `chassisUrl` is: the envelope is the chassis'
+ * contract rather than the file API's, every endpoint answers in it, and a
+ * second reader of it would be a second opinion about what a refusal is.
  */
-async function answer<T>(response: Response): Promise<T> {
+export async function answer<T>(response: Response): Promise<T> {
   const text = await response.text()
   let body: unknown
   try {
