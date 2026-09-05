@@ -2668,6 +2668,46 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 			_, unsafe, _ := assistantServerIn(t, filepath.Join(foreign, "jpack-desk"))
 			return sendJSON(t, unsafe, http.MethodGet, "/api/assistant/key", nil)
 		},
+		CodeAssistantRelayPath: func(t *testing.T) (int, map[string]any) {
+			// A relayed request naming no path at all. It needs no
+			// configuration and no key: the suffix is a property of the
+			// request alone and is decided before anything is read off this
+			// machine.
+			return getJSON(t, ts, relayPrefix+"?token="+testToken)
+		},
+		CodeAssistantRelayBusy: func(t *testing.T) (int, map[string]any) {
+			// Every slot taken, held for the length of one request. Filling
+			// the channel rather than starting four real relays because what
+			// this witnesses is the bound, and four concurrent sockets would
+			// witness the scheduler as well.
+			writeDeskConfig(t, server, `{"deskConfigVersion":1,"assistant":{"endpoint":`+
+				`{"url":"https://e.example/v1","kind":"openai-compatible","model":"m",`+
+				`"tools":[]}}}`)
+			if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
+				t.Fatalf("store")
+			}
+			for i := 0; i < maxRelayInFlight; i++ {
+				server.relaySlots <- struct{}{}
+			}
+			defer func() {
+				for i := 0; i < maxRelayInFlight; i++ {
+					<-server.relaySlots
+				}
+			}()
+			return getJSON(t, ts, relayPrefix+"models?token="+testToken)
+		},
+		CodeAssistantRelayUpstream: func(t *testing.T) (int, map[string]any) {
+			// Port 1 on loopback, where nothing listens. Loopback so the
+			// transport rule admits an `http:` URL, and a port nothing can
+			// bind so the request never leaves this machine.
+			writeDeskConfig(t, server, `{"deskConfigVersion":1,"assistant":{"endpoint":`+
+				`{"url":"http://127.0.0.1:1/v1","kind":"openai-compatible","model":"m",`+
+				`"tools":[]}}}`)
+			if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
+				t.Fatalf("store")
+			}
+			return getJSON(t, ts, relayPrefix+"models?token="+testToken)
+		},
 		CodeAssistantNoKey: func(t *testing.T) (int, map[string]any) {
 			writeDeskConfig(t, server, `{"deskConfigVersion":1,"assistant":{"endpoint":`+
 				`{"url":"https://e.example/v1","kind":"openai-compatible","model":"m",`+

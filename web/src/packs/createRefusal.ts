@@ -47,6 +47,9 @@ export const CHASSIS_CODES = [
   'assistant-unconfigured',
   'assistant-no-key',
   'assistant-unusable-store',
+  'assistant-relay-path',
+  'assistant-relay-busy',
+  'assistant-relay-upstream',
   'internal'
 ] as const
 
@@ -69,7 +72,8 @@ export const CONTROL_FLOW_CODES = ['not-found'] as const
  *
  * **This is a third category, and it is here rather than absent because the
  * alternative was worse.** The code set is the *chassis'*, not the file API's,
- * and it grew two members that only `POST /api/assistant/probe` answers with.
+ * and it grew members that only the assistant's own routes answer with — the
+ * probe's three, and the model relay's three.
  * Giving them a sentence about creating a pack would put text on the page
  * asserting something that cannot happen; leaving them out would let the
  * exhaustiveness test below be satisfied by an omission. So they are listed,
@@ -79,7 +83,12 @@ export const CONTROL_FLOW_CODES = ['not-found'] as const
 export const OTHER_ENDPOINT_CODES = [
   'assistant-unconfigured',
   'assistant-no-key',
-  'assistant-unusable-store'
+  'assistant-unusable-store',
+  // The model relay's three. A create writes a file through the file API and
+  // never carries model traffic, so none of them can reach this dialog either.
+  'assistant-relay-path',
+  'assistant-relay-busy',
+  'assistant-relay-upstream'
 ] as const
 
 /** The chassis codes this dialog has a sentence for. */

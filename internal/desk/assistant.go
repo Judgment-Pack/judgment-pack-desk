@@ -774,6 +774,23 @@ func transportDiagnostic(err error) string {
 	return DiagnosticUnexpected
 }
 
+// attachCredential presents the key the way this protocol requires.
+//
+// **The table it reads is `credentialHeader`, in `modelrelay.go`, and it is
+// the only one.** The probe and the relay present the same credential to the
+// same endpoint; two tables would be two answers about what an `anthropic`
+// endpoint is sent, and the one that was wrong would be wrong with a key in
+// it. A kind neither of them defines attaches nothing at all rather than
+// guessing — `decodeDeskFile` refuses every such kind by name, so reaching
+// here with one is a bug rather than a configuration.
+func attachCredential(header http.Header, kind, key string) {
+	name, value, ok := credentialHeader(kind, key)
+	if !ok {
+		return
+	}
+	header.Set(name, value)
+}
+
 func probeRequest(ctx context.Context, endpoint assistantEndpoint, key string) (*http.Request, error) {
 	switch endpoint.kind {
 	case "openai-compatible":
@@ -782,7 +799,7 @@ func probeRequest(ctx context.Context, endpoint assistantEndpoint, key string) (
 		if err != nil {
 			return nil, err
 		}
-		request.Header.Set("Authorization", "Bearer "+key)
+		attachCredential(request.Header, endpoint.kind, key)
 		return request, nil
 	case "anthropic":
 		payload, err := json.Marshal(map[string]any{
@@ -798,7 +815,7 @@ func probeRequest(ctx context.Context, endpoint assistantEndpoint, key string) (
 		if err != nil {
 			return nil, err
 		}
-		request.Header.Set("x-api-key", key)
+		attachCredential(request.Header, endpoint.kind, key)
 		// The version this protocol requires on every request. It is a
 		// property of the wire, not a model or a vendor choice, and an
 		// endpoint speaking this protocol refuses a request without it.

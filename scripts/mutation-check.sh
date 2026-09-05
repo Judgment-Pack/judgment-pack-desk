@@ -516,6 +516,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   A=internal/desk/assistant.go
   CU=internal/desk/custody.go
   DF=internal/desk/deskfile.go
+  MR=internal/desk/modelrelay.go
 
   mutate go "the key file is readable by everyone on the machine" "$CU" \
     '	custodyFileMode = 0o600' \
@@ -601,9 +602,14 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # exists any more — nothing an endpoint writes is repeated at all — and the
   # property that replaced them is held by "the endpoint's own body travels to
   # the page" below. Named here so their absence is a statement.
-  mutate go "the anthropic probe sends the other protocol's header" "$A" \
-    '		request.Header.Set("x-api-key", key)' \
-    '		request.Header.Set("Authorization", "Bearer "+key)'
+  # Retargeted: the credential is attached from one table now, read by the
+  # probe and by the model relay, so this row breaks the table rather than one
+  # of its two callers. Breaking a copy would leave the other one right.
+  mutate go "the anthropic protocol is given the other one's header" "$MR" \
+    '	case "anthropic":
+		return "x-api-key", key, true' \
+    '	case "anthropic":
+		return "Authorization", "Bearer " + key, true'
   mutate go "the version header this protocol requires is dropped" "$A" \
     '		request.Header.Set("anthropic-version", "2023-06-01")' \
     '		request.Header.Del("anthropic-version")'
@@ -774,6 +780,86 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		for index, element := range typed {' \
     '	case []any:
 		for index, element := range typed[:0] {'
+
+  # ---- The model relay: the page's traffic, this machine's key -------------
+  #
+  # Every row here breaks a sentence the README makes about what the relay
+  # takes off a request, what it puts on, and what it will not carry. The
+  # measurement in each case is at the endpoint, which is why they discriminate
+  # at all: a test that asserted the handler called `Del` would survive most of
+  # these.
+  mutate go "an inbound credential travels to the endpoint" "$MR" \
+    '			for _, header := range inboundCredentialHeaders {
+				out.Header.Del(header)
+			}' \
+    ''
+  mutate go "the page's Origin and Referer travel to the endpoint" "$MR" \
+    '			out.Header.Del("Origin")
+			out.Header.Del("Referer")' \
+    ''
+  # The one thing this route adds. Without it the endpoint is called with no
+  # credential at all, which is a page that cannot work rather than a page that
+  # is unsafe — but it is the sentence the whole route exists for.
+  mutate go "the configured key is never attached" "$MR" \
+    '			out.Header.Set(name, value)' \
+    '			_, _ = name, value'
+  # This desk's own credential, in the place it is easiest to forget.
+  mutate go "the session token is forwarded to the endpoint" "$MR" \
+    '		if name, _, _ := strings.Cut(parameter, "="); name == "token" {
+			continue
+		}' \
+    ''
+  mutate go "the relayed path is never validated" "$MR" \
+    '	if reason := relaySuffixProblem(suffix); reason != "" {' \
+    '	if reason := ""; reason != "" {'
+  mutate go "a relayed path may leave the endpoint's path space" "$MR" \
+    '		if segment == "." || segment == ".." {' \
+    '		if false {'
+  # No percent sign is what makes the escaped and the unescaped reading of an
+  # accepted suffix the same string, so `%2e%2e%2f` cannot be a dot segment in
+  # a costume and `a%2Fb` cannot become two.
+  mutate go "any character at all is a relayed path" "$MR" \
+    '			if !relayPathRune(r) {' \
+    '			if false {'
+  mutate go "the relayed body is unbounded" "$MR" \
+    '	if r.ContentLength > maxRelayBody {' \
+    '	if false {'
+  mutate go "an undeclared body length is unbounded" "$MR" \
+    '	r.Body = http.MaxBytesReader(w, r.Body, maxRelayBody)' \
+    '	_ = w'
+  # The page and this chassis share an origin, so a cookie from the endpoint
+  # would be stored against the desk.
+  mutate go "the endpoint may set a cookie on the desk's origin" "$MR" \
+    '			response.Header.Del("Set-Cookie")' \
+    ''
+  # A queue rather than a bound: the request past the fourth waits instead of
+  # being told. The test uses a client with a timeout for exactly this row, so
+  # a queued request fails the suite rather than hanging it.
+  mutate go "the relay queues rather than bounds" "$MR" \
+    '	select {
+	case s.relaySlots <- struct{}{}:
+		defer func() { <-s.relaySlots }()
+	default:' \
+    '	s.relaySlots <- struct{}{}
+	defer func() { <-s.relaySlots }()
+	if false {'
+  mutate go "a relayed answer is buffered rather than streamed" "$MR" \
+    '		FlushInterval: -1,' \
+    '		FlushInterval: 0,'
+  mutate go "a stalled stream is never cut" "$MR" \
+    '			response.Body = boundedByIdle(response.Body, cancel)' \
+    ''
+  mutate go "one relayed request is unbounded in time" "$MR" \
+    '	ctx, cancel := context.WithTimeout(r.Context(), relayDeadline)' \
+    '	ctx, cancel := context.WithCancel(r.Context())'
+  mutate go "the relay's log line carries the whole address" "$MR" \
+    '	s.log.Printf("desk: assistant relay %s answered %d", loggableOrigin(endpoint.url), status)' \
+    '	s.log.Printf("desk: assistant relay %s %s answered %d", endpoint.url, suffix, status)'
+  mutate go "the relay runs without the session guard" "$MR" \
+    '	if !s.guard(w, r) {
+		return
+	}' \
+    ''
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx

@@ -4,10 +4,18 @@ A local web desk for a Judgment Pack project. `jpack-desk` is one Go binary: it
 serves a single-page application and relays JSON-RPC between that page and a
 `jpack mcp` subprocess running in your project directory.
 
-The browser is the MCP client. The Go program is a chassis, not a feature
-server — it has no per-feature endpoints and parses none of the traffic it
-carries, so the desk can show anything the runtime's tools expose without a
+The browser is the MCP client. The Go program is a chassis rather than a feature
+server: **what it carries, it does not read.** JSON-RPC bytes cross the relay
+untouched, so the desk can show anything the runtime's tools expose without a
 matching change on the Go side.
+
+It does have the few routes the browser cannot do for itself — the file API,
+because the runtime has no write tools; the assistant's key, because a
+credential must never be pasted into a project; and the **model relay**, a
+per-feature *route* that carries the assistant's model traffic because the key
+must never reach the page. None of them parses what it carries either: the relay
+adds one header to a request and reads no body, no model name and no answer. See
+[Where the assistant key lives](#where-the-assistant-key-lives).
 
 ## What it shows
 
@@ -1469,14 +1477,15 @@ the page in order to be presented to an endpoint:
 | `PUT /api/assistant/key` | store one — non-empty, at most 4 KiB, no control character |
 | `DELETE /api/assistant/key` | remove it |
 | `POST /api/assistant/probe` | reach the configured endpoint once and report what came back |
+| `ANY /api/assistant/relay/v1/…` | carry one model request to the configured endpoint, with the key attached here |
 
-The last four answer `409` with `assistant-unusable-store` where this machine
+The probe's four answer `409` with `assistant-unusable-store` where this machine
 has no directory safe to keep a credential in, `assistant-unconfigured` where
 the desk-level file names no endpoint or was refused, and `assistant-no-key`
 where nothing is stored. Each of those is a different repair, which is why they
 are three codes and not one.
 
-All five are under the same two checks as `/ws` and the file API, through the
+All six are under the same two checks as `/ws` and the file API, through the
 same shared guard, and a request refused by the guard stores nothing — asserted
 by its own test, because a handler that stored and then refused would pass
 every status assertion.
@@ -1531,6 +1540,80 @@ gateway's own logs. A probe that reaches nothing still answers `200`; the
 refusals are the states in which the question cannot be asked at all — no
 usable place to keep a key, no endpoint configured (a refused file included),
 and no key stored — and each says which.
+
+### The model relay
+
+**The page runs the assistant's loop and the page never holds the key.** Those
+two sentences are only compatible if something between them carries the
+credential, and it has to be the desk: the key is on this machine and is
+returned by no endpoint. So a page-side engine points its provider client at
+
+```
+baseURL = <this desk's origin>/api/assistant/relay/v1
+```
+
+and sends its model traffic with **no credential at all**. The relay strips
+whatever the page did send, attaches the configured key on the configured wire
+protocol, and forwards everything else verbatim. It is also what makes the
+arrangement possible in a browser: an ordinary bring-your-own endpoint answers
+no CORS, so a page calling one directly could not read the answer.
+
+- **The destination cannot come from the page.** It is `configuredEndpoint` —
+  the same whole-file decode the probe uses, so a `desk.json` the browser
+  refuses authorises no relayed request either. The page chooses a **path
+  suffix** and nothing else.
+- **The suffix is held to a closed class**: one or more segments of
+  `[A-Za-z0-9._-]`, no dot segment, no empty segment, at most 256 bytes, and
+  **no percent sign** — so the escaped and unescaped readings of an accepted
+  suffix are the same string and `%2e%2e%2f` is not a dot segment in a costume.
+  Anything else is refused with `assistant-relay-path` and nothing leaves this
+  process. The suffix is appended to the configured URL's **escaped** path, so
+  `%2F` in a configured base stays one segment.
+- **The `v1` in that address belongs to this route, not to any endpoint**, which
+  is how one mount point serves both protocols: an OpenAI-compatible client
+  appends `/chat/completions` and an Anthropic one appends `/v1/messages`, and
+  each lands unchanged after the configured base — exactly where the probe
+  sends its own request.
+- **Stripped by name, before anything is injected**: `Authorization`,
+  `X-Api-Key`, `Api-Key`, `X-Goog-Api-Key`, `Cookie`, `Proxy-Authorization`,
+  plus `Origin`, `Referer`, the hop-by-hop headers and any `X-Forwarded-*` the
+  page set. **And the desk's own session token**, which travels as `?token=` on
+  every route this chassis serves: forwarding the page's query "as-is" would
+  otherwise present this desk's credential to somebody else's endpoint on every
+  request. Everything else — `anthropic-version`, `content-type`, `accept`, a
+  header nobody has thought of yet — arrives unchanged.
+- **Both query strings travel**: the configured endpoint's own routing first,
+  then the page's, minus that token.
+- **Method and body verbatim**, bounded at 8 MiB — a whole schema, several
+  examples and a draft ride in one request — and an over-size body is **refused
+  with `too-large`, never truncated**.
+- **Streamed, not buffered.** The answer is flushed as it arrives; a test proves
+  the page has the first SSE event in hand *before the endpoint has written the
+  second*, which a relay that buffered would fail while still delivering both.
+- **Bounded in time rather than in bytes**, because a model answer has no length
+  worth guessing: **ten minutes** for one whole relayed request and **two
+  minutes** between two writes from the endpoint. A stream that stalls is cut
+  rather than left holding the page.
+- **At most four relayed requests in flight**, and past that the answer is an
+  immediate `assistant-relay-busy` — a bound, deliberately not a queue, because
+  a queue reports a wait as latency.
+- **No redirect is followed**, for the reason the probe does not follow one: Go
+  strips `Authorization` across hosts and knows nothing about `x-api-key`.
+- **The answer is forwarded whole** — status, headers and body — minus the
+  hop-by-hop headers and minus `Set-Cookie`: the page and this chassis share an
+  origin, so a cookie from the endpoint would be stored against the desk and
+  sent back to the desk's own endpoints.
+- **Nothing else.** No retry (a retried model request is a second charge on
+  somebody's account for an answer nobody saw), no caching, no request
+  rewriting, no model-name inspection. A refusal carries `assistant-relay-*`
+  and, for an endpoint that never answered, one word from the probe's closed
+  diagnostic vocabulary — never anything the endpoint wrote.
+- **The log line is the origin and the status**: no path, no suffix, no header,
+  no body, no key.
+
+Nothing in this release calls it. It is the seam the assistant's engine slot
+needs ([ADR-0001](docs/adr/0001-make-the-assistant-engine-a-slot.md)), built
+before the engine so that the engine is page work.
 
 ## Authoring (issue #14, phase 1)
 
@@ -1832,6 +1915,7 @@ internal/desk/
   custody.go         the credential directory: validated once, then pinned
   deskfile.go        the desk-level file decoded under the browser's contract
   relay.go           WebSocket ↔ `jpack mcp` subprocess
+  modelrelay.go      the model relay: the page's traffic, this machine's key
   watch.go           project-tree file watching
 scripts/acceptance.sh  the two-run acceptance proof
 web/                 Vite + React + TypeScript SPA

@@ -177,6 +177,29 @@ const (
 	// on this machine whose ownership or mode makes it unsafe to keep a
 	// credential in. The sentence names the directory; see custody.go.
 	CodeAssistantUnusableStore = "assistant-unusable-store"
+	// CodeAssistantRelayPath is a relayed request whose path suffix this desk
+	// will not forward.
+	//
+	// Its own code because it is the one refusal on that route that is about
+	// the *request* rather than about this machine's state: nothing needs
+	// repairing here, the caller asked for a path outside what the relay
+	// carries. See `relaySuffixProblem`.
+	CodeAssistantRelayPath = "assistant-relay-path"
+	// CodeAssistantRelayBusy is a relayed request past the number this desk
+	// carries at once.
+	//
+	// Split from every other refusal because it is the only one that is
+	// **temporary**: the same request a moment later is fine, which is a
+	// different instruction to a caller from any of the others.
+	CodeAssistantRelayBusy = "assistant-relay-busy"
+	// CodeAssistantRelayUpstream is a relayed request the configured endpoint
+	// never answered.
+	//
+	// It carries one word from the probe's closed diagnostic vocabulary and
+	// never anything the endpoint wrote, for the reason that vocabulary exists:
+	// a body under the endpoint's control can carry a derived representation of
+	// the credential.
+	CodeAssistantRelayUpstream = "assistant-relay-upstream"
 	// CodeInternal is everything with no better answer. A client that branches
 	// on this is a client guessing, which is what the others are for.
 	CodeInternal = "internal"
@@ -214,6 +237,12 @@ var codeStatus = map[string]int{
 	CodeAssistantUnconfigured:  http.StatusConflict,
 	CodeAssistantNoKey:         http.StatusConflict,
 	CodeAssistantUnusableStore: http.StatusConflict,
+	// The request itself, and a desk with no room for it: a bad request and a
+	// service that is temporarily full are not the desk's state disagreeing
+	// with a request, so neither is a 409.
+	CodeAssistantRelayPath:     http.StatusBadRequest,
+	CodeAssistantRelayBusy:     http.StatusServiceUnavailable,
+	CodeAssistantRelayUpstream: http.StatusBadGateway,
 	CodeInternal:               http.StatusInternalServerError,
 }
 
@@ -224,6 +253,7 @@ var allCodes = []string{
 	CodeNotUTF8, CodeNotAFile, CodeUnauthorized, CodeForbidden, CodeBadRequest,
 	CodeStagingFile, CodeExcludedDirectory,
 	CodeAssistantUnconfigured, CodeAssistantNoKey, CodeAssistantUnusableStore,
+	CodeAssistantRelayPath, CodeAssistantRelayBusy, CodeAssistantRelayUpstream,
 	CodeInternal,
 }
 
