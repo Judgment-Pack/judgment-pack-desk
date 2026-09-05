@@ -107,6 +107,20 @@ func afterCustodyCheck(path string) {
 	}
 }
 
+// testHookAfterKeyStat runs between establishing what the key file is and
+// opening it, and is nil outside tests.
+//
+// The residual the type check cannot close: a swap performed *after* it. It is
+// what proves `O_NOFOLLOW` is doing work rather than being decorative beside
+// an `Lstat` that already refused the ordinary case.
+var testHookAfterKeyStat func(path string)
+
+func afterKeyStat(path string) {
+	if testHookAfterKeyStat != nil {
+		testHookAfterKeyStat(path)
+	}
+}
+
 // openAssistantStore validates the chain and pins what it found.
 //
 // Called once, when the server is built. Everything it can repair — a missing
@@ -377,6 +391,13 @@ func (s *assistantStore) readKey() (string, error) {
 				"so it is not treated as this desk's key",
 			filepath.Join(s.dir, secretsDirName, assistantKeyName), perm)
 	}
+	// **The flag, not the check, is what closes the window.** The `Lstat`
+	// above establishes what is there at that instant; `os.Root` follows a
+	// symlink that stays inside the root, so between the two a swap would
+	// still be followed. `O_NOFOLLOW` makes the kernel refuse the traversal
+	// with no window at all — and the hook below is what lets a test perform
+	// exactly that swap at exactly that instant.
+	afterKeyStat(filepath.Join(s.dir, secretsDirName, assistantKeyName))
 	file, err := s.secrets.OpenFile(assistantKeyName, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
 	if err != nil {
 		return "", err

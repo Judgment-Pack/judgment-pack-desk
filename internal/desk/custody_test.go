@@ -11,6 +11,7 @@ package desk
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -323,5 +324,127 @@ func TestAnUnusableStoreLeavesTheRestOfTheDeskAlone(t *testing.T) {
 	status, listing := getJSON(t, ts, "/api/files?token="+testToken)
 	if status != http.StatusOK {
 		t.Errorf("the file listing answered %d: %v", status, listing)
+	}
+}
+
+func TestCustodyRefusesOurOwnDirectoryOwnedByAnother(t *testing.T) {
+	// **The `ours` half of the ownership rule, isolated.** The ancestor rule
+	// admits root as well as this user, so a test whose whole chain looks
+	// foreign is caught by the ancestor check and says nothing about the
+	// stricter rule applied to the desk's own directories. `/tmp` is
+	// root-owned and sticky, so it passes as an ancestor; the directory
+	// created inside it is ours and must be refused when this desk believes
+	// it is somebody else.
+	if runtime.GOOS == "windows" {
+		t.Skip("no /tmp on Windows")
+	}
+	root := os.TempDir()
+	info, err := os.Lstat(root)
+	if err != nil {
+		t.Fatalf("stat %s: %v", root, err)
+	}
+	owner, known := ownerOf(info)
+	if !known || owner != 0 || info.Mode()&os.ModeSticky == 0 {
+		t.Skipf("%s is not the root-owned sticky directory this case needs", root)
+	}
+
+	restore := effectiveUser
+	real := restore()
+	effectiveUser = func() uint32 { return real + 1 }
+	t.Cleanup(func() { effectiveUser = restore })
+
+	dir := filepath.Join(root, fmt.Sprintf("jpack-desk-custody-%d", os.Getpid()))
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+
+	said := refusedFor(t, storeIn(t, dir), "a directory of ours owned by another user")
+	if !strings.Contains(said, "who is running this desk") {
+		t.Errorf("the refusal is not the one about our own directory: %q", said)
+	}
+	if !strings.Contains(said, dir) {
+		t.Errorf("the refusal names the wrong directory: %q", said)
+	}
+}
+
+func TestCustodyRefusesALinkSwappedInAfterTheCheck(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on Windows")
+	}
+	// **The residual the type check cannot close, closed by the flag.** The
+	// key file is a regular file when it is inspected and a symlink by the
+	// time it is opened — which is exactly the race a validated pathname
+	// leaves open. `O_NOFOLLOW` makes the kernel refuse the traversal, so
+	// there is no instant in which the swap pays off.
+	config := t.TempDir()
+	store := storeIn(t, config)
+	if !store.usable() {
+		t.Fatalf("refused: %v", store.problem)
+	}
+	if err := store.storeKey(testKey); err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "somebody-elses-secret")
+	if err := os.WriteFile(target, []byte("not-this-desks-key"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	key := filepath.Join(config, secretsDirName, assistantKeyName)
+	restore := testHookAfterKeyStat
+	swapped := false
+	testHookAfterKeyStat = func(string) {
+		if swapped {
+			return
+		}
+		swapped = true
+		if err := os.Remove(key); err != nil {
+			t.Errorf("remove: %v", err)
+			return
+		}
+		if err := os.Symlink(target, key); err != nil {
+			t.Errorf("symlink: %v", err)
+		}
+	}
+	t.Cleanup(func() { testHookAfterKeyStat = restore })
+
+	got, err := store.readKey()
+	if err == nil {
+		t.Fatalf("the swapped-in link was followed and answered %q", got)
+	}
+	if got != "" {
+		t.Errorf("a refused read still produced %q", got)
+	}
+	if strings.Contains(got, "not-this-desks-key") {
+		t.Error("the attacker's file was read as the key")
+	}
+}
+
+func TestARefusedStoreTouchesTheFilesystemNotAtAll(t *testing.T) {
+	// The guard inside the store, not the one in the handler. They are two
+	// layers and the outer one is what a request meets; this is the one that
+	// would matter if a future caller reached the store directly.
+	base := t.TempDir()
+	loose := filepath.Join(base, "loose")
+	if err := os.Mkdir(loose, 0o777); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.Chmod(loose, 0o777); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	dir := filepath.Join(loose, "jpack-desk")
+	store := storeIn(t, dir)
+	if store.usable() {
+		t.Fatal("the store accepted a loose parent")
+	}
+	if err := store.storeKey(testKey); err == nil {
+		t.Error("a refused store wrote a key")
+	}
+	if _, err := store.readKey(); err == nil {
+		t.Error("a refused store answered a read")
+	}
+	if err := store.removeKey(); err == nil {
+		t.Error("a refused store answered a removal")
+	}
+	// And nothing was created on the way to those refusals.
+	if _, err := os.Lstat(dir); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a refused store created %s: %v", dir, err)
 	}
 }

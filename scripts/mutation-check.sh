@@ -668,12 +668,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the key is opened without no-follow" "$CU" \
     '	file, err := s.secrets.OpenFile(assistantKeyName, os.O_RDONLY|openNoFollow|openNonBlocking, 0)' \
     '	file, err := s.secrets.OpenFile(assistantKeyName, os.O_RDONLY|openNonBlocking, 0)'
-  mutate go "a refused store writes anyway" "$CU" \
-    '	if !s.usable() {
-		return s.problem
-	}
-	staged, name, err := s.stage()' \
-    '	staged, name, err := s.stage()'
+  # Deliberately not mutated: the `usable()` guards inside the store. Removing
+  # one does not produce a wrong answer, it produces a nil-pointer panic — a
+  # refused store holds no descriptors at all — and a mutation that crashes the
+  # suite has not been survived, it has not been tested. The guards are
+  # asserted directly instead, by TestARefusedStoreTouchesTheFilesystemNotAtAll
+  # and TestAnUnusableStoreLeavesTheRestOfTheDeskAlone. Named here so that
+  # their absence from this table is a statement rather than an oversight.
 
   # ---- The one contract, and the credential in it -------------------------
   mutate go "the control check runs after the value is trimmed" "$A" \
@@ -685,10 +686,23 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	if decoded.refused() {' \
     '	decoded := decodeDeskFile(data)
 	if false {'
-  mutate go "the endpoint's own body is read back out" "$A" \
-    '	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxProbeBody))' \
+  # The body is discarded, and the vocabulary is what travels. Mutated as one
+  # block, because reading the bytes into a variable and never using them is
+  # not the defect — putting them in the answer is.
+  mutate go "the endpoint's own body travels to the page" "$A" \
+    '	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxProbeBody))
+	reachable := response.StatusCode >= 200 && response.StatusCode < 300
+	diagnostic := ""
+	if !reachable {
+		// One word, chosen from the status. Never the bytes just discarded.
+		diagnostic = statusDiagnostic(response.StatusCode)
+	}' \
     '	body, _ := io.ReadAll(io.LimitReader(response.Body, maxProbeBody))
-	_ = body'
+	reachable := response.StatusCode >= 200 && response.StatusCode < 300
+	diagnostic := ""
+	if !reachable {
+		diagnostic = string(body)
+	}'
   # A configured URL may carry a query string, and a query string is a place
   # people put credentials.
   mutate go "the whole endpoint URL is logged" "$A" \

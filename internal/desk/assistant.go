@@ -691,6 +691,7 @@ func probeEndpoint(ctx context.Context, endpoint assistantEndpoint, key string) 
 	reachable := response.StatusCode >= 200 && response.StatusCode < 300
 	diagnostic := ""
 	if !reachable {
+		// One word, chosen from the status. Never the bytes just discarded.
 		diagnostic = statusDiagnostic(response.StatusCode)
 	}
 	return ProbeResult{

@@ -1100,3 +1100,54 @@ func TestProbeEndpointDirectlyHonoursACallerDeadline(t *testing.T) {
 		t.Errorf("result %+v", result)
 	}
 }
+
+func TestTheProbeLogsAnOriginAndNothingElse(t *testing.T) {
+	// **A configured URL may carry a query string** — some gateways route on
+	// one — and a query string is where a presigned link keeps its
+	// credential. Logging the whole URL therefore falsified "the key is never
+	// logged" for a configuration this desk accepts. Scheme and host is enough
+	// to tell one endpoint from another in a log.
+	stub := newStubEndpoint(t, func(w http.ResponseWriter) {
+		w.WriteHeader(http.StatusOK)
+	})
+	s, ts, logged := assistantServer(t)
+	const routing = "sig=THIS-LOOKS-LIKE-A-SECRET&tenant=acme"
+	writeDeskConfig(t, s, fmt.Sprintf(
+		`{"deskConfigVersion":1,"assistant":{"endpoint":{"url":%q,"kind":"openai-compatible",`+
+			`"model":"a-model","tools":[]}}}`, stub.server.URL+"/v1?"+routing))
+	if status, body := storeKey(t, ts, testKey); status != http.StatusOK {
+		t.Fatalf("store: %d %v", status, body)
+	}
+	if status, body := postJSON(t, ts, "/api/assistant/probe"); status != http.StatusOK {
+		t.Fatalf("probe: %d %v", status, body)
+	}
+
+	written := logged.String()
+	if !strings.Contains(written, "assistant probe") {
+		t.Fatalf("the probe logged nothing, so the search below is vacuous: %q", written)
+	}
+	// The origin is there, so the line is still useful.
+	if !strings.Contains(written, stub.server.URL) {
+		t.Errorf("the log does not name the endpoint's origin: %q", written)
+	}
+	// And nothing past it.
+	for _, forbidden := range []string{routing, "THIS-LOOKS-LIKE-A-SECRET", "sig=", "/v1?"} {
+		if strings.Contains(written, forbidden) {
+			t.Errorf("the log carries %q: %q", forbidden, written)
+		}
+	}
+}
+
+func TestALoggableOriginIsSchemeAndHostOnly(t *testing.T) {
+	for _, tc := range []struct{ raw, want string }{
+		{"https://gw.example/v1?sig=secret", "https://gw.example"},
+		{"https://gw.example:8443/v1", "https://gw.example:8443"},
+		// The port is kept: it is what tells two endpoints on one host apart.
+		{"http://127.0.0.1:11434/v1", "http://127.0.0.1:11434"},
+		{"not a url at all", "the configured endpoint"},
+	} {
+		if got := loggableOrigin(tc.raw); got != tc.want {
+			t.Errorf("loggableOrigin(%q) = %q, want %q", tc.raw, got, tc.want)
+		}
+	}
+}
