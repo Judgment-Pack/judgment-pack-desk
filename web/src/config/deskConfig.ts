@@ -316,9 +316,27 @@ function scanForKeys(path: string, value: unknown, problems: ConfigProblem[]): v
   }
 }
 
-/** The reason an unadmitted member is refused with: the specific one first. */
-function unknownReason(name: string): string {
-  return isKeyLike(name) ? KEYS_ARE_NEVER_IN_CONFIGURATION : 'unknown key'
+/**
+ * A key that already carries the credential sentence carries nothing else.
+ *
+ * **There is one producer of that sentence** — `scanForKeys` — and the schema
+ * walk says only "unknown key". That is a deliberate simplification of a
+ * design that had both: a `unknownReason` helper picked the sentence at the
+ * schema walk *as well*, which meant breaking either one left the other
+ * saying it, and the mutation table reported an unheld safeguard while two
+ * things held it. One producer, one row for it, and this to keep the reader
+ * from seeing the same member refused twice for two reasons.
+ */
+function withoutRedundantReasons(problems: ConfigProblem[]): ConfigProblem[] {
+  const credentialed = new Set(
+    problems
+      .filter((problem) => problem.reason === KEYS_ARE_NEVER_IN_CONFIGURATION)
+      .map((problem) => problem.key)
+  )
+  return problems.filter(
+    (problem) =>
+      problem.reason === KEYS_ARE_NEVER_IN_CONFIGURATION || !credentialed.has(problem.key)
+  )
 }
 
 /**
@@ -389,7 +407,7 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
       problems.push({ key: 'assistant', reason: ASSISTANT_AT_PROJECT })
       continue
     }
-    problems.push({ key, reason: unknownReason(key) })
+    problems.push({ key, reason: 'unknown key' })
   }
 
   const values: Partial<DeskConfig> = {}
@@ -525,7 +543,7 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
   // both. Reported once.
   const unique: ConfigProblem[] = []
   const seen = new Set<string>()
-  for (const problem of problems) {
+  for (const problem of withoutRedundantReasons(problems)) {
     const identity = `${problem.key}\u0000${problem.reason}`
     if (seen.has(identity)) continue
     seen.add(identity)
@@ -696,7 +714,7 @@ function section(
   const record = value as Record<string, unknown>
   for (const member of Object.keys(record)) {
     if (!allowed.includes(member)) {
-      problems.push({ key: `${key}.${member}`, reason: unknownReason(member) })
+      problems.push({ key: `${key}.${member}`, reason: 'unknown key' })
     }
   }
   return record

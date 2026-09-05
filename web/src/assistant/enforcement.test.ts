@@ -381,3 +381,28 @@ describe('(6) the probe answers from a closed vocabulary, shared with the desk',
     expect(client, 'the probe result still carries a detail member').not.toMatch(/\bdetail\b\s*:/)
   })
 })
+
+describe('(7) one member, one refusal', () => {
+  it('refuses a credential-shaped member once, with the sentence about keys', () => {
+    // The credential sentence has **one producer** — the recursive pre-scan —
+    // and the schema walk says only "unknown key". A member that is both was
+    // reported twice for two reasons, which reads on Admin as two mistakes.
+    const decoded = decodeDeskConfig(
+      JSON.stringify({ deskConfigVersion: 1, assistant: { endpoint: { apiKey: 'sk-nope' } } }),
+      'desk'
+    )
+    const about = decoded.problems.filter(
+      (problem) => problem.key === 'assistant.endpoint.apiKey'
+    )
+    expect(about).toHaveLength(1)
+    expect(about[0]!.reason).toBe(KEYS_ARE_NEVER_IN_CONFIGURATION)
+  })
+
+  it('still says "unknown key" for a member that is not credential-shaped', () => {
+    const decoded = decodeDeskConfig(
+      JSON.stringify({ deskConfigVersion: 1, colour: 'blue' }),
+      'desk'
+    )
+    expect(decoded.problems.find((problem) => problem.key === 'colour')!.reason).toBe('unknown key')
+  })
+})

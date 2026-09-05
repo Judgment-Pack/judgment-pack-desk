@@ -15,12 +15,13 @@ package desk
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -106,10 +107,13 @@ func TestSharedFixturesDecodeAsTheVerdictSays(t *testing.T) {
 			if !decoded.refused() {
 				t.Fatal("refused fixture was accepted")
 			}
-			// **A refused file yields no endpoint**, whatever else was in it.
-			// This is the property the probe depends on.
-			if decoded.Endpoint != nil {
-				t.Error("a refused file produced an endpoint")
+			// The endpoint is *carried* out of a refused decode now — see the
+			// note at the end of `decodeDeskFile` — so what this asserts is
+			// the property the probe actually depends on: the verdict says
+			// refused, and `configuredEndpoint` gates on that. Whether an
+			// endpoint object was assembled along the way is not the question.
+			if !decoded.refused() {
+				t.Error("a refused file reports itself clean")
 			}
 			// The keys as a set: the two decoders walk the document
 			// differently, and requiring one order would be a contract about
@@ -133,34 +137,66 @@ func TestSharedFixturesDecodeAsTheVerdictSays(t *testing.T) {
 	}
 }
 
+// countingTransport records every request that reaches the wire.
+//
+// **This is the only place "no outbound request was made" can be established.**
+// The version this replaced started a stub server and asserted the stub was
+// not reached — while leaving each fixture's own unrelated URL in place, so
+// the stub was never the destination and `reached == 0` was true of a probe
+// that had happily called somewhere else. Counting at the transport is a
+// statement about what left the process, not about who happened to answer.
+type countingTransport struct {
+	mu    sync.Mutex
+	calls int
+	to    []string
+}
+
+func (c *countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	c.mu.Lock()
+	c.calls++
+	c.to = append(c.to, r.URL.String())
+	c.mu.Unlock()
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     "200 OK",
+		Body:       io.NopCloser(strings.NewReader("{}")),
+		Header:     make(http.Header),
+		Request:    r,
+	}, nil
+}
+
+func (c *countingTransport) seen() (int, []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.calls, append([]string(nil), c.to...)
+}
+
+// countingProbes swaps the probe client's transport for the duration of a test.
+func countingProbes(t *testing.T) *countingTransport {
+	t.Helper()
+	counter := &countingTransport{}
+	restore := probeClient.Transport
+	probeClient.Transport = counter
+	t.Cleanup(func() { probeClient.Transport = restore })
+	return counter
+}
+
 func TestARefusedFileSendsNothing(t *testing.T) {
-	// **The assertion the whole exercise is for.** Every refused fixture, each
-	// one carrying an otherwise-serviceable endpoint pointed at a live stub,
-	// and the stub must record zero requests. A probe that "merely" reported a
-	// refusal while having already opened the connection would pass a status
-	// assertion and fail this one.
+	// **The assertion the whole exercise is for**, and now measured where it
+	// means something. Every refused fixture is probed with a key stored, and
+	// the transport must not be reached once — not "reached a different
+	// place", not at all.
 	verdicts := fixtureVerdicts(t)
 	for _, name := range fixtureNames(t) {
 		if verdicts[name].Accepted {
 			continue
 		}
 		t.Run(name, func(t *testing.T) {
-			var reached int
-			stub := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-				reached++
-			}))
-			defer stub.Close()
-
+			counter := countingProbes(t)
 			data, err := os.ReadFile(filepath.Join(fixtureDir(t), name+".json"))
 			if err != nil {
 				t.Fatalf("read: %v", err)
 			}
-			// The fixture's own endpoint is left exactly as written — the
-			// point is that the file is refused, not that its URL is
-			// unreachable — and the stub stands beside it to catch any request
-			// at all. Where the fixture happens to name a resolvable host, the
-			// refusal is what must stop the request; where it does not, the
-			// count is still zero and the stub is the control.
 			s, ts, _ := assistantServer(t)
 			writeDeskConfig(t, s, string(data))
 			if status, body := storeKey(t, ts, testKey); status != http.StatusOK {
@@ -173,35 +209,49 @@ func TestARefusedFileSendsNothing(t *testing.T) {
 			if body["code"] != CodeAssistantUnconfigured {
 				t.Fatalf("code %v, want %s", body["code"], CodeAssistantUnconfigured)
 			}
-			if reached != 0 {
-				t.Fatalf("the stub was reached %d times by a refused configuration", reached)
+			if calls, to := counter.seen(); calls != 0 {
+				t.Fatalf("a refused configuration made %d outbound request(s), to %v", calls, to)
 			}
 		})
 	}
 }
 
-func TestAnAcceptedFixtureDoesReachTheEndpoint(t *testing.T) {
-	// The control for the test above: without it, "zero requests" would be
-	// satisfied by a probe that never works at all.
-	var reached int
-	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		reached++
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer stub.Close()
-
-	s, ts, _ := assistantServer(t)
-	writeDeskConfig(t, s, `{"deskConfigVersion":1,"assistant":{"endpoint":{"url":"`+
-		stub.URL+`/v1","kind":"openai-compatible","model":"a-model","tools":["validate"]}}}`)
-	if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
-		t.Fatal("store")
+func TestAnAcceptedFileDoesReachTheTransport(t *testing.T) {
+	// The positive control. Without it "zero requests" is satisfied by a probe
+	// that never works at all, which is the failure mode the previous version
+	// of this pair actually had.
+	counter := countingProbes(t)
+	verdicts := fixtureVerdicts(t)
+	tried := 0
+	for _, name := range fixtureNames(t) {
+		if !verdicts[name].Accepted {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(fixtureDir(t), name+".json"))
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		// Only the fixtures that actually configure an endpoint can probe; the
+		// rest are accepted files with nothing to reach.
+		if decodeDeskFile(data).Endpoint == nil {
+			continue
+		}
+		tried++
+		s, ts, _ := assistantServer(t)
+		writeDeskConfig(t, s, string(data))
+		if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
+			t.Fatalf("%s: store", name)
+		}
+		if status, body := postJSON(t, ts, "/api/assistant/probe"); status != http.StatusOK {
+			t.Fatalf("%s: status %d, body %v", name, status, body)
+		}
 	}
-	status, body := postJSON(t, ts, "/api/assistant/probe")
-	if status != http.StatusOK || body["reachable"] != true {
-		t.Fatalf("status %d, body %v", status, body)
+	if tried == 0 {
+		t.Fatal("no accepted fixture configures an endpoint, so this control proves nothing")
 	}
-	if reached != 1 {
-		t.Fatalf("the stub was reached %d times, want once", reached)
+	calls, to := counter.seen()
+	if calls != tried {
+		t.Fatalf("%d accepted fixtures made %d requests (%v)", tried, calls, to)
 	}
 }
 
@@ -235,5 +285,34 @@ func TestTheKeySentenceIsTheSameOnBothSides(t *testing.T) {
 	declared := strings.Join(pieces, "")
 	if declared != keysAreNeverInConfiguration {
 		t.Errorf("the sentence differs:\n go: %q\n ts: %q", keysAreNeverInConfiguration, declared)
+	}
+}
+
+func TestAMemberIsRefusedOnceWithTheCredentialSentence(t *testing.T) {
+	// The credential sentence has **one producer** — the recursive pre-scan —
+	// and the schema walk says only "unknown key". A member that is both was
+	// reported twice for two reasons, which reads on Admin as two mistakes,
+	// and made the mutation row for either producer survive.
+	decoded := decodeDeskFile([]byte(
+		`{"deskConfigVersion":1,"assistant":{"endpoint":{"apiKey":"sk-nope"}}}`))
+	var about []deskProblem
+	for _, problem := range decoded.Problems {
+		if problem.Key == "assistant.endpoint.apiKey" {
+			about = append(about, problem)
+		}
+	}
+	if len(about) != 1 {
+		t.Fatalf("%d refusals for one member: %v", len(about), about)
+	}
+	if about[0].Reason != keysAreNeverInConfiguration {
+		t.Errorf("reason %q, want the sentence about keys", about[0].Reason)
+	}
+
+	// And an ordinary unknown member still says so.
+	plain := decodeDeskFile([]byte(`{"deskConfigVersion":1,"colour":"blue"}`))
+	for _, problem := range plain.Problems {
+		if problem.Key == "colour" && problem.Reason != "unknown key" {
+			t.Errorf("colour: %q", problem.Reason)
+		}
 	}
 }

@@ -1216,7 +1216,9 @@ text over a network is a credential given away, and one about transport only.
 It may **not** carry a user, a password or a fragment: a key is never written
 into configuration, and that includes into a URL. It **may** carry a query
 string, because some gateways route on one — and that query string is never
-logged.
+logged. An escaped path is carried through exactly as configured: `%2F` stays
+one segment, because re-encoding it into a separator would send the credential
+to a different resource than the one written down.
 It is the base the endpoint documents for its own protocol: for
 `openai-compatible` the base carrying `/models` and `/chat/completions`, which
 usually ends in `/v1`; for `anthropic` the base carrying `/v1/messages`. The
@@ -1398,10 +1400,19 @@ attacker named in a preplanted `desk.json`. So:
   *sticky* world-writable ancestor is admitted — `/tmp` is the case, and the
   sticky bit is exactly the rule that only an entry's owner may replace it.
 - **The desk's own two directories must be owned by the user running the
-  desk**, and are created or narrowed to `0700`. Their ancestors may belong to
-  root as well, because `/` and `/home` do on every ordinary system. One of
-  ours that is merely too loose is narrowed rather than refused; what cannot
-  be repaired — who owns it, whether it is a link — is refused.
+  desk**, and must not be writable by anyone else. Their ancestors may belong
+  to root as well, because `/` and `/home` do on every ordinary system.
+  A `0755` directory of ours — what a umask of 022 produces — is narrowed to
+  `0700`, because nobody else could have written into it. One that **is**
+  writable by group or others is **refused**, not narrowed: tightening it
+  closes the future and can do nothing about what was already planted while it
+  stood open, and what may have been planted is a `desk.json` naming an
+  endpoint this desk would then present its key to.
+- **`desk.json` is held to the key's rules but one.** It must be owned by this
+  user, a regular file, not writable by anyone else, and the descriptor opened
+  is compared to the entry inspected — because writing that file is choosing
+  where a credential goes. It **may** be world-readable: it holds no secret,
+  and refusing `0644` would refuse what an editor or a checkout leaves.
 - **The validated directory is then pinned**, and every read, write, rename and
   mode change goes through that descriptor with no-follow semantics. The key
   file itself must be a regular file no one else can read; a symlink at its
@@ -1492,7 +1503,10 @@ whitespace model showed "configuration refused" on Admin while the probe
 happily sent the stored key to the endpoint it named. The two decoders are held
 together by fixtures both read — `web/src/config/fixtures/desk-config/`, with
 one `expected.json` naming each file's verdict and the keys it must refuse — so
-a rule changed on one side and not the other fails on both.
+a rule changed on one side and not the other fails on both. There is an accept
+and a refuse fixture for **every member either decoder validates**, and each
+refused one is probed with a key stored while a counting transport asserts that
+nothing at all left the process.
 
 The answer is `{reachable, status, latencyMs, diagnostic}`, where `reachable`
 means the endpoint answered *successfully* — a 401 is a host that is there and
@@ -1504,7 +1518,9 @@ endpoint's own sentence used to be quoted with the key substituted out of it,
 which is a categorical promise held by one string replacement: a body under the
 endpoint's control can carry a *derived* representation of the credential —
 base64, percent-encoded, JSON-escaped, hex, or half of it — that no
-substitution reliably detects. So the body is drained and discarded. The cost
+substitution reliably detects. So the body is read to the end and discarded —
+to the end, bounded by the same ten-second deadline rather than by a byte
+count, because a drain that stops early leaves the connection unusable. The cost
 is real and accepted: debugging a misconfigured gateway now means reading that
 gateway's own logs. A probe that reaches nothing still answers `200`; the
 refusals are the states in which the question cannot be asked at all — no

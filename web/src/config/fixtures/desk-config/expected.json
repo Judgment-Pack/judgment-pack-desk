@@ -1,4 +1,8 @@
 {
+  "accepted-appearance-dark-compact": {
+    "accepted": true,
+    "keys": []
+  },
   "accepted-endpoint": {
     "accepted": true,
     "keys": []
@@ -19,6 +23,18 @@
     "accepted": true,
     "keys": []
   },
+  "accepted-identity-issuer-loopback": {
+    "accepted": true,
+    "keys": []
+  },
+  "accepted-identity-provider-in-full": {
+    "accepted": true,
+    "keys": []
+  },
+  "accepted-identity-provider-nulls": {
+    "accepted": true,
+    "keys": []
+  },
   "accepted-minimal": {
     "accepted": true,
     "keys": []
@@ -26,6 +42,44 @@
   "accepted-null-endpoint": {
     "accepted": true,
     "keys": []
+  },
+  "accepted-organization-mark-data-uri": {
+    "accepted": true,
+    "keys": []
+  },
+  "accepted-organization-mark-svg": {
+    "accepted": true,
+    "keys": []
+  },
+  "accepted-panes-at-the-bounds": {
+    "accepted": true,
+    "keys": []
+  },
+  "accepted-panes-partial": {
+    "accepted": true,
+    "keys": []
+  },
+  "accepted-storage-nested-dir": {
+    "accepted": true,
+    "keys": []
+  },
+  "refused-appearance-density-unknown": {
+    "accepted": false,
+    "keys": [
+      "appearance.density"
+    ]
+  },
+  "refused-appearance-not-object": {
+    "accepted": false,
+    "keys": [
+      "appearance"
+    ]
+  },
+  "refused-assistant-not-object": {
+    "accepted": false,
+    "keys": [
+      "assistant"
+    ]
   },
   "refused-assistant-sibling": {
     "accepted": false,
@@ -57,6 +111,12 @@
       "assistant.endpoint.url"
     ]
   },
+  "refused-endpoint-kind-number": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.kind"
+    ]
+  },
   "refused-endpoint-missing-kind": {
     "accepted": false,
     "keys": [
@@ -64,6 +124,30 @@
     ]
   },
   "refused-endpoint-missing-tools": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.tools"
+    ]
+  },
+  "refused-endpoint-model-number": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.model"
+    ]
+  },
+  "refused-endpoint-not-object": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint"
+    ]
+  },
+  "refused-endpoint-tools-not-array": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.tools"
+    ]
+  },
+  "refused-endpoint-tools-not-strings": {
     "accepted": false,
     "keys": [
       "assistant.endpoint.tools"
@@ -87,16 +171,106 @@
       "assistant.endpoint.tools"
     ]
   },
+  "refused-endpoint-url-empty": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-url-not-absolute": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
   "refused-endpoint-userinfo": {
     "accepted": false,
     "keys": [
       "assistant.endpoint.url"
     ]
   },
+  "refused-identity-audience-object": {
+    "accepted": false,
+    "keys": [
+      "identity.provider.audience"
+    ]
+  },
+  "refused-identity-avatar-not-boolean": {
+    "accepted": false,
+    "keys": [
+      "identity.provider.showRemoteAvatar"
+    ]
+  },
+  "refused-identity-claims-empty-member": {
+    "accepted": false,
+    "keys": [
+      "identity.provider.claims.name"
+    ]
+  },
+  "refused-identity-claims-unknown-member": {
+    "accepted": false,
+    "keys": [
+      "identity.provider.claims.nickname"
+    ]
+  },
+  "refused-identity-client-id-empty": {
+    "accepted": false,
+    "keys": [
+      "identity.provider.clientId"
+    ]
+  },
+  "refused-identity-client-id-missing": {
+    "accepted": false,
+    "keys": [
+      "identity.provider.clientId"
+    ]
+  },
   "refused-identity-issuer": {
     "accepted": false,
     "keys": [
       "identity.provider.issuer"
+    ]
+  },
+  "refused-identity-issuer-missing": {
+    "accepted": false,
+    "keys": [
+      "identity.provider.issuer"
+    ]
+  },
+  "refused-identity-label-number": {
+    "accepted": false,
+    "keys": [
+      "identity.provider.label"
+    ]
+  },
+  "refused-identity-label-object": {
+    "accepted": false,
+    "keys": [
+      "identity.provider.label"
+    ]
+  },
+  "refused-identity-not-object": {
+    "accepted": false,
+    "keys": [
+      "identity"
+    ]
+  },
+  "refused-identity-provider-not-object": {
+    "accepted": false,
+    "keys": [
+      "identity.provider"
+    ]
+  },
+  "refused-identity-scopes-not-strings": {
+    "accepted": false,
+    "keys": [
+      "identity.provider.scopes"
+    ]
+  },
+  "refused-identity-signout-unknown": {
+    "accepted": false,
+    "keys": [
+      "identity.provider.signOut"
     ]
   },
   "refused-key-deeply-nested": {
@@ -138,16 +312,148 @@
       ""
     ]
   },
+  "refused-not-json": {
+    "accepted": false,
+    "keys": [
+      ""
+    ]
+  },
+  "refused-organization-mark-number": {
+    "accepted": false,
+    "keys": [
+      "organization.mark"
+    ]
+  },
+  "refused-organization-mark-path": {
+    "accepted": false,
+    "keys": [
+      "organization.mark"
+    ]
+  },
+  "refused-organization-name-empty": {
+    "accepted": false,
+    "keys": [
+      "organization.name"
+    ]
+  },
+  "refused-organization-name-number": {
+    "accepted": false,
+    "keys": [
+      "organization.name"
+    ]
+  },
+  "refused-organization-not-object": {
+    "accepted": false,
+    "keys": [
+      "organization"
+    ]
+  },
   "refused-pane-out-of-bounds": {
     "accepted": false,
     "keys": [
       "panes.inspector.width"
     ]
   },
+  "refused-panes-console-height-zero": {
+    "accepted": false,
+    "keys": [
+      "panes.console.height"
+    ]
+  },
+  "refused-panes-console-open-not-boolean": {
+    "accepted": false,
+    "keys": [
+      "panes.console.open"
+    ]
+  },
+  "refused-panes-inspector-open-not-boolean": {
+    "accepted": false,
+    "keys": [
+      "panes.inspector.open"
+    ]
+  },
+  "refused-panes-left-mode-unknown": {
+    "accepted": false,
+    "keys": [
+      "panes.left.mode"
+    ]
+  },
+  "refused-panes-left-not-object": {
+    "accepted": false,
+    "keys": [
+      "panes.left"
+    ]
+  },
+  "refused-panes-left-width-below": {
+    "accepted": false,
+    "keys": [
+      "panes.left.width"
+    ]
+  },
+  "refused-panes-left-width-fraction": {
+    "accepted": false,
+    "keys": [
+      "panes.left.width"
+    ]
+  },
+  "refused-panes-not-object": {
+    "accepted": false,
+    "keys": [
+      "panes"
+    ]
+  },
+  "refused-storage-dir-absolute": {
+    "accepted": false,
+    "keys": [
+      "storage.packs.dir"
+    ]
+  },
+  "refused-storage-dir-backslash": {
+    "accepted": false,
+    "keys": [
+      "storage.packs.dir"
+    ]
+  },
+  "refused-storage-dir-dotdot": {
+    "accepted": false,
+    "keys": [
+      "storage.packs.dir"
+    ]
+  },
+  "refused-storage-dir-not-string": {
+    "accepted": false,
+    "keys": [
+      "storage.packs.dir"
+    ]
+  },
   "refused-storage-excluded-dir": {
     "accepted": false,
     "keys": [
       "storage.packs.dir"
+    ]
+  },
+  "refused-storage-id-base-empty": {
+    "accepted": false,
+    "keys": [
+      "storage.packs.idBase"
+    ]
+  },
+  "refused-storage-id-base-not-uri": {
+    "accepted": false,
+    "keys": [
+      "storage.packs.idBase"
+    ]
+  },
+  "refused-storage-kind-database": {
+    "accepted": false,
+    "keys": [
+      "storage.packs.kind"
+    ]
+  },
+  "refused-storage-not-object": {
+    "accepted": false,
+    "keys": [
+      "storage"
     ]
   },
   "refused-top-level-key": {
@@ -166,6 +472,24 @@
     "accepted": false,
     "keys": [
       "appearance.theme"
+    ]
+  },
+  "refused-user-display-name-empty": {
+    "accepted": false,
+    "keys": [
+      "user.displayName"
+    ]
+  },
+  "refused-user-display-name-number": {
+    "accepted": false,
+    "keys": [
+      "user.displayName"
+    ]
+  },
+  "refused-user-not-object": {
+    "accepted": false,
+    "keys": [
+      "user"
     ]
   },
   "refused-wrong-version": {

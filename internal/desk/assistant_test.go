@@ -148,16 +148,20 @@ const testKey = "sk-desk-test-0123456789-abcdefghij"
 /* Custody ------------------------------------------------------------------ */
 
 func TestAssistantKeyModeBits(t *testing.T) {
-	// A configuration tree that already exists, wide open, **before the desk
-	// starts**. Validation and narrowing happen once, when the store is
-	// pinned, so this is the moment at which a pre-existing loose directory
-	// has to be dealt with — and `Mkdir` does nothing at all to a directory
-	// that is already there, which is why the narrowing is unconditional.
+	// A configuration tree that already exists **before the desk starts**, at
+	// the mode a umask of 022 produces. Validation and narrowing happen once,
+	// when the store is pinned, so this is the moment at which a pre-existing
+	// directory has to be dealt with — and `Mkdir` does nothing at all to a
+	// directory that is already there, which is why the narrowing is
+	// unconditional. `0755` and not `0777`: nobody else could have written
+	// into it, so there is nothing that might already be there and it is
+	// repaired. One anybody could write to is refused instead — see
+	// TestCustodyRefusesAFormerlyWritableDirectory.
 	config := t.TempDir()
-	if err := os.Mkdir(filepath.Join(config, secretsDirName), 0o777); err != nil {
+	if err := os.Mkdir(filepath.Join(config, secretsDirName), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.Chmod(filepath.Join(config, secretsDirName), 0o777); err != nil {
+	if err := os.Chmod(filepath.Join(config, secretsDirName), 0o755); err != nil {
 		t.Fatalf("chmod: %v", err)
 	}
 	s, ts, _ := assistantServerIn(t, config)
@@ -452,7 +456,7 @@ func TestAssistantKeyRefusals(t *testing.T) {
 	})
 
 	t.Run("oversize", func(t *testing.T) {
-		status, body := storeKey(t, ts, strings.Repeat("k", maxKeyBytes+1))
+		status, body := storeKey(t, ts, strings.Repeat("k", (4<<10)+1))
 		if status != http.StatusRequestEntityTooLarge || body["code"] != CodeTooLarge {
 			t.Fatalf("status %d, body %v", status, body)
 		}
@@ -474,10 +478,18 @@ func TestAssistantKeyRefusals(t *testing.T) {
 }
 
 func TestAssistantKeyAtTheSizeBoundary(t *testing.T) {
+	// **The bound is asserted, then a literal of that size is sent.** Building
+	// the body from `maxKeyBytes` itself read well and made the mutation that
+	// raises the bound allocate a gigabyte, which hangs the suite — and a
+	// mutation that hangs has not been survived, it has not been tested. The
+	// constant is checked first, so raising it fails here in microseconds.
+	if maxKeyBytes != 4<<10 {
+		t.Fatalf("maxKeyBytes = %d, want 4096", maxKeyBytes)
+	}
 	_, ts, _ := assistantServer(t)
 	// Exactly the maximum is accepted: the envelope allowance exists so that
 	// the quotes and braces around a maximal key do not refuse it.
-	status, body := storeKey(t, ts, strings.Repeat("k", maxKeyBytes))
+	status, body := storeKey(t, ts, strings.Repeat("k", 4<<10))
 	if status != http.StatusOK {
 		t.Fatalf("status %d, body %v", status, body)
 	}
@@ -966,11 +978,19 @@ func TestProbeDiagnosticsComeFromTheClosedVocabulary(t *testing.T) {
 				_, _ = w.Write([]byte(`{"error":{"message":"never quoted"}}`))
 			})
 			_, body := probeAgainst(t, "openai-compatible", stub.server.URL+"/v1")
-			if body["diagnostic"] != tc.want {
-				t.Errorf("diagnostic %v, want %q", body["diagnostic"], tc.want)
+			// Read with a checked assertion. A bare `.(string)` panicked when
+			// a mutation made the probe refuse instead of answer — and a
+			// panicking test is not a failing test: the harness reports it as
+			// INCONCLUSIVE, so a mutation that *was* caught looked untested.
+			got, ok := body["diagnostic"].(string)
+			if !ok {
+				t.Fatalf("no diagnostic in the answer: %v", body)
 			}
-			if !contains(AssistantDiagnostics, body["diagnostic"].(string)) {
-				t.Errorf("%q is not in the declared vocabulary", body["diagnostic"])
+			if got != tc.want {
+				t.Errorf("diagnostic %q, want %q", got, tc.want)
+			}
+			if !contains(AssistantDiagnostics, got) {
+				t.Errorf("%q is not in the declared vocabulary", got)
 			}
 		})
 	}
@@ -1180,5 +1200,87 @@ func TestAProbeAddressAppendsToThePathAndKeepsTheQuery(t *testing.T) {
 		if got := probeAddress(tc.base, tc.suffix); got != tc.want {
 			t.Errorf("probeAddress(%q, %q) = %q, want %q", tc.base, tc.suffix, got, tc.want)
 		}
+	}
+}
+
+func TestAProbeAddressKeepsAnEscapedPathEscaped(t *testing.T) {
+	// **`u.Path` is the decoded path**, and writing to it alone leaves
+	// `RawPath` describing something else — which `String` resolves by
+	// re-encoding from the decoded form. For `/tenant%2Fone` that turns one
+	// segment into two and sends the credential to a different resource than
+	// the one configured.
+	for _, tc := range []struct{ base, suffix, want string }{
+		{"https://gw.example/tenant%2Fone", "/models", "https://gw.example/tenant%2Fone/models"},
+		{"https://gw.example/a%2eb", "/models", "https://gw.example/a%2eb/models"},
+		{"https://gw.example/t%2Fone?route=eu", "/models",
+			"https://gw.example/t%2Fone/models?route=eu"},
+		{"https://gw.example/tenant%20one", "/models",
+			"https://gw.example/tenant%20one/models"},
+		// And the ordinary cases still hold.
+		{"https://gw.example/v1", "/models", "https://gw.example/v1/models"},
+		{"https://gw.example/v1/", "/models", "https://gw.example/v1/models"},
+		{"https://gw.example", "/v1/messages", "https://gw.example/v1/messages"},
+	} {
+		if got := probeAddress(tc.base, tc.suffix); got != tc.want {
+			t.Errorf("probeAddress(%q, %q) = %q, want %q", tc.base, tc.suffix, got, tc.want)
+		}
+	}
+}
+
+func TestAnEscapedPathSurvivesDecodingAndTheProbe(t *testing.T) {
+	// End to end: what the endpoint is configured with is what it receives.
+	// `httptest` reports `RequestURI` unparsed, which is the only place the
+	// escaping is still visible.
+	var seen string
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.RequestURI
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer stub.Close()
+
+	s, ts, _ := assistantServer(t)
+	writeDeskConfig(t, s, fmt.Sprintf(
+		`{"deskConfigVersion":1,"assistant":{"endpoint":{"url":%q,"kind":"openai-compatible",`+
+			`"model":"a-model","tools":[]}}}`, stub.URL+"/tenant%2Fone"))
+	if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
+		t.Fatal("store")
+	}
+	if status, body := postJSON(t, ts, "/api/assistant/probe"); status != http.StatusOK {
+		t.Fatalf("status %d, body %v", status, body)
+	}
+	if seen != "/tenant%2Fone/models" {
+		t.Errorf("the endpoint received %q, want the configured escaping intact", seen)
+	}
+}
+
+func TestTheProbeDrainsTheWholeBody(t *testing.T) {
+	// The README says the body is drained; it used to stop at 8 KiB, which is
+	// a different thing and leaves the connection unreusable.
+	const size = 64 << 10
+	var served int
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		written, _ := w.Write(bytes.Repeat([]byte("y"), size))
+		served = written
+	}))
+	defer stub.Close()
+
+	s, ts, _ := assistantServer(t)
+	writeDeskConfig(t, s, fmt.Sprintf(
+		`{"deskConfigVersion":1,"assistant":{"endpoint":{"url":%q,"kind":"openai-compatible",`+
+			`"model":"a-model","tools":[]}}}`, stub.URL+"/v1"))
+	if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
+		t.Fatal("store")
+	}
+	status, body := postJSON(t, ts, "/api/assistant/probe")
+	if status != http.StatusOK {
+		t.Fatalf("status %d, body %v", status, body)
+	}
+	if served != size {
+		t.Errorf("the endpoint wrote %d of %d bytes; the reader gave up early", served, size)
+	}
+	// And none of it travelled, however long it was.
+	if body["diagnostic"] != DiagnosticUnexpected {
+		t.Errorf("diagnostic %v", body["diagnostic"])
 	}
 }

@@ -1,0 +1,17 @@
+{
+  "deskConfigVersion": 1,
+  "assistant": {
+    "endpoint": {
+      "url": "https://api.example.invalid/v1",
+      "kind": "openai-compatible",
+      "model": "a-model",
+      "tools": [
+        "validate"
+      ]
+    }
+  },
+  "organization": {
+    "name": "Acme Co.",
+    "mark": "<svg viewBox=\"0 0 8 8\"></svg>"
+  }
+}

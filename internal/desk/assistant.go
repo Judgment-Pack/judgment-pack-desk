@@ -98,13 +98,6 @@ const minFingerprintable = 12
 // asserts its default is ten seconds.
 var probeTimeout = 10 * time.Second
 
-// maxProbeBody bounds how much of an endpoint's answer is read.
-//
-// It is read and **discarded**: the body is drained so the connection can be
-// reused and then thrown away, because nothing an endpoint writes is repeated
-// to anybody. See `ProbeResult`.
-const maxProbeBody = 8 << 10
-
 // configDirFor resolves the desk-level directory.
 //
 // An explicit directory (tests, and nothing else) wins. Otherwise
@@ -197,35 +190,7 @@ type DeskLevelConfig struct {
 // dotfile tree assembled out of symlinks now has to satisfy, and refusing is
 // the safe answer where it does not.
 func (s *Server) readDeskFile() (present bool, data []byte, err error) {
-	if !s.assistant.usable() {
-		return false, nil, s.assistant.problem
-	}
-	info, err := s.assistant.root.Lstat(deskConfigName)
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil, nil
-	}
-	if err != nil {
-		return false, nil, err
-	}
-	if !info.Mode().IsRegular() {
-		// Coded, so the handler answers the status this refusal deserves
-		// rather than the internal one every unclassified read failure gets.
-		// A symlink lands here too: `Lstat` does not follow one, so its mode
-		// is the link's and a link is not a regular file.
-		return false, nil, withCode(CodeNotAFile,
-			fmt.Errorf("%s is not a regular file", s.deskConfigPath()))
-	}
-	file, err := s.assistant.root.OpenFile(
-		deskConfigName, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
-	if err != nil {
-		return false, nil, err
-	}
-	defer file.Close()
-	data, err = readBounded(file, maxFileBytes)
-	if err != nil {
-		return false, nil, err
-	}
-	return true, data, nil
+	return s.assistant.readConfigFile()
 }
 
 // handleDeskConfig reads the desk-level file.
@@ -643,8 +608,38 @@ func probeAddress(base, suffix string) string {
 	if err != nil {
 		return base + suffix
 	}
-	parsed.Path = strings.TrimRight(parsed.Path, "/") + suffix
+	appendPath(parsed, suffix)
 	return parsed.String()
+}
+
+// appendPath adds a path segment to a URL **without re-encoding what is
+// already there**.
+//
+// `u.Path` is the *decoded* path, and writing to it alone leaves `u.RawPath`
+// describing something else — which `String` then resolves by re-encoding from
+// the decoded form. For a base of `/tenant%2Fone` that turns one segment into
+// two: the request goes to `/tenant/one/models`, a different resource from the
+// one configured, with the credential attached. `%2e` is the same defect in
+// another dress.
+//
+// So both fields are set together, from the escaped form: the escaped path is
+// what the endpoint was configured with, and it travels unchanged.
+func appendPath(u *url.URL, suffix string) {
+	escaped := strings.TrimRight(u.EscapedPath(), "/") + suffix
+	decoded, err := url.PathUnescape(escaped)
+	if err != nil {
+		// Not decodable, which means the configured path is not something Go
+		// will re-encode faithfully either. Setting Opaque is not available
+		// here, so the escaped form is used for both and `String` emits it
+		// verbatim.
+		u.Path = escaped
+		u.RawPath = escaped
+		return
+	}
+	u.Path = decoded
+	// RawPath is honoured only where it is a valid encoding of Path; setting
+	// both from the same source is what makes it so.
+	u.RawPath = escaped
 }
 
 // loggableOrigin is the most of a configured URL that is ever written down:
@@ -670,6 +665,12 @@ func loggableOrigin(raw string) string {
 // on the page instead of a silent second request.
 var probeClient = &http.Client{
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	// Transport is nil, which is `http.DefaultTransport` — TLS verification
+	// and all. It is a field rather than an omission so that a test can count
+	// what actually leaves this process: "no outbound request was made" is a
+	// claim about the transport, and the only way to check it is at the
+	// transport. A stub the fixture never names cannot establish it.
+	Transport: nil,
 }
 
 // probeEndpoint sends one request and times it.
@@ -702,9 +703,14 @@ func probeEndpoint(ctx context.Context, endpoint assistantEndpoint, key string) 
 		return ProbeResult{Status: 0, LatencyMs: elapsed, Diagnostic: transportDiagnostic(err)}
 	}
 	defer response.Body.Close()
-	// Drained so the connection can be reused, and discarded because nothing
-	// an endpoint writes is repeated to anybody.
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxProbeBody))
+	// **Drained to the end, and discarded.** Both halves are deliberate and
+	// the first one was previously overstated: this used to stop at 8 KiB and
+	// the README said "drained", which is not the same thing — a body longer
+	// than the bound left the connection unreusable. The drain is bounded by
+	// the request's own ten-second deadline rather than by a byte count, so an
+	// endpoint that streams for ever is cut off by the timeout that governs
+	// everything else here. Nothing read is repeated to anybody.
+	_, _ = io.Copy(io.Discard, response.Body)
 	reachable := response.StatusCode >= 200 && response.StatusCode < 300
 	diagnostic := ""
 	if !reachable {

@@ -508,26 +508,27 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # Every row here breaks a custody claim the README makes in words. The three
   # that matter most are the first three: where the key lives, who can read it,
   # and what happens to the old one when a new one is stored.
+  # The three files the assistant slot lives in, declared together and before
+  # any row uses one. They were declared where each section began, which put
+  # `$CU` after its first use the moment a row was retargeted from
+  # `assistant.go` into `custody.go` — and `set -u` turns that into a run that
+  # fills in no rows at all.
   A=internal/desk/assistant.go
+  CU=internal/desk/custody.go
+  DF=internal/desk/deskfile.go
 
-  mutate go "the secrets directory is trusted as it was found" "$A" \
-    '	if err := os.Chmod(dir, secretsDirMode); err != nil {
-		return err
-	}
-' \
-    ''
-  mutate go "the key file is readable by everyone on the machine" "$A" \
-    '	secretMode     = 0o600' \
-    '	secretMode     = 0o644'
+  mutate go "the key file is readable by everyone on the machine" "$CU" \
+    '	custodyFileMode = 0o600' \
+    '	custodyFileMode = 0o644'
   # A truncate-and-write keeps the file it opened, and leaves a window in which
   # a reader sees neither key whole.
-  mutate go "the key is written in place rather than replaced" "$A" \
-    '	if err := os.Rename(name, s.assistantKeyPath()); err != nil {
+  mutate go "the key is written in place rather than replaced" "$CU" \
+    '	if err := s.secrets.Rename(name, assistantKeyName); err != nil {
 		remove()
 		return err
 	}' \
     '	remove()
-	if err := os.WriteFile(s.assistantKeyPath(), []byte(key), secretMode); err != nil {
+	if err := s.secrets.WriteFile(assistantKeyName, []byte(key), custodyFileMode); err != nil {
 		return err
 	}'
   mutate go "the key is logged beside the event" "$A" \
@@ -568,18 +569,21 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		writeJSONCoded(w, http.StatusConflict, CodeAssistantNoKey,' \
     '	if false {
 		writeJSONCoded(w, http.StatusConflict, CodeAssistantNoKey,'
-  mutate go "the endpoint object takes any member at all" "$A" \
-    '		if !allowed[member] {' \
-    '		if false && !allowed[member] {'
-  mutate go "the tool allow-list is not consulted" "$A" \
-    '	for _, tool := range endpoint.Tools {
-		if !contains(AssistantTools, tool) {' \
-    '	for _, tool := range endpoint.Tools {
-		if false && !contains(AssistantTools, tool) {'
+  mutate go "any object takes any member at all" "$DF" \
+    '		if !contains(allowed, member) {' \
+    '		if false && !contains(allowed, member) {'
+  mutate go "the tool allow-list is not consulted" "$DF" \
+    '				if !contains(AssistantTools, name) {' \
+    '				if false && !contains(AssistantTools, name) {'
   # A bearer credential in clear text over a network is a credential given away.
-  mutate go "http is accepted off loopback" "$A" \
-    '	if parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname()) {' \
-    '	if parsed.Scheme == "http" {'
+  mutate go "http is accepted off loopback" "$DF" \
+    '	if parsed.Scheme == "http" &&
+		(parsed.Hostname() == "localhost" || parsed.Hostname() == "127.0.0.1") {
+		return ""
+	}' \
+    '	if parsed.Scheme == "http" {
+		return ""
+	}'
   # Go strips Authorization across hosts and knows nothing about x-api-key.
   mutate go "the probe follows a redirect with the credential" "$A" \
     '	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },' \
@@ -592,13 +596,11 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "a refused credential is reported as reachable" "$A" \
     '	reachable := response.StatusCode >= 200 && response.StatusCode < 300' \
     '	reachable := response.StatusCode < 500'
-  # Some endpoints echo the credential back in the name of being helpful.
-  mutate go "an endpoint that echoes the key has it painted on the page" "$A" \
-    '	return strings.ReplaceAll(text, key, "…")' \
-    '	return text'
-  mutate go "the quoted sentence is unbounded" "$A" \
-    'const maxDetail = 200' \
-    'const maxDetail = 20000'
+  # Deliberately gone rather than retargeted: two rows that broke the old
+  # `scrub` and the old 200-character bound on a quoted sentence. Neither
+  # exists any more — nothing an endpoint writes is repeated at all — and the
+  # property that replaced them is held by "the endpoint's own body travels to
+  # the page" below. Named here so their absence is a statement.
   mutate go "the anthropic probe sends the other protocol's header" "$A" \
     '		request.Header.Set("x-api-key", key)' \
     '		request.Header.Set("Authorization", "Bearer "+key)'
@@ -610,11 +612,11 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '			"max_tokens": 1024,'
   # "There is none, and it would be here" is an answer, and Admin needs the path.
   mutate go "an absent desk-level file is a refusal" "$A" \
-    '	if errors.Is(err, os.ErrNotExist) {
+    '	if !present {
 		writeJSON(w, http.StatusOK, DeskLevelConfig{Path: path, Present: false})
 		return
 	}' \
-    '	if errors.Is(err, os.ErrNotExist) {
+    '	if !present {
 		writeJSONCoded(w, http.StatusNotFound, CodeNotFound, "no desk-level configuration file")
 		return
 	}'
@@ -627,9 +629,6 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # Each of these is an arrangement another local user can make in a
   # configuration tree they can write to. The first four were all possible at
   # once before the store was validated and pinned.
-  CU=internal/desk/custody.go
-  DF=internal/desk/deskfile.go
-
   mutate go "a symlinked directory is walked through" "$CU" \
     '	if info.Mode()&fs.ModeSymlink != 0 {
 		return fmt.Errorf(
@@ -662,9 +661,19 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if false {
 		return "", fmt.Errorf(
 			"%s is a symbolic link rather than a key, and was not read",'
+  # **One rule, one row.** It used to be written out at both the name and the
+  # descriptor, which made each copy invisible: break one and the other
+  # refuses the same file a moment later, so the table reported an unheld
+  # safeguard while two things were holding it. It lives in `ownerOnlyFile`
+  # now, and this breaks that.
   mutate go "a key anyone on the machine can read is still the key" "$CU" \
-    '	if perm := info.Mode().Perm(); perm&0o077 != 0 {' \
-    '	if perm := info.Mode().Perm(); false && perm&0o077 != 0 {'
+    '	if perm := mode.Perm(); perm&0o077 != 0 {' \
+    '	if perm := mode.Perm(); false && perm&0o077 != 0 {'
+  mutate go "a key that is not a regular file is read anyway" "$CU" \
+    '	if !mode.IsRegular() {
+		return fmt.Errorf("%s is not a regular file, and was not read", path)
+	}' \
+    ''
   # **This row replaced one that did not discriminate**, and the replacement is
   # the interesting part. The row used to remove `O_NOFOLLOW` from the open, on
   # the belief that the flag was what refused a link swapped in after the
@@ -673,8 +682,16 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # actually closes the window is comparing the opened file to the inspected
   # one by identity, so that is what is broken here.
   mutate go "the opened key is not checked against the inspected one" "$CU" \
-    '	if !os.SameFile(info, opened) {' \
-    '	if false {'
+    '	if !os.SameFile(info, opened) {
+		return "", fmt.Errorf(' \
+    '	if false {
+		return "", fmt.Errorf('
+  # The same check on the file that names where a credential goes.
+  mutate go "the opened configuration is not checked against the inspected one" "$CU" \
+    '	if !os.SameFile(info, opened) {
+		return false, nil, withCode(CodeForbidden, fmt.Errorf(' \
+    '	if false && !os.SameFile(info, opened) {
+		return false, nil, withCode(CodeForbidden, fmt.Errorf('
   # Deliberately not mutated: the `usable()` guards inside the store. Removing
   # one does not produce a wrong answer, it produces a nil-pointer panic — a
   # refused store holds no descriptors at all — and a mutation that crashes the
@@ -697,14 +714,14 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # block, because reading the bytes into a variable and never using them is
   # not the defect — putting them in the answer is.
   mutate go "the endpoint's own body travels to the page" "$A" \
-    '	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxProbeBody))
+    '	_, _ = io.Copy(io.Discard, response.Body)
 	reachable := response.StatusCode >= 200 && response.StatusCode < 300
 	diagnostic := ""
 	if !reachable {
 		// One word, chosen from the status. Never the bytes just discarded.
 		diagnostic = statusDiagnostic(response.StatusCode)
 	}' \
-    '	body, _ := io.ReadAll(io.LimitReader(response.Body, maxProbeBody))
+    '	body, _ := io.ReadAll(response.Body)
 	reachable := response.StatusCode >= 200 && response.StatusCode < 300
 	diagnostic := ""
 	if !reachable {
@@ -718,6 +735,11 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the logged origin carries the rest of the URL" "$A" \
     '	return parsed.Scheme + "://" + parsed.Host' \
     '	return parsed.String()'
+  mutate go "a member refused as a credential is also refused as unknown" "$DF" \
+    '		if problem.Reason != keysAreNeverInConfiguration && credentialed[problem.Key] {
+			continue
+		}' \
+    ''
   mutate go "the credential scan never runs" "$DF" \
     '	problems = append(problems, scanForKeys("", parsed)...)' \
     ''
@@ -727,10 +749,15 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # Caught by the live drive: the protocol path was appended to the whole URL
   # string, so a configured query put it after the query.
   mutate go "the protocol path is appended to the whole URL" "$A" \
-    '	parsed.Path = strings.TrimRight(parsed.Path, "/") + suffix
+    '	appendPath(parsed, suffix)
 	return parsed.String()' \
     '	_ = parsed
 	return base + suffix'
+  # `u.Path` is the decoded path; writing it alone re-encodes %2F into a
+  # separator and sends the credential to a different resource.
+  mutate go "an escaped path is re-encoded on the way out" "$A" \
+    '	escaped := strings.TrimRight(u.EscapedPath(), "/") + suffix' \
+    '	escaped := strings.TrimRight(u.Path, "/") + suffix'
   mutate go "a fragment on the endpoint is accepted" "$DF" \
     '	if parsed.Fragment != "" || strings.Contains(raw, "#") {' \
     '	if false {'
@@ -757,6 +784,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   Y=web/src/mcp/capabilities.ts
   W=web/src/config/DeskConfigProvider.tsx
   V=web/src/routes/AdminView.tsx
+  VB=web/src/routes/adminBlocks.tsx
   Q=web/src/shell/useHashTarget.ts
   B=web/src/shell/authorBridge.ts
   I=web/src/identity/IdentityProvider.tsx
@@ -868,8 +896,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # cue it was indistinguishable from having no configuration file at all
   # anywhere except /admin.
   mutate web "a refused configuration is silent outside Admin" "$S" \
-    '        {problems.length > 0 && (' \
-    '        {false && ('
+    '        {refused && <ConfigCue full={CONFIG_REFUSED_CUE} short={CONFIG_REFUSED_SHORT} />}' \
+    '        {false && <ConfigCue full={CONFIG_REFUSED_CUE} short={CONFIG_REFUSED_SHORT} />}'
   mutate web "main remounts on a pane change" "$N" \
     '      <main id="main" tabIndex={-1} className="desk-main">' \
     '      <main id="main" key={String(shell.console.open)} tabIndex={-1} className="desk-main">'
@@ -883,8 +911,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "        recordFileChange(String((notification.params as { path?: unknown })?.path ?? ''))" \
     '        void recordFileChange'
   mutate web "a config problem no longer refuses the whole file" "$D" \
-    '  if (problems.length > 0) return { values: undefined, problems, declaredPanes }' \
-    '  if (false) return { values: undefined, problems, declaredPanes }'
+    '  if (unique.length > 0) return { values: undefined, problems: unique, declaredPanes }' \
+    '  if (false) return { values: undefined, problems: unique, declaredPanes }'
   mutate web "an unknown config key is accepted silently" "$D" \
     "    problems.push({ key, reason: 'unknown key' })" \
     '    void key'
@@ -946,7 +974,9 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the configured theme is decoded and never applied" "$W" \
     '  useAppliedTheme(value.config.appearance.theme)' \
     '  void value.config.appearance.theme'
-  mutate web "the copy button reports a copy it did not make" "$V" \
+  # The paste block and the source badge moved into adminBlocks.tsx when the
+  # Assistant section came to need them too.
+  mutate web "the copy button reports a copy it did not make" "$VB" \
     '          const written = navigator.clipboard?.writeText(text)
           if (!written) {
             setCopied(false)
@@ -1172,7 +1202,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "  if (value !== 'filesystem') {" \
     '  if (false) {'
   mutate web "storage defaults are not applied when the member is absent" "$D" \
-    '      storage: values?.storage ?? DESK_DEFAULTS.storage' \
+    "      storage: pick('"'storage'"')" \
     '      storage: values?.storage!'
   mutate web "an escaping pack directory is accepted" "$D" \
     "  if (trimmed.split('/').some((part) => part === '..' || part === '.' || part === '')) {" \
@@ -1343,11 +1373,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # with the reason recorded where nothing rendered it, so a desk that could
   # not open its own file looked exactly like a desk with no file.
   mutate web "an unreadable configuration is reported as an absent one" "$Z" \
-    '      if (cause.status === 404) return effectiveConfig(undefined, reasonFor(cause))' \
-    '      if (true) return effectiveConfig(undefined, reasonFor(cause))'
+    '      if (cause.status === 404) {
+        return effectiveConfig(undefined, reasonFor(cause), undefined, await deskLevel)
+      }' \
+    '      if (true) {
+        return effectiveConfig(undefined, reasonFor(cause), undefined, await deskLevel)
+      }'
   mutate web "an unreadable configuration is silent outside Admin" "$S" \
-    '        {problems.length === 0 && readFailure !== undefined && (' \
-    '        {false && ('
+    '        {!refused && unread && (' \
+    '        {false && unread && ('
   mutate web "the strip's warning is the half that disappears" "$G" \
     '  .desk-strip-warn {
     flex: 0 0 auto;
@@ -1483,9 +1517,13 @@ if [ "$which" = all ] || [ "$which" = web ]; then
 
   # 7. "The reason is the chassis' own" was false for a browser error: nothing
   # answered, so nothing the chassis said is being quoted.
+  # Two `instanceof` checks now — the desk-level read has one of its own — so
+  # the needle carries the line that follows to name the project read's.
   mutate web "a browser error is attributed to the chassis" "$Z" \
-    '    if (cause instanceof FileRequestError) {' \
-    '    if (false) {'
+    '    if (cause instanceof FileRequestError) {
+      if (cause.status === 404) {' \
+    '    if (false) {
+      if (cause.status === 404) {'
   mutate web "Admin sources every unread reason to the chassis" "$V" \
     "          ) : readFailure.source === 'chassis' ? (" \
     '          ) : true ? ('
@@ -3114,14 +3152,19 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   AQ=web/src/assistant/queries.ts
   CQ=web/src/config/queries.ts
 
-  # "Unknown key" is true and useless: whoever pasted a key has made a mistake
-  # about where keys live, not about spelling.
-  mutate web "a pasted key is an ordinary unknown key" "$D" \
-    "  return isKeyLike(name) ? KEYS_ARE_NEVER_IN_CONFIGURATION : 'unknown key'" \
-    "  return 'unknown key'"
-  mutate web "the key-shaped rule stops at the top level" "$D" \
-    '      problems.push({ key: `${key}.${member}`, reason: unknownReason(member) })' \
-    "      problems.push({ key: \`\${key}.\${member}\`, reason: 'unknown key' })"
+  # **Two rows are gone from here**, and the reason is worth the space. They
+  # broke a helper that chose the credential sentence at the schema walk, on
+  # top of the recursive pre-scan that also produces it — so breaking either
+  # one left the other saying it, and both rows reported an unheld safeguard
+  # while two things held it. There is one producer now (`scanForKeys`, with
+  # its own two rows below) and one rule that keeps a member from being
+  # refused twice, which is what this breaks.
+  mutate web "a member refused as a credential is also refused as unknown" "$D" \
+    '  return problems.filter(
+    (problem) =>
+      problem.reason === KEYS_ARE_NEVER_IN_CONFIGURATION || !credentialed.has(problem.key)
+  )' \
+    '  return problems'
   mutate web "the tool list is open" "$D" \
     '      if (!(ASSISTANT_TOOLS as readonly string[]).includes(tool)) {' \
     '      if (false && (ASSISTANT_TOOLS as readonly string[]).includes(tool)) {'
@@ -3157,9 +3200,12 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the strip is silent about a refused desk-level file" "$S" \
     '  const refused = problems.length > 0 || (desk?.problems.length ?? 0) > 0' \
     '  const refused = problems.length > 0'
-  mutate web "the typed key is left in the field after it is stored" "$AS" \
-    "        store.mutate(value, { onSuccess: () => setTyped('') })" \
-    '        store.mutate(value)'
+  # Deliberately gone rather than retargeted: the row that broke the
+  # success-only clearing of a *controlled* field. There is no controlled
+  # field any more — React batches a `setState`, so the key was still in the
+  # input when `fetch` began — and the clearing it tested is now an assignment
+  # to an uncontrolled node, which "the field is cleared only once the store
+  # has answered" below breaks directly.
   mutate web "the key field is an ordinary text input" "$AS" \
     '          type="password"' \
     '          type="text"'
@@ -3202,10 +3248,11 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "  if (url.hash !== '' || raw.includes('#')) {" \
     '  if (false) {'
   # The typed key, and how long the page holds it.
+  # An assignment to the node takes effect at once; a `setState` would not
+  # have, which is the whole reason the field is uncontrolled.
   mutate web "the field is cleared only once the store has answered" "$AS" \
-    "    setTyped('')
-    setStoreProblem(undefined)" \
-    '    setStoreProblem(undefined)'
+    "    if (input) input.value = ''" \
+    '    void input'
   # **This row replaced one that did not discriminate.** It used to remove the
   # `store.reset()` the section called on settlement, on the belief that
   # resetting was what stopped React Query retaining the credential. It was

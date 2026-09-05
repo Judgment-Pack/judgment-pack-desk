@@ -121,6 +121,15 @@ func afterKeyStat(path string) {
 	}
 }
 
+// testHookAfterConfigStat is testHookAfterKeyStat for the desk-level file.
+var testHookAfterConfigStat func(path string)
+
+func afterConfigStat(path string) {
+	if testHookAfterConfigStat != nil {
+		testHookAfterConfigStat(path)
+	}
+}
+
 // openAssistantStore validates the chain and pins what it found.
 //
 // Called once, when the server is built. Everything it can repair — a missing
@@ -268,18 +277,33 @@ func safeDirectory(path string, info fs.FileInfo, ours bool) error {
 		return fmt.Errorf("%s is owned by user %d, who is neither the user running this desk "+
 			"nor the system", path, owner)
 	}
-	if ours {
-		// **The mode of one of our own directories is repaired, not refused.**
-		// The caller narrows it to 0700 the moment this returns, and refusing
-		// instead would leave a desk that found its own directory at 0755 —
-		// which is what a umask of 022 produces — permanently unable to keep a
-		// key it could simply have tightened. What cannot be repaired is who
-		// owns it and whether it is a link, and those are refused above.
+	if loose := info.Mode().Perm() & worldMode; loose != 0 && ours {
+		// **A directory of ours that anybody could write to is refused, not
+		// repaired**, and the earlier version of this was wrong in a way worth
+		// recording. It narrowed such a directory to 0700 and carried on, on
+		// the argument that tightening it closed the attack. It closes the
+		// *future*: what it cannot touch is what was already planted while the
+		// directory stood open. The key file is checked, so a planted key is
+		// caught — but `desk.json` sits in the same directory and names the
+		// endpoint a credential is presented to, so a planted configuration
+		// turns the desk's own key into an outbound gift. Narrowing made that
+		// arrangement *look* repaired.
 		//
-		// Narrowing closes the future rather than the past: another user may
-		// already have planted a name inside a directory that was loose. That
-		// is why the key file itself is separately required to be a regular
-		// file of mode 0600 and is opened with no-follow — see `readKey`.
+		// So the invariant is the simple one: a custody directory that was
+		// ever writable by anyone else is not a custody directory. The fix a
+		// person makes is one `chmod`, and the sentence says which bits.
+		return fmt.Errorf(
+			"%s is writable by group or others (mode %#o); a directory anyone could write to "+
+				"may already hold something they put there, so narrowing it now would not make "+
+				"it safe — remove the %#o bits and restart the desk",
+			path, info.Mode().Perm(), loose)
+	}
+	if ours {
+		// Ours, and not writable by anyone else. `0755` is what a umask of 022
+		// produces and is repaired to `0700` by the caller: nobody else could
+		// have written into it, so there is nothing that might already be
+		// there, and refusing it would strand a desk over bits it can simply
+		// take away.
 		return nil
 	}
 	if loose := info.Mode().Perm() & worldMode; loose != 0 {
@@ -356,6 +380,108 @@ func ensureOwnedDirectoryIn(root *os.Root, label, name string) error {
 	return nil
 }
 
+// readConfigFile reads the desk-level configuration through the pinned
+// directory, held to the same rules the key is.
+//
+// **`desk.json` is not an ordinary file to this desk.** It names the endpoint
+// a credential is presented to, which makes writing it equivalent to choosing
+// where the key goes — so it is checked the way the key is checked: owned by
+// the user running the desk, a regular file, not writable by anyone else, and
+// the descriptor that was opened compared to the entry that was inspected.
+//
+// A world-*readable* `desk.json` is fine and deliberately so: it holds no
+// secret, and refusing a `0644` configuration file would refuse the state a
+// plain `git checkout` or a text editor leaves. What is refused is one anybody
+// else could have *written*.
+func (s *assistantStore) readConfigFile() (present bool, data []byte, err error) {
+	if !s.usable() {
+		return false, nil, s.problem
+	}
+	at := filepath.Join(s.dir, deskConfigName)
+	info, err := s.root.Lstat(deskConfigName)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil, nil
+	}
+	if err != nil {
+		return false, nil, err
+	}
+	if info.Mode()&fs.ModeSymlink != 0 {
+		return false, nil, withCode(CodeNotAFile, fmt.Errorf(
+			"%s is a symbolic link rather than a configuration file, and was not read", at))
+	}
+	if !info.Mode().IsRegular() {
+		return false, nil, withCode(CodeNotAFile,
+			fmt.Errorf("%s is not a regular file", at))
+	}
+	if err := ownedByUs(at, info); err != nil {
+		return false, nil, withCode(CodeForbidden, err)
+	}
+	if loose := info.Mode().Perm() & worldMode; loose != 0 {
+		return false, nil, withCode(CodeForbidden, fmt.Errorf(
+			"%s is writable by group or others (mode %#o); a file anyone could write names the "+
+				"endpoint this desk would present its key to, so it is not read",
+			at, info.Mode().Perm()))
+	}
+	// The same instant the key's hook covers, for the same reason: this file
+	// decides where a credential is sent, so a swap between the check and the
+	// open is worth a test of its own.
+	afterConfigStat(at)
+	file, err := s.root.OpenFile(deskConfigName, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
+	if err != nil {
+		return false, nil, err
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil {
+		return false, nil, err
+	}
+	// The same identity check the key gets, and for the same reason: what was
+	// inspected must be what was opened, or a swap between the two decides
+	// where a credential goes.
+	if !os.SameFile(info, opened) {
+		return false, nil, withCode(CodeForbidden, fmt.Errorf(
+			"%s changed between being inspected and being opened, and was not read", at))
+	}
+	data, err = readBounded(file, maxFileBytes)
+	if err != nil {
+		return false, nil, withCode(CodeTooLarge, fmt.Errorf("%s: %w", at, err))
+	}
+	return true, data, nil
+}
+
+// ownerOnlyFile is the rule a credential file is held to: a regular file that
+// nobody but its owner may read or write.
+//
+// One function, called on the name and again on the descriptor, so that the
+// rule has one spelling and one row in the mutation table. Written out twice
+// it was invisible to both: breaking either copy left the other refusing the
+// same file.
+func ownerOnlyFile(path string, mode fs.FileMode) error {
+	if !mode.IsRegular() {
+		return fmt.Errorf("%s is not a regular file, and was not read", path)
+	}
+	if perm := mode.Perm(); perm&0o077 != 0 {
+		return fmt.Errorf(
+			"%s is readable or writable by someone other than its owner (mode %#o), "+
+				"so it is not treated as this desk's key", path, perm)
+	}
+	return nil
+}
+
+// ownedByUs is the ownership half of the rule above, shared by the two files
+// this desk treats as its own.
+func ownedByUs(path string, info fs.FileInfo) error {
+	owner, known := ownerOf(info)
+	if !known {
+		return fmt.Errorf("%s: this build could not establish who owns it", path)
+	}
+	if me := effectiveUser(); owner != me {
+		return fmt.Errorf("%s is owned by user %d rather than by %d, who is running this desk",
+			path, owner, me)
+	}
+	return nil
+}
+
 /* The key, through the pinned directory ------------------------------------ */
 
 // readKey answers the stored key, or the empty string where there is none.
@@ -369,6 +495,7 @@ func (s *assistantStore) readKey() (string, error) {
 	if !s.usable() {
 		return "", s.problem
 	}
+	keyPath := filepath.Join(s.dir, secretsDirName, assistantKeyName)
 	info, err := s.secrets.Lstat(assistantKeyName)
 	if errors.Is(err, os.ErrNotExist) {
 		return "", nil
@@ -378,18 +505,15 @@ func (s *assistantStore) readKey() (string, error) {
 	}
 	if info.Mode()&fs.ModeSymlink != 0 {
 		return "", fmt.Errorf(
-			"%s is a symbolic link rather than a key, and was not read",
-			filepath.Join(s.dir, secretsDirName, assistantKeyName))
+			"%s is a symbolic link rather than a key, and was not read", keyPath)
 	}
-	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("%s is not a regular file, and was not read",
-			filepath.Join(s.dir, secretsDirName, assistantKeyName))
-	}
-	if perm := info.Mode().Perm(); perm&0o077 != 0 {
-		return "", fmt.Errorf(
-			"%s is readable or writable by someone other than its owner (mode %#o), "+
-				"so it is not treated as this desk's key",
-			filepath.Join(s.dir, secretsDirName, assistantKeyName), perm)
+	// **The rule lives in one function, applied twice.** It used to be written
+	// out at both points, which made each copy invisible to a mutation: break
+	// one and the other refuses the same file a moment later, so the harness
+	// reported a safeguard nothing was holding when in fact two things were.
+	// Defence in depth is worth having; two spellings of one rule are not.
+	if err := ownerOnlyFile(keyPath, info.Mode()); err != nil {
+		return "", err
 	}
 	// **The open is checked against the thing that was inspected, by
 	// identity.** The `Lstat` above establishes what is at that name at that
@@ -421,9 +545,10 @@ func (s *assistantStore) readKey() (string, error) {
 	}
 	// Re-asserted on the descriptor, because the checks above were made on a
 	// name. These two are cheap and they are the ones that matter.
-	if !opened.Mode().IsRegular() || opened.Mode().Perm()&0o077 != 0 {
-		return "", fmt.Errorf("%s is not a regular file only its owner can read",
-			filepath.Join(s.dir, secretsDirName, assistantKeyName))
+	// Re-asserted on the descriptor, because the check above was made on a
+	// name. Same function, so there is one rule to break and one row for it.
+	if err := ownerOnlyFile(keyPath, opened.Mode()); err != nil {
+		return "", err
 	}
 	data, err := readBounded(file, maxKeyBytes)
 	if err != nil {

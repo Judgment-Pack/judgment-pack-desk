@@ -19,7 +19,7 @@
  * Nothing on this page says chassis, bytes or path to the reader. The words
  * are the desk, this machine, and the file.
  */
-import { useState } from 'react'
+import { useRef, useState, type RefObject } from 'react'
 import { Fields } from '../components/primitives'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { ASSISTANT_TOOLS } from '../config/deskConfig'
@@ -65,12 +65,16 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
   const store = useStoreAssistantKey()
   const remove = useRemoveAssistantKey()
   const probe = useProbeAssistant()
-  // **Held here, and for as short a time as possible.** The value is copied
-  // and this is cleared *synchronously, before the request is made*, so a
-  // store that fails does not leave the plaintext sitting in a password field
-  // and in React state until somebody notices. It is written to no record on
-  // this machine.
-  const [typed, setTyped] = useState('')
+  // **The field is uncontrolled, and that is the point.** It used to be React
+  // state cleared with `setTyped('')` immediately before the request — which
+  // reads as synchronous and is not: React batches the update, so `fetch`
+  // could begin while both the input and the state still held the key. An
+  // uncontrolled input is cleared by assigning to the DOM node, which happens
+  // at the instant it is written and not at the next render.
+  //
+  // Nothing here mirrors the value into state. There is nothing to mirror it
+  // for: the page never re-renders from it and never displays it.
+  const field = useRef<HTMLInputElement | null>(null)
   // The outcome of the last store or removal, kept here rather than read off
   // the mutation — the mutation is reset on settlement so that it retains no
   // copy of the credential it was called with, and resetting takes its error
@@ -79,11 +83,11 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
   const [removeProblem, setRemoveProblem] = useState<string | undefined>(undefined)
 
   const submitKey = () => {
-    const value = typed
-    // Cleared before the request, not after the answer: a store that fails
-    // must not leave the plaintext in a password field until somebody
-    // notices.
-    setTyped('')
+    const input = field.current
+    const value = input?.value ?? ''
+    // Cleared on the node, before the request is made. This assignment has
+    // taken effect by the next statement; a `setState` would not have.
+    if (input) input.value = ''
     setStoreProblem(undefined)
     store.submit(value, { onError: (error) => setStoreProblem(error.message) })
   }
@@ -178,8 +182,7 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
         state={key.data ?? { present: false, fingerprint: '' }}
         answered={key.isSuccess}
         failed={key.error}
-        typed={typed}
-        onType={setTyped}
+        field={field}
         onStore={submitKey}
         storeProblem={storeProblem}
         onRemove={() => {
@@ -207,8 +210,10 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
       <p className="quiet">
         The check is made by the desk and not by this page, because the key never reaches this
         page. It sends the smallest request the configured protocol defines — a model listing, or
-        a message bounded to one token — waits at most ten seconds, and reports what came back
-        word for word. It is refused, by name, where there is no endpoint to reach or no key to
+        a message bounded to one token — waits at most ten seconds, and reports whether it was
+        reached, what it answered, how long it took, and one word from a fixed list about why not.
+        It never repeats what the endpoint wrote: a body an endpoint controls can carry the key
+        back in a form no substitution would find. It is refused, by name, where there is no endpoint to reach or no key to
         present.
       </p>
     </>
@@ -227,8 +232,7 @@ function KeyControl({
   state,
   answered,
   failed,
-  typed,
-  onType,
+  field,
   onStore,
   storeProblem,
   onRemove,
@@ -237,8 +241,7 @@ function KeyControl({
   state: { present: boolean; fingerprint: string }
   answered: boolean
   failed: Error | null
-  typed: string
-  onType: (value: string) => void
+  field: RefObject<HTMLInputElement | null>
   onStore: () => void
   storeProblem: string | undefined
   onRemove: () => void
@@ -253,11 +256,11 @@ function KeyControl({
         <label htmlFor="assistant-key">Key</label>{' '}
         <input
           id="assistant-key"
+          ref={field}
           type="password"
           autoComplete="off"
           spellCheck={false}
-          value={typed}
-          onChange={(event) => onType(event.target.value)}
+          defaultValue=""
         />{' '}
         <button type="button" onClick={onStore}>
           Store key
@@ -285,8 +288,8 @@ function KeyControl({
         What is typed here goes to the desk and is written to one file on this machine, readable
         by you and nobody else. It is never written into a project, never sent back to this page,
         and never printed in the desk&apos;s log. What is shown above is four characters from each
-        end — enough to tell one key from another, and not enough to use. The field is emptied the
-        moment it is sent, whether the desk took it or refused it.
+        end — enough to tell one key from another, and not enough to use. The field is emptied at
+        the instant it is sent, whether the desk takes it or refuses it.
       </p>
       <p className="quiet">
         <strong>The key and the endpoint are separate.</strong> Removing the endpoint from the

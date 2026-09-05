@@ -57,11 +57,17 @@ function stubChassis(answers: {
   keyError?: { error: string; code: string }
   probe?: unknown
   probeStatus?: number
+  /** Called synchronously, inside `fetch`, before anything is awaited. */
+  onRequest?: (method: string, url: string) => void
 }): { sent: { method: string; url: string; body?: string }[] } {
   const sent: { method: string; url: string; body?: string }[] = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     sent.push({ method, url, body: init?.body as string | undefined })
+    // **Before any await.** The question is what the page holds at the instant
+    // the request begins, not what it holds once the answer has come back and
+    // a render has flushed.
+    answers.onRequest?.(method, url)
     if (url.includes('/api/assistant/probe')) {
       return {
         ok: (answers.probeStatus ?? 200) < 400,
@@ -256,6 +262,34 @@ describe('the Assistant section', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Remove key' }))
     await waitFor(() => expect(sent.some((request) => request.method === 'DELETE')).toBe(true))
     expect(await screen.findByText('none stored on this machine')).toBeTruthy()
+  })
+
+  it('has emptied the field at the instant the request is made', async () => {
+    // **The assertion that was missing.** The old one read the field after
+    // `fireEvent` had flushed a render, which says nothing about the moment
+    // `fetch` was called — and React batches state updates, so a `setState`
+    // immediately before the request had not taken effect when it began. The
+    // field is uncontrolled and cleared on the node now, and this looks at it
+    // from inside `fetch`.
+    let atTheRequest: string | undefined
+    let container: HTMLElement | undefined
+    stubChassis({
+      key: { present: false, fingerprint: '' },
+      onRequest: (method) => {
+        if (method !== 'PUT') return
+        atTheRequest = (container?.querySelector('input') as HTMLInputElement | null)?.value
+      }
+    })
+    const rendered = renderSection()
+    container = rendered.container
+    await screen.findByText('none stored on this machine')
+    const field = container.querySelector('input') as HTMLInputElement
+    fireEvent.change(field, { target: { value: 'sk-a-real-looking-key-wxyz' } })
+    expect(field.value).toBe('sk-a-real-looking-key-wxyz')
+    fireEvent.click(screen.getByRole('button', { name: 'Store key' }))
+
+    await waitFor(() => expect(atTheRequest).toBeDefined())
+    expect(atTheRequest, 'the field still held the key when the request began').toBe('')
   })
 
   it('clears the field before the request, so a failure retains nothing', async () => {

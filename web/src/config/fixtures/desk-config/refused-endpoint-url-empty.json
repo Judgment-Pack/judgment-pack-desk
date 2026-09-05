@@ -1,0 +1,13 @@
+{
+  "deskConfigVersion": 1,
+  "assistant": {
+    "endpoint": {
+      "url": "  ",
+      "kind": "openai-compatible",
+      "model": "a-model",
+      "tools": [
+        "validate"
+      ]
+    }
+  }
+}

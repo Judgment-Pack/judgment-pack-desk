@@ -52,8 +52,11 @@ type deskProblem struct {
 
 // deskDecode is the verdict on one file.
 type deskDecode struct {
-	// Endpoint is present only where the whole file was accepted and it
-	// configures one.
+	// Endpoint is what the assistant member decoded to, **whether or not the
+	// file as a whole was accepted**. It is usable only where `refused()` is
+	// false, and `configuredEndpoint` — the only reader — asks that first.
+	// See the note at the end of `decodeDeskFile` for why it is carried out of
+	// a refused decode rather than dropped.
 	Endpoint *assistantEndpoint
 	Problems []deskProblem
 }
@@ -96,13 +99,29 @@ func isKeyLike(name string) bool {
 	return false
 }
 
-// unknownReason is the sentence an unadmitted member is refused with: the
-// specific one first.
-func unknownReason(name string) string {
-	if isKeyLike(name) {
-		return keysAreNeverInConfiguration
+// withoutRedundantReasons drops every other refusal for a key that already
+// carries the credential sentence.
+//
+// **One producer of that sentence** — `scanForKeys` — and the schema walk says
+// only "unknown key". A helper that picked the sentence at the schema walk as
+// well meant breaking either one left the other saying it, and the mutation
+// table reported an unheld safeguard while two things held it. Mirrors
+// `withoutRedundantReasons` in `deskConfig.ts`.
+func withoutRedundantReasons(problems []deskProblem) []deskProblem {
+	credentialed := make(map[string]bool)
+	for _, problem := range problems {
+		if problem.Reason == keysAreNeverInConfiguration {
+			credentialed[problem.Key] = true
+		}
 	}
-	return "unknown key"
+	kept := make([]deskProblem, 0, len(problems))
+	for _, problem := range problems {
+		if problem.Reason != keysAreNeverInConfiguration && credentialed[problem.Key] {
+			continue
+		}
+		kept = append(kept, problem)
+	}
+	return kept
 }
 
 // The top-level keys the desk-level file admits. `identity` and `assistant`
@@ -158,7 +177,7 @@ func decodeDeskFile(text []byte) deskDecode {
 		if contains(deskTopLevelKeys, key) {
 			continue
 		}
-		problems = append(problems, deskProblem{Key: key, Reason: unknownReason(key)})
+		problems = append(problems, deskProblem{Key: key, Reason: "unknown key"})
 	}
 
 	var endpoint *assistantEndpoint
@@ -186,13 +205,18 @@ func decodeDeskFile(text []byte) deskDecode {
 		endpoint = found
 	}
 
-	problems = dedupeProblems(problems)
-	if len(problems) > 0 {
-		// A refused file contributes nothing at all — its endpoint included.
-		// This is the whole reason this function exists.
-		return deskDecode{Problems: problems}
-	}
-	return deskDecode{Endpoint: endpoint}
+	// **The endpoint is carried out even when the file is refused, and the
+	// single gate is `refused()`.** Dropping it here as well looked safer and
+	// made the safeguard untestable: a mutation that skipped the refusal check
+	// in `configuredEndpoint` still met a nil endpoint, refused for that
+	// reason instead, and made no request — so the harness row for "a refused
+	// configuration still authorises a probe" survived, and the property it
+	// claimed to hold was held by an accident of structure rather than by the
+	// check. One gate, in one place, that a test can break.
+	//
+	// Nothing may read `Endpoint` without asking `refused()` first;
+	// `configuredEndpoint` is the only caller and does exactly that.
+	return deskDecode{Endpoint: endpoint, Problems: dedupeProblems(withoutRedundantReasons(problems))}
 }
 
 // scanForKeys walks the parsed document and names every credential-shaped
@@ -238,7 +262,7 @@ func object(value any, key string, allowed []string) (map[string]any, []deskProb
 	for _, member := range sortedKeys(record) {
 		if !contains(allowed, member) {
 			problems = append(problems, deskProblem{
-				Key: join(key, member), Reason: unknownReason(member)})
+				Key: join(key, member), Reason: "unknown key"})
 		}
 	}
 	return record, problems
@@ -486,6 +510,14 @@ func decodeIdentity(value any) []deskProblem {
 			}
 		}
 	}
+	// **`label` and `audience` were declared and never read**, which is how
+	// the two decoders came apart a second time: an object-valued `label`
+	// beside a perfectly good endpoint was refused by the browser and accepted
+	// here, and "accepted here" is what authorises an outbound request with a
+	// credential in it. Anything that is validated on one side is validated on
+	// both; the fixtures below are what keeps that true rather than hoped.
+	problems = append(problems, optionalString(inner, "identity.provider", "label")...)
+	problems = append(problems, optionalString(inner, "identity.provider", "audience")...)
 	problems = append(problems, boolean(inner, "identity.provider", "showRemoteAvatar")...)
 	problems = append(problems, oneOf(inner, "identity.provider", "signOut",
 		[]string{"local", "provider"})...)
@@ -577,6 +609,8 @@ func decodeAssistant(value any) (*assistantEndpoint, []deskProblem) {
 		}
 	}
 
+	// Same rule one level down: the object is handed back whenever it decoded
+	// into something, and whether it may be *used* is `refused()`'s answer.
 	if len(problems) > 0 {
 		return nil, problems
 	}
@@ -641,7 +675,10 @@ func normalizedEndpointURL(raw string) string {
 	if err != nil {
 		return raw
 	}
-	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	// Through the escaped form, for the reason `appendPath` gives: writing the
+	// decoded path alone re-encodes `%2F` into a separator and turns one
+	// configured segment into two.
+	appendPath(parsed, "")
 	return parsed.String()
 }
 
@@ -658,6 +695,20 @@ func oneOf(record map[string]any, section, member string, choices []string) []de
 	}
 	return []deskProblem{{Key: join(section, member),
 		Reason: fmt.Sprintf("must be one of %s; found %s", quotedList(choices), describe(value))}}
+}
+
+// optionalString mirrors the browser's `optionalString`: a string, or null,
+// or absent. Anything else is refused by name, in the same words.
+func optionalString(record map[string]any, section, member string) []deskProblem {
+	value, present := record[member]
+	if !present || value == nil {
+		return nil
+	}
+	if _, ok := value.(string); ok {
+		return nil
+	}
+	return []deskProblem{{Key: join(section, member),
+		Reason: fmt.Sprintf("must be a string or null; found %s", describe(value))}}
 }
 
 func boolean(record map[string]any, section, member string) []deskProblem {
