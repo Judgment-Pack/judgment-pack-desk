@@ -581,7 +581,7 @@ func decodeAssistant(value any) (*assistantEndpoint, []deskProblem) {
 		return nil, problems
 	}
 	return &assistantEndpoint{
-		url:   strings.TrimRight(trimmedURL, "/"),
+		url:   normalizedEndpointURL(trimmedURL),
 		kind:  kind,
 		model: trimmedModel,
 		tools: tools,
@@ -626,6 +626,23 @@ func endpointURLProblem(raw string) string {
 	return fmt.Sprintf(
 		"must be an https: URL, or an http: URL on localhost or 127.0.0.1; found %q — "+
 			"a key sent in clear text over a network is a key given away", raw)
+}
+
+// normalizedEndpointURL trims a trailing separator from the URL's **path**.
+//
+// The path, not the string. `strings.TrimRight(raw, "/")` was the first
+// version and it is wrong the moment a query string is allowed: it trims
+// nothing at all from `https://gw/v1/?route=eu`, and worse, it invited the
+// protocol path to be appended to the whole string — which put `/models`
+// after the query and sent `GET /v1?route=eu/models`. The live drive is what
+// caught that.
+func normalizedEndpointURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	return parsed.String()
 }
 
 /* Small shared readers ----------------------------------------------------- */

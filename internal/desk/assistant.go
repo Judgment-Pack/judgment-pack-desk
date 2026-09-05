@@ -630,6 +630,23 @@ func (s *Server) handleAssistantProbe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// probeAddress appends the protocol's path to the configured base.
+//
+// **To the path, and not to the string.** A configured URL may carry a query
+// string — some gateways route on one — so `base + "/models"` puts the
+// protocol's path *after* the query and sends `GET /v1?route=eu/models`,
+// which is a request to a resource nobody named. The query is carried through
+// untouched, because it is the endpoint's own routing and none of this desk's
+// business.
+func probeAddress(base, suffix string) string {
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return base + suffix
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + suffix
+	return parsed.String()
+}
+
 // loggableOrigin is the most of a configured URL that is ever written down:
 // its scheme, its host and its port.
 //
@@ -754,7 +771,8 @@ func transportDiagnostic(err error) string {
 func probeRequest(ctx context.Context, endpoint assistantEndpoint, key string) (*http.Request, error) {
 	switch endpoint.kind {
 	case "openai-compatible":
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.url+"/models", nil)
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet,
+			probeAddress(endpoint.url, "/models"), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -770,7 +788,7 @@ func probeRequest(ctx context.Context, endpoint assistantEndpoint, key string) (
 			return nil, err
 		}
 		request, err := http.NewRequestWithContext(ctx, http.MethodPost,
-			endpoint.url+"/v1/messages", strings.NewReader(string(payload)))
+			probeAddress(endpoint.url, "/v1/messages"), strings.NewReader(string(payload)))
 		if err != nil {
 			return nil, err
 		}

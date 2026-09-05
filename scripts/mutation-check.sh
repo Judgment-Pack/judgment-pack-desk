@@ -724,6 +724,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "a key smuggled into the URL is accepted" "$DF" \
     '	if parsed.User != nil {' \
     '	if false {'
+  # Caught by the live drive: the protocol path was appended to the whole URL
+  # string, so a configured query put it after the query.
+  mutate go "the protocol path is appended to the whole URL" "$A" \
+    '	parsed.Path = strings.TrimRight(parsed.Path, "/") + suffix
+	return parsed.String()' \
+    '	_ = parsed
+	return base + suffix'
   mutate go "a fragment on the endpoint is accepted" "$DF" \
     '	if parsed.Fragment != "" || strings.Contains(raw, "#") {' \
     '	if false {'

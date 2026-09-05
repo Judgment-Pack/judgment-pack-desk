@@ -1151,3 +1151,34 @@ func TestALoggableOriginIsSchemeAndHostOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestProbeKeepsAConfiguredQueryStringAndAppendsToThePath(t *testing.T) {
+	// **`base + "/models"` is wrong the moment a query string is allowed**, and
+	// a query string is allowed because some gateways route on one. Appending
+	// to the string sent `GET /v1?route=eu/models` — a request to a resource
+	// nobody named — and the live drive is what caught it.
+	stub := newStubEndpoint(t, func(w http.ResponseWriter) {
+		w.WriteHeader(http.StatusOK)
+	})
+	_, body := probeAgainst(t, "openai-compatible", stub.server.URL+"/v1?route=eu&tier=2")
+	if body["reachable"] != true {
+		t.Fatalf("body %v", body)
+	}
+	method, path, _, _ := stub.saw()
+	if method != http.MethodGet || path != "/v1/models" {
+		t.Errorf("the probe sent %s %s, want GET /v1/models", method, path)
+	}
+}
+
+func TestAProbeAddressAppendsToThePathAndKeepsTheQuery(t *testing.T) {
+	for _, tc := range []struct{ base, suffix, want string }{
+		{"https://gw.example/v1", "/models", "https://gw.example/v1/models"},
+		{"https://gw.example/v1?route=eu", "/models", "https://gw.example/v1/models?route=eu"},
+		{"https://gw.example/v1/", "/models", "https://gw.example/v1/models"},
+		{"https://gw.example", "/v1/messages", "https://gw.example/v1/messages"},
+	} {
+		if got := probeAddress(tc.base, tc.suffix); got != tc.want {
+			t.Errorf("probeAddress(%q, %q) = %q, want %q", tc.base, tc.suffix, got, tc.want)
+		}
+	}
+}
