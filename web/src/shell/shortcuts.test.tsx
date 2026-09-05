@@ -49,8 +49,26 @@ describe('the desk shortcuts', () => {
     expect(SHORTCUTS.map((shortcut) => shortcut.keys)).toEqual([
       'Mod+B',
       'Mod+Alt+I',
-      'Mod+Alt+J'
+      'Mod+Alt+J',
+      'Mod+S'
     ])
+  })
+
+  it('says where the save chord applies, because it is not the shell that fires it', () => {
+    // Mod+S is on the published list and is deliberately not installed by
+    // `installShortcuts`: every chord this module installs is suppressed inside
+    // a text field, and save is the one that has to fire there. The label is
+    // what tells a reader of Help & About which surface owns it.
+    const save = SHORTCUTS.find((shortcut) => shortcut.keys === 'Mod+S')
+    expect(save?.label).toContain('editing a pack')
+  })
+
+  it('does not install the save chord, so the typing rule stays as written', () => {
+    render(<Harness />)
+    fireEvent.keyDown(document, { key: 's', ctrlKey: true })
+    fireEvent.keyDown(document, { key: 's', metaKey: true })
+    expect(fired()).toEqual([])
+    expect(shortcutFor(new KeyboardEvent('keydown', { key: 's', ctrlKey: true }))).toBeUndefined()
   })
 
   it('toggles each pane on its own chord, on Ctrl and on Meta alike', () => {

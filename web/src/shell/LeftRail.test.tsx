@@ -12,7 +12,7 @@
  * name **before** it looks the handler up — so a rail that made the call is
  * caught by the record, not by whether the call happened to succeed.
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Tooltip } from 'radix-ui'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
@@ -160,10 +160,44 @@ describe('the left rail', () => {
     renderRail(packs([]))
     expect(screen.queryByLabelText('unsaved changes')).toBeNull()
     fireEvent.click(document.body)
-    publishDirty(true)
+    publishDirty('jpack.json', true)
     await waitFor(() => expect(screen.getByLabelText('unsaved changes')).toBeTruthy())
-    publishDirty(false)
+    publishDirty('jpack.json', false)
     await waitFor(() => expect(screen.queryByLabelText('unsaved changes')).toBeNull())
+  })
+
+  it('keeps the dot while any editor is dirty, and drops it when none is', async () => {
+    // **The dot means "something has unsaved bytes", and there are two
+    // editors now.** With one module-level flag the last publisher decided for
+    // both: a pack editor mounting clean withdrew the dot the authoring view
+    // was holding.
+    //
+    // **Each publish is flushed, and the assertions are synchronous.** Written
+    // with `waitFor`, the middle one passed the moment it was called — before
+    // React had processed the notification the publish had just queued — so a
+    // withdrawal that took the dot away was invisible to it. The mutation
+    // harness is what found that: clearing the whole map on every publish left
+    // this case green. `act` makes each publish a completed render, and an
+    // assertion that has to be true *now* is one a later render cannot repair.
+    renderRail(packs([]))
+    fireEvent.click(document.body)
+    await act(async () => {
+      publishDirty('jpack.json', true)
+    })
+    await act(async () => {
+      publishDirty('packs/vendor-onboarding.pack.json', true)
+    })
+    expect(screen.getByLabelText('unsaved changes')).toBeTruthy()
+    await act(async () => {
+      publishDirty('packs/vendor-onboarding.pack.json', false)
+    })
+    // One editor is still dirty, so the dot stands. Each publisher withdraws
+    // its own key and nobody else's.
+    expect(screen.getByLabelText('unsaved changes')).toBeTruthy()
+    await act(async () => {
+      publishDirty('jpack.json', false)
+    })
+    expect(screen.queryByLabelText('unsaved changes')).toBeNull()
   })
 
   it('offers the Admin sections in one menu, in their declared order', async () => {

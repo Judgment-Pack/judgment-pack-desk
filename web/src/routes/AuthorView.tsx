@@ -1,16 +1,10 @@
-import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
-import { useBlocker } from 'react-router-dom'
 import { Empty, ErrorBox, Loading, Pill, Section } from '../components/primitives'
-import {
-  StaleWrite,
-  readFile,
-  type FileContent,
-  type FileEntry,
-  type FileListing
-} from '../files/client'
-import { useFileContent, useFileListing, useWriteFile } from '../files/queries'
+import { StaleWrite, type FileContent } from '../files/client'
+import { useFileContent, useFileListing } from '../files/queries'
+import { useFileEditing } from '../files/useFileEditing'
 import { useOpenRequests, usePublishedDirty } from '../shell/authorBridge'
+import { useDirtyGuard } from '../shell/useDirtyGuard'
 
 /**
  * The authoring shell: pick a file, edit its bytes, save them (issue #14,
@@ -55,32 +49,12 @@ export function AuthorView() {
   // The one thing the shell needs from this view. Both hooks live in
   // `authorBridge.ts` beside the state they publish to, so what this view
   // carries for the shell is one import and two calls.
-  usePublishedDirty(dirty)
+  usePublishedDirty(selected ?? '(no file)', dirty)
 
   // Two guards, because they cover two different exits and neither covers the
-  // other. `beforeunload` is the browser's, and it fires only when the document
-  // itself goes — a reload, a close, a link off the site. Everything inside this
-  // application is same-document routing, which that event never sees: Back out
-  // of the editor, or follow any in-app link, and the component simply unmounts
-  // with the buffer in it.
-  useEffect(() => {
-    if (!dirty) return
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault()
-    window.addEventListener('beforeunload', warn)
-    return () => window.removeEventListener('beforeunload', warn)
-  }, [dirty])
-
-  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
-    dirty && currentLocation.pathname !== nextLocation.pathname
-  )
-  useEffect(() => {
-    if (blocker.state !== 'blocked') return
-    if (window.confirm('This file has unsaved changes that will be lost. Leave anyway?')) {
-      blocker.proceed()
-    } else {
-      blocker.reset()
-    }
-  }, [blocker])
+  // other — both now in `shell/useDirtyGuard.ts`, so the pack editor holds the
+  // same pair rather than a second spelling of it.
+  useDirtyGuard(dirty, 'This file has unsaved changes that will be lost. Leave anyway?')
 
   const choose = (path: string) => {
     if (path === selected) return
@@ -196,14 +170,6 @@ export function AuthorView() {
   )
 }
 
-/** What the last save produced, kept apart from the live buffer. */
-interface SaveOutcome {
-  /** The bytes that were submitted, captured at the moment of the request. */
-  submitted: string
-  /** What the chassis read back off the disk afterwards. */
-  landed: FileContent
-}
-
 /**
  * One file, open.
  *
@@ -227,16 +193,17 @@ function FileEditor({
   onDirty: (dirty: boolean) => void
 }) {
   const loaded = useFileContent(path)
-  const write = useWriteFile()
-  const queryClient = useQueryClient()
+  // The base revision, the save and its proof — `files/useFileEditing.ts`,
+  // which is this editor's own discipline lifted out so the pack editor holds
+  // one story rather than a second spelling of it.
+  const editing = useFileEditing()
+  const { write, outcome, reloadError, verified } = editing
 
   // The revision this edit is against. Editor-local and immutable except where
   // the user acts: seeded once from the first successful load, replaced by an
   // explicit reload or a successful save. Never by a background refetch.
   const [base, setBase] = useState<FileContent | undefined>(undefined)
   const [buffer, setBuffer] = useState<string | undefined>(undefined)
-  const [outcome, setOutcome] = useState<SaveOutcome | undefined>(undefined)
-  const [reloadError, setReloadError] = useState<Error | undefined>(undefined)
 
   useEffect(() => {
     if (loaded.data && base === undefined) {
@@ -265,70 +232,25 @@ function FileEditor({
   const deleted = base !== undefined && (!listed || loaded.isError)
 
   const reload = () => {
-    write.reset()
-    setOutcome(undefined)
-    // A direct read, not a refetch. `refetch()` reports success from cache
-    // when the watcher's broad `cancelQueries()` cancels the request in flight,
-    // so its success is not proof that anything was fetched — and installing
-    // cached bytes as the new base is how a reload replaces an edit with what
-    // it was already showing. Only this request's own answer counts.
-    setReloadError(undefined)
-    void readFile(path)
-      .then((fresh) => {
-        setBase(fresh)
-        setBuffer(fresh.content)
-        queryClient.setQueryData(['desk-file', path], fresh)
-      })
-      .catch((cause: unknown) => {
-        setReloadError(cause instanceof Error ? cause : new Error(String(cause)))
-      })
+    // This editor is remounted per file (`key={selected}`), so there is no
+    // other document a late answer could land in: it takes every read it asked
+    // for, and says so.
+    editing.reload(path, (fresh) => {
+      setBase(fresh)
+      setBuffer(fresh.content)
+      return true
+    })
   }
 
   const save = (override: boolean) => {
     if (buffer === undefined || base === undefined) return
-    // A previous verdict does not survive into a new attempt: leaving "Saved,
-    // and verified" on screen while the next save is pending or failing states
-    // something about bytes that are no longer the question.
-    setOutcome(undefined)
-    // The snapshot is captured here, with the request. Everything about
-    // verifying this save is judged against it and never against the buffer,
-    // which the user is free to keep typing into.
-    const submitted = buffer
-    // When this save was issued, measured against the file query's own clock.
-    const startedAt = queryClient.getQueryState(['desk-file', path])?.dataUpdatedAt ?? 0
-    write.mutate(
-      { path, content: submitted, baseSha256: base.sha256, override },
-      {
-        onSuccess: (landed) => {
-          setOutcome({ submitted, landed })
-          setBase(landed)
-          // The read-back is authoritative about the bytes this save wrote, and
-          // *not* about anything that happened afterwards. A watcher refetch
-          // that completed while this PUT was in flight is newer than this
-          // answer, and installing over it would replace a fresher read and
-          // clear the invalidation that fetched it.
-          const state = queryClient.getQueryState(['desk-file', path])
-          if (state !== undefined && state.dataUpdatedAt > startedAt) return
-          // The read-back is the authority on what is now on disk, so the
-          // caches are told rather than left to disagree with it. Without this
-          // the page can say "Saved, and verified" beside a "changed on disk"
-          // warning derived from the pre-save cache — both from the same save.
-          queryClient.setQueryData(['desk-file', path], landed)
-          queryClient.setQueryData(['desk-files'], (previous: FileListing | undefined) =>
-            previous === undefined
-              ? previous
-              : {
-                  ...previous,
-                  files: upsertListed(previous.files, {
-                    path: landed.path,
-                    bytes: landed.bytes,
-                    sha256: landed.sha256
-                  })
-                }
-          )
-        }
-      }
-    )
+    editing.save({
+      path,
+      content: buffer,
+      baseSha256: base.sha256,
+      override,
+      onSaved: (landed) => setBase(landed)
+    })
   }
 
   if (loaded.error && base === undefined) {
@@ -345,10 +267,6 @@ function FileEditor({
       </Section>
     )
   }
-
-  // The proof, not the assumption: the chassis read the file back off the disk
-  // after the rename, and this compares that to the bytes that were sent.
-  const verified = outcome !== undefined && outcome.landed.content === outcome.submitted
 
   return (
     <Section title="Editor">
@@ -408,8 +326,7 @@ function FileEditor({
               // anyway" beside a buffer that no longer differs is an offer to
               // write something nobody is proposing.
               setBuffer(base.content)
-              setOutcome(undefined)
-              write.reset()
+              editing.reset()
             }}
           >
             Discard changes
@@ -436,7 +353,9 @@ function FileEditor({
           />
         )}
         {failure && <ErrorBox title={`Could not save ${path}`} error={failure} />}
-        {reloadError && <ErrorBox title={`Could not reload ${path}`} error={reloadError} />}
+        {reloadError && (
+          <ErrorBox title={`Could not reload ${reloadError.path}`} error={reloadError.error} />
+        )}
 
         {outcome && !stale && (
           <p className={verified ? 'note' : 'note note-warn'}>
@@ -518,10 +437,4 @@ function StaleNotice({
 
 function shortDigest(digest: string): string {
   return digest ? `${digest.slice(0, 12)}…` : '(no file)'
-}
-
-/** The listing with one entry replaced, or added where it was not there. */
-function upsertListed(files: FileEntry[], entry: FileEntry): FileEntry[] {
-  const without = files.filter((file) => file.path !== entry.path)
-  return [...without, entry].sort((a, b) => a.path.localeCompare(b.path))
 }

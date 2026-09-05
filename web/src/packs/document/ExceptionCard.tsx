@@ -1,11 +1,53 @@
 /** One exception: a rule's card plus the effect and the rule it targets. */
+import type { KeyboardEvent } from 'react'
 import type { Exception } from '../../mcp/types'
+import { ExceptionForm, MoveControls } from '../edit/CardForm'
+import { useEditing } from '../edit/editingContext'
 import { Block } from './Block'
 import { ConditionTree } from './ConditionTree'
 import { ExtensionsBlock } from './ExtensionsBlock'
 import styles from './PackDocument.module.css'
+import { Shaped } from './MisshapenMember'
 
-export function ExceptionCard({ exception, at }: { exception: Exception; at: string }) {
+export function ExceptionCard({
+  exception,
+  at,
+  order
+}: {
+  exception: Exception
+  at: string
+  order?: {
+    index: number
+    count: number
+    move: (from: number, to: number) => void
+    onKeyDown: (event: KeyboardEvent<HTMLElement>) => void
+  }
+}) {
+  const { editing } = useEditing()
+  if (editing) {
+    return (
+      /*
+        The chord is on the card itself, which is the element the move effect
+        focuses. Bound one level in, it fired once and then never again: the
+        second press came from the `li` the first press had moved focus to,
+        and a keydown on the `li` never reaches a handler on its child.
+      */
+      <Block pointer={at} as="li" className={styles.card} onKeyDown={order?.onKeyDown}>
+        <p className={styles.cardHead}>
+          {order !== undefined && (
+            <MoveControls
+              index={order.index}
+              count={order.count}
+              move={order.move}
+              what="exception"
+            />
+          )}
+        </p>
+        <ExceptionForm at={at} />
+        <ExtensionsBlock extensions={exception.extensions} at={`${at}/extensions`} />
+      </Block>
+    )
+  }
   return (
     <Block pointer={at} as="li" className={styles.card}>
       <p className={styles.cardHead}>
@@ -42,7 +84,14 @@ export function ExceptionCard({ exception, at }: { exception: Exception; at: str
           on unknown: {exception.onUnknown}
         </Block>
       </p>
-      {(exception.sourceRefs?.length ?? 0) > 0 && (
+      {exception.sourceRefs !== undefined && (
+        <Shaped
+          pointer={`${at}/sourceRefs`}
+          label="sources"
+          expects="list"
+          value={exception.sourceRefs}
+        >
+      {Array.isArray(exception.sourceRefs) && exception.sourceRefs!.length > 0 && (
         <Block pointer={`${at}/sourceRefs`} as="p" className={styles.refs}>
           <span className={styles.fieldLabel}>sources</span>
           {exception.sourceRefs!.map((ref) => (
@@ -51,6 +100,8 @@ export function ExceptionCard({ exception, at }: { exception: Exception; at: str
             </code>
           ))}
         </Block>
+      )}
+        </Shaped>
       )}
       <ExtensionsBlock extensions={exception.extensions} at={`${at}/extensions`} />
     </Block>

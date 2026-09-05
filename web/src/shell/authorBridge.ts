@@ -22,14 +22,34 @@
  */
 import { useEffect, useSyncExternalStore } from 'react'
 
-let dirty = false
+/**
+ * Which paths have unsaved bytes — **a map, not a flag**.
+ *
+ * There is a second editor now. A single `let dirty` is a claim about "the
+ * editor", and with two of them the last one to publish decided for both: the
+ * pack editor mounting clean withdrew the dot the authoring view had raised,
+ * and the authoring view unmounting withdrew the dot the pack editor was
+ * holding. Each publisher owns its own key and withdraws only its own.
+ *
+ * What the rail's dot means is unchanged, and is what `useAuthorDirty`
+ * answers: **something** on this desk has unsaved bytes.
+ */
+const dirtyPaths = new Map<string, boolean>()
 const dirtyListeners = new Set<() => void>()
+let anyDirty = false
 
-/** AuthorView publishes; the rail reads. Nothing here decides anything. */
-export function publishDirty(next: boolean): void {
-  if (next === dirty) return
-  dirty = next
+function announceDirty(): void {
+  const next = [...dirtyPaths.values()].some(Boolean)
+  if (next === anyDirty) return
+  anyDirty = next
   for (const listener of dirtyListeners) listener()
+}
+
+/** An editor publishes for its own path; the rail reads the union. */
+export function publishDirty(path: string, next: boolean): void {
+  if (next) dirtyPaths.set(path, true)
+  else dirtyPaths.delete(path)
+  announceDirty()
 }
 
 function subscribeDirty(listener: () => void): () => void {
@@ -38,23 +58,29 @@ function subscribeDirty(listener: () => void): () => void {
 }
 
 function readDirty(): boolean {
-  return dirty
+  return anyDirty
 }
 
 export function useAuthorDirty(): boolean {
   return useSyncExternalStore(subscribeDirty, readDirty, readDirty)
 }
 
+/** Whether one particular path has unsaved bytes. */
+export function isPathDirty(path: string): boolean {
+  return dirtyPaths.get(path) === true
+}
+
 /**
- * Publish one view's unsaved state for the rail to read, and withdraw it on
- * unmount — a dot left standing after the editor is gone is a claim about a
- * buffer that no longer exists.
+ * Publish one view's unsaved state for the rail to read, and withdraw **its
+ * own key** on unmount — a dot left standing after the editor is gone is a
+ * claim about a buffer that no longer exists, and a withdrawal that cleared
+ * the whole map would be a claim about somebody else's.
  */
-export function usePublishedDirty(dirty: boolean): void {
+export function usePublishedDirty(path: string, dirty: boolean): void {
   useEffect(() => {
-    publishDirty(dirty)
-    return () => publishDirty(false)
-  }, [dirty])
+    publishDirty(path, dirty)
+    return () => publishDirty(path, false)
+  }, [path, dirty])
 }
 
 /**
@@ -149,8 +175,9 @@ export function takeRequestedOpen(): string | undefined {
 
 /** Start from a shell that has published nothing. Tests only. */
 export function forgetAuthorBridge(): void {
-  dirty = false
+  dirtyPaths.clear()
   requestedOpen = undefined
+  anyDirty = false
   for (const listener of dirtyListeners) listener()
   announceOpen()
 }

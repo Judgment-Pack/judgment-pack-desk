@@ -1,0 +1,35 @@
+.group {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.segment {
+  appearance: none;
+  padding: 0.25rem 0.6rem;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.segment:first-child {
+  border-left: none;
+}
+
+.segment[data-state='on'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.segment[disabled] {
+  color: var(--ink-faint);
+  cursor: default;
+}

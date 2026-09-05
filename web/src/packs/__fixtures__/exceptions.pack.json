@@ -1,0 +1,95 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/refund-policy",
+  "version": "0.3.1",
+  "title": "Refund policy",
+  "description": "Synthetic fixture carrying one exception of each declared effect.",
+  "decision": {
+    "intent": "Decide whether a refund is issued on the stated grounds.",
+    "question": "Should this refund request be approved?"
+  },
+  "evidenceRequirements": [
+    {
+      "id": "receipt",
+      "description": "The original receipt for the purchase.",
+      "required": true,
+      "kind": "document"
+    },
+    {
+      "id": "damage-report",
+      "description": "An assessment of the reported damage.",
+      "required": false,
+      "kind": "measurement"
+    }
+  ],
+  "outcomes": [
+    { "id": "refund", "label": "Refund" },
+    { "id": "decline", "label": "Decline" }
+  ],
+  "rules": [
+    {
+      "id": "refund-within-window",
+      "description": "Refund a request made inside the return window.",
+      "when": {
+        "op": "fact",
+        "path": "/request/daysSincePurchase",
+        "operator": "less-than-or-equal",
+        "value": "30"
+      },
+      "outcome": "refund",
+      "onUnknown": "escalate"
+    },
+    {
+      "id": "decline-outside-window",
+      "description": "Decline a request made after the return window closed.",
+      "when": {
+        "op": "fact",
+        "path": "/request/daysSincePurchase",
+        "operator": "greater-than",
+        "value": "30"
+      },
+      "outcome": "decline",
+      "onUnknown": "ignore"
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "goodwill-waiver",
+      "description": "A goodwill waiver suspends the window rule.",
+      "when": { "op": "fact", "path": "/request/waiver", "operator": "equals", "value": "goodwill" },
+      "effect": "suppress-rule",
+      "targetRule": "decline-outside-window",
+      "onUnknown": "ignore"
+    },
+    {
+      "id": "damaged-on-arrival",
+      "description": "Goods damaged on arrival are refunded whatever the window says.",
+      "when": { "op": "evidence-present", "evidenceRequirement": "damage-report" },
+      "effect": "force-outcome",
+      "outcome": "refund",
+      "onUnknown": "escalate"
+    },
+    {
+      "id": "disputed-amount",
+      "description": "A disputed amount goes to a person rather than to a rule.",
+      "when": {
+        "op": "any",
+        "conditions": [
+          { "op": "fact", "path": "/request/amount", "operator": "greater-than", "value": "1000" },
+          { "op": "fact", "path": "/request/status", "operator": "in", "value": ["disputed", "escalated"] }
+        ]
+      },
+      "effect": "escalate",
+      "onUnknown": "escalate"
+    }
+  ],
+  "fallbackOutcome": "decline",
+  "escalation": {
+    "triggers": ["conflict", "unknown", "no-match"],
+    "target": { "kind": "queue", "name": "refund review" }
+  },
+  "metadata": {
+    "authors": ["the refunds desk"],
+    "createdAt": "2026-03-02T11:00:00Z"
+  }
+}

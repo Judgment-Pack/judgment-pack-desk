@@ -33,7 +33,9 @@ export function PackInspector({
   at,
   meta,
   fileSha256,
+  baseSha256,
   fileBytes,
+  dirty,
   anchored,
   truncation,
   stale,
@@ -49,7 +51,11 @@ export function PackInspector({
   at: string | null
   meta: PackFileMeta
   fileSha256: string | undefined
+  /** The digest of the revision the editor loaded, where it holds one. */
+  baseSha256?: string | undefined
   fileBytes: number | undefined
+  /** True where the editor holds bytes that are on no disk yet. */
+  dirty?: boolean
   anchored: readonly AnchoredDiagnostic[]
   truncation: string | undefined
   stale: boolean
@@ -66,7 +72,19 @@ export function PackInspector({
   tab: string | null
   onTabChange: (tab: string) => void
 }) {
-  if (at === null || doc === undefined) {
+  if (doc === undefined) {
+    // **No fallback to the served pack.** The page is over the bytes the editor
+    // holds, and where those are not a document there is no member to inspect —
+    // showing the runtime's last good answer here would put members and
+    // references on screen that the file no longer carries.
+    return (
+      <p className={styles.empty}>
+        The bytes in the editor are not a document this desk can read, so there is no member to
+        inspect. The JSON view holds them.
+      </p>
+    )
+  }
+  if (at === null) {
     return (
       <p className={styles.empty}>
         Select a member of the document to inspect it here.
@@ -90,7 +108,9 @@ export function PackInspector({
               subtree={subtreeAt(doc, at)}
               meta={meta}
               fileSha256={fileSha256}
+              baseSha256={baseSha256}
               fileBytes={fileBytes}
+              dirty={dirty}
             />
           )
         },

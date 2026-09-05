@@ -25,6 +25,13 @@
   color: var(--warn);
 }
 
+/* What a completed save did, in the chassis' own figures. */
+.saved {
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+  color: var(--ink-quiet);
+}
+
 /* The two other views on this pack. */
 .elsewhere {
   display: flex;
@@ -51,4 +58,30 @@
   padding-left: 1.1rem;
   font-size: 0.78rem;
   color: var(--ink-soft);
+}
+
+/* The editor and the what-if pane, side by side where there is room. */
+.workspace {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.column {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+/* The width is the route's own constant, set on `.workspace` as
+   `--tryit-pane-width`. The predicate that decides whether this pane fits
+   beside the editor and the width it actually takes were two numbers eight
+   pixels apart, which made the side-by-side branch unreachable at the shell's
+   own maximum. The fallback is the width that constant currently holds. */
+.pane {
+  flex: 0 0 auto;
+  width: var(--tryit-pane-width, 24rem);
+  max-width: 100%;
 }

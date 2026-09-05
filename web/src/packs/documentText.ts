@@ -18,11 +18,14 @@
  * raw bytes instead: a form that wrote through a reading the runtime does not
  * share would edit a document nobody has.
  *
- * **Deliberately not here**, so the next piece of work does not re-derive them:
- * `insertMember` — adding a member needs a place to put it and a house style
- * for the whitespace around it, which is a decision and not a splice — and
- * array reordering, because rule order is §7-significant and moves through
- * keyboard move-up/move-down rather than through a generic splice.
+ * **Both absences this module used to name are now here.** `insertMember`
+ * needed a place to put a member and a house style for the whitespace around
+ * it; the house style is not invented, it is *read off the container's own
+ * members* — a neighbour's own leading layout, taken verbatim — which is the
+ * same rule `removeMember` already holds when it refuses to take the next
+ * member's indentation. `moveElement` is array reordering, which is a splice
+ * once it is stated as one: two element bodies exchanged inside the array's own
+ * layout, for the §7-significant order of `rules`.
  */
 
 /** Where one value, and the member that carries it, sit in the text. */
@@ -321,6 +324,187 @@ export function removeMember(text: string, index: DocumentIndex, pointer: string
 
 function isSpace(char: string): boolean {
   return char === ' ' || char === '\t' || char === '\n' || char === '\r'
+}
+
+
+/** Where a member goes when it is added to an object. */
+export type Placement =
+  /** Immediately after this member of the same object. */
+  | { after: string }
+  /** The first member of the object. */
+  | { first: true }
+  /** The last member of the object, which is the ordinary case. */
+  | { last: true }
+
+/**
+ * Add one member to an object, in the layout the object already uses.
+ *
+ * **The whitespace is read, never invented.** An object indented with two
+ * spaces, one with tabs and one written on a single line are three documents,
+ * and a writer with a house style of its own would reformat two of them on the
+ * first edit — which is exactly the whole-file diff ADR-0019 makes a human
+ * read. So the run of layout in front of a neighbouring member is taken
+ * verbatim and reused, and where the object has no member to learn from the
+ * insertion is made inline, with one space, because that is the only shape
+ * that can be produced without asserting a style the document has not shown.
+ *
+ * `json` is the value's bytes, written in as given — the caller shapes it, for
+ * the reason `replaceValue` states.
+ *
+ * An array takes the same call with `name` omitted: the element's own layout
+ * is a neighbour's, and the pointer of the container is the array's.
+ */
+export function insertMember(
+  text: string,
+  index: DocumentIndex,
+  containerPointer: string,
+  name: string | undefined,
+  json: string,
+  placement: Placement = { last: true }
+): string {
+  const container = spanAt(index, containerPointer)
+  if (container === undefined) return text
+  const open = text[container.valueStart]
+  if (open !== '{' && open !== '[') return text
+  if (open === '{' && name === undefined) return text
+  if (open === '[' && name !== undefined) return text
+
+  const members = childSpans(index, containerPointer, open === '[')
+  const written = name === undefined ? json : `${JSON.stringify(name)}: ${json}`
+
+  if (members.length === 0) {
+    // Nothing to learn a style from, so nothing is claimed: one space either
+    // side, inline. Whatever whitespace an empty container held is not a
+    // member's layout and is not evidence of one.
+    return (
+      text.slice(0, container.valueStart + 1) +
+      ` ${written} ` +
+      text.slice(container.valueEnd - 1)
+    )
+  }
+
+  const at = placementIndex(members, placement)
+  // The neighbour whose layout this member borrows: the one it is written
+  // beside. Its own leading run, verbatim — never the next member's, which is
+  // the mistake `removeMember` documents in the other direction.
+  const model = members[Math.min(at, members.length - 1)]!
+  const layout = leadingLayout(text, model.memberStart)
+
+  if (at >= members.length) {
+    const last = members[members.length - 1]!
+    return text.slice(0, last.memberEnd) + ',' + layout + written + text.slice(last.memberEnd)
+  }
+  const before = members[at]!
+  const start = before.memberStart - layout.length
+  return text.slice(0, start) + layout + written + ',' + text.slice(start)
+}
+
+/**
+ * Move one element of an array to another index. **The whitespace belongs to
+ * the slot; only the bodies change places.**
+ *
+ * Rule order is §7-significant: `rules[1]` firing before `rules[2]` is a fact
+ * about the document, so moving a rule is an edit to what the pack decides and
+ * not a tidy. It is a splice like every other edit here — the element's bytes
+ * are lifted out of their place and put back at another one — and the run in
+ * front of a position, and the run between a position and its comma, stay
+ * where they are. So an array written with unequal indentation keeps the shape
+ * it was written in: the element that lands in slot 1 is written where slot 1
+ * was, rather than dragging its old column across and leaving the array
+ * ragged in a new place. It is the array's shape that survives a move, not
+ * each element's own.
+ *
+ * Out-of-range indices and a move to where the element already is return the
+ * text unchanged: nothing happened, and inventing a change would be a diff
+ * over a gesture that did nothing.
+ */
+export function moveElement(
+  text: string,
+  index: DocumentIndex,
+  arrayPointer: string,
+  from: number,
+  to: number
+): string {
+  const container = spanAt(index, arrayPointer)
+  if (container === undefined || text[container.valueStart] !== '[') return text
+  const elements = childSpans(index, arrayPointer, true)
+  if (from === to) return text
+  if (from < 0 || to < 0 || from >= elements.length || to >= elements.length) return text
+
+  // Each element as its own bytes, and the whitespace around each position as
+  // its own strings: the run in front of it, and the run between it and the
+  // comma that follows. Both are the *position's* and neither travels with a
+  // body — see the note above — and both are re-emitted verbatim, so a move
+  // changes nothing outside the bodies it exchanged.
+  const parts = elements.map((span, position) => ({
+    layout: leadingLayout(text, span.memberStart),
+    trail: trailingLayout(text, span.memberEnd, position === elements.length - 1),
+    body: text.slice(span.memberStart, span.memberEnd)
+  }))
+  const bodies = parts.map((part) => part.body)
+  const [moved] = bodies.splice(from, 1)
+  bodies.splice(to, 0, moved!)
+
+  const first = elements[0]!
+  const last = elements[elements.length - 1]!
+  const start = first.memberStart - parts[0]!.layout.length
+  const rebuilt = bodies
+    .map((body, position) => {
+      const slot = parts[position]!
+      const separator = position === bodies.length - 1 ? '' : `${slot.trail},`
+      return slot.layout + body + separator
+    })
+    .join('')
+  return text.slice(0, start) + rebuilt + text.slice(last.memberEnd)
+}
+
+/** The direct children of one container, in document order. */
+function childSpans(index: DocumentIndex, container: string, array: boolean): Span[] {
+  const prefix = container === '' ? '/' : `${container}/`
+  const found: Span[] = []
+  for (const [pointer, span] of index.spans) {
+    if (!pointer.startsWith(prefix)) continue
+    const rest = pointer.slice(prefix.length)
+    if (rest.includes('/')) continue
+    if (array && !/^(0|[1-9][0-9]*)$/.test(rest)) continue
+    found.push(span)
+  }
+  found.sort((left, right) => left.memberStart - right.memberStart)
+  return found
+}
+
+/**
+ * The run of whitespace between one element and the comma after it.
+ *
+ * `{ "id": "one" } ,` is legal JSON, and that space is a byte the author wrote.
+ * Joining the rebuilt bodies with a bare `,` dropped it — an edit changing a
+ * byte it did not name, in the one module whose whole claim is that it does
+ * not. The last element has no comma of its own, and everything after it is
+ * outside the region this rebuilds.
+ */
+function trailingLayout(text: string, memberEnd: number, last: boolean): string {
+  if (last) return ''
+  let ahead = memberEnd
+  while (ahead < text.length && isSpace(text[ahead]!)) ahead += 1
+  return text[ahead] === ',' ? text.slice(memberEnd, ahead) : ''
+}
+
+/** The run of whitespace immediately in front of one member. */
+function leadingLayout(text: string, memberStart: number): string {
+  let back = memberStart - 1
+  while (back >= 0 && isSpace(text[back]!)) back -= 1
+  return text.slice(back + 1, memberStart)
+}
+
+function placementIndex(members: readonly Span[], placement: Placement): number {
+  if ('first' in placement) return 0
+  if ('after' in placement) {
+    // The pointer of the member to follow, matched against the children by
+    // their own spans rather than by re-deriving the address.
+    const found = members.findIndex((span) => span.pointer === placement.after)
+    return found < 0 ? members.length : found + 1
+  }
+  return members.length
 }
 
 /** One way the desk's reading of the bytes and `JSON.parse`'s differ. */

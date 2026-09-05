@@ -1,0 +1,13 @@
+.dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  flex: 0 0 auto;
+  border-radius: var(--radius-sm);
+  background: var(--warn);
+}
+
+/* Text an operand is holding that is not in the buffer yet. */
+.unwritten {
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+}

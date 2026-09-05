@@ -1,0 +1,7 @@
+.lock {
+  margin: 0.35rem 0 0;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}

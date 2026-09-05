@@ -1,0 +1,24 @@
+.raw {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.label {
+  font-size: 0.76rem;
+  color: var(--ink-soft);
+}
+
+.problem {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--warn);
+}
+
+.foot {
+  display: flex;
+  gap: 0.6rem;
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}

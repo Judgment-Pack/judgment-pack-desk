@@ -7,11 +7,23 @@
  * words.
  */
 import type { Decision } from '../../mcp/types'
+import { useEditing } from '../edit/editingContext'
+import { TextField } from '../edit/fields'
 import { Block } from './Block'
 import { ExtensionsBlock } from './ExtensionsBlock'
 import styles from './PackDocument.module.css'
 
 export function DecisionBlock({ decision, at }: { decision: Decision; at: string }) {
+  const { editing } = useEditing()
+  if (editing) {
+    return (
+      <Block pointer={at} className={styles.decision}>
+        <TextField pointer={`${at}/question`} label="question" rows={2} />
+        <TextField pointer={`${at}/intent`} label="intent" rows={2} />
+        <ExtensionsBlock extensions={decision.extensions} at={`${at}/extensions`} />
+      </Block>
+    )
+  }
   return (
     <Block pointer={at} className={styles.decision}>
       <Block pointer={`${at}/question`} as="h1" className={styles.question}>

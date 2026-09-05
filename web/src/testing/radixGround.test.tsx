@@ -42,7 +42,7 @@
  * and these cases are why.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { Avatar, Collapsible, Dialog, DropdownMenu, Select, Separator, Tabs, Toggle, Tooltip, VisuallyHidden } from 'radix-ui'
+import { Avatar, Collapsible, Dialog, DropdownMenu, Select, Separator, Tabs, Toggle, ToggleGroup, Toolbar, Tooltip, VisuallyHidden } from 'radix-ui'
 import { afterEach, describe, expect, it } from 'vitest'
 
 afterEach(cleanup)
@@ -294,5 +294,47 @@ describe('the Radix primitives this shell is built on', () => {
     expect(hidden.style.position).toBe('absolute')
     expect(hidden.style.width).toBe('1px')
     expect(hidden.style.clip).toContain('rect')
+  })
+
+  it('reports a ToggleGroup deselect as the empty string, which is why the segmented control drops it', () => {
+    // **The finding the segmented control is built around.** Pressing the item
+    // that is already on is a deselect, and a single-value group reports the
+    // empty string for it — a group with nothing chosen. That is a real state
+    // for a toggle group and is not one Edit|Read has: "neither Edit nor Read"
+    // is not a mode. `ui/SegmentedControl.tsx` refuses the empty answer, and
+    // this case is why.
+    const seen: string[] = []
+    render(
+      <ToggleGroup.Root type="single" value="edit" onValueChange={(next) => seen.push(next)}>
+        <ToggleGroup.Item value="edit">Edit</ToggleGroup.Item>
+        <ToggleGroup.Item value="read">Read</ToggleGroup.Item>
+      </ToggleGroup.Root>
+    )
+    // Pressed and unpressed are reported per item, so the group's state is
+    // readable without asking the caller what it stored.
+    expect(screen.getByRole('radio', { name: 'Edit' }).getAttribute('data-state')).toBe('on')
+    fireEvent.click(screen.getByRole('radio', { name: 'Read' }))
+    expect(seen).toEqual(['read'])
+    fireEvent.click(screen.getByRole('radio', { name: 'Edit' }))
+    expect(seen).toEqual(['read', ''])
+  })
+
+  it('makes a Toolbar one tab stop with the arrow keys inside it', () => {
+    render(
+      <Toolbar.Root aria-label="Editing">
+        <Toolbar.Button>Check</Toolbar.Button>
+        <Toolbar.Separator />
+        <Toolbar.Button>Save</Toolbar.Button>
+      </Toolbar.Root>
+    )
+    const toolbar = screen.getByRole('toolbar', { name: 'Editing' })
+    // **The stop is the toolbar, not its first button.** Before focus has
+    // entered it, every item is `-1` and the container carries `0` — so a test
+    // asserting the first button is the tab stop asserts a state this group
+    // only reaches after it has been focused once.
+    expect(toolbar.getAttribute('tabindex')).toBe('0')
+    for (const button of toolbar.querySelectorAll('button')) {
+      expect(button.getAttribute('tabindex')).toBe('-1')
+    }
   })
 })

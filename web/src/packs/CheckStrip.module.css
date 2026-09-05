@@ -1,0 +1,33 @@
+.strip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.check {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.checkWhat {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}
+
+.warning {
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+  color: var(--warn);
+}
+
+.rootDiagnostics {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}

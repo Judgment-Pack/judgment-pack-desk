@@ -10,9 +10,19 @@
  * show.
  *
  * It carries the member's pointer like every other block, so a diagnostic
- * about the absent member has somewhere to land and the future form field is
- * already addressed.
+ * about the absent member has somewhere to land and the form field is already
+ * addressed by it.
+ *
+ * **In edit mode the line is also the way to write one.** The bytes it writes
+ * are the schema's required members, empty — see `edit/shape.ts` — and it is
+ * one splice into the document's own layout, at the position the schema's
+ * property order gives the member. Where this desk knows no shape for the
+ * member, there is no button rather than a button that writes a guess.
  */
+import { Button } from '../../ui/Button'
+import { useEditing } from '../edit/editingContext'
+import { starterFor } from '../edit/shape'
+import { setRawJson } from '../edit/writes'
 import { Block } from './Block'
 import styles from './PackDocument.module.css'
 
@@ -26,12 +36,22 @@ export function OmittedMember({
   /** What the absence means, where the document's own vocabulary says. */
   note?: string
 }) {
+  const { editing, write } = useEditing()
+  const starter = starterFor(pointer)
   return (
     <Block pointer={pointer} className={styles.omitted}>
       <h2 className={styles.heading}>{label}</h2>
       <p className={styles.omittedLine}>
         <span className={styles.omittedTag}>not declared</span>
         {note !== undefined && <span> {note}</span>}
+        {editing && starter !== undefined && (
+          <Button
+            variant="quiet"
+            onClick={() => write((current) => setRawJson(current, pointer, starter))}
+          >
+            Declare it
+          </Button>
+        )}
       </p>
     </Block>
   )

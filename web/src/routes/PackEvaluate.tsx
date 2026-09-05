@@ -2,10 +2,10 @@ import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { DispositionDiff } from '../components/DispositionDiff'
 import { EvaluationRaw, EvaluationView } from '../components/EvaluationView'
-import { Empty, ErrorBox, Pill, Section } from '../components/primitives'
+import { Empty, Section } from '../components/primitives'
+import { RefusalPanel } from '../components/RefusalPanel'
 import { useMcp } from '../mcp/McpProvider'
 import { useEvaluate, usePacks } from '../mcp/queries'
-import { ToolRefusal } from '../mcp/refusal'
 import type { EvaluationRun, PackSummary } from '../mcp/types'
 
 type ResultTab = 'reading' | 'raw'
@@ -55,7 +55,7 @@ export function PackEvaluate() {
   const run = () => {
     if (!packId || !runnable) return
     evaluate.mutate(
-      { packId, facts, evidence: evidenceSupplied ? evidence : undefined },
+      { source: 'pack_id', packId, facts, evidence: evidenceSupplied ? evidence : undefined },
       {
         onSuccess: (completed) => {
           setHistory((runs) => [...runs, completed])
@@ -261,43 +261,6 @@ function PackReference({ summary }: { summary?: PackSummary }) {
         </p>
       )}
     </div>
-  )
-}
-
-/**
- * A refused evaluation. It carries no disposition at all, so this panel reports
- * only the §8.4 class and phase the runtime assigned and the message it wrote —
- * never a substitute answer.
- */
-function RefusalPanel({ error }: { error: Error }) {
-  const envelope = error instanceof ToolRefusal ? error.envelope : undefined
-  const evaluationError = envelope?.evaluationError
-  return (
-    <Section title="Refused">
-      <ErrorBox title="The runtime refused this evaluation" error={error} />
-      {evaluationError && (
-        <p className="meta">
-          <Pill tone="strong">class: {evaluationError.class}</Pill>
-          <Pill>phase: {evaluationError.phase}</Pill>
-          <Pill tone="quiet">evaluator {evaluationError.evaluatorSpecVersion}</Pill>
-        </p>
-      )}
-      {envelope?.diagnostics?.length ? (
-        <ul className="cards">
-          {envelope.diagnostics.map((diagnostic, index) => (
-            <li className="card" key={`${diagnostic.code ?? 'diagnostic'}:${index}`}>
-              <div className="card-head">
-                {diagnostic.code && <code className="id">{diagnostic.code}</code>}
-                {diagnostic.severity && <Pill tone="quiet">{diagnostic.severity}</Pill>}
-                {diagnostic.codeStability && <Pill tone="quiet">{diagnostic.codeStability}</Pill>}
-              </div>
-              {diagnostic.message && <p>{diagnostic.message}</p>}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      <p className="note">A refusal carries no disposition. Nothing above is an answer.</p>
-    </Section>
   )
 }
 

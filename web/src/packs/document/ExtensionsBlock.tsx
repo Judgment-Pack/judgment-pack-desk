@@ -10,6 +10,7 @@
 import { child } from '../pointers'
 import { Block } from './Block'
 import styles from './PackDocument.module.css'
+import { MisshapenMember, isRecord } from './MisshapenMember'
 
 export function ExtensionsBlock({
   extensions,
@@ -22,6 +23,19 @@ export function ExtensionsBlock({
   heading?: string
 }) {
   if (extensions === undefined) return null
+  // `Object.entries(null)` throws, and `Object.entries("ab")` is two members
+  // nobody wrote. Extensions are a namespaced object or they are not extensions.
+  if (!isRecord(extensions)) {
+    return (
+      <MisshapenMember
+        pointer={at}
+        label={heading ?? 'extensions'}
+        expected="an object"
+        value={extensions}
+        compact={heading === undefined}
+      />
+    )
+  }
   return (
     <Block pointer={at} className={styles.extensions}>
       {heading !== undefined && <h2 className={styles.heading}>{heading}</h2>}

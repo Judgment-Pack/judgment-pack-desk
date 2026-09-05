@@ -149,3 +149,10 @@
   font-size: 0.72rem;
   color: var(--ink-faint);
 }
+
+/* The same figures, while the editor holds bytes they are not about. */
+.unbound {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+}

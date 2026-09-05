@@ -47,6 +47,9 @@ import {
   VersionBlock
 } from './IdentityBlock'
 import { MemberOutline, type OutlineEntry } from './MemberOutline'
+import { MisshapenMember } from './MisshapenMember'
+import { IdRefField } from '../edit/fields'
+import { useEditing } from '../edit/editingContext'
 import { MetadataBlock } from './MetadataBlock'
 import { OutcomesBlock } from './OutcomesBlock'
 import { OmittedMember } from './OmittedMember'
@@ -169,6 +172,70 @@ function onDocumentKey(
   destination.focus()
 }
 
+/**
+ * What shape each root member has to be for the controls that draw it.
+ *
+ * **Not the schema, and not a verdict.** `validate` is what says whether a
+ * document is a pack. This is the narrower question the renderer has to answer
+ * before it draws anything: `"rules": {}` is valid JSON that somebody can have
+ * on disk — this desk can write it — and `rules.map` took the whole route down
+ * with it. A member that is not the shape below gets a block saying so, at its
+ * own pointer, with its bytes in it.
+ */
+const MEMBER_SHAPE: Record<string, 'list' | 'object' | 'string'> = {
+  specVersion: 'string',
+  id: 'string',
+  version: 'string',
+  title: 'string',
+  description: 'string',
+  decision: 'object',
+  applicability: 'object',
+  evidenceRequirements: 'list',
+  sources: 'list',
+  outcomes: 'list',
+  rules: 'list',
+  exceptions: 'list',
+  fallbackOutcome: 'string',
+  escalation: 'object',
+  metadata: 'object',
+  extensions: 'object'
+}
+
+const WORD: Record<'list' | 'object' | 'string', string> = {
+  list: 'a list',
+  object: 'an object',
+  string: 'a string'
+}
+
+function isShape(value: unknown, shape: 'list' | 'object' | 'string'): boolean {
+  if (shape === 'list') return Array.isArray(value)
+  if (shape === 'string') return typeof value === 'string'
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * The outcome a pack falls back to, chosen from the outcomes it declares.
+ *
+ * Read-only it is a `code` element; in a form it is the same optional id
+ * reference the rules use, so "not declared" is a choice and a dangling id is
+ * shown as one rather than silently dropped.
+ */
+function FallbackOutcomeBlock({ fallback }: { fallback: string | undefined }) {
+  const { editing, ids } = useEditing()
+  return (
+    <Block pointer="/fallbackOutcome">
+      <h2 className={styles.heading}>Fallback outcome</h2>
+      {editing ? (
+        <IdRefField pointer="/fallbackOutcome" label="fallback outcome" ids={ids.outcomes} optional />
+      ) : (
+        <p>
+          <code className={styles.id}>{fallback}</code>
+        </p>
+      )}
+    </Block>
+  )
+}
+
 function MemberBlock({ unit, document: doc }: { unit: MemberUnit; document: PackDocument }) {
   if (!unitIsPresent(doc, unit)) {
     // Only an optional member reaches this: `readingOrder` leaves a missing
@@ -180,6 +247,18 @@ function MemberBlock({ unit, document: doc }: { unit: MemberUnit; document: Pack
         pointer={unit.pointer}
         label={unit.blockLabel ?? unit.label}
         note={ABSENCE_NOTE[unit.id]}
+      />
+    )
+  }
+  const shape = MEMBER_SHAPE[unit.id]
+  const held = (doc as unknown as Record<string, unknown>)[unit.members[0]!]
+  if (shape !== undefined && !isShape(held, shape)) {
+    return (
+      <MisshapenMember
+        pointer={unit.pointer}
+        label={unit.blockLabel ?? unit.label}
+        expected={WORD[shape]}
+        value={held}
       />
     )
   }
@@ -211,14 +290,7 @@ function MemberBlock({ unit, document: doc }: { unit: MemberUnit; document: Pack
     case 'exceptions':
       return <ExceptionsBlock exceptions={doc.exceptions!} at="/exceptions" />
     case 'fallbackOutcome':
-      return (
-        <Block pointer="/fallbackOutcome">
-          <h2 className={styles.heading}>Fallback outcome</h2>
-          <p>
-            <code className={styles.id}>{doc.fallbackOutcome}</code>
-          </p>
-        </Block>
-      )
+      return <FallbackOutcomeBlock fallback={doc.fallbackOutcome} />
     case 'escalation':
       return <EscalationBlock escalation={doc.escalation!} at="/escalation" />
     case 'metadata':

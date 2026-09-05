@@ -573,11 +573,14 @@ describe('a check that ran over other bytes', () => {
     diagnosticsTruncated: false
   })
 
-  it('is anchored nowhere, and the strip says which bytes it was about', async () => {
-    // **The one this whole comparison exists for.** `/rules/0` resolves on the
-    // page, so a report anchored without asking would print a real diagnostic
-    // on a rule that is not the rule it is about — which is worse than none,
-    // because it looks like an answer.
+  it('is the file’s own diagnostic, on the file’s own document', async () => {
+    // **What phase 2 changed, and why it is not a weakening.** The page used to
+    // draw the *served* document and check the *file*, so `/rules/0` named two
+    // different rules and the report had to be withheld wholesale. The page now
+    // draws the buffer, which is the file — so the check and the document are
+    // one revision by construction, the diagnostic anchors on the rule it is
+    // actually about, and the disagreement between the two sources is reported
+    // as what it is: two answers about one file.
     chassis(MOVED, MOVED_DIGEST)
     draw(
       {
@@ -592,16 +595,35 @@ describe('a check that ran over other bytes', () => {
       { inspector: true, tab: 'checks' }
     )
     await screen.findByRole('heading', { level: 1 })
-    await waitFor(() =>
-      expect(screen.getByText(/ran over different bytes from the ones shown/)).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('This rule can never fire.')).toBeTruthy())
+    expect(screen.getByText(/different digest from the file on disk/)).toBeTruthy()
+    // The document on the page is the file's, so the rule the check named is
+    // the rule the page draws — `screen-first` was dropped from the file.
+    expect(screen.queryByText('screen-first')).toBeNull()
+  })
+
+  it('is anchored nowhere once the editor has typed past the check', async () => {
+    // **The stale rule, now over bytes that move.** A report whose
+    // `checkedBytes` are not the bytes on screen anchors nothing at all: an
+    // edit moves every `/rules/N` pointer, and there is nothing in a pointer
+    // that says which of them would still be right.
+    chassis(PACK_TEXT, DIGEST)
+    draw(
+      { ...SERVED, validate: () => ({ text: REFUSED }) },
+      {},
+      '/packs/vendor-onboarding?at=/rules/0&edit=1&shape=json',
+      { inspector: true, tab: 'checks' }
     )
-    // The panel is open on that very rule and says the same thing rather than
-    // listing what the check found.
+    // The JSON view has no h1: the document is the bytes.
+    await screen.findByLabelText("The document's bytes")
+    await waitFor(() => expect(screen.getByText('This rule can never fire.')).toBeTruthy())
+    const raw = screen.getByLabelText("The document's bytes")
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    await waitFor(() =>
+      expect(screen.getByText(/ran over bytes the editor has moved past/)).toBeTruthy()
+    )
     expect(screen.getByText(/computed against other bytes/)).toBeTruthy()
-    expect(screen.queryByText('JPS-SEMANTIC-UNREACHABLE-RULE')).toBeNull()
     expect(screen.queryByText('This rule can never fire.')).toBeNull()
-    // And it does not answer "No other diagnostic names this member" either:
-    // that is a clean bill drawn from a report about other bytes.
     expect(screen.queryByText(/No other diagnostic names this member/)).toBeNull()
   })
 

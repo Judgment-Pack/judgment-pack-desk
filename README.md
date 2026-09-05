@@ -418,10 +418,21 @@ the same in that state.
 | `Mod+B` | Collapse or expand the navigation rail |
 | `Mod+Alt+I` | Open or close the Inspector |
 | `Mod+Alt+J` | Open or close the Console |
+| `Mod+S` | Save, while editing a pack |
 
-Every one is suppressed while focus is in an `input`, a `textarea` or a
-`contenteditable` — which is exactly the authoring editor — and every one has a
+Every **shell** chord is suppressed while focus is in an `input`, a `textarea`
+or a `contenteditable` — which is exactly an editor — and every one has a
 visible button, so a chord the browser claims costs a click and not a feature.
+
+`Mod+S` is on the list and is deliberately **not** installed by
+`installShortcuts`, and the two facts are one fact: save is the chord that has
+to fire *inside* a text field, which is where that rule silences everything
+else. The pack editor registers it on `document` for exactly as long as edit
+mode is on screen — not on a subtree, because `document.body` is where focus
+sits the moment the mode opens (the Edit button unmounts itself) and from a
+subtree listener the chord neither saved nor called `preventDefault`, so the
+browser's own "Save page as…" opened over unsaved work. The shell's rule stays
+as written and the label says where this one applies.
 **Every modifier a chord does not declare is rejected**: Ctrl+Shift+B is not
 `Mod+B`, and Ctrl+Cmd+B is neither of the two spellings of `Mod` — an undeclared
 chord is left to the browser unprevented rather than claimed and swallowed.
@@ -713,12 +724,232 @@ Where `diagnosticsTruncated` is set the runtime stopped at its own limit of
 100, and the panel says the list was cut rather than that nothing else was
 found.
 
+### Editing
+
+`?edit` on the same route, and a search parameter rather than a path segment
+for one reason: the dirty blocker's predicate is
+`currentLocation.pathname !== nextLocation.pathname`, so a mode in the path
+would ask "leave without saving?" every time a viewer switched back to Read,
+and a predicate loose enough to allow that would stop asking on the exits it
+exists for. The toggle is the same page — same mount, same scroll, same
+selection, same buffer — and `?at` and `?edit` are both written with
+`replace: true`, because how you are looking at a document is not a
+navigation.
+
+**The buffer is the document, and nothing stands behind it.** Both modes draw
+`indexDocument(buffer).value` rather than the parsed pack `get_pack` served, so
+a keystroke in the JSON view moves the reading document above it and a form edit
+is in the bytes the moment it is made. A page over one revision while the form
+writes into another is the digest-binding failure one component further in.
+
+The served document is drawn **only before a file has been loaded at all** — the
+read has not answered, or the listing names no path. Once the editor holds
+bytes, those bytes are the page whatever they say: bytes that do not scan are
+the JSON view with the position they stop at, bytes that scan into something
+that is not an object are the JSON view too, and a member of the wrong shape
+states itself at its own pointer with its bytes in it. Falling back to the
+runtime's last good answer there would draw a document that is on no disk, over
+a file that no longer holds it — and the Inspector beside it would list members
+and references the file does not carry. The digest sentence still says when the
+two sources disagree.
+
+**And the buffer follows the address.** `/packs/:packId` is one element inside
+the packs layout, so another pack is another *parameter* and nothing unmounts —
+which is what lets the mode toggle keep the mount, the scroll and the buffer.
+Everything the page holds about a file therefore has to follow the address
+itself: the buffer is seeded once **per path**, and the last write's verdict and
+any unwritten operands are dropped when the path moves. A watcher refetch
+carries the same path and still does not rebase, which is the rule the base
+depends on. The Inspector's provenance group says the same thing from the other
+side: while the buffer is dirty it stops claiming the file matches what the
+editor holds, and says the figures are the file on disk instead.
+
+The toolbar is edit mode's: a reading page carrying a Check button and a Save
+that can never be pressed is chrome about a mode nobody is in. The way *in* is
+one control beside the two standing links, and it writes `?edit` with
+`replace: true` for the same reason selecting a member does.
+
+**Forms in place.** A member's card becomes its form where it stands, and it
+keeps the block's pointer as its `data-pointer` and element id — so a
+diagnostic still anchors *on the field*, a deep link still reaches it, and the
+Inspector still selects it. `ui/Field` owns the label, the `aria-describedby`
+and the `aria-invalid`; what the field adds is the runtime's own code and
+message, printed under the control and named in the description, so a screen
+reader reaching the input is told what the runtime said rather than that
+something is invalid. Phase 2 covers the flat members — identity, decision,
+outcomes, evidence requirements, sources, escalation — and rules and
+exceptions. What a field *says* before the runtime answers is said in words: an
+id's hint is "lowercase letters, digits and hyphens", not the pattern, because
+the pattern is `shape.ts`'s and a regular expression is not something to read
+aloud.
+
+**A member the document does not carry is stated, not drawn.** A field whose
+container is absent has no span to splice into — a missing object is a different
+edit, and inventing one would write members nobody asked for — so a control for
+it would take a keystroke and move no bytes. `source.locator`,
+`source.citation`, `escalation.target` and a rule's `when` are each drawn as
+"not declared" with an offer to write the schema's own required members, empty;
+the fields appear once the object does. A condition removed from a `not` is the
+same case, and it is offered a condition back rather than being described as a
+node kind this desk does not know.
+
+**Form | JSON is a third view of the same buffer**, kept in sync both ways over
+a monospace textarea with a scroll-synced, `aria-hidden` line gutter and no
+editor dependency. Bytes that do not scan keep JSON available, withhold Form,
+and print where the scanner stopped as a line and a column. So does a document
+this desk's scanner and `JSON.parse` read differently — a duplicated member
+name is the case that exists in the wild, and a form that wrote through a
+reading nobody else shares would edit a document nobody has.
+
+**Every edit is a splice.** `documentText.ts` indexes the bytes once and each
+write replaces exactly one value's span; every byte outside it survives,
+including the ones the desk has no opinion about. Blanking a `nonEmptyString`
+removes the member rather than writing `""`, and a member the document does not
+carry yet is *inserted* — at the position the schema's own property order gives
+it, in the layout a neighbour already uses. Dirty is a **byte** comparison, so
+a whitespace-only change is unsaved. Undo is a capped stack of buffer
+snapshots, one per committed action, with typing coalesced per field — so a
+sentence typed into a description is one Undo and not nine — and it is a
+toolbar **button** rather than a chord, because `Mod+Z` inside a text field is
+that field's own undo and taking it away would trade per-character undo for
+per-action undo without asking. Past the cap the oldest entry is dropped and
+the control goes disabled rather than the stack lying about its depth. Discard
+restores the base and clears the last save attempt's verdict.
+
+**The condition builder** draws the schema's five node kinds — `literal`,
+`all`/`any`, `not`, `fact`, `evidence-present` — recursing through `$ref`. Each
+group is a `role="group"` named by its operator and its pointer, its controls
+are real buttons, and a nested group collapses to "collapsed · N conditions". A
+`fact` node's operand control switches on the operator: the four ordered
+comparisons write a decimal **string**, `in` a list, `equals` and `not-equals`
+any JSON at all. **It shapes and it never refuses** — an empty `in`, an
+unquoted `5000` and an id nothing declares are all writable, and `validate`
+names them at their pointers. Changing an operator keeps the author's operand
+rather than retyping it. A node kind this desk has never seen is printed as its
+JSON and offered no controls, exactly as the reading tree holds it. One
+deliberate exception to "every keystroke reaches the buffer": the operand
+controls that take arbitrary JSON hold what is typed until it parses, because
+writing each intermediate keystroke would withhold form mode with a parse error
+in the middle of a word. Nothing is refused and nothing is corrected — the
+field says it is not written yet and names the bytes still on disk, the text is
+held by the editing session so it survives the switch to the JSON view and
+back, and the toolbar says how many fields are in that state beside the unsaved
+dot. Changing a node's *kind* moves one word where the new kind needs no member
+the old node lacks, which is what `all` → `any` is: re-serializing the subtree
+for it would re-indent every nested condition and re-print the author's own
+number literals.
+
+**Rule order is §7-significant**, so it moves by keyboard and not by drag: two
+buttons on each card and `Alt+ArrowUp` / `Alt+ArrowDown` inside it, through the
+writer's `moveElement`. Focus follows the card to its new address and a live
+region names the position it landed in. A move invalidates every `/rules/N`
+pointer past it — `?at`, the Inspector's subtree and every anchored diagnostic
+— so the check is marked stale and **nothing is re-anchored**.
+
+**Checks run on idle and on demand.** The first bytes go at once; every later
+change waits for a pause, and the toolbar's Check and the save path close the
+gap. The report carries the bytes it checked, and where those are not the bytes
+on screen no diagnostic is anchored at all — the strip says the check is behind
+the buffer, and the panel says the same rather than listing what it found. In
+the JSON view the strip prints every diagnostic with its own pointer, because
+there are no blocks to distribute them to and a report visible only to whoever
+has the Inspector open is a report the page is keeping to itself.
+
+**Try it** runs the draft without saving it. `experimental_evaluate` takes
+`pack` as JSON text **XOR** `pack_id`, so the source control sends one or the
+other and never both: the tool's `required` list is `["facts"]` alone and the
+handler enforces exactly-one-of by hand, so both and neither are each refused
+on an argument mistake rather than on anything about the pack. A text pack
+never reaches the reviewed set — `applied` is built only where a `pack_id` was
+supplied, and the consult is gated on it — so a draft run is `lock.DraftRun`,
+never refused for being unlocked and proving nothing about a recorded decision.
+The audit writer, though, runs for **every** call including a text pack, and
+only `rehearsal: true` suppresses the record: the declaration is sent wherever
+the runtime advertises the argument, and where it is not, the pane says the run
+would be recorded in a project declaring an audit directory and requires an
+explicit second click. The evidence rows come from the **draft's** own
+requirements, so one added in the editor appears and one deleted stops sending
+a key. The disposition, the reasons and the trace are the existing evaluation
+view, verbatim; the foot prints the payload's own `packId` and `packVersion` —
+which is the pack document's `id`, a URI, and not the project's decision id.
+A preflight refusal is rendered as the runtime's answer, class and phase and
+diagnostics, with no disposition anywhere near it; mid-edit that is the
+ordinary answer rather than an error. The result is stale the moment the buffer
+moves, and says so, and the confirmation for an unadvertised rehearsal
+remembers the bytes it confirmed rather than being a flag — the editor beside
+the pane is most of what would be sent. The pane sits beside the editor where
+the editor keeps 512px, and takes the Inspector's place where it does not. The
+**workspace** is what is measured, not the editor column: the column is the
+pane's flex sibling, so placing the pane shrinks the box the decision was read
+from, and a predicate whose input depends on its own output has no fixed point
+across a wide band of ordinary widths.
+
+**Save** is `PUT /api/file {path, content, baseSha256}`, and the base moves
+only on load, on an explicit reload, and on a successful save — never on a
+watcher refetch, which would silently rebase onto bytes nobody saw and make the
+next save overwrite them without the 409 that exists to prevent exactly that.
+The read-back is compared to the **submitted** snapshot rather than to the live
+buffer, so typing after a save cannot turn a true "verified" into a false "does
+not match". **It is never gated on the check**: the chassis writes bytes and
+the runtime judges them, in that order, and outstanding diagnostics stay on
+screen through the save. A 409 shows both digests behind a `digests`
+disclosure — printed short and carried whole, so a reader can compare one
+against `sha256sum` — distinguishes `exists` from `stale` from the chassis' own
+code, and offers Reload — which says that it discards — and *Overwrite anyway*,
+which is never the primary control. On success `list_packs`, `get_pack` and the
+`validate` queries are invalidated.
+
+**A refusal does not take the page away.** Save writes bytes the runtime may
+then refuse to serve, so `get_pack` failing is a state this editor can produce —
+and the way out of it is the editor. The refusal is printed above the bytes
+rather than in place of them: the file API returns whatever is on disk, the path
+comes from the listing where `get_pack` cannot name it, and the JSON view stands
+in both modes (read-only until the mode is Edit). Bytes shaped like nothing the
+desk expects — `rules` pasted as an object — are read as what they are rather
+than taking the route down with the unsaved buffer inside it.
+
+**The lock line.** Where `jpack.lock.json` is in the file listing, one
+sentence: the project keeps a reviewed set, and updating it is the project's
+own step. Where it is not, silence — not "this project keeps no reviewed set",
+which would be a claim about a file that may simply not have been read. No tool
+reports lock state, the Evaluation payload carries no lock member, and `packs
+lock` is a CLI verb (ADR-0019), so the desk cannot know it and computes none of
+it.
+
+**Keyboard.** `Mod+S` saves. It is registered by the editor rather than through
+the shell's `installShortcuts` — every shell chord is suppressed inside a text
+field, which is exactly where save has to fire — and it is bound for as long as
+edit mode is on screen rather than to a subtree: `document.body` is a reachable
+resting place for focus, and it is where focus sits the moment edit mode opens,
+because the Edit button unmounts itself. The chord is claimed there too, so the
+browser's own "Save page as…" never opens over unsaved work. `Alt+ArrowUp` /
+`Alt+ArrowDown` move a rule, from the card itself — which is the element the
+move focuses, so the chord works twice in a row. Escape does not discard.
+
+What phase 2 does **not** do: add or remove an entry in a list (an outcome, a
+requirement, a source, a rule), write `metadata.reviews`, or edit a condition
+node kind it has never seen. Each is a line in the JSON view.
+
 ### What this page will not say
 
 No desk-computed verdict of any kind: no conformance claim, no lock state, no
 health, no pass/fail chip. The runtime judges documents and this page quotes it.
-Nothing about the reviewed set appears here at all — no tool reports it, so the
-desk cannot know it and must not compute it.
+**Nothing about this pack's standing in the reviewed set appears here** — not
+whether it is in the set, not whether the entry is current, not whether an edit
+would invalidate it. No tool reports any of that, so the desk cannot know it and
+must not compute it. The one thing it does say is that the set **exists**, which
+is the file listing's own answer and nobody's inference: where the listing
+contains `jpack.lock.json`, one line says the project keeps a reviewed set and
+that updating it is the project's own step.
+
+The editor adds four more. **No English paraphrase of a condition**: `"5000"`
+keeps its quotes and `greater-than` stays the document's word, in the reading
+tree and in the builder alike, because "is greater than" is a second,
+unversioned statement of the rule. **No re-lock button** — `packs lock` is a
+CLI verb (ADR-0019) and the lock line says whose step it is. **No generated row
+expectation**, and no claim to call `packs suggest`, which is CLI-only
+(ADR-0024). And **no form that refuses a value**: what an author types is
+written, and the runtime is what names it.
 
 ## Configuration
 
@@ -1323,7 +1554,10 @@ web/                 Vite + React + TypeScript SPA
                      advertised-capability reader, the canonical-string,
                      probe-name and graph-document readers, and the ledger of
                      divergent digest pairs already asked about
-  src/files/         the chassis file API: the client, and its query hooks
+  src/files/         the chassis file API: the client, its query hooks, and
+                     the save discipline both editors hold — the base that
+                     moves only where the viewer acts, the reload that is a
+                     direct read, and the read-back compared to what was sent
   src/routes/        project home, the packs layout and its two children
                      (the "select a pack" page and the pack document),
                      evaluation, matrix, graphs, the authoring shell, the
@@ -1332,14 +1566,18 @@ web/                 Vite + React + TypeScript SPA
                      trace and handoff-target renderers both the pack and graph
                      surfaces share
   src/shell/         the six regions, the pane state and its per-project
-                     record, the three shortcuts, the icon set, the console's
+                     record, the published shortcut list, the dirty guards
+                     both editors use — a `beforeunload` listener and a router
+                     blocker whose predicate is the pathname alone — the icon
+                     set, the console's
                      ring buffer, the fragment-scrolling hook the section menus
                      need, and the Create-pack dialog — which asks for a name,
                      a description and a template, and decides the file's
                      location from configuration
   src/ui/            the styled primitives: Button, Field, Input, TextArea,
-                     Select, Tabs, Dialog and Alert, one CSS module each (see
-                     Styling)
+                     Select, Tabs, Dialog and Alert, plus the editor's own —
+                     SegmentedControl, Toolbar, CodeArea, SuggestInput and
+                     AlertPanel — one CSS module each (see Styling)
   src/packs/         the pack surface: the RFC 6901 pointer module, the
                      span-preserving document writer, the validate reader, the
                      cross-reference reader, the packs pane and its windowing
@@ -1355,6 +1593,14 @@ web/                 Vite + React + TypeScript SPA
                      omitted-member line, the unparaphrased condition tree and
                      one component per member kind
     inspector/       the three panels: Member, References, Checks
+    edit/            edit mode: the `?edit` helpers, the editing context, the
+                     shapes mirrored from the schema, the one place a form edit
+                     becomes text, the buffer with its undo and its discard,
+                     the toolbar, the JSON view, the pointer-addressed field
+                     wrapper and the field kinds, the condition builder and its
+                     text operations, the rule and exception forms with their
+                     keyboard reordering, the check on idle, the what-if pane,
+                     the stale-write alert and the lock line
   src/config/        the jpack-desk.json schema, its strict decoder, the one
                      query that reads it, and the theme attribute it writes
   src/identity/      the identity slot: one nullable field, and the header
@@ -1459,6 +1705,48 @@ They are where a rendering rule fails a test rather than surviving as a habit �
 that a verdict the runtime did not state is never painted, that a served graph
 document is read and never repaired, and that each fallback says exactly as much
 as it should about why it is one.
+
+The editor's own suites are named after the claim each holds.
+`packs/documentText.test.ts` and `packs/edit/writes.test.ts` hold the splices:
+every byte outside a touched span identical, a blanked `nonEmptyString` removed
+rather than emptied, and a member that is not there yet written at the position
+the schema gives it — behind **a neighbour's own leading run, reused verbatim**.
+That run is copied and never invented, and it is never used to reformat a member
+that was already there: an insertion changes the bytes it inserts and nothing
+else, which is why a document indented with tabs stays indented with tabs and a
+document nobody indented stays on one line.
+`packs/edit/shape.test.ts` holds the mirrored schema against the fixtures'
+own values. `packs/edit/useDocumentBuffer.test.ts` holds dirty as a byte
+comparison, one undo entry per action, and a discard that clears the last
+attempt's verdict. `packs/edit/conditionOps.test.ts` and
+`ConditionBuilder.test.tsx` hold the builder: the operand control switching on
+the operator, an ordered comparison emitting a *string*, an empty `in` and an
+unquoted number both writable, and an unrecognised kind printed rather than
+edited. `packs/edit/EditView.test.tsx` holds the one buffer — a JSON keystroke
+moving the reading document, a form edit moving the bytes, form mode withheld
+over a document the two readings disagree about, a diagnostic reaching its
+field by `aria-describedby`, and a rule reorder that marks the check stale
+rather than re-anchoring it. `packs/edit/navigate.test.tsx` holds the buffer
+following the address on the route that does not remount — the second pack's
+members drawn, the second pack's bytes, digest and path sent, and nothing of a
+discarded edit left on the pack that follows it. `packs/edit/forms.test.tsx`
+holds what a form does about a member that is not there and about text it has
+not written. `packs/edit/resilience.test.tsx` holds the states this editor can
+itself produce: a list pasted as an object, a pack the runtime will not serve,
+`Mod+S` from `document.body`, the move chord fired twice from one card, the
+what-if placement measured off the frame, and the Inspector's provenance while
+the buffer is dirty. `packs/edit/save.test.tsx` holds the save: not
+gated on the check, 409 with both digests whole and a non-primary Overwrite,
+`Mod+S` inside the field the shell suppresses in, and a `?edit` toggle that
+never prompts. `packs/edit/TryItPane.test.tsx` holds `pack` XOR `pack_id`, the
+rehearsal declaration exactly where advertised, the explicit click where it is
+not, a confirmation that does not outlive the bytes it confirmed, and a refusal
+rendered with no disposition. `packs/edit/lockLine.test.tsx`
+holds the one sentence, and that no lock, conformance, health or pass/fail word
+appears anywhere on the page. `files/useFileEditing.test.ts` and
+`shell/useDirtyGuard.test.tsx` hold the discipline lifted out of the authoring
+view — `routes/AuthorView.test.tsx` staying green unedited is the proof the
+extraction preserved its behaviour.
 
 CI runs `gofmt`, `go vet` and `go test` on one job and `npm ci`, `tsc`, the
 component tests and `vite build` on another. It supplies neither a runtime binary

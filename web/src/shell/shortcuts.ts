@@ -27,11 +27,26 @@ export interface Shortcut {
 /**
  * The list, typed and exported once: Help & About renders it and the README
  * quotes it, so there is one place a chord is written down.
+ *
+ * **`Mod+S` is on the list and is not installed here, and the two facts are
+ * one fact.** Every chord below is suppressed inside a text field, which is
+ * the rule the module doc opens with and the reason a Mod+B cannot collapse
+ * the rail mid-sentence. Save is the one chord that has to fire *exactly*
+ * there — an author's hands are in a field when they save — so it is
+ * registered by the pack editor, and the label says where it applies rather
+ * than the shell quietly making an exception to its own rule.
+ *
+ * The editor installs it on the **document**, for as long as edit mode is on
+ * screen, rather than on its own subtree: `document.body` is a reachable
+ * resting place for focus and is where focus sits the moment edit mode opens,
+ * and from there a subtree listener neither saved nor claimed the chord — so
+ * the browser's own save-page dialog opened over unsaved work.
  */
 export const SHORTCUTS: readonly Shortcut[] = [
   { keys: 'Mod+B', label: 'Collapse or expand the navigation rail' },
   { keys: 'Mod+Alt+I', label: 'Open or close the Inspector' },
-  { keys: 'Mod+Alt+J', label: 'Open or close the Console' }
+  { keys: 'Mod+Alt+J', label: 'Open or close the Console' },
+  { keys: 'Mod+S', label: 'Save, while editing a pack' }
 ]
 
 export interface ShortcutActions {
