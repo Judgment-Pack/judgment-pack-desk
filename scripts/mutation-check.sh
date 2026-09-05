@@ -832,7 +832,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		if err != nil || decoded == sessionTokenParameter {
 			continue
 		}' \
-    ''
+    '		_ = name'
   # **The name is compared the way the guard compares it.** `Query().Get`
   # percent-decodes a parameter name, so a strip that read the raw name kept
   # `%74oken=<token>` and sent this desk's own credential to the endpoint on a
@@ -880,11 +880,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # The name list cannot cover a header nobody named; the value comparison is
   # what does, and it is its own row because it is its own rule.
   mutate go "a header whose value is the key is handed back" "$MR" \
-    '			if value == key {
-				header.Del(name)
-				break
-			}' \
-    ''
+    '			if value == key {' \
+    '			if false && value == key {'
   # The page and this chassis share an origin, so a cookie from the endpoint
   # would be stored against the desk.
   mutate go "the endpoint may set a cookie on the desk's origin" "$MR" \
