@@ -960,16 +960,26 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # exact equality, because a short key is a substring of ordinary text.
   mutate go "a long key echoed inside a value is handed back" "$MR" \
     '			if value == key || (long && strings.Contains(value, key)) {' \
-    '			if value == key {'
-  # Past the overall deadline a fresh idle bound would let one late write hold
-  # a slot for two more minutes, which is the whole-request bound not being one.
-  mutate go "a late write takes a whole idle bound past the deadline" "$MR" \
-    '	if d.finalUntil.IsZero() {
-		d.finalUntil = now.Add(relayFinalWrite)
+    '			if value == key || (false && long && strings.Contains(value, key)) {'
+  # **The cap, which is what the finding was about**: without it every write
+  # takes a fresh idle bound, so an idle bound longer than the overall deadline
+  # means the overall deadline bounds nothing and a stalled page holds its slot
+  # for the idle bound instead.
+  mutate go "a write is not capped by the overall deadline" "$MR" \
+    '	if next.After(d.until) {
+		next = d.until
 	}' \
-    '	if d.finalUntil.IsZero() {
-		d.finalUntil = now.Add(relayIdle)
-	}'
+    ''
+  # **Deliberately not mutated: `relayFinalWrite` itself.** Replacing the five
+  # seconds with the idle bound changes nothing any test can observe, and the
+  # reason is worth writing down rather than leaving as a row that reports
+  # "nothing failed" for ever. The one write it governs is the refusal envelope
+  # on the error path — two hundred bytes onto a socket whose buffer is empty by
+  # construction, because that path runs *instead of* a body rather than after
+  # one. A client would have to have a full receive window and no body to have
+  # filled it, which is not a state this route can produce. The cap above is the
+  # safeguard; the constant is the size of the tail behind it, and it is asserted
+  # by reading rather than by measurement.
   mutate go "the relay's log line carries the whole address" "$MR" \
     '	s.log.Printf("desk: assistant relay %s answered %d", loggableOrigin(endpoint.url), status)' \
     '	s.log.Printf("desk: assistant relay %s %s answered %d", endpoint.url, suffix, status)'
