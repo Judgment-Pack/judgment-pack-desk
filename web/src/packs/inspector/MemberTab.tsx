@@ -60,8 +60,11 @@ export function MemberTab({
     dirty !== true &&
     meta.sha256 !== undefined &&
     fileSha256 !== undefined &&
-    baseSha256 !== undefined &&
     meta.sha256 === fileSha256 &&
+    // An undefined base is not equal to anything, which is the point: it was
+    // written as "undefined **or** equal", so a page whose editor holds no
+    // revision of this file at all printed the sentence on the strength of the
+    // other two agreeing with each other.
     baseSha256 === fileSha256
 
   return (

@@ -2691,9 +2691,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '        .finally(() => {})'
   # The Inspector: a defined base, and no served fallback behind the buffer.
   mutate web "an absent base digest is read as a match" "$MTB" \
-    '    baseSha256 !== undefined &&
-    meta.sha256 === fileSha256 &&' \
-    '    meta.sha256 === fileSha256 &&'
+    '    baseSha256 === fileSha256' \
+    '    (baseSha256 === undefined || baseSha256 === fileSha256)'
   mutate web "the Inspector falls back to the document the runtime served" "$PV" \
     '          document={drawn}' \
     '          document={drawn ?? pack.data.document}'
