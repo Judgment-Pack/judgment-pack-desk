@@ -820,7 +820,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # a costume and `a%2Fb` cannot become two.
   mutate go "any character at all is a relayed path" "$MR" \
     '			if !relayPathRune(r) {' \
-    '			if false {'
+    '			if false && !relayPathRune(r) {'
   mutate go "the relayed body is unbounded" "$MR" \
     '	if r.ContentLength > maxRelayBody {' \
     '	if false {'
@@ -843,6 +843,12 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	s.relaySlots <- struct{}{}
 	defer func() { <-s.relaySlots }()
 	if false {'
+  # **Held by the declared-length test and not by the SSE one.**
+  # `httputil.ReverseProxy` flushes immediately on its own for a
+  # `text/event-stream` body and for one of unknown length, whatever
+  # FlushInterval says — so the SSE test survives this mutation and reported a
+  # safeguard nothing was holding. What FlushInterval decides is the remaining
+  # case: a streamed answer that declares its Content-Length.
   mutate go "a relayed answer is buffered rather than streamed" "$MR" \
     '		FlushInterval: -1,' \
     '		FlushInterval: 0,'

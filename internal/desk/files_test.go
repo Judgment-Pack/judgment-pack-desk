@@ -2694,7 +2694,20 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 					<-server.relaySlots
 				}
 			}()
-			return getJSON(t, ts, relayPrefix+"models?token="+testToken)
+			// **A client with a deadline, and it is load-bearing.** A relay
+			// that queued instead of refusing would hold this request behind
+			// the four slots this witness is holding, and an unbounded client
+			// would turn that into a suite that hangs rather than a witness
+			// that fails.
+			client := &http.Client{Timeout: 5 * time.Second}
+			resp, err := client.Get(ts.URL + relayPrefix + "models?token=" + testToken)
+			if err != nil {
+				t.Fatalf("the relay never answered past its bound: %v", err)
+			}
+			defer resp.Body.Close()
+			var body map[string]any
+			_ = json.NewDecoder(resp.Body).Decode(&body)
+			return resp.StatusCode, body
 		},
 		CodeAssistantRelayUpstream: func(t *testing.T) (int, map[string]any) {
 			// Port 1 on loopback, where nothing listens. Loopback so the

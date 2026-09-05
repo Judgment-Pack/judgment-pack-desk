@@ -671,6 +671,62 @@ func TestRelayDeliversAStreamIncrementally(t *testing.T) {
 	}
 }
 
+func TestRelayDeliversADeclaredLengthStreamIncrementally(t *testing.T) {
+	// **This is the test that holds `FlushInterval: -1`, and the SSE one above
+	// is not.** `httputil.ReverseProxy` flushes immediately on its own for a
+	// `text/event-stream` body and for a body of unknown length, whatever the
+	// field says — so the SSE case would go on passing with the field set to
+	// zero, and a mutation row over it reported a safeguard nothing was
+	// holding. What the field actually decides is this remaining case: an
+	// answer that streams *and* declares its length, which is a shape an
+	// endpoint is free to send and a page would otherwise wait out in full.
+	released := make(chan struct{})
+	const first, second = "the first half.", "the second half."
+	u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", fmt.Sprint(len(first)+len(second)))
+		w.WriteHeader(http.StatusOK)
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("the test endpoint cannot flush")
+			return
+		}
+		_, _ = io.WriteString(w, first)
+		flusher.Flush()
+		<-released
+		_, _ = io.WriteString(w, second)
+		flusher.Flush()
+	})
+	_, ts, _ := relayDesk(t, "openai-compatible", u)
+
+	resp, err := ts.Client().Get(relayURL(ts, "chat/completions"))
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer resp.Body.Close()
+
+	arrived := make(chan string, 1)
+	go func() {
+		buffer := make([]byte, len(first))
+		read, _ := io.ReadFull(resp.Body, buffer)
+		arrived <- string(buffer[:read])
+	}()
+	select {
+	case got := <-arrived:
+		if got != first {
+			t.Fatalf("read %q, want %q", got, first)
+		}
+	case <-time.After(5 * time.Second):
+		close(released)
+		t.Fatal("the first half never arrived while the endpoint was still writing")
+	}
+	close(released)
+	rest, _ := io.ReadAll(resp.Body)
+	if string(rest) != second {
+		t.Errorf("the rest of the answer was %q, want %q", rest, second)
+	}
+}
+
 /* The refusals ------------------------------------------------------------- */
 
 func TestRelayRefusesWithoutTheSessionToken(t *testing.T) {
