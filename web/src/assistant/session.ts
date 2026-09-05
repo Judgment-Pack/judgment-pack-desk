@@ -22,7 +22,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { chassisUrl } from '../files/client'
 import { DeskWebSocketTransport } from '../mcp/transport'
 import { sessionToken, socketURL } from '../mcp/McpProvider'
-import { allowedTools, gateTransport } from './toolGate'
+import { allowedTools, gateTransport, type GuardrailNotice } from './toolGate'
 import type {
   AssistantEvent,
   AssistantSession,
@@ -81,16 +81,14 @@ export async function openAssistantConnection(options: {
 }): Promise<AssistantConnection> {
   const allowed = allowedTools(options.allowed)
   const raw = options.transport ?? assistantTransport()
-  const gated = gateTransport(raw, {
-    allowed,
-    onGuardrail: (notice) =>
-      options.onEvent({
-        type: 'guardrail',
-        tool: notice.tool,
-        action: notice.action,
-        detail: notice.detail
-      })
-  })
+  const notify = (notice: GuardrailNotice) =>
+    options.onEvent({
+      type: 'guardrail',
+      tool: notice.tool,
+      action: notice.action,
+      detail: notice.detail
+    })
+  const gated = gateTransport(raw, { allowed, onGuardrail: notify })
   const client = new Client({ name: 'judgment-pack-desk-assistant', version: '0.1.0' }, { capabilities: {} })
   await client.connect(gated)
   const listed = (await client.listTools()).tools as McpTool[]

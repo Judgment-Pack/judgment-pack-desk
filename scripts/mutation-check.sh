@@ -3517,6 +3517,84 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "a diagnostic is rendered as the bare word" "$AS" \
     "      {result.diagnostic !== '' && (" \
     "      {false && result.diagnostic !== '' && ("
+
+  # ---- The assistant's guardrails, below whatever runs the loop -----------
+  #
+  # ADR-0001 puts these under the engine slot on purpose: they are the desk's
+  # promises and not a framework's features, so each one is broken here and the
+  # test that notices is named. Every row's catcher is either the conformance
+  # session — the bake-off scenario, run against the engine registry — or a
+  # test that measures at a recording transport.
+  TG=web/src/assistant/toolGate.ts
+  ASN=web/src/assistant/session.ts
+  AE=web/src/assistant/engine.ts
+  BL=web/src/assistant/engines/builtin/loop.ts
+  BT=web/src/assistant/engines/builtin/providers/types.ts
+
+  # K3(b). Without the allow-list, write_file leaves the page and reaches the
+  # runtime — which is the arrival the scripted server counts as a failure.
+  mutate web "the allow-list check is removed" "$TG" \
+    '  if (typeof name !== '"'"'string'"'"' || !allowed.has(name)) {' \
+    '  if (false) {'
+  # K3(a). Without the rewrite, an evaluate the model asked for without a
+  # rehearsal member reaches the runtime and an audit record is appended.
+  mutate web "the rehearsal rewrite is removed" "$TG" \
+    '  if (name === REHEARSAL_TOOL && args[REHEARSAL_MEMBER] !== true) {' \
+    '  if (false) {'
+  # A rewrite that satisfies itself with a truthy value rather than `true`: the
+  # runtime reads the member, and `"true"` is not it.
+  mutate web "the rewrite accepts any truthy rehearsal value" "$TG" \
+    '  if (name === REHEARSAL_TOOL && args[REHEARSAL_MEMBER] !== true) {' \
+    '  if (name === REHEARSAL_TOOL && !args[REHEARSAL_MEMBER]) {'
+  # The gate is not installed at all: the engine's calls go straight to the
+  # socket. Both K3 rows fail together, which is the point of a wire-level gate.
+  mutate web "the gate is not installed on the assistant's transport" "$ASN" \
+    '  const gated = gateTransport(raw, { allowed, onGuardrail: notify })' \
+    '  const gated = raw'
+  # One shared transport instead of one per session: two sessions would share a
+  # jpack mcp and a gate, and closing either would take the other's connection.
+  mutate web "the assistant reuses one shared transport" "$ASN" \
+    'export function assistantTransport(): Transport {
+  return new DeskWebSocketTransport(socketURL(sessionToken()))
+}' \
+    'let sharedTransport: Transport | undefined
+export function assistantTransport(): Transport {
+  sharedTransport ??= new DeskWebSocketTransport(socketURL(sessionToken()))
+  return sharedTransport
+}'
+  # The engine is handed the client, which is a door beside the gate rather
+  # than behind it. The member set is asserted whole, so adding one fails.
+  mutate web "the session hands the engine a client beside the gate" "$AE" \
+    '  /** Bound through the ToolGate. */
+  callTool: CallTool' \
+    '  /** Bound through the ToolGate. */
+  callTool: CallTool
+  client?: unknown'
+  # K1. The page holds no key; a header here is a credential it had to have got.
+  mutate web "a credential header is restored to the model request" "$BT" \
+    "  return { 'content-type': 'application/json', ...extra }" \
+    "  return { 'content-type': 'application/json', authorization: 'Bearer x', ...extra }"
+  # The engine adds a query parameter of its own, which the relay refuses
+  # outright — and which a string-concatenated URL would put after the query.
+  mutate web "the engine appends its suffix after the query" "$BT" \
+    '  const url = new URL(base, '"'"'http://desk.invalid'"'"')
+  url.pathname = `${url.pathname.replace(/\/+$/, '"''"')}/${suffix.replace(/^\/+/, '"''"')}`' \
+    '  const url = new URL(`${base}/${suffix}`, '"'"'http://desk.invalid'"'"')'
+  # `end` twice: a pane that renders "running" until it sees one would be right
+  # either way, so what this breaks is the contract's own "exactly once".
+  mutate web "end is emitted twice" "$BL" \
+    '    yield { type: '"'"'end'"'"' }
+  }
+}' \
+    '    yield { type: '"'"'end'"'"' }
+    yield { type: '"'"'end'"'"' }
+  }
+}'
+  # The proposal taken from the prose rather than from the fenced block: a
+  # worked example in an explanation becomes the document a person accepts.
+  mutate web "the proposal is taken from the prose" "$BL" \
+    '  const blocks = [...(text ?? '"''"').matchAll(FENCE)].map((match) => match[1] ?? '"''"')' \
+    '  const blocks = [(text ?? '"''"').slice((text ?? '"''"').indexOf('"'"'{'"'"'), (text ?? '"''"').lastIndexOf('"'"'}'"'"') + 1)]'
 fi
 
 restore
