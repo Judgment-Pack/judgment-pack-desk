@@ -347,11 +347,6 @@ func relayQueryProblem(raw string) string {
 	return ""
 }
 
-// sessionTokenParameter is the name this chassis authenticates every request
-// with, and therefore the only name a relayed request may carry. Declared once
-// so the guard's spelling and this rule's spelling cannot drift.
-const sessionTokenParameter = "token"
-
 // relayTarget is the address one relayed request is sent to.
 //
 // The suffix goes on the configured URL's **escaped path**, through

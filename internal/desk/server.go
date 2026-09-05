@@ -224,10 +224,16 @@ func (s *Server) Close() error {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
 
+// sessionTokenParameter is the name this chassis authenticates every request
+// with, and therefore the only query parameter name a relayed request may
+// carry. Declared once, here, beside the guard that reads it, so the guard's
+// spelling and the relay's rule cannot drift apart.
+const sessionTokenParameter = "token"
+
 // authorized reports whether the request carries the session token. The
 // comparison is constant-time so that a wrong token leaks no prefix.
 func (s *Server) authorized(r *http.Request) bool {
-	got := r.URL.Query().Get("token")
+	got := r.URL.Query().Get(sessionTokenParameter)
 	if got == "" {
 		return false
 	}
