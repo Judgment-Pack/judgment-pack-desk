@@ -93,6 +93,7 @@ describe('bytes shaped like nothing this desk expects', () => {
     // wrong rather than crashing on the way to finding out.
     expect(screen.queryByRole('navigation', { name: 'Members' })).toBeNull()
     expect(screen.getByRole('toolbar', { name: 'Editing' })).toBeTruthy()
+    expect(screen.getByText(/JSON, but not an object/)).toBeTruthy()
   })
 
   it.each([
@@ -114,8 +115,8 @@ describe('bytes shaped like nothing this desk expects', () => {
     ['/metadata/reviews/0', (doc: Record<string, unknown>) => {
       ;(doc.metadata as Record<string, unknown>).reviews = [null]
     }],
-    ['/extensions', (doc: Record<string, unknown>) => {
-      doc.extensions = null
+    ['/rules/0/extensions', (doc: Record<string, unknown>) => {
+      ;(doc.rules as Record<string, unknown>[])[0]!.extensions = null
     }],
     ['/escalation/triggers', (doc: Record<string, unknown>) => {
       ;(doc.escalation as Record<string, unknown>).triggers = 'no-match'

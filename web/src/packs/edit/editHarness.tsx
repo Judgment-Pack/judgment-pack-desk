@@ -155,7 +155,22 @@ export function chassis(options: {
       log.reads += 1
       const wanted = decodeURIComponent(/[?&]path=([^&]*)/.exec(address)?.[1] ?? '')
       const gate = gates.get(wanted)
-      if (gate !== undefined) await gate.wait
+      // **The answer is the file as it was when the read was made.** Held until
+      // the case says so, but not *read* then: a request that is answered late
+      // is answering about the bytes it saw, which is the whole of what makes a
+      // late answer wrong.
+      const snapshot = disk.get(wanted)
+      if (gate !== undefined) {
+        await gate.wait
+        if (snapshot !== undefined && !readsBroken) {
+          return ok({
+            path: wanted,
+            bytes: snapshot.content.length,
+            sha256: snapshot.sha256,
+            content: snapshot.content
+          })
+        }
+      }
       if (readsBroken) {
         return {
           ok: false,

@@ -58,7 +58,7 @@ import { CHECK_BEHIND_BUFFER, anchor, isStale, truncationNote } from '../packs/c
 import type { AnchoredDiagnostic } from '../packs/checks'
 import { CheckStrip } from '../packs/CheckStrip'
 import { PackDocumentView } from '../packs/document/PackDocumentView'
-import { isRecord } from '../packs/document/MisshapenMember'
+import { describe as describeShape, isRecord } from '../packs/document/MisshapenMember'
 import { SelectionContext } from '../packs/document/Block'
 import { EditToolbar } from '../packs/edit/EditToolbar'
 import {
@@ -959,6 +959,15 @@ function formWithheld(
   disagreement: readonly { pointer: string; reason: string }[]
 ): string | undefined {
   if (read === undefined || text === undefined) return undefined
+  // **JSON, and not a document.** `null`, `[]`, `"a pack"` and `7` each scan and
+  // agree with `JSON.parse`; there is no member to draw a control over and no
+  // parse error to point at, so without this the form was simply gone and the
+  // page said nothing about where it went.
+  if (read.index.parseError === undefined && !isRecord(read.index.value)) {
+    return `These bytes are JSON, but not an object, so there is no document to draw a form over — ${describeShape(
+      read.index.value
+    )} is what they are.`
+  }
   if (read.index.parseError !== undefined) {
     const offset = /byte (\d+)/.exec(read.index.parseError)
     const where =
