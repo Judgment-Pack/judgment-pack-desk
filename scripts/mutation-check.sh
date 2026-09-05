@@ -3196,11 +3196,9 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  if (false) {'
   # The typed key, and how long the page holds it.
   mutate web "the field is cleared only once the store has answered" "$AS" \
-    "    const value = typed
-    setTyped('')
+    "    setTyped('')
     setStoreProblem(undefined)" \
-    '    const value = typed
-    setStoreProblem(undefined)'
+    '    setStoreProblem(undefined)'
   # **This row replaced one that did not discriminate.** It used to remove the
   # `store.reset()` the section called on settlement, on the belief that
   # resetting was what stopped React Query retaining the credential. It was
@@ -3208,20 +3206,19 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # its variables for minutes afterwards either way — which a test that reads
   # the cache is what established. The key is not a mutation variable at all
   # now, so what is broken here is that.
+  # One edit, and it is the defect exactly: the credential becomes something
+  # React Query keeps. The mutation function ignores the argument either way —
+  # what changes is that the cache entry now holds the key, which is what the
+  # cache-reading test looks for.
   mutate web "the key is handed to the mutation as its variable" "$AQ" \
-    '    mutationFn: async () => {
-      const key = pending.current ?? '"''"'
-      // Dropped before the promise is awaited, not after it resolves: a
-      // request that never comes back must not leave it here.
-      pending.current = null
-      return storeAssistantKey(key)
-    },' \
-    '    mutationFn: async () => storeAssistantKey(pending.current ?? '"''"'),'
-  mutate web "the pending key is left behind after the request" "$AQ" \
-    '        onSettled: () => {
-          pending.current = null
-        }' \
-    '        onSettled: () => undefined'
+    '      mutation.mutate(undefined, {' \
+    '      mutation.mutate(key as unknown as void, {'
+  # Deliberately not mutated: the two places the pending ref is cleared. A ref
+  # is closure state with no reader outside the hook, so breaking it produces
+  # no observable difference for any test to catch — it would be a row that
+  # reports "nothing failed" for ever, which reads as a missing safeguard
+  # rather than an unobservable one. What *is* observable is that the cache
+  # retains nothing, and the row above holds that.
   # A key is not removed by removing the endpoint, so the page must not say so.
   mutate web "no endpoint is reported as no key" "$AS" \
     "          {endpoint === null ? 'none — no endpoint configured' : 'a model endpoint'}" \
