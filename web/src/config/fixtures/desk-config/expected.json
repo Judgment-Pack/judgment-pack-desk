@@ -31,6 +31,10 @@
     "accepted": true,
     "keys": []
   },
+  "accepted-endpoint-every-tool": {
+    "accepted": true,
+    "keys": []
+  },
   "accepted-endpoint-loopback-http": {
     "accepted": true,
     "keys": []
@@ -133,6 +137,12 @@
     "accepted": false,
     "keys": [
       "assistant.thinking"
+    ]
+  },
+  "refused-endpoint-a-sixth-tool": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.tools"
     ]
   },
   "refused-endpoint-blank-model": {

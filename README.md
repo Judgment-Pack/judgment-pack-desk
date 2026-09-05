@@ -1096,8 +1096,12 @@ appear here:
       "url": "https://api.example.invalid/v1",
       "kind": "openai-compatible",
       "model": "a-model",
-      "tools": ["get_schema", "get_example", "validate", "experimental_evaluate"]
-    }
+      "tools": [
+        "get_schema", "list_examples", "get_example", "validate", "experimental_evaluate"
+      ]
+    },
+    "engine": "vercel",
+    "thinking": "off"
   }
 }
 ```
@@ -1236,12 +1240,15 @@ desk appends the path its protocol prescribes and never guesses a version
 segment.
 
 `tools` is required, is validated against a closed list — `get_schema`,
-`get_example`, `validate`, `experimental_evaluate` — and refuses anything else
-by name. It is required rather than defaulted because a defaulted tool list is
-a capability granted by a file that never mentioned it; `[]` is accepted and
-means an assistant that may call nothing. Every one of the four is a **read**:
-three questions put to the runtime and a rehearsal, which consults no reviewed
-set and decides no outcome. The list is mirrored in
+`list_examples`, `get_example`, `validate`, `experimental_evaluate` — and
+refuses anything else by name. It is required rather than defaulted because a
+defaulted tool list is a capability granted by a file that never mentioned it;
+`[]` is accepted and means an assistant that may call nothing. Every one of the
+five is a **read**: four questions put to the runtime and a rehearsal, which
+consults no reviewed set and decides no outcome. `list_examples` is on the list
+because the runtime's own `author_pack` prompt tells the model to call it — a
+list without it grants a capability the prompt then asks for and cannot have.
+The list is mirrored in
 `internal/desk/assistant.go` and held to it by a test that reads that file,
 because both sides refuse by it.
 
@@ -2011,10 +2018,10 @@ web/                 Vite + React + TypeScript SPA
                      implementations of one contract, held together
   src/identity/      the identity slot: one nullable field, and the header
                      control that renders it
-  src/assistant/     the assistant slot: one nullable field, the four chassis
-                     calls, the Admin section that configures it and holds the
-                     key, and the one hook a future pane will read — nothing
-                     here renders a pane
+  src/assistant/     the assistant slot: one nullable field and two settings
+                     about how it runs, the four chassis calls, the Admin
+                     section that configures it and holds the key, and the one
+                     hook a future pane will read — nothing here renders a pane
   scripts/smoke.ts   the desk's own client, driven outside a browser
 ```
 

@@ -69,7 +69,7 @@ export const ASSISTANT_KINDS: readonly EndpointKind[] = ['openai-compatible', 'a
 /**
  * The runtime tools the assistant may be configured to call.
  *
- * A closed list, and every one of them is a **read**: three questions and a
+ * A closed list, and every one of them is a **read**: four questions and a
  * rehearsal. There is no write tool on it because the runtime has none, and no
  * file tool because proposing an edit is the assistant's whole reach — a
  * proposal a person accepts and the runtime then checks. A name outside this
@@ -77,12 +77,18 @@ export const ASSISTANT_KINDS: readonly EndpointKind[] = ['openai-compatible', 'a
  * configuration that grants a tool nothing honours is a configuration that
  * reads as a grant.
  *
+ * **`list_examples` is here because the runtime's own prompt calls it.** The
+ * `author_pack` prompt tells the model to list the examples before asking for
+ * one, so a list without it grants a capability the prompt then asks for and
+ * cannot have.
+ *
  * Mirrored from `AssistantTools` in `internal/desk/assistant.go`, and **held to
  * it by a test that reads that file** — both sides refuse by this list, and two
  * answers about what the assistant may call is worse than either one.
  */
 export const ASSISTANT_TOOLS = [
   'get_schema',
+  'list_examples',
   'get_example',
   'validate',
   'experimental_evaluate'

@@ -172,9 +172,11 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
       <p className="quiet">
         The assistant may be given only these tools:{' '}
         <code>{ASSISTANT_TOOLS.join(', ')}</code>. Every one of them is a question put to the
-        runtime, and the last is a rehearsal — it consults no reviewed set and decides no outcome.
-        A name outside that list is refused when the file is read, rather than accepted and
-        ignored, because a setting that appears to grant something is a grant to whoever wrote it.
+        runtime, and the last is a rehearsal — it consults no reviewed set and decides no outcome.{' '}
+        <code>list_examples</code> is on the list because the runtime&apos;s own authoring prompt
+        tells the model to call it. A name outside that list is refused when the file is read,
+        rather than accepted and ignored, because a setting that appears to grant something is a
+        grant to whoever wrote it.
       </p>
 
       <PasteBlock

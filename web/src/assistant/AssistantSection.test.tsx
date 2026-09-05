@@ -469,11 +469,13 @@ describe('the Assistant section', () => {
     expect(await screen.findByText(/no key is stored on this machine/)).toBeTruthy()
   })
 
-  it('names the four tools it may be given, and says what each of them is', () => {
+  it('names the five tools it may be given, and says what each of them is', () => {
     stubChassis({})
     renderSection()
     expect(
-      screen.getByText('get_schema, get_example, validate, experimental_evaluate')
+      screen.getByText(
+        'get_schema, list_examples, get_example, validate, experimental_evaluate'
+      )
     ).toBeTruthy()
     expect(screen.getByText(/consults no reviewed set and decides no outcome/)).toBeTruthy()
   })

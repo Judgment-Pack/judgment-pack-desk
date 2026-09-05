@@ -314,9 +314,13 @@ describe('(2) a key is refused wherever it is written, and refused for being one
 })
 
 describe('(3) the tool list is closed, and is one list across both sides', () => {
-  it('accepts the four and refuses anything else by name', () => {
+  it('accepts the five and refuses anything else by name', () => {
+    // Written out rather than compared to the constant, so that adding a name
+    // to the list is a line in this file too. `list_examples` is here because
+    // the runtime's `author_pack` prompt calls it.
     expect([...ASSISTANT_TOOLS]).toEqual([
       'get_schema',
+      'list_examples',
       'get_example',
       'validate',
       'experimental_evaluate'
@@ -325,13 +329,20 @@ describe('(3) the tool list is closed, and is one list across both sides', () =>
     expect(good.problems).toEqual([])
     expect(good.values?.assistant?.endpoint?.tools).toEqual([...ASSISTANT_TOOLS])
 
-    for (const tool of ['write_file', 'get_pack', 'evaluate', 'bash', 'GET_SCHEMA']) {
+    for (const tool of [
+      'write_file',
+      'get_pack',
+      'evaluate',
+      'bash',
+      'GET_SCHEMA',
+      'list_packs'
+    ]) {
       const decoded = decodeDesk({ endpoint: { ...GOOD_ENDPOINT, tools: [tool] } })
       expect(decoded.values, `${tool} refuses the whole file`).toBeUndefined()
       const problem = decoded.problems.find((each) => each.key === 'assistant.endpoint.tools')
       expect(problem, `${tool} is refused`).toBeDefined()
       // Named one at a time: "one of these is not allowed" makes a reader
-      // check four names against a list.
+      // check five names against a list.
       expect(problem!.reason).toContain(JSON.stringify(tool))
     }
   })

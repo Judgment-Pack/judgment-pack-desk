@@ -421,10 +421,18 @@ var AssistantKinds = []string{"openai-compatible", "anthropic"}
 //
 // Held here as well as in the page's decoder because both sides refuse by it,
 // and a test reads this declaration to hold the two lists to one answer. Every
-// one of them is a **read** of the runtime: three questions and a rehearsal.
+// one of them is a **read** of the runtime: four questions and a rehearsal.
 // There is no write tool on the list because the runtime has none, and no file
 // tool because proposing an edit is the assistant's whole reach.
-var AssistantTools = []string{"get_schema", "get_example", "validate", "experimental_evaluate"}
+//
+// **`list_examples` is on it because the runtime's own prompt calls it.** The
+// `author_pack` prompt tells the model to list the examples before asking for
+// one, so a list without it grants a capability the prompt then asks for and
+// cannot have — an assistant refused by its own instructions. It is a read
+// like the rest: the names of the examples the runtime serves.
+var AssistantTools = []string{
+	"get_schema", "list_examples", "get_example", "validate", "experimental_evaluate",
+}
 
 // AssistantEngines is the closed set of loops that may run the assistant.
 //
