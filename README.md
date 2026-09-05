@@ -1277,9 +1277,13 @@ admits `off`, `on` and `ultra`; the two states it cannot express — a model tha
 always thinks, and an endpoint that offers no thinking at all — are the desk's
 to report when it meets them rather than settings anyone selects.
 
-**Nothing in this release acts on either.** They are decoded, refused if wrong,
-exposed by `useAssistantSlot()` and shown on Admin. No request is shaped by
-`thinking` and no engine is loaded.
+`engine` is acted on now: the page loads the named engine's chunk and runs it.
+**This build carries an adapter for `builtin` only.** A desk configured for
+`vercel` — the default — therefore runs `builtin`, and the tab says so in one
+line rather than refusing: a default nobody typed is not a reason to have no
+assistant. `thinking` is still stored and shown and shapes no request; the
+built-in engine reports a tier other than `off` as unavailable and carries on,
+which is what ADR-0001 means by degrading visibly.
 
 **Admin › Assistant** shows the configured endpoint, its protocol, its model
 and its tools with the file each came from, the engine and the tier, the exact JSON to paste, the key
@@ -1291,10 +1295,113 @@ lets the key line say whether one is still kept here.
 
 **What the assistant is, and is not**, in the sentence the page carries: it
 proposes edits to the draft; you accept them; the runtime checks them. It never
-saves a file and never decides an outcome. Nothing in this release renders an
-assistant pane — this is the slot, its configuration and its key custody. The
-pane is the next piece of work, and `useAssistantSlot()` is the one reading it
-will consume.
+saves a file and never decides an outcome.
+
+### The Assistant tab
+
+On a pack's route — reading or `?edit` — the right pane carries two tabs,
+**Inspector** and **Assistant**. The Assistant tab renders only where an
+endpoint is configured *and* a key is stored on this machine; otherwise it says
+in one line where that is configured, because a control that would refuse is
+worse than a sentence that explains.
+
+Type what the pack should decide and press **Run**. The desk fetches the
+runtime's own `author_pack` prompt over `prompts/get` with what you typed as its
+`policy` argument, hands it to the engine, and shows what happens: each tool
+call by name, each answer's `isError` and byte count, each guardrail in the
+desk's warning colour, and at the end the **proposal** — the document as
+read-only JSON, the unknowns the assistant declared, and beneath them the
+runtime's own checks **quoted whole**: the `validate` report and the rehearsal
+evaluation, as the runtime wrote them. A summary of a verdict is a second
+verdict, so there is none.
+
+**Accept and Reject are drawn and disabled**, with a title saying they arrive in
+the next chunk. Nothing here writes to the draft, produces a diff, or touches a
+file. `Escape` stops a running session; leaving the route stops it too.
+Nothing about a session is persisted — coming back is a new one.
+
+**The assistant opens its own MCP connection**, and that costs one more
+`jpack mcp` process while the tab is running. The reason is the ToolGate below:
+the desk's one client serves the page's own calls — `list_packs`, `get_pack`,
+Try it — every one of which is outside the assistant's allow-list, so a gate on
+that transport would break the desk. A second socket, gated at the wire, is what
+makes "no page code path can bypass it" a structural claim rather than a habit.
+The connection lives exactly as long as the session and is closed on stop, on
+unmount and on navigation.
+
+### The ToolGate
+
+`web/src/assistant/toolGate.ts` wraps the assistant transport's `send`, and
+every outbound `tools/call` frame passes through it:
+
+- a name outside the session's allow-list is **refused** — the frame never
+  leaves the page, the caller's promise rejects with a `GateViolation` naming
+  the tool, and a `guardrail` line appears in the tab. The engine turns the
+  rejection into a result the model is told about, because a call dropped in
+  silence is a turn the model spends re-asking for it;
+- `experimental_evaluate` is **rewritten** to carry `rehearsal: true` whatever
+  the arguments said, with a `guardrail` line saying what was there — the
+  `rehearsal` member's previous value, and never the pack text;
+- everything else passes untouched, including `initialize`, `tools/list` and
+  `prompts/get`. The gate is about what the assistant may *do*.
+
+The allow-list is `assistant.endpoint.tools` **intersected with the five**, and
+the order is allow-list first: an `experimental_evaluate` the file never granted
+is refused rather than politely corrected on its way out.
+
+The engine is handed a `callTool` bound through this gate and **nothing else** —
+no client, no transport, no `fetch` — and the session's member set is asserted
+whole in `assistant/enforcement.test.ts`, because the guarantee is that there is
+nothing else there.
+
+### The engine slot, as it stands
+
+`web/src/assistant/engine.ts` is ADR-0001's contract. `assistant/engines/` is
+the registry: one lazily loaded chunk per certified engine, so a session
+downloads one. `builtin` is the port of the bake-off's control loop — a
+hand-written turn loop over an explicit messages array, both wire formats, no
+new dependency — restricted to the contract: it takes the runtime's prompt and
+the runtime's own tool definitions, speaks to the chassis relay **with no
+credential of its own**, reads a stream or a whole answer by what came back
+rather than by what it asked for, ends on one fenced JSON block, bounds itself
+at twenty model turns, and emits `end` exactly once.
+
+Its request URL is the relay base with **one path suffix** and no query of its
+own: the desk puts this chassis' session token in the base and the relay refuses
+any other parameter outright, so an engine that appended one would have every
+request refused. Both wire formats put `stream` in the body, so none is needed.
+
+### The conformance session
+
+`web/src/assistant/conformance/` is the bake-off's scenario carried into the
+repository and run in CI — keyless, deterministic, no network, no runtime
+binary. It runs against the engine **registry**, so a future adapter is
+certified by adding its id to one list.
+
+- `scenario.json` is the experiment's own fixture, whose DRAFT_V1, DRAFT_V2 and
+  FACTS were proved against the runtime before it was written.
+- `runtime.json` is a recording of a real `jpack mcp`: `tools/list` filtered to
+  the five, exactly as served with the runtime's own schemas, and one
+  `tools/call` answer per step T1–T6, taken from judgment-pack-runtime v0.19.0
+  in a project copy that declared an audit trail. No audit record was written by
+  any of them.
+- `scriptedModel.ts` is the fixture's step logic in TypeScript, installed as a
+  `fetch` stub that records every request; it decides the next step from the
+  results present in the request's own messages, so a run that mishandled a
+  message array gets a different script.
+- `scriptedServer.ts` replays the recording on an in-memory transport pair, and
+  matches a call by its **arguments**: an `experimental_evaluate` arriving
+  without `rehearsal: true` is a failure, and so is a `write_file` arriving at
+  all.
+
+Four legs — OpenAI-compatible and Anthropic, each answered as a stream and as
+one whole object, because an endpoint may ignore what the request asked for —
+and the checks are the experiment's own: **K1** no credential in any request and
+nothing called but the relay; **K2** the five tools out of `tools/list`, with no
+schema literal in any engine source; **K3a** the rewrite, measured at the
+scripted server rather than at the page; **K3b** `write_file` never arriving;
+**K3c** the proposal equal to DRAFT_V2; T8's unknowns; and the event stream's
+exact order with one `end`.
 
 ## Requirements
 
@@ -1719,9 +1826,11 @@ the endpoint the desk-level file names, and it is good only at the endpoint that
 already holds it.** What this route guarantees is that the desk never volunteers
 it — not that an endpoint cannot give away a secret it was given.
 
-Nothing in this release calls it. It is the seam the assistant's engine slot
-needs ([ADR-0001](docs/adr/0001-make-the-assistant-engine-a-slot.md)), built
-before the engine so that the engine is page work.
+The assistant's engine calls it, and nothing else does
+([ADR-0001](docs/adr/0001-make-the-assistant-engine-a-slot.md)). The base the
+page is handed carries this chassis' session token — the one parameter the rule
+above admits — and the engine appends a path suffix to it and adds no parameter
+of its own.
 
 ## Authoring (issue #14, phase 1)
 
@@ -2234,6 +2343,18 @@ appears anywhere on the page. `files/useFileEditing.test.ts` and
 `shell/useDirtyGuard.test.tsx` hold the discipline lifted out of the authoring
 view — `routes/AuthorView.test.tsx` staying green unedited is the proof the
 extraction preserved its behaviour.
+
+The assistant's suites are named the same way. `assistant/toolGate.test.ts`
+holds the gate at a **recording transport**: what left the page, never what the
+gate believes it did. `assistant/conformance/conformance.test.ts` is the desk's
+conformance session, described above, and is the one that certifies an engine.
+`assistant/engines/builtin/engine.test.ts` holds the handful of properties that
+session only exercises incidentally — the request's headers and URL, the turn
+bound, `end` exactly once, and a proposal taken from the fenced block rather
+than from the prose beside it. `assistant/AssistantPane.test.tsx` drives the
+page's **real** transport against the recorded runtime through a stand-in
+`WebSocket`, so the socket, the gate and the SDK client above it are the
+production ones.
 
 CI runs `gofmt`, `go vet` and `go test` on one job and `npm ci`, `tsc`, the
 component tests and `vite build` on another. It supplies neither a runtime binary
