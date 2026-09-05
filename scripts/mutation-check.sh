@@ -823,8 +823,11 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # The one thing this route adds. Without it the endpoint is called with no
   # credential at all, which is a page that cannot work rather than a page that
   # is unsafe — but it is the sentence the whole route exists for.
+  # Repaired: the needle named `out.Header.Set`, which this file stopped saying
+  # when the outbound headers became an allow-list built into a new set. A row
+  # that cannot apply is a row reporting nothing.
   mutate go "the configured key is never attached" "$MR" \
-    '			out.Header.Set(name, value)' \
+    '			carried.Set(name, value)' \
     '			_, _ = name, value'
   # This desk's own credential, in the place it is easiest to forget.
   mutate go "the session token is forwarded to the endpoint" "$MR" \
@@ -852,7 +855,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "any character at all is a relayed path" "$MR" \
     '			if !relayPathRune(r) {' \
     '			if false && !relayPathRune(r) {'
-  mutate go "the relayed body is unbounded" "$MR" \
+  # Renamed, because the old name was a claim the mutation could not break:
+  # disabling the fast rejection leaves the body bounded at the reader, so the
+  # status is still 413 and nothing outbound still happens. What the fast path
+  # decides is *when* the weighing happens — before the store, the endpoint and
+  # the key are read — and a desk with none of those answers `too-large`
+  # instead of `assistant-unconfigured`, which is what the test measures.
+  mutate go "an over-size body is weighed only after the desk is read" "$MR" \
     '	if r.ContentLength > maxRelayBody {' \
     '	if false {'
   mutate go "an undeclared body length is unbounded" "$MR" \
@@ -923,6 +932,44 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		until:          deadline,
 	}, r)' \
     '	proxy.ServeHTTP(w, r)'
+  # Two parsers disagreed about `;` and the desk's own session token went to the
+  # endpoint: Go reads `x=1;token=T&token=T` as one `token` parameter and
+  # accepts it, while a strip that removed the pair it could see preserved the
+  # first one for a server that does split on `;`.
+  mutate go "a query two parsers read differently is forwarded" "$MR" \
+    "$(printf '\tif strings.ContainsRune(raw, %s) {' "';'")" \
+    '	if false {'
+  # The proxy copies the endpoint's trailers to the page after the body, past
+  # every filter on this route.
+  mutate go "the endpoint's trailers are forwarded to the page" "$MR" \
+    '			response.Trailer = nil
+			response.Header.Del("Trailer")' \
+    ''
+  mutate go "a trailer staged by the proxy still reaches the page" "$MR" \
+    '	for name := range header {
+		if strings.HasPrefix(name, http.TrailerPrefix) {
+			header.Del(name)
+		}
+	}' \
+    ''
+  # A 1xx reaches the page through a client trace, before ModifyResponse runs.
+  mutate go "an informational response is forwarded to the page" "$MR" \
+    '	if status < 100 || status >= 200 {' \
+    '	if true {'
+  # A long key is looked for anywhere in a value; below twelve bytes it is
+  # exact equality, because a short key is a substring of ordinary text.
+  mutate go "a long key echoed inside a value is handed back" "$MR" \
+    '			if value == key || (long && strings.Contains(value, key)) {' \
+    '			if value == key {'
+  # Past the overall deadline a fresh idle bound would let one late write hold
+  # a slot for two more minutes, which is the whole-request bound not being one.
+  mutate go "a late write takes a whole idle bound past the deadline" "$MR" \
+    '	if d.finalUntil.IsZero() {
+		d.finalUntil = now.Add(relayFinalWrite)
+	}' \
+    '	if d.finalUntil.IsZero() {
+		d.finalUntil = now.Add(relayIdle)
+	}'
   mutate go "the relay's log line carries the whole address" "$MR" \
     '	s.log.Printf("desk: assistant relay %s answered %d", loggableOrigin(endpoint.url), status)' \
     '	s.log.Printf("desk: assistant relay %s %s answered %d", endpoint.url, suffix, status)'

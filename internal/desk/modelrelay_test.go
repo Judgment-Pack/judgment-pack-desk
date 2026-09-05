@@ -39,6 +39,12 @@ type arrival struct {
 	host     string
 	header   http.Header
 	body     []byte
+	// What the endpoint was told about the body's length, and how it was
+	// framed. Recorded because the relay measures a buffered body and declares
+	// it: an endpoint that requires a declared length would refuse a chunked
+	// request, and nothing else here would notice.
+	contentLength    int64
+	transferEncoding []string
 }
 
 // upstream is an endpoint that records what reached it.
@@ -61,12 +67,14 @@ func newUpstream(t *testing.T, respond http.HandlerFunc) *upstream {
 		body, _ := io.ReadAll(r.Body)
 		u.mu.Lock()
 		u.seen = append(u.seen, arrival{
-			method:   r.Method,
-			path:     r.URL.EscapedPath(),
-			rawQuery: r.URL.RawQuery,
-			host:     r.Host,
-			header:   r.Header.Clone(),
-			body:     body,
+			method:           r.Method,
+			path:             r.URL.EscapedPath(),
+			rawQuery:         r.URL.RawQuery,
+			host:             r.Host,
+			header:           r.Header.Clone(),
+			body:             body,
+			contentLength:    r.ContentLength,
+			transferEncoding: append([]string(nil), r.TransferEncoding...),
 		})
 		u.mu.Unlock()
 		if u.respond != nil {
@@ -543,6 +551,59 @@ func TestRelayStripsTheSessionTokenBySpellingItTheWayTheGuardDoes(t *testing.T) 
 	}
 }
 
+func TestRelayRefusesAQueryCarryingASemicolon(t *testing.T) {
+	// **Two parsers disagreed about one character and the desk's own session
+	// token went to the endpoint.** `;` was a query separator once and some
+	// servers still read it as one; Go does not, so
+	// `x=1;token=<the token>&token=<the token>` reads to the guard as a single
+	// `token` parameter — accepted — while the strip removed the pair it could
+	// see and preserved `x=1;token=<the token>` byte for byte, for an endpoint
+	// that does split on `;`.
+	//
+	// The answer is not a third parser: two readers can only be held to one
+	// answer over the inputs they read the same way, so this query is refused.
+	counter := countingRelays(t)
+	u := newUpstream(t, nil)
+	_, ts, _ := relayDesk(t, "openai-compatible", u)
+	for _, query := range []string{
+		"x=1;token=" + testToken + "&token=" + testToken,
+		"token=" + testToken + "&a=1;b=2",
+		"token=" + testToken + ";",
+	} {
+		resp, body := relayDo(t, ts, http.MethodGet, "models?"+query, nil, nil)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%q: status %d, want 400 (%s)", query, resp.StatusCode, body)
+			continue
+		}
+		if got := codeOfBody(t, body); got != CodeAssistantRelayPath {
+			t.Errorf("%q: code %q, want %q", query, got, CodeAssistantRelayPath)
+		}
+	}
+	if calls, to := counter.seen(); calls != 0 {
+		t.Fatalf("a semicolon query made %d outbound request(s), to %v", calls, to)
+	}
+	if seen := u.arrivals(); len(seen) != 0 {
+		t.Fatalf("the endpoint saw %d request(s)", len(seen))
+	}
+}
+
+func TestRelayCarriesAnEscapedSemicolonLikeAnyOtherCharacter(t *testing.T) {
+	// The positive control for the refusal above, and the line it draws: `%3B`
+	// is a *value* and not a separator to anybody, so refusing it would be this
+	// desk deciding something about an endpoint's own routing. Its own test
+	// because the refusal's is counted at the transport, where nothing reaches
+	// a real endpoint at all.
+	u := newUpstream(t, nil)
+	_, ts, _ := relayDesk(t, "openai-compatible", u)
+	resp, body := relayGet(t, ts, "models?route=eu%3Bwest")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("an escaped semicolon was refused: %d %s", resp.StatusCode, body)
+	}
+	if got := u.only(t).rawQuery; got != "route=eu%3Bwest" {
+		t.Errorf("query %q, want the escaped semicolon carried through", got)
+	}
+}
+
 func TestTheTokenStripAndTheGuardReadOneName(t *testing.T) {
 	// The rule itself, at the two ends that have to agree: whatever
 	// `url.ParseQuery` calls `token`, `withoutSessionToken` drops — and
@@ -664,6 +725,31 @@ func TestRelayRefusesABodyPastTheBound(t *testing.T) {
 	}
 }
 
+func TestRelayWeighsADeclaredBodyBeforeItReadsAnythingOfItsOwn(t *testing.T) {
+	// **The fast rejection is a rejection, and this is what makes it visible.**
+	// A declared length past the bound is refused before the store, the
+	// endpoint or the key is read — so a desk that has none of those still
+	// answers `too-large` rather than `assistant-unconfigured`. Without the
+	// fast path the body would still be bounded at the reader, and every
+	// assertion about the *status* would go on passing; what changes is which
+	// refusal a desk with nothing configured gives, and that is the difference
+	// this test is made of.
+	counter := countingRelays(t)
+	_, ts, _ := assistantServer(t)
+	resp, body := relayDo(t, ts, http.MethodPost, "chat/completions",
+		strings.NewReader(strings.Repeat("x", maxRelayBody+1)), nil)
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status %d, want 413: %s", resp.StatusCode, body)
+	}
+	if got := codeOfBody(t, body); got != CodeTooLarge {
+		t.Fatalf("code %q, want %q — the size was weighed after the desk was read",
+			got, CodeTooLarge)
+	}
+	if calls, _ := counter.seen(); calls != 0 {
+		t.Fatalf("an over-size body made %d outbound request(s)", calls)
+	}
+}
+
 func TestRelayBoundsABodyOfUndeclaredLength(t *testing.T) {
 	// The second half of the bound. A chunked body declares no length, so the
 	// pre-check cannot see it and the read is what refuses it.
@@ -715,6 +801,17 @@ func TestRelayCarriesABodyOfUndeclaredLengthWhenItFits(t *testing.T) {
 	}
 	if string(seen.body) != payload {
 		t.Error("the body that arrived is not the body that was sent")
+	}
+	// **And it arrives with the length this desk measured**, not as a chunked
+	// stream. The relay buffers the body to bound it, so it knows the length
+	// and declares it; an endpoint that requires one would refuse a chunked
+	// request, and the body arriving intact would not have said so.
+	if seen.contentLength != int64(len(payload)) {
+		t.Errorf("the endpoint was told %d bytes, want %d", seen.contentLength, len(payload))
+	}
+	if len(seen.transferEncoding) != 0 {
+		t.Errorf("the request was framed as %v, want a declared length",
+			seen.transferEncoding)
 	}
 }
 
@@ -1196,7 +1293,29 @@ func TestRelayReleasesASlotHeldByAClientThatStoppedReading(t *testing.T) {
 	// Raw connections rather than a client, because the property is "this
 	// socket is never read from again" and every HTTP client in the standard
 	// library reads.
-	shortDeadlines(t, 30*time.Second, 300*time.Millisecond)
+	// **Two arrangements, because two different bounds have to release the
+	// slot.** With a short idle bound it is the gap between writes that ends
+	// the stalled write; with a short *overall* bound and an idle bound longer
+	// than it, the cap is the only thing that can — and that second one is the
+	// case the first version of this test could not see, which let a late write
+	// take a fresh idle bound and hold a slot two minutes past the deadline
+	// this desk advertises.
+	for _, bounds := range []struct {
+		name          string
+		overall, idle time.Duration
+	}{
+		{"the idle bound releases it", 30 * time.Second, 300 * time.Millisecond},
+		{"the overall bound caps it", 500 * time.Millisecond, 30 * time.Second},
+	} {
+		t.Run(bounds.name, func(t *testing.T) {
+			relaySlotIsReleased(t, bounds.overall, bounds.idle)
+		})
+	}
+}
+
+func relaySlotIsReleased(t *testing.T, overall, idle time.Duration) {
+	t.Helper()
+	shortDeadlines(t, overall, idle)
 	stop := make(chan struct{})
 	t.Cleanup(func() { close(stop) })
 	// Far more than any socket buffer, so the write to the stalled client
@@ -1249,10 +1368,12 @@ func TestRelayReleasesASlotHeldByAClientThatStoppedReading(t *testing.T) {
 	// held is that the slots come back, not when.
 	impatient := *ts.Client()
 	impatient.Timeout = 5 * time.Second
-	// Eight seconds: the fix answers in well under one, and a suite that has
-	// to wait out the failure is a suite the mutation harness reports as a
-	// timeout rather than as the caught mutation it is.
-	deadline := time.Now().Add(8 * time.Second)
+	// The bound this is entitled to wait: the overall deadline, plus the one
+	// short write allowed past it, plus a second of slack. Anything longer is
+	// a slot that is not coming back, and a suite that waits it out is one the
+	// mutation harness reports as a timeout rather than as the caught mutation
+	// it is.
+	deadline := time.Now().Add(overall + relayFinalWrite + time.Second)
 	var last int
 	for time.Now().Before(deadline) {
 		resp, err := impatient.Get(relayURL(ts, "models"))
@@ -1386,6 +1507,190 @@ func TestRelayTakesTheKeyBackOutOfAnAnswer(t *testing.T) {
 	}
 	if body != `{"error":"unauthorized"}` {
 		t.Errorf("body %q, want the endpoint's own", body)
+	}
+}
+
+func TestRelayForwardsNoTrailer(t *testing.T) {
+	// **The path `ModifyResponse` never sees.** `httputil.ReverseProxy` copies
+	// the endpoint's trailers to the page *after* the body, past every filter
+	// on this route — so an endpoint that announced `Trailer: X-Echo` and sent
+	// the key in it handed over the credential under a name no list covers. No
+	// trailer is forwarded at all now, and this reads the raw answer to say so:
+	// a header map assertion alone would not see bytes on the wire.
+	u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Trailer", "X-Echo, X-Api-Key")
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "an answer")
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		w.Header().Set("X-Echo", testKey)
+		w.Header().Set("X-Api-Key", testKey)
+		// The unannounced spelling too, which travels under a different rule.
+		w.Header().Set(http.TrailerPrefix+"X-Late", testKey)
+	})
+	_, ts, _ := relayDesk(t, "openai-compatible", u)
+
+	raw := rawRelayExchange(t, ts, "chat/completions")
+	if !strings.Contains(raw, "an answer") {
+		t.Fatalf("the endpoint's body did not arrive: %q", raw)
+	}
+	if strings.Contains(raw, testKey) {
+		t.Errorf("the key reached the page in the raw answer:\n%s", raw)
+	}
+	for _, name := range []string{"X-Echo", "X-Api-Key", "X-Late", "Trailer"} {
+		if strings.Contains(raw, name) {
+			t.Errorf("%s reached the page:\n%s", name, raw)
+		}
+	}
+
+	// And through a real client, whose trailer map is the other place a
+	// trailer would show up.
+	resp, err := ts.Client().Get(relayURL(ts, "chat/completions"))
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if len(resp.Trailer) != 0 {
+		t.Errorf("the page received trailers: %v", resp.Trailer)
+	}
+}
+
+func TestWithoutTrailersClearsWhatAProxyStages(t *testing.T) {
+	// The second half of the rule, held on its own. `response.Trailer = nil`
+	// stops the proxy copying anything; this is what clears whatever it staged
+	// before this handler returns, which is the instant net/http would send it.
+	header := http.Header{}
+	header.Set("Trailer", "X-Echo")
+	header.Set(http.TrailerPrefix+"X-Echo", testKey)
+	header.Set(http.TrailerPrefix+"X-Api-Key", testKey)
+	header.Set("Content-Type", "application/json")
+	withoutTrailers(header)
+	if got := header.Get("Trailer"); got != "" {
+		t.Errorf("the announcement survived as %q", got)
+	}
+	for name := range header {
+		if strings.HasPrefix(name, http.TrailerPrefix) {
+			t.Errorf("%s survived", name)
+		}
+	}
+	if got := header.Get("Content-Type"); got != "application/json" {
+		t.Errorf("an ordinary header was removed: %q", got)
+	}
+}
+
+func TestRelayForwardsNoInformationalResponse(t *testing.T) {
+	// **The other path no filter sees.** `ReverseProxy` forwards a 1xx through
+	// a client trace that copies its headers to the page and writes the status,
+	// all before `ModifyResponse` runs — so an endpoint could put the key in a
+	// `103 Early Hints` header and have it delivered. None is forwarded.
+	u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Echo", testKey)
+		w.Header().Set("Link", "</style.css>; rel=preload")
+		w.WriteHeader(http.StatusEarlyHints)
+		w.Header().Del("X-Echo")
+		w.Header().Del("Link")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	})
+	_, ts, _ := relayDesk(t, "openai-compatible", u)
+
+	raw := rawRelayExchange(t, ts, "chat/completions")
+	if !strings.Contains(raw, `{"ok":true}`) {
+		t.Fatalf("the endpoint's answer did not arrive: %q", raw)
+	}
+	if strings.Contains(raw, testKey) {
+		t.Errorf("the key reached the page in a 1xx header:\n%s", raw)
+	}
+	if strings.Contains(raw, "103") || strings.Contains(raw, "Early") {
+		t.Errorf("an informational response reached the page:\n%s", raw)
+	}
+}
+
+// rawRelayExchange makes one relayed request on a socket of its own and returns
+// every byte that came back.
+//
+// A raw connection because the properties above are about **bytes on the
+// wire**: a trailer and a 1xx are both invisible to an assertion over a
+// `*http.Response`'s header map, and a client that parses them away would hide
+// exactly what is being asked about.
+func rawRelayExchange(t *testing.T, ts *httptest.Server, suffix string) string {
+	t.Helper()
+	address := strings.TrimPrefix(ts.URL, "http://")
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	if _, err := fmt.Fprintf(conn, "GET %s%s?token=%s HTTP/1.1\r\nHost: %s\r\n"+
+		"Connection: close\r\n\r\n", relayPrefix, suffix, testToken, address); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	raw, err := io.ReadAll(conn)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	return string(raw)
+}
+
+func TestRelayTakesALongKeyOutOfAnAnswerWhereverItSits(t *testing.T) {
+	// **The value rule has a length in it.** A key of twelve bytes or more is
+	// looked for anywhere in a header's value, so `X-Echo: Bearer <key>` under
+	// a name nobody listed goes as well as a bare echo. Below twelve it is
+	// exact equality only: a three-character key is a substring of ordinary
+	// text, and a filter that deletes the answer to protect a credential is a
+	// worse answer than the credential.
+	for _, testCase := range []struct {
+		name     string
+		key      string
+		echoed   string
+		survives bool
+	}{
+		{"a long key, echoed whole", "sk-long-enough-to-reason-about", "sk-long-enough-to-reason-about", false},
+		{"a long key, inside a value", "sk-long-enough-to-reason-about", "Bearer sk-long-enough-to-reason-about", false},
+		{"exactly twelve", "sk-012345678", "Bearer sk-012345678", false},
+		{"one short of twelve, echoed whole", "sk-01234567", "sk-01234567", false},
+		// Eleven bytes: exact equality only, so a value that merely contains
+		// it stays. Stated as the behaviour it is rather than left to be met.
+		{"one short of twelve, inside a value", "sk-01234567", "Bearer sk-01234567", true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			echoed := testCase.echoed
+			u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("X-Echo", echoed)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{}`))
+			})
+			s, ts, _ := assistantServer(t)
+			writeDeskConfig(t, s, fmt.Sprintf(
+				`{"deskConfigVersion":1,"assistant":{"endpoint":`+
+					`{"url":%q,"kind":"openai-compatible","model":"m","tools":[]}}}`,
+				u.server.URL))
+			if status, body := storeKey(t, ts, testCase.key); status != http.StatusOK {
+				t.Fatalf("store: %d %v", status, body)
+			}
+			resp, _ := relayGet(t, ts, "chat/completions")
+			got := resp.Header.Get("X-Echo")
+			if testCase.survives {
+				if got != echoed {
+					t.Errorf("X-Echo = %q, want %q — the short-key rule is exact equality",
+						got, echoed)
+				}
+				return
+			}
+			if got != "" {
+				t.Errorf("X-Echo carried %q back to the page", got)
+			}
+		})
+	}
+	// And the boundary itself, stated where a reader meets it.
+	if minFingerprintable != 12 {
+		t.Errorf("minFingerprintable is %d; the value rule's boundary moved with it",
+			minFingerprintable)
 	}
 }
 

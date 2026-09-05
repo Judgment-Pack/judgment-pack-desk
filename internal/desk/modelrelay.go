@@ -119,6 +119,15 @@ var (
 	relayIdle     = 2 * time.Minute
 )
 
+// relayFinalWrite bounds the one write allowed after a request's overall
+// deadline has passed: the refusal the handler is about to make.
+//
+// Five seconds, and a constant rather than a third dial. It is short enough
+// that a slot cannot be held past the overall bound in any way that matters,
+// and long enough that a page on a loopback socket will always have taken a
+// two-hundred-byte envelope.
+const relayFinalWrite = 5 * time.Second
+
 // relayTransport is the transport every relayed request goes out on.
 //
 // Nil is `http.DefaultTransport` — TLS verification and all, the same policy
@@ -266,6 +275,30 @@ func relaySuffixProblem(suffix string) string {
 	return ""
 }
 
+// relayQueryProblem refuses a query this desk cannot reason about.
+//
+// **One character, and the reason is that two parsers disagree about it.**
+// `;` was a query separator once, and some servers still read it as one. Go
+// does not: `url.ParseQuery` rejects a pair containing a semicolon, so the
+// guard reads `x=1;token=<the token>&token=<the token>` as *one* `token`
+// parameter and accepts the request — while the strip, which removes the pair
+// it can see, preserves the first one byte for byte and hands the desk's own
+// session token to an endpoint that does split on `;`.
+//
+// The fix is not a third parser. Two readers can only be held to one answer
+// over the inputs they read the same way, so a raw query carrying a literal
+// semicolon is refused here — a property of the request alone, decided before
+// anything is read off this machine. No SDK emits one; `%3B` is untouched,
+// because an escaped semicolon is a value and not a separator to anybody.
+func relayQueryProblem(raw string) string {
+	if strings.ContainsRune(raw, ';') {
+		return "a relayed query may not contain a semicolon: it is a separator to some " +
+			"servers and a value to others, and this desk will not send one it cannot " +
+			"read the same way twice"
+	}
+	return ""
+}
+
 func relayPathRune(r rune) bool {
 	switch {
 	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
@@ -374,6 +407,13 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 	// forwarded should not cause a key to be opened.
 	suffix := strings.TrimPrefix(r.URL.EscapedPath(), relayPrefix)
 	if reason := relaySuffixProblem(suffix); reason != "" {
+		writeJSONCoded(w, http.StatusBadRequest, CodeAssistantRelayPath, reason)
+		return
+	}
+	// The query, on the same footing and for the same reason: a property of
+	// the request alone, and one this desk will not forward because two
+	// parsers read it differently. See `relayQueryProblem`.
+	if reason := relayQueryProblem(r.URL.RawQuery); reason != "" {
 		writeJSONCoded(w, http.StatusBadRequest, CodeAssistantRelayPath, reason)
 		return
 	}
@@ -519,6 +559,14 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 			// an origin, so a cookie from the endpoint would be stored against
 			// the desk and sent back to the desk's own endpoints.
 			withoutReflectedCredentials(response.Header, key)
+			// **No trailer is forwarded**, and this is where that is decided:
+			// the proxy copies `res.Trailer` to the page after the body, past
+			// every filter here, so an announced `Trailer: X-Echo` was a second
+			// way to hand the key over. Emptied rather than filtered, because
+			// nothing either protocol needs arrives in one and a trailer this
+			// desk carried would be a header nobody had checked.
+			response.Trailer = nil
+			response.Header.Del("Trailer")
 			response.Body = boundedByIdle(response.Body, cancel)
 			return nil
 		},
@@ -553,6 +601,9 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 		controller:     controller,
 		until:          deadline,
 	}, r)
+	// Anything the proxy staged for a trailer after the body, dropped before
+	// this handler returns — which is when net/http would send it.
+	withoutTrailers(w.Header())
 	// **Scheme and host only, and no path at all.** The same rule the probe's
 	// line follows and for the same reason: a configured URL may carry a query
 	// string, and a query string is a place people put credentials. The suffix
@@ -571,13 +622,23 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 // is called, because an endpoint that wants to hand the key back will not use
 // a name on anybody's list.
 //
-// **Exact equality, and the limit is stated.** A value that merely contains the
-// key — `Bearer <key>` under a name nobody named, base64, hex, half of it — is
-// not caught, and no comparison could catch the derived forms: that is the same
-// ruling chunk 1 took for the probe, where the answer was to stop repeating the
-// endpoint's words at all. Here the words are the page's to have, so the bound
-// is different and is written down in the README: the key is the endpoint's own
-// credential, and it is good only at the endpoint that already holds it.
+// **The value rule has a length in it, and the length is the honest part.**
+// A key of twelve bytes or more is looked for *anywhere* in a value, so
+// `X-Echo: Bearer <key>` under a name nobody listed is caught as well as a bare
+// echo. Below twelve it is exact equality only, because a short key is a
+// substring of ordinary text: a three-character key would match a date, a
+// status word and half the header set, and a filter that deletes the answer to
+// protect a credential is a worse answer than the credential. Twelve is
+// `minFingerprintable`, the same length below which this desk will not show a
+// fingerprint either, and for the same reason — below it there is not enough
+// value to reason about.
+//
+// **What no comparison catches is a derived form** — base64, percent-encoded,
+// hex, half of it — which is the ruling chunk 1 already took for the probe. And
+// bodies are not read at all. The bound on both is in the README and it is not a
+// filter: the key is the endpoint's own credential, presented only to the
+// endpoint the desk-level file names, and good only at the endpoint that
+// already holds it.
 func withoutReflectedCredentials(header http.Header, key string) {
 	for _, name := range reflectedCredentialHeaders {
 		header.Del(name)
@@ -585,12 +646,31 @@ func withoutReflectedCredentials(header http.Header, key string) {
 	if key == "" {
 		return
 	}
+	long := len(key) >= minFingerprintable
 	for name, values := range header {
 		for _, value := range values {
-			if value == key {
+			if value == key || (long && strings.Contains(value, key)) {
 				header.Del(name)
 				break
 			}
+		}
+	}
+}
+
+// withoutTrailers takes the trailer keys back out of a header map.
+//
+// **`ModifyResponse` never sees a trailer.** `httputil.ReverseProxy` copies
+// `res.Trailer` into the client's header map *after* the body has been
+// forwarded, under `http.TrailerPrefix` — so an endpoint that announces
+// `Trailer: X-Echo` and sends the key in it had a second, unfiltered way to
+// hand the credential to the page. The answer is that this relay forwards no
+// trailer at all: `response.Trailer` is emptied before the copy can happen, and
+// this is what clears anything staged for one afterwards.
+func withoutTrailers(header http.Header) {
+	header.Del("Trailer")
+	for name := range header {
+		if strings.HasPrefix(name, http.TrailerPrefix) {
+			header.Del(name)
 		}
 	}
 }
@@ -612,6 +692,11 @@ type deadlineWriter struct {
 	http.ResponseWriter
 	controller *http.ResponseController
 	until      time.Time
+	// finalUntil is the instant the one answer allowed past the overall
+	// deadline must be finished by, set the first time a write is attempted
+	// past it. Zero until then. Written and read on the proxy's own goroutine,
+	// which is the only one that writes a response.
+	finalUntil time.Time
 }
 
 // extend gives the next write the idle bound, capped at the request's overall
@@ -624,15 +709,44 @@ type deadlineWriter struct {
 func (d *deadlineWriter) extend() {
 	now := time.Now()
 	next := now.Add(relayIdle)
-	if next.After(d.until) && d.until.After(now) {
+	if next.After(d.until) {
 		next = d.until
 	}
-	_ = d.controller.SetWriteDeadline(next)
+	if next.After(now) {
+		_ = d.controller.SetWriteDeadline(next)
+		return
+	}
+	// Past the overall deadline. There is one answer left — the refusal this
+	// handler is about to make — and it gets **one** short bound rather than
+	// another idle one: a deadline already in the past would fail it before it
+	// was attempted and drop the page mid-connection, and a fresh idle bound
+	// would let a late write hold a slot for two more minutes, which is the
+	// whole-request bound not being one.
+	//
+	// One *answer* and not one `Write`: an envelope is a `WriteHeader` and a
+	// `Write` at least, so the instant is fixed the first time it is asked for
+	// and reused after — the tail is five seconds however many calls it takes,
+	// and a write that arrives past it fails, as it should.
+	if d.finalUntil.IsZero() {
+		d.finalUntil = now.Add(relayFinalWrite)
+	}
+	_ = d.controller.SetWriteDeadline(d.finalUntil)
 }
 
+// WriteHeader swallows an informational response.
+//
+// **1xx reaches the page through a path no filter sees.** `ReverseProxy`
+// forwards an endpoint's `103 Early Hints` through a client trace that copies
+// its headers into the page's header map and writes the status — all of it
+// before `ModifyResponse` runs — so an endpoint could put the key in a 103
+// header and have it delivered. Nothing either protocol needs is carried in
+// one, so none is forwarded: the write is dropped, and the proxy clears the
+// headers it staged for it immediately afterwards.
 func (d *deadlineWriter) WriteHeader(status int) {
-	d.extend()
-	d.ResponseWriter.WriteHeader(status)
+	if status < 100 || status >= 200 {
+		d.extend()
+		d.ResponseWriter.WriteHeader(status)
+	}
 }
 
 func (d *deadlineWriter) Write(p []byte) (int, error) {

@@ -1631,6 +1631,12 @@ no CORS, so a page calling one directly could not read the answer.
   `Query().Get`, which percent-decodes, so `?%74oken=…` authenticates a request,
   and a strip that compared the raw name would have kept it. Both readers decode
   now; a name that will not decode is dropped, as `url.ParseQuery` drops it.
+  **The equivalence holds over the accepted set only**, which is why a raw query
+  carrying a literal `;` is refused outright with `assistant-relay-path`: `;`
+  was a separator once and some servers still read it as one, so
+  `x=1;token=…&token=…` is a single `token` parameter to Go's parser and two to
+  theirs — and no third parser closes that. `%3B` is a value to everybody and
+  travels untouched. No SDK emits a bare one.
 - **Both query strings travel**: the configured endpoint's own routing first,
   then the page's, minus that token.
 - **Method and body verbatim**, bounded at 8 MiB — a whole schema, several
@@ -1650,8 +1656,11 @@ no CORS, so a page calling one directly could not read the answer.
   same pair — a page that authenticates and then stops reading would otherwise
   hold its slot for ever, since neither deadline ends a write to a client that
   is not listening and this desk's server has no `WriteTimeout` on purpose
-  (`/ws` is a socket it holds open for a session). The whole bound is therefore
-  the overall deadline plus, at most, one idle bound for the final write.
+  (`/ws` is a socket it holds open for a session). **Every write is capped at
+  the overall deadline**; past it exactly one write is allowed, bounded at five
+  seconds, so the refusal still lands rather than the page being dropped
+  mid-connection. The whole bound is therefore the overall deadline plus five
+  seconds, and no idle bound can extend a request past it.
 - **At most four relayed requests in flight**, and past that the answer is an
   immediate `assistant-relay-busy` — a bound, deliberately not a queue, because
   a queue reports a wait as latency.
@@ -1661,7 +1670,11 @@ no CORS, so a page calling one directly could not read the answer.
   hop-by-hop headers, minus the credential headers below, and minus
   `Set-Cookie`: the page and this chassis share an origin, so a cookie from the
   endpoint would be stored against the desk and sent back to the desk's own
-  endpoints.
+  endpoints. **No informational response and no trailer is forwarded at all**,
+  because both reach the page down paths no filter on this route sees — a 1xx
+  through the proxy's own client trace before the answer is inspected, and a
+  trailer copied after the body — and nothing either protocol needs arrives in
+  either.
 - **Nothing else.** No retry (a retried model request is a second charge on
   somebody's account for an answer nobody saw), no caching, no request
   rewriting, no model-name inspection. A refusal carries `assistant-relay-*`
@@ -1677,7 +1690,13 @@ otherwise put the machine-held key straight into the page, which is the single
 thing this route exists to prevent. So the **answer's headers are filtered too**:
 `Authorization`, `Proxy-Authorization`, `WWW-Authenticate`, `Proxy-Authenticate`,
 `X-Api-Key`, `Api-Key`, `X-Goog-Api-Key` and `Set-Cookie` by name, and any header
-at all — under a name nobody listed — whose value **is** the configured key.
+at all — under a name nobody listed — carrying the configured key in its value.
+That last rule has a length in it: a key of **twelve bytes or more** is looked
+for anywhere in a value, so `X-Echo: Bearer <key>` goes too; below twelve it is
+exact equality only, because a short key is a substring of ordinary text and a
+filter that deletes the answer to protect a credential is a worse answer than
+the credential. Twelve is the same length below which this desk will not show a
+key's fingerprint either.
 
 **The body is not filtered, and that is a decision rather than an oversight.**
 The relay parses none of the traffic it carries; a streamed answer cannot be
