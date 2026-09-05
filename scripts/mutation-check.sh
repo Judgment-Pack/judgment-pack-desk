@@ -621,6 +621,96 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "a relative XDG_CONFIG_HOME is honoured" "$A" \
     '	if xdg := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(xdg) {' \
     '	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {'
+
+  # ---- Custody: the directory a credential is kept in ---------------------
+  #
+  # Each of these is an arrangement another local user can make in a
+  # configuration tree they can write to. The first four were all possible at
+  # once before the store was validated and pinned.
+  CU=internal/desk/custody.go
+  DF=internal/desk/deskfile.go
+
+  mutate go "a symlinked directory is walked through" "$CU" \
+    '	if info.Mode()&fs.ModeSymlink != 0 {
+		return fmt.Errorf(
+			"%s is a symbolic link; a key is not kept anywhere reached through one", path)
+	}' \
+    ''
+  mutate go "a directory owned by somebody else is ours" "$CU" \
+    '	if ours && owner != me {' \
+    '	if false && owner != me {'
+  # The sticky exception is what makes /tmp usable; without the guard around
+  # it, every world-writable ancestor is admitted.
+  mutate go "any world-writable ancestor is admitted" "$CU" \
+    '		if info.Mode()&fs.ModeSticky == 0 {' \
+    '		if false {'
+  mutate go "the ancestors are never walked" "$CU" \
+    '	if err := checkAncestors(parent); err != nil {
+		return &assistantStore{dir: dir, problem: err}
+	}' \
+    ''
+  mutate go "the secrets directory is left at whatever mode it had" "$CU" \
+    '	if info.Mode().Perm() != custodyDirMode {
+		if err := root.Chmod(name, custodyDirMode); err != nil {' \
+    '	if false {
+		if err := root.Chmod(name, custodyDirMode); err != nil {'
+  # The key file itself, which is the name an attacker plants a link at.
+  mutate go "a symlinked key file is followed" "$CU" \
+    '	if info.Mode()&fs.ModeSymlink != 0 {
+		return "", fmt.Errorf(
+			"%s is a symbolic link rather than a key, and was not read",' \
+    '	if false {
+		return "", fmt.Errorf(
+			"%s is a symbolic link rather than a key, and was not read",'
+  mutate go "a key anyone on the machine can read is still the key" "$CU" \
+    '	if perm := info.Mode().Perm(); perm&0o077 != 0 {' \
+    '	if perm := info.Mode().Perm(); false && perm&0o077 != 0 {'
+  mutate go "the key is opened without no-follow" "$CU" \
+    '	file, err := s.secrets.OpenFile(assistantKeyName, os.O_RDONLY|openNoFollow|openNonBlocking, 0)' \
+    '	file, err := s.secrets.OpenFile(assistantKeyName, os.O_RDONLY|openNonBlocking, 0)'
+  mutate go "a refused store writes anyway" "$CU" \
+    '	if !s.usable() {
+		return s.problem
+	}
+	staged, name, err := s.stage()' \
+    '	staged, name, err := s.stage()'
+
+  # ---- The one contract, and the credential in it -------------------------
+  mutate go "the control check runs after the value is trimmed" "$A" \
+    '	if index := strings.IndexFunc(req.Key, isControl); index >= 0 {' \
+    '	if index := strings.IndexFunc(strings.TrimSpace(req.Key), isControl); index >= 0 {'
+  # The HIGH: a file the browser refuses must authorise nothing.
+  mutate go "a refused configuration still authorises a probe" "$A" \
+    '	decoded := decodeDeskFile(data)
+	if decoded.refused() {' \
+    '	decoded := decodeDeskFile(data)
+	if false {'
+  mutate go "the endpoint's own body is read back out" "$A" \
+    '	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxProbeBody))' \
+    '	body, _ := io.ReadAll(io.LimitReader(response.Body, maxProbeBody))
+	_ = body'
+  # A configured URL may carry a query string, and a query string is a place
+  # people put credentials.
+  mutate go "the whole endpoint URL is logged" "$A" \
+    '		loggableOrigin(endpoint.url), result.Status, result.LatencyMs)' \
+    '		endpoint.url, result.Status, result.LatencyMs)'
+  mutate go "the logged origin carries the rest of the URL" "$A" \
+    '	return parsed.Scheme + "://" + parsed.Host' \
+    '	return parsed.String()'
+  mutate go "the credential scan never runs" "$DF" \
+    '	problems = append(problems, scanForKeys("", parsed)...)' \
+    ''
+  mutate go "a key smuggled into the URL is accepted" "$DF" \
+    '	if parsed.User != nil {' \
+    '	if false {'
+  mutate go "a fragment on the endpoint is accepted" "$DF" \
+    '	if parsed.Fragment != "" || strings.Contains(raw, "#") {' \
+    '	if false {'
+  mutate go "the credential scan does not look inside arrays" "$DF" \
+    '	case []any:
+		for index, element := range typed {' \
+    '	case []any:
+		for index, element := range typed[:0] {'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -3068,6 +3158,37 @@ if [ "$which" = all ] || [ "$which" = web ]; then
       signal,
       body: JSON.stringify({ url: 'http://127.0.0.1:1/v1' })
     })"
+
+  # The credential scan, and the two URL members a key can hide in.
+  mutate web "the credential scan never runs" "$D" \
+    "  scanForKeys('', parsed, problems)" \
+    ''
+  mutate web "the credential scan does not look inside arrays" "$D" \
+    '    value.forEach((element, index) => scanForKeys(`${path}[${index}]`, element, problems))' \
+    '    void value'
+  mutate web "a key smuggled into the URL is accepted" "$D" \
+    "  if (url.username !== '' || url.password !== '') {" \
+    '  if (false) {'
+  mutate web "a fragment on the endpoint is accepted" "$D" \
+    "  if (url.hash !== '' || raw.includes('#')) {" \
+    '  if (false) {'
+  # The typed key, and how long the page holds it.
+  mutate web "the field is cleared only once the store has answered" "$AS" \
+    "    const value = typed
+    setTyped('')
+    setStoreProblem(undefined)" \
+    '    const value = typed
+    setStoreProblem(undefined)'
+  mutate web "the mutation keeps the key it was called with" "$AS" \
+    '      onSettled: () => store.reset()' \
+    '      onSettled: () => undefined'
+  # A key is not removed by removing the endpoint, so the page must not say so.
+  mutate web "no endpoint is reported as no key" "$AS" \
+    "          {endpoint === null ? 'none — no endpoint configured' : 'a model endpoint'}" \
+    "          {endpoint === null ? 'none — no assistant, and no key' : 'a model endpoint'}"
+  mutate web "a diagnostic is rendered as the bare word" "$AS" \
+    "      {result.diagnostic !== '' && (" \
+    "      {false && result.diagnostic !== '' && ("
 fi
 
 restore
