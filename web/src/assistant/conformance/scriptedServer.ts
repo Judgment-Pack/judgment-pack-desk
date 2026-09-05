@@ -64,6 +64,81 @@ function canonical(value: unknown): string {
   return `{${entries.map(([key, inner]) => `${JSON.stringify(key)}:${canonical(inner)}`).join(',')}}`
 }
 
+/**
+ * The recorded runtime as a pure frame answerer.
+ *
+ * Separate from any transport, so the same server can sit behind an in-memory
+ * pair (the conformance session, which injects one) and behind a stand-in
+ * `WebSocket` (the pane's test, which drives the page's real transport).
+ */
+export interface RecordedRuntime {
+  seen: ServerObservation[]
+  /** One reply frame, or null where the message needs none. */
+  answer(message: JSONRPCMessage): JSONRPCMessage | null
+}
+
+export function recordedRuntime(): RecordedRuntime {
+  const seen: ServerObservation[] = []
+  return {
+    seen,
+    answer(message: JSONRPCMessage): JSONRPCMessage | null {
+      const frame = message as {
+        id?: string | number
+        method?: string
+        params?: { name?: string; arguments?: Record<string, unknown> }
+      }
+      if (frame.id === undefined || frame.method === undefined) return null // a notification
+      const reply = (result: unknown) =>
+        ({ jsonrpc: '2.0', id: frame.id, result }) as unknown as JSONRPCMessage
+      const fail = (code: number, message: string) =>
+        ({ jsonrpc: '2.0', id: frame.id, error: { code, message } }) as unknown as JSONRPCMessage
+
+      if (frame.method === 'initialize') {
+        return reply({
+          protocolVersion: runtime.runtime.protocolVersion,
+          capabilities: { tools: {}, prompts: {} },
+          serverInfo: runtime.runtime.serverInfo
+        })
+      }
+      if (frame.method === 'tools/list') return reply({ tools: RECORDED_TOOLS })
+      if (frame.method !== 'tools/call') {
+        return fail(-32601, `the scripted runtime does not serve ${frame.method}`)
+      }
+
+      const name = String(frame.params?.name ?? '')
+      const args = frame.params?.arguments ?? {}
+
+      if (name === 'write_file') {
+        // K3(b), measured where it matters: the frame got here.
+        seen.push({ name, args, refusal: 'write_file reached the runtime' })
+        return fail(-32602, 'unknown tool: write_file')
+      }
+      if (name === 'experimental_evaluate' && args.rehearsal !== true) {
+        // K3(a), likewise: an unguarded evaluate would leave an audit record.
+        seen.push({
+          name,
+          args,
+          refusal: 'experimental_evaluate reached the runtime without rehearsal: true'
+        })
+        return fail(-32602, 'the evaluation would have been recorded')
+      }
+
+      const match = RECORDED_CALLS.find(
+        (call) => call.tool === name && canonical(call.arguments) === canonical(args)
+      )
+      if (!match) {
+        seen.push({ name, args, refusal: `no recorded answer for ${name} with these arguments` })
+        return fail(
+          -32602,
+          `the scripted runtime has no recorded answer for ${name} with these arguments`
+        )
+      }
+      seen.push({ name, args, refusal: '' })
+      return reply(match.result)
+    }
+  }
+}
+
 export interface ScriptedRuntime {
   /** The client side of the pair. Wrap this in the ToolGate. */
   transport: Transport
@@ -72,7 +147,7 @@ export interface ScriptedRuntime {
 }
 
 /**
- * Stand one recorded runtime up.
+ * Stand one recorded runtime up on an in-memory transport pair.
  *
  * Nothing is spawned, nothing is listened on, and no runtime binary is needed:
  * the suite has to run in CI, keyless and offline, or it is not the desk's
@@ -80,84 +155,77 @@ export interface ScriptedRuntime {
  */
 export async function scriptedRuntime(): Promise<ScriptedRuntime> {
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()
-  const seen: ServerObservation[] = []
-
+  const core = recordedRuntime()
   serverSide.onmessage = (message: JSONRPCMessage) => {
-    const frame = message as {
-      id?: string | number
-      method?: string
-      params?: { name?: string; arguments?: Record<string, unknown> }
-    }
-    if (frame.id === undefined || frame.method === undefined) return // a notification
-    const reply = (result: unknown) =>
-      void serverSide.send({ jsonrpc: '2.0', id: frame.id, result } as JSONRPCMessage)
-    const fail = (code: number, message: string) =>
-      void serverSide.send({
-        jsonrpc: '2.0',
-        id: frame.id,
-        error: { code, message }
-      } as unknown as JSONRPCMessage)
-
-    if (frame.method === 'initialize') {
-      reply({
-        protocolVersion: runtime.runtime.protocolVersion,
-        capabilities: { tools: {}, prompts: {} },
-        serverInfo: runtime.runtime.serverInfo
-      })
-      return
-    }
-    if (frame.method === 'tools/list') {
-      reply({ tools: RECORDED_TOOLS })
-      return
-    }
-    if (frame.method !== 'tools/call') {
-      fail(-32601, `the scripted runtime does not serve ${frame.method}`)
-      return
-    }
-
-    const name = String(frame.params?.name ?? '')
-    const args = frame.params?.arguments ?? {}
-
-    if (name === 'write_file') {
-      // K3(b), measured where it matters: the frame got here.
-      seen.push({ name, args, refusal: 'write_file reached the runtime' })
-      fail(-32602, 'unknown tool: write_file')
-      return
-    }
-    if (name === 'experimental_evaluate' && args.rehearsal !== true) {
-      // K3(a), likewise: an unguarded evaluate would leave an audit record.
-      seen.push({
-        name,
-        args,
-        refusal: 'experimental_evaluate reached the runtime without rehearsal: true'
-      })
-      fail(-32602, 'the evaluation would have been recorded')
-      return
-    }
-
-    const match = RECORDED_CALLS.find(
-      (call) => call.tool === name && canonical(call.arguments) === canonical(args)
-    )
-    if (!match) {
-      seen.push({
-        name,
-        args,
-        refusal: `no recorded answer for ${name} with these arguments`
-      })
-      fail(-32602, `the scripted runtime has no recorded answer for ${name} with these arguments`)
-      return
-    }
-    seen.push({ name, args, refusal: '' })
-    reply(match.result)
+    const reply = core.answer(message)
+    if (reply !== null) void serverSide.send(reply)
   }
-
   await serverSide.start()
   return {
     transport: clientSide,
-    seen,
+    seen: core.seen,
     close: async () => {
       await serverSide.close()
       await clientSide.close()
+    }
+  }
+}
+
+/**
+ * The recorded runtime behind a stand-in `WebSocket`.
+ *
+ * This is what lets a page test drive the **page's own** transport: the
+ * assistant opens its connection through `DeskWebSocketTransport`, and what
+ * that talks to is this rather than a socket. The chassis' framing is one
+ * JSON-RPC message per text frame, which is exactly what this reads and
+ * writes, so nothing about the transport under test is stubbed out.
+ */
+export function scriptedWebSocket(): {
+  WebSocket: typeof WebSocket
+  seen: ServerObservation[]
+  /** The URLs the page opened, so a test can hold it to one connection. */
+  opened: string[]
+  closed: number
+} {
+  const core = recordedRuntime()
+  const opened: string[] = []
+  const state = { closed: 0 }
+
+  class ScriptedSocket {
+    static readonly OPEN = 1
+    static readonly CLOSED = 3
+    readyState = 1
+    onopen: (() => void) | null = null
+    onmessage: ((event: { data: string }) => void) | null = null
+    onerror: (() => void) | null = null
+    onclose: (() => void) | null = null
+
+    constructor(url: string) {
+      opened.push(url)
+      // The handshake completes on a later task, as a real one does: a socket
+      // that opened synchronously would let a bug in the ordering pass.
+      queueMicrotask(() => this.onopen?.())
+    }
+
+    send(data: string): void {
+      const reply = core.answer(JSON.parse(data) as JSONRPCMessage)
+      if (reply === null) return
+      queueMicrotask(() => this.onmessage?.({ data: JSON.stringify(reply) }))
+    }
+
+    close(): void {
+      state.closed += 1
+      this.readyState = 3
+      queueMicrotask(() => this.onclose?.())
+    }
+  }
+
+  return {
+    WebSocket: ScriptedSocket as unknown as typeof WebSocket,
+    seen: core.seen,
+    opened,
+    get closed() {
+      return state.closed
     }
   }
 }

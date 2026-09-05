@@ -157,9 +157,13 @@ describe('useAssistantSlot', () => {
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('builtin|ultra'))
   })
 
-  it('is read by nothing that renders a tab', () => {
-    // Chunk 1 ships the slot and no pane. A tab appearing here would be a
-    // feature nobody reviewed arriving with the configuration for it.
+  it('has exactly one consumer, and it is the Assistant pane', () => {
+    // It used to be *no* consumer: the slot shipped a chunk before anything
+    // rendered an assistant, and this asserted the absence. The pane exists
+    // now, so what is held is the same claim in its next form — the slot is
+    // read in one place, which is what "one hook, so that the question has a
+    // single answer" is worth. A second reader here is a second answer being
+    // assembled at a call site.
     const src = join(import.meta.dirname, '..')
     const offenders: string[] = []
     const walk = (relative: string) => {
@@ -178,6 +182,8 @@ describe('useAssistantSlot', () => {
       }
     }
     walk('')
-    expect(offenders, 'the slot has a consumer already').toEqual([])
+    expect(offenders, 'the slot is read in more than one place').toEqual([
+      'assistant/AssistantPane.tsx'
+    ])
   })
 })
