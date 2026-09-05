@@ -1,0 +1,19 @@
+{
+  "deskConfigVersion": 1,
+  "assistant": {
+    "endpoint": {
+      "url": "https://api.example.invalid/v1",
+      "kind": "openai-compatible",
+      "model": "a-model",
+      "tools": [
+        "validate"
+      ]
+    }
+  },
+  "identity": {
+    "provider": {
+      "issuer": "http://localhost:8080/",
+      "clientId": "an-id"
+    }
+  }
+}

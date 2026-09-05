@@ -25,17 +25,93 @@
  * rejection that has nothing to do with the case under test.
  */
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
-import { FileRequestError, readFile } from '../files/client'
+import { FileRequestError, answer, chassisUrl, readFile } from '../files/client'
 import {
   PROJECT_CONFIG_PATH,
   decodeDeskConfig,
   effectiveConfig,
+  type DeskLevelRead,
   type EffectiveConfig
 } from './deskConfig'
 
 export const DESK_CONFIG_QUERY_KEY = ['desk-config'] as const
 
+/** What `GET /api/desk-config` answers. Absence is a 200, not a 404. */
+interface DeskLevelAnswer {
+  path: string
+  present: boolean
+  content?: string
+}
+
+/**
+ * The desk-level `desk.json`, read through the one endpoint that can reach it.
+ *
+ * **This one cannot go through the file API, and that is not a gap.** The
+ * chassis resolves every file-API path through the project's pinned
+ * `os.Root` — which is exactly what stops it reading `~/.config` — so a file
+ * outside the project is not addressable there and never will be. Hence a
+ * second, read-only endpoint, under the same token and origin guard.
+ *
+ * It never rejects, on the same terms and for the same reason as the project
+ * read below: a shell query that rejected would poison every integration test
+ * that stubs no fetch with an unhandled rejection about a file the case under
+ * test does not mention.
+ */
+export async function loadDeskLevelConfig(signal?: AbortSignal): Promise<DeskLevelRead> {
+  // The path is not known until the chassis says it, so a failure before that
+  // has nothing to name. The endpoint's own path is the honest stand-in, and
+  // it is marked as such rather than presented as a location on disk.
+  let answered: DeskLevelAnswer
+  try {
+    answered = await answer<DeskLevelAnswer>(
+      await fetch(chassisUrl('/api/desk-config'), { signal })
+    )
+  } catch (cause) {
+    if (cause instanceof FileRequestError) {
+      return {
+        path: DESK_LEVEL_PATH_UNKNOWN,
+        present: false,
+        readFailure: {
+          reason: cause.message,
+          responseReceived: true,
+          status: cause.status,
+          source: cause.source
+        }
+      }
+    }
+    return {
+      path: DESK_LEVEL_PATH_UNKNOWN,
+      present: false,
+      readFailure: { reason: messageOf(cause), responseReceived: false, source: 'browser' }
+    }
+  }
+  if (!answered.present || answered.content === undefined) {
+    return {
+      path: answered.path,
+      present: false,
+      note: `no desk-level configuration file at ${answered.path}`
+    }
+  }
+  return {
+    path: answered.path,
+    present: true,
+    decoded: decodeDeskConfig(answered.content, 'desk')
+  }
+}
+
+/**
+ * What Admin prints where the chassis never said where the file would be.
+ *
+ * A sentence rather than a plausible path: inventing `~/.config/jpack-desk`
+ * here would be this page asserting a location it did not learn, on a machine
+ * whose `XDG_CONFIG_HOME` it cannot read.
+ */
+export const DESK_LEVEL_PATH_UNKNOWN = 'the chassis did not say where'
+
 export async function loadDeskConfig(signal?: AbortSignal): Promise<EffectiveConfig> {
+  // Both files, and neither read waits on the other: they are two independent
+  // questions to the same chassis, and a slow one should not delay the other.
+  const deskLevel = loadDeskLevelConfig(signal)
   let text: string
   try {
     text = (await readFile(PROJECT_CONFIG_PATH, signal)).content
@@ -59,21 +135,34 @@ export async function loadDeskConfig(signal?: AbortSignal): Promise<EffectiveCon
     // off "is there a status?" put the middle one in the last bucket and had
     // Admin say the request never got an answer.
     if (cause instanceof FileRequestError) {
-      if (cause.status === 404) return effectiveConfig(undefined, reasonFor(cause))
-      return effectiveConfig(undefined, undefined, {
-        reason: cause.message,
-        responseReceived: true,
-        status: cause.status,
-        source: cause.source
-      })
+      if (cause.status === 404) {
+        return effectiveConfig(undefined, reasonFor(cause), undefined, await deskLevel)
+      }
+      return effectiveConfig(
+        undefined,
+        undefined,
+        {
+          reason: cause.message,
+          responseReceived: true,
+          status: cause.status,
+          source: cause.source
+        },
+        await deskLevel
+      )
     }
-    return effectiveConfig(undefined, undefined, {
-      reason: messageOf(cause),
-      responseReceived: false,
-      source: 'browser'
-    })
+    return effectiveConfig(
+      undefined,
+      undefined,
+      { reason: messageOf(cause), responseReceived: false, source: 'browser' },
+      await deskLevel
+    )
   }
-  return effectiveConfig(decodeDeskConfig(text, 'project'))
+  return effectiveConfig(
+    decodeDeskConfig(text, 'project'),
+    undefined,
+    undefined,
+    await deskLevel
+  )
 }
 
 function messageOf(cause: unknown): string {

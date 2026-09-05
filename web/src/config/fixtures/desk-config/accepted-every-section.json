@@ -1,0 +1,48 @@
+{
+  "deskConfigVersion": 1,
+  "organization": {
+    "name": "Acme Co.",
+    "mark": null
+  },
+  "user": {
+    "displayName": "the operator"
+  },
+  "identity": {
+    "provider": null
+  },
+  "assistant": {
+    "endpoint": {
+      "url": "https://api.example.invalid/v1",
+      "kind": "openai-compatible",
+      "model": "a-model",
+      "tools": [
+        "validate"
+      ]
+    }
+  },
+  "appearance": {
+    "theme": "system",
+    "density": "comfortable"
+  },
+  "panes": {
+    "left": {
+      "mode": "expanded",
+      "width": 248
+    },
+    "inspector": {
+      "open": false,
+      "width": 360
+    },
+    "console": {
+      "open": false,
+      "height": 240
+    }
+  },
+  "storage": {
+    "packs": {
+      "kind": "filesystem",
+      "dir": "packs",
+      "idBase": "https://example.invalid/judgment-packs/"
+    }
+  }
+}

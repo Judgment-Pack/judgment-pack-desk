@@ -1,0 +1,27 @@
+{
+  "deskConfigVersion": 1,
+  "assistant": {
+    "endpoint": {
+      "url": "https://api.example.invalid/v1",
+      "kind": "openai-compatible",
+      "model": "a-model",
+      "tools": [
+        "validate"
+      ]
+    }
+  },
+  "panes": {
+    "left": {
+      "mode": "icons",
+      "width": 160
+    },
+    "inspector": {
+      "open": true,
+      "width": 720
+    },
+    "console": {
+      "open": true,
+      "height": 80
+    }
+  }
+}

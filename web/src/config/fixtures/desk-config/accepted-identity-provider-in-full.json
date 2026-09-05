@@ -1,0 +1,32 @@
+{
+  "deskConfigVersion": 1,
+  "assistant": {
+    "endpoint": {
+      "url": "https://api.example.invalid/v1",
+      "kind": "openai-compatible",
+      "model": "a-model",
+      "tools": [
+        "validate"
+      ]
+    }
+  },
+  "identity": {
+    "provider": {
+      "issuer": "https://issuer.example/",
+      "clientId": "an-id",
+      "label": "Acme SSO",
+      "audience": "api://acme",
+      "scopes": [
+        "openid",
+        "profile"
+      ],
+      "claims": {
+        "name": "name",
+        "picture": "picture",
+        "subject": "sub"
+      },
+      "showRemoteAvatar": true,
+      "signOut": "provider"
+    }
+  }
+}

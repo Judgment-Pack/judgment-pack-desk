@@ -24,7 +24,8 @@
  * was started with, and nothing here can change them.
  */
 import { useState } from 'react'
-import { Json, Section } from '../components/primitives'
+import { AssistantSection } from '../assistant/AssistantSection'
+import { Section } from '../components/primitives'
 import { useHashTarget } from '../shell/useHashTarget'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { DESK_FALLBACK_NAME, PANE_BOUNDS } from '../config/deskConfig'
@@ -33,17 +34,17 @@ import { useMcp } from '../mcp/McpProvider'
 import { usePacks } from '../mcp/queries'
 import { useRenderedPanes, type MeasuredBox } from '../shell/measured'
 import { useShellState } from '../shell/paneState'
-import { IconCopy } from '../shell/icons'
 import type { ResetOutcome } from '../shell/paneState'
+import { PasteBlock, SourceBadge } from './adminBlocks'
 import { ADMIN_DISCLAIMER, ADMIN_SECTIONS } from './adminSections'
 
 const DESK_FILE_NOTE =
-  'The desk-level desk.json — the only place an identity provider may be configured — is not ' +
-  'read yet. Whether the page learns it through a new read-only GET /api/desk-config, or the ' +
-  'chassis tells the page at connect time, is the spec’s open question 2 and is unanswered.'
+  'The desk-level desk.json is the only place an identity provider or an assistant endpoint may ' +
+  'be configured. It is read through its own read-only endpoint rather than the file API, ' +
+  'because it is outside the project and the file API reaches nothing outside the project.'
 
 export function AdminView() {
-  const { config, sources, problems, path, note, readFailure } = useEffectiveConfig()
+  const { config, sources, problems, path, note, readFailure, desk } = useEffectiveConfig()
   const { server, known } = useMcp()
   const { data } = usePacks()
   const listing = useFileListing()
@@ -117,6 +118,34 @@ export function AdminView() {
         </p>
       )}
 
+      {desk !== undefined && desk.problems.length > 0 && (
+        <p className="note note-warn" role="status">
+          <strong>
+            The desk-level configuration was refused, and the desk is on its defaults for
+            everything that file supplies.
+          </strong>{' '}
+          It is a separate file from the one above and is refused separately: a bad key here does
+          not refuse the project&apos;s file, and neither one is repaired by the other.
+          <br />
+          <code className="partial-reason">{desk.path}</code>
+          {desk.problems.map((problem) => (
+            <code key={`${problem.key}:${problem.reason}`} className="partial-reason">
+              {problem.key === '' ? problem.reason : `${problem.key}: ${problem.reason}`}
+            </code>
+          ))}
+        </p>
+      )}
+
+      {desk !== undefined && desk.problems.length === 0 && desk.readFailure !== undefined && (
+        <p className="note note-warn" role="status">
+          <strong>The desk-level configuration could not be read.</strong> That is not the same as
+          not having one: the read did not succeed, so nothing here establishes that the file is
+          absent either.
+          <br />
+          <code className="partial-reason">{desk.readFailure.reason}</code>
+        </p>
+      )}
+
       <h2 id={ADMIN_SECTIONS[0]!.id} className="section-title">
         {ADMIN_SECTIONS[0]!.title}
       </h2>
@@ -147,7 +176,7 @@ export function AdminView() {
         Local display name: <code>{config.user.displayName}</code>{' '}
         <span className="quiet">used when no identity provider is configured</span>
         <br />
-        <SourceBadge source={sources.identity} path={path} />
+        <SourceBadge source={sources.identity} path={path} deskPath={desk?.path} />
       </p>
       <p className="quiet">{DESK_FILE_NOTE}</p>
       <p className="quiet">
@@ -163,8 +192,10 @@ export function AdminView() {
         origin check.
       </p>
 
-      <h2 id={ADMIN_SECTIONS[2]!.id} className="section-title">
-        {ADMIN_SECTIONS[2]!.title}
+      <AssistantSection id={ADMIN_SECTIONS[2]!.id} title={ADMIN_SECTIONS[2]!.title} />
+
+      <h2 id={ADMIN_SECTIONS[3]!.id} className="section-title">
+        {ADMIN_SECTIONS[3]!.title}
       </h2>
       <p>
         Connected runtime:{' '}
@@ -184,8 +215,8 @@ export function AdminView() {
         config-supplied path would be a way to run code on this machine by editing a file.
       </p>
 
-      <h2 id={ADMIN_SECTIONS[3]!.id} className="section-title">
-        {ADMIN_SECTIONS[3]!.title}
+      <h2 id={ADMIN_SECTIONS[4]!.id} className="section-title">
+        {ADMIN_SECTIONS[4]!.title}
       </h2>
       <p>
         Configuration the runtime resolved:{' '}
@@ -193,6 +224,18 @@ export function AdminView() {
         <br />
         Desk configuration file: <code>{path}</code>{' '}
         <span className="quiet">read through the chassis file API, like any project file</span>
+        <br />
+        Desk-level file on this machine:{' '}
+        {desk === undefined ? (
+          <span className="quiet">not read on this page</span>
+        ) : (
+          <>
+            <code>{desk.path}</code>{' '}
+            <span className="quiet">
+              {desk.present ? 'read' : 'no file is there — the desk is on its defaults for it'}
+            </span>
+          </>
+        )}
       </p>
       {note !== undefined && problems.length === 0 && readFailure === undefined && (
         <p className="quiet">
@@ -202,8 +245,8 @@ export function AdminView() {
         </p>
       )}
 
-      <h2 id={ADMIN_SECTIONS[4]!.id} className="section-title">
-        {ADMIN_SECTIONS[4]!.title}
+      <h2 id={ADMIN_SECTIONS[5]!.id} className="section-title">
+        {ADMIN_SECTIONS[5]!.title}
       </h2>
       <p>
         Kind: <strong>{config.storage.packs.kind}</strong>{' '}
@@ -243,8 +286,8 @@ export function AdminView() {
         }}
       />
 
-      <h2 id={ADMIN_SECTIONS[5]!.id} className="section-title">
-        {ADMIN_SECTIONS[5]!.title}
+      <h2 id={ADMIN_SECTIONS[6]!.id} className="section-title">
+        {ADMIN_SECTIONS[6]!.title}
       </h2>
       <p>
         Theme: <code>{config.appearance.theme}</code>
@@ -269,8 +312,8 @@ export function AdminView() {
         because a key that is accepted and does nothing should say so.
       </p>
 
-      <h2 id={ADMIN_SECTIONS[6]!.id} className="section-title">
-        {ADMIN_SECTIONS[6]!.title}
+      <h2 id={ADMIN_SECTIONS[7]!.id} className="section-title">
+        {ADMIN_SECTIONS[7]!.title}
       </h2>
       <p>
         {/* **Configured, and labelled as configured.** These are the decoded
@@ -453,61 +496,4 @@ function packLocationState(
   // complete: a partial one is explicitly not all the files.
   if ((listing.data?.partial ?? []).length > 0) return 'partial'
   return 'no-file-under-it'
-}
-
-function SourceBadge({ source, path }: { source: string; path: string }) {
-  return (
-    <span className="quiet">
-      source: {source}
-      {source === 'project file' ? (
-        <>
-          {' · '}
-          <code>{path}</code>
-        </>
-      ) : (
-        <>
-          {' · no value for this section was read from '}
-          <code>{path}</code>
-        </>
-      )}
-    </span>
-  )
-}
-
-/**
- * The exact JSON to paste, and a button that copies it.
- *
- * The button reports what happened rather than what it attempted. There is no
- * `navigator.clipboard` in an insecure context and the write can be refused by
- * permission, and a page whose whole argument is that it never states what it
- * did not observe cannot say "copied" on the strength of having asked.
- */
-function PasteBlock({ label, json }: { label: string; json: unknown }) {
-  const [copied, setCopied] = useState<boolean | undefined>(undefined)
-  const text = JSON.stringify(json, null, 2)
-  return (
-    <div>
-      <Json value={json} label={label} />
-      <button
-        type="button"
-        onClick={() => {
-          const written = navigator.clipboard?.writeText(text)
-          if (!written) {
-            setCopied(false)
-            return
-          }
-          written.then(
-            () => setCopied(true),
-            () => setCopied(false)
-          )
-        }}
-      >
-        <IconCopy /> Copy
-      </button>{' '}
-      {copied === true && <span className="quiet">copied</span>}
-      {copied === false && (
-        <span className="quiet">this browser did not allow the copy — the JSON is above</span>
-      )}
-    </div>
-  )
 }

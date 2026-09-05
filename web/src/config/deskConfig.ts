@@ -62,6 +62,65 @@ export interface IdentityConfig {
   provider: IdentityProviderConfig | null
 }
 
+/** The wire protocols the desk can speak to a model endpoint. */
+export type EndpointKind = 'openai-compatible' | 'anthropic'
+export const ASSISTANT_KINDS: readonly EndpointKind[] = ['openai-compatible', 'anthropic']
+
+/**
+ * The runtime tools the assistant may be configured to call.
+ *
+ * A closed list, and every one of them is a **read**: three questions and a
+ * rehearsal. There is no write tool on it because the runtime has none, and no
+ * file tool because proposing an edit is the assistant's whole reach — a
+ * proposal a person accepts and the runtime then checks. A name outside this
+ * list refuses the whole file by name rather than being ignored, because a
+ * configuration that grants a tool nothing honours is a configuration that
+ * reads as a grant.
+ *
+ * Mirrored from `AssistantTools` in `internal/desk/assistant.go`, and **held to
+ * it by a test that reads that file** — both sides refuse by this list, and two
+ * answers about what the assistant may call is worse than either one.
+ */
+export const ASSISTANT_TOOLS = [
+  'get_schema',
+  'get_example',
+  'validate',
+  'experimental_evaluate'
+] as const
+export type AssistantTool = (typeof ASSISTANT_TOOLS)[number]
+
+/**
+ * A model endpoint, as the desk records it.
+ *
+ * **There is no vendor, no operator and no mode here, and that absence is the
+ * same design proof the identity slot carries.** An endpoint you already have
+ * and an endpoint someone operates for you are the same object with a
+ * different URL in it: they take the same fields, travel the same code path,
+ * and neither can acquire an affordance the other lacks.
+ *
+ * **`kind` is the exception that proves it, and it is not a discriminator of
+ * that sort.** It names the endpoint's **wire protocol** — a real difference
+ * in how a request is *shaped*, because the two protocols put the credential
+ * in different headers and the call on different paths, and no single request
+ * could satisfy both. It says nothing about who is at the other end: nothing
+ * in the desk reads the host, compares it to a list, or behaves differently
+ * for one endpoint than another.
+ *
+ * **There is no key member, at any depth.** The desk keeps the key on this
+ * machine, outside every project and outside this file; one pasted in here is
+ * refused by name rather than silently persisted into somebody's repository.
+ */
+export interface AssistantEndpointConfig {
+  url: string
+  kind: EndpointKind
+  model: string
+  tools: string[]
+}
+
+export interface AssistantConfig {
+  endpoint: AssistantEndpointConfig | null
+}
+
 export interface AppearanceConfig {
   theme: ThemeChoice
   density: Density
@@ -124,6 +183,7 @@ export interface DeskConfig {
   organization: OrganizationConfig
   user: UserConfig
   identity: IdentityConfig
+  assistant: AssistantConfig
   appearance: AppearanceConfig
   panes: PanesConfig
   storage: StorageConfig
@@ -134,6 +194,7 @@ export const DESK_DEFAULTS: DeskConfig = {
   organization: { name: null, mark: null },
   user: { displayName: 'local user' },
   identity: { provider: null },
+  assistant: { endpoint: null },
   appearance: { theme: 'system', density: 'comfortable' },
   panes: {
     left: { mode: 'expanded', width: 248 },
@@ -183,11 +244,100 @@ const COMMON_KEYS = [
   'storage'
 ] as const
 const PROJECT_KEYS: readonly string[] = COMMON_KEYS
-const DESK_KEYS: readonly string[] = [...COMMON_KEYS, 'identity']
+const DESK_KEYS: readonly string[] = [...COMMON_KEYS, 'identity', 'assistant']
 
 const IDENTITY_AT_PROJECT =
   'identity may only be configured in the desk-level desk.json — a project is a shared ' +
   'checkout, and committing an issuer would push one operator’s directory onto every clone'
+
+const ASSISTANT_AT_PROJECT =
+  'assistant may only be configured in the desk-level desk.json — a project is a shared ' +
+  'checkout, and committing an endpoint would push one operator’s model endpoint onto every clone'
+
+/**
+ * The sentence a key-shaped member is refused with, wherever it appears.
+ *
+ * **It is refused for being named that, not for being unknown.** "Unknown key"
+ * is true and useless here: whoever pasted a key into a configuration file has
+ * made a mistake about *where keys live*, and a refusal that only says the
+ * spelling is wrong invites them to look for the right spelling. So the
+ * refusal says the thing that is actually wrong, and says where the key does
+ * go instead.
+ */
+export const KEYS_ARE_NEVER_IN_CONFIGURATION =
+  'a key is never stored in configuration — the desk keeps the assistant key on this machine, ' +
+  'in a file that is in no project and is never sent to this page; store it on Admin › Assistant'
+
+/**
+ * The names this decoder treats as key-shaped, wherever they appear.
+ *
+ * Deliberately broad and deliberately a substring test: the point is to catch
+ * a credential someone reached for a plausible name for, and a member of this
+ * schema that collided with one of these words would be renamed rather than
+ * exempted. It is checked before "unknown key" so that the more specific
+ * sentence is the one that gets said.
+ */
+const KEY_LIKE = ['key', 'secret', 'token', 'password', 'credential', 'bearer', 'authorization']
+
+function isKeyLike(name: string): boolean {
+  const folded = name.toLowerCase().replace(/[^a-z]/g, '')
+  return KEY_LIKE.some((word) => folded.includes(word))
+}
+
+/**
+ * Every credential-shaped member in the document, at any depth, named by path.
+ *
+ * **This runs before schema decoding, and over the parsed document rather than
+ * over the schema.** The rule the file claims to hold is "a key is refused
+ * wherever it is written"; what it actually held was "a key is refused where
+ * this schema already looks", because the check lived inside `section()` and
+ * `section()` only visits objects the schema knows about. So
+ * `{"unknown": {"apiKey": "…"}}` was refused — as `unknown: unknown key` —
+ * and the sentence about where keys live, which is the whole point of the
+ * rule, never appeared. A reader repairing that file would have renamed
+ * `unknown` and pasted the key somewhere else.
+ *
+ * Arrays are walked too, with an index in the path. `[{"apiKey": …}]` is a key
+ * in a configuration file however unlikely the shape, and "any depth" that
+ * stopped at the first array would be another rule with a quiet exception.
+ */
+function scanForKeys(path: string, value: unknown, problems: ConfigProblem[]): void {
+  if (Array.isArray(value)) {
+    value.forEach((element, index) => scanForKeys(`${path}[${index}]`, element, problems))
+    return
+  }
+  if (value === null || typeof value !== 'object') return
+  for (const [name, child] of Object.entries(value as Record<string, unknown>)) {
+    const at = path === '' ? name : `${path}.${name}`
+    if (isKeyLike(name)) {
+      problems.push({ key: at, reason: KEYS_ARE_NEVER_IN_CONFIGURATION })
+    }
+    scanForKeys(at, child, problems)
+  }
+}
+
+/**
+ * A key that already carries the credential sentence carries nothing else.
+ *
+ * **There is one producer of that sentence** — `scanForKeys` — and the schema
+ * walk says only "unknown key". That is a deliberate simplification of a
+ * design that had both: a `unknownReason` helper picked the sentence at the
+ * schema walk *as well*, which meant breaking either one left the other
+ * saying it, and the mutation table reported an unheld safeguard while two
+ * things held it. One producer, one row for it, and this to keep the reader
+ * from seeing the same member refused twice for two reasons.
+ */
+function withoutRedundantReasons(problems: ConfigProblem[]): ConfigProblem[] {
+  const credentialed = new Set(
+    problems
+      .filter((problem) => problem.reason === KEYS_ARE_NEVER_IN_CONFIGURATION)
+      .map((problem) => problem.key)
+  )
+  return problems.filter(
+    (problem) =>
+      problem.reason === KEYS_ARE_NEVER_IN_CONFIGURATION || !credentialed.has(problem.key)
+  )
+}
 
 /**
  * The largest organization mark this will take, in **bytes** of UTF-8.
@@ -234,6 +384,9 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
   const problems: ConfigProblem[] = []
   let declaredPanes: DeclaredPanes = { ...NOTHING_DECLARED }
 
+  // The credential scan, first and over everything. See `scanForKeys`.
+  scanForKeys('', parsed, problems)
+
   if (!('deskConfigVersion' in record)) {
     problems.push({ key: 'deskConfigVersion', reason: 'required' })
   } else if (record.deskConfigVersion !== DESK_CONFIG_VERSION) {
@@ -248,6 +401,10 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
     if (allowed.includes(key)) continue
     if (key === 'identity' && location === 'project') {
       problems.push({ key: 'identity', reason: IDENTITY_AT_PROJECT })
+      continue
+    }
+    if (key === 'assistant' && location === 'project') {
+      problems.push({ key: 'assistant', reason: ASSISTANT_AT_PROJECT })
       continue
     }
     problems.push({ key, reason: 'unknown key' })
@@ -289,6 +446,13 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
     const identity = section(record.identity, 'identity', ['provider'], problems)
     if (identity) {
       values.identity = { provider: providerValue(identity.provider, problems) }
+    }
+  }
+
+  if ('assistant' in record && location === 'desk') {
+    const assistant = section(record.assistant, 'assistant', ['endpoint'], problems)
+    if (assistant) {
+      values.assistant = { endpoint: endpointValue(assistant.endpoint, problems) }
     }
   }
 
@@ -374,7 +538,18 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
     }
   }
 
-  if (problems.length > 0) return { values: undefined, problems, declaredPanes }
+  // The one overlap the two passes produce: a key-shaped member that is also
+  // an unadmitted member of a section the schema does know about is named by
+  // both. Reported once.
+  const unique: ConfigProblem[] = []
+  const seen = new Set<string>()
+  for (const problem of withoutRedundantReasons(problems)) {
+    const identity = `${problem.key}\u0000${problem.reason}`
+    if (seen.has(identity)) continue
+    seen.add(identity)
+    unique.push(problem)
+  }
+  if (unique.length > 0) return { values: undefined, problems: unique, declaredPanes }
   return { values, problems: [], declaredPanes }
 }
 
@@ -777,6 +952,146 @@ function providerValue(
   }
 }
 
+/**
+ * The endpoint object, or null.
+ *
+ * **Every member is required, and `tools` least optionally of all.** The other
+ * three could plausibly take a default and do not, because there is no
+ * endpoint a desk could invent; `tools` could not, because a defaulted tool
+ * list is a capability granted by a file that never mentioned it. An empty
+ * array is accepted and means what it says: an assistant that may call
+ * nothing.
+ *
+ * The URL rule is the issuer rule, for the same reason and with the same
+ * limit: `https:`, or `http:` on loopback so a locally-run endpoint works.
+ * That is a rule about **transport** — a bearer credential sent in clear text
+ * over a network is a credential given away — and deliberately not one about
+ * who the endpoint is. Nothing reads the host.
+ */
+function endpointValue(
+  value: unknown,
+  problems: ConfigProblem[]
+): AssistantEndpointConfig | null {
+  if (value === undefined || value === null) return null
+  const endpoint = section(
+    value,
+    'assistant.endpoint',
+    ['url', 'kind', 'model', 'tools'],
+    problems
+  )
+  if (!endpoint) return null
+
+  const url = typeof endpoint.url === 'string' ? endpoint.url.trim() : undefined
+  if (url === undefined || url === '') {
+    problems.push({
+      key: 'assistant.endpoint.url',
+      reason: `must be a non-empty string; found ${describe(endpoint.url)}`
+    })
+  } else {
+    const reason = endpointUrlProblem(url)
+    if (reason !== undefined) problems.push({ key: 'assistant.endpoint.url', reason })
+  }
+
+  const kind = oneOf(endpoint.kind, 'assistant.endpoint.kind', ASSISTANT_KINDS, problems)
+  if (endpoint.kind === undefined) {
+    problems.push({ key: 'assistant.endpoint.kind', reason: 'required' })
+  }
+
+  const model = typeof endpoint.model === 'string' ? endpoint.model.trim() : undefined
+  if (model === undefined || model === '') {
+    problems.push({
+      key: 'assistant.endpoint.model',
+      reason: `must be a non-empty string; found ${describe(endpoint.model)}`
+    })
+  }
+
+  let tools: string[] = []
+  if (endpoint.tools === undefined) {
+    problems.push({
+      key: 'assistant.endpoint.tools',
+      reason:
+        'required — an absent tool list would be a capability granted by a file that never ' +
+        'mentioned it; write [] for an assistant that may call nothing'
+    })
+  } else if (
+    !Array.isArray(endpoint.tools) ||
+    endpoint.tools.some((tool) => typeof tool !== 'string')
+  ) {
+    problems.push({
+      key: 'assistant.endpoint.tools',
+      reason: `must be an array of strings; found ${describe(endpoint.tools)}`
+    })
+  } else {
+    // Named one at a time. "One of these is not allowed" makes the reader
+    // check four names against a list; naming the one that is wrong does not.
+    for (const tool of endpoint.tools as string[]) {
+      if (!(ASSISTANT_TOOLS as readonly string[]).includes(tool)) {
+        problems.push({
+          key: 'assistant.endpoint.tools',
+          reason:
+            `${JSON.stringify(tool)} is not a tool the assistant may call; ` +
+            `it accepts ${ASSISTANT_TOOLS.join(', ')}`
+        })
+      }
+    }
+    tools = endpoint.tools as string[]
+  }
+
+  return {
+    url: url ?? '',
+    kind: kind ?? 'openai-compatible',
+    model: model ?? '',
+    tools
+  }
+}
+
+/**
+ * The transport rule, and the credential rule beside it.
+ *
+ * **`https:`, or `http:` on `localhost` or `127.0.0.1`** — about transport,
+ * because a bearer credential in clear text over a network is a credential
+ * given away, and about transport only: nothing reads the host, compares it to
+ * a list, or behaves differently for one endpoint than another.
+ *
+ * **Userinfo and a fragment are refused by name.** A URL is written into a
+ * configuration file and shown on Admin; a credential smuggled into its
+ * userinfo would be a second, unmanaged place for a secret to live, in the one
+ * file this desk insists holds none — and it would make "the key is never
+ * logged" false for a configuration this schema accepted. A query string is
+ * *allowed*, because some gateways route on one, and is never logged.
+ *
+ * Held identical to `endpointURLProblem` in `internal/desk/deskfile.go` by the
+ * shared fixtures both decoders read.
+ */
+function endpointUrlProblem(raw: string): string | undefined {
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    return `must be an absolute URL; found ${JSON.stringify(raw)}`
+  }
+  if (url.username !== '' || url.password !== '') {
+    return (
+      'must not carry a user or password in the URL — a key is never written into ' +
+      'configuration, and that includes into a URL'
+    )
+  }
+  if (url.hash !== '' || raw.includes('#')) {
+    return (
+      'must not carry a fragment; an endpoint is a location a request is sent to, ' +
+      'and a fragment is never sent'
+    )
+  }
+  if (url.protocol === 'https:') return undefined
+  if (url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')) {
+    return undefined
+  }
+  return (
+    'must be an https: URL, or an http: URL on localhost or 127.0.0.1 — a key sent in ' +
+    'clear text over a network is a key given away'
+  )
+}
+
 function isAcceptableIssuer(issuer: string): boolean {
   let url: URL
   try {
@@ -812,7 +1127,36 @@ export interface ReadFailure {
 }
 
 /** Which file an effective value came from. */
-export type ValueSource = 'project file' | 'default'
+export type ValueSource = 'project file' | 'desk file' | 'default'
+
+/**
+ * One read of the desk-level `desk.json`, as the chassis reported it.
+ *
+ * `path` is carried whether or not a file was found, because it is what Admin
+ * tells the reader to write. `present` and `decoded` are different facts: a
+ * file that is there and refused is present with problems, and a file that is
+ * absent is neither.
+ */
+export interface DeskLevelRead {
+  /** Absolute, on this machine, and known even where nothing was read. */
+  path: string
+  present: boolean
+  /** The decode, where a file was read at all. */
+  decoded?: DecodedConfig
+  /** Why nothing was read, where the file is simply absent. */
+  note?: string
+  /** The read did not produce a file, and it was not an absence. */
+  readFailure?: ReadFailure
+}
+
+/** What Admin renders about the desk-level file. The decode, summarised. */
+export interface DeskLevelSummary {
+  path: string
+  present: boolean
+  problems: ConfigProblem[]
+  note?: string
+  readFailure?: ReadFailure
+}
 
 export interface EffectiveConfig {
   config: DeskConfig
@@ -839,43 +1183,84 @@ export interface EffectiveConfig {
    * it is merely unread. Rendered on Admin and cued on the status strip.
    */
   readFailure?: ReadFailure
-  /** Which pane dimensions the project file stated, rather than inherited. */
+  /** Which pane dimensions the file that supplied them stated, rather than inherited. */
   declaredPanes: DeclaredPanes
+  /**
+   * The desk-level file, where one was looked for.
+   *
+   * Undefined means **nothing asked** — the shell's own defaults value, and
+   * every test that builds one without a desk-level read. It is not the same
+   * as a read that found no file, which is `present: false` with a path, and
+   * Admin says which of the two it is rather than collapsing them.
+   */
+  desk?: DeskLevelSummary
 }
 
 export const PROJECT_CONFIG_PATH = 'jpack-desk.json'
 
 /**
- * Merge one decoded project file onto the built-in defaults, per section.
+ * Merge the two decoded files onto the built-in defaults, per section.
  *
- * A refused file contributes nothing at all: `values` is undefined, every
- * source badge reads `default`, and the problems travel to Admin.
+ * **The precedence is project file → desk-level file → built-in default**, and
+ * it is stated once, here. A project's own file wins because it is the more
+ * specific statement: the desk-level file is this machine's answer for every
+ * project it opens, and a project that says something different is saying it
+ * about itself.
+ *
+ * Two sections do not participate in that order at all, because they exist in
+ * only one of the two files: `identity` and `assistant` are refused by name in
+ * a project file — a project is a shared checkout, and committing either would
+ * push one operator's arrangements onto every clone — so their only source is
+ * the desk-level file.
+ *
+ * A refused file contributes nothing at all: `values` is undefined, its
+ * sections fall through to whatever is behind it, and its problems travel to
+ * Admin. That holds for each file independently — a refused desk-level file
+ * does not refuse a good project file, and each is reported as its own.
  */
 export function effectiveConfig(
   decoded: DecodedConfig | undefined,
   note?: string,
-  readFailure?: ReadFailure
+  readFailure?: ReadFailure,
+  desk?: DeskLevelRead
 ): EffectiveConfig {
   const values = decoded?.values
-  const from = <K extends keyof Omit<DeskConfig, 'deskConfigVersion'>>(key: K): ValueSource =>
-    values?.[key] === undefined ? 'default' : 'project file'
+  const deskValues = desk?.decoded?.values
+  const from = <K extends keyof Omit<DeskConfig, 'deskConfigVersion'>>(key: K): ValueSource => {
+    if (values?.[key] !== undefined) return 'project file'
+    if (deskValues?.[key] !== undefined) return 'desk file'
+    return 'default'
+  }
+  const pick = <K extends keyof Omit<DeskConfig, 'deskConfigVersion'>>(key: K): DeskConfig[K] =>
+    (values?.[key] ?? deskValues?.[key] ?? DESK_DEFAULTS[key]) as DeskConfig[K]
+  // The dimensions are read off whichever file actually supplied the panes.
+  // Reading them off the project's decode while the desk-level file supplied
+  // the section would report the Inspector's drawer against a width that file
+  // never stated.
+  const panesDeclaredBy =
+    values?.panes !== undefined
+      ? decoded?.declaredPanes
+      : deskValues?.panes !== undefined
+        ? desk?.decoded?.declaredPanes
+        : undefined
   return {
     config: {
       deskConfigVersion: DESK_CONFIG_VERSION,
-      organization: values?.organization ?? DESK_DEFAULTS.organization,
-      user: values?.user ?? DESK_DEFAULTS.user,
-      // Identity is never in a project file. Phase A reads no desk-level file,
-      // so this is the default in every running desk today, and Admin says so
-      // in words rather than leaving the reader to infer it.
-      identity: values?.identity ?? DESK_DEFAULTS.identity,
-      appearance: values?.appearance ?? DESK_DEFAULTS.appearance,
-      panes: values?.panes ?? DESK_DEFAULTS.panes,
-      storage: values?.storage ?? DESK_DEFAULTS.storage
+      organization: pick('organization'),
+      user: pick('user'),
+      // Never in a project file, so never from one: the desk-level file or the
+      // default, and nothing in between.
+      identity: deskValues?.identity ?? DESK_DEFAULTS.identity,
+      assistant: deskValues?.assistant ?? DESK_DEFAULTS.assistant,
+      appearance: pick('appearance'),
+      panes: pick('panes'),
+      storage: pick('storage')
     },
     sources: {
       organization: from('organization'),
       user: from('user'),
-      identity: 'default',
+      identity: deskValues?.identity === undefined ? 'default' : 'desk file',
+      assistant: deskValues?.assistant === undefined ? 'default' : 'desk file',
       appearance: from('appearance'),
       panes: from('panes'),
       storage: from('storage')
@@ -884,9 +1269,16 @@ export function effectiveConfig(
     path: PROJECT_CONFIG_PATH,
     note,
     readFailure,
-    // A refused file contributes nothing, its dimensions included: the desk is
-    // on the built-in defaults, and none of them was declared.
-    declaredPanes:
-      values?.panes === undefined ? NOTHING_DECLARED : (decoded?.declaredPanes ?? NOTHING_DECLARED)
+    declaredPanes: panesDeclaredBy ?? NOTHING_DECLARED,
+    desk:
+      desk === undefined
+        ? undefined
+        : {
+            path: desk.path,
+            present: desk.present,
+            problems: desk.decoded?.problems ?? [],
+            note: desk.note,
+            readFailure: desk.readFailure
+          }
   }
 }

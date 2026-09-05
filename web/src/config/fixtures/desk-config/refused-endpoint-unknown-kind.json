@@ -1,0 +1,13 @@
+{
+  "deskConfigVersion": 1,
+  "assistant": {
+    "endpoint": {
+      "url": "https://api.example.invalid/v1",
+      "kind": "gemini",
+      "model": "a-model",
+      "tools": [
+        "validate"
+      ]
+    }
+  }
+}

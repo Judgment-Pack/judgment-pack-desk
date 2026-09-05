@@ -67,7 +67,12 @@ export function StatusStrip({
   onToggleConsole: () => void
 }) {
   const { server } = useMcp()
-  const { problems, readFailure } = useEffectiveConfig()
+  const { problems, readFailure, desk } = useEffectiveConfig()
+  // **Either file, one cue.** The strip's job is to stop a mistyped key
+  // looking exactly like having written no file at all, and that argument does
+  // not care which of the two files carried the typo. Admin names which.
+  const refused = problems.length > 0 || (desk?.problems.length ?? 0) > 0
+  const unread = readFailure !== undefined || desk?.readFailure !== undefined
   return (
     <footer className="desk-strip">
       <span className="desk-strip-left">
@@ -78,10 +83,8 @@ export function StatusStrip({
         ) : (
           <span className="desk-strip-connection">not connected</span>
         )}
-        {problems.length > 0 && (
-          <ConfigCue full={CONFIG_REFUSED_CUE} short={CONFIG_REFUSED_SHORT} />
-        )}
-        {problems.length === 0 && readFailure !== undefined && (
+        {refused && <ConfigCue full={CONFIG_REFUSED_CUE} short={CONFIG_REFUSED_SHORT} />}
+        {!refused && unread && (
           <ConfigCue full={CONFIG_UNREAD_CUE} short={CONFIG_UNREAD_SHORT} />
         )}
       </span>

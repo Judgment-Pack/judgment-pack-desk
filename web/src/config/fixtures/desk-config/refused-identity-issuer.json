@@ -1,0 +1,19 @@
+{
+  "deskConfigVersion": 1,
+  "identity": {
+    "provider": {
+      "issuer": "ftp://issuer.example",
+      "clientId": "x"
+    }
+  },
+  "assistant": {
+    "endpoint": {
+      "url": "https://api.example.invalid/v1",
+      "kind": "openai-compatible",
+      "model": "a-model",
+      "tools": [
+        "validate"
+      ]
+    }
+  }
+}
