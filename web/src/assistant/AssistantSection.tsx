@@ -75,10 +75,12 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
   // Nothing here mirrors the value into state. There is nothing to mirror it
   // for: the page never re-renders from it and never displays it.
   const field = useRef<HTMLInputElement | null>(null)
-  // The outcome of the last store or removal, kept here rather than read off
-  // the mutation — the mutation is reset on settlement so that it retains no
-  // copy of the credential it was called with, and resetting takes its error
-  // with it.
+  // The outcome of the last store or removal, kept locally because the
+  // mutation takes no credential variable and exposes no retained
+  // credential-bearing state. (An earlier version called `reset()` on
+  // settlement and this comment said so; resetting turned out not to clear
+  // the mutation cache's copy at all, which is why the key stopped being a
+  // mutation variable in the first place. See `useStoreAssistantKey`.)
   const [storeProblem, setStoreProblem] = useState<string | undefined>(undefined)
   const [removeProblem, setRemoveProblem] = useState<string | undefined>(undefined)
 

@@ -320,8 +320,9 @@ describe('the Assistant section', () => {
     // **Where a credential lives is the question, and React Query is a place
     // it can live.** A mutation keeps what it was called with for as long as
     // its state does, so a failed store left the plaintext in the mutation
-    // cache beside the error. It is reset on settlement; this reads the cache
-    // rather than trusting that.
+    // cache beside the error. The key is not a mutation variable at all now —
+    // resetting the observer did not clear the cache's copy — and this reads
+    // the cache rather than trusting either arrangement.
     for (const failing of [false, true]) {
       const client = testQueryClient()
       stubChassis(

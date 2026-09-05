@@ -345,12 +345,33 @@ func ensureOwnedDirectory(parent, name string) error {
 	// group and other **write**, and this takes read and execute away too. The
 	// order matters — the check refuses what cannot be repaired, and only then
 	// is the repair applied.
-	if info.Mode().Perm() != custodyDirMode {
+	if needsNarrowing(info.Mode()) {
 		if err := os.Chmod(path, custodyDirMode); err != nil {
 			return fmt.Errorf("%s could not be narrowed to %#o: %w", path, custodyDirMode, err)
 		}
 	}
 	return nil
+}
+
+// needsNarrowing reports whether a directory of ours is not yet exactly 0700.
+//
+// **The special bits count, and comparing `Perm()` alone missed them.** `Perm`
+// masks everything above the nine permission bits, so a directory at `02700`
+// compared equal to `0700`, no `Chmod` was issued, and it kept its setgid bit
+// while the README said the mode was `0700`. Setgid on a directory is not a
+// group-write grant — nothing this package refuses turns on it — but it does
+// change who owns what is created inside, and a sentence that names one mode
+// while the code accepts another is the kind of small untruth this repository
+// is written not to have.
+//
+// They are **narrowed away rather than refused**, which is the choice made
+// here and worth saying out loud: they are not a capability anyone else gains,
+// they are trivially repairable by the same `Chmod` that is already being
+// issued, and refusing a desk over an inherited setgid bit would be a refusal
+// nobody could act on without being told exactly this.
+func needsNarrowing(mode fs.FileMode) bool {
+	return mode.Perm() != custodyDirMode ||
+		mode&(fs.ModeSetuid|fs.ModeSetgid|fs.ModeSticky) != 0
 }
 
 // ensureOwnedDirectoryIn is ensureOwnedDirectory relative to a pinned root.
@@ -372,7 +393,7 @@ func ensureOwnedDirectoryIn(root *os.Root, label, name string) error {
 	if err := safeDirectory(path, info, true); err != nil {
 		return err
 	}
-	if info.Mode().Perm() != custodyDirMode {
+	if needsNarrowing(info.Mode()) {
 		if err := root.Chmod(name, custodyDirMode); err != nil {
 			return fmt.Errorf("%s could not be narrowed to %#o: %w", path, custodyDirMode, err)
 		}

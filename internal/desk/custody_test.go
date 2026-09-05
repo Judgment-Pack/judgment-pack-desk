@@ -336,6 +336,54 @@ func TestAnUnusableStoreLeavesTheRestOfTheDeskAlone(t *testing.T) {
 	}
 }
 
+func TestCustodyNarrowsAwayTheSpecialBits(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no setgid bit on Windows")
+	}
+	// **`Perm()` masks the special bits away**, so a directory at `02700`
+	// compared equal to `0700`, no `Chmod` was issued, and it kept its setgid
+	// while the README said the mode was `0700`. Setgid on a directory is not
+	// a group-write grant — it changes who owns what is created inside — but a
+	// sentence naming one mode while the code accepts another is exactly the
+	// kind of small untruth this suite exists to catch.
+	//
+	// Both of the desk's own directories, because both had the same test.
+	config := t.TempDir()
+	secrets := filepath.Join(config, secretsDirName)
+	if err := os.Mkdir(secrets, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	for _, dir := range []string{config, secrets} {
+		if err := os.Chmod(dir, os.FileMode(0o700)|os.ModeSetgid); err != nil {
+			t.Fatalf("chmod %s: %v", dir, err)
+		}
+		info, err := os.Lstat(dir)
+		if err != nil {
+			t.Fatalf("stat: %v", err)
+		}
+		if info.Mode()&os.ModeSetgid == 0 {
+			t.Skipf("this filesystem did not keep the setgid bit on %s", dir)
+		}
+	}
+
+	store := storeIn(t, config)
+	if !store.usable() {
+		t.Fatalf("a 02700 directory was refused rather than narrowed: %v", store.problem)
+	}
+	for _, dir := range []string{config, secrets} {
+		info, err := os.Lstat(dir)
+		if err != nil {
+			t.Fatalf("stat: %v", err)
+		}
+		if info.Mode().Perm() != custodyDirMode {
+			t.Errorf("%s is %#o, want %#o", dir, info.Mode().Perm(), custodyDirMode)
+		}
+		if special := info.Mode() & (os.ModeSetuid | os.ModeSetgid | os.ModeSticky); special != 0 {
+			t.Errorf("%s kept %v; the mode is not %#o as documented", dir, special, custodyDirMode)
+		}
+	}
+}
+
 func TestCustodyRefusesOurOwnDirectoryOwnedByAnother(t *testing.T) {
 	// **The `ours` half of the ownership rule, isolated.** The ancestor rule
 	// admits root as well as this user, so a test whose whole chain looks

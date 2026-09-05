@@ -1403,11 +1403,16 @@ attacker named in a preplanted `desk.json`. So:
   desk**, and must not be writable by anyone else. Their ancestors may belong
   to root as well, because `/` and `/home` do on every ordinary system.
   A `0755` directory of ours — what a umask of 022 produces — is narrowed to
-  `0700`, because nobody else could have written into it. One that **is**
-  writable by group or others is **refused**, not narrowed: tightening it
-  closes the future and can do nothing about what was already planted while it
-  stood open, and what may have been planted is a `desk.json` naming an
-  endpoint this desk would then present its key to.
+  **exactly** `0700`, because nobody else could have written into it. Exactly:
+  the setuid, setgid and sticky bits are taken off with the rest, so `02700`
+  becomes `0700` rather than being left as it was. None of the three grants
+  anyone else access, and none is a reason to refuse a desk — but a sentence
+  that names one mode while the code accepts another is a small untruth, and
+  the same `chmod` was being issued anyway. One that **is** writable by group
+  or others is **refused**, not narrowed: tightening it closes the future and
+  can do nothing about what was already planted while it stood open, and what
+  may have been planted is a `desk.json` naming an endpoint this desk would
+  then present its key to.
 - **`desk.json` is held to the key's rules but one.** It must be owned by this
   user, a regular file, not writable by anyone else, and the descriptor opened
   is compared to the entry inspected — because writing that file is choosing

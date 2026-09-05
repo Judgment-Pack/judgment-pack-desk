@@ -16,6 +16,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -1253,22 +1254,63 @@ func TestAnEscapedPathSurvivesDecodingAndTheProbe(t *testing.T) {
 	}
 }
 
+// countedBody is a response body that records what was actually read from it.
+//
+// **The server's accepted writes are not evidence.** The test this replaced
+// asserted that the endpoint's `Write` returned 64 KiB, which a socket buffer
+// can accept in full while the client reads eight and closes — so it proved
+// nothing about the drain it was named for. This is on the *client* side of
+// the transport, where "read to the end" is a fact that can be observed.
+type countedBody struct {
+	reader io.Reader
+	read   int
+	eof    bool
+}
+
+func (b *countedBody) Read(p []byte) (int, error) {
+	n, err := b.reader.Read(p)
+	b.read += n
+	if errors.Is(err, io.EOF) {
+		b.eof = true
+	}
+	return n, err
+}
+
+func (b *countedBody) Close() error { return nil }
+
+// bodyTransport answers every request with a body of the given size and keeps
+// the counter, so a test can ask how much of it was consumed.
+type bodyTransport struct {
+	size int
+	body *countedBody
+}
+
+func (t *bodyTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	t.body = &countedBody{reader: bytes.NewReader(bytes.Repeat([]byte("y"), t.size))}
+	return &http.Response{
+		StatusCode:    http.StatusInternalServerError,
+		Status:        "500 Internal Server Error",
+		Body:          t.body,
+		Header:        make(http.Header),
+		ContentLength: int64(t.size),
+		Request:       r,
+	}, nil
+}
+
 func TestTheProbeDrainsTheWholeBody(t *testing.T) {
 	// The README says the body is drained; it used to stop at 8 KiB, which is
-	// a different thing and leaves the connection unreusable.
+	// a different thing and leaves the connection unreusable. Measured where
+	// the reading happens rather than where the writing does.
 	const size = 64 << 10
-	var served int
-	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		written, _ := w.Write(bytes.Repeat([]byte("y"), size))
-		served = written
-	}))
-	defer stub.Close()
+	transport := &bodyTransport{size: size}
+	restore := probeClient.Transport
+	probeClient.Transport = transport
+	t.Cleanup(func() { probeClient.Transport = restore })
 
 	s, ts, _ := assistantServer(t)
-	writeDeskConfig(t, s, fmt.Sprintf(
-		`{"deskConfigVersion":1,"assistant":{"endpoint":{"url":%q,"kind":"openai-compatible",`+
-			`"model":"a-model","tools":[]}}}`, stub.URL+"/v1"))
+	writeDeskConfig(t, s, `{"deskConfigVersion":1,"assistant":{"endpoint":{`+
+		`"url":"https://gw.example/v1","kind":"openai-compatible",`+
+		`"model":"a-model","tools":[]}}}`)
 	if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
 		t.Fatal("store")
 	}
@@ -1276,8 +1318,16 @@ func TestTheProbeDrainsTheWholeBody(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("status %d, body %v", status, body)
 	}
-	if served != size {
-		t.Errorf("the endpoint wrote %d of %d bytes; the reader gave up early", served, size)
+
+	if transport.body == nil {
+		t.Fatal("the probe made no request")
+	}
+	if transport.body.read != size {
+		t.Errorf("the probe read %d of %d bytes; the drain gave up early",
+			transport.body.read, size)
+	}
+	if !transport.body.eof {
+		t.Error("the probe never saw the end of the body")
 	}
 	// And none of it travelled, however long it was.
 	if body["diagnostic"] != DiagnosticUnexpected {

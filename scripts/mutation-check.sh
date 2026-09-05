@@ -648,11 +648,19 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		return &assistantStore{dir: dir, problem: err}
 	}' \
     ''
-  mutate go "the secrets directory is left at whatever mode it had" "$CU" \
-    '	if info.Mode().Perm() != custodyDirMode {
-		if err := root.Chmod(name, custodyDirMode); err != nil {' \
-    '	if false {
-		if err := root.Chmod(name, custodyDirMode); err != nil {'
+  # The narrowing decision moved into `needsNarrowing` when the special bits
+  # were added to it, so one row now breaks it for both of the desk's own
+  # directories rather than one row per site.
+  mutate go "the desk's own directories are left at whatever mode they had" "$CU" \
+    '	return mode.Perm() != custodyDirMode ||
+		mode&(fs.ModeSetuid|fs.ModeSetgid|fs.ModeSticky) != 0' \
+    '	return false'
+  # `Perm()` masks the special bits away, so comparing it alone left a 02700
+  # directory setgid while the README said the mode was 0700.
+  mutate go "the special mode bits are not narrowed away" "$CU" \
+    '	return mode.Perm() != custodyDirMode ||
+		mode&(fs.ModeSetuid|fs.ModeSetgid|fs.ModeSticky) != 0' \
+    '	return mode.Perm() != custodyDirMode'
   # The key file itself, which is the name an attacker plants a link at.
   mutate go "a symlinked key file is followed" "$CU" \
     '	if info.Mode()&fs.ModeSymlink != 0 {
