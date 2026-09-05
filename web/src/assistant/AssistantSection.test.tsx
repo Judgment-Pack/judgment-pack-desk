@@ -7,7 +7,7 @@
  * store request and appears nowhere else, in no rendered text and in no
  * subsequent request.
  */
-import { QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
@@ -92,14 +92,26 @@ function stubChassis(answers: {
   return { sent }
 }
 
-function renderSection(value: EffectiveConfig = unconfigured()) {
+function renderSection(
+  value: EffectiveConfig = unconfigured(),
+  client = testQueryClient()
+) {
   return render(
-    <QueryClientProvider client={testQueryClient()}>
+    <QueryClientProvider client={client}>
       <DeskConfigFixture value={value}>
         <AssistantSection id="assistant" title="Assistant" />
       </DeskConfigFixture>
     </QueryClientProvider>
   )
+}
+
+/** Every value React Query is currently holding on behalf of a mutation. */
+function retainedVariables(client: QueryClient): unknown[] {
+  return client
+    .getMutationCache()
+    .getAll()
+    .map((mutation) => mutation.state.variables)
+    .filter((variables) => variables !== undefined)
 }
 
 describe('the Assistant section', () => {
@@ -268,6 +280,42 @@ describe('the Assistant section', () => {
     // And nowhere in the rendered page either.
     expect(container.textContent).not.toContain('sk-a-real-looking-key-wxyz')
     expect(field.value).toBe('')
+  })
+
+  it('retains the key in no mutation, on success or on failure', async () => {
+    // **Where a credential lives is the question, and React Query is a place
+    // it can live.** A mutation keeps what it was called with for as long as
+    // its state does, so a failed store left the plaintext in the mutation
+    // cache beside the error. It is reset on settlement; this reads the cache
+    // rather than trusting that.
+    for (const failing of [false, true]) {
+      const client = testQueryClient()
+      stubChassis(
+        failing
+          ? {
+              key: { present: false, fingerprint: '' },
+              keyError: { error: 'refused', code: 'bad-request' }
+            }
+          : { key: { present: false, fingerprint: '' } }
+      )
+      const { container } = renderSection(unconfigured(), client)
+      await screen.findByText('none stored on this machine')
+      fireEvent.change(container.querySelector('input')!, {
+        target: { value: 'sk-a-real-looking-key-wxyz' }
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Store key' }))
+      await waitFor(() =>
+        expect(
+          retainedVariables(client),
+          failing ? 'after a failed store' : 'after a successful store'
+        ).toEqual([])
+      )
+      // And nowhere in the cache's serialized state either.
+      expect(JSON.stringify(client.getMutationCache().getAll())).not.toContain(
+        'sk-a-real-looking-key-wxyz'
+      )
+      cleanup()
+    }
   })
 
   it('reports a refused store as one that did not happen', async () => {

@@ -3104,6 +3104,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # ---- The assistant slot, on the page side -------------------------------
   AS=web/src/assistant/AssistantSection.tsx
   AC=web/src/assistant/client.ts
+  AQ=web/src/assistant/queries.ts
   CQ=web/src/config/queries.ts
 
   # "Unknown key" is true and useless: whoever pasted a key has made a mistake
@@ -3200,9 +3201,27 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     setStoreProblem(undefined)" \
     '    const value = typed
     setStoreProblem(undefined)'
-  mutate web "the mutation keeps the key it was called with" "$AS" \
-    '      onSettled: () => store.reset()' \
-    '      onSettled: () => undefined'
+  # **This row replaced one that did not discriminate.** It used to remove the
+  # `store.reset()` the section called on settlement, on the belief that
+  # resetting was what stopped React Query retaining the credential. It was
+  # not: `reset()` clears the observer, and the mutation *cache entry* keeps
+  # its variables for minutes afterwards either way — which a test that reads
+  # the cache is what established. The key is not a mutation variable at all
+  # now, so what is broken here is that.
+  mutate web "the key is handed to the mutation as its variable" "$AQ" \
+    '    mutationFn: async () => {
+      const key = pending.current ?? '"''"'
+      // Dropped before the promise is awaited, not after it resolves: a
+      // request that never comes back must not leave it here.
+      pending.current = null
+      return storeAssistantKey(key)
+    },' \
+    '    mutationFn: async () => storeAssistantKey(pending.current ?? '"''"'),'
+  mutate web "the pending key is left behind after the request" "$AQ" \
+    '        onSettled: () => {
+          pending.current = null
+        }' \
+    '        onSettled: () => undefined'
   # A key is not removed by removing the endpoint, so the page must not say so.
   mutate web "no endpoint is reported as no key" "$AS" \
     "          {endpoint === null ? 'none — no endpoint configured' : 'a model endpoint'}" \

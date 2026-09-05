@@ -15,6 +15,7 @@ import {
   type UseMutationResult,
   type UseQueryResult
 } from '@tanstack/react-query'
+import { useRef } from 'react'
 import {
   probeAssistantEndpoint,
   readAssistantKey,
@@ -43,25 +44,55 @@ export function useAssistantKey(): UseQueryResult<AssistantKeyState, Error> {
 }
 
 /**
- * One store.
+ * One store, and a credential that is a **variable of nothing**.
  *
- * **The credential is not kept as a mutation variable after the request.** A
- * mutation retains what it was called with — `variables` stays readable on the
- * result object for as long as the mutation's state does — so a failed store
- * left the plaintext sitting in React Query's cache along with the error. It
- * is reset on settlement instead: the request has either landed or not, and
- * either way the value has no further use.
+ * `useMutation` retains what it was called with: `variables` stays on the
+ * mutation in the cache for as long as its entry lives, which is minutes after
+ * it settles. Resetting the observer does not clear that — the entry is the
+ * cache's, not the observer's — so a store that took the key as its variable
+ * left the plaintext in React Query whether it succeeded or failed. Calling
+ * `reset()` looked like a fix and was not; a test that reads the mutation
+ * cache is what said so.
+ *
+ * So the mutation takes no variable at all. The key travels in a ref, which is
+ * cleared the instant the request is handed to `fetch`, and nothing in the
+ * cache ever holds it. The window in which it exists in this page is the
+ * window in which it is being sent, which is the shortest one there is.
  */
-export function useStoreAssistantKey(): UseMutationResult<AssistantKeyState, Error, string> {
+export interface StoreAssistantKey {
+  /** Send one key. It is dropped as soon as the request has been made. */
+  submit: (key: string, handlers?: { onError?: (error: Error) => void }) => void
+  isPending: boolean
+}
+
+export function useStoreAssistantKey(): StoreAssistantKey {
   const client = useQueryClient()
-  const mutation = useMutation({
-    mutationFn: storeAssistantKey,
+  const pending = useRef<string | null>(null)
+  const mutation = useMutation<AssistantKeyState, Error, void>({
+    mutationFn: async () => {
+      const key = pending.current ?? ''
+      // Dropped before the promise is awaited, not after it resolves: a
+      // request that never comes back must not leave it here.
+      pending.current = null
+      return storeAssistantKey(key)
+    },
     // The chassis answers with the state it now holds, so the cache is set
     // from that rather than invalidated and re-read. Setting it from what was
     // *sent* would be the page reporting its own request as an outcome.
     onSuccess: (state) => client.setQueryData(ASSISTANT_KEY_QUERY_KEY, state)
   })
-  return mutation
+  return {
+    isPending: mutation.isPending,
+    submit: (key, handlers) => {
+      pending.current = key
+      mutation.mutate(undefined, {
+        onError: handlers?.onError,
+        onSettled: () => {
+          pending.current = null
+        }
+      })
+    }
+  }
 }
 
 export function useRemoveAssistantKey(): UseMutationResult<AssistantKeyState, Error, void> {

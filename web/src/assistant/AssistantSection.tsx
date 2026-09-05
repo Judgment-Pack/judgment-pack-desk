@@ -80,15 +80,12 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
 
   const submitKey = () => {
     const value = typed
+    // Cleared before the request, not after the answer: a store that fails
+    // must not leave the plaintext in a password field until somebody
+    // notices.
     setTyped('')
     setStoreProblem(undefined)
-    store.mutate(value, {
-      onError: (error) => setStoreProblem(error.message),
-      // Reset once it has settled, whichever way: a mutation keeps what it
-      // was called with for as long as its state lives, and that is a copy of
-      // a credential nothing further needs.
-      onSettled: () => store.reset()
-    })
+    store.submit(value, { onError: (error) => setStoreProblem(error.message) })
   }
 
   return (
