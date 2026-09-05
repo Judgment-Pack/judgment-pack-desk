@@ -36,6 +36,9 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
 import { ASSISTANT_TOOLS } from '../config/deskConfig'
 
+/** The one method this gate has an opinion about. */
+export const TOOLS_CALL = 'tools/call'
+
 /** The one tool whose arguments this gate rewrites, and the member it writes. */
 export const REHEARSAL_TOOL = 'experimental_evaluate'
 export const REHEARSAL_MEMBER = 'rehearsal'
@@ -74,12 +77,12 @@ export interface GuardrailNotice {
 export type FrameVerdict =
   | { verdict: 'pass' }
   | { verdict: 'refused'; notice: GuardrailNotice; violation: GateViolation }
-  | { verdict: 'rewrote'; notice: GuardrailNotice; frame: JSONRPCMessage }
-
-interface ToolsCallFrame {
-  method?: string
-  params?: { name?: string; arguments?: Record<string, unknown> }
-}
+  /**
+   * The frame was rebuilt. `notice` is null exactly where the caller had
+   * already written an own `rehearsal: true` — the frame is still rebuilt,
+   * because "own, and last" is what travels, but there is nothing to report.
+   */
+  | { verdict: 'rewrote'; notice: GuardrailNotice | null; frame: JSONRPCMessage }
 
 /**
  * The allow-list for a session: what the file granted, intersected with the
@@ -96,57 +99,160 @@ export function allowedTools(configured: readonly string[]): ReadonlySet<string>
   return new Set(configured.filter((name) => ceiling.has(name)))
 }
 
+/** A plain object, and nothing else: not an array, not null, not a primitive. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** The refusal every malformed frame gets, in one place. */
+function refuse(tool: string, detail: string): FrameVerdict {
+  return {
+    verdict: 'refused',
+    notice: { tool, action: 'refused', detail },
+    violation: new GateViolation(tool, `refused on the wire: ${detail}`)
+  }
+}
+
+/**
+ * The own, enumerable properties of an argument object, read **once** each.
+ *
+ * Once, because a getter or a proxy may answer differently on a second read:
+ * a gate that checked one value and serialized another is a gate that can be
+ * told two different things about the same call. What this returns is the
+ * object that will be sent, and it is the object the check was made against.
+ */
+function ownArguments(args: Record<string, unknown>): Record<string, unknown> {
+  const copy: Record<string, unknown> = {}
+  for (const key of Object.keys(args)) copy[key] = args[key]
+  return copy
+}
+
 /**
  * What must happen to one outbound frame before it may leave the page.
  *
- * Anything that is not a `tools/call` passes untouched — `initialize`,
- * `tools/list`, `prompts/get`, a notification, a response — because this gate
- * is about what the assistant may *do*, and reading what the runtime serves is
- * not one of the things it does.
+ * **It fails closed.** A frame that is not a well-formed single JSON-RPC
+ * request, notification or response is refused rather than waved through as
+ * traffic this gate has no opinion about. That rule is here because the old one
+ * — "anything without `method` equal to `tools/call` passes" — let a **batch**
+ * out: a JSON-RPC array has no `method`, so a batch carrying an allowed call
+ * beside a `write_file` reached the socket whole. The SDK's type says one
+ * message; the type is not what runs, and the whole point of a gate at the wire
+ * is that it covers callers the type never described.
+ *
+ * A near-spelling of the guarded method is refused too — `Tools/Call`,
+ * ` tools/call `, `tools/call\u200b`. Some server somewhere folds case or trims,
+ * and a frame two readers disagree about is one this desk will not send. That
+ * is the chassis' own ruling about its query, applied here.
+ *
+ * What still passes untouched: `initialize`, `tools/list`, `prompts/get`, a
+ * notification, and a response to a request the server made. Reading what the
+ * runtime serves is not one of the things the assistant *does*.
  */
 export function inspectOutboundFrame(
   message: JSONRPCMessage,
   allowed: ReadonlySet<string>
 ): FrameVerdict {
-  const frame = message as ToolsCallFrame
-  if (frame.method !== 'tools/call') return { verdict: 'pass' }
-  const name = frame.params?.name
+  const unreadable = '(a frame this gate could not read)'
+  if (!isRecord(message)) {
+    return refuse(
+      unreadable,
+      Array.isArray(message)
+        ? 'a JSON-RPC batch is not a frame this gate can check one call at a time, so it is ' +
+            'refused whole; nothing left the page'
+        : 'an outbound frame must be a single JSON-RPC object; this one is not, and nothing ' +
+            'left the page'
+    )
+  }
+
+  const method = (message as { method?: unknown }).method
+  if (method === undefined) {
+    // A response to a request the server made: an id, and one of result/error.
+    const hasId = 'id' in message && message.id !== null && message.id !== undefined
+    const answers = 'result' in message || 'error' in message
+    if (hasId && answers) return { verdict: 'pass' }
+    return refuse(
+      unreadable,
+      'an outbound frame with no method must be a response carrying an id and a result or an ' +
+        'error; this one is neither a request nor a response'
+    )
+  }
+  if (typeof method !== 'string') {
+    return refuse(unreadable, 'an outbound frame\'s method must be a string')
+  }
+  if (method !== TOOLS_CALL) {
+    // Fail closed on a spelling that is `tools/call` to some other reader.
+    if (method.trim().toLowerCase() === TOOLS_CALL) {
+      return refuse(
+        unreadable,
+        `${JSON.stringify(method)} is a spelling of ${TOOLS_CALL} this desk will not send: a ` +
+          `frame two readers disagree about is one it cannot check`
+      )
+    }
+    return { verdict: 'pass' }
+  }
+
+  const params = (message as { params?: unknown }).params
+  if (!isRecord(params)) {
+    return refuse(unreadable, `a ${TOOLS_CALL} frame must carry a params object`)
+  }
+  const name = params.name
   if (typeof name !== 'string' || !allowed.has(name)) {
     const spelled = typeof name === 'string' ? name : String(name)
-    const detail =
+    return refuse(
+      spelled,
       `${spelled} is not one of the tools this assistant may call ` +
-      `(${[...allowed].join(', ') || 'none'}); the call did not leave the page and ` +
-      `nothing was written`
-    return {
-      verdict: 'refused',
-      notice: { tool: spelled, action: 'refused', detail },
-      violation: new GateViolation(spelled, `refused on the wire: ${detail}`)
-    }
+        `(${[...allowed].join(', ') || 'none'}); the call did not leave the page and ` +
+        `nothing was written`
+    )
   }
-  const args = frame.params?.arguments ?? {}
-  if (name === REHEARSAL_TOOL && args[REHEARSAL_MEMBER] !== true) {
-    // What was there, and only that. The pack and the facts travel in the same
-    // object and neither is ever named here.
-    const had =
-      REHEARSAL_MEMBER in args
-        ? `the call carried ${REHEARSAL_MEMBER}: ${JSON.stringify(args[REHEARSAL_MEMBER])}`
-        : `the call carried no ${REHEARSAL_MEMBER} member`
-    return {
-      verdict: 'rewrote',
-      notice: {
-        tool: name,
-        action: 'rewrote',
-        detail:
-          `${had}; it was rewritten to ${REHEARSAL_MEMBER}: true before the frame left ` +
-          `the page, so the runtime appends no audit record (runtime ADR-0018, ADR-0028)`
-      },
-      frame: {
-        ...(message as object),
-        params: { ...frame.params, arguments: { ...args, [REHEARSAL_MEMBER]: true } }
-      } as unknown as JSONRPCMessage
-    }
+  const supplied = params.arguments
+  if (supplied !== undefined && !isRecord(supplied)) {
+    return refuse(name, `a ${TOOLS_CALL} frame's arguments must be an object where it has any`)
   }
-  return { verdict: 'pass' }
+
+  if (name !== REHEARSAL_TOOL) return { verdict: 'pass' }
+
+  /**
+   * **The evaluate frame is never passed through as it arrived.**
+   *
+   * It is rebuilt from the own, enumerable properties of what the caller gave,
+   * with an own `rehearsal: true` written last. An inherited `rehearsal: true`
+   * — `Object.create({ rehearsal: true })` — reads as `true` to every check and
+   * is dropped by `JSON.stringify`, so a gate that inspected and forwarded
+   * would have sent an unrehearsed evaluation and the runtime would have
+   * appended an audit record. There is no branch here that forwards the
+   * original object, which is why there is no shape that can slip past it.
+   */
+  const args = ownArguments(supplied ?? {})
+  const already = Object.hasOwn(args, REHEARSAL_MEMBER) && args[REHEARSAL_MEMBER] === true
+  args[REHEARSAL_MEMBER] = true
+  const rebuilt = {
+    ...(message as object),
+    params: { ...params, arguments: args }
+  } as unknown as JSONRPCMessage
+  if (already) {
+    // Nothing to report: the caller asked for exactly what it got. The frame
+    // is still the rebuilt one, because "own and last" is what travels.
+    return { verdict: 'rewrote', notice: null, frame: rebuilt }
+  }
+  // What was there, and only that. The pack and the facts travel in the same
+  // object and neither is ever named here.
+  const had = Object.hasOwn(supplied ?? {}, REHEARSAL_MEMBER)
+    ? `the call carried ${REHEARSAL_MEMBER}: ${JSON.stringify((supplied ?? {})[REHEARSAL_MEMBER])}`
+    : REHEARSAL_MEMBER in (supplied ?? {})
+      ? `the call carried an inherited ${REHEARSAL_MEMBER}, which no serializer sends`
+      : `the call carried no ${REHEARSAL_MEMBER} member`
+  return {
+    verdict: 'rewrote',
+    notice: {
+      tool: name,
+      action: 'rewrote',
+      detail:
+        `${had}; it was rewritten to an own ${REHEARSAL_MEMBER}: true before the frame left ` +
+        `the page, so the runtime appends no audit record (runtime ADR-0018, ADR-0028)`
+    },
+    frame: rebuilt
+  }
 }
 
 /**
@@ -177,7 +283,7 @@ export function gateTransport(
       return Promise.reject(decided.violation)
     }
     if (decided.verdict === 'rewrote') {
-      options.onGuardrail?.(decided.notice)
+      if (decided.notice !== null) options.onGuardrail?.(decided.notice)
       return send(decided.frame, sendOptions)
     }
     return send(message, sendOptions)
