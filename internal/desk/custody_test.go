@@ -374,6 +374,14 @@ func TestCustodyRefusesALinkSwappedInAfterTheCheck(t *testing.T) {
 	// time it is opened — which is exactly the race a validated pathname
 	// leaves open. `O_NOFOLLOW` makes the kernel refuse the traversal, so
 	// there is no instant in which the swap pays off.
+	//
+	// **The link points *inside* the credential directory, and that is the
+	// case the flag is actually for.** `os.Root` refuses a symlink whose
+	// target leaves the root all by itself, so a link to somebody else's file
+	// elsewhere on the disk is stopped whether or not the flag is set — which
+	// makes it the wrong case to measure the flag against. A link to a decoy
+	// beside the key is inside the root, `os.Root` follows it, and only
+	// `O_NOFOLLOW` says no.
 	config := t.TempDir()
 	store := storeIn(t, config)
 	if !store.usable() {
@@ -382,8 +390,8 @@ func TestCustodyRefusesALinkSwappedInAfterTheCheck(t *testing.T) {
 	if err := store.storeKey(testKey); err != nil {
 		t.Fatalf("store: %v", err)
 	}
-	target := filepath.Join(t.TempDir(), "somebody-elses-secret")
-	if err := os.WriteFile(target, []byte("not-this-desks-key"), 0o600); err != nil {
+	decoy := filepath.Join(config, secretsDirName, "decoy")
+	if err := os.WriteFile(decoy, []byte("not-this-desks-key"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -399,7 +407,8 @@ func TestCustodyRefusesALinkSwappedInAfterTheCheck(t *testing.T) {
 			t.Errorf("remove: %v", err)
 			return
 		}
-		if err := os.Symlink(target, key); err != nil {
+		// Relative, and inside the root: the arrangement `os.Root` permits.
+		if err := os.Symlink("decoy", key); err != nil {
 			t.Errorf("symlink: %v", err)
 		}
 	}

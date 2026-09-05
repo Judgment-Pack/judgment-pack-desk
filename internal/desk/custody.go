@@ -391,18 +391,40 @@ func (s *assistantStore) readKey() (string, error) {
 				"so it is not treated as this desk's key",
 			filepath.Join(s.dir, secretsDirName, assistantKeyName), perm)
 	}
-	// **The flag, not the check, is what closes the window.** The `Lstat`
-	// above establishes what is there at that instant; `os.Root` follows a
-	// symlink that stays inside the root, so between the two a swap would
-	// still be followed. `O_NOFOLLOW` makes the kernel refuse the traversal
-	// with no window at all — and the hook below is what lets a test perform
-	// exactly that swap at exactly that instant.
+	// **The open is checked against the thing that was inspected, by
+	// identity.** The `Lstat` above establishes what is at that name at that
+	// instant, and a swap performed *after* it is the race a validated
+	// pathname leaves open.
+	//
+	// `O_NOFOLLOW` is passed and is **not** what closes it. `os.Root` resolves
+	// the final component itself — a symlink whose target stays inside the
+	// root is followed, and the flag does not reach the syscall that would
+	// refuse it. That was asserted here in a comment and was false; the
+	// mutation harness is what said so, by removing the flag and watching
+	// every test still pass. What actually closes the window is comparing the
+	// file that was opened with the file that was inspected: a swapped-in link
+	// resolves to a different inode, and a different inode is not this key.
 	afterKeyStat(filepath.Join(s.dir, secretsDirName, assistantKeyName))
 	file, err := s.secrets.OpenFile(assistantKeyName, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
 	if err != nil {
 		return "", err
 	}
 	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil {
+		return "", err
+	}
+	if !os.SameFile(info, opened) {
+		return "", fmt.Errorf(
+			"%s changed between being inspected and being opened, and was not read",
+			filepath.Join(s.dir, secretsDirName, assistantKeyName))
+	}
+	// Re-asserted on the descriptor, because the checks above were made on a
+	// name. These two are cheap and they are the ones that matter.
+	if !opened.Mode().IsRegular() || opened.Mode().Perm()&0o077 != 0 {
+		return "", fmt.Errorf("%s is not a regular file only its owner can read",
+			filepath.Join(s.dir, secretsDirName, assistantKeyName))
+	}
 	data, err := readBounded(file, maxKeyBytes)
 	if err != nil {
 		return "", err

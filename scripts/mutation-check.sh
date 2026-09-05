@@ -665,9 +665,16 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "a key anyone on the machine can read is still the key" "$CU" \
     '	if perm := info.Mode().Perm(); perm&0o077 != 0 {' \
     '	if perm := info.Mode().Perm(); false && perm&0o077 != 0 {'
-  mutate go "the key is opened without no-follow" "$CU" \
-    '	file, err := s.secrets.OpenFile(assistantKeyName, os.O_RDONLY|openNoFollow|openNonBlocking, 0)' \
-    '	file, err := s.secrets.OpenFile(assistantKeyName, os.O_RDONLY|openNonBlocking, 0)'
+  # **This row replaced one that did not discriminate**, and the replacement is
+  # the interesting part. The row used to remove `O_NOFOLLOW` from the open, on
+  # the belief that the flag was what refused a link swapped in after the
+  # check. Every test survived it: `os.Root` resolves the final component
+  # itself and the flag never reaches a syscall that would refuse. What
+  # actually closes the window is comparing the opened file to the inspected
+  # one by identity, so that is what is broken here.
+  mutate go "the opened key is not checked against the inspected one" "$CU" \
+    '	if !os.SameFile(info, opened) {' \
+    '	if false {'
   # Deliberately not mutated: the `usable()` guards inside the store. Removing
   # one does not produce a wrong answer, it produces a nil-pointer panic — a
   # refused store holds no descriptors at all — and a mutation that crashes the
