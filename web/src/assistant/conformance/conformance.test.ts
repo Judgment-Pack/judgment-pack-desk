@@ -35,14 +35,51 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CERTIFIED_ENGINES, loadEngine } from '../engines'
-import { openAssistantConnection, runAssistantSession } from '../session'
+import { bindModelCall, openAssistantConnection, runAssistantSession } from '../session'
 import scenario from './scenario.json'
 import { scriptedModel, type RecordedRequest } from './scriptedModel'
 import { RECORDED_TOOLS, scriptedRuntime, type ServerObservation } from './scriptedServer'
 import type { AssistantEvent } from '../engine'
 
-const RELAY_BASE = '/api/assistant/relay/v1?token=conformance-token'
 const FIVE = scenario.scenarioTools
+
+/**
+ * The network globals an engine must never touch, and what happens if it does.
+ *
+ * ADR-0001's contract sketch handed the engine a `baseUrl`, and a `baseUrl` for
+ * this relay carries **this chassis' session token**: an adapter could read it
+ * and open `/ws?token=…` itself with `globalThis.WebSocket`, driving a third
+ * MCP connection the ToolGate is not on. The contract changed to a capability
+ * (`assistant/engine.ts`), and this is what holds the change — structurally,
+ * rather than by scanning the source for spellings somebody thought of.
+ *
+ * For the duration of the engine's run every one of these is a sentinel that
+ * throws. The desk's own capability captured `fetch` when the session was
+ * bound, so it still works; an engine that reaches for a global does not.
+ */
+const NETWORK_GLOBALS = ['fetch', 'WebSocket', 'XMLHttpRequest', 'EventSource'] as const
+
+class EngineTouchedANetworkGlobal extends Error {}
+
+/** Replace every network global with a throwing sentinel; returns the undo. */
+function sealNetwork(): () => void {
+  const scope = globalThis as unknown as Record<string, unknown>
+  const before = new Map<string, unknown>()
+  for (const name of NETWORK_GLOBALS) {
+    before.set(name, scope[name])
+    const sentinel = function sealed(): never {
+      throw new EngineTouchedANetworkGlobal(
+        `the engine reached for globalThis.${name}; a session's only reach to a model is ` +
+          `session.model.call, and its only reach to the runtime is session.callTool`
+      )
+    }
+    // Both call shapes: `fetch(...)` and `new WebSocket(...)`.
+    scope[name] = sentinel
+  }
+  return () => {
+    for (const [name, value] of before) scope[name] = value
+  }
+}
 const DRAFT_V2 = scenario.documents.DRAFT_V2 as unknown
 
 interface Leg {
@@ -63,7 +100,14 @@ interface Run {
   seen: ServerObservation[]
 }
 
-/** One whole session, driven exactly as the page drives it. */
+/**
+ * One whole session, driven exactly as the page drives it.
+ *
+ * The desk's half — the socket, the gate, the client, the model capability —
+ * is bound first, with the real globals in place. Then the network is sealed
+ * and the **engine** runs: everything it does from that point is through the
+ * two capabilities it was handed, or it throws.
+ */
 async function runLeg(engineId: (typeof CERTIFIED_ENGINES)[number], leg: Leg): Promise<Run> {
   const model = scriptedModel({ api: leg.api, answerAs: leg.answerAs })
   vi.stubGlobal('fetch', model.fetch)
@@ -75,22 +119,29 @@ async function runLeg(engineId: (typeof CERTIFIED_ENGINES)[number], leg: Leg): P
     transport: runtime.transport
   })
   try {
+    const ready = connection
+    const call = bindModelCall()
     const engine = await loadEngine(engineId)
-    await runAssistantSession(
-      engine,
-      {
-        // The prompt the desk fetched over prompts/get. Its text is the
-        // runtime's; what matters here is that the engine sends it and adds
-        // no authoring instructions of its own.
-        prompt: `${scenario.policy}`,
-        tools: connection.tools,
-        callTool: connection.callTool,
-        model: { family: leg.api, baseUrl: RELAY_BASE, model: 'scripted-model' },
-        thinking: { tier: 'off' },
-        signal: new AbortController().signal
-      },
-      (event) => events.push(event)
-    )
+    const unseal = sealNetwork()
+    try {
+      await runAssistantSession(
+        engine,
+        {
+          // The prompt the desk fetched over prompts/get. Its text is the
+          // runtime's; what matters here is that the engine sends it and adds
+          // no authoring instructions of its own.
+          prompt: `${scenario.policy}`,
+          tools: ready.tools,
+          callTool: ready.callTool,
+          model: { family: leg.api, model: 'scripted-model', call },
+          thinking: { tier: 'off' },
+          signal: new AbortController().signal
+        },
+        (event) => events.push(event)
+      )
+    } finally {
+      unseal()
+    }
   } finally {
     await connection.close()
     await runtime.close()
@@ -186,6 +237,18 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
       expect(evaluated.rehearsal).toBe(scenario.expectations.T6.rehearsal)
       expect(evaluated.disposition.kind).toBe(scenario.expectations.T6.disposition.kind)
       expect(evaluated.disposition.outcomeId).toBe(scenario.expectations.T6.disposition.outcomeId)
+    })
+
+    it('K1a — the engine touches no network global at all', async () => {
+      // Nothing to assert beyond the leg completing: the sentinels throw, the
+      // engine reports an error, and every check below would fail. This case
+      // exists so the *reason* a leg failed is named.
+      const { events } = await runLeg(engineId, leg)
+      const errors = events.filter(
+        (event): event is Extract<AssistantEvent, { type: 'error' }> => event.type === 'error'
+      )
+      expect(errors.map((error) => error.message)).toEqual([])
+      expect(events.some((event) => event.type === 'proposal')).toBe(true)
     })
 
     it('K1 — sends no credential, and calls nothing but the relay', async () => {

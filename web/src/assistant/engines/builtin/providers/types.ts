@@ -8,6 +8,8 @@
  * anyway, and that is deliberate — see its comment.
  */
 
+import type { ModelCall } from '../../../engine'
+
 /** One tool call the model asked for. */
 export interface ToolCall {
   id: string
@@ -71,8 +73,14 @@ export class ModelHttpError extends Error {
 }
 
 export interface SendOptions {
-  /** The chassis relay's base. The engine appends a path suffix and nothing else. */
-  base: string
+  /**
+   * The desk's model capability, and the engine's only reach to a model.
+   *
+   * Not a URL: the engine is handed no address and no credential, so it can
+   * neither point a request somewhere else nor read this chassis' session
+   * token out of its own configuration. See `assistant/engine.ts`.
+   */
+  call: ModelCall
   model: string
   system: string
   messages: unknown[]
@@ -102,42 +110,15 @@ export interface Provider {
 }
 
 /**
- * Where one request goes: the relay's base with one path suffix on it, and
- * **not one parameter of the page's own**.
- *
- * The desk hands the engine a base that already carries this chassis' session
- * token, and the relay refuses a query carrying anything else — any name, any
- * case, any encoding — with `assistant-relay-path`. That rule came out of four
- * review rounds and is structural: no comparison the desk can write is the
- * comparison every parser downstream makes, so the page's query is refused
- * rather than filtered.
- *
- * So the suffix is appended to the base's **path** and the base's query is
- * carried across untouched. An engine that built `${base}/${suffix}` by
- * concatenation would put the suffix after the query and address a route that
- * does not exist; an engine that added `?stream=true` would have every request
- * refused. Both wire formats put `stream` in the body, so neither needs one.
- */
-export function relayRequestUrl(base: string, suffix: string): string {
-  const url = new URL(base, 'http://desk.invalid')
-  url.pathname = `${url.pathname.replace(/\/+$/, '')}/${suffix.replace(/^\/+/, '')}`
-  // Relative in, relative out: the page's own origin is where this goes, and
-  // writing an absolute URL for a same-origin request invents a host.
-  return /^[a-z][a-z0-9+.-]*:/i.test(base) || base.startsWith('//')
-    ? url.toString()
-    : `${url.pathname}${url.search}`
-}
-
-/**
  * The headers one model request carries, and the whole of them.
  *
  * **No credential, of any name.** The page holds none: the chassis relay keeps
  * the key on this machine, strips whatever it is sent, and attaches the
  * configured one on the way out. A header here would be a credential this page
  * had to have obtained, which is the single thing the relay exists to prevent.
- * `web/src/assistant/engines/builtin/engine.test.ts` asserts the outgoing
- * request carries no `authorization`, no `x-api-key` and no `cookie`.
+ * The desk's capability drops anything outside its allow-list before the
+ * request leaves the engine, so this is a convenience and not the guard.
  */
-export function relayHeaders(extra: Record<string, string> = {}): Record<string, string> {
+export function protocolHeaders(extra: Record<string, string> = {}): Record<string, string> {
   return { 'content-type': 'application/json', ...extra }
 }

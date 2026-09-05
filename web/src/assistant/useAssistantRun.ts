@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { loadEngine, resolveEngine } from './engines'
-import { openAssistantConnection, relayBaseUrl, runAssistantSession } from './session'
+import { bindModelCall, openAssistantConnection, runAssistantSession } from './session'
 import type { AssistantEvent } from './engine'
 import type { AssistantEndpointConfig, AssistantEngine, ThinkingTier } from '../config/deskConfig'
 
@@ -99,7 +99,7 @@ export function useAssistantRun(options: {
               prompt,
               tools: opened.tools,
               callTool: opened.callTool,
-              model: { family: endpoint.kind, baseUrl: relayBaseUrl(), model: endpoint.model },
+              model: { family: endpoint.kind, model: endpoint.model, call: bindModelCall() },
               thinking: { tier: thinking },
               signal: own.signal
             },

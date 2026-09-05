@@ -9,7 +9,7 @@
  */
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { assistantTransport, openAssistantConnection, relayBaseUrl } from './session'
+import { assistantTransport, bindModelCall, openAssistantConnection, suffixProblem } from './session'
 import { scriptedRuntime } from './conformance/scriptedServer'
 import type { AssistantEvent } from './engine'
 
@@ -18,15 +18,102 @@ afterEach(() => {
   window.sessionStorage.clear()
 })
 
-describe('the relay base handed to the engine', () => {
-  it('is the relay mount point with the desk’s token and no other parameter', () => {
+describe('the model capability the desk binds', () => {
+  /** Install a recording fetch and return what it was called with. */
+  function recordingFetch(): { calls: { url: string; init: RequestInit }[] } {
+    const calls: { url: string; init: RequestInit }[] = []
+    vi.stubGlobal('fetch', async (url: unknown, init: RequestInit) => {
+      calls.push({ url: String(url), init })
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+    return { calls }
+  }
+
+  it('builds the address itself, with the desk’s token and no other parameter', async () => {
     window.sessionStorage.setItem('jpack-desk-token', 'a-token')
-    const base = relayBaseUrl()
-    const url = new URL(base, 'http://desk.invalid')
-    expect(url.pathname).toBe('/api/assistant/relay/v1')
-    // The relay refuses a query carrying anything but `token`, outright. A
-    // second parameter here would be every request refused.
+    const { calls } = recordingFetch()
+    await bindModelCall()('chat/completions', { body: '{}' })
+    const url = new URL(calls[0]!.url, 'http://desk.invalid')
+    expect(url.pathname).toBe('/api/assistant/relay/v1/chat/completions')
+    // The relay refuses a query carrying anything but `token`, outright.
     expect([...url.searchParams.entries()]).toEqual([['token', 'a-token']])
+    expect(calls[0]!.init.method).toBe('POST')
+  })
+
+  it('puts the Anthropic suffix after the same mount point', async () => {
+    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
+    const { calls } = recordingFetch()
+    await bindModelCall()('v1/messages', { body: '{}' })
+    expect(new URL(calls[0]!.url, 'http://desk.invalid').pathname).toBe(
+      '/api/assistant/relay/v1/v1/messages'
+    )
+  })
+
+  it('carries the protocol headers and drops everything else', async () => {
+    // An allow-list, mirrored from the chassis' own. A credential header this
+    // desk has never heard of does not travel, because it is not on the list.
+    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
+    const { calls } = recordingFetch()
+    await bindModelCall()('chat/completions', {
+      body: '{}',
+      headers: {
+        'content-type': 'application/json',
+        'anthropic-version': '2023-06-01',
+        authorization: 'Bearer smuggled',
+        'x-api-key': 'smuggled',
+        cookie: 'smuggled',
+        'x-auth-token': 'smuggled',
+        'ocp-apim-subscription-key': 'smuggled'
+      }
+    })
+    expect(calls[0]!.init.headers).toEqual({
+      'content-type': 'application/json',
+      'anthropic-version': '2023-06-01'
+    })
+  })
+
+  it('refuses a suffix outside the relay’s own segment rule, before anything is sent', async () => {
+    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
+    const { calls } = recordingFetch()
+    const call = bindModelCall()
+    for (const bad of [
+      '',
+      '/',
+      'chat//completions',
+      '../admin',
+      'chat/../../admin',
+      'chat/completions?stream=true',
+      'chat%2Fcompletions',
+      'chat\\completions',
+      'chat completions',
+      '.',
+      '..',
+      'a'.repeat(257)
+    ]) {
+      await expect(call(bad, { body: '{}' }), bad).rejects.toThrow()
+    }
+    expect(calls).toEqual([])
+  })
+
+  it('states the rule as a function, so a refusal can be read without a socket', () => {
+    expect(suffixProblem('chat/completions')).toBe('')
+    expect(suffixProblem('v1/messages')).toBe('')
+    expect(suffixProblem('chat/completions?x=1')).not.toBe('')
+    expect(suffixProblem('%2e%2e/admin')).not.toBe('')
+  })
+
+  it('captures fetch when it is bound, not when it is called', async () => {
+    // This is what lets the conformance session seal every network global for
+    // the duration of an engine's run: the desk's capability still works, and
+    // an engine that reaches for a global does not.
+    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
+    const { calls } = recordingFetch()
+    const call = bindModelCall()
+    vi.stubGlobal('fetch', () => {
+      throw new Error('the engine reached for globalThis.fetch')
+    })
+    await call('chat/completions', { body: '{}' })
+    expect(calls).toHaveLength(1)
   })
 })
 

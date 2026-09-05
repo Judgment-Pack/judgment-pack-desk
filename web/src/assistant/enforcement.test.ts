@@ -532,35 +532,26 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
     )
   })
 
-  it('imports no MCP client anywhere under engines/', () => {
-    // The weak, enumerated half: an engine that reached for the SDK directly
-    // would open a transport the gate is not on. Listed as weak because a
-    // novel spelling walks past it; the member set above is what holds the
-    // design.
-    const engines = join(SRC, 'assistant', 'engines')
-    const walk = (directory: string): string[] => {
-      const found: string[] = []
-      for (const entry of readdirSync(directory, { withFileTypes: true })) {
-        const path = join(directory, entry.name)
-        if (entry.isDirectory()) found.push(...walk(path))
-        else if (entry.name.endsWith('.ts') && !entry.name.includes('.test.')) found.push(path)
-      }
-      return found
-    }
-    const sources = walk(engines)
-    expect(sources.length).toBeGreaterThan(0)
-    for (const path of sources) {
-      const text = readFileSync(path, 'utf8')
-      for (const forbidden of [
-        '@modelcontextprotocol/sdk/client',
-        '@modelcontextprotocol/sdk/shared/transport',
-        'DeskWebSocketTransport',
-        'sessionToken'
-      ]) {
-        expect(text, `${path} reaches for ${forbidden}`).not.toContain(forbidden)
-      }
-    }
+  it('hands the model a capability and never an address', () => {
+    // The reason the contract deviates from ADR-0001's sketch, held as a
+    // member set rather than as prose: a `baseUrl` for this relay is this
+    // chassis' session token, and an engine holding it can open `/ws?token=…`
+    // itself over a connection no gate is on.
+    const source = read('assistant/engine.ts')
+    expect(membersOf(interfaceBody(source, 'ModelRequest'))).toEqual(['headers', 'body', 'signal'])
+    expect(source).toContain(
+      'export type ModelCall = (suffix: string, request: ModelRequest) => Promise<Response>'
+    )
+    expect(source).toContain('model: { family: EndpointKind; model: string; call: ModelCall }')
   })
+
+  // **The string-enumeration guard that used to stand here is gone.** It
+  // forbade a handful of spellings — `@modelcontextprotocol/sdk/client`,
+  // `DeskWebSocketTransport`, `sessionToken` — under `engines/`, and said of
+  // itself that a novel spelling walks past it. `new globalThis["Web"+"Socket"]`
+  // is that novel spelling. The conformance session seals `fetch`, `WebSocket`,
+  // `XMLHttpRequest` and `EventSource` for the duration of every engine's run
+  // instead, which is a guard over *behaviour* and needs no list.
 
   it('writes no tool schema of its own: the runtime’s served one is the only one', () => {
     // K2. The model is shown the contract the runtime enforces, or it is shown

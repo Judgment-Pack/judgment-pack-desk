@@ -11,43 +11,47 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CERTIFIED_ENGINES, isCertified, loadEngine, resolveEngine } from '../index'
 import { builtin } from './index'
 import { MAX_TURNS, extractProposal } from './loop'
-import { relayHeaders, relayRequestUrl } from './providers/types'
-import type { AssistantEvent, AssistantSession, McpTool } from '../../engine'
+import { protocolHeaders } from './providers/types'
+import type { AssistantEvent, AssistantSession, McpTool, ModelCall } from '../../engine'
 
-const RELAY = '/api/assistant/relay/v1?token=session-token'
 
 const TOOLS: McpTool[] = [
   { name: 'validate', description: 'check a document', inputSchema: { type: 'object' } }
 ]
 
-/** One recorded request, in the shape a checker reads. */
+/**
+ * One recorded model call, in the shape a checker reads.
+ *
+ * The **suffix** and not a URL, because that is all the engine gets to choose:
+ * the desk's capability builds the address. A test that recorded a URL would be
+ * testing the desk's own binding, which `assistant/session.test.ts` holds.
+ */
 interface Recorded {
-  url: string
+  suffix: string
   headerNames: string[]
   body: Record<string, unknown>
 }
 
-function stubEndpoint(
+/** A model capability that answers from a script and remembers the calls. */
+function stubModel(
   answers: (body: Record<string, unknown>, turn: number) => unknown
-): Recorded[] {
+): { call: ModelCall; seen: Recorded[] } {
   const seen: Recorded[] = []
   let turn = 0
-  vi.stubGlobal('fetch', async (input: string, init: RequestInit) => {
+  const call: ModelCall = async (suffix, request) => {
     turn += 1
-    const body = JSON.parse(String(init.body)) as Record<string, unknown>
+    const body = JSON.parse(request.body) as Record<string, unknown>
     seen.push({
-      url: String(input),
-      headerNames: Object.keys((init.headers ?? {}) as Record<string, string>).map((name) =>
-        name.toLowerCase()
-      ),
+      suffix,
+      headerNames: Object.keys(request.headers ?? {}).map((name) => name.toLowerCase()),
       body
     })
     return new Response(JSON.stringify(answers(body, turn)), {
       status: 200,
       headers: { 'content-type': 'application/json' }
     })
-  })
-  return seen
+  }
+  return { call, seen }
 }
 
 function session(overrides: Partial<AssistantSession> = {}): AssistantSession {
@@ -55,10 +59,23 @@ function session(overrides: Partial<AssistantSession> = {}): AssistantSession {
     prompt: 'the runtime’s prompt',
     tools: TOOLS,
     callTool: async () => ({ content: [{ type: 'text', text: '{"status":"valid"}' }] }),
-    model: { family: 'openai-compatible', baseUrl: RELAY, model: 'a-model' },
+    model: { family: 'openai-compatible', model: 'a-model', call: async () => new Response('{}') },
     thinking: { tier: 'off' },
     signal: new AbortController().signal,
     ...overrides
+  }
+}
+
+/** A session whose model capability is the scripted one. */
+function scripted(
+  answers: (body: Record<string, unknown>, turn: number) => unknown,
+  overrides: Partial<AssistantSession> = {}
+): { session: AssistantSession; seen: Recorded[] } {
+  const model = stubModel(answers)
+  const base = session(overrides)
+  return {
+    session: { ...base, model: { ...base.model, call: model.call } },
+    seen: model.seen
   }
 }
 
@@ -80,10 +97,10 @@ const PROPOSAL_TEXT =
 
 afterEach(() => vi.unstubAllGlobals())
 
-describe('the request the page makes', () => {
+describe('the request the engine makes', () => {
   it('carries no credential of any name', async () => {
-    const seen = stubEndpoint(() => finalMessage(PROPOSAL_TEXT))
-    await drain(builtin.start(session()))
+    const { session: one, seen } = scripted(() => finalMessage(PROPOSAL_TEXT))
+    await drain(builtin.start(one))
     expect(seen).toHaveLength(1)
     for (const name of ['authorization', 'x-api-key', 'cookie', 'api-key', 'proxy-authorization']) {
       expect(seen[0]!.headerNames, `the request carried ${name}`).not.toContain(name)
@@ -92,31 +109,43 @@ describe('the request the page makes', () => {
   })
 
   it('carries no credential on the Anthropic path either', async () => {
-    const seen = stubEndpoint(() => ({
-      content: [{ type: 'text', text: PROPOSAL_TEXT }]
-    }))
-    await drain(builtin.start(session({ model: { family: 'anthropic', baseUrl: RELAY, model: 'm' } })))
+    const { session: one, seen } = scripted(
+      () => ({ content: [{ type: 'text', text: PROPOSAL_TEXT }] }),
+      { model: { family: 'anthropic', model: 'm', call: async () => new Response('{}') } }
+    )
+    await drain(builtin.start(one))
     expect(seen[0]!.headerNames.sort()).toEqual(['anthropic-version', 'content-type'])
   })
 
-  it('goes to the relay base with one path suffix and no query of its own', async () => {
-    const seen = stubEndpoint(() => finalMessage(PROPOSAL_TEXT))
-    await drain(builtin.start(session()))
-    expect(seen[0]!.url).toBe('/api/assistant/relay/v1/chat/completions?token=session-token')
-    // The relay refuses any parameter but the desk's own, so the engine adds none.
-    expect([...new URL(seen[0]!.url, 'http://desk.invalid').searchParams.keys()]).toEqual(['token'])
+  it('names a path suffix and never a URL', async () => {
+    // The engine chooses the suffix; the desk builds the address. There is no
+    // URL here to point somewhere else and no token to read out of one.
+    const { session: one, seen } = scripted(() => finalMessage(PROPOSAL_TEXT))
+    await drain(builtin.start(one))
+    expect(seen[0]!.suffix).toBe('chat/completions')
+    expect(seen[0]!.suffix).not.toContain('?')
+    expect(seen[0]!.suffix).not.toContain('token')
+  })
+
+  it('names the Anthropic suffix on that leg', async () => {
+    const { session: one, seen } = scripted(
+      () => ({ content: [{ type: 'text', text: PROPOSAL_TEXT }] }),
+      { model: { family: 'anthropic', model: 'm', call: async () => new Response('{}') } }
+    )
+    await drain(builtin.start(one))
+    expect(seen[0]!.suffix).toBe('v1/messages')
   })
 
   it('puts stream in the body, which is why no query is ever needed', async () => {
-    const seen = stubEndpoint(() => finalMessage(PROPOSAL_TEXT))
-    await drain(builtin.start(session()))
+    const { session: one, seen } = scripted(() => finalMessage(PROPOSAL_TEXT))
+    await drain(builtin.start(one))
     expect(seen[0]!.body.stream).toBe(true)
-    expect(seen[0]!.url).not.toContain('stream')
+    expect(seen[0]!.suffix).not.toContain('stream')
   })
 
   it('offers the runtime’s own tool definitions, schema included, unrewritten', async () => {
-    const seen = stubEndpoint(() => finalMessage(PROPOSAL_TEXT))
-    await drain(builtin.start(session()))
+    const { session: one, seen } = scripted(() => finalMessage(PROPOSAL_TEXT))
+    await drain(builtin.start(one))
     expect(seen[0]!.body.tools).toEqual([
       {
         type: 'function',
@@ -130,31 +159,10 @@ describe('the request the page makes', () => {
   })
 })
 
-describe('relayRequestUrl', () => {
-  it.each([
-    ['/api/assistant/relay/v1?token=t', 'chat/completions', '/api/assistant/relay/v1/chat/completions?token=t'],
-    ['/api/assistant/relay/v1?token=t', 'v1/messages', '/api/assistant/relay/v1/v1/messages?token=t'],
-    ['/api/assistant/relay/v1/?token=t', 'chat/completions', '/api/assistant/relay/v1/chat/completions?token=t'],
-    ['/api/assistant/relay/v1', 'chat/completions', '/api/assistant/relay/v1/chat/completions'],
-    [
-      'http://127.0.0.1:8791/api/assistant/relay/v1?token=t',
-      'chat/completions',
-      'http://127.0.0.1:8791/api/assistant/relay/v1/chat/completions?token=t'
-    ]
-  ])('appends %s + %s to the path, never after the query', (base, suffix, expected) => {
-    expect(relayRequestUrl(base, suffix)).toBe(expected)
-  })
-
-  it('adds no parameter of its own to a base that has one', () => {
-    const url = new URL(relayRequestUrl('/relay/v1?token=abc', 'chat/completions'), 'http://d.invalid')
-    expect([...url.searchParams.entries()]).toEqual([['token', 'abc']])
-  })
-})
-
-describe('relayHeaders', () => {
+describe('protocolHeaders', () => {
   it('is a content type and whatever the protocol needs, and nothing else', () => {
-    expect(relayHeaders()).toEqual({ 'content-type': 'application/json' })
-    expect(relayHeaders({ 'anthropic-version': '2023-06-01' })).toEqual({
+    expect(protocolHeaders()).toEqual({ 'content-type': 'application/json' })
+    expect(protocolHeaders({ 'anthropic-version': '2023-06-01' })).toEqual({
       'content-type': 'application/json',
       'anthropic-version': '2023-06-01'
     })
@@ -199,21 +207,26 @@ describe('the proposal comes out of the fenced block and nowhere else', () => {
 
 describe('the event stream', () => {
   it('ends with exactly one end event on the happy path', async () => {
-    stubEndpoint(() => finalMessage(PROPOSAL_TEXT))
-    const events = await drain(builtin.start(session()))
+    const { session: one } = scripted(() => finalMessage(PROPOSAL_TEXT))
+    const events = await drain(builtin.start(one))
     expect(events.filter((event) => event.type === 'end')).toHaveLength(1)
     expect(events.at(-1)!.type).toBe('end')
     expect(events.map((event) => event.type)).toEqual(['proposal', 'end'])
   })
 
   it('ends with exactly one end event when the endpoint refuses', async () => {
-    vi.stubGlobal('fetch', async () =>
-      new Response(JSON.stringify({ error: 'no key stored', code: 'assistant-no-key' }), {
-        status: 409,
-        headers: { 'content-type': 'application/json' }
-      })
-    )
-    const events = await drain(builtin.start(session()))
+    const refusing = session({
+      model: {
+        family: 'openai-compatible',
+        model: 'a-model',
+        call: async () =>
+          new Response(JSON.stringify({ error: 'no key stored', code: 'assistant-no-key' }), {
+            status: 409,
+            headers: { 'content-type': 'application/json' }
+          })
+      }
+    })
+    const events = await drain(builtin.start(refusing))
     expect(events.filter((event) => event.type === 'end')).toHaveLength(1)
     expect(events[0]).toMatchObject({ type: 'error' })
     expect((events[0] as { message: string }).message).toContain('409')
@@ -221,14 +234,14 @@ describe('the event stream', () => {
   })
 
   it('ends with exactly one end event when the final message carries no proposal', async () => {
-    stubEndpoint(() => finalMessage('I could not write one.'))
-    const events = await drain(builtin.start(session()))
+    const { session: one } = scripted(() => finalMessage('I could not write one.'))
+    const events = await drain(builtin.start(one))
     expect(events.map((event) => event.type)).toEqual(['error', 'end'])
   })
 
   it('reports a tool call, then its result, in that order', async () => {
     let asked = 0
-    stubEndpoint((_body, turn) =>
+    const { session: one } = scripted((_body, turn) =>
       turn === 1
         ? {
             choices: [
@@ -247,23 +260,20 @@ describe('the event stream', () => {
               }
             ]
           }
-        : finalMessage(PROPOSAL_TEXT)
-    )
-    const events = await drain(
-      builtin.start(
-        session({
-          callTool: async (name, args) => {
-            asked += 1
-            expect(name).toBe('validate')
-            expect(args).toEqual({ document: '{}' })
-            return {
-              content: [{ type: 'text', text: '{"status":"valid"}' }],
-              structuredContent: { status: 'valid' }
-            }
+        : finalMessage(PROPOSAL_TEXT),
+      {
+        callTool: async (name, args) => {
+          asked += 1
+          expect(name).toBe('validate')
+          expect(args).toEqual({ document: '{}' })
+          return {
+            content: [{ type: 'text', text: '{"status":"valid"}' }],
+            structuredContent: { status: 'valid' }
           }
-        })
-      )
+        }
+      }
     )
+    const events = await drain(builtin.start(one))
     expect(asked).toBe(1)
     expect(events.map((event) => event.type)).toEqual([
       'tool_call',
@@ -283,43 +293,41 @@ describe('the event stream', () => {
   it('turns a gate refusal into a result the model is told about', async () => {
     // A dropped call is a turn the model spends re-asking. The refusal has to
     // come back as a result, which is what lets the session reach its proposal.
-    stubEndpoint((_body, turn) =>
-      turn === 1
-        ? {
-            choices: [
-              {
-                message: {
-                  role: 'assistant',
-                  content: null,
-                  tool_calls: [
-                    {
-                      id: 'call_1',
-                      type: 'function',
-                      function: { name: 'write_file', arguments: '{"path":"p"}' }
-                    }
-                  ]
+    const { session: one } = scripted(
+      (_body, turn) =>
+        turn === 1
+          ? {
+              choices: [
+                {
+                  message: {
+                    role: 'assistant',
+                    content: null,
+                    tool_calls: [
+                      {
+                        id: 'call_1',
+                        type: 'function',
+                        function: { name: 'write_file', arguments: '{"path":"p"}' }
+                      }
+                    ]
+                  }
                 }
-              }
-            ]
-          }
-        : finalMessage(PROPOSAL_TEXT)
+              ]
+            }
+          : finalMessage(PROPOSAL_TEXT),
+      {
+        callTool: async () => {
+          throw new Error('refused on the wire: write_file is not one of the tools')
+        }
+      }
     )
-    const events = await drain(
-      builtin.start(
-        session({
-          callTool: async () => {
-            throw new Error('refused on the wire: write_file is not one of the tools')
-          }
-        })
-      )
-    )
+    const events = await drain(builtin.start(one))
     expect(events[1]).toMatchObject({ type: 'tool_result', name: 'write_file', isError: true })
     expect((events[1] as { text: string }).text).toContain('never')
     expect(events.map((event) => event.type)).toContain('proposal')
   })
 
   it('bounds the session and says so where a model never stops calling tools', async () => {
-    stubEndpoint(() => ({
+    const { session: one } = scripted(() => ({
       choices: [
         {
           message: {
@@ -332,7 +340,7 @@ describe('the event stream', () => {
         }
       ]
     }))
-    const events = await drain(builtin.start(session()))
+    const events = await drain(builtin.start(one))
     expect(events.filter((event) => event.type === 'tool_call')).toHaveLength(MAX_TURNS)
     expect(events.at(-2)).toMatchObject({ type: 'error' })
     expect((events.at(-2) as { message: string }).message).toContain(String(MAX_TURNS))
@@ -341,22 +349,28 @@ describe('the event stream', () => {
 
   it('stops on the session’s signal and still ends once', async () => {
     const controller = new AbortController()
-    vi.stubGlobal('fetch', async (_input: string, init: RequestInit) => {
-      controller.abort()
-      const error = new Error('aborted')
-      error.name = 'AbortError'
-      void init
-      throw error
+    const stopping = session({
+      signal: controller.signal,
+      model: {
+        family: 'openai-compatible',
+        model: 'a-model',
+        call: async () => {
+          controller.abort()
+          const error = new Error('aborted')
+          error.name = 'AbortError'
+          throw error
+        }
+      }
     })
-    const events = await drain(builtin.start(session({ signal: controller.signal })))
+    const events = await drain(builtin.start(stopping))
     expect(events).toEqual([{ type: 'error', message: 'the session was stopped' }, { type: 'end' }])
   })
 })
 
 describe('the thinking tier this chunk does not run', () => {
   it.each(['on', 'ultra'] as const)('reports %s unavailable and carries on', async (tier) => {
-    stubEndpoint(() => finalMessage(PROPOSAL_TEXT))
-    const events = await drain(builtin.start(session({ thinking: { tier } })))
+    const { session: one } = scripted(() => finalMessage(PROPOSAL_TEXT), { thinking: { tier } })
+    const events = await drain(builtin.start(one))
     expect(events[0]).toMatchObject({ type: 'thinking_unavailable' })
     expect((events[0] as { detail: string }).detail).toContain(tier)
     expect((events[0] as { detail: string }).detail).toContain('does not run a thinking tier yet')
@@ -365,8 +379,8 @@ describe('the thinking tier this chunk does not run', () => {
   })
 
   it('says nothing at all where the tier is off', async () => {
-    stubEndpoint(() => finalMessage(PROPOSAL_TEXT))
-    const events = await drain(builtin.start(session()))
+    const { session: one } = scripted(() => finalMessage(PROPOSAL_TEXT))
+    const events = await drain(builtin.start(one))
     expect(events.map((event) => event.type)).not.toContain('thinking_unavailable')
   })
 })

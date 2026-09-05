@@ -29,21 +29,105 @@ import type {
   CallTool,
   Engine,
   McpTool,
-  McpToolResult
+  McpToolResult,
+  ModelCall,
+  ModelRequest
 } from './engine'
 
 /**
- * The relay base the engine is handed.
- *
- * It carries this chassis' session token and nothing else, because the relay
- * refuses a query with any other pair in it — any name, any case, any encoding
- * — and the engine appends a path suffix to it without adding a parameter of
- * its own. The token is the desk's, so it is the desk that puts it here: an
- * engine that had to reach for the session token would be an engine holding a
- * credential.
+ * The relay's mount point. The `v1` belongs to this route, not to any endpoint.
  */
-export function relayBaseUrl(): string {
-  return chassisUrl('/api/assistant/relay/v1')
+const RELAY_PREFIX = '/api/assistant/relay/v1'
+
+/**
+ * The headers a model request may carry, mirrored from the chassis' own
+ * outbound allow-list (`relayedRequestHeaders` in `internal/desk/modelrelay.go`).
+ *
+ * **An allow-list, for the reason the chassis gives at length**: "every inbound
+ * credential is stripped" cannot be held by a list of names somebody thought of
+ * — `X-Auth-Token`, `X-Amz-Security-Token`, `Ocp-Apim-Subscription-Key` and
+ * whatever a gateway invents next walk straight through a denylist. This is the
+ * same claim one layer earlier, so that an engine's header never reaches even
+ * this desk's own route unless the protocol needs it. `Authorization`,
+ * `X-Api-Key` and `Cookie` are absent rather than deleted: there is no second
+ * rule to keep in step with this one.
+ */
+const MODEL_REQUEST_HEADERS: readonly string[] = [
+  'accept',
+  'accept-language',
+  'content-type',
+  'anthropic-version',
+  'anthropic-beta',
+  'openai-beta',
+  'openai-organization',
+  'openai-project'
+]
+
+/** Bounds the suffix, as `maxRelaySuffix` does on the chassis side. */
+const MAX_SUFFIX = 256
+
+/**
+ * The path suffix rule, mirrored from `relaySuffixProblem`.
+ *
+ * One or more segments of `[A-Za-z0-9._-]`: no dot segment, no empty segment,
+ * no percent sign, no backslash, no query. It is checked **here** as well as on
+ * the chassis because the point of the capability is that the engine cannot
+ * address anything the desk did not agree to — a refusal that only happened on
+ * the far side would be a refusal after the request left the page.
+ */
+export function suffixProblem(suffix: string): string {
+  if (suffix === '') return `a model call must name at least one path segment after ${RELAY_PREFIX}`
+  if (suffix.length > MAX_SUFFIX) {
+    return `a model call's path is at most ${MAX_SUFFIX} bytes; this one is ${suffix.length}`
+  }
+  for (const segment of suffix.split('/')) {
+    if (segment === '') return 'a model call\'s path may not carry an empty segment'
+    if (segment === '.' || segment === '..') {
+      return 'a model call\'s path may not carry a dot segment'
+    }
+    if (!/^[A-Za-z0-9._-]+$/.test(segment)) {
+      return (
+        `a model call's path segments are letters, digits, ".", "_" and "-"; ` +
+        `${JSON.stringify(segment)} is not one`
+      )
+    }
+  }
+  return ''
+}
+
+/**
+ * A model call this session may make, bound by the desk.
+ *
+ * Three things happen here that an engine must not be trusted to do:
+ *
+ * - **the address is built here**, out of the mount point and a suffix this
+ *   function validated, with the session token attached by `chassisUrl`. The
+ *   engine never sees a URL and never sees the token, so an adapter cannot
+ *   read this chassis' credential out of its own configuration and open a
+ *   second, ungated socket with it;
+ * - **the headers are an allow-list**, so nothing resembling a credential
+ *   travels even as far as this desk's own route;
+ * - **`fetch` is captured when the session is bound**, not read at call time,
+ *   so the conformance session can replace every network global with a
+ *   throwing sentinel for the duration of an engine's run. An engine that
+ *   reaches for one fails the leg; this call still works.
+ */
+export function bindModelCall(): ModelCall {
+  const send = globalThis.fetch.bind(globalThis)
+  return async (suffix: string, request: ModelRequest): Promise<Response> => {
+    const problem = suffixProblem(suffix)
+    if (problem !== '') throw new Error(problem)
+    const headers: Record<string, string> = {}
+    for (const [name, value] of Object.entries(request.headers ?? {})) {
+      if (MODEL_REQUEST_HEADERS.includes(name.toLowerCase())) headers[name] = value
+    }
+    return send(chassisUrl(`${RELAY_PREFIX}/${suffix}`), {
+      method: 'POST',
+      headers,
+      body: request.body,
+      signal: request.signal
+    })
+  }
 }
 
 /**

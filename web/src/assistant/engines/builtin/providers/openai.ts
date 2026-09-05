@@ -7,7 +7,7 @@
  * `none` prototype, minus the reasoning fields (chunk 4).
  */
 import { isEventStream, sseEvents } from './sse'
-import { ModelHttpError, relayHeaders, relayRequestUrl } from './types'
+import { ModelHttpError, protocolHeaders } from './types'
 import type { McpTool } from '../../../engine'
 import type { ModelTurn, Provider, SendOptions, ToolCall } from './types'
 
@@ -79,9 +79,8 @@ export const openai: Provider = {
     }
     if (options.stream) body.stream_options = { include_usage: true }
 
-    const response = await fetch(relayRequestUrl(options.base, openai.suffix), {
-      method: 'POST',
-      headers: relayHeaders(),
+    const response = await options.call(openai.suffix, {
+      headers: protocolHeaders(),
       body: JSON.stringify(body),
       signal: options.signal
     })

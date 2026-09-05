@@ -14,7 +14,7 @@
  * Ported from the bake-off's `none` prototype, minus the thinking handling.
  */
 import { isEventStream, sseEvents } from './sse'
-import { ModelHttpError, relayHeaders, relayRequestUrl } from './types'
+import { ModelHttpError, protocolHeaders } from './types'
 import type { McpTool } from '../../../engine'
 import type { ModelTurn, Provider, SendOptions, ToolCall } from './types'
 
@@ -70,11 +70,10 @@ export const anthropic: Provider = {
       stream: options.stream
     }
 
-    const response = await fetch(relayRequestUrl(options.base, anthropic.suffix), {
-      method: 'POST',
+    const response = await options.call(anthropic.suffix, {
       // `anthropic-version` is on the relay's outbound allow-list; nothing
       // resembling a credential is, and nothing here is one.
-      headers: relayHeaders({ 'anthropic-version': '2023-06-01' }),
+      headers: protocolHeaders({ 'anthropic-version': '2023-06-01' }),
       body: JSON.stringify(body),
       signal: options.signal
     })

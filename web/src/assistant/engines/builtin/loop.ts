@@ -154,7 +154,7 @@ export async function* runBuiltin(session: AssistantSession): AsyncGenerator<Ass
     for (let turn = 1; turn <= MAX_TURNS; turn += 1) {
       turns = turn
       const reply = await provider.send({
-        base: session.model.baseUrl,
+        call: session.model.call,
         model: session.model.model,
         system: SYSTEM,
         messages,
