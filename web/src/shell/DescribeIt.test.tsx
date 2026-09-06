@@ -1026,6 +1026,38 @@ describe('a route change is a dismissal', () => {
     await waitFor(() => expect(runtime!.opened.length).toBe(2))
   })
 
+  it('leaves it open on a hash-only change, which this desk calls no navigation', async () => {
+    // Selecting a member writes a hash and stays on the page (`MemberOutline`
+    // says so in as many words). A dialog that closed on one would stop a run
+    // and discard a proposal over a page that had not changed.
+    serve({ hang: true })
+    const router = drawShell()
+    fireEvent.click(await screen.findByRole('button', { name: 'Create a pack' }))
+    await screen.findByRole('dialog', { name: 'Create a pack' })
+    await propose()
+    await waitFor(() => expect(runtime!.opened.length).toBe(1))
+    await act(async () => {
+      await router.navigate({ hash: '#/rules/0' })
+    })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(screen.queryByRole('dialog', { name: 'Create a pack' })).not.toBeNull()
+    expect(runtime!.closed, 'the run was ended by a fragment').toBe(0)
+  })
+
+  it('closes it when the search changes, which is a different page', async () => {
+    serve({ hang: true })
+    const router = drawShell()
+    fireEvent.click(await screen.findByRole('button', { name: 'Create a pack' }))
+    await screen.findByRole('dialog', { name: 'Create a pack' })
+    await propose()
+    await waitFor(() => expect(runtime!.opened.length).toBe(1))
+    await act(async () => {
+      await router.navigate({ search: '?edit' })
+    })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Create a pack' })).toBeNull())
+    await waitFor(() => expect(runtime!.closed).toBe(1))
+  })
+
   it('closes it on a history Back as well', async () => {
     serve({ hang: true })
     const router = drawShell()

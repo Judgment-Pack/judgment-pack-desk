@@ -675,20 +675,29 @@ export function CreatePackDialog({
    * exception is the one the dismissal handler already makes: while the create
    * sequence is running this dialog is the only place its outcome is reported,
    * and it stays to report it.
+   *
+   * **The page is the pathname and the search, and a fragment is not either.**
+   * The obvious key is `location.key`, and it moves for a hash-only history
+   * entry too — which this desk defines as *not* a navigation, in as many words
+   * (`MemberOutline`: selecting a member writes a hash and stays on the page).
+   * Keyed on that, choosing a member in the document behind an open dialog
+   * would have closed it, stopped the run and discarded the proposal, over a
+   * page that had not changed.
    */
   const closeNow = useRef(close)
   closeNow.current = close
-  const shownAt = useRef(location.key)
+  const page = `${location.pathname}${location.search}`
+  const shownAt = useRef(page)
   useEffect(() => {
     if (!open) {
-      shownAt.current = location.key
+      shownAt.current = page
       return
     }
-    if (location.key === shownAt.current) return
-    shownAt.current = location.key
+    if (page === shownAt.current) return
+    shownAt.current = page
     if (busy) return
     closeNow.current(false)
-  }, [location.key, open, busy])
+  }, [page, open, busy])
 
   return (
     <Dialog

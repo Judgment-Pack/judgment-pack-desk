@@ -4467,6 +4467,13 @@ export function assistantTransport(): Transport {
     '    closeNow.current(false)' \
     '    void closeNow'
 
+  # And the other half: a fragment is not a page. Keyed on `location.key` this
+  # closes over a hash the document's own outline writes, which this desk
+  # defines as not a navigation.
+  mutate web "a fragment counts as a navigation" "$X" \
+    '  const page = `${location.pathname}${location.search}`' \
+    '  const page = location.key'
+
   # **Deliberately not mutated: the unmount's `finish`.**
   #
   # Round 1 asked for a row here — the cleanup released without finishing, so an
