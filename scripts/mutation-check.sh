@@ -4322,22 +4322,19 @@ export function assistantTransport(): Transport {
   # model's statement about a document nobody has named yet; writing them is a
   # pack arriving under an identity the person creating it never chose.
   mutate web "Create writes the proposal without shaping it" "$X" \
-    '        text: packFromProposal(source.document, {
-          name,
-          description,
-          slug,
-          idBase,
-          specVersion: specVersionFrom(schema0.data)
-        })' \
-    '        text: `${JSON.stringify(source.document, null, 2)}\n`'
+    '      return { text: packFromProposal(source.document, { name, description, slug, idBase }) }' \
+    '      return { text: `${JSON.stringify(source.document, null, 2)}\n` }'
 
   # And the narrower half of the same claim: the shaping runs, and the name it
   # is given comes from the proposal instead of from the field above it.
   mutate web "the name field loses to the name the proposal gave itself" "$X" \
-    '        text: packFromProposal(source.document, {
-          name,' \
-    '        text: packFromProposal(source.document, {
-          name: String((source.document as { title?: unknown }).title ?? name),'
+    '{ name, description, slug, idBase }) }' \
+    '{
+        name: String((source.document as { title?: unknown }).title ?? name),
+        description,
+        slug,
+        idBase
+      }) }'
 
   # A run still in flight is about to replace the events the proposal is on,
   # and Create with a half-finished session behind it writes a document nobody
@@ -4386,6 +4383,15 @@ export function assistantTransport(): Transport {
     specVersion: '0.2.0-draft'
   })
 }"
+
+  # **A failure after the terminal event is still a failure.** One `end` is the
+  # contract, so a throw while an engine unwinds cannot go on the stream — and
+  # dropping it made `proposal -> end -> throw` read as a clean run to
+  # everything downstream, which offered the proposal for writing.
+  mutate web "a failure after the run's terminal event is dropped" "$AR" \
+    '            setFailure(said)
+            if (!run.ended) push(run, { type: '"'"'error'"'"', message: said })' \
+    '            if (!run.ended) push(run, { type: '"'"'error'"'"', message: said })'
 
   # ---- Round 1: what the review found, and the rows that hold the answers ---
   #

@@ -325,9 +325,20 @@ export function useDescribeIt(): DescribeItState {
    * not stand — so an `error` after a proposal withdraws it. Before it is
    * another matter: a tool call that failed and was retried is an ordinary run.
    */
+  /**
+   * What this run failed with **after** its terminal event, where it did.
+   *
+   * The stream cannot carry it — one `end` is the contract — so the run hook
+   * reports it beside the events, and it counts the same way an `error` on the
+   * stream does: a session that fell over while unwinding is not one whose
+   * document this dialog may write.
+   */
+  const unwound = discarded || submitted === null || ranId !== submitted.id ? undefined : run.failure
   const proposedAt = events.findIndex((event) => event.type === 'proposal')
   const withdrawn =
-    proposedAt !== -1 && events.slice(proposedAt + 1).some((event) => event.type === 'error')
+    proposedAt !== -1 &&
+    (unwound !== undefined ||
+      events.slice(proposedAt + 1).some((event) => event.type === 'error'))
   const proposal =
     proposedAt === -1 || withdrawn ? undefined : (events[proposedAt] as ProposalEvent)
   const failures = events.filter(
@@ -368,7 +379,7 @@ export function useDescribeIt(): DescribeItState {
    * wrong — a refused prompt, a run that failed, a proposal withdrawn by an
    * error after it, or a document that could not be read as JSON data.
    */
-  const problem = promptFailed ?? failures[failures.length - 1]?.message ?? ''
+  const problem = promptFailed ?? unwound ?? failures[failures.length - 1]?.message ?? ''
   const blocking =
     lost !== ''
       ? lost

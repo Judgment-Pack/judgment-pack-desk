@@ -50,6 +50,20 @@ export interface AssistantRun {
   status: RunStatus
   events: AssistantEvent[]
   /**
+   * What went wrong in this run, **including after its terminal event**.
+   *
+   * The stream cannot carry it: exactly one `end` is the contract, and nothing
+   * after it reaches the list. But an engine that yields `end` and then throws
+   * while unwinding — a `finally` that fails, a transport that rejects on close
+   * — has not had a clean run, and a reader that saw only the event list would
+   * be told it did. So the failure is reported here, beside the stream rather
+   * than in it, and a consumer deciding whether to *act* on what the run
+   * produced reads this as well as the events.
+   *
+   * Undefined for a run that ended without one, and cleared where a run starts.
+   */
+  failure: string | undefined
+  /**
    * Which engine ran. The configured one, always: every id a `desk.json` may
    * name is certified in this build, and the registry is a total map over them,
    * so there is no substitution left for this to report.
@@ -160,6 +174,7 @@ export function useAssistantRun(options: {
 }): AssistantRun {
   const [status, setStatus] = useState<RunStatus>('idle')
   const [events, setEvents] = useState<AssistantEvent[]>([])
+  const [failure, setFailure] = useState<string | undefined>(undefined)
   const active = useRef<Active | null>(null)
   // Read at call time rather than captured, so a run started with one
   // configuration is not carried on with another.
@@ -236,6 +251,7 @@ export function useAssistantRun(options: {
       const run: Active = { controller: new AbortController(), connection: null, ended: false }
       active.current = run
       setEvents([])
+      setFailure(undefined)
       setStatus('running')
 
       void (async () => {
@@ -265,14 +281,16 @@ export function useAssistantRun(options: {
         } catch (cause) {
           // Everything before the engine's own `try` — the socket, the tool
           // listing, the engine's chunk. The engine reports its own failures
-          // and always ends; this reports the ones it never got to see. A run
-          // that was stopped has its terminal event already and says nothing
-          // more.
-          if (active.current === run && !run.ended) {
-            push(run, {
-              type: 'error',
-              message: `${(cause as Error).name}: ${(cause as Error).message}`
-            })
+          // and always ends; this reports the ones it never got to see.
+          const said = `${(cause as Error).name}: ${(cause as Error).message}`
+          if (active.current === run) {
+            // **Recorded whether or not the run has ended.** A failure after
+            // the terminal event cannot go on the stream — one `end` is the
+            // contract and nothing follows it — and dropping it entirely is
+            // what made `proposal → end → throw` read as a clean run to
+            // everything downstream. It goes beside the stream instead.
+            setFailure(said)
+            if (!run.ended) push(run, { type: 'error', message: said })
           }
         } finally {
           if (active.current === run) {
@@ -286,5 +304,5 @@ export function useAssistantRun(options: {
     [finish, push, release]
   )
 
-  return { status, events, engineId: options.engine, start, stop }
+  return { status, events, failure, engineId: options.engine, start, stop }
 }

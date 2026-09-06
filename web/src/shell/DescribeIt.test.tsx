@@ -806,6 +806,40 @@ describe('a proposal belongs to the submission that produced it', () => {
     expect(served.sent).toEqual([])
   })
 
+  it('withdraws a proposal the engine failed after its own end', async () => {
+    // The contract's one `end` means the stream cannot carry what happens
+    // after it — and an engine that yields `end` and then throws while
+    // unwinding has not had a clean run. It used to read as one.
+    injected = {
+      id: 'builtin',
+      start: async function* (): AsyncIterable<AssistantEvent> {
+        yield {
+          type: 'proposal',
+          document: { specVersion: '0.2.0-draft', outcomes: [], rules: [] },
+          unknowns: []
+        }
+        yield { type: 'end' }
+        throw new Error('the session could not be closed')
+      }
+    }
+    const { sent } = serve()
+    draw()
+    await propose()
+    await waitFor(() =>
+      expect(screen.getAllByText(/the session could not be closed/).length).toBeGreaterThan(0)
+    )
+    fireEvent.change(screen.getByLabelText('Name (required)'), {
+      target: { value: 'Vendor Onboarding' }
+    })
+    await waitFor(() => expect(createButton().disabled).toBe(true))
+    expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull()
+    expect(screen.getByLabelText('Template').textContent).not.toContain('The assistant’s proposal')
+    expect(createButton().title).toContain('the session could not be closed')
+    fireEvent.click(createButton())
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(sent).toEqual([])
+  })
+
   it('withdraws a proposal the run failed after', async () => {
     // The contract does not make `proposal` an engine's last non-terminal
     // event. One that proposes and then fails has shown its work and then said
