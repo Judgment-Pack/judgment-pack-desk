@@ -215,6 +215,18 @@ export function unsupportedThinking(
 export const REFUTE_ON_A_DEGRADED_ENDPOINT = true
 
 /**
+ * How many consecutive turns an **inference from absence** takes.
+ *
+ * A refusal is the endpoint telling the desk something and is believed at once.
+ * "This model always thinks" and "this endpoint has no thinking" inferred from
+ * what a single turn did or did not carry are not that: they are one
+ * observation promoted to a session-wide capability. Two consecutive turns
+ * agreeing is the smallest thing that is not one turn — and where the endpoint
+ * really has no thinking, two is one extra request.
+ */
+export const PERMANENCE = 2
+
+/**
  * A signature that came back shorter than it went out.
  *
  * `vercel/ai#19663`: an Anthropic thinking signature split across two stream
@@ -331,15 +343,30 @@ export interface ThinkingSlot {
   members(): Record<string, unknown> | null
   /** What the endpoint's refusal meant. */
   refused(status: number, message: string): ThinkingRefusal
-  /** Reasoning arrived. Returns the `always` notice the first time it matters. */
-  reasoned(): AssistantEvent | null
   /**
-   * A turn finished with the tier on and no reasoning in it.
+   * Reasoning arrived in the turn now in progress. Says nothing on its own.
    *
-   * ADR-0001's second unmeasurable state: "no thinking block after the first
-   * turn". Returns the notice the first time, and null afterwards.
+   * The **turn** is what carries evidence about an endpoint, not a passage, so
+   * this only marks; `turnEnded` is where a state can change.
    */
-  silent(): AssistantEvent | null
+  sawReasoning(): void
+  /**
+   * One model turn finished, and whether it carried an answer of its own.
+   *
+   * **This is where permanence is decided, and it takes more than one turn.**
+   * A single observation is a turn, not a capability: one unsolicited passage
+   * at tier off used to label a model "always thinks" for the session, and one
+   * quiet first turn at tier on used to strip the parameter from every request
+   * after it — so a tool-only turn, an endpoint's one-off omission or a gateway
+   * hiccup became a conclusion about the endpoint. A **400 naming the member**
+   * is immediate, because that is the endpoint saying so; an inference from
+   * *absence* is not.
+   *
+   * `hadText` is whether the turn produced an answer rather than only a tool
+   * call: a turn that said nothing but called a tool is no evidence that an
+   * endpoint will not reason, so it is not counted either way.
+   */
+  turnEnded(hadText: boolean): AssistantEvent | null
   /** A carried signature came back short. Degrades, once, with the reason. */
   truncated(reason: string): AssistantEvent | null
   /** Whether the refutation pass runs, under the ruling above. */
@@ -352,8 +379,11 @@ export function openThinking(session: Pick<AssistantSession, 'thinking' | 'model
   let unavailable = false
   let always = false
   let announced = false
-  /** True once the first model turn has been accounted for, either way. */
-  let firstTurnDone = false
+  /** Reasoning seen in the turn now in progress. */
+  let reasonedThisTurn = false
+  /** Consecutive off-tier turns that reasoned, and on-tier answers that did not. */
+  let reasoningRun = 0
+  let quietRun = 0
 
   const notice = (state: 'always' | 'unavailable', reason: string): AssistantEvent | null => {
     if (announced) return null
@@ -390,18 +420,34 @@ export function openThinking(session: Pick<AssistantSession, 'thinking' | 'model
         event: notice('unavailable', `the endpoint answered ${status} to the tier parameter`)
       }
     },
-    reasoned() {
-      firstTurnDone = true
-      if (tier !== 'off' || always) return null
-      always = true
-      return notice('always', '')
+    sawReasoning() {
+      reasonedThisTurn = true
     },
-    silent() {
-      if (firstTurnDone) return null
-      firstTurnDone = true
-      if (tier === 'off' || unavailable) return null
+    turnEnded(hadText) {
+      const reasoned = reasonedThisTurn
+      reasonedThisTurn = false
+      if (tier === 'off') {
+        // A turn that returned no reasoning is counter-evidence, so the run
+        // starts again: "always" means every turn, not one of them.
+        reasoningRun = reasoned ? reasoningRun + 1 : 0
+        if (always || reasoningRun < PERMANENCE) return null
+        always = true
+        return notice('always', '')
+      }
+      if (unavailable) return null
+      if (reasoned) {
+        quietRun = 0
+        return null
+      }
+      // A tool-only turn is not evidence that an endpoint will not reason.
+      if (!hadText) return null
+      quietRun += 1
+      if (quietRun < PERMANENCE) return null
       unavailable = true
-      return notice('unavailable', 'the first turn carried no reasoning block')
+      return notice(
+        'unavailable',
+        `${PERMANENCE} consecutive turns carried an answer and no reasoning block`
+      )
     },
     truncated(reason) {
       if (unavailable) return null

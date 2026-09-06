@@ -177,15 +177,44 @@ describe('the five states', () => {
     expect(slot('ultra').state()).toBe('ultra')
   })
 
-  it('reports "always" when reasoning arrives with the tier off, once', () => {
+  /** One turn: reasoning or not, and whether it produced an answer. */
+  const turn = (it0: ReturnType<typeof slot>, reasoned: boolean, hadText = true) => {
+    if (reasoned) it0.sawReasoning()
+    return it0.turnEnded(hadText)
+  }
+
+  it('reports "always" only after two consecutive turns reason, and once', () => {
+    // **One turn is a turn, not a capability.** A single unsolicited passage at
+    // tier off used to label the model "always thinks" for the session.
     const it0 = slot('off')
     expect(it0.members()).toBeNull()
-    const first = it0.reasoned()
-    expect(first!.type).toBe('thinking_unavailable')
-    expect((first as { detail: string }).detail).toContain(THINKING_ALWAYS)
+    expect(turn(it0, true)).toBeNull()
+    expect(it0.state()).toBe('off')
+    const second = turn(it0, true)
+    expect(second!.type).toBe('thinking_unavailable')
+    expect((second as { detail: string }).detail).toContain(THINKING_ALWAYS)
     expect(it0.state()).toBe('always')
-    // Once. A second passage of reasoning is not a second line.
-    expect(it0.reasoned()).toBeNull()
+    // Once. A third reasoning turn is not a second line.
+    expect(turn(it0, true)).toBeNull()
+  })
+
+  it('does not report "always" for one reasoning turn among quiet ones', () => {
+    const it0 = slot('off')
+    expect(turn(it0, false)).toBeNull()
+    expect(turn(it0, true)).toBeNull()
+    expect(turn(it0, false)).toBeNull()
+    expect(turn(it0, true)).toBeNull()
+    expect(it0.state()).toBe('off')
+  })
+
+  it('needs the turns to be consecutive, and a quiet one starts the count again', () => {
+    const it0 = slot('off')
+    turn(it0, true)
+    turn(it0, false)
+    turn(it0, true)
+    expect(it0.state()).toBe('off')
+    expect(turn(it0, true)).not.toBeNull()
+    expect(it0.state()).toBe('always')
   })
 
   it('falls back once on Anthropic and degrades on the second refusal', () => {
@@ -227,22 +256,42 @@ describe('the five states', () => {
     expect(slot('on').refused(429, 'rate limited').kind).toBe('other')
   })
 
-  it('reports unavailable when the first turn carries no reasoning at all', () => {
+  it('reports unavailable only after two consecutive answers carry no reasoning', () => {
     const it0 = slot('on')
-    const said = it0.silent()
+    expect(turn(it0, false)).toBeNull()
+    expect(it0.state()).toBe('on')
+    const said = turn(it0, false)
     expect((said as { detail: string }).detail).toContain(THINKING_UNAVAILABLE)
     expect(it0.state()).toBe('unavailable')
-    // And only the **first** turn: a later quiet turn is not a degrade.
-    expect(slot('on').reasoned()).toBeNull()
-    const two = slot('on')
-    two.reasoned()
-    expect(two.silent()).toBeNull()
-    expect(two.state()).toBe('on')
   })
 
-  it('says nothing about a quiet first turn when the tier is off', () => {
+  it('does not count a turn that only called a tool', () => {
+    // **A tool-only turn is no evidence that an endpoint will not reason.** A
+    // quiet first tool turn followed by a turn that reasons must not have
+    // stripped the tier from every request in between.
+    const it0 = slot('on')
+    expect(turn(it0, false, false)).toBeNull()
+    expect(turn(it0, false, false)).toBeNull()
+    expect(turn(it0, false, false)).toBeNull()
+    expect(it0.state()).toBe('on')
+    expect(turn(it0, true)).toBeNull()
+    expect(it0.state()).toBe('on')
+  })
+
+  it('starts the count again where a turn does reason', () => {
+    const it0 = slot('on')
+    turn(it0, false)
+    turn(it0, true)
+    turn(it0, false)
+    expect(it0.state()).toBe('on')
+    expect(turn(it0, false)).not.toBeNull()
+    expect(it0.state()).toBe('unavailable')
+  })
+
+  it('says nothing about a quiet turn when the tier is off', () => {
     const it0 = slot('off')
-    expect(it0.silent()).toBeNull()
+    expect(turn(it0, false)).toBeNull()
+    expect(turn(it0, false)).toBeNull()
     expect(it0.state()).toBe('off')
   })
 

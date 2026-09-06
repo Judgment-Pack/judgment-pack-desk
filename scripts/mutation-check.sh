@@ -4205,6 +4205,25 @@ export function assistantTransport(): Transport {
       return { type: 'thinking_unavailable', detail: thinkingNotice('unavailable', reason) }
     },"
 
+  # **A turn is not a capability.** One unsolicited passage at tier off used to
+  # label the model "always thinks" for the whole session.
+  mutate web "one reasoning turn makes a model that always thinks" "$TH" \
+    "        if (always || reasoningRun < PERMANENCE) return null" \
+    "        if (always || reasoningRun < 1) return null"
+  # …and the other direction: one quiet turn used to strip the tier from every
+  # request after it, on an endpoint that reasons perfectly well.
+  mutate web "one quiet turn makes an endpoint with no thinking" "$TH" \
+    "      quietRun += 1
+      if (quietRun < PERMANENCE) return null" \
+    "      quietRun += 1
+      if (quietRun < 1) return null"
+  # A turn that only called a tool is no evidence that an endpoint will not
+  # reason, and counting it made a tool-first session degrade itself.
+  mutate web "a tool-only turn counts as evidence of no thinking" "$TH" \
+    "      // A tool-only turn is not evidence that an endpoint will not reason.
+      if (!hadText) return null" \
+    "      void hadText"
+
   # **The conjunction.** `Unsupported parameter` and `Extra inputs are not
   # permitted` are what an endpoint says about *any* member, so prose alone
   # degraded the tier on a refusal about `temperature` and hid a real failure

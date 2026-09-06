@@ -196,7 +196,11 @@ async function* builtinEvents(
       for (const passage of reply.reasoning) {
         yield { type: 'reasoning', text: passage, done: true }
       }
-      const noticed = reply.reasoning.length > 0 ? slot.reasoned() : slot.silent()
+      // The **turn** is the unit of evidence about an endpoint, and whether it
+      // produced an answer of its own is half of it: a turn that only called a
+      // tool says nothing about whether an endpoint will reason.
+      if (reply.reasoning.length > 0) slot.sawReasoning()
+      const noticed = slot.turnEnded(reply.text !== '')
       if (noticed !== null) yield noticed
 
       if (reply.calls.length === 0) {
@@ -318,6 +322,10 @@ async function* refute(options: {
     for (const passage of reply.reasoning) {
       yield { type: 'reasoning', text: passage, done: true }
     }
+    // The critic's turns are this session's turns, on this session's endpoint.
+    if (reply.reasoning.length > 0) options.slot.sawReasoning()
+    const noticed = options.slot.turnEnded(reply.text !== '')
+    if (noticed !== null) yield noticed
     if (reply.calls.length === 0) {
       modelText = reply.text
       break

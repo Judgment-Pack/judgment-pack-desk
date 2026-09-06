@@ -964,9 +964,6 @@ describe('what the model said about its own reasoning', () => {
       'reasoning',
       'reasoning',
       'reasoning',
-      // …and the desk's own report of what that means: the tier is off, no
-      // parameter was sent, and the endpoint reasoned anyway.
-      'thinking_unavailable',
       'proposal',
       'end'
     ])
@@ -976,7 +973,23 @@ describe('what the model said about its own reasoning', () => {
       // The whole passage on `done`, so a reader has it rather than the pieces.
       { type: 'reasoning', text: 'I check the schema before I propose.', done: true }
     ])
-    expect((events[3] as { detail: string }).detail).toContain('always thinks')
+    // **And no capability is claimed from one turn.** One unsolicited passage
+    // is a turn, not a model that always thinks.
+    expect(events.some((event) => event.type === 'thinking_unavailable')).toBe(false)
+  })
+
+  it('reports a model that always thinks after two turns of it', async () => {
+    const { call } = scriptedCall([
+      turn({ reasoning: ['I look first.'], tool: { name: 'validate', args: { document: '{}' } } }),
+      turn({ reasoning: ['And then I propose.'], text: PROPOSAL_TEXT })
+    ])
+    const events = await drain(vercel.start(session(call)))
+    const notices = events.filter(
+      (event): event is Extract<AssistantEvent, { type: 'thinking_unavailable' }> =>
+        event.type === 'thinking_unavailable'
+    )
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.detail).toContain('always thinks')
   })
 
   it('says nothing where the endpoint reasoned about nothing', async () => {
@@ -1123,8 +1136,10 @@ describe('the thinking tier, through the SDK’s own call settings', () => {
     expect(events.some((event) => event.type === 'thinking_unavailable')).toBe(false)
   })
 
-  it('reports unavailable where the first turn carried no reasoning', async () => {
-    const { call } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
+  it('reports unavailable after two answers with no reasoning, and not after one', async () => {
+    // The critic's own turn is this session's second answer, so the second
+    // observation lands there on a session that proposes at once.
+    const { call, seen } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
     const events = await drain(
       vercel.start(session(call, { thinking: normalize('on', 'openai-compatible') }))
     )
@@ -1132,6 +1147,20 @@ describe('the thinking tier, through the SDK’s own call settings', () => {
     expect(notices).toHaveLength(1)
     expect((notices[0] as { detail: string }).detail).toContain('no reasoning block')
     expect(events.some((event) => event.type === 'proposal')).toBe(true)
+    // The first request still carried the tier: nothing was concluded from one
+    // turn.
+    expect(seen[0]!.body.reasoning_effort).toBe('high')
+  })
+
+  it('does not conclude anything from a turn that only called a tool', async () => {
+    const { call } = scriptedCall([
+      turn({ tool: { name: 'validate', args: { document: '{}' } } }),
+      turn({ reasoning: ['I did think.'], text: PROPOSAL_TEXT })
+    ])
+    const events = await drain(
+      vercel.start(session(call, { thinking: normalize('on', 'openai-compatible') }))
+    )
+    expect(events.some((event) => event.type === 'thinking_unavailable')).toBe(false)
   })
 })
 

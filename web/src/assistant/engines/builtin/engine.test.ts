@@ -519,33 +519,80 @@ describe('the thinking tier, on this engine’s own wire', () => {
     expect(events.some((event) => event.type === 'proposal')).toBe(true)
   })
 
-  it('reports a model that always thinks, where the tier is off', async () => {
-    const model = answering(() =>
-      whole({
-        choices: [
-          { message: { role: 'assistant', content: PROPOSAL_TEXT, reasoning_content: 'I thought.' } }
-        ]
-      })
+  it('reports a model that always thinks, after two turns of it and not one', async () => {
+    // **One turn is a turn, not a capability.** The first turn calls a tool and
+    // reasons; the second reasons and proposes. Only then does the desk say
+    // that this model always thinks.
+    const thinkingTurn = (content: unknown) =>
+      whole({ choices: [{ message: { role: 'assistant', reasoning_content: 'I thought.', ...(content as object) } }] })
+    const model = answering((turn) =>
+      turn === 1
+        ? thinkingTurn({
+            content: null,
+            tool_calls: [
+              {
+                id: 'call_1',
+                type: 'function',
+                function: { name: 'validate', arguments: '{"document":"{}"}' }
+              }
+            ]
+          })
+        : thinkingTurn({ content: PROPOSAL_TEXT })
     )
     const events = await drain(builtin.start(withModel(model.call, 'openai-compatible', 'off')))
     expect(Object.keys(model.bodies[0]!)).not.toContain('reasoning_effort')
     expect(events.map((event) => event.type)).toEqual([
       'reasoning',
+      'tool_call',
+      'tool_result',
+      'reasoning',
       'thinking_unavailable',
       'proposal',
       'end'
     ])
-    expect((events[1] as { detail: string }).detail).toContain('always thinks')
+    expect((events[4] as { detail: string }).detail).toContain('always thinks')
     // …and no critic ran at all, because the tier is off.
     expect(model.critic).toEqual([])
   })
 
-  it('reports unavailable where the first turn carried no reasoning at all', async () => {
+  it('says nothing about one reasoning turn among quiet ones', async () => {
+    const model = answering((turn) =>
+      turn === 1
+        ? whole({
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: 'Let me look.',
+                  reasoning_content: 'I thought once.',
+                  tool_calls: [
+                    {
+                      id: 'call_1',
+                      type: 'function',
+                      function: { name: 'validate', arguments: '{"document":"{}"}' }
+                    }
+                  ]
+                }
+              }
+            ]
+          })
+        : whole(proposalMessage)
+    )
+    const events = await drain(builtin.start(withModel(model.call, 'openai-compatible', 'off')))
+    expect(events.some((event) => event.type === 'thinking_unavailable')).toBe(false)
+  })
+
+  it('reports unavailable after two answers with no reasoning, and not after one', async () => {
+    // The critic's own turn is this session's second answer, so the pass is
+    // where the second observation lands on a session that proposes at once.
     const model = answering(() => whole(proposalMessage))
     const events = await drain(builtin.start(withModel(model.call, 'openai-compatible', 'on')))
     const notices = events.filter((event) => event.type === 'thinking_unavailable')
     expect(notices).toHaveLength(1)
     expect((notices[0] as { detail: string }).detail).toContain('no reasoning block')
+    // Nothing was said on the first turn: the proposal's own request had
+    // already gone out with the tier still on it.
+    expect(Object.keys(model.bodies[0]!)).toContain('reasoning_effort')
   })
 
   it('rethrows a refusal that is not about the tier', async () => {
@@ -643,6 +690,9 @@ describe('what an Anthropic thinking turn survives on the way back', () => {
       'reasoning',
       'tool_call',
       'tool_result',
+      // The second turn proposes and carries no reasoning; the critic's own
+      // turn is the second answer with none, so the desk reports it there.
+      'thinking_unavailable',
       // The refutation pass runs at this tier and reached no runtime check.
       'critique',
       'proposal',

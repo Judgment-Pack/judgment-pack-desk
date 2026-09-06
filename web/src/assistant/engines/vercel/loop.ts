@@ -565,8 +565,10 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
         // unmeasurable state — "no thinking block after the first turn" — is
         // decided here, by the desk, and said once.
         if (steps > 0) {
-          const quiet = slot.silent()
-          if (quiet !== null) await deliver(quiet)
+          // `final` still holds the step that just ended: whether it produced
+          // an answer of its own is half the evidence a turn carries.
+          const noticed = slot.turnEnded(final !== '')
+          if (noticed !== null) await deliver(noticed)
         }
         // A turn boundary is where a reasoning block's signature is finished.
         // See `signatureLedger`.
@@ -603,8 +605,7 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
         // pieces — which is the shape the contract's `done` marks.
         await deliver({ type: 'reasoning', text: reasoning, done: true })
         reasoning = ''
-        const always = slot.reasoned()
-        if (always !== null) await deliver(always)
+        slot.sawReasoning()
         continue
       }
       const unoffered = unofferedTool(part, offered)
@@ -636,8 +637,8 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
     if (streamed !== null) throw streamed
     // The last turn's own accounting, and the notice a `fetch` may have
     // produced while the stream was being read.
-    const quiet = slot.silent()
-    if (quiet !== null) await deliver(quiet)
+    const noticed = slot.turnEnded(final !== '')
+    if (noticed !== null) await deliver(noticed)
     await flush()
 
     // `result.text` mints a fresh promise on every read, so it is read here,
@@ -692,6 +693,9 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
           const part = step.value
           if (part.type === 'start-step') {
             ledger.boundary()
+            // The critic's turns are this session's turns.
+            const said = slot.turnEnded(criticText !== '')
+            if (said !== null) await deliver(said)
             criticText = ''
             continue
           }
@@ -714,6 +718,7 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
           if (part.type === 'reasoning-end') {
             await deliver({ type: 'reasoning', text: criticReasoning, done: true })
             criticReasoning = ''
+            slot.sawReasoning()
             continue
           }
           if (part.type === 'text-delta') criticText += (part as { text?: string }).text ?? ''
@@ -723,6 +728,8 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
         // nobody is reading.
         recording = null
       }
+      const ended = slot.turnEnded(criticText !== '')
+      if (ended !== null) await deliver(ended)
       if (streamed !== null) throw streamed
       critique = recorder.critique(criticText)
       await deliver(critiqueEvent(critique))
