@@ -1601,16 +1601,27 @@ a `setTimeout` throws into nobody's `catch`.
 
 The barrier at the end **tracks handles rather than waiting**. It was a fixed
 200ms, and a fixed wait is a delay an engine can out-wait — 201ms, an interval,
-a timer that schedules another timer. `setTimeout`, `setInterval`,
-`clearTimeout`, `clearInterval`, `queueMicrotask`, and `setImmediate` and
-`requestAnimationFrame` where they exist, are wrapped for the sealed window:
-each call is recorded *and* scheduled for real, so an engine that legitimately
-needs a timer still makes progress, and whatever has not fired when the run ends
-is fired, repeatedly, until nothing is left. What remains when the bound is
-reached is a **failure**, not a pass. A handle the engine itself cancelled is
-never fired on its behalf — the clear functions are wrapped for exactly that —
-because running one would report a reach the engine had already decided not to
-make.
+a timer that schedules another timer. Every scheduling primitive a page has is
+wrapped for the sealed window, **each with its canceller**: `setTimeout`,
+`setInterval`, `queueMicrotask`, `setImmediate`, `requestAnimationFrame` and
+`requestIdleCallback`, with `clearTimeout`, `clearInterval`, `clearImmediate`,
+`cancelAnimationFrame` and `cancelIdleCallback` beside them. Each call is
+recorded *and* scheduled for real, so an engine that legitimately needs a timer
+still makes progress, and whatever has not fired when the run ends is fired,
+repeatedly, until nothing is left. What remains when the bound is reached is a
+**failure**, not a pass. A handle the engine itself cancelled is never fired on
+its behalf — that is what the cancellers are wrapped for — because running one
+would report a reach the engine had already decided not to make; a schedule that
+returns no handle at all, as `queueMicrotask` does, is filed under none, so a
+`clearTimeout(undefined)` cannot cancel it by accident.
+
+**`requestIdleCallback` is installed where the environment has none**, backed by
+a timeout and handing the callback the deadline object the API defines, and
+removed again afterwards. jsdom does not have it, so an engine that wrote
+`globalThis.requestIdleCallback?.(() => fetch(…))` did nothing at all during
+certification and reached the network in Chrome, after the seal would have
+lifted: a primitive the *browser* has and the *harness* does not is a hole in a
+guard whose whole claim is that everything an engine scheduled has already run.
 
 **A certified engine leaves no live interval when its iterator ends.** An
 interval is never run by the drain at all: running a few ticks and calling it

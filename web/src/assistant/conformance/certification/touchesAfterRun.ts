@@ -8,7 +8,10 @@
  * Every one of those is a delay or a bound an engine can simply outlast: 201ms,
  * a chain of timers, or a reach on the fourth tick.
  *
- * So the session **tracks** every handle an engine creates while it is sealed,
+ * So the session **tracks** every handle an engine creates while it is sealed —
+ * `requestIdleCallback` included, which the harness installs where the
+ * environment has none, precisely so that a primitive the browser has and jsdom
+ * does not cannot be the one an engine schedules its reach on —
  * runs the timeouts and microtasks to exhaustion, and treats two things as
  * certification failures in their own right: a handle still pending when the
  * bound is reached, and **an interval the engine never cleared**. This fixture
@@ -53,6 +56,11 @@ export const touchesAfterRun: Engine = {
     void Promise.resolve()
       .then(() => Promise.resolve())
       .then(() => reach('promise'))
+    // An idle callback, which is the shape the harness had no answer for at
+    // all: jsdom has no `requestIdleCallback`, so an engine that wrote this
+    // line did nothing during certification and reached the network in Chrome,
+    // after the seal would have lifted. The harness installs one now.
+    globalThis.requestIdleCallback(() => reach('idle'))
     // And an interval nobody clears, at a period no leg can outlast — so the
     // only way its reach is ever recorded is a drain that ran it. The interval
     // being **live** is what fails this leg; a harness that ran it on the

@@ -162,6 +162,8 @@ function trackDeferredWork(): {
 } {
   const scope = globalThis as unknown as Record<string, unknown>
   const before = new Map<string, unknown>()
+  /** Names this harness *added*, which are deleted again rather than restored. */
+  const added = new Set<string>()
   const tracked: Tracked[] = []
   const byHandle = new Map<unknown, Tracked>()
   const keep = (name: string) => before.set(name, scope[name])
@@ -283,6 +285,14 @@ function trackDeferredWork(): {
         (handle) => realClearImmediate?.(handle),
         false
       )
+    // **The canceller too.** `setImmediate` was wrapped and `clearImmediate`
+    // was not, so a handle the engine itself cancelled stayed pending in the
+    // bookkeeping and was force-run by the drain — a reach attributed to an
+    // engine that had already decided not to make it.
+    if (typeof realClearImmediate === 'function') {
+      keep('clearImmediate')
+      scope.clearImmediate = (handle: unknown) => forget(handle, (inner) => realClearImmediate(inner))
+    }
   }
   if (typeof scope.requestAnimationFrame === 'function') {
     const realRaf = scope.requestAnimationFrame as (fn: (t: number) => void) => unknown
@@ -297,6 +307,46 @@ function trackDeferredWork(): {
         (handle) => realCancelRaf?.(handle),
         false
       )
+    if (typeof realCancelRaf === 'function') {
+      keep('cancelAnimationFrame')
+      scope.cancelAnimationFrame = (handle: unknown) => forget(handle, (inner) => realCancelRaf(inner))
+    }
+  }
+  /**
+   * **The idle callback the seal has to bring with it.**
+   *
+   * jsdom has no `requestIdleCallback`, so an engine that wrote
+   * `globalThis.requestIdleCallback?.(() => fetch(…))` did nothing at all during
+   * certification and reached the network in Chrome, after the seal would have
+   * lifted. A primitive the *browser* has and the *harness* does not is a hole
+   * in a guard whose whole claim is "everything this engine scheduled has run".
+   *
+   * So the harness installs a realistic one where the environment has none —
+   * backed by a timeout, handing the callback the deadline object the API
+   * defines — tracked and cancellable like every other schedule, and **removed**
+   * again by `restore` rather than left behind for the next test file.
+   */
+  {
+    const realIdle = scope.requestIdleCallback as ((fn: unknown) => unknown) | undefined
+    const realCancelIdle = scope.cancelIdleCallback as ((handle: unknown) => void) | undefined
+    const schedule = (wrapped: () => void): unknown =>
+      realIdle !== undefined ? realIdle(wrapped) : realSetTimeout(wrapped, 1)
+    const clear = (handle: unknown) =>
+      realCancelIdle !== undefined ? realCancelIdle(handle) : realClearTimeout(handle as never)
+    if (realIdle === undefined) added.add('requestIdleCallback')
+    if (realCancelIdle === undefined) added.add('cancelIdleCallback')
+    keep('requestIdleCallback')
+    keep('cancelIdleCallback')
+    scope.requestIdleCallback = (fn: (deadline: unknown) => void) =>
+      record(
+        'requestIdleCallback',
+        'requestIdleCallback',
+        () => fn({ didTimeout: false, timeRemaining: () => 0 }),
+        schedule,
+        clear,
+        false
+      )
+    scope.cancelIdleCallback = (handle: unknown) => forget(handle, clear)
   }
 
   return {
@@ -311,7 +361,13 @@ function trackDeferredWork(): {
     // that reaches on its ninth tick is an engine no bounded drain can catch.
     liveIntervals: () => tracked.filter((entry) => entry.repeating && !entry.cancelled),
     restore() {
-      for (const [name, value] of before) scope[name] = value
+      for (const [name, value] of before) {
+        // A primitive this harness *added* is deleted rather than restored to
+        // `undefined`: a page that feature-detects it would otherwise find the
+        // property present and useless for every test that runs after.
+        if (added.has(name)) delete scope[name]
+        else scope[name] = value
+      }
       // Whatever the engine left behind stops here, so a leg cannot leak a
       // ticking timer into the next one. This is hygiene and never a verdict:
       // `liveIntervals` was read before it, and an interval stopped here has
@@ -901,6 +957,10 @@ describe('the seal, shown to fail', () => {
     expect(from.has('far'), 'the five-minute reach').toBe(true)
     expect(from.has('chained'), 'the reach behind another timer').toBe(true)
     expect(from.has('promise'), 'the reach on a promise chain, with no timer').toBe(true)
+    // **The one the environment does not have.** jsdom has no
+    // `requestIdleCallback`, so this reach did nothing during certification and
+    // would have run in Chrome after the seal lifted. The harness installs one.
+    expect(from.has('idle'), 'the reach on an idle callback').toBe(true)
     // And the drain finished with nothing left waiting.
     expect(leftPending).toBe(0)
   })
@@ -938,6 +998,12 @@ describe('the seal, shown to fail', () => {
     // report a reach this engine never made.
     expect(from.has('cancelled'), 'a reach it had already cancelled').toBe(false)
     expect(from.has('interval'), 'a reach on an interval it cleared').toBe(false)
+    // The two whose cancellers the harness did not wrap, and the idle one it
+    // now brings with it: each was scheduled and cancelled, and none may be
+    // fired on the engine's behalf.
+    expect(from.has('immediate'), 'a reach on an immediate it cleared').toBe(false)
+    expect(from.has('raf'), 'a reach on an animation frame it cancelled').toBe(false)
+    expect(from.has('idle'), 'a reach on an idle callback it cancelled').toBe(false)
   })
 
   it('restores every global when a deferred callback throws', async () => {
@@ -977,13 +1043,25 @@ describe('the seal, shown to fail', () => {
   })
 
   it('leaves the timer functions exactly as it found them', async () => {
-    const before = ['setTimeout', 'setInterval', 'queueMicrotask'].map(
-      (name) => (globalThis as unknown as Record<string, unknown>)[name]
-    )
+    const names = [
+      'setTimeout',
+      'clearTimeout',
+      'setInterval',
+      'clearInterval',
+      'queueMicrotask',
+      'setImmediate',
+      'clearImmediate',
+      'requestAnimationFrame',
+      'cancelAnimationFrame'
+    ]
+    const scope = globalThis as unknown as Record<string, unknown>
+    const before = names.map((name) => scope[name])
+    // And the one the harness **adds**: it must be gone again, not left as a
+    // present-but-useless property for every test that runs after this one.
+    expect('requestIdleCallback' in scope, 'jsdom has no idle callback').toBe(false)
     await runLeg(fromRegistry('builtin'), leg)
-    const after = ['setTimeout', 'setInterval', 'queueMicrotask'].map(
-      (name) => (globalThis as unknown as Record<string, unknown>)[name]
-    )
-    expect(after).toEqual(before)
+    expect(names.map((name) => scope[name])).toEqual(before)
+    expect('requestIdleCallback' in scope, 'the harness left its own behind').toBe(false)
+    expect('cancelIdleCallback' in scope, 'the harness left its own behind').toBe(false)
   })
 })

@@ -45,6 +45,16 @@ export const clearsItsInterval: Engine = {
     // of the microtask and never ran it — and the reach went unrecorded.
     queueMicrotask(() => reach('microtask'))
     clearTimeout(undefined as unknown as ReturnType<typeof setTimeout>)
+    // Two more schedules it cancels, at the two primitives whose *cancellers*
+    // the harness did not wrap: a cancelled callback stayed pending in the
+    // bookkeeping and was force-run by the drain, which is a reach attributed to
+    // an engine that had already decided not to make it.
+    const soon = setImmediate(() => reach('immediate'))
+    clearImmediate(soon)
+    const painted = requestAnimationFrame(() => reach('raf'))
+    cancelAnimationFrame(painted)
+    const idling = globalThis.requestIdleCallback(() => reach('idle'))
+    globalThis.cancelIdleCallback(idling)
     // And one it does mean, which is what fails the leg.
     setTimeout(() => reach('kept'), 40)
     yield { type: 'end' }
