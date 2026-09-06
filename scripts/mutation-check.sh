@@ -2730,6 +2730,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # asks for.
   WRT=web/src/packs/edit/writes.ts
   BUF=web/src/packs/edit/useDocumentBuffer.ts
+  HT=web/src/packs/edit/heldText.ts
   COP=web/src/packs/edit/conditionOps.ts
   CB=web/src/packs/edit/ConditionBuilder.tsx
   CF=web/src/packs/edit/CardForm.tsx
@@ -3193,11 +3194,11 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '    if (!runnable) return'
   # The latch, and the two ways it has to be let go.
   mutate web "a save left in flight by a navigation wedges every later one" "$PV" \
-    '    reset()
+    '    setUnaccounted(false)
     saving.current = undefined' \
-    '    reset()'
+    '    setUnaccounted(false)'
   mutate web "the latch is released only through the mutation observer" "$FE" \
-    '        .finally(() => input.onSettled?.())' \
+    '        .finally(() => input.onSettled?.({ delivered }))' \
     '        .finally(() => {})'
   # The Inspector: a defined base, and no served fallback behind the buffer.
   mutate web "an absent base digest is read as a match" "$MTB" \
@@ -3360,7 +3361,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  const hasWork = dirty'
   mutate web "Discard leaves the text it did not write" "$PV" \
     '    buffer.discard()
-    setDrafts(new Map())' \
+    forgetDrafts()' \
     '    buffer.discard()'
   mutate web "a draft is masked rather than retired" "$PV" \
     '          ownerOf(read, pointer) === draft.owner
@@ -3868,10 +3869,23 @@ export function assistantTransport(): Transport {
     seeded.current = fresh.path'
   # Work held beside the bytes is still work: a reload asked for before it was
   # typed must go stale, exactly as a commit makes it.
-  mutate web "text held beside the bytes moves no revision" "$PV" \
-    '    touchBuffer.current()
-    setDrafts((held) => {' \
-    '    setDrafts((held) => {'
+  mutate web "text held beside the bytes moves no revision" "$HT" \
+    '    if (heldChanged(now.current.get(pointer), draft)) touchNow.current()' \
+    '    void pointer'
+
+  # **A save that finished with nobody here to take its answer.** The per-save
+  # callbacks arrive through react-query's observer, and a reload landing — or
+  # leaving the pack — detaches it: the write completes on disk and the page
+  # would otherwise say nothing at all about it.
+  mutate web "a save that answers to nobody is not reported" "$PV" \
+    '          if (!delivered && pathNow.current === path) setUnaccounted(true)' \
+    '          void delivered'
+  # Releasing held text is not an edit — the write that follows it is — and the
+  # operand does both in one gesture, so counting both makes the revision
+  # something other than a count of edits.
+  mutate web "every hold counts as an edit, released or not" "$HT" \
+    '    if (heldChanged(now.current.get(pointer), draft)) touchNow.current()' \
+    '    touchNow.current()'
 
   # **A reload that lands over an edit made while it was in flight.** The
   # generation moves only where the buffer is put down, so an edit — a

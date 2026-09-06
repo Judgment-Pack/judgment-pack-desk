@@ -77,8 +77,19 @@ export interface FileEditing {
     override?: boolean
     createParents?: boolean
     onSaved?: (landed: FileContent) => void
-    /** However it ended — so a caller holding a single-flight latch can let go. */
-    onSettled?: () => void
+    /**
+     * However it ended — so a caller holding a single-flight latch can let go.
+     *
+     * `delivered` says whether **this page saw the answer**. The per-save
+     * callbacks reach the caller through react-query's observer, and the route
+     * detaches that observer whenever the address moves or a reload lands: the
+     * write still completes on disk, and neither `onSaved` nor the mutation's
+     * own error state ever arrives. A caller that reported nothing there would
+     * leave a save that finished with no account of itself anywhere on screen.
+     * This promise settles either way, which is what makes the difference
+     * reportable.
+     */
+    onSettled?: (settled: { delivered: boolean }) => void
   }) => void
   /**
    * Read the file again and hand back what is on disk now.
@@ -163,7 +174,7 @@ export function useFileEditing(): FileEditing {
       override?: boolean
       createParents?: boolean
       onSaved?: (landed: FileContent) => void
-      onSettled?: () => void
+      onSettled?: (settled: { delivered: boolean }) => void
     }) => {
       // A previous verdict does not survive into a new attempt: leaving
       // "Saved, and verified" on screen while the next save is pending or
@@ -182,6 +193,9 @@ export function useFileEditing(): FileEditing {
       // flight across that never settled, so a caller holding a single-flight
       // latch held it for ever and every later Save returned silently. The
       // promise resolves either way, whatever happens to the observer.
+      // Set by the per-save callbacks below, which only run while the observer
+      // is still attached. See `onSettled`.
+      let delivered = false
       void write
         .mutateAsync(
           {
@@ -193,6 +207,7 @@ export function useFileEditing(): FileEditing {
           },
           {
           onSuccess: (landed) => {
+            delivered = true
             setOutcome({ submitted, landed })
             input.onSaved?.(landed)
             // The read-back is authoritative about the bytes this save wrote,
@@ -220,13 +235,17 @@ export function useFileEditing(): FileEditing {
                     })
                   }
             )
+          },
+          onError: () => {
+            // The observer was still attached, so `write.error` is on screen.
+            delivered = true
           }
           }
         )
         // The mutation's own error is rendered from `write.error`; this catch
         // exists so a rejected promise is not an unhandled one.
         .catch(() => {})
-        .finally(() => input.onSettled?.())
+        .finally(() => input.onSettled?.({ delivered }))
       // eslint-disable-next-line react-hooks/exhaustive-deps
     },
     [queryClient]

@@ -495,3 +495,69 @@ function within(root: HTMLElement, label: string): HTMLElement {
   if (found === undefined) throw new Error(`no button labelled ${label}`)
   return found
 }
+
+describe('a save this page never saw the answer to', () => {
+  /**
+   * The write goes to the chassis and the page moves on before it answers.
+   *
+   * The per-save callbacks reach the route through react-query's observer, and
+   * two ordinary actions detach it: leaving the pack (`editor.reset()`) and a
+   * reload landing (`write.reset()`). The write still completes on disk — what
+   * never arrives is the read-back, so the base is not moved onto it and
+   * neither "Saved, and verified" nor a refusal is printed. Nothing here
+   * retains the answer: the file on disk is the truth, and what the page owes
+   * the author is to say so.
+   */
+  it('says so where a reload lands first, and leaves the buffer alone', async () => {
+    const log = chassis({ content: PACK_TEXT, sha256: PACK_DIGEST, holdWrite: true })
+    const { queryClient } = drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const area = await editable()
+    const submitted = `${PACK_TEXT}\n`
+    fireEvent.change(area, { target: { value: submitted } })
+    const release = log.holdWrite()
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(log.writes).toHaveLength(1))
+
+    // The file moves on disk while the PUT is in the air, and the reload the
+    // page offers lands before the save answers.
+    const onDisk = `${PACK_TEXT}\n\n`
+    log.write(PACK_PATH, onDisk)
+    act(() => {
+      // The watcher noticing, which is what puts the offer on screen.
+      queryClient.setQueryData(['desk-file', PACK_PATH], {
+        path: PACK_PATH,
+        bytes: onDisk.length,
+        sha256: 'd0d0d0'.padEnd(64, '0'),
+        content: onDisk
+      })
+    })
+    const offer = await screen.findByRole('button', { name: /^Reload/ })
+    fireEvent.click(offer)
+    await waitFor(() =>
+      expect((screen.getByLabelText("The document's bytes") as HTMLTextAreaElement).value).toBe(
+        onDisk
+      )
+    )
+
+    // Now the save answers, to nobody.
+    release()
+    await act(async () => {})
+
+    expect(screen.getByText(/This save finished, and this page has no account of it/)).toBeTruthy()
+    // The reloaded bytes are still the bytes: nothing was moved onto them.
+    expect((screen.getByLabelText("The document's bytes") as HTMLTextAreaElement).value).toBe(onDisk)
+    expect(screen.queryByText(/Saved, and verified/)).toBeNull()
+    // And the way out is the read that would settle it.
+    expect(screen.getByRole('button', { name: /^Reload/ })).toBeTruthy()
+  })
+
+  it('says nothing of the sort when the answer arrives', async () => {
+    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const area = await editable()
+    fireEvent.change(area, { target: { value: `${PACK_TEXT}\n` } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(screen.getByText(/Saved, and verified/)).toBeTruthy())
+    expect(screen.queryByText(/This save finished, and this page has no account of it/)).toBeNull()
+  })
+})

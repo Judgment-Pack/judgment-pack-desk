@@ -507,6 +507,46 @@ describe('a read that lands after the page has moved on', () => {
     expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(false)
   })
 
+  it('says a save finished unaccounted for when the author comes back to it', async () => {
+    // A→B→A with the PUT in the air. Leaving detaches the mutation's observer,
+    // so the read-back never arrives: the write completed on disk and this page
+    // has no account of it. Nothing is retained — the file on disk is the truth
+    // — and what the page owes the author is to say so and offer the read.
+    const log = chassis({
+      content: ALPHA,
+      sha256: PACK_DIGEST,
+      also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } },
+      holdWrite: true
+    })
+    vi.stubGlobal('confirm', () => true)
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const alpha = await screen.findByDisplayValue('Alpha pack')
+    fireEvent.change(alpha, { target: { value: 'Alpha pack, revised' } })
+    const release = log.holdWrite()
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(log.writes).toHaveLength(1))
+
+    await act(async () => {
+      await router.navigate('/packs/bravo?edit=1')
+    })
+    await screen.findByDisplayValue('Bravo pack')
+    await act(async () => {
+      await router.navigate('/packs/alpha?edit=1')
+    })
+    // The editor is back over Alpha's own bytes — the file query still holds
+    // them, because the save that would move them has not answered.
+    await waitFor(() => expect(document.getElementById('/title')).not.toBeNull())
+
+    release()
+    await act(async () => {})
+
+    expect(
+      screen.getByText(/This save finished, and this page has no account of it/)
+    ).toBeTruthy()
+    expect(screen.queryByText(/Saved, and verified/)).toBeNull()
+    expect(screen.getByRole('button', { name: /^Reload/ })).toBeTruthy()
+  })
+
   it('names the file a failed reload was for, not the one on screen', async () => {
     const log = chassis({
       content: ALPHA,
