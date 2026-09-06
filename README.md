@@ -1640,8 +1640,12 @@ Three rules, all of them desk code:
 
 The settled status is a **table per tool** and not the single word `valid`: a
 rehearsal evaluation answers `"status": "evaluated"`, so one word over both
-tools would have reported every session ever run as refuted. A check the runtime
-refused outright counts as a check and refutes.
+tools would have reported every session ever run as refuted. **A status is the
+only thing that makes a check**: an answer the runtime returned with `isError`
+and no `status` in it is the runtime declining to *answer*, not declining the
+document, and it is no check at all — and a call the desk's own gate refused
+never reached the runtime, so it is a `guardrail` line and can never become one.
+A verdict is a thing the runtime said.
 
 A refuted proposal is **still a proposal**: the document is shown, the diff is
 drawn, and Accept is offered. Refutation is information, not failure, and the
@@ -3078,8 +3082,11 @@ the ones that are about **that SDK** rather than about the contract: the address
 discipline on the `fetch` its providers are given, the placeholder credential
 that never leaves it, the two layers that put `rehearsal: true` on an evaluate
 and which of them the desk's gate must see, the whole-answer re-framing, the
-retry count, and the `unhandledrejection` guard installed for one run and
-removed after it. `assistant/AssistantPane.test.tsx` drives the
+retry count, and — for the one rejection this desk cannot claim — that **the
+author is told anyway**, on the run's own stream, with the status and the
+endpoint's own sentence in it. There is no `unhandledrejection` listener, by
+ruling: one is keyed on an error *name* and would suppress every rejection
+carrying it. `assistant/AssistantPane.test.tsx` drives the
 page's **real** transport against the recorded runtime through a stand-in
 `WebSocket`, so the socket, the gate and the SDK client above it are the
 production ones.

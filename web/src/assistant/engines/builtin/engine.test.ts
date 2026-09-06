@@ -1283,8 +1283,11 @@ describe('the refutation pass, on this engine’s second loop', () => {
     expect(one.critic[0]).toContain('A pack')
   })
 
-  it('still runs where the endpoint degraded, under this chunk’s ruling', async () => {
-    expect(REFUTE_ON_A_DEGRADED_ENDPOINT).toBe(true)
+  it('follows the ruling on a degraded endpoint, whichever way it is set', async () => {
+    // **The alternative is one boolean and nothing else.** A maintainer who
+    // rules the other way flips `REFUTE_ON_A_DEGRADED_ENDPOINT` and this case
+    // follows: it asserts the *behaviour the constant asks for*, not the value
+    // this chunk happens to carry.
     let refused = false
     const asked: string[] = []
     const call: ModelCall = async (_suffix, request) => {
@@ -1314,10 +1317,15 @@ describe('the refutation pass, on this engine’s second loop', () => {
     }
     const events = await drain(builtin.start(one))
     expect(events.filter((event) => event.type === 'thinking_unavailable')).toHaveLength(1)
-    // The tab's line is the degrade's; the pass ran anyway, because its value
-    // is the runtime's checks rather than the model's thinking.
-    expect(asked).toEqual(['critic'])
-    expect(events.some((event) => event.type === 'critique')).toBe(true)
+    // The tab's line is the degrade's either way. Whether the pass ran is the
+    // ruling's: under the default it does, because its value is the runtime's
+    // checks rather than the model's thinking.
+    expect(asked).toEqual(REFUTE_ON_A_DEGRADED_ENDPOINT ? ['critic'] : [])
+    expect(events.some((event) => event.type === 'critique')).toBe(
+      REFUTE_ON_A_DEGRADED_ENDPOINT
+    )
+    // …and the session completes with its proposal on either ruling.
+    expect(events.some((event) => event.type === 'proposal')).toBe(true)
   })
 
   it('ends a critic tool call that is still in flight when the run is stopped', async () => {

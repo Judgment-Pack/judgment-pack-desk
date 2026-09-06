@@ -328,11 +328,12 @@ describe('the refutation pass’s gate, and the ruling on a degraded endpoint', 
     expect(slot('ultra').runsRefutation()).toBe(true)
   })
 
-  it('still runs on a degraded endpoint, under the default this chunk carries', () => {
-    // **The open ruling.** The value of the pass is the runtime's checks over
-    // the proposed document, not the model's thinking. The alternative is this
-    // constant set to false and nothing else.
-    expect(REFUTE_ON_A_DEGRADED_ENDPOINT).toBe(true)
+  it('follows the ruling on a degraded endpoint, whichever way it is set', () => {
+    // **The open ruling, and the whole of what changes with it.** The value of
+    // the pass is the runtime's checks over the proposed document, not the
+    // model's thinking — so the default is that it runs. The alternative is
+    // this constant set to `false` **and nothing else**: no test names a value,
+    // every one of them asks the constant.
     const it0 = slot('on')
     it0.refused(400, 'Unsupported parameter: reasoning_effort')
     expect(it0.state()).toBe('unavailable')
