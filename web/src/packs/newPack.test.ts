@@ -14,7 +14,8 @@ import {
   packPathFor,
   packFromProposal,
   shapeTemplate,
-  slugFor
+  slugFor,
+  specVersionFrom
 } from './newPack'
 
 const SCHEMA = JSON.stringify({
@@ -318,7 +319,8 @@ describe('packFromProposal', () => {
         name: 'Vendor Onboarding',
         description,
         slug: 'vendor-onboarding',
-        idBase: 'https://example.invalid/judgment-packs/'
+        idBase: 'https://example.invalid/judgment-packs/',
+        specVersion: '0.2.0-draft'
       })
     ) as Record<string, unknown>
 
@@ -333,12 +335,59 @@ describe('packFromProposal', () => {
     expect(document.description).toBe('Whether a vendor may be onboarded.')
   })
 
-  it('leaves every other member exactly as the proposal carried it', () => {
-    const document = shaped('One line.')
+  it('states specVersion itself, from the runtime’s schema and never the proposal', () => {
+    // **The one member that is not the model's.** A template's `specVersion` is
+    // the runtime's own statement, served with the example; a proposal's is a
+    // string a model wrote, and the desk states the format version instead —
+    // from the schema, exactly as an empty pack gets it.
+    const claimed = Object.freeze({ ...PROPOSED, specVersion: '99' })
+    const document = JSON.parse(
+      packFromProposal(claimed, {
+        name: 'A',
+        description: '',
+        slug: 'a',
+        idBase: 'https://example.invalid/p/',
+        specVersion: '0.2.0-draft'
+      })
+    ) as Record<string, unknown>
     expect(document.specVersion).toBe('0.2.0-draft')
+  })
+
+  it('refuses to write anything where there is no schema to state it from', () => {
+    // A document whose format version the desk invented is worse than one it
+    // declined to create.
+    for (const stated of [undefined, '']) {
+      expect(() =>
+        packFromProposal(PROPOSED, {
+          name: 'A',
+          description: '',
+          slug: 'a',
+          idBase: 'https://example.invalid/p/',
+          specVersion: stated
+        })
+      ).toThrow(/which version of the format/)
+    }
+  })
+
+  it('leaves every other member exactly as the proposal carried it', () => {
+    // **Left, and checked — not stripped.** An unknown top-level member is a
+    // document the runtime's schema refuses, and the dialog refuses it before
+    // either write with the runtime's own diagnostics. Removing it here would
+    // be the desk editing a document on a model's behalf and telling nobody.
+    const document = shaped('One line.')
     expect(document.decision).toEqual({ intent: 'decide', question: 'Approve?' })
     expect(document.outcomes).toEqual([{ id: 'approve' }, { id: 'decline' }])
     expect(document.rules).toEqual([{ id: 'r1' }])
+    const extra = JSON.parse(
+      packFromProposal(Object.freeze({ ...PROPOSED, fileName: 'model-choice.pack.json' }), {
+        name: 'A',
+        description: '',
+        slug: 'a',
+        idBase: 'https://example.invalid/p/',
+        specVersion: '0.2.0-draft'
+      })
+    ) as Record<string, unknown>
+    expect(extra.fileName).toBe('model-choice.pack.json')
   })
 
   it('drops the proposal’s own description where the dialog was given none', () => {
@@ -350,7 +399,8 @@ describe('packFromProposal', () => {
       name: 'A',
       description: '',
       slug: 'a',
-      idBase: 'https://example.invalid/p/'
+      idBase: 'https://example.invalid/p/',
+      specVersion: '0.2.0-draft'
     })
     expect(text.endsWith('}\n')).toBe(true)
     expect(text).toContain('\n  "specVersion"')
@@ -366,10 +416,29 @@ describe('packFromProposal', () => {
   })
 
   it('says so when the proposal is not a JSON object', () => {
-    const fields = { name: 'A', description: '', slug: 'a', idBase: 'https://e.invalid/' }
+    const fields = {
+      name: 'A',
+      description: '',
+      slug: 'a',
+      idBase: 'https://e.invalid/',
+      specVersion: '0.2.0-draft'
+    }
     for (const value of [null, [], 7, 'a pack']) {
       expect(() => packFromProposal(value, fields)).toThrow(/not a JSON object/)
     }
+  })
+})
+
+describe('specVersionFrom', () => {
+  it('reads the const the schema states, and nothing else', () => {
+    expect(specVersionFrom(SCHEMA)).toBe('0.2.0-draft')
+  })
+
+  it('is undefined where there is no schema to read it from', () => {
+    expect(specVersionFrom(undefined)).toBeUndefined()
+    expect(specVersionFrom('{oops')).toBeUndefined()
+    expect(specVersionFrom('{}')).toBeUndefined()
+    expect(specVersionFrom(JSON.stringify({ properties: { specVersion: { type: 'string' } } }))).toBeUndefined()
   })
 })
 

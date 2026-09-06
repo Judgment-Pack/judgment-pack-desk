@@ -42,6 +42,9 @@ import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { FileRequestError, readFile, writeFile, type FileContent } from '../files/client'
 import { useFileContent, useFileListing } from '../files/queries'
 import { useMcp } from '../mcp/McpProvider'
+import { useValidate } from '../mcp/queries'
+import { layersReached } from '../packs/checks'
+import { useIdleCheck } from '../packs/edit/useIdleCheck'
 import { RuntimeRefusal, useExample, useExampleListing, useSchema } from '../mcp/starters'
 import {
   existingPackKeys,
@@ -60,7 +63,8 @@ import {
   packFromProposal,
   packPathFor,
   shapeTemplate,
-  slugFor
+  slugFor,
+  specVersionFrom
 } from '../packs/newPack'
 import { Alert } from '../ui/Alert'
 import { Button } from '../ui/Button'
@@ -68,6 +72,7 @@ import { Dialog, DialogActions, DialogClose } from '../ui/Dialog'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
+import type { ValidationReport } from '../mcp/types'
 import { TextArea } from '../ui/TextArea'
 
 const PROJECT_FILE = 'jpack.json'
@@ -107,6 +112,9 @@ const ORPHANED =
   'The pack was created but could not be registered. Nothing else was changed.'
 const NO_TEMPLATE = 'There is no template to start from here.'
 const TEMPLATE_UNUSABLE = 'This template could not be used.'
+const NO_VALIDATE =
+  'This desk cannot check a proposed document here, because this connection serves no validate. Nothing was created.'
+const CHECKING = 'Checking the proposed document…'
 const PROPOSAL_UNUSABLE = 'This proposal could not be used, so nothing was created.'
 const RENAMED = 'Named from the field above, not from the proposal.'
 const TEMPLATES_PENDING = 'Asking the runtime what it can start from…'
@@ -148,7 +156,7 @@ export function CreatePackDialog({
 }) {
   const { config } = useEffectiveConfig()
   const { dir, idBase } = config.storage.packs
-  const { known, exampleSupported, schemaSupported } = useMcp()
+  const { known, exampleSupported, schemaSupported, validateSupported } = useMcp()
   const listing = useFileListing()
   const project = useFileContent(PROJECT_FILE)
   const examples = useExampleListing()
@@ -332,6 +340,63 @@ export function CreatePackDialog({
     namedOtherwise(source.document, { name, slug, idBase })
 
   /**
+   * The bytes a proposal would be written as, computed **here** so they can be
+   * checked before Create is offered.
+   *
+   * `shapePack` fills the members the dialog asked about and leaves the rest as
+   * the model wrote them, because the desk does not edit a document on a
+   * model's behalf. What that leaves is a document nobody has checked — an
+   * unknown top-level member, a mistyped rule, a `specVersion` a model invented
+   * — and the runtime's schema is `additionalProperties: false`, so the answer
+   * to "is this a pack" is the runtime's and is available for the asking.
+   */
+  const proposed = useMemo((): { text: string } | { problem: string } | undefined => {
+    if (source?.kind !== 'proposal' || slug === undefined) return undefined
+    try {
+      return {
+        text: packFromProposal(source.document, {
+          name,
+          description,
+          slug,
+          idBase,
+          specVersion: specVersionFrom(schema0.data)
+        })
+      }
+    } catch (cause) {
+      return { problem: reasonOf(cause) }
+    }
+  }, [source, name, description, slug, idBase, schema0.data])
+  const shapedText = proposed !== undefined && 'text' in proposed ? proposed.text : undefined
+  // The editor's own instrument: a call per keystroke is a call per keystroke,
+  // so what is sent is a snapshot the field settles on, and `behind` is what
+  // says the bytes on screen have moved past the ones that were checked.
+  const idle = useIdleCheck(shapedText)
+  const checked = useValidate(idle.checkedText)
+
+  /**
+   * Why a proposal cannot be written, in the runtime's words where they exist.
+   *
+   * Read in order. The last branch is the load-bearing one: **a proposal is
+   * written only where the runtime called the exact bytes valid**, and the
+   * comparison against `checkedBytes` is what makes "the bytes that were
+   * checked" and "the bytes that would be written" one string rather than two.
+   */
+  const proposalRefusal: string | undefined =
+    source?.kind !== 'proposal'
+      ? undefined
+      : proposed === undefined || 'problem' in proposed
+        ? (proposed?.problem ?? CHECKING)
+        : !validateSupported
+          ? NO_VALIDATE
+          : checked.isError
+            ? `The check on the proposed document was refused — ${checked.error.message}`
+            : checked.data === undefined || checked.data.checkedBytes !== shapedText
+              ? CHECKING
+              : checked.data.report.status === 'valid'
+                ? undefined
+                : refusedBy(checked.data.report)
+
+  /**
    * What to say under the Template field, and the four facts it is made of.
    *
    * Read in order, because they are answers to different questions and only
@@ -399,6 +464,7 @@ export function CreatePackDialog({
     slug !== undefined &&
     taken === undefined &&
     source !== undefined &&
+    proposalRefusal === undefined &&
     !busy &&
     describe.blocking === '' &&
     listing.isSuccess &&
@@ -414,7 +480,7 @@ export function CreatePackDialog({
    * to a template one press after somebody asked for something else would write
    * a document nobody chose.
    */
-  const createWhy = describe.blocking === '' ? undefined : describe.blocking
+  const createWhy = describe.blocking !== '' ? describe.blocking : proposalRefusal
 
   const invalidate = (keys: readonly (readonly unknown[])[]) => {
     for (const key of keys) void queryClient.invalidateQueries({ queryKey: key })
@@ -502,18 +568,27 @@ export function CreatePackDialog({
       // (0c) The document itself, before anything is sent: a template that is
       // not a JSON object cannot become a pack, and finding that out after the
       // write would be an orphan for a reason known in advance.
+      // **A proposal is written as the bytes the runtime checked**, read back
+      // off the check's own answer rather than shaped a second time: two
+      // shapings are two documents to a reader even where they are one string,
+      // and the claim being made is that what was validated is what was
+      // written. A template is the runtime's own document and is shaped here as
+      // it always was.
       let content: string
-      try {
-        content =
-          source.kind === 'proposal'
-            ? packFromProposal(source.document, { name, description, slug, idBase })
-            : shapeTemplate(source.text, { name, description, slug, idBase })
-      } catch (cause) {
-        setFailure({
-          lead: source.kind === 'proposal' ? PROPOSAL_UNUSABLE : TEMPLATE_UNUSABLE,
-          reason: reasonOf(cause)
-        })
-        return
+      if (source.kind === 'proposal') {
+        const validated = checked.data
+        if (validated === undefined || validated.checkedBytes !== shapedText) {
+          setFailure({ lead: PROPOSAL_UNUSABLE, reason: CHECKING })
+          return
+        }
+        content = validated.checkedBytes
+      } else {
+        try {
+          content = shapeTemplate(source.text, { name, description, slug, idBase })
+        } catch (cause) {
+          setFailure({ lead: TEMPLATE_UNUSABLE, reason: reasonOf(cause) })
+          return
+        }
       }
 
       // (1) The pack itself, and **what the chassis says it wrote**.
@@ -671,6 +746,7 @@ export function CreatePackDialog({
         </Field>
 
         {renamed && <p className="quiet">{RENAMED}</p>}
+        {proposalRefusal !== undefined && <p className="quiet">{proposalRefusal}</p>}
 
         <DescribeIt state={describe} />
 
@@ -733,6 +809,25 @@ function namedOtherwise(
   if (typeof document !== 'object' || document === null) return false
   const held = document as { id?: unknown; title?: unknown }
   return held.title !== fields.name.trim() || held.id !== `${fields.idBase}${fields.slug}`
+}
+
+/**
+ * What the runtime said about a document it would not call valid.
+ *
+ * The check strip's own sentence — the status, the layers that ran and the
+ * count — and then the first diagnostic verbatim, which is the one thing a
+ * count cannot say. Nothing is summarised and nothing is translated: the
+ * remaining diagnostics are on the page this would have opened.
+ */
+function refusedBy(report: ValidationReport): string {
+  const first = (report.diagnostics ?? [])[0]
+  const said =
+    first === undefined
+      ? ''
+      : ` First: ${first.message ?? 'no message'}${
+          first.instancePath ? ` at ${first.instancePath}` : ''
+        }.`
+  return `The runtime will not call this document a pack — ${layersReached(report).text}${said}`
 }
 
 /** The message the failure carries, never a sentence invented over it. */

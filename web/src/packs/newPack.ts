@@ -201,12 +201,6 @@ export function shapeTemplate(templateJson: string, fields: PackFields): string 
 /**
  * The assistant's proposal, shaped into the pack the fields describe.
  *
- * **The same shaping a template gets, and deliberately the same.** A proposal
- * is a document like any other by the time it reaches here, and giving it its
- * own rules would be the desk treating a model's document as a different kind
- * of thing from the runtime's own example — which is precisely the claim it
- * must not make.
- *
  * **What is passed in is the canonical frozen snapshot**, the one
  * `useAssistantRun` ingested when the proposal arrived, and never a value read
  * back off an engine's live event: two readings of a getter are two documents,
@@ -218,12 +212,54 @@ export function shapeTemplate(templateJson: string, fields: PackFields): string 
  * The name that was typed gives the `title` and the `id`; a proposal that
  * called itself something else keeps none of it, and the dialog says so in one
  * line rather than letting a document arrive under a name nobody chose.
+ *
+ * **`specVersion` is the desk's here, and it is not the desk's for a template.**
+ * The difference is where the two documents come from. A template is the
+ * runtime's own — `get_example` served it, `specVersion` and all — so keeping
+ * it is keeping the runtime's statement about which version of the format the
+ * document is written to. A proposal is a model's, and a model's opinion of the
+ * format version is not a statement about the format; it is a string. So the
+ * desk states it, from the runtime's own schema, exactly as `emptyPackFrom`
+ * does — and refuses to write anything where there is no schema to state it
+ * from, because a document whose format version the desk invented is worse than
+ * one it declined to create.
+ *
+ * Everything else the proposal carried is left as it wrote it and **checked**,
+ * not stripped. The runtime's schema is `additionalProperties: false`, so a
+ * member nobody asked for is a document the validator refuses — and the dialog
+ * refuses it before either write, with the runtime's own diagnostics. Silently
+ * removing members would be the desk editing a document on a model's behalf and
+ * telling nobody.
  */
-export function packFromProposal(document: unknown, fields: PackFields): string {
+export function packFromProposal(
+  document: unknown,
+  fields: PackFields & { specVersion: string | undefined }
+): string {
   if (typeof document !== 'object' || document === null || Array.isArray(document)) {
     throw new Error('the proposal is not a JSON object')
   }
-  return serialise(shapePack(document as Record<string, unknown>, fields))
+  if (fields.specVersion === undefined || fields.specVersion === '') {
+    throw new Error(
+      'this desk cannot say which version of the format a proposal is written to: the connected runtime served no schema'
+    )
+  }
+  const shaped = shapePack(document as Record<string, unknown>, fields)
+  shaped.specVersion = fields.specVersion
+  return serialise(shaped)
+}
+
+/**
+ * The format version the connected runtime's schema declares.
+ *
+ * The same reading `emptyPackFrom` takes — the `const` the schema states for
+ * `specVersion` — through the same two functions, so there is one place that
+ * knows how a schema says it.
+ */
+export function specVersionFrom(schemaText: string | undefined): string | undefined {
+  const schema = readSchema(schemaText)
+  if (schema === undefined) return undefined
+  const stated = emptyFor(schema.properties.specVersion, schema.defs)
+  return typeof stated === 'string' && stated !== '' ? stated : undefined
 }
 
 /** One document with the four members filled in, as plain data. */

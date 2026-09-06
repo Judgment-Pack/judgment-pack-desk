@@ -74,12 +74,94 @@ const TEMPLATE = JSON.stringify({
   rules: [{ id: 'r1' }]
 })
 
+/** The runtime's schema, as far as this desk reads it: the format version. */
+const SCHEMA = JSON.stringify({
+  required: ['specVersion', 'id', 'version', 'title', 'outcomes', 'rules'],
+  properties: {
+    specVersion: { const: '0.2.0-draft' },
+    id: { type: 'string' },
+    version: { type: 'string' },
+    title: { type: 'string' },
+    outcomes: { type: 'array' },
+    rules: { type: 'array' }
+  }
+})
+
+/** Every member the format declares, which is all of them. */
+const DECLARED = new Set([
+  'specVersion',
+  'id',
+  'version',
+  'title',
+  'description',
+  'decision',
+  'applicability',
+  'evidenceRequirements',
+  'sources',
+  'outcomes',
+  'rules',
+  'exceptions',
+  'fallbackOutcome',
+  'escalation',
+  'metadata',
+  'extensions'
+])
+
+/**
+ * A stand-in for the runtime's validator, and honest about being one.
+ *
+ * It answers the one question these cases are about — would the runtime call
+ * this a pack — on the two grounds the review names: the schema is
+ * `additionalProperties: false`, and `specVersion` is a `const`. The real
+ * validator runs over the real thing in the live drive; what is held here is
+ * that the dialog **asks before it writes** and refuses what comes back.
+ */
+function validateStub(text: string): { text: string } {
+  const document = JSON.parse(text) as Record<string, unknown>
+  const diagnostics = [
+    ...Object.keys(document)
+      .filter((member) => !DECLARED.has(member))
+      .map((member) => ({
+        code: 'additional-property',
+        layer: 'structural',
+        severity: 'error',
+        instancePath: `/${member}`,
+        message: `additional properties are not allowed: ${member}`
+      })),
+    ...(document.specVersion === '0.2.0-draft'
+      ? []
+      : [
+          {
+            code: 'const-mismatch',
+            layer: 'structural',
+            severity: 'error',
+            instancePath: '/specVersion',
+            message: 'specVersion must be "0.2.0-draft"'
+          }
+        ])
+  ]
+  return {
+    text: JSON.stringify({
+      status: diagnostics.length === 0 ? 'valid' : 'invalid',
+      layers: [
+        { name: 'carrier', status: 'passed' },
+        { name: 'structural', status: diagnostics.length === 0 ? 'passed' : 'failed' },
+        ...(diagnostics.length === 0 ? [{ name: 'semantic', status: 'passed' }] : [])
+      ],
+      diagnostics
+    })
+  }
+}
+
 interface Sent {
   path: string
   body: Record<string, unknown>
 }
 
 let runtime: ReturnType<typeof scriptedWebSocket> | null = null
+/** Every tool call the desk's own connection made, for the cases about that. */
+let calls: { name: string; args: Record<string, unknown> }[] = []
+const stubCalls = () => calls
 
 function config(assistant: unknown): EffectiveConfig {
   return effectiveConfig(undefined, undefined, undefined, {
@@ -161,12 +243,15 @@ function serve(
 function Mounted({
   deskConfig,
   persist,
-  secondPrompt = 'ok'
+  secondPrompt = 'ok',
+  validateSupported = true
 }: {
   deskConfig: EffectiveConfig
   persist: boolean
   /** What the runtime does with the **second** `prompts/get` it is asked. */
   secondPrompt?: 'ok' | 'reject' | 'hang'
+  /** Whether the connection advertises the tool the check needs. */
+  validateSupported?: boolean
 }) {
   const [open, setOpen] = useState(true)
   /** The desk-level file, as an admin might rewrite it while this is open. */
@@ -175,7 +260,9 @@ function Mounted({
     stubClient(
       {
         list_examples: () => ({ text: EXAMPLES }),
-        get_example: () => ({ text: TEMPLATE })
+        get_example: () => ({ text: TEMPLATE }),
+        get_schema: () => ({ text: SCHEMA }),
+        validate: (args) => validateStub(String(args.document))
       },
       {
         prompts: {
@@ -184,6 +271,7 @@ function Mounted({
       }
     )
   )
+  calls = stub.calls
   const [connection] = useState(() => {
     // A runtime that answers the first prompt and then does not. The second
     // Propose is the case the association between an offered proposal and the
@@ -206,7 +294,8 @@ function Mounted({
     return connected({
       client: client as never,
       exampleSupported: true,
-      schemaSupported: false
+      schemaSupported: true,
+      validateSupported
     })
   })
   return (
@@ -232,7 +321,11 @@ function Mounted({
 
 function draw(
   assistant: unknown = { endpoint: ENDPOINT },
-  options: { persist?: boolean; secondPrompt?: 'ok' | 'reject' | 'hang' } = {}
+  options: {
+    persist?: boolean
+    secondPrompt?: 'ok' | 'reject' | 'hang'
+    validateSupported?: boolean
+  } = {}
 ) {
   const deskConfig = config(assistant)
   const router = createMemoryRouter(
@@ -244,6 +337,7 @@ function draw(
             deskConfig={deskConfig}
             persist={options.persist ?? false}
             secondPrompt={options.secondPrompt}
+            validateSupported={options.validateSupported}
           />
         )
       }
@@ -305,6 +399,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
   runtime = null
   injected = null
+  calls = []
   window.sessionStorage.clear()
   window.localStorage.clear()
 })
@@ -548,9 +643,11 @@ describe('Create writes the proposal', () => {
       specVersion: '0.2.0-draft',
       outcomes: [{ id: 'approve' }, { id: 'decline' }],
       rules: [{ id: 'r1' }],
-      get question() {
+      // A member the format declares, so the check has no quarrel with it, and
+      // one the shaping never touches — so what is written is what was read.
+      get metadata() {
         reads += 1
-        return `read ${reads}`
+        return { note: `read ${reads}` }
       }
     })
     const { sent } = serve()
@@ -559,12 +656,12 @@ describe('Create writes the proposal', () => {
     fireEvent.click(screen.getByText('Show document'))
     const shown = JSON.parse(
       (screen.getByLabelText('The proposed document') as HTMLTextAreaElement).value
-    ) as { question: string }
+    ) as { metadata: { note: string } }
     await nameIt('Vendor Onboarding')
     fireEvent.click(createButton())
     await waitFor(() => expect(sent.length).toBe(2))
-    const written = JSON.parse(String(sent[0]!.body.content)) as { question: string }
-    expect(written.question).toBe(shown.question)
+    const written = JSON.parse(String(sent[0]!.body.content)) as { metadata: { note: string } }
+    expect(written.metadata.note).toBe(shown.metadata.note)
   })
 
   it('will not create while the assistant is still running, and says why', async () => {
@@ -822,7 +919,9 @@ describe('a route change is a dismissal', () => {
       {
         list_packs: () => ({ text: JSON.stringify({ status: 'valid', packs: [] }) }),
         list_examples: () => ({ text: EXAMPLES }),
-        get_example: () => ({ text: TEMPLATE })
+        get_example: () => ({ text: TEMPLATE }),
+        get_schema: () => ({ text: SCHEMA }),
+        validate: (args) => validateStub(String(args.document))
       },
       {
         prompts: {
@@ -840,7 +939,8 @@ describe('a route change is a dismissal', () => {
               value={connected({
                 client: stub.client,
                 exampleSupported: true,
-                schemaSupported: false
+                schemaSupported: true,
+                validateSupported: true
               })}
             >
               <DeskConfigFixture value={deskConfig}>
@@ -905,5 +1005,92 @@ describe('a route change is a dismissal', () => {
     })
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Create a pack' })).toBeNull())
     await waitFor(() => expect(runtime!.closed).toBe(1))
+  })
+})
+
+
+describe('a proposal is checked before it is written', () => {
+  it('refuses the review’s document before either write, with the runtime’s words', async () => {
+    // An otherwise plausible pack carrying a `specVersion` the model invented
+    // and a filename it made up. The desk's shaping fills the members the
+    // dialog asked about and leaves the rest as written; the runtime is what
+    // says whether the result is a pack, and it says no.
+    injected = proposing({
+      specVersion: '99',
+      fileName: 'model-choice.pack.json',
+      outcomes: [{ id: 'approve' }, { id: 'decline' }],
+      rules: [{ id: 'r1' }]
+    })
+    const { sent } = serve()
+    draw()
+    await propose()
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    fireEvent.change(screen.getByLabelText('Name (required)'), {
+      target: { value: 'Vendor Onboarding' }
+    })
+    await waitFor(() =>
+      expect(screen.getByText(/will not call this document a pack/)).toBeTruthy()
+    )
+    expect(createButton().disabled).toBe(true)
+    expect(createButton().title).toContain('additional properties are not allowed: fileName')
+    fireEvent.click(createButton())
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    // Neither write. Not the pack, and not the registration.
+    expect(sent).toEqual([])
+  })
+
+  it('states the format version itself rather than taking the model’s', async () => {
+    // The proposal above claimed `99`; the desk writes what the schema states.
+    injected = proposing({
+      specVersion: '99',
+      outcomes: [{ id: 'approve' }, { id: 'decline' }],
+      rules: [{ id: 'r1' }]
+    })
+    const { sent } = serve()
+    draw()
+    await propose()
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    await nameIt('Vendor Onboarding')
+    fireEvent.click(createButton())
+    await waitFor(() => expect(sent.length).toBe(2))
+    const written = JSON.parse(String(sent[0]!.body.content)) as { specVersion: string }
+    expect(written.specVersion).toBe('0.2.0-draft')
+  })
+
+  it('checks the exact bytes it writes, once', async () => {
+    const { sent } = serve()
+    draw()
+    await propose()
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    await nameIt('Vendor Onboarding')
+    fireEvent.click(createButton())
+    await waitFor(() => expect(sent.length).toBe(2))
+    // Every `validate` the desk made, and the bytes it was made with: the file
+    // that was written is one of them, so what was checked is what was written.
+    const checks = stubCalls().filter((call) => call.name === 'validate')
+    expect(checks.length).toBeGreaterThan(0)
+    expect(checks.map((call) => call.args.document)).toContain(String(sent[0]!.body.content))
+  })
+
+  it('will not create where the connection cannot check a document at all', async () => {
+    const { sent } = serve()
+    draw({ endpoint: ENDPOINT }, { validateSupported: false })
+    await propose()
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    fireEvent.change(screen.getByLabelText('Name (required)'), {
+      target: { value: 'Vendor Onboarding' }
+    })
+    await waitFor(() => expect(createButton().disabled).toBe(true))
+    expect(createButton().title).toContain('serves no validate')
+    expect(sent).toEqual([])
+  })
+
+  it('does not check a template: the runtime served that document itself', async () => {
+    const { sent } = serve()
+    draw()
+    await nameIt('Template Only')
+    fireEvent.click(createButton())
+    await waitFor(() => expect(sent.length).toBe(2))
+    expect(stubCalls().filter((call) => call.name === 'validate')).toEqual([])
   })
 })
