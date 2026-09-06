@@ -14,8 +14,8 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ASSISTANT_TOOLS } from '../../../config/deskConfig'
-import { loadEngine } from '../index'
+import { ASSISTANT_ENGINES, ASSISTANT_TOOLS } from '../../../config/deskConfig'
+import { CERTIFICATION_IS_TOTAL, CERTIFIED_ENGINES, loadEngine } from '../index'
 import { eventChannel } from './channel'
 import { vercel } from './index'
 import { REHEARSAL_HOOK, claimPromises } from './loop'
@@ -159,6 +159,24 @@ describe('the ordered channel, when the consumer stops listening', () => {
 })
 
 describe('the registry', () => {
+  it('cannot make an engine loadable without certifying it', () => {
+    // The loader table and the certified list used to be independent: adding a
+    // third engine and its loader while forgetting the list compiled, let a
+    // `desk.json` select it, and left `describe.each` never certifying it.
+    expect(CERTIFICATION_IS_TOTAL).toBe(true)
+    const total: typeof CERTIFICATION_IS_TOTAL = true
+    expect(total).toBe(true)
+    // @ts-expect-error — the assertion is a type equality, not a boolean: it
+    // stops compiling the day the two sets differ, which is the whole guard.
+    const wrong: typeof CERTIFICATION_IS_TOTAL = false
+    expect(wrong).toBe(false)
+    // And at runtime: every id the registry can load is one the suite runs.
+    for (const id of ASSISTANT_ENGINES) {
+      expect(CERTIFIED_ENGINES, `${id} is loadable but not certified`).toContain(id)
+    }
+    expect([...CERTIFIED_ENGINES].sort()).toEqual([...ASSISTANT_ENGINES].sort())
+  })
+
   it('loads this adapter for the id a desk.json names, and not another', async () => {
     // A `vercel` entry pointing at `builtin` would pass every conformance leg
     // twice over and certify nothing — which is exactly what the fallback this
