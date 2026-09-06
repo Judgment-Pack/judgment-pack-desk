@@ -140,7 +140,7 @@ describe('the model capability the desk binds', () => {
       for (const key of Object.getOwnPropertyNames(level)) {
         if (seen.has(key)) continue
         seen.add(key)
-        if (key === 'body' || key === 'constructor') continue
+        if (key === 'constructor') continue
         let read: unknown
         try {
           read = (value as Record<string, unknown>)[key]
@@ -148,6 +148,17 @@ describe('the model capability the desk binds', () => {
           continue
         }
         parts.push(key, everythingReachable(read, depth + 1))
+        // A stream is an object like any other: whatever somebody decorated it
+        // with is reachable through whoever holds it.
+        if (read instanceof ReadableStream) {
+          for (const own of Object.getOwnPropertyNames(read)) {
+            try {
+              parts.push(own, String((read as unknown as Record<string, unknown>)[own]))
+            } catch {
+              /* a property that refuses to be read tells us nothing */
+            }
+          }
+        }
       }
     }
     return parts.join(' ')
@@ -180,6 +191,55 @@ describe('the model capability the desk binds', () => {
     expect(await answered.text()).toBe('{"ok":true}')
     // And the header the endpoint used to smuggle it back is not.
     expect(answered.headers.get('x-echo')).toBeNull()
+  })
+
+  it('gives back a body stream of its own, not the one the answer arrived on', async () => {
+    // A Response built from a ReadableStream keeps that very object as its
+    // body, so a stream somebody decorated — a captured fetch, a patched
+    // prototype — was reachable through the facade as `facade.body.leak`.
+    window.sessionStorage.setItem('jpack-desk-token', 'a-secret-session-token')
+    let upstream: ReadableStream<Uint8Array> | null = null
+    vi.stubGlobal('fetch', async (url: unknown) => {
+      const real = new Response('{"ok":true}', {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+      upstream = real.body
+      // The decoration, on the stream itself.
+      Object.defineProperty(real.body, 'leak', {
+        value: `${String(url)}`,
+        enumerable: true,
+        configurable: true
+      })
+      return real
+    })
+    const answered = await bindModelCall()('chat/completions', { body: '{}' })
+    expect(answered.body).not.toBe(upstream)
+    expect((answered.body as unknown as Record<string, unknown>).leak).toBeUndefined()
+    expect(everythingReachable(answered)).not.toContain('a-secret-session-token')
+    // And it is still the answer: the bytes come through the fresh stream.
+    expect(await answered.text()).toBe('{"ok":true}')
+  })
+
+  it('reports an abort as a fresh AbortError, with no message or cause of its own', async () => {
+    // A rejection named AbortError can carry the request URL in its message and
+    // again in its cause. Rethrowing it whole handed the engine the address by
+    // another door; the classification is all that travels.
+    window.sessionStorage.setItem('jpack-desk-token', 'a-secret-session-token')
+    vi.stubGlobal('fetch', async (url: unknown) => {
+      const inner = new Error(`aborted while fetching ${String(url)}`)
+      inner.name = 'AbortError'
+      const outer = new Error(`aborted while fetching ${String(url)}`, { cause: inner })
+      outer.name = 'AbortError'
+      throw outer
+    })
+    const failure = (await bindModelCall()('chat/completions', { body: '{}' }).catch(
+      (error: unknown) => error
+    )) as Error & { cause?: unknown }
+    expect(failure.name).toBe('AbortError')
+    expect(failure.cause).toBeUndefined()
+    expect(everythingReachable(failure)).not.toContain('a-secret-session-token')
+    expect(everythingReachable(failure)).not.toContain('/api/assistant/relay')
   })
 
   it('replaces the error a failed call throws, because a TypeError quotes the URL', async () => {

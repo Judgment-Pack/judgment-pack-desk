@@ -124,6 +124,15 @@ const MODEL_ANSWER_HEADERS: readonly string[] = ['content-type', 'content-length
  * the URL** — which is the relay address with this chassis' session token in
  * it. An engine that caught the error and read `.message` would have the token.
  */
+/**
+ * The sentence an aborted model call carries.
+ *
+ * Separate from `CALL_FAILED` because the two say different things to a loop —
+ * one is the viewer stopping a session, the other is a request that did not
+ * happen — and neither says where.
+ */
+const CALL_ABORTED = 'the model request was aborted'
+
 const CALL_FAILED =
   'the model request could not be made; the desk holds the address and the reason is not the ' +
   "engine's to read"
@@ -168,9 +177,15 @@ export function bindModelCall(): ModelCall {
         signal: request.signal
       })
     } catch (cause) {
-      // An abort is the caller's own signal and is reported as itself, so a
-      // loop can tell "stopped" from "failed". It names no URL either.
-      if ((cause as Error)?.name === 'AbortError') throw cause
+      // **An abort is reported as an abort and never as itself.** A loop has to
+      // be able to tell "stopped" from "failed", so the classification travels
+      // — and nothing else does: a rejection named `AbortError` can carry the
+      // request URL in its own message and again in its `cause`, and rethrowing
+      // it whole handed the engine the address by another door. A fresh
+      // `DOMException` carries the name, the fixed sentence, and no cause.
+      if ((cause as Error)?.name === 'AbortError') {
+        throw new DOMException(CALL_ABORTED, 'AbortError')
+      }
       throw new Error(CALL_FAILED)
     }
     return facade(answered)
@@ -183,6 +198,14 @@ export function bindModelCall(): ModelCall {
  * A body with no `url`, no `redirected`, and a filtered header copy. The status
  * and the reason phrase travel because a loop has to be able to tell a refusal
  * from an answer.
+ *
+ * **The body is a fresh stream, not the one the answer arrived on.** A
+ * `Response` built from a `ReadableStream` keeps that very object as its body,
+ * so a stream carrying a property somebody put on it — a captured `fetch`, a
+ * patched prototype — was reachable through the facade as `facade.body.leak`.
+ * Piping through an identity `TransformStream` yields a different object whose
+ * only content is the bytes. A body-less answer stays body-less: `null` is not
+ * a stream and the constructor refuses one on these statuses anyway.
  */
 function facade(answered: Response): Response {
   const carried = new Headers()
@@ -192,7 +215,9 @@ function facade(answered: Response): Response {
   // A body is not allowed on these statuses, and the constructor throws rather
   // than ignoring one.
   const empty = answered.status === 204 || answered.status === 205 || answered.status === 304
-  return new Response(empty ? null : answered.body, {
+  const body =
+    empty || answered.body === null ? null : answered.body.pipeThrough(new TransformStream())
+  return new Response(body, {
     status: answered.status,
     statusText: answered.statusText,
     headers: carried
