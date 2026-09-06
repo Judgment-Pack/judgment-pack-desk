@@ -71,6 +71,14 @@
   overflow-wrap: anywhere;
 }
 
+/* One reasoning passage, as the endpoint wrote it, behind its own count. */
+.reasoning {
+  margin: 0.25rem 0 0.25rem 1rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink-soft);
+}
+
 .error {
   color: var(--danger);
   overflow-wrap: anywhere;

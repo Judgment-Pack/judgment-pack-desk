@@ -121,7 +121,22 @@ export function EventList({
     >
       {reported.map(({ event, index }) => (
         <li key={index} className={lineClass(event)}>
-          {describeEvent(event)}
+          {/*
+            **Reasoning is collapsed, with its count, and opens on a click.**
+            The line says how much of it there was — which is what a reader
+            scanning a session wants — and the passage itself is one disclosure
+            away, because a model's account of its own reasoning is worth
+            reading and is not worth a hundred lines of the stream. Nothing is
+            summarised: what opens is the passage as the endpoint wrote it.
+          */}
+          {event.type === 'reasoning' ? (
+            <details>
+              <summary>{describeEvent(event)}</summary>
+              <pre className={styles.reasoning}>{event.text}</pre>
+            </details>
+          ) : (
+            describeEvent(event)
+          )}
         </li>
       ))}
       {failure !== undefined && (

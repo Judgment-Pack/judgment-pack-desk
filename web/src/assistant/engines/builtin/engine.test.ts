@@ -381,21 +381,283 @@ describe('the event stream', () => {
   })
 })
 
-describe('the thinking tier this chunk does not run', () => {
-  it.each(['on', 'ultra'] as const)('reports %s unavailable and carries on', async (tier) => {
-    const { session: one } = scripted(() => finalMessage(PROPOSAL_TEXT), { thinking: normalize(tier, 'openai-compatible') })
-    const events = await drain(builtin.start(one))
-    expect(events[0]).toMatchObject({ type: 'thinking_unavailable' })
-    expect((events[0] as { detail: string }).detail).toContain(tier)
-    expect((events[0] as { detail: string }).detail).toContain('does not run a thinking tier yet')
-    // Reported, and then the session completes: degrading is not refusing.
-    expect(events.map((event) => event.type)).toEqual(['thinking_unavailable', 'proposal', 'end'])
+describe('the thinking tier, on this engine’s own wire', () => {
+  /** A model capability that answers a scripted list of Responses in order. */
+  function answering(answers: (turn: number) => Response): {
+    call: ModelCall
+    bodies: Record<string, unknown>[]
+  } {
+    const bodies: Record<string, unknown>[] = []
+    const call: ModelCall = async (_suffix, request) => {
+      bodies.push(JSON.parse(request.body) as Record<string, unknown>)
+      return answers(bodies.length)
+    }
+    return { call, bodies }
+  }
+
+  const whole = (payload: unknown) =>
+    new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    })
+
+  const refusal = (message: string) =>
+    new Response(JSON.stringify({ error: { message } }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' }
+    })
+
+  const proposalMessage = { choices: [{ message: { role: 'assistant', content: PROPOSAL_TEXT } }] }
+  const anthropicProposal = { content: [{ type: 'text', text: PROPOSAL_TEXT }] }
+  /** The same answer with a thinking block on it, as a thinking endpoint sends. */
+  const anthropicThought = {
+    content: [
+      { type: 'thinking', thinking: 'I read the schema.', signature: 'c2ln' },
+      { type: 'text', text: PROPOSAL_TEXT }
+    ]
+  }
+
+  const withModel = (
+    call: ModelCall,
+    family: 'openai-compatible' | 'anthropic',
+    tier: 'off' | 'on' | 'ultra'
+  ): AssistantSession => ({
+    ...session(),
+    model: { family, model: 'a-model', call },
+    thinking: normalize(tier, family)
   })
 
-  it('says nothing at all where the tier is off', async () => {
-    const { session: one } = scripted(() => finalMessage(PROPOSAL_TEXT))
-    const events = await drain(builtin.start(one))
+  it('puts the desk’s table on every OpenAI-compatible request', async () => {
+    for (const [tier, effort] of [
+      ['on', 'high'],
+      ['ultra', 'xhigh']
+    ] as const) {
+      const model = answering(() => whole(proposalMessage))
+      await drain(builtin.start(withModel(model.call, 'openai-compatible', tier)))
+      expect(model.bodies[0]!.reasoning_effort, tier).toBe(effort)
+    }
+  })
+
+  it('puts the adaptive spelling and its sibling on an Anthropic request', async () => {
+    const model = answering(() => whole(anthropicProposal))
+    await drain(builtin.start(withModel(model.call, 'anthropic', 'on')))
+    expect(model.bodies[0]!.thinking).toEqual({ type: 'adaptive' })
+    expect(model.bodies[0]!.output_config).toEqual({ effort: 'high' })
+  })
+
+  it('sends no tier member at all where the tier is off', async () => {
+    const model = answering(() => whole(proposalMessage))
+    const events = await drain(builtin.start(withModel(model.call, 'openai-compatible', 'off')))
+    expect(Object.keys(model.bodies[0]!)).not.toContain('reasoning_effort')
+    expect(Object.keys(model.bodies[0]!)).not.toContain('thinking')
     expect(events.map((event) => event.type)).not.toContain('thinking_unavailable')
+  })
+
+  it('reads a passage back under either vendor name', async () => {
+    for (const name of ['reasoning_content', 'reasoning'] as const) {
+      const model = answering(() =>
+        whole({
+          choices: [{ message: { role: 'assistant', content: PROPOSAL_TEXT, [name]: 'I read it.' } }]
+        })
+      )
+      const events = await drain(builtin.start(withModel(model.call, 'openai-compatible', 'on')))
+      expect(events[0], name).toEqual({ type: 'reasoning', text: 'I read it.', done: true })
+    }
+  })
+
+  it('falls back once to the other Anthropic spelling, and says nothing about it', async () => {
+    const model = answering((turn) =>
+      turn === 1 ? refusal('Adaptive thinking is not supported by this model') : whole(anthropicThought)
+    )
+    const events = await drain(builtin.start(withModel(model.call, 'anthropic', 'on')))
+    expect(model.bodies).toHaveLength(2)
+    expect(model.bodies[0]!.thinking).toEqual({ type: 'adaptive' })
+    // The other spelling, with the budget in it — and no `output_config`.
+    expect(model.bodies[1]!.thinking).toEqual({ type: 'enabled', budget_tokens: 8000 })
+    expect(Object.keys(model.bodies[1]!)).not.toContain('output_config')
+    // A fallback is not a degrade: the session still thinks and says nothing.
+    expect(events.map((event) => event.type)).toEqual(['reasoning', 'proposal', 'end'])
+  })
+
+  it('degrades once, retries plain, and completes the session', async () => {
+    const model = answering((turn) =>
+      turn === 1 ? refusal('Unsupported parameter: reasoning_effort') : whole(proposalMessage)
+    )
+    const events = await drain(builtin.start(withModel(model.call, 'openai-compatible', 'on')))
+    expect(model.bodies).toHaveLength(2)
+    expect(Object.keys(model.bodies[1]!)).not.toContain('reasoning_effort')
+    const notices = events.filter((event) => event.type === 'thinking_unavailable')
+    // **Once.** A degrade said twice is a reader learning to skip the line.
+    expect(notices).toHaveLength(1)
+    expect(events.map((event) => event.type)).toEqual([
+      'thinking_unavailable',
+      'proposal',
+      'end'
+    ])
+  })
+
+  it('reports a model that always thinks, where the tier is off', async () => {
+    const model = answering(() =>
+      whole({
+        choices: [
+          { message: { role: 'assistant', content: PROPOSAL_TEXT, reasoning_content: 'I thought.' } }
+        ]
+      })
+    )
+    const events = await drain(builtin.start(withModel(model.call, 'openai-compatible', 'off')))
+    expect(Object.keys(model.bodies[0]!)).not.toContain('reasoning_effort')
+    expect(events.map((event) => event.type)).toEqual([
+      'reasoning',
+      'thinking_unavailable',
+      'proposal',
+      'end'
+    ])
+    expect((events[1] as { detail: string }).detail).toContain('always thinks')
+  })
+
+  it('reports unavailable where the first turn carried no reasoning at all', async () => {
+    const model = answering(() => whole(proposalMessage))
+    const events = await drain(builtin.start(withModel(model.call, 'openai-compatible', 'on')))
+    expect(events.map((event) => event.type)).toEqual([
+      'thinking_unavailable',
+      'proposal',
+      'end'
+    ])
+    expect((events[0] as { detail: string }).detail).toContain('no reasoning block')
+  })
+
+  it('rethrows a refusal that is not about the tier', async () => {
+    const model = answering(() => refusal('messages: at least one message is required'))
+    const events = await drain(builtin.start(withModel(model.call, 'openai-compatible', 'on')))
+    expect(model.bodies).toHaveLength(1)
+    expect(events.map((event) => event.type)).toEqual(['error', 'end'])
+    expect((events[0] as { message: string }).message).toContain('at least one message')
+  })
+})
+
+describe('what an Anthropic thinking turn survives on the way back', () => {
+  /** One Anthropic SSE turn, block by block, exactly as the protocol writes it. */
+  function anthropicStream(blocks: Record<string, unknown>[]): Response {
+    const lines: string[] = []
+    const event = (name: string, object: Record<string, unknown>) =>
+      lines.push(`event: ${name}\ndata: ${JSON.stringify({ type: name, ...object })}\n\n`)
+    event('message_start', {
+      message: { id: 'm', role: 'assistant', content: [], usage: { input_tokens: 1, output_tokens: 0 } }
+    })
+    blocks.forEach((block, index) => {
+      if (block.type === 'thinking') {
+        event('content_block_start', { index, content_block: { type: 'thinking', thinking: '' } })
+        event('content_block_delta', {
+          index,
+          delta: { type: 'thinking_delta', thinking: String(block.thinking ?? '') }
+        })
+        // **Split across two events**, which is the shape `vercel/ai#19663` is
+        // about. This engine concatenates them; the fixture halves the value.
+        const signature = String(block.signature ?? '')
+        const half = Math.floor(signature.length / 2)
+        event('content_block_delta', {
+          index,
+          delta: { type: 'signature_delta', signature: signature.slice(0, half) }
+        })
+        event('content_block_delta', {
+          index,
+          delta: { type: 'signature_delta', signature: signature.slice(half) }
+        })
+      } else if (block.type === 'redacted_thinking') {
+        event('content_block_start', {
+          index,
+          content_block: { type: 'redacted_thinking', data: String(block.data ?? '') }
+        })
+      } else if (block.type === 'tool_use') {
+        event('content_block_start', {
+          index,
+          content_block: { type: 'tool_use', id: String(block.id), name: String(block.name), input: {} }
+        })
+        event('content_block_delta', {
+          index,
+          delta: { type: 'input_json_delta', partial_json: JSON.stringify(block.input ?? {}) }
+        })
+      } else {
+        event('content_block_start', { index, content_block: { type: 'text', text: '' } })
+        event('content_block_delta', {
+          index,
+          delta: { type: 'text_delta', text: String(block.text ?? '') }
+        })
+      }
+      event('content_block_stop', { index })
+    })
+    event('message_delta', { delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } })
+    event('message_stop', {})
+    return new Response(lines.join(''), {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' }
+    })
+  }
+
+  it('carries the whole block back — text, a reassembled signature, and a redacted one', async () => {
+    const bodies: Record<string, unknown>[] = []
+    const call: ModelCall = async (_suffix, request) => {
+      bodies.push(JSON.parse(request.body) as Record<string, unknown>)
+      if (bodies.length === 1) {
+        return anthropicStream([
+          { type: 'thinking', thinking: 'I will check the schema.', signature: 'c2lnbmF0dXJlLVQx' },
+          { type: 'redacted_thinking', data: 'cmVkYWN0ZWQ6VDE=' },
+          { type: 'tool_use', id: 'toolu_1', name: 'validate', input: { document: '{}' } }
+        ])
+      }
+      return anthropicStream([{ type: 'text', text: PROPOSAL_TEXT }])
+    }
+    const one: AssistantSession = {
+      ...session(),
+      model: { family: 'anthropic', model: 'a-model', call },
+      thinking: normalize('on', 'anthropic')
+    }
+    const events = await drain(builtin.start(one))
+    expect(events.map((event) => event.type)).toEqual([
+      'reasoning',
+      'tool_call',
+      'tool_result',
+      'proposal',
+      'end'
+    ])
+    // The turn that goes back is the turn that arrived: every block, in order.
+    const sent = (bodies[1]!.messages as { role: string; content: unknown }[])[1]!
+    const carried = sent.content as { type: string; signature?: string; data?: string }[]
+    expect(sent.role).toBe('assistant')
+    expect(carried.map((block) => block.type)).toEqual([
+      'thinking',
+      'redacted_thinking',
+      'tool_use'
+    ])
+    // **Reassembled.** Two `signature_delta` events are one signature, and a
+    // half signature is a block the endpoint refuses.
+    expect(carried[0]!.signature).toBe('c2lnbmF0dXJlLVQx')
+    expect(carried[1]!.data).toBe('cmVkYWN0ZWQ6VDE=')
+  })
+
+  it('never sends the model’s reasoning text to the runtime', async () => {
+    const asked: unknown[] = []
+    const call: ModelCall = async (_suffix, request) => {
+      const body = JSON.parse(request.body) as { messages?: unknown[] }
+      if ((body.messages ?? []).length <= 1) {
+        return anthropicStream([
+          { type: 'thinking', thinking: 'A SECRET THOUGHT', signature: 'c2ln' },
+          { type: 'tool_use', id: 'toolu_1', name: 'validate', input: { document: '{}' } }
+        ])
+      }
+      return anthropicStream([{ type: 'text', text: PROPOSAL_TEXT }])
+    }
+    const one: AssistantSession = {
+      ...session({ callTool: async (_name, args) => {
+        asked.push(args)
+        return { content: [{ type: 'text', text: '{"status":"valid"}' }] }
+      } }),
+      model: { family: 'anthropic', model: 'a-model', call },
+      thinking: normalize('on', 'anthropic')
+    }
+    await drain(builtin.start(one))
+    expect(asked).toEqual([{ document: '{}' }])
+    expect(JSON.stringify(asked)).not.toContain('A SECRET THOUGHT')
   })
 })
 

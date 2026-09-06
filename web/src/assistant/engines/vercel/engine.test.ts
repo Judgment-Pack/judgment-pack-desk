@@ -18,8 +18,17 @@ import { ASSISTANT_ENGINES, ASSISTANT_TOOLS } from '../../../config/deskConfig'
 import { CERTIFICATION_IS_TOTAL, CERTIFIED_ENGINES, loadEngine } from '../index'
 import { ChannelHasOneConsumer, eventChannel } from './channel'
 import { vercel } from './index'
-import { REHEARSAL_HOOK, claimPromises } from './loop'
-import { ADDRESS_REFUSED, PLACEHOLDER_ORIGIN, placeholderBase, reframe, relayFetch, suffixOf } from './relay'
+import { REHEARSAL_HOOK, claimPromises, sdkThinking } from './loop'
+import {
+  ADDRESS_REFUSED,
+  PLACEHOLDER_ORIGIN,
+  placeholderBase,
+  reframe,
+  relayFetch,
+  signatureLedger,
+  suffixOf,
+  withoutTruncatedThinking
+} from './relay'
 import { normalize } from '../../thinking'
 import type { streamText } from 'ai'
 import type { AssistantEvent, AssistantSession, McpTool, ModelCall, McpToolResult } from '../../engine'
@@ -78,6 +87,57 @@ function turn(step: {
     )
   }
   lines.push('data: [DONE]\n\n')
+  return lines.join('')
+}
+
+/** One Anthropic SSE turn: a thinking block, then a tool call or the text. */
+function anthropicTurn(step: {
+  reasoning?: string
+  signature?: string
+  splitSignature?: boolean
+  text?: string
+  tool?: { name: string; args: unknown }
+}): string {
+  const lines: string[] = []
+  const event = (name: string, object: Record<string, unknown>) =>
+    lines.push(`event: ${name}\ndata: ${JSON.stringify({ type: name, ...object })}\n\n`)
+  event('message_start', {
+    message: { id: 'm', type: 'message', role: 'assistant', model: 'm', content: [], stop_reason: null, usage: { input_tokens: 1, output_tokens: 0 } }
+  })
+  let index = 0
+  if (step.reasoning !== undefined) {
+    event('content_block_start', { index, content_block: { type: 'thinking', thinking: '' } })
+    event('content_block_delta', { index, delta: { type: 'thinking_delta', thinking: step.reasoning } })
+    const signature = step.signature ?? 'c2ln'
+    if (step.splitSignature === true) {
+      const half = Math.floor(signature.length / 2)
+      event('content_block_delta', { index, delta: { type: 'signature_delta', signature: signature.slice(0, half) } })
+      event('content_block_delta', { index, delta: { type: 'signature_delta', signature: signature.slice(half) } })
+    } else {
+      event('content_block_delta', { index, delta: { type: 'signature_delta', signature } })
+    }
+    event('content_block_stop', { index })
+    index += 1
+  }
+  if (step.tool !== undefined) {
+    event('content_block_start', {
+      index,
+      content_block: { type: 'tool_use', id: `toolu_${step.tool.name}`, name: step.tool.name, input: {} }
+    })
+    event('content_block_delta', {
+      index,
+      delta: { type: 'input_json_delta', partial_json: JSON.stringify(step.tool.args) }
+    })
+  } else {
+    event('content_block_start', { index, content_block: { type: 'text', text: '' } })
+    event('content_block_delta', { index, delta: { type: 'text_delta', text: step.text ?? '' } })
+  }
+  event('content_block_stop', { index })
+  event('message_delta', {
+    delta: { stop_reason: step.tool === undefined ? 'end_turn' : 'tool_use', stop_sequence: null },
+    usage: { output_tokens: 1 }
+  })
+  event('message_stop', {})
   return lines.join('')
 }
 
@@ -902,6 +962,9 @@ describe('what the model said about its own reasoning', () => {
       'reasoning',
       'reasoning',
       'reasoning',
+      // …and the desk's own report of what that means: the tier is off, no
+      // parameter was sent, and the endpoint reasoned anyway.
+      'thinking_unavailable',
       'proposal',
       'end'
     ])
@@ -911,6 +974,7 @@ describe('what the model said about its own reasoning', () => {
       // The whole passage on `done`, so a reader has it rather than the pieces.
       { type: 'reasoning', text: 'I check the schema before I propose.', done: true }
     ])
+    expect((events[3] as { detail: string }).detail).toContain('always thinks')
   })
 
   it('says nothing where the endpoint reasoned about nothing', async () => {
@@ -920,12 +984,227 @@ describe('what the model said about its own reasoning', () => {
   })
 })
 
-describe('the thinking tier this chunk does not run', () => {
-  it.each(['on', 'ultra'] as const)('reports %s unavailable and carries on', async (tier) => {
+describe('the thinking tier, through the SDK’s own call settings', () => {
+  /**
+   * **The translation, held to the desk's table.**
+   *
+   * `sdkThinking` is the one place this adapter turns the desk's wire members
+   * into the SDK's vocabulary, and the assertion below is that what comes out
+   * the other end of the SDK is what the table asked for — measured on the
+   * body, not on the option object.
+   */
+  it.each([
+    ['openai-compatible', 'on'],
+    ['openai-compatible', 'ultra'],
+    ['anthropic', 'on'],
+    ['anthropic', 'ultra']
+  ] as const)('puts the desk’s own members on a %s request at %s', async (family, tier) => {
+    const answer =
+      family === 'anthropic' ? anthropicTurn({ text: PROPOSAL_TEXT }) : turn({ text: PROPOSAL_TEXT })
+    const { call, seen } = scriptedCall([answer])
+    await drain(
+      vercel.start(
+        session(call, {
+          model: { family, model: 'a-model', call },
+          thinking: normalize(tier, family)
+        })
+      )
+    )
+    const table = normalize(tier, family).wire!.members
+    for (const [member, value] of Object.entries(table)) {
+      expect(seen[0]!.body[member], `${family} ${tier} ${member}`).toEqual(value)
+    }
+  })
+
+  it('sends no tier member at all where the tier is off', async () => {
+    const { call, seen } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
+    await drain(vercel.start(session(call)))
+    expect(Object.keys(seen[0]!.body)).not.toContain('reasoning_effort')
+    expect(Object.keys(seen[0]!.body)).not.toContain('thinking')
+  })
+
+  it('translates each of the desk’s three dialects and nothing else', () => {
+    expect(sdkThinking('openai-compatible', null)).toEqual({})
+    expect(sdkThinking('openai-compatible', { reasoning_effort: 'xhigh' })).toEqual({
+      providerOptions: { 'desk-endpoint': { reasoningEffort: 'xhigh' } }
+    })
+    expect(
+      sdkThinking('anthropic', { thinking: { type: 'adaptive' }, output_config: { effort: 'high' } })
+    ).toEqual({ providerOptions: { anthropic: { thinking: { type: 'adaptive' }, effort: 'high' } } })
+    expect(sdkThinking('anthropic', { thinking: { type: 'enabled', budget_tokens: 16000 } })).toEqual({
+      providerOptions: { anthropic: { thinking: { type: 'enabled', budgetTokens: 16000 } } }
+    })
+  })
+
+  it('degrades once on a 400 that names the member, and completes', async () => {
+    const seen: Record<string, unknown>[] = []
+    const call: ModelCall = async (_suffix, request) => {
+      seen.push(JSON.parse(request.body) as Record<string, unknown>)
+      if (seen.length === 1) {
+        return new Response(
+          JSON.stringify({ error: { message: 'Unsupported parameter: reasoning_effort' } }),
+          { status: 400, headers: { 'content-type': 'application/json' } }
+        )
+      }
+      return new Response(turn({ reasoning: ['x'], text: PROPOSAL_TEXT }), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' }
+      })
+    }
+    const events = await drain(
+      vercel.start(session(call, { thinking: normalize('on', 'openai-compatible') }))
+    )
+    expect(seen).toHaveLength(2)
+    expect(seen[0]!.reasoning_effort).toBe('high')
+    // The retry is the identical request without the member.
+    expect(Object.keys(seen[1]!)).not.toContain('reasoning_effort')
+    const notices = events.filter((event) => event.type === 'thinking_unavailable')
+    expect(notices).toHaveLength(1)
+    expect(events[events.length - 2]!.type).toBe('proposal')
+    expect(events[events.length - 1]!.type).toBe('end')
+  })
+
+  it('falls back once to the other Anthropic spelling, and says nothing about it', async () => {
+    const seen: Record<string, unknown>[] = []
+    const call: ModelCall = async (_suffix, request) => {
+      seen.push(JSON.parse(request.body) as Record<string, unknown>)
+      if (seen.length === 1) {
+        return new Response(
+          JSON.stringify({ error: { message: 'Adaptive thinking is not supported by this model' } }),
+          { status: 400, headers: { 'content-type': 'application/json' } }
+        )
+      }
+      return new Response(anthropicTurn({ reasoning: 'I read it.', text: PROPOSAL_TEXT }), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' }
+      })
+    }
+    const events = await drain(
+      vercel.start(
+        session(call, {
+          model: { family: 'anthropic', model: 'a-model', call },
+          thinking: normalize('on', 'anthropic')
+        })
+      )
+    )
+    expect(seen).toHaveLength(2)
+    expect(seen[0]!.thinking).toEqual({ type: 'adaptive' })
+    expect(seen[1]!.thinking).toEqual({ type: 'enabled', budget_tokens: 8000 })
+    expect(events.some((event) => event.type === 'thinking_unavailable')).toBe(false)
+  })
+
+  it('reports unavailable where the first turn carried no reasoning', async () => {
     const { call } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
-    const events = await drain(vercel.start(session(call, { thinking: normalize(tier, 'openai-compatible') })))
-    expect(events.map((event) => event.type)).toEqual(['thinking_unavailable', 'proposal', 'end'])
-    expect((events[0] as { detail: string }).detail).toContain(tier)
-    expect((events[0] as { detail: string }).detail).toContain('vercel')
+    const events = await drain(
+      vercel.start(session(call, { thinking: normalize('on', 'openai-compatible') }))
+    )
+    const notices = events.filter((event) => event.type === 'thinking_unavailable')
+    expect(notices).toHaveLength(1)
+    expect((notices[0] as { detail: string }).detail).toContain('no reasoning block')
+    expect(events[events.length - 2]!.type).toBe('proposal')
+  })
+})
+
+describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
+  it('reassembles the fragments the desk saw, and refuses the fragment', () => {
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'c2lnbmF0')
+    ledger.fragment('0', 'dXJlLVQx')
+    expect(ledger.wholes()).toEqual(['c2lnbmF0dXJlLVQx'])
+    const body = JSON.stringify({
+      messages: [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: 'I read it.', signature: 'dXJlLVQx' },
+            { type: 'text', text: 'hello' }
+          ]
+        }
+      ]
+    })
+    const filtered = withoutTruncatedThinking(body, ledger)
+    expect(filtered.truncated).toContain('19663')
+    const sent = JSON.parse(filtered.body) as { messages: { content: { type: string }[] }[] }
+    expect(sent.messages[0]!.content.map((block) => block.type)).toEqual(['text'])
+  })
+
+  it('leaves a whole signature exactly where it was', () => {
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'c2lnbmF0dXJlLVQx')
+    const body = JSON.stringify({
+      messages: [
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'x', signature: 'c2lnbmF0dXJlLVQx' }] }
+      ]
+    })
+    const filtered = withoutTruncatedThinking(body, ledger)
+    expect(filtered.truncated).toBe('')
+    expect(filtered.body).toBe(body)
+  })
+
+  it('does not double a signature the SDK repeated whole', () => {
+    // The SDK re-emits the same value where the endpoint sent one event, and a
+    // ledger that appended blindly would invent a truncation nobody caused.
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'c2ln')
+    ledger.fragment('0', 'c2ln')
+    expect(ledger.wholes()).toEqual(['c2ln'])
+  })
+
+  /**
+   * **The measurement, end to end — and it is written to fail if the SDK is
+   * ever fixed in silence.**
+   *
+   * The fixture splits one signature across two `signature_delta` events, which
+   * is what a re-chunking proxy does. If this SDK ever reassembles them, the
+   * desk detects no truncation, no notice is emitted, and this case goes red —
+   * which is the point: the guard would then be dead code, and the desk should
+   * find out from its own suite rather than from an endpoint.
+   */
+  it('detects the truncation on a real session and degrades once', async () => {
+    const seen: Record<string, unknown>[] = []
+    const call: ModelCall = async (_suffix, request) => {
+      seen.push(JSON.parse(request.body) as Record<string, unknown>)
+      if (seen.length === 1) {
+        return new Response(
+          anthropicTurn({
+            reasoning: 'I will check it.',
+            signature: 'c2lnbmF0dXJlLVQx',
+            splitSignature: true,
+            tool: { name: 'validate', args: { document: '{}' } }
+          }),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } }
+        )
+      }
+      return new Response(anthropicTurn({ reasoning: 'Done.', text: PROPOSAL_TEXT }), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' }
+      })
+    }
+    const events = await drain(
+      vercel.start(
+        session(call, {
+          model: { family: 'anthropic', model: 'a-model', call },
+          thinking: normalize('on', 'anthropic')
+        })
+      )
+    )
+    const notices = events.filter(
+      (event): event is Extract<AssistantEvent, { type: 'thinking_unavailable' }> =>
+        event.type === 'thinking_unavailable'
+    )
+    expect(
+      notices.map((notice) => notice.detail),
+      'the SDK reassembled the split signature — the guard is now dead code'
+    ).toHaveLength(1)
+    expect(notices[0]!.detail).toContain('19663')
+    // And no malformed block left the page: the second request carries no
+    // thinking block at all rather than one with half a signature.
+    const carried = (seen[1]!.messages as { role: string; content: unknown }[])
+      .flatMap((message) => (Array.isArray(message.content) ? message.content : []))
+      .filter((block) => (block as { type?: string }).type === 'thinking')
+    expect(carried).toEqual([])
+    // The session still completes: a degrade is not a refusal.
+    expect(events[events.length - 1]!.type).toBe('end')
+    expect(events.some((event) => event.type === 'proposal')).toBe(true)
   })
 })

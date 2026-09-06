@@ -2,10 +2,9 @@
  * The two wire formats, behind one shape.
  *
  * Ported from the bake-off's `none` prototype (the control candidate ADR-0001
- * measured, and the one this engine is), minus the thinking tier: chunk 2b
- * runs `off` and reports the two other tiers as unavailable, so nothing here
- * reads or writes a reasoning field yet. The `assistant` member below is kept
- * anyway, and that is deliberate — see its comment.
+ * measured, and the one this engine is), thinking included: each provider
+ * merges the **desk's** wire members into its body, reads reasoning back, and
+ * echoes the assistant turn as received.
  */
 
 import type { ModelCall } from '../../../engine'
@@ -27,14 +26,30 @@ export interface ModelTurn {
    * The assistant turn **exactly as the endpoint sent it**, echoed back
    * unchanged on the next request rather than rebuilt from a typed model.
    *
-   * Nothing in this chunk needs it: with the tier off there are no thinking
-   * blocks to preserve. It is here because it is the property the bake-off
-   * credited this engine with — Anthropic's rule is that thinking blocks come
-   * back "complete and unmodified", and filtering by block type silently drops
-   * `redacted_thinking` — and a shape that has to be reintroduced later is a
-   * shape that gets reintroduced wrongly. Keeping it costs one member.
+   * This is the property the bake-off credited this engine with, and thinking
+   * is what it is for: Anthropic's rule is that thinking blocks come back
+   * "complete and unmodified", and filtering by block type silently drops
+   * `redacted_thinking`. Nothing below maps, filters or rebuilds a block.
    */
   assistant: unknown
+  /**
+   * The reasoning passages this turn carried, in the endpoint's own order.
+   *
+   * One entry per passage rather than per delta: the contract's `done` marks a
+   * passage finished, and a reader wants the passage. Empty where the endpoint
+   * sent none — which is one of the two signals the desk's thinking slot reads
+   * to decide that an endpoint has no thinking at all.
+   */
+  reasoning: string[]
+  /**
+   * Every thinking signature this turn carried, whole.
+   *
+   * Anthropic only, and reassembled here: a signature split across two
+   * `signature_delta` events is one signature, and the desk concatenates the
+   * fragments rather than keeping the last. It is recorded so that what goes
+   * back out can be compared with what came in.
+   */
+  signatures: string[]
 }
 
 /**
@@ -87,6 +102,15 @@ export interface SendOptions {
   tools: unknown[]
   /** Whether the request asks for a stream. What comes back decides how it is read. */
   stream: boolean
+  /**
+   * The tier's wire members, from the desk's own table, or null.
+   *
+   * **Merged, never chosen.** `assistant/thinking.ts` owns the mapping from
+   * `(family, tier)` to members and owns the fallback between the two Anthropic
+   * spellings; a provider puts what it is given on the request and has no
+   * opinion about it.
+   */
+  thinking?: Record<string, unknown> | null
   /**
    * The run's own signal, and **required**.
    *

@@ -26,6 +26,7 @@
  * - **the answer is presented in the framing the SDK asked for.** See below.
  */
 import { isEventStream, withAbort } from '../contract'
+import { isTruncatedSignature } from '../../thinking'
 import type { EndpointKind } from '../../../config/deskConfig'
 import type { ModelCall } from '../../engine'
 
@@ -236,6 +237,91 @@ function anthropicEvents(payload: unknown): string {
 }
 
 /**
+ * What signatures came in, so that what goes back out can be compared with them.
+ *
+ * **`vercel/ai#19663`, answered where the desk can answer it.** An Anthropic
+ * thinking signature split across two `signature_delta` events reaches the SDK
+ * as two `reasoning-delta` parts, each carrying a *whole* signature in its
+ * provider metadata — and the last one wins when the assistant message is
+ * rebuilt. What then goes back is half a signature, and a thinking block with a
+ * half signature is a request the endpoint refuses.
+ *
+ * This desk cannot make the SDK reassemble it. What it can do is **notice**:
+ * the fragments are concatenated here, the outgoing body is compared against
+ * the result, and a block whose signature is a strict prefix or suffix of what
+ * arrived is removed rather than sent. The rule is `assistant/thinking.ts`'s;
+ * the wire shape is this file's, because this is where the desk already knows
+ * one.
+ */
+export interface SignatureLedger {
+  /** One fragment, for one reasoning block. */
+  fragment(id: string, signature: string): void
+  /** Each block's signature, whole. */
+  wholes(): string[]
+}
+
+export function signatureLedger(): SignatureLedger {
+  const held = new Map<string, string>()
+  return {
+    fragment(id, signature) {
+      if (signature === '') return
+      const before = held.get(id) ?? ''
+      // A fragment repeated is not a fragment appended: the SDK emits the same
+      // whole signature again where the endpoint sent one event, and doubling
+      // it would invent a truncation that never happened.
+      held.set(id, before.endsWith(signature) ? before : before + signature)
+    },
+    wholes: () => [...held.values()].filter((signature) => signature !== '')
+  }
+}
+
+/** One Anthropic content block, as far as this file needs to know. */
+interface WireBlock {
+  type?: string
+  signature?: unknown
+}
+
+/**
+ * The same request with every truncated thinking block taken out of it, or the
+ * body unchanged.
+ *
+ * Removing the block is the only honest repair: the desk holds the whole
+ * signature but the *text* it belongs to came through the SDK's own
+ * accumulation, so putting the whole signature back would be this desk
+ * asserting that a block it did not reassemble is intact. What it does instead
+ * is send the turn without the block and say why.
+ */
+export function withoutTruncatedThinking(
+  body: string,
+  ledger: SignatureLedger
+): { body: string; truncated: string } {
+  const wholes = ledger.wholes()
+  if (wholes.length === 0) return { body, truncated: '' }
+  let payload: { messages?: { content?: unknown }[] }
+  try {
+    payload = JSON.parse(body) as { messages?: { content?: unknown }[] }
+  } catch {
+    return { body, truncated: '' }
+  }
+  let found = ''
+  for (const message of payload.messages ?? []) {
+    const content = message?.content
+    if (!Array.isArray(content)) continue
+    const kept = content.filter((item) => {
+      const block = item as WireBlock
+      if (block?.type !== 'thinking' || typeof block.signature !== 'string') return true
+      if (!isTruncatedSignature(wholes, block.signature)) return true
+      found =
+        'the SDK carried a thinking signature back as a fragment of the one the endpoint sent ' +
+        '(vercel/ai#19663); the block was removed rather than sent malformed'
+      return false
+    })
+    if (kept.length !== content.length) message.content = kept
+  }
+  return found === '' ? { body, truncated: '' } : { body: JSON.stringify(payload), truncated: found }
+}
+
+/**
  * The `fetch` the SDK's providers are given, and the whole of an engine's reach
  * to a model.
  *
@@ -250,6 +336,10 @@ export function relayFetch(options: {
   call: ModelCall
   /** The run's own signal: every await below is bounded by it. */
   signal: AbortSignal
+  /** What came in, for the outgoing body to be compared against. */
+  ledger?: SignatureLedger
+  /** Said once, where a signature came back short. */
+  onTruncated?: (reason: string) => void
 }): typeof fetch {
   const base = placeholderBase(options.family)
   const run = options.signal
@@ -260,10 +350,17 @@ export function relayFetch(options: {
     for (const [name, value] of Object.entries(headerRecord(init?.headers))) {
       if (PROTOCOL_HEADERS.includes(name.toLowerCase())) headers[name] = value
     }
-    const body = init?.body
-    if (typeof body !== 'string') {
+    const composed = init?.body
+    if (typeof composed !== 'string') {
       throw new Error('a model request body must be the JSON text the SDK composed')
     }
+    // **Checked before it leaves, not after it is refused.** See
+    // `withoutTruncatedThinking`.
+    const { body, truncated } =
+      options.family === 'anthropic' && options.ledger !== undefined
+        ? withoutTruncatedThinking(composed, options.ledger)
+        : { body: composed, truncated: '' }
+    if (truncated !== '') options.onTruncated?.(truncated)
     // **Bounded by the run's own signal**, and a thunk, so a closed run makes no
     // request at all. The desk's capability is handed the signal too — an abort
     // has to reach the request the desk actually made — but a capability that

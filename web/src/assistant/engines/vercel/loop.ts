@@ -28,13 +28,19 @@
  *    to a request that asked to stream ends the run with no output at all. That
  *    is closed one layer down, in `relay.ts`.
  * 4. **A thinking signature split across two stream events is truncated**
- *    (`vercel/ai#19663`, reproduced on the shipped release). Nothing here reads
- *    or writes a thinking block: the tier is reported unavailable and the
- *    session continues, and chunk 4 is where that defect has to be answered.
+ *    (`vercel/ai#19663`, reproduced on the shipped release). The desk cannot
+ *    make the SDK reassemble one, so it **detects** the truncation instead: the
+ *    fragments are ledgered as they arrive, the outgoing body is compared with
+ *    them, a block whose signature came back as a fragment is removed rather
+ *    than sent, and the session degrades once with the reason. See
+ *    `relay.ts`'s `withoutTruncatedThinking`.
+ * 5. **The tier is a call setting, applied per step.** `prepareStep` supplies
+ *    it on every request with no agent to rebuild — but *what* it supplies is
+ *    `assistant/thinking.ts`'s table, translated once by `sdkThinking` below,
+ *    so the two engines put the same members on the wire.
  *
- * What is deliberately **not** here: the thinking tier, the refutation pass,
- * `@ai-sdk/mcp` (the desk keeps its own MCP client, and its gate is on that
- * client's transport), and any writing at all.
+ * What is deliberately **not** here: `@ai-sdk/mcp` (the desk keeps its own MCP
+ * client, and its gate is on that client's transport), and any writing at all.
  */
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
@@ -49,13 +55,15 @@ import {
   openRun,
   servedSchema,
   textOf,
-  thinkingUnavailable,
   withAbort
 } from '../contract'
+import { openThinking } from '../../thinking'
 import { eventChannel } from './channel'
-import { placeholderBase, relayFetch } from './relay'
+import { placeholderBase, relayFetch, signatureLedger } from './relay'
 import type { LanguageModel, ToolSet } from 'ai'
+import type { EndpointKind } from '../../../config/deskConfig'
 import type { AssistantEvent, AssistantSession, McpTool, McpToolResult } from '../../engine'
+import type { SignatureLedger } from './relay'
 
 /**
  * The tool whose arguments the desk rehearses, named once.
@@ -86,9 +94,63 @@ export const REHEARSAL_HOOK = 'experimental_refineToolInput' satisfies keyof Par
   typeof streamText
 >[0]
 
+/**
+ * The name the OpenAI-compatible provider is built under.
+ *
+ * It is also the key its `providerOptions` are read from — the SDK takes the
+ * part of the provider id before the dot — so the two are one constant rather
+ * than two strings somebody has to keep in step.
+ */
+export const ENDPOINT_NAME = 'desk-endpoint'
+
+/**
+ * The desk's wire members, in the SDK's own vocabulary.
+ *
+ * **A translation, and never a second table.** `assistant/thinking.ts` decides
+ * what `on` means for a family and which Anthropic spelling is in force; this
+ * says how to ask *this SDK* to put exactly those members on the request. The
+ * mapping is asserted against the table in the engine's own suite, so a
+ * spelling that stopped producing the desk's members is a red test rather than
+ * a session that quietly thought at some other depth.
+ *
+ * `{}` where the slot carries nothing, so a run at `off` — or after a degrade —
+ * is byte-identical to one from before this chunk.
+ */
+export function sdkThinking(
+  family: EndpointKind,
+  members: Record<string, unknown> | null
+): Record<string, unknown> {
+  if (members === null) return {}
+  if (family === 'anthropic') {
+    const thinking = members.thinking as { type?: string; budget_tokens?: number } | undefined
+    const effort = (members.output_config as { effort?: string } | undefined)?.effort
+    const anthropic: Record<string, unknown> = {}
+    if (thinking?.type === 'adaptive') anthropic.thinking = { type: 'adaptive' }
+    else if (thinking?.type === 'enabled') {
+      anthropic.thinking = { type: 'enabled', budgetTokens: thinking.budget_tokens }
+    }
+    // The depth is a sibling on the wire and a sibling here: the provider puts
+    // `effort` into `output_config`, which is the member the desk's table names.
+    if (effort !== undefined) anthropic.effort = effort
+    return { providerOptions: { anthropic } }
+  }
+  return { providerOptions: { [ENDPOINT_NAME]: { reasoningEffort: members.reasoning_effort } } }
+}
+
 /** One model, built for the family the desk configured and nothing else. */
-function modelFor(session: AssistantSession, signal: AbortSignal): LanguageModel {
-  const fetch = relayFetch({ family: session.model.family, call: session.model.call, signal })
+function modelFor(
+  session: AssistantSession,
+  signal: AbortSignal,
+  ledger: SignatureLedger,
+  onTruncated: (reason: string) => void
+): LanguageModel {
+  const fetch = relayFetch({
+    family: session.model.family,
+    call: session.model.call,
+    signal,
+    ledger,
+    onTruncated
+  })
   const baseURL = placeholderBase(session.model.family)
   if (session.model.family === 'anthropic') {
     return createAnthropic({
@@ -104,7 +166,7 @@ function modelFor(session: AssistantSession, signal: AbortSignal): LanguageModel
   }
   // `createOpenAICompatible` simply omits `Authorization` when it has no key.
   // That is a convenience: the allow-list in `relay.ts` is the guard.
-  return createOpenAICompatible({ name: 'desk-endpoint', baseURL, fetch }).chatModel(
+  return createOpenAICompatible({ name: ENDPOINT_NAME, baseURL, fetch }).chatModel(
     session.model.model
   )
 }
@@ -291,6 +353,15 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
   // nothing reaches `jpack mcp` after the consumer has left, and bounded, so a
   // call in flight cannot hold the cleanup that is ending it.
   const callTool = guardedCallTool(session, gate.signal)
+  // The tier, held by the desk. This adapter asks it for members and pushes
+  // whatever notice it hands back; it never decides what a refusal meant.
+  const slot = openThinking(session)
+  const ledger = signatureLedger()
+  /** The degrade notice this run still owes the stream, at most one. */
+  let owed: AssistantEvent | null = null
+  const onTruncated = (reason: string) => {
+    owed ??= slot.truncated(reason)
+  }
   const offered = new Set(session.tools.map((tool) => tool.name))
   // What the model asked for, before the SDK's refinement touched it.
   //
@@ -300,14 +371,35 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
   // evaluates still pairs each call with its own arguments.
   const asked: unknown[] = []
 
-  const drive = async (): Promise<void> => {
-    if (session.thinking.tier !== 'off') {
-      await channel.push({
-        type: 'thinking_unavailable',
-        detail: thinkingUnavailable(session.thinking.tier, 'vercel')
-      })
+  /**
+   * One whole attempt at the session.
+   *
+   * `produced` counts what this attempt already put on the stream, because the
+   * only refusal this desk retries is one that arrived **before anything was
+   * delivered** — a 400 on the very first request. A tier refusal after a tool
+   * call has run is not a session to start again; it is reported like any other
+   * failure.
+   */
+  const runOnce = async (produced: { count: number }): Promise<void> => {
+    /**
+     * One event on the stream, counted.
+     *
+     * The count is what makes the retry below safe: an attempt that delivered
+     * nothing can be started again, and one that delivered anything cannot.
+     */
+    const deliver = async (event: AssistantEvent): Promise<void> => {
+      produced.count += 1
+      await channel.push(event)
     }
-
+    /** The degrade notice a fetch may have produced, flushed in stream order. */
+    const flush = async (): Promise<void> => {
+      if (owed === null) return
+      const said = owed
+      owed = null
+      await deliver(said)
+    }
+    // A fresh attempt takes nothing from the one before it.
+    asked.length = 0
     const tools = toolsFor(session.tools, async (name, input) => {
       // **The desk's gate is handed the call the model made.** The hook below
       // has already rewritten what the SDK carries; what leaves the page is
@@ -319,7 +411,7 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
         string,
         unknown
       >
-      await channel.push({ type: 'tool_call', name, args })
+      await deliver({ type: 'tool_call', name, args })
       let answer: McpToolResult
       try {
         answer = await callTool(name, args)
@@ -334,11 +426,11 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
         const text =
           `refused: ${(cause as Error).message}. This assistant proposes; it never ` +
           `writes a file and never calls a tool it was not offered.`
-        await channel.push({ type: 'tool_result', name, isError: true, text })
+        await deliver({ type: 'tool_result', name, isError: true, text })
         return { content: [{ type: 'text', text }], isError: true }
       }
       const said = outcome(answer)
-      await channel.push({
+      await deliver({
         type: 'tool_result',
         name,
         isError: said.isError,
@@ -350,12 +442,17 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
 
     let streamed: unknown = null
     const result = streamText({
-      model: modelFor(session, gate.signal),
+      model: modelFor(session, gate.signal, ledger, onTruncated),
       instructions: SYSTEM,
       tools,
       messages: [{ role: 'user', content: session.prompt }],
       stopWhen: stepCountIs(MAX_TURNS),
       abortSignal: gate.signal,
+      // **The tier, per step, with no agent to rebuild.** ADR-0001 credits this
+      // SDK with exactly that, and the members are the desk's table's — read
+      // fresh on every step, so a degrade or a dialect fallback takes effect on
+      // the next request rather than at the next session.
+      prepareStep: () => sdkThinking(session.model.family, slot.members()),
       // **No retries, deliberately.** The SDK's default is two, with an
       // exponential backoff, and its retryable set includes 409 — which is the
       // status the *desk's own relay* answers with when no key is stored on
@@ -391,6 +488,8 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
     // before calling a tool would otherwise have that prose concatenated onto
     // the message the proposal is read out of.
     let final = ''
+    /** How many steps have started, so a turn boundary can be recognised. */
+    let steps = 0
     /** One reasoning passage, accumulated so `done` can carry the whole of it. */
     let reasoning = ''
     // **Read through the run's signal, not only the SDK's.** `abortSignal`
@@ -401,8 +500,18 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
     for (;;) {
       const step = await withAbort(() => parts.next(), gate.signal)
       if (step.done === true) break
+      // In stream order: a notice a `fetch` produced belongs where it happened.
+      await flush()
       const part = step.value
       if (part.type === 'start-step') {
+        // A step boundary is the end of the turn before it. ADR-0001's second
+        // unmeasurable state — "no thinking block after the first turn" — is
+        // decided here, by the desk, and said once.
+        if (steps > 0) {
+          const quiet = slot.silent()
+          if (quiet !== null) await deliver(quiet)
+        }
+        steps += 1
         final = ''
         continue
       }
@@ -420,21 +529,29 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
       if (part.type === 'reasoning-delta') {
         const text = (part as { text?: string }).text ?? ''
         reasoning += text
-        await channel.push({ type: 'reasoning', text, done: false })
+        // Every signature fragment, as it arrives. See `signatureLedger`.
+        const carried = (part as { providerMetadata?: { anthropic?: { signature?: unknown } } })
+          .providerMetadata?.anthropic?.signature
+        if (typeof carried === 'string') {
+          ledger.fragment(String((part as { id?: unknown }).id ?? ''), carried)
+        }
+        if (text !== '') await deliver({ type: 'reasoning', text, done: false })
         continue
       }
       if (part.type === 'reasoning-end') {
         // The whole of it, once, so a reader has the passage rather than the
         // pieces — which is the shape the contract's `done` marks.
-        await channel.push({ type: 'reasoning', text: reasoning, done: true })
+        await deliver({ type: 'reasoning', text: reasoning, done: true })
         reasoning = ''
+        const always = slot.reasoned()
+        if (always !== null) await deliver(always)
         continue
       }
       const unoffered = unofferedTool(part, offered)
       if (unoffered !== undefined) {
         // The SDK refused it; the desk's gate must be the one to say so.
         const input = (part as { input?: unknown }).input
-        await channel.push({ type: 'tool_call', name: unoffered, args: input ?? {} })
+        await deliver({ type: 'tool_call', name: unoffered, args: input ?? {} })
         let refusal = 'the call did not leave the page and nothing was written'
         try {
           await callTool(unoffered, (input ?? {}) as Record<string, unknown>)
@@ -444,7 +561,7 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
           if (isCancelled(cause)) throw cause
           refusal = (cause as Error).message
         }
-        await channel.push({
+        await deliver({
           type: 'tool_result',
           name: unoffered,
           isError: true,
@@ -457,17 +574,70 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
       if (part.type === 'text-delta') final += (part as { text?: string }).text ?? ''
     }
     if (streamed !== null) throw streamed
+    // The last turn's own accounting, and the notice a `fetch` may have
+    // produced while the stream was being read.
+    const quiet = slot.silent()
+    if (quiet !== null) await deliver(quiet)
+    await flush()
 
     // `result.text` mints a fresh promise on every read, so it is read here,
     // where it is awaited, and nowhere it would be left standing.
     const proposal = extractProposal(
       final !== '' ? final : await withAbort(() => Promise.resolve(result.text), gate.signal)
     )
-    await channel.push({
+    await deliver({
       type: 'proposal',
       document: proposal.document,
       unknowns: proposal.unknowns
     })
+  }
+
+  /**
+   * The status and the endpoint's own sentence out of an SDK error, or nothing.
+   *
+   * The desk's thinking slot needs both to decide whether a refusal was about
+   * the tier it sent. Neither is quoted past that: the sentence a person reads
+   * is `describe`'s, and the endpoint's body reaches the closed list of
+   * patterns in `assistant/thinking.ts` and goes no further.
+   */
+  const refusalOf = (cause: unknown): { status: number; message: string } | null => {
+    const error = cause as { statusCode?: unknown; responseBody?: unknown; cause?: unknown }
+    const status =
+      typeof error?.statusCode === 'number'
+        ? error.statusCode
+        : typeof (error?.cause as { statusCode?: unknown } | undefined)?.statusCode === 'number'
+          ? ((error.cause as { statusCode: number }).statusCode)
+          : undefined
+    if (status === undefined) return null
+    const body = error.responseBody ?? (error.cause as { responseBody?: unknown } | undefined)?.responseBody
+    return { status, message: endpointSentence(body) }
+  }
+
+  /**
+   * The session, with the one retry a tier refusal earns.
+   *
+   * **Only before anything has been delivered.** An endpoint that has no
+   * thinking answers 400 to the first request, and starting that request again
+   * costs one call and no work; an endpoint that refused the tier half way
+   * through a session is not one whose session can be replayed, and it is
+   * reported like any other failure. Three attempts at most — the tier as
+   * configured, the other Anthropic spelling, and the plain request — and the
+   * slot itself says `other` once it carries no members, so this cannot spin.
+   */
+  const drive = async (): Promise<void> => {
+    for (let attempt = 1; ; attempt += 1) {
+      const produced = { count: 0 }
+      try {
+        await runOnce(produced)
+        return
+      } catch (cause) {
+        const refusal = refusalOf(cause)
+        if (refusal === null || produced.count > 0 || attempt >= 3) throw cause
+        const said = slot.refused(refusal.status, refusal.message)
+        if (said.kind === 'other') throw cause
+        if (said.kind === 'degrade' && said.event !== null) await channel.push(said.event)
+      }
+    }
   }
 
   /**

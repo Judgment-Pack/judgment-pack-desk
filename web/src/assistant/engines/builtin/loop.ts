@@ -8,9 +8,14 @@
  * live one level below it in the desk's own ToolGate, so a bug written here
  * cannot reach the runtime with a tool nobody granted.
  *
- * What is deliberately **not** here, and lands later: the thinking tier
- * (chunk 4 — a tier other than `off` is reported unavailable and the session
- * continues), the refutation pass, and any writing at all. The proposal is the
+ * **The thinking tier is the desk's, and this loop only carries it.** The
+ * members on each request come from `assistant/thinking.ts`'s table, the one
+ * fallback between the two Anthropic spellings is that module's, and so are
+ * the two states a tier cannot express. What is here is the three places an
+ * engine has to put them: the members on the body, the passage events, and the
+ * one retry a refusal earns.
+ *
+ * What is deliberately **not** here: any writing at all. The proposal is the
  * only sink; the desk renders it and a person accepts it.
  */
 import {
@@ -22,15 +27,15 @@ import {
   isCancelled,
   openRun,
   textOf,
-  thinkingUnavailable,
   withAbort
 } from '../contract'
+import { openThinking } from '../../thinking'
 import { anthropic } from './providers/anthropic'
 import { openai } from './providers/openai'
 import { ModelHttpError } from './providers/types'
 import type { Proposal } from '../contract'
 import type { CallTool } from '../../engine'
-import type { Provider, ToolCall } from './providers/types'
+import type { ModelTurn, Provider, ToolCall } from './providers/types'
 import type { AssistantEvent, AssistantSession } from '../../engine'
 
 // The contract's own vocabulary — the turn bound, the desk's sentence to the
@@ -109,16 +114,9 @@ async function* builtinEvents(
   signal: AbortSignal
 ): AsyncGenerator<AssistantEvent> {
   try {
-    if (session.thinking.tier !== 'off') {
-      // Reported and then carried on with, which is what ADR-0001 means by
-      // degrading visibly: the tier is real configuration, this engine does
-      // not implement it yet, and a session that silently ran at `off` would
-      // be this desk answering a question nobody asked it.
-      yield {
-        type: 'thinking_unavailable',
-        detail: thinkingUnavailable(session.thinking.tier, 'built-in')
-      }
-    }
+    // The tier, held by the desk. This loop asks it for members and yields
+    // whatever notice it hands back; it never decides what a refusal meant.
+    const slot = openThinking(session)
 
     // The runtime, reachable only while the run is: the signal is read before
     // a call is dispatched, so nothing reaches `jpack mcp` after the consumer
@@ -136,19 +134,53 @@ async function* builtinEvents(
       // Bounded by the run's signal and not only by the request's: a capability
       // that never settles must not be able to hold this loop open. A thunk,
       // so a closed run makes no request at all.
-      const reply = await withAbort(
-        () =>
-          provider.send({
-            call: session.model.call,
-            model: session.model.model,
-            system: SYSTEM,
-            messages,
-            tools,
-            stream: true,
+      //
+      // **At most three attempts, and each one is the desk's decision.** The
+      // tier as configured; the other Anthropic spelling where the first was
+      // refused; and the plain request once the slot has degraded. A refusal
+      // that is not about the tier is rethrown on the first attempt, and once
+      // the slot carries no members `refused` says `other` — so this cannot
+      // spin.
+      let reply: ModelTurn | null = null
+      for (let attempt = 1; attempt <= 3 && reply === null; attempt += 1) {
+        try {
+          reply = await withAbort(
+            () =>
+              provider.send({
+                call: session.model.call,
+                model: session.model.model,
+                system: SYSTEM,
+                messages,
+                tools,
+                stream: true,
+                signal,
+                thinking: slot.members()
+              }),
             signal
-          }),
-        signal
-      )
+          )
+        } catch (cause) {
+          if (!(cause instanceof ModelHttpError)) throw cause
+          const refusal = slot.refused(cause.status, cause.endpointMessage)
+          if (refusal.kind === 'other') throw cause
+          // One line, once, whatever brought it about. A dialect fallback says
+          // nothing: the desk asked in the other spelling and the session still
+          // thinks.
+          if (refusal.kind === 'degrade' && refusal.event !== null) yield refusal.event
+        }
+      }
+      if (reply === null) {
+        throw new Error('the model request was refused at every thinking spelling this desk knows')
+      }
+
+      // **The passage, not the deltas.** This loop reads a whole turn before it
+      // yields anything, so what it has is the passage the contract's `done`
+      // marks — and reasoning text goes to the tab and nowhere near the
+      // runtime.
+      for (const passage of reply.reasoning) {
+        yield { type: 'reasoning', text: passage, done: true }
+      }
+      const noticed = reply.reasoning.length > 0 ? slot.reasoned() : slot.silent()
+      if (noticed !== null) yield noticed
 
       if (reply.calls.length === 0) {
         proposal = extractProposal(reply.text)

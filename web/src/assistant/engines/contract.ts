@@ -13,7 +13,6 @@
  * are each adapter's own, and an engine that needed a helper from another
  * engine would be an engine the slot did not really separate.
  */
-import type { ThinkingTier } from '../../config/deskConfig'
 import type { AssistantEvent, AssistantSession, CallTool, McpTool, McpToolResult } from '../engine'
 
 /**
@@ -353,19 +352,8 @@ export function isEventStream(response: Response): boolean {
   return (response.headers.get('content-type') ?? '').toLowerCase().includes('text/event-stream')
 }
 
-/**
- * The sentence an engine that does not run a thinking tier says, once.
- *
- * ADR-0001's "degrade visibly": the tier is real configuration, no engine
- * implements it before chunk 4, and a session that silently ran at `off` would
- * be this desk answering a question nobody asked it. One sentence rather than
- * one per adapter, because two spellings of "this did not happen" is how a
- * reader learns to skip the line.
- */
-export function thinkingUnavailable(tier: ThinkingTier, engine: string): string {
-  return (
-    `this desk is configured for thinking "${tier}", and the ${engine} engine does not run a ` +
-    `thinking tier yet; the session ran with the model's own default reasoning and no tier ` +
-    `parameter was sent`
-  )
-}
+// **The "this engine does not run a tier" sentence is gone with the reason for
+// it.** Both engines run the tier now, and every sentence the desk says about
+// thinking — the degrade, "this model always thinks", the line in the tab — is
+// `assistant/thinking.ts`'s, because a state that two modules describe is a
+// state two readers can disagree about.
