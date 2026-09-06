@@ -3661,6 +3661,13 @@ export function assistantTransport(): Transport {
 
   # The run's terminal event, normalized in the hook. Stop used to clear the
   # run's identity before the engine handled the abort, so no end was observed.
+  #
+  # **The catcher is `useAssistantRun.test.tsx` and not the pane's suite**, and
+  # the difference is the point: the pane drives the built-in engine, which
+  # honours its abort signal and yields `end` from its own `finally`, so the
+  # hook could write nothing at all and those cases still pass. The hook's test
+  # uses an engine that ignores the signal and never settles — nothing but the
+  # hook can end that session.
   mutate web "Stop writes no terminal event" "$AR" \
     '    finish(run)
     release(run)
