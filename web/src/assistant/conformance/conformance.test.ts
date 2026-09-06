@@ -188,10 +188,6 @@ function trackDeferredWork(): {
       repeating,
       fire() {
         if (!entry.pending || entry.cancelled) return
-        // **An interval is never fired on the engine's behalf.** Running three
-        // ticks and calling it drained let an engine hide a reach behind the
-        // fourth; a live interval is a certification failure in its own right.
-        if (entry.repeating) return
         entry.pending = false
         clear(handle)
         run()
@@ -296,6 +292,11 @@ function trackDeferredWork(): {
   }
 
   return {
+    // **An interval is never work the drain does.** Running a few ticks and
+    // calling it drained let an engine hide a reach behind a later one, so an
+    // interval is not something this fires on the engine's behalf at all — it
+    // is reported, below, and the engine fails for having left it. One rule,
+    // one place: a second guard inside `fire` would make this one unobservable.
     pending: () => tracked.filter((entry) => entry.pending && !entry.repeating),
     // **The interval rule.** A certified engine leaves no live interval when its
     // iterator ends: an interval nobody cleared runs for ever, and an engine
