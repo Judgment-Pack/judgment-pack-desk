@@ -1874,23 +1874,13 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # row is the same claim about the same guard: the shaping runs unguarded and
   # a document that cannot be shaped is discovered after the write.)
   mutate web "a template that is not a document is sent anyway" "$X" \
-    '      let content: string
-      try {
-        content =
-          source.kind === '"'"'proposal'"'"'
-            ? packFromProposal(source.document, { name, description, slug, idBase })
-            : shapeTemplate(source.text, { name, description, slug, idBase })
-      } catch (cause) {
-        setFailure({
-          lead: source.kind === '"'"'proposal'"'"' ? PROPOSAL_UNUSABLE : TEMPLATE_UNUSABLE,
-          reason: reasonOf(cause)
-        })
-        return
-      }' \
-    '      const content =
-        source.kind === '"'"'proposal'"'"'
-          ? packFromProposal(source.document, { name, description, slug, idBase })
-          : shapeTemplate(source.text, { name, description, slug, idBase })'
+    '        try {
+          content = shapeTemplate(source.text, { name, description, slug, idBase })
+        } catch (cause) {
+          setFailure({ lead: TEMPLATE_UNUSABLE, reason: reasonOf(cause) })
+          return
+        }' \
+    '        content = shapeTemplate(source.text, { name, description, slug, idBase })'
 
   # A listing that failed is not a project with no files in it.
   mutate web "a listing that failed is reported as a project with no jpack.json" "$X" \
@@ -4332,25 +4322,28 @@ export function assistantTransport(): Transport {
   # model's statement about a document nobody has named yet; writing them is a
   # pack arriving under an identity the person creating it never chose.
   mutate web "Create writes the proposal without shaping it" "$X" \
-    '            ? packFromProposal(source.document, { name, description, slug, idBase })' \
-    '            ? `${JSON.stringify(source.document, null, 2)}\n`'
+    '        text: packFromProposal(source.document, {
+          name,
+          description,
+          slug,
+          idBase,
+          specVersion: specVersionFrom(schema0.data)
+        })' \
+    '        text: `${JSON.stringify(source.document, null, 2)}\n`'
 
   # And the narrower half of the same claim: the shaping runs, and the name it
   # is given comes from the proposal instead of from the field above it.
   mutate web "the name field loses to the name the proposal gave itself" "$X" \
-    '            ? packFromProposal(source.document, { name, description, slug, idBase })' \
-    '            ? packFromProposal(source.document, {
-                name: String((source.document as { title?: unknown }).title ?? name),
-                description,
-                slug,
-                idBase
-              })'
+    '        text: packFromProposal(source.document, {
+          name,' \
+    '        text: packFromProposal(source.document, {
+          name: String((source.document as { title?: unknown }).title ?? name),'
 
   # A run still in flight is about to replace the events the proposal is on,
   # and Create with a half-finished session behind it writes a document nobody
   # has seen the end of.
   mutate web "Create is enabled while the assistant is still running" "$X" \
-    '    !describe.running &&' \
+    '    describe.blocking === '"'"''"'"' &&' \
     '    true &&'
 
   # **The snapshot, not the event.** An engine may put a live object on
@@ -4369,8 +4362,8 @@ export function assistantTransport(): Transport {
   # a control that would refuse is worse than a sentence saying where the key
   # goes.
   mutate web "Describe is drawn with no key stored on this machine" "$DI" \
-    '    usable: slot.endpoint !== null && slot.keyPresent,' \
-    '    usable: slot.endpoint !== null,'
+    '  const usable = slot.endpoint !== null && slot.keyPresent' \
+    '  const usable = slot.endpoint !== null'
 
   # Closing the dialog ends the session, and it has to end it **through the run
   # hook**: an unmount alone aborts the iterator and closes the socket without
@@ -4379,6 +4372,72 @@ export function assistantTransport(): Transport {
   mutate web "the run is left open when the dialog closes" "$X" \
     '    if (!next) describe.discard()' \
     '    void next'
+
+  # ---- Round 1: what the review found, and the rows that hold the answers ---
+  #
+  # A proposal belongs to a submission; an error after one withdraws it; the
+  # runtime says whether a proposal is a pack before either write; losing the
+  # slot ends the session; a route change is a dismissal; and an unmount
+  # accounts for the run's terminal event.
+
+  # **Withdrawn at the press, not at the start.** `run.events` is cleared when a
+  # run *starts*, one effect later — so a second Propose whose prompt is refused
+  # never reaches the place that would have cleared it, and the first run's
+  # proposal stays selected and writable.
+  mutate web "the previous proposal is not withdrawn at the press" "$DI" \
+    '    setDiscarded(false)
+    setRanId(null)' \
+    '    setDiscarded(false)'
+
+  # And the gate that makes the id mean anything: events belonging to an older
+  # submission are not this section's to read.
+  mutate web "a proposal from an earlier submission is read anyway" "$DI" \
+    '  const events =
+    discarded || submitted === null || ranId !== submitted.id ? EMPTY : run.events' \
+    '  const events = discarded ? EMPTY : run.events'
+
+  # The contract does not make `proposal` an engine's last non-terminal event.
+  # One that proposes and then fails has said the work does not stand.
+  mutate web "an error after a proposal leaves it on offer" "$DI" \
+    '  const withdrawn =
+    proposedAt !== -1 && events.slice(proposedAt + 1).some((event) => event.type === '"'"'error'"'"')' \
+    '  const withdrawn = false'
+
+  # **The runtime is what says a document is a pack.** Without this term Create
+  # is offered on a document nobody checked, which is how a `specVersion` a
+  # model invented and a top-level member nobody declared get written and
+  # registered.
+  mutate web "the check on a proposed document is not required" "$X" \
+    '    proposalRefusal === undefined &&' \
+    '    true &&'
+
+  # And the reading of the answer: a report that is not `valid` is a refusal,
+  # not a formality.
+  mutate web "a document the runtime refused is treated as valid" "$X" \
+    '              : checked.data.report.status === '"'"'valid'"'"'
+                ? undefined
+                : refusedBy(checked.data.report)' \
+    '              : undefined'
+
+  # Losing the slot used to hide the controls and leave the session running.
+  mutate web "the assistant going away only hides the controls" "$DI" \
+    '    discardNow.current()
+    setLost(SLOT_LOST)' \
+    '    void SLOT_LOST'
+
+  # The rail mounts this dialog above the route, so a Back leaves it standing
+  # over another page with its run alive.
+  mutate web "a route change is not a dismissal" "$X" \
+    '    closeNow.current(false)' \
+    '    void closeNow'
+
+  # An unmount that releases without finishing closes the connection while
+  # accounting for no terminal event.
+  mutate web "an unmount releases the run without finishing it" "$AR" \
+    '      const run = active.current
+      if (run !== null) finish(run)
+      release(run)' \
+    '      release(active.current)'
 
   mutate web "Fix re-serializes the runtime's diagnostics" "$CK" \
     '  const span = spanAt(indexDocument(raw), '"'"'/diagnostics'"'"')
