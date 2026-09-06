@@ -567,3 +567,45 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
     }
   })
 })
+
+describe('the proposal is canonicalized in one place, and nowhere else', () => {
+  /**
+   * A string sweep, and a weak guard like the two above it: it cannot catch a
+   * novel spelling of a JSON round trip. What it does catch is the ordinary
+   * one, which is what a second canonicalization looks like when somebody adds
+   * it back for safety — and that is the defect this holds against, because two
+   * readings of one proposal are two documents: the diff can describe the first
+   * and the writer write the second.
+   */
+  const others = () =>
+    sourcesUnder('assistant').filter(
+      (source) =>
+        !source.path.includes('.test.') &&
+        !source.path.includes('/conformance/') &&
+        source.path !== 'assistant/useAssistantRun.ts'
+    )
+
+  it('round-trips and freezes in the run hook, and in no other module', () => {
+    const hook = read('assistant/useAssistantRun.ts')
+    expect(hook).toContain('JSON.stringify(value)')
+    expect(hook).toContain('JSON.parse(text)')
+    expect(hook).toContain('Object.freeze(value)')
+    const swept = others()
+    expect(swept.length).toBeGreaterThan(3)
+    for (const source of swept) {
+      expect(source.text, `${source.path} round-trips a proposal`).not.toContain(
+        'JSON.parse(JSON.stringify'
+      )
+      expect(source.text, `${source.path} calls plain()`).not.toMatch(/[^A-Za-z]plain\(/)
+      expect(source.text, `${source.path} freezes again`).not.toContain('Object.freeze(')
+    }
+  })
+
+  it('says so in the two modules that read what it produced', () => {
+    // A claim a reader has to hold when they change the diff or the writer, so
+    // it is written where they are rather than only here.
+    for (const path of ['assistant/proposalDiff.ts', 'assistant/acceptProposal.ts']) {
+      expect(read(path), `${path} names the guard`).toContain('enforcement.test.ts')
+    }
+  })
+})

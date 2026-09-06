@@ -3863,6 +3863,19 @@ export function assistantTransport(): Transport {
     '        if (expect.revision !== edits.current) return false' \
     '        void expect.revision'
 
+  # **What ingestion hands on cannot be moved afterwards.** The snapshot travels
+  # to the pane on the run's event list; unfrozen, anything holding the event
+  # can reach into it between the memoised diff and the accept, and the writer
+  # then writes a document nobody was shown.
+  mutate web "the ingested proposal is left mutable" "$AR" \
+    '  return Object.freeze(value)' \
+    '  return value'
+  # **One canonicalization, and the guard that keeps it one.** A second round
+  # trip added back "for safety" is a second reading of one proposal.
+  mutate web "the writer canonicalizes the proposal again" "$AC" \
+    '  const proposed = document' \
+    '  const proposed = JSON.parse(JSON.stringify(document)) as unknown'
+
   # **A row's identity is its kind and its pointer.** A proposal that replaces
   # one rule with a rule of another id produces two rows about position 0, and
   # a list keyed on the pointer alone hands React one key for both.

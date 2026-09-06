@@ -42,23 +42,19 @@ import {
   type Buffered
 } from '../packs/edit/writes'
 import { pointer as pointerOf } from '../packs/pointers'
-import { isObject, matchElements, plain, sameValue } from './proposalDiff'
+import { isObject, matchElements, sameValue } from './proposalDiff'
 
 /**
  * The whole accept, as one buffer.
  *
- * The document is canonicalized **first**, on the ToolGate's reasoning: a value
- * with a getter or a `toJSON` can answer one thing while the diff is computed
- * and another while a writer serializes it, so what is written would not be
- * what was shown. What is diffed and what is written are the same plain data.
- *
- * A proposal that is not JSON data at all writes nothing: there is nothing to
- * write, and inventing a document from it would be this desk having an opinion
- * about bytes it could not read.
+ * **`document` is the snapshot the run hook ingested** — plain JSON data,
+ * frozen all the way down — and this writes exactly that. It does not
+ * canonicalize again: a second round trip is a second reading, and what is
+ * written must be what the diff described and the pane displayed. There is one
+ * such site in the assistant and `enforcement.test.ts` holds it there.
  */
 export function applyProposal(current: Buffered, document: unknown): Buffered {
-  const proposed = plain(document)
-  if (proposed === undefined) return current
+  const proposed = document
 
   // **The draft has to be a document this desk and `JSON.parse` agree about.**
   // The form editor holds the same rule, and for the same reason: a splice
@@ -269,9 +265,15 @@ function placeAfter(
   return { first: true }
 }
 
-/** Which proposals this desk can put into the draft at all. */
+/**
+ * Which proposals this desk can put into the draft at all.
+ *
+ * A structural belt over the ingestion's own rule — a proposal that is not an
+ * object never reaches the pane — asked again here because the button's reason
+ * is worth being right about whatever gets past it.
+ */
 export function writable(document: unknown): boolean {
-  return plain(document) !== undefined
+  return isObject(document)
 }
 
 /**

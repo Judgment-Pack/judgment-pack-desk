@@ -66,13 +66,52 @@ interface Active {
 }
 
 /**
- * One proposal event as plain JSON data, or the error that says why not.
+ * One value as plain JSON data, or undefined where it is not JSON data at all.
  *
- * `JSON.parse(JSON.stringify(x))` over the whole payload — the document, the
- * unknowns and the critique together — so nothing an engine put on the event
- * survives as a live object: no getters, no `toJSON`, no functions, no symbol
- * keys and no prototype. Exported because the property it holds is worth
- * testing on its own.
+ * **The only canonicalization in the assistant**, and `enforcement.test.ts`
+ * holds that: no other module here round-trips a proposal, because a second
+ * round trip is a second reading, and the whole point of ingesting once is that
+ * there is one. A cycle, a `BigInt` and a `toJSON` that throws all end here as
+ * `undefined`.
+ */
+export function plain(value: unknown): unknown {
+  let text: string | undefined
+  try {
+    text = JSON.stringify(value)
+  } catch {
+    return undefined
+  }
+  if (text === undefined) return undefined
+  return JSON.parse(text) as unknown
+}
+
+/**
+ * Plain data, frozen all the way down.
+ *
+ * Canonicalizing once is not enough on its own: what comes out is an ordinary
+ * object, and it travels to the pane on `AssistantRun.events` where anything
+ * holding the event could reach into it between the diff and the accept. The
+ * diff would then describe one document and the writer write another — which is
+ * the defect ingestion exists to prevent, one layer out. Frozen, the two are
+ * the same object and there is nothing to disagree about.
+ *
+ * The recursion terminates because this only ever runs over the output of
+ * `JSON.parse`, which has no cycles.
+ */
+export function frozen<T>(value: T): T {
+  if (typeof value !== 'object' || value === null) return value
+  for (const held of Object.values(value as Record<string, unknown>)) frozen(held)
+  return Object.freeze(value)
+}
+
+/**
+ * One proposal event as plain, frozen JSON data — or the error that says why
+ * there is none.
+ *
+ * The whole payload together: the document, the unknowns and the critique. So
+ * nothing an engine put on the event survives as a live object — no getters, no
+ * `toJSON`, no functions, no symbol keys, no prototype — and nothing downstream
+ * can move what is left.
  *
  * **A document that is not a JSON object is refused rather than shown.** A pack
  * is an object; `null`, `[]`, `7` and `"a pack"` are each a value this desk
@@ -82,21 +121,16 @@ interface Active {
 export function canonicalProposal(
   event: Extract<AssistantEvent, { type: 'proposal' }>
 ): AssistantEvent {
-  let held: { document?: unknown; unknowns?: unknown; critique?: { refuted: boolean } }
-  try {
-    const text = JSON.stringify({
-      document: event.document,
-      unknowns: event.unknowns,
-      critique: event.critique
-    })
-    if (text === undefined) throw new Error('it is not JSON data')
-    held = JSON.parse(text) as typeof held
-  } catch (cause) {
+  const held = plain({
+    document: event.document,
+    unknowns: event.unknowns,
+    critique: event.critique
+  }) as { document?: unknown; unknowns?: unknown; critique?: { refuted: boolean } } | undefined
+  if (held === undefined) {
     return {
       type: 'error',
       message:
-        `the proposal could not be read as JSON data (${(cause as Error).message}); ` +
-        `nothing was proposed and nothing was written`
+        'the proposal could not be read as JSON data; nothing was proposed and nothing was written'
     }
   }
   const document = held.document
@@ -108,12 +142,12 @@ export function canonicalProposal(
         'write; nothing was written'
     }
   }
-  return {
+  return frozen({
     type: 'proposal',
     document,
     unknowns: Array.isArray(held.unknowns) ? held.unknowns.map((entry) => String(entry)) : [],
     ...(held.critique === undefined ? {} : { critique: held.critique })
-  }
+  })
 }
 
 export function useAssistantRun(options: {

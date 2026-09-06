@@ -256,36 +256,19 @@ describe('a draft there is nothing to splice into', () => {
     expect(JSON.parse(after.text)).toEqual([1, 2])
   })
 
-  it('writes nothing at all for a proposal that is not JSON data', () => {
-    const before = buffered(fileText({ a: 1 }))
-    const cyclic: Record<string, unknown> = {}
-    cyclic.self = cyclic
-    expect(applyProposal(before, cyclic).text).toBe(before.text)
-    expect(writable(cyclic)).toBe(false)
+  it('is offered only for a document, which is what the ingestion admits', () => {
+    // `writable` is a structural belt over the run hook's own rule: a proposal
+    // that is not an object never reaches the pane. It is asked again because
+    // the button's reason is worth being right about whatever gets past it.
     expect(writable({ a: 1 })).toBe(true)
+    expect(writable([1, 2])).toBe(false)
+    expect(writable(null)).toBe(false)
+    expect(writable('a pack')).toBe(false)
   })
 
   it('starts an empty buffer off with the document and a newline', () => {
     const after = applyProposal(buffered(''), { a: 1 })
     expect(after.text).toBe('{\n  "a": 1\n}\n')
-  })
-})
-
-describe('a proposal read through a mutable object', () => {
-  it('writes what was diffed, not what the object answers next', () => {
-    // The ToolGate's lesson, one layer up: a getter that changes its answer
-    // between the diff and the write would put a document on disk that nobody
-    // was shown. Canonicalizing first is what makes the two the same reading.
-    let answers = 0
-    const document = {
-      get title() {
-        answers += 1
-        return `title ${answers}`
-      }
-    }
-    const after = applyProposal(buffered(fileText({ title: 'old' })), document)
-    expect(JSON.parse(after.text)).toEqual({ title: 'title 1' })
-    expect(answers).toBe(1)
   })
 })
 

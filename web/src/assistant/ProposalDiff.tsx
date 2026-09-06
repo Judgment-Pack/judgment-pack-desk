@@ -28,22 +28,31 @@ const SAYS: Record<DiffEntry['status'], string> = {
   unchanged: 'unchanged'
 }
 
-export function ProposalDiffView({ diff }: { diff: ProposalDiff }) {
-  if (diff.problem !== undefined) {
-    return (
-      <section className={styles.diff} aria-label="The proposal as a diff">
-        <p className={styles.notice}>{diff.problem}</p>
-      </section>
-    )
-  }
+export function ProposalDiffView({
+  diff,
+  onBaseline = true
+}: {
+  diff: ProposalDiff
+  /**
+   * Whether the page still holds the draft this diff is against.
+   *
+   * The caption is the only thing that changes, and it has to: the comparison
+   * stays against the bytes the session was given — that is what Accept would
+   * apply — so on a page whose draft has moved, "the draft on this page" names
+   * a document this is not about.
+   */
+  onBaseline?: boolean
+}) {
   const moved = diff.entries.filter((entry) => entry.status !== 'unchanged')
   const kept = diff.entries.filter((entry) => entry.status === 'unchanged')
   return (
     <section className={styles.diff} aria-label="The proposal as a diff">
       <p className={styles.honesty}>
-        {diff.against === 'the draft'
-          ? 'Compared with the draft on this page, member by member.'
-          : `There was nothing to compare with — ${diff.reason} — so every member below is new.`}
+        {diff.against !== 'the draft'
+          ? `There was nothing to compare with — ${diff.reason} — so every member below is new.`
+          : onBaseline
+            ? 'Compared with the draft on this page, member by member.'
+            : 'Compared with the draft this proposal was given, member by member — the draft on this page has changed since.'}
       </p>
       {moved.length === 0 && (
         <p className={styles.honesty}>

@@ -14,7 +14,7 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { scriptedWebSocket } from './conformance/scriptedServer'
 import scenario from './conformance/scenario.json'
-import { canonicalProposal, useAssistantRun } from './useAssistantRun'
+import { canonicalProposal, frozen, plain, useAssistantRun } from './useAssistantRun'
 import type { AssistantEvent, AssistantSession, Engine } from './engine'
 
 /** An engine that yields nothing, ends never, and ignores its abort signal. */
@@ -188,5 +188,71 @@ describe('the proposal is canonicalized once, where it arrives', () => {
       unknowns: ['one', 'two'],
       critique: { refuted: false }
     })
+  })
+})
+
+describe('what ingestion hands on cannot be moved afterwards', () => {
+  const emits = (event: AssistantEvent): Engine => ({
+    id: 'builtin',
+    async *start(): AsyncGenerator<AssistantEvent> {
+      yield event
+      yield { type: 'end' }
+    }
+  })
+
+  it('freezes the document all the way down, so nothing between diff and accept can move it', async () => {
+    engine = emits({
+      type: 'proposal',
+      document: { title: 'as proposed', rules: [{ id: 'a', when: { value: '5000' } }] },
+      unknowns: ['one']
+    })
+    const { result } = drive()
+    act(() => result.current.start('the runtime’s prompt'))
+    await waitFor(() => expect(ends(result.current.events)).toHaveLength(1))
+    const proposal = result.current.events.find((event) => event.type === 'proposal') as {
+      document: { title: string; rules: { id: string; when: { value: string } }[] }
+      unknowns: string[]
+    }
+    // A consumer holding the public event cannot reach into it between the
+    // memoised diff and the accept: the diff would describe one document and
+    // the writer write another.
+    expect(Object.isFrozen(proposal.document)).toBe(true)
+    expect(Object.isFrozen(proposal.document.rules)).toBe(true)
+    expect(Object.isFrozen(proposal.document.rules[0]!.when)).toBe(true)
+    expect(Object.isFrozen(proposal.unknowns)).toBe(true)
+    expect(() => {
+      proposal.document.rules[0]!.when.value = '9999'
+    }).toThrow(TypeError)
+    expect(() => {
+      proposal.document.title = 'something else'
+    }).toThrow(TypeError)
+    expect(() => proposal.document.rules.push({ id: 'b', when: { value: '1' } })).toThrow(TypeError)
+    expect(proposal.document).toEqual({
+      title: 'as proposed',
+      rules: [{ id: 'a', when: { value: '5000' } }]
+    })
+  })
+
+  it('canonicalizes and freezes as two functions with one job each', () => {
+    expect(plain({ a: 1, b: undefined, c: () => 1 })).toEqual({ a: 1 })
+    expect(plain(undefined)).toBeUndefined()
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    expect(plain(cyclic)).toBeUndefined()
+    // A getter is read once, and what comes back is inert.
+    let reads = 0
+    const held = plain({
+      get title() {
+        reads += 1
+        return `title ${reads}`
+      }
+    })
+    expect(held).toEqual({ title: 'title 1' })
+    expect(reads).toBe(1)
+
+    const deep = frozen({ a: { b: [{ c: 1 }] } })
+    expect(Object.isFrozen(deep.a.b[0])).toBe(true)
+    expect(frozen('a string')).toBe('a string')
+    expect(frozen(null)).toBeNull()
   })
 })

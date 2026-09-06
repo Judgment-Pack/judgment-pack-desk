@@ -8,13 +8,12 @@
  * editor and the document that arrived. Nothing here reads a summary, a
  * changelog, or any member of the proposal other than the document itself.
  *
- * **Everything is canonicalized before it is compared.** `JSON.parse(
- * JSON.stringify(x))` first, on the ToolGate's own reasoning: a value with a
- * getter or a `toJSON` can answer one thing while the diff is looking and
- * another when the writer serializes it, so the diff would be about a document
- * nobody is accepting. What comes out has no getters, no `toJSON`, no
- * functions, no symbol keys and no prototype left, and it is the only thing
- * this module and `acceptProposal.ts` ever read.
+ * **What it is given is already canonical.** The run hook ingests a proposal
+ * once — plain JSON data, frozen all the way down — and this reads that
+ * snapshot. It does not round-trip it again: a second canonicalization is a
+ * second reading, and the whole point of ingesting once is that the diff, the
+ * display and the writer are looking at one document. `enforcement.test.ts`
+ * holds that there is exactly one such site.
  *
  * **Granularity is the pack's top-level members, and the elements of array
  * members.** Elements that carry an `id` are matched by it — so a reordered
@@ -70,8 +69,6 @@ export interface ProposalDiff {
   against: 'the draft' | 'nothing'
   /** Why there was nothing to compare with, where there was not. */
   reason?: string
-  /** Why there is no diff at all: a proposal that is not JSON data. */
-  problem?: string
   /** Top-level entries, in the proposal's own member order, removals last. */
   entries: DiffEntry[]
   counts: Record<DiffStatus, number>
@@ -89,24 +86,6 @@ function entryOf(entry: Omit<DiffEntry, 'key'>): DiffEntry {
 
 export function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-/**
- * One value as plain JSON data, or undefined where it is not JSON data at all.
- *
- * The canonicalization the whole module rests on. A cycle, a `BigInt` and a
- * `toJSON` that throws all end here as `undefined` — a proposal this desk will
- * not diff and will not write — rather than as an exception thrown at a render.
- */
-export function plain(value: unknown): unknown {
-  let text: string | undefined
-  try {
-    text = JSON.stringify(value)
-  } catch {
-    return undefined
-  }
-  if (text === undefined) return undefined
-  return JSON.parse(text) as unknown
 }
 
 /**
@@ -306,15 +285,7 @@ function counted(entries: readonly DiffEntry[]): Record<DiffStatus, number> {
  * the pane can say why rather than showing a comparison it did not make.
  */
 export function diffProposal(draftText: string | undefined, document: unknown): ProposalDiff {
-  const proposed = plain(document)
-  if (proposed === undefined) {
-    return {
-      against: 'nothing',
-      problem: 'the proposal is not JSON data, so there is nothing to compare or to write',
-      entries: [],
-      counts: counted([])
-    }
-  }
+  const proposed = document
   const draft = readDraft(draftText)
   if ('problem' in draft) {
     const entries = isObject(proposed)

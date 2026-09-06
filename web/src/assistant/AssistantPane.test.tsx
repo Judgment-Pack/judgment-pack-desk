@@ -1028,6 +1028,22 @@ describe('a proposal belongs to the draft it was given', () => {
     // own title, not the one typed while the model was thinking.
     expect(diff.textContent).toContain('the draft the session was given')
     expect(diff.textContent).not.toContain('what the author typed meanwhile')
+    // **And the caption says which draft that is.** "The draft on this page" is
+    // a different document now, and a caption that named it would make the
+    // comparison look like one it is not.
+    expect(diff.textContent).toContain('Compared with the draft this proposal was given')
+    expect(diff.textContent).toContain('the draft on this page has changed since')
+    expect(diff.textContent).not.toContain('Compared with the draft on this page')
+  })
+
+  it('goes back to naming the page’s own draft once it is that draft again', async () => {
+    await runAndEdit()
+    act(() => held!.undo())
+    await waitFor(() =>
+      expect(
+        screen.getByRole('region', { name: 'The proposal as a diff' }).textContent
+      ).toContain('Compared with the draft on this page')
+    )
   })
 
   it('offers it again once the draft is back to the bytes it was made about', async () => {

@@ -473,7 +473,7 @@ export function AssistantPane({
             Nothing has been written. This is a document to accept or reject, and the checks below
             are the runtime’s own words.
           </p>
-          {diff !== undefined && <ProposalDiffView diff={diff} />}
+          {diff !== undefined && <ProposalDiffView diff={diff} onBaseline={onBaseline} />}
           <p className={styles.label}>The whole proposed document</p>
           <CodeArea
             value={JSON.stringify(proposal.document, null, 2)}

@@ -13,7 +13,6 @@ import scenario from './conformance/scenario.json'
 import {
   diffProposal,
   matchElements,
-  plain,
   readDraft,
   sameValue,
   type DiffEntry
@@ -32,7 +31,6 @@ describe('the scenario’s own two drafts', () => {
   it('compares against the draft, member by member', () => {
     expect(diff.against).toBe('the draft')
     expect(diff.reason).toBeUndefined()
-    expect(diff.problem).toBeUndefined()
     expect(diff.counts).toEqual({ added: 1, removed: 0, changed: 2, unchanged: 11 })
   })
 
@@ -68,44 +66,16 @@ describe('the scenario’s own two drafts', () => {
     ])
   })
 
-  it('is the same diff whichever way the proposal object was built', () => {
-    // The proposal arrives as an engine's parsed object; the same document
-    // reached through a live object with a `toJSON` must diff identically,
-    // because both are canonicalized before anything is compared.
-    const live = { toJSON: () => DRAFT_V2 }
-    expect(diffProposal(text(DRAFT_V1), live)).toEqual(diff)
-  })
 })
 
-describe('canonicalizing before anything is compared', () => {
-  it('reads a value through a getter once, and compares the reading', () => {
-    // The ToolGate's own lesson: a getter can answer one thing while the diff
-    // is looking and another when the writer serializes. Whatever it answers
-    // first is what is diffed and what would be written — one reading, not two.
-    let answers = 0
-    const document = {
-      title: 'steady',
-      get version() {
-        answers += 1
-        return `v${answers}`
-      }
-    }
-    const diff = diffProposal(text({ title: 'steady', version: 'v1' }), document)
-    expect(answers).toBe(1)
-    expect(at(diff.entries, '/version')?.status).toBe('unchanged')
-  })
-
-  it('refuses a proposal that is not JSON data at all', () => {
-    const cyclic: Record<string, unknown> = { title: 'a pack' }
-    cyclic.self = cyclic
-    const diff = diffProposal(text({ title: 'a pack' }), cyclic)
-    expect(diff.problem).toContain('not JSON data')
-    expect(diff.entries).toEqual([])
-  })
-
-  it('drops what JSON has no word for', () => {
-    expect(plain({ a: 1, b: undefined, c: () => 1 })).toEqual({ a: 1 })
-    expect(plain(undefined)).toBeUndefined()
+describe('what it is given is what it compares', () => {
+  it('is the same diff whichever object carried the same data', () => {
+    // This module does not canonicalize — the run hook does, once — so what it
+    // is handed is plain data and two plain readings of one document are one
+    // diff. The live-object case belongs to the ingestion and is asserted there.
+    const one = diffProposal(text(DRAFT_V1), JSON.parse(JSON.stringify(DRAFT_V2)) as unknown)
+    const two = diffProposal(text(DRAFT_V1), JSON.parse(JSON.stringify(DRAFT_V2)) as unknown)
+    expect(one).toEqual(two)
   })
 
   it('calls two objects the same only where their member order is the same', () => {
