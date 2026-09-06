@@ -3629,7 +3629,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # hide behind a later tick and report a clean drain.
   mutate web "the drain runs an engine's interval on its behalf" "$CT" \
     '        if (entry.repeating) return' \
-    '        if (entry.repeating && entry.pending === false) return'
+    '        if (false) return'
   mutate web "a live interval is not reported" "$CT" \
     '    liveIntervals: () => tracked.filter((entry) => entry.repeating && !entry.cancelled),' \
     '    liveIntervals: () => [],'

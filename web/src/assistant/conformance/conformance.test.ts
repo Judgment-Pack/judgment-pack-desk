@@ -132,6 +132,8 @@ interface Tracked {
   repeating: boolean
   fire(): void
   cancel(): void
+  /** Stop the real handle. The harness's own hygiene, never a verdict. */
+  stop(): void
 }
 
 /**
@@ -197,6 +199,10 @@ function trackDeferredWork(): {
       cancel() {
         entry.cancelled = true
         entry.pending = false
+      },
+      stop() {
+        entry.pending = false
+        clear(handle)
       }
     }
     const handle = schedule(() => {
@@ -298,10 +304,10 @@ function trackDeferredWork(): {
     restore() {
       for (const [name, value] of before) scope[name] = value
       // Whatever the engine left behind stops here, so a leg cannot leak a
-      // ticking timer into the next one.
-      for (const entry of tracked) {
-        if (entry.repeating && !entry.cancelled) entry.pending = false
-      }
+      // ticking timer into the next one. This is hygiene and never a verdict:
+      // `liveIntervals` was read before it, and an interval stopped here has
+      // already been reported.
+      for (const entry of tracked) entry.stop()
     }
   }
 }
@@ -832,7 +838,7 @@ describe('the seal, shown to fail', () => {
     // own terms, reported by name — and this fixture's interval reach is never
     // run by the harness, so the failure is the interval and not the reach.
     const { liveIntervals, violations } = await runLeg(fromCertification('touches-after-run'), leg)
-    expect(liveIntervals).toEqual(['setInterval(50ms)'])
+    expect(liveIntervals).toEqual(['setInterval(30000ms)'])
     expect(markers(violations)).not.toContain('interval')
   })
 

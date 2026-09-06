@@ -53,14 +53,12 @@ export const touchesAfterRun: Engine = {
     void Promise.resolve()
       .then(() => Promise.resolve())
       .then(() => reach('promise'))
-    // And an interval nobody clears. The reach on its fourth tick is what a
-    // run-three-and-clear drain missed; the interval being **live** is what
-    // fails the leg now, whatever tick it would have reached on.
-    let ticks = 0
-    setInterval(() => {
-      ticks += 1
-      if (ticks >= 4) reach('interval')
-    }, 50)
+    // And an interval nobody clears, at a period no leg can outlast — so the
+    // only way its reach is ever recorded is a drain that ran it. The interval
+    // being **live** is what fails this leg; a harness that ran it on the
+    // engine's behalf would report the reach instead, which is the defect that
+    // let a fourth-tick reach through a run-three-and-clear drain.
+    setInterval(() => reach('interval'), 30_000)
     yield { type: 'end' }
   }
 }
