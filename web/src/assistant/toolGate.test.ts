@@ -216,6 +216,10 @@ describe('the rehearsal rewrite, read off the wire', () => {
       const { transport, onWire } = gated(FIVE)
       await transport.send(call('experimental_evaluate', shifty as Record<string, unknown>))
       expect(wireArguments(onWire).rehearsal).toBe(true)
+      // **The counter, asserted.** Round 2 pointed out that this case proved
+      // nothing without it: a second read is exactly how the check and the wire
+      // come apart, and one read is the claim.
+      expect(reads).toBe(1)
     })
 
     it('sends an own rehearsal: true through a proxy that lies about the member', async () => {
@@ -233,6 +237,78 @@ describe('the rehearsal rewrite, read off the wire', () => {
       // `rehearsal` is not an own key of the target, so the proxy's `get` lie
       // never reaches the bytes — and the rebuild puts a real one there.
       expect(wireArguments(onWire)).toEqual({ pack: '{}', rehearsal: true })
+    })
+
+    it('sends an own rehearsal: true where the arguments carry an enumerable toJSON', async () => {
+      // The round-2 defect. A copied `toJSON` is invoked at serialization, so a
+      // rebuild that carried rehearsal: true produced bytes that did not — and
+      // the runtime would have recorded the evaluation.
+      const lying = {
+        pack: '{"a":1}',
+        toJSON() {
+          return { pack: '{"a":1}' }
+        }
+      }
+      const { transport, onWire, notices } = gated(FIVE)
+      await transport.send(
+        call('experimental_evaluate', lying as unknown as Record<string, unknown>)
+      )
+      expect(wireArguments(onWire)).toEqual({ pack: '{"a":1}', rehearsal: true })
+      expect(notices[0]!.action).toBe('rewrote')
+    })
+
+    it('reads a nested toJSON once, and sends what it produced', async () => {
+      const nested = {
+        pack: {
+          toJSON() {
+            return { title: 'from toJSON' }
+          }
+        }
+      }
+      const { transport, onWire } = gated(FIVE)
+      await transport.send(
+        call('experimental_evaluate', nested as unknown as Record<string, unknown>)
+      )
+      expect(wireArguments(onWire)).toEqual({
+        pack: { title: 'from toJSON' },
+        rehearsal: true
+      })
+    })
+
+    it('drops a symbol-keyed property, which no serializer would have sent', async () => {
+      const marked: Record<string | symbol, unknown> = { pack: '{}' }
+      marked[Symbol('rehearsal')] = true
+      const { transport, onWire } = gated(FIVE)
+      await transport.send(call('experimental_evaluate', marked as Record<string, unknown>))
+      expect(wireArguments(onWire)).toEqual({ pack: '{}', rehearsal: true })
+    })
+
+    it.each([
+      ['a capitalized key', 'Rehearsal'],
+      ['a mixed-case key', 'rehearsaL'],
+      ['a Cyrillic confusable', 'rehea\u0433sal'],
+      ['a key with a zero-width space', 'rehe\u200barsal']
+    ])('writes the ASCII member beside %s rather than mistaking it for one', async (_what, key) => {
+      // None of these is `rehearsal` to the runtime, and none of them stops the
+      // real one being written.
+      const { transport, onWire } = gated(FIVE)
+      await transport.send(
+        call('experimental_evaluate', { pack: '{}', [key]: true } as Record<string, unknown>)
+      )
+      const args = wireArguments(onWire)
+      expect(args.rehearsal).toBe(true)
+      expect(Object.hasOwn(args, 'rehearsal')).toBe(true)
+      expect(args[key]).toBe(true)
+    })
+
+    it('refuses arguments that cannot be serialized at all', async () => {
+      const cyclic: Record<string, unknown> = { pack: '{}' }
+      cyclic.self = cyclic
+      const { transport, sent } = gated(FIVE)
+      await expect(transport.send(call('experimental_evaluate', cyclic))).rejects.toThrow(
+        GateViolation
+      )
+      expect(sent).toEqual([])
     })
 
     it('sends the member where the call carried no arguments at all', async () => {
@@ -311,6 +387,23 @@ describe('the frames the gate will not send at all', () => {
     [
       'tools/call whose params are a string',
       { jsonrpc: '2.0', id: 1, method: 'tools/call', params: 'name=validate' }
+    ],
+    ['a frame with no jsonrpc member', { id: 1, method: 'tools/list', params: {} }],
+    ['a frame declaring jsonrpc 1.0', { jsonrpc: '1.0', id: 1, method: 'tools/list' }],
+    ['a request whose id is an object', { jsonrpc: '2.0', id: { n: 1 }, method: 'tools/list' }],
+    ['a request whose id is a boolean', { jsonrpc: '2.0', id: true, method: 'tools/list' }],
+    [
+      'a frame carrying a method and a result',
+      { jsonrpc: '2.0', id: 1, method: 'tools/list', result: {} }
+    ],
+    [
+      'a response carrying both a result and an error',
+      { jsonrpc: '2.0', id: 1, result: {}, error: { code: -1, message: 'x' } }
+    ],
+    ['a response carrying neither', { jsonrpc: '2.0', id: 1 }],
+    [
+      'a non-tools/call frame whose params are a string',
+      { jsonrpc: '2.0', id: 1, method: 'prompts/get', params: 'name=p' }
     ]
   ])('refuses %s, and nothing reaches the socket', async (_what, frame) => {
     // **Fail closed.** The rule this replaces was "anything whose method is not
@@ -321,6 +414,113 @@ describe('the frames the gate will not send at all', () => {
     const { transport, sent } = gated(FIVE)
     await expect(transport.send(frame as unknown as JSONRPCMessage)).rejects.toThrow(GateViolation)
     expect(sent).toEqual([])
+  })
+})
+
+describe('the shapes that change under an inspection', () => {
+  it('refuses a frame that cannot be serialized at all', async () => {
+    // A cycle is a refusal here rather than an exception thrown at the socket.
+    const cyclic: Record<string, unknown> = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'validate', arguments: {} }
+    }
+    ;(cyclic.params as { arguments: Record<string, unknown> }).arguments.self = cyclic
+    const { transport, sent } = gated(FIVE)
+    await expect(transport.send(cyclic as unknown as JSONRPCMessage)).rejects.toThrow(GateViolation)
+    expect(sent).toEqual([])
+  })
+
+  it('sends what a shifting method getter serialized into, and never its later answer', async () => {
+    // The response exemption used to read `method` off the object and then
+    // forward **that object**, so a getter answering `undefined` for the check
+    // and `tools/call` for the socket carried a method out after all. The
+    // canonical frame is taken from the one read `JSON.stringify` makes, and it
+    // is what leaves: whatever the getter says afterwards reaches nothing.
+    let reads = 0
+    const shifty = {
+      jsonrpc: '2.0',
+      id: 1,
+      result: {},
+      get method() {
+        reads += 1
+        return reads === 1 ? undefined : 'tools/call'
+      }
+    }
+    const { transport, sent, onWire } = gated(FIVE)
+    await transport.send(shifty as unknown as JSONRPCMessage)
+    // **One read, asserted before anything else touches the object**, because
+    // this whole case is about how many times it is asked.
+    expect(reads).toBe(1)
+    expect(onWire()).toEqual([{ jsonrpc: '2.0', id: 1, result: {} }])
+    expect(sent[0]).not.toBe(shifty)
+    // The object still answers `tools/call` — to anyone who asks it again, and
+    // after this line nobody does.
+    expect(shifty.method).toBe('tools/call')
+  })
+
+  it('refuses a response whose method getter answers tools/call to the serializer', async () => {
+    // The other order: the read that matters is the one the bytes came from,
+    // and a frame carrying both a method and a result is not any of the three
+    // shapes this gate will send.
+    const shifty = {
+      jsonrpc: '2.0',
+      id: 1,
+      result: {},
+      get method() {
+        return 'tools/call'
+      }
+    }
+    const { transport, sent } = gated(FIVE)
+    await expect(transport.send(shifty as unknown as JSONRPCMessage)).rejects.toThrow(GateViolation)
+    expect(sent).toEqual([])
+  })
+
+  it('refuses a response-shaped object that serializes as a tools/call', async () => {
+    const disguised = {
+      jsonrpc: '2.0',
+      id: 1,
+      result: {},
+      toJSON() {
+        return {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'write_file', arguments: { path: 'p' } }
+        }
+      }
+    }
+    const { transport, sent } = gated(FIVE)
+    await expect(transport.send(disguised as unknown as JSONRPCMessage)).rejects.toThrow(
+      GateViolation
+    )
+    expect(sent).toEqual([])
+  })
+
+  it('checks the tool a frame serializes into, not the one it claims', async () => {
+    // The mirror image: a frame that reads as an allowed call and serializes as
+    // a write. The canonical form is what the allow-list is applied to.
+    const disguised = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'validate', arguments: {} },
+      toJSON() {
+        return {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'write_file', arguments: { path: 'p' } }
+        }
+      }
+    }
+    const { transport, sent, notices } = gated(FIVE)
+    await expect(transport.send(disguised as unknown as JSONRPCMessage)).rejects.toThrow(
+      GateViolation
+    )
+    expect(sent).toEqual([])
+    expect(notices[0]!.tool).toBe('write_file')
   })
 })
 
