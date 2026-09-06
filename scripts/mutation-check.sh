@@ -4436,13 +4436,22 @@ export function assistantTransport(): Transport {
     '    closeNow.current(false)' \
     '    void closeNow'
 
-  # An unmount that releases without finishing closes the connection while
-  # accounting for no terminal event.
-  mutate web "an unmount releases the run without finishing it" "$AR" \
-    '      const run = active.current
-      if (run !== null) finish(run)
-      release(run)' \
-    '      release(active.current)'
+  # **Deliberately not mutated: the unmount's `finish`.**
+  #
+  # Round 1 asked for a row here — the cleanup released without finishing, so an
+  # unmount closed the connection while accounting for no terminal event — and
+  # the row was written and reported NOT DISCRIMINATING. That is the honest
+  # answer and it is recorded rather than repaired: after the component is gone
+  # there is nobody left to observe the event. `setEvents` on an unmounted tree
+  # is a no-op, the run object is unreachable, and every other consequence
+  # (the abort, the socket) belongs to `release`, which runs either way.
+  #
+  # The call stays because it is correct — `run.ended` is what a second `end` is
+  # dropped against, and the hook should state one rule on every path — and its
+  # absence from this table is a statement rather than an oversight. What *is*
+  # measured is every path a page can see: Stop, the dialog's close, a route
+  # change, and the slot going away, each asserted through the next session
+  # being allowed to start.
 
   mutate web "Fix re-serializes the runtime's diagnostics" "$CK" \
     '  const span = spanAt(indexDocument(raw), '"'"'/diagnostics'"'"')
