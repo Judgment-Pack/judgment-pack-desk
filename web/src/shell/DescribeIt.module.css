@@ -1,0 +1,54 @@
+.disclosure {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.6rem;
+  background: var(--surface);
+}
+
+.summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.5rem;
+  min-width: 0;
+}
+
+.label {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--ink-soft);
+}
+
+.quiet {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--ink-faint);
+}
+
+.notice {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--warn);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}

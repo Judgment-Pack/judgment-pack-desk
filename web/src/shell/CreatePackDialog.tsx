@@ -53,6 +53,7 @@ import {
   type ProjectConfig
 } from '../packs/jpackConfig'
 import { codeOf, refusalDetail, refusalLead } from '../packs/createRefusal'
+import { DescribeIt, useDescribeIt } from './DescribeIt'
 import { collisionIn, emptyPackFrom, packPathFor, shapeTemplate, slugFor } from '../packs/newPack'
 import { Alert } from '../ui/Alert'
 import { Button } from '../ui/Button'
@@ -128,6 +129,15 @@ export function CreatePackDialog({
   const schema0 = useSchema(schemaSupported)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  /**
+   * The **Describe it** section's own state, held here rather than inside it.
+   *
+   * Because closing this dialog is not the section's event: the run has to be
+   * stopped through the run hook — one terminal event, one socket close — and
+   * an unmount alone would abort an engine iterator with nothing left to write
+   * a terminal event onto. `close` below is the one place that happens.
+   */
+  const describe = useDescribeIt()
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -305,6 +315,23 @@ export function CreatePackDialog({
     for (const key of keys) void queryClient.invalidateQueries({ queryKey: key })
   }
 
+  /**
+   * **Every way this dialog closes goes through here**, and closing ends the
+   * session the Describe section was running.
+   *
+   * The rail unmounts this component when it closes, so an effect on `open`
+   * would never run: the stop has to happen on the way out rather than after
+   * it. It goes through the run hook — which writes the run's one terminal
+   * event and closes its one connection — rather than leaving the unmount to
+   * abort an iterator nobody is reading. The proposal goes with it: nothing
+   * about a session is persisted, and a dialog that reopened one would be
+   * re-offering a document nobody accepted.
+   */
+  const close = (next: boolean) => {
+    if (!next) describe.discard()
+    onOpenChange(next)
+  }
+
   const create = async () => {
     if (!ready || slug === undefined || path === undefined || template === undefined) return
     setFailure(undefined)
@@ -427,7 +454,7 @@ export function CreatePackDialog({
 
       // (3) Everything that answered before this pack existed.
       invalidate([['desk-files'], ['desk-file', PROJECT_FILE], ['list_packs'], ['desk-config']])
-      onOpenChange(false)
+      close(false)
       navigate(`/packs/${slug}`)
       // Closing this dialog is not closing the thing it was inside. Below
       // 900px the rail is a modal drawer, and it stayed over the page this
@@ -447,7 +474,7 @@ export function CreatePackDialog({
       // the one outcome that leaves something behind.
       onOpenChange={(next) => {
         if (!next && busy) return
-        onOpenChange(next)
+        close(next)
       }}
       title="Create a pack"
       description={DIALOG_DESCRIPTION}
@@ -502,6 +529,8 @@ export function CreatePackDialog({
             />
           )}
         </Field>
+
+        <DescribeIt state={describe} />
 
         {(failure ?? blocked) && (
           <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>
