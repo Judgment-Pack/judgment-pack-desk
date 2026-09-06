@@ -116,42 +116,52 @@ function sealNetwork(): Seal {
 /**
  * One deferred callback an engine scheduled while the seal was up.
  *
- * `fire` runs it now; `cancel` stops the real handle. An interval is pending
- * until it is cancelled, so it is fired a bounded number of times and then
- * cleared — an engine that reaches on a tick reaches on the first one.
+ * `fire` runs it now; `cancel` marks it as the engine's own cancellation, which
+ * is not the same thing at all — a timer an engine cleared is a timer that will
+ * never run, and firing it on the engine's behalf would fail a leg for
+ * something the engine did not do.
  */
 interface Tracked {
   kind: string
+  label: string
+  /** True until it has run, or the engine cancelled it. */
   pending: boolean
-  runs: number
+  /** True where the engine itself called clearTimeout/clearInterval. */
+  cancelled: boolean
+  /** An interval: pending for ever until the engine clears it. */
+  repeating: boolean
   fire(): void
   cancel(): void
 }
 
-const INTERVAL_RUNS = 3
-
 /**
  * Track every handle an engine creates, instead of waiting for one to fire.
  *
- * The barrier this replaces was a fixed wait — 200ms — and a fixed wait is a
- * delay an engine can out-wait: 201ms, an interval, or a timer that schedules
- * another timer. Round 3 named all three. So the timer functions are wrapped
- * for the sealed window: each call is recorded **and** scheduled for real, so
- * an engine that legitimately depends on a timer still makes progress; and the
- * drain afterwards fires whatever has not fired yet, repeatedly, so a chain is
- * followed to its end.
+ * The barrier this replaces was a fixed wait, and a fixed wait is a delay an
+ * engine can out-wait. So the timer functions are wrapped for the sealed
+ * window: each call is recorded **and** scheduled for real, so an engine that
+ * legitimately depends on a timer still makes progress, and the drain
+ * afterwards runs whatever has not run yet.
+ *
+ * **`clearTimeout` and `clearInterval` are wrapped too.** Without them a handle
+ * the engine itself cancelled stayed "pending" in the bookkeeping and was force
+ * run by the drain — a certification failure for something the engine had
+ * already decided not to do.
  *
  * `queueMicrotask` is wrapped and forwarded rather than deferred: promise
  * machinery runs on it, and holding one back would deadlock the very run this
- * is measuring.
+ * is measuring. `Promise.prototype.then` is **not** wrapped — see
+ * `drainDeferredWork` for what that bounds.
  */
 function trackDeferredWork(): {
   pending(): Tracked[]
+  liveIntervals(): Tracked[]
   restore(): void
 } {
   const scope = globalThis as unknown as Record<string, unknown>
   const before = new Map<string, unknown>()
   const tracked: Tracked[] = []
+  const byHandle = new Map<unknown, Tracked>()
   const keep = (name: string) => before.set(name, scope[name])
 
   const realSetTimeout = globalThis.setTimeout
@@ -160,38 +170,49 @@ function trackDeferredWork(): {
   const realClearInterval = globalThis.clearInterval
   const realQueueMicrotask = globalThis.queueMicrotask
 
-  /** One entry, and the handle the caller gets back. */
-  function record(kind: string, run: () => void, schedule: (wrapped: () => void) => unknown,
-                  clear: (handle: unknown) => void, repeating: boolean): unknown {
+  function record(
+    kind: string,
+    label: string,
+    run: () => void,
+    schedule: (wrapped: () => void) => unknown,
+    clear: (handle: unknown) => void,
+    repeating: boolean
+  ): unknown {
     const entry: Tracked = {
       kind,
+      label,
       pending: true,
-      runs: 0,
+      cancelled: false,
+      repeating,
       fire() {
-        if (!entry.pending) return
-        entry.runs += 1
-        if (!repeating) {
-          entry.pending = false
-          clear(handle)
-        } else if (entry.runs >= INTERVAL_RUNS) {
-          // Bounded, then cleared: an interval is pending for ever otherwise.
-          entry.pending = false
-          clear(handle)
-        }
+        if (!entry.pending || entry.cancelled) return
+        // **An interval is never fired on the engine's behalf.** Running three
+        // ticks and calling it drained let an engine hide a reach behind the
+        // fourth; a live interval is a certification failure in its own right.
+        if (entry.repeating) return
+        entry.pending = false
+        clear(handle)
         run()
       },
       cancel() {
+        entry.cancelled = true
         entry.pending = false
-        clear(handle)
       }
     }
     const handle = schedule(() => {
+      if (entry.cancelled) return
       if (!repeating) entry.pending = false
-      entry.runs += 1
       run()
     })
     tracked.push(entry)
+    byHandle.set(handle, entry)
     return handle
+  }
+
+  /** The engine's own cancellation: the handle is done, and never fired here. */
+  const forget = (handle: unknown, clear: (h: unknown) => void) => {
+    byHandle.get(handle)?.cancel()
+    clear(handle)
   }
 
   keep('setTimeout')
@@ -199,26 +220,37 @@ function trackDeferredWork(): {
     if (typeof fn !== 'function') return realSetTimeout(fn as never, ms)
     return record(
       'setTimeout',
+      `setTimeout(${String(ms ?? 0)}ms)`,
       () => (fn as (...rest: unknown[]) => void)(...args),
       (wrapped) => realSetTimeout(wrapped, ms),
       (handle) => realClearTimeout(handle as never),
       false
     )
   }
+  keep('clearTimeout')
+  scope.clearTimeout = (handle: unknown) =>
+    forget(handle, (inner) => realClearTimeout(inner as never))
+
   keep('setInterval')
   scope.setInterval = (fn: unknown, ms?: number, ...args: unknown[]) => {
     if (typeof fn !== 'function') return realSetInterval(fn as never, ms)
     return record(
       'setInterval',
+      `setInterval(${String(ms ?? 0)}ms)`,
       () => (fn as (...rest: unknown[]) => void)(...args),
       (wrapped) => realSetInterval(wrapped, ms),
       (handle) => realClearInterval(handle as never),
       true
     )
   }
+  keep('clearInterval')
+  scope.clearInterval = (handle: unknown) =>
+    forget(handle, (inner) => realClearInterval(inner as never))
+
   keep('queueMicrotask')
   scope.queueMicrotask = (fn: () => void) =>
     record(
+      'queueMicrotask',
       'queueMicrotask',
       fn,
       (wrapped) => {
@@ -235,6 +267,7 @@ function trackDeferredWork(): {
     scope.setImmediate = (fn: () => void, ...args: unknown[]) =>
       record(
         'setImmediate',
+        'setImmediate',
         () => fn(...(args as [])),
         (wrapped) => realSetImmediate(wrapped),
         (handle) => realClearImmediate?.(handle),
@@ -248,6 +281,7 @@ function trackDeferredWork(): {
     scope.requestAnimationFrame = (fn: (t: number) => void) =>
       record(
         'requestAnimationFrame',
+        'requestAnimationFrame',
         () => fn(0),
         (wrapped) => realRaf(() => wrapped()),
         (handle) => realCancelRaf?.(handle),
@@ -256,27 +290,52 @@ function trackDeferredWork(): {
   }
 
   return {
-    pending: () => tracked.filter((entry) => entry.pending),
+    pending: () => tracked.filter((entry) => entry.pending && !entry.repeating),
+    // **The interval rule.** A certified engine leaves no live interval when its
+    // iterator ends: an interval nobody cleared runs for ever, and an engine
+    // that reaches on its ninth tick is an engine no bounded drain can catch.
+    liveIntervals: () => tracked.filter((entry) => entry.repeating && !entry.cancelled),
     restore() {
       for (const [name, value] of before) scope[name] = value
+      // Whatever the engine left behind stops here, so a leg cannot leak a
+      // ticking timer into the next one.
+      for (const entry of tracked) {
+        if (entry.repeating && !entry.cancelled) entry.pending = false
+      }
     }
   }
 }
 
+/** How many times the drain will look for more work before giving up. */
+const DRAIN_ROUNDS = 64
+
 /**
  * Run everything an engine left behind, under the seal, until nothing is left.
  *
- * Repeatedly, because a timer may schedule another one — the chained shape the
- * fixed wait could not see. Bounded, because an engine that schedules for ever
- * must end the drain rather than the drain ending the suite; what is left over
- * is reported and asserted rather than waited on.
+ * Repeatedly, because a timer may schedule another one and a microtask may
+ * queue another — the chained shapes a fixed wait could not see. Bounded,
+ * because an engine that schedules for ever must end the drain rather than the
+ * drain ending the suite; **what is left over when the bound is reached is a
+ * failure, not a pass**, and the count is what the leg asserts.
+ *
+ * Promise reactions are flushed rather than tracked: `await Promise.resolve()`
+ * between rounds runs whatever the microtask queue holds, which is how a
+ * `.then` chain an engine left behind is caught while the seal is still up.
+ * What that does not cover is a reaction chained off something that resolves
+ * *after* the drain — a fetch to a real host, a socket, a `MessageChannel` —
+ * and that bound is stated in the README rather than papered over.
  */
 async function drainDeferredWork(tracker: { pending(): Tracked[] }): Promise<number> {
-  for (let round = 0; round < 32; round += 1) {
+  for (let round = 0; round < DRAIN_ROUNDS; round += 1) {
+    // Microtasks first: a `.then` chain needs no timer at all.
+    for (let tick = 0; tick < 8; tick += 1) await Promise.resolve()
     const due = tracker.pending()
-    if (due.length === 0) break
+    if (due.length === 0) {
+      // One more flush, in case the last timer queued a reaction.
+      for (let tick = 0; tick < 8; tick += 1) await Promise.resolve()
+      if (tracker.pending().length === 0) break
+    }
     for (const entry of due) entry.fire()
-    for (let tick = 0; tick < 5; tick += 1) await Promise.resolve()
   }
   return tracker.pending().length
 }
@@ -301,6 +360,10 @@ interface Run {
   violations: string[]
   /** Handles still pending when the drain gave up. Zero, or the seal is a wait. */
   leftPending: number
+  /** Intervals the engine never cleared. Each one is a certification failure. */
+  liveIntervals: string[]
+  /** What a deferred callback threw during the drain, where one did. */
+  drainThrew: string
 }
 
 /**
@@ -335,6 +398,8 @@ async function runLeg(
   let seal: Seal | null = null
   let tracker: ReturnType<typeof trackDeferredWork> | null = null
   let leftPending = 0
+  let liveIntervals: string[] = []
+  let drainThrew = ''
   try {
     const ready = await connection.ready
     const call = bindModelCall()
@@ -363,20 +428,41 @@ async function runLeg(
     // harness's problem: it lands on the stream like any other failure.
     events.push({ type: 'error', message: `${(cause as Error).name}: ${(cause as Error).message}` })
   } finally {
-    if (tracker !== null) {
-      leftPending = await drainDeferredWork(tracker)
-      tracker.restore()
+    // **Nested, so every one of these runs whatever throws.** A deferred
+    // callback that threw during the drain used to leave this block before the
+    // sentinels and the timer wrappers came off, and a leg that failed could
+    // poison every leg after it with globals that were never restored.
+    try {
+      if (tracker !== null) {
+        leftPending = await drainDeferredWork(tracker)
+        liveIntervals = tracker.liveIntervals().map((entry) => entry.label)
+      }
+    } catch (cause) {
+      drainThrew = `${(cause as Error).name}: ${(cause as Error).message}`
+    } finally {
+      try {
+        tracker?.restore()
+      } finally {
+        try {
+          seal?.lift()
+        } finally {
+          try {
+            await connection.close()
+          } finally {
+            await runtime.close()
+          }
+        }
+      }
     }
-    seal?.lift()
-    await connection.close()
-    await runtime.close()
   }
   return {
     events,
     requests: model.requests,
     seen: runtime.seen,
     violations: seal?.violations ?? [],
-    leftPending
+    leftPending,
+    liveIntervals,
+    drainThrew
   }
 }
 
@@ -508,11 +594,18 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
       // after deferred work has been drained, and they **record** as well as
       // throwing — a reach from a timer throws into nobody's catch, so the
       // list is what says it happened.
-      const { events, violations, leftPending } = await runLeg(fromRegistry(engineId), leg)
+      const { events, violations, leftPending, liveIntervals, drainThrew } = await runLeg(
+        fromRegistry(engineId),
+        leg
+      )
       expect(violations).toEqual([])
       // Nothing was still waiting when the seal came down: the barrier is a
-      // drain of tracked handles, not a delay somebody chose.
+      // drain of tracked handles, not a delay somebody chose. And no interval
+      // was left ticking — a certified engine clears what it starts, because an
+      // interval nobody clears is one no bounded drain can exhaust.
       expect(leftPending).toBe(0)
+      expect(liveIntervals).toEqual([])
+      expect(drainThrew).toBe('')
       const errors = events.filter(
         (event): event is Extract<AssistantEvent, { type: 'error' }> => event.type === 'error'
       )
@@ -664,7 +757,11 @@ const CERTIFICATION_LOADERS = {
   'touches-on-load': async () =>
     (await import('./certification/touchesOnLoad')).touchesOnLoad,
   'touches-after-run': async () =>
-    (await import('./certification/touchesAfterRun')).touchesAfterRun
+    (await import('./certification/touchesAfterRun')).touchesAfterRun,
+  'clears-its-interval': async () =>
+    (await import('./certification/clearsItsInterval')).clearsItsInterval,
+  'throws-while-draining': async () =>
+    (await import('./certification/throwsWhileDraining')).throwsWhileDraining
 }
 
 const fromCertification = (id: keyof typeof CERTIFICATION_LOADERS) => () =>
@@ -702,27 +799,80 @@ describe('the seal, shown to fail', () => {
     expect(events.some((event) => event.type === 'proposal')).toBe(false)
   })
 
-  it('catches four reaches an engine scheduled for after its run', async () => {
+  /** Which schedules a leg's recorded reaches came from. */
+  const markers = (violations: string[]) =>
+    violations
+      .map((violation) => /from=([a-z]+)/.exec(violation)?.[1])
+      .filter((marker): marker is string => marker !== undefined)
+
+  it('catches the reaches an engine scheduled for after its run', async () => {
     const { violations, events, leftPending } = await runLeg(
       fromCertification('touches-after-run'),
       leg
     )
     // The run itself is clean — it ends, and nothing throws into the harness.
-    // Four schedules, none of which a fixed wait would have caught: soon, five
-    // minutes out, chained behind another timer, and on an interval.
     expect(events.map((event) => event.type)).toEqual(['end'])
     for (const violation of violations) expect(violation).toContain('globalThis.fetch')
-    // **Each schedule by name.** A count would be satisfied by an interval
-    // ticking four times while the three that actually defeat a fixed wait went
+    // **Each schedule by name.** A count would be satisfied by one of them
+    // firing repeatedly while the ones that actually defeat a fixed wait went
     // uncaught, which is the defect this fixture exists for.
-    const from = (marker: string) =>
-      violations.some((violation) => violation.includes(`from=${marker}`))
-    expect(from('soon'), 'the 10ms reach').toBe(true)
-    expect(from('far'), 'the five-minute reach').toBe(true)
-    expect(from('chained'), 'the reach behind another timer').toBe(true)
-    expect(from('interval'), 'the reach on an interval').toBe(true)
-    // And the drain finished: nothing was left waiting when the seal lifted.
+    const from = new Set(markers(violations))
+    expect(from.has('soon'), 'the 10ms reach').toBe(true)
+    expect(from.has('far'), 'the five-minute reach').toBe(true)
+    expect(from.has('chained'), 'the reach behind another timer').toBe(true)
+    expect(from.has('promise'), 'the reach on a promise chain, with no timer').toBe(true)
+    // And the drain finished with nothing left waiting.
     expect(leftPending).toBe(0)
+  })
+
+  it('fails an engine that leaves an interval ticking, whatever it reaches on', async () => {
+    // **The interval rule.** Running an interval a few times and clearing it on
+    // the engine's behalf let a reach hide behind the fourth tick and report a
+    // clean drain. An interval nobody cleared is a certification failure on its
+    // own terms, reported by name — and this fixture's interval reach is never
+    // run by the harness, so the failure is the interval and not the reach.
+    const { liveIntervals, violations } = await runLeg(fromCertification('touches-after-run'), leg)
+    expect(liveIntervals).toEqual(['setInterval(50ms)'])
+    expect(markers(violations)).not.toContain('interval')
+  })
+
+  it('lets an engine that clears its own interval past that rule, and still fails it', async () => {
+    // A rule that fails everything proves as little as one that fails nothing.
+    // This engine clears the interval it started — nothing to report — and
+    // still reaches from a timeout, which is what fails the leg.
+    const { liveIntervals, violations, leftPending } = await runLeg(
+      fromCertification('clears-its-interval'),
+      leg
+    )
+    expect(liveIntervals).toEqual([])
+    expect(leftPending).toBe(0)
+    const from = new Set(markers(violations))
+    expect(from.has('kept'), 'the timeout it meant').toBe(true)
+    // **And nothing it cancelled.** A drain that fired cancelled handles would
+    // report a reach this engine never made.
+    expect(from.has('cancelled'), 'a reach it had already cancelled').toBe(false)
+    expect(from.has('interval'), 'a reach on an interval it cleared').toBe(false)
+  })
+
+  it('restores every global when a deferred callback throws', async () => {
+    // The cleanup used to be one `finally` with the drain first in it, so a
+    // callback that threw left the block before the sentinels and the timer
+    // wrappers came off — and every leg after it ran against globals nobody
+    // restored.
+    const timers = ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'queueMicrotask']
+    const scope = globalThis as unknown as Record<string, unknown>
+    const before = timers.map((name) => scope[name])
+    const { drainThrew } = await runLeg(fromCertification('throws-while-draining'), leg)
+    expect(drainThrew).toContain('nobody was awaiting')
+    // The timer functions are the harness's only business and come back by
+    // identity.
+    expect(timers.map((name) => scope[name])).toEqual(before)
+    // The network globals are `fetch`-stubbed by the leg itself, so what is
+    // asserted of them is that none is still a sentinel.
+    for (const name of NETWORK_GLOBALS) {
+      const current = scope[name] as { name?: string } | undefined
+      expect(current?.name ?? '', `${name} is still sealed`).not.toBe('sealed')
+    }
   })
 
   it('leaves no sentinel behind when the leg is over', async () => {
