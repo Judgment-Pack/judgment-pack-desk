@@ -230,9 +230,12 @@ export async function* runVercel(session: AssistantSession): AsyncGenerator<Assi
   else session.signal.addEventListener('abort', onAbort, { once: true })
   const release = guardRejections()
   const offered = new Set(session.tools.map((tool) => tool.name))
-  // What the model asked for, before the SDK's refinement touched it. Only the
-  // rehearsal tool is refined, so only its calls are recorded here; the queue is
-  // per tool name because one step may carry more than one call to it.
+  // What the model asked for, before the SDK's refinement touched it.
+  //
+  // One queue and not a map, because the refinement hook below is registered for
+  // exactly one tool: every entry here is a call to it, and they are taken in
+  // the order the SDK refines and then executes them, so a step carrying two
+  // evaluates still pairs each call with its own arguments.
   const asked: unknown[] = []
 
   const drive = async (): Promise<void> => {
