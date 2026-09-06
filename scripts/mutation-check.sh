@@ -4373,6 +4373,20 @@ export function assistantTransport(): Transport {
     '    if (!next) describe.discard()' \
     '    void next'
 
+  # **The desk owns four members, and `specVersion` is not one of them.** It was
+  # for one round: the version a model wrote was replaced from the schema, so
+  # the bytes the runtime checked were not the bytes the assistant proposed on
+  # the one member that says what the document is, and `specVersion: "99"` was
+  # repaired into something creatable instead of being refused.
+  mutate web "the desk rewrites the format version the proposal wrote" "$NP" \
+    '  return serialise(shapePack(document as Record<string, unknown>, fields))
+}' \
+    "  return serialise({
+    ...shapePack(document as Record<string, unknown>, fields),
+    specVersion: '0.2.0-draft'
+  })
+}"
+
   # ---- Round 1: what the review found, and the rows that hold the answers ---
   #
   # A proposal belongs to a submission; an error after one withdraws it; the

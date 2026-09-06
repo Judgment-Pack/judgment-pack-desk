@@ -82,16 +82,17 @@ flight, a refused prompt, a run that ended without a document, a proposal that
 could not be read as JSON data.
 
 **The runtime says whether a proposal is a pack, before either write.** The
-desk fills the members the dialog asked about and leaves the rest as the model
-wrote it — nothing is stripped in silence — and then hands the exact bytes it
-would write to `validate`. Create is offered only where the answer is `valid`
-for those bytes, and refused with the check strip's own sentence and the first
-diagnostic verbatim. `specVersion` is the one member the desk states for a
-proposal and does not for a template: `get_example` served the template's, and
-a model's opinion of the format version is not a statement about the format, so
-it comes from the runtime's schema exactly as an empty pack's does. A proposal
-is refused outright where the connection serves no schema to take it from, or
-no `validate` to ask.
+desk fills the four members the dialog asked about — the name, the id, the
+version and the description — and leaves everything else exactly as the model
+wrote it, `specVersion` included. Nothing is stripped and nothing is repaired
+in silence: what the assistant proposed is what the runtime is asked about. The
+exact bytes that would be written go to `validate`, Create is offered only
+where the answer is `valid` for those bytes, and a refusal shows the check
+strip's own sentence and **every** diagnostic the runtime returned, in the same
+rendering the Checks panel uses — code, layer, severity, message and pointer,
+unreworded — with the runtime's own truncation note where it stopped at its
+limit. A proposal is refused outright where the connection serves no `validate`
+to ask.
 
 **Losing the assistant ends the session**, it does not merely hide it: the key
 leaving this machine or the endpoint leaving the file stops the run through the

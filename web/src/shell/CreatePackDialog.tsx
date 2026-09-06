@@ -63,8 +63,7 @@ import {
   packFromProposal,
   packPathFor,
   shapeTemplate,
-  slugFor,
-  specVersionFrom
+  slugFor
 } from '../packs/newPack'
 import { Alert } from '../ui/Alert'
 import { Button } from '../ui/Button'
@@ -343,29 +342,23 @@ export function CreatePackDialog({
    * The bytes a proposal would be written as, computed **here** so they can be
    * checked before Create is offered.
    *
-   * `shapePack` fills the members the dialog asked about and leaves the rest as
-   * the model wrote them, because the desk does not edit a document on a
-   * model's behalf. What that leaves is a document nobody has checked — an
-   * unknown top-level member, a mistyped rule, a `specVersion` a model invented
-   * — and the runtime's schema is `additionalProperties: false`, so the answer
-   * to "is this a pack" is the runtime's and is available for the asking.
+   * `shapePack` fills the four members the dialog asked about and leaves the
+   * rest exactly as the model wrote them — `specVersion` included — because the
+   * desk does not edit a document on a model's behalf. What that leaves is a
+   * document nobody has checked: an unknown top-level member, a mistyped rule,
+   * a format version a model invented. The runtime's schema is
+   * `additionalProperties: false` and its `specVersion` is a `const`, so the
+   * answer to "is this a pack" is the runtime's and is available for the
+   * asking.
    */
   const proposed = useMemo((): { text: string } | { problem: string } | undefined => {
     if (source?.kind !== 'proposal' || slug === undefined) return undefined
     try {
-      return {
-        text: packFromProposal(source.document, {
-          name,
-          description,
-          slug,
-          idBase,
-          specVersion: specVersionFrom(schema0.data)
-        })
-      }
+      return { text: packFromProposal(source.document, { name, description, slug, idBase }) }
     } catch (cause) {
       return { problem: reasonOf(cause) }
     }
-  }, [source, name, description, slug, idBase, schema0.data])
+  }, [source, name, description, slug, idBase])
   const shapedText = proposed !== undefined && 'text' in proposed ? proposed.text : undefined
   // The editor's own instrument: a call per keystroke is a call per keystroke,
   // so what is sent is a snapshot the field settles on, and `behind` is what

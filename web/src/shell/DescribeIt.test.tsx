@@ -1039,8 +1039,10 @@ describe('a proposal is checked before it is written', () => {
     expect(sent).toEqual([])
   })
 
-  it('states the format version itself rather than taking the model’s', async () => {
-    // The proposal above claimed `99`; the desk writes what the schema states.
+  it('sends the format version the proposal wrote, unchanged, and is refused on it', async () => {
+    // **The desk does not repair a proposal into something creatable.** The
+    // version a model wrote is what the runtime is asked about, and its
+    // diagnostic is what the author reads.
     injected = proposing({
       specVersion: '99',
       outcomes: [{ id: 'approve' }, { id: 'decline' }],
@@ -1050,11 +1052,22 @@ describe('a proposal is checked before it is written', () => {
     draw()
     await propose()
     await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
-    await nameIt('Vendor Onboarding')
+    fireEvent.change(screen.getByLabelText('Name (required)'), {
+      target: { value: 'Vendor Onboarding' }
+    })
+    await waitFor(() =>
+      expect(screen.getByText(/will not call this document a pack/)).toBeTruthy()
+    )
+    // What reached the runtime carried the model's own version.
+    const asked = stubCalls().filter((call) => call.name === 'validate')
+    expect(asked.length).toBeGreaterThan(0)
+    expect(
+      asked.some((call) => (JSON.parse(String(call.args.document)) as { specVersion?: unknown }).specVersion === '99')
+    ).toBe(true)
+    expect(createButton().disabled).toBe(true)
     fireEvent.click(createButton())
-    await waitFor(() => expect(sent.length).toBe(2))
-    const written = JSON.parse(String(sent[0]!.body.content)) as { specVersion: string }
-    expect(written.specVersion).toBe('0.2.0-draft')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(sent).toEqual([])
   })
 
   it('checks the exact bytes it writes, once', async () => {
