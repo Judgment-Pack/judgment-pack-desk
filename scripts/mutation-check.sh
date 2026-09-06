@@ -4266,10 +4266,15 @@ export function assistantTransport(): Transport {
     "        ? yield* refute({ session, provider, tools, callTool, slot, signal, document: proposal.document })" \
     "        ? yield* refute({ session, provider, tools, callTool: session.callTool, slot, signal, document: proposal.document })"
 
-  # And the same seam on the SDK-backed engine's second stream.
-  mutate web "the critic's stream is not bounded by the run" "$VL" \
-    "          const step = await withAbort(() => criticParts.next(), gate.signal)" \
-    "          const step = await criticParts.next()"
+  # **Retired: "the critic's stream is not bounded by the run".** It reported
+  # NOT DISCRIMINATING, correctly. The critic's `streamText` is given the run's
+  # `abortSignal`, so the SDK ends its own stream on a cancel and the desk's
+  # bound on the *read* changes nothing anyone can observe — exactly as it does
+  # on the main loop's read, which has never had a row either. The bound is kept
+  # because "the SDK honours the signal" is a premise and not a rule (the same
+  # argument `relay.ts` makes about checking an address the SDK composed), and
+  # its absence from this table is stated here rather than left as a gap. What
+  # IS observable is the seam on the tool dispatch, above.
 
   # A signal that aborted *while* the work was running fired before the
   # listener existed, so the await hung on whatever the work returned — which

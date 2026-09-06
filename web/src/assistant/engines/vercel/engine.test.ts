@@ -1156,6 +1156,19 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
     expect(filtered.body).toBe(body)
   })
 
+  it('starts a new signature at each turn, because the block ids repeat', () => {
+    // **The turn boundary, which is not decoration.** On the Anthropic wire a
+    // reasoning part is keyed by its index in the message, so every turn starts
+    // again at `0`. A ledger with no boundary concatenates one turn's signature
+    // onto the next and then reports the next turn's *whole* signature as a
+    // fragment of the pair — measured, on a session's third turn.
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'c2lnLVQx')
+    ledger.boundary()
+    ledger.fragment('0', 'c2lnLVQy')
+    expect(ledger.wholes()).toEqual(['c2lnLVQx', 'c2lnLVQy'])
+  })
+
   it('does not double a signature the SDK repeated whole', () => {
     // The SDK re-emits the same value where the endpoint sent one event, and a
     // ledger that appended blindly would invent a truncation nobody caused.

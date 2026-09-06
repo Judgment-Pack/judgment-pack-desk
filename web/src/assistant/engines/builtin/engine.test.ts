@@ -1268,6 +1268,61 @@ describe('the refutation pass, on this engine’s second loop', () => {
     expect(events.some((event) => event.type === 'critique')).toBe(true)
   })
 
+  it('ends a critic tool call that is still in flight when the run is stopped', async () => {
+    // **The run gate, on the critic's own dispatch.** The pass runs on
+    // `guardedCallTool` — the same bounded capability the main loop uses — so a
+    // viewer who presses Stop while the critic is waiting on `jpack mcp` ends
+    // the pass. A critic handed `session.callTool` directly waits for ever on a
+    // socket that answers nothing, and this session never ends.
+    const controller = new AbortController()
+    const call: ModelCall = async (_suffix, request) => {
+      if (request.body.includes(REFUTATION_MARKER)) {
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: 'call_c1',
+                      type: 'function',
+                      function: { name: 'validate', arguments: '{"document":"{}"}' }
+                    }
+                  ]
+                }
+              }
+            ]
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      }
+      return new Response(
+        JSON.stringify({ choices: [{ message: { role: 'assistant', content: PROPOSAL_TEXT } }] }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    }
+    const one: AssistantSession = {
+      ...session({
+        signal: controller.signal,
+        // The viewer presses Stop while this call is in flight, and it never
+        // settles — which is what a socket to a subprocess does.
+        callTool: async () => {
+          controller.abort()
+          return new Promise(() => {})
+        }
+      }),
+      model: { family: 'openai-compatible', model: 'a-model', call },
+      thinking: normalize('on', 'openai-compatible')
+    }
+    const events = await drain(builtin.start(one))
+    // It ended, and said nothing after the cancel.
+    expect(events.map((event) => event.type)).not.toContain('critique')
+    expect(events.map((event) => event.type)).not.toContain('proposal')
+    expect(events.map((event) => event.type)).not.toContain('end')
+  })
+
   it('ends where the run does, and says nothing after it', async () => {
     // The cancellation seam holds for the critic exactly as for the first loop.
     const controller = new AbortController()
