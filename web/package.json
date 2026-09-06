@@ -8,7 +8,9 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "conformance:record": "node scripts/record-conformance.mjs record",
+    "conformance:verify": "node scripts/record-conformance.mjs verify"
   },
   "license": "Apache-2.0",
   "dependencies": {

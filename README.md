@@ -1384,7 +1384,21 @@ certified by adding its id to one list.
   the five, exactly as served with the runtime's own schemas, and one
   `tools/call` answer per step T1–T6, taken from judgment-pack-runtime v0.19.0
   in a project copy that declared an audit trail. No audit record was written by
-  any of them.
+  any of them. It is **produced by a checked-in recorder** rather than by hand:
+
+  ```sh
+  # regenerate, or byte-compare what is committed against a runtime
+  JPACK_COMMIT=<full commit> npm --prefix web run conformance:record -- ./bin/jpack /path/to/project
+  JPACK_COMMIT=<full commit> npm --prefix web run conformance:verify -- ./bin/jpack /path/to/project
+  ```
+
+  The fixture carries the binary's SHA-256 and the runtime's full commit, and
+  `verify` fails on a byte of drift — which is what makes "recorded" a claim
+  somebody can check rather than a word in a comment. The project directory must
+  declare an audit trail, so a recording pass that wrote one would leave the
+  evidence behind. `sourceCommit` is stated by whoever runs the recorder and is
+  the one member there that is a claim rather than a measurement; the fixture
+  says so itself.
 - `scriptedModel.ts` is the fixture's step logic in TypeScript, installed as a
   `fetch` stub that records every request; it decides the next step from the
   results present in the request's own messages, so a run that mishandled a

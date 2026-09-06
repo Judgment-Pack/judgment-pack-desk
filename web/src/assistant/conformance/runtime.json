@@ -1,15 +1,16 @@
 {
-  "$comment": "Recorded once from a real runtime, not written by hand. `tools` is tools/list filtered to the five the assistant may call, exactly as served; `calls` is one tools/call answer per scenario step T1-T6, recorded with the arguments the gate lets out of the page — which is why T6 carries rehearsal: true. T7 (write_file) is deliberately absent: a call that reaches the scripted server under that name is a test failure, which is the point of the step.",
-  "recordedAt": "2026-09-05",
+  "$comment": "Recorded by web/scripts/record-conformance.mjs. Do not hand-edit: run `npm --prefix web run conformance:verify -- <binary> <project>` and it will say so. `tools` is tools/list filtered to the five the assistant may call, exactly as served; `calls` is one tools/call answer per scenario step T1-T6, recorded with the arguments the gate lets out of the page — which is why T6 carries rehearsal: true. T7 (write_file) is deliberately absent: a call that reaches the scripted server under that name is a test failure, which is the point of the step.",
+  "recorder": "web/scripts/record-conformance.mjs",
   "runtime": {
-    "release": "judgment-pack-runtime v0.19.0 (git tag v0.19.0, 5332814)",
+    "binarySha256": "7d849d0d8310b556d6c04485dea7dcfcc502ce0f0bca96862bab3ac4c728423f",
     "serverInfo": {
       "name": "jpack",
       "version": "0.0.0-dev"
     },
-    "note": "The binary is built from the v0.19.0 tree without release ldflags, so it reports its version as 0.0.0-dev; the release it is built from is the `release` member above.",
     "protocolVersion": "2025-06-18",
-    "project": "internal/graph/testdata/project of that tree, copied and given an audit trail (configVersion 3, audit.dir \"audit\"). No audit record was written by any call recorded here."
+    "note": "A release build reports its own version; a binary built from a tagged tree without release ldflags reports 0.0.0-dev, so `binarySha256` and `sourceCommit` are what identify it. `sourceCommit` is stated by whoever ran the recorder — it is not read off the binary — and is the one member here that is a claim rather than a measurement.",
+    "sourceCommit": "533281492908c055dbb6a6f5a3585935b0f73bc1",
+    "project": "The directory named on the command line. It must declare an audit trail, so that a recording pass that wrote one would leave the evidence behind."
   },
   "tools": [
     {

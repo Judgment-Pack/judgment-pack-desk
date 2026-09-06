@@ -39,6 +39,7 @@ import { bindModelCall, openAssistantConnection, runAssistantSession } from '../
 import scenario from './scenario.json'
 import { scriptedModel, type RecordedRequest } from './scriptedModel'
 import { RECORDED_TOOLS, scriptedRuntime, type ServerObservation } from './scriptedServer'
+import runtime from './runtime.json'
 import type { AssistantEvent } from '../engine'
 
 const FIVE = scenario.scenarioTools
@@ -166,6 +167,10 @@ describe('the scenario this session carries', () => {
   it('is the bake-off’s, with its provenance and its eight steps', () => {
     expect(scenario.$comment).toContain('2026-09-05-assistant-engine-bakeoff')
     expect(scenario.generatedAt).toContain('2026-09-05')
+    // The generator lives in the experiment's record, not here. An earlier
+    // version of that line named a path in this repository that does not
+    // exist, which is a provenance claim nobody could check.
+    expect(scenario.$comment).toContain('NOT in this repository')
     expect(scenario.steps.map((step) => step.id)).toEqual([
       'T1',
       'T2',
@@ -181,6 +186,32 @@ describe('the scenario this session carries', () => {
     // the gate has to put one there.
     const evaluate = scenario.steps.find((step) => step.id === 'T6')!
     expect(Object.keys(evaluate.arguments!).sort()).toEqual(['facts', 'pack'])
+  })
+
+  it('names the binary it was recorded from, and how to re-record it', () => {
+    // **Provenance that can be checked, not asserted.** The fixture used to
+    // carry a tag and a short commit in prose, with no recorder in the
+    // repository and nothing that could tell a hand-edited answer from a
+    // recorded one. `web/scripts/record-conformance.mjs` regenerates this file
+    // byte for byte from a named binary and project, and its `verify` mode
+    // byte-compares — so what this test holds is that the members the
+    // verification needs are all here.
+    expect(runtime.recorder).toBe('web/scripts/record-conformance.mjs')
+    expect(runtime.runtime.binarySha256).toMatch(/^[0-9a-f]{64}$/)
+    expect(runtime.runtime.sourceCommit).toMatch(/^[0-9a-f]{40}$/)
+    expect(runtime.runtime.protocolVersion).toBeTruthy()
+    expect(runtime.runtime.serverInfo.name).toBeTruthy()
+    // The one member here that is a claim rather than a measurement says so.
+    expect(runtime.runtime.note).toContain('a claim rather than a measurement')
+    expect(runtime.$comment).toContain('conformance:verify')
+  })
+
+  it('carries one recorded answer per step T1–T6 and none for the write', () => {
+    expect(runtime.calls.map((call) => call.step)).toEqual(['T1', 'T2', 'T3', 'T4', 'T5', 'T6'])
+    expect(runtime.calls.map((call) => call.tool)).not.toContain('write_file')
+    // Recorded with the arguments the gate lets out of the page.
+    const evaluate = runtime.calls.find((call) => call.tool === 'experimental_evaluate')!
+    expect((evaluate.arguments as { rehearsal?: unknown }).rehearsal).toBe(true)
   })
 
   it('offers the five tools the runtime actually served, schemas included', () => {
