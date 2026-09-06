@@ -2566,6 +2566,18 @@ no CORS, so a page calling one directly could not read the answer.
   through the proxy's own client trace before the answer is inspected, and a
   trailer copied after the body — and nothing either protocol needs arrives in
   either.
+- **The model listing goes over it too, and is first-page-only.** Each
+  protocol's listing is an ordinary relayed `GET` — `<relay>/models` for an
+  `openai-compatible` base ending in `/v1`, `<relay>/v1/models` for
+  `anthropic`, `<relay>/v1beta/models` for `gemini` — carrying that protocol's
+  credential header and none of the page's. **A page cannot ask for a second
+  page**: Gemini's listing pages with `pageToken`, and nothing of the page's
+  query is forwarded, so `pageToken=…` is refused with `assistant-relay-path`
+  and nothing sent. That is a stated limit rather than an oversight — an
+  endpoint with more models than one page holds shows the first page, and a
+  desk that needs more would have to put the parameter in the **configured
+  URL's own query**, which is the file on this machine and not the page's
+  choice. Nothing on the chassis is added for the listing; it is the relay.
 - **Nothing else.** No retry (a retried model request is a second charge on
   somebody's account for an answer nobody saw), no caching, no request
   rewriting, no model-name inspection. A refusal carries `assistant-relay-*`

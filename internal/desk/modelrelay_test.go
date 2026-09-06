@@ -1926,6 +1926,98 @@ func TestRelayCannotTakeTheKeyOutOfABody(t *testing.T) {
 	}
 }
 
+/* Model listing ------------------------------------------------------------ */
+
+func TestRelayCarriesEachProtocolsModelListing(t *testing.T) {
+	// **The page's way of finding out what models an endpoint offers**, on all
+	// three wires, through the relay that already exists — nothing on the
+	// chassis is added for it. Each protocol's listing is a `GET` on its own
+	// path under its own configured base, and what is asserted is what the
+	// endpoint received: the desk's credential in that protocol's header
+	// exactly once, and nothing at all of the page's.
+	for _, testCase := range []struct {
+		kind, base, suffix, path, header string
+	}{
+		{"openai-compatible", "/v1", "models", "/v1/models", "Authorization"},
+		{"anthropic", "", "v1/models", "/v1/models", "x-api-key"},
+		{"gemini", "", "v1beta/models", "/v1beta/models", "x-goog-api-key"},
+	} {
+		t.Run(testCase.kind, func(t *testing.T) {
+			u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"listing":"the endpoint's own"}`))
+			})
+			_, ts, _ := relayDeskAt(t, testCase.kind, u.server.URL+testCase.base)
+			const smuggled = "sk-the-page-should-not-have-this"
+			resp, body := relayDo(t, ts, http.MethodGet, testCase.suffix, nil,
+				func(r *http.Request) {
+					for _, header := range credentialHeaderCorpus {
+						r.Header.Set(header, smuggled)
+					}
+				})
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status %d: %s", resp.StatusCode, body)
+			}
+			if body != `{"listing":"the endpoint's own"}` {
+				t.Errorf("body %q, want the endpoint's own", body)
+			}
+			seen := u.only(t)
+			if seen.method != http.MethodGet || seen.path != testCase.path {
+				t.Errorf("the endpoint saw %s %s, want GET %s",
+					seen.method, seen.path, testCase.path)
+			}
+			// The right credential, once, and the configured key rather than
+			// anything the page sent.
+			if got := seen.header.Values(testCase.header); len(got) != 1 ||
+				!strings.Contains(got[0], testKey) {
+				t.Errorf("%s = %v, want exactly one carrying the configured key",
+					testCase.header, got)
+			}
+			// And nothing of the page's, under any spelling at all.
+			if strings.Contains(fmt.Sprint(seen.header), smuggled) {
+				t.Errorf("what the page sent reached the endpoint: %v", seen.header)
+			}
+			if strings.Contains(seen.rawQuery, "token") ||
+				strings.Contains(fmt.Sprint(seen.header), testToken) {
+				t.Errorf("the session token reached the endpoint: %q %v",
+					seen.rawQuery, seen.header)
+			}
+		})
+	}
+}
+
+func TestRelayRefusesTheListingsPaginationQuery(t *testing.T) {
+	// **The listing this desk carries is first-page-only, and the reason is
+	// the query rule.** Gemini's model listing pages with `pageToken`, and a
+	// page cannot send one: nothing of the page's query is forwarded, and the
+	// one exception is the literal `alt=sse`. That is a limit rather than an
+	// oversight — see the README — and this is the assertion that it holds on
+	// every kind, with nothing sent.
+	for _, kind := range AssistantKinds {
+		t.Run(kind, func(t *testing.T) {
+			counter := countingRelays(t)
+			u := newUpstream(t, nil)
+			_, ts, _ := relayDesk(t, kind, u)
+			for _, query := range []string{"pageToken=x", "pageSize=50", "pageToken=x&alt=sse"} {
+				resp, body := relayDo(t, ts, http.MethodGet, "v1beta/models?"+query, nil, nil)
+				if resp.StatusCode != http.StatusBadRequest {
+					t.Errorf("%q: status %d, want 400 (%s)", query, resp.StatusCode, body)
+					continue
+				}
+				if got := codeOfBody(t, body); got != CodeAssistantRelayPath {
+					t.Errorf("%q: code %q, want %q", query, got, CodeAssistantRelayPath)
+				}
+			}
+			if calls, to := counter.seen(); calls != 0 {
+				t.Fatalf("a pagination query made %d outbound request(s), to %v", calls, to)
+			}
+			if seen := u.arrivals(); len(seen) != 0 {
+				t.Fatalf("the endpoint saw %d request(s)", len(seen))
+			}
+		})
+	}
+}
+
 /* The one table ------------------------------------------------------------ */
 
 func TestTheProbeAndTheRelayPresentTheSameCredential(t *testing.T) {
