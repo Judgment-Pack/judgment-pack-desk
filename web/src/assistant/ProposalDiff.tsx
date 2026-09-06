@@ -51,7 +51,7 @@ export function ProposalDiffView({ diff }: { diff: ProposalDiff }) {
         </p>
       )}
       {moved.map((entry) => (
-        <Entry key={entry.pointer} entry={entry} />
+        <Entry key={entry.key} entry={entry} />
       ))}
       {kept.length > 0 && (
         <p className={styles.honesty}>
@@ -103,7 +103,7 @@ function Entry({ entry }: { entry: DiffEntry }) {
       ) : (
         <>
           {shown.map((child) => (
-            <Entry key={child.pointer} entry={child} />
+            <Entry key={child.key} entry={child} />
           ))}
           {kept > 0 && (
             <p className={styles.honesty}>

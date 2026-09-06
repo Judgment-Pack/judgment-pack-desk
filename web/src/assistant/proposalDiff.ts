@@ -33,6 +33,17 @@ export type DiffStatus = 'added' | 'removed' | 'changed' | 'unchanged'
 
 /** One member of the document, or one element of an array member. */
 export interface DiffEntry {
+  /**
+   * What identifies this row, which is **not** its pointer alone.
+   *
+   * A proposal that replaces `rules[0]` with a rule of another id produces two
+   * rows about position 0 — one removed, on the draft's pointer, and one added,
+   * on the proposal's — and a list keyed on the pointer would give React two
+   * rows with one key and a reader two rows that claim to be the same member.
+   * The kind is what tells them apart, and it is computed here rather than at
+   * the renderer so there is one answer.
+   */
+  key: string
   /** The RFC 6901 pointer this entry is about, in the desk's one address space. */
   pointer: string
   /** What to call it: the member's name, an element's id, or its position. */
@@ -64,6 +75,16 @@ export interface ProposalDiff {
   /** Top-level entries, in the proposal's own member order, removals last. */
   entries: DiffEntry[]
   counts: Record<DiffStatus, number>
+}
+
+/**
+ * One entry, with the identity every row is keyed by.
+ *
+ * `status:pointer`: an added row carries the proposal's pointer, a removed row
+ * the draft's, and the two can name the same position without colliding.
+ */
+function entryOf(entry: Omit<DiffEntry, 'key'>): DiffEntry {
+  return { key: `${entry.status}:${entry.pointer}`, ...entry }
 }
 
 export function isObject(value: unknown): value is Record<string, unknown> {
@@ -235,31 +256,37 @@ function compareElements(at: string, before: readonly unknown[], after: readonly
     const pointer = `${at}/${to}`
     const from = pairs[to]
     if (from === undefined) {
-      children.push({
-        pointer,
-        label: labelOf(after[to], to),
-        status: 'added',
-        after: jsonText(after[to])
-      })
+      children.push(
+        entryOf({
+          pointer,
+          label: labelOf(after[to], to),
+          status: 'added',
+          after: jsonText(after[to])
+        })
+      )
       continue
     }
     const same = sameValue(before[from], after[to])
-    children.push({
-      pointer,
-      label: labelOf(after[to], to),
-      status: same ? 'unchanged' : 'changed',
-      ...(same && from !== to ? { moved: true } : {}),
-      before: jsonText(before[from]),
-      after: jsonText(after[to])
-    })
+    children.push(
+      entryOf({
+        pointer,
+        label: labelOf(after[to], to),
+        status: same ? 'unchanged' : 'changed',
+        ...(same && from !== to ? { moved: true } : {}),
+        before: jsonText(before[from]),
+        after: jsonText(after[to])
+      })
+    )
   }
   for (const from of dropped) {
-    children.push({
-      pointer: `${at}/${from}`,
-      label: labelOf(before[from], from),
-      status: 'removed',
-      before: jsonText(before[from])
-    })
+    children.push(
+      entryOf({
+        pointer: `${at}/${from}`,
+        label: labelOf(before[from], from),
+        status: 'removed',
+        before: jsonText(before[from])
+      })
+    )
   }
   return children
 }
@@ -291,32 +318,34 @@ export function diffProposal(draftText: string | undefined, document: unknown): 
   const draft = readDraft(draftText)
   if ('problem' in draft) {
     const entries = isObject(proposed)
-      ? Object.keys(proposed).map((name) => ({
-          pointer: pointerOf([name]),
-          label: name,
-          status: 'added' as const,
-          after: jsonText(proposed[name])
-        }))
+      ? Object.keys(proposed).map((name) =>
+          entryOf({
+            pointer: pointerOf([name]),
+            label: name,
+            status: 'added',
+            after: jsonText(proposed[name])
+          })
+        )
       : [
-          {
+          entryOf({
             pointer: '',
             label: 'the whole document',
-            status: 'added' as const,
+            status: 'added',
             after: jsonText(proposed)
-          }
+          })
         ]
     return { against: 'nothing', reason: draft.problem, entries, counts: counted(entries) }
   }
 
   // A proposal that is not an object is one thing to accept or reject, whole.
   if (!isObject(proposed)) {
-    const entry: DiffEntry = {
+    const entry: DiffEntry = entryOf({
       pointer: '',
       label: 'the whole document',
       status: sameValue(draft.value, proposed) ? 'unchanged' : 'changed',
       before: jsonText(draft.value),
       after: jsonText(proposed)
-    }
+    })
     return { against: 'the draft', entries: [entry], counts: counted([entry]) }
   }
 
@@ -327,39 +356,45 @@ export function diffProposal(draftText: string | undefined, document: unknown): 
     // `hasOwn`, so a member the proposal writes as `null` is a member it
     // carries — and a member neither side carries is not invented here.
     if (!Object.hasOwn(draft.value, name)) {
-      entries.push({ pointer, label: name, status: 'added', after: jsonText(after) })
+      entries.push(entryOf({ pointer, label: name, status: 'added', after: jsonText(after) }))
       continue
     }
     const before = draft.value[name]
     if (sameValue(before, after)) {
-      entries.push({
-        pointer,
-        label: name,
-        status: 'unchanged',
-        before: jsonText(before),
-        after: jsonText(after)
-      })
+      entries.push(
+        entryOf({
+          pointer,
+          label: name,
+          status: 'unchanged',
+          before: jsonText(before),
+          after: jsonText(after)
+        })
+      )
       continue
     }
-    entries.push({
-      pointer,
-      label: name,
-      status: 'changed',
-      before: jsonText(before),
-      after: jsonText(after),
-      ...(Array.isArray(before) && Array.isArray(after)
-        ? { children: compareElements(pointer, before, after) }
-        : {})
-    })
+    entries.push(
+      entryOf({
+        pointer,
+        label: name,
+        status: 'changed',
+        before: jsonText(before),
+        after: jsonText(after),
+        ...(Array.isArray(before) && Array.isArray(after)
+          ? { children: compareElements(pointer, before, after) }
+          : {})
+      })
+    )
   }
   for (const name of Object.keys(draft.value)) {
     if (Object.hasOwn(proposed, name)) continue
-    entries.push({
-      pointer: pointerOf([name]),
-      label: name,
-      status: 'removed',
-      before: jsonText(draft.value[name])
-    })
+    entries.push(
+      entryOf({
+        pointer: pointerOf([name]),
+        label: name,
+        status: 'removed',
+        before: jsonText(draft.value[name])
+      })
+    )
   }
   return { against: 'the draft', entries, counts: counted(entries) }
 }

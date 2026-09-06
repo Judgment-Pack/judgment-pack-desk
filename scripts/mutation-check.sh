@@ -3850,6 +3850,13 @@ export function assistantTransport(): Transport {
     '  const draft = readDraft(draftText)' \
     '  const draft = readDraft(undefined)'
 
+  # **A row's identity is its kind and its pointer.** A proposal that replaces
+  # one rule with a rule of another id produces two rows about position 0, and
+  # a list keyed on the pointer alone hands React one key for both.
+  mutate web "two rows about one position share an identity" "$PD" \
+    '  return { key: `${entry.status}:${entry.pointer}`, ...entry }' \
+    '  return { key: entry.pointer, ...entry }'
+
   # A member the proposal did not move must not be written. The fixture drafts
   # are indented with four spaces, so a member written again comes back with
   # this module's own layout and the byte comparison sees it.

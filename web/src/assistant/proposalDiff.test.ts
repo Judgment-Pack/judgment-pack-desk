@@ -270,3 +270,45 @@ describe('reading the draft', () => {
     expect('problem' in readDraft(undefined)).toBe(true)
   })
 })
+
+describe('every row has an identity of its own', () => {
+  /** Every entry's key, parents and elements together. */
+  const keys = (entries: readonly DiffEntry[]): string[] =>
+    entries.flatMap((entry) => [entry.key, ...keys(entry.children ?? [])])
+
+  const unique = (found: readonly string[]) => new Set(found).size === found.length
+
+  it('tells a replaced element’s two rows apart', () => {
+    // The case the pointer alone cannot carry: one position, two rows — the
+    // rule that left and the rule that arrived.
+    const diff = diffProposal(text({ rules: [{ id: 'a' }] }), { rules: [{ id: 'b' }] })
+    const children = at(diff.entries, '/rules')!.children!
+    expect(children.map((entry) => [entry.status, entry.pointer, entry.key])).toEqual([
+      ['added', '/rules/0', 'added:/rules/0'],
+      ['removed', '/rules/0', 'removed:/rules/0']
+    ])
+    expect(unique(keys(diff.entries))).toBe(true)
+  })
+
+  it('keeps them unique where an id is carried twice', () => {
+    const diff = diffProposal(
+      text({ rules: [{ id: 'a', n: 1 }, { id: 'a', n: 2 }, { id: 'b' }] }),
+      { rules: [{ id: 'a', n: 3 }, { id: 'b' }] }
+    )
+    expect(unique(keys(diff.entries))).toBe(true)
+  })
+
+  it('keeps them unique through a reorder, an insertion and a removal at once', () => {
+    const diff = diffProposal(
+      text({ rules: [{ id: 'a' }, { id: 'b' }, { id: 'c' }], title: 'kept' }),
+      { rules: [{ id: 'new' }, { id: 'c' }, { id: 'a' }], title: 'kept' }
+    )
+    expect(unique(keys(diff.entries))).toBe(true)
+    expect(keys(diff.entries)).toContain('removed:/rules/1')
+    expect(keys(diff.entries)).toContain('added:/rules/0')
+  })
+
+  it('keeps them unique over the scenario’s own two drafts', () => {
+    expect(unique(keys(diffProposal(text(DRAFT_V1), DRAFT_V2).entries))).toBe(true)
+  })
+})

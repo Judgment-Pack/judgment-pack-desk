@@ -852,6 +852,24 @@ describe('the proposal the pane reads is the one the hook canonicalized', () => 
     expect(JSON.parse(held!.text!)).toEqual({ title: 'title 1' })
   })
 
+  it('draws a replaced element as two rows, with no duplicate key', async () => {
+    // React reports duplicate keys through `console.error`, and a warning
+    // nobody reads is a warning nobody fixes.
+    const complaints: string[] = []
+    const spy = vi.spyOn(console, 'error').mockImplementation((...parts: unknown[]) => {
+      complaints.push(parts.map((part) => String(part)).join(' '))
+    })
+    injected = proposes({ rules: [{ id: 'b' }] })
+    await draw({ buffer: { text: '{\n    "rules": [\n        { "id": "a" }\n    ]\n}\n' } })
+    await runIt()
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    const diff = screen.getByRole('region', { name: 'The proposal as a diff' })
+    expect(diff.textContent).toContain('added')
+    expect(diff.textContent).toContain('removed')
+    expect(complaints.filter((line) => /same key|duplicate/i.test(line))).toEqual([])
+    spy.mockRestore()
+  })
+
   it('shows the failure and offers no proposal where the document is not JSON data', async () => {
     const document: Record<string, unknown> = {}
     document.self = document
