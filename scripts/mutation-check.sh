@@ -3596,16 +3596,18 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the allow-list check is removed" "$TG" \
     "  if (typeof name !== 'string' || !allowed.has(name)) {" \
     '  if (false) {'
-  # K3(a) — and the one an inspect-and-forward gate cannot hold. An inherited
-  # rehearsal: true reads as true and is dropped by JSON.stringify, so the
-  # runtime receives an unrehearsed evaluation and appends an audit record.
-  # This is the branch the rebuild replaced, restored.
+  # K3(a) — and the one an inspect-and-forward gate cannot hold. A call that
+  # already reads as rehearsed still may not be forwarded as it arrived: the
+  # object can serialize without the member it appears to carry.
   mutate web "an evaluate that reads as rehearsed is forwarded unchanged" "$TG" \
-    '  const args = ownArguments(supplied ?? {})
-  const already = Object.hasOwn(args, REHEARSAL_MEMBER) && args[REHEARSAL_MEMBER] === true' \
-    '  if ((supplied ?? {})[REHEARSAL_MEMBER] === true) return { verdict: '"'"'pass'"'"' }
-  const args = ownArguments(supplied ?? {})
-  const already = false'
+    '  if (already) {
+    // Nothing to report: the caller asked for exactly what it got. The frame is
+    // still the canonical one, because canonical is what travels.
+    return { verdict: '"'"'send'"'"', notice: null, frame: frame as unknown as JSONRPCMessage }
+  }' \
+    '  if (already) {
+    return { verdict: '"'"'send'"'"', notice: null, frame: message }
+  }'
   # **Deliberately not a row: reading each own property twice.** It was one, and
   # it reported "nothing failed" — correctly. `ownArguments` reads once so that
   # a getter cannot answer the check and the wire differently, but the value
@@ -3618,24 +3620,14 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # Fail closed. A batch has no method, and "no method is harmless traffic" is
   # what let an array carrying write_file out whole.
   mutate web "a frame this gate cannot read is passed as harmless traffic" "$TG" \
-    '  if (!isRecord(message)) {
-    return refuse(
-      unreadable,
-      Array.isArray(message)
-        ? '"'"'a JSON-RPC batch is not a frame this gate can check one call at a time, so it is '"'"' +
-            '"'"'refused whole; nothing left the page'"'"'
-        : '"'"'an outbound frame must be a single JSON-RPC object; this one is not, and nothing '"'"' +
-            '"'"'left the page'"'"'
-    )
-  }' \
-    '  if (!isRecord(message)) {
-    return { verdict: '"'"'pass'"'"' }
-  }'
+    '  if (!isRecord(frame)) {' \
+    '  if (false) {'
   mutate web "a frame with no method at all is passed" "$TG" \
-    '    const hasId = '"'"'id'"'"' in message && message.id !== null && message.id !== undefined
-    const answers = '"'"'result'"'"' in message || '"'"'error'"'"' in message
-    if (hasId && answers) return { verdict: '"'"'pass'"'"' }' \
-    '    return { verdict: '"'"'pass'"'"' }'
+    '  if (!hasMethod) {' \
+    '  if (hasMethod === false && true) {
+    return { verdict: '"'"'send'"'"', notice: null, frame: frame as unknown as JSONRPCMessage }
+  }
+  if (false) {'
   # A near-spelling some other reader folds to tools/call.
   mutate web "a near-spelling of tools/call is waved through" "$TG" \
     '    if (method.trim().toLowerCase() === TOOLS_CALL) {' \

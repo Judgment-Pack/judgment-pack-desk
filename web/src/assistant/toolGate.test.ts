@@ -239,6 +239,33 @@ describe('the rehearsal rewrite, read off the wire', () => {
       expect(wireArguments(onWire)).toEqual({ pack: '{}', rehearsal: true })
     })
 
+    it('sends canonical bytes even where the call already read as rehearsed', async () => {
+      // The `already` branch has nothing to *report* — and still may not
+      // forward the caller's object. This `toJSON` carries the member the first
+      // time it is asked and drops it the second, so a gate that checked the
+      // canonical form and then handed the transport the original would send
+      // an unrehearsed evaluation with nothing to show for it.
+      let serializations = 0
+      const alternating = {
+        pack: '{"a":1}',
+        toJSON() {
+          serializations += 1
+          return serializations === 1
+            ? { pack: '{"a":1}', rehearsal: true }
+            : { pack: '{"a":1}' }
+        }
+      }
+      const { transport, onWire, notices } = gated(FIVE)
+      await transport.send(
+        call('experimental_evaluate', alternating as unknown as Record<string, unknown>)
+      )
+      expect(wireArguments(onWire)).toEqual({ pack: '{"a":1}', rehearsal: true })
+      // Nothing to say: what it serialized into already carried the member.
+      expect(notices).toEqual([])
+      // And it was asked exactly once, by the canonicalization.
+      expect(serializations).toBe(1)
+    })
+
     it('sends an own rehearsal: true where the arguments carry an enumerable toJSON', async () => {
       // The round-2 defect. A copied `toJSON` is invoked at serialization, so a
       // rebuild that carried rehearsal: true produced bytes that did not — and
