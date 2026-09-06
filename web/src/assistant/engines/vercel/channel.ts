@@ -26,6 +26,16 @@
  * unmounts, a `break`, a `return()` on the iterator: whatever is waiting on a
  * delivery that will never happen must be released, or the framework's task
  * runs for ever behind a page nobody is looking at.
+ *
+ * **And the event being yielded when that happens is the one `abandon()` cannot
+ * see.** `drain` takes an entry off the queue *before* yielding it, so a
+ * consumer that stops at exactly that event leaves a delivery nothing is
+ * holding: not the queue, because it was taken off; not the resumed loop,
+ * because it never resumes. `drive()` would wait on that `push` for ever and
+ * `runVercel`'s `finally` would wait on `drive()`. So the generator settles the
+ * entry it was yielding from a `finally` of its own, on **every** exit path —
+ * its own return, a consumer's `return()`, a throw — and abandons the rest with
+ * it.
  */
 import type { AssistantEvent } from '../../engine'
 
@@ -44,16 +54,36 @@ export interface EventChannel {
   drain(): AsyncGenerator<AssistantEvent>
 }
 
-export function eventChannel(): EventChannel {
+export function eventChannel(options: { onAbandon?: () => void } = {}): EventChannel {
   const queue: Waiting[] = []
   let wake: (() => void) | null = null
   let closed = false
   let abandoned = false
+  /** The entry `drain` has yielded and not yet resumed from. */
+  let inFlight: Waiting | null = null
 
   const stir = () => {
     const wakeNow = wake
     wake = null
     wakeNow?.()
+  }
+
+  /** Release everything nobody will ever deliver, the in-flight one included. */
+  const releaseAll = () => {
+    const first = !abandoned
+    abandoned = true
+    closed = true
+    // **Before anything is released, and this order is the whole of it.** What
+    // resumes on a released delivery is the producer, and it resumes on a
+    // microtask — earlier than any `finally` further out could run. So the
+    // owner is told the run is over *first*, and the producer finds an ended
+    // run rather than a session it should carry on with.
+    if (first) options.onAbandon?.()
+    const held = inFlight
+    inFlight = null
+    held?.delivered()
+    while (queue.length > 0) queue.shift()!.delivered()
+    stir()
   }
 
   return {
@@ -68,28 +98,32 @@ export function eventChannel(): EventChannel {
       closed = true
       stir()
     },
-    abandon(): void {
-      abandoned = true
-      closed = true
-      // Whatever was queued is never delivered, so nothing may still be waiting
-      // on a delivery: each pending push is released where it stands.
-      while (queue.length > 0) queue.shift()!.delivered()
-      stir()
-    },
+    abandon: releaseAll,
     async *drain(): AsyncGenerator<AssistantEvent> {
-      for (;;) {
-        while (queue.length > 0) {
-          if (abandoned) return
-          const next = queue.shift()!
-          yield next.event
-          // After the consumer's own body has run for this event, which is what
-          // makes the desk's interleaved guardrail land in the right place.
-          next.delivered()
+      try {
+        for (;;) {
+          while (queue.length > 0) {
+            if (abandoned) return
+            const next = queue.shift()!
+            inFlight = next
+            yield next.event
+            inFlight = null
+            // After the consumer's own body has run for this event, which is what
+            // makes the desk's interleaved guardrail land in the right place.
+            next.delivered()
+          }
+          if (closed) return
+          await new Promise<void>((resolve) => {
+            wake = resolve
+          })
         }
-        if (closed) return
-        await new Promise<void>((resolve) => {
-          wake = resolve
-        })
+      } finally {
+        // **Every exit, not only the loop's own.** A consumer that stopped at an
+        // event — `break`, `return()`, a throw in its body — never resumes the
+        // `yield` above, so the entry it took off the queue is a delivery
+        // nothing else can settle. Settling it here is what keeps the producer
+        // from waiting on it for ever.
+        releaseAll()
       }
     }
   }

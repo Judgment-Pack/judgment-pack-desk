@@ -220,11 +220,14 @@ function endpointSentence(body: unknown): string {
  * because a viewer who pressed Stop has not been told about a failure.
  */
 export async function* runVercel(session: AssistantSession): AsyncGenerator<AssistantEvent> {
-  const channel = eventChannel()
   // The run's own controller, chained to the session's: the SDK is given this
-  // one so the `finally` below can end a run the consumer walked away from,
-  // and the session's abort reaches it the moment the viewer presses Stop.
+  // one so a consumer that walks away ends the run, and the session's abort
+  // reaches it the moment the viewer presses Stop.
   const stop = new AbortController()
+  // **The channel aborts the run as it releases what it was holding**, because
+  // the producer resumes on a microtask and would otherwise carry on into a
+  // tool call for a session nobody is listening to any more.
+  const channel = eventChannel({ onAbandon: () => stop.abort() })
   const onAbort = () => stop.abort()
   if (session.signal.aborted) stop.abort()
   else session.signal.addEventListener('abort', onAbort, { once: true })
@@ -258,6 +261,13 @@ export async function* runVercel(session: AssistantSession): AsyncGenerator<Assi
         unknown
       >
       await channel.push({ type: 'tool_call', name, args })
+      if (stop.signal.aborted) {
+        // The run ended while this call was waiting to be reported — the viewer
+        // pressed Stop, or the consumer stopped listening. A session nobody is
+        // watching asks the runtime nothing more.
+        const text = 'the session was stopped before this call was made; nothing was written'
+        return { content: [{ type: 'text', text }], isError: true }
+      }
       let answer: McpToolResult
       try {
         answer = await session.callTool(name, args)
@@ -383,11 +393,19 @@ export async function* runVercel(session: AssistantSession): AsyncGenerator<Assi
   } finally {
     // A consumer that stopped listening releases whatever the framework's
     // pipeline is waiting to deliver, and the run is aborted rather than left
-    // running behind a pane nobody is watching.
+    // running behind a pane nobody is watching. The abort goes first, so the
+    // loop that is about to be released finds a run already over.
+    session.signal.removeEventListener('abort', onAbort)
+    // `abandon` aborts the run before it releases anything; calling it again
+    // where the drain already did is harmless and keeps this path honest.
     channel.abandon()
     stop.abort()
-    session.signal.removeEventListener('abort', onAbort)
-    await settled
+    // **Not awaited here.** On the ordinary path `settled` was awaited above,
+    // where waiting is what it means. On this one the consumer has stopped
+    // listening, and waiting for a loop that is itself waiting on a tool call
+    // would make `return()` on this iterator as slow as the slowest thing the
+    // session was doing.
+    void settled
     release()
     yield { type: 'end' }
   }

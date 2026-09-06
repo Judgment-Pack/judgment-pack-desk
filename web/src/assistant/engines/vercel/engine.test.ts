@@ -16,6 +16,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ASSISTANT_TOOLS } from '../../../config/deskConfig'
 import { loadEngine } from '../index'
+import { eventChannel } from './channel'
 import { vercel } from './index'
 import { REHEARSAL_HOOK, SUPPRESSED_REJECTION } from './loop'
 import { ADDRESS_REFUSED, PLACEHOLDER_ORIGIN, placeholderBase, reframe, relayFetch, suffixOf } from './relay'
@@ -116,6 +117,38 @@ async function drain(events: AsyncIterable<AssistantEvent>): Promise<AssistantEv
   for await (const event of events) seen.push(event)
   return seen
 }
+
+/** A promise, or a marker where it did not settle inside the bound. */
+async function within(ms: number, work: Promise<unknown>): Promise<string> {
+  return Promise.race([
+    work.then(() => 'settled'),
+    new Promise<string>((resolve) => setTimeout(() => resolve('STILL WAITING'), ms))
+  ])
+}
+
+describe('the ordered channel, when the consumer stops listening', () => {
+  it('settles the delivery it was yielding when the drain is returned', async () => {
+    // The defect: `drain` takes an entry off the queue **before** yielding it,
+    // so a consumer that stops at exactly that event leaves a delivery nothing
+    // is holding — not the queue, and not the loop that never resumes. The
+    // producer waited on it for ever.
+    const channel = eventChannel()
+    const first = channel.push({ type: 'end' })
+    const second = channel.push({ type: 'end' })
+    const drain = channel.drain()
+    expect((await drain.next()).value).toEqual({ type: 'end' })
+    await drain.return(undefined)
+    expect(await within(500, first), 'the event that was in flight').toBe('settled')
+    expect(await within(500, second), 'the events still queued behind it').toBe('settled')
+  })
+
+  it('settles a delivery abandoned before the drain ever ran', async () => {
+    const channel = eventChannel()
+    const waiting = channel.push({ type: 'end' })
+    channel.abandon()
+    expect(await within(500, waiting)).toBe('settled')
+  })
+})
 
 describe('the registry', () => {
   it('loads this adapter for the id a desk.json names, and not another', async () => {
@@ -380,6 +413,36 @@ describe('exactly one end, on every path', () => {
     const events = await drain(vercel.start(session(call)))
     expect(events.map((event) => event.type)).toEqual(['error', 'end'])
     expect((events[0] as { message: string }).message).toContain('exactly one fenced JSON block')
+  })
+})
+
+describe('a consumer that stops in the middle of a run', () => {
+  it('returns promptly, and asks the runtime nothing more', async () => {
+    // The whole path: the model asks for a tool, the adapter's `execute` waits
+    // for the `tool_call` event to reach the consumer, and the consumer stops
+    // there. The deadlock itself is proved on the channel above — this is the
+    // shape it happens in, and the two things a viewer would notice: `return()`
+    // settles, and a session nobody is watching asks the runtime nothing more.
+    let asked = 0
+    const { call, seen } = scriptedCall([
+      turn({ tool: { name: 'validate', args: { document: {} } } }),
+      turn({ text: PROPOSAL_TEXT })
+    ])
+    const iterator = vercel.start(
+      session(call, {}, async () => {
+        asked += 1
+        return { content: [{ type: 'text', text: '{"status":"ok"}' }] }
+      })
+    )[Symbol.asyncIterator]()
+    const first = await iterator.next()
+    expect(first.value).toMatchObject({ type: 'tool_call', name: 'validate' })
+    expect(asked, 'the tool has not been called yet').toBe(0)
+    expect(await within(2000, iterator.return!(undefined))).toBe('settled')
+    // Whatever the framework's pipeline does as it unwinds, it does not reach
+    // the runtime, and it does not take another turn.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(asked, 'the runtime was asked after the consumer stopped').toBe(0)
+    expect(seen).toHaveLength(1)
   })
 })
 
