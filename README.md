@@ -1362,20 +1362,17 @@ admits `off`, `on` and `ultra`; the two states it cannot express — a model tha
 always thinks, and an endpoint that offers no thinking at all — are the desk's
 to report when it meets them rather than settings anyone selects.
 
-`engine` is acted on now: the page loads the named engine's chunk and runs it,
+Both are acted on now: the page loads the named engine's chunk and runs it —
 and **this build certifies both ids**, so the tab's status line names the engine
-the file asked for and nothing is ever substituted. `thinking` is still stored
-and shown and shapes no request; either engine reports a tier other than `off`
-as unavailable and carries on, which is what ADR-0001 means by degrading
-visibly.
+the file asked for and nothing is ever substituted — and a tier other than `off`
+puts real parameters on every request and runs the refutation pass below.
 
 **What the slot has shipped so far**, in ADR-0001's own order: the slot and the
 key custody; the Assistant tab, with propose and accept-into-draft; the engine
 slot itself, with `vercel` and `builtin` both certified against the conformance
-session; and **Describe it** in the Create dialog, which runs the same session
-with no draft and hands what comes back to Create rather than to a diff. The
-thinking tier and the refutation pass are the chunk after this one: a tier other
-than `off` is reported unavailable and the session continues.
+session; **Describe it** in the Create dialog, which runs the same session with
+no draft and hands what comes back to Create rather than to a diff; and the
+thinking tier with its refutation pass.
 
 **Admin › Assistant** shows the configured endpoint, its protocol, its model
 and its tools with the file each came from, the engine and the tier, the exact JSON to paste, the key
@@ -1533,6 +1530,157 @@ the pane declines to start one it knows is about to be argued with.
 **Reject** drops the proposal and keeps the event stream. There is no partial
 accept: per-member checkboxes are a later refinement, and this chunk deliberately
 does not ship half of one.
+
+### The thinking tier
+
+`assistant.thinking` is `off`, `on` or `ultra`. Set to anything but `off` it
+makes whichever engine runs **ask the model to think at that depth**, stream the
+model's reasoning into the tab as it arrives, carry thinking blocks back
+verbatim across every tool turn, and run the refutation pass below before a
+proposal is shown.
+
+**The tier maps to provider parameters in one desk-owned table**, per endpoint
+family, and the engine receives the normalized result — it never chooses a
+parameter of its own. The table is `web/src/assistant/thinking.ts` and it is the
+whole of it:
+
+| family | tier | what goes on the wire |
+| --- | --- | --- |
+| `openai-compatible` | `on` | `reasoning_effort: "high"` |
+| `openai-compatible` | `ultra` | `reasoning_effort: "xhigh"` |
+| `anthropic` | `on` | `thinking: {"type":"adaptive"}` with `output_config: {"effort":"high"}` |
+| `anthropic` | `ultra` | the same, with `"effort":"xhigh"` |
+| `anthropic`, after a 400 | `on` / `ultra` | `thinking: {"type":"enabled","budget_tokens":8000}` / `16000` |
+| either | `off` | **nothing at all** |
+
+`off` is expressed by **omission** everywhere, and that is not a shortcut:
+Anthropic rejects `{"type":"disabled"}` on the models that always think, and
+several OpenAI-compatible endpoints answer 400 to `reasoning_effort: "none"`, so
+*send nothing* is the only spelling of off that every endpoint accepts.
+
+The depth on the Anthropic family lives in a **sibling** member on current
+models and inside the thinking member on 4.5-era ones, so the desk tries the
+adaptive spelling first and, on a 400 that names a member it actually sent,
+**falls back once** to the token budget. A fallback says nothing in the tab: the
+desk asked in the other spelling and the session still thinks.
+
+**Five states, three of them selectable.** The last two are the desk's to report
+when it meets them, on every engine, and are deliberately not values anybody can
+put in a file:
+
+| state | how the desk reaches it |
+| --- | --- |
+| `off` | the file said so, or said nothing |
+| `on` / `ultra` | the file said so and the endpoint did it |
+| **this model always thinks** | the tier is `off`, **no** thinking parameter was sent, and reasoning came back anyway |
+| **unavailable for this endpoint** | a 400 or 422 naming a member the desk sent, at every spelling it knows; or the first turn carried no reasoning block at all; or a thinking signature came back truncated |
+
+**The degrade happens once, visibly, and the session completes.** The refused
+member is never sent again — the requests carrying a tier parameter are a prefix
+of the run, at most one per spelling — one line appears in the tab, and the
+scenario runs to its proposal. Whether a 400 is *about the tier* is decided
+against a **closed list** of the providers' own documented refusals plus the
+member names this desk actually sent; an endpoint's body is matched against that
+list and never quoted past it, so a refusal about a document cannot be read as a
+refusal of the parameter.
+
+The tab's status line names the tier the file asked for and the state the
+session reached: `builtin · a-model · thinking on · unavailable for this
+endpoint`. Each reasoning passage is one line in the stream, collapsed with its
+character count, and opens on a click. **Reasoning text never reaches the
+runtime** — it is for the person reading the tab, and the runtime is asked about
+documents.
+
+**Thinking blocks come back complete and unmodified**, which is Anthropic's own
+rule and the reason the built-in engine echoes the assistant turn exactly as it
+received it rather than rebuilding it: a `redacted_thinking` block survives
+because nothing filters by block type, and a signature split across two
+`signature_delta` events is concatenated rather than the last fragment kept. The
+`vercel` engine cannot make its SDK reassemble one (`vercel/ai#19663`, still
+present at `ai@7.0.93` and measured by this repository's own suite), so the desk
+**detects** the truncation instead: fragments are ledgered as they arrive, each
+outgoing body is compared with them, a block whose signature came back as a
+fragment is removed rather than sent, and the session degrades once with the
+reason. That test is written to go red if the SDK is ever fixed in silence.
+
+### The refutation pass
+
+With the tier on, the assistant does not show you a proposal it has not tried to
+break. After the main loop has produced a document and **before** the proposal
+event is emitted, the engine runs a second, adversarial session over it — a
+second loop in `builtin`, a second `streamText` in `vercel` — instructed by the
+runtime's own `test_pack` prompt, the document fenced beneath it, and one fixed
+sentence from this desk saying to try to refute it with the runtime's tools and
+to state no verdict of its own.
+
+It runs **inside the same ToolGate**, on the same `callTool`, over the same five
+tools, under the same run gate: its `experimental_evaluate` is rewritten to a
+rehearsal before the frame leaves the page exactly as the main loop's is, it can
+no more reach `write_file`, and pressing Stop during the pass ends it where it
+would have ended the loop above. The desk hands an engine one capability, so
+there is no ungated route for a critic to be given.
+
+Three rules, all of them desk code:
+
+- **the verdict is computed from the runtime's own results, never from the
+  model's prose.** A check is a `validate` or a rehearsal `experimental_evaluate`
+  the critic actually caused, read from the answers that came back through the
+  gate; the proposal is refuted exactly where one of them did not come back as
+  the runtime's own word for "this went through". A critic whose sentence says
+  *REFUTATION: this pack is broken* over a `validate` the runtime called `valid`
+  produces **not refuted**, and one whose sentence says *none found* over an
+  `invalid` produces **refuted** — both directions are conformance legs;
+- **a non-empty list of checks before "not refuted" is rendered.** A critic that
+  talked and asked the runtime nothing produces *the critic ran no runtime
+  check*, and the proposal is shown **without** a refutation line rather than
+  with a clean bill of health nobody measured;
+- **the checks are quoted and the prose is labelled.** The report shows each
+  check as the runtime's own `status`, and the critic's own words beneath, as
+  the model's words.
+
+The settled status is a **table per tool** and not the single word `valid`: a
+rehearsal evaluation answers `"status": "evaluated"`, so one word over both
+tools would have reported every session ever run as refuted. A check the runtime
+refused outright counts as a check and refutes.
+
+A refuted proposal is **still a proposal**: the document is shown, the diff is
+drawn, and Accept is offered. Refutation is information, not failure, and the
+desk's one clean-run selector treats it as such.
+
+**The ruling this carries, which the maintainer has not made.** On a *degraded*
+endpoint — one with no thinking at all — the pass **still runs**. Its value is
+the runtime's checks over the proposed document, not the model's thinking, and a
+`validate` costs one call; the tab's line says the endpoint has no thinking, and
+the checks appear as they always do. The alternative — skip the pass wherever
+the endpoint degraded — is `REFUTE_ON_A_DEGRADED_ENDPOINT` in
+`web/src/assistant/thinking.ts` set to `false`, one boolean and nothing else,
+with a conformance leg that follows it either way. ADR-0001 lists this among the
+questions the bake-off could not close, and it is open until the maintainer
+rules.
+
+### What is measured, and what is modelled
+
+The conformance session runs both engines over both wire formats, each answered
+as a stream and as one whole object, at tier `off`, `on` and `ultra`, against an
+endpoint with thinking, one with none, one that takes only the other Anthropic
+spelling, and one that splits its signatures. What that **measures** is what
+this desk puts on the wire and what it does with what comes back: the tier
+parameter on every request including the critic's, the signatures carried back
+byte-equal and well formed, the degrade happening once, the refused member never
+re-sent, the critic's evaluate arriving at the runtime rehearsed, and the verdict
+following the runtime rather than the prose. The runtime's answers in it are a
+real `jpack mcp`'s, recorded.
+
+What is **modelled** is the endpoint. The scripted model reproduces the
+documented wire shapes of both protocols; it is not evidence about how any
+vendor's endpoint actually responds, and the reasoning text and signatures in it
+are deterministic strings rather than a model's. Two smaller things are modelled
+too, and are named here rather than left to be discovered: the critic's copy of
+the runtime's `test_pack` prompt is a stand-in string in CI (the recorded
+runtime carries `tools/list` and `tools/call` and no `prompts/get`), and that
+prompt is read **without** its `pack` argument on the page as well, because the
+document the critic will be given does not exist when a session's prompts are
+read — the document is handed to the critic verbatim instead.
 
 ### The ToolGate
 

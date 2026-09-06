@@ -538,6 +538,9 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
           const quiet = slot.silent()
           if (quiet !== null) await deliver(quiet)
         }
+        // A turn boundary is where a reasoning block's signature is finished.
+        // See `signatureLedger`.
+        ledger.boundary()
         steps += 1
         final = ''
         continue
@@ -652,6 +655,7 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
           await flush()
           const part = step.value
           if (part.type === 'start-step') {
+            ledger.boundary()
             criticText = ''
             continue
           }

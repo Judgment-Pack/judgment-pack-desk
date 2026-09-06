@@ -153,6 +153,9 @@ interface OpenAiWhole {
       role?: string
       content?: string | null
       tool_calls?: { id?: string; type?: string; function?: { name?: string; arguments?: string } }[]
+      /** Both vendor names, because an endpoint may use either. */
+      reasoning_content?: string | null
+      reasoning?: string | null
     }
     finish_reason?: string | null
   }[]
@@ -178,6 +181,11 @@ function openAiChunks(payload: unknown): string {
     const delta: Record<string, unknown> = {}
     if (message.role !== undefined) delta.role = message.role
     if (message.content !== undefined) delta.content = message.content
+    // **Reasoning survives the re-framing.** A gateway that buffers a thinking
+    // answer must not cost the session its reasoning, and an adapter that
+    // dropped it here would look exactly like an endpoint that sent none.
+    if (message.reasoning_content != null) delta.reasoning_content = message.reasoning_content
+    if (message.reasoning != null) delta.reasoning = message.reasoning
     if (message.tool_calls !== undefined) {
       // The one member a chunk carries and a whole message does not: the index
       // that lets deltas be reassembled. It is the position in this array.
@@ -193,7 +201,18 @@ function openAiChunks(payload: unknown): string {
 }
 
 interface AnthropicWhole {
-  content?: { type?: string; text?: string; id?: string; name?: string; input?: unknown }[]
+  content?: {
+    type?: string
+    text?: string
+    id?: string
+    name?: string
+    input?: unknown
+    /** A thinking block's own two members. */
+    thinking?: string
+    signature?: string
+    /** A redacted block's. */
+    data?: string
+  }[]
   stop_reason?: string | null
   stop_sequence?: string | null
   usage?: { output_tokens?: number }
@@ -209,6 +228,29 @@ function anthropicEvents(payload: unknown): string {
 
   event('message_start', { message: { ...message, content: [] } })
   blocks.forEach((block, index) => {
+    if (block.type === 'thinking') {
+      // The block's own event grammar, so the SDK reads it as reasoning and
+      // carries its signature rather than reading a thinking block as prose.
+      event('content_block_start', { index, content_block: { type: 'thinking', thinking: '' } })
+      event('content_block_delta', {
+        index,
+        delta: { type: 'thinking_delta', thinking: block.thinking ?? '' }
+      })
+      event('content_block_delta', {
+        index,
+        delta: { type: 'signature_delta', signature: block.signature ?? '' }
+      })
+      event('content_block_stop', { index })
+      return
+    }
+    if (block.type === 'redacted_thinking') {
+      event('content_block_start', {
+        index,
+        content_block: { type: 'redacted_thinking', data: block.data ?? '' }
+      })
+      event('content_block_stop', { index })
+      return
+    }
     if (block.type === 'tool_use') {
       event('content_block_start', {
         index,
@@ -254,24 +296,46 @@ function anthropicEvents(payload: unknown): string {
  * one.
  */
 export interface SignatureLedger {
-  /** One fragment, for one reasoning block. */
+  /** One fragment, for one reasoning block of the turn in progress. */
   fragment(id: string, signature: string): void
+  /**
+   * A turn ended: what was in progress is whole.
+   *
+   * **The block ids repeat.** On the Anthropic wire a reasoning part is keyed
+   * by its index in the message, so every turn starts again at `0` — and a
+   * ledger that kept accumulating under that key concatenated one turn's
+   * signature onto the next, then reported the next turn's *whole* signature as
+   * a fragment of the pair. Measured: it degraded a perfectly good session on
+   * its third turn. A turn boundary is where a block's signature is finished.
+   */
+  boundary(): void
   /** Each block's signature, whole. */
   wholes(): string[]
 }
 
 export function signatureLedger(): SignatureLedger {
-  const held = new Map<string, string>()
+  const inFlight = new Map<string, string>()
+  const done: string[] = []
+  const settle = () => {
+    for (const signature of inFlight.values()) {
+      if (signature !== '' && !done.includes(signature)) done.push(signature)
+    }
+    inFlight.clear()
+  }
   return {
     fragment(id, signature) {
       if (signature === '') return
-      const before = held.get(id) ?? ''
+      const before = inFlight.get(id) ?? ''
       // A fragment repeated is not a fragment appended: the SDK emits the same
       // whole signature again where the endpoint sent one event, and doubling
       // it would invent a truncation that never happened.
-      held.set(id, before.endsWith(signature) ? before : before + signature)
+      inFlight.set(id, before.endsWith(signature) ? before : before + signature)
     },
-    wholes: () => [...held.values()].filter((signature) => signature !== '')
+    boundary: settle,
+    wholes() {
+      settle()
+      return [...done]
+    }
   }
 }
 
