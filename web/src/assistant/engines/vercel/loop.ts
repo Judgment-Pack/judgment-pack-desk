@@ -253,6 +253,22 @@ function outcome(result: McpToolResult): { text: string; isError: boolean; struc
  *
  * Nothing here suppresses anything: every rejection this page makes, including
  * any this engine mishandles, still reaches the console as a real page error.
+ *
+ * **And one of them still does, measured.** In a real browser, an endpoint that
+ * answers 400 leaves exactly one unhandled `AI_NoOutputGeneratedError` on the
+ * page — constructed inside the SDK's own transform `flush`, never handed to
+ * any member of the result, and never handled late (no `rejectionhandled`
+ * follows it). Claiming the result's promises a second time after the stream
+ * has been consumed does not claim it either; both were measured on the live
+ * drive, at tier `off` on the ordinary refusal path as well as on this chunk's
+ * degrade, so it is the SDK's refusal path and not the tier. The session is
+ * unaffected — the failure is reported, the degrade happens, the run completes —
+ * and the page's console carries one error nobody on this side can catch. jsdom
+ * cannot see it (such a rejection reaches Node's own handler and never becomes
+ * a `window` event), which is why the conformance session says so and why the
+ * live drive is where it was found. Recorded rather than papered over: the
+ * `unhandledrejection` listener ADR-0001 suggests would hide every rejection
+ * carrying that name, including one this desk should hear about.
  */
 export function claimPromises(result: object): number {
   const names = new Set<string>()
