@@ -1370,22 +1370,43 @@ What is checked, in order:
 
 1. the frame survives a JSON round trip at all (a cycle does not, and is a
    refusal rather than an exception thrown at the socket) and is a plain object;
-2. `jsonrpc` is exactly `"2.0"`;
-3. it is exactly one of three shapes — a **request** (a string `method`, an `id`
-   that is a string or a number, `params` absent or a plain object), a
-   **notification** (a string `method`, no `id`), or a **response** (an `id`,
-   exactly one of `result` and `error`, and no `method`). Anything else is
-   refused, a JSON-RPC batch included: an array has no `method`, and "anything
-   that is not `tools/call` is traffic I have no opinion about" let a batch
-   carrying an allowed call beside a `write_file` out whole;
-4. a method that is not `tools/call` but is a spelling of it to some other
+2. **every frame is checked against the SDK's own message schema**
+   (`JSONRPCMessageSchema`) — a request, a notification, a response or an error,
+   each whole. That replaced a hand-written set of shape rules, and the reason
+   is that the hand-written ones were looser than the sentence describing them:
+   `{"id": null, "result": 7}`, an `error` that is a string, and a fractional id
+   all satisfied "an id and exactly one of `result` and `error`", and not one of
+   them is a JSON-RPC message. It is the same schema the client validates
+   *inbound* frames against, so what this desk will send is what its own SDK
+   will accept. A JSON-RPC batch is refused here too: an array is not a message,
+   and "anything that is not `tools/call` is traffic I have no opinion about"
+   let a batch carrying an allowed call beside a `write_file` out whole;
+3. a method that is not `tools/call` but is a spelling of it to some other
    reader — `Tools/Call`, ` tools/call ` — is refused, on the chassis' own
    reasoning about its query: a frame two readers disagree about is one this
    desk will not send;
-5. for `tools/call`, the tool is on the session's allow-list — checked against
+4. for `tools/call`, the tool is on the session's allow-list — checked against
    the name the frame **serializes into**, not the one it claims — and
    `experimental_evaluate` gets an own `rehearsal: true` written last onto the
    canonical arguments.
+
+One whole conversation through the gate — the handshake, the notification after
+it, a listing, a prompt, a tool call, and the client's automatic answer to the
+server's own `ping` — is in the suite, because tightening frame rules is the
+kind of change that breaks a connection while every refusal test stays green.
+
+### What these guards do not claim
+
+They are structural guards against **mistakes, SDK-internal paths and
+uncertified adapters**, and certification is what the desk trusts. They are not
+a sandbox. An engine runs in the page's own realm, and same-realm code that
+patches a prototype or replaces a global is outside what any page-side guard can
+contain — a module that redefines `Response.prototype.body`, or captures `fetch`
+before the desk does, is not a threat the ToolGate or the model capability claim
+to hold. What they do hold is that an engine which behaves itself cannot reach a
+tool nobody granted, cannot send an unrehearsed evaluation, and is never handed
+this chassis' credential; and that an engine which does not behave itself fails
+the conformance session rather than shipping.
 
 The engine is handed a `callTool` bound through this gate and **nothing else** —
 no client, no transport, no `fetch`, and **no URL** — and the session's member
@@ -1414,10 +1435,17 @@ it at call time. The engine chooses a suffix — `chat/completions`,
 browser `Response` carries the requested URL on `.url`, which is the relay
 address with the token in it, so returning it handed the engine everything it
 needed to derive `/ws?token=…`. What comes back is a constructed `Response` —
-empty `url`, the status and reason phrase, the body, and a filtered header copy.
+empty `url`, the status and reason phrase, a filtered header copy, and **a body
+stream of this desk's own**, piped through an identity transform: a `Response`
+built from a `ReadableStream` keeps that very object, so a stream somebody
+decorated was reachable as `facade.body.leak`.
+
 The failure path goes the same way: a browser's `TypeError` for a failed fetch
-quotes the URL, so the error is replaced with a fixed sentence. An abort is
-still reported as itself, so a loop can tell "stopped" from "failed".
+quotes the URL, so the error is replaced with a fixed sentence. An **abort**
+reaches the engine as a fresh `AbortError` with a fixed sentence and no `cause`
+— the classification travels because a loop has to tell "stopped" from "failed",
+and nothing else does, because a rejection named `AbortError` can carry the URL
+in its own message and again in its cause.
 
 The suffix must be a **primitive string** before anything else happens. The
 TypeScript signature said `string` and the type is not what runs: a string-like
@@ -1428,9 +1456,18 @@ this capability into an authenticated POST to another same-origin chassis route.
 That capture of `fetch` is what makes the guarantee structural instead of
 inspected: the conformance session replaces `fetch`, `WebSocket`,
 `XMLHttpRequest` and `EventSource` with throwing sentinels **from before the
-engine's chunk is imported until after deferred work has been drained**, on
+engine's chunk is imported until after everything it scheduled has run**, on
 every leg. The sentinels record as well as throwing, because a reach from inside
-a `setTimeout` throws into nobody's `catch`. The desk's capability still works; an engine that reaches for a
+a `setTimeout` throws into nobody's `catch`.
+
+The barrier at the end **tracks handles rather than waiting**. It was a fixed
+200ms, and a fixed wait is a delay an engine can out-wait — 201ms, an interval,
+a timer that schedules another timer. `setTimeout`, `setInterval`,
+`queueMicrotask`, and `setImmediate` and `requestAnimationFrame` where they
+exist, are wrapped for the sealed window: each call is recorded *and* scheduled
+for real, so an engine that legitimately needs a timer still makes progress, and
+whatever has not fired when the run ends is fired, repeatedly, until nothing is
+left. What remains is asserted to be zero rather than waited on. The desk's capability still works; an engine that reaches for a
 global fails the leg by name (`K1a`). The string-enumeration guard that used to
 forbid a handful of spellings under `engines/` is gone: it said of itself that a
 novel spelling walks past it, and `new globalThis["Web"+"Socket"]` is that
