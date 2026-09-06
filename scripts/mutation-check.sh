@@ -4425,7 +4425,9 @@ export function assistantTransport(): Transport {
   # One that proposes and then fails has said the work does not stand.
   mutate web "an error after a proposal leaves it on offer" "$DI" \
     '  const withdrawn =
-    proposedAt !== -1 && events.slice(proposedAt + 1).some((event) => event.type === '"'"'error'"'"')' \
+    proposedAt !== -1 &&
+    (unwound !== undefined ||
+      events.slice(proposedAt + 1).some((event) => event.type === '"'"'error'"'"'))' \
     '  const withdrawn = false'
 
   # **The runtime is what says a document is a pack.** Without this term Create
