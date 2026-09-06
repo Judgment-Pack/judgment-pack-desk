@@ -3795,9 +3795,11 @@ export function assistantTransport(): Transport {
     setStatus((current) => (current === '"'"'running'"'"' ? '"'"'finished'"'"' : current))' \
     '    release(run)
     setStatus((current) => (current === '"'"'running'"'"' ? '"'"'finished'"'"' : current))'
+  # (The event became `held` when the proposal's canonicalization landed in this
+  # function; the row is the same claim about the same line.)
   mutate web "a second end is appended rather than dropped" "$AR" \
-    "    if (event.type === 'end') run.ended = true" \
-    '    void event'
+    "    if (held.type === 'end') run.ended = true" \
+    '    void held'
   # **Both halves at once, because either alone holds it.** A connection whose
   # setup is still in flight is releasable two ways: the run records the handle
   # synchronously, and the run's signal is handed to the setup. Breaking one
@@ -3899,6 +3901,15 @@ export function assistantTransport(): Transport {
   mutate web "the draft is left out of the first message" "$AP" \
     '    startRun(withDraft(prompt.data.text, draftNow.current))' \
     '    startRun(prompt.data.text)'
+
+  # **One canonicalization, where the event arrives.** An engine may put a live
+  # object on `document`, and three readings of one getter are three documents:
+  # the diff describes A, the pane displays B, the writer writes C. The row
+  # takes the canonicalization out of the hook, so the pane's own readers each
+  # take their own.
+  mutate web "the proposal reaches the pane uncanonicalized" "$AR" \
+    "    const held = event.type === 'proposal' ? canonicalProposal(event) : event" \
+    '    const held = event'
 
   # `fix_pack` works from the validator's report. A message list is a
   # paraphrase, and a paraphrase of a refusal is a second refusal.

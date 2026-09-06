@@ -14,7 +14,7 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { scriptedWebSocket } from './conformance/scriptedServer'
 import scenario from './conformance/scenario.json'
-import { useAssistantRun } from './useAssistantRun'
+import { canonicalProposal, useAssistantRun } from './useAssistantRun'
 import type { AssistantEvent, AssistantSession, Engine } from './engine'
 
 /** An engine that yields nothing, ends never, and ignores its abort signal. */
@@ -121,5 +121,72 @@ describe('the run hook writes the terminal event itself', () => {
     // The socket is a `jpack mcp`; an engine that ignores its signal must not
     // be able to keep one alive past the pane that started it. Once.
     await waitFor(() => expect(runtime!.closed).toBe(1))
+  })
+})
+
+describe('the proposal is canonicalized once, where it arrives', () => {
+  /** An engine that puts one value on the stream and ends. */
+  const emits = (event: AssistantEvent): Engine => ({
+    id: 'builtin',
+    // eslint-disable-next-line require-yield
+    async *start(): AsyncGenerator<AssistantEvent> {
+      yield event
+      yield { type: 'end' }
+    }
+  })
+
+  it('reads a live document exactly once, and puts plain data on the stream', async () => {
+    let reads = 0
+    const document = {
+      get title() {
+        reads += 1
+        return `title ${reads}`
+      }
+    }
+    engine = emits({ type: 'proposal', document, unknowns: ['one'] })
+    const { result } = drive()
+    act(() => result.current.start('the runtime’s prompt'))
+    await waitFor(() => expect(ends(result.current.events)).toHaveLength(1))
+    const proposal = result.current.events.find((event) => event.type === 'proposal')
+    expect(reads).toBe(1)
+    expect((proposal as { document: unknown }).document).toEqual({ title: 'title 1' })
+    // And what is on the stream is inert: reading it again cannot move it.
+    expect((proposal as { document: { title: string } }).document.title).toBe('title 1')
+    expect(reads).toBe(1)
+  })
+
+  it('refuses a document that cannot be read as JSON data, and proposes nothing', async () => {
+    const document: Record<string, unknown> = {}
+    document.self = document
+    engine = emits({ type: 'proposal', document, unknowns: [] })
+    const { result } = drive()
+    act(() => result.current.start('the runtime’s prompt'))
+    await waitFor(() => expect(ends(result.current.events)).toHaveLength(1))
+    expect(result.current.events.find((event) => event.type === 'proposal')).toBeUndefined()
+    const failure = result.current.events.find((event) => event.type === 'error')
+    expect((failure as { message: string }).message).toContain('could not be read as JSON data')
+  })
+
+  it('refuses a proposal whose document is not an object', () => {
+    for (const document of [null, [1, 2], 7, 'a pack', undefined]) {
+      const held = canonicalProposal({ type: 'proposal', document, unknowns: [] })
+      expect(held.type).toBe('error')
+      expect((held as { message: string }).message).toContain('no document object')
+    }
+  })
+
+  it('keeps the unknowns and the critique, as data', () => {
+    const held = canonicalProposal({
+      type: 'proposal',
+      document: { a: 1 },
+      unknowns: ['one', 'two'],
+      critique: { refuted: false }
+    })
+    expect(held).toEqual({
+      type: 'proposal',
+      document: { a: 1 },
+      unknowns: ['one', 'two'],
+      critique: { refuted: false }
+    })
   })
 })

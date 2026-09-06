@@ -14,6 +14,23 @@ import { AssistantPane, DRAFT_SENTENCE, withDraft } from './AssistantPane'
 import { EditingContext, type EditingSession } from '../packs/edit/editingContext'
 import { useDocumentBuffer, type DocumentBuffer } from '../packs/edit/useDocumentBuffer'
 import { buffered, bytesAt } from '../packs/edit/writes'
+import type { AssistantEvent, Engine } from './engine'
+
+/**
+ * An engine this suite puts in the registry's place, where a case needs one.
+ *
+ * Null by default, so every other case runs the real `builtin` chunk against
+ * the scripted model exactly as it did before.
+ */
+let injected: Engine | null = null
+
+vi.mock('./engines', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./engines')>()
+  return {
+    ...original,
+    loadEngine: async (id: 'builtin' | 'vercel') => injected ?? original.loadEngine(id)
+  }
+})
 import { scriptedModel } from './conformance/scriptedModel'
 import { scriptedWebSocket } from './conformance/scriptedServer'
 import scenario from './conformance/scenario.json'
@@ -192,6 +209,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
   runtime = null
   held = null
+  injected = null
   wrote = 0
   window.sessionStorage.clear()
 })
@@ -786,5 +804,66 @@ describe('fixing what the check refused', () => {
     const sent = body.messages.find((message) => message.role === 'user')!.content
     expect(sent).toContain('The runtime’s repair prompt, with the diagnostics in it.')
     expect(sent).toContain(DRAFT)
+  })
+})
+
+describe('the proposal the pane reads is the one the hook canonicalized', () => {
+  /** An engine that proposes one document and ends. */
+  const proposes = (document: unknown): Engine => ({
+    id: 'builtin',
+    async *start(): AsyncGenerator<AssistantEvent> {
+      yield { type: 'proposal', document, unknowns: [] }
+      yield { type: 'end' }
+    }
+  })
+
+  async function runIt() {
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    )
+    fireEvent.change(screen.getByLabelText('What should this pack decide?'), {
+      target: { value: 'a policy' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+  }
+
+  it('reads a live document once, for the diff, the display and the write together', async () => {
+    let reads = 0
+    injected = proposes({
+      get title() {
+        reads += 1
+        return `title ${reads}`
+      }
+    })
+    await draw({ buffer: { text: '{\n    "title": "the draft’s own"\n}\n' } })
+    await runIt()
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    // The diff and the whole-document display are both on screen by now.
+    expect(screen.getByRole('region', { name: 'The proposal as a diff' }).textContent).toContain(
+      '/title'
+    )
+    expect(
+      JSON.parse((screen.getByLabelText('The proposed document') as HTMLTextAreaElement).value)
+    ).toEqual({ title: 'title 1' })
+    fireEvent.click(screen.getByRole('button', { name: 'Accept into draft' }))
+    await waitFor(() => expect(held!.dirty).toBe(true))
+    // One reading, and it is the one that was drawn and the one that was written.
+    expect(reads).toBe(1)
+    expect(JSON.parse(held!.text!)).toEqual({ title: 'title 1' })
+  })
+
+  it('shows the failure and offers no proposal where the document is not JSON data', async () => {
+    const document: Record<string, unknown> = {}
+    document.self = document
+    injected = proposes(document)
+    await draw({ buffer: { text: '{\n    "title": "the draft’s own"\n}\n' } })
+    await runIt()
+    await waitFor(() =>
+      expect(
+        screen.getByRole('list', { name: 'What the assistant did' }).textContent
+      ).toContain('could not be read as JSON data')
+    )
+    expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull()
+    expect(wrote).toBe(0)
   })
 })
