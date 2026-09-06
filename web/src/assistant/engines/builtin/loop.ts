@@ -67,13 +67,18 @@ export type { Proposal } from '../contract'
 async function callSafely(
   callTool: CallTool,
   call: ToolCall
-): Promise<{ text: string; isError: boolean; structured?: unknown }> {
+): Promise<{ text: string; isError: boolean; structured?: unknown; answered: boolean }> {
   try {
     const result = await callTool(call.name, call.args)
     return {
       text: textOf(result),
       isError: Boolean(result.isError),
-      structured: result.structuredContent
+      structured: result.structuredContent,
+      // **The runtime answered this one.** The distinction matters to exactly
+      // one caller — the refutation pass — because a refusal by the desk's own
+      // gate is not a thing the runtime said, and a critique that counted it
+      // would report a verdict about a call that never left the page.
+      answered: true
     }
   } catch (cause) {
     // **A cancelled run is not a refused tool.** Turning it into a result the
@@ -83,7 +88,8 @@ async function callSafely(
       text:
         `refused: ${(cause as Error).message}. This assistant proposes; it never ` +
         `writes a file and never calls a tool it was not offered.`,
-      isError: true
+      isError: true,
+      answered: false
     }
   }
 }
@@ -319,9 +325,10 @@ async function* refute(options: {
         text: outcome.text,
         ...(outcome.structured === undefined ? {} : { structured: outcome.structured })
       }
-      // Every answer that came back through the gate. Which of them is a check
-      // is the desk's decision and not this loop's.
-      recorder.saw(call.name, outcome.text, outcome.isError)
+      // **Only what the runtime answered.** A call the gate refused produced no
+      // runtime answer, so it is a `guardrail` line and never a check. Which of
+      // the answers is a check is the desk's decision and not this loop's.
+      if (outcome.answered) recorder.saw(call.name, outcome.text)
       results.push({ call, text: outcome.text, isError: outcome.isError })
     }
     // Echoed as received here too, so the pass's own thinking blocks and their

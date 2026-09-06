@@ -4244,6 +4244,28 @@ export function assistantTransport(): Transport {
     "  if (critique === null || critique.checks.length === 0) return {}" \
     "  if (critique === null) return {}"
 
+  # **A check is a thing the runtime said.** A refusal by the desk's own gate is
+  # not: a critique built out of them says "the runtime refuted this proposal"
+  # about a call that never left the page.
+  mutate web "a call the gate refused is fed to the recorder as a check" "$BL" \
+    '      if (outcome.answered) recorder.saw(call.name, outcome.text)' \
+    '      recorder.saw(call.name, outcome.text)'
+  # …and the recorder itself, which must not invent a status the runtime never
+  # used for an answer that carried none.
+  mutate web "an answer with no runtime status is recorded as refused" "$RF" \
+    "      const said = statusOf(text)
+      if (said === null) return" \
+    "      const said = statusOf(text)
+      if (said === null) {
+        checks.push({ tool, status: 'refused', diagnostics: 0 })
+        return
+      }"
+  # An object literal inherits `toString`, `constructor` and the rest, so `in`
+  # made a tool the table does not name into a check.
+  mutate web "the settled table is read through its prototype" "$RF" \
+    '  return Object.hasOwn(SETTLED_STATUS, tool)' \
+    '  return tool in SETTLED_STATUS'
+
   # The runtime has one word per command for "this went through". A rule that
   # read `status !== 'valid'` over both tools would report every session ever
   # run as refuted, because a rehearsal evaluation answers `evaluated`.

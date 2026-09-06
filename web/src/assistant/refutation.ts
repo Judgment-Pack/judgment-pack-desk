@@ -88,6 +88,19 @@ export const SETTLED_STATUS: Readonly<Record<string, string>> = {
   experimental_evaluate: 'evaluated'
 }
 
+/**
+ * The names this table holds, and **only** the names it holds.
+ *
+ * `tool in SETTLED_STATUS` was the reading, and an object literal inherits
+ * `toString`, `constructor`, `valueOf` and the rest from `Object.prototype` —
+ * so a critic that called a tool named `toString` produced a *check*, from a
+ * table that names no such tool. `Object.hasOwn` reads the table and nothing
+ * behind it.
+ */
+export function isCheckTool(tool: string): boolean {
+  return Object.hasOwn(SETTLED_STATUS, tool)
+}
+
 /** One runtime answer the critic caused, as the verdict reads it. */
 export interface Check {
   tool: string
@@ -107,6 +120,19 @@ export interface Check {
  */
 export const NO_CHECKS =
   'the critic ran no runtime check, so nothing here says whether the document holds'
+
+/**
+ * The sentence the pass reports where the runtime advertises no `test_pack`.
+ *
+ * The instructions a critic works from are the **runtime's**; the desk adds one
+ * sentence to them and has no second opinion of its own to fall back on. So a
+ * runtime with no testing prompt gets no critic rather than a critic working
+ * from the desk's sentence alone — and the proposal is shown, without a
+ * refutation line, because a pass that did not run refuted nothing.
+ */
+export const NO_TEST_PROMPT =
+  'the refutation pass did not run: this runtime advertises no test_pack prompt, and the ' +
+  'critic works from the runtime’s instructions rather than from words of this desk’s own'
 
 /** The verdict, and the words on either side of it. */
 export interface Critique {
@@ -168,8 +194,15 @@ export function quoteOf(checks: readonly Check[]): string {
  * answer it received, and the filtering is here.
  */
 export interface CritiqueRecorder {
-  /** One answer the runtime gave the critic. */
-  saw(tool: string, text: string, isError: boolean): void
+  /**
+   * One answer **the runtime gave** the critic.
+   *
+   * The contract is in the name: an engine calls this only where its own
+   * `callTool` returned — where the frame passed the ToolGate, reached
+   * `jpack mcp`, and came back. A call the gate refused never gets here, and
+   * neither does one a cancelled run abandoned.
+   */
+  saw(tool: string, text: string): void
   /** The critique, once the critic has stopped calling tools. */
   critique(modelText: string): Critique
 }
@@ -177,17 +210,27 @@ export interface CritiqueRecorder {
 export function openCritique(): CritiqueRecorder {
   const checks: Check[] = []
   return {
-    saw(tool, text, isError) {
-      if (!(tool in SETTLED_STATUS)) return
+    /**
+     * **A check is a thing the runtime said, and nothing else.**
+     *
+     * Two ways this used to manufacture one, and both are closed here. A
+     * refusal by the desk's own gate arrived as `{isError: true}` with the
+     * gate's sentence in it, and was recorded as a check with the status
+     * `refused` — so a critic that asked for a `validate` the file never
+     * granted made the tab say *the runtime refuted this proposal* about a
+     * call that never left the page. And the table was read with `in`, so a
+     * tool named `toString` was a check the table does not name.
+     *
+     * Now: only answers that came back through the gate reach this at all (see
+     * `saw`), only names the table holds are read, and a status comes only out
+     * of the runtime's own JSON. An answer with no `status` is not a check —
+     * including an in-band `isError` from the runtime, which is the runtime
+     * declining to *answer* rather than declining the document.
+     */
+    saw(tool, text) {
+      if (!isCheckTool(tool)) return
       const said = statusOf(text)
-      if (said === null) {
-        // An answer with no `status` at all is still a check the critic
-        // caused, and an errored one refutes: a runtime that could not read
-        // the document has not approved it. Named `refused` so the quote says
-        // what happened rather than inventing a status the runtime never used.
-        if (isError) checks.push({ tool, status: 'refused', diagnostics: 0 })
-        return
-      }
+      if (said === null) return
       checks.push({ tool, status: said.status, diagnostics: said.diagnostics })
     },
     critique(modelText) {

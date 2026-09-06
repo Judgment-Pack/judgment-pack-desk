@@ -589,7 +589,13 @@ async function runLeg(
    * behaviour at all — so every existing leg is byte-identical to the one
    * before this chunk.
    */
-  how: { tier?: ThinkingTier; mode?: ThinkingMode; refuted?: boolean } = {}
+  how: {
+    tier?: ThinkingTier
+    mode?: ThinkingMode
+    refuted?: boolean
+    /** The tools this desk's file granted. Defaults to the five. */
+    allowed?: readonly string[]
+  } = {}
 ): Promise<Run> {
   const model = scriptedModel({
     api: leg.api,
@@ -601,7 +607,7 @@ async function runLeg(
   const runtime = await scriptedRuntime()
   const events: AssistantEvent[] = []
   const connection = openAssistantConnection({
-    allowed: FIVE,
+    allowed: how.allowed ?? FIVE,
     onEvent: (event) => events.push(event),
     transport: runtime.transport
   })
@@ -1204,6 +1210,42 @@ describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
       if (REFUTE_ON_A_DEGRADED_ENDPOINT) {
         expect(criticEvents(events)[0]!.checks).toHaveLength(2)
       }
+    })
+  })
+
+  describe('a critic that asks for a tool this desk never granted', () => {
+    const leg: Leg = { api: 'openai-compatible', answerAs: 'stream' }
+    /** The three reads. Neither check tool is granted, so neither can answer. */
+    const READS_ONLY = ['get_schema', 'list_examples', 'get_example']
+
+    it('refuses it at the wire, and the pass reports no check rather than a verdict', async () => {
+      // **A refusal is not a verdict.** The desk's gate refuses a call the file
+      // never granted; that refusal is a `guardrail` line, and the critic is
+      // told about it so it does not spend its turns re-asking. What it must
+      // never be is a *check* — a critique built out of the desk's own refusals
+      // would say "the runtime refuted this proposal" about calls that never
+      // left the page.
+      const { events, seen } = await runLeg(fromRegistry(engineId), leg, {
+        tier: 'on',
+        mode: 'on',
+        allowed: READS_ONLY
+      })
+      // Nothing the gate refused reached `jpack mcp` at all.
+      expect(seen.map((call) => call.name)).not.toContain('validate')
+      expect(seen.map((call) => call.name)).not.toContain('experimental_evaluate')
+      expect(seen.filter((call) => call.refusal !== '')).toEqual([])
+      // The critic ran, was refused, and produced no check and no verdict.
+      const critique = criticEvents(events)
+      expect(critique).toHaveLength(1)
+      expect(critique[0]!.checks).toEqual([])
+      expect(critique[0]!.refuted).toBe(false)
+      expect(critique[0]!.text).toContain('no runtime check')
+      // …and the proposal carries no refutation line at all.
+      expect(proposals(events)).toHaveLength(1)
+      expect(proposals(events)[0]!.critique).toBeUndefined()
+      // The refusals are reported as what they are.
+      const refused = guardrails(events).filter((event) => event.action === 'refused')
+      expect(refused.map((event) => event.tool)).toContain('validate')
     })
   })
 

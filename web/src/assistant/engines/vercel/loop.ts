@@ -471,9 +471,10 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
         text: said.text,
         ...(said.structured === undefined ? {} : { structured: said.structured })
       })
-      // Every answer that came back through the gate, while the critic is the
-      // one asking. Which of them is a check is the desk's decision.
-      recording?.saw(name, said.text, said.isError)
+      // **Only what the runtime answered**, and this is the only place it is
+      // reached: the refusal path above returns before it, so a call the gate
+      // refused is a `guardrail` line and never a check.
+      recording?.saw(name, said.text)
       return answer
     })
 
