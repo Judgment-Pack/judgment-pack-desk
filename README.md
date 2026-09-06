@@ -1647,17 +1647,26 @@ the provider's `fetch` option, so the shape survives the next chunk.
 
 `web/src/assistant/engine.ts` is ADR-0001's contract. `assistant/engines/` is
 the registry: one lazily loaded chunk per certified engine, so a **release**
-carries every certified chunk and a **session** downloads one. The registry is a
-total map over the ids `desk.json` may name, so an id the decoder admits without
-an adapter is a compile error rather than a setting that appears to grant
-something and quietly runs something else.
+carries every certified chunk and a **session** downloads one. There is **one
+table**: the certified list is derived from the loaders rather than written
+beside them, and the two sets are asserted equal at the type level, so an id
+cannot become loadable without being put in front of the conformance session and
+an id the decoder declares cannot be left without an adapter. Both directions are
+compile errors.
 
 `assistant/engines/contract.ts` holds what belongs to the contract rather than to
 either loop — the twenty-turn bound, the desk's own sentence to the model, the
 one reading of a proposal (exactly one fenced block, never the prose beside it),
-and the rule that an answer is read by **what came back** rather than by what
-was asked for. Both engines import it, because a rule written twice is a rule
-two readers can disagree about.
+the rule that an answer is read by **what came back** rather than by what was
+asked for, and the served schema an engine may show the model. Both engines
+import it, because a rule written twice is a rule two readers can disagree about.
+
+**A tool the runtime served without an `inputSchema` is refused**, on either
+engine: the session ends with one `error` naming the tool, before a request is
+made. K2 says the model is shown the contract the runtime enforces *or it is
+shown nothing*, and a permissive `{"type":"object"}` written by the desk is this
+desk telling the model that anything is acceptable for a tool whose real contract
+it does not know. The five a real `jpack mcp` serves all carry one.
 
 | engine | what runs the loop | added download (gzip) | what it guards | what it does not do yet |
 | --- | --- | --- | --- | --- |
@@ -1697,6 +1706,20 @@ rather than the desk's:
   own relay answers when no key is stored on this machine. Three requests and six
   seconds for a refusal a person has to go and fix. Retries are off, so both
   engines make one request per turn.
+- **the refusal path leaks a rejection nobody can catch.** `streamText`'s result
+  exposes its output as promise-valued members, and reading one mints a promise
+  that rejects when the call fails; read and left unclaimed, it reaches the page
+  as an unhandled `AI_NoOutputGeneratedError`. It is closed at the cause — every
+  promise-valued member is claimed the moment the result exists, enumerated from
+  the object rather than from a list the next release would date — and **not**
+  with a page listener: one of those would suppress every rejection on the page
+  carrying that error name, an unrelated operation's included, for as long as a
+  run was open.
+
+It reports what the model said about its own reasoning as the contract's
+`reasoning` events, **whatever the tier is**: the tier is what this desk asks
+for, and a model that always thinks reasons anyway. The tab renders one line per
+passage rather than one per delta.
 
 Either engine reaches a model only through `session.model.call`, naming a path
 suffix; the address, the token and the header allow-list are the desk's. The
@@ -1768,10 +1791,11 @@ resolves *after* the drain — a fetch to a real host, a socket, a `MessageChann
 — is outside it. So is an engine that stops reading a stream: a reader left
 attached schedules nothing, and no drain can see it. And so is an unhandled
 rejection: these legs run in jsdom under Node, where a rejection nobody claims
-goes to Node's own handler and never becomes a `window` event, which is why the
-guard ADR-0001 asks the default engine for is exercised in
-`assistant/engines/vercel/engine.test.ts` by dispatching the event a browser
-would.
+goes to Node's own handler and never becomes a `window` event. So the adapter's
+own suite measures that where it *is* visible —
+`process.on('unhandledRejection')`, over the desk's own 409 refusal — rather than
+by dispatching the event a browser would have sent, which would only have
+measured its own dispatch.
 
 Each leg also records **what the engine actually sent** — the step, how many
 results its own messages carried back, the route, the body's own top-level

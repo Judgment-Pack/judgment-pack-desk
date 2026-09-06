@@ -3545,6 +3545,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   EC=web/src/assistant/engines/contract.ts
   VL=web/src/assistant/engines/vercel/loop.ts
   VR=web/src/assistant/engines/vercel/relay.ts
+  VC=web/src/assistant/engines/vercel/channel.ts
 
   # ---- Canonical bytes ----------------------------------------------------
   #
@@ -3899,19 +3900,18 @@ export function assistantTransport(): Transport {
 
   # `end` exactly once, on the path an error takes.
   mutate web "the vercel engine ends twice on the error path" "$VL" \
-    "    release()
+    "    void settled
     yield { type: 'end' }" \
-    "    release()
+    "    void settled
     yield { type: 'end' }
     yield { type: 'end' }"
 
-  # The guard is scoped to the run: a listener that outlived the session would
-  # swallow the same error class for a page no longer running an assistant.
-  mutate web "the rejection guard is left installed after the run" "$VL" \
-    '    release()
-    yield { type: '"'"'end'"'"' }' \
-    '    void release
-    yield { type: '"'"'end'"'"' }'
+  # **Retired: "the rejection guard is left installed after the run".** There is
+  # no guard to leave installed. Review round 1 was right that a page listener
+  # keyed on an error *name* suppresses every rejection carrying it, an
+  # unrelated operation's included, for as long as a run is open — so the leak
+  # is closed at its cause instead, and the row that replaces this one is "the
+  # SDK's result promises are read and left unclaimed", below.
 
   # The registry's own entry. A `vercel` that loaded `builtin` would pass every
   # leg twice over and certify nothing — which is exactly what the fallback this
@@ -3919,6 +3919,63 @@ export function assistantTransport(): Transport {
   mutate web "the vercel entry in the registry points at builtin" "$EN" \
     "  vercel: async () => (await import('./vercel')).vercel" \
     "  vercel: async () => (await import('./builtin')).builtin"
+
+  # ---- What review round 1 found, each broken again ------------------------
+  #
+  # **The one that deadlocked.** `drain` takes an entry off the queue before
+  # yielding it, so a consumer that stops at exactly that event leaves a
+  # delivery nothing else can settle: not the queue, and not the loop that never
+  # resumes. The producer waited on it for ever.
+  mutate web "the drain does not settle the event it was yielding" "$VC" \
+    '        releaseAll()
+      }' \
+    '        void releaseAll
+      }'
+  # A member of the SDK's result read and left unclaimed is a rejection nobody
+  # on the page can catch. The mutant reads one and claims nothing, which is
+  # the defect exactly — and the count is measured at Node's own handler,
+  # because jsdom never turns such a rejection into a window event.
+  mutate web "the SDK's result promises are read and left unclaimed" "$VL" \
+    '    claimPromises(result)' \
+    '    void claimPromises
+    void (result as { text?: unknown }).text'
+  # The contract has a `reasoning` event and the SDK has three part types for
+  # it. An adapter that drops them decides, on the desk's behalf, that what the
+  # model said about its own reasoning is not worth showing.
+  mutate web "the SDK's reasoning parts are dropped" "$VL" \
+    "      if (part.type === 'reasoning-delta') {" \
+    '      if (false) {'
+  # K2's other half: the model is shown the contract the runtime enforces **or
+  # it is shown nothing**. A permissive schema written here is this desk telling
+  # the model that anything goes for a tool whose contract it does not know.
+  mutate web "a tool with no served schema is given an invented one" "$EC" \
+    '  if (tool.inputSchema === undefined || tool.inputSchema === null) {' \
+    '  if (tool.inputSchema === undefined) return { type: 42 }
+  if (false) {'
+  # jsdom has no `requestIdleCallback`, so a reach scheduled on one did nothing
+  # during certification and ran in Chrome after the seal lifted. The harness
+  # installs one; this mutant installs it without tracking it.
+  mutate web "an idle callback is scheduled but not tracked" "$CT" \
+    "    scope.requestIdleCallback = (fn: (deadline: unknown) => void) =>
+      record(
+        'requestIdleCallback',
+        'requestIdleCallback',
+        () => fn({ didTimeout: false, timeRemaining: () => 0 }),
+        schedule,
+        clear,
+        false
+      )" \
+    '    scope.requestIdleCallback = (fn: (deadline: unknown) => void) =>
+      schedule(() => fn({ didTimeout: false, timeRemaining: () => 0 }))'
+  # A canceller that is not wrapped leaves a cancelled callback pending in the
+  # bookkeeping, and the drain fires it — a reach attributed to an engine that
+  # had already decided not to make it.
+  mutate web "a cancelled immediate is fired by the drain anyway" "$CT" \
+    "    if (typeof realClearImmediate === 'function') {
+      keep('clearImmediate')
+      scope.clearImmediate = (handle: unknown) => forget(handle, (inner) => realClearImmediate(inner))
+    }" \
+    '    void realClearImmediate'
 
   # ---- The proposal as a diff, and accepting it into the draft -------------
   #
