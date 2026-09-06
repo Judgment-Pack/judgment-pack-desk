@@ -170,6 +170,14 @@ export function collisionIn(
   return undefined
 }
 
+/** The four members the create dialog fills, whatever the document came from. */
+export interface PackFields {
+  name: string
+  description: string
+  slug: string
+  idBase: string
+}
+
 /**
  * The template's own JSON, with the four members this dialog fills.
  *
@@ -177,10 +185,7 @@ export function collisionIn(
  * it — `specVersion` above all, which is the runtime's statement about which
  * version of the format this document is written to and never the desk's.
  */
-export function shapeTemplate(
-  templateJson: string,
-  fields: { name: string; description: string; slug: string; idBase: string }
-): string {
+export function shapeTemplate(templateJson: string, fields: PackFields): string {
   let parsed: unknown
   try {
     parsed = JSON.parse(templateJson)
@@ -190,7 +195,39 @@ export function shapeTemplate(
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error('the template is not a JSON object')
   }
-  const document = parsed as Record<string, unknown>
+  return serialise(shapePack(parsed as Record<string, unknown>, fields))
+}
+
+/**
+ * The assistant's proposal, shaped into the pack the fields describe.
+ *
+ * **The same shaping a template gets, and deliberately the same.** A proposal
+ * is a document like any other by the time it reaches here, and giving it its
+ * own rules would be the desk treating a model's document as a different kind
+ * of thing from the runtime's own example — which is precisely the claim it
+ * must not make.
+ *
+ * **What is passed in is the canonical frozen snapshot**, the one
+ * `useAssistantRun` ingested when the proposal arrived, and never a value read
+ * back off an engine's live event: two readings of a getter are two documents,
+ * and the one that was shown would not be the one that was written. It is
+ * already plain JSON data, so nothing here round-trips it again — the spread
+ * below produces plain data and the serialization at the end is the only one.
+ *
+ * **The fields win over anything the proposal said about its own identity.**
+ * The name that was typed gives the `title` and the `id`; a proposal that
+ * called itself something else keeps none of it, and the dialog says so in one
+ * line rather than letting a document arrive under a name nobody chose.
+ */
+export function packFromProposal(document: unknown, fields: PackFields): string {
+  if (typeof document !== 'object' || document === null || Array.isArray(document)) {
+    throw new Error('the proposal is not a JSON object')
+  }
+  return serialise(shapePack(document as Record<string, unknown>, fields))
+}
+
+/** One document with the four members filled in, as plain data. */
+function shapePack(document: Record<string, unknown>, fields: PackFields): Record<string, unknown> {
   const described = fields.description.trim()
   const shaped: Record<string, unknown> = {
     ...document,
@@ -205,7 +242,18 @@ export function shapeTemplate(
   // description must not keep it under a new name.
   if (described === '') delete shaped.description
   else shaped.description = described
-  return `${JSON.stringify(shaped, null, 2)}\n`
+  return shaped
+}
+
+/**
+ * The bytes a new pack is written as: two-space JSON, one trailing newline.
+ *
+ * **One serialization, in one place.** Both sources shape plain data and hand
+ * it here, so a template and a proposal are written by the same code and there
+ * is no second spelling for a document to arrive in.
+ */
+function serialise(document: Record<string, unknown>): string {
+  return `${JSON.stringify(document, null, 2)}\n`
 }
 
 /**

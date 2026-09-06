@@ -14,7 +14,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { useState } from 'react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Engine } from '../assistant/engine'
+import type { AssistantEvent, Engine } from '../assistant/engine'
 
 /**
  * An engine this suite puts in the registry's place, where a case needs one.
@@ -424,5 +424,161 @@ describe('stopping', () => {
     expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull()
     expect(document.querySelector('[aria-label="What the assistant did"]')).toBeNull()
     expect((screen.getByLabelText(/What should this pack decide/) as HTMLTextAreaElement).value).toBe('')
+  })
+})
+
+
+/** Type a name and wait until the dialog is willing to act on it. */
+async function nameIt(name: string) {
+  fireEvent.change(screen.getByLabelText('Name (required)'), { target: { value: name } })
+  await waitFor(() => expect(createButton().disabled).toBe(false))
+}
+
+const createButton = () => screen.getByRole('button', { name: 'Create pack' }) as HTMLButtonElement
+
+/** An engine that proposes exactly this, and then ends. */
+function proposing(document: unknown, unknowns: string[] = []): Engine {
+  return {
+    id: 'builtin',
+    start: async function* (): AsyncIterable<AssistantEvent> {
+      yield { type: 'proposal', document, unknowns }
+      yield { type: 'end' }
+    }
+  }
+}
+
+describe('Create writes the proposal', () => {
+  async function runIt() {
+    await propose()
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+  }
+
+  it('writes it under the slug, with the desk’s id and the name that was typed', async () => {
+    const { sent } = serve()
+    draw()
+    await runIt()
+    await nameIt('Vendor Onboarding')
+    fireEvent.click(createButton())
+    await waitFor(() => expect(sent.length).toBe(2))
+    expect(sent[0]!.path).toBe('packs/vendor-onboarding.pack.json')
+    // The bytes that were sent, read back and compared with the document that
+    // was shown: the file is the shaped snapshot and nothing else.
+    const written = JSON.parse(String(sent[0]!.body.content)) as Record<string, unknown>
+    expect(written.id).toBe('https://example.invalid/judgment-packs/vendor-onboarding')
+    expect(written.title).toBe('Vendor Onboarding')
+    expect(written.version).toBe('0.1.0')
+    expect(written.specVersion).toBe(scenario.documents.DRAFT_V2.specVersion)
+    expect(written.rules).toEqual(scenario.documents.DRAFT_V2.rules)
+    expect(written.outcomes).toEqual(scenario.documents.DRAFT_V2.outcomes)
+    // And it is registered under the same id, exactly as a template create is.
+    expect(sent[1]!.path).toBe('jpack.json')
+    expect(String(sent[1]!.body.content)).toContain('vendor-onboarding')
+  })
+
+  it('chooses the proposal as the source, and says the name field won', async () => {
+    serve()
+    draw()
+    await runIt()
+    await nameIt('Vendor Onboarding')
+    expect(screen.getByLabelText('Template').textContent).toContain('The assistant’s proposal')
+    expect(screen.getByText('Named from the field above, not from the proposal.')).toBeTruthy()
+  })
+
+  it('writes what was shown, even where the document reads differently each time', async () => {
+    // The canonicalization the run hook does, measured from the far end: an
+    // engine may put a live object on `document`, and three readings of one
+    // getter are three documents. What is written has to be the reading that
+    // was displayed.
+    let reads = 0
+    injected = proposing({
+      specVersion: '0.2.0-draft',
+      outcomes: [{ id: 'approve' }, { id: 'decline' }],
+      rules: [{ id: 'r1' }],
+      get question() {
+        reads += 1
+        return `read ${reads}`
+      }
+    })
+    const { sent } = serve()
+    draw()
+    await runIt()
+    fireEvent.click(screen.getByText('Show document'))
+    const shown = JSON.parse(
+      (screen.getByLabelText('The proposed document') as HTMLTextAreaElement).value
+    ) as { question: string }
+    await nameIt('Vendor Onboarding')
+    fireEvent.click(createButton())
+    await waitFor(() => expect(sent.length).toBe(2))
+    const written = JSON.parse(String(sent[0]!.body.content)) as { question: string }
+    expect(written.question).toBe(shown.question)
+  })
+
+  it('will not create while the assistant is still running, and says why', async () => {
+    serve({ hang: true })
+    draw()
+    await propose()
+    await waitFor(() => expect(runtime!.opened.length).toBe(1))
+    fireEvent.change(screen.getByLabelText('Name (required)'), {
+      target: { value: 'Vendor Onboarding' }
+    })
+    await waitFor(() => expect(createButton().disabled).toBe(true))
+    expect(createButton().title).toBe(
+      'The assistant is still running. Stop it or wait for it to end.'
+    )
+  })
+
+  it('will not create a proposal that could not be read, and quotes the reason', async () => {
+    // A document with a cycle in it: the run hook refuses it as unreadable and
+    // puts its own sentence on the stream, and no proposal arrives. The source
+    // is still the proposal — a run that ended with nothing is a state this
+    // dialog reports rather than hides — so Create refuses and says so.
+    const cyclic: Record<string, unknown> = { specVersion: '0.2.0-draft' }
+    cyclic.self = cyclic
+    injected = proposing(cyclic)
+    const { sent } = serve()
+    draw()
+    await propose()
+    await waitFor(() =>
+      expect(screen.getByLabelText('Template').textContent).toContain('The assistant’s proposal')
+    )
+    fireEvent.change(screen.getByLabelText('Name (required)'), {
+      target: { value: 'Vendor Onboarding' }
+    })
+    await waitFor(() => expect(createButton().disabled).toBe(true))
+    expect(createButton().title).toContain('could not be read as JSON data')
+    expect(sent).toEqual([])
+  })
+
+  it('will not create where the key went away mid-run, and quotes the refusal', async () => {
+    serve({ refuse: true })
+    draw()
+    await propose()
+    await waitFor(() =>
+      expect(screen.getByLabelText('Template').textContent).toContain('The assistant’s proposal')
+    )
+    fireEvent.change(screen.getByLabelText('Name (required)'), {
+      target: { value: 'Vendor Onboarding' }
+    })
+    await waitFor(() => expect(createButton().disabled).toBe(true))
+    // The endpoint's own status, carried through: the dialog quotes the run
+    // rather than inventing a sentence about a refusal it did not make.
+    expect(createButton().title).toContain('409')
+  })
+
+  it('still writes a template where the author switches back to one', async () => {
+    const { sent } = serve()
+    draw()
+    await runIt()
+    // Back to the runtime's own example, with the proposal still on offer.
+    fireEvent.click(screen.getByLabelText('Template'))
+    fireEvent.click(await screen.findByRole('option', { name: 'minimal-expense-approval' }))
+    await nameIt('Vendor Onboarding')
+    fireEvent.click(createButton())
+    await waitFor(() => expect(sent.length).toBe(2))
+    const written = JSON.parse(String(sent[0]!.body.content)) as Record<string, unknown>
+    // The example's members, under the desk's own identity.
+    expect(written.id).toBe('https://example.invalid/judgment-packs/vendor-onboarding')
+    expect(written.rules).toEqual([{ id: 'r1' }])
+    expect(screen.queryByText('Named from the field above, not from the proposal.')).toBeNull()
   })
 })

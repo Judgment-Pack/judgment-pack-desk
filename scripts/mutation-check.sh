@@ -1869,15 +1869,28 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '      } catch {
         /* the mutant finds out later */
       }'
+  # (The shaping grew a second source in the Describe chunk — a template's
+  # bytes or a proposal's snapshot — so the guarded call is a branch now. The
+  # row is the same claim about the same guard: the shaping runs unguarded and
+  # a document that cannot be shaped is discovered after the write.)
   mutate web "a template that is not a document is sent anyway" "$X" \
     '      let content: string
       try {
-        content = shapeTemplate(template, { name, description, slug, idBase })
+        content =
+          source.kind === '"'"'proposal'"'"'
+            ? packFromProposal(source.document, { name, description, slug, idBase })
+            : shapeTemplate(source.text, { name, description, slug, idBase })
       } catch (cause) {
-        setFailure({ lead: '"'"'This template could not be used.'"'"', reason: reasonOf(cause) })
+        setFailure({
+          lead: source.kind === '"'"'proposal'"'"' ? PROPOSAL_UNUSABLE : TEMPLATE_UNUSABLE,
+          reason: reasonOf(cause)
+        })
         return
       }' \
-    '      const content = shapeTemplate(template, { name, description, slug, idBase })'
+    '      const content =
+        source.kind === '"'"'proposal'"'"'
+          ? packFromProposal(source.document, { name, description, slug, idBase })
+          : shapeTemplate(source.text, { name, description, slug, idBase })'
 
   # A listing that failed is not a project with no files in it.
   mutate web "a listing that failed is reported as a project with no jpack.json" "$X" \
