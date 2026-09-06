@@ -4450,7 +4450,9 @@ export function assistantTransport(): Transport {
   mutate web "a document the runtime refused is treated as valid" "$X" \
     '              : checked.data.report.status === '"'"'valid'"'"'
                 ? undefined
-                : refusedBy(checked.data.report)' \
+                : `The runtime will not call this document a pack — ${
+                    layersReached(checked.data.report).text
+                  }`' \
     '              : undefined'
 
   # Losing the slot used to hide the controls and leave the session running.
