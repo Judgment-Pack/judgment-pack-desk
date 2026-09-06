@@ -102,6 +102,155 @@ describe('the model capability the desk binds', () => {
     expect(suffixProblem('%2e%2e/admin')).not.toBe('')
   })
 
+  /**
+   * Everything an adversarial engine can reach from one value, as strings.
+   *
+   * Own and inherited properties, whatever each of them stringifies to, the
+   * text of any function it can reach, and the headers if there are any. It is
+   * a sweep and not a proof — a getter that only answers on the third read
+   * would evade it — but it is the shape the finding asked for, and it fails
+   * on the defect it was written against.
+   */
+  function everythingReachable(value: unknown, depth = 0): string {
+    if (depth > 3 || value === null || value === undefined) return String(value)
+    const parts: string[] = []
+    try {
+      parts.push(String(value))
+    } catch {
+      /* a value that refuses to be a string tells us nothing */
+    }
+    if (typeof value === 'function') {
+      try {
+        parts.push(Function.prototype.toString.call(value))
+      } catch {
+        /* likewise */
+      }
+      return parts.join(' ')
+    }
+    if (typeof value !== 'object') return parts.join(' ')
+    if (value instanceof Headers) {
+      value.forEach((header, name) => parts.push(`${name}: ${header}`))
+    }
+    const seen = new Set<string>()
+    for (
+      let level: object | null = value;
+      level !== null && level !== Object.prototype;
+      level = Object.getPrototypeOf(level) as object | null
+    ) {
+      for (const key of Object.getOwnPropertyNames(level)) {
+        if (seen.has(key)) continue
+        seen.add(key)
+        if (key === 'body' || key === 'constructor') continue
+        let read: unknown
+        try {
+          read = (value as Record<string, unknown>)[key]
+        } catch {
+          continue
+        }
+        parts.push(key, everythingReachable(read, depth + 1))
+      }
+    }
+    return parts.join(' ')
+  }
+
+  it('returns a facade an engine cannot read the relay address off', async () => {
+    // A browser Response carries the requested URL on `.url`, and that URL is
+    // the relay address with this chassis' session token in it. Returning the
+    // one fetch produced handed the engine everything it needed to open
+    // /ws?token=… on a connection no gate is on.
+    window.sessionStorage.setItem('jpack-desk-token', 'a-secret-session-token')
+    vi.stubGlobal('fetch', async (url: unknown) => {
+      // A response that knows where it came from, exactly as a browser's does.
+      const real = new Response('{"ok":true}', {
+        status: 200,
+        headers: { 'content-type': 'application/json', 'x-echo': String(url) }
+      })
+      Object.defineProperty(real, 'url', { value: String(url), configurable: true })
+      return real
+    })
+    const answered = await bindModelCall()('chat/completions', { body: '{}' })
+    const reachable = everythingReachable(answered)
+    expect(answered.url).toBe('')
+    expect(reachable).not.toContain('a-secret-session-token')
+    expect(reachable).not.toContain('/api/assistant/relay')
+    expect(reachable).not.toContain('token=')
+    // What a loop does need is still there.
+    expect(answered.status).toBe(200)
+    expect(answered.headers.get('content-type')).toBe('application/json')
+    expect(await answered.text()).toBe('{"ok":true}')
+    // And the header the endpoint used to smuggle it back is not.
+    expect(answered.headers.get('x-echo')).toBeNull()
+  })
+
+  it('replaces the error a failed call throws, because a TypeError quotes the URL', async () => {
+    window.sessionStorage.setItem('jpack-desk-token', 'a-secret-session-token')
+    vi.stubGlobal('fetch', async (url: unknown) => {
+      throw new TypeError(`Failed to fetch ${String(url)}`)
+    })
+    const failure = await bindModelCall()('chat/completions', { body: '{}' }).catch(
+      (error: unknown) => error
+    )
+    const reachable = everythingReachable(failure)
+    expect(reachable).not.toContain('a-secret-session-token')
+    expect(reachable).not.toContain('/api/assistant/relay')
+    expect((failure as Error).message).toContain('could not be made')
+  })
+
+  it('reports an abort as itself, so a loop can tell stopped from failed', async () => {
+    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
+    vi.stubGlobal('fetch', async () => {
+      const error = new Error('aborted')
+      error.name = 'AbortError'
+      throw error
+    })
+    const failure = await bindModelCall()('chat/completions', { body: '{}' }).catch(
+      (error: unknown) => error
+    )
+    expect((failure as Error).name).toBe('AbortError')
+  })
+
+  it('carries a body-less status without trying to give it a body', async () => {
+    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
+    vi.stubGlobal('fetch', async () => new Response(null, { status: 204 }))
+    const answered = await bindModelCall()('chat/completions', { body: '{}' })
+    expect(answered.status).toBe(204)
+  })
+
+  it.each([
+    ['a boxed String', () => new String('chat/completions')],
+    [
+      'an object with a helpful split and a different toString',
+      () => ({
+        length: 4,
+        split: () => ['safe'],
+        toString: () => '../../../../api/assistant/probe'
+      })
+    ],
+    [
+      'an object with Symbol.toPrimitive',
+      () => ({
+        length: 4,
+        split: () => ['safe'],
+        [Symbol.toPrimitive]: () => '../../api/assistant/key'
+      })
+    ],
+    ['a proxy over a safe string', () => new Proxy({ length: 4, split: () => ['safe'] }, {})],
+    ['a Request', () => new Request('http://desk.invalid/api/assistant/probe')],
+    ['a number', () => 7],
+    ['null', () => null],
+    ['an array of segments', () => ['chat', 'completions']]
+  ])('refuses %s as a suffix, and sends nothing', async (_what, make) => {
+    // The TypeScript signature says `string`; the type is not what runs. A
+    // string-like object answers an innocuous `split()` while the validator is
+    // looking and a different `toString()` when the URL is built.
+    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
+    const { calls } = recordingFetch()
+    await expect(
+      bindModelCall()(make() as unknown as string, { body: '{}' })
+    ).rejects.toThrow(/must be a string/)
+    expect(calls).toEqual([])
+  })
+
   it('captures fetch when it is bound, not when it is called', async () => {
     // This is what lets the conformance session seal every network global for
     // the duration of an engine's run: the desk's capability still works, and
@@ -256,7 +405,7 @@ describe('the assistant’s own connection', () => {
       transport: staged.transport
     })
     await expect(connection.ready).rejects.toThrow(/would not list its tools/)
-    expect(staged.closed()).toBeGreaterThan(0)
+    expect(staged.closed()).toBe(1)
   })
 
   it.each([
@@ -279,7 +428,9 @@ describe('the assistant’s own connection', () => {
     )
     controller.abort()
     await expect(settled).resolves.toBe('AbortError')
-    expect(staged.closed()).toBeGreaterThan(0)
+    // Exactly once, not merely at least once: closing twice would mean the
+    // abort path and the failure path are both firing and neither knows.
+    expect(staged.closed()).toBe(1)
   })
 
   it.each([
@@ -320,7 +471,7 @@ describe('the assistant’s own connection', () => {
       signal: controller.signal
     })
     await expect(connection.ready).rejects.toThrow()
-    expect(staged.closed()).toBeGreaterThan(0)
+    expect(staged.closed()).toBe(1)
   })
 
   it('reports a refusal as a guardrail event and lets nothing out of the page', async () => {

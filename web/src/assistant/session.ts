@@ -75,7 +75,17 @@ const MAX_SUFFIX = 256
  * address anything the desk did not agree to — a refusal that only happened on
  * the far side would be a refusal after the request left the page.
  */
-export function suffixProblem(suffix: string): string {
+export function suffixProblem(suffix: unknown): string {
+  // **A primitive string, or nothing.** The signature said `string` and the
+  // runtime did not check: a string-like object can answer an innocuous
+  // `length` and `split()` while this function is looking and a different
+  // `toString()` when the URL is built, which turns this capability into an
+  // authenticated POST to another same-origin chassis route. A boxed String, a
+  // proxy, a `Symbol.toPrimitive` and a `Request` are all this shape. The type
+  // is not what runs.
+  if (typeof suffix !== 'string') {
+    return `a model call's path must be a string; this one is a ${typeof suffix}`
+  }
   if (suffix === '') return `a model call must name at least one path segment after ${RELAY_PREFIX}`
   if (suffix.length > MAX_SUFFIX) {
     return `a model call's path is at most ${MAX_SUFFIX} bytes; this one is ${suffix.length}`
@@ -96,21 +106,49 @@ export function suffixProblem(suffix: string): string {
 }
 
 /**
+ * The answer headers an engine may read, and the whole of them.
+ *
+ * Both wire formats need one thing from an answer's headers — whether it is an
+ * event stream — and the byte count is worth carrying beside it. Everything
+ * else is dropped, on the same allow-list reasoning the request side uses: a
+ * header nobody has heard of does not reach the engine because it is not on
+ * this list. The chassis already strips credential headers from an answer; this
+ * is the same claim one layer in.
+ */
+const MODEL_ANSWER_HEADERS: readonly string[] = ['content-type', 'content-length']
+
+/**
+ * The sentence every failed model call carries, whatever went wrong.
+ *
+ * Fixed text, because a browser's own `TypeError` for a failed fetch **quotes
+ * the URL** — which is the relay address with this chassis' session token in
+ * it. An engine that caught the error and read `.message` would have the token.
+ */
+const CALL_FAILED =
+  'the model request could not be made; the desk holds the address and the reason is not the ' +
+  "engine's to read"
+
+/**
  * A model call this session may make, bound by the desk.
  *
- * Three things happen here that an engine must not be trusted to do:
+ * Four things happen here that an engine must not be trusted to do:
  *
  * - **the address is built here**, out of the mount point and a suffix this
- *   function validated, with the session token attached by `chassisUrl`. The
- *   engine never sees a URL and never sees the token, so an adapter cannot
- *   read this chassis' credential out of its own configuration and open a
- *   second, ungated socket with it;
- * - **the headers are an allow-list**, so nothing resembling a credential
- *   travels even as far as this desk's own route;
+ *   function validated, with the session token attached by `chassisUrl`;
+ * - **the answer is a facade**, constructed by this desk. A browser `Response`
+ *   carries the requested URL on `.url`, so returning the one `fetch` produced
+ *   handed the engine the token-bearing relay address and, from it, everything
+ *   needed to open `/ws?token=…` on a connection no gate is on. A constructed
+ *   `Response` has an empty `url`, no `redirected` history and only the headers
+ *   this desk copied onto it. The same reasoning covers the failure path: the
+ *   error is replaced, because a fetch `TypeError` quotes the URL;
+ * - **the headers are an allow-list**, in both directions, so nothing
+ *   resembling a credential travels even as far as this desk's own route and
+ *   nothing but the protocol's own comes back;
  * - **`fetch` is captured when the session is bound**, not read at call time,
  *   so the conformance session can replace every network global with a
- *   throwing sentinel for the duration of an engine's run. An engine that
- *   reaches for one fails the leg; this call still works.
+ *   throwing sentinel for the whole of an engine's leg. An engine that reaches
+ *   for one fails; this call still works.
  */
 export function bindModelCall(): ModelCall {
   const send = globalThis.fetch.bind(globalThis)
@@ -121,13 +159,44 @@ export function bindModelCall(): ModelCall {
     for (const [name, value] of Object.entries(request.headers ?? {})) {
       if (MODEL_REQUEST_HEADERS.includes(name.toLowerCase())) headers[name] = value
     }
-    return send(chassisUrl(`${RELAY_PREFIX}/${suffix}`), {
-      method: 'POST',
-      headers,
-      body: request.body,
-      signal: request.signal
-    })
+    let answered: Response
+    try {
+      answered = await send(chassisUrl(`${RELAY_PREFIX}/${suffix}`), {
+        method: 'POST',
+        headers,
+        body: request.body,
+        signal: request.signal
+      })
+    } catch (cause) {
+      // An abort is the caller's own signal and is reported as itself, so a
+      // loop can tell "stopped" from "failed". It names no URL either.
+      if ((cause as Error)?.name === 'AbortError') throw cause
+      throw new Error(CALL_FAILED)
+    }
+    return facade(answered)
   }
+}
+
+/**
+ * The answer the engine gets: this desk's, built from the endpoint's.
+ *
+ * A body with no `url`, no `redirected`, and a filtered header copy. The status
+ * and the reason phrase travel because a loop has to be able to tell a refusal
+ * from an answer.
+ */
+function facade(answered: Response): Response {
+  const carried = new Headers()
+  answered.headers.forEach((value, name) => {
+    if (MODEL_ANSWER_HEADERS.includes(name.toLowerCase())) carried.set(name, value)
+  })
+  // A body is not allowed on these statuses, and the constructor throws rather
+  // than ignoring one.
+  const empty = answered.status === 204 || answered.status === 205 || answered.status === 304
+  return new Response(empty ? null : answered.body, {
+    status: answered.status,
+    statusText: answered.statusText,
+    headers: carried
+  })
 }
 
 /**
