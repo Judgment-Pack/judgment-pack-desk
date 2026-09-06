@@ -684,7 +684,7 @@ func TestConfiguredEndpointRefusals(t *testing.T) {
 		},
 		{
 			"a kind this desk cannot speak",
-			`{"deskConfigVersion":1,"assistant":{"endpoint":{"url":"https://e.example/v1","kind":"gemini",` +
+			`{"deskConfigVersion":1,"assistant":{"endpoint":{"url":"https://e.example/v1","kind":"some-other-protocol",` +
 				`"model":"m","tools":[]}}}`,
 			"kind",
 		},
@@ -768,6 +768,13 @@ type stubEndpoint struct {
 	path    string
 	headers http.Header
 	body    string
+	// raw is the whole request target as it arrived — path, query and all.
+	//
+	// Recorded because a credential in a URL is the thing the gemini arm must
+	// not do, and a probe that put the key in `?key=` would leave `path` and
+	// `headers` looking exactly as they do now. What that claim is about is
+	// the bytes of the request line.
+	raw string
 }
 
 func newStubEndpoint(t *testing.T, answer func(w http.ResponseWriter)) *stubEndpoint {
@@ -777,6 +784,7 @@ func newStubEndpoint(t *testing.T, answer func(w http.ResponseWriter)) *stubEndp
 		body, _ := io.ReadAll(r.Body)
 		stub.mu.Lock()
 		stub.method, stub.path, stub.headers, stub.body = r.Method, r.URL.Path, r.Header.Clone(), string(body)
+		stub.raw = r.URL.RequestURI()
 		stub.mu.Unlock()
 		answer(w)
 	}))
@@ -788,6 +796,13 @@ func (s *stubEndpoint) saw() (string, string, http.Header, string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.method, s.path, s.headers, s.body
+}
+
+// requestLine is the target the endpoint was asked for, query included.
+func (s *stubEndpoint) requestLine() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.raw
 }
 
 // probeAgainst runs one probe end to end through the chassis.
@@ -887,6 +902,70 @@ func TestProbeSpeaksTheAnthropicProtocol(t *testing.T) {
 	}
 	if payload.Model != "a-model" {
 		t.Errorf("model %q, want the configured one", payload.Model)
+	}
+}
+
+func TestProbeSpeaksTheGeminiProtocol(t *testing.T) {
+	// The native Gemini wire's own smallest legitimate request: the model
+	// listing, bounded to one entry. A `GET`, which creates nothing, and one
+	// this listing answers 401 to without a credential — so it exercises the
+	// key rather than merely the route.
+	stub := newStubEndpoint(t, func(w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"models":[{"name":"models/a-model"}]}`))
+	})
+
+	status, body := probeAgainst(t, "gemini", stub.server.URL)
+	if status != http.StatusOK {
+		t.Fatalf("status %d, body %v", status, body)
+	}
+	if body["reachable"] != true {
+		t.Errorf("reachable %v, want true (%v)", body["reachable"], body)
+	}
+	if body["diagnostic"] != "" {
+		t.Errorf("diagnostic %q, want empty on a success", body["diagnostic"])
+	}
+
+	method, path, headers, sent := stub.saw()
+	if method != http.MethodGet || path != "/v1beta/models" {
+		t.Errorf("the probe sent %s %s, want GET /v1beta/models", method, path)
+	}
+	if sent != "" {
+		t.Errorf("the probe sent a body: %q", sent)
+	}
+	// This protocol's own header, and neither of the other two protocols'.
+	if got := headers.Values("x-goog-api-key"); len(got) != 1 || got[0] != testKey {
+		t.Errorf("x-goog-api-key = %v, want exactly one %q", got, testKey)
+	}
+	if headers.Get("Authorization") != "" || headers.Get("x-api-key") != "" {
+		t.Errorf("the gemini probe sent another protocol's credential header: %v", headers)
+	}
+	// **The key is not in the URL**, which is the one thing this protocol's
+	// own documentation offers and this desk declines. Asserted on the request
+	// line rather than on a parsed query, because what is being claimed is
+	// about the bytes.
+	line := stub.requestLine()
+	if line != "/v1beta/models?pageSize=1" {
+		t.Errorf("request line %q, want /v1beta/models?pageSize=1", line)
+	}
+	if strings.Contains(line, testKey) || strings.Contains(line, "key=") {
+		t.Errorf("the key travelled in the URL: %q", line)
+	}
+}
+
+func TestProbeKeepsAConfiguredQueryBeforeTheGeminiPageSize(t *testing.T) {
+	// The configured query is the endpoint's own routing and keeps its place;
+	// the one parameter this desk adds goes after it. The same order the relay
+	// uses, and the reason it is one function.
+	stub := newStubEndpoint(t, func(w http.ResponseWriter) {
+		_, _ = w.Write([]byte(`{"models":[]}`))
+	})
+	status, body := probeAgainst(t, "gemini", stub.server.URL+"/?route=eu")
+	if status != http.StatusOK {
+		t.Fatalf("status %d, body %v", status, body)
+	}
+	if got := stub.requestLine(); got != "/v1beta/models?route=eu&pageSize=1" {
+		t.Errorf("request line %q, want the configured query first", got)
 	}
 }
 

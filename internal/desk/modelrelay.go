@@ -219,15 +219,39 @@ var reflectedCredentialHeaders = []string{
 // about what an `anthropic` endpoint is sent. `ok` is false for a kind nothing
 // defines, which `decodeDeskFile` refuses by name long before either caller
 // reaches this.
+// **Every entry is a header, and that is the rule rather than a coincidence.**
+// Google's Gemini API documents `?key=` as an alternative to `x-goog-api-key`,
+// and this desk does not take it: a credential in a URL is a credential in a
+// log, in a `Referer`, in a proxy's access record and in the `loggableOrigin`
+// line this route writes — and the configuration decoder already refuses a URL
+// carrying userinfo for the same reason. The header is the only place a key
+// goes.
 func credentialHeader(kind, key string) (name, value string, ok bool) {
 	switch kind {
 	case "openai-compatible":
 		return "Authorization", "Bearer " + key, true
 	case "anthropic":
 		return "x-api-key", key, true
+	case "gemini":
+		return "x-goog-api-key", key, true
 	default:
 		return "", "", false
 	}
+}
+
+// appendQueryPair puts one raw query pair after whatever query is already
+// there.
+//
+// **The configured query keeps its place and the added pair goes after it.**
+// Shared by `relayTarget` and the probe's address builder so that the order
+// has one implementation: a desk that put its own pair first in one place and
+// last in the other would be sending two different requests to an endpoint
+// that routes on the first parameter it reads.
+func appendQueryPair(raw, pair string) string {
+	if raw == "" {
+		return pair
+	}
+	return raw + "&" + pair
 }
 
 // relaySuffixProblem is the whole of what the page may ask for after the mount

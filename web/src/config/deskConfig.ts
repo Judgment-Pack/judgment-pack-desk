@@ -62,9 +62,27 @@ export interface IdentityConfig {
   provider: IdentityProviderConfig | null
 }
 
-/** The wire protocols the desk can speak to a model endpoint. */
-export type EndpointKind = 'openai-compatible' | 'anthropic'
-export const ASSISTANT_KINDS: readonly EndpointKind[] = ['openai-compatible', 'anthropic']
+/**
+ * The wire protocols the desk can speak to a model endpoint.
+ *
+ * **`gemini` is a third protocol and not a third vendor.** It names Google's
+ * native Gemini wire — thought parts, thought signatures carried back across
+ * tool turns and an explicit thinking budget exist only there, and not on that
+ * vendor's OpenAI-compatibility layer — and an endpoint speaking it is
+ * configured in the same four fields as any other, at whatever URL its
+ * operator documents. The URL rule stays the transport rule and nothing reads
+ * the host, so a proxy or a self-hosted endpoint speaking that wire is this
+ * kind too.
+ *
+ * Mirrored from `AssistantKinds` in `internal/desk/assistant.go` and held to
+ * it by a test that reads that file, because both sides refuse by this list.
+ */
+export type EndpointKind = 'openai-compatible' | 'anthropic' | 'gemini'
+export const ASSISTANT_KINDS: readonly EndpointKind[] = [
+  'openai-compatible',
+  'anthropic',
+  'gemini'
+]
 
 /**
  * The runtime tools the assistant may be configured to call.

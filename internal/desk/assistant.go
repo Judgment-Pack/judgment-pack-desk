@@ -414,7 +414,15 @@ func isControl(r rune) bool { return r < 0x20 || r == 0x7f }
 // It branches on how bytes are shaped and never on who is at the other end:
 // an endpoint someone operates for you and one you run yourself are the same
 // object in the same slot, and nothing here reads the host.
-var AssistantKinds = []string{"openai-compatible", "anthropic"}
+//
+// **`gemini` is the third protocol and not a third vendor.** It names Google's
+// native Gemini wire — the one that carries thought parts, thought signatures
+// across tool turns and an explicit thinking budget, none of which exist on
+// that vendor's OpenAI-compatibility layer — and an endpoint speaking it is
+// configured in the same four fields as any other, at whatever URL its
+// operator documents. Nothing here reads the host, and a self-hosted or
+// proxied endpoint speaking that wire is this kind too.
+var AssistantKinds = []string{"openai-compatible", "anthropic", "gemini"}
 
 // AssistantTools is the closed set of runtime tools the assistant may be
 // configured to call.
@@ -656,11 +664,34 @@ func (s *Server) handleAssistantProbe(w http.ResponseWriter, r *http.Request) {
 // untouched, because it is the endpoint's own routing and none of this desk's
 // business.
 func probeAddress(base, suffix string) string {
+	return probeAddressWithQuery(base, suffix, "")
+}
+
+// probeAddressWithQuery is probeAddress with one raw pair of the desk's own
+// added after the configured query.
+//
+// **The configured query first, then the pair.** It is the endpoint's own
+// routing and it keeps its place; what this desk adds goes after it, which is
+// the same order `relayTarget` uses for the one query pair the relay admits.
+// One order, written once, so the probe and the relay cannot disagree about
+// what a configured `?route=eu` endpoint is sent.
+//
+// `ForceQuery` is cleared because a base written as `https://gw/v1?` would
+// otherwise emit `?` and then this pair after it, which is a query two readers
+// could disagree about — the one thing this desk will not send.
+func probeAddressWithQuery(base, suffix, pair string) string {
 	parsed, err := url.Parse(base)
 	if err != nil {
-		return base + suffix
+		if pair == "" {
+			return base + suffix
+		}
+		return base + suffix + "?" + pair
 	}
 	appendPath(parsed, suffix)
+	if pair != "" {
+		parsed.RawQuery = appendQueryPair(parsed.RawQuery, pair)
+		parsed.ForceQuery = false
+	}
 	return parsed.String()
 }
 
@@ -873,6 +904,22 @@ func probeRequest(ctx context.Context, endpoint assistantEndpoint, key string) (
 		// endpoint speaking this protocol refuses a request without it.
 		request.Header.Set("anthropic-version", "2023-06-01")
 		request.Header.Set("content-type", "application/json")
+		return request, nil
+	case "gemini":
+		// The model listing, bounded to one entry. A `GET`, which creates
+		// nothing and costs nothing, and which exercises the credential rather
+		// than merely the route — this listing answers 401 without one.
+		//
+		// **`pageSize=1` and not the whole catalogue**: a reachability check
+		// has no use for the rest of it, and a probe that pulled every model
+		// on every press would be a probe with an opinion about how much of
+		// somebody's quota a button may spend.
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet,
+			probeAddressWithQuery(endpoint.url, "/v1beta/models", "pageSize=1"), nil)
+		if err != nil {
+			return nil, err
+		}
+		attachCredential(request.Header, endpoint.kind, key)
 		return request, nil
 	default:
 		// Unreachable: `decodeDeskFile` refuses every other kind by name.

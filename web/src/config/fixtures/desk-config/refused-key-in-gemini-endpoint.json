@@ -2,12 +2,14 @@
   "deskConfigVersion": 1,
   "assistant": {
     "endpoint": {
-      "url": "https://api.example.invalid/v1",
-      "kind": "some-other-protocol",
+      "url": "https://api.example.invalid/",
+      "kind": "gemini",
       "model": "a-model",
       "tools": [
         "validate"
-      ]
+      ],
+      "apiKey": "nope",
+      "x-goog-api-key": "nope"
     }
   }
 }

@@ -28,6 +28,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   ASSISTANT_ENGINES,
+  ASSISTANT_KINDS,
   ASSISTANT_THINKING,
   ASSISTANT_TOOLS,
   DESK_DEFAULTS,
@@ -246,15 +247,22 @@ describe('(1a) engine and thinking are closed lists that say how, not whether', 
     expect(decoded.values?.assistant?.thinking).toBe('off')
   })
 
-  it('is the same pair of lists the chassis refuses by', () => {
+  it('is the same three lists the chassis refuses by', () => {
     // Two implementations of one contract drift; the fixtures hold the
     // verdicts and this holds the vocabularies, read out of the Go source the
     // same way the tool list is.
+    //
+    // **The kinds are on it now**, and they were the one closed list held to
+    // the chassis by nothing at all: a protocol added on one side and not the
+    // other is a file one decoder accepts and the other refuses — and the
+    // refusing one is the one that decides whether a credential leaves this
+    // machine.
     const source = readFileSync(
       join(SRC, '..', '..', 'internal', 'desk', 'assistant.go'),
       'utf8'
     )
     for (const [declaration, list] of [
+      ['AssistantKinds', ASSISTANT_KINDS],
       ['AssistantEngines', ASSISTANT_ENGINES],
       ['AssistantThinkingTiers', ASSISTANT_THINKING]
     ] as [string, readonly string[]][]) {

@@ -53,6 +53,12 @@
     "engine": "vercel",
     "thinking": "off"
   },
+  "accepted-endpoint-kind-gemini": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
+  },
   "accepted-endpoint-loopback-http": {
     "accepted": true,
     "keys": [],
@@ -213,6 +219,12 @@
     "accepted": false,
     "keys": [
       "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-kind-gemini-misspelled": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.kind"
     ]
   },
   "refused-endpoint-kind-number": {
@@ -395,6 +407,13 @@
     "accepted": false,
     "keys": [
       "assistant.endpoint.apiKey"
+    ]
+  },
+  "refused-key-in-gemini-endpoint": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.apiKey",
+      "assistant.endpoint.x-goog-api-key"
     ]
   },
   "refused-key-in-unknown-object": {

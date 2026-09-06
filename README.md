@@ -1296,18 +1296,40 @@ states** and they are not three shapes:
 | | |
 | --- | --- |
 | **None** | The default. `endpoint` is null, no key is asked for, and nothing renders an assistant. The runtime's authoring prompts still run in any chat client you already use. |
-| **Bring your own** | An OpenAI-compatible or Anthropic endpoint you already have. The desk stores the endpoint, keeps the key on this machine, and has no relationship with whoever issued it. |
+| **Bring your own** | An OpenAI-compatible, Anthropic or Gemini endpoint you already have. The desk stores the endpoint, keeps the key on this machine, and has no relationship with whoever issued it. |
 | **Supplied** | An endpoint someone else operates for you. Configured in exactly the four fields above — **an ordinary endpoint, the same code path**, nothing it can do that yours cannot. |
 
 There is no `vendor`, no `operator`, no `mode` and no third shape, because the
 last two rows are the same object with a different URL in it. The one member
 that does branch is `kind`, and it names the endpoint's **wire protocol**
-rather than who runs it: the two protocols put the credential in different
-headers and the call on a different path, so no single request could satisfy
-both. Nothing in the desk reads the host, compares it to a list, or behaves
+rather than who runs it: each protocol puts the credential in a different
+header and the call on a different path, so no single request could satisfy
+them. There are three:
+
+| `kind` | credential header | what the probe asks for |
+| --- | --- | --- |
+| `openai-compatible` | `Authorization: Bearer <key>` | `GET <base>/models` |
+| `anthropic` | `x-api-key: <key>` | `POST <base>/v1/messages`, one output token |
+| `gemini` | `x-goog-api-key: <key>` | `GET <base>/v1beta/models?pageSize=1` |
+
+`gemini` is Google's **native** Gemini API and deliberately not that vendor's
+OpenAI-compatibility layer, because three things exist only on the native wire
+and the assistant needs all three: thought parts, thought signatures carried
+back across tool turns, and an explicit thinking budget. The base is whatever
+the endpoint documents — `https://generativelanguage.googleapis.com` for the
+service Google runs — and its reference is
+[the models list](https://ai.google.dev/api/models#method:-models.list) and
+[generating content](https://ai.google.dev/api/generate-content). That API also
+accepts its key as a `?key=` query parameter, and **this desk never uses it**:
+a credential in a URL is a credential in a log, a `Referer` and a proxy's
+access record, which is the same rule that refuses userinfo in a configured
+URL. Every row of that table is a header.
+
+Nothing in the desk reads the host, compares it to a list, or behaves
 differently for one endpoint than another — which an enforcement test holds in
 place by enumerating every host comparison in the source and requiring each to
-be a loopback name.
+be a loopback name. A proxy or a self-hosted endpoint speaking any of those
+three wires is that `kind`, at its own URL.
 
 `url` must be an `https:` URL, or an `http:` one on `localhost` or
 `127.0.0.1` — a rule about transport, because a bearer credential sent in clear
@@ -1320,7 +1342,8 @@ one segment, because re-encoding it into a separator would send the credential
 to a different resource than the one written down.
 It is the base the endpoint documents for its own protocol: for
 `openai-compatible` the base carrying `/models` and `/chat/completions`, which
-usually ends in `/v1`; for `anthropic` the base carrying `/v1/messages`. The
+usually ends in `/v1`; for `anthropic` the base carrying `/v1/messages`; for
+`gemini` the base carrying `/v1beta/models`, which is the origin alone. The
 desk appends the path its protocol prescribes and never guesses a version
 segment.
 

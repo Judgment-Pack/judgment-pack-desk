@@ -219,6 +219,7 @@ func TestRelayInjectsTheConfiguredKeyOncePerProtocol(t *testing.T) {
 	}{
 		{"openai-compatible", "Authorization", "Bearer " + testKey},
 		{"anthropic", "x-api-key", testKey},
+		{"gemini", "x-goog-api-key", testKey},
 	} {
 		t.Run(testCase.kind, func(t *testing.T) {
 			u := newUpstream(t, nil)
@@ -1463,8 +1464,11 @@ func TestRelayTakesTheKeyBackOutOfAnAnswer(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
 	})
-	_, ts, _ := relayDesk(t, "openai-compatible", u)
-	resp, body := relayGet(t, ts, "chat/completions")
+	// **On the gemini kind**, so the `X-Goog-Api-Key` row of the strip list is
+	// exercised against the endpoint whose credential header it actually is —
+	// the case in which an echo would be the desk's own key coming back.
+	_, ts, _ := relayDesk(t, "gemini", u)
+	resp, body := relayGet(t, ts, "v1beta/models")
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status %d, want the endpoint's 401", resp.StatusCode)
 	}
