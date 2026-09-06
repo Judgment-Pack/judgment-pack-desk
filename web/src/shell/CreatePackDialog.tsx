@@ -36,12 +36,16 @@
  * has no delete verb — and claiming one would be worse than the residue.
  */
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState, type RefObject } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { FileRequestError, readFile, writeFile, type FileContent } from '../files/client'
 import { useFileContent, useFileListing } from '../files/queries'
 import { useMcp } from '../mcp/McpProvider'
+import { useValidate } from '../mcp/queries'
+import { anchor, layersReached, truncationNote } from '../packs/checks'
+import { DiagnosticList } from '../packs/DiagnosticList'
+import { useIdleCheck } from '../packs/edit/useIdleCheck'
 import { RuntimeRefusal, useExample, useExampleListing, useSchema } from '../mcp/starters'
 import {
   existingPackKeys,
@@ -53,7 +57,15 @@ import {
   type ProjectConfig
 } from '../packs/jpackConfig'
 import { codeOf, refusalDetail, refusalLead } from '../packs/createRefusal'
-import { collisionIn, emptyPackFrom, packPathFor, shapeTemplate, slugFor } from '../packs/newPack'
+import { DescribeIt, useDescribeIt } from './DescribeIt'
+import {
+  collisionIn,
+  emptyPackFrom,
+  packFromProposal,
+  packPathFor,
+  shapeTemplate,
+  slugFor
+} from '../packs/newPack'
 import { Alert } from '../ui/Alert'
 import { Button } from '../ui/Button'
 import { Dialog, DialogActions, DialogClose } from '../ui/Dialog'
@@ -75,6 +87,14 @@ const PROJECT_FILE = 'jpack.json'
  */
 const SCHEMA_EMPTY = 'schema:empty'
 const EMPTY_LABEL = 'Empty pack'
+/**
+ * The fifth state of the choice: the document the assistant proposed.
+ *
+ * In the same namespaced space as the other two, so a runtime that serves an
+ * example called `the-assistants-proposal` cannot spell its way into it.
+ */
+const PROPOSAL_SOURCE = 'proposal:the-assistants'
+const PROPOSAL_LABEL = 'The assistant’s proposal'
 const exampleValue = (name: string) => `example:${encodeURIComponent(name)}`
 const exampleNameOf = (value: string): string | undefined =>
   value.startsWith('example:') ? decodeURIComponent(value.slice('example:'.length)) : undefined
@@ -90,11 +110,28 @@ const PACK_FILE_TAKEN = 'Something is already there under that name — try anot
 const ORPHANED =
   'The pack was created but could not be registered. Nothing else was changed.'
 const NO_TEMPLATE = 'There is no template to start from here.'
+const TEMPLATE_UNUSABLE = 'This template could not be used.'
+const NO_VALIDATE =
+  'This desk cannot check a proposed document here, because this connection serves no validate. Nothing was created.'
+const CHECKING = 'Checking the proposed document…'
+const PROPOSAL_UNUSABLE = 'This proposal could not be used, so nothing was created.'
+const RENAMED = 'Named from the field above, not from the proposal.'
 const TEMPLATES_PENDING = 'Asking the runtime what it can start from…'
 const PARTIAL_PROJECT =
   'This project\u2019s file listing is incomplete, so this dialog cannot tell whether that name is free. Nothing was created.'
 const DIALOG_DESCRIPTION =
   'The name gives the pack\u2019s id and its file name; the template is the runtime\u2019s own.'
+
+/**
+ * What Create would write, and where it came from.
+ *
+ * One value rather than two nullable ones, so everything below branches on the
+ * same fact: a template is bytes the runtime served and a proposal is the
+ * canonical frozen snapshot the run hook ingested, and the difference matters
+ * exactly twice — which shaping function is called, and which sentence a
+ * refusal gets.
+ */
+type Source = { kind: 'template'; text: string } | { kind: 'proposal'; document: unknown }
 
 export function CreatePackDialog({
   open,
@@ -118,7 +155,7 @@ export function CreatePackDialog({
 }) {
   const { config } = useEffectiveConfig()
   const { dir, idBase } = config.storage.packs
-  const { known, exampleSupported, schemaSupported } = useMcp()
+  const { known, exampleSupported, schemaSupported, validateSupported } = useMcp()
   const listing = useFileListing()
   const project = useFileContent(PROJECT_FILE)
   const examples = useExampleListing()
@@ -128,6 +165,16 @@ export function CreatePackDialog({
   const schema0 = useSchema(schemaSupported)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const location = useLocation()
+  /**
+   * The **Describe it** section's own state, held here rather than inside it.
+   *
+   * Because closing this dialog is not the section's event: the run has to be
+   * stopped through the run hook — one terminal event, one socket close — and
+   * an unmount alone would abort an engine iterator with nothing left to write
+   * a terminal event onto. `close` below is the one place that happens.
+   */
+  const describe = useDescribeIt()
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -178,14 +225,22 @@ export function CreatePackDialog({
    * skeleton with no `specVersion` is not an incomplete pack but a file nothing
    * can read as one.
    */
+  /** The Describe section has a proposal this dialog could write. */
+  const proposalOffered = describe.offered
+
   const options = useMemo(
     () => [
       ...(examplesState === 'settled'
         ? offered.map((entry) => ({ value: exampleValue(entry.name), label: entry.name }))
         : []),
-      ...(emptyState === 'ready' ? [{ value: SCHEMA_EMPTY, label: EMPTY_LABEL }] : [])
+      ...(emptyState === 'ready' ? [{ value: SCHEMA_EMPTY, label: EMPTY_LABEL }] : []),
+      // Offered from the moment a run has finished, whether or not it produced
+      // a document: a run that ended with nothing is a state this dialog has to
+      // be able to *report*, and one whose option quietly never appeared would
+      // leave a person staring at a template they did not choose.
+      ...(proposalOffered ? [{ value: PROPOSAL_SOURCE, label: PROPOSAL_LABEL }] : [])
     ],
-    [examplesState, emptyState, offered]
+    [examplesState, emptyState, offered, proposalOffered]
   )
 
   /**
@@ -204,6 +259,32 @@ export function CreatePackDialog({
 
   const example = useExample(exampleName)
   const schema = schema0
+
+  /**
+   * The proposal becomes the source the moment there is one to be.
+   *
+   * Somebody who described a policy and watched it be worked out did not then
+   * choose a template, and leaving the field on one would make Create write the
+   * wrong document on the first press. Switching back is one click, and the
+   * proposal stays on offer until this dialog closes.
+   */
+  useEffect(() => {
+    if (proposalOffered) setChoice(PROPOSAL_SOURCE)
+  }, [proposalOffered])
+
+  /**
+   * And it stops being the source the moment it stops being on offer.
+   *
+   * Pressing Propose again, losing the assistant, closing the section's session
+   * — each takes the proposal off the list, and a choice left pointing at it
+   * would be a source the author cannot see and cannot change. Falling back to
+   * the template choice is what the field says it is.
+   */
+  useEffect(() => {
+    if (!proposalOffered) {
+      setChoice((current) => (current === PROPOSAL_SOURCE ? undefined : current))
+    }
+  }, [proposalOffered])
 
   useEffect(() => {
     if (open) return
@@ -226,8 +307,89 @@ export function CreatePackDialog({
   // A template the runtime is still fetching is not a refusal, and one it
   // refused is: the two are kept apart so a slow answer never reads as a
   // failure.
-  const template = selected === undefined ? undefined : isEmpty ? emptyPackFrom(schema.data) : example.data
+  const usingProposal = selected === PROPOSAL_SOURCE
+  const template =
+    selected === undefined || usingProposal
+      ? undefined
+      : isEmpty
+        ? emptyPackFrom(schema.data)
+        : example.data
   const templateError = isEmpty ? schema.error : example.error
+
+  /**
+   * The document Create would write, or nothing.
+   *
+   * The proposal half is read off the run's own event list, which is where the
+   * **canonical frozen snapshot** lives: `useAssistantRun` ingests a proposal
+   * once, and this is that value rather than a second reading of an engine's
+   * event.
+   */
+  const source: Source | undefined = usingProposal
+    ? describe.proposal === undefined
+      ? undefined
+      : { kind: 'proposal', document: describe.proposal.document }
+    : template === undefined
+      ? undefined
+      : { kind: 'template', text: template }
+
+  /** Whether the proposal calls itself something other than what was typed. */
+  const renamed =
+    source?.kind === 'proposal' &&
+    slug !== undefined &&
+    namedOtherwise(source.document, { name, slug, idBase })
+
+  /**
+   * The bytes a proposal would be written as, computed **here** so they can be
+   * checked before Create is offered.
+   *
+   * `shapePack` fills the four members the dialog asked about and leaves the
+   * rest exactly as the model wrote them — `specVersion` included — because the
+   * desk does not edit a document on a model's behalf. What that leaves is a
+   * document nobody has checked: an unknown top-level member, a mistyped rule,
+   * a format version a model invented. The runtime's schema is
+   * `additionalProperties: false` and its `specVersion` is a `const`, so the
+   * answer to "is this a pack" is the runtime's and is available for the
+   * asking.
+   */
+  const proposed = useMemo((): { text: string } | { problem: string } | undefined => {
+    if (source?.kind !== 'proposal' || slug === undefined) return undefined
+    try {
+      return { text: packFromProposal(source.document, { name, description, slug, idBase }) }
+    } catch (cause) {
+      return { problem: reasonOf(cause) }
+    }
+  }, [source, name, description, slug, idBase])
+  const shapedText = proposed !== undefined && 'text' in proposed ? proposed.text : undefined
+  // The editor's own instrument: a call per keystroke is a call per keystroke,
+  // so what is sent is a snapshot the field settles on, and `behind` is what
+  // says the bytes on screen have moved past the ones that were checked.
+  const idle = useIdleCheck(shapedText)
+  const checked = useValidate(idle.checkedText)
+
+  /**
+   * Why a proposal cannot be written, in the runtime's words where they exist.
+   *
+   * Read in order. The last branch is the load-bearing one: **a proposal is
+   * written only where the runtime called the exact bytes valid**, and the
+   * comparison against `checkedBytes` is what makes "the bytes that were
+   * checked" and "the bytes that would be written" one string rather than two.
+   */
+  const proposalRefusal: string | undefined =
+    source?.kind !== 'proposal'
+      ? undefined
+      : proposed === undefined || 'problem' in proposed
+        ? (proposed?.problem ?? CHECKING)
+        : !validateSupported
+          ? NO_VALIDATE
+          : checked.isError
+            ? `The check on the proposed document was refused — ${checked.error.message}`
+            : checked.data === undefined || checked.data.checkedBytes !== shapedText
+              ? CHECKING
+              : checked.data.report.status === 'valid'
+                ? undefined
+                : `The runtime will not call this document a pack — ${
+                    layersReached(checked.data.report).text
+                  }`
 
   /**
    * What to say under the Template field, and the four facts it is made of.
@@ -296,17 +458,63 @@ export function CreatePackDialog({
   const ready =
     slug !== undefined &&
     taken === undefined &&
-    template !== undefined &&
+    source !== undefined &&
+    proposalRefusal === undefined &&
     !busy &&
+    describe.blocking === '' &&
     listing.isSuccess &&
     !partial
+
+  /**
+   * Why Create is not offered, in the control's own `title`.
+   *
+   * Whatever the Describe section is holding the dialog for, in its own words:
+   * a submission in flight, a refused prompt, a run that failed, a proposal an
+   * error withdrew, a document that could not be read as JSON data. It holds
+   * the dialog rather than the proposal source, because a Create that fell back
+   * to a template one press after somebody asked for something else would write
+   * a document nobody chose.
+   */
+  const createWhy = describe.blocking !== '' ? describe.blocking : proposalRefusal
+
+  /**
+   * The report behind a refusal, where the refusal is the runtime's.
+   *
+   * Only where the check answered about the bytes that would be written and
+   * called them something other than valid: a pending check and a refused call
+   * have a sentence and no diagnostics to print.
+   */
+  const refused =
+    proposalRefusal !== undefined &&
+    checked.data !== undefined &&
+    checked.data.checkedBytes === shapedText &&
+    checked.data.report.status !== 'valid'
+      ? checked.data.report
+      : undefined
 
   const invalidate = (keys: readonly (readonly unknown[])[]) => {
     for (const key of keys) void queryClient.invalidateQueries({ queryKey: key })
   }
 
+  /**
+   * **Every way this dialog closes goes through here**, and closing ends the
+   * session the Describe section was running.
+   *
+   * The rail unmounts this component when it closes, so an effect on `open`
+   * would never run: the stop has to happen on the way out rather than after
+   * it. It goes through the run hook — which writes the run's one terminal
+   * event and closes its one connection — rather than leaving the unmount to
+   * abort an iterator nobody is reading. The proposal goes with it: nothing
+   * about a session is persisted, and a dialog that reopened one would be
+   * re-offering a document nobody accepted.
+   */
+  const close = (next: boolean) => {
+    if (!next) describe.discard()
+    onOpenChange(next)
+  }
+
   const create = async () => {
-    if (!ready || slug === undefined || path === undefined || template === undefined) return
+    if (!ready || slug === undefined || path === undefined || source === undefined) return
     setFailure(undefined)
     setBusy(true)
     try {
@@ -370,12 +578,27 @@ export function CreatePackDialog({
       // (0c) The document itself, before anything is sent: a template that is
       // not a JSON object cannot become a pack, and finding that out after the
       // write would be an orphan for a reason known in advance.
+      // **A proposal is written as the bytes the runtime checked**, read back
+      // off the check's own answer rather than shaped a second time: two
+      // shapings are two documents to a reader even where they are one string,
+      // and the claim being made is that what was validated is what was
+      // written. A template is the runtime's own document and is shaped here as
+      // it always was.
       let content: string
-      try {
-        content = shapeTemplate(template, { name, description, slug, idBase })
-      } catch (cause) {
-        setFailure({ lead: 'This template could not be used.', reason: reasonOf(cause) })
-        return
+      if (source.kind === 'proposal') {
+        const validated = checked.data
+        if (validated === undefined || validated.checkedBytes !== shapedText) {
+          setFailure({ lead: PROPOSAL_UNUSABLE, reason: CHECKING })
+          return
+        }
+        content = validated.checkedBytes
+      } else {
+        try {
+          content = shapeTemplate(source.text, { name, description, slug, idBase })
+        } catch (cause) {
+          setFailure({ lead: TEMPLATE_UNUSABLE, reason: reasonOf(cause) })
+          return
+        }
       }
 
       // (1) The pack itself, and **what the chassis says it wrote**.
@@ -427,7 +650,7 @@ export function CreatePackDialog({
 
       // (3) Everything that answered before this pack existed.
       invalidate([['desk-files'], ['desk-file', PROJECT_FILE], ['list_packs'], ['desk-config']])
-      onOpenChange(false)
+      close(false)
       navigate(`/packs/${slug}`)
       // Closing this dialog is not closing the thing it was inside. Below
       // 900px the rail is a modal drawer, and it stayed over the page this
@@ -438,6 +661,44 @@ export function CreatePackDialog({
     }
   }
 
+  /**
+   * **A route change closes this dialog**, and closing it ends the session.
+   *
+   * This dialog is mounted by the rail, which sits above the route's own
+   * `<Routes>`: a browser Back, a Forward, or any programmatic navigation
+   * changes the page underneath without unmounting the dialog or telling it
+   * anything. A run would go on running over a page it has nothing to do with,
+   * with no terminal event and no connection close, because only a Radix
+   * dismissal and a successful Create ever reached `close`.
+   *
+   * A navigation is a dismissal like Escape, so it takes the same path. The one
+   * exception is the one the dismissal handler already makes: while the create
+   * sequence is running this dialog is the only place its outcome is reported,
+   * and it stays to report it.
+   *
+   * **The page is the pathname and the search, and a fragment is not either.**
+   * The obvious key is `location.key`, and it moves for a hash-only history
+   * entry too — which this desk defines as *not* a navigation, in as many words
+   * (`MemberOutline`: selecting a member writes a hash and stays on the page).
+   * Keyed on that, choosing a member in the document behind an open dialog
+   * would have closed it, stopped the run and discarded the proposal, over a
+   * page that had not changed.
+   */
+  const closeNow = useRef(close)
+  closeNow.current = close
+  const page = `${location.pathname}${location.search}`
+  const shownAt = useRef(page)
+  useEffect(() => {
+    if (!open) {
+      shownAt.current = page
+      return
+    }
+    if (page === shownAt.current) return
+    shownAt.current = page
+    if (busy) return
+    closeNow.current(false)
+  }, [page, open, busy])
+
   return (
     <Dialog
       open={open}
@@ -447,7 +708,7 @@ export function CreatePackDialog({
       // the one outcome that leaves something behind.
       onOpenChange={(next) => {
         if (!next && busy) return
-        onOpenChange(next)
+        close(next)
       }}
       title="Create a pack"
       description={DIALOG_DESCRIPTION}
@@ -503,6 +764,33 @@ export function CreatePackDialog({
           )}
         </Field>
 
+        {renamed && <p className="quiet">{RENAMED}</p>}
+        {proposalRefusal !== undefined && <p className="quiet">{proposalRefusal}</p>}
+        {/*
+          **Every diagnostic the runtime returned, as it wrote them.** Not the
+          first, and not reworded: a runtime reporting independent errors at two
+          members is describing two problems, and this is the one place they can
+          be read — the page that would have shown the rest is the page this
+          refusal prevents from existing. The rendering is the Checks panel's
+          own, so the words are the same words wherever a diagnostic is printed.
+          `anchor` is given an empty set of rendered pointers because nothing of
+          the document is on screen here, which makes every `named` the
+          diagnostic's own `instancePath`.
+        */}
+        {refused !== undefined && (
+          <>
+            <DiagnosticList
+              diagnostics={anchor(refused, new Set())}
+              label="What the runtime said about this document"
+            />
+            {truncationNote(refused) !== undefined && (
+              <p className="quiet">{truncationNote(refused)}</p>
+            )}
+          </>
+        )}
+
+        <DescribeIt state={describe} />
+
         {(failure ?? blocked) && (
           <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>
         )}
@@ -513,7 +801,7 @@ export function CreatePackDialog({
               Cancel
             </Button>
           </DialogClose>
-          <Button variant="primary" type="submit" disabled={!ready}>
+          <Button variant="primary" type="submit" disabled={!ready} title={createWhy}>
             Create pack
           </Button>
         </DialogActions>
@@ -544,6 +832,24 @@ function projectFacts(text: string | undefined): { keys: string[]; paths: string
   } catch {
     return { keys: [], paths: [] }
   }
+}
+
+/**
+ * Whether a proposal calls itself something other than what the field says.
+ *
+ * Read off the document rather than off anything the model said about its own
+ * work, and compared with what the shaping will actually write. Where the two
+ * differ the dialog says so in one line: the desk's shaping wins either way,
+ * and a document quietly arriving under a name nobody chose is worse than a
+ * sentence saying which name won.
+ */
+function namedOtherwise(
+  document: unknown,
+  fields: { name: string; slug: string; idBase: string }
+): boolean {
+  if (typeof document !== 'object' || document === null) return false
+  const held = document as { id?: unknown; title?: unknown }
+  return held.title !== fields.name.trim() || held.id !== `${fields.idBase}${fields.slug}`
 }
 
 /** The message the failure carries, never a sentence invented over it. */

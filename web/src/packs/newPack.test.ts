@@ -12,6 +12,7 @@ import {
   collisionIn,
   emptyPackFrom,
   packPathFor,
+  packFromProposal,
   shapeTemplate,
   slugFor
 } from './newPack'
@@ -291,6 +292,114 @@ describe('shapeTemplate', () => {
     expect(() =>
       shapeTemplate('{oops', { name: 'A', description: '', slug: 'a', idBase: 'https://e.invalid/' })
     ).toThrow(/not valid JSON/)
+  })
+})
+
+describe('packFromProposal', () => {
+  /**
+   * A proposal as the run hook hands one over: plain JSON data, frozen all the
+   * way down. Shaped from *this* object, because the snapshot is what was on
+   * screen and a second reading of anything else is a second document.
+   */
+  const PROPOSED = Object.freeze({
+    specVersion: '0.2.0-draft',
+    id: 'https://example.com/judgment-packs/expense-reimbursement',
+    version: '0.1.0',
+    title: 'Expense reimbursement',
+    description: 'The assistant’s own line.',
+    decision: Object.freeze({ intent: 'decide', question: 'Approve?' }),
+    outcomes: Object.freeze([{ id: 'approve' }, { id: 'decline' }]),
+    rules: Object.freeze([{ id: 'r1' }])
+  })
+
+  const shaped = (description: string) =>
+    JSON.parse(
+      packFromProposal(PROPOSED, {
+        name: 'Vendor Onboarding',
+        description,
+        slug: 'vendor-onboarding',
+        idBase: 'https://example.invalid/judgment-packs/'
+      })
+    ) as Record<string, unknown>
+
+  it('writes the name that was typed, not the one the proposal gave itself', () => {
+    // The one rule that is not shared with a template for a reason: a template
+    // is the runtime's own document and a proposal is a model's, and the
+    // person who typed the name is the author of neither.
+    const document = shaped('Whether a vendor may be onboarded.')
+    expect(document.title).toBe('Vendor Onboarding')
+    expect(document.id).toBe('https://example.invalid/judgment-packs/vendor-onboarding')
+    expect(document.version).toBe('0.1.0')
+    expect(document.description).toBe('Whether a vendor may be onboarded.')
+  })
+
+  it('leaves the format version the proposal wrote, for the runtime to judge', () => {
+    // **Not one of the four.** The desk owns exactly what it owns for a
+    // template, and rewriting the one member that says what the document *is*
+    // would mean the bytes the runtime checked were not the bytes the assistant
+    // proposed. A version that is wrong is the runtime's to refuse.
+    const claimed = Object.freeze({ ...PROPOSED, specVersion: '99' })
+    const document = JSON.parse(
+      packFromProposal(claimed, {
+        name: 'A',
+        description: '',
+        slug: 'a',
+        idBase: 'https://example.invalid/p/'
+      })
+    ) as Record<string, unknown>
+    expect(document.specVersion).toBe('99')
+  })
+
+  it('leaves every other member exactly as the proposal carried it', () => {
+    // **Left, and checked — not stripped.** An unknown top-level member is a
+    // document the runtime's schema refuses, and the dialog refuses it before
+    // either write with the runtime's own diagnostics. Removing it here would
+    // be the desk editing a document on a model's behalf and telling nobody.
+    const document = shaped('One line.')
+    expect(document.specVersion).toBe('0.2.0-draft')
+    expect(document.decision).toEqual({ intent: 'decide', question: 'Approve?' })
+    expect(document.outcomes).toEqual([{ id: 'approve' }, { id: 'decline' }])
+    expect(document.rules).toEqual([{ id: 'r1' }])
+    const extra = JSON.parse(
+      packFromProposal(Object.freeze({ ...PROPOSED, fileName: 'model-choice.pack.json' }), {
+        name: 'A',
+        description: '',
+        slug: 'a',
+        idBase: 'https://example.invalid/p/'
+      })
+    ) as Record<string, unknown>
+    expect(extra.fileName).toBe('model-choice.pack.json')
+  })
+
+  it('drops the proposal’s own description where the dialog was given none', () => {
+    expect('description' in shaped('  ')).toBe(false)
+  })
+
+  it('writes the same bytes a template is written as', () => {
+    const text = packFromProposal(PROPOSED, {
+      name: 'A',
+      description: '',
+      slug: 'a',
+      idBase: 'https://example.invalid/p/'
+    })
+    expect(text.endsWith('}\n')).toBe(true)
+    expect(text).toContain('\n  "specVersion"')
+  })
+
+  it('does not move the snapshot it was given', () => {
+    // It is frozen, so a mutation would throw in strict mode rather than
+    // silently succeed — but the claim is about what comes out: plain data
+    // built from a spread, and the snapshot still saying what it said.
+    shaped('One line.')
+    expect(PROPOSED.title).toBe('Expense reimbursement')
+    expect(PROPOSED.id).toBe('https://example.com/judgment-packs/expense-reimbursement')
+  })
+
+  it('says so when the proposal is not a JSON object', () => {
+    const fields = { name: 'A', description: '', slug: 'a', idBase: 'https://e.invalid/' }
+    for (const value of [null, [], 7, 'a pack']) {
+      expect(() => packFromProposal(value, fields)).toThrow(/not a JSON object/)
+    }
   })
 })
 

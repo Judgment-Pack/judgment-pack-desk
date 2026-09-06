@@ -40,9 +40,12 @@ import { CodeArea } from '../ui/CodeArea'
 import { TextArea } from '../ui/TextArea'
 import { useEditing } from '../packs/edit/editingContext'
 import type { BufferIdentity } from '../packs/edit/useDocumentBuffer'
+import { EventList } from './EventList'
 import { ProposalDiffView } from './ProposalDiff'
+import { ProposalUnknowns, RuntimeChecks } from './ProposalReport'
 import { DRAFT_MOVED, acceptState, applyProposal, writable, type Disposition } from './acceptProposal'
 import { diffProposal } from './proposalDiff'
+import { outcomeOf } from './runOutcome'
 import { useAssistantRun } from './useAssistantRun'
 import { useAssistantSlot } from './useAssistantSlot'
 import styles from './AssistantPane.module.css'
@@ -95,11 +98,6 @@ function fixWhy(diagnostics: number, advertised: boolean, listed: boolean): stri
   if (!advertised && listed) return 'This runtime advertises no fix_pack prompt.'
   if (diagnostics === 0) return 'The check on this page reports no diagnostic to fix.'
   return undefined
-}
-
-/** The bytes of one tool answer, said the way the desk says byte counts. */
-function byteCount(text: string): number {
-  return new TextEncoder().encode(text).length
 }
 
 export function AssistantPane({
@@ -285,6 +283,20 @@ export function AssistantPane({
     return () => document.removeEventListener('keydown', onKey)
   }, [stop])
 
+  /**
+   * The proposal this session produced, and whether the session stands behind
+   * it — **two questions, and only one of them is this pane's to answer.**
+   *
+   * `outcomeOf` is the desk's one reading of "is this run clean", shared with
+   * the Create dialog so that a rule about a session is not kept in two places.
+   * What the two do about the answer differs, and reasonably: the dialog offers
+   * no source to write, and this pane keeps the session on screen — the stream,
+   * the document, the runtime's quoted checks — with Accept refused and the
+   * run's own words on the control. A reader who has just watched a session
+   * fail is better served by seeing what it produced and why it cannot be used
+   * than by the whole thing disappearing.
+   */
+  const outcome = outcomeOf(run)
   const proposal = run.events.find(
     (event): event is Extract<AssistantEvent, { type: 'proposal' }> => event.type === 'proposal'
   )
@@ -358,31 +370,13 @@ export function AssistantPane({
   const accept = acceptState({
     editing,
     proposal: proposal !== undefined,
+    failure: outcome.failure,
     running,
     onBaseline,
     busy: busy(),
     disposition,
     writable: proposed !== undefined && writable(proposed)
   })
-  const results = run.events.filter(
-    (event): event is Extract<AssistantEvent, { type: 'tool_result' }> =>
-      event.type === 'tool_result'
-  )
-  const checked = (name: string) => [...results].reverse().find((result) => result.name === name)
-  /**
-   * The events this list has a line for.
-   *
-   * **One line per reasoning passage, not one per delta.** An engine reports
-   * reasoning as it arrives — the contract's `done` is what marks a passage
-   * finished — and a model that reasons for a paragraph would otherwise fill
-   * this list with a hundred lines saying how many characters had arrived so
-   * far. The deltas stay on the run's event list for a fold to read; what is
-   * rendered here is the passage.
-   */
-  const reported = run.events
-    .map((event, index) => ({ event, index }))
-    .filter(({ event }) => event.type !== 'reasoning' || event.done)
-
   return (
     <div className={styles.pane}>
       <p className={styles.status}>
@@ -459,15 +453,7 @@ export function AssistantPane({
         </p>
       )}
 
-      {reported.length > 0 && (
-        <ol className={styles.stream} aria-label="What the assistant did">
-          {reported.map(({ event, index }) => (
-            <li key={index} className={lineClass(event)}>
-              {describe(event)}
-            </li>
-          ))}
-        </ol>
-      )}
+      <EventList events={run.events} failure={run.failure} />
 
       {proposal !== undefined && disposition === 'rejected' && (
         <p className={styles.honesty}>
@@ -485,6 +471,12 @@ export function AssistantPane({
             Nothing has been written. This is a document to accept or reject, and the checks below
             are the runtime’s own words.
           </p>
+          {outcome.failure !== '' && (
+            <p className={styles.notice}>
+              This session did not stand behind what it proposed: {outcome.failure}. It cannot be
+              accepted into the draft.
+            </p>
+          )}
           {diff !== undefined && <ProposalDiffView diff={diff} onBaseline={onBaseline} />}
           <p className={styles.label}>The whole proposed document</p>
           <CodeArea
@@ -492,28 +484,8 @@ export function AssistantPane({
             readOnly
             aria-label="The proposed document"
           />
-          <p className={styles.label}>Unknowns the assistant declared</p>
-          {proposal.unknowns.length === 0 ? (
-            <p className={styles.honesty}>It declared none.</p>
-          ) : (
-            <ul className={styles.unknowns}>
-              {proposal.unknowns.map((unknown) => (
-                <li key={unknown}>{unknown}</li>
-              ))}
-            </ul>
-          )}
-          {(['validate', 'experimental_evaluate'] as const).map((name) => {
-            const result = checked(name)
-            if (result === undefined) return null
-            return (
-              <div key={name}>
-                <p className={styles.label}>
-                  {name} — the runtime’s answer, quoted{result.isError ? ' (isError)' : ''}
-                </p>
-                <CodeArea value={result.text} readOnly aria-label={`${name}, as the runtime wrote it`} />
-              </div>
-            )
-          })}
+          <ProposalUnknowns unknowns={proposal.unknowns} />
+          <RuntimeChecks events={run.events} />
           <div className={styles.actions}>
             {/*
               **The reading route has no draft to accept into**, so it says
@@ -550,42 +522,4 @@ export function AssistantPane({
       )}
     </div>
   )
-}
-
-function lineClass(event: AssistantEvent): string {
-  if (event.type === 'guardrail' || event.type === 'thinking_unavailable') return styles.guard!
-  if (event.type === 'error') return styles.error!
-  return styles.line!
-}
-
-/**
- * One event as one line.
- *
- * A tool result is reported as its byte count and the runtime's own `isError`,
- * never as a reading of what it said: the pane has no opinion about a report it
- * did not write, and the proposal below quotes the two that matter in full.
- */
-function describe(event: AssistantEvent): string {
-  switch (event.type) {
-    case 'tool_call':
-      return `called ${event.name}(${Object.keys((event.args ?? {}) as object).join(', ')})`
-    case 'tool_result':
-      return `${event.name} answered ${byteCount(event.text)} bytes${
-        event.isError ? ' (isError)' : ''
-      }${event.structured === undefined ? '' : ' with structured content'}`
-    case 'guardrail':
-      return `${event.action} ${event.tool}: ${event.detail}`
-    case 'thinking_unavailable':
-      return event.detail
-    case 'reasoning':
-      return `${event.text.length} characters of reasoning`
-    case 'critique':
-      return event.text
-    case 'proposal':
-      return `proposed a document with ${event.unknowns.length} unknown(s); nothing was written`
-    case 'error':
-      return event.message
-    case 'end':
-      return 'the session ended'
-  }
 }

@@ -1084,3 +1084,73 @@ describe('a proposal belongs to the draft it was given', () => {
     expect(JSON.parse(held!.text!)).toEqual(PROPOSED)
   })
 })
+
+
+describe('a session that failed after it ended', () => {
+  /**
+   * The exact sequence: a document, the contract's one terminal event, and then
+   * a throw while the engine unwinds.
+   *
+   * The Create dialog withdrew it from the moment `run.failure` existed; this
+   * pane went on offering it, because the rule lived in one consumer instead of
+   * in one place both read. `outcomeOf` is that place now.
+   */
+  const proposesThenFalls: Engine = {
+    id: 'builtin',
+    async *start(): AsyncGenerator<AssistantEvent> {
+      yield {
+        type: 'proposal',
+        document: scenario.documents.DRAFT_V2,
+        unknowns: []
+      }
+      yield { type: 'end' }
+      throw new Error('the session could not be closed')
+    }
+  }
+
+  const DRAFT = `${JSON.stringify(scenario.documents.DRAFT_V1, null, 2)}\n`
+
+  async function runIt() {
+    injected = proposesThenFalls
+    await draw({ buffer: { text: DRAFT, editing: true } })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    )
+    fireEvent.change(screen.getByLabelText('What should this pack decide?'), {
+      target: { value: scenario.policy }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+  }
+
+  it('says so in the event list, as the run’s own last line', async () => {
+    await runIt()
+    const stream = screen.getByRole('list', { name: 'What the assistant did' })
+    await waitFor(() =>
+      expect(stream.textContent).toContain('the session failed after it ended')
+    )
+    expect(stream.textContent).toContain('the session could not be closed')
+    // And it is still exactly one terminal event: the failure is beside the
+    // stream, not a second `end` on it.
+    expect(
+      [...stream.querySelectorAll('li')].filter((line) => line.textContent === 'the session ended')
+    ).toHaveLength(1)
+  })
+
+  it('refuses Accept, in the run’s own words, and leaves the draft alone', async () => {
+    await runIt()
+    const accept = () => screen.getByRole('button', { name: 'Accept into draft' })
+    await waitFor(() => expect(accept().hasAttribute('disabled')).toBe(true))
+    // The run's own words, which carry the error's name as the hook records it.
+    expect(accept().getAttribute('title')).toBe('Error: the session could not be closed')
+    expect(
+      screen.getByRole('region', { name: 'The proposal' }).textContent
+    ).toContain('did not stand behind what it proposed')
+    // Pressed anyway: the buffer is where the claim is, and it does not move.
+    const before = held!.text
+    fireEvent.click(accept())
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(held!.text).toBe(before)
+    expect(wrote).toBe(0)
+  })
+})

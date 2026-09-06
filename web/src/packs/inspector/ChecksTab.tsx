@@ -26,6 +26,7 @@
  * read; the "bytes now in the editor" wording arrives with the editor.
  */
 import type { AnchoredDiagnostic } from '../checks'
+import { DiagnosticList } from '../DiagnosticList'
 import styles from './PackInspector.module.css'
 
 export function ChecksTab({
@@ -63,30 +64,7 @@ export function ChecksTab({
           is on screen.
         </p>
       )}
-      {diagnostics.length > 0 && (
-        <ul className={styles.diagnostics}>
-          {diagnostics.map((entry, index) => (
-            <li key={`${entry.diagnostic.code}-${index}`} className={styles.diagnostic}>
-              <p className={styles.diagnosticHead}>
-                <code className={styles.code}>{entry.diagnostic.code}</code>
-                {entry.diagnostic.layer !== undefined && (
-                  <span className={styles.word}>{entry.diagnostic.layer}</span>
-                )}
-                {entry.diagnostic.severity !== undefined && (
-                  <span className={styles.word}>{entry.diagnostic.severity}</span>
-                )}
-                {entry.diagnostic.codeStability !== undefined && (
-                  <span className={styles.word}>{entry.diagnostic.codeStability}</span>
-                )}
-              </p>
-              <p className={styles.message}>{entry.diagnostic.message}</p>
-              <p className={styles.pointer}>
-                <code>{entry.named}</code>
-              </p>
-            </li>
-          ))}
-        </ul>
-      )}
+      <DiagnosticList diagnostics={diagnostics} />
       {pending ? (
         <p className={styles.empty}>The check has not answered yet.</p>
       ) : truncation !== undefined ? (

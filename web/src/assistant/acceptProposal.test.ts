@@ -276,6 +276,7 @@ describe('when Accept may be pressed', () => {
   const open = {
     editing: true,
     proposal: true,
+    failure: '',
     running: false,
     onBaseline: true,
     busy: '',
@@ -327,6 +328,16 @@ describe('when Accept may be pressed', () => {
     expect(acceptState({ ...open, writable: false }).why).toContain('not JSON data')
   })
 
+  it('is refused where the run did not stand behind what it proposed', () => {
+    // A run that failed after proposing has withdrawn the proposal, and no
+    // amount of the page being ready makes it acceptable. The words are the
+    // run's own.
+    expect(acceptState({ ...open, failure: 'the session could not be closed' }).why).toBe(
+      'the session could not be closed'
+    )
+    expect(acceptState({ ...open, failure: 'the session could not be closed' }).enabled).toBe(false)
+  })
+
   it('gives one reason at a time, in the order a reader would ask', () => {
     // Every reason is a real state, and the first one is the one that answers
     // "why can I not press this": the route, then the run, then what has
@@ -334,6 +345,12 @@ describe('when Accept may be pressed', () => {
     expect(acceptState({ ...open, editing: false, running: true }).why).toBe('Open Edit to accept.')
     expect(acceptState({ ...open, running: true, busy: 'This draft is being saved.' }).why).toContain(
       'still running'
+    )
+    // A failed run outranks the draft under it, and is outranked by the two
+    // structural facts: the route, and whether there is a proposal at all.
+    expect(acceptState({ ...open, failure: 'it fell over', running: true }).why).toBe('it fell over')
+    expect(acceptState({ ...open, failure: 'it fell over', proposal: false }).why).toContain(
+      'no proposal'
     )
     // An accepted proposal has moved the draft off its own baseline by
     // construction, and "already in the draft" is the answer to why.

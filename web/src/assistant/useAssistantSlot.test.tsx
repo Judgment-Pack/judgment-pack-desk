@@ -157,13 +157,19 @@ describe('useAssistantSlot', () => {
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('builtin|ultra'))
   })
 
-  it('has exactly one consumer, and it is the Assistant pane', () => {
+  it('is read only by the surfaces that render an assistant', () => {
     // It used to be *no* consumer: the slot shipped a chunk before anything
-    // rendered an assistant, and this asserted the absence. The pane exists
-    // now, so what is held is the same claim in its next form — the slot is
-    // read in one place, which is what "one hook, so that the question has a
-    // single answer" is worth. A second reader here is a second answer being
-    // assembled at a call site.
+    // rendered an assistant, and this asserted the absence. Then it was one,
+    // the pane. It is two now — the pane and the Create dialog's Describe
+    // section — and the claim being held is the same one in its next form.
+    //
+    // **What is held is the list, not the count.** "One hook, so that the
+    // question has a single answer" is a claim about there being one *reading*
+    // of the configuration and the key, and two components calling this hook
+    // is that hook doing its job. What would break it is a third place
+    // assembling its own answer out of `config.assistant` and the key read —
+    // so every reader is enumerated here, and a new one is a line somebody
+    // had to write on purpose rather than a habit that spread.
     const src = join(import.meta.dirname, '..')
     const offenders: string[] = []
     const walk = (relative: string) => {
@@ -182,8 +188,9 @@ describe('useAssistantSlot', () => {
       }
     }
     walk('')
-    expect(offenders, 'the slot is read in more than one place').toEqual([
-      'assistant/AssistantPane.tsx'
+    expect(offenders, 'the slot is read somewhere new').toEqual([
+      'assistant/AssistantPane.tsx',
+      'shell/DescribeIt.tsx'
     ])
   })
 })

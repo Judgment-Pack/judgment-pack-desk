@@ -56,6 +56,11 @@
   overflow: auto;
 }
 
+/* The dialog has less room than the tab, and the same list. */
+.compact {
+  max-height: 9rem;
+}
+
 .line {
   color: var(--ink-soft);
   overflow-wrap: anywhere;

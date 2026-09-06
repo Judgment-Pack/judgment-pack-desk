@@ -1869,15 +1869,18 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '      } catch {
         /* the mutant finds out later */
       }'
+  # (The shaping grew a second source in the Describe chunk — a template's
+  # bytes or a proposal's snapshot — so the guarded call is a branch now. The
+  # row is the same claim about the same guard: the shaping runs unguarded and
+  # a document that cannot be shaped is discovered after the write.)
   mutate web "a template that is not a document is sent anyway" "$X" \
-    '      let content: string
-      try {
-        content = shapeTemplate(template, { name, description, slug, idBase })
-      } catch (cause) {
-        setFailure({ lead: '"'"'This template could not be used.'"'"', reason: reasonOf(cause) })
-        return
-      }' \
-    '      const content = shapeTemplate(template, { name, description, slug, idBase })'
+    '        try {
+          content = shapeTemplate(source.text, { name, description, slug, idBase })
+        } catch (cause) {
+          setFailure({ lead: TEMPLATE_UNUSABLE, reason: reasonOf(cause) })
+          return
+        }' \
+    '        content = shapeTemplate(source.text, { name, description, slug, idBase })'
 
   # A listing that failed is not a project with no files in it.
   mutate web "a listing that failed is reported as a project with no jpack.json" "$X" \
@@ -3539,6 +3542,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   BO=web/src/assistant/engines/builtin/providers/openai.ts
   AR=web/src/assistant/useAssistantRun.ts
   AP=web/src/assistant/AssistantPane.tsx
+  RO=web/src/assistant/runOutcome.ts
 
   CT=web/src/assistant/conformance/conformance.test.ts
   EN=web/src/assistant/engines/index.ts
@@ -3809,7 +3813,10 @@ export function assistantTransport(): Transport {
   # (The event became `held` when the proposal's canonicalization landed in this
   # function; the row is the same claim about the same line.)
   mutate web "a second end is appended rather than dropped" "$AR" \
-    "    if (held.type === 'end') run.ended = true" \
+    "    if (held.type === 'end') {
+      run.ended = true
+      terminals.current.count += 1
+    }" \
     '    void held'
   # **Both halves at once, because either alone holds it.** A connection whose
   # setup is still in flight is releasable two ways: the run records the handle
@@ -4307,6 +4314,198 @@ export function assistantTransport(): Transport {
   # `fix_pack` works from the validator's report, and what it is given is the
   # runtime's own bytes: a re-serialization of a parse of them is this desk's
   # spelling of a refusal it did not write.
+  # ---- Describe it, and Create writing what it proposed --------------------
+  #
+  # ADR-0001 again, in this chunk's form: nothing is written until Create is
+  # pressed, the name field is the authority over identity, and what is written
+  # is the canonical frozen snapshot that was on screen. Each row below breaks
+  # one half of one of those.
+  DI=web/src/shell/DescribeIt.tsx
+
+  # **The desk's shaping, skipped.** The proposal's own `id` and `title` are a
+  # model's statement about a document nobody has named yet; writing them is a
+  # pack arriving under an identity the person creating it never chose.
+  mutate web "Create writes the proposal without shaping it" "$X" \
+    '      return { text: packFromProposal(source.document, { name, description, slug, idBase }) }' \
+    '      return { text: `${JSON.stringify(source.document, null, 2)}\n` }'
+
+  # And the narrower half of the same claim: the shaping runs, and the name it
+  # is given comes from the proposal instead of from the field above it.
+  mutate web "the name field loses to the name the proposal gave itself" "$X" \
+    '{ name, description, slug, idBase }) }' \
+    '{
+        name: String((source.document as { title?: unknown }).title ?? name),
+        description,
+        slug,
+        idBase
+      }) }'
+
+  # A run still in flight is about to replace the events the proposal is on,
+  # and Create with a half-finished session behind it writes a document nobody
+  # has seen the end of.
+  mutate web "Create is enabled while the assistant is still running" "$X" \
+    '    describe.blocking === '"'"''"'"' &&' \
+    '    true &&'
+
+  # **The snapshot, not the event.** An engine may put a live object on
+  # `document`; the run hook ingests it once and hands on plain frozen data, and
+  # this row makes the canonical event carry the live one instead — so the
+  # document the dialog displayed and the document Create writes are two
+  # readings of one getter.
+  mutate web "the proposal is written from event.document, not the snapshot" "$AR" \
+    "    type: 'proposal',
+    document," \
+    "    type: 'proposal',
+    document: event.document,"
+
+  # The section renders as a control only where there is an assistant to run.
+  # An endpoint with no key on this machine is a session that cannot start, and
+  # a control that would refuse is worse than a sentence saying where the key
+  # goes.
+  mutate web "Describe is drawn with no key stored on this machine" "$DI" \
+    '  const usable = slot.endpoint !== null && slot.keyPresent' \
+    '  const usable = slot.endpoint !== null'
+
+  # Closing the dialog ends the session, and it has to end it **through the run
+  # hook**: an unmount alone aborts the iterator and closes the socket without
+  # ever writing the run's terminal event, so the next session cannot start and
+  # the contract's one `end` is nowhere.
+  mutate web "the run is left open when the dialog closes" "$X" \
+    '    if (!next) describe.discard()' \
+    '    void next'
+
+  # **The desk owns four members, and `specVersion` is not one of them.** It was
+  # for one round: the version a model wrote was replaced from the schema, so
+  # the bytes the runtime checked were not the bytes the assistant proposed on
+  # the one member that says what the document is, and `specVersion: "99"` was
+  # repaired into something creatable instead of being refused.
+  mutate web "the desk rewrites the format version the proposal wrote" "$NP" \
+    '  return serialise(shapePack(document as Record<string, unknown>, fields))
+}' \
+    "  return serialise({
+    ...shapePack(document as Record<string, unknown>, fields),
+    specVersion: '0.2.0-draft'
+  })
+}"
+
+  # **One reading of "is this run clean", for both consumers.** The tab used to
+  # find the proposal on the event list itself, so a run that failed after
+  # proposing was offered for accepting into a draft with no reason shown —
+  # while the dialog, reading the same run, had already withdrawn it.
+  mutate web "the Assistant tab ignores what the run failed with" "$AP" \
+    '    failure: outcome.failure,' \
+    "    failure: '',"
+
+  # And the selector itself: a failure reported after the terminal event
+  # withdraws the proposal for everybody that reads it.
+  mutate web "a post-end failure does not withdraw the proposal" "$RO" \
+    '  const spoiled =
+    run.failure ?? (proposedAt === -1 ? said(events) : said(events.slice(proposedAt + 1)))' \
+    '  const spoiled = proposedAt === -1 ? said(events) : said(events.slice(proposedAt + 1))'
+
+  # **A failure after the terminal event is still a failure.** One `end` is the
+  # contract, so a throw while an engine unwinds cannot go on the stream — and
+  # dropping it made `proposal -> end -> throw` read as a clean run to
+  # everything downstream, which offered the proposal for writing.
+  mutate web "a failure after the run's terminal event is dropped" "$AR" \
+    '            setFailure(said)
+            if (!run.ended) push(run, { type: '"'"'error'"'"', message: said })' \
+    '            if (!run.ended) push(run, { type: '"'"'error'"'"', message: said })'
+
+  # **Every diagnostic, or the author cannot see what is wrong.** The refusal
+  # prevents the page that would have shown the rest from existing, so this is
+  # the only place the runtime's whole answer can be read.
+  mutate web "the refusal shows only the first diagnostic" "$X" \
+    '              diagnostics={anchor(refused, new Set())}' \
+    '              diagnostics={anchor(refused, new Set()).slice(0, 1)}'
+
+  # ---- Round 1: what the review found, and the rows that hold the answers ---
+  #
+  # A proposal belongs to a submission; an error after one withdraws it; the
+  # runtime says whether a proposal is a pack before either write; losing the
+  # slot ends the session; a route change is a dismissal; and an unmount
+  # accounts for the run's terminal event.
+
+  # **Withdrawn at the press, not at the start.** `run.events` is cleared when a
+  # run *starts*, one effect later, and the id is what says whose events those
+  # are: a submission that reuses the previous id is a second Propose reading
+  # the first one's proposal — and, since the start effect keys on the same id,
+  # never running at all.
+  #
+  # (A `setRanId(null)` in `propose` was the first spelling of this row. The
+  # harness reported it NOT DISCRIMINATING, correctly: the ids are strictly
+  # increasing, so the comparison below already held it and the statement was
+  # doing nothing. It is gone, and the row names what actually holds it.)
+  mutate web "the previous proposal is not withdrawn at the press" "$DI" \
+    '    setSubmitted({ id: (nextRun.current += 1), args: { policy: typed } })' \
+    '    setSubmitted({ id: nextRun.current, args: { policy: typed } })'
+
+  # And the gate that makes the id mean anything: events belonging to an older
+  # submission are not this section's to read.
+  mutate web "a proposal from an earlier submission is read anyway" "$DI" \
+    '  const events =
+    discarded || submitted === null || ranId !== submitted.id ? EMPTY : run.events' \
+    '  const events = discarded ? EMPTY : run.events'
+
+  # The contract does not make `proposal` an engine's last non-terminal event.
+  # One that proposes and then fails has said the work does not stand.
+  # (The rule moved into `runOutcome.ts` when the Assistant tab was made to read
+  # the same one; the row names it where it lives.)
+  mutate web "an error after a proposal leaves it on offer" "$RO" \
+    '? said(events) : said(events.slice(proposedAt + 1)))' \
+    '? said(events) : undefined)'
+
+  # **The runtime is what says a document is a pack.** Without this term Create
+  # is offered on a document nobody checked, which is how a `specVersion` a
+  # model invented and a top-level member nobody declared get written and
+  # registered.
+  mutate web "the check on a proposed document is not required" "$X" \
+    '    proposalRefusal === undefined &&' \
+    '    true &&'
+
+  # And the reading of the answer: a report that is not `valid` is a refusal,
+  # not a formality.
+  mutate web "a document the runtime refused is treated as valid" "$X" \
+    '              : checked.data.report.status === '"'"'valid'"'"'
+                ? undefined
+                : `The runtime will not call this document a pack — ${
+                    layersReached(checked.data.report).text
+                  }`' \
+    '              : undefined'
+
+  # Losing the slot used to hide the controls and leave the session running.
+  mutate web "the assistant going away only hides the controls" "$DI" \
+    '    discardNow.current()
+    setLost(SLOT_LOST)' \
+    '    void SLOT_LOST'
+
+  # The rail mounts this dialog above the route, so a Back leaves it standing
+  # over another page with its run alive.
+  mutate web "a route change is not a dismissal" "$X" \
+    '    closeNow.current(false)' \
+    '    void closeNow'
+
+  # And the other half: a fragment is not a page. Keyed on `location.key` this
+  # closes over a hash the document's own outline writes, which this desk
+  # defines as not a navigation.
+  mutate web "a fragment counts as a navigation" "$X" \
+    '  const page = `${location.pathname}${location.search}`' \
+    '  const page = location.key'
+
+  # **The unmount's `finish`, now that it can be observed.**
+  #
+  # Round 1 asked for this row; it reported NOT DISCRIMINATING and was retired
+  # with the reason — after the component is gone, `setEvents` is a no-op and
+  # nothing renders the array it would have made. Round 2 asked for the
+  # observation instead of the retirement, and the hook now counts its terminal
+  # events in an object whose identity is stable for its lifetime, so a test
+  # takes the reference while the hook is alive and reads it after it is not.
+  mutate web "an unmount releases the run without finishing it" "$AR" \
+    '      const run = active.current
+      if (run !== null) finish(run)
+      release(run)' \
+    '      release(active.current)'
+
   mutate web "Fix re-serializes the runtime's diagnostics" "$CK" \
     '  const span = spanAt(indexDocument(raw), '"'"'/diagnostics'"'"')
   return span === undefined ? undefined : raw.slice(span.valueStart, span.valueEnd)' \

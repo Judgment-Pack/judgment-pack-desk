@@ -312,6 +312,15 @@ export function acceptState(input: {
   editing: boolean
   /** True where a proposal has arrived. */
   proposal: boolean
+  /**
+   * Why this run is not one to act on, or `''` — `outcomeOf`'s answer.
+   *
+   * Ranked above every other reason but the two structural ones, because it is
+   * a fact about the *session* rather than about the draft or the control: a
+   * run that failed after proposing has withdrawn what it proposed, and no
+   * amount of the page being ready makes it acceptable.
+   */
+  failure: string
   /** True while the session is still running, in either of its phases. */
   running: boolean
   /**
@@ -327,6 +336,7 @@ export function acceptState(input: {
 }): AcceptState {
   if (!input.editing) return { enabled: false, why: 'Open Edit to accept.' }
   if (!input.proposal) return { enabled: false, why: 'There is no proposal to accept yet.' }
+  if (input.failure !== '') return { enabled: false, why: input.failure }
   if (input.running) {
     return { enabled: false, why: 'The session is still running. Stop it or wait for it to end.' }
   }

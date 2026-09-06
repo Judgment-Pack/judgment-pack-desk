@@ -50,11 +50,42 @@ export interface AssistantRun {
   status: RunStatus
   events: AssistantEvent[]
   /**
+   * What went wrong in this run, **including after its terminal event**.
+   *
+   * The stream cannot carry it: exactly one `end` is the contract, and nothing
+   * after it reaches the list. But an engine that yields `end` and then throws
+   * while unwinding — a `finally` that fails, a transport that rejects on close
+   * — has not had a clean run, and a reader that saw only the event list would
+   * be told it did. So the failure is reported here, beside the stream rather
+   * than in it, and a consumer deciding whether to *act* on what the run
+   * produced reads this as well as the events.
+   *
+   * Undefined for a run that ended without one, and cleared where a run starts.
+   */
+  failure: string | undefined
+  /**
    * Which engine ran. The configured one, always: every id a `desk.json` may
    * name is certified in this build, and the registry is a total map over them,
    * so there is no substitution left for this to report.
    */
   engineId: AssistantEngine
+  /**
+   * How many terminal events this hook has accounted for, in an object whose
+   * identity is stable for the life of the hook.
+   *
+   * **It exists to make the unmount path observable, and that is the whole of
+   * it.** A run that ends while its component is on screen puts its `end` on
+   * `events` and anybody can count it there. A run ended *by* the unmount
+   * cannot: `setEvents` on a tree that is going away is a no-op and the array
+   * it would have produced is never rendered. So the count lives in an object a
+   * caller can take a reference to **before** the unmount and read after it —
+   * which is what turns "exactly one terminal event, on every path" from a
+   * claim into a measurement, and what the mutation harness breaks.
+   *
+   * It counts terminal events and not runs: a second `end` is dropped before it
+   * gets here, so Stop followed by an unmount is one.
+   */
+  terminals: { count: number }
   /** Start one run with the prompt text the desk already fetched. */
   start: (prompt: string) => void
   stop: () => void
@@ -160,7 +191,10 @@ export function useAssistantRun(options: {
 }): AssistantRun {
   const [status, setStatus] = useState<RunStatus>('idle')
   const [events, setEvents] = useState<AssistantEvent[]>([])
+  const [failure, setFailure] = useState<string | undefined>(undefined)
   const active = useRef<Active | null>(null)
+  // One object for the life of the hook. See `AssistantRun.terminals`.
+  const terminals = useRef({ count: 0 })
   // Read at call time rather than captured, so a run started with one
   // configuration is not carried on with another.
   const settings = useRef(options)
@@ -177,7 +211,10 @@ export function useAssistantRun(options: {
     if (active.current !== run || run.ended) return
     // The one canonicalization site. See the module doc.
     const held = event.type === 'proposal' ? canonicalProposal(event) : event
-    if (held.type === 'end') run.ended = true
+    if (held.type === 'end') {
+      run.ended = true
+      terminals.current.count += 1
+    }
     setEvents((previous) => [...previous, held])
   }, [])
 
@@ -214,9 +251,20 @@ export function useAssistantRun(options: {
 
   // A run that is still open when this unmounts is a `jpack mcp` nobody is
   // watching. The route change that unmounts the pane is the same event.
+  //
+  // **It goes through `finish` and not through `release` alone.** Releasing
+  // aborts and closes; it does not account for the run's one terminal event,
+  // and this hook's whole claim is that every run has exactly one however it
+  // ended. An unmounted component paints nothing, so the `setEvents` is a
+  // no-op — but `run.ended` is not: it is what a second `end` is dropped
+  // against, and what lets the next run start where the component comes back.
   useEffect(() => {
-    return () => release(active.current)
-  }, [release])
+    return () => {
+      const run = active.current
+      if (run !== null) finish(run)
+      release(run)
+    }
+  }, [finish, release])
 
   const start = useCallback(
     (prompt: string) => {
@@ -225,6 +273,7 @@ export function useAssistantRun(options: {
       const run: Active = { controller: new AbortController(), connection: null, ended: false }
       active.current = run
       setEvents([])
+      setFailure(undefined)
       setStatus('running')
 
       void (async () => {
@@ -254,14 +303,16 @@ export function useAssistantRun(options: {
         } catch (cause) {
           // Everything before the engine's own `try` — the socket, the tool
           // listing, the engine's chunk. The engine reports its own failures
-          // and always ends; this reports the ones it never got to see. A run
-          // that was stopped has its terminal event already and says nothing
-          // more.
-          if (active.current === run && !run.ended) {
-            push(run, {
-              type: 'error',
-              message: `${(cause as Error).name}: ${(cause as Error).message}`
-            })
+          // and always ends; this reports the ones it never got to see.
+          const said = `${(cause as Error).name}: ${(cause as Error).message}`
+          if (active.current === run) {
+            // **Recorded whether or not the run has ended.** A failure after
+            // the terminal event cannot go on the stream — one `end` is the
+            // contract and nothing follows it — and dropping it entirely is
+            // what made `proposal → end → throw` read as a clean run to
+            // everything downstream. It goes beside the stream instead.
+            setFailure(said)
+            if (!run.ended) push(run, { type: 'error', message: said })
           }
         } finally {
           if (active.current === run) {
@@ -275,5 +326,13 @@ export function useAssistantRun(options: {
     [finish, push, release]
   )
 
-  return { status, events, engineId: options.engine, start, stop }
+  return {
+    status,
+    events,
+    failure,
+    terminals: terminals.current,
+    engineId: options.engine,
+    start,
+    stop
+  }
 }

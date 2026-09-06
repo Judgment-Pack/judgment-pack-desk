@@ -122,6 +122,34 @@ describe('the run hook writes the terminal event itself', () => {
     // be able to keep one alive past the pane that started it. Once.
     await waitFor(() => expect(runtime!.closed).toBe(1))
   })
+
+  it('accounts for the terminal event on unmount, where nobody is left to render one', async () => {
+    // **The unmount path, measured.** `setEvents` on a tree that is going away
+    // is a no-op and the array it would have produced is never rendered, so an
+    // assertion about `events` after an unmount can say nothing — which is why
+    // the row for this was retired as unobservable. The counter is the
+    // observation: a reference taken while the hook is alive, read after it is
+    // not.
+    const { result, unmount } = drive()
+    act(() => result.current.start('the runtime’s prompt'))
+    await waitFor(() => expect(runtime!.opened).toHaveLength(1))
+    const terminals = result.current.terminals
+    expect(terminals.count).toBe(0)
+    unmount()
+    expect(terminals.count, 'the unmount ended the run without accounting for it').toBe(1)
+  })
+
+  it('accounts for exactly one where Stop is followed by an unmount', async () => {
+    const { result, unmount } = drive()
+    act(() => result.current.start('the runtime’s prompt'))
+    await waitFor(() => expect(runtime!.opened).toHaveLength(1))
+    const terminals = result.current.terminals
+    act(() => result.current.stop())
+    expect(terminals.count).toBe(1)
+    unmount()
+    expect(terminals.count, 'the unmount ended an already ended run again').toBe(1)
+    await waitFor(() => expect(runtime!.closed).toBe(1))
+  })
 })
 
 describe('the proposal is canonicalized once, where it arrives', () => {

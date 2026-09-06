@@ -54,6 +54,60 @@ and selects nothing; a listing the runtime *refused* says that instead, in the
 runtime's own words. Nothing is said about what checks will make of the result:
 that is the runtime's verdict to report, on the page this opens.
 
+**Or describe it.** Beside the template choice is a disclosure — *Describe it
+instead* — where you type what the pack should decide in your own words and
+press **Propose**. The desk runs the runtime's own `author_pack` prompt through
+the assistant, and the dialog shows what it did — every tool call, every
+guardrail, every failure — and then the proposal: the document summarised, the
+unknowns it declared, the `validate` report and the rehearsal evaluation quoted
+as the runtime wrote them, and the whole document behind *Show document*.
+**Create** then writes that document exactly as it writes a template.
+
+What it never does. **No file exists until Create is pressed** — the section
+proposes and nothing else, which is ADR-0001's rule that the proposal is the
+only sink. **The name field wins**: the id and the title come from what was
+typed, whatever the proposal called itself, and the dialog says so in one line
+where the two differ. **The document that is written is the desk's after
+shaping** — applied to the frozen snapshot that was on screen, so what was
+shown is what was written.
+
+**A proposal belongs to the submission that produced it.** Pressing Propose
+again withdraws the previous one at the press, and so does an `error` after a
+proposal: an engine that proposes a document and then fails has said the work
+does not stand. So a second Propose whose prompt is refused, or which is
+stopped while the prompt is still being read, leaves nothing on offer — and
+Create is *held* rather than quietly falling back to a template nobody chose.
+Whatever the section is holding it for is in the button's own `title`: a run in
+flight, a refused prompt, a run that ended without a document, a proposal that
+could not be read as JSON data.
+
+**The runtime says whether a proposal is a pack, before either write.** The
+desk fills the four members the dialog asked about — the name, the id, the
+version and the description — and leaves everything else exactly as the model
+wrote it, `specVersion` included. Nothing is stripped and nothing is repaired
+in silence: what the assistant proposed is what the runtime is asked about. The
+exact bytes that would be written go to `validate`, Create is offered only
+where the answer is `valid` for those bytes, and a refusal shows the check
+strip's own sentence and **every** diagnostic the runtime returned, in the same
+rendering the Checks panel uses — `code`, `codeStability`, `layer`, `severity`,
+the message and the pointer, each as the runtime gave it and none of them
+reworded. Where the answer sets `diagnosticsTruncated`, the runtime stopped at
+its own limit and the desk says so in a line of its own naming that limit; the
+sentence is the desk's, and the number in it is the desk's copy of the
+runtime's cap rather than a figure the answer carries. A proposal is refused
+outright where the connection serves no `validate` to ask.
+
+**Losing the assistant ends the session**, it does not merely hide it: the key
+leaving this machine or the endpoint leaving the file stops the run through the
+run hook — one terminal event, one connection close — discards the proposal and
+holds Create with a sentence saying so. **A route change is a dismissal**: this
+dialog is mounted by the rail, above the route, so a Back or a Forward would
+otherwise leave it standing over another page with its run alive; it closes on
+one, exactly as Escape does. Closing ends the session and discards the proposal;
+nothing about it is persisted. Without an endpoint and a key the section is one
+line saying where those are configured, and the runtime's prompts still run in
+any chat client you already use.
+
 Two writes, in this order, and nothing is sent until everything that could
 refuse has been asked. The pack is written with `PUT /api/file`,
 `baseSha256: ""` and `createParents: true` — so a file already under that name
@@ -1314,6 +1368,14 @@ the file asked for and nothing is ever substituted. `thinking` is still stored
 and shown and shapes no request; either engine reports a tier other than `off`
 as unavailable and carries on, which is what ADR-0001 means by degrading
 visibly.
+
+**What the slot has shipped so far**, in ADR-0001's own order: the slot and the
+key custody; the Assistant tab, with propose and accept-into-draft; the engine
+slot itself, with `vercel` and `builtin` both certified against the conformance
+session; and **Describe it** in the Create dialog, which runs the same session
+with no draft and hands what comes back to Create rather than to a diff. The
+thinking tier and the refutation pass are the chunk after this one: a tier other
+than `off` is reported unavailable and the session continues.
 
 **Admin › Assistant** shows the configured endpoint, its protocol, its model
 and its tools with the file each came from, the engine and the tier, the exact JSON to paste, the key
@@ -2648,8 +2710,8 @@ web/                 Vite + React + TypeScript SPA
                      set, the console's
                      ring buffer, the fragment-scrolling hook the section menus
                      need, and the Create-pack dialog — which asks for a name,
-                     a description and a template, and decides the file's
-                     location from configuration
+                     a description and a template, offers Describe it beside
+                     them, and decides the file's location from configuration
   src/ui/            the styled primitives: Button, Field, Input, TextArea,
                      Select, Tabs, Dialog and Alert, plus the editor's own —
                      SegmentedControl, Toolbar, CodeArea, SuggestInput and
@@ -2658,8 +2720,8 @@ web/                 Vite + React + TypeScript SPA
                      span-preserving document writer, the validate reader, the
                      cross-reference reader, the packs pane and its windowing
                      hook, the scroll-spy — and what a new pack is called and
-                     where it goes (the slug rule, the template shaping, and
-                     the jpack.json amendment)
+                     where it goes (the slug rule, the one shaping a template
+                     and a proposal both take, and the jpack.json amendment)
     __fixtures__/    the documents every case here is asserted against, each
                      one the runtime accepts, held to the spec's own enums by
                      a test
@@ -2688,6 +2750,7 @@ web/                 Vite + React + TypeScript SPA
   src/assistant/     the assistant slot: one nullable field and two settings
                      about how it runs, the four chassis calls, the Admin
                      section that configures it and holds the key, the tab, the
+                     event list and proposal report both surfaces render, the
                      ToolGate, and engines/ — one lazily loaded chunk per
                      certified engine behind one contract
   scripts/smoke.ts   the desk's own client, driven outside a browser
