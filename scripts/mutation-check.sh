@@ -4381,13 +4381,18 @@ export function assistantTransport(): Transport {
   # accounts for the run's terminal event.
 
   # **Withdrawn at the press, not at the start.** `run.events` is cleared when a
-  # run *starts*, one effect later — so a second Propose whose prompt is refused
-  # never reaches the place that would have cleared it, and the first run's
-  # proposal stays selected and writable.
+  # run *starts*, one effect later, and the id is what says whose events those
+  # are: a submission that reuses the previous id is a second Propose reading
+  # the first one's proposal — and, since the start effect keys on the same id,
+  # never running at all.
+  #
+  # (A `setRanId(null)` in `propose` was the first spelling of this row. The
+  # harness reported it NOT DISCRIMINATING, correctly: the ids are strictly
+  # increasing, so the comparison below already held it and the statement was
+  # doing nothing. It is gone, and the row names what actually holds it.)
   mutate web "the previous proposal is not withdrawn at the press" "$DI" \
-    '    setDiscarded(false)
-    setRanId(null)' \
-    '    setDiscarded(false)'
+    '    setSubmitted({ id: (nextRun.current += 1), args: { policy: typed } })' \
+    '    setSubmitted({ id: nextRun.current, args: { policy: typed } })'
 
   # And the gate that makes the id mean anything: events belonging to an older
   # submission are not this section's to read.

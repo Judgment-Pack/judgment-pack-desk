@@ -250,14 +250,6 @@ export function useDescribeIt(): DescribeItState {
   discardNow.current = discard
 
   /**
-   * A new submission, and the previous proposal gone **at the press**.
-   *
-   * `setRanId(null)` is what invalidates it, and it happens here rather than
-   * where the run starts: everything between the two is a moment in which the
-   * old proposal is still on `run.events`, and a second Propose that fails
-   * before its run begins never reaches the place that would have cleared it.
-   */
-  /**
    * **Losing the assistant ends the session, it does not merely hide it.**
    *
    * `usable` used to control rendering alone: the key going out of the store,
@@ -292,10 +284,24 @@ export function useDescribeIt(): DescribeItState {
     setLost(SLOT_LOST)
   }, [usable])
 
+  /**
+   * A new submission, and the previous proposal gone **at the press**.
+   *
+   * The id is what invalidates it, and it does so here rather than where the
+   * run starts: `ranId` still names the run before this one, the events gate
+   * below compares the two, and everything between the press and the start is
+   * therefore a moment in which the section has no proposal rather than the
+   * previous one. A second Propose that fails before its run begins — a refused
+   * `prompts/get`, a Stop while the prompt is still being read — never reaches
+   * the place that would have cleared it, which is the whole of the finding.
+   *
+   * (An explicit `setRanId(null)` stood here and is gone: the ids are strictly
+   * increasing, so it could never change the comparison, and the mutation
+   * harness reported it as a line nothing holds.)
+   */
   const propose = useCallback(() => {
     setLost('')
     setDiscarded(false)
-    setRanId(null)
     setStoppedId(null)
     setSubmitted({ id: (nextRun.current += 1), args: { policy: typed } })
   }, [typed])
