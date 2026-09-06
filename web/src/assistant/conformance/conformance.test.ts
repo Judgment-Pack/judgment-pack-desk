@@ -207,7 +207,15 @@ function trackDeferredWork(): {
       run()
     })
     tracked.push(entry)
-    byHandle.set(handle, entry)
+    // **A handle of `undefined` is not a handle.** `queueMicrotask` returns
+    // nothing, so every microtask an engine queued used to be filed under the
+    // one key `undefined` — and `clearTimeout(undefined)`, the defensive line
+    // every library carries and the AI SDK reaches seven times a leg, cancelled
+    // the most recent of them. The drain then refused to run it "because the
+    // engine cancelled it", and a reach on that microtask was never recorded.
+    // A schedule with no handle can only be cancelled by the engine holding a
+    // handle it was never given, so it is filed under none.
+    if (handle !== undefined && handle !== null) byHandle.set(handle, entry)
     return handle
   }
 
@@ -331,6 +339,23 @@ const DRAIN_ROUNDS = 64
  * What that does not cover is a reaction chained off something that resolves
  * *after* the drain — a fetch to a real host, a socket, a `MessageChannel` —
  * and that bound is stated in the README rather than papered over.
+ *
+ * **Two more bounds, found when an engine built on a framework first ran these
+ * legs**, and stated here for the same reason:
+ *
+ * - **An open stream is not pending work.** An engine that stopped reading a
+ *   `ReadableStream` half way leaves a reader attached and nothing scheduled:
+ *   no handle, no microtask, nothing this drain can see. What the seal still
+ *   holds is that whatever that stream eventually does cannot reach a network
+ *   global — but it holds it only while the seal is up, and the seal comes down
+ *   when the drain finishes.
+ * - **An unhandled rejection is invisible here.** The one defect ADR-0001
+ *   records against the default engine is a rejection the caller cannot claim
+ *   reaching the *page*. These legs run in jsdom under Node, where such a
+ *   rejection goes to Node's own handler and never becomes a `window` event, so
+ *   neither the seal nor the drain can observe it. The guard the ADR asks for is
+ *   exercised in `engines/vercel/engine.test.ts` instead, by dispatching the
+ *   event a browser would.
  */
 async function drainDeferredWork(tracker: { pending(): Tracked[] }): Promise<number> {
   for (let round = 0; round < DRAIN_ROUNDS; round += 1) {
@@ -475,6 +500,41 @@ async function runLeg(
 
 /** The registry's own loader, for the engines this build certifies. */
 const fromRegistry = (id: (typeof CERTIFIED_ENGINES)[number]) => () => loadEngine(id)
+
+/**
+ * What the engine sent, request by request, for a reviewer to read.
+ *
+ * The conformance session's assertions say what must be true of every engine;
+ * this says what **this** one actually put on the wire — the step it was
+ * answering, how many results its own messages carried back, and the body's own
+ * top-level members. It is attached to the leg as a test annotation rather than
+ * asserted, because its value is that a reviewer can read it and notice
+ * something nobody wrote a rule about yet.
+ */
+function requestLog(requests: RecordedRequest[]): string {
+  return requests
+    .map(
+      (request) =>
+        `${request.step} results=${request.results} ${new URL(request.url, 'http://desk.invalid').pathname} ` +
+        `{${request.bodyMembers.join(', ')}} tools=[${request.toolNames.join(', ')}] ` +
+        `headers=[${request.headerNames.join(', ')}]`
+    )
+    .join('\n')
+}
+
+/**
+ * The members each wire format defines, which every engine must send.
+ *
+ * **Not the union of what the two engines send.** The built-in engine puts
+ * `stream_options` on an OpenAI-compatible request and the SDK-backed one puts
+ * a `tool_choice`; neither is required by the protocol and neither is the
+ * other's business. What is asserted is what the format itself defines, so a
+ * third adapter is held to the same list.
+ */
+const WIRE_MEMBERS: Record<Leg['api'], string[]> = {
+  'openai-compatible': ['messages', 'model', 'stream', 'tools'],
+  anthropic: ['max_tokens', 'messages', 'model', 'stream', 'system', 'tools']
+}
 
 const toolCalls = (events: AssistantEvent[]) =>
   events.filter((event): event is Extract<AssistantEvent, { type: 'tool_call' }> => event.type === 'tool_call')
@@ -718,6 +778,19 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
       expect(events.some((event) => event.type === 'thinking_unavailable')).toBe(false)
     })
 
+    it('sends what the wire format defines, and records the rest for a reviewer', async ({
+      annotate
+    }) => {
+      const { requests } = await runLeg(fromRegistry(engineId), leg)
+      for (const request of requests) {
+        expect(
+          request.bodyMembers,
+          `${engineId} ${leg.api} ${request.step} sent {${request.bodyMembers.join(', ')}}`
+        ).toEqual(expect.arrayContaining(WIRE_MEMBERS[leg.api]))
+      }
+      await annotate(`${engineId} · ${leg.api} · ${leg.answerAs}\n${requestLog(requests)}`, 'notice')
+    })
+
     it('carries every result back, so the script never repeats a step', async () => {
       const { requests } = await runLeg(fromRegistry(engineId), leg)
       // The scripted model reads n off the request's own messages. A run whose
@@ -855,6 +928,12 @@ describe('the seal, shown to fail', () => {
     expect(leftPending).toBe(0)
     const from = new Set(markers(violations))
     expect(from.has('kept'), 'the timeout it meant').toBe(true)
+    // **A schedule with no handle is not cancelled by a handle nobody was
+    // given.** `queueMicrotask` returns nothing, so every microtask used to be
+    // filed under the one key `undefined` — and the `clearTimeout(undefined)`
+    // this fixture writes next to it cancelled the most recent of them. The
+    // drain then skipped it, and its reach was never recorded.
+    expect(from.has('microtask'), 'the reach on a microtask it never cancelled').toBe(true)
     // **And nothing it cancelled.** A drain that fired cancelled handles would
     // report a reach this engine never made.
     expect(from.has('cancelled'), 'a reach it had already cancelled').toBe(false)
