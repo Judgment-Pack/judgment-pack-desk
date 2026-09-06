@@ -109,9 +109,6 @@ const NO_TEMPLATE = 'There is no template to start from here.'
 const TEMPLATE_UNUSABLE = 'This template could not be used.'
 const PROPOSAL_UNUSABLE = 'This proposal could not be used, so nothing was created.'
 const RENAMED = 'Named from the field above, not from the proposal.'
-const STILL_RUNNING = 'The assistant is still running. Stop it or wait for it to end.'
-const NOTHING_TO_WRITE =
-  'The assistant produced no document, so there is nothing to create. Pick a template, or describe it again.'
 const TEMPLATES_PENDING = 'Asking the runtime what it can start from…'
 const PARTIAL_PROJECT =
   'This project\u2019s file listing is incomplete, so this dialog cannot tell whether that name is free. Nothing was created.'
@@ -220,8 +217,8 @@ export function CreatePackDialog({
    * skeleton with no `specVersion` is not an incomplete pack but a file nothing
    * can read as one.
    */
-  /** A run has been asked for in this dialog, and is no longer in flight. */
-  const proposalOffered = describe.asked && !describe.running
+  /** The Describe section has a proposal this dialog could write. */
+  const proposalOffered = describe.offered
 
   const options = useMemo(
     () => [
@@ -265,6 +262,20 @@ export function CreatePackDialog({
    */
   useEffect(() => {
     if (proposalOffered) setChoice(PROPOSAL_SOURCE)
+  }, [proposalOffered])
+
+  /**
+   * And it stops being the source the moment it stops being on offer.
+   *
+   * Pressing Propose again, losing the assistant, closing the section's session
+   * — each takes the proposal off the list, and a choice left pointing at it
+   * would be a source the author cannot see and cannot change. Falling back to
+   * the template choice is what the field says it is.
+   */
+  useEffect(() => {
+    if (!proposalOffered) {
+      setChoice((current) => (current === PROPOSAL_SOURCE ? undefined : current))
+    }
   }, [proposalOffered])
 
   useEffect(() => {
@@ -388,24 +399,21 @@ export function CreatePackDialog({
     taken === undefined &&
     source !== undefined &&
     !busy &&
-    !describe.running &&
+    describe.blocking === '' &&
     listing.isSuccess &&
     !partial
 
   /**
    * Why Create is not offered, in the control's own `title`.
    *
-   * Three states, and each is a fact about the assistant rather than about the
-   * name that was typed: a run still in flight (whose events are about to be
-   * replaced), a run that ended with no document this desk can write — a
-   * proposal that could not be read as JSON data lands here, as does one whose
-   * key went away mid-run — and, under it, the run's own words.
+   * Whatever the Describe section is holding the dialog for, in its own words:
+   * a submission in flight, a refused prompt, a run that failed, a proposal an
+   * error withdrew, a document that could not be read as JSON data. It holds
+   * the dialog rather than the proposal source, because a Create that fell back
+   * to a template one press after somebody asked for something else would write
+   * a document nobody chose.
    */
-  const createWhy = describe.running
-    ? STILL_RUNNING
-    : usingProposal && describe.proposal === undefined
-      ? describe.problem === '' ? NOTHING_TO_WRITE : describe.problem
-      : undefined
+  const createWhy = describe.blocking === '' ? undefined : describe.blocking
 
   const invalidate = (keys: readonly (readonly unknown[])[]) => {
     for (const key of keys) void queryClient.invalidateQueries({ queryKey: key })

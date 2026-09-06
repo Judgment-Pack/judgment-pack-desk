@@ -156,10 +156,13 @@ function serve(
  */
 function Mounted({
   deskConfig,
-  persist
+  persist,
+  secondPrompt = 'ok'
 }: {
   deskConfig: EffectiveConfig
   persist: boolean
+  /** What the runtime does with the **second** `prompts/get` it is asked. */
+  secondPrompt?: 'ok' | 'reject' | 'hang'
 }) {
   const [open, setOpen] = useState(true)
   const [stub] = useState(() =>
@@ -175,9 +178,31 @@ function Mounted({
       }
     )
   )
-  const [connection] = useState(() =>
-    connected({ client: stub.client, exampleSupported: true, schemaSupported: false })
-  )
+  const [connection] = useState(() => {
+    // A runtime that answers the first prompt and then does not. The second
+    // Propose is the case the association between an offered proposal and the
+    // submission that produced it is about.
+    const inner = stub.client as unknown as {
+      getPrompt: (params: { name: string; arguments?: Record<string, string> }) => Promise<unknown>
+    }
+    let asked = 0
+    const client = {
+      ...(stub.client as unknown as Record<string, unknown>),
+      getPrompt: async (params: { name: string; arguments?: Record<string, string> }) => {
+        asked += 1
+        if (asked > 1 && secondPrompt === 'reject') {
+          throw new Error('the runtime refused to serve author_pack')
+        }
+        if (asked > 1 && secondPrompt === 'hang') return new Promise(() => {})
+        return inner.getPrompt(params)
+      }
+    }
+    return connected({
+      client: client as never,
+      exampleSupported: true,
+      schemaSupported: false
+    })
+  })
   return (
     <McpContext.Provider value={connection}>
       <DeskConfigFixture value={deskConfig}>
@@ -198,14 +223,20 @@ function Mounted({
 
 function draw(
   assistant: unknown = { endpoint: ENDPOINT },
-  options: { persist?: boolean } = {}
+  options: { persist?: boolean; secondPrompt?: 'ok' | 'reject' | 'hang' } = {}
 ) {
   const deskConfig = config(assistant)
   const router = createMemoryRouter(
     [
       {
         path: '*',
-        element: <Mounted deskConfig={deskConfig} persist={options.persist ?? false} />
+        element: (
+          <Mounted
+            deskConfig={deskConfig}
+            persist={options.persist ?? false}
+            secondPrompt={options.secondPrompt}
+          />
+        )
       }
     ],
     { initialEntries: ['/'] }
@@ -534,9 +565,10 @@ describe('Create writes the proposal', () => {
 
   it('will not create a proposal that could not be read, and quotes the reason', async () => {
     // A document with a cycle in it: the run hook refuses it as unreadable and
-    // puts its own sentence on the stream, and no proposal arrives. The source
-    // is still the proposal — a run that ended with nothing is a state this
-    // dialog reports rather than hides — so Create refuses and says so.
+    // puts its own sentence on the stream, and no proposal arrives. There is no
+    // source to offer — a document that cannot be written is not a choice — and
+    // the whole dialog is held with the reason rather than quietly falling back
+    // to a template nobody picked.
     const cyclic: Record<string, unknown> = { specVersion: '0.2.0-draft' }
     cyclic.self = cyclic
     injected = proposing(cyclic)
@@ -544,30 +576,33 @@ describe('Create writes the proposal', () => {
     draw()
     await propose()
     await waitFor(() =>
-      expect(screen.getByLabelText('Template').textContent).toContain('The assistant’s proposal')
+      expect(screen.getAllByText(/could not be read as JSON data/).length).toBeGreaterThan(0)
     )
+    expect(screen.getByLabelText('Template').textContent).not.toContain('The assistant’s proposal')
     fireEvent.change(screen.getByLabelText('Name (required)'), {
       target: { value: 'Vendor Onboarding' }
     })
     await waitFor(() => expect(createButton().disabled).toBe(true))
     expect(createButton().title).toContain('could not be read as JSON data')
+    fireEvent.click(createButton())
+    await new Promise((resolve) => setTimeout(resolve, 50))
     expect(sent).toEqual([])
   })
 
-  it('will not create where the key went away mid-run, and quotes the refusal', async () => {
-    serve({ refuse: true })
+  it('will not create where the relay refused the model call, and quotes the status', async () => {
+    // The chassis answers 409 with its own envelope; the run fails, no proposal
+    // arrives, and the dialog quotes the run rather than inventing a sentence
+    // about a refusal it did not make. (This is the *relay's* refusal, not the
+    // slot going away — that transition is its own case below.)
+    const { sent } = serve({ refuse: true })
     draw()
     await propose()
-    await waitFor(() =>
-      expect(screen.getByLabelText('Template').textContent).toContain('The assistant’s proposal')
-    )
+    await waitFor(() => expect(createButton().title).toContain('409'), { timeout: 15_000 })
     fireEvent.change(screen.getByLabelText('Name (required)'), {
       target: { value: 'Vendor Onboarding' }
     })
     await waitFor(() => expect(createButton().disabled).toBe(true))
-    // The endpoint's own status, carried through: the dialog quotes the run
-    // rather than inventing a sentence about a refusal it did not make.
-    expect(createButton().title).toContain('409')
+    expect(sent).toEqual([])
   })
 
   it('still writes a template where the author switches back to one', async () => {
@@ -585,5 +620,102 @@ describe('Create writes the proposal', () => {
     expect(written.id).toBe('https://example.invalid/judgment-packs/vendor-onboarding')
     expect(written.rules).toEqual([{ id: 'r1' }])
     expect(screen.queryByText('Named from the field above, not from the proposal.')).toBeNull()
+  })
+})
+
+
+describe('a proposal belongs to the submission that produced it', () => {
+  /** Propose once, successfully, and name the pack so Create would be offered. */
+  async function proposedOnce() {
+    const served = serve()
+    draw({ endpoint: ENDPOINT }, { secondPrompt: 'reject' })
+    await propose()
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    await nameIt('Vendor Onboarding')
+    expect(createButton().disabled).toBe(false)
+    return served
+  }
+
+  it('withdraws the first proposal the instant a second Propose is pressed', async () => {
+    const { sent } = await proposedOnce()
+    fireEvent.change(screen.getByLabelText(/What should this pack decide/), {
+      target: { value: 'Something else entirely.' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Propose' }))
+    // The old proposal is gone at the press, not when the next run starts.
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull())
+    expect(createButton().disabled).toBe(true)
+    expect(sent).toEqual([])
+  })
+
+  it('does not offer it again when the second submission’s prompt is refused', async () => {
+    const { sent } = await proposedOnce()
+    fireEvent.change(screen.getByLabelText(/What should this pack decide/), {
+      target: { value: 'Something else entirely.' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Propose' }))
+    // The refusal is reported, and the previous run's document is not the
+    // answer to a question that was never answered.
+    await screen.findByText(/refused to serve author_pack/)
+    expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull()
+    expect(createButton().disabled).toBe(true)
+    expect(createButton().title).toContain('refused to serve author_pack')
+    fireEvent.click(createButton())
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(sent).toEqual([])
+  })
+
+  it('does not offer it again when the second submission is stopped mid-prompt', async () => {
+    const served = serve()
+    draw({ endpoint: ENDPOINT }, { secondPrompt: 'hang' })
+    await propose()
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    await nameIt('Vendor Onboarding')
+    fireEvent.change(screen.getByLabelText(/What should this pack decide/), {
+      target: { value: 'Something else entirely.' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Propose' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Stop' }).hasAttribute('disabled')).toBe(false)
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+    await waitFor(() => expect(createButton().disabled).toBe(true))
+    expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull()
+    fireEvent.click(createButton())
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(served.sent).toEqual([])
+  })
+
+  it('withdraws a proposal the run failed after', async () => {
+    // The contract does not make `proposal` an engine's last non-terminal
+    // event. One that proposes and then fails has shown its work and then said
+    // the work does not stand.
+    injected = {
+      id: 'builtin',
+      start: async function* (): AsyncIterable<AssistantEvent> {
+        yield {
+          type: 'proposal',
+          document: { specVersion: '0.2.0-draft', outcomes: [], rules: [] },
+          unknowns: []
+        }
+        yield { type: 'error', message: 'the final check did not complete' }
+        yield { type: 'end' }
+      }
+    }
+    const { sent } = serve()
+    draw()
+    await propose()
+    await waitFor(() =>
+      expect(screen.getAllByText(/the final check did not complete/).length).toBeGreaterThan(0)
+    )
+    fireEvent.change(screen.getByLabelText('Name (required)'), {
+      target: { value: 'Vendor Onboarding' }
+    })
+    await waitFor(() => expect(createButton().disabled).toBe(true))
+    expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull()
+    expect(createButton().title).toContain('the final check did not complete')
+    fireEvent.click(createButton())
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(sent).toEqual([])
   })
 })

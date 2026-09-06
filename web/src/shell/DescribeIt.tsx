@@ -81,14 +81,36 @@ export interface DescribeItState {
   standing: string
   typed: string
   setTyped: (text: string) => void
-  /** A run has been asked for in this dialog, and has not been discarded. */
-  asked: boolean
+  /**
+   * There is a proposal on offer: the latest submission produced one and
+   * nothing went wrong after it.
+   *
+   * The dialog offers the proposal as a source on exactly this, so a source
+   * that cannot be written is never on the list. Why there is none is
+   * `blocking`, which holds Create whatever source is selected.
+   */
+  offered: boolean
+  /**
+   * **Why Create must not act at all, or ''.**
+   *
+   * Not a fact about the selected source: a submission that is in flight, or
+   * that settled without a document this desk can write, holds the whole dialog
+   * — because the alternative is a Create that quietly falls back to a template
+   * the author did not choose, one press after they asked for something else.
+   * The way out is another Propose, or closing the dialog.
+   */
+  blocking: string
   /** The prompt is being read, or the engine is running. */
   running: boolean
   events: readonly AssistantEvent[]
   /**
-   * The run's proposal: the canonical frozen snapshot the run hook ingested,
-   * and never a value read back off an engine's own event.
+   * The proposal **of the latest submission**, where that submission's run
+   * ended with one and nothing went wrong after it.
+   *
+   * The canonical frozen snapshot the run hook ingested, and never a value
+   * read back off an engine's own event. Undefined is a real answer with three
+   * causes — no run has ended, the run produced no proposal, or it produced one
+   * and then failed — and `problem` says which.
    */
   proposal: ProposalEvent | undefined
   /** The last thing that went wrong on the stream, or ''. */
@@ -126,9 +148,38 @@ export function useDescribeIt(): DescribeItState {
     null
   )
   const nextRun = useRef(0)
+  /**
+   * The submission whose run the hook is carrying events for.
+   *
+   * **State, not a ref, because the rendering depends on it.** `useAssistantRun`
+   * clears its event list when a run *starts*, which is one effect after the
+   * submission that asked for it — so between pressing Propose and the engine
+   * beginning, `run.events` still holds the *previous* run's proposal. A
+   * section that read them then would offer a document the latest Propose did
+   * not produce, and if that second run never started at all — a refused
+   * `prompts/get`, a Stop while the prompt was still being read — it would go
+   * on offering it for ever. A proposal belongs to the submission that produced
+   * it; this is the id that says which one, and events from any other are not
+   * this section's.
+   */
+  const [ranId, setRanId] = useState<number | null>(null)
+  /**
+   * The submission a person stopped, if any.
+   *
+   * Stop used to clear `submitted`, which is now the thing that identifies
+   * whose events are on screen: clearing it took the stopped run's own stream
+   * off the page along with the terminal event it had just written. So the
+   * submission stays and is marked, which is what disables the prompt query and
+   * keeps the start effect from starting a run for it.
+   */
+  const [stoppedId, setStoppedId] = useState<number | null>(null)
   /** True once this session has been thrown away, until the next Propose. */
   const [discarded, setDiscarded] = useState(true)
-  const prompt = usePromptText(AUTHOR_PACK_PROMPT, submitted !== null && advertised, submitted?.args)
+  const prompt = usePromptText(
+    AUTHOR_PACK_PROMPT,
+    submitted !== null && submitted.id !== stoppedId && advertised,
+    submitted?.args
+  )
   const run = useAssistantRun({
     // Only ever started where the endpoint exists; the fallback keeps the hook
     // unconditional, which is the rule React enforces.
@@ -144,12 +195,14 @@ export function useDescribeIt(): DescribeItState {
   const startRun = run.start
   useEffect(() => {
     if (submitted === null || prompt.data === undefined) return
+    if (submitted.id === stoppedId) return
     if (started.current === submitted.id) return
     started.current = submitted.id
+    setRanId(submitted.id)
     // **No draft.** There is no document yet — that is what this section is
     // for — so what comes back is a whole document rather than an edit.
     startRun(prompt.data.text)
-  }, [submitted, prompt.data, startRun])
+  }, [submitted, stoppedId, prompt.data, startRun])
 
   const stopRun = run.stop
   /**
@@ -160,26 +213,61 @@ export function useDescribeIt(): DescribeItState {
    * the effect above from starting a run for it.
    */
   const stop = useCallback(() => {
-    setSubmitted(null)
+    setSubmitted((current) => {
+      if (current !== null) setStoppedId(current.id)
+      return current
+    })
     stopRun()
   }, [stopRun])
 
   const discard = useCallback(() => {
     setSubmitted(null)
+    setRanId(null)
+    setStoppedId(null)
     setTyped('')
     setDiscarded(true)
     stopRun()
   }, [stopRun])
 
+  /**
+   * A new submission, and the previous proposal gone **at the press**.
+   *
+   * `setRanId(null)` is what invalidates it, and it happens here rather than
+   * where the run starts: everything between the two is a moment in which the
+   * old proposal is still on `run.events`, and a second Propose that fails
+   * before its run begins never reaches the place that would have cleared it.
+   */
   const propose = useCallback(() => {
     setDiscarded(false)
+    setRanId(null)
+    setStoppedId(null)
     setSubmitted({ id: (nextRun.current += 1), args: { policy: typed } })
   }, [typed])
 
-  const events = discarded ? EMPTY : run.events
-  const proposal = events.find(
-    (event): event is ProposalEvent => event.type === 'proposal'
-  )
+  /**
+   * The events of the **latest submission's** run, and of no other.
+   *
+   * The gate is the id and not the emptiness of the list: `run.events` is a
+   * live list belonging to whichever run the hook last started, and the whole
+   * of this finding is that the section must not read it while it belongs to an
+   * older submission.
+   */
+  const events =
+    discarded || submitted === null || ranId !== submitted.id ? EMPTY : run.events
+  /**
+   * The proposal, and whether anything went wrong **after** it.
+   *
+   * The contract does not make `proposal` an engine's last non-terminal event.
+   * An engine that proposes a document and then fails a final check has not
+   * offered that document — it has shown its work and then said the work did
+   * not stand — so an `error` after a proposal withdraws it. Before it is
+   * another matter: a tool call that failed and was retried is an ordinary run.
+   */
+  const proposedAt = events.findIndex((event) => event.type === 'proposal')
+  const withdrawn =
+    proposedAt !== -1 && events.slice(proposedAt + 1).some((event) => event.type === 'error')
+  const proposal =
+    proposedAt === -1 || withdrawn ? undefined : (events[proposedAt] as ProposalEvent)
   const failures = events.filter(
     (event): event is Extract<AssistantEvent, { type: 'error' }> => event.type === 'error'
   )
@@ -205,8 +293,30 @@ export function useDescribeIt(): DescribeItState {
   const running =
     !discarded &&
     submitted !== null &&
+    submitted.id !== stoppedId &&
     promptFailed === undefined &&
-    (started.current !== submitted.id || run.status === 'running')
+    (ranId !== submitted.id || run.status === 'running')
+
+  /**
+   * The whole of what this section says to Create.
+   *
+   * Read in order: no submission is nothing to say; a submission in flight
+   * holds Create because its events are about to be replaced; a settled
+   * submission with no usable proposal holds it and quotes whatever went
+   * wrong — a refused prompt, a run that failed, a proposal withdrawn by an
+   * error after it, or a document that could not be read as JSON data.
+   */
+  const problem = promptFailed ?? failures[failures.length - 1]?.message ?? ''
+  const blocking =
+    discarded || submitted === null
+      ? ''
+      : running
+        ? STILL_RUNNING
+        : proposal === undefined
+          ? problem === ''
+            ? NOTHING_PROPOSED
+            : problem
+          : ''
 
   return {
     usable: slot.endpoint !== null && slot.keyPresent,
@@ -218,11 +328,12 @@ export function useDescribeIt(): DescribeItState {
         : `${slot.engine} · ${slot.endpoint.model} · thinking ${slot.thinking}`,
     typed,
     setTyped,
-    asked: !discarded && submitted !== null,
+    offered: proposal !== undefined,
+    blocking,
     running,
     events,
     proposal,
-    problem: promptFailed ?? failures[failures.length - 1]?.message ?? '',
+    problem,
     propose,
     stop,
     discard
@@ -293,8 +404,8 @@ function Section({ state }: { state: DescribeItState }) {
           </details>
         </section>
       )}
-      {proposal === undefined && state.asked && !state.running && (
-        <p className={styles.notice}>{state.problem === '' ? NOTHING_PROPOSED : state.problem}</p>
+      {proposal === undefined && state.blocking !== '' && !state.running && (
+        <p className={styles.notice}>{state.blocking}</p>
       )}
     </div>
   )
