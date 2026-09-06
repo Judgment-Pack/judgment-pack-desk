@@ -13,7 +13,13 @@ import { builtin } from './index'
 import { MAX_TURNS, extractProposal } from './loop'
 import { protocolHeaders } from './providers/types'
 import { ASSISTANT_ENGINES } from '../../../config/deskConfig'
-import type { AssistantEvent, AssistantSession, McpTool, ModelCall } from '../../engine'
+import type {
+  AssistantEvent,
+  AssistantSession,
+  McpTool,
+  McpToolResult,
+  ModelCall
+} from '../../engine'
 
 
 const TOOLS: McpTool[] = [
@@ -364,7 +370,13 @@ describe('the event stream', () => {
       }
     })
     const events = await drain(builtin.start(stopping))
-    expect(events).toEqual([{ type: 'error', message: 'the session was stopped' }, { type: 'end' }])
+    // **Nothing at all, and the stream ends.** A viewer who pressed Stop has
+    // not been told about a failure, and a cancelled run is a session somebody
+    // ended rather than a run that finished — the terminal event belongs to the
+    // one that finished. Both engines answer a cancellation this way, and the
+    // page's terminal accounting is the run hook's, which writes an `end`
+    // whatever an engine does.
+    expect(events).toEqual([])
   })
 })
 
@@ -447,6 +459,150 @@ describe('a consumer that stops in the middle of a run', () => {
     expect(settledInOrder).toEqual(['next', 'return'])
     expect(sawAbort, 'the request in flight observed the abort').toBe(true)
     expect(await iterator.next()).toEqual({ value: undefined, done: true })
+  })
+})
+
+describe('a run stopped while it is waiting on the runtime', () => {
+  /** A model that calls one tool, then proposes. */
+  function callsATool(): ModelCall {
+    let turn = 0
+    return async () => {
+      turn += 1
+      return new Response(
+        JSON.stringify(
+          turn === 1
+            ? {
+                choices: [
+                  {
+                    message: {
+                      role: 'assistant',
+                      content: null,
+                      tool_calls: [
+                        {
+                          id: 'call_1',
+                          type: 'function',
+                          function: { name: 'validate', arguments: '{}' }
+                        }
+                      ]
+                    },
+                    finish_reason: 'tool_calls'
+                  }
+                ]
+              }
+            : { choices: [{ message: { role: 'assistant', content: PROPOSAL_TEXT } }] }
+        ),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    }
+  }
+  const bound = (work: Promise<unknown>) =>
+    Promise.race([
+      work.then(
+        () => 'settled',
+        () => 'settled'
+      ),
+      new Promise<string>((resolve) => setTimeout(() => resolve('STILL WAITING'), 2000))
+    ])
+
+  describe.each([
+    ['return()', (i: AsyncIterator<AssistantEvent>) => i.return!(undefined)],
+    [
+      'throw()',
+      (i: AsyncIterator<AssistantEvent>) => i.throw!(new Error('gave up')).catch(() => undefined)
+    ]
+  ] as const)('%s', (_name, stop) => {
+    it('settles the pending next first, then itself, and asks the runtime nothing more', async () => {
+      // The interleaving this engine kept: `return()` aborted the provider's
+      // signal and then waited on the inner generator, which was queued behind
+      // a `next()` waiting on a `tools/call` that honours no signal at all.
+      let arrived = () => {}
+      const entered = new Promise<void>((resolve) => {
+        arrived = resolve
+      })
+      let calls = 0
+      const one = session({
+        model: { family: 'openai-compatible', model: 'a-model', call: callsATool() },
+        callTool: async () => {
+          calls += 1
+          arrived()
+          return new Promise<McpToolResult>(() => {})
+        }
+      })
+      const iterator = builtin.start(one)[Symbol.asyncIterator]()
+      expect((await iterator.next()).value).toMatchObject({ type: 'tool_call' })
+      const pending = iterator.next()
+      await entered
+      const settledInOrder: string[] = []
+      const held = pending.then(() => settledInOrder.push('next'))
+      const ended = Promise.resolve(stop(iterator)).then(() => settledInOrder.push('stop'))
+
+      expect(await bound(held), 'the pending next').toBe('settled')
+      expect(await bound(ended), 'the stop').toBe('settled')
+      expect(await pending).toEqual({ value: undefined, done: true })
+      expect(settledInOrder).toEqual(['next', 'stop'])
+      expect(calls, 'the runtime was asked exactly once, before the stop').toBe(1)
+    })
+  })
+
+  it('settles a pending next when the session itself is aborted mid tool call', async () => {
+    const controller = new AbortController()
+    let arrived = () => {}
+    const entered = new Promise<void>((resolve) => {
+      arrived = resolve
+    })
+    const one = session({
+      signal: controller.signal,
+      model: { family: 'openai-compatible', model: 'a-model', call: callsATool() },
+      callTool: async () => {
+        arrived()
+        return new Promise<McpToolResult>(() => {})
+      }
+    })
+    const iterator = builtin.start(one)[Symbol.asyncIterator]()
+    expect((await iterator.next()).value).toMatchObject({ type: 'tool_call' })
+    const pending = iterator.next()
+    await entered
+    controller.abort()
+    expect(await bound(pending), 'the pending next').toBe('settled')
+    expect(await pending).toEqual({ value: undefined, done: true })
+  })
+
+  it('lets no tools/call reach the runtime after the consumer has closed the run', async () => {
+    // Two queued reads and a late model answer carrying a tool call. This
+    // engine had no guard before dispatch at all.
+    const asked: string[] = []
+    let answer = () => {}
+    const held = new Promise<void>((resolve) => {
+      answer = resolve
+    })
+    const inner = callsATool()
+    let turn = 0
+    const one = session({
+      model: {
+        family: 'openai-compatible',
+        model: 'a-model',
+        call: async (suffix, request) => {
+          turn += 1
+          if (turn === 1) await held
+          return inner(suffix, request)
+        }
+      },
+      callTool: async (name) => {
+        asked.push(name)
+        return { content: [{ type: 'text', text: '{}' }] }
+      }
+    })
+    const iterator = builtin.start(one)[Symbol.asyncIterator]()
+    const first = iterator.next()
+    const second = iterator.next()
+    void first.catch(() => undefined)
+    void second.catch(() => undefined)
+    expect(await bound(iterator.return!(undefined) as Promise<unknown>)).toBe('settled')
+    answer()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(asked, 'a tools/call reached the runtime after the run closed').toEqual([])
+    expect(await first).toEqual({ value: undefined, done: true })
+    expect(await second).toEqual({ value: undefined, done: true })
   })
 })
 

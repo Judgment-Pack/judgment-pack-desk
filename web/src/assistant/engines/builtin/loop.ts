@@ -18,13 +18,18 @@ import {
   SYSTEM,
   eventIterator,
   extractProposal,
+  guardedCallTool,
+  isCancelled,
+  onceOnly,
   textOf,
-  thinkingUnavailable
+  thinkingUnavailable,
+  withAbort
 } from '../contract'
 import { anthropic } from './providers/anthropic'
 import { openai } from './providers/openai'
 import { ModelHttpError } from './providers/types'
 import type { Proposal } from '../contract'
+import type { CallTool } from '../../engine'
 import type { Provider, ToolCall } from './providers/types'
 import type { AssistantEvent, AssistantSession } from '../../engine'
 
@@ -45,17 +50,20 @@ export type { Proposal } from '../contract'
  * runtime's own in-band `isError` both land here as one shape.
  */
 async function callSafely(
-  session: AssistantSession,
+  callTool: CallTool,
   call: ToolCall
 ): Promise<{ text: string; isError: boolean; structured?: unknown }> {
   try {
-    const result = await session.callTool(call.name, call.args)
+    const result = await callTool(call.name, call.args)
     return {
       text: textOf(result),
       isError: Boolean(result.isError),
       structured: result.structuredContent
     }
   } catch (cause) {
+    // **A cancelled run is not a refused tool.** Turning it into a result the
+    // model is told about would carry on a session nobody is listening to.
+    if (isCancelled(cause)) throw cause
     return {
       text:
         `refused: ${(cause as Error).message}. This assistant proposes; it never ` +
@@ -89,15 +97,22 @@ function providerFor(family: AssistantSession['model']['family']): Provider {
  */
 export function runBuiltin(session: AssistantSession): AsyncIterable<AssistantEvent> {
   const stop = new AbortController()
-  const onAbort = () => stop.abort()
+  // **One cancellation, reached four ways.** The consumer's `return()`, its
+  // `throw()`, the session's own signal and the run's natural end all run these
+  // statements and no others, once, synchronously, before anything is awaited —
+  // because what is waiting is exactly what this releases.
+  const cancel = onceOnly(() => {
+    session.signal.removeEventListener('abort', onAbort)
+    stop.abort()
+  })
+  function onAbort(): void {
+    cancel()
+  }
   if (session.signal.aborted) stop.abort()
   else session.signal.addEventListener('abort', onAbort, { once: true })
   return eventIterator({
     open: () => builtinEvents(session, stop.signal),
-    cancel: () => {
-      session.signal.removeEventListener('abort', onAbort)
-      stop.abort()
-    }
+    cancel
   })
 }
 
@@ -117,6 +132,11 @@ async function* builtinEvents(
       }
     }
 
+    // The runtime, reachable only while the run is: the signal is read before
+    // a call is dispatched, so nothing reaches `jpack mcp` after the consumer
+    // has left, and the wait is bounded, so a call in flight cannot hold the
+    // cleanup that is ending it.
+    const callTool = guardedCallTool(session, signal)
     const provider = providerFor(session.model.family)
     const tools = provider.tools(session.tools)
     const messages: unknown[] = provider.initialMessages(SYSTEM, session.prompt)
@@ -125,15 +145,20 @@ async function* builtinEvents(
 
     for (let turn = 1; turn <= MAX_TURNS; turn += 1) {
       turns = turn
-      const reply = await provider.send({
-        call: session.model.call,
-        model: session.model.model,
-        system: SYSTEM,
-        messages,
-        tools,
-        stream: true,
+      // Bounded by the run's signal and not only by the request's: a capability
+      // that never settles must not be able to hold this loop open.
+      const reply = await withAbort(
+        provider.send({
+          call: session.model.call,
+          model: session.model.model,
+          system: SYSTEM,
+          messages,
+          tools,
+          stream: true,
+          signal
+        }),
         signal
-      })
+      )
 
       if (reply.calls.length === 0) {
         proposal = extractProposal(reply.text)
@@ -143,7 +168,7 @@ async function* builtinEvents(
       const results: { call: ToolCall; text: string; isError: boolean }[] = []
       for (const call of reply.calls) {
         yield { type: 'tool_call', name: call.name, args: call.args }
-        const outcome = await callSafely(session, call)
+        const outcome = await callSafely(callTool, call)
         yield {
           type: 'tool_result',
           name: call.name,
@@ -168,6 +193,12 @@ async function* builtinEvents(
       yield { type: 'proposal', document: proposal.document, unknowns: proposal.unknowns }
     }
   } catch (cause) {
+    // **A cancelled run says nothing more at all — not even `end`.** It is the
+    // unwinding of a session somebody ended, not a run that finished, and the
+    // terminal event belongs to a run that finished. Both engines answer a
+    // cancellation the same way, and the page's own terminal accounting is the
+    // run hook's (`useAssistantRun`), which writes one whatever an engine does.
+    if (isCancelled(cause)) return
     yield { type: 'error', message: describe(cause) }
   }
   // **After the `try`, not inside a `finally`.** A `finally` that yields makes

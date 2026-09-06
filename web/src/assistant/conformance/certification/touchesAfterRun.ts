@@ -77,6 +77,12 @@ export const touchesAfterRun: Engine = {
       },
       { timeout: 10 }
     )
+    // **A long idle callback, and a short timer that cancels it.** A browser
+    // would run the cancellation first and the idle work never; a drain that
+    // fired everything at once ran the idle work first, and told it its
+    // sixty-second deadline had been reached. Neither reach may be recorded.
+    const patient = globalThis.requestIdleCallback(() => reach('idle-long'), { timeout: 60_000 })
+    setTimeout(() => globalThis.cancelIdleCallback(patient), 1_000)
     // And an interval nobody clears, at a period no leg can outlast — so the
     // only way its reach is ever recorded is a drain that ran it. The interval
     // being **live** is what fails this leg; a harness that ran it on the

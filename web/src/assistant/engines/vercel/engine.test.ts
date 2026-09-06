@@ -474,7 +474,7 @@ describe('exactly one end, on every path', () => {
     expect(requests).toBe(1)
   })
 
-  it('ends once and says nothing else when the session is aborted', async () => {
+  it('says nothing at all, and ends, when the session is aborted', async () => {
     // The desk's own capability rejects an aborted call with a fresh
     // `AbortError` carrying a fixed sentence and no address; this stands in for
     // it, because a stub that ignored the signal would be testing a capability
@@ -489,7 +489,10 @@ describe('exactly one end, on every path', () => {
       })
     }
     const events = await drain(vercel.start(session(call, { signal: controller.signal })))
-    expect(events.map((event) => event.type)).toEqual(['end'])
+    // Nothing at all: a cancelled run is a session somebody ended rather than
+    // a run that finished, and the terminal event belongs to the one that
+    // finished. The stream ends; the run hook writes the page's own `end`.
+    expect(events).toEqual([])
   })
 
   it('ends once where the final message carries no fenced block', async () => {
@@ -569,6 +572,119 @@ describe('a consumer that stops in the middle of a run', () => {
     // asked again.
     expect(await iterator.next()).toEqual({ value: undefined, done: true })
     expect(await iterator.return!(undefined)).toEqual({ value: undefined, done: true })
+  })
+
+  /**
+   * A run stopped while it is waiting on the **runtime**, three ways.
+   *
+   * The seam every review round found an interleaving in: something outside the
+   * engine is being awaited, and the cleanup that would end it is queued behind
+   * that await. Every one of these is bounded, so a regression fails rather
+   * than hanging the suite.
+   */
+  describe.each([
+    ['return()', (i: AsyncIterator<AssistantEvent>) => i.return!(undefined)],
+    ['throw()', (i: AsyncIterator<AssistantEvent>) => i.throw!(new Error('gave up')).catch(() => undefined)]
+  ] as const)('while a tool call is pending, %s', (_name, stop) => {
+    it('settles the pending next first, then itself, and asks the runtime nothing more', async () => {
+      let arrived = () => {}
+      const entered = new Promise<void>((resolve) => {
+        arrived = resolve
+      })
+      let calls = 0
+      const { call } = scriptedCall([
+        turn({ tool: { name: 'validate', args: { document: {} } } }),
+        turn({ text: PROPOSAL_TEXT })
+      ])
+      const iterator = vercel.start(
+        session(call, {}, async () => {
+          calls += 1
+          arrived()
+          // The capability that never settles: an MCP frame on a socket nobody
+          // is answering. Nothing about it honours a signal.
+          return new Promise<McpToolResult>(() => {})
+        })
+      )[Symbol.asyncIterator]()
+
+      expect((await iterator.next()).value).toMatchObject({ type: 'tool_call' })
+      const pending = iterator.next()
+      await entered
+      const settledInOrder: string[] = []
+      const held = pending.then(() => settledInOrder.push('next'))
+      const ended = Promise.resolve(stop(iterator)).then(() => settledInOrder.push('stop'))
+
+      expect(await within(2000, held), 'the pending next').toBe('settled')
+      expect(await within(2000, ended), 'the stop').toBe('settled')
+      expect(await pending).toEqual({ value: undefined, done: true })
+      expect(settledInOrder).toEqual(['next', 'stop'])
+      expect(calls, 'the runtime was asked exactly once, before the stop').toBe(1)
+    })
+  })
+
+  it('settles a pending next when the session itself is aborted mid tool call', async () => {
+    // The session's own signal reaches the same cancellation the consumer's
+    // `return()` does — it used to abort the SDK and leave the channel alone,
+    // so a `next()` waiting on a tool call that never settled waited for ever.
+    const controller = new AbortController()
+    let arrived = () => {}
+    const entered = new Promise<void>((resolve) => {
+      arrived = resolve
+    })
+    const { call } = scriptedCall([
+      turn({ tool: { name: 'validate', args: { document: {} } } }),
+      turn({ text: PROPOSAL_TEXT })
+    ])
+    const iterator = vercel.start(
+      session(call, { signal: controller.signal }, async () => {
+        arrived()
+        return new Promise<McpToolResult>(() => {})
+      })
+    )[Symbol.asyncIterator]()
+    expect((await iterator.next()).value).toMatchObject({ type: 'tool_call' })
+    const pending = iterator.next()
+    await entered
+    controller.abort()
+    expect(await within(2000, pending), 'the pending next').toBe('settled')
+    expect(await pending).toEqual({ value: undefined, done: true })
+  })
+
+  it('lets no tools/call reach the runtime after the consumer has closed the run', async () => {
+    // Two queued reads and a model answer that arrives late carrying a tool
+    // call: the guard is read **before** the call is dispatched, so a closed
+    // run has nowhere to send it.
+    let asked: string[] = []
+    let answer = () => {}
+    const held = new Promise<void>((resolve) => {
+      answer = resolve
+    })
+    let turnNumber = 0
+    const call: ModelCall = async () => {
+      turnNumber += 1
+      if (turnNumber === 1) await held
+      return new Response(
+        turnNumber === 1
+          ? turn({ tool: { name: 'validate', args: { document: {} } } })
+          : turn({ text: PROPOSAL_TEXT }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } }
+      )
+    }
+    const iterator = vercel.start(
+      session(call, {}, async (name) => {
+        asked.push(name)
+        return { content: [{ type: 'text', text: '{}' }] }
+      })
+    )[Symbol.asyncIterator]()
+    const first = iterator.next()
+    const second = iterator.next()
+    void first.catch(() => undefined)
+    void second.catch(() => undefined)
+    expect(await within(2000, iterator.return!(undefined) as Promise<unknown>)).toBe('settled')
+    // Now the model answers, with a tool call, into a run that is closed.
+    answer()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(asked, 'a tools/call reached the runtime after the run closed').toEqual([])
+    expect(await first).toEqual({ value: undefined, done: true })
+    expect(await second).toEqual({ value: undefined, done: true })
   })
 
   it('returns promptly, and asks the runtime nothing more', async () => {

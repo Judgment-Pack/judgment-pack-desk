@@ -124,6 +124,16 @@ function sealNetwork(): Seal {
 interface Tracked {
   kind: string
   label: string
+  /**
+   * When this schedule is due, on the drain's own clock.
+   *
+   * The drain fires what an engine left behind **in the order a browser would
+   * have run it**, advancing its clock to each entry's due time. Firing
+   * everything at once instead let a sixty-second idle callback run before the
+   * one-second timer that was going to cancel it, and report a timeout that
+   * had not happened.
+   */
+  dueAt: number
   /** True until it has run, or the engine cancelled it. */
   pending: boolean
   /** True where the engine itself called clearTimeout/clearInterval. */
@@ -157,6 +167,8 @@ interface Tracked {
  */
 function trackDeferredWork(): {
   pending(): Tracked[]
+  due(): Tracked[]
+  advanceTo(moment: number): void
   liveIntervals(): Tracked[]
   restore(): void
 } {
@@ -174,17 +186,28 @@ function trackDeferredWork(): {
   const realClearInterval = globalThis.clearInterval
   const realQueueMicrotask = globalThis.queueMicrotask
 
+  /**
+   * The drain's clock: real time, or the point the drain has advanced to.
+   *
+   * Never goes backwards, and is what a callback reads to know whether its own
+   * deadline has been reached.
+   */
+  let advancedTo = 0
+  const now = () => Math.max(Date.now(), advancedTo)
+
   function record(
     kind: string,
     label: string,
     run: () => void,
     schedule: (wrapped: () => void) => unknown,
     clear: (handle: unknown) => void,
-    repeating: boolean
+    repeating: boolean,
+    delay = 0
   ): unknown {
     const entry: Tracked = {
       kind,
       label,
+      dueAt: now() + Math.max(0, delay),
       pending: true,
       cancelled: false,
       repeating,
@@ -236,7 +259,8 @@ function trackDeferredWork(): {
       () => (fn as (...rest: unknown[]) => void)(...args),
       (wrapped) => realSetTimeout(wrapped, ms),
       (handle) => realClearTimeout(handle as never),
-      false
+      false,
+      ms ?? 0
     )
   }
   keep('clearTimeout')
@@ -252,7 +276,8 @@ function trackDeferredWork(): {
       () => (fn as (...rest: unknown[]) => void)(...args),
       (wrapped) => realSetInterval(wrapped, ms),
       (handle) => realClearInterval(handle as never),
-      true
+      true,
+      ms ?? 0
     )
   }
   keep('clearInterval')
@@ -355,11 +380,17 @@ function trackDeferredWork(): {
       // it a timeout was the same fiction one step further on: an engine that
       // would have cancelled a sixty-second callback long before its deadline
       // was credited with work a browser would never have let it do.
-      const didTimeout = timeout !== undefined
-      const label = didTimeout
-        ? `requestIdleCallback(${String(timeout)}ms timeout)`
-        : 'requestIdleCallback'
+      const label =
+        timeout === undefined
+          ? 'requestIdleCallback'
+          : `requestIdleCallback(${String(timeout)}ms timeout)`
+      // **Computed when the callback runs, not when it was asked for.** A
+      // deadline that has not been reached is not a timeout, and saying it was
+      // is how an engine got credited with work a browser would never have let
+      // it do.
+      const deadlineAt = timeout === undefined ? undefined : now() + timeout
       const run = () => {
+        const didTimeout = deadlineAt !== undefined && now() >= deadlineAt
         // The budget a browser gives a callback, measured from the moment it
         // starts running rather than from when it was asked for: positive at
         // the first read and decreasing, and never negative.
@@ -378,7 +409,9 @@ function trackDeferredWork(): {
             realSetTimeout(wrapped, timeout ?? 1)
       const clear = (handle: unknown) =>
         realCancelIdle !== undefined ? realCancelIdle(handle) : realClearTimeout(handle as never)
-      return record('requestIdleCallback', label, run, schedule, clear, false)
+      // Due at its own deadline — an idle slot on the next turn where none was
+      // asked for — so the drain runs it where a browser would have.
+      return record('requestIdleCallback', label, run, schedule, clear, false, timeout ?? 1)
     }
     scope.cancelIdleCallback = (handle: unknown) =>
       forget(handle, (inner) =>
@@ -387,6 +420,15 @@ function trackDeferredWork(): {
   }
 
   return {
+    /** The pending, non-repeating entries, soonest first. */
+    due: () =>
+      tracked
+        .filter((entry) => entry.pending && !entry.repeating && !entry.cancelled)
+        .sort((left, right) => left.dueAt - right.dueAt),
+    /** Advance the drain's clock to a point, never backwards. */
+    advanceTo: (moment: number) => {
+      advancedTo = Math.max(advancedTo, moment)
+    },
     // **An interval is never work the drain does.** Running a few ticks and
     // calling it drained let an engine hide a reach behind a later one, so an
     // interval is not something this fires on the engine's behalf at all — it
@@ -461,17 +503,29 @@ const IDLE_BUDGET_MS = 50
  *   exercised in `engines/vercel/engine.test.ts` instead, by dispatching the
  *   event a browser would.
  */
-async function drainDeferredWork(tracker: { pending(): Tracked[] }): Promise<number> {
+async function drainDeferredWork(tracker: {
+  pending(): Tracked[]
+  due(): Tracked[]
+  advanceTo(moment: number): void
+}): Promise<number> {
   for (let round = 0; round < DRAIN_ROUNDS; round += 1) {
     // Microtasks first: a `.then` chain needs no timer at all.
     for (let tick = 0; tick < 8; tick += 1) await Promise.resolve()
-    const due = tracker.pending()
-    if (due.length === 0) {
+    let next = tracker.due()[0]
+    if (next === undefined) {
       // One more flush, in case the last timer queued a reaction.
       for (let tick = 0; tick < 8; tick += 1) await Promise.resolve()
-      if (tracker.pending().length === 0) break
+      next = tracker.due()[0]
+      if (next === undefined) break
     }
-    for (const entry of due) entry.fire()
+    // **One at a time, soonest first, with the clock advanced to its due
+    // time.** Firing every pending entry at once ran them in the order they
+    // were *scheduled* rather than the order they were *due*, so a
+    // sixty-second idle callback ran before the one-second timer that was
+    // going to cancel it — and, being run, reported a timeout that had not
+    // happened. Re-read each round, because firing one schedules others.
+    tracker.advanceTo(next.dueAt)
+    next.fire()
   }
   return tracker.pending().length
 }
@@ -1087,6 +1141,12 @@ describe('the seal, shown to fail', () => {
     // decline to do anything, and certify a clean leg.
     expect(from.has('idle'), 'the reach guarded on the idle budget').toBe(true)
     expect(from.has('idle-timeout'), 'the reach guarded on didTimeout').toBe(true)
+    // **And the one a browser would never have run.** A sixty-second idle
+    // callback with a one-second cancellation beside it: the drain advances to
+    // each schedule's own due time, so the cancellation happens first and the
+    // idle work never does. Firing everything at once ran it — and told it a
+    // deadline it had not reached had been reached.
+    expect(from.has('idle-long'), 'a reach on an idle callback cancelled long before').toBe(false)
     // And the drain finished with nothing left waiting.
     expect(leftPending).toBe(0)
   })

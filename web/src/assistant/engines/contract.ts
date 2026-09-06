@@ -14,7 +14,99 @@
  * engine would be an engine the slot did not really separate.
  */
 import type { ThinkingTier } from '../../config/deskConfig'
-import type { AssistantEvent, McpTool, McpToolResult } from '../engine'
+import type { AssistantEvent, AssistantSession, CallTool, McpTool, McpToolResult } from '../engine'
+
+/**
+ * The run ended while something was still waiting on it.
+ *
+ * Not a failure and never an `error` event: a consumer left, a viewer pressed
+ * Stop, or the run's own cleanup came round. Every loop treats it as the
+ * unwinding it is.
+ */
+export class RunCancelled extends Error {
+  constructor() {
+    super('the run was cancelled while this was still waiting on it')
+    this.name = 'RunCancelled'
+  }
+}
+
+/** Whether a failure is a run that ended rather than a run that went wrong. */
+export function isCancelled(cause: unknown): boolean {
+  const name = (cause as { name?: unknown } | null | undefined)?.name
+  return name === 'RunCancelled' || name === 'AbortError'
+}
+
+/**
+ * One await on something outside the engine, bounded by the run's own signal.
+ *
+ * **This is the class fix, and it is why it is one function used everywhere.**
+ * Four rounds of review found four interleavings of the same shape: a consumer
+ * stops a run, the cleanup that would end it is queued behind an `await` on
+ * something the cleanup was supposed to end, and both wait for ever. Aborting
+ * *the thing being awaited* closes one of those at a time and only where the
+ * thing happens to honour a signal — the model request does, a `tools/call`
+ * over a socket does not.
+ *
+ * So no loop in either engine awaits anything external directly. Every one of
+ * them awaits **this**, which settles the moment the run's signal does, whatever
+ * the thing underneath decides to do. The underlying promise keeps a handler
+ * either way, so nothing it does later reaches the page as an unclaimed
+ * rejection.
+ */
+export function withAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    // Still claimed: the work is in flight and its outcome is nobody's now.
+    void work.catch(() => undefined)
+    return Promise.reject(new RunCancelled())
+  }
+  return new Promise<T>((resolve, reject) => {
+    const cancelled = () => reject(new RunCancelled())
+    signal.addEventListener('abort', cancelled, { once: true })
+    work.then(
+      (value) => {
+        signal.removeEventListener('abort', cancelled)
+        resolve(value)
+      },
+      (cause: unknown) => {
+        signal.removeEventListener('abort', cancelled)
+        reject(cause)
+      }
+    )
+  })
+}
+
+/**
+ * The runtime, reachable only while the run is.
+ *
+ * Two guards, and the first is the one that matters: **the signal is read
+ * before the call is dispatched**, so a `tools/call` cannot reach the runtime
+ * after the consumer has left — a late model answer arriving on a closed run
+ * has nowhere to send it. The second bounds the wait, so a call already in
+ * flight cannot hold the cleanup that is trying to end it.
+ */
+export function guardedCallTool(session: AssistantSession, signal: AbortSignal): CallTool {
+  return async (name, args) => {
+    if (signal.aborted) throw new RunCancelled()
+    return withAbort(session.callTool(name, args), signal)
+  }
+}
+
+/**
+ * A cancellation that happens once, however many ways it is reached.
+ *
+ * `return()`, `throw()`, the session's own signal and the run's natural end all
+ * arrive here, and what they run is the same statements in the same order —
+ * synchronously, before anything is awaited, because what is waiting is exactly
+ * what this releases.
+ */
+export function onceOnly(work: () => void): () => void {
+  let ran = false
+  return () => {
+    if (ran) return
+    ran = true
+    work()
+  }
+}
 
 /**
  * An engine's events, behind an iterator whose `return()` acts **at once**.

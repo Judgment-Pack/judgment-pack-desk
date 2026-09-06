@@ -44,9 +44,13 @@ import {
   SYSTEM,
   eventIterator,
   extractProposal,
+  guardedCallTool,
+  isCancelled,
+  onceOnly,
   servedSchema,
   textOf,
-  thinkingUnavailable
+  thinkingUnavailable,
+  withAbort
 } from '../contract'
 import { eventChannel } from './channel'
 import { placeholderBase, relayFetch } from './relay'
@@ -264,9 +268,30 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
   // the producer resumes on a microtask and would otherwise carry on into a
   // tool call for a session nobody is listening to any more.
   const channel = eventChannel({ onAbandon: () => stop.abort() })
-  const onAbort = () => stop.abort()
+  /**
+   * Everything this run holds, released once.
+   *
+   * **One cancellation, reached four ways**: the consumer's `return()`, its
+   * `throw()`, the session's own signal and the run's natural end all run these
+   * statements and no others, once, synchronously, before anything is awaited —
+   * because what is waiting is exactly what this releases. The session's signal
+   * used to abort the SDK and nothing else, which left a `next()` waiting on
+   * the channel for a run that had already been told to stop.
+   */
+  const cancel = onceOnly(() => {
+    session.signal.removeEventListener('abort', onAbort)
+    stop.abort()
+    channel.abandon()
+  })
+  function onAbort(): void {
+    cancel()
+  }
   if (session.signal.aborted) stop.abort()
   else session.signal.addEventListener('abort', onAbort, { once: true })
+  // The runtime, reachable only while the run is: read before dispatch, so
+  // nothing reaches `jpack mcp` after the consumer has left, and bounded, so a
+  // call in flight cannot hold the cleanup that is ending it.
+  const callTool = guardedCallTool(session, stop.signal)
   const offered = new Set(session.tools.map((tool) => tool.name))
   // What the model asked for, before the SDK's refinement touched it.
   //
@@ -296,17 +321,17 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
         unknown
       >
       await channel.push({ type: 'tool_call', name, args })
-      if (stop.signal.aborted) {
-        // The run ended while this call was waiting to be reported — the viewer
-        // pressed Stop, or the consumer stopped listening. A session nobody is
-        // watching asks the runtime nothing more.
-        const text = 'the session was stopped before this call was made; nothing was written'
-        return { content: [{ type: 'text', text }], isError: true }
-      }
       let answer: McpToolResult
       try {
-        answer = await session.callTool(name, args)
+        answer = await callTool(name, args)
       } catch (cause) {
+        // A run that ended while this was waiting — or before it was
+        // dispatched — is the session unwinding, not a tool refusing. The
+        // runtime was not asked and the model is told nothing more.
+        if (isCancelled(cause)) {
+          const text = 'the session was stopped before this call was made; nothing was written'
+          return { content: [{ type: 'text', text }], isError: true }
+        }
         const text =
           `refused: ${(cause as Error).message}. This assistant proposes; it never ` +
           `writes a file and never calls a tool it was not offered.`
@@ -369,7 +394,15 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
     let final = ''
     /** One reasoning passage, accumulated so `done` can carry the whole of it. */
     let reasoning = ''
-    for await (const part of result.stream) {
+    // **Read through the run's signal, not only the SDK's.** `abortSignal`
+    // makes the SDK end its own stream; this makes the *read* end whatever the
+    // SDK decides to do, which is the same rule every other await in this loop
+    // is held to.
+    const parts = result.stream[Symbol.asyncIterator]()
+    for (;;) {
+      const step = await withAbort(parts.next(), stop.signal)
+      if (step.done === true) break
+      const part = step.value
       if (part.type === 'start-step') {
         final = ''
         continue
@@ -405,8 +438,11 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
         await channel.push({ type: 'tool_call', name: unoffered, args: input ?? {} })
         let refusal = 'the call did not leave the page and nothing was written'
         try {
-          await session.callTool(unoffered, (input ?? {}) as Record<string, unknown>)
+          await callTool(unoffered, (input ?? {}) as Record<string, unknown>)
         } catch (cause) {
+          // A cancelled run stops here rather than reporting a refusal that
+          // never happened.
+          if (isCancelled(cause)) throw cause
           refusal = (cause as Error).message
         }
         await channel.push({
@@ -449,22 +485,6 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
     channel.close()
   }
   /**
-   * Everything this run holds, released once.
-   *
-   * Called by the iterator **before** it awaits anything, which is the whole
-   * reason the outer shape is not an async generator: a generator serves
-   * `next()` and `return()` from one queue, so the `return()` carrying this
-   * abort would have been queued behind the very `next()` the abort was going
-   * to release. `channel.abandon()` aborts first in its own right; the explicit
-   * `stop.abort()` beside it is the same claim made where a reader is.
-   */
-  const cancel = () => {
-    session.signal.removeEventListener('abort', onAbort)
-    stop.abort()
-    channel.abandon()
-  }
-
-  /**
    * The run itself starts on the consumer's first `next()`.
    *
    * A consumer that opens a session and leaves without asking for an event has
@@ -472,9 +492,9 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
    */
   const open = (): AsyncGenerator<AssistantEvent> => {
     const loop = drive().catch(async (cause: unknown) => {
-      // An abort is the viewer stopping the session, and it ends it: there is
-      // no failure to report and nothing more to say than `end`.
-      if (stop.signal.aborted || (cause as Error)?.name === 'AbortError') return
+      // A cancelled run is the viewer stopping the session, or a consumer
+      // walking away: it ends the run and there is no failure to report.
+      if (isCancelled(cause) || stop.signal.aborted) return
       await channel.push({ type: 'error', message: describe(cause) })
     })
     // Nothing else awaits this; a rejection out of the catch above would be
