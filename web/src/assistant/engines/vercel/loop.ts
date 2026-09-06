@@ -61,6 +61,7 @@ import { openThinking } from '../../thinking'
 import {
   CRITIC_SYSTEM,
   MAX_CRITIC_TURNS,
+  criticCannotRun,
   criticMessage,
   critiqueEvent,
   critiqueOnProposal,
@@ -654,7 +655,13 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
      * delivered, and every call it makes is a read.
      */
     let critique = null as ReturnType<CritiqueRecorder['critique']> | null
-    if (slot.runsRefutation()) {
+    // **No runtime prompt, no critic.** The instructions are the runtime's; this
+    // desk adds one sentence and has none of its own to fall back on.
+    const cannot = slot.runsRefutation() ? criticCannotRun(session.testPrompt) : null
+    if (cannot !== null) {
+      critique = cannot
+      await deliver(critiqueEvent(cannot))
+    } else if (slot.runsRefutation()) {
       const recorder = openCritique()
       recording = recorder
       let criticText = ''

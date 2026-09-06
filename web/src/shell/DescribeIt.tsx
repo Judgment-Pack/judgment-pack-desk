@@ -201,10 +201,11 @@ export function useDescribeIt(): DescribeItState {
   )
   // The runtime's testing prompt, for the refutation pass, and only where a
   // critic will run. Same reading as the Assistant tab's, for the same reason.
-  const testPrompt = usePromptText(
-    TEST_PACK_PROMPT,
-    slot.thinking !== 'off' && (prompts.data ?? []).includes(TEST_PACK_PROMPT)
-  )
+  const advertisesTest = (prompts.data ?? []).includes(TEST_PACK_PROMPT)
+  const testPrompt = usePromptText(TEST_PACK_PROMPT, slot.thinking !== 'off' && advertisesTest)
+  /** Both prompts, or neither. See the Assistant tab's `waitingForTest`. */
+  const waitingForTest =
+    slot.thinking !== 'off' && advertisesTest && testPrompt.data === undefined
   const run = useAssistantRun({
     // Only ever started where the endpoint exists; the fallback keeps the hook
     // unconditional, which is the rule React enforces.
@@ -221,6 +222,7 @@ export function useDescribeIt(): DescribeItState {
   const startRun = run.start
   useEffect(() => {
     if (submitted === null || prompt.data === undefined) return
+    if (waitingForTest) return
     if (submitted.id === stoppedId) return
     if (started.current === submitted.id) return
     started.current = submitted.id
@@ -228,7 +230,7 @@ export function useDescribeIt(): DescribeItState {
     // **No draft.** There is no document yet — that is what this section is
     // for — so what comes back is a whole document rather than an edit.
     startRun(prompt.data.text)
-  }, [submitted, stoppedId, prompt.data, startRun])
+  }, [submitted, stoppedId, prompt.data, waitingForTest, startRun])
 
   const stopRun = run.stop
   /**

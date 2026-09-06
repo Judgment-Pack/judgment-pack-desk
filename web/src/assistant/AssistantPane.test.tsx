@@ -130,7 +130,7 @@ function DraftHarness({
 async function draw(options: {
   assistant?: unknown
   keyPresent?: boolean
-  prompts?: Record<string, { text: string }>
+  prompts?: Record<string, { text: string; hold?: Promise<void> }>
   /** Leave the model's answer in flight, so a run is still open. */
   hang?: boolean
   /** Answer every model request with the chassis' own refusal envelope. */
@@ -1153,4 +1153,65 @@ describe('a session that failed after it ended', () => {
     expect(held!.text).toBe(before)
     expect(wrote).toBe(0)
   })
+})
+
+describe('the runtime’s testing prompt, which the refutation pass needs', () => {
+  const THINKING = { endpoint: ENDPOINT, engine: 'builtin', thinking: 'on' }
+
+  it('does not start a run until the testing prompt has arrived too', async () => {
+    // **Both prompts, or neither.** A session begins by reading the runtime's
+    // prompts, and the pass needs a second one. Starting on the first alone
+    // handed the engine an empty `testPrompt`, and the critic then ran on this
+    // desk's one sentence with none of the runtime's instructions.
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const { relayed } = await draw({
+      assistant: THINKING,
+      prompts: {
+        author_pack: { text: 'The runtime’s authoring prompt.' },
+        test_pack: { text: 'The runtime’s testing prompt.', hold: held }
+      }
+    })
+    fireEvent.change(await screen.findByLabelText('What should this pack decide?'), {
+      target: { value: 'a policy' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    // The author prompt has resolved; the testing prompt has not. Nothing has
+    // been asked of a model.
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('button', { name: 'Stop' }) as HTMLButtonElement).disabled
+      ).toBe(false)
+    )
+    expect(relayed).toHaveLength(0)
+    release()
+    // …and once it arrives, the session runs and the critic gets the text.
+    await screen.findByLabelText('The proposal', {}, { timeout: 20000 })
+    expect(relayed.length).toBeGreaterThan(0)
+    const critic = relayed.filter((request) => request.body.includes('REFUTATION PASS'))
+    expect(critic.length).toBeGreaterThan(0)
+    expect(critic[0]!.body).toContain('The runtime’s testing prompt.')
+  }, 30000)
+
+  it('reports that the pass cannot run where the runtime advertises none', async () => {
+    const { relayed } = await draw({
+      assistant: THINKING,
+      prompts: { author_pack: { text: 'The runtime’s authoring prompt.' } }
+    })
+    fireEvent.change(await screen.findByLabelText('What should this pack decide?'), {
+      target: { value: 'a policy' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await screen.findByLabelText('The proposal', {}, { timeout: 20000 })
+    // No critic ran at all — not one on the desk's sentence alone.
+    expect(relayed.filter((request) => request.body.includes('REFUTATION PASS'))).toEqual([])
+    // …and the tab says so, with no refutation line on the proposal.
+    // Once in the stream, once in the proposal's report — one sentence, in the
+    // two places a reader looks.
+    expect((await screen.findAllByText(/advertises no test_pack prompt/)).length).toBe(2)
+    expect(screen.queryByText(/did not refute this proposal/)).toBeNull()
+    expect(screen.queryByText(/refuted this proposal/)).toBeNull()
+  }, 30000)
 })

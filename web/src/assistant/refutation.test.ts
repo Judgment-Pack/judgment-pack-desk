@@ -12,12 +12,14 @@ import {
   CRITIC_SYSTEM,
   MAX_CRITIC_TURNS,
   NO_CHECKS,
+  NO_TEST_PROMPT,
   REFUTATION_MARKER,
   SETTLED_STATUS,
+  criticCannotRun,
   criticMessage,
   critiqueEvent,
-  isCheckTool,
   critiqueOnProposal,
+  isCheckTool,
   openCritique,
   quoteOf,
   statusOf,
@@ -207,9 +209,21 @@ describe('what the critic is told', () => {
     expect(message.indexOf('```json')).toBeGreaterThan(message.indexOf(CRITIC_SENTENCE))
   })
 
-  it('works from the desk’s one sentence alone where the runtime advertises none', () => {
-    const message = criticMessage('', { id: 'a-pack' })
-    expect(message.startsWith(CRITIC_SENTENCE)).toBe(true)
+  it('does not run at all where the runtime advertises no testing prompt', () => {
+    // **Never a critic on this desk's sentence alone.** The instructions are
+    // the runtime's; the desk adds one sentence to them and has none of its own
+    // to fall back on.
+    const cannot = criticCannotRun('')
+    expect(cannot).not.toBeNull()
+    expect(cannot!.checks).toEqual([])
+    expect(cannot!.refuted).toBe(false)
+    expect(cannot!.text).toBe(NO_TEST_PROMPT)
+    expect(cannot!.text).toContain('advertises no test_pack')
+    // Zero checks, so the proposal is shown without a refutation line.
+    expect(critiqueOnProposal(cannot)).toEqual({})
+    // Whitespace is not a prompt either.
+    expect(criticCannotRun('   \n ')).not.toBeNull()
+    expect(criticCannotRun('THE RUNTIME’S GUIDANCE')).toBeNull()
   })
 
   it('is bounded: a pass is a read over a document, not a second session', () => {

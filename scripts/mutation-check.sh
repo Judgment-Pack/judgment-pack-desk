@@ -4301,6 +4301,19 @@ export function assistantTransport(): Transport {
     "    runsRefutation() {
       if (false) return false"
 
+  # **Both prompts, or neither.** Starting on the author prompt alone handed the
+  # engine an empty `testPrompt`, and the critic then ran on this desk's one
+  # sentence with none of the runtime's instructions.
+  mutate web "the run starts before the runtime's testing prompt arrives" "$AP" \
+    '    if (waitingForTest) return' \
+    '    void waitingForTest'
+  # …and the other half: with no testing prompt at all the pass must report that
+  # it cannot run rather than putting a critic in front of a document with only
+  # the desk's sentence to go on.
+  mutate web "the critic runs on the desk's sentence alone" "$RF" \
+    "  if (testPrompt.trim() !== '') return null" \
+    "  if (true) return null"
+
   # The critic runs under the **run's** gate, not on the session capability
   # directly: a viewer who presses Stop during the pass must end it where they
   # would have ended the loop above.

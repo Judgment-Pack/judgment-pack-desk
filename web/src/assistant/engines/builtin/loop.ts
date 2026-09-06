@@ -33,6 +33,7 @@ import { openThinking } from '../../thinking'
 import {
   CRITIC_SYSTEM,
   MAX_CRITIC_TURNS,
+  criticCannotRun,
   criticMessage,
   critiqueEvent,
   critiqueOnProposal,
@@ -285,6 +286,13 @@ async function* refute(options: {
   signal: AbortSignal
   document: unknown
 }): AsyncGenerator<AssistantEvent, Critique> {
+  // **No runtime prompt, no critic.** The instructions are the runtime's; this
+  // desk adds one sentence and has none of its own to fall back on.
+  const cannot = criticCannotRun(options.session.testPrompt)
+  if (cannot !== null) {
+    yield critiqueEvent(cannot)
+    return cannot
+  }
   const recorder = openCritique()
   const messages = options.provider.initialMessages(
     CRITIC_SYSTEM,

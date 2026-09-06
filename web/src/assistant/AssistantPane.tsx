@@ -245,10 +245,20 @@ export function AssistantPane({
    * until the session has produced it. The critic is handed the document
    * itself, fenced, beside this guidance.
    */
-  const testPrompt = usePromptText(
-    TEST_PACK_PROMPT,
-    slot.thinking !== 'off' && (prompts.data ?? []).includes(TEST_PACK_PROMPT)
-  )
+  const advertisesTest = (prompts.data ?? []).includes(TEST_PACK_PROMPT)
+  const testPrompt = usePromptText(TEST_PACK_PROMPT, slot.thinking !== 'off' && advertisesTest)
+  /**
+   * Whether this session still owes the critic the runtime's testing prompt.
+   *
+   * A session begins by reading the runtime's prompts, and the refutation pass
+   * needs a **second** one. Starting on the first alone handed the engine an
+   * empty `testPrompt`, and the critic then ran on the desk's sentence with
+   * none of the runtime's instructions — the one thing the pass is not allowed
+   * to be. A runtime that advertises no `test_pack` is not waited for: the pass
+   * reports that it cannot run, and the proposal is shown without a line.
+   */
+  const waitingForTest =
+    slot.thinking !== 'off' && advertisesTest && testPrompt.data === undefined
   const run = useAssistantRun({
     // Only rendered where the endpoint exists; the fallback keeps the hook
     // unconditional, which is the rule React enforces.
@@ -265,6 +275,8 @@ export function AssistantPane({
   const startRun = run.start
   useEffect(() => {
     if (submitted === null || prompt.data === undefined) return
+    // Both prompts, or neither: see `waitingForTest`.
+    if (waitingForTest) return
     if (started.current === submitted.id) return
     started.current = submitted.id
     setRejected(false)
@@ -276,7 +288,7 @@ export function AssistantPane({
     })
     setRan(submitted.name)
     startRun(withDraft(prompt.data.text, draftNow.current))
-  }, [submitted, prompt.data, startRun])
+  }, [submitted, prompt.data, waitingForTest, startRun])
 
   /**
    * Stop, in **both** phases of a session.

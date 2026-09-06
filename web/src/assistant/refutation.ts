@@ -240,6 +240,21 @@ export function openCritique(): CritiqueRecorder {
 }
 
 /**
+ * The critique a pass that **could not run** produces, or null where it can.
+ *
+ * The instructions a critic works from are the runtime's; this desk adds one
+ * sentence to them and has none of its own to fall back on. A run that reached
+ * the pass without the runtime's testing prompt — a runtime that advertises no
+ * `test_pack` — therefore reports that, rather than putting a critic in front
+ * of a document with only the desk's sentence to go on. Zero checks, so the
+ * proposal is shown without a refutation line.
+ */
+export function criticCannotRun(testPrompt: string): Critique | null {
+  if (testPrompt.trim() !== '') return null
+  return { refuted: false, checks: [], text: NO_TEST_PROMPT, modelText: '' }
+}
+
+/**
  * The critic's first message: the runtime's testing prompt, the desk's one
  * sentence, and the document.
  *
@@ -247,12 +262,13 @@ export function openCritique(): CritiqueRecorder {
  * for caller-supplied material, so the critic can tell what it was handed from
  * the instructions around it.
  *
- * `testPrompt` is the runtime's `test_pack` prompt as `prompts/get` served it.
- * It is read **without** its `pack` argument, and the reason is honest rather
- * than convenient: the document does not exist when a session's prompts are
- * read, and a prompt fetched mid-run for each proposal would be a second
- * `prompts/get` inside a pass whose whole point is that it costs one call. The
- * document is handed over below instead, verbatim.
+ * `testPrompt` is the runtime's `test_pack` prompt as `prompts/get` served it,
+ * and it is never empty here: a pass with no runtime prompt does not run at all
+ * (`criticCannotRun`). It is read **without** its `pack` argument, and the
+ * reason is honest rather than convenient: the document does not exist when a
+ * session's prompts are read, and a prompt fetched mid-run for each proposal
+ * would be a second `prompts/get` inside a pass whose whole point is that it
+ * costs one call. The document is handed over below instead, verbatim.
  */
 export function criticMessage(testPrompt: string, document: unknown): string {
   const fenced = `\`\`\`json\n${JSON.stringify(document, null, 2)}\n\`\`\``
