@@ -4292,13 +4292,18 @@ export function assistantTransport(): Transport {
     "  if (critique === null || critique.checks.length === 0) return {}" \
     "  if (critique === null) return {}"
 
-  # **A check is a thing the runtime said.** A refusal by the desk's own gate is
-  # not: a critique built out of them says "the runtime refuted this proposal"
-  # about a call that never left the page.
-  mutate web "a call the gate refused is fed to the recorder as a check" "$BL" \
-    '      if (outcome.answered) recorder.saw(call.name, outcome.text)' \
-    '      recorder.saw(call.name, outcome.text)'
-  # …and the recorder itself, which must not invent a status the runtime never
+  # **Deliberately not a row: "a call the gate refused is fed to the recorder".**
+  # It was one, and it reported NOT DISCRIMINATING — correctly. The two guards
+  # are each sufficient: a gate refusal's text is the desk's own prose and
+  # carries no runtime `status`, so feeding it to the recorder produces no check
+  # even without the `answered` flag. The flag is kept because it is the
+  # readable statement of the rule and does not depend on what a refusal
+  # *reads* like, and because a future refusal that happened to carry a JSON
+  # status would walk straight past the other guard. Its absence from this table
+  # is a statement rather than an oversight. What IS observable is the row
+  # below, and the conformance leg where the file grants neither check tool.
+  #
+  # The recorder itself, which must not invent a status the runtime never
   # used for an answer that carried none.
   mutate web "an answer with no runtime status is recorded as refused" "$RF" \
     "      const said = statusOf(text)

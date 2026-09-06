@@ -1167,7 +1167,7 @@ describe('the runtime’s testing prompt, which the refutation pass needs', () =
     const held = new Promise<void>((resolve) => {
       release = resolve
     })
-    const { relayed } = await draw({
+    const { relayed, prompted } = await draw({
       assistant: THINKING,
       prompts: {
         author_pack: { text: 'The runtime’s authoring prompt.' },
@@ -1178,14 +1178,23 @@ describe('the runtime’s testing prompt, which the refutation pass needs', () =
       target: { value: 'a policy' }
     })
     fireEvent.click(screen.getByRole('button', { name: 'Run' }))
-    // The author prompt has resolved; the testing prompt has not. Nothing has
-    // been asked of a model.
+    // Both prompts have been **asked for** — the stub records the request before
+    // it waits — and the authoring one, which is not held, has answered. So the
+    // start effect has had everything it needs except the testing prompt.
     await waitFor(() =>
-      expect(
-        (screen.getByRole('button', { name: 'Stop' }) as HTMLButtonElement).disabled
-      ).toBe(false)
+      expect(prompted.map((one) => one.name)).toEqual(
+        expect.arrayContaining(['author_pack', 'test_pack'])
+      )
     )
-    expect(relayed).toHaveLength(0)
+    // **And nothing has been asked of a model.** Given twenty turns of the
+    // event loop, a run that started would have made its first request several
+    // times over.
+    for (let tick = 0; tick < 20; tick += 1) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1))
+      })
+      expect(relayed, 'a run started before the testing prompt arrived').toHaveLength(0)
+    }
     release()
     // …and once it arrives, the session runs and the critic gets the text.
     await screen.findByLabelText('The proposal', {}, { timeout: 20000 })
