@@ -40,9 +40,10 @@ import scenario from './scenario.json'
 import { scriptedModel, type RecordedRequest } from './scriptedModel'
 import { RECORDED_TOOLS, scriptedRuntime, type ServerObservation } from './scriptedServer'
 import runtime from './runtime.json'
-import type { AssistantEvent } from '../engine'
+import type { AssistantEvent, Engine } from '../engine'
 
 const FIVE = scenario.scenarioTools
+const DRAFT_V2 = scenario.documents.DRAFT_V2 as unknown
 
 /**
  * The network globals an engine must never touch, and what happens if it does.
@@ -62,26 +63,59 @@ const NETWORK_GLOBALS = ['fetch', 'WebSocket', 'XMLHttpRequest', 'EventSource'] 
 
 class EngineTouchedANetworkGlobal extends Error {}
 
-/** Replace every network global with a throwing sentinel; returns the undo. */
-function sealNetwork(): () => void {
+/** One sealed interval: the sentinels, and what they caught. */
+interface Seal {
+  /** Every reach, in order. Deferred ones land here too, where nothing catches. */
+  violations: string[]
+  lift(): void
+}
+
+/**
+ * Replace every network global with a throwing sentinel.
+ *
+ * **It records as well as throwing.** A reach from inside a `setTimeout` throws
+ * into nobody's `catch`, so the exception alone proves nothing: the leg would
+ * pass with the violation swallowed. The list is what the assertions read.
+ */
+function sealNetwork(): Seal {
   const scope = globalThis as unknown as Record<string, unknown>
   const before = new Map<string, unknown>()
+  const violations: string[] = []
   for (const name of NETWORK_GLOBALS) {
     before.set(name, scope[name])
     const sentinel = function sealed(): never {
-      throw new EngineTouchedANetworkGlobal(
+      const reach =
         `the engine reached for globalThis.${name}; a session's only reach to a model is ` +
-          `session.model.call, and its only reach to the runtime is session.callTool`
-      )
+        `session.model.call, and its only reach to the runtime is session.callTool`
+      violations.push(reach)
+      throw new EngineTouchedANetworkGlobal(reach)
     }
     // Both call shapes: `fetch(...)` and `new WebSocket(...)`.
     scope[name] = sentinel
   }
-  return () => {
-    for (const [name, value] of before) scope[name] = value
+  return {
+    violations,
+    lift() {
+      for (const [name, value] of before) scope[name] = value
+    }
   }
 }
-const DRAFT_V2 = scenario.documents.DRAFT_V2 as unknown
+
+/**
+ * Let deferred work run while the seal is still up.
+ *
+ * A timer an engine set before it finished is exactly the reach the seal used
+ * to miss, so the barrier is real time rather than a microtask flush: fake
+ * timers fight the SDK's own in-memory transport, which settles on
+ * microtasks, and a run that hangs is worse than a bound that is stated. The
+ * length is the interval the fixture schedules inside, several times over.
+ */
+const DRAIN_MS = 200
+async function drainDeferredWork(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, DRAIN_MS))
+  // And a few microtask ticks, for anything the timers queued on their way out.
+  for (let tick = 0; tick < 5; tick += 1) await Promise.resolve()
+}
 
 interface Leg {
   api: 'openai-compatible' | 'anthropic'
@@ -99,17 +133,26 @@ interface Run {
   events: AssistantEvent[]
   requests: RecordedRequest[]
   seen: ServerObservation[]
+  /** Every network global the engine reached for, deferred reaches included. */
+  violations: string[]
 }
 
 /**
  * One whole session, driven exactly as the page drives it.
  *
- * The desk's half — the socket, the gate, the client, the model capability —
- * is bound first, with the real globals in place. Then the network is sealed
- * and the **engine** runs: everything it does from that point is through the
- * two capabilities it was handed, or it throws.
+ * The desk's half — the socket, the gate, the client, the model capability — is
+ * bound first, with the real globals in place. Then the network is sealed, and
+ * **everything the engine touches happens inside that seal**: its chunk is
+ * imported under it, it runs under it, and deferred work is drained under it
+ * before the globals come back. The two halves used to be the other way round
+ * in both directions — the `import()` happened before the seal and the seal was
+ * lifted the instant the run resolved — so a module could reach for `fetch` on
+ * load and a timer could reach for it a moment after `end`.
  */
-async function runLeg(engineId: (typeof CERTIFIED_ENGINES)[number], leg: Leg): Promise<Run> {
+async function runLeg(
+  load: () => Promise<Engine>,
+  leg: Leg
+): Promise<Run> {
   const model = scriptedModel({ api: leg.api, answerAs: leg.answerAs })
   vi.stubGlobal('fetch', model.fetch)
   const runtime = await scriptedRuntime()
@@ -119,36 +162,52 @@ async function runLeg(engineId: (typeof CERTIFIED_ENGINES)[number], leg: Leg): P
     onEvent: (event) => events.push(event),
     transport: runtime.transport
   })
+  // **The desk's half is bound outside the seal, and must be**: the model
+  // capability captures `fetch` when it is bound, which is the property that
+  // lets an engine be sealed off from every network global while its own calls
+  // still work. Binding it under the sentinel would capture the sentinel.
+  let seal: Seal | null = null
   try {
     const ready = await connection.ready
     const call = bindModelCall()
-    const engine = await loadEngine(engineId)
-    const unseal = sealNetwork()
-    try {
-      await runAssistantSession(
-        engine,
-        {
-          // The prompt the desk fetched over prompts/get. Its text is the
-          // runtime's; what matters here is that the engine sends it and adds
-          // no authoring instructions of its own.
-          prompt: `${scenario.policy}`,
-          tools: ready.tools,
-          callTool: ready.callTool,
-          model: { family: leg.api, model: 'scripted-model', call },
-          thinking: { tier: 'off' },
-          signal: new AbortController().signal
-        },
-        (event) => events.push(event)
-      )
-    } finally {
-      unseal()
-    }
+    // Sealed from here: the engine's chunk is imported under it.
+    seal = sealNetwork()
+    const engine = await load()
+    await runAssistantSession(
+      engine,
+      {
+        // The prompt the desk fetched over prompts/get. Its text is the
+        // runtime's; what matters here is that the engine sends it and adds
+        // no authoring instructions of its own.
+        prompt: `${scenario.policy}`,
+        tools: ready.tools,
+        callTool: ready.callTool,
+        model: { family: leg.api, model: 'scripted-model', call },
+        thinking: { tier: 'off' },
+        signal: new AbortController().signal
+      },
+      (event) => events.push(event)
+    )
+  } catch (cause) {
+    // A load that threw or a run that failed is the leg's result, not the
+    // harness's problem: it lands on the stream like any other failure.
+    events.push({ type: 'error', message: `${(cause as Error).name}: ${(cause as Error).message}` })
   } finally {
+    await drainDeferredWork()
+    seal?.lift()
     await connection.close()
     await runtime.close()
   }
-  return { events, requests: model.requests, seen: runtime.seen }
+  return {
+    events,
+    requests: model.requests,
+    seen: runtime.seen,
+    violations: seal?.violations ?? []
+  }
 }
+
+/** The registry's own loader, for the engines this build certifies. */
+const fromRegistry = (id: (typeof CERTIFIED_ENGINES)[number]) => () => loadEngine(id)
 
 const toolCalls = (events: AssistantEvent[]) =>
   events.filter((event): event is Extract<AssistantEvent, { type: 'tool_call' }> => event.type === 'tool_call')
@@ -226,7 +285,7 @@ describe('the scenario this session carries', () => {
 describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
   describe.each(LEGS)('leg $api answered as $answerAs', (leg) => {
     it('runs the whole scenario and ends with a proposal', async () => {
-      const { events, seen } = await runLeg(engineId, leg)
+      const { events, seen } = await runLeg(fromRegistry(engineId), leg)
 
       // Every recorded step ran, in the scenario's order, and the two the
       // scenario exists to provoke did not reach the runtime at all.
@@ -270,11 +329,13 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
       expect(evaluated.disposition.outcomeId).toBe(scenario.expectations.T6.disposition.outcomeId)
     })
 
-    it('K1a — the engine touches no network global at all', async () => {
-      // Nothing to assert beyond the leg completing: the sentinels throw, the
-      // engine reports an error, and every check below would fail. This case
-      // exists so the *reason* a leg failed is named.
-      const { events } = await runLeg(engineId, leg)
+    it('K1a — the engine touches no network global, at load, during or after', async () => {
+      // The sentinels are up from before the engine's chunk is imported until
+      // after deferred work has been drained, and they **record** as well as
+      // throwing — a reach from a timer throws into nobody's catch, so the
+      // list is what says it happened.
+      const { events, violations } = await runLeg(fromRegistry(engineId), leg)
+      expect(violations).toEqual([])
       const errors = events.filter(
         (event): event is Extract<AssistantEvent, { type: 'error' }> => event.type === 'error'
       )
@@ -283,7 +344,7 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
     })
 
     it('K1 — sends no credential, and calls nothing but the relay', async () => {
-      const { requests } = await runLeg(engineId, leg)
+      const { requests } = await runLeg(fromRegistry(engineId), leg)
       expect(requests.length).toBeGreaterThan(0)
       for (const request of requests) {
         for (const forbidden of [
@@ -309,14 +370,14 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
     })
 
     it('K2 — offers exactly the five, out of tools/list', async () => {
-      const { requests } = await runLeg(engineId, leg)
+      const { requests } = await runLeg(fromRegistry(engineId), leg)
       for (const request of requests) {
         expect(request.toolNames).toEqual(FIVE)
       }
     })
 
     it('K3a — the evaluate reaches the runtime rewritten, and is reported', async () => {
-      const { events, seen } = await runLeg(engineId, leg)
+      const { events, seen } = await runLeg(fromRegistry(engineId), leg)
       const evaluate = seen.find((call) => call.name === 'experimental_evaluate')!
       // At the wire. The model asked without it; the server saw it with it.
       expect(evaluate.args.rehearsal).toBe(true)
@@ -332,7 +393,7 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
     })
 
     it('K3b — write_file never reaches the runtime, and the model is told', async () => {
-      const { events, seen } = await runLeg(engineId, leg)
+      const { events, seen } = await runLeg(fromRegistry(engineId), leg)
       expect(seen.map((call) => call.name)).not.toContain('write_file')
       const refused = guardrails(events).filter((event) => event.action === 'refused')
       expect(refused).toHaveLength(1)
@@ -346,14 +407,14 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
     })
 
     it('K3c — the proposal is DRAFT_V2, and T8’s unknowns arrive whole', async () => {
-      const { events } = await runLeg(engineId, leg)
+      const { events } = await runLeg(fromRegistry(engineId), leg)
       expect(proposals(events)).toHaveLength(1)
       expect(proposals(events)[0]!.document).toEqual(DRAFT_V2)
       expect(proposals(events)[0]!.unknowns).toEqual(scenario.unknowns)
     })
 
     it('emits the event stream the ADR names, in order, ending once', async () => {
-      const { events } = await runLeg(engineId, leg)
+      const { events } = await runLeg(fromRegistry(engineId), leg)
       expect(events.map((event) => event.type)).toEqual([
         'tool_call', // T1 get_schema
         'tool_result',
@@ -381,7 +442,7 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
     })
 
     it('carries every result back, so the script never repeats a step', async () => {
-      const { requests } = await runLeg(engineId, leg)
+      const { requests } = await runLeg(fromRegistry(engineId), leg)
       // The scripted model reads n off the request's own messages. A run whose
       // steps are 1..8 with no repeat is a run whose message array carried
       // every tool result back in the shape the endpoint expects.
@@ -397,5 +458,61 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
       ])
       expect(requests.map((request) => request.results)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
     })
+  })
+})
+
+/**
+ * **The guard, shown to fail.**
+ *
+ * A conformance session that only ever runs conformant engines proves nothing
+ * about the session. These two fixtures are engines the desk would never
+ * certify — one reaches for a network global while its module loads, the other
+ * schedules the reach for after its run has ended cleanly — and each one is
+ * the exact hole round 2 found: the seal used to go up after the `import()` and
+ * come down the instant the run resolved.
+ *
+ * They are loaded through the same `runLeg` every certified engine goes
+ * through, so what is being shown is the harness and not a rehearsal of it.
+ */
+describe('the seal, shown to fail', () => {
+  const leg: Leg = { api: 'openai-compatible', answerAs: 'stream' }
+
+  it('catches an engine that touches the network as its module loads', async () => {
+    const { violations, events } = await runLeg(
+      async () => (await import('./certification/touchesOnLoad')).touchesOnLoad,
+      leg
+    )
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toContain('globalThis.fetch')
+    // And the leg fails: the import itself threw, so no session ran.
+    expect(events.some((event) => event.type === 'error')).toBe(true)
+    expect(events.some((event) => event.type === 'proposal')).toBe(false)
+  })
+
+  it('catches an engine that schedules its reach for after the run', async () => {
+    const { violations, events } = await runLeg(
+      async () => (await import('./certification/touchesAfterRun')).touchesAfterRun,
+      leg
+    )
+    // The run itself is clean — it ends, and nothing throws into the harness.
+    // The barrier is what sees it: the timer fires while the seal is still up.
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toContain('globalThis.fetch')
+    expect(events.map((event) => event.type)).toEqual(['end'])
+  })
+
+  it('leaves no sentinel behind when the leg is over', async () => {
+    // A seal that did not lift would break every test that runs after it; one
+    // that lifted early is the defect above. `fetch` is the harness's own
+    // scripted stub by then rather than the browser's, so what is asserted is
+    // that none of the four is still a sentinel.
+    const sealed = (name: string) =>
+      ((globalThis as unknown as Record<string, { name?: string }>)[name]?.name ?? '') === 'sealed'
+    await runLeg(fromRegistry('builtin'), leg)
+    for (const name of NETWORK_GLOBALS) {
+      expect(sealed(name), `${name} is still sealed`).toBe(false)
+    }
+    // And WebSocket, which the harness never stubs here, is the real one.
+    expect(typeof globalThis.WebSocket).toBe('function')
   })
 })
