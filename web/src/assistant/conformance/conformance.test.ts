@@ -113,13 +113,13 @@ async function runLeg(engineId: (typeof CERTIFIED_ENGINES)[number], leg: Leg): P
   vi.stubGlobal('fetch', model.fetch)
   const runtime = await scriptedRuntime()
   const events: AssistantEvent[] = []
-  const connection = await openAssistantConnection({
+  const connection = openAssistantConnection({
     allowed: FIVE,
     onEvent: (event) => events.push(event),
     transport: runtime.transport
   })
   try {
-    const ready = connection
+    const ready = await connection.ready
     const call = bindModelCall()
     const engine = await loadEngine(engineId)
     const unseal = sealNetwork()

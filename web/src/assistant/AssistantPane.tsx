@@ -18,7 +18,7 @@
  * **Nothing is persisted.** Leaving the route ends the session and closes its
  * connection; coming back is a new one.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AUTHOR_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
 import { Button } from '../ui/Button'
 import { CodeArea } from '../ui/CodeArea'
@@ -41,12 +41,22 @@ export function AssistantPane() {
   const advertised = (prompts.data ?? []).includes(AUTHOR_PACK_PROMPT)
 
   const [typed, setTyped] = useState('')
-  /** The policy a person actually submitted. The prompt is read for this. */
-  const [submitted, setSubmitted] = useState<string | null>(null)
+  /**
+   * The submission a person actually made, **keyed by a run id**.
+   *
+   * The id is why this is an object and not the policy text. Pressing Run twice
+   * with the text unchanged used to set the same string: React saw no state
+   * change, the effect below saw the same value it had already started, and an
+   * enabled button did nothing at all. Two runs of one policy is an ordinary
+   * thing to want — a model is not a pure function — so each press is its own
+   * submission whatever it says.
+   */
+  const [submitted, setSubmitted] = useState<{ id: number; policy: string } | null>(null)
+  const nextRun = useRef(0)
   const prompt = usePromptText(
     AUTHOR_PACK_PROMPT,
     advertised && submitted !== null,
-    submitted === null ? undefined : { policy: submitted }
+    submitted === null ? undefined : { policy: submitted.policy }
   )
 
   const run = useAssistantRun({
@@ -57,29 +67,43 @@ export function AssistantPane() {
     thinking: slot.thinking
   })
 
-  // The run starts when the prompt this policy asked for has arrived, and once
-  // per submission: the query answers again on a refetch, and a second start
-  // would be a second `jpack mcp` for one press of Run.
-  const started = useRef<string | null>(null)
+  // The run starts when the prompt this submission asked for has arrived, and
+  // once per submission: the query answers again on a refetch, and a second
+  // start would be a second `jpack mcp` for one press of Run.
+  const started = useRef<number | null>(null)
   const startRun = run.start
   useEffect(() => {
     if (submitted === null || prompt.data === undefined) return
-    if (started.current === submitted) return
-    started.current = submitted
+    if (started.current === submitted.id) return
+    started.current = submitted.id
     startRun(prompt.data.text)
   }, [submitted, prompt.data, startRun])
 
-  const stop = run.stop
+  /**
+   * Stop, in **both** phases of a session.
+   *
+   * A session begins with the desk reading the runtime's prompt, and only then
+   * does an engine run. Stop was wired to the engine alone, so pressing it
+   * while the prompt was still being read did nothing at all — the control was
+   * enabled and inert. Clearing the submission disables that query and keeps
+   * the effect above from starting a run for it.
+   */
+  const stopRun = run.stop
+  const stop = useCallback(() => {
+    setSubmitted(null)
+    stopRun()
+  }, [stopRun])
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || run.status !== 'running') return
+      if (event.key !== 'Escape') return
       // Not `preventDefault`: Escape closes the Inspector drawer below 1100px,
       // and a pane that swallowed it would trap a reader in a dialog.
       stop()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [run.status, stop])
+  }, [stop])
 
   if (slot.endpoint === null || !slot.keyPresent) {
     return (
@@ -122,11 +146,11 @@ export function AssistantPane() {
         <Button
           variant="primary"
           disabled={running || typed.trim() === '' || !advertised}
-          onClick={() => setSubmitted(typed)}
+          onClick={() => setSubmitted({ id: (nextRun.current += 1), policy: typed })}
         >
           Run
         </Button>
-        <Button disabled={!running} onClick={run.stop}>
+        <Button disabled={!running} onClick={stop}>
           Stop
         </Button>
       </div>

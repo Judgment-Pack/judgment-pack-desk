@@ -180,7 +180,7 @@ export async function scriptedRuntime(): Promise<ScriptedRuntime> {
  * JSON-RPC message per text frame, which is exactly what this reads and
  * writes, so nothing about the transport under test is stubbed out.
  */
-export function scriptedWebSocket(): {
+export function scriptedWebSocket(options: { deaf?: boolean } = {}): {
   WebSocket: typeof WebSocket
   seen: ServerObservation[]
   /** The URLs the page opened, so a test can hold it to one connection. */
@@ -208,6 +208,9 @@ export function scriptedWebSocket(): {
     }
 
     send(data: string): void {
+      // `deaf` is a socket that opened and answers nothing, not even
+      // `initialize` — the state a hung setup has to be releasable from.
+      if (options.deaf) return
       const reply = core.answer(JSON.parse(data) as JSONRPCMessage)
       if (reply === null) return
       queueMicrotask(() => this.onmessage?.({ data: JSON.stringify(reply) }))

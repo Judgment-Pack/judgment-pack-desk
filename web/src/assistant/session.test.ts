@@ -146,14 +146,15 @@ describe('the assistant’s own connection', () => {
 
   it('serves only the allow-listed tools, out of the runtime’s own listing', async () => {
     const runtime = await scriptedRuntime()
-    const connection = await openAssistantConnection({
+    const connection = openAssistantConnection({
       allowed: ['get_schema', 'validate'],
       onEvent: () => {},
       transport: runtime.transport
     })
-    expect(connection.tools.map((tool) => tool.name)).toEqual(['get_schema', 'validate'])
+    const ready = await connection.ready
+    expect(ready.tools.map((tool) => tool.name)).toEqual(['get_schema', 'validate'])
     // The definitions are the runtime's own, schema included.
-    expect(connection.tools[0]!.inputSchema).toBeDefined()
+    expect(ready.tools[0]!.inputSchema).toBeDefined()
     await connection.close()
     await runtime.close()
   })
@@ -178,25 +179,160 @@ describe('the assistant’s own connection', () => {
         runtime.transport.onerror = handler
       }
     }
-    const connection = await openAssistantConnection({
+    const connection = openAssistantConnection({
       allowed: ['validate'],
       onEvent: () => {},
       transport: watched
     })
+    await connection.ready
     await connection.close()
     expect(closed).toBe(1)
     await runtime.close()
   })
 
+  /**
+   * A transport whose answers a test decides, one method at a time.
+   *
+   * The three stages a setup can be stuck at — the socket, `initialize`,
+   * `tools/list` — are separately controllable, because the finding was that
+   * each of them left a connection nobody could close.
+   */
+  function stagedTransport(behaviour: {
+    initialize?: 'answer' | 'hang'
+    listTools?: 'answer' | 'hang' | 'reject'
+  }): { transport: Transport; closed: () => number } {
+    let closed = 0
+    const transport: Transport = {
+      async start() {},
+      async close() {
+        closed += 1
+        // What a real transport does, and what makes a hung `initialize`
+        // reject rather than hang on after the connection is closed.
+        transport.onclose?.()
+      },
+      async send(message) {
+        const frame = message as unknown as { id?: number; method?: string }
+        if (frame.method === undefined) return
+        const reply = (result: unknown) =>
+          queueMicrotask(() =>
+            transport.onmessage?.({ jsonrpc: '2.0', id: frame.id, result } as never)
+          )
+        if (frame.method === 'initialize') {
+          if (behaviour.initialize === 'hang') return
+          reply({
+            protocolVersion: '2025-06-18',
+            capabilities: { tools: {} },
+            serverInfo: { name: 'staged', version: '0' }
+          })
+          return
+        }
+        if (frame.method === 'tools/list') {
+          if (behaviour.listTools === 'hang') return
+          if (behaviour.listTools === 'reject') {
+            queueMicrotask(() =>
+              transport.onmessage?.({
+                jsonrpc: '2.0',
+                id: frame.id,
+                error: { code: -32603, message: 'the runtime would not list its tools' }
+              } as never)
+            )
+            return
+          }
+          reply({ tools: [] })
+        }
+      }
+    }
+    return { transport, closed: () => closed }
+  }
+
+  it('closes the transport when tools/list refuses', async () => {
+    // The finding, exactly: setup threw past a connected client that nothing
+    // held a reference to, so the socket — and the jpack mcp behind it —
+    // stayed up for the life of the tab.
+    const staged = stagedTransport({ listTools: 'reject' })
+    const connection = openAssistantConnection({
+      allowed: ['validate'],
+      onEvent: () => {},
+      transport: staged.transport
+    })
+    await expect(connection.ready).rejects.toThrow(/would not list its tools/)
+    expect(staged.closed()).toBeGreaterThan(0)
+  })
+
+  it.each([
+    ['initialize', { initialize: 'hang' as const }],
+    ['tools/list', { listTools: 'hang' as const }]
+  ])('closes the transport when %s hangs and the caller stops', async (_stage, behaviour) => {
+    // Stop, and unmount, and a navigation are all this: the run aborts, and
+    // the connection has to go with it even though its setup never finished.
+    const staged = stagedTransport(behaviour)
+    const controller = new AbortController()
+    const connection = openAssistantConnection({
+      allowed: ['validate'],
+      onEvent: () => {},
+      transport: staged.transport,
+      signal: controller.signal
+    })
+    const settled = connection.ready.then(
+      () => 'resolved',
+      (error: Error) => error.name
+    )
+    controller.abort()
+    await expect(settled).resolves.toBe('AbortError')
+    expect(staged.closed()).toBeGreaterThan(0)
+  })
+
+  it.each([
+    ['initialize', { initialize: 'hang' as const }],
+    ['tools/list', { listTools: 'hang' as const }]
+  ])('closes the transport when %s hangs and close() is called directly', async (_stage, behaviour) => {
+    const staged = stagedTransport(behaviour)
+    const connection = openAssistantConnection({
+      allowed: ['validate'],
+      onEvent: () => {},
+      transport: staged.transport
+    })
+    // The handle exists before its setup finishes, which is the whole reason
+    // the shape is synchronous.
+    await connection.close()
+    expect(staged.closed()).toBe(1)
+  })
+
+  it('closes nothing twice, however many times it is closed', async () => {
+    const staged = stagedTransport({ listTools: 'hang' })
+    const connection = openAssistantConnection({
+      allowed: ['validate'],
+      onEvent: () => {},
+      transport: staged.transport
+    })
+    await Promise.all([connection.close(), connection.close(), connection.close()])
+    expect(staged.closed()).toBe(1)
+  })
+
+  it('refuses a connection whose signal was already aborted, and opens nothing', async () => {
+    const staged = stagedTransport({})
+    const controller = new AbortController()
+    controller.abort()
+    const connection = openAssistantConnection({
+      allowed: ['validate'],
+      onEvent: () => {},
+      transport: staged.transport,
+      signal: controller.signal
+    })
+    await expect(connection.ready).rejects.toThrow()
+    expect(staged.closed()).toBeGreaterThan(0)
+  })
+
   it('reports a refusal as a guardrail event and lets nothing out of the page', async () => {
     const runtime = await scriptedRuntime()
     const events: AssistantEvent[] = []
-    const connection = await openAssistantConnection({
+    const connection = openAssistantConnection({
       allowed: ['validate'],
       onEvent: (event) => events.push(event),
       transport: runtime.transport
     })
-    await expect(connection.callTool('write_file', { path: 'p' })).rejects.toThrow(/write_file/)
+    const ready = await connection.ready
+    await expect(ready.callTool('write_file', { path: 'p' })).rejects.toThrow(/write_file/)
     expect(runtime.seen).toEqual([])
     expect(events).toEqual([
       {

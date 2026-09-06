@@ -143,11 +143,27 @@ export function assistantTransport(): Transport {
   return new DeskWebSocketTransport(socketURL(sessionToken()))
 }
 
-export interface AssistantConnection {
+/** What a connection is once it has finished setting itself up. */
+export interface AssistantConnectionReady {
   /** The allow-listed tools, exactly as `tools/list` served them. */
   tools: McpTool[]
   /** Bound through the gate. The only thing an engine is handed. */
   callTool: CallTool
+}
+
+/**
+ * A connection, **owned from the instant it is asked for**.
+ *
+ * The handle is returned synchronously and `ready` settles later, which is the
+ * whole point: `close()` exists before `initialize` has been answered, so a
+ * caller can release a connection whose setup is still in flight. The shape
+ * this replaces returned a promise, and a caller could not store anything until
+ * it resolved — so a `tools/list` that hung or rejected left a socket open, a
+ * `jpack mcp` running, and nothing anywhere holding a reference to either.
+ */
+export interface AssistantConnection {
+  ready: Promise<AssistantConnectionReady>
+  /** Idempotent, and safe at any point in the setup. */
   close(): Promise<void>
 }
 
@@ -156,13 +172,16 @@ export interface AssistantConnection {
  *
  * `transport` is injectable so a test — the conformance session included — can
  * drive the whole path, gate and client and all, without a socket. Nothing in
- * the page passes it.
+ * the page passes it. `signal` is the run's; an abort closes whatever exists
+ * and rejects `ready`, rather than leaving a setup running against a session
+ * nobody is watching any more.
  */
-export async function openAssistantConnection(options: {
+export function openAssistantConnection(options: {
   allowed: readonly string[]
   onEvent: (event: AssistantEvent) => void
   transport?: Transport
-}): Promise<AssistantConnection> {
+  signal?: AbortSignal
+}): AssistantConnection {
   const allowed = allowedTools(options.allowed)
   const raw = options.transport ?? assistantTransport()
   const notify = (notice: GuardrailNotice) =>
@@ -174,20 +193,89 @@ export async function openAssistantConnection(options: {
     })
   const gated = gateTransport(raw, { allowed, onGuardrail: notify })
   const client = new Client({ name: 'judgment-pack-desk-assistant', version: '0.1.0' }, { capabilities: {} })
-  await client.connect(gated)
-  const listed = (await client.listTools()).tools as McpTool[]
-  // The tools the model is offered are the ones the runtime served, filtered
-  // to what this desk's file granted — never a definition written here.
-  const tools = listed.filter((tool) => allowed.has(tool.name))
-  return {
-    tools,
-    // The SDK's own result type is wider than the contract's — it carries the
-    // task and meta members this desk never reads — so it is narrowed here,
-    // once, rather than at each engine.
-    callTool: async (name, args) =>
-      (await client.callTool({ name, arguments: args })) as McpToolResult,
-    close: () => client.close()
+
+  let connected = false
+  let shutting: Promise<void> | null = null
+  /**
+   * Close once, and never reject.
+   *
+   * The client's own `close` reaches the transport it was connected with, so
+   * once `connect` has returned that is the whole of it. Before then the client
+   * has adopted nothing this can rely on — and a transport that was started and
+   * never adopted is exactly the socket this finding was about — so the raw one
+   * is closed directly. Either way a real transport's `onclose` reaches the
+   * client, which is what makes a hung `initialize` reject rather than hang on.
+   *
+   * Never rejects: a caller closing a connection has nothing left to do about a
+   * failure to close it.
+   */
+  const close = (): Promise<void> => {
+    shutting ??= (async () => {
+      try {
+        await (connected ? client.close() : raw.close())
+      } catch {
+        /* the socket is going away regardless */
+      }
+    })()
+    return shutting
   }
+
+  const aborted = () => {
+    const error = new Error('the assistant connection was closed before it was ready')
+    error.name = 'AbortError'
+    return error
+  }
+
+  const ready = (async (): Promise<AssistantConnectionReady> => {
+    // An abort at any point closes what exists **and settles this promise**.
+    // Closing alone is not enough: a transport that answers nothing answers a
+    // close with nothing either, and `ready` would hang for the life of the
+    // page with the caller still waiting on it.
+    let onAbort = () => {}
+    const stopped = new Promise<never>((_resolve, reject) => {
+      onAbort = () => {
+        void close()
+        reject(aborted())
+      }
+    })
+    // Nobody awaits `stopped` unless the race below does; without this an abort
+    // on a completed setup would be an unhandled rejection.
+    void stopped.catch(() => undefined)
+    options.signal?.addEventListener('abort', onAbort, { once: true })
+    try {
+      if (options.signal?.aborted) throw aborted()
+      await Promise.race([client.connect(gated), stopped])
+      connected = true
+      if (options.signal?.aborted) throw aborted()
+      const listed = ((await Promise.race([client.listTools(), stopped])).tools ?? []) as McpTool[]
+      if (options.signal?.aborted) throw aborted()
+      // The tools the model is offered are the ones the runtime served,
+      // filtered to what this desk's file granted — never a definition written
+      // here.
+      const tools = listed.filter((tool) => allowed.has(tool.name))
+      return {
+        tools,
+        // The SDK's own result type is wider than the contract's — it carries
+        // the task and meta members this desk never reads — so it is narrowed
+        // here, once, rather than at each engine.
+        callTool: async (name, args) =>
+          (await client.callTool({ name, arguments: args })) as McpToolResult
+      }
+    } catch (cause) {
+      // **Nothing is left open on a failure.** A `tools/list` that answered
+      // with a JSON-RPC error used to throw straight out of here, past a
+      // connected client nobody held a reference to.
+      await close()
+      throw cause
+    } finally {
+      options.signal?.removeEventListener('abort', onAbort)
+    }
+  })()
+  // A `ready` nobody awaits — an abort during setup — must not be an unhandled
+  // rejection. The caller still gets the rejection when it awaits.
+  void ready.catch(() => undefined)
+
+  return { ready, close }
 }
 
 /**

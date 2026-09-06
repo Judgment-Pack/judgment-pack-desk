@@ -51,6 +51,10 @@ async function draw(options: {
   prompts?: Record<string, { text: string }>
   /** Leave the model's answer in flight, so a run is still open. */
   hang?: boolean
+  /** Answer every model request with the chassis' own refusal envelope. */
+  refuse?: boolean
+  /** A socket that opens and then answers nothing, not even `initialize`. */
+  deafSocket?: boolean
 } = {}) {
   const model = scriptedModel({ api: 'openai-compatible', answerAs: 'stream' })
   const keyRead = JSON.stringify({
@@ -66,11 +70,17 @@ async function draw(options: {
         headerNames: Object.keys((init?.headers ?? {}) as Record<string, string>)
       })
       if (options.hang) return new Promise<Response>(() => {})
+      if (options.refuse) {
+        return new Response(JSON.stringify({ error: 'no key stored', code: 'assistant-no-key' }), {
+          status: 409,
+          headers: { 'content-type': 'application/json' }
+        })
+      }
       return model.fetch(input as string, init)
     }
     return { ok: true, status: 200, statusText: '', text: async () => keyRead } as unknown as Response
   })
-  runtime = scriptedWebSocket()
+  runtime = scriptedWebSocket({ deaf: options.deafSocket ?? false })
   vi.stubGlobal('WebSocket', runtime.WebSocket)
 
   const { client } = stubClient(
@@ -245,6 +255,97 @@ describe('one whole run', () => {
   })
 })
 
+describe('exactly one end, on every path', () => {
+  /** The terminal events on the stream the pane rendered. */
+  const ends = () =>
+    [...document.querySelectorAll('[aria-label="What the assistant did"] li')].filter(
+      (line) => line.textContent === 'the session ended'
+    )
+
+  async function typeAndRun() {
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    )
+    fireEvent.change(screen.getByLabelText('What should this pack decide?'), {
+      target: { value: scenario.policy }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+  }
+
+  it('one, on the path that reaches a proposal', async () => {
+    await draw()
+    await typeAndRun()
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    expect(ends()).toHaveLength(1)
+  })
+
+  it('one, when Stop is pressed with the model still answering', async () => {
+    // The defect: Stop cleared the run's identity before the engine handled
+    // the abort, so the engine's own `end` was discarded and the stream simply
+    // stopped — status said finished and the contract's terminal event was
+    // nowhere.
+    await draw({ hang: true })
+    await typeAndRun()
+    // The engine has to have started: Stop is enabled during the prompt read
+    // too, and that is a different phase with nothing to end.
+    await waitFor(() => expect(runtime!.opened.length).toBe(1))
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+    await waitFor(() => expect(ends()).toHaveLength(1))
+    // And the engine's own `end`, which arrives once the abort has propagated,
+    // does not become a second one.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(ends()).toHaveLength(1)
+  })
+
+  it('one, when the endpoint refuses before the engine gets anywhere', async () => {
+    await draw({ refuse: true })
+    await typeAndRun()
+    await waitFor(() => expect(ends()).toHaveLength(1))
+    const stream = screen.getByRole('list', { name: 'What the assistant did' })
+    expect(stream.textContent).toContain('409')
+  })
+
+  it('one, when the connection itself never comes up', async () => {
+    // Nothing answers `initialize`, so `ready` never resolves on its own. Stop
+    // has to end the run and close the socket even though setup never finished.
+    await draw({ deafSocket: true })
+    await typeAndRun()
+    // The engine has to have started: Stop is enabled during the prompt read
+    // too, and that is a different phase with nothing to end.
+    await waitFor(() => expect(runtime!.opened.length).toBe(1))
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+    await waitFor(() => expect(ends()).toHaveLength(1))
+    await waitFor(() => expect(runtime!.closed).toBeGreaterThan(0))
+  })
+})
+
+describe('running the same policy twice', () => {
+  it('runs again with the text unchanged', async () => {
+    // Pressing Run with the same policy set the same state value, React
+    // changed nothing, and the enabled button did nothing at all.
+    await draw()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    )
+    fireEvent.change(screen.getByLabelText('What should this pack decide?'), {
+      target: { value: scenario.policy }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    const first = runtime!.opened.length
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    // A second run: a second connection, and a stream that starts again.
+    await waitFor(() => expect(runtime!.opened.length).toBe(first + 1))
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    expect(
+      [...document.querySelectorAll('[aria-label="What the assistant did"] li')].filter(
+        (line) => line.textContent === 'the session ended'
+      )
+    ).toHaveLength(1)
+  })
+})
+
 describe('stopping', () => {
   it('stops on Escape while a session is running', async () => {
     await draw()
@@ -255,9 +356,7 @@ describe('stopping', () => {
       target: { value: scenario.policy }
     })
     fireEvent.click(screen.getByRole('button', { name: 'Run' }))
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Stop' }).hasAttribute('disabled')).toBe(false)
-    )
+    await waitFor(() => expect(runtime!.opened.length).toBe(1))
     fireEvent.keyDown(document, { key: 'Escape' })
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Stop' }).hasAttribute('disabled')).toBe(true)
