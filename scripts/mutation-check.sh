@@ -3199,8 +3199,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '    baseSha256 === fileSha256' \
     '    (baseSha256 === undefined || baseSha256 === fileSha256)'
   mutate web "the Inspector falls back to the document the runtime served" "$PV" \
-    '          document={drawn}' \
-    '          document={drawn ?? pack.data.document}'
+    '        document={drawn}' \
+    '        document={drawn ?? pack.data.document}'
   mutate web "the Inspector says nothing about having no document" "$PINS" \
     '  if (doc === undefined) {' \
     '  if (false) {'
@@ -3590,9 +3590,11 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # after the import — is the defect, and the load-time fixture is what notices.
   mutate web "the seal goes up after the engine's chunk is loaded" "$CT" \
     '    seal = sealNetwork()
+    tracker = trackDeferredWork()
     const engine = await load()' \
     '    const engine = await load()
-    seal = sealNetwork()'
+    seal = sealNetwork()
+    tracker = trackDeferredWork()'
 
   # The SDK's own message schema, which replaced this desk's hand-written shape
   # rules: an id of null beside a result, a string error and a fractional id all
