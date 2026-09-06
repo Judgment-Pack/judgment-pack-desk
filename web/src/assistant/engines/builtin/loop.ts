@@ -13,81 +13,33 @@
  * continues), the refutation pass, and any writing at all. The proposal is the
  * only sink; the desk renders it and a person accepts it.
  */
+import {
+  MAX_TURNS,
+  SYSTEM,
+  eventIterator,
+  extractProposal,
+  guardedCallTool,
+  isCancelled,
+  openRun,
+  textOf,
+  thinkingUnavailable,
+  withAbort
+} from '../contract'
 import { anthropic } from './providers/anthropic'
 import { openai } from './providers/openai'
 import { ModelHttpError } from './providers/types'
+import type { Proposal } from '../contract'
+import type { CallTool } from '../../engine'
 import type { Provider, ToolCall } from './providers/types'
-import type { AssistantEvent, AssistantSession, McpToolResult } from '../../engine'
+import type { AssistantEvent, AssistantSession } from '../../engine'
 
-/**
- * The most model turns one session may take.
- *
- * Eight is the whole scripted scenario; twenty leaves room for a model that
- * asks the runtime more questions than the fixture does, and bounds a loop
- * whose stopping condition is a model's own decision to stop calling tools.
- * A session that reaches it ends with an error rather than quietly.
- */
-export const MAX_TURNS = 20
-
-/**
- * What the desk tells the model about itself, above the runtime's own prompt.
- *
- * Short on purpose: the authoring instructions are the runtime's, fetched over
- * `prompts/get`, and a system prompt that restated them would be this desk
- * having a second opinion about how a pack is written. What is here is the two
- * things the runtime's prompt does not know — that this loop proposes rather
- * than writes, and the shape the proposal has to arrive in.
- */
-export const SYSTEM =
-  'You are the judgment-pack desk’s authoring assistant. You propose; you never ' +
-  'write a file and never state a verdict of your own. When you report a check you ' +
-  'quote the runtime. End by proposing the pack as a single fenced JSON block ' +
-  'shaped {"proposal": {"kind": "create", "document": …, "unknowns": […]}}.'
-
-const FENCE = /```(?:json)?\s*\n([\s\S]*?)\n```/g
-
-export interface Proposal {
-  document: unknown
-  unknowns: string[]
-}
-
-/**
- * The proposal, and **only** out of the fenced block.
- *
- * Never out of the prose around it. The model's sentences are the model's; the
- * document this desk offers a person to accept is the one the model set apart
- * as a document, and reading a JSON object out of an explanation would let a
- * worked example become a proposal. Exactly one block, because two is a
- * message this engine cannot choose between and should not guess at.
- */
-export function extractProposal(text: string): Proposal {
-  const blocks = [...(text ?? '').matchAll(FENCE)].map((match) => match[1] ?? '')
-  if (blocks.length !== 1) {
-    throw new Error(
-      `the final message must carry exactly one fenced JSON block holding the proposal; ` +
-        `this one carried ${blocks.length}`
-    )
-  }
-  const parsed = JSON.parse(blocks[0]!) as {
-    proposal?: { document?: unknown; unknowns?: unknown }
-  }
-  if (parsed.proposal === undefined) {
-    throw new Error('the fenced block in the final message carries no "proposal" member')
-  }
-  const unknowns = parsed.proposal.unknowns
-  return {
-    document: parsed.proposal.document,
-    unknowns: Array.isArray(unknowns) ? unknowns.map((entry) => String(entry)) : []
-  }
-}
-
-/** The text half of one tool answer, joined in the runtime's own order. */
-function textOf(result: McpToolResult): string {
-  return (result.content ?? [])
-    .filter((block) => block.type === 'text')
-    .map((block) => block.text ?? '')
-    .join('\n')
-}
+// The contract's own vocabulary — the turn bound, the desk's sentence to the
+// model, and the one reading of a proposal — is `engines/contract.ts`, shared
+// with every other adapter. Re-exported because this engine's own suite and the
+// mutation matrix name them here, and because a reader of this loop should not
+// have to go looking for the two constants it is bounded by.
+export { MAX_TURNS, SYSTEM, extractProposal }
+export type { Proposal } from '../contract'
 
 /**
  * One tool call, and an answer whatever happens.
@@ -98,17 +50,20 @@ function textOf(result: McpToolResult): string {
  * runtime's own in-band `isError` both land here as one shape.
  */
 async function callSafely(
-  session: AssistantSession,
+  callTool: CallTool,
   call: ToolCall
 ): Promise<{ text: string; isError: boolean; structured?: unknown }> {
   try {
-    const result = await session.callTool(call.name, call.args)
+    const result = await callTool(call.name, call.args)
     return {
       text: textOf(result),
       isError: Boolean(result.isError),
       structured: result.structuredContent
     }
   } catch (cause) {
+    // **A cancelled run is not a refused tool.** Turning it into a result the
+    // model is told about would carry on a session nobody is listening to.
+    if (isCancelled(cause)) throw cause
     return {
       text:
         `refused: ${(cause as Error).message}. This assistant proposes; it never ` +
@@ -125,11 +80,34 @@ function providerFor(family: AssistantSession['model']['family']): Provider {
 /**
  * Run one session, as a stream of events.
  *
- * `end` is emitted exactly once, from the `finally`, whatever happened above
- * it — including an abort. A pane that renders "running" until it sees `end`
- * would otherwise spin for ever on the one path nobody tests.
+ * **The outer shape is an iterator and not this generator**, for the reason
+ * `engines/contract.ts` gives at length: an async generator serves `next()` and
+ * `return()` from one queue, so a `return()` arriving while a `next()` waits on
+ * a model request is not run until that request settles — and the abort that
+ * would have settled it was inside the `return()`. Measured on this engine as
+ * well as on the SDK-backed one: both promises hung for ever.
+ *
+ * So the abort is this engine's own, chained to the session's, and it is what
+ * the iterator cancels with. What the provider is given is `stop`'s signal, not
+ * the session's, so a consumer that walks away ends the request in flight.
+ *
+ * `end` is emitted exactly once and **not from a `finally`**: a consumer that
+ * stops listening closes this generator, and closing it is what it means for
+ * that consumer to be owed no terminal event.
  */
-export async function* runBuiltin(session: AssistantSession): AsyncGenerator<AssistantEvent> {
+export function runBuiltin(session: AssistantSession): AsyncIterable<AssistantEvent> {
+  // **One gate, reached four ways.** The consumer's `return()`, its `throw()`,
+  // the session's own signal and the run's natural end all close the same gate,
+  // once, synchronously — and a session already aborted when this is called
+  // closes it before a provider is built or a request is made.
+  const gate = openRun(session, () => {})
+  return eventIterator({ gate, open: () => builtinEvents(session, gate.signal) })
+}
+
+async function* builtinEvents(
+  session: AssistantSession,
+  signal: AbortSignal
+): AsyncGenerator<AssistantEvent> {
   try {
     if (session.thinking.tier !== 'off') {
       // Reported and then carried on with, which is what ADR-0001 means by
@@ -138,13 +116,15 @@ export async function* runBuiltin(session: AssistantSession): AsyncGenerator<Ass
       // be this desk answering a question nobody asked it.
       yield {
         type: 'thinking_unavailable',
-        detail:
-          `this desk is configured for thinking "${session.thinking.tier}", and the built-in ` +
-          `engine does not run a thinking tier yet; the session ran with the model's own ` +
-          `default reasoning and no tier parameter was sent`
+        detail: thinkingUnavailable(session.thinking.tier, 'built-in')
       }
     }
 
+    // The runtime, reachable only while the run is: the signal is read before
+    // a call is dispatched, so nothing reaches `jpack mcp` after the consumer
+    // has left, and the wait is bounded, so a call in flight cannot hold the
+    // cleanup that is ending it.
+    const callTool = guardedCallTool(session, signal)
     const provider = providerFor(session.model.family)
     const tools = provider.tools(session.tools)
     const messages: unknown[] = provider.initialMessages(SYSTEM, session.prompt)
@@ -153,15 +133,22 @@ export async function* runBuiltin(session: AssistantSession): AsyncGenerator<Ass
 
     for (let turn = 1; turn <= MAX_TURNS; turn += 1) {
       turns = turn
-      const reply = await provider.send({
-        call: session.model.call,
-        model: session.model.model,
-        system: SYSTEM,
-        messages,
-        tools,
-        stream: true,
-        signal: session.signal
-      })
+      // Bounded by the run's signal and not only by the request's: a capability
+      // that never settles must not be able to hold this loop open. A thunk,
+      // so a closed run makes no request at all.
+      const reply = await withAbort(
+        () =>
+          provider.send({
+            call: session.model.call,
+            model: session.model.model,
+            system: SYSTEM,
+            messages,
+            tools,
+            stream: true,
+            signal
+          }),
+        signal
+      )
 
       if (reply.calls.length === 0) {
         proposal = extractProposal(reply.text)
@@ -171,7 +158,7 @@ export async function* runBuiltin(session: AssistantSession): AsyncGenerator<Ass
       const results: { call: ToolCall; text: string; isError: boolean }[] = []
       for (const call of reply.calls) {
         yield { type: 'tool_call', name: call.name, args: call.args }
-        const outcome = await callSafely(session, call)
+        const outcome = await callSafely(callTool, call)
         yield {
           type: 'tool_result',
           name: call.name,
@@ -196,10 +183,21 @@ export async function* runBuiltin(session: AssistantSession): AsyncGenerator<Ass
       yield { type: 'proposal', document: proposal.document, unknowns: proposal.unknowns }
     }
   } catch (cause) {
+    // **A cancelled run says nothing more at all — not even `end`.** It is the
+    // unwinding of a session somebody ended, not a run that finished, and the
+    // terminal event belongs to a run that finished. Both engines answer a
+    // cancellation the same way, and the page's own terminal accounting is the
+    // run hook's (`useAssistantRun`), which writes one whatever an engine does.
+    if (isCancelled(cause)) return
     yield { type: 'error', message: describe(cause) }
-  } finally {
-    yield { type: 'end' }
   }
+  // **After the `try`, not inside a `finally`.** A `finally` that yields makes
+  // a consumer's first `return()` resolve `{ value: end, done: false }` with
+  // this generator still suspended, and `for await`'s own closing discards that
+  // value — so the terminal event is delivered to nobody. Here it is reached on
+  // every path the run itself takes, and skipped on the one path where it
+  // should be: a consumer that asked to stop.
+  yield { type: 'end' }
 }
 
 /**

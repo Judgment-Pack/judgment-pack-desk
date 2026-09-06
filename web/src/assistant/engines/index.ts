@@ -7,10 +7,14 @@
  * adding an adapter is one line here plus its module — and the suite certifies
  * it or the suite goes red.
  *
- * **`vercel` is not here yet.** It is the ADR's default and this build carries
- * no adapter for it, so a desk configured for it runs `builtin` and the tab
- * says so in one line. The alternative — refusing to run — would make a
- * default nobody typed into a desk that does nothing.
+ * **Every engine a `desk.json` may name is certified in this build, and there is
+ * one table that says so.** The loaders are total over `AssistantEngine`, the
+ * certified list is *derived* from them rather than written beside them, and the
+ * two are asserted equal at the type level — so an id cannot become loadable
+ * without being put in front of the conformance session, and an id the decoder
+ * declares cannot be left without an adapter. The substitution this used to do —
+ * a desk configured for `vercel` running `builtin` and a line in the tab saying
+ * so — is gone with the reason for it.
  *
  * The loaders are `import()` so a session downloads one chunk. The release
  * grows by the sum of certified engines; a session does not.
@@ -18,45 +22,47 @@
 import type { AssistantEngine } from '../../config/deskConfig'
 import type { Engine } from '../engine'
 
-/**
- * The engines this build carries, in the order the conformance suite runs them.
- *
- * The one list the suite reads. A `vercel` entry added without an adapter
- * fails to load rather than falling through to something else.
- */
-export const CERTIFIED_ENGINES = ['builtin'] as const
-export type CertifiedEngine = (typeof CERTIFIED_ENGINES)[number]
-
 /** One engine's chunk, by id. */
 export type EngineLoaders = Record<string, () => Promise<Engine>>
 
-const LOADERS: EngineLoaders = {
-  builtin: async () => (await import('./builtin')).builtin
-}
+/**
+ * **The one table.** Every id this build can load, and nothing else.
+ *
+ * `satisfies` makes it total over `AssistantEngine` — a declared engine with no
+ * chunk does not compile — and, because this is an object literal, refuses an id
+ * the decoder does not declare as an excess property. So the table cannot drift
+ * from the decoder in either direction.
+ */
+const LOADERS = {
+  builtin: async () => (await import('./builtin')).builtin,
+  vercel: async () => (await import('./vercel')).vercel
+} satisfies Record<AssistantEngine, () => Promise<Engine>>
 
-/** Whether this build carries an adapter for an id a `desk.json` may name. */
-export function isCertified(id: AssistantEngine): id is CertifiedEngine {
-  return (CERTIFIED_ENGINES as readonly string[]).includes(id)
-}
+export type CertifiedEngine = keyof typeof LOADERS
 
 /**
- * The id a session will actually run, and what to say where it is not the
- * configured one.
+ * The engines this build carries, in the order the conformance suite runs them.
  *
- * `substituted` is a sentence for the pane rather than a boolean, because the
- * only useful thing to render is which engine ran and why it was not the one
- * the file named.
+ * **Derived from the table rather than written beside it.** The two used to be
+ * independent lists: adding a third engine and its loader while forgetting this
+ * one compiled, let a `desk.json` select it, and left `describe.each` never
+ * certifying it — a build that could run an engine the suite had never seen.
  */
-export function resolveEngine(configured: AssistantEngine): {
-  id: CertifiedEngine
-  substituted?: string
-} {
-  if (isCertified(configured)) return { id: configured }
-  return {
-    id: 'builtin',
-    substituted: `${configured} is not certified in this build; running builtin`
-  }
-}
+export const CERTIFIED_ENGINES = Object.keys(LOADERS) as CertifiedEngine[]
+
+/** True only where two key sets are the same set, both ways round. */
+type Exactly<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
+
+/**
+ * **Loadable and certified are the same set, asserted at the type level.**
+ *
+ * The `satisfies` above says the table covers every declared engine; this says
+ * the certified list covers every loadable one. Together they are the sentence
+ * ADR-0001 asks for: an engine ships only once it has passed the desk's
+ * conformance session, and there is no way to make one loadable without putting
+ * it in front of the suite.
+ */
+export const CERTIFICATION_IS_TOTAL: Exactly<AssistantEngine, CertifiedEngine> = true
 
 /**
  * Load one engine's chunk.

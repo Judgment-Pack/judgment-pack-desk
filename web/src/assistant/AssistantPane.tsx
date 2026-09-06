@@ -369,13 +369,25 @@ export function AssistantPane({
       event.type === 'tool_result'
   )
   const checked = (name: string) => [...results].reverse().find((result) => result.name === name)
+  /**
+   * The events this list has a line for.
+   *
+   * **One line per reasoning passage, not one per delta.** An engine reports
+   * reasoning as it arrives — the contract's `done` is what marks a passage
+   * finished — and a model that reasons for a paragraph would otherwise fill
+   * this list with a hundred lines saying how many characters had arrived so
+   * far. The deltas stay on the run's event list for a fold to read; what is
+   * rendered here is the passage.
+   */
+  const reported = run.events
+    .map((event, index) => ({ event, index }))
+    .filter(({ event }) => event.type !== 'reasoning' || event.done)
 
   return (
     <div className={styles.pane}>
       <p className={styles.status}>
         {run.engineId} · {slot.endpoint.model} · thinking {slot.thinking}
       </p>
-      {run.substituted !== undefined && <p className={styles.notice}>{run.substituted}</p>}
       {ran !== undefined && (
         <p className={styles.status}>
           Running the runtime’s {ran} prompt
@@ -447,9 +459,9 @@ export function AssistantPane({
         </p>
       )}
 
-      {run.events.length > 0 && (
+      {reported.length > 0 && (
         <ol className={styles.stream} aria-label="What the assistant did">
-          {run.events.map((event, index) => (
+          {reported.map(({ event, index }) => (
             <li key={index} className={lineClass(event)}>
               {describe(event)}
             </li>

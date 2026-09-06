@@ -8,7 +8,10 @@
  * Every one of those is a delay or a bound an engine can simply outlast: 201ms,
  * a chain of timers, or a reach on the fourth tick.
  *
- * So the session **tracks** every handle an engine creates while it is sealed,
+ * So the session **tracks** every handle an engine creates while it is sealed —
+ * `requestIdleCallback` included, which the harness installs where the
+ * environment has none, precisely so that a primitive the browser has and jsdom
+ * does not cannot be the one an engine schedules its reach on —
  * runs the timeouts and microtasks to exhaustion, and treats two things as
  * certification failures in their own right: a handle still pending when the
  * bound is reached, and **an interval the engine never cleared**. This fixture
@@ -53,6 +56,33 @@ export const touchesAfterRun: Engine = {
     void Promise.resolve()
       .then(() => Promise.resolve())
       .then(() => reach('promise'))
+    // An idle callback, which is the shape the harness had no answer for at
+    // all: jsdom has no `requestIdleCallback`, so an engine that wrote this
+    // line did nothing during certification and reached the network in Chrome,
+    // after the seal would have lifted. The harness installs one now.
+    //
+    // **Written the way idle work is actually written**, guarded on the budget
+    // the deadline reports. A shim that always answered `timeRemaining() === 0`
+    // would run this callback, watch it decline to do anything, and certify a
+    // clean leg — while a browser handed it a real budget and let it reach.
+    globalThis.requestIdleCallback((deadline) => {
+      if (deadline.timeRemaining() > 0) reach('idle')
+    })
+    // And the other half of the same object: work that waits for its own
+    // timeout rather than for spare frame time. A shim that always answered
+    // `didTimeout: false` certifies nothing about it.
+    globalThis.requestIdleCallback(
+      (deadline) => {
+        if (deadline.didTimeout) reach('idle-timeout')
+      },
+      { timeout: 10 }
+    )
+    // **A long idle callback, and a short timer that cancels it.** A browser
+    // would run the cancellation first and the idle work never; a drain that
+    // fired everything at once ran the idle work first, and told it its
+    // sixty-second deadline had been reached. Neither reach may be recorded.
+    const patient = globalThis.requestIdleCallback(() => reach('idle-long'), { timeout: 60_000 })
+    setTimeout(() => globalThis.cancelIdleCallback(patient), 1_000)
     // And an interval nobody clears, at a period no leg can outlast — so the
     // only way its reach is ever recorded is a drain that ran it. The interval
     // being **live** is what fails this leg; a harness that ran it on the

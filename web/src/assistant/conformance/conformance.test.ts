@@ -124,6 +124,16 @@ function sealNetwork(): Seal {
 interface Tracked {
   kind: string
   label: string
+  /**
+   * When this schedule is due, on the drain's own clock.
+   *
+   * The drain fires what an engine left behind **in the order a browser would
+   * have run it**, advancing its clock to each entry's due time. Firing
+   * everything at once instead let a sixty-second idle callback run before the
+   * one-second timer that was going to cancel it, and report a timeout that
+   * had not happened.
+   */
+  dueAt: number
   /** True until it has run, or the engine cancelled it. */
   pending: boolean
   /** True where the engine itself called clearTimeout/clearInterval. */
@@ -157,11 +167,15 @@ interface Tracked {
  */
 function trackDeferredWork(): {
   pending(): Tracked[]
+  due(): Tracked[]
+  advanceTo(moment: number): void
   liveIntervals(): Tracked[]
   restore(): void
 } {
   const scope = globalThis as unknown as Record<string, unknown>
   const before = new Map<string, unknown>()
+  /** Names this harness *added*, which are deleted again rather than restored. */
+  const added = new Set<string>()
   const tracked: Tracked[] = []
   const byHandle = new Map<unknown, Tracked>()
   const keep = (name: string) => before.set(name, scope[name])
@@ -172,17 +186,28 @@ function trackDeferredWork(): {
   const realClearInterval = globalThis.clearInterval
   const realQueueMicrotask = globalThis.queueMicrotask
 
+  /**
+   * The drain's clock: real time, or the point the drain has advanced to.
+   *
+   * Never goes backwards, and is what a callback reads to know whether its own
+   * deadline has been reached.
+   */
+  let advancedTo = 0
+  const now = () => Math.max(Date.now(), advancedTo)
+
   function record(
     kind: string,
     label: string,
     run: () => void,
     schedule: (wrapped: () => void) => unknown,
     clear: (handle: unknown) => void,
-    repeating: boolean
+    repeating: boolean,
+    delay = 0
   ): unknown {
     const entry: Tracked = {
       kind,
       label,
+      dueAt: now() + Math.max(0, delay),
       pending: true,
       cancelled: false,
       repeating,
@@ -207,7 +232,15 @@ function trackDeferredWork(): {
       run()
     })
     tracked.push(entry)
-    byHandle.set(handle, entry)
+    // **A handle of `undefined` is not a handle.** `queueMicrotask` returns
+    // nothing, so every microtask an engine queued used to be filed under the
+    // one key `undefined` — and `clearTimeout(undefined)`, the defensive line
+    // every library carries and the AI SDK reaches seven times a leg, cancelled
+    // the most recent of them. The drain then refused to run it "because the
+    // engine cancelled it", and a reach on that microtask was never recorded.
+    // A schedule with no handle can only be cancelled by the engine holding a
+    // handle it was never given, so it is filed under none.
+    if (handle !== undefined && handle !== null) byHandle.set(handle, entry)
     return handle
   }
 
@@ -226,7 +259,8 @@ function trackDeferredWork(): {
       () => (fn as (...rest: unknown[]) => void)(...args),
       (wrapped) => realSetTimeout(wrapped, ms),
       (handle) => realClearTimeout(handle as never),
-      false
+      false,
+      ms ?? 0
     )
   }
   keep('clearTimeout')
@@ -242,7 +276,8 @@ function trackDeferredWork(): {
       () => (fn as (...rest: unknown[]) => void)(...args),
       (wrapped) => realSetInterval(wrapped, ms),
       (handle) => realClearInterval(handle as never),
-      true
+      true,
+      ms ?? 0
     )
   }
   keep('clearInterval')
@@ -275,6 +310,14 @@ function trackDeferredWork(): {
         (handle) => realClearImmediate?.(handle),
         false
       )
+    // **The canceller too.** `setImmediate` was wrapped and `clearImmediate`
+    // was not, so a handle the engine itself cancelled stayed pending in the
+    // bookkeeping and was force-run by the drain — a reach attributed to an
+    // engine that had already decided not to make it.
+    if (typeof realClearImmediate === 'function') {
+      keep('clearImmediate')
+      scope.clearImmediate = (handle: unknown) => forget(handle, (inner) => realClearImmediate(inner))
+    }
   }
   if (typeof scope.requestAnimationFrame === 'function') {
     const realRaf = scope.requestAnimationFrame as (fn: (t: number) => void) => unknown
@@ -289,9 +332,103 @@ function trackDeferredWork(): {
         (handle) => realCancelRaf?.(handle),
         false
       )
+    if (typeof realCancelRaf === 'function') {
+      keep('cancelAnimationFrame')
+      scope.cancelAnimationFrame = (handle: unknown) => forget(handle, (inner) => realCancelRaf(inner))
+    }
+  }
+  /**
+   * **The idle callback the seal has to bring with it.**
+   *
+   * jsdom has no `requestIdleCallback`, so an engine that wrote
+   * `globalThis.requestIdleCallback?.(() => fetch(…))` did nothing at all during
+   * certification and reached the network in Chrome, after the seal would have
+   * lifted. A primitive the *browser* has and the *harness* does not is a hole
+   * in a guard whose whole claim is "everything this engine scheduled has run".
+   *
+   * So the harness installs a realistic one where the environment has none —
+   * backed by a timeout, handing the callback the deadline object the API
+   * defines — tracked and cancellable like every other schedule, and **removed**
+   * again by `restore` rather than left behind for the next test file.
+   *
+   * **Realistic means the deadline, not only the callback.** A shim that always
+   * answered `timeRemaining() === 0` certified nothing about the ordinary idle
+   * pattern — `requestIdleCallback(d => { if (d.timeRemaining() > 0) work() })`
+   * did nothing here and did its work in a browser, after the seal lifted — and
+   * a shim that always answered `didTimeout: false` certified nothing about code
+   * that waits for its own timeout. So the deadline carries a positive,
+   * decreasing budget measured from when the callback *starts* (the browser's
+   * own rule), and `didTimeout` says what actually ran it.
+   */
+  {
+    const realIdle = scope.requestIdleCallback as
+      | ((fn: unknown, options?: IdleRequestOptions) => unknown)
+      | undefined
+    const realCancelIdle = scope.cancelIdleCallback as ((handle: unknown) => void) | undefined
+    if (realIdle === undefined) added.add('requestIdleCallback')
+    if (realCancelIdle === undefined) added.add('cancelIdleCallback')
+    keep('requestIdleCallback')
+    keep('cancelIdleCallback')
+    scope.requestIdleCallback = (
+      fn: (deadline: IdleDeadline) => void,
+      options?: IdleRequestOptions
+    ) => {
+      const timeout = options?.timeout
+      // **A sealed leg never goes idle**, so a callback that asked for a
+      // timeout is run because of it — and it is run **at that timeout and not
+      // before**. Firing every positive timeout after a millisecond and calling
+      // it a timeout was the same fiction one step further on: an engine that
+      // would have cancelled a sixty-second callback long before its deadline
+      // was credited with work a browser would never have let it do.
+      const label =
+        timeout === undefined
+          ? 'requestIdleCallback'
+          : `requestIdleCallback(${String(timeout)}ms timeout)`
+      // **Computed when the callback runs, not when it was asked for.** A
+      // deadline that has not been reached is not a timeout, and saying it was
+      // is how an engine got credited with work a browser would never have let
+      // it do.
+      const deadlineAt = timeout === undefined ? undefined : now() + timeout
+      const run = () => {
+        const didTimeout = deadlineAt !== undefined && now() >= deadlineAt
+        // The budget a browser gives a callback, measured from the moment it
+        // starts running rather than from when it was asked for: positive at
+        // the first read and decreasing, and never negative.
+        const startedAt = Date.now()
+        fn({
+          didTimeout,
+          timeRemaining: () => Math.max(0, IDLE_BUDGET_MS - (Date.now() - startedAt))
+        })
+      }
+      const schedule = (wrapped: () => void): unknown =>
+        realIdle !== undefined
+          ? realIdle(wrapped, options)
+          : // The requested deadline, honoured. An idle slot with no timeout is
+            // modelled as the next turn, which is the soonest a browser could
+            // have offered one.
+            realSetTimeout(wrapped, timeout ?? 1)
+      const clear = (handle: unknown) =>
+        realCancelIdle !== undefined ? realCancelIdle(handle) : realClearTimeout(handle as never)
+      // Due at its own deadline — an idle slot on the next turn where none was
+      // asked for — so the drain runs it where a browser would have.
+      return record('requestIdleCallback', label, run, schedule, clear, false, timeout ?? 1)
+    }
+    scope.cancelIdleCallback = (handle: unknown) =>
+      forget(handle, (inner) =>
+        realCancelIdle !== undefined ? realCancelIdle(inner) : realClearTimeout(inner as never)
+      )
   }
 
   return {
+    /** The pending, non-repeating entries, soonest first. */
+    due: () =>
+      tracked
+        .filter((entry) => entry.pending && !entry.repeating && !entry.cancelled)
+        .sort((left, right) => left.dueAt - right.dueAt),
+    /** Advance the drain's clock to a point, never backwards. */
+    advanceTo: (moment: number) => {
+      advancedTo = Math.max(advancedTo, moment)
+    },
     // **An interval is never work the drain does.** Running a few ticks and
     // calling it drained let an engine hide a reach behind a later one, so an
     // interval is not something this fires on the engine's behalf at all — it
@@ -303,7 +440,13 @@ function trackDeferredWork(): {
     // that reaches on its ninth tick is an engine no bounded drain can catch.
     liveIntervals: () => tracked.filter((entry) => entry.repeating && !entry.cancelled),
     restore() {
-      for (const [name, value] of before) scope[name] = value
+      for (const [name, value] of before) {
+        // A primitive this harness *added* is deleted rather than restored to
+        // `undefined`: a page that feature-detects it would otherwise find the
+        // property present and useless for every test that runs after.
+        if (added.has(name)) delete scope[name]
+        else scope[name] = value
+      }
       // Whatever the engine left behind stops here, so a leg cannot leak a
       // ticking timer into the next one. This is hygiene and never a verdict:
       // `liveIntervals` was read before it, and an interval stopped here has
@@ -315,6 +458,17 @@ function trackDeferredWork(): {
 
 /** How many times the drain will look for more work before giving up. */
 const DRAIN_ROUNDS = 64
+
+/**
+ * The idle budget the harness's own `requestIdleCallback` hands a callback.
+ *
+ * A browser gives an idle callback whatever is left of the frame, up to 50ms.
+ * The number matters less than that it is **positive and decreasing**: an
+ * engine that guards its work on `deadline.timeRemaining() > 0` must actually
+ * do that work here, or certification says nothing about the ordinary idle
+ * pattern.
+ */
+const IDLE_BUDGET_MS = 50
 
 /**
  * Run everything an engine left behind, under the seal, until nothing is left.
@@ -331,18 +485,47 @@ const DRAIN_ROUNDS = 64
  * What that does not cover is a reaction chained off something that resolves
  * *after* the drain — a fetch to a real host, a socket, a `MessageChannel` —
  * and that bound is stated in the README rather than papered over.
+ *
+ * **Two more bounds, found when an engine built on a framework first ran these
+ * legs**, and stated here for the same reason:
+ *
+ * - **An open stream is not pending work.** An engine that stopped reading a
+ *   `ReadableStream` half way leaves a reader attached and nothing scheduled:
+ *   no handle, no microtask, nothing this drain can see. What the seal still
+ *   holds is that whatever that stream eventually does cannot reach a network
+ *   global — but it holds it only while the seal is up, and the seal comes down
+ *   when the drain finishes.
+ * - **An unhandled rejection is invisible here.** The one defect ADR-0001
+ *   records against the default engine is a rejection the caller cannot claim
+ *   reaching the *page*. These legs run in jsdom under Node, where such a
+ *   rejection goes to Node's own handler and never becomes a `window` event, so
+ *   neither the seal nor the drain can observe it. The guard the ADR asks for is
+ *   exercised in `engines/vercel/engine.test.ts` instead, by dispatching the
+ *   event a browser would.
  */
-async function drainDeferredWork(tracker: { pending(): Tracked[] }): Promise<number> {
+async function drainDeferredWork(tracker: {
+  pending(): Tracked[]
+  due(): Tracked[]
+  advanceTo(moment: number): void
+}): Promise<number> {
   for (let round = 0; round < DRAIN_ROUNDS; round += 1) {
     // Microtasks first: a `.then` chain needs no timer at all.
     for (let tick = 0; tick < 8; tick += 1) await Promise.resolve()
-    const due = tracker.pending()
-    if (due.length === 0) {
+    let next = tracker.due()[0]
+    if (next === undefined) {
       // One more flush, in case the last timer queued a reaction.
       for (let tick = 0; tick < 8; tick += 1) await Promise.resolve()
-      if (tracker.pending().length === 0) break
+      next = tracker.due()[0]
+      if (next === undefined) break
     }
-    for (const entry of due) entry.fire()
+    // **One at a time, soonest first, with the clock advanced to its due
+    // time.** Firing every pending entry at once ran them in the order they
+    // were *scheduled* rather than the order they were *due*, so a
+    // sixty-second idle callback ran before the one-second timer that was
+    // going to cancel it — and, being run, reported a timeout that had not
+    // happened. Re-read each round, because firing one schedules others.
+    tracker.advanceTo(next.dueAt)
+    next.fire()
   }
   return tracker.pending().length
 }
@@ -475,6 +658,41 @@ async function runLeg(
 
 /** The registry's own loader, for the engines this build certifies. */
 const fromRegistry = (id: (typeof CERTIFIED_ENGINES)[number]) => () => loadEngine(id)
+
+/**
+ * What the engine sent, request by request, for a reviewer to read.
+ *
+ * The conformance session's assertions say what must be true of every engine;
+ * this says what **this** one actually put on the wire — the step it was
+ * answering, how many results its own messages carried back, and the body's own
+ * top-level members. It is attached to the leg as a test annotation rather than
+ * asserted, because its value is that a reviewer can read it and notice
+ * something nobody wrote a rule about yet.
+ */
+function requestLog(requests: RecordedRequest[]): string {
+  return requests
+    .map(
+      (request) =>
+        `${request.step} results=${request.results} ${new URL(request.url, 'http://desk.invalid').pathname} ` +
+        `{${request.bodyMembers.join(', ')}} tools=[${request.toolNames.join(', ')}] ` +
+        `headers=[${request.headerNames.join(', ')}]`
+    )
+    .join('\n')
+}
+
+/**
+ * The members each wire format defines, which every engine must send.
+ *
+ * **Not the union of what the two engines send.** The built-in engine puts
+ * `stream_options` on an OpenAI-compatible request and the SDK-backed one puts
+ * a `tool_choice`; neither is required by the protocol and neither is the
+ * other's business. What is asserted is what the format itself defines, so a
+ * third adapter is held to the same list.
+ */
+const WIRE_MEMBERS: Record<Leg['api'], string[]> = {
+  'openai-compatible': ['messages', 'model', 'stream', 'tools'],
+  anthropic: ['max_tokens', 'messages', 'model', 'stream', 'system', 'tools']
+}
 
 const toolCalls = (events: AssistantEvent[]) =>
   events.filter((event): event is Extract<AssistantEvent, { type: 'tool_call' }> => event.type === 'tool_call')
@@ -718,6 +936,19 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
       expect(events.some((event) => event.type === 'thinking_unavailable')).toBe(false)
     })
 
+    it('sends what the wire format defines, and records the rest for a reviewer', async ({
+      annotate
+    }) => {
+      const { requests } = await runLeg(fromRegistry(engineId), leg)
+      for (const request of requests) {
+        expect(
+          request.bodyMembers,
+          `${engineId} ${leg.api} ${request.step} sent {${request.bodyMembers.join(', ')}}`
+        ).toEqual(expect.arrayContaining(WIRE_MEMBERS[leg.api]))
+      }
+      await annotate(`${engineId} · ${leg.api} · ${leg.answerAs}\n${requestLog(requests)}`, 'notice')
+    })
+
     it('carries every result back, so the script never repeats a step', async () => {
       const { requests } = await runLeg(fromRegistry(engineId), leg)
       // The scripted model reads n off the request's own messages. A run whose
@@ -789,6 +1020,72 @@ const fromCertification = (id: keyof typeof CERTIFICATION_LOADERS) => () =>
  * certified engine goes through, so what is shown is the harness and not a
  * rehearsal of it.
  */
+describe('the idle callback this harness brings with it', () => {
+  /**
+   * The shim on its own, under controlled time.
+   *
+   * `trackDeferredWork` is the whole of the barrier and it is not exported, so
+   * this installs it exactly as a leg does — with fake timers already in place,
+   * so what it captures is the clock this test advances — and takes it off
+   * again afterwards.
+   */
+  function installed(work: (scope: Record<string, unknown>) => void): void {
+    vi.useFakeTimers()
+    const scope = globalThis as unknown as Record<string, unknown>
+    const tracker = trackDeferredWork()
+    try {
+      work(scope)
+    } finally {
+      tracker.restore()
+      vi.useRealTimers()
+    }
+  }
+
+  it('does not run a timeout callback before its deadline, and says so when it does', () => {
+    installed((scope) => {
+      const seen: { didTimeout: boolean; budget: number }[] = []
+      const request = scope.requestIdleCallback as typeof requestIdleCallback
+      request((deadline) => seen.push({ didTimeout: deadline.didTimeout, budget: deadline.timeRemaining() }), {
+        timeout: 60_000
+      })
+      // A minute is a minute. Firing it after a millisecond and calling that a
+      // timeout is what let an engine be credited with work it would have
+      // cancelled first.
+      vi.advanceTimersByTime(1)
+      expect(seen, 'invoked before its deadline').toEqual([])
+      vi.advanceTimersByTime(59_998)
+      expect(seen, 'invoked before its deadline').toEqual([])
+      vi.advanceTimersByTime(1)
+      expect(seen).toHaveLength(1)
+      expect(seen[0]!.didTimeout, 'it ran because the deadline was reached').toBe(true)
+      expect(seen[0]!.budget, 'a positive budget at the first read').toBeGreaterThan(0)
+    })
+  })
+
+  it('never runs one the engine cancelled before its deadline', () => {
+    installed((scope) => {
+      let ran = 0
+      const request = scope.requestIdleCallback as typeof requestIdleCallback
+      const cancel = scope.cancelIdleCallback as typeof cancelIdleCallback
+      const handle = request(() => (ran += 1), { timeout: 60_000 })
+      vi.advanceTimersByTime(1_000)
+      cancel(handle)
+      vi.advanceTimersByTime(120_000)
+      expect(ran).toBe(0)
+    })
+  })
+
+  it('offers an idle slot with no timeout on the next turn, and says it did not time out', () => {
+    installed((scope) => {
+      const seen: boolean[] = []
+      const request = scope.requestIdleCallback as typeof requestIdleCallback
+      request((deadline) => seen.push(deadline.didTimeout))
+      vi.advanceTimersByTime(1)
+      expect(seen).toEqual([false])
+    })
+  })
+})
+
 describe('the seal, shown to fail', () => {
   const leg: Leg = { api: 'openai-compatible', answerAs: 'stream' }
 
@@ -806,10 +1103,17 @@ describe('the seal, shown to fail', () => {
     expect(events.some((event) => event.type === 'proposal')).toBe(false)
   })
 
-  /** Which schedules a leg's recorded reaches came from. */
+  /**
+   * Which schedules a leg's recorded reaches came from.
+   *
+   * The hyphen is in the character class deliberately: a marker read as a
+   * prefix of a longer one — `idle` out of `idle-timeout` — makes two distinct
+   * reaches indistinguishable, and one of them then looks recorded when only
+   * the other was.
+   */
   const markers = (violations: string[]) =>
     violations
-      .map((violation) => /from=([a-z]+)/.exec(violation)?.[1])
+      .map((violation) => /from=([a-z-]+)/.exec(violation)?.[1])
       .filter((marker): marker is string => marker !== undefined)
 
   it('catches the reaches an engine scheduled for after its run', async () => {
@@ -828,6 +1132,21 @@ describe('the seal, shown to fail', () => {
     expect(from.has('far'), 'the five-minute reach').toBe(true)
     expect(from.has('chained'), 'the reach behind another timer').toBe(true)
     expect(from.has('promise'), 'the reach on a promise chain, with no timer').toBe(true)
+    // **The one the environment does not have.** jsdom has no
+    // `requestIdleCallback`, so this reach did nothing during certification and
+    // would have run in Chrome after the seal lifted. The harness installs one —
+    // and both of these are written the way idle work is actually written, one
+    // guarded on the deadline's budget and one on its `didTimeout`, so a shim
+    // that answered zero and false to everything would run them, watch them
+    // decline to do anything, and certify a clean leg.
+    expect(from.has('idle'), 'the reach guarded on the idle budget').toBe(true)
+    expect(from.has('idle-timeout'), 'the reach guarded on didTimeout').toBe(true)
+    // **And the one a browser would never have run.** A sixty-second idle
+    // callback with a one-second cancellation beside it: the drain advances to
+    // each schedule's own due time, so the cancellation happens first and the
+    // idle work never does. Firing everything at once ran it — and told it a
+    // deadline it had not reached had been reached.
+    expect(from.has('idle-long'), 'a reach on an idle callback cancelled long before').toBe(false)
     // And the drain finished with nothing left waiting.
     expect(leftPending).toBe(0)
   })
@@ -855,10 +1174,22 @@ describe('the seal, shown to fail', () => {
     expect(leftPending).toBe(0)
     const from = new Set(markers(violations))
     expect(from.has('kept'), 'the timeout it meant').toBe(true)
+    // **A schedule with no handle is not cancelled by a handle nobody was
+    // given.** `queueMicrotask` returns nothing, so every microtask used to be
+    // filed under the one key `undefined` — and the `clearTimeout(undefined)`
+    // this fixture writes next to it cancelled the most recent of them. The
+    // drain then skipped it, and its reach was never recorded.
+    expect(from.has('microtask'), 'the reach on a microtask it never cancelled').toBe(true)
     // **And nothing it cancelled.** A drain that fired cancelled handles would
     // report a reach this engine never made.
     expect(from.has('cancelled'), 'a reach it had already cancelled').toBe(false)
     expect(from.has('interval'), 'a reach on an interval it cleared').toBe(false)
+    // The two whose cancellers the harness did not wrap, and the idle one it
+    // now brings with it: each was scheduled and cancelled, and none may be
+    // fired on the engine's behalf.
+    expect(from.has('immediate'), 'a reach on an immediate it cleared').toBe(false)
+    expect(from.has('raf'), 'a reach on an animation frame it cancelled').toBe(false)
+    expect(from.has('idle'), 'a reach on an idle callback it cancelled').toBe(false)
   })
 
   it('restores every global when a deferred callback throws', async () => {
@@ -898,13 +1229,25 @@ describe('the seal, shown to fail', () => {
   })
 
   it('leaves the timer functions exactly as it found them', async () => {
-    const before = ['setTimeout', 'setInterval', 'queueMicrotask'].map(
-      (name) => (globalThis as unknown as Record<string, unknown>)[name]
-    )
+    const names = [
+      'setTimeout',
+      'clearTimeout',
+      'setInterval',
+      'clearInterval',
+      'queueMicrotask',
+      'setImmediate',
+      'clearImmediate',
+      'requestAnimationFrame',
+      'cancelAnimationFrame'
+    ]
+    const scope = globalThis as unknown as Record<string, unknown>
+    const before = names.map((name) => scope[name])
+    // And the one the harness **adds**: it must be gone again, not left as a
+    // present-but-useless property for every test that runs after this one.
+    expect('requestIdleCallback' in scope, 'jsdom has no idle callback').toBe(false)
     await runLeg(fromRegistry('builtin'), leg)
-    const after = ['setTimeout', 'setInterval', 'queueMicrotask'].map(
-      (name) => (globalThis as unknown as Record<string, unknown>)[name]
-    )
-    expect(after).toEqual(before)
+    expect(names.map((name) => scope[name])).toEqual(before)
+    expect('requestIdleCallback' in scope, 'the harness left its own behind').toBe(false)
+    expect('cancelIdleCallback' in scope, 'the harness left its own behind').toBe(false)
   })
 })

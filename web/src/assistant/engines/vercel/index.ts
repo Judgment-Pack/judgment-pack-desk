@@ -1,0 +1,21 @@
+/**
+ * `vercel` — the default engine ADR-0001 names, and the second the desk ships.
+ *
+ * One object implementing one contract. Everything it can reach passes through
+ * a seam the desk owns: `callTool` is bound through the ToolGate, and its model
+ * traffic goes to the chassis relay with no credential of its own — the SDK's
+ * providers are constructed against a placeholder origin and a `fetch` that is
+ * the desk's own capability. Swapping this engine for the built-in one changes
+ * none of those seams, which is what the slot is for.
+ */
+import { runVercel } from './loop'
+import type { AssistantEvent, AssistantSession, Engine } from '../../engine'
+
+export const vercel: Engine = {
+  id: 'vercel',
+  start(session: AssistantSession): AsyncIterable<AssistantEvent> {
+    return runVercel(session)
+  }
+}
+
+export default vercel

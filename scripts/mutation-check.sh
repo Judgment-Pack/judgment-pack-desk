@@ -3542,6 +3542,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
 
   CT=web/src/assistant/conformance/conformance.test.ts
   EN=web/src/assistant/engines/index.ts
+  EC=web/src/assistant/engines/contract.ts
+  VL=web/src/assistant/engines/vercel/loop.ts
+  VR=web/src/assistant/engines/vercel/relay.ts
+  VC=web/src/assistant/engines/vercel/channel.ts
 
   # ---- Canonical bytes ----------------------------------------------------
   #
@@ -3767,22 +3771,23 @@ export function assistantTransport(): Transport {
   # socket to /ws with this chassis' token. Every leg seals fetch, WebSocket,
   # XMLHttpRequest and EventSource for the duration of the engine's run.
   mutate web "the engine reaches for globalThis.fetch" "$BO" \
-    '    const response = await options.call(openai.suffix, {' \
-    "    const response = await globalThis.fetch('/api/assistant/relay/v1/chat/completions', {
-      method: 'POST',"
+    '        options.call(openai.suffix, {' \
+    "        globalThis.fetch('/api/assistant/relay/v1/chat/completions', {
+          method: 'POST',"
   # `end` twice: a pane that renders "running" until it sees one would be right
   # either way, so what this breaks is the contract's own "exactly once".
   mutate web "end is emitted twice" "$BL" \
-    "    yield { type: 'end' }
-  }
+    "  yield { type: 'end' }
 }" \
-    "    yield { type: 'end' }
-    yield { type: 'end' }
-  }
+    "  yield { type: 'end' }
+  yield { type: 'end' }
 }"
   # The proposal taken from the prose rather than from the fenced block: a
   # worked example in an explanation becomes the document a person accepts.
-  mutate web "the proposal is taken from the prose" "$BL" \
+  # **The reading moved to `engines/contract.ts` when the second engine landed**,
+  # because it is the contract's rule and not either loop's — so this row now
+  # breaks it for both of them at once, which is a stronger row than it was.
+  mutate web "the proposal is taken from the prose" "$EC" \
     "  const blocks = [...(text ?? '').matchAll(FENCE)].map((match) => match[1] ?? '')" \
     "  const blocks = [(text ?? '').slice((text ?? '').indexOf('{'), (text ?? '').lastIndexOf('}') + 1)]"
 
@@ -3837,6 +3842,303 @@ export function assistantTransport(): Transport {
     '              id: 1,
               name: AUTHOR_PACK_PROMPT,
               args: { policy: typed }'
+
+  # ---- The `vercel` adapter: what the SDK makes the desk's business --------
+  #
+  # ADR-0001 lists four defects against this SDK and the desk's answer to each
+  # is a line in the adapter. Every row here breaks one of them. The engine's
+  # own suite is the catcher where the conformance legs cannot be — the legs
+  # STAY green for the first row, which is the point of it.
+
+  # **The refine hook, removed entirely.** The desk's gate is the layer that
+  # holds, so every conformance leg stays green: the rehearsal still reaches the
+  # runtime and `write_file` still never does. What is lost is the SDK's own
+  # layer — the rewritten input the model is shown on its next turn — which is
+  # the only observable consequence the hook has, and the only thing that can
+  # discriminate this row. A row whose catcher were a leg would be a row lying
+  # about which layer holds.
+  mutate web "the SDK's rehearsal hook never fires, and only the gate holds" "$VL" \
+    '        [REHEARSAL_TOOL]: (input: unknown) => {' \
+    '        [`${REHEARSAL_TOOL}_NEVER_CALLED`]: (input: unknown) => {'
+
+  # The gate handed a call somebody already fixed reports nothing, and the
+  # guardrail line in the tab is the only place a person learns the flag was
+  # forced. K3a goes red on every leg of both engines' matrix.
+  mutate web "the gate is handed the call the adapter already rehearsed" "$VL" \
+    "      const args = (name === REHEARSAL_TOOL && asked.length > 0 ? asked.shift() : input) as Record<
+        string,
+        unknown
+      >" \
+    "      const args = input as Record<string, unknown>"
+
+  # The whole reason `session.model` is a capability: the SDK composes an
+  # absolute URL and the wrapper is what reduces it to a suffix the desk admits.
+  # Passing it through hands the desk's own capability a URL, which it refuses —
+  # and this row proves the wrapper is the layer doing the reducing.
+  mutate web "the SDK's absolute URL is handed to the capability whole" "$VR" \
+    "  const suffix = url.slice(PLACEHOLDER_ORIGIN.length + 1)
+  return suffix === '' ? undefined : suffix" \
+    '  return url'
+
+  # K1. `createAnthropic` throws without a key, so the provider is handed a
+  # placeholder — and a wrapper that forwarded whatever the SDK set would send
+  # `x-api-key` to this desk's own route. The allow-list is the guard; the
+  # capability's own is the second one, and this row shows the first is real.
+  mutate web "the wrapper forwards every header the SDK set" "$VR" \
+    '      if (PROTOCOL_HEADERS.includes(name.toLowerCase())) headers[name] = value' \
+    '      if (PROTOCOL_HEADERS.length >= 0) headers[name] = value'
+
+  # K2. The model is offered the runtime's own five and nothing else. A sixth
+  # tool bound here would be a tool the session never handed over — and the gate
+  # below would still refuse the call, which is why the row that matters is the
+  # one about what the model was **shown** rather than what it reached.
+  mutate web "a tool the session never offered is bound to the model" "$VL" \
+    '  for (const tool of tools) {' \
+    "  for (const tool of [...tools, { name: 'write_file', description: '' }]) {"
+
+  # `end` exactly once, on the path an error takes.
+  mutate web "the vercel engine ends twice on the error path" "$VL" \
+    "  const finish = async (): Promise<void> => {
+    await channel.push({ type: 'end' })" \
+    "  const finish = async (): Promise<void> => {
+    await channel.push({ type: 'end' })
+    await channel.push({ type: 'end' })"
+
+  # **Retired: "the rejection guard is left installed after the run".** There is
+  # no guard to leave installed. Review round 1 was right that a page listener
+  # keyed on an error *name* suppresses every rejection carrying it, an
+  # unrelated operation's included, for as long as a run is open — so the leak
+  # is closed at its cause instead, and the row that replaces this one is "the
+  # SDK's result promises are read and left unclaimed", below.
+
+  # The registry's own entry. A `vercel` that loaded `builtin` would pass every
+  # leg twice over and certify nothing — which is exactly what the fallback this
+  # PR removed used to do on purpose.
+  mutate web "the vercel entry in the registry points at builtin" "$EN" \
+    "  vercel: async () => (await import('./vercel')).vercel" \
+    "  vercel: async () => (await import('./builtin')).builtin"
+
+  # ---- What review round 1 found, each broken again ------------------------
+  #
+  # **The one that deadlocked.** `drain` takes an entry off the queue before
+  # yielding it, so a consumer that stops at exactly that event leaves a
+  # delivery nothing else can settle: not the queue, and not the loop that never
+  # resumes. The producer waited on it for ever.
+  mutate web "the drain does not settle the event it was yielding" "$VC" \
+    '        releaseAll()
+      }' \
+    '        void releaseAll
+      }'
+  # A member of the SDK's result read and left unclaimed is a rejection nobody
+  # on the page can catch. The mutant reads one and claims nothing, which is
+  # the defect exactly — and the count is measured at Node's own handler,
+  # because jsdom never turns such a rejection into a window event.
+  mutate web "the SDK's result promises are read and left unclaimed" "$VL" \
+    '    claimPromises(result)' \
+    '    void claimPromises
+    void (result as { text?: unknown }).text'
+  # The contract has a `reasoning` event and the SDK has three part types for
+  # it. An adapter that drops them decides, on the desk's behalf, that what the
+  # model said about its own reasoning is not worth showing.
+  mutate web "the SDK's reasoning parts are dropped" "$VL" \
+    "      if (part.type === 'reasoning-delta') {" \
+    '      if (false) {'
+  # K2's other half: the model is shown the contract the runtime enforces **or
+  # it is shown nothing**. A permissive schema written here is this desk telling
+  # the model that anything goes for a tool whose contract it does not know.
+  mutate web "a tool with no served schema is given an invented one" "$EC" \
+    '  if (tool.inputSchema === undefined || tool.inputSchema === null) {' \
+    '  if (tool.inputSchema === undefined) return { type: 42 }
+  if (false) {'
+  # jsdom has no `requestIdleCallback`, so a reach scheduled on one did nothing
+  # during certification and ran in Chrome after the seal lifted. The harness
+  # installs one; this mutant installs it without tracking it.
+  mutate web "an idle callback is scheduled but not tracked" "$CT" \
+    "      return record('requestIdleCallback', label, run, schedule, clear, false, timeout ?? 1)" \
+    '      void record
+      void label
+      void clear
+      return schedule(run)'
+  # A canceller that is not wrapped leaves a cancelled callback pending in the
+  # bookkeeping, and the drain fires it — a reach attributed to an engine that
+  # had already decided not to make it.
+  mutate web "a cancelled immediate is fired by the drain anyway" "$CT" \
+    "    if (typeof realClearImmediate === 'function') {
+      keep('clearImmediate')
+      scope.clearImmediate = (handle: unknown) => forget(handle, (inner) => realClearImmediate(inner))
+    }" \
+    '    void realClearImmediate'
+
+  # ---- What review round 2 found, each broken again ------------------------
+  #
+  # The in-flight slot is a single slot. Two readers would overwrite each
+  # other's, and the overwritten entry would be in neither the queue nor the
+  # slot — a delivery nothing can ever settle.
+  mutate web "a second consumer of the channel is admitted" "$VC" \
+    '      if (consuming) throw new ChannelHasOneConsumer()' \
+    '      void ChannelHasOneConsumer'
+  # **The whole regression, not half of it.** Round 3 was right that removing the
+  # channel's terminal event alone kills the mutant for the wrong reason: the
+  # named claim is about `return()` semantics, so the mutant has to be the shape
+  # that had them wrong — an async generator again, with `end` yielded from its
+  # `finally` and nothing pushed on the channel. The return-semantics test then
+  # fails for the reason it is named after: the first `return()` answers
+  # `{ done: false }` carrying an event.
+  mutate web "the run is a generator again, with end yielded from its finally" "$VL" \
+    '  const finish = async (): Promise<void> => {
+    await channel.push({ type: '"'"'end'"'"' })
+    channel.close()
+  }
+  /**
+   * The run itself starts on the consumer'"'"'s first `next()`.
+   *
+   * A consumer that opens a session and leaves without asking for an event has
+   * asked the model nothing, and this is what makes that true.
+   */
+  const open = (): AsyncGenerator<AssistantEvent> => {
+    const loop = drive().catch(async (cause: unknown) => {
+      // A cancelled run is the viewer stopping the session, or a consumer
+      // walking away: it ends the run and there is no failure to report.
+      if (isCancelled(cause) || gate.signal.aborted) return
+      await channel.push({ type: '"'"'error'"'"', message: describe(cause) })
+    })
+    // Nothing else awaits this; a rejection out of the catch above would be
+    // unhandled. It cannot reject, and this is what says so.
+    void loop.then(finish, finish)
+    return channel.drain()
+  }
+
+  return eventIterator({ gate, open })' \
+    '  const finish = async (): Promise<void> => {
+    channel.close()
+  }
+  const open = (): AsyncGenerator<AssistantEvent> => {
+    const loop = drive().catch(async (cause: unknown) => {
+      if (isCancelled(cause) || gate.signal.aborted) return
+      await channel.push({ type: '"'"'error'"'"', message: describe(cause) })
+    })
+    void loop.then(finish, finish)
+    return channel.drain()
+  }
+  void eventIterator
+  return (async function* (): AsyncGenerator<AssistantEvent> {
+    try {
+      yield* open()
+    } finally {
+      gate.close()
+      yield { type: '"'"'end'"'"' }
+    }
+  })()'
+
+  # `return()` has to cancel **before** it awaits: what a pending `next()` is
+  # waiting on is exactly what the cancel ends, and the queued close cannot run
+  # until that `next()` settles.
+  mutate web "the iterator cancels only after it has waited" "$EC" \
+    '      options.gate.close()
+      await events?.return(undefined)' \
+    '      await events?.return(undefined)
+      options.gate.close()'
+
+  # A `next()` that finds the iterator closed under it must not wait on the same
+  # closing promise the `return()` is waiting on: the `return()` registered
+  # first and would settle first, telling the consumer the iterator was closed
+  # before the `next()` it was holding had come back.
+  mutate web "a closed iterator's pending next waits on the closing too" "$EC" \
+    '      if (options.gate.isClosed()) return done
+      if (step.done === true) {' \
+    '      if (step.done === true || options.gate.isClosed()) {'
+  # The connection is closed once however many times it is released: the abort
+  # closes it and the setup's own failure closes it again.
+  mutate web "the connection is closed once per release, not once" "$ASN" \
+    '    shutting ??= (async () => {' \
+    '    shutting = (async () => {'
+  # ---- What review round 5 found: the two orderings a signal cannot hold ---
+  #
+  # A session already aborted is a run that is over. It used to abort the run's
+  # controller and nothing else, so an engine still reported a tier, still built
+  # a provider, and still made a request — for a session that never happened.
+  mutate web "a session aborted before the run is not closed, only aborted" "$EC" \
+    "  if (session.signal.aborted) close()" \
+    '  if (session.signal.aborted) stop.abort()'
+  # **Closed, then aborted, then released.** When the thing an engine was
+  # awaiting wins its race with the abort by a microtask, the loop resumes
+  # holding a value; aborting cannot stop it delivering that, and a flag the
+  # delivery path reads can — but only if it is set first.
+  mutate web "the run is aborted and released before it is marked closed" "$EC" \
+    "    closed = true
+    session.signal.removeEventListener('abort', close)
+    stop.abort()
+    release()" \
+    "    session.signal.removeEventListener('abort', close)
+    stop.abort()
+    release()
+    closed = true"
+  # And the delivery path is where that flag is read. A loop that resumed after
+  # the run closed can yield whatever it likes; none of it is anybody's.
+  mutate web "the delivery path does not read the closed gate" "$EC" \
+    '      if (options.gate.isClosed()) return done
+      if (step.done === true) {' \
+    '      if (step.done === true) {'
+  # A thunk, so a closed run starts no work at all: taking a promise meant the
+  # call had already been made by the time the signal was read.
+  mutate web "an await on the world is started before the signal is read" "$EC" \
+    '  if (signal.aborted) return Promise.reject(new RunCancelled())
+  let started: Promise<T>' \
+    '  let started: Promise<T>'
+
+  # ---- What review round 4 found: the class, broken again -----------------
+  #
+  # Every await on the world outside an engine is bounded by the run's own
+  # signal, because aborting the awaited thing only works where the thing
+  # honours a signal — a model request does, a `tools/call` over a socket does
+  # not. Each row here unbinds one of them.
+  mutate web "the vercel adapter's tool call is not bounded by the run" "$VL" \
+    '  const callTool = guardedCallTool(session, gate.signal)' \
+    '  const callTool: CallTool = (name, args) => session.callTool(name, args)'
+  mutate web "the built-in engine's tool call is not bounded by the run" "$BL" \
+    '    const callTool = guardedCallTool(session, signal)' \
+    '    const callTool: CallTool = (name, args) => session.callTool(name, args)'
+  # **Retired: "the runtime is asked without reading the run's signal first".**
+  # `guardedCallTool` still reads the signal before it dispatches, and that is
+  # the readable statement of the rule where the rule lives — but it is no
+  # longer the line that *holds* it. `withAbort` takes a thunk and refuses a
+  # closed run **without invoking it**, so removing the explicit check changes
+  # nothing anyone can observe, and a row saying otherwise would read as a
+  # missing safeguard rather than a doubly-held one. The row that holds it is
+  # "an await on the world is started before the signal is read", above.
+  # **Retired: "a session abort aborts the SDK and abandons nothing".** It was
+  # discriminating when the abandon was the only thing that could settle a
+  # `next()` waiting behind a tool call. It is not any more: the tool call is
+  # bounded by the run's signal, so the loop unwinds on its own and its `end`
+  # reaches the waiting consumer, which the closed gate then drops. What
+  # `abandon()` still does is release a producer nobody will ever take from
+  # after a consumer's `return()`, and the channel's own tests hold that — "the
+  # drain does not settle the event it was yielding", below. Two layers, and
+  # the row that broke one of them stopped saying anything.
+  # The drain runs what an engine left behind in the order a browser would
+  # have, not all at once: a sixty-second idle callback must not run before the
+  # one-second timer that was going to cancel it.
+  mutate web "the drain fires every pending handle at once again" "$CT" \
+    '    tracker.advanceTo(next.dueAt)
+    next.fire()' \
+    '    for (const entry of tracker.pending()) entry.fire()'
+
+  # A timeout is a deadline, not a hint: firing every positive one after a
+  # millisecond credits an engine with work it would have cancelled first.
+  mutate web "the idle callback is fired before its deadline" "$CT" \
+    '            realSetTimeout(wrapped, timeout ?? 1)' \
+    '            realSetTimeout(wrapped, timeout === undefined ? 1 : Math.min(1, timeout))'
+
+  # A shim that answers zero to `timeRemaining()` runs the ordinary idle
+  # pattern, watches it decline to do anything, and certifies a clean leg —
+  # while a browser gives it a real budget and lets it reach.
+  mutate web "the idle deadline reports no budget at all" "$CT" \
+    '          timeRemaining: () => Math.max(0, IDLE_BUDGET_MS - (Date.now() - startedAt))' \
+    '          timeRemaining: () => 0'
+  # And the other half of the same object: code that waits for its own timeout.
+  mutate web "the idle deadline never reports its own timeout" "$CT" \
+    '        const didTimeout = deadlineAt !== undefined && now() >= deadlineAt' \
+    '        const didTimeout = false'
 
   # ---- The proposal as a diff, and accepting it into the draft -------------
   #

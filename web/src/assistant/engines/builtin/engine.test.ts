@@ -8,11 +8,18 @@
  * once, the proposal's provenance, and the tier this chunk does not implement.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CERTIFIED_ENGINES, isCertified, loadEngine, resolveEngine } from '../index'
+import { CERTIFIED_ENGINES, loadEngine } from '../index'
 import { builtin } from './index'
 import { MAX_TURNS, extractProposal } from './loop'
 import { protocolHeaders } from './providers/types'
-import type { AssistantEvent, AssistantSession, McpTool, ModelCall } from '../../engine'
+import { ASSISTANT_ENGINES } from '../../../config/deskConfig'
+import type {
+  AssistantEvent,
+  AssistantSession,
+  McpTool,
+  McpToolResult,
+  ModelCall
+} from '../../engine'
 
 
 const TOOLS: McpTool[] = [
@@ -363,7 +370,13 @@ describe('the event stream', () => {
       }
     })
     const events = await drain(builtin.start(stopping))
-    expect(events).toEqual([{ type: 'error', message: 'the session was stopped' }, { type: 'end' }])
+    // **Nothing at all, and the stream ends.** A viewer who pressed Stop has
+    // not been told about a failure, and a cancelled run is a session somebody
+    // ended rather than a run that finished — the terminal event belongs to the
+    // one that finished. Both engines answer a cancellation this way, and the
+    // page's terminal accounting is the run hook's, which writes an `end`
+    // whatever an engine does.
+    expect(events).toEqual([])
   })
 })
 
@@ -385,12 +398,351 @@ describe('the thinking tier this chunk does not run', () => {
   })
 })
 
+describe('a tool the runtime served without a schema', () => {
+  it('ends the session naming it, rather than inventing a contract for it', async () => {
+    const { session: one } = scripted(() => finalMessage(PROPOSAL_TEXT), {
+      tools: [{ name: 'a_new_tool', description: 'd' }]
+    })
+    const events = await drain(builtin.start(one))
+    expect(events.map((event) => event.type)).toEqual(['error', 'end'])
+    expect((events[0] as { message: string }).message).toContain('a_new_tool')
+    expect((events[0] as { message: string }).message).toContain('without an input schema')
+  })
+})
+
+describe('a consumer that stops in the middle of a run', () => {
+  it('stops a run whose model request only ends when it is aborted', async () => {
+    // This engine had the same defect the SDK-backed one did, and for the same
+    // reason: an async generator serves `next()` and `return()` from one queue,
+    // so the `return()` was queued behind the `next()` it would have released.
+    // It also had no abort of its own — the session's was the caller's — so
+    // there was nothing for a `return()` to cancel with even if it had run.
+    let sawAbort = false
+    let arrived = () => {}
+    const entered = new Promise<void>((resolve) => {
+      arrived = resolve
+    })
+    const call: ModelCall = (_suffix, request) =>
+      new Promise<Response>((_resolve, reject) => {
+        arrived()
+        const stopped = () => {
+          sawAbort = true
+          reject(new DOMException('the model request was aborted', 'AbortError'))
+        }
+        if (request.signal?.aborted === true) stopped()
+        else request.signal?.addEventListener('abort', stopped)
+      })
+    const bound = (work: Promise<unknown>) =>
+      Promise.race([
+        work.then(() => 'settled'),
+        new Promise<string>((resolve) => setTimeout(() => resolve('STILL WAITING'), 2000))
+      ])
+
+    const settledInOrder: string[] = []
+    const iterator = builtin.start(session({ model: { family: 'openai-compatible', model: 'a-model', call } }))[
+      Symbol.asyncIterator
+    ]()
+    const pending = iterator.next().then((step) => {
+      settledInOrder.push('next')
+      return step
+    })
+    await entered
+    const returned = iterator.return!(undefined).then((step) => {
+      settledInOrder.push('return')
+      return step
+    })
+
+    expect(await bound(pending), 'the pending next').toBe('settled')
+    expect(await bound(returned), 'the return').toBe('settled')
+    expect(await pending).toEqual({ value: undefined, done: true })
+    expect(await returned).toEqual({ value: undefined, done: true })
+    expect(settledInOrder).toEqual(['next', 'return'])
+    expect(sawAbort, 'the request in flight observed the abort').toBe(true)
+    expect(await iterator.next()).toEqual({ value: undefined, done: true })
+  })
+})
+
+describe('a run stopped while it is waiting on the runtime', () => {
+  /** A model that calls one tool, then proposes. */
+  function callsATool(): ModelCall {
+    let turn = 0
+    return async () => {
+      turn += 1
+      return new Response(
+        JSON.stringify(
+          turn === 1
+            ? {
+                choices: [
+                  {
+                    message: {
+                      role: 'assistant',
+                      content: null,
+                      tool_calls: [
+                        {
+                          id: 'call_1',
+                          type: 'function',
+                          function: { name: 'validate', arguments: '{}' }
+                        }
+                      ]
+                    },
+                    finish_reason: 'tool_calls'
+                  }
+                ]
+              }
+            : { choices: [{ message: { role: 'assistant', content: PROPOSAL_TEXT } }] }
+        ),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    }
+  }
+  const bound = (work: Promise<unknown>) =>
+    Promise.race([
+      work.then(
+        () => 'settled',
+        () => 'settled'
+      ),
+      new Promise<string>((resolve) => setTimeout(() => resolve('STILL WAITING'), 2000))
+    ])
+
+  describe.each([
+    ['return()', (i: AsyncIterator<AssistantEvent>) => i.return!(undefined)],
+    [
+      'throw()',
+      (i: AsyncIterator<AssistantEvent>) => i.throw!(new Error('gave up')).catch(() => undefined)
+    ]
+  ] as const)('%s', (_name, stop) => {
+    it('settles the pending next first, then itself, and asks the runtime nothing more', async () => {
+      // The interleaving this engine kept: `return()` aborted the provider's
+      // signal and then waited on the inner generator, which was queued behind
+      // a `next()` waiting on a `tools/call` that honours no signal at all.
+      let arrived = () => {}
+      const entered = new Promise<void>((resolve) => {
+        arrived = resolve
+      })
+      let calls = 0
+      const one = session({
+        model: { family: 'openai-compatible', model: 'a-model', call: callsATool() },
+        callTool: async () => {
+          calls += 1
+          arrived()
+          return new Promise<McpToolResult>(() => {})
+        }
+      })
+      const iterator = builtin.start(one)[Symbol.asyncIterator]()
+      expect((await iterator.next()).value).toMatchObject({ type: 'tool_call' })
+      const pending = iterator.next()
+      await entered
+      const settledInOrder: string[] = []
+      const held = pending.then(() => settledInOrder.push('next'))
+      const ended = Promise.resolve(stop(iterator)).then(() => settledInOrder.push('stop'))
+
+      expect(await bound(held), 'the pending next').toBe('settled')
+      expect(await bound(ended), 'the stop').toBe('settled')
+      expect(await pending).toEqual({ value: undefined, done: true })
+      expect(settledInOrder).toEqual(['next', 'stop'])
+      expect(calls, 'the runtime was asked exactly once, before the stop').toBe(1)
+    })
+  })
+
+  it('settles a pending next when the session itself is aborted mid tool call', async () => {
+    const controller = new AbortController()
+    let arrived = () => {}
+    const entered = new Promise<void>((resolve) => {
+      arrived = resolve
+    })
+    const one = session({
+      signal: controller.signal,
+      model: { family: 'openai-compatible', model: 'a-model', call: callsATool() },
+      callTool: async () => {
+        arrived()
+        return new Promise<McpToolResult>(() => {})
+      }
+    })
+    const iterator = builtin.start(one)[Symbol.asyncIterator]()
+    expect((await iterator.next()).value).toMatchObject({ type: 'tool_call' })
+    const pending = iterator.next()
+    await entered
+    controller.abort()
+    expect(await bound(pending), 'the pending next').toBe('settled')
+    expect(await pending).toEqual({ value: undefined, done: true })
+  })
+
+  it('lets no tools/call reach the runtime after the consumer has closed the run', async () => {
+    // Two queued reads and a late model answer carrying a tool call. This
+    // engine had no guard before dispatch at all.
+    const asked: string[] = []
+    let answer = () => {}
+    const held = new Promise<void>((resolve) => {
+      answer = resolve
+    })
+    const inner = callsATool()
+    let turn = 0
+    const one = session({
+      model: {
+        family: 'openai-compatible',
+        model: 'a-model',
+        call: async (suffix, request) => {
+          turn += 1
+          if (turn === 1) await held
+          return inner(suffix, request)
+        }
+      },
+      callTool: async (name) => {
+        asked.push(name)
+        return { content: [{ type: 'text', text: '{}' }] }
+      }
+    })
+    const iterator = builtin.start(one)[Symbol.asyncIterator]()
+    const first = iterator.next()
+    const second = iterator.next()
+    void first.catch(() => undefined)
+    void second.catch(() => undefined)
+    expect(await bound(iterator.return!(undefined) as Promise<unknown>)).toBe('settled')
+    answer()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(asked, 'a tools/call reached the runtime after the run closed').toEqual([])
+    expect(await first).toEqual({ value: undefined, done: true })
+    expect(await second).toEqual({ value: undefined, done: true })
+  })
+})
+
+describe('a session that was already over before the run began', () => {
+  it.each(['off', 'ultra'] as const)('emits nothing and asks nothing, at tier %s', async (tier) => {
+    // An aborted signal is a run that is over. It used to abort this engine's
+    // controller and nothing else, so it still said `thinking_unavailable` and
+    // still evaluated `provider.send(...)` — a request made for a session that
+    // never happened.
+    const controller = new AbortController()
+    controller.abort()
+    let requests = 0
+    let tools = 0
+    const one = session({
+      signal: controller.signal,
+      thinking: { tier },
+      model: {
+        family: 'openai-compatible',
+        model: 'a-model',
+        call: async () => {
+          requests += 1
+          return new Response(JSON.stringify(finalMessage(PROPOSAL_TEXT)), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          })
+        }
+      },
+      callTool: async () => {
+        tools += 1
+        return { content: [] }
+      }
+    })
+    const events = await drain(builtin.start(one))
+    expect(events).toEqual([])
+    expect(requests, 'a request was made for a run that was already over').toBe(0)
+    expect(tools, 'the runtime was asked by a run that was already over').toBe(0)
+  })
+})
+
+describe('when the thing being awaited wins its race with the abort', () => {
+  /** A model that calls one tool, then proposes. */
+  function callsAToolThenProposes(): ModelCall {
+    let turn = 0
+    return async () => {
+      turn += 1
+      return new Response(
+        JSON.stringify(
+          turn === 1
+            ? {
+                choices: [
+                  {
+                    message: {
+                      role: 'assistant',
+                      content: null,
+                      tool_calls: [
+                        {
+                          id: 'call_1',
+                          type: 'function',
+                          function: { name: 'validate', arguments: '{}' }
+                        }
+                      ]
+                    },
+                    finish_reason: 'tool_calls'
+                  }
+                ]
+              }
+            : { choices: [{ message: { role: 'assistant', content: PROPOSAL_TEXT } }] }
+        ),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    }
+  }
+
+  it('delivers nothing after the run closed, and no error and no end', async () => {
+    // `withAbort` settles with the **value** when the work wins by a
+    // microtask; the abort then runs while the loop is still holding it. What
+    // stops the loop delivering a `tool_result` is not the abort — it is that
+    // the run is already marked closed and the delivery path reads that.
+    const controller = new AbortController()
+    const one = session({
+      signal: controller.signal,
+      model: { family: 'openai-compatible', model: 'a-model', call: callsAToolThenProposes() },
+      callTool: async () => {
+        const answer: McpToolResult = { content: [{ type: 'text', text: '{"status":"ok"}' }] }
+        controller.abort()
+        return answer
+      }
+    })
+    const iterator = builtin.start(one)[Symbol.asyncIterator]()
+    expect((await iterator.next()).value).toMatchObject({ type: 'tool_call' })
+    const after: AssistantEvent[] = []
+    for (;;) {
+      const step = await iterator.next()
+      if (step.done === true) break
+      after.push(step.value)
+    }
+    expect(after, 'an event was delivered after the run closed').toEqual([])
+  })
+
+  it('delivers no error where the awaited thing failed first', async () => {
+    // The other half, and the one this engine got wrong: the underlying promise
+    // **rejected** just before the abort, so the catch saw the original failure
+    // rather than a cancellation and reported an `error` and an `end` for a run
+    // that was already over.
+    const controller = new AbortController()
+    const one = session({
+      signal: controller.signal,
+      model: { family: 'openai-compatible', model: 'a-model', call: callsAToolThenProposes() },
+      callTool: async () => {
+        controller.abort()
+        throw new Error('the socket went away')
+      }
+    })
+    const iterator = builtin.start(one)[Symbol.asyncIterator]()
+    expect((await iterator.next()).value).toMatchObject({ type: 'tool_call' })
+    const after: AssistantEvent[] = []
+    for (;;) {
+      const step = await iterator.next()
+      if (step.done === true) break
+      after.push(step.value)
+    }
+    expect(after).toEqual([])
+  })
+})
+
 describe('the registry', () => {
   it('carries builtin, and loads it as its own chunk', async () => {
-    expect([...CERTIFIED_ENGINES]).toEqual(['builtin'])
+    expect([...CERTIFIED_ENGINES]).toEqual(['builtin', 'vercel'])
     const engine = await loadEngine('builtin')
     expect(engine.id).toBe('builtin')
     expect(engine).toBe(builtin)
+  })
+
+  it('certifies every engine a desk.json may name, so nothing is substituted', () => {
+    // The registry used to fall back to `builtin` for an id this build carried
+    // no adapter for, and the tab said so in one line. Both engines ship now,
+    // and `LOADERS` is a total map over `AssistantEngine`: an id added to the
+    // decoder's closed list without a chunk is a compile error, which is a
+    // stronger statement than a fallback nobody could reach.
+    expect([...ASSISTANT_ENGINES].sort()).toEqual([...CERTIFIED_ENGINES].sort())
   })
 
   it('refuses an id no table registers, by name', async () => {
@@ -411,15 +763,4 @@ describe('the registry', () => {
     await expect(loadEngine('anything', { anything: async () => stub })).resolves.toBe(stub)
   })
 
-  it('falls back to builtin for an engine this build does not carry, and says which', () => {
-    expect(isCertified('vercel')).toBe(false)
-    expect(resolveEngine('vercel')).toEqual({
-      id: 'builtin',
-      substituted: 'vercel is not certified in this build; running builtin'
-    })
-  })
-
-  it('substitutes nothing where the configured engine is certified', () => {
-    expect(resolveEngine('builtin')).toEqual({ id: 'builtin' })
-  })
 })

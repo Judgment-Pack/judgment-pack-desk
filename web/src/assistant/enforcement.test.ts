@@ -45,15 +45,30 @@ function read(relative: string): string {
   return readFileSync(join(SRC, relative), 'utf8')
 }
 
+/**
+ * Every source under these directories, **all the way down**.
+ *
+ * It used to read one level and stop, which meant the two guards below —
+ * neither of them strong, both of them enumerations — did not look at
+ * `assistant/engines/` at all. An adapter is exactly where a vendor's base URL
+ * or a comparison against one would be written, and the `vercel` adapter is
+ * three levels down and carries the one URL literal the assistant has.
+ */
 function sourcesUnder(...directories: string[]): { path: string; text: string }[] {
   const found: { path: string; text: string }[] = []
-  for (const directory of directories) {
+  const walk = (directory: string) => {
     for (const entry of readdirSync(join(SRC, directory), { withFileTypes: true })) {
+      const path = `${directory}/${entry.name}`
+      if (entry.isDirectory()) {
+        walk(path)
+        continue
+      }
       if (!entry.isFile()) continue
       if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) continue
-      found.push({ path: `${directory}/${entry.name}`, text: read(`${directory}/${entry.name}`) })
+      found.push({ path, text: read(path) })
     }
   }
+  for (const directory of directories) walk(directory)
   return found
 }
 
@@ -424,7 +439,13 @@ describe('(5) no endpoint literal in the source — a WEAK, enumerated guard', (
       // The paste block on Admin shows one, and a reader who copies it gets a
       // URL that cannot reach anything rather than one that reaches us.
       'https://api.example.invalid/',
-      'https://example.invalid/judgment-packs/'
+      'https://example.invalid/judgment-packs/',
+      // The placeholder origin the `vercel` adapter's providers are built
+      // against and which nothing ever resolves — reserved by the same RFC, for
+      // the same reason. It is a URL an engine composes so that the desk can
+      // reduce it to a path suffix, and if it ever escaped to a real `fetch` it
+      // would fail rather than arrive somewhere.
+      'https://relay.invalid'
     ]
     for (const source of sourcesUnder('assistant', 'config', 'routes')) {
       if (source.path.includes('.test.')) continue
@@ -554,16 +575,32 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
   // instead, which is a guard over *behaviour* and needs no list.
 
   it('writes no tool schema of its own: the runtime’s served one is the only one', () => {
-    // K2. The model is shown the contract the runtime enforces, or it is shown
-    // nothing — so no engine source may carry a tool name or a schema literal.
-    const providers = join(SRC, 'assistant', 'engines', 'builtin', 'providers')
-    for (const name of readdirSync(providers)) {
-      if (!name.endsWith('.ts') || name.includes('.test.')) continue
-      const text = readFileSync(join(providers, name), 'utf8')
+    // K2, over **every** engine source rather than one directory of one engine.
+    // The sweep used to read `builtin/providers` and nothing else, so the whole
+    // of `engines/vercel/` — where an adapter-authored permissive schema
+    // actually was — went unlooked-at.
+    //
+    // The model is shown the contract the runtime enforces or it is shown
+    // nothing, so no engine may carry a schema of its own. The one tool name any
+    // engine may write is `experimental_evaluate`, because ADR-0001 names it:
+    // the SDK-backed adapter's rehearsal hook is keyed by tool name. Every other
+    // name is a capability the engine would be asserting.
+    const sources = sourcesUnder('assistant/engines')
+    expect(sources.length, 'the sweep found no engine sources at all').toBeGreaterThan(5)
+    for (const source of sources) {
+      if (source.path.includes('.test.')) continue
       for (const tool of ASSISTANT_TOOLS) {
-        expect(text, `${name} names the tool ${tool}`).not.toContain(`'${tool}'`)
-        expect(text, `${name} names the tool ${tool}`).not.toContain(`"${tool}"`)
+        if (tool === 'experimental_evaluate') continue
+        expect(source.text, `${source.path} names the tool ${tool}`).not.toContain(`'${tool}'`)
+        expect(source.text, `${source.path} names the tool ${tool}`).not.toContain(`"${tool}"`)
       }
+      // A schema is an object with `properties` or a `type: 'object'` beside a
+      // tool. Weak, and enumerated — what actually holds the rule is that a
+      // served schema is the only thing any engine passes on, and that a tool
+      // arriving without one is refused rather than given one.
+      expect(source.text, `${source.path} writes a schema of its own`).not.toMatch(
+        /properties\s*:\s*\{/
+      )
     }
   })
 })

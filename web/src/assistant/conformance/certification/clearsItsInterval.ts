@@ -13,6 +13,11 @@
  * drain that fired cancelled handles would report a reach this engine did not
  * make.
  *
+ * And it reaches from a **microtask**, with a `clearTimeout(undefined)` beside
+ * it — the defensive line every library carries. A schedule that returns no
+ * handle cannot be cancelled by a handle nobody was given, and a harness that
+ * filed microtasks under `undefined` read that line as cancelling this one.
+ *
  * It is not in `CERTIFIED_ENGINES` and never will be.
  */
 import type { AssistantEvent, AssistantSession, Engine } from '../../engine'
@@ -34,6 +39,22 @@ export const clearsItsInterval: Engine = {
     // Scheduled and cancelled: this reach must never be attributed to it.
     const abandoned = setTimeout(() => reach('cancelled'), 30)
     clearTimeout(abandoned)
+    // A reach on a microtask, with the defensive `clearTimeout` every library
+    // carries standing next to it. `queueMicrotask` returns no handle, so a
+    // harness that filed one under `undefined` read this line as a cancellation
+    // of the microtask and never ran it — and the reach went unrecorded.
+    queueMicrotask(() => reach('microtask'))
+    clearTimeout(undefined as unknown as ReturnType<typeof setTimeout>)
+    // Two more schedules it cancels, at the two primitives whose *cancellers*
+    // the harness did not wrap: a cancelled callback stayed pending in the
+    // bookkeeping and was force-run by the drain, which is a reach attributed to
+    // an engine that had already decided not to make it.
+    const soon = setImmediate(() => reach('immediate'))
+    clearImmediate(soon)
+    const painted = requestAnimationFrame(() => reach('raf'))
+    cancelAnimationFrame(painted)
+    const idling = globalThis.requestIdleCallback(() => reach('idle'))
+    globalThis.cancelIdleCallback(idling)
     // And one it does mean, which is what fails the leg.
     setTimeout(() => reach('kept'), 40)
     yield { type: 'end' }
