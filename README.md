@@ -907,14 +907,24 @@ code, and offers Reload — which says that it discards — and *Overwrite anywa
 which is never the primary control. On success `list_packs`, `get_pack` and the
 `validate` queries are invalidated.
 
-**A reload that lands over an edit is refused.** A read takes as long as it
-takes, and what it brings back is a whole file. The ticket a reload carries names
+**A read or a write that lands over an edit is refused.** Both take as long as
+they take, and what comes back is a whole file. The ticket a reload carries names
 the file, the incarnation of the buffer *and* the edit revision it was issued at
-— a number every commit, undo and discard moves — so an edit made while the read
-was in flight makes the answer stale and the buffer declines it, keeping both the
-work and the undo entry that could take it back. The stale-file offer stays on
-screen, which is the honest state: the file did move, and this buffer has moved
-too.
+— a number every commit, undo, discard **and unwritten operand** moves, because
+text typed into a field that is not JSON yet is work too — so an edit made while
+the read was in flight makes the answer stale and the buffer declines it, keeping
+both the work and the undo entry that could take it back. The stale-file offer
+stays on screen, which is the honest state: the file did move, and this buffer
+has moved too; and the offer says what it would cost — *Reload, losing these
+changes* — for unwritten text exactly as it does for unsaved bytes.
+
+A **save** carries the same identity, and `landed` refuses a read-back for
+another file: a PUT in flight across a navigation used to make one pack's bytes
+another pack's base. An edit made *during* a save is not refused — that is the
+case the save's own text comparison answers, by keeping the work and leaving it
+dirty against the revision that landed. (The counters are JavaScript numbers, so
+the claim is bounded and stated as such: a ticket cannot collide within 2^53
+edits of one page session.)
 
 **A refusal does not take the page away.** Save writes bytes the runtime may
 then refuse to serve, so `get_pack` failing is a state this editor can produce —
@@ -1382,15 +1392,24 @@ of its own work for this desk to repeat, and a model's account of what it
 changed is not evidence about a document.
 
 **The proposal is canonicalized once, where the event arrives**, in the run hook
-— `JSON.parse(JSON.stringify(x))` — and the diff, the rendering, the writability
-check and the writer all read that one snapshot. The reasoning is the ToolGate's:
-an engine may put any value on `document`, and a getter or a `toJSON` can answer
-one thing while the diff is looking, another while the pane renders and a third
-while the writer serializes — three readings are three documents, and the one a
-person accepted would be none of them. A document that cannot be read as JSON
-data at all — a cycle, a throwing getter, a value that is not an object — becomes
-an `error` on the stream and no proposal: there is nothing to show and nothing to
-write.
+— `JSON.parse(JSON.stringify(x))` — and **frozen all the way down**; the diff,
+the rendering, the writability check and the writer read that one snapshot and
+never round-trip it again. The reasoning is the ToolGate's: an engine may put any
+value on `document`, and a getter or a `toJSON` can answer one thing while the
+diff is looking, another while the pane renders and a third while the writer
+serializes — three readings are three documents, and the one a person accepted
+would be none of them. The freeze closes the same gap one layer out: the snapshot
+travels to the pane on the run's event list, and anything holding that event
+could otherwise reach into it between the memoised diff and the accept. A
+document that cannot be read as JSON data at all — a cycle, a throwing getter, a
+value that is not an object — becomes an `error` on the stream and no proposal:
+there is nothing to show and nothing to write. That there is exactly one
+canonicalization site is swept for in `assistant/enforcement.test.ts`, because a
+second round trip added back "for safety" is a second reading.
+
+The caption names the draft it actually compared: on a page whose bytes have
+moved since the run began it says *the draft this proposal was given*, because
+"the draft on this page" is by then a different document.
 
 Each row is identified by its **kind and its pointer**, not by the pointer alone.
 A proposal that replaces one rule with a rule of another id produces two rows
