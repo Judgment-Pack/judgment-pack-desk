@@ -267,21 +267,36 @@ function outcome(result: McpToolResult): { text: string; isError: boolean; struc
  * Nothing here suppresses anything: every rejection this page makes, including
  * any this engine mishandles, still reaches the console as a real page error.
  *
- * **And one of them still does, measured.** In a real browser, an endpoint that
- * answers 400 leaves exactly one unhandled `AI_NoOutputGeneratedError` on the
- * page — constructed inside the SDK's own transform `flush`, never handed to
- * any member of the result, and never handled late (no `rejectionhandled`
- * follows it). Claiming the result's promises a second time after the stream
- * has been consumed does not claim it either; both were measured on the live
- * drive, at tier `off` on the ordinary refusal path as well as on this chunk's
- * degrade, so it is the SDK's refusal path and not the tier. The session is
- * unaffected — the failure is reported, the degrade happens, the run completes —
- * and the page's console carries one error nobody on this side can catch. jsdom
- * cannot see it (such a rejection reaches Node's own handler and never becomes
- * a `window` event), which is why the conformance session says so and why the
- * live drive is where it was found. Recorded rather than papered over: the
- * `unhandledrejection` listener ADR-0001 suggests would hide every rejection
- * carrying that name, including one this desk should hear about.
+ * **And one of them still does — measured, and not reachable from here.** In a
+ * real browser, an endpoint that answers 400 leaves exactly one unhandled
+ * `AI_NoOutputGeneratedError` on the page, constructed inside the SDK's own
+ * transform `flush` and never handled late (no `rejectionhandled` follows it).
+ * Three things were tried and each was measured on the live drive:
+ *
+ * - claiming the result's promises **again** after the stream is consumed —
+ *   still leaks;
+ * - claiming the result's object graph **recursively**, own properties and
+ *   prototype getters, to depth four — still leaks. So the rejecting promise is
+ *   not reachable from the result at any depth: the SDK creates it inside a
+ *   transform and hands it to nothing;
+ * - reproducing it under Node with the same loop shape — tools, `prepareStep`,
+ *   the refinement hook, an abort signal — and `process.on('unhandledRejection')`
+ *   sees nothing at all. jsdom therefore cannot see it either, which is why the
+ *   conformance session says so and why the live drive is where it was found.
+ *
+ * It is **the SDK's refusal path and not this chunk's**: it reproduces at tier
+ * `off` against an endpoint that refuses every request, which is what the desk
+ * shipped before the tier existed. The closest upstream report is
+ * `vercel/ai#8084` ("Unable to catch NoOutputGeneratedError"), closed against
+ * 5.0.x; this is the same class on 7.0.93 and no open issue matches it.
+ *
+ * The session is unaffected and, more to the point, **the author is told**: the
+ * run puts the status and the endpoint's own sentence on its own stream, which
+ * `engine.test.ts` asserts, so what reaches the console is noise beside a
+ * failure the tab has already reported. Recorded here rather than papered over —
+ * the `unhandledrejection` listener ADR-0001 suggests is keyed on an error
+ * *name* and would suppress every rejection carrying it, including one this
+ * desk should hear about.
  */
 export function claimPromises(result: object): number {
   const names = new Set<string>()

@@ -1955,8 +1955,8 @@ it does not know. The five a real `jpack mcp` serves all carry one.
 
 | engine | what runs the loop | added download (gzip) | what it guards | what it does not do yet |
 | --- | --- | --- | --- | --- |
-| `vercel` **(default)** | Vercel AI SDK v7 — `ai` 7.0.93, `@ai-sdk/openai-compatible` 3.0.44, `@ai-sdk/anthropic` 4.0.49, all pinned exactly | **91.3 KiB** for the lazy chunk, plus 0.8 KiB of shared contract and 1.7 KiB the main chunk grows by sharing `zod` with it | the rehearsal hook named as a key of the SDK's own options type, so an upstream rename is a compile error rather than a guard that fails open; the desk's gate handed the call **as the model made it**; a placeholder origin the adapter never resolves, and a query refused at both layers; the SDK's own retries off; the `unhandledrejection` the SDK's refusal path leaks | the thinking tier and the refutation pass (chunk 4). A tier other than `off` is reported unavailable and the session continues |
-| `builtin` | the bake-off's control loop, by hand — two SSE parsers, both wire formats | 2.5 KiB, and no new dependency at all | the same promises, held one level below it in the ToolGate and the model capability, which is where they are held for **every** engine | the same, and it is not the default: it is the fallback that adds nothing to the supply chain |
+| `vercel` **(default)** | Vercel AI SDK v7 — `ai` 7.0.93, `@ai-sdk/openai-compatible` 3.0.44, `@ai-sdk/anthropic` 4.0.49, all pinned exactly | **96.0 KiB** for the lazy chunk, plus 2.0 KiB shared with the other engine and 1.2 KiB the main chunk grows by | the rehearsal hook named as a key of the SDK's own options type, so an upstream rename is a compile error rather than a guard that fails open; the desk's gate handed the call **as the model made it**; a placeholder origin the adapter never resolves, and a query refused at both layers; the SDK's own retries off; the truncated thinking signature it carries back (`vercel/ai#19663`), detected and degraded rather than sent | reassemble a split signature: it detects the truncation instead, and the session degrades once with the reason |
+| `builtin` | the bake-off's control loop, by hand — two SSE parsers, both wire formats | 3.2 KiB, and no new dependency at all | the same promises, held one level below it in the ToolGate and the model capability, which is where they are held for **every** engine; and the assistant turn echoed as received, so thinking blocks, redacted blocks and split signatures survive by construction | nothing the default does — it is the fallback that adds nothing to the supply chain |
 
 `builtin` is the port of the bake-off's control loop — a hand-written turn loop
 over an explicit messages array, both wire formats, no new dependency —
@@ -1991,15 +1991,37 @@ rather than the desk's:
   own relay answers when no key is stored on this machine. Three requests and six
   seconds for a refusal a person has to go and fix. Retries are off, so both
   engines make one request per turn.
-- **the refusal path leaks a rejection nobody can catch.** `streamText`'s result
-  exposes its output as promise-valued members, and reading one mints a promise
-  that rejects when the call fails; read and left unclaimed, it reaches the page
-  as an unhandled `AI_NoOutputGeneratedError`. It is closed at the cause — every
-  promise-valued member is claimed the moment the result exists, enumerated from
-  the object rather than from a list the next release would date — and **not**
-  with a page listener: one of those would suppress every rejection on the page
-  carrying that error name, an unrelated operation's included, for as long as a
-  run was open.
+- **the refusal path leaks a rejection nobody can catch, and one of them is
+  still there.** `streamText`'s result exposes its output as promise-valued
+  members, and reading one mints a promise that rejects when the call fails;
+  read and left unclaimed, it reaches the page as an unhandled
+  `AI_NoOutputGeneratedError`. Those are claimed at the cause — every
+  promise-valued member, the moment the result exists, enumerated from the
+  object rather than from a list the next release would date.
+
+  **One more is not reachable from this side, and this desk says so rather than
+  hiding it.** In a real browser, an endpoint that answers 400 leaves exactly one
+  `AI_NoOutputGeneratedError` on the page, constructed inside the SDK's own
+  transform `flush` and never handled late. Three things were tried and each was
+  measured on the live drive: claiming the result's promises again after the
+  stream is consumed (still leaks); claiming the result's whole object graph
+  recursively, own properties and prototype getters, to depth four (still
+  leaks — so the rejecting promise is reachable from the result at *no* depth);
+  and reproducing it under Node with the same loop shape, where
+  `process.on('unhandledRejection')` sees nothing at all, which is why neither
+  jsdom nor the conformance session can observe it. It reproduces at tier `off`
+  against an endpoint that refuses every request, so it is the SDK's refusal
+  path rather than anything the tier added. The closest upstream report is
+  [`vercel/ai#8084`](https://github.com/vercel/ai/issues/8084) — *"Unable to
+  catch NoOutputGeneratedError"* — closed against 5.0.x; this is the same class
+  on 7.0.93 and no open issue matches it.
+
+  What the desk owns is that **the console is not where a person finds out**: the
+  run puts the status and the endpoint's own sentence on its own stream, which
+  the engine's suite asserts, so the rejection is noise beside a failure the tab
+  has already reported. The fix is **not** a page listener: one of those is keyed
+  on an error *name* and would suppress every rejection on the page carrying it,
+  an unrelated operation's included, for as long as a run was open.
 
 It reports what the model said about its own reasoning as the contract's
 `reasoning` events, **whatever the tier is**: the tier is what this desk asks

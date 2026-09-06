@@ -1363,6 +1363,35 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
   })
 })
 
+describe('what the author is told when the endpoint refuses', () => {
+  /**
+   * **The half of the SDK's refusal path this desk owns.**
+   *
+   * One `AI_NoOutputGeneratedError` still reaches a browser's console from
+   * inside the SDK's own transform flush, and it is not reachable from the
+   * result's object graph at any depth — measured on the live drive, three
+   * ways (see `claimPromises`). What this holds is that the console is not
+   * where a person finds out: the run says what happened, on its own stream,
+   * with the status and the endpoint's own sentence in it.
+   */
+  it('reports the status and the endpoint’s own sentence, and ends once', async () => {
+    const call: ModelCall = async () =>
+      new Response(JSON.stringify({ error: { message: 'this endpoint refuses everything' } }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' }
+      })
+    const events = await drain(vercel.start(session(call)))
+    expect(events.map((event) => event.type)).toEqual(['error', 'end'])
+    const said = (events[0] as { message: string }).message
+    expect(said).toContain('400')
+    expect(said).toContain('this endpoint refuses everything')
+    // …and no address in it: the SDK's error carries the placeholder origin,
+    // which says nothing useful and reads as a real host.
+    expect(said).not.toContain('relay.invalid')
+    expect(said).not.toContain('http')
+  })
+})
+
 describe('the refutation pass, on this SDK’s second streamText', () => {
   const VALID = JSON.stringify({ status: 'valid', diagnostics: [] })
   const INVALID = JSON.stringify({
