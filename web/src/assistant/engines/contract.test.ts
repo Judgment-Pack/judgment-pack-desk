@@ -12,6 +12,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { RunCancelled, eventIterator, openRun, servedSchema, withAbort } from './contract'
+import { normalize } from '../thinking'
 import type { AssistantEvent, AssistantSession } from '../engine'
 
 /** A promise, or a marker where it did not settle inside the bound. */
@@ -69,10 +70,11 @@ function waiting(): {
 function sessionWith(signal: AbortSignal): AssistantSession {
   return {
     prompt: 'p',
+    testPrompt: '',
     tools: [],
     callTool: async () => ({ content: [] }),
     model: { family: 'openai-compatible', model: 'm', call: async () => new Response('{}') },
-    thinking: { tier: 'off' },
+    thinking: normalize('off', 'openai-compatible'),
     signal
   }
 }

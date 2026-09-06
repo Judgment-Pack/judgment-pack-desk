@@ -37,12 +37,28 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CERTIFIED_ENGINES, loadEngine } from '../engines'
 import { bindModelCall, openAssistantConnection, runAssistantSession } from '../session'
 import scenario from './scenario.json'
-import { scriptedModel, type RecordedRequest } from './scriptedModel'
+import {
+  scriptedModel,
+  thinkSignature,
+  thinkText,
+  type RecordedRequest,
+  type ThinkingMode
+} from './scriptedModel'
 import { RECORDED_TOOLS, scriptedRuntime, type ServerObservation } from './scriptedServer'
+import {
+  REFUTE_ON_A_DEGRADED_ENDPOINT,
+  RESPONSE_TOKENS,
+  normalize,
+  wireFor
+} from '../thinking'
+import type { ThinkingTier } from '../../config/deskConfig'
 import runtime from './runtime.json'
 import type { AssistantEvent, Engine } from '../engine'
 
 const FIVE = scenario.scenarioTools
+
+/** The stand-in for the runtime's `test_pack` prompt. See `runLeg`. */
+const TEST_PROMPT = 'THE RUNTIME’S TEST_PACK GUIDANCE, AS PROMPTS/GET SERVED IT'
 const DRAFT_V2 = scenario.documents.DRAFT_V2 as unknown
 
 /**
@@ -570,14 +586,33 @@ interface Run {
  */
 async function runLeg(
   load: () => Promise<Engine>,
-  leg: Leg
+  leg: Leg,
+  /**
+   * What the desk asked for and what the endpoint offers.
+   *
+   * Defaulted to the phase-A pair — tier off, an endpoint with no thinking
+   * behaviour at all — so every existing leg is byte-identical to the one
+   * before this chunk.
+   */
+  how: {
+    tier?: ThinkingTier
+    mode?: ThinkingMode
+    refuted?: boolean
+    /** The tools this desk's file granted. Defaults to the five. */
+    allowed?: readonly string[]
+  } = {}
 ): Promise<Run> {
-  const model = scriptedModel({ api: leg.api, answerAs: leg.answerAs })
+  const model = scriptedModel({
+    api: leg.api,
+    answerAs: leg.answerAs,
+    thinking: how.mode ?? 'off',
+    refuted: how.refuted === true
+  })
   vi.stubGlobal('fetch', model.fetch)
   const runtime = await scriptedRuntime()
   const events: AssistantEvent[] = []
   const connection = openAssistantConnection({
-    allowed: FIVE,
+    allowed: how.allowed ?? FIVE,
     onEvent: (event) => events.push(event),
     transport: runtime.transport
   })
@@ -605,10 +640,15 @@ async function runLeg(
         // runtime's; what matters here is that the engine sends it and adds
         // no authoring instructions of its own.
         prompt: `${scenario.policy}`,
+        // The runtime's own `test_pack` guidance is what the critic works from
+        // on the page. This session carries no recorded `prompts/get`, so it
+        // hands over a stand-in and the legs assert the stand-in travelled —
+        // which measures the engine and models the runtime's text.
+        testPrompt: TEST_PROMPT,
         tools: ready.tools,
         callTool: ready.callTool,
         model: { family: leg.api, model: 'scripted-model', call },
-        thinking: { tier: 'off' },
+        thinking: normalize(how.tier ?? 'off', leg.api),
         signal: new AbortController().signal
       },
       (event) => events.push(event)
@@ -965,6 +1005,324 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
         'T8'
       ])
       expect(requests.map((request) => request.results)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+    })
+  })
+})
+
+/**
+ * The thinking legs, the no-thinking leg and the refutation legs — every
+ * engine, both wire formats.
+ *
+ * ADR-0001 makes these part of certification: *"the thinking leg (the tier
+ * parameter on every request, thinking blocks carried back verbatim after every
+ * tool result, reasoning streamed as events, the refutation pass run **only**
+ * when the tier is on), the no-thinking leg (a 400 on the parameter degrades
+ * once and the session completes)"*.
+ *
+ * The scripted endpoint's thinking half is `fixture/THINKING-SPEC.md` carried
+ * into the repository: the gate per wire format, deterministic reasoning text
+ * and signatures recomputed by the leg rather than trusted from the endpoint,
+ * the `-nothink` 400, the split-signature probe, and the critic script the
+ * marker switches on.
+ */
+const criticEvents = (events: AssistantEvent[]) =>
+  events.filter(
+    (event): event is Extract<AssistantEvent, { type: 'critique' }> => event.type === 'critique'
+  )
+const reasoningEvents = (events: AssistantEvent[]) =>
+  events.filter(
+    (event): event is Extract<AssistantEvent, { type: 'reasoning' }> => event.type === 'reasoning'
+  )
+const notices = (events: AssistantEvent[]) =>
+  events.filter(
+    (event): event is Extract<AssistantEvent, { type: 'thinking_unavailable' }> =>
+      event.type === 'thinking_unavailable'
+  )
+
+describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
+  describe.each(LEGS)('leg $api answered as $answerAs', (leg) => {
+    it('T-a — every request carries the tier parameter, not only the first', async ({
+      annotate
+    }) => {
+      // Frameworks lose the setting on later steps. Every row, including the
+      // critic's own, or the row fails naming the first that did not.
+      const { requests } = await runLeg(fromRegistry(engineId), leg, { tier: 'on', mode: 'on' })
+      expect(requests.length).toBeGreaterThan(7)
+      const missing = requests
+        .map((request, at) => ({ request, at }))
+        .filter(({ request }) => !request.thinkingRequested)
+        .map(({ at, request }) => `#${at} (${request.step})`)
+      expect(missing, 'requests with no tier parameter').toEqual([])
+      const seen = [...new Set(requests.map((request) => JSON.stringify(request.thinkingParam)))]
+      await annotate(`${engineId} · ${leg.api} · tier on → ${seen.join(' | ')}`, 'notice')
+      // And the members are the desk's table's, on both families.
+      const expected = normalize('on', leg.api).wire!.expect
+      for (const request of requests) {
+        expect(request.thinkingParam!.path).toBe(expected.path)
+        expect(request.thinkingParam!.value).toEqual(expected.value)
+      }
+    })
+
+    it('ultra sends the deeper member, and the same on every request', async () => {
+      const { requests } = await runLeg(fromRegistry(engineId), leg, { tier: 'ultra', mode: 'on' })
+      const expected = normalize('ultra', leg.api).wire!.expect
+      for (const request of requests) {
+        expect(request.thinkingParam!.value).toEqual(expected.value)
+      }
+    })
+
+    it('streams the model’s reasoning to the tab, and sends none of it to the runtime', async () => {
+      const { events, seen } = await runLeg(fromRegistry(engineId), leg, {
+        tier: 'on',
+        mode: 'on'
+      })
+      const passages = reasoningEvents(events).filter((event) => event.done)
+      expect(passages.length).toBeGreaterThan(0)
+      // The endpoint's own words, recomputed here rather than trusted from it.
+      expect(passages[0]!.text).toContain(thinkText({ id: 'T1', tool: 'get_schema' }))
+      // **And not one byte of it reaches `jpack mcp`.** Reasoning is for the
+      // person reading the tab; the runtime is asked about documents.
+      const sent = JSON.stringify(seen.map((call) => call.args))
+      expect(sent).not.toContain('[scripted reasoning')
+      expect(sent).not.toContain('must not state a verdict')
+    })
+
+    it('T-b — signatures carried back, verbatim and well formed', async () => {
+      if (leg.api !== 'anthropic') return
+      const { requests } = await runLeg(fromRegistry(engineId), leg, { tier: 'on', mode: 'on' })
+      // Every row after the first result must carry back every signature this
+      // endpoint has emitted so far, byte-equal, on a block that still has its
+      // text. The expected values are recomputed by this leg from the scenario's
+      // own step ids and never read out of what the endpoint logged.
+      const afterAResult = requests.filter((request) => request.results >= 1 && !request.refutation)
+      expect(afterAResult.length).toBeGreaterThan(0)
+      for (const request of afterAResult) {
+        expect(request.signaturesMissing, `${request.step} dropped a signature`).toEqual([])
+        expect(request.signaturesTruncated, `${request.step} truncated a signature`).toEqual([])
+        expect(request.signaturesMalformed, `${request.step} sent a block with no text`).toEqual([])
+      }
+      // …and they are the signatures the scenario's steps produce.
+      expect(afterAResult[0]!.signaturesCarried).toContain(thinkSignature({ id: 'T1' }))
+    })
+
+    it('runs the refutation pass, takes its verdict from the runtime, and shows it', async ({
+      annotate
+    }) => {
+      const { events, seen, requests } = await runLeg(fromRegistry(engineId), leg, {
+        tier: 'on',
+        mode: 'on'
+      })
+      // The pass is a second conversation, and the endpoint saw it.
+      const marked = requests.filter((request) => request.refutation)
+      expect(marked.length).toBeGreaterThan(0)
+      const critique = criticEvents(events)
+      expect(critique).toHaveLength(1)
+      // **The verdict is the runtime's.** The critic's prose on this leg says
+      // it is "fairly sure this pack is refuted"; the runtime said valid and
+      // evaluated, so the desk reports not refuted.
+      expect(critique[0]!.refuted).toBe(false)
+      expect(critique[0]!.checks).toEqual([
+        { tool: 'validate', status: 'valid' },
+        { tool: 'experimental_evaluate', status: 'evaluated' }
+      ])
+      expect(critique[0]!.text).toContain('quoted from the runtime')
+      // The critic ran BEFORE the proposal, and the proposal carries the line.
+      const kinds = events.map((event) => event.type)
+      expect(kinds.indexOf('critique')).toBeLessThan(kinds.indexOf('proposal'))
+      expect(proposals(events)[0]!.critique).toEqual({ refuted: false })
+      // **Inside the same ToolGate.** The critic asked for an evaluate with no
+      // rehearsal member, exactly as T6 does, and the runtime saw a rehearsal —
+      // so the gate rewrote the critic's frame too. An ungated critic would
+      // have been recorded as a refusal by the scripted server.
+      const evaluates = seen.filter((call) => call.name === 'experimental_evaluate')
+      expect(evaluates).toHaveLength(2)
+      for (const call of evaluates) expect(call.args.rehearsal).toBe(true)
+      expect(seen.filter((call) => call.refusal !== '')).toEqual([])
+      await annotate(
+        `${engineId} · ${leg.api} · refutation: ${JSON.stringify(critique[0]!.checks)}`,
+        'notice'
+      )
+    })
+
+    it('renders refuted: true where the runtime refuses the document', async () => {
+      // **The branch ADR-0001 records as never executed outside a mutation.**
+      // The critic causes a real `validate` over the draft the runtime already
+      // refused, and its own prose says "none found".
+      const { events } = await runLeg(fromRegistry(engineId), leg, {
+        tier: 'on',
+        mode: 'on',
+        refuted: true
+      })
+      const critique = criticEvents(events)
+      expect(critique).toHaveLength(1)
+      expect(critique[0]!.refuted).toBe(true)
+      expect(critique[0]!.checks[0]).toEqual({ tool: 'validate', status: 'invalid' })
+      expect(critique[0]!.text).toContain('1 diagnostic(s)')
+      // And the proposal is still shown, with the line on it: refutation is
+      // information, not failure.
+      expect(proposals(events)).toHaveLength(1)
+      expect(proposals(events)[0]!.critique).toEqual({ refuted: true })
+      expect(proposals(events)[0]!.document).toEqual(DRAFT_V2)
+      expect(events.some((event) => event.type === 'error')).toBe(false)
+    })
+
+    it('runs no refutation pass at all where the tier is off', async () => {
+      const { events, requests } = await runLeg(fromRegistry(engineId), leg)
+      expect(requests.filter((request) => request.refutation)).toEqual([])
+      expect(criticEvents(events)).toEqual([])
+      expect(proposals(events)[0]!.critique).toBeUndefined()
+    })
+
+    it('the no-thinking leg — degrades once, and the session completes', async () => {
+      // ADR-0001's own leg: "a 400 on the parameter degrades once and the
+      // session completes".
+      const { events, requests, seen } = await runLeg(fromRegistry(engineId), leg, {
+        tier: 'on',
+        mode: 'nothink'
+      })
+      expect(notices(events)).toHaveLength(1)
+      expect(notices(events)[0]!.detail).toContain('unavailable for this endpoint')
+      // The whole scenario still ran, and the proposal is the document.
+      expect(seen.map((call) => call.name)).toContain('experimental_evaluate')
+      expect(proposals(events)).toHaveLength(1)
+      expect(proposals(events)[0]!.document).toEqual(DRAFT_V2)
+      expect(events.filter((event) => event.type === 'end')).toHaveLength(1)
+      expect(events.some((event) => event.type === 'error')).toBe(false)
+      // **And the refused member is never re-sent.** The requests that carry a
+      // tier parameter are a prefix of the run — one per spelling the desk
+      // knows, so at most two on the Anthropic family and one elsewhere — and
+      // every request after that prefix is plain. A row further down that
+      // carried the member again would be the desk asking a question it had
+      // already been answered.
+      const asked = requests.map((request) => request.thinkingRequested)
+      const prefix = asked.indexOf(false) === -1 ? asked.length : asked.indexOf(false)
+      expect(prefix, 'the tier was asked for after the endpoint refused it').toBeLessThanOrEqual(
+        leg.api === 'anthropic' ? 2 : 1
+      )
+      expect(asked.slice(prefix).filter(Boolean)).toEqual([])
+    })
+
+    it('the ruling — the refutation pass still runs on a degraded endpoint', async () => {
+      // The default this chunk carries, and the thing the maintainer may flip:
+      // the pass's value is the runtime's checks, not the model's thinking.
+      const { events, requests } = await runLeg(fromRegistry(engineId), leg, {
+        tier: 'on',
+        mode: 'nothink'
+      })
+      const ran = requests.some((request) => request.refutation)
+      expect(ran).toBe(REFUTE_ON_A_DEGRADED_ENDPOINT)
+      expect(criticEvents(events).length === 1).toBe(REFUTE_ON_A_DEGRADED_ENDPOINT)
+      if (REFUTE_ON_A_DEGRADED_ENDPOINT) {
+        expect(criticEvents(events)[0]!.checks).toHaveLength(2)
+      }
+    })
+  })
+
+  describe('a critic that asks for a tool this desk never granted', () => {
+    const leg: Leg = { api: 'openai-compatible', answerAs: 'stream' }
+    /** The three reads. Neither check tool is granted, so neither can answer. */
+    const READS_ONLY = ['get_schema', 'list_examples', 'get_example']
+
+    it('refuses it at the wire, and the pass reports no check rather than a verdict', async () => {
+      // **A refusal is not a verdict.** The desk's gate refuses a call the file
+      // never granted; that refusal is a `guardrail` line, and the critic is
+      // told about it so it does not spend its turns re-asking. What it must
+      // never be is a *check* — a critique built out of the desk's own refusals
+      // would say "the runtime refuted this proposal" about calls that never
+      // left the page.
+      const { events, seen } = await runLeg(fromRegistry(engineId), leg, {
+        tier: 'on',
+        mode: 'on',
+        allowed: READS_ONLY
+      })
+      // Nothing the gate refused reached `jpack mcp` at all.
+      expect(seen.map((call) => call.name)).not.toContain('validate')
+      expect(seen.map((call) => call.name)).not.toContain('experimental_evaluate')
+      expect(seen.filter((call) => call.refusal !== '')).toEqual([])
+      // The critic ran, was refused, and produced no check and no verdict.
+      const critique = criticEvents(events)
+      expect(critique).toHaveLength(1)
+      expect(critique[0]!.checks).toEqual([])
+      expect(critique[0]!.refuted).toBe(false)
+      expect(critique[0]!.text).toContain('no runtime check')
+      // …and the proposal carries no refutation line at all.
+      expect(proposals(events)).toHaveLength(1)
+      expect(proposals(events)[0]!.critique).toBeUndefined()
+      // The refusals are reported as what they are.
+      const refused = guardrails(events).filter((event) => event.action === 'refused')
+      expect(refused.map((event) => event.tool)).toContain('validate')
+    })
+  })
+
+  describe('the Anthropic dialects', () => {
+    const leg: Leg = { api: 'anthropic', answerAs: 'stream' }
+
+    it('falls back once to the token-budget spelling, and says nothing about it', async () => {
+      const { events, requests } = await runLeg(fromRegistry(engineId), leg, {
+        tier: 'on',
+        mode: 'enabled-only'
+      })
+      // The first request asks in the adaptive spelling and is refused; the
+      // second asks in the other one and every request after it does too.
+      expect(requests[0]!.thinkingParam!.value).toEqual({ type: 'adaptive' })
+      const accepted = requests.filter(
+        (request) => (request.thinkingParam?.value as { type?: string } | undefined)?.type === 'enabled'
+      )
+      expect(accepted.length).toBeGreaterThan(5)
+      expect(accepted[0]!.thinkingParam!.value).toEqual({ type: 'enabled', budget_tokens: 8000 })
+      // **And the request is internally consistent**, which this endpoint now
+      // enforces: the budget is spent out of `max_tokens`, so a request whose
+      // budget is not strictly below it is refused. Every accepted row got past
+      // that check, and the maximum is the desk's table's.
+      expect(wireFor('on', 'anthropic-enabled')!.members.max_tokens).toBe(8000 + RESPONSE_TOKENS)
+      expect(wireFor('ultra', 'anthropic-enabled')!.members.max_tokens).toBe(16000 + RESPONSE_TOKENS)
+      // A fallback is not a degrade: nothing is said and the session thinks.
+      expect(notices(events)).toEqual([])
+      expect(reasoningEvents(events).length).toBeGreaterThan(0)
+      expect(proposals(events)[0]!.document).toEqual(DRAFT_V2)
+    })
+
+    it('never sends a fragment of a signature back, even when one arrives split', async ({
+      annotate
+    }) => {
+      // `vercel/ai#19663`. The two engines answer it differently — one
+      // reassembles the fragments, one detects the truncation and degrades —
+      // and the **contract's** rule is the same for both: a malformed thinking
+      // block never leaves the page. That is what is asserted; what each engine
+      // did is annotated.
+      const { events, requests } = await runLeg(fromRegistry(engineId), leg, {
+        tier: 'on',
+        mode: 'split'
+      })
+      for (const request of requests) {
+        expect(request.signaturesTruncated, `${request.step} sent a fragment`).toEqual([])
+        expect(request.signaturesMalformed, `${request.step} sent an empty block`).toEqual([])
+      }
+      // **The rebuild, measured at the endpoint.** This endpoint now refuses a
+      // continuation that asks for thinking and does not carry back every block
+      // it signed — so an engine that merely *filtered* the damaged block out
+      // of an otherwise unchanged request would be refused here, and an engine
+      // that rebuilt it without the tier is not.
+      const askedAndShort = requests.filter(
+        (request) =>
+          request.thinkingRequested &&
+          request.results >= 1 &&
+          request.signaturesMissing.length > 0
+      )
+      expect(
+        askedAndShort.map((request) => request.step),
+        'a request asked for thinking without carrying back what it was signed'
+      ).toEqual([])
+      const said = notices(events).map((notice) => notice.detail)
+      const carried = requests.some((request) => request.signaturesCarried.length > 0)
+      await annotate(
+        `${engineId} · split signature → ${carried ? 'reassembled and carried' : 'not carried'}` +
+          `${said.length === 0 ? '' : `; degraded: ${said[0]}`}`,
+        'notice'
+      )
+      // Either way the session completes with the document.
+      expect(proposals(events)[0]!.document).toEqual(DRAFT_V2)
+      expect(events.filter((event) => event.type === 'end')).toHaveLength(1)
     })
   })
 })

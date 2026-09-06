@@ -3864,9 +3864,12 @@ export function assistantTransport(): Transport {
   # the only observable consequence the hook has, and the only thing that can
   # discriminate this row. A row whose catcher were a leg would be a row lying
   # about which layer holds.
+  # (The hook moved into a `refine` constant when the critic landed, so the
+  # main loop and the critic's second stream are given the same one. The row is
+  # the same claim about the same line, at the indentation it now has.)
   mutate web "the SDK's rehearsal hook never fires, and only the gate holds" "$VL" \
-    '        [REHEARSAL_TOOL]: (input: unknown) => {' \
-    '        [`${REHEARSAL_TOOL}_NEVER_CALLED`]: (input: unknown) => {'
+    '      [REHEARSAL_TOOL]: (input: unknown) => {' \
+    '      [`${REHEARSAL_TOOL}_NEVER_CALLED`]: (input: unknown) => {'
 
   # The gate handed a call somebody already fixed reports nothing, and the
   # guardrail line in the tab is the only place a person learns the flag was
@@ -3947,9 +3950,13 @@ export function assistantTransport(): Transport {
   # The contract has a `reasoning` event and the SDK has three part types for
   # it. An adapter that drops them decides, on the desk's behalf, that what the
   # model said about its own reasoning is not worth showing.
+  # (Needled with the comment above it, because the critic's second stream now
+  # reads the same part type and a bare needle would be ambiguous.)
   mutate web "the SDK's reasoning parts are dropped" "$VL" \
-    "      if (part.type === 'reasoning-delta') {" \
-    '      if (false) {'
+    "      // own reasoning is not worth showing.
+      if (part.type === 'reasoning-delta') {" \
+    '      // own reasoning is not worth showing.
+      if (false) {'
   # K2's other half: the model is shown the contract the runtime enforces **or
   # it is shown nothing**. A permissive schema written here is this desk telling
   # the model that anything goes for a tool whose contract it does not know.
@@ -4146,6 +4153,278 @@ export function assistantTransport(): Transport {
   mutate web "the idle deadline never reports its own timeout" "$CT" \
     '        const didTimeout = deadlineAt !== undefined && now() >= deadlineAt' \
     '        const didTimeout = false'
+
+  # ---- The thinking tier, and the refutation pass --------------------------
+  #
+  # ADR-0001 puts both in the desk rather than in an engine: one table per
+  # endpoint family, five states of which two are the desk's to report, and a
+  # refutation pass held to three rules no prototype kept on its own. Each row
+  # below breaks one of them.
+  TH=web/src/assistant/thinking.ts
+  RF=web/src/assistant/refutation.ts
+  BA=web/src/assistant/engines/builtin/providers/anthropic.ts
+
+  # `off` is expressed by OMISSION: Anthropic rejects `{"type":"disabled"}` on
+  # the models that always think and several endpoints answer 400 to
+  # `reasoning_effort: "none"`, so a tier member sent at `off` is a request a
+  # desk configured for no thinking never agreed to make.
+  mutate web "the tier member is sent when the tier is off" "$TH" \
+    "  if (tier === 'off') return null
+  const effort = tier === 'ultra' ? 'xhigh' : 'high'" \
+    "  const effort = tier === 'ultra' ? 'xhigh' : 'high'"
+
+  # The degrade is sticky for the session: the member the endpoint refused is
+  # never sent again. Without this the retry re-sends what was just refused,
+  # and every request after it does too.
+  mutate web "a refused tier member is sent again on the next request" "$TH" \
+    "      unavailable = true
+      // The status, and the desk's own sentence. The endpoint's body is
+      // matched against a closed list and never quoted past it." \
+    "      // The status, and the desk's own sentence. The endpoint's body is
+      // matched against a closed list and never quoted past it."
+
+  # Anthropic spends the thinking budget out of `max_tokens`, so the table that
+  # chooses the budget chooses the maximum with it. Without the allowance the
+  # budget is not below the maximum and every enabled-dialect endpoint refuses
+  # the request — which the conformance endpoint now enforces.
+  mutate web "the enabled dialect's response allowance is dropped" "$TH" \
+    "          max_tokens: budget + RESPONSE_TOKENS" \
+    "          max_tokens: budget"
+
+  # **The line, once.** A degrade said on every request is a reader learning to
+  # skip it; the split-signature leg is where a second one can actually happen,
+  # because a fresh block arrives on every turn.
+  mutate web "the degrade is announced more than once" "$TH" \
+    "    truncated(reason) {
+      if (unavailable) return null
+      unavailable = true
+      return notice('unavailable', reason)
+    }," \
+    "    truncated(reason) {
+      unavailable = true
+      return { type: 'thinking_unavailable', detail: thinkingNotice('unavailable', reason) }
+    },"
+
+  # The slot changes at the transition and the request that leaves is already
+  # the degraded one, so a notice held until the next stream part left the tab
+  # saying `thinking on` about a request that carried none — for as long as it
+  # took, or for ever.
+  mutate web "the truncation notice waits for the next stream part" "$VL" \
+    "    const said = slot.truncated(reason)
+    if (said !== null) await channel.push(said)" \
+    "    const said = slot.truncated(reason)
+    if (said !== null) void Promise.resolve().then(() => channel.push(said))"
+
+  # **A turn is not a capability.** One unsolicited passage at tier off used to
+  # label the model "always thinks" for the whole session.
+  mutate web "one reasoning turn makes a model that always thinks" "$TH" \
+    "        if (always || reasoningRun < PERMANENCE) return null" \
+    "        if (always || reasoningRun < 1) return null"
+  # …and the other direction: one quiet turn used to strip the tier from every
+  # request after it, on an endpoint that reasons perfectly well.
+  mutate web "one quiet turn makes an endpoint with no thinking" "$TH" \
+    "      quietRun += 1
+      if (quietRun < PERMANENCE) return null" \
+    "      quietRun += 1
+      if (quietRun < 1) return null"
+  # A turn that only called a tool is no evidence that an endpoint will not
+  # reason, and counting it made a tool-first session degrade itself.
+  mutate web "a tool-only turn counts as evidence of no thinking" "$TH" \
+    '      if (!hadText) return null' \
+    '      void hadText'
+  # …and the same rule in the other tier, where it was written and not applied:
+  # a reasoning answer, a tool call and a second reasoning answer never reached
+  # "always", because the tool call in the middle wiped the count.
+  mutate web "a tool-only turn wipes the off-tier count" "$TH" \
+    "      if (!hadText) return null
+      if (tier === 'off') {" \
+    "      if (tier === 'off') {
+        if (!hadText) reasoningRun = 0"
+
+
+  # **The conjunction.** `Unsupported parameter` and `Extra inputs are not
+  # permitted` are what an endpoint says about *any* member, so prose alone
+  # degraded the tier on a refusal about `temperature` and hid a real failure
+  # behind a misleading "thinking is unavailable" line. (This replaces the
+  # "any 400" row, which did not prove the conjunction it was named for.)
+  mutate web "a refusal need not name a member the desk sent" "$TH" \
+    "  if (status !== 400) return false
+  return namesSent(members).some((name) => message.includes(name))" \
+    "  if (status !== 400) return false
+  return /unsupported parameter|extra inputs are not permitted|not supported/i.test(message)"
+
+  # vercel/ai#19663. A block whose signature came back as a fragment is removed
+  # rather than sent: a malformed thinking block is a request the endpoint
+  # refuses, and sending one is the defect the ledger exists for.
+  mutate web "a truncated thinking signature is sent back anyway" "$VR" \
+    "      if (sent === undefined || !isTruncatedSignature(sent.signature, block.signature)) return true" \
+    "      if (true) return true"
+
+  # **Block identity, by position.** Comparing a carried signature against every
+  # signature ever ledgered threw away a later block whose own signature was
+  # legitimately shorter and happened to be a prefix of an earlier one.
+  mutate web "a carried signature is compared with every signature ever seen" "$VR" \
+    "      const sent = signed[at]
+      at += 1" \
+    "      const sent = signed.find((one) => isTruncatedSignature(one.signature, String(block.signature)))
+      at += 1"
+
+  # **A filter is not a rebuild.** The body was composed before the slot
+  # degraded, so filtering the damaged block out of it leaves a request that
+  # still asks for thinking while no longer carrying a block the endpoint
+  # signed — a continuation the split-signature endpoint refuses.
+  mutate web "the degraded request is filtered rather than rebuilt" "$VR" \
+    "  for (const member of TIER_MEMBERS) delete payload[member]
+  Object.assign(payload, membersAfter() ?? {})" \
+    "  void TIER_MEMBERS
+  void membersAfter"
+
+  # The block ids repeat every turn on the Anthropic wire, so a ledger with no
+  # turn boundary concatenates one turn's signature onto the next and reports
+  # the next turn's whole signature as a fragment of the pair — degrading a
+  # perfectly good session on its third turn.
+  mutate web "the signature ledger has no turn boundary" "$VR" \
+    "    boundary: settle," \
+    "    boundary: () => {},"
+  # **Two blocks signed the same are two blocks.** Collapsing them left a later
+  # block compared against the wrong entry, or against none, and sent.
+  mutate web "two blocks signed the same collapse into one" "$VR" \
+    "      if (signature !== '') done.push({ conversation, turn, block, signature })" \
+    "      if (signature !== '' && !done.some((one) => one.signature === signature)) {
+        done.push({ conversation, turn, block, signature })
+      }"
+  # The critic's history carries none of the main loop's blocks, so comparing
+  # its first block against the loop's first signature compares two different
+  # conversations' positions.
+  mutate web "the critic is compared against the main loop's blocks" "$VR" \
+    "      return done.filter((entry) => entry.conversation === conversation)" \
+    "      return [...done]"
+
+  # **The verdict is the runtime's.** The critic's prose disagrees with the
+  # runtime on purpose on both conformance legs, so a verdict read out of it is
+  # wrong in both directions.
+  mutate web "the refutation verdict is read out of the critic's prose" "$RF" \
+    "    critique(modelText) {
+      return { refuted: verdictOf(checks), checks: [...checks], text: quoteOf(checks), modelText }
+    }" \
+    "    critique(modelText) {
+      return {
+        refuted: /refut/i.test(modelText),
+        checks: [...checks],
+        text: quoteOf(checks),
+        modelText
+      }
+    }"
+
+  # A non-empty list of checks before "not refuted" is rendered. A critic that
+  # talked and asked the runtime nothing has produced no evidence, and a
+  # refutation line on that proposal is a clean bill of health nobody measured.
+  mutate web "a proposal the critic never checked is rendered as not refuted" "$RF" \
+    "  if (critique === null || critique.checks.length === 0) return {}" \
+    "  if (critique === null) return {}"
+
+  # **The separation, broken in the one way that matters.** The distinction is
+  # a type: the refusal arm of `ToolOutcome` has no `report`, so a call the gate
+  # refused cannot reach the recorder from the loop at all. The row that merely
+  # removed the old boolean was not discriminating, because today's guardrail
+  # prose happens not to parse as JSON — so this one hands the recorder the
+  # refusal's words **shaped like a runtime answer**, which is the failure the
+  # separation exists to make impossible.
+  mutate web "the refusal continuation is handed the recorder" "$BL" \
+    "      if (outcome.kind === 'answered') outcome.report(recorder, call.name)" \
+    "      recorder.saw(
+        call.name,
+        outcome.kind === 'answered' ? outcome.text : '{\"status\":\"invalid\"}'
+      )"
+  # The recorder itself, which must not invent a status the runtime never
+  # used for an answer that carried none.
+  mutate web "an answer with no runtime status is recorded as refused" "$RF" \
+    "      const said = statusOf(text)
+      if (said === null) return" \
+    "      const said = statusOf(text)
+      if (said === null) {
+        checks.push({ tool, status: 'refused', diagnostics: 0 })
+        return
+      }"
+  # An object literal inherits `toString`, `constructor` and the rest, so `in`
+  # made a tool the table does not name into a check.
+  mutate web "the settled table is read through its prototype" "$RF" \
+    '  return Object.hasOwn(SETTLED_STATUS, tool)' \
+    '  return tool in SETTLED_STATUS'
+
+  # The runtime has one word per command for "this went through". A rule that
+  # read `status !== 'valid'` over both tools would report every session ever
+  # run as refuted, because a rehearsal evaluation answers `evaluated`.
+  mutate web "one settled status is used for every check" "$RF" \
+    "  return checks.length > 0 && checks.some((check) => check.status !== SETTLED_STATUS[check.tool])" \
+    "  return checks.length > 0 && checks.some((check) => check.status !== 'valid')"
+
+  # The pass is gated on the tier: a desk configured for no thinking runs no
+  # critic, makes no second conversation, and spends no extra call.
+  mutate web "the refutation pass runs even with the tier off" "$TH" \
+    "    runsRefutation() {
+      if (tier === 'off') return false" \
+    "    runsRefutation() {
+      if (false) return false"
+
+  # **Both prompts, or neither.** Starting on the author prompt alone handed the
+  # engine an empty `testPrompt`, and the critic then ran on this desk's one
+  # sentence with none of the runtime's instructions.
+  # **A read that failed is a settled read.** `data` alone stays undefined for
+  # ever on the error state, so a `prompts/get` the runtime refused deadlocked
+  # the whole session: the authoring prompt had arrived, no engine started, and
+  # the tab said nothing about why.
+  mutate web "a refused testing prompt is waited for for ever" "$AP" \
+    '    testPrompt.data === undefined &&
+    testPrompt.error === null' \
+    '    testPrompt.data === undefined'
+
+  mutate web "the run starts before the runtime's testing prompt arrives" "$AP" \
+    '    if (waitingForTest) return' \
+    '    void waitingForTest'
+  # …and the other half: with no testing prompt at all the pass must report that
+  # it cannot run rather than putting a critic in front of a document with only
+  # the desk's sentence to go on.
+  mutate web "the critic runs on the desk's sentence alone" "$RF" \
+    "  if (testPrompt.trim() !== '') return null" \
+    "  if (true) return null"
+
+  # The critic runs under the **run's** gate, not on the session capability
+  # directly: a viewer who presses Stop during the pass must end it where they
+  # would have ended the loop above.
+  mutate web "the critic calls the runtime outside the run's gate" "$BL" \
+    "        ? yield* refute({ session, provider, tools, callTool, slot, signal, document: proposal.document })" \
+    "        ? yield* refute({ session, provider, tools, callTool: session.callTool, slot, signal, document: proposal.document })"
+
+  # **Retired: "the critic's stream is not bounded by the run".** It reported
+  # NOT DISCRIMINATING, correctly. The critic's `streamText` is given the run's
+  # `abortSignal`, so the SDK ends its own stream on a cancel and the desk's
+  # bound on the *read* changes nothing anyone can observe — exactly as it does
+  # on the main loop's read, which has never had a row either. The bound is kept
+  # because "the SDK honours the signal" is a premise and not a rule (the same
+  # argument `relay.ts` makes about checking an address the SDK composed), and
+  # its absence from this table is stated here rather than left as a gap. What
+  # IS observable is the seam on the tool dispatch, above.
+
+  # A signal that aborted *while* the work was running fired before the
+  # listener existed, so the await hung on whatever the work returned — which
+  # is exactly what a capability that ends the session from inside a request
+  # does.
+  mutate web "a run that closed while the work ran is never noticed" "$EC" \
+    "    if (signal.aborted) cancelled()
+  })" \
+    "    void cancelled
+  })"
+
+  # **Reasoning is for the person reading the tab.** The runtime is asked about
+  # documents, and a tool call carrying the model's own reasoning would put it
+  # in a project's audit trail.
+  mutate web "the model's reasoning is sent to the runtime with the tool call" "$BA" \
+    "      args: (block.input ?? {}) as Record<string, unknown>," \
+    "      args: {
+        ...((block.input ?? {}) as Record<string, unknown>),
+        reasoning: content.find((held) => held.type === 'thinking')?.thinking
+      } as Record<string, unknown>,"
 
   # ---- The proposal as a diff, and accepting it into the draft -------------
   #

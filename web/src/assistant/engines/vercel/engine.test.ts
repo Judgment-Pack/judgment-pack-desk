@@ -18,8 +18,19 @@ import { ASSISTANT_ENGINES, ASSISTANT_TOOLS } from '../../../config/deskConfig'
 import { CERTIFICATION_IS_TOTAL, CERTIFIED_ENGINES, loadEngine } from '../index'
 import { ChannelHasOneConsumer, eventChannel } from './channel'
 import { vercel } from './index'
-import { REHEARSAL_HOOK, claimPromises } from './loop'
-import { ADDRESS_REFUSED, PLACEHOLDER_ORIGIN, placeholderBase, reframe, relayFetch, suffixOf } from './relay'
+import { REHEARSAL_HOOK, claimPromises, sdkThinking } from './loop'
+import {
+  ADDRESS_REFUSED,
+  PLACEHOLDER_ORIGIN,
+  placeholderBase,
+  reframe,
+  relayFetch,
+  signatureLedger,
+  suffixOf,
+  withoutTruncatedThinking
+} from './relay'
+import { normalize, wireFor } from '../../thinking'
+import { REFUTATION_MARKER } from '../../refutation'
 import type { streamText } from 'ai'
 import type { AssistantEvent, AssistantSession, McpTool, ModelCall, McpToolResult } from '../../engine'
 
@@ -50,6 +61,12 @@ function turn(step: {
   for (const piece of step.reasoning ?? []) {
     lines.push(frame([{ index: 0, delta: { reasoning_content: piece }, finish_reason: null }]))
   }
+  // A turn may answer **and** call a tool, which is what an endpoint does when
+  // it says what it is about to do — and it is the shape the "a tool-only turn
+  // neither counts nor resets" rule needs to be measured against.
+  if (step.tool && step.text !== undefined) {
+    lines.push(frame([{ index: 0, delta: { content: step.text }, finish_reason: null }]))
+  }
   if (step.tool) {
     lines.push(
       frame([
@@ -77,6 +94,57 @@ function turn(step: {
     )
   }
   lines.push('data: [DONE]\n\n')
+  return lines.join('')
+}
+
+/** One Anthropic SSE turn: a thinking block, then a tool call or the text. */
+function anthropicTurn(step: {
+  reasoning?: string
+  signature?: string
+  splitSignature?: boolean
+  text?: string
+  tool?: { name: string; args: unknown }
+}): string {
+  const lines: string[] = []
+  const event = (name: string, object: Record<string, unknown>) =>
+    lines.push(`event: ${name}\ndata: ${JSON.stringify({ type: name, ...object })}\n\n`)
+  event('message_start', {
+    message: { id: 'm', type: 'message', role: 'assistant', model: 'm', content: [], stop_reason: null, usage: { input_tokens: 1, output_tokens: 0 } }
+  })
+  let index = 0
+  if (step.reasoning !== undefined) {
+    event('content_block_start', { index, content_block: { type: 'thinking', thinking: '' } })
+    event('content_block_delta', { index, delta: { type: 'thinking_delta', thinking: step.reasoning } })
+    const signature = step.signature ?? 'c2ln'
+    if (step.splitSignature === true) {
+      const half = Math.floor(signature.length / 2)
+      event('content_block_delta', { index, delta: { type: 'signature_delta', signature: signature.slice(0, half) } })
+      event('content_block_delta', { index, delta: { type: 'signature_delta', signature: signature.slice(half) } })
+    } else {
+      event('content_block_delta', { index, delta: { type: 'signature_delta', signature } })
+    }
+    event('content_block_stop', { index })
+    index += 1
+  }
+  if (step.tool !== undefined) {
+    event('content_block_start', {
+      index,
+      content_block: { type: 'tool_use', id: `toolu_${step.tool.name}`, name: step.tool.name, input: {} }
+    })
+    event('content_block_delta', {
+      index,
+      delta: { type: 'input_json_delta', partial_json: JSON.stringify(step.tool.args) }
+    })
+  } else {
+    event('content_block_start', { index, content_block: { type: 'text', text: '' } })
+    event('content_block_delta', { index, delta: { type: 'text_delta', text: step.text ?? '' } })
+  }
+  event('content_block_stop', { index })
+  event('message_delta', {
+    delta: { stop_reason: step.tool === undefined ? 'end_turn' : 'tool_use', stop_sequence: null },
+    usage: { output_tokens: 1 }
+  })
+  event('message_stop', {})
   return lines.join('')
 }
 
@@ -109,12 +177,13 @@ function session(
 ): AssistantSession {
   return {
     prompt: 'the runtime’s prompt',
+    testPrompt: 'the runtime’s test_pack guidance',
     tools: TOOLS,
     callTool:
       callTool ??
       (async (): Promise<McpToolResult> => ({ content: [{ type: 'text', text: '{"status":"ok"}' }] })),
     model: { family: 'openai-compatible', model: 'a-model', call },
-    thinking: { tier: 'off' },
+    thinking: normalize('off', 'openai-compatible'),
     signal: new AbortController().signal,
     ...overrides
   }
@@ -201,7 +270,7 @@ describe('a session that was already over before the run began', () => {
     }
     const events = await drain(
       vercel.start(
-        session(call, { signal: controller.signal, thinking: { tier } }, async () => {
+        session(call, { signal: controller.signal, thinking: normalize(tier, 'openai-compatible') }, async () => {
           tools += 1
           return { content: [] }
         })
@@ -910,6 +979,31 @@ describe('what the model said about its own reasoning', () => {
       // The whole passage on `done`, so a reader has it rather than the pieces.
       { type: 'reasoning', text: 'I check the schema before I propose.', done: true }
     ])
+    // **And no capability is claimed from one turn.** One unsolicited passage
+    // is a turn, not a model that always thinks.
+    expect(events.some((event) => event.type === 'thinking_unavailable')).toBe(false)
+  })
+
+  it('reports a model that always thinks after two answers of it', async () => {
+    // A turn that only called a tool neither counts nor resets, in either
+    // tier, so the two that count are the two that answered — with a tool-only
+    // turn between them, which must not wipe the count.
+    const { call } = scriptedCall([
+      turn({
+        reasoning: ['I look first.'],
+        text: 'Let me look.',
+        tool: { name: 'validate', args: { document: '{}' } }
+      }),
+      turn({ tool: { name: 'validate', args: { document: '{}' } } }),
+      turn({ reasoning: ['And then I propose.'], text: PROPOSAL_TEXT })
+    ])
+    const events = await drain(vercel.start(session(call)))
+    const notices = events.filter(
+      (event): event is Extract<AssistantEvent, { type: 'thinking_unavailable' }> =>
+        event.type === 'thinking_unavailable'
+    )
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.detail).toContain('always thinks')
   })
 
   it('says nothing where the endpoint reasoned about nothing', async () => {
@@ -919,12 +1013,673 @@ describe('what the model said about its own reasoning', () => {
   })
 })
 
-describe('the thinking tier this chunk does not run', () => {
-  it.each(['on', 'ultra'] as const)('reports %s unavailable and carries on', async (tier) => {
-    const { call } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
-    const events = await drain(vercel.start(session(call, { thinking: { tier } })))
-    expect(events.map((event) => event.type)).toEqual(['thinking_unavailable', 'proposal', 'end'])
-    expect((events[0] as { detail: string }).detail).toContain(tier)
-    expect((events[0] as { detail: string }).detail).toContain('vercel')
+describe('the thinking tier, through the SDK’s own call settings', () => {
+  /**
+   * **The translation, held to the desk's table.**
+   *
+   * `sdkThinking` is the one place this adapter turns the desk's wire members
+   * into the SDK's vocabulary, and the assertion below is that what comes out
+   * the other end of the SDK is what the table asked for — measured on the
+   * body, not on the option object.
+   */
+  it.each([
+    ['openai-compatible', 'on'],
+    ['openai-compatible', 'ultra'],
+    ['anthropic', 'on'],
+    ['anthropic', 'ultra']
+  ] as const)('puts the desk’s own members on a %s request at %s', async (family, tier) => {
+    const answer =
+      family === 'anthropic' ? anthropicTurn({ text: PROPOSAL_TEXT }) : turn({ text: PROPOSAL_TEXT })
+    const { call, seen } = scriptedCall([answer])
+    await drain(
+      vercel.start(
+        session(call, {
+          model: { family, model: 'a-model', call },
+          thinking: normalize(tier, family)
+        })
+      )
+    )
+    const table = normalize(tier, family).wire!.members
+    for (const [member, value] of Object.entries(table)) {
+      expect(seen[0]!.body[member], `${family} ${tier} ${member}`).toEqual(value)
+    }
+    // The fallback dialect's pair, through the SDK's own call settings.
+    const fallback = wireFor(tier, 'anthropic-enabled')!.members as { max_tokens: number }
+    if (family === 'anthropic') {
+      expect(sdkThinking(family, wireFor(tier, 'anthropic-enabled')!.members)).toMatchObject({
+        maxOutputTokens: fallback.max_tokens
+      })
+    }
+  })
+
+  it('sends no tier member at all where the tier is off', async () => {
+    const { call, seen } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
+    await drain(vercel.start(session(call)))
+    expect(Object.keys(seen[0]!.body)).not.toContain('reasoning_effort')
+    expect(Object.keys(seen[0]!.body)).not.toContain('thinking')
+  })
+
+  it('translates each of the desk’s three dialects and nothing else', () => {
+    expect(sdkThinking('openai-compatible', null)).toEqual({})
+    expect(sdkThinking('openai-compatible', { reasoning_effort: 'xhigh' })).toEqual({
+      providerOptions: { 'desk-endpoint': { reasoningEffort: 'xhigh' } }
+    })
+    expect(
+      sdkThinking('anthropic', { thinking: { type: 'adaptive' }, output_config: { effort: 'high' } })
+    ).toEqual({ providerOptions: { anthropic: { thinking: { type: 'adaptive' }, effort: 'high' } } })
+    expect(
+      sdkThinking('anthropic', {
+        thinking: { type: 'enabled', budget_tokens: 16000 },
+        max_tokens: 20096
+      })
+    ).toEqual({
+      providerOptions: { anthropic: { thinking: { type: 'enabled', budgetTokens: 16000 } } },
+      // The SDK's spelling of the number the desk's table chose beside the
+      // budget: Anthropic spends the budget out of the request's maximum.
+      maxOutputTokens: 20096
+    })
+  })
+
+  it('degrades once on a 400 that names the member, and completes', async () => {
+    const seen: Record<string, unknown>[] = []
+    const call: ModelCall = async (_suffix, request) => {
+      // The critic is a second conversation and is not what this measures.
+      if (request.body.includes(REFUTATION_MARKER)) {
+        return new Response(turn({ text: 'REFUTATION: nothing to report.' }), {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' }
+        })
+      }
+      seen.push(JSON.parse(request.body) as Record<string, unknown>)
+      if (seen.length === 1) {
+        return new Response(
+          JSON.stringify({ error: { message: 'Unsupported parameter: reasoning_effort' } }),
+          { status: 400, headers: { 'content-type': 'application/json' } }
+        )
+      }
+      return new Response(turn({ reasoning: ['x'], text: PROPOSAL_TEXT }), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' }
+      })
+    }
+    const events = await drain(
+      vercel.start(session(call, { thinking: normalize('on', 'openai-compatible') }))
+    )
+    expect(seen).toHaveLength(2)
+    expect(seen[0]!.reasoning_effort).toBe('high')
+    // The retry is the identical request without the member.
+    expect(Object.keys(seen[1]!)).not.toContain('reasoning_effort')
+    const notices = events.filter((event) => event.type === 'thinking_unavailable')
+    expect(notices).toHaveLength(1)
+    expect(events.some((event) => event.type === 'proposal')).toBe(true)
+    expect(events[events.length - 1]!.type).toBe('end')
+  })
+
+  it('falls back once to the other Anthropic spelling, and says nothing about it', async () => {
+    const seen: Record<string, unknown>[] = []
+    const call: ModelCall = async (_suffix, request) => {
+      if (request.body.includes(REFUTATION_MARKER)) {
+        return new Response(anthropicTurn({ text: 'REFUTATION: nothing to report.' }), {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' }
+        })
+      }
+      seen.push(JSON.parse(request.body) as Record<string, unknown>)
+      if (seen.length === 1) {
+        return new Response(
+          JSON.stringify({ error: { message: 'Adaptive thinking is not supported by this model' } }),
+          { status: 400, headers: { 'content-type': 'application/json' } }
+        )
+      }
+      return new Response(anthropicTurn({ reasoning: 'I read it.', text: PROPOSAL_TEXT }), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' }
+      })
+    }
+    const events = await drain(
+      vercel.start(
+        session(call, {
+          model: { family: 'anthropic', model: 'a-model', call },
+          thinking: normalize('on', 'anthropic')
+        })
+      )
+    )
+    expect(seen).toHaveLength(2)
+    expect(seen[0]!.thinking).toEqual({ type: 'adaptive' })
+    expect(seen[1]!.thinking).toEqual({ type: 'enabled', budget_tokens: 8000 })
+    expect(events.some((event) => event.type === 'thinking_unavailable')).toBe(false)
+  })
+
+  it('reports unavailable after two answers with no reasoning, and not after one', async () => {
+    // The critic's own turn is this session's second answer, so the second
+    // observation lands there on a session that proposes at once.
+    const { call, seen } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
+    const events = await drain(
+      vercel.start(session(call, { thinking: normalize('on', 'openai-compatible') }))
+    )
+    const notices = events.filter((event) => event.type === 'thinking_unavailable')
+    expect(notices).toHaveLength(1)
+    expect((notices[0] as { detail: string }).detail).toContain('no reasoning block')
+    expect(events.some((event) => event.type === 'proposal')).toBe(true)
+    // The first request still carried the tier: nothing was concluded from one
+    // turn.
+    expect(seen[0]!.body.reasoning_effort).toBe('high')
+  })
+
+  it('does not conclude anything from a turn that only called a tool', async () => {
+    const { call } = scriptedCall([
+      turn({ tool: { name: 'validate', args: { document: '{}' } } }),
+      turn({ reasoning: ['I did think.'], text: PROPOSAL_TEXT })
+    ])
+    const events = await drain(
+      vercel.start(session(call, { thinking: normalize('on', 'openai-compatible') }))
+    )
+    expect(events.some((event) => event.type === 'thinking_unavailable')).toBe(false)
+  })
+})
+
+describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
+  it('reassembles the fragments the desk saw, and refuses the fragment', () => {
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'c2lnbmF0')
+    ledger.fragment('0', 'dXJlLVQx')
+    expect(ledger.signed().map((one) => one.signature)).toEqual(['c2lnbmF0dXJlLVQx'])
+    const body = JSON.stringify({
+      messages: [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: 'I read it.', signature: 'dXJlLVQx' },
+            { type: 'text', text: 'hello' }
+          ]
+        }
+      ]
+    })
+    const filtered = withoutTruncatedThinking(body, ledger)
+    expect(filtered.truncated).toContain('19663')
+    const sent = JSON.parse(filtered.body) as { messages: { content: { type: string }[] }[] }
+    expect(sent.messages[0]!.content.map((block) => block.type)).toEqual(['text'])
+  })
+
+  it('rebuilds the request from the slot rather than filtering the composed one', () => {
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'c2lnbmF0dXJlLVQx')
+    const body = JSON.stringify({
+      model: 'm',
+      max_tokens: 12096,
+      thinking: { type: 'enabled', budget_tokens: 8000 },
+      output_config: { effort: 'high' },
+      messages: [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: 'I read it.', signature: 'dXJlLVQx' },
+            { type: 'text', text: 'hello' }
+          ]
+        }
+      ]
+    })
+    // The slot has degraded by the time this is read, so it asks for nothing.
+    const rebuilt = withoutTruncatedThinking(body, ledger, () => null)
+    const sent = JSON.parse(rebuilt.body) as Record<string, unknown>
+    expect(rebuilt.truncated).toContain('19663')
+    expect(Object.keys(sent)).not.toContain('thinking')
+    expect(Object.keys(sent)).not.toContain('output_config')
+    // `max_tokens` stays: the protocol requires one on every request, and one
+    // larger than a degraded session needs is legal.
+    expect(sent.max_tokens).toBe(12096)
+    expect(sent.model).toBe('m')
+  })
+
+  it('leaves a whole signature exactly where it was', () => {
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'c2lnbmF0dXJlLVQx')
+    const body = JSON.stringify({
+      messages: [
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'x', signature: 'c2lnbmF0dXJlLVQx' }] }
+      ]
+    })
+    const filtered = withoutTruncatedThinking(body, ledger)
+    expect(filtered.truncated).toBe('')
+    expect(filtered.body).toBe(body)
+  })
+
+  it('says the endpoint has no thinking before the degraded request is answered', async () => {
+    // **The slot changes at the transition, so the line must too.** The rebuilt
+    // request carries no thinking member at all; a notice held until that
+    // request produced a stream part left the tab saying `thinking on` about a
+    // request that carried none — for as long as it took, or for ever. This
+    // holds the second request open and asserts the line has already arrived.
+    let holding = 0
+    const call: ModelCall = async (_suffix, request) => {
+      const body = JSON.parse(request.body) as Record<string, unknown>
+      if (!('thinking' in body)) {
+        // The rebuilt request: never answered.
+        holding += 1
+        return new Promise<Response>(() => {})
+      }
+      return new Response(
+        anthropicTurn({
+          reasoning: 'I will check it.',
+          signature: 'c2lnbmF0dXJlLVQx',
+          splitSignature: true,
+          tool: { name: 'validate', args: { document: '{}' } }
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } }
+      )
+    }
+    const iterator = vercel
+      .start(
+        session(call, {
+          model: { family: 'anthropic', model: 'a-model', call },
+          thinking: normalize('on', 'anthropic')
+        })
+      )
+      [Symbol.asyncIterator]()
+    const seen: AssistantEvent[] = []
+    for (;;) {
+      const step = await iterator.next()
+      if (step.done === true) break
+      seen.push(step.value)
+      if (step.value.type === 'thinking_unavailable') break
+    }
+    // It arrived — **before the degraded request was even dispatched**, which
+    // is stronger than "before it was answered". Under the shape this replaces
+    // the notice waited for a stream part from that request, and this request
+    // never produces one: the loop above would have run to the test's timeout
+    // with the tab still saying `thinking on`.
+    const notice = seen.find((event) => event.type === 'thinking_unavailable')
+    expect(notice, 'the notice waited for a request that never answered').toBeDefined()
+    expect((notice as { detail: string }).detail).toContain('19663')
+    expect(holding, 'the notice came after the request went out').toBe(0)
+    // And the run ends when the consumer stops listening, holding nothing.
+    await iterator.return?.()
+  }, 20000)
+
+  it('starts a new signature at each turn, because the block ids repeat', () => {
+    // **The turn boundary, which is not decoration.** On the Anthropic wire a
+    // reasoning part is keyed by its index in the message, so every turn starts
+    // again at `0`. A ledger with no boundary concatenates one turn's signature
+    // onto the next and then reports the next turn's *whole* signature as a
+    // fragment of the pair — measured, on a session's third turn.
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'c2lnLVQx')
+    ledger.boundary()
+    ledger.fragment('0', 'c2lnLVQy')
+    expect(ledger.signed().map((one) => one.signature)).toEqual(['c2lnLVQx', 'c2lnLVQy'])
+  })
+
+  it('lets a later block whose own signature is shorter survive', () => {
+    // **Block identity, by position.** The ledger holds one signature per
+    // signed block in the order they were sent, and the history carries the
+    // same blocks in the same order. A global membership test threw the second
+    // block away because its signature happened to be a prefix of the first's.
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'abcdef')
+    ledger.boundary()
+    ledger.fragment('0', 'abc')
+    const body = JSON.stringify({
+      messages: [
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'one', signature: 'abcdef' }] },
+        { role: 'user', content: [{ type: 'text', text: 'and?' }] },
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'two', signature: 'abc' }] }
+      ]
+    })
+    const looked = withoutTruncatedThinking(body, ledger, () => null)
+    expect(looked.truncated).toBe('')
+    expect(looked.body).toBe(body)
+  })
+
+  it('still catches the block that did come back as a fragment', () => {
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'abcdef')
+    ledger.boundary()
+    ledger.fragment('0', 'abc')
+    // The FIRST block came back halved; the second is its own whole signature.
+    const body = JSON.stringify({
+      messages: [
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'one', signature: 'abc' }] },
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'two', signature: 'abc' }] }
+      ]
+    })
+    const looked = withoutTruncatedThinking(body, ledger, () => null)
+    expect(looked.truncated).toContain('19663')
+    const sent = JSON.parse(looked.body) as { messages: { content: { type: string }[] }[] }
+    expect(sent.messages[0]!.content).toEqual([])
+    expect(sent.messages[1]!.content).toHaveLength(1)
+  })
+
+  it('keeps two blocks that were signed the same, because they are two blocks', () => {
+    // **Collapsing duplicates lost a block's identity.** With `abcdef`,
+    // `abcdef`, `uvwxyz` the ledger became two entries, so a third block that
+    // came back as `uvw` was compared against the second entry — or against
+    // nothing — and was sent.
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'abcdef')
+    ledger.boundary()
+    ledger.fragment('0', 'abcdef')
+    ledger.boundary()
+    ledger.fragment('0', 'uvwxyz')
+    expect(ledger.signed().map((one) => one.signature)).toEqual(['abcdef', 'abcdef', 'uvwxyz'])
+    const body = JSON.stringify({
+      messages: [
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'one', signature: 'abcdef' }] },
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'two', signature: 'abcdef' }] },
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'three', signature: 'uvw' }] }
+      ]
+    })
+    const looked = withoutTruncatedThinking(body, ledger, () => null)
+    expect(looked.truncated).toContain('19663')
+    const sent = JSON.parse(looked.body) as { messages: { content: unknown[] }[] }
+    expect(sent.messages[0]!.content).toHaveLength(1)
+    expect(sent.messages[1]!.content).toHaveLength(1)
+    expect(sent.messages[2]!.content).toEqual([])
+  })
+
+  it('compares the critic’s fresh conversation against its own blocks only', () => {
+    // The critic's history carries none of the main loop's blocks, correctly.
+    // Comparing its first block against the loop's first signature would be
+    // comparing two different conversations' positions.
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'abcdef')
+    ledger.boundary()
+    ledger.conversation()
+    expect(ledger.signed()).toEqual([])
+    const body = JSON.stringify({
+      messages: [
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'critic', signature: 'abc' }] }
+      ]
+    })
+    // Nothing signed in this conversation yet, so nothing is compared.
+    expect(withoutTruncatedThinking(body, ledger, () => null).truncated).toBe('')
+    ledger.fragment('0', 'zzzzzz')
+    expect(ledger.signed().map((one) => one.signature)).toEqual(['zzzzzz'])
+    const short = JSON.stringify({
+      messages: [
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'critic', signature: 'zzz' }] }
+      ]
+    })
+    expect(withoutTruncatedThinking(short, ledger, () => null).truncated).toContain('19663')
+  })
+
+  it('does not double a signature the SDK repeated whole', () => {
+    // The SDK re-emits the same value where the endpoint sent one event, and a
+    // ledger that appended blindly would invent a truncation nobody caused.
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'c2ln')
+    ledger.fragment('0', 'c2ln')
+    expect(ledger.signed().map((one) => one.signature)).toEqual(['c2ln'])
+  })
+
+  /**
+   * **The measurement, end to end — and it is written to fail if the SDK is
+   * ever fixed in silence.**
+   *
+   * The fixture splits one signature across two `signature_delta` events, which
+   * is what a re-chunking proxy does. If this SDK ever reassembles them, the
+   * desk detects no truncation, no notice is emitted, and this case goes red —
+   * which is the point: the guard would then be dead code, and the desk should
+   * find out from its own suite rather than from an endpoint.
+   */
+  it('detects the truncation on a real session and degrades once', async () => {
+    const seen: Record<string, unknown>[] = []
+    const call: ModelCall = async (_suffix, request) => {
+      if (request.body.includes(REFUTATION_MARKER)) {
+        return new Response(anthropicTurn({ text: 'REFUTATION: nothing to report.' }), {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' }
+        })
+      }
+      seen.push(JSON.parse(request.body) as Record<string, unknown>)
+      if (seen.length === 1) {
+        return new Response(
+          anthropicTurn({
+            reasoning: 'I will check it.',
+            signature: 'c2lnbmF0dXJlLVQx',
+            splitSignature: true,
+            tool: { name: 'validate', args: { document: '{}' } }
+          }),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } }
+        )
+      }
+      return new Response(anthropicTurn({ reasoning: 'Done.', text: PROPOSAL_TEXT }), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' }
+      })
+    }
+    const events = await drain(
+      vercel.start(
+        session(call, {
+          model: { family: 'anthropic', model: 'a-model', call },
+          thinking: normalize('on', 'anthropic')
+        })
+      )
+    )
+    const notices = events.filter(
+      (event): event is Extract<AssistantEvent, { type: 'thinking_unavailable' }> =>
+        event.type === 'thinking_unavailable'
+    )
+    expect(
+      notices.map((notice) => notice.detail),
+      'the SDK reassembled the split signature — the guard is now dead code'
+    ).toHaveLength(1)
+    expect(notices[0]!.detail).toContain('19663')
+    // And no malformed block left the page: the second request carries no
+    // thinking block at all rather than one with half a signature.
+    const carried = (seen[1]!.messages as { role: string; content: unknown }[])
+      .flatMap((message) => (Array.isArray(message.content) ? message.content : []))
+      .filter((block) => (block as { type?: string }).type === 'thinking')
+    expect(carried).toEqual([])
+    // **And it does not ask for thinking either.** A request that both asks for
+    // thinking and has dropped a block the endpoint signed is a continuation a
+    // real endpoint may refuse: the body was composed before the slot degraded,
+    // so it is rebuilt from what the slot says afterwards rather than filtered.
+    expect(Object.keys(seen[1]!)).not.toContain('thinking')
+    expect(Object.keys(seen[1]!)).not.toContain('output_config')
+    // The session still completes: a degrade is not a refusal.
+    expect(events[events.length - 1]!.type).toBe('end')
+    expect(events.some((event) => event.type === 'proposal')).toBe(true)
+  })
+})
+
+describe('what the author is told when the endpoint refuses', () => {
+  /**
+   * **The half of the SDK's refusal path this desk owns.**
+   *
+   * One `AI_NoOutputGeneratedError` still reaches a browser's console from
+   * inside the SDK's own transform flush, and it is not reachable from the
+   * result's object graph at any depth — measured on the live drive, three
+   * ways (see `claimPromises`). What this holds is that the console is not
+   * where a person finds out: the run says what happened, on its own stream,
+   * with the status and the endpoint's own sentence in it.
+   */
+  it('reports the status and the endpoint’s own sentence, and ends once', async () => {
+    const call: ModelCall = async () =>
+      new Response(JSON.stringify({ error: { message: 'this endpoint refuses everything' } }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' }
+      })
+    const events = await drain(vercel.start(session(call)))
+    expect(events.map((event) => event.type)).toEqual(['error', 'end'])
+    const said = (events[0] as { message: string }).message
+    expect(said).toContain('400')
+    expect(said).toContain('this endpoint refuses everything')
+    // …and no address in it: the SDK's error carries the placeholder origin,
+    // which says nothing useful and reads as a real host.
+    expect(said).not.toContain('relay.invalid')
+    expect(said).not.toContain('http')
+  })
+})
+
+describe('the refutation pass, on this SDK’s second streamText', () => {
+  const VALID = JSON.stringify({ status: 'valid', diagnostics: [] })
+  const INVALID = JSON.stringify({
+    status: 'invalid',
+    diagnostics: [{ code: 'JPS-SEMANTIC-UNRESOLVED-OUTCOME' }]
+  })
+
+  /** A session whose main loop proposes at once and whose critic runs a script. */
+  function criticised(options: {
+    tier: 'off' | 'on' | 'ultra'
+    criticCalls?: { name: string; args: Record<string, unknown> }[]
+    criticSays: string
+    answer: string
+  }): { session: AssistantSession; asked: { name: string; args: unknown }[]; critic: string[] } {
+    const asked: { name: string; args: unknown }[] = []
+    const critic: string[] = []
+    let criticTurn = 0
+    const call: ModelCall = async (_suffix, request) => {
+      const stream = (text: string) =>
+        new Response(text, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+      if (request.body.includes(REFUTATION_MARKER)) {
+        critic.push(request.body)
+        criticTurn += 1
+        const next = (options.criticCalls ?? [])[criticTurn - 1]
+        return stream(
+          next === undefined ? turn({ text: options.criticSays }) : turn({ tool: next })
+        )
+      }
+      return stream(turn({ text: PROPOSAL_TEXT }))
+    }
+    return {
+      session: session(
+        call,
+        { thinking: normalize(options.tier, 'openai-compatible') },
+        async (name, args) => {
+          asked.push({ name, args })
+          return { content: [{ type: 'text', text: options.answer }] }
+        }
+      ),
+      asked,
+      critic
+    }
+  }
+
+  it('does not run at all where the tier is off', async () => {
+    const one = criticised({ tier: 'off', criticSays: 'x', answer: VALID })
+    const events = await drain(vercel.start(one.session))
+    expect(one.critic).toEqual([])
+    expect(events.some((event) => event.type === 'critique')).toBe(false)
+  })
+
+  it('runs after the proposal exists and before it is shown', async () => {
+    const one = criticised({
+      tier: 'on',
+      criticCalls: [{ name: 'validate', args: { document: '{}' } }],
+      criticSays: 'REFUTATION: none found.',
+      answer: VALID
+    })
+    const events = await drain(vercel.start(one.session))
+    const kinds = events.map((event) => event.type)
+    expect(kinds).toContain('critique')
+    expect(kinds.indexOf('critique')).toBeLessThan(kinds.indexOf('proposal'))
+    // The critic's own call travelled the session's `callTool` — the same
+    // capability, through the same gate, as the main loop's.
+    expect(one.asked).toEqual([{ name: 'validate', args: { document: '{}' } }])
+    expect(kinds.filter((kind) => kind === 'tool_call')).toHaveLength(1)
+  })
+
+  it('takes the verdict from the runtime and not from the critic’s prose', async () => {
+    const one = criticised({
+      tier: 'on',
+      criticCalls: [{ name: 'validate', args: { document: '{}' } }],
+      criticSays: 'REFUTATION: this pack is broken and must not be used.',
+      answer: VALID
+    })
+    const events = await drain(vercel.start(one.session))
+    const critique = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'critique' }> => event.type === 'critique'
+    )!
+    expect(critique.refuted).toBe(false)
+    expect(critique.checks).toEqual([{ tool: 'validate', status: 'valid' }])
+  })
+
+  it('reports refuted where the runtime refused, whatever the critic said', async () => {
+    const one = criticised({
+      tier: 'on',
+      criticCalls: [{ name: 'validate', args: { document: '{}' } }],
+      criticSays: 'REFUTATION: none found. Everything checks out.',
+      answer: INVALID
+    })
+    const events = await drain(vercel.start(one.session))
+    const critique = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'critique' }> => event.type === 'critique'
+    )!
+    expect(critique.refuted).toBe(true)
+    const proposal = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'proposal' }> => event.type === 'proposal'
+    )!
+    expect(proposal.critique).toEqual({ refuted: true })
+    expect(proposal.document).toBeDefined()
+  })
+
+  it('says the critic ran no check, and puts no line on the proposal', async () => {
+    const one = criticised({ tier: 'on', criticSays: 'I had a look.', answer: VALID })
+    const events = await drain(vercel.start(one.session))
+    const critique = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'critique' }> => event.type === 'critique'
+    )!
+    expect(critique.checks).toEqual([])
+    expect(critique.text).toContain('no runtime check')
+    const proposal = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'proposal' }> => event.type === 'proposal'
+    )!
+    expect(proposal.critique).toBeUndefined()
+  })
+
+  it('rehearses the critic’s evaluate through the same hook as the main loop’s', async () => {
+    // The critic gets the **same** tool set and the same refinement hook, so an
+    // evaluate it asks for without a rehearsal member is rewritten before it is
+    // executed — and the desk's gate below rewrites it again on the wire.
+    const one = criticised({
+      tier: 'on',
+      criticCalls: [{ name: 'experimental_evaluate', args: { pack: '{}', facts: '{}' } }],
+      criticSays: 'REFUTATION: none found.',
+      answer: JSON.stringify({ status: 'evaluated', rehearsal: true })
+    })
+    const events = await drain(vercel.start(one.session))
+    expect(one.asked).toEqual([
+      { name: 'experimental_evaluate', args: { pack: '{}', facts: '{}' } }
+    ])
+    const critique = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'critique' }> => event.type === 'critique'
+    )!
+    expect(critique.checks).toEqual([{ tool: 'experimental_evaluate', status: 'evaluated' }])
+    // **`evaluated` is not `valid`, and it does not refute.** One word over
+    // both tools would report every session ever run as refuted.
+    expect(critique.refuted).toBe(false)
+  })
+
+  it('hands the critic the runtime’s testing prompt and the proposed document', async () => {
+    const one = criticised({ tier: 'on', criticSays: 'done', answer: VALID })
+    await drain(vercel.start(one.session))
+    expect(one.critic[0]).toContain('test_pack guidance')
+    expect(one.critic[0]).toContain(REFUTATION_MARKER)
+    expect(one.critic[0]).toContain('A pack')
+  })
+
+  it('ends where the run does, and says nothing after it', async () => {
+    const controller = new AbortController()
+    const call: ModelCall = async (_suffix, request) => {
+      if (request.body.includes(REFUTATION_MARKER)) {
+        controller.abort()
+        return new Promise<Response>(() => {})
+      }
+      return new Response(turn({ text: PROPOSAL_TEXT }), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' }
+      })
+    }
+    const events = await drain(
+      vercel.start(
+        session(call, {
+          signal: controller.signal,
+          thinking: normalize('on', 'openai-compatible')
+        })
+      )
+    )
+    expect(events.map((event) => event.type)).not.toContain('critique')
+    expect(events.map((event) => event.type)).not.toContain('proposal')
+    expect(events.map((event) => event.type)).not.toContain('end')
   })
 })

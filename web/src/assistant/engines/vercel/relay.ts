@@ -26,6 +26,7 @@
  * - **the answer is presented in the framing the SDK asked for.** See below.
  */
 import { isEventStream, withAbort } from '../contract'
+import { TIER_MEMBERS, isTruncatedSignature } from '../../thinking'
 import type { EndpointKind } from '../../../config/deskConfig'
 import type { ModelCall } from '../../engine'
 
@@ -152,6 +153,9 @@ interface OpenAiWhole {
       role?: string
       content?: string | null
       tool_calls?: { id?: string; type?: string; function?: { name?: string; arguments?: string } }[]
+      /** Both vendor names, because an endpoint may use either. */
+      reasoning_content?: string | null
+      reasoning?: string | null
     }
     finish_reason?: string | null
   }[]
@@ -177,6 +181,11 @@ function openAiChunks(payload: unknown): string {
     const delta: Record<string, unknown> = {}
     if (message.role !== undefined) delta.role = message.role
     if (message.content !== undefined) delta.content = message.content
+    // **Reasoning survives the re-framing.** A gateway that buffers a thinking
+    // answer must not cost the session its reasoning, and an adapter that
+    // dropped it here would look exactly like an endpoint that sent none.
+    if (message.reasoning_content != null) delta.reasoning_content = message.reasoning_content
+    if (message.reasoning != null) delta.reasoning = message.reasoning
     if (message.tool_calls !== undefined) {
       // The one member a chunk carries and a whole message does not: the index
       // that lets deltas be reassembled. It is the position in this array.
@@ -192,7 +201,18 @@ function openAiChunks(payload: unknown): string {
 }
 
 interface AnthropicWhole {
-  content?: { type?: string; text?: string; id?: string; name?: string; input?: unknown }[]
+  content?: {
+    type?: string
+    text?: string
+    id?: string
+    name?: string
+    input?: unknown
+    /** A thinking block's own two members. */
+    thinking?: string
+    signature?: string
+    /** A redacted block's. */
+    data?: string
+  }[]
   stop_reason?: string | null
   stop_sequence?: string | null
   usage?: { output_tokens?: number }
@@ -208,6 +228,29 @@ function anthropicEvents(payload: unknown): string {
 
   event('message_start', { message: { ...message, content: [] } })
   blocks.forEach((block, index) => {
+    if (block.type === 'thinking') {
+      // The block's own event grammar, so the SDK reads it as reasoning and
+      // carries its signature rather than reading a thinking block as prose.
+      event('content_block_start', { index, content_block: { type: 'thinking', thinking: '' } })
+      event('content_block_delta', {
+        index,
+        delta: { type: 'thinking_delta', thinking: block.thinking ?? '' }
+      })
+      event('content_block_delta', {
+        index,
+        delta: { type: 'signature_delta', signature: block.signature ?? '' }
+      })
+      event('content_block_stop', { index })
+      return
+    }
+    if (block.type === 'redacted_thinking') {
+      event('content_block_start', {
+        index,
+        content_block: { type: 'redacted_thinking', data: block.data ?? '' }
+      })
+      event('content_block_stop', { index })
+      return
+    }
     if (block.type === 'tool_use') {
       event('content_block_start', {
         index,
@@ -236,6 +279,175 @@ function anthropicEvents(payload: unknown): string {
 }
 
 /**
+ * What signatures came in, so that what goes back out can be compared with them.
+ *
+ * **`vercel/ai#19663`, answered where the desk can answer it.** An Anthropic
+ * thinking signature split across two `signature_delta` events reaches the SDK
+ * as two `reasoning-delta` parts, each carrying a *whole* signature in its
+ * provider metadata — and the last one wins when the assistant message is
+ * rebuilt. What then goes back is half a signature, and a thinking block with a
+ * half signature is a request the endpoint refuses.
+ *
+ * This desk cannot make the SDK reassemble it. What it can do is **notice**:
+ * the fragments are concatenated here, the outgoing body is compared against
+ * the result, and a block whose signature is a strict prefix or suffix of what
+ * arrived is removed rather than sent. The rule is `assistant/thinking.ts`'s;
+ * the wire shape is this file's, because this is where the desk already knows
+ * one.
+ */
+/** One block this endpoint signed, and where it was signed. */
+export interface SignedBlock {
+  /** Which conversation: the main loop is 0, the critic is 1. */
+  conversation: number
+  /** Which turn of that conversation. */
+  turn: number
+  /** The block's own id within the turn, as the SDK keys its reasoning parts. */
+  block: string
+  signature: string
+}
+
+export interface SignatureLedger {
+  /** One fragment, for one reasoning block of the turn in progress. */
+  fragment(id: string, signature: string): void
+  /**
+   * A turn ended: what was in progress is whole.
+   *
+   * **The block ids repeat.** On the Anthropic wire a reasoning part is keyed
+   * by its index in the message, so every turn starts again at `0` — and a
+   * ledger that kept accumulating under that key concatenated one turn's
+   * signature onto the next, then reported the next turn's *whole* signature as
+   * a fragment of the pair. Measured: it degraded a perfectly good session on
+   * its third turn. A turn boundary is where a block's signature is finished.
+   */
+  boundary(): void
+  /**
+   * A **new conversation** begins: the refutation pass.
+   *
+   * The critic's history carries none of the main loop's blocks, correctly, so
+   * comparing what it sends against the loop's signatures would compare a first
+   * block against a signature from another conversation entirely.
+   */
+  conversation(): void
+  /** The blocks this conversation signed, in the order they were signed. */
+  signed(): SignedBlock[]
+}
+
+export function signatureLedger(): SignatureLedger {
+  const inFlight = new Map<string, string>()
+  const done: SignedBlock[] = []
+  let conversation = 0
+  let turn = 0
+  const settle = () => {
+    // **Duplicates are kept, because two blocks are two blocks.** A ledger that
+    // held distinct signatures collapsed `abcdef, abcdef, uvwxyz` into two
+    // entries, and a third block that came back as `uvw` was then compared
+    // against the second entry — or against nothing at all — and sent.
+    for (const [block, signature] of inFlight) {
+      if (signature !== '') done.push({ conversation, turn, block, signature })
+    }
+    inFlight.clear()
+    turn += 1
+  }
+  return {
+    fragment(id, signature) {
+      if (signature === '') return
+      const before = inFlight.get(id) ?? ''
+      // A fragment repeated is not a fragment appended: the SDK emits the same
+      // whole signature again where the endpoint sent one event, and doubling
+      // it would invent a truncation that never happened.
+      inFlight.set(id, before.endsWith(signature) ? before : before + signature)
+    },
+    boundary: settle,
+    conversation() {
+      settle()
+      conversation += 1
+      turn = 0
+    },
+    signed() {
+      settle()
+      return done.filter((entry) => entry.conversation === conversation)
+    }
+  }
+}
+
+/** One Anthropic content block, as far as this file needs to know. */
+interface WireBlock {
+  type?: string
+  signature?: unknown
+}
+
+/**
+ * The request this desk will actually send, once a truncated signature has been
+ * found in the one the SDK composed.
+ *
+ * **A filter was not enough, and this is the difference.** Removing the damaged
+ * block leaves a request that still *asks for thinking* while no longer
+ * carrying a signed block it was given — which is a continuation a real
+ * endpoint may refuse outright. And the body was composed before the slot
+ * degraded, so it still carried the tier member the desk had by then stopped
+ * asking for.
+ *
+ * So the request is **rebuilt** rather than filtered: the damaged block is
+ * removed, every member the table can use to ask for thinking is taken off, and
+ * whatever the slot says *now* is put back — which, after a truncation, is
+ * nothing. `max_tokens` stays as composed: the protocol requires one on every
+ * Anthropic request, and one larger than a degraded session needs is legal.
+ *
+ * Removing the block is the only honest repair for the block itself: the desk
+ * holds the whole signature but the *text* it belongs to came through the SDK's
+ * own accumulation, so putting the whole signature back would be this desk
+ * asserting that a block it did not reassemble is intact.
+ */
+export function withoutTruncatedThinking(
+  body: string,
+  ledger: SignatureLedger,
+  /** What the slot asks for **after** the degrade. Null where it asks nothing. */
+  membersAfter: () => Record<string, unknown> | null = () => null
+): { body: string; truncated: string } {
+  const signed = ledger.signed()
+  if (signed.length === 0) return { body, truncated: '' }
+  let payload: { messages?: { content?: unknown }[] } & Record<string, unknown>
+  try {
+    payload = JSON.parse(body) as { messages?: { content?: unknown }[] } & Record<string, unknown>
+  } catch {
+    return { body, truncated: '' }
+  }
+  let found = ''
+  // **The block's identity is (conversation, turn, block), and position is how
+  // the two histories are lined up.** The ledger holds one entry per signed
+  // block of *this* conversation, in the order the endpoint signed them, and
+  // the outgoing history carries the same blocks in the same order — so the
+  // k-th block back is compared with the k-th block signed and with no other.
+  // Comparing against every signature ever ledgered threw away a later block
+  // whose own signature was legitimately shorter; collapsing duplicates left a
+  // later block compared against the wrong entry, or against none.
+  let at = 0
+  for (const message of payload.messages ?? []) {
+    const content = message?.content
+    if (!Array.isArray(content)) continue
+    const kept = content.filter((item) => {
+      const block = item as WireBlock
+      if (block?.type !== 'thinking' || typeof block.signature !== 'string') return true
+      const sent = signed[at]
+      at += 1
+      // A block this desk never saw signed is somebody else's business.
+      if (sent === undefined || !isTruncatedSignature(sent.signature, block.signature)) return true
+      found =
+        'the SDK carried a thinking signature back as a fragment of the one the endpoint sent ' +
+        '(vercel/ai#19663); the block was removed and the request rebuilt without the tier'
+      return false
+    })
+    if (kept.length !== content.length) message.content = kept
+  }
+  if (found === '') return { body, truncated: '' }
+  // The rebuild. `membersAfter` is read here, after the caller has told the
+  // slot — so what goes back on is what the desk is asking for now.
+  for (const member of TIER_MEMBERS) delete payload[member]
+  Object.assign(payload, membersAfter() ?? {})
+  return { body: JSON.stringify(payload), truncated: found }
+}
+
+/**
  * The `fetch` the SDK's providers are given, and the whole of an engine's reach
  * to a model.
  *
@@ -250,6 +462,26 @@ export function relayFetch(options: {
   call: ModelCall
   /** The run's own signal: every await below is bounded by it. */
   signal: AbortSignal
+  /** What came in, for the outgoing body to be compared against. */
+  ledger?: SignatureLedger
+  /**
+   * Said once, where a signature came back short — and **awaited**.
+   *
+   * The slot changes at the moment this is called, and the request that leaves
+   * a moment later is already the degraded one. So the line a person reads has
+   * to be on the stream by then: awaiting it here is what keeps the tab from
+   * saying `thinking on` about a request that carries none, for as long as that
+   * request takes to answer — or for ever, if it hangs.
+   */
+  onTruncated?: (reason: string) => void | Promise<void>
+  /**
+   * What the slot asks for, read **after** `onTruncated` has been told.
+   *
+   * The body was composed before the degrade; this is how the request that
+   * actually leaves carries what the desk is asking for now rather than what it
+   * was asking for a moment ago.
+   */
+  membersNow?: () => Record<string, unknown> | null
 }): typeof fetch {
   const base = placeholderBase(options.family)
   const run = options.signal
@@ -260,9 +492,27 @@ export function relayFetch(options: {
     for (const [name, value] of Object.entries(headerRecord(init?.headers))) {
       if (PROTOCOL_HEADERS.includes(name.toLowerCase())) headers[name] = value
     }
-    const body = init?.body
-    if (typeof body !== 'string') {
+    const composed = init?.body
+    if (typeof composed !== 'string') {
       throw new Error('a model request body must be the JSON text the SDK composed')
+    }
+    // **Checked before it leaves, not after it is refused.** See
+    // `withoutTruncatedThinking`.
+    //
+    // **The order is the whole of it.** The slot is told first, and the body is
+    // rebuilt from what it says afterwards — so the request that leaves is not
+    // the one composed before the desk changed its mind.
+    let body = composed
+    let truncated = ''
+    if (options.family === 'anthropic' && options.ledger !== undefined) {
+      const looked = withoutTruncatedThinking(composed, options.ledger, () => null)
+      if (looked.truncated !== '') {
+        truncated = looked.truncated
+        // **Told, and heard, before the request goes.** See `onTruncated`.
+        await options.onTruncated?.(truncated)
+        body = withoutTruncatedThinking(composed, options.ledger, () => options.membersNow?.() ?? null)
+          .body
+      }
     }
     // **Bounded by the run's own signal**, and a thunk, so a closed run makes no
     // request at all. The desk's capability is handed the signal too — an abort

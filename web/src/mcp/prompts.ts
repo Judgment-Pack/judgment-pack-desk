@@ -26,6 +26,17 @@ export const AUTHOR_PACK_PROMPT = 'author_pack'
  */
 export const FIX_PACK_PROMPT = 'fix_pack'
 
+/**
+ * The runtime's testing prompt, which the assistant's critic works from.
+ *
+ * `internal/mcp/prompts.go` describes it as guidance for "a logic-testing
+ * session: build an instance matrix for a pack you hold and probe it with the
+ * experimental evaluator". That is what the refutation pass does, so the
+ * instructions it runs under are the runtime's own rather than a second opinion
+ * this desk wrote.
+ */
+export const TEST_PACK_PROMPT = 'test_pack'
+
 interface PromptSummary {
   name: string
   description?: string

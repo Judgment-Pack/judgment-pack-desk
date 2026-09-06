@@ -528,7 +528,15 @@ describe('(7) one member, one refusal', () => {
  * member set — there is nothing else on the session — so it is asserted whole,
  * both ways round, exactly as (1) asserts the endpoint's.
  */
-const SESSION_KEYS = ['prompt', 'tools', 'callTool', 'model', 'thinking', 'signal'] as const
+const SESSION_KEYS = [
+  'prompt',
+  'testPrompt',
+  'tools',
+  'callTool',
+  'model',
+  'thinking',
+  'signal'
+] as const
 
 const sessionKeysAreExact: Exactly<
   keyof import('./engine').AssistantSession,
@@ -536,7 +544,7 @@ const sessionKeysAreExact: Exactly<
 > = true
 
 describe('(8) the engine is handed a bound callTool and nothing else', () => {
-  it('declares the session member set as exactly those six', () => {
+  it('declares the session member set as exactly those seven', () => {
     // A `client` here — or a `transport`, or a `fetch` — would put a door
     // beside the ToolGate rather than behind it, and every guarantee the gate
     // holds would become a guarantee about the door engines happened to use.

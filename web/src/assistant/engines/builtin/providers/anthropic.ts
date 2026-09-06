@@ -6,14 +6,22 @@
  * top-level member, and a different path after the relay's mount point.
  *
  * **The assistant turn is kept as received** — the whole `content` array, in
- * order, nothing filtered by block type. With the tier off there is nothing in
- * it but text and `tool_use`; the shape is kept because it is the one that
- * survives thinking blocks and `redacted_thinking` later, and because a
- * filter written now is a filter to remember to remove.
+ * order, nothing filtered by block type. That is what makes thinking work here
+ * by construction: a `thinking` block goes back with its signature because the
+ * block that arrived is the block that is sent, and `redacted_thinking` — which
+ * a filter by block type silently drops — survives for the same reason.
  *
- * Ported from the bake-off's `none` prototype, minus the thinking handling.
+ * **A signature split across two `signature_delta` events is one signature.**
+ * The protocol's own default is a single event and `vercel/ai#19663` was closed
+ * on that argument, but a re-chunking proxy is an ordinary deployment, so the
+ * fragments are concatenated here rather than the last one kept. What that
+ * costs is one `+=`; what keeping the last one costs is a malformed block on
+ * the next request.
+ *
+ * Ported from the bake-off's `none` prototype, thinking handling included.
  */
 import { servedSchema, withAbort } from '../../contract'
+import { RESPONSE_TOKENS } from '../../../thinking'
 import { isEventStream, sseEvents } from './sse'
 import { ModelHttpError, protocolHeaders } from './types'
 import type { McpTool } from '../../../engine'
@@ -26,6 +34,26 @@ interface Block {
   name?: string
   input?: unknown
   [key: string]: unknown
+}
+
+/**
+ * The reasoning passages in one content array, in the endpoint's own order.
+ *
+ * A `redacted_thinking` block carries no text a person could read, so it is not
+ * a passage — but it is still in `content`, and `content` is what goes back.
+ */
+function reasoningOf(content: Block[]): string[] {
+  return content
+    .filter((block) => block.type === 'thinking')
+    .map((block) => String(block.thinking ?? ''))
+    .filter((said) => said !== '')
+}
+
+/** Every signature in one content array, whole. */
+function signaturesOf(content: Block[]): string[] {
+  return content
+    .map((block) => (typeof block.signature === 'string' ? block.signature : ''))
+    .filter((signature) => signature !== '')
 }
 
 function callsOf(content: Block[]): ToolCall[] {
@@ -65,11 +93,19 @@ export const anthropic: Provider = {
   async send(options: SendOptions): Promise<ModelTurn> {
     const body: Record<string, unknown> = {
       model: options.model,
-      max_tokens: 4096,
+      // The desk's response allowance. The tier's members below may raise it:
+      // the enabled thinking dialect's budget is spent out of this number, so
+      // the table that chooses the budget chooses the maximum with it.
+      max_tokens: RESPONSE_TOKENS,
       system: options.system,
       messages: options.messages,
       tools: options.tools,
-      stream: options.stream
+      stream: options.stream,
+      // The desk's table's members, merged. On this family that is
+      // `thinking` beside `output_config`, or `thinking` with a budget in it —
+      // and which of the two is `assistant/thinking.ts`'s decision, not this
+      // provider's.
+      ...(options.thinking ?? {})
     }
 
     // **Bounded by the run's signal**, and a thunk: a closed run makes no
@@ -99,7 +135,13 @@ export const anthropic: Provider = {
         .join('')
       // `content` is the array the endpoint sent, kept by reference: no map, no
       // filter, no rebuild.
-      return { text, calls: callsOf(content), assistant: { role: 'assistant', content } }
+      return {
+        text,
+        calls: callsOf(content),
+        assistant: { role: 'assistant', content },
+        reasoning: reasoningOf(content),
+        signatures: signaturesOf(content)
+      }
     }
 
     let text = ''
@@ -110,7 +152,13 @@ export const anthropic: Provider = {
         type?: string
         index?: number
         content_block?: Block
-        delta?: { type?: string; text?: string; partial_json?: string }
+        delta?: {
+          type?: string
+          text?: string
+          partial_json?: string
+          thinking?: string
+          signature?: string
+        }
       }
       if (event.type === 'content_block_start') {
         // Whatever kind it is, the block starts as the one that arrived.
@@ -123,6 +171,13 @@ export const anthropic: Provider = {
         if (delta.type === 'text_delta') {
           block.text = (block.text ?? '') + (delta.text ?? '')
           text += delta.text ?? ''
+        } else if (delta.type === 'thinking_delta') {
+          block.thinking = String(block.thinking ?? '') + (delta.thinking ?? '')
+        } else if (delta.type === 'signature_delta') {
+          // **Concatenated, not replaced.** Two events are one signature; the
+          // block that goes back must carry the whole of it or the endpoint
+          // refuses the next request.
+          block.signature = String(block.signature ?? '') + (delta.signature ?? '')
         } else if (delta.type === 'input_json_delta') {
           partial.set(event.index ?? 0, (partial.get(event.index ?? 0) ?? '') + (delta.partial_json ?? ''))
         }
@@ -142,7 +197,13 @@ export const anthropic: Provider = {
     const content = [...blocks.keys()]
       .sort((left, right) => left - right)
       .map((key) => blocks.get(key)!)
-    return { text, calls: callsOf(content), assistant: { role: 'assistant', content } }
+    return {
+      text,
+      calls: callsOf(content),
+      assistant: { role: 'assistant', content },
+      reasoning: reasoningOf(content),
+      signatures: signaturesOf(content)
+    }
   },
 
   appendTurn(messages, turn, results) {

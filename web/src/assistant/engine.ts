@@ -47,7 +47,8 @@
  * lands, this capability is what is passed as the provider's `fetch` option,
  * so the shape survives the next chunk.
  */
-import type { AssistantEngine, EndpointKind, ThinkingTier } from '../config/deskConfig'
+import type { AssistantEngine, EndpointKind } from '../config/deskConfig'
+import type { NormalizedThinking } from './thinking'
 
 /** One tool exactly as `tools/list` served it. Nothing is re-declared. */
 export interface McpTool {
@@ -98,13 +99,35 @@ export type ModelCall = (suffix: string, request: ModelRequest) => Promise<Respo
 export interface AssistantSession {
   /** The runtime's prompt text, from `prompts/get`. */
   prompt: string
+  /**
+   * The runtime's **testing** prompt, for the refutation pass, or `''`.
+   *
+   * A second string rather than a capability, and read where the session's
+   * other prompt is read: an engine cannot ask the runtime for a prompt —
+   * `callTool` is the whole of its reach and `prompts/get` is not a tool — and
+   * giving it one would be a second door beside the gate. Empty where the
+   * runtime advertises no `test_pack`, or where the tier is off and no critic
+   * will run; the critic then works from the desk's one fixed sentence alone.
+   */
+  testPrompt: string
   /** The allow-listed tools, exactly as `tools/list` served them. */
   tools: McpTool[]
   /** Bound through the ToolGate. */
   callTool: CallTool
   /** A capability and a name. No address, and no credential. */
   model: { family: EndpointKind; model: string; call: ModelCall }
-  thinking: { tier: ThinkingTier }
+  /**
+   * The tier, **normalized by the desk** — the tier the file asked for, the
+   * wire members that expresses on this endpoint's family, and the state the
+   * session starts in.
+   *
+   * ADR-0001: *"the tier maps to provider parameters in one desk-owned table,
+   * per endpoint family, and the engine receives the normalized result."* So an
+   * engine puts `wire.members` on the request and never decides what `on` means
+   * for an endpoint; the table, the dialect fallback between the two Anthropic
+   * spellings and the two states a tier cannot express are `assistant/thinking.ts`.
+   */
+  thinking: NormalizedThinking
   signal: AbortSignal
 }
 

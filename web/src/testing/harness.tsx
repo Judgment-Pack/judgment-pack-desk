@@ -42,8 +42,23 @@ export type ToolHandler = (
  * prompts looks like from here.
  */
 export interface StubExtras {
-  /** One entry per advertised prompt: its name, and the text it carries. */
-  prompts?: Record<string, { description?: string; text: string }>
+  /**
+   * One entry per advertised prompt: its name, and the text it carries.
+   *
+   * `hold` leaves a `prompts/get` in flight until it settles, which is how a
+   * case can put one prompt's answer behind another's and watch what a caller
+   * does in between.
+   */
+  prompts?: Record<
+    string,
+    {
+      description?: string
+      text: string
+      hold?: Promise<void>
+      /** Advertised, and refused on `prompts/get` with this message. */
+      fails?: string
+    }
+  >
 }
 
 /** A client that answers from handlers, and remembers what it was asked. */
@@ -78,6 +93,8 @@ export function stubClient(
       prompted.push({ name: params.name, args: params.arguments ?? {} })
       const prompt = (extras.prompts ?? {})[params.name]
       if (!prompt) throw new Error(`no stub answers the prompt ${params.name}`)
+      if (prompt.hold !== undefined) await prompt.hold
+      if (prompt.fails !== undefined) throw new Error(prompt.fails)
       return {
         description: prompt.description,
         messages: [{ role: 'user', content: { type: 'text', text: prompt.text } }]

@@ -34,7 +34,13 @@
  * connection; coming back is a new one.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AUTHOR_PACK_PROMPT, FIX_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
+import {
+  AUTHOR_PACK_PROMPT,
+  FIX_PACK_PROMPT,
+  TEST_PACK_PROMPT,
+  usePromptNames,
+  usePromptText
+} from '../mcp/prompts'
 import { Button } from '../ui/Button'
 import { CodeArea } from '../ui/CodeArea'
 import { TextArea } from '../ui/TextArea'
@@ -42,10 +48,11 @@ import { useEditing } from '../packs/edit/editingContext'
 import type { BufferIdentity } from '../packs/edit/useDocumentBuffer'
 import { EventList } from './EventList'
 import { ProposalDiffView } from './ProposalDiff'
-import { ProposalUnknowns, RuntimeChecks } from './ProposalReport'
+import { ProposalUnknowns, RefutationReport, RuntimeChecks } from './ProposalReport'
 import { DRAFT_MOVED, acceptState, applyProposal, writable, type Disposition } from './acceptProposal'
 import { diffProposal } from './proposalDiff'
 import { outcomeOf } from './runOutcome'
+import { stateFromEvents, thinkingLine } from './thinking'
 import { useAssistantRun } from './useAssistantRun'
 import { useAssistantSlot } from './useAssistantSlot'
 import styles from './AssistantPane.module.css'
@@ -229,12 +236,46 @@ export function AssistantPane({
   /** Which prompt the run on screen is of, once one has started. */
   const [ran, setRan] = useState<string | undefined>(undefined)
 
+  /**
+   * The runtime's testing prompt, for the refutation pass.
+   *
+   * Read **only where a critic will run** — the pass is gated on the tier, so a
+   * desk at `off` spends no `prompts/get` on it — and read with no `pack`
+   * argument, because the document the critic will be given does not exist
+   * until the session has produced it. The critic is handed the document
+   * itself, fenced, beside this guidance.
+   */
+  const advertisesTest = (prompts.data ?? []).includes(TEST_PACK_PROMPT)
+  const testPrompt = usePromptText(TEST_PACK_PROMPT, slot.thinking !== 'off' && advertisesTest)
+  /**
+   * Whether this session still owes the critic the runtime's testing prompt.
+   *
+   * A session begins by reading the runtime's prompts, and the refutation pass
+   * needs a **second** one. Starting on the first alone handed the engine an
+   * empty `testPrompt`, and the critic then ran on the desk's sentence with
+   * none of the runtime's instructions — the one thing the pass is not allowed
+   * to be. A runtime that advertises no `test_pack` is not waited for: the pass
+   * reports that it cannot run, and the proposal is shown without a line.
+   *
+   * **A read that failed is a settled read.** `data` alone stays undefined for
+   * ever on the error state, so a `prompts/get` the runtime refused deadlocked
+   * the whole session: the authoring prompt had arrived, no engine started, and
+   * the tab said nothing about why. A rejection settles this the same way an
+   * answer does — the run goes ahead **without a critic**, and the reason is a
+   * line of its own beside the stream.
+   */
+  const waitingForTest =
+    slot.thinking !== 'off' &&
+    advertisesTest &&
+    testPrompt.data === undefined &&
+    testPrompt.error === null
   const run = useAssistantRun({
     // Only rendered where the endpoint exists; the fallback keeps the hook
     // unconditional, which is the rule React enforces.
     endpoint: slot.endpoint ?? { url: '', kind: 'openai-compatible', model: '', tools: [] },
     engine: slot.engine,
-    thinking: slot.thinking
+    thinking: slot.thinking,
+    testPrompt: testPrompt.data?.text ?? ''
   })
 
   // The run starts when the prompt this submission asked for has arrived, and
@@ -244,6 +285,8 @@ export function AssistantPane({
   const startRun = run.start
   useEffect(() => {
     if (submitted === null || prompt.data === undefined) return
+    // Both prompts, or neither: see `waitingForTest`.
+    if (waitingForTest) return
     if (started.current === submitted.id) return
     started.current = submitted.id
     setRejected(false)
@@ -255,7 +298,7 @@ export function AssistantPane({
     })
     setRan(submitted.name)
     startRun(withDraft(prompt.data.text, draftNow.current))
-  }, [submitted, prompt.data, startRun])
+  }, [submitted, prompt.data, waitingForTest, startRun])
 
   /**
    * Stop, in **both** phases of a session.
@@ -366,7 +409,11 @@ export function AssistantPane({
     )
   }
 
-  const running = run.status === 'running' || (submitted !== null && prompt.isFetching)
+  // **Running covers the whole of a session**, including the reading of the
+  // runtime's prompts. Stop has to be usable while the desk is waiting for one:
+  // a wait nobody can end is the same trap as a run nobody can end.
+  const running =
+    run.status === 'running' || (submitted !== null && (prompt.isFetching || waitingForTest))
   const accept = acceptState({
     editing,
     proposal: proposal !== undefined,
@@ -380,7 +427,16 @@ export function AssistantPane({
   return (
     <div className={styles.pane}>
       <p className={styles.status}>
-        {run.engineId} · {slot.endpoint.model} · thinking {slot.thinking}
+        {/*
+          **The tier the file asked for, and the state the session actually
+          reached.** ADR-0001's five states: three a person selects, and two the
+          desk discovers and must report — a model that always thinks, and an
+          endpoint with no thinking at all. The state is read off this run's own
+          events rather than remembered, so the line and the stream cannot
+          disagree.
+        */}
+        {run.engineId} · {slot.endpoint.model} ·{' '}
+        {thinkingLine(slot.thinking, stateFromEvents(slot.thinking, run.events))}
       </p>
       {ran !== undefined && (
         <p className={styles.status}>
@@ -452,6 +508,17 @@ export function AssistantPane({
           The runtime’s {submitted.name} prompt could not be read: {prompt.error.message}
         </p>
       )}
+      {/*
+        **Which of the two ways the desk has no testing prompt.** The engine
+        says only that it has none; this says why, because only this knows. The
+        session runs either way — without a critic.
+      */}
+      {testPrompt.error !== null && (
+        <p className={styles.notice}>
+          The runtime’s {TEST_PACK_PROMPT} prompt could not be read, so the refutation pass did
+          not run: {testPrompt.error.message}
+        </p>
+      )}
 
       <EventList events={run.events} failure={run.failure} />
 
@@ -486,6 +553,7 @@ export function AssistantPane({
           />
           <ProposalUnknowns unknowns={proposal.unknowns} />
           <RuntimeChecks events={run.events} />
+          <RefutationReport events={run.events} />
           <div className={styles.actions}>
             {/*
               **The reading route has no draft to accept into**, so it says
