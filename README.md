@@ -1353,22 +1353,39 @@ The allow-list is `assistant.endpoint.tools` **intersected with the five**, and
 the order is allow-list first: an `experimental_evaluate` the file never granted
 is refused rather than politely corrected on its way out.
 
-It **fails closed**. A frame that is not a well-formed single JSON-RPC request,
-notification or response is refused rather than waved through: a JSON-RPC batch
-is an array with no `method`, so "anything that is not `tools/call` is traffic I
-have no opinion about" let a batch carrying an allowed call beside a
-`write_file` out whole. A near-spelling of the guarded method — `Tools/Call`,
-` tools/call ` — is refused too, on the chassis' own reasoning about its query:
-a frame two readers disagree about is one this desk will not send.
+**The frame is canonicalized to bytes before anything is decided, and what
+leaves is the canonical frame.** That is the shape of the whole check, and it is
+the lesson the chassis' relay learned over four review rounds: a classification
+made about a mutable object is a classification the object can change out from
+under you. A `method` getter can answer `undefined` while the gate is looking
+and `tools/call` while `JSON.stringify` is; a response-shaped object with a
+`toJSON` can serialize as a request; an enumerable `toJSON` on a call's
+arguments is invoked at serialization and drops whatever the gate had just
+written. So the object is serialized once, the bytes are parsed back to plain
+data — which has no getters, no `toJSON`, no functions, no symbol keys and no
+prototype left — and every rule is applied to that. The transport is handed the
+plain data and never the caller's object.
 
-And an `experimental_evaluate` frame is **never forwarded as it arrived**. It is
-rebuilt from the own, enumerable properties of what the caller gave, each read
-once, with an own `rehearsal: true` written last. An inherited `rehearsal: true`
-— `Object.create({ rehearsal: true })` — reads as `true` to any check and is
-dropped by `JSON.stringify`, so an inspect-and-forward gate would have sent an
-unrehearsed evaluation and the runtime would have appended an audit record.
-There is no branch that forwards the original object, which is why there is no
-shape that can slip past it.
+What is checked, in order:
+
+1. the frame survives a JSON round trip at all (a cycle does not, and is a
+   refusal rather than an exception thrown at the socket) and is a plain object;
+2. `jsonrpc` is exactly `"2.0"`;
+3. it is exactly one of three shapes — a **request** (a string `method`, an `id`
+   that is a string or a number, `params` absent or a plain object), a
+   **notification** (a string `method`, no `id`), or a **response** (an `id`,
+   exactly one of `result` and `error`, and no `method`). Anything else is
+   refused, a JSON-RPC batch included: an array has no `method`, and "anything
+   that is not `tools/call` is traffic I have no opinion about" let a batch
+   carrying an allowed call beside a `write_file` out whole;
+4. a method that is not `tools/call` but is a spelling of it to some other
+   reader — `Tools/Call`, ` tools/call ` — is refused, on the chassis' own
+   reasoning about its query: a frame two readers disagree about is one this
+   desk will not send;
+5. for `tools/call`, the tool is on the session's allow-list — checked against
+   the name the frame **serializes into**, not the one it claims — and
+   `experimental_evaluate` gets an own `rehearsal: true` written last onto the
+   canonical arguments.
 
 The engine is handed a `callTool` bound through this gate and **nothing else** —
 no client, no transport, no `fetch`, and **no URL** — and the session's member
@@ -1393,10 +1410,27 @@ allow-list, and captures `fetch` when the session is bound rather than reading
 it at call time. The engine chooses a suffix — `chat/completions`,
 `v1/messages` — and nothing else.
 
-That last detail is what makes the guarantee structural instead of inspected:
-the conformance session replaces `fetch`, `WebSocket`, `XMLHttpRequest` and
-`EventSource` with throwing sentinels for the duration of every engine's run, on
-every leg. The desk's capability still works; an engine that reaches for a
+**The answer is a facade this desk builds**, not the one `fetch` produced: a
+browser `Response` carries the requested URL on `.url`, which is the relay
+address with the token in it, so returning it handed the engine everything it
+needed to derive `/ws?token=…`. What comes back is a constructed `Response` —
+empty `url`, the status and reason phrase, the body, and a filtered header copy.
+The failure path goes the same way: a browser's `TypeError` for a failed fetch
+quotes the URL, so the error is replaced with a fixed sentence. An abort is
+still reported as itself, so a loop can tell "stopped" from "failed".
+
+The suffix must be a **primitive string** before anything else happens. The
+TypeScript signature said `string` and the type is not what runs: a string-like
+object can answer an innocuous `length` and `split()` while the validator is
+looking and a different `toString()` when the URL is built, which would turn
+this capability into an authenticated POST to another same-origin chassis route.
+
+That capture of `fetch` is what makes the guarantee structural instead of
+inspected: the conformance session replaces `fetch`, `WebSocket`,
+`XMLHttpRequest` and `EventSource` with throwing sentinels **from before the
+engine's chunk is imported until after deferred work has been drained**, on
+every leg. The sentinels record as well as throwing, because a reach from inside
+a `setTimeout` throws into nobody's `catch`. The desk's capability still works; an engine that reaches for a
 global fails the leg by name (`K1a`). The string-enumeration guard that used to
 forbid a handful of spellings under `engines/` is gone: it said of itself that a
 novel spelling walks past it, and `new globalThis["Web"+"Socket"]` is that
@@ -1456,12 +1490,18 @@ certified by adding its id to one list.
   matches a call by its **arguments**: an `experimental_evaluate` arriving
   without `rehearsal: true` is a failure, and so is a `write_file` arriving at
   all.
+- `certification/` holds two engines the desk would never certify: one touches
+  the network as its module loads, one schedules the reach for after its run
+  ends cleanly. Each must fail its leg, and does. **A conformance session that
+  only ever runs conformant engines proves nothing about the session.**
 
 Four legs — OpenAI-compatible and Anthropic, each answered as a stream and as
 one whole object, because an endpoint may ignore what the request asked for —
 and the checks are the experiment's own, plus one this desk added: **K1a** the
-engine touches no network global at all, held by sealing `fetch`, `WebSocket`,
-`XMLHttpRequest` and `EventSource` for the duration of its run; **K1** no
+engine touches no network global at all — at load, during its run, or from a
+timer it left behind — held by sealing `fetch`, `WebSocket`, `XMLHttpRequest`
+and `EventSource` from before its chunk is imported until after deferred work
+has been drained; **K1** no
 credential in any request and nothing called but the relay; **K2** the five
 tools out of `tools/list`, with no schema literal in any engine source; **K3a**
 the rewrite, measured at the scripted server rather than at the page; **K3b**
