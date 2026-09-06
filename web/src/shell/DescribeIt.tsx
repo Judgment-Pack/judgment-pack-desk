@@ -183,9 +183,30 @@ export function useDescribeIt(): DescribeItState {
   const failures = events.filter(
     (event): event is Extract<AssistantEvent, { type: 'error' }> => event.type === 'error'
   )
-  const running = !discarded && (run.status === 'running' || (submitted !== null && prompt.isFetching))
   const promptFailed =
     submitted !== null && prompt.error !== null ? prompt.error.message : undefined
+  /**
+   * **In flight from the press of Propose until the run's terminal event.**
+   *
+   * Not `run.status === 'running'`, and not that plus "the prompt is being
+   * fetched" either: both leave a gap. A session begins with the desk reading
+   * the runtime's prompt and only then does an engine start, and the start
+   * happens in an effect — which React runs *after* it has painted. So between
+   * a cached prompt answering and the run beginning there is a frame in which
+   * the status is still `idle` (or `finished`, from the run before) and the
+   * fetch is not in flight, and the dialog around this would offer Create with
+   * the previous session's proposal as its source.
+   *
+   * The submission's own id closes it: a submission the effect has not started
+   * yet is in flight by definition. A prompt that was *refused* is the one way
+   * out — the effect will never start that run, and a section stuck reporting a
+   * run that cannot begin is worse than one saying why it did not.
+   */
+  const running =
+    !discarded &&
+    submitted !== null &&
+    promptFailed === undefined &&
+    (started.current !== submitted.id || run.status === 'running')
 
   return {
     usable: slot.endpoint !== null && slot.keyPresent,
