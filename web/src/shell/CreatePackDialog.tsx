@@ -43,7 +43,8 @@ import { FileRequestError, readFile, writeFile, type FileContent } from '../file
 import { useFileContent, useFileListing } from '../files/queries'
 import { useMcp } from '../mcp/McpProvider'
 import { useValidate } from '../mcp/queries'
-import { layersReached } from '../packs/checks'
+import { anchor, layersReached, truncationNote } from '../packs/checks'
+import { DiagnosticList } from '../packs/DiagnosticList'
 import { useIdleCheck } from '../packs/edit/useIdleCheck'
 import { RuntimeRefusal, useExample, useExampleListing, useSchema } from '../mcp/starters'
 import {
@@ -71,7 +72,6 @@ import { Dialog, DialogActions, DialogClose } from '../ui/Dialog'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
-import type { ValidationReport } from '../mcp/types'
 import { TextArea } from '../ui/TextArea'
 
 const PROJECT_FILE = 'jpack.json'
@@ -387,7 +387,9 @@ export function CreatePackDialog({
               ? CHECKING
               : checked.data.report.status === 'valid'
                 ? undefined
-                : refusedBy(checked.data.report)
+                : `The runtime will not call this document a pack — ${
+                    layersReached(checked.data.report).text
+                  }`
 
   /**
    * What to say under the Template field, and the four facts it is made of.
@@ -474,6 +476,21 @@ export function CreatePackDialog({
    * a document nobody chose.
    */
   const createWhy = describe.blocking !== '' ? describe.blocking : proposalRefusal
+
+  /**
+   * The report behind a refusal, where the refusal is the runtime's.
+   *
+   * Only where the check answered about the bytes that would be written and
+   * called them something other than valid: a pending check and a refused call
+   * have a sentence and no diagnostics to print.
+   */
+  const refused =
+    proposalRefusal !== undefined &&
+    checked.data !== undefined &&
+    checked.data.checkedBytes === shapedText &&
+    checked.data.report.status !== 'valid'
+      ? checked.data.report
+      : undefined
 
   const invalidate = (keys: readonly (readonly unknown[])[]) => {
     for (const key of keys) void queryClient.invalidateQueries({ queryKey: key })
@@ -740,6 +757,28 @@ export function CreatePackDialog({
 
         {renamed && <p className="quiet">{RENAMED}</p>}
         {proposalRefusal !== undefined && <p className="quiet">{proposalRefusal}</p>}
+        {/*
+          **Every diagnostic the runtime returned, as it wrote them.** Not the
+          first, and not reworded: a runtime reporting independent errors at two
+          members is describing two problems, and this is the one place they can
+          be read — the page that would have shown the rest is the page this
+          refusal prevents from existing. The rendering is the Checks panel's
+          own, so the words are the same words wherever a diagnostic is printed.
+          `anchor` is given an empty set of rendered pointers because nothing of
+          the document is on screen here, which makes every `named` the
+          diagnostic's own `instancePath`.
+        */}
+        {refused !== undefined && (
+          <>
+            <DiagnosticList
+              diagnostics={anchor(refused, new Set())}
+              label="What the runtime said about this document"
+            />
+            {truncationNote(refused) !== undefined && (
+              <p className="quiet">{truncationNote(refused)}</p>
+            )}
+          </>
+        )}
 
         <DescribeIt state={describe} />
 
@@ -802,25 +841,6 @@ function namedOtherwise(
   if (typeof document !== 'object' || document === null) return false
   const held = document as { id?: unknown; title?: unknown }
   return held.title !== fields.name.trim() || held.id !== `${fields.idBase}${fields.slug}`
-}
-
-/**
- * What the runtime said about a document it would not call valid.
- *
- * The check strip's own sentence — the status, the layers that ran and the
- * count — and then the first diagnostic verbatim, which is the one thing a
- * count cannot say. Nothing is summarised and nothing is translated: the
- * remaining diagnostics are on the page this would have opened.
- */
-function refusedBy(report: ValidationReport): string {
-  const first = (report.diagnostics ?? [])[0]
-  const said =
-    first === undefined
-      ? ''
-      : ` First: ${first.message ?? 'no message'}${
-          first.instancePath ? ` at ${first.instancePath}` : ''
-        }.`
-  return `The runtime will not call this document a pack — ${layersReached(report).text}${said}`
 }
 
 /** The message the failure carries, never a sentence invented over it. */

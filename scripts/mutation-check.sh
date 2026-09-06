@@ -4393,6 +4393,13 @@ export function assistantTransport(): Transport {
             if (!run.ended) push(run, { type: '"'"'error'"'"', message: said })' \
     '            if (!run.ended) push(run, { type: '"'"'error'"'"', message: said })'
 
+  # **Every diagnostic, or the author cannot see what is wrong.** The refusal
+  # prevents the page that would have shown the rest from existing, so this is
+  # the only place the runtime's whole answer can be read.
+  mutate web "the refusal shows only the first diagnostic" "$X" \
+    '              diagnostics={anchor(refused, new Set())}' \
+    '              diagnostics={anchor(refused, new Set()).slice(0, 1)}'
+
   # ---- Round 1: what the review found, and the rows that hold the answers ---
   #
   # A proposal belongs to a submission; an error after one withdraws it; the

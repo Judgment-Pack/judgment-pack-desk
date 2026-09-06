@@ -123,20 +123,22 @@ function validateStub(text: string): { text: string } {
       .filter((member) => !DECLARED.has(member))
       .map((member) => ({
         code: 'additional-property',
+        codeStability: 'stable',
         layer: 'structural',
         severity: 'error',
         instancePath: `/${member}`,
-        message: `additional properties are not allowed: ${member}`
+        message: `additional properties are not allowed: "${member}" — remove it, or say what it is.`
       })),
     ...(document.specVersion === '0.2.0-draft'
       ? []
       : [
           {
             code: 'const-mismatch',
-            layer: 'structural',
+            codeStability: 'stable',
+            layer: 'carrier',
             severity: 'error',
             instancePath: '/specVersion',
-            message: 'specVersion must be "0.2.0-draft"'
+            message: 'specVersion must be "0.2.0-draft"; this document says otherwise.'
           }
         ])
   ]
@@ -1066,7 +1068,13 @@ describe('a proposal is checked before it is written', () => {
       expect(screen.getByText(/will not call this document a pack/)).toBeTruthy()
     )
     expect(createButton().disabled).toBe(true)
-    expect(createButton().title).toContain('additional properties are not allowed: fileName')
+    // The button's own reason is the check strip's sentence; the runtime's
+    // diagnostics are printed in full below it, in the Checks panel's own
+    // rendering rather than squeezed into a `title`.
+    expect(createButton().title).toContain('will not call this document a pack')
+    expect(
+      screen.getByRole('list', { name: 'What the runtime said about this document' }).textContent
+    ).toContain('additional properties are not allowed: "fileName"')
     fireEvent.click(createButton())
     await new Promise((resolve) => setTimeout(resolve, 50))
     // Neither write. Not the pack, and not the registration.
@@ -1139,5 +1147,48 @@ describe('a proposal is checked before it is written', () => {
     fireEvent.click(createButton())
     await waitFor(() => expect(sent.length).toBe(2))
     expect(stubCalls().filter((call) => call.name === 'validate')).toEqual([])
+  })
+})
+
+
+describe('a refusal shows the runtime’s whole diagnosis', () => {
+  it('prints every diagnostic, with its own code, layer, severity and pointer', async () => {
+    // Two independent problems. A dialog that showed one of them would be
+    // telling the author their document has one thing wrong with it.
+    injected = proposing({
+      specVersion: '99',
+      fileName: 'model-choice.pack.json',
+      outcomes: [{ id: 'approve' }, { id: 'decline' }],
+      rules: [{ id: 'r1' }]
+    })
+    const { sent } = serve()
+    draw()
+    await propose()
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    fireEvent.change(screen.getByLabelText('Name (required)'), {
+      target: { value: 'Vendor Onboarding' }
+    })
+    const list = await screen.findByRole('list', {
+      name: 'What the runtime said about this document'
+    })
+    // Both, and the runtime's own words — punctuation and all, unreworded.
+    expect(list.textContent).toContain(
+      'additional properties are not allowed: "fileName" — remove it, or say what it is.'
+    )
+    expect(list.textContent).toContain(
+      'specVersion must be "0.2.0-draft"; this document says otherwise.'
+    )
+    // And the fields a message alone does not carry.
+    expect(list.textContent).toContain('additional-property')
+    expect(list.textContent).toContain('const-mismatch')
+    expect(list.textContent).toContain('structural')
+    expect(list.textContent).toContain('carrier')
+    expect(list.textContent).toContain('/fileName')
+    expect(list.textContent).toContain('/specVersion')
+    // Before either write, and instead of one.
+    expect(createButton().disabled).toBe(true)
+    fireEvent.click(createButton())
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(sent).toEqual([])
   })
 })
