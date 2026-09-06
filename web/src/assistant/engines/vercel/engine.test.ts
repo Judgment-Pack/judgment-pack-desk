@@ -422,6 +422,24 @@ describe('the tools this engine offers, and the schemas it writes', () => {
 })
 
 describe('exactly one end, on every path', () => {
+  it('delivers the terminal event through the channel, in order, once', async () => {
+    // Not from a `finally`: `end` is pushed and delivered like every other
+    // event, so a direct consumer — `runAssistantSession`, and anything else
+    // driving the contract — actually receives it.
+    const { call } = scriptedCall([
+      turn({ tool: { name: 'validate', args: { document: {} } } }),
+      turn({ text: PROPOSAL_TEXT })
+    ])
+    const events = await drain(vercel.start(session(call)))
+    expect(events.map((event) => event.type)).toEqual([
+      'tool_call',
+      'tool_result',
+      'proposal',
+      'end'
+    ])
+    expect(events.filter((event) => event.type === 'end')).toHaveLength(1)
+  })
+
   it('reports a refusal once and ends', async () => {
     const call: ModelCall = async () =>
       new Response(JSON.stringify({ error: 'no key stored', code: 'assistant-no-key' }), {
@@ -483,6 +501,31 @@ describe('exactly one end, on every path', () => {
 })
 
 describe('a consumer that stops in the middle of a run', () => {
+  it('closes the generator on the first return, and produces nothing after it', async () => {
+    // Yielding the terminal `end` from a `finally` made the first `return()`
+    // resolve `{ value: end, done: false }` with the generator still suspended,
+    // and `for await`'s own closing discards that value — so a direct consumer
+    // was never handed the terminal event at all, and the page only worked
+    // because the run hook writes one of its own. A consumer that asks to stop
+    // is owed no terminal event; what it is owed is a closed iterator.
+    const { call } = scriptedCall([
+      turn({ tool: { name: 'validate', args: { document: {} } } }),
+      turn({ text: PROPOSAL_TEXT })
+    ])
+    const iterator = vercel.start(session(call))[Symbol.asyncIterator]()
+    expect((await iterator.next()).value).toMatchObject({ type: 'tool_call' })
+    expect(await iterator.return!(undefined)).toEqual({ value: undefined, done: true })
+    expect(await iterator.next()).toEqual({ value: undefined, done: true })
+  })
+
+  it('closes on a return before the first next, having run nothing', async () => {
+    const { call, seen } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
+    const iterator = vercel.start(session(call))[Symbol.asyncIterator]()
+    expect(await within(2000, iterator.return!(undefined) as Promise<unknown>)).toBe('settled')
+    expect(await iterator.next()).toEqual({ value: undefined, done: true })
+    expect(seen, 'the model was never asked anything').toHaveLength(0)
+  })
+
   it('returns promptly, and asks the runtime nothing more', async () => {
     // The whole path: the model asks for a tool, the adapter's `execute` waits
     // for the `tool_call` event to reach the consumer, and the consumer stops

@@ -248,9 +248,11 @@ function endpointSentence(body: unknown): string {
 /**
  * Run one session, as a stream of events.
  *
- * `end` is emitted exactly once, from the `finally`, whatever happened above
- * it — including an abort, which ends the session and says nothing else,
- * because a viewer who pressed Stop has not been told about a failure.
+ * `end` is emitted exactly once, on the channel like every other event and
+ * never from a `finally`, whatever happened above it — including an abort,
+ * which ends the session and says nothing else, because a viewer who pressed
+ * Stop has not been told about a failure. A consumer that stops listening is
+ * owed no terminal event and gets none: its `return()` closes the generator.
  */
 export async function* runVercel(session: AssistantSession): AsyncGenerator<AssistantEvent> {
   // The run's own controller, chained to the session's: the SDK is given this
@@ -430,6 +432,27 @@ export async function* runVercel(session: AssistantSession): AsyncGenerator<Assi
     })
   }
 
+  /**
+   * The contract's terminal event, on the same ordered stream as the rest.
+   *
+   * **Not yielded from a `finally`.** That is the one shape an async generator
+   * makes surprising: a `finally` that yields makes the consumer's first
+   * `return()` resolve `{ value: end, done: false }` with the generator still
+   * suspended, and `for await`'s own closing discards that value — so the
+   * terminal event a direct consumer is owed was never delivered at all, and
+   * the page only worked because the run hook writes an `end` of its own. So
+   * `end` travels the way every other event does: pushed, delivered in order,
+   * and once.
+   *
+   * On the path where the consumer left early the channel is already abandoned,
+   * this push resolves at once, and the event is dropped — which is right: a
+   * consumer that stopped listening is not owed a terminal event, and it has
+   * closed the iterator to say so.
+   */
+  const finish = async (): Promise<void> => {
+    await channel.push({ type: 'end' })
+    channel.close()
+  }
   const loop = drive().catch(async (cause: unknown) => {
     // An abort is the viewer stopping the session, and it ends it: there is no
     // failure to report and nothing more to say than `end`.
@@ -438,19 +461,19 @@ export async function* runVercel(session: AssistantSession): AsyncGenerator<Assi
   })
   // Nothing else awaits this; a rejection out of the catch above would be
   // unhandled. It cannot reject, and this is what says so.
-  const settled = loop.then(
-    () => channel.close(),
-    () => channel.close()
-  )
+  const settled = loop.then(finish, finish)
 
   try {
     yield* channel.drain()
     await settled
   } finally {
-    // A consumer that stopped listening releases whatever the framework's
-    // pipeline is waiting to deliver, and the run is aborted rather than left
-    // running behind a pane nobody is watching. The abort goes first, so the
-    // loop that is about to be released finds a run already over.
+    // **Cleanup, and nothing yielded.** The consumer that stopped listening
+    // releases whatever the framework's pipeline is waiting to deliver, and the
+    // run is aborted rather than left running behind a pane nobody is watching.
+    // The abort goes first, so the loop that is about to be released finds a run
+    // already over. Reaching here on a `return()` closes this generator —
+    // `done: true`, no further events — which is what a consumer asking to stop
+    // means.
     session.signal.removeEventListener('abort', onAbort)
     // `abandon` aborts the run before it releases anything; calling it again
     // where the drain already did is harmless and keeps this path honest.
@@ -462,6 +485,5 @@ export async function* runVercel(session: AssistantSession): AsyncGenerator<Assi
     // would make `return()` on this iterator as slow as the slowest thing the
     // session was doing.
     void settled
-    yield { type: 'end' }
   }
 }

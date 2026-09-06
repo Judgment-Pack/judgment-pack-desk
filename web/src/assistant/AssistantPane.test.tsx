@@ -415,6 +415,25 @@ describe('exactly one end, on every path', () => {
     expect(ends()).toHaveLength(1)
   })
 
+  it('one, and one socket close, on the path that reaches a proposal', async () => {
+    // The engine's own terminal event travels the channel like every other, so
+    // the runner receives it and the hook does not have to write one. And the
+    // connection is closed **once**: the run's identity is cleared before the
+    // close, and the connection's own close is idempotent, so Stop, the run's
+    // `finally` and an unmount cannot each take a socket down.
+    await draw()
+    await typeAndRun()
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    expect(ends()).toHaveLength(1)
+    await waitFor(() => expect(runtime!.closed).toBe(1))
+    // And it stays one through the *other* release path: the unmount, which is
+    // what a navigation away from the pack is. The run's identity is cleared
+    // when it is released, so a second release has nothing left to close.
+    cleanup()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(runtime!.closed, 'the socket was closed twice').toBe(1)
+  })
+
   it('one, when Stop is pressed with the model still answering', async () => {
     // The defect: Stop cleared the run's identity before the engine handled
     // the abort, so the engine's own `end` was discarded and the stream simply
@@ -451,7 +470,13 @@ describe('exactly one end, on every path', () => {
     await waitFor(() => expect(runtime!.opened.length).toBe(1))
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
     await waitFor(() => expect(ends()).toHaveLength(1))
-    await waitFor(() => expect(runtime!.closed).toBeGreaterThan(0))
+    // **Once**, and this is the path where that is not free: the abort closes
+    // the connection and the setup's own failure closes it again, so the
+    // connection's `close` has to collapse the two rather than take a socket
+    // down twice.
+    await waitFor(() => expect(runtime!.closed).toBe(1))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(runtime!.closed, 'the socket was closed twice').toBe(1)
   })
 })
 
