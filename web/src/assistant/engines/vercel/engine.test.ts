@@ -18,7 +18,7 @@ import { ASSISTANT_TOOLS } from '../../../config/deskConfig'
 import { loadEngine } from '../index'
 import { eventChannel } from './channel'
 import { vercel } from './index'
-import { REHEARSAL_HOOK, SUPPRESSED_REJECTION } from './loop'
+import { REHEARSAL_HOOK, claimPromises } from './loop'
 import { ADDRESS_REFUSED, PLACEHOLDER_ORIGIN, placeholderBase, reframe, relayFetch, suffixOf } from './relay'
 import type { streamText } from 'ai'
 import type { AssistantEvent, AssistantSession, McpTool, ModelCall, McpToolResult } from '../../engine'
@@ -455,33 +455,85 @@ describe('a consumer that stops in the middle of a run', () => {
 })
 
 describe('the unhandled rejection the SDK’s refusal path leaks', () => {
-  /** One `unhandledrejection` event, as a page would deliver it. */
-  function reject(name: string): Event {
-    const event = new Event('unhandledrejection', { cancelable: true })
-    ;(event as { reason?: unknown }).reason = { name }
-    globalThis.dispatchEvent(event)
-    return event
+  /**
+   * Every rejection Node saw with no handler while `run` was in flight.
+   *
+   * `process`, not `window`: jsdom does not turn a Node-level unhandled
+   * rejection into an `unhandledrejection` event, so a test that dispatched one
+   * itself would be measuring its own dispatch. This is the real thing.
+   */
+  async function unhandled(run: () => Promise<void>): Promise<string[]> {
+    const seen: string[] = []
+    const watch = (reason: unknown) =>
+      seen.push(String((reason as { name?: string } | undefined)?.name ?? reason))
+    const others = process.listeners('unhandledRejection')
+    process.removeAllListeners('unhandledRejection')
+    process.on('unhandledRejection', watch)
+    try {
+      await run()
+      // Node reports an unclaimed rejection a turn or two later, never in the
+      // same tick, so the window has to outlast the run.
+      for (let tick = 0; tick < 6; tick += 1) await new Promise((r) => setTimeout(r, 10))
+    } finally {
+      process.off('unhandledRejection', watch)
+      for (const listener of others) process.on('unhandledRejection', listener as never)
+    }
+    return seen
   }
 
-  it('is suppressed while a run is open, and only that one error name', async () => {
-    const { call } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
-    const iterator = vercel.start(session(call))[Symbol.asyncIterator]()
-    // One event in: the run is open.
-    await iterator.next()
-    expect(reject(SUPPRESSED_REJECTION).defaultPrevented).toBe(true)
-    expect(reject('TypeError').defaultPrevented).toBe(false)
-    for (;;) {
-      const step = await iterator.next()
-      if (step.done === true || step.value.type === 'end') break
-    }
+  /** The desk's own refusal: the relay answers 409 when no key is stored. */
+  const refuses: ModelCall = async () =>
+    new Response(JSON.stringify({ error: 'no key stored', code: 'assistant-no-key' }), {
+      status: 409,
+      headers: { 'content-type': 'application/json' }
+    })
+
+  it('is not leaked at all: the result’s promises are claimed as it is made', async () => {
+    // Measured, not asserted: reading `result.text` and leaving it unclaimed
+    // produces exactly one `AI_NoOutputGeneratedError` on this path. Claiming
+    // every promise-valued member of the result produces none, and nothing is
+    // suppressed anywhere to achieve it.
+    const events: AssistantEvent[] = []
+    const leaked = await unhandled(async () => {
+      for await (const event of vercel.start(session(refuses))) events.push(event)
+    })
+    expect(leaked).toEqual([])
+    expect(events.map((event) => event.type)).toEqual(['error', 'end'])
   })
 
-  it('is not suppressed once the run has ended: the guard is removed', async () => {
-    const { call } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
-    await drain(vercel.start(session(call)))
-    // A listener that outlived the session would swallow the same error class
-    // for a page that is no longer running an assistant at all.
-    expect(reject(SUPPRESSED_REJECTION).defaultPrevented).toBe(false)
+  it('installs no page listener, so an unrelated rejection stays observable', async () => {
+    // The guard this replaces suppressed **every** page rejection whose reason
+    // merely carried that error name — an unrelated operation elsewhere in the
+    // page, during a run, was hidden from the browser's own diagnostics.
+    const iterator = vercel.start(session(scriptedCall([turn({ text: PROPOSAL_TEXT })]).call))[
+      Symbol.asyncIterator
+    ]()
+    await iterator.next()
+    const event = new Event('unhandledrejection', { cancelable: true })
+    ;(event as { reason?: unknown }).reason = { name: 'AI_NoOutputGeneratedError' }
+    globalThis.dispatchEvent(event)
+    expect(event.defaultPrevented, 'something on this page suppressed it').toBe(false)
+    await iterator.return!(undefined)
+  })
+
+  it('claims the promise-valued members the SDK exposes, and steps over the rest', () => {
+    // The enumeration itself, on a stand-in: own properties and prototype
+    // getters alike, a member that throws on being read stepped over, and
+    // nothing claimed that is not a promise.
+    let read = 0
+    const stand = Object.create({
+      get inherited() {
+        read += 1
+        return Promise.reject(new Error('claimed'))
+      },
+      get throws(): unknown {
+        throw new Error('a member that will not be read')
+      }
+    }) as Record<string, unknown>
+    stand.own = Promise.reject(new Error('claimed'))
+    stand.plain = 'not a promise'
+    expect(claimPromises(stand)).toBe(2)
+    expect(read).toBe(1)
   })
 })
 

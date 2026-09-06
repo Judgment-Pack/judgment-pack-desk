@@ -19,11 +19,11 @@
  *    own options type, so the day `ai` stops declaring it this file stops
  *    compiling.
  * 2. **The refusal path leaks unhandled rejections.** `AI_NoOutputGeneratedError`
- *    is raised inside the SDK's own recorded-stream flush and delivered to
- *    promises the caller cannot claim, so claiming the members this loop reads
- *    does not close it. A guard is installed for the duration of the run and
- *    removed after — the page's console is not this engine's to fill with an
- *    error nobody can catch.
+ *    reaches the page from a promise the result exposed and nobody claimed. It
+ *    is closed at the cause rather than at the symptom: every promise-valued
+ *    member of the result is claimed the moment the result exists, enumerated
+ *    from the object rather than from a list. Nothing on this page is
+ *    suppressed — see `claimPromises`.
  * 3. **The SDK reads the answer it asked for.** An endpoint that answers whole
  *    to a request that asked to stream ends the run with no output at all. That
  *    is closed one layer down, in `relay.ts`.
@@ -147,29 +147,58 @@ function outcome(result: McpToolResult): { text: string; isError: boolean; struc
 }
 
 /**
- * The `unhandledrejection` guard, installed for one run.
+ * Claim every promise the SDK's result exposes, the moment it exists.
  *
- * ADR-0001: "the refusal path leaks unhandled `AI_NoOutputGeneratedError`
- * rejections the caller cannot claim; the page needs an `unhandledrejection`
- * guard". It is scoped to the run and **removed** after it, because a listener
- * that outlived the session would swallow the same error class for a page that
- * is no longer running an assistant at all. Only that one error name is
- * suppressed; every other rejection reaches the console as a real page error.
+ * ADR-0001 records that this SDK's refusal path "leaks unhandled
+ * `AI_NoOutputGeneratedError` rejections the caller cannot claim" and asks the
+ * page for an `unhandledrejection` guard. **The guard was the wrong layer.** A
+ * listener on the page suppresses every rejection that merely *has* that error
+ * name — an unrelated operation elsewhere in the page, during this run, would
+ * have been hidden from the browser's own diagnostics — and it treats the
+ * symptom rather than the cause.
+ *
+ * The cause is reachable. `streamText`'s result exposes its output as
+ * promise-valued members, and reading one mints a promise that rejects when the
+ * call fails; a member read and left unclaimed is a rejection nobody can catch.
+ * Measured on the desk's own refusal path: reading `result.text` and not
+ * claiming it produces exactly one unhandled `AI_NoOutputGeneratedError`, and
+ * claiming every promise-valued member produces none.
+ *
+ * **Enumerated from the object rather than from a list somebody wrote**, own
+ * properties and prototype getters alike, because the list is the SDK's and it
+ * changes between releases — `content`, `finalStep`, `output`, `reasoning`,
+ * `responseMessages`, `totalUsage` and eighteen more at the pinned version. A
+ * member that throws on being read (`elementStream`, without an output
+ * specification) is not a promise to claim and is stepped over.
+ *
+ * Nothing here suppresses anything: every rejection this page makes, including
+ * any this engine mishandles, still reaches the console as a real page error.
  */
-export const SUPPRESSED_REJECTION = 'AI_NoOutputGeneratedError'
-
-function guardRejections(): () => void {
-  const scope = globalThis as unknown as {
-    addEventListener?: (name: string, fn: (event: Event) => void) => void
-    removeEventListener?: (name: string, fn: (event: Event) => void) => void
+export function claimPromises(result: object): number {
+  const names = new Set<string>()
+  for (
+    let held: object | null = result;
+    held !== null;
+    held = Object.getPrototypeOf(held) as object | null
+  ) {
+    for (const name of Object.getOwnPropertyNames(held)) names.add(name)
   }
-  if (typeof scope.addEventListener !== 'function') return () => {}
-  const guard = (event: Event) => {
-    const reason = (event as { reason?: { name?: unknown } }).reason
-    if (reason?.name === SUPPRESSED_REJECTION) event.preventDefault()
+  let claimed = 0
+  for (const name of names) {
+    if (name === 'constructor') continue
+    let value: unknown
+    try {
+      value = (result as Record<string, unknown>)[name]
+    } catch {
+      // A member that throws on being read is not a promise to claim.
+      continue
+    }
+    if (value === null || typeof value !== 'object') continue
+    if (typeof (value as { then?: unknown }).then !== 'function') continue
+    claimed += 1
+    void Promise.resolve(value as PromiseLike<unknown>).catch(() => undefined)
   }
-  scope.addEventListener('unhandledrejection', guard)
-  return () => scope.removeEventListener?.('unhandledrejection', guard)
+  return claimed
 }
 
 /**
@@ -231,7 +260,6 @@ export async function* runVercel(session: AssistantSession): AsyncGenerator<Assi
   const onAbort = () => stop.abort()
   if (session.signal.aborted) stop.abort()
   else session.signal.addEventListener('abort', onAbort, { once: true })
-  const release = guardRejections()
   const offered = new Set(session.tools.map((tool) => tool.name))
   // What the model asked for, before the SDK's refinement touched it.
   //
@@ -321,12 +349,12 @@ export async function* runVercel(session: AssistantSession): AsyncGenerator<Assi
       }
     })
 
-    // Each of these rejects when the call fails, and a member left unclaimed is
-    // a rejection nobody can catch. Claiming them does not close the leak — the
-    // SDK mints derived promises of its own — which is what `guardRejections`
-    // is for; it does close the ones this loop actually reads.
-    const text = result.text
-    void Promise.resolve(text).catch(() => undefined)
+    // **Before anything is awaited, and the only claim there is.** Every
+    // promise-valued member of the result is claimed the moment the result
+    // exists, so a call that fails produces no rejection the page cannot catch.
+    // Nothing below reads one of those members without awaiting it, which is
+    // the other half of the same rule. See `claimPromises`.
+    claimPromises(result)
 
     // The **last** step's text, not every step's: a session that reasoned aloud
     // before calling a tool would otherwise have that prose concatenated onto
@@ -388,7 +416,9 @@ export async function* runVercel(session: AssistantSession): AsyncGenerator<Assi
     }
     if (streamed !== null) throw streamed
 
-    const proposal = extractProposal(final || (await text))
+    // `result.text` mints a fresh promise on every read, so it is read here,
+    // where it is awaited, and nowhere it would be left standing.
+    const proposal = extractProposal(final !== '' ? final : await result.text)
     await channel.push({
       type: 'proposal',
       document: proposal.document,
@@ -428,7 +458,6 @@ export async function* runVercel(session: AssistantSession): AsyncGenerator<Assi
     // would make `return()` on this iterator as slow as the slowest thing the
     // session was doing.
     void settled
-    release()
     yield { type: 'end' }
   }
 }
