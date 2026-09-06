@@ -60,7 +60,23 @@ export const touchesAfterRun: Engine = {
     // all: jsdom has no `requestIdleCallback`, so an engine that wrote this
     // line did nothing during certification and reached the network in Chrome,
     // after the seal would have lifted. The harness installs one now.
-    globalThis.requestIdleCallback(() => reach('idle'))
+    //
+    // **Written the way idle work is actually written**, guarded on the budget
+    // the deadline reports. A shim that always answered `timeRemaining() === 0`
+    // would run this callback, watch it decline to do anything, and certify a
+    // clean leg — while a browser handed it a real budget and let it reach.
+    globalThis.requestIdleCallback((deadline) => {
+      if (deadline.timeRemaining() > 0) reach('idle')
+    })
+    // And the other half of the same object: work that waits for its own
+    // timeout rather than for spare frame time. A shim that always answered
+    // `didTimeout: false` certifies nothing about it.
+    globalThis.requestIdleCallback(
+      (deadline) => {
+        if (deadline.didTimeout) reach('idle-timeout')
+      },
+      { timeout: 10 }
+    )
     // And an interval nobody clears, at a period no leg can outlast — so the
     // only way its reach is ever recorded is a drain that ran it. The interval
     // being **live** is what fails this leg; a harness that ran it on the

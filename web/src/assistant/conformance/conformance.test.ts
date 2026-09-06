@@ -325,28 +325,60 @@ function trackDeferredWork(): {
    * backed by a timeout, handing the callback the deadline object the API
    * defines — tracked and cancellable like every other schedule, and **removed**
    * again by `restore` rather than left behind for the next test file.
+   *
+   * **Realistic means the deadline, not only the callback.** A shim that always
+   * answered `timeRemaining() === 0` certified nothing about the ordinary idle
+   * pattern — `requestIdleCallback(d => { if (d.timeRemaining() > 0) work() })`
+   * did nothing here and did its work in a browser, after the seal lifted — and
+   * a shim that always answered `didTimeout: false` certified nothing about code
+   * that waits for its own timeout. So the deadline carries a positive,
+   * decreasing budget measured from when the callback *starts* (the browser's
+   * own rule), and `didTimeout` says what actually ran it.
    */
   {
-    const realIdle = scope.requestIdleCallback as ((fn: unknown) => unknown) | undefined
+    const realIdle = scope.requestIdleCallback as
+      | ((fn: unknown, options?: IdleRequestOptions) => unknown)
+      | undefined
     const realCancelIdle = scope.cancelIdleCallback as ((handle: unknown) => void) | undefined
-    const schedule = (wrapped: () => void): unknown =>
-      realIdle !== undefined ? realIdle(wrapped) : realSetTimeout(wrapped, 1)
-    const clear = (handle: unknown) =>
-      realCancelIdle !== undefined ? realCancelIdle(handle) : realClearTimeout(handle as never)
     if (realIdle === undefined) added.add('requestIdleCallback')
     if (realCancelIdle === undefined) added.add('cancelIdleCallback')
     keep('requestIdleCallback')
     keep('cancelIdleCallback')
-    scope.requestIdleCallback = (fn: (deadline: unknown) => void) =>
-      record(
-        'requestIdleCallback',
-        'requestIdleCallback',
-        () => fn({ didTimeout: false, timeRemaining: () => 0 }),
-        schedule,
-        clear,
-        false
+    scope.requestIdleCallback = (
+      fn: (deadline: IdleDeadline) => void,
+      options?: IdleRequestOptions
+    ) => {
+      const timeout = options?.timeout
+      // **A sealed leg never goes idle.** There is no spare frame time in a
+      // suite: a callback that asked for a timeout is run *because* of it, and
+      // saying otherwise would certify `didTimeout` against a state this
+      // harness can never reach.
+      const didTimeout = timeout !== undefined
+      const label = didTimeout
+        ? `requestIdleCallback(${String(timeout)}ms timeout)`
+        : 'requestIdleCallback'
+      const run = () => {
+        // The budget a browser gives a callback, measured from the moment it
+        // starts running rather than from when it was asked for: positive at
+        // the first read and decreasing, and never negative.
+        const startedAt = Date.now()
+        fn({
+          didTimeout,
+          timeRemaining: () => Math.max(0, IDLE_BUDGET_MS - (Date.now() - startedAt))
+        })
+      }
+      const schedule = (wrapped: () => void): unknown =>
+        realIdle !== undefined
+          ? realIdle(wrapped, options)
+          : realSetTimeout(wrapped, timeout === undefined ? 1 : Math.min(1, timeout))
+      const clear = (handle: unknown) =>
+        realCancelIdle !== undefined ? realCancelIdle(handle) : realClearTimeout(handle as never)
+      return record('requestIdleCallback', label, run, schedule, clear, false)
+    }
+    scope.cancelIdleCallback = (handle: unknown) =>
+      forget(handle, (inner) =>
+        realCancelIdle !== undefined ? realCancelIdle(inner) : realClearTimeout(inner as never)
       )
-    scope.cancelIdleCallback = (handle: unknown) => forget(handle, clear)
   }
 
   return {
@@ -379,6 +411,17 @@ function trackDeferredWork(): {
 
 /** How many times the drain will look for more work before giving up. */
 const DRAIN_ROUNDS = 64
+
+/**
+ * The idle budget the harness's own `requestIdleCallback` hands a callback.
+ *
+ * A browser gives an idle callback whatever is left of the frame, up to 50ms.
+ * The number matters less than that it is **positive and decreasing**: an
+ * engine that guards its work on `deadline.timeRemaining() > 0` must actually
+ * do that work here, or certification says nothing about the ordinary idle
+ * pattern.
+ */
+const IDLE_BUDGET_MS = 50
 
 /**
  * Run everything an engine left behind, under the seal, until nothing is left.
@@ -935,10 +978,17 @@ describe('the seal, shown to fail', () => {
     expect(events.some((event) => event.type === 'proposal')).toBe(false)
   })
 
-  /** Which schedules a leg's recorded reaches came from. */
+  /**
+   * Which schedules a leg's recorded reaches came from.
+   *
+   * The hyphen is in the character class deliberately: a marker read as a
+   * prefix of a longer one — `idle` out of `idle-timeout` — makes two distinct
+   * reaches indistinguishable, and one of them then looks recorded when only
+   * the other was.
+   */
   const markers = (violations: string[]) =>
     violations
-      .map((violation) => /from=([a-z]+)/.exec(violation)?.[1])
+      .map((violation) => /from=([a-z-]+)/.exec(violation)?.[1])
       .filter((marker): marker is string => marker !== undefined)
 
   it('catches the reaches an engine scheduled for after its run', async () => {
@@ -959,8 +1009,13 @@ describe('the seal, shown to fail', () => {
     expect(from.has('promise'), 'the reach on a promise chain, with no timer').toBe(true)
     // **The one the environment does not have.** jsdom has no
     // `requestIdleCallback`, so this reach did nothing during certification and
-    // would have run in Chrome after the seal lifted. The harness installs one.
-    expect(from.has('idle'), 'the reach on an idle callback').toBe(true)
+    // would have run in Chrome after the seal lifted. The harness installs one —
+    // and both of these are written the way idle work is actually written, one
+    // guarded on the deadline's budget and one on its `didTimeout`, so a shim
+    // that answered zero and false to everything would run them, watch them
+    // decline to do anything, and certify a clean leg.
+    expect(from.has('idle'), 'the reach guarded on the idle budget').toBe(true)
+    expect(from.has('idle-timeout'), 'the reach guarded on didTimeout').toBe(true)
     // And the drain finished with nothing left waiting.
     expect(leftPending).toBe(0)
   })

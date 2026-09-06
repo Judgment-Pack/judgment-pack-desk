@@ -1615,13 +1615,23 @@ would report a reach the engine had already decided not to make; a schedule that
 returns no handle at all, as `queueMicrotask` does, is filed under none, so a
 `clearTimeout(undefined)` cannot cancel it by accident.
 
-**`requestIdleCallback` is installed where the environment has none**, backed by
-a timeout and handing the callback the deadline object the API defines, and
+**`requestIdleCallback` is installed where the environment has none**, and
 removed again afterwards. jsdom does not have it, so an engine that wrote
 `globalThis.requestIdleCallback?.(() => fetch(…))` did nothing at all during
 certification and reached the network in Chrome, after the seal would have
 lifted: a primitive the *browser* has and the *harness* does not is a hole in a
 guard whose whole claim is that everything an engine scheduled has already run.
+
+**Realistic means the deadline, not only the callback.** The shim takes the
+`IdleRequestOptions` it is given, hands the callback a budget that is positive
+at its first read and decreasing from the moment it starts — the browser's own
+rule — and reports `didTimeout` truthfully: a sealed leg never goes idle, so a
+callback that asked for a timeout is run because of it. A shim that answered
+zero and false to everything would run the ordinary idle pattern
+(`if (deadline.timeRemaining() > 0) work()`), watch it decline to do anything,
+and certify a clean leg while a browser gave it a real budget and let it reach.
+The hostile fixture writes both shapes, one guarded on the budget and one on
+`didTimeout`.
 
 **A certified engine leaves no live interval when its iterator ends.** An
 interval is never run by the drain at all: running a few ticks and calling it
@@ -1653,6 +1663,19 @@ beside them, and the two sets are asserted equal at the type level, so an id
 cannot become loadable without being put in front of the conformance session and
 an id the decoder declares cannot be left without an adapter. Both directions are
 compile errors.
+
+**One channel, one consumer, and no terminal event out of a `finally`.** The
+adapter's events reach the contract through an ordered channel whose `push`
+resolves only once the consumer has taken the event — which is what puts the
+desk's own guardrail line between the `tool_call` that provoked it and the
+`tool_result` that followed. A second reader is refused by name before it takes
+anything, because the in-flight slot is a single slot and two readers would
+overwrite each other's. And `end` travels that channel like every other event
+rather than being yielded from a `finally`: a `finally` that yields makes a
+consumer's first `return()` resolve `{ value, done: false }` with the generator
+still suspended, and `for await`'s own closing discards the value, so the
+terminal event is never delivered at all. A consumer that stops listening is owed
+no terminal event; what it is owed is a closed iterator.
 
 `assistant/engines/contract.ts` holds what belongs to the contract rather than to
 either loop — the twenty-turn bound, the desk's own sentence to the model, the

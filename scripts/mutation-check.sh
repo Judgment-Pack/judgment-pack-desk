@@ -3900,11 +3900,11 @@ export function assistantTransport(): Transport {
 
   # `end` exactly once, on the path an error takes.
   mutate web "the vercel engine ends twice on the error path" "$VL" \
-    "    void settled
-    yield { type: 'end' }" \
-    "    void settled
-    yield { type: 'end' }
-    yield { type: 'end' }"
+    "  const finish = async (): Promise<void> => {
+    await channel.push({ type: 'end' })" \
+    "  const finish = async (): Promise<void> => {
+    await channel.push({ type: 'end' })
+    await channel.push({ type: 'end' })"
 
   # **Retired: "the rejection guard is left installed after the run".** There is
   # no guard to leave installed. Review round 1 was right that a page listener
@@ -3956,17 +3956,11 @@ export function assistantTransport(): Transport {
   # during certification and ran in Chrome after the seal lifted. The harness
   # installs one; this mutant installs it without tracking it.
   mutate web "an idle callback is scheduled but not tracked" "$CT" \
-    "    scope.requestIdleCallback = (fn: (deadline: unknown) => void) =>
-      record(
-        'requestIdleCallback',
-        'requestIdleCallback',
-        () => fn({ didTimeout: false, timeRemaining: () => 0 }),
-        schedule,
-        clear,
-        false
-      )" \
-    '    scope.requestIdleCallback = (fn: (deadline: unknown) => void) =>
-      schedule(() => fn({ didTimeout: false, timeRemaining: () => 0 }))'
+    "      return record('requestIdleCallback', label, run, schedule, clear, false)" \
+    '      void record
+      void label
+      void clear
+      return schedule(run)'
   # A canceller that is not wrapped leaves a cancelled callback pending in the
   # bookkeeping, and the drain fires it — a reach attributed to an engine that
   # had already decided not to make it.
@@ -3976,6 +3970,41 @@ export function assistantTransport(): Transport {
       scope.clearImmediate = (handle: unknown) => forget(handle, (inner) => realClearImmediate(inner))
     }" \
     '    void realClearImmediate'
+
+  # ---- What review round 2 found, each broken again ------------------------
+  #
+  # The in-flight slot is a single slot. Two readers would overwrite each
+  # other's, and the overwritten entry would be in neither the queue nor the
+  # slot — a delivery nothing can ever settle.
+  mutate web "a second consumer of the channel is admitted" "$VC" \
+    '      if (consuming) throw new ChannelHasOneConsumer()' \
+    '      void ChannelHasOneConsumer'
+  # A `finally` that yields makes the consumer's first `return()` resolve
+  # `{ value, done: false }` with the generator still suspended, and `for await`
+  # discards that value — so the terminal event is never delivered at all.
+  mutate web "the terminal event is yielded from the finally again" "$VL" \
+    "  const finish = async (): Promise<void> => {
+    await channel.push({ type: 'end' })
+    channel.close()
+  }" \
+    "  const finish = async (): Promise<void> => {
+    channel.close()
+  }"
+  # The connection is closed once however many times it is released: the abort
+  # closes it and the setup's own failure closes it again.
+  mutate web "the connection is closed once per release, not once" "$ASN" \
+    '    shutting ??= (async () => {' \
+    '    shutting = (async () => {'
+  # A shim that answers zero to `timeRemaining()` runs the ordinary idle
+  # pattern, watches it decline to do anything, and certifies a clean leg —
+  # while a browser gives it a real budget and lets it reach.
+  mutate web "the idle deadline reports no budget at all" "$CT" \
+    '          timeRemaining: () => Math.max(0, IDLE_BUDGET_MS - (Date.now() - startedAt))' \
+    '          timeRemaining: () => 0'
+  # And the other half of the same object: code that waits for its own timeout.
+  mutate web "the idle deadline never reports its own timeout" "$CT" \
+    '      const didTimeout = timeout !== undefined' \
+    '      const didTimeout = false'
 
   # ---- The proposal as a diff, and accepting it into the draft -------------
   #
