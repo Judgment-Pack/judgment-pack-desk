@@ -18,11 +18,13 @@
  * **Nothing is persisted.** Leaving the route ends the session and closes its
  * connection; coming back is a new one.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AUTHOR_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
 import { Button } from '../ui/Button'
 import { CodeArea } from '../ui/CodeArea'
 import { TextArea } from '../ui/TextArea'
+import { ProposalDiffView } from './ProposalDiff'
+import { diffProposal } from './proposalDiff'
 import { useAssistantRun } from './useAssistantRun'
 import { useAssistantSlot } from './useAssistantSlot'
 import styles from './AssistantPane.module.css'
@@ -35,7 +37,21 @@ function byteCount(text: string): number {
   return new TextEncoder().encode(text).length
 }
 
-export function AssistantPane() {
+export function AssistantPane({
+  draft
+}: {
+  /**
+   * The bytes this page is about: the editor's buffer on `?edit`, the saved
+   * document elsewhere, and undefined before either has been read.
+   *
+   * It is the route's rather than read from a context here, because the route
+   * is the one place that knows which of the two the page is showing — and
+   * because "the document the diff is against" and "the document the assistant
+   * was given" have to be the same string or the diff is about a draft nobody
+   * sent.
+   */
+  draft?: string
+} = {}) {
   const slot = useAssistantSlot()
   const prompts = usePromptNames()
   const advertised = (prompts.data ?? []).includes(AUTHOR_PACK_PROMPT)
@@ -105,6 +121,22 @@ export function AssistantPane() {
     return () => document.removeEventListener('keydown', onKey)
   }, [stop])
 
+  const proposal = run.events.find(
+    (event): event is Extract<AssistantEvent, { type: 'proposal' }> => event.type === 'proposal'
+  )
+  /**
+   * What accepting this proposal would do to the draft.
+   *
+   * Computed from the two documents and from nothing the model said about its
+   * own work. It is memoised on the draft and the proposal because the pane
+   * re-renders on every event of the next run.
+   */
+  const proposed = proposal?.document
+  const diff = useMemo(
+    () => (proposed === undefined ? undefined : diffProposal(draft, proposed)),
+    [draft, proposed]
+  )
+
   if (slot.endpoint === null || !slot.keyPresent) {
     return (
       <p className={styles.empty}>
@@ -116,9 +148,6 @@ export function AssistantPane() {
   }
 
   const running = run.status === 'running' || (submitted !== null && prompt.isFetching)
-  const proposal = run.events.find(
-    (event): event is Extract<AssistantEvent, { type: 'proposal' }> => event.type === 'proposal'
-  )
   const results = run.events.filter(
     (event): event is Extract<AssistantEvent, { type: 'tool_result' }> =>
       event.type === 'tool_result'
@@ -183,6 +212,8 @@ export function AssistantPane() {
             Nothing has been written. This is a document to accept or reject, and the checks below
             are the runtime’s own words.
           </p>
+          {diff !== undefined && <ProposalDiffView diff={diff} />}
+          <p className={styles.label}>The whole proposed document</p>
           <CodeArea
             value={JSON.stringify(proposal.document, null, 2)}
             readOnly

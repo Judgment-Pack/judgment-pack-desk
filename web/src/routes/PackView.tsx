@@ -724,7 +724,16 @@ export function PackView() {
         onValueChange={setRightTab}
         tabs={[
           { value: 'inspector', label: 'Inspector', panel: inspectorNode },
-          { value: 'assistant', label: 'Assistant', panel: <AssistantPane /> }
+          {
+            value: 'assistant',
+            label: 'Assistant',
+            // The bytes this page is about: the editor's buffer where a file
+            // has been read, the runtime's served copy before that. It is the
+            // same string Try it sends, and for the same reason — a pane over
+            // one revision beside a page over another is the failure the
+            // digest binding exists to prevent.
+            panel: <AssistantPane draft={bufferText ?? servedText} />
+          }
         ]}
       />
     )

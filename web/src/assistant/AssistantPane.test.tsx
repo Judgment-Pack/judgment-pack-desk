@@ -55,6 +55,8 @@ async function draw(options: {
   refuse?: boolean
   /** A socket that opens and then answers nothing, not even `initialize`. */
   deafSocket?: boolean
+  /** The bytes the page is about, which the diff is computed against. */
+  draft?: string
 } = {}) {
   const model = scriptedModel({ api: 'openai-compatible', answerAs: 'stream' })
   const keyRead = JSON.stringify({
@@ -95,7 +97,7 @@ async function draw(options: {
     <QueryClientProvider client={testQueryClient()}>
       <McpContext.Provider value={connected({ client })}>
         <DeskConfigFixture value={config(options.assistant ?? { endpoint: ENDPOINT })}>
-          <AssistantPane />
+          <AssistantPane draft={options.draft} />
         </DeskConfigFixture>
       </McpContext.Provider>
     </QueryClientProvider>
@@ -163,8 +165,8 @@ describe('the tab before a run', () => {
 })
 
 describe('one whole run', () => {
-  async function runIt() {
-    const drawn = await draw()
+  async function runIt(already?: Awaited<ReturnType<typeof draw>>) {
+    const drawn = already ?? (await draw())
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
     )
@@ -221,6 +223,33 @@ describe('one whole run', () => {
     for (const unknown of scenario.unknowns) {
       expect(screen.getByText(unknown)).toBeTruthy()
     }
+  })
+
+  it('shows the proposal as a diff against the draft it was given', async () => {
+    const drawn = await draw({ draft: JSON.stringify(scenario.documents.DRAFT_V1, null, 2) })
+    await runIt(drawn)
+    const diff = screen.getByRole('region', { name: 'The proposal as a diff' })
+    expect(diff.textContent).toContain('Compared with the draft on this page')
+    // The two members that moved, the one that arrived, and the eleven that
+    // did not — under one line with a count.
+    expect(diff.textContent).toContain('/version')
+    expect(diff.textContent).toContain('/rules')
+    expect(diff.textContent).toContain('/exceptions')
+    expect(diff.textContent).toContain('11 members unchanged')
+    // The rule the proposal drops is named, and the three it keeps are not
+    // redrawn as rewrites.
+    expect(diff.textContent).toContain('/rules/3')
+    expect(diff.textContent).toContain('3 elements unchanged, in the same place.')
+    // And the draft's own bytes are quoted beside the proposal's.
+    const before = screen.getByLabelText('/version, in the draft') as HTMLTextAreaElement
+    expect(JSON.parse(before.value)).toBe('0.0.1')
+  })
+
+  it('says there was nothing to compare with where the page has no bytes', async () => {
+    await runIt()
+    const diff = screen.getByRole('region', { name: 'The proposal as a diff' })
+    expect(diff.textContent).toContain('There was nothing to compare with')
+    expect(diff.textContent).toContain('no draft on this page')
   })
 
   it('quotes the runtime’s checks beside it rather than summarising them', async () => {
