@@ -3812,7 +3812,10 @@ export function assistantTransport(): Transport {
   # (The event became `held` when the proposal's canonicalization landed in this
   # function; the row is the same claim about the same line.)
   mutate web "a second end is appended rather than dropped" "$AR" \
-    "    if (held.type === 'end') run.ended = true" \
+    "    if (held.type === 'end') {
+      run.ended = true
+      terminals.current.count += 1
+    }" \
     '    void held'
   # **Both halves at once, because either alone holds it.** A connection whose
   # setup is still in flight is releasable two ways: the run records the handle
@@ -4474,22 +4477,19 @@ export function assistantTransport(): Transport {
     '  const page = `${location.pathname}${location.search}`' \
     '  const page = location.key'
 
-  # **Deliberately not mutated: the unmount's `finish`.**
+  # **The unmount's `finish`, now that it can be observed.**
   #
-  # Round 1 asked for a row here — the cleanup released without finishing, so an
-  # unmount closed the connection while accounting for no terminal event — and
-  # the row was written and reported NOT DISCRIMINATING. That is the honest
-  # answer and it is recorded rather than repaired: after the component is gone
-  # there is nobody left to observe the event. `setEvents` on an unmounted tree
-  # is a no-op, the run object is unreachable, and every other consequence
-  # (the abort, the socket) belongs to `release`, which runs either way.
-  #
-  # The call stays because it is correct — `run.ended` is what a second `end` is
-  # dropped against, and the hook should state one rule on every path — and its
-  # absence from this table is a statement rather than an oversight. What *is*
-  # measured is every path a page can see: Stop, the dialog's close, a route
-  # change, and the slot going away, each asserted through the next session
-  # being allowed to start.
+  # Round 1 asked for this row; it reported NOT DISCRIMINATING and was retired
+  # with the reason — after the component is gone, `setEvents` is a no-op and
+  # nothing renders the array it would have made. Round 2 asked for the
+  # observation instead of the retirement, and the hook now counts its terminal
+  # events in an object whose identity is stable for its lifetime, so a test
+  # takes the reference while the hook is alive and reads it after it is not.
+  mutate web "an unmount releases the run without finishing it" "$AR" \
+    '      const run = active.current
+      if (run !== null) finish(run)
+      release(run)' \
+    '      release(active.current)'
 
   mutate web "Fix re-serializes the runtime's diagnostics" "$CK" \
     '  const span = spanAt(indexDocument(raw), '"'"'/diagnostics'"'"')

@@ -69,6 +69,23 @@ export interface AssistantRun {
    * so there is no substitution left for this to report.
    */
   engineId: AssistantEngine
+  /**
+   * How many terminal events this hook has accounted for, in an object whose
+   * identity is stable for the life of the hook.
+   *
+   * **It exists to make the unmount path observable, and that is the whole of
+   * it.** A run that ends while its component is on screen puts its `end` on
+   * `events` and anybody can count it there. A run ended *by* the unmount
+   * cannot: `setEvents` on a tree that is going away is a no-op and the array
+   * it would have produced is never rendered. So the count lives in an object a
+   * caller can take a reference to **before** the unmount and read after it —
+   * which is what turns "exactly one terminal event, on every path" from a
+   * claim into a measurement, and what the mutation harness breaks.
+   *
+   * It counts terminal events and not runs: a second `end` is dropped before it
+   * gets here, so Stop followed by an unmount is one.
+   */
+  terminals: { count: number }
   /** Start one run with the prompt text the desk already fetched. */
   start: (prompt: string) => void
   stop: () => void
@@ -176,6 +193,8 @@ export function useAssistantRun(options: {
   const [events, setEvents] = useState<AssistantEvent[]>([])
   const [failure, setFailure] = useState<string | undefined>(undefined)
   const active = useRef<Active | null>(null)
+  // One object for the life of the hook. See `AssistantRun.terminals`.
+  const terminals = useRef({ count: 0 })
   // Read at call time rather than captured, so a run started with one
   // configuration is not carried on with another.
   const settings = useRef(options)
@@ -192,7 +211,10 @@ export function useAssistantRun(options: {
     if (active.current !== run || run.ended) return
     // The one canonicalization site. See the module doc.
     const held = event.type === 'proposal' ? canonicalProposal(event) : event
-    if (held.type === 'end') run.ended = true
+    if (held.type === 'end') {
+      run.ended = true
+      terminals.current.count += 1
+    }
     setEvents((previous) => [...previous, held])
   }, [])
 
@@ -304,5 +326,13 @@ export function useAssistantRun(options: {
     [finish, push, release]
   )
 
-  return { status, events, failure, engineId: options.engine, start, stop }
+  return {
+    status,
+    events,
+    failure,
+    terminals: terminals.current,
+    engineId: options.engine,
+    start,
+    stop
+  }
 }
