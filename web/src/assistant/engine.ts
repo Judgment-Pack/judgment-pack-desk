@@ -47,7 +47,8 @@
  * lands, this capability is what is passed as the provider's `fetch` option,
  * so the shape survives the next chunk.
  */
-import type { AssistantEngine, EndpointKind, ThinkingTier } from '../config/deskConfig'
+import type { AssistantEngine, EndpointKind } from '../config/deskConfig'
+import type { NormalizedThinking } from './thinking'
 
 /** One tool exactly as `tools/list` served it. Nothing is re-declared. */
 export interface McpTool {
@@ -104,7 +105,18 @@ export interface AssistantSession {
   callTool: CallTool
   /** A capability and a name. No address, and no credential. */
   model: { family: EndpointKind; model: string; call: ModelCall }
-  thinking: { tier: ThinkingTier }
+  /**
+   * The tier, **normalized by the desk** — the tier the file asked for, the
+   * wire members that expresses on this endpoint's family, and the state the
+   * session starts in.
+   *
+   * ADR-0001: *"the tier maps to provider parameters in one desk-owned table,
+   * per endpoint family, and the engine receives the normalized result."* So an
+   * engine puts `wire.members` on the request and never decides what `on` means
+   * for an endpoint; the table, the dialect fallback between the two Anthropic
+   * spellings and the two states a tier cannot express are `assistant/thinking.ts`.
+   */
+  thinking: NormalizedThinking
   signal: AbortSignal
 }
 

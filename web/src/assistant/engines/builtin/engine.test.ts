@@ -13,6 +13,7 @@ import { builtin } from './index'
 import { MAX_TURNS, extractProposal } from './loop'
 import { protocolHeaders } from './providers/types'
 import { ASSISTANT_ENGINES } from '../../../config/deskConfig'
+import { normalize } from '../../thinking'
 import type {
   AssistantEvent,
   AssistantSession,
@@ -67,7 +68,7 @@ function session(overrides: Partial<AssistantSession> = {}): AssistantSession {
     tools: TOOLS,
     callTool: async () => ({ content: [{ type: 'text', text: '{"status":"valid"}' }] }),
     model: { family: 'openai-compatible', model: 'a-model', call: async () => new Response('{}') },
-    thinking: { tier: 'off' },
+    thinking: normalize('off', 'openai-compatible'),
     signal: new AbortController().signal,
     ...overrides
   }
@@ -382,7 +383,7 @@ describe('the event stream', () => {
 
 describe('the thinking tier this chunk does not run', () => {
   it.each(['on', 'ultra'] as const)('reports %s unavailable and carries on', async (tier) => {
-    const { session: one } = scripted(() => finalMessage(PROPOSAL_TEXT), { thinking: { tier } })
+    const { session: one } = scripted(() => finalMessage(PROPOSAL_TEXT), { thinking: normalize(tier, 'openai-compatible') })
     const events = await drain(builtin.start(one))
     expect(events[0]).toMatchObject({ type: 'thinking_unavailable' })
     expect((events[0] as { detail: string }).detail).toContain(tier)
@@ -618,7 +619,7 @@ describe('a session that was already over before the run began', () => {
     let tools = 0
     const one = session({
       signal: controller.signal,
-      thinking: { tier },
+      thinking: normalize(tier, 'openai-compatible'),
       model: {
         family: 'openai-compatible',
         model: 'a-model',

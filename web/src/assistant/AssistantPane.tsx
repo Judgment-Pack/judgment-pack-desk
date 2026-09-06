@@ -46,6 +46,7 @@ import { ProposalUnknowns, RuntimeChecks } from './ProposalReport'
 import { DRAFT_MOVED, acceptState, applyProposal, writable, type Disposition } from './acceptProposal'
 import { diffProposal } from './proposalDiff'
 import { outcomeOf } from './runOutcome'
+import { stateFromEvents, thinkingLine } from './thinking'
 import { useAssistantRun } from './useAssistantRun'
 import { useAssistantSlot } from './useAssistantSlot'
 import styles from './AssistantPane.module.css'
@@ -380,7 +381,16 @@ export function AssistantPane({
   return (
     <div className={styles.pane}>
       <p className={styles.status}>
-        {run.engineId} · {slot.endpoint.model} · thinking {slot.thinking}
+        {/*
+          **The tier the file asked for, and the state the session actually
+          reached.** ADR-0001's five states: three a person selects, and two the
+          desk discovers and must report — a model that always thinks, and an
+          endpoint with no thinking at all. The state is read off this run's own
+          events rather than remembered, so the line and the stream cannot
+          disagree.
+        */}
+        {run.engineId} · {slot.endpoint.model} ·{' '}
+        {thinkingLine(slot.thinking, stateFromEvents(slot.thinking, run.events))}
       </p>
       {ran !== undefined && (
         <p className={styles.status}>

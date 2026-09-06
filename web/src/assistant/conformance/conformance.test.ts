@@ -39,6 +39,7 @@ import { bindModelCall, openAssistantConnection, runAssistantSession } from '../
 import scenario from './scenario.json'
 import { scriptedModel, type RecordedRequest } from './scriptedModel'
 import { RECORDED_TOOLS, scriptedRuntime, type ServerObservation } from './scriptedServer'
+import { normalize } from '../thinking'
 import runtime from './runtime.json'
 import type { AssistantEvent, Engine } from '../engine'
 
@@ -608,7 +609,7 @@ async function runLeg(
         tools: ready.tools,
         callTool: ready.callTool,
         model: { family: leg.api, model: 'scripted-model', call },
-        thinking: { tier: 'off' },
+        thinking: normalize('off', leg.api),
         signal: new AbortController().signal
       },
       (event) => events.push(event)

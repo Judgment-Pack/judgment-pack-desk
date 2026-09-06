@@ -20,6 +20,7 @@ import { ChannelHasOneConsumer, eventChannel } from './channel'
 import { vercel } from './index'
 import { REHEARSAL_HOOK, claimPromises } from './loop'
 import { ADDRESS_REFUSED, PLACEHOLDER_ORIGIN, placeholderBase, reframe, relayFetch, suffixOf } from './relay'
+import { normalize } from '../../thinking'
 import type { streamText } from 'ai'
 import type { AssistantEvent, AssistantSession, McpTool, ModelCall, McpToolResult } from '../../engine'
 
@@ -114,7 +115,7 @@ function session(
       callTool ??
       (async (): Promise<McpToolResult> => ({ content: [{ type: 'text', text: '{"status":"ok"}' }] })),
     model: { family: 'openai-compatible', model: 'a-model', call },
-    thinking: { tier: 'off' },
+    thinking: normalize('off', 'openai-compatible'),
     signal: new AbortController().signal,
     ...overrides
   }
@@ -201,7 +202,7 @@ describe('a session that was already over before the run began', () => {
     }
     const events = await drain(
       vercel.start(
-        session(call, { signal: controller.signal, thinking: { tier } }, async () => {
+        session(call, { signal: controller.signal, thinking: normalize(tier, 'openai-compatible') }, async () => {
           tools += 1
           return { content: [] }
         })
@@ -922,7 +923,7 @@ describe('what the model said about its own reasoning', () => {
 describe('the thinking tier this chunk does not run', () => {
   it.each(['on', 'ultra'] as const)('reports %s unavailable and carries on', async (tier) => {
     const { call } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
-    const events = await drain(vercel.start(session(call, { thinking: { tier } })))
+    const events = await drain(vercel.start(session(call, { thinking: normalize(tier, 'openai-compatible') })))
     expect(events.map((event) => event.type)).toEqual(['thinking_unavailable', 'proposal', 'end'])
     expect((events[0] as { detail: string }).detail).toContain(tier)
     expect((events[0] as { detail: string }).detail).toContain('vercel')

@@ -40,6 +40,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { loadEngine } from './engines'
 import { bindModelCall, openAssistantConnection, runAssistantSession } from './session'
+import { normalize } from './thinking'
 import type { AssistantEvent } from './engine'
 import type { AssistantConnection } from './session'
 import type { AssistantEndpointConfig, AssistantEngine, ThinkingTier } from '../config/deskConfig'
@@ -295,7 +296,9 @@ export function useAssistantRun(options: {
               tools: ready.tools,
               callTool: ready.callTool,
               model: { family: endpoint.kind, model: endpoint.model, call: bindModelCall() },
-              thinking: { tier: thinking },
+              // **Normalized here, once.** The engine is handed the desk's own
+              // table's result rather than a tier it would have to interpret.
+              thinking: normalize(thinking, endpoint.kind),
               signal: run.controller.signal
             },
             (event) => push(run, event)
