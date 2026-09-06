@@ -283,6 +283,63 @@ describe('a read that resolves before the next render', () => {
   })
 })
 
+describe('a read that lands over an edit made while it was in flight', () => {
+  it('is refused, and the work and its undo entry stay', () => {
+    // The defect this exists for: a reload takes as long as it takes, and an
+    // edit made while it is in flight moves no generation and no path. The
+    // ticket still matched, the answer was adopted over the edit, and the undo
+    // stack went with it — so there was no way back to the work either.
+    const { result } = renderHook(() => useDocumentBuffer(file('{"a": 1}')))
+    const ticket = result.current.identity!
+    // The read is in flight. Now an edit — a keystroke, a form field, or an
+    // accepted proposal, which is an edit like any other.
+    act(() => result.current.commit('{"a": 2}'))
+    let took: boolean | undefined
+    act(() => {
+      took = result.current.rebase(file('{"a": 9}'), ticket)
+    })
+    expect(took).toBe(false)
+    expect(result.current.text).toBe('{"a": 2}')
+    expect(result.current.canUndo).toBe(true)
+    // And the ticket the caller would take *now* is accepted, so a reload
+    // asked for after the edit still works.
+    act(() => {
+      took = result.current.rebase(file('{"a": 9}'), result.current.identity)
+    })
+    expect(took).toBe(true)
+    expect(result.current.text).toBe('{"a": 9}')
+  })
+
+  it('is refused after an undo, and after a discard', () => {
+    const { result } = renderHook(() => useDocumentBuffer(file('{"a": 1}')))
+    act(() => result.current.commit('{"a": 2}'))
+    const afterCommit = result.current.identity!
+    act(() => result.current.undo())
+    let took: boolean | undefined
+    act(() => {
+      took = result.current.rebase(file('{"a": 9}'), afterCommit)
+    })
+    expect(took).toBe(false)
+
+    act(() => result.current.commit('{"a": 3}'))
+    const afterSecond = result.current.identity!
+    act(() => result.current.discard())
+    act(() => {
+      took = result.current.rebase(file('{"a": 9}'), afterSecond)
+    })
+    expect(took).toBe(false)
+  })
+
+  it('counts the revision in the identity it hands out', () => {
+    const { result } = renderHook(() => useDocumentBuffer(file('{"a": 1}')))
+    expect(result.current.identity!.revision).toBe(0)
+    act(() => result.current.commit('{"a": 2}'))
+    expect(result.current.identity!.revision).toBe(1)
+    act(() => result.current.undo())
+    expect(result.current.identity!.revision).toBe(2)
+  })
+})
+
 describe('what a save lands on', () => {
   it('replaces the buffer where the save carried everything', () => {
     const { result } = renderHook(() => useDocumentBuffer(file('{"a": 1}')))

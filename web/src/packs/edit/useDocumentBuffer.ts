@@ -84,6 +84,19 @@ export interface DocumentBuffer {
 export interface BufferIdentity {
   path: string
   generation: number
+  /**
+   * How many edits this buffer has taken, ever.
+   *
+   * **The generation is not enough, and this is the half it was missing.** A
+   * reload is a read that takes as long as it takes, and an edit made while it
+   * is in flight moves no generation: the ticket still named the same file and
+   * the same incarnation, so the answer was adopted over work that arrived
+   * after the read was asked for — silently, and taking the undo stack with it,
+   * so there was no way back to it either. A number that moves on every commit
+   * and every undo is what says the buffer is not the buffer the read was asked
+   * about.
+   */
+  revision: number
 }
 
 /** One entry on the stack: the bytes, and what was being typed into. */
@@ -152,6 +165,17 @@ export function useDocumentBuffer(
   // the pure function React is entitled to call twice.
   const current = useRef<string | undefined>(undefined)
   current.current = text
+
+  /**
+   * The edit counter behind `BufferIdentity.revision`.
+   *
+   * A ref and not state, for the reason the generation is one: a read can
+   * resolve before the next render, and what decides whether it may be adopted
+   * has to be true *now*. Every path that moves the text moves it — commit,
+   * undo, discard — and it is never reset, so two different buffers can never
+   * present the same number for the same file.
+   */
+  const edits = useRef(0)
 
   const seeded = useRef<string | undefined>(undefined)
   const [waiting, setWaiting] = useState<FileContent | undefined>(undefined)
@@ -223,6 +247,7 @@ export function useDocumentBuffer(
       setText(next)
       return
     }
+    edits.current += 1
     setStack((entries) => {
       const key = options?.coalesceKey
       const top = entries[entries.length - 1]
@@ -245,12 +270,16 @@ export function useDocumentBuffer(
     const entries = stackNow.current
     const top = entries[entries.length - 1]
     if (top === undefined) return
+    edits.current += 1
     current.current = top.text
     setText(top.text)
     setStack(entries.slice(0, -1))
   }, [])
 
   const discard = useCallback(() => {
+    // A discard is an undo of everything, and it moves the bytes: a reload
+    // asked for before it is a reload about a buffer that no longer exists.
+    edits.current += 1
     if (base !== undefined) {
       current.current = base.content
       setText(base.content)
@@ -271,6 +300,10 @@ export function useDocumentBuffer(
     (fresh: FileContent, expect?: BufferIdentity): boolean => {
       if (expect !== undefined) {
         if (expect.generation !== generationNow.current) return false
+        // **An edit since the read was asked for is a refusal.** Including one
+        // made by Accept, which is an edit like any other: adopting here would
+        // replace it and clear the stack that could have taken it back.
+        if (expect.revision !== edits.current) return false
         if (seeded.current !== undefined && seeded.current !== expect.path) return false
         if (fresh.path !== expect.path) return false
       }
@@ -339,7 +372,15 @@ export function useDocumentBuffer(
       identity:
         seeded.current === undefined
           ? undefined
-          : { path: seeded.current, generation: generationNow.current },
+          : {
+              path: seeded.current,
+              generation: generationNow.current,
+              // Read off the ref, and re-read whenever this memo is rebuilt —
+              // which every edit does, because every edit moves `text`. Two
+              // commits that produce the same bytes leave a ticket carrying the
+              // earlier number, and a refusal is the safe direction.
+              revision: edits.current
+            },
       generation,
       landed,
       waiting,

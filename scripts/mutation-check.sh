@@ -3119,6 +3119,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the buffer takes a revision it is no longer about" "$BUF" \
     '      if (expect !== undefined) {
         if (expect.generation !== generationNow.current) return false
+        // **An edit since the read was asked for is a refusal.** Including one
+        // made by Accept, which is an edit like any other: adopting here would
+        // replace it and clear the stack that could have taken it back.
+        if (expect.revision !== edits.current) return false
         if (seeded.current !== undefined && seeded.current !== expect.path) return false
         if (fresh.path !== expect.path) return false
       }' \
@@ -3849,6 +3853,14 @@ export function assistantTransport(): Transport {
   mutate web "the diff is not computed against the draft" "$PD" \
     '  const draft = readDraft(draftText)' \
     '  const draft = readDraft(undefined)'
+
+  # **A reload that lands over an edit made while it was in flight.** The
+  # generation moves only where the buffer is put down, so an edit — a
+  # keystroke, or an accepted proposal — left the ticket matching, and the
+  # answer was adopted over the work with its undo entry.
+  mutate web "a reload adopts over an edit made while it was in flight" "$BUF" \
+    '        if (expect.revision !== edits.current) return false' \
+    '        void expect.revision'
 
   # **A row's identity is its kind and its pointer.** A proposal that replaces
   # one rule with a rule of another id produces two rows about position 0, and
