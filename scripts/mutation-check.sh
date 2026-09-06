@@ -3534,6 +3534,63 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   AR=web/src/assistant/useAssistantRun.ts
   AP=web/src/assistant/AssistantPane.tsx
 
+  CT=web/src/assistant/conformance/conformance.test.ts
+
+  # ---- Canonical bytes ----------------------------------------------------
+  #
+  # The lesson the chassis' relay learned over four rounds, and the one this
+  # gate learned in round 2: a classification made about a mutable object is a
+  # classification the object can change out from under you. Each row here
+  # restores one version of that mistake.
+  mutate web "the frame is classified before it is canonicalized" "$TG" \
+    '  const frame = canonical(message)' \
+    '  const frame = message as unknown'
+  # The round-2 defect exactly: copy the caller's own properties — toJSON
+  # included — and let the serializer invoke it after the member was written.
+  mutate web "the arguments are copied rather than canonicalized" "$TG" \
+    '  const args = (supplied ?? {}) as Record<string, unknown>' \
+    '  const args = { ...((message as { params?: { arguments?: Record<string, unknown> } }).params?.arguments ?? {}) }'
+  mutate web "a frame need not declare jsonrpc 2.0" "$TG" \
+    "  if (frame.jsonrpc !== '2.0') {" \
+    '  if (false) {'
+  # A response is an id and exactly one of result and error. Both, or neither,
+  # is a shape that was being waved through as a response.
+  mutate web "a response is exempted without checking its shape" "$TG" \
+    '    if (hasId && idIsOk && hasResult !== hasError) return { verdict: '"'"'send'"'"', notice: null, frame: frame as unknown as JSONRPCMessage }' \
+    '    if (hasId) return { verdict: '"'"'send'"'"', notice: null, frame: frame as unknown as JSONRPCMessage }'
+
+  # ---- The model capability's own answer ----------------------------------
+  #
+  # A browser Response carries the requested URL on `.url`, and that URL is the
+  # relay address with this chassis' session token in it.
+  mutate web "the model answer is handed back as fetch produced it" "$ASN" \
+    '    return facade(answered)' \
+    '    return answered'
+  # A fetch TypeError quotes the URL, so the browser's own error is the token.
+  mutate web "a failed model call rethrows the browser's own error" "$ASN" \
+    '      throw new Error(CALL_FAILED)' \
+    '      throw cause'
+  mutate web "the answer's headers are not filtered" "$ASN" \
+    '    if (MODEL_ANSWER_HEADERS.includes(name.toLowerCase())) carried.set(name, value)' \
+    '    carried.set(name, value)'
+  # A string-like object answers an innocuous split() while the validator looks
+  # and a different toString() when the URL is built.
+  mutate web "the suffix is not required to be a primitive string" "$ASN" \
+    "  if (typeof suffix !== 'string') {" \
+    '  if (false) {'
+
+  # ---- The seal, which is itself a claim -----------------------------------
+  #
+  # **A row over the harness, deliberately.** "The engine touches no network
+  # global" is a property of the conformance session, and the two certification
+  # fixtures are what hold it. Moving the seal back to where round 2 found it —
+  # after the import — is the defect, and the load-time fixture is what notices.
+  mutate web "the seal goes up after the engine's chunk is loaded" "$CT" \
+    '    seal = sealNetwork()
+    const engine = await load()' \
+    '    const engine = await load()
+    seal = sealNetwork()'
+
   # K3(b). Without the allow-list, write_file leaves the page and reaches the
   # runtime — which is the arrival the scripted server counts as a failure.
   mutate web "the allow-list check is removed" "$TG" \
