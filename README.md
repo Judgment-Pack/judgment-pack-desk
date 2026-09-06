@@ -1317,8 +1317,12 @@ verdict, so there is none.
 
 **Accept and Reject are drawn and disabled**, with a title saying they arrive in
 the next chunk. Nothing here writes to the draft, produces a diff, or touches a
-file. `Escape` stops a running session; leaving the route stops it too.
-Nothing about a session is persisted — coming back is a new one.
+file. `Escape` stops a session; leaving the route stops it too. A session has
+two phases — the desk reading the runtime's prompt, then the engine running —
+and Stop ends either. Every session emits exactly one `end`, whichever way it
+finishes. Pressing Run again with the text unchanged is a second run, because a
+model is not a pure function. Nothing about a session is persisted — coming back
+is a new one.
 
 **The assistant opens its own MCP connection**, and that costs one more
 `jpack mcp` process while the tab is running. The reason is the ToolGate below:
@@ -1349,10 +1353,55 @@ The allow-list is `assistant.endpoint.tools` **intersected with the five**, and
 the order is allow-list first: an `experimental_evaluate` the file never granted
 is refused rather than politely corrected on its way out.
 
+It **fails closed**. A frame that is not a well-formed single JSON-RPC request,
+notification or response is refused rather than waved through: a JSON-RPC batch
+is an array with no `method`, so "anything that is not `tools/call` is traffic I
+have no opinion about" let a batch carrying an allowed call beside a
+`write_file` out whole. A near-spelling of the guarded method — `Tools/Call`,
+` tools/call ` — is refused too, on the chassis' own reasoning about its query:
+a frame two readers disagree about is one this desk will not send.
+
+And an `experimental_evaluate` frame is **never forwarded as it arrived**. It is
+rebuilt from the own, enumerable properties of what the caller gave, each read
+once, with an own `rehearsal: true` written last. An inherited `rehearsal: true`
+— `Object.create({ rehearsal: true })` — reads as `true` to any check and is
+dropped by `JSON.stringify`, so an inspect-and-forward gate would have sent an
+unrehearsed evaluation and the runtime would have appended an audit record.
+There is no branch that forwards the original object, which is why there is no
+shape that can slip past it.
+
 The engine is handed a `callTool` bound through this gate and **nothing else** —
-no client, no transport, no `fetch` — and the session's member set is asserted
-whole in `assistant/enforcement.test.ts`, because the guarantee is that there is
-nothing else there.
+no client, no transport, no `fetch`, and **no URL** — and the session's member
+set is asserted whole in `assistant/enforcement.test.ts`, because the guarantee
+is that there is nothing else there.
+
+### Why the engine gets a capability and not a base URL
+
+ADR-0001's contract sketch writes `model: { family, baseUrl, model }`, with
+`baseUrl` "the chassis relay". This desk deviates, and the reason is that the
+relay authenticates with **this chassis' session token in the query**: a
+`baseUrl` an engine can read is this desk's own credential in the engine's
+hands, and an adapter holding it can open `/ws?token=…` itself with
+`globalThis.WebSocket` and drive a third MCP connection the ToolGate is not on.
+Nothing in the contract would have been violated. The guarantee would simply
+have been gone.
+
+So `model` is `{ family, model, call }`. `call(suffix, request)` is bound by the
+desk: it builds the address itself, admits only a path suffix that passes the
+relay's own segment rule, carries only the headers on the chassis' outbound
+allow-list, and captures `fetch` when the session is bound rather than reading
+it at call time. The engine chooses a suffix — `chat/completions`,
+`v1/messages` — and nothing else.
+
+That last detail is what makes the guarantee structural instead of inspected:
+the conformance session replaces `fetch`, `WebSocket`, `XMLHttpRequest` and
+`EventSource` with throwing sentinels for the duration of every engine's run, on
+every leg. The desk's capability still works; an engine that reaches for a
+global fails the leg by name (`K1a`). The string-enumeration guard that used to
+forbid a handful of spellings under `engines/` is gone: it said of itself that a
+novel spelling walks past it, and `new globalThis["Web"+"Socket"]` is that
+spelling. When the `vercel` adapter lands, this capability is what is passed as
+the provider's `fetch` option, so the shape survives the next chunk.
 
 ### The engine slot, as it stands
 
@@ -1366,10 +1415,10 @@ credential of its own**, reads a stream or a whole answer by what came back
 rather than by what it asked for, ends on one fenced JSON block, bounds itself
 at twenty model turns, and emits `end` exactly once.
 
-Its request URL is the relay base with **one path suffix** and no query of its
-own: the desk puts this chassis' session token in the base and the relay refuses
-any other parameter outright, so an engine that appended one would have every
-request refused. Both wire formats put `stream` in the body, so none is needed.
+It reaches a model only through `session.model.call`, naming a path suffix; the
+address, the token and the header allow-list are the desk's. Both wire formats
+put `stream` in the body, so no engine ever needs a query — which is as well,
+because the relay refuses one.
 
 ### The conformance session
 
@@ -1410,12 +1459,14 @@ certified by adding its id to one list.
 
 Four legs — OpenAI-compatible and Anthropic, each answered as a stream and as
 one whole object, because an endpoint may ignore what the request asked for —
-and the checks are the experiment's own: **K1** no credential in any request and
-nothing called but the relay; **K2** the five tools out of `tools/list`, with no
-schema literal in any engine source; **K3a** the rewrite, measured at the
-scripted server rather than at the page; **K3b** `write_file` never arriving;
-**K3c** the proposal equal to DRAFT_V2; T8's unknowns; and the event stream's
-exact order with one `end`.
+and the checks are the experiment's own, plus one this desk added: **K1a** the
+engine touches no network global at all, held by sealing `fetch`, `WebSocket`,
+`XMLHttpRequest` and `EventSource` for the duration of its run; **K1** no
+credential in any request and nothing called but the relay; **K2** the five
+tools out of `tools/list`, with no schema literal in any engine source; **K3a**
+the rewrite, measured at the scripted server rather than at the page; **K3b**
+`write_file` never arriving; **K3c** the proposal equal to DRAFT_V2; T8's
+unknowns; and the event stream's exact order with one `end`.
 
 ## Requirements
 
@@ -1840,11 +1891,12 @@ the endpoint the desk-level file names, and it is good only at the endpoint that
 already holds it.** What this route guarantees is that the desk never volunteers
 it — not that an endpoint cannot give away a secret it was given.
 
-The assistant's engine calls it, and nothing else does
-([ADR-0001](docs/adr/0001-make-the-assistant-engine-a-slot.md)). The base the
-page is handed carries this chassis' session token — the one parameter the rule
-above admits — and the engine appends a path suffix to it and adds no parameter
-of its own.
+The assistant calls it, and nothing else does
+([ADR-0001](docs/adr/0001-make-the-assistant-engine-a-slot.md)). The **desk**
+builds each relayed address, with this chassis' session token — the one
+parameter the rule above admits — and hands the engine a capability rather than
+a URL, so no engine ever holds the token or chooses a query. See
+[Why the engine gets a capability and not a base URL](#why-the-engine-gets-a-capability-and-not-a-base-url).
 
 ## Authoring (issue #14, phase 1)
 
