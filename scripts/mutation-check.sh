@@ -3551,14 +3551,16 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the arguments are copied rather than canonicalized" "$TG" \
     '  const args = (supplied ?? {}) as Record<string, unknown>' \
     '  const args = { ...((message as { params?: { arguments?: Record<string, unknown> } }).params?.arguments ?? {}) }'
-  mutate web "a frame need not declare jsonrpc 2.0" "$TG" \
-    "  if (frame.jsonrpc !== '2.0') {" \
-    '  if (false) {'
-  # A response is an id and exactly one of result and error. Both, or neither,
-  # is a shape that was being waved through as a response.
-  mutate web "a response is exempted without checking its shape" "$TG" \
-    '    if (hasId && idIsOk && hasResult !== hasError) return { verdict: '"'"'send'"'"', notice: null, frame: frame as unknown as JSONRPCMessage }' \
-    '    if (hasId) return { verdict: '"'"'send'"'"', notice: null, frame: frame as unknown as JSONRPCMessage }'
+  # **Two rows retired here, and a third below, because one row replaced all
+  # three.** "a frame need not declare jsonrpc 2.0", "a response is exempted
+  # without checking its shape" and "a frame with no method at all is passed"
+  # each needled a hand-written shape rule, and those rules are gone: the
+  # canonical frame is checked against the SDK's own JSONRPCMessageSchema, which
+  # is stricter than the three were together — it is what refuses an id of null
+  # beside a result, an error that is a string and a fractional id, none of
+  # which the old rules caught. "a frame need not be a message the SDK would
+  # accept" breaks that check, and the corpus it fails on is every case those
+  # three used to own plus five they did not.
 
   # ---- The model capability's own answer ----------------------------------
   #
@@ -3617,10 +3619,33 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # A fixed wait is a delay an engine can out-wait. The fixture schedules at
   # five minutes, on an interval, and chained behind another timer.
   mutate web "the deferred barrier is a fixed wait again" "$CT" \
-    '      leftPending = await drainDeferredWork(tracker)
-      tracker.restore()' \
-    '      await new Promise((resolve) => setTimeout(resolve, 200))
-      tracker.restore()'
+    '        leftPending = await drainDeferredWork(tracker)' \
+    '        await new Promise((resolve) => setTimeout(resolve, 200))'
+
+  # ---- The seal's two rules about what an engine leaves behind ------------
+  #
+  # An interval nobody cleared is a certification failure in its own right:
+  # running it a few times and clearing it on the engine's behalf let a reach
+  # hide behind a later tick and report a clean drain.
+  mutate web "the drain runs an engine's interval on its behalf" "$CT" \
+    '        if (entry.repeating) return' \
+    '        if (entry.repeating && entry.pending === false) return'
+  mutate web "a live interval is not reported" "$CT" \
+    '    liveIntervals: () => tracked.filter((entry) => entry.repeating && !entry.cancelled),' \
+    '    liveIntervals: () => [],'
+  # A handle the engine itself cancelled must never be run on its behalf: doing
+  # so reports a reach the engine had already decided not to make.
+  mutate web "a cancelled handle is fired anyway" "$CT" \
+    '    byHandle.get(handle)?.cancel()
+    clear(handle)' \
+    '    clear(handle)'
+  # A deferred callback that throws used to leave the finally before the
+  # sentinels and the timer wrappers came off, poisoning every later leg.
+  mutate web "a throwing callback escapes the cleanup" "$CT" \
+    '    } catch (cause) {
+      drainThrew = `${(cause as Error).name}: ${(cause as Error).message}`
+    } finally {' \
+    '    } finally {'
   # **Not a row: the certification fixtures travelling `loadEngine`.** They do —
   # `fromCertification` calls it, which is why the loader takes its table as a
   # parameter — but a mutant that called the table directly would import the
@@ -3672,12 +3697,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  if (!isRecord(frame)) {
     return { verdict: '"'"'send'"'"', notice: null, frame: frame as unknown as JSONRPCMessage }
     return refuse('
-  mutate web "a frame with no method at all is passed" "$TG" \
-    '  if (!hasMethod) {' \
-    '  if (hasMethod === false && true) {
-    return { verdict: '"'"'send'"'"', notice: null, frame: frame as unknown as JSONRPCMessage }
-  }
-  if (false) {'
+  # (The third retired row was here — see the note above.)
   # A near-spelling some other reader folds to tools/call.
   mutate web "a near-spelling of tools/call is waved through" "$TG" \
     '    if (method.trim().toLowerCase() === TOOLS_CALL) {' \
