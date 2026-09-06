@@ -3523,34 +3523,84 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # ADR-0001 puts these under the engine slot on purpose: they are the desk's
   # promises and not a framework's features, so each one is broken here and the
   # test that notices is named. Every row's catcher is either the conformance
-  # session — the bake-off scenario, run against the engine registry — or a
-  # test that measures at a recording transport.
+  # session — the bake-off scenario, run against the engine registry, with every
+  # network global sealed for the duration of the engine's run — or a test that
+  # measures at a recording transport or on the serialized bytes.
   TG=web/src/assistant/toolGate.ts
   ASN=web/src/assistant/session.ts
-  AE=web/src/assistant/engine.ts
   BL=web/src/assistant/engines/builtin/loop.ts
   BT=web/src/assistant/engines/builtin/providers/types.ts
+  BO=web/src/assistant/engines/builtin/providers/openai.ts
+  AR=web/src/assistant/useAssistantRun.ts
+  AP=web/src/assistant/AssistantPane.tsx
 
   # K3(b). Without the allow-list, write_file leaves the page and reaches the
   # runtime — which is the arrival the scripted server counts as a failure.
   mutate web "the allow-list check is removed" "$TG" \
-    '  if (typeof name !== '"'"'string'"'"' || !allowed.has(name)) {' \
+    "  if (typeof name !== 'string' || !allowed.has(name)) {" \
     '  if (false) {'
-  # K3(a). Without the rewrite, an evaluate the model asked for without a
-  # rehearsal member reaches the runtime and an audit record is appended.
-  mutate web "the rehearsal rewrite is removed" "$TG" \
-    '  if (name === REHEARSAL_TOOL && args[REHEARSAL_MEMBER] !== true) {' \
-    '  if (false) {'
-  # A rewrite that satisfies itself with a truthy value rather than `true`: the
-  # runtime reads the member, and `"true"` is not it.
-  mutate web "the rewrite accepts any truthy rehearsal value" "$TG" \
-    '  if (name === REHEARSAL_TOOL && args[REHEARSAL_MEMBER] !== true) {' \
-    '  if (name === REHEARSAL_TOOL && !args[REHEARSAL_MEMBER]) {'
+  # K3(a) — and the one an inspect-and-forward gate cannot hold. An inherited
+  # rehearsal: true reads as true and is dropped by JSON.stringify, so the
+  # runtime receives an unrehearsed evaluation and appends an audit record.
+  # This is the branch the rebuild replaced, restored.
+  mutate web "an evaluate that reads as rehearsed is forwarded unchanged" "$TG" \
+    '  const args = ownArguments(supplied ?? {})
+  const already = Object.hasOwn(args, REHEARSAL_MEMBER) && args[REHEARSAL_MEMBER] === true' \
+    '  if ((supplied ?? {})[REHEARSAL_MEMBER] === true) return { verdict: '"'"'pass'"'"' }
+  const args = ownArguments(supplied ?? {})
+  const already = false'
+  # Each own property read once is what stops a getter or a proxy answering the
+  # check and the wire differently.
+  mutate web "the arguments are read twice instead of once" "$TG" \
+    '  for (const key of Object.keys(args)) copy[key] = args[key]' \
+    '  for (const key of Object.keys(args)) copy[key] = args[key] === undefined ? args[key] : args[key]'
+  # Fail closed. A batch has no method, and "no method is harmless traffic" is
+  # what let an array carrying write_file out whole.
+  mutate web "a frame this gate cannot read is passed as harmless traffic" "$TG" \
+    '  if (!isRecord(message)) {
+    return refuse(
+      unreadable,
+      Array.isArray(message)
+        ? '"'"'a JSON-RPC batch is not a frame this gate can check one call at a time, so it is '"'"' +
+            '"'"'refused whole; nothing left the page'"'"'
+        : '"'"'an outbound frame must be a single JSON-RPC object; this one is not, and nothing '"'"' +
+            '"'"'left the page'"'"'
+    )
+  }' \
+    '  if (!isRecord(message)) {
+    return { verdict: '"'"'pass'"'"' }
+  }'
+  mutate web "a frame with no method at all is passed" "$TG" \
+    '    const hasId = '"'"'id'"'"' in message && message.id !== null && message.id !== undefined
+    const answers = '"'"'result'"'"' in message || '"'"'error'"'"' in message
+    if (hasId && answers) return { verdict: '"'"'pass'"'"' }' \
+    '    return { verdict: '"'"'pass'"'"' }'
+  # A near-spelling some other reader folds to tools/call.
+  mutate web "a near-spelling of tools/call is waved through" "$TG" \
+    '    if (method.trim().toLowerCase() === TOOLS_CALL) {' \
+    '    if (false) {'
+
   # The gate is not installed at all: the engine's calls go straight to the
   # socket. Both K3 rows fail together, which is the point of a wire-level gate.
   mutate web "the gate is not installed on the assistant's transport" "$ASN" \
     '  const gated = gateTransport(raw, { allowed, onGuardrail: notify })' \
     '  const gated = raw'
+  # **The row this replaces only widened a TypeScript interface.** It added
+  # `client?: unknown` to AssistantSession, which no engine could use and no
+  # gate was bypassed by: the member-set test failed, and that demonstrated
+  # interface-shape sensitivity rather than the guardrail it was named for.
+  # This one is a real bypass — the gate is installed and reporting, on a decoy,
+  # while the client the engine's caller is bound to speaks straight to the
+  # socket — and the conformance server observes the ungated arrivals.
+  mutate web "the engine's caller is bound to an ungated client" "$ASN" \
+    '  const gated = gateTransport(raw, { allowed, onGuardrail: notify })' \
+    '  const decoy: Transport = {
+    start: () => raw.start(),
+    close: () => raw.close(),
+    send: (message, sendOptions) => raw.send(message, sendOptions)
+  }
+  gateTransport(decoy, { allowed, onGuardrail: notify })
+  const gated = raw'
   # One shared transport instead of one per session: two sessions would share a
   # jpack mcp and a gate, and closing either would take the other's connection.
   mutate web "the assistant reuses one shared transport" "$ASN" \
@@ -3562,39 +3612,72 @@ export function assistantTransport(): Transport {
   sharedTransport ??= new DeskWebSocketTransport(socketURL(sessionToken()))
   return sharedTransport
 }'
-  # The engine is handed the client, which is a door beside the gate rather
-  # than behind it. The member set is asserted whole, so adding one fails.
-  mutate web "the session hands the engine a client beside the gate" "$AE" \
-    '  /** Bound through the ToolGate. */
-  callTool: CallTool' \
-    '  /** Bound through the ToolGate. */
-  callTool: CallTool
-  client?: unknown'
+  # A setup that fails leaves a socket and a jpack mcp with nothing holding a
+  # reference to either.
+  mutate web "a failed setup leaves the connection open" "$ASN" \
+    '      await close()
+      throw cause' \
+    '      throw cause'
+  # The desk's model capability, which is what an engine is handed instead of a
+  # URL: the address, the header allow-list and the suffix rule are all here.
+  mutate web "the model call forwards every header it is handed" "$ASN" \
+    '      if (MODEL_REQUEST_HEADERS.includes(name.toLowerCase())) headers[name] = value' \
+    '      headers[name] = value'
+  mutate web "the model call accepts any suffix at all" "$ASN" \
+    '    const problem = suffixProblem(suffix)' \
+    "    const problem = ''"
+
   # K1. The page holds no key; a header here is a credential it had to have got.
   mutate web "a credential header is restored to the model request" "$BT" \
     "  return { 'content-type': 'application/json', ...extra }" \
     "  return { 'content-type': 'application/json', authorization: 'Bearer x', ...extra }"
-  # The engine adds a query parameter of its own, which the relay refuses
-  # outright — and which a string-concatenated URL would put after the query.
-  mutate web "the engine appends its suffix after the query" "$BT" \
-    '  const url = new URL(base, '"'"'http://desk.invalid'"'"')
-  url.pathname = `${url.pathname.replace(/\/+$/, '"''"')}/${suffix.replace(/^\/+/, '"''"')}`' \
-    '  const url = new URL(`${base}/${suffix}`, '"'"'http://desk.invalid'"'"')'
+  # The whole reason session.model is a capability rather than a base URL: an
+  # engine that reaches for a network global is an engine that can open its own
+  # socket to /ws with this chassis' token. Every leg seals fetch, WebSocket,
+  # XMLHttpRequest and EventSource for the duration of the engine's run.
+  mutate web "the engine reaches for globalThis.fetch" "$BO" \
+    '    const response = await options.call(openai.suffix, {' \
+    "    const response = await globalThis.fetch('/api/assistant/relay/v1/chat/completions', {
+      method: 'POST',"
   # `end` twice: a pane that renders "running" until it sees one would be right
   # either way, so what this breaks is the contract's own "exactly once".
   mutate web "end is emitted twice" "$BL" \
-    '    yield { type: '"'"'end'"'"' }
+    "    yield { type: 'end' }
   }
-}' \
-    '    yield { type: '"'"'end'"'"' }
-    yield { type: '"'"'end'"'"' }
+}" \
+    "    yield { type: 'end' }
+    yield { type: 'end' }
   }
-}'
+}"
   # The proposal taken from the prose rather than from the fenced block: a
   # worked example in an explanation becomes the document a person accepts.
   mutate web "the proposal is taken from the prose" "$BL" \
-    '  const blocks = [...(text ?? '"''"').matchAll(FENCE)].map((match) => match[1] ?? '"''"')' \
-    '  const blocks = [(text ?? '"''"').slice((text ?? '"''"').indexOf('"'"'{'"'"'), (text ?? '"''"').lastIndexOf('"'"'}'"'"') + 1)]'
+    "  const blocks = [...(text ?? '').matchAll(FENCE)].map((match) => match[1] ?? '')" \
+    "  const blocks = [(text ?? '').slice((text ?? '').indexOf('{'), (text ?? '').lastIndexOf('}') + 1)]"
+
+  # The run's terminal event, normalized in the hook. Stop used to clear the
+  # run's identity before the engine handled the abort, so no end was observed.
+  mutate web "Stop writes no terminal event" "$AR" \
+    '    finish(run)
+    release(run)
+    setStatus((current) => (current === '"'"'running'"'"' ? '"'"'finished'"'"' : current))' \
+    '    release(run)
+    setStatus((current) => (current === '"'"'running'"'"' ? '"'"'finished'"'"' : current))'
+  mutate web "a second end is appended rather than dropped" "$AR" \
+    "    if (event.type === 'end') run.ended = true" \
+    '    void event'
+  # The connection recorded only once its setup returned is a connection Stop
+  # and unmount cannot close while the setup is still in flight.
+  mutate web "the connection is recorded only after it is ready" "$AR" \
+    '          run.connection = opened
+          const ready = await opened.ready' \
+    '          const ready = await opened.ready
+          run.connection = opened'
+  # An identical policy run twice: the run id is what makes the second press a
+  # second submission rather than the same state value.
+  mutate web "a second run of the same policy is suppressed" "$AP" \
+    '          onClick={() => setSubmitted({ id: (nextRun.current += 1), policy: typed })}' \
+    '          onClick={() => setSubmitted({ id: 1, policy: typed })}'
 fi
 
 restore
