@@ -16,7 +16,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ASSISTANT_ENGINES, ASSISTANT_TOOLS } from '../../../config/deskConfig'
 import { CERTIFICATION_IS_TOTAL, CERTIFIED_ENGINES, loadEngine } from '../index'
-import { eventChannel } from './channel'
+import { ChannelHasOneConsumer, eventChannel } from './channel'
 import { vercel } from './index'
 import { REHEARSAL_HOOK, claimPromises } from './loop'
 import { ADDRESS_REFUSED, PLACEHOLDER_ORIGIN, placeholderBase, reframe, relayFetch, suffixOf } from './relay'
@@ -148,6 +148,30 @@ describe('the ordered channel, when the consumer stops listening', () => {
     await drain.return(undefined)
     expect(await within(500, first), 'the event that was in flight').toBe('settled')
     expect(await within(500, second), 'the events still queued behind it').toBe('settled')
+  })
+
+  it('refuses a second consumer by name, and takes nothing from the first', async () => {
+    // One channel, one consumer. The in-flight slot is a single slot because
+    // there is a single reader: two drains taking concurrently would overwrite
+    // each other's, and the overwritten entry would be in neither the queue nor
+    // the slot — a delivery nothing could ever settle.
+    const channel = eventChannel()
+    const first = channel.push({ type: 'end' })
+    const second = channel.push({ type: 'end' })
+    const one = channel.drain()
+    const two = channel.drain()
+    expect((await one.next()).value).toEqual({ type: 'end' })
+    const refused = await two.next().then(
+      () => undefined,
+      (cause: unknown) => cause as Error
+    )
+    expect(refused?.name).toBe('ChannelHasOneConsumer')
+    expect(refused).toBeInstanceOf(ChannelHasOneConsumer)
+    expect(refused?.message).toContain('already has a consumer')
+    // And the refusal left the first reader and both deliveries untouched.
+    await one.return(undefined)
+    expect(await within(500, first), 'the event the first reader held').toBe('settled')
+    expect(await within(500, second), 'the event still queued behind it').toBe('settled')
   })
 
   it('settles a delivery abandoned before the drain ever ran', async () => {

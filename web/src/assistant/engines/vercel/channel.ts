@@ -44,6 +44,31 @@ interface Waiting {
   delivered: () => void
 }
 
+/**
+ * A second consumer, refused.
+ *
+ * **One channel, one consumer, by contract.** The in-flight slot is a single
+ * slot because there is a single reader: two drains taking concurrently would
+ * overwrite each other's, and the entry that was overwritten would be in
+ * neither the queue nor the slot — a delivery nothing could ever settle, which
+ * is the defect one layer up from the one this channel already fixed. Tracking
+ * a slot per drain would *support* a second reader instead, and supporting one
+ * would be inventing a use nobody has: the events of a run are an ordered
+ * stream and splitting them between two readers has no meaning.
+ *
+ * So the second reader is refused **before it takes anything**, by name, and
+ * the first reader and every queued push are left exactly as they were.
+ */
+export class ChannelHasOneConsumer extends Error {
+  constructor() {
+    super(
+      'this channel already has a consumer: a run is one ordered stream of events, ' +
+        'and a second reader would take deliveries the first can no longer settle'
+    )
+    this.name = 'ChannelHasOneConsumer'
+  }
+}
+
 export interface EventChannel {
   /** Put one event on the channel; resolves once the consumer has taken it. */
   push(event: AssistantEvent): Promise<void>
@@ -51,6 +76,10 @@ export interface EventChannel {
   close(): void
   /** Nobody is listening any more: release every pending delivery at once. */
   abandon(): void
+  /**
+   * The one consumer's stream. A second one throws `ChannelHasOneConsumer` on
+   * its first `next()`, having taken nothing.
+   */
   drain(): AsyncGenerator<AssistantEvent>
 }
 
@@ -61,6 +90,8 @@ export function eventChannel(options: { onAbandon?: () => void } = {}): EventCha
   let abandoned = false
   /** The entry `drain` has yielded and not yet resumed from. */
   let inFlight: Waiting | null = null
+  /** True once a drain has begun. There is one, for the life of the channel. */
+  let consuming = false
 
   const stir = () => {
     const wakeNow = wake
@@ -100,6 +131,11 @@ export function eventChannel(options: { onAbandon?: () => void } = {}): EventCha
     },
     abandon: releaseAll,
     async *drain(): AsyncGenerator<AssistantEvent> {
+      // **Before the `try`, so this refusal releases nothing.** A second reader
+      // that ran the cleanup below would settle the first reader's in-flight
+      // delivery on its way out — which is the failure it is here to prevent.
+      if (consuming) throw new ChannelHasOneConsumer()
+      consuming = true
       try {
         for (;;) {
           while (queue.length > 0) {
