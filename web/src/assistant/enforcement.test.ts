@@ -45,15 +45,30 @@ function read(relative: string): string {
   return readFileSync(join(SRC, relative), 'utf8')
 }
 
+/**
+ * Every source under these directories, **all the way down**.
+ *
+ * It used to read one level and stop, which meant the two guards below —
+ * neither of them strong, both of them enumerations — did not look at
+ * `assistant/engines/` at all. An adapter is exactly where a vendor's base URL
+ * or a comparison against one would be written, and the `vercel` adapter is
+ * three levels down and carries the one URL literal the assistant has.
+ */
 function sourcesUnder(...directories: string[]): { path: string; text: string }[] {
   const found: { path: string; text: string }[] = []
-  for (const directory of directories) {
+  const walk = (directory: string) => {
     for (const entry of readdirSync(join(SRC, directory), { withFileTypes: true })) {
+      const path = `${directory}/${entry.name}`
+      if (entry.isDirectory()) {
+        walk(path)
+        continue
+      }
       if (!entry.isFile()) continue
       if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) continue
-      found.push({ path: `${directory}/${entry.name}`, text: read(`${directory}/${entry.name}`) })
+      found.push({ path, text: read(path) })
     }
   }
+  for (const directory of directories) walk(directory)
   return found
 }
 
@@ -424,7 +439,13 @@ describe('(5) no endpoint literal in the source — a WEAK, enumerated guard', (
       // The paste block on Admin shows one, and a reader who copies it gets a
       // URL that cannot reach anything rather than one that reaches us.
       'https://api.example.invalid/',
-      'https://example.invalid/judgment-packs/'
+      'https://example.invalid/judgment-packs/',
+      // The placeholder origin the `vercel` adapter's providers are built
+      // against and which nothing ever resolves — reserved by the same RFC, for
+      // the same reason. It is a URL an engine composes so that the desk can
+      // reduce it to a path suffix, and if it ever escaped to a real `fetch` it
+      // would fail rather than arrive somewhere.
+      'https://relay.invalid'
     ]
     for (const source of sourcesUnder('assistant', 'config', 'routes')) {
       if (source.path.includes('.test.')) continue
