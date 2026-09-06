@@ -428,9 +428,17 @@ export function openThinking(session: Pick<AssistantSession, 'thinking' | 'model
     turnEnded(hadText) {
       const reasoned = reasonedThisTurn
       reasonedThisTurn = false
+      // **A turn that only called a tool neither counts nor resets, in either
+      // tier.** It is not evidence that an endpoint will not reason, and it is
+      // not evidence that it will: several endpoints reason about the answer
+      // they are composing and say nothing while they are fetching. The rule
+      // was written for the on-tier counter and applied only there, so at tier
+      // off a reasoning answer, a tool call and a second reasoning answer never
+      // reached "always" — the tool call in the middle wiped the count.
+      if (!hadText) return null
       if (tier === 'off') {
-        // A turn that returned no reasoning is counter-evidence, so the run
-        // starts again: "always" means every turn, not one of them.
+        // An answer that returned no reasoning is counter-evidence, so the run
+        // starts again: "always" means every answer, not one of them.
         reasoningRun = reasoned ? reasoningRun + 1 : 0
         if (always || reasoningRun < PERMANENCE) return null
         always = true
@@ -441,8 +449,6 @@ export function openThinking(session: Pick<AssistantSession, 'thinking' | 'model
         quietRun = 0
         return null
       }
-      // A tool-only turn is not evidence that an endpoint will not reason.
-      if (!hadText) return null
       quietRun += 1
       if (quietRun < PERMANENCE) return null
       unavailable = true

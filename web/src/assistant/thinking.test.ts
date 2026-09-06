@@ -207,13 +207,27 @@ describe('the five states', () => {
     expect(it0.state()).toBe('off')
   })
 
-  it('needs the turns to be consecutive, and a quiet one starts the count again', () => {
+  it('needs the turns to be consecutive, and a quiet answer starts the count again', () => {
     const it0 = slot('off')
     turn(it0, true)
     turn(it0, false)
     turn(it0, true)
     expect(it0.state()).toBe('off')
     expect(turn(it0, true)).not.toBeNull()
+    expect(it0.state()).toBe('always')
+  })
+
+  it('does not let a tool-only turn wipe the off-tier count either', () => {
+    // **The rule, applied in both tiers.** A turn that only called a tool
+    // neither counts nor resets: an endpoint that reasons about the answer it
+    // is composing and says nothing while it is fetching still always thinks.
+    const it0 = slot('off')
+    expect(turn(it0, true)).toBeNull()
+    expect(turn(it0, false, false)).toBeNull()
+    expect(turn(it0, false, false)).toBeNull()
+    expect(it0.state()).toBe('off')
+    const said = turn(it0, true)
+    expect(said, 'the tool call in the middle wiped the count').not.toBeNull()
     expect(it0.state()).toBe('always')
   })
 

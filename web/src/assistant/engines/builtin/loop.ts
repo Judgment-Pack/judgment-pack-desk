@@ -43,7 +43,7 @@ import { anthropic } from './providers/anthropic'
 import { openai } from './providers/openai'
 import { ModelHttpError } from './providers/types'
 import type { Proposal } from '../contract'
-import type { Critique } from '../../refutation'
+import type { Critique, CritiqueRecorder } from '../../refutation'
 import type { ThinkingSlot } from '../../thinking'
 import type { CallTool } from '../../engine'
 import type { ModelTurn, Provider, ToolCall } from './providers/types'
@@ -65,32 +65,50 @@ export type { Proposal } from '../contract'
  * turns on a tool it will never get. The ToolGate's rejection and the
  * runtime's own in-band `isError` both land here as one shape.
  */
-async function callSafely(
-  callTool: CallTool,
-  call: ToolCall
-): Promise<{ text: string; isError: boolean; structured?: unknown; answered: boolean }> {
+/**
+ * What one tool call produced: an answer from the runtime, or a refusal by the
+ * desk's own gate.
+ *
+ * **Two shapes, and only one of them can reach a recorder.** The distinction
+ * matters to exactly one caller — the refutation pass — because a refusal is
+ * not a thing the runtime said, and a critique counting one would report a
+ * verdict about a call that never left the page. It was a boolean an engine
+ * set, which is a flag somebody can set wrongly; it is a **type** now. The
+ * refusal arm has no `report` member at all, so the code that would hand a
+ * guardrail's own words to the recorder does not compile.
+ */
+type ToolOutcome =
+  | {
+      kind: 'answered'
+      text: string
+      isError: boolean
+      structured?: unknown
+      /** The runtime answered, so this answer may be a check. */
+      report(recorder: CritiqueRecorder, name: string): void
+    }
+  | { kind: 'refused'; text: string; isError: true; structured?: undefined }
+
+async function callSafely(callTool: CallTool, call: ToolCall): Promise<ToolOutcome> {
   try {
     const result = await callTool(call.name, call.args)
+    const text = textOf(result)
     return {
-      text: textOf(result),
+      kind: 'answered',
+      text,
       isError: Boolean(result.isError),
       structured: result.structuredContent,
-      // **The runtime answered this one.** The distinction matters to exactly
-      // one caller — the refutation pass — because a refusal by the desk's own
-      // gate is not a thing the runtime said, and a critique that counted it
-      // would report a verdict about a call that never left the page.
-      answered: true
+      report: (recorder, name) => recorder.saw(name, text)
     }
   } catch (cause) {
     // **A cancelled run is not a refused tool.** Turning it into a result the
     // model is told about would carry on a session nobody is listening to.
     if (isCancelled(cause)) throw cause
     return {
+      kind: 'refused',
       text:
         `refused: ${(cause as Error).message}. This assistant proposes; it never ` +
         `writes a file and never calls a tool it was not offered.`,
-      isError: true,
-      answered: false
+      isError: true
     }
   }
 }
@@ -341,10 +359,11 @@ async function* refute(options: {
         text: outcome.text,
         ...(outcome.structured === undefined ? {} : { structured: outcome.structured })
       }
-      // **Only what the runtime answered.** A call the gate refused produced no
-      // runtime answer, so it is a `guardrail` line and never a check. Which of
-      // the answers is a check is the desk's decision and not this loop's.
-      if (outcome.answered) recorder.saw(call.name, outcome.text)
+      // **Only what the runtime answered**, and the type is what says so: the
+      // refusal arm has no `report`, so a call the gate refused cannot reach
+      // the recorder from here at all. Which of the answers is a check is then
+      // the desk's decision and not this loop's.
+      if (outcome.kind === 'answered') outcome.report(recorder, call.name)
       results.push({ call, text: outcome.text, isError: outcome.isError })
     }
     // Echoed as received here too, so the pass's own thinking blocks and their

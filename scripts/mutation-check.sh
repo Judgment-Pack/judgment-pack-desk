@@ -4220,9 +4220,17 @@ export function assistantTransport(): Transport {
   # A turn that only called a tool is no evidence that an endpoint will not
   # reason, and counting it made a tool-first session degrade itself.
   mutate web "a tool-only turn counts as evidence of no thinking" "$TH" \
-    "      // A tool-only turn is not evidence that an endpoint will not reason.
-      if (!hadText) return null" \
-    "      void hadText"
+    '      if (!hadText) return null' \
+    '      void hadText'
+  # …and the same rule in the other tier, where it was written and not applied:
+  # a reasoning answer, a tool call and a second reasoning answer never reached
+  # "always", because the tool call in the middle wiped the count.
+  mutate web "a tool-only turn wipes the off-tier count" "$TH" \
+    "      if (!hadText) return null
+      if (tier === 'off') {" \
+    "      if (tier === 'off') {
+        if (!hadText) reasoningRun = 0"
+
 
   # **The conjunction.** `Unsupported parameter` and `Extra inputs are not
   # permitted` are what an endpoint says about *any* member, so prose alone
@@ -4292,17 +4300,19 @@ export function assistantTransport(): Transport {
     "  if (critique === null || critique.checks.length === 0) return {}" \
     "  if (critique === null) return {}"
 
-  # **Deliberately not a row: "a call the gate refused is fed to the recorder".**
-  # It was one, and it reported NOT DISCRIMINATING — correctly. The two guards
-  # are each sufficient: a gate refusal's text is the desk's own prose and
-  # carries no runtime `status`, so feeding it to the recorder produces no check
-  # even without the `answered` flag. The flag is kept because it is the
-  # readable statement of the rule and does not depend on what a refusal
-  # *reads* like, and because a future refusal that happened to carry a JSON
-  # status would walk straight past the other guard. Its absence from this table
-  # is a statement rather than an oversight. What IS observable is the row
-  # below, and the conformance leg where the file grants neither check tool.
-  #
+  # **The separation, broken in the one way that matters.** The distinction is
+  # a type: the refusal arm of `ToolOutcome` has no `report`, so a call the gate
+  # refused cannot reach the recorder from the loop at all. The row that merely
+  # removed the old boolean was not discriminating, because today's guardrail
+  # prose happens not to parse as JSON — so this one hands the recorder the
+  # refusal's words **shaped like a runtime answer**, which is the failure the
+  # separation exists to make impossible.
+  mutate web "the refusal continuation is handed the recorder" "$BL" \
+    "      if (outcome.kind === 'answered') outcome.report(recorder, call.name)" \
+    "      recorder.saw(
+        call.name,
+        outcome.kind === 'answered' ? outcome.text : '{\"status\":\"invalid\"}'
+      )"
   # The recorder itself, which must not invent a status the runtime never
   # used for an answer that carried none.
   mutate web "an answer with no runtime status is recorded as refused" "$RF" \

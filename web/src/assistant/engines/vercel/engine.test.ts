@@ -61,6 +61,12 @@ function turn(step: {
   for (const piece of step.reasoning ?? []) {
     lines.push(frame([{ index: 0, delta: { reasoning_content: piece }, finish_reason: null }]))
   }
+  // A turn may answer **and** call a tool, which is what an endpoint does when
+  // it says what it is about to do — and it is the shape the "a tool-only turn
+  // neither counts nor resets" rule needs to be measured against.
+  if (step.tool && step.text !== undefined) {
+    lines.push(frame([{ index: 0, delta: { content: step.text }, finish_reason: null }]))
+  }
   if (step.tool) {
     lines.push(
       frame([
@@ -978,9 +984,17 @@ describe('what the model said about its own reasoning', () => {
     expect(events.some((event) => event.type === 'thinking_unavailable')).toBe(false)
   })
 
-  it('reports a model that always thinks after two turns of it', async () => {
+  it('reports a model that always thinks after two answers of it', async () => {
+    // A turn that only called a tool neither counts nor resets, in either
+    // tier, so the two that count are the two that answered — with a tool-only
+    // turn between them, which must not wipe the count.
     const { call } = scriptedCall([
-      turn({ reasoning: ['I look first.'], tool: { name: 'validate', args: { document: '{}' } } }),
+      turn({
+        reasoning: ['I look first.'],
+        text: 'Let me look.',
+        tool: { name: 'validate', args: { document: '{}' } }
+      }),
+      turn({ tool: { name: 'validate', args: { document: '{}' } } }),
       turn({ reasoning: ['And then I propose.'], text: PROPOSAL_TEXT })
     ])
     const events = await drain(vercel.start(session(call)))

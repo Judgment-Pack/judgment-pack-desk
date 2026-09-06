@@ -519,30 +519,27 @@ describe('the thinking tier, on this engine’s own wire', () => {
     expect(events.some((event) => event.type === 'proposal')).toBe(true)
   })
 
-  it('reports a model that always thinks, after two turns of it and not one', async () => {
-    // **One turn is a turn, not a capability.** The first turn calls a tool and
-    // reasons; the second reasons and proposes. Only then does the desk say
-    // that this model always thinks.
+  it('reports a model that always thinks, after two answers of it and not one', async () => {
+    // **One answer is an answer, not a capability** — and the tool call in the
+    // middle neither counts nor resets, which is the rule applied in both
+    // tiers. The first turn answers and calls a tool; the second only calls a
+    // tool; the third answers and proposes. Only then is it said.
     const thinkingTurn = (content: unknown) =>
       whole({ choices: [{ message: { role: 'assistant', reasoning_content: 'I thought.', ...(content as object) } }] })
-    const model = answering((turn) =>
-      turn === 1
-        ? thinkingTurn({
-            content: null,
-            tool_calls: [
-              {
-                id: 'call_1',
-                type: 'function',
-                function: { name: 'validate', arguments: '{"document":"{}"}' }
-              }
-            ]
-          })
-        : thinkingTurn({ content: PROPOSAL_TEXT })
-    )
+    const aCall = (id: string) => [
+      { id, type: 'function', function: { name: 'validate', arguments: '{"document":"{}"}' } }
+    ]
+    const model = answering((turn) => {
+      if (turn === 1) return thinkingTurn({ content: 'Let me look.', tool_calls: aCall('call_1') })
+      if (turn === 2) return whole({ choices: [{ message: { role: 'assistant', content: null, tool_calls: aCall('call_2') } }] })
+      return thinkingTurn({ content: PROPOSAL_TEXT })
+    })
     const events = await drain(builtin.start(withModel(model.call, 'openai-compatible', 'off')))
     expect(Object.keys(model.bodies[0]!)).not.toContain('reasoning_effort')
     expect(events.map((event) => event.type)).toEqual([
       'reasoning',
+      'tool_call',
+      'tool_result',
       'tool_call',
       'tool_result',
       'reasoning',
@@ -550,7 +547,7 @@ describe('the thinking tier, on this engine’s own wire', () => {
       'proposal',
       'end'
     ])
-    expect((events[4] as { detail: string }).detail).toContain('always thinks')
+    expect((events[6] as { detail: string }).detail).toContain('always thinks')
     // …and no critic ran at all, because the tier is off.
     expect(model.critic).toEqual([])
   })
