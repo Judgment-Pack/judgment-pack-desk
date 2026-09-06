@@ -73,16 +73,17 @@ export interface GuardrailNotice {
   detail: string
 }
 
-/** What `inspectOutboundFrame` decided about one frame. */
+/**
+ * What `inspectOutboundFrame` decided about one frame.
+ *
+ * **There is no `pass`.** Every frame that leaves is the canonical one this
+ * gate built, never the object it was handed: a decision made about an object
+ * and then applied to that same object is a decision the object can change
+ * afterwards. `notice` is null wherever nothing needed reporting.
+ */
 export type FrameVerdict =
-  | { verdict: 'pass' }
+  | { verdict: 'send'; notice: GuardrailNotice | null; frame: JSONRPCMessage }
   | { verdict: 'refused'; notice: GuardrailNotice; violation: GateViolation }
-  /**
-   * The frame was rebuilt. `notice` is null exactly where the caller had
-   * already written an own `rehearsal: true` — the frame is still rebuilt,
-   * because "own, and last" is what travels, but there is nothing to report.
-   */
-  | { verdict: 'rewrote'; notice: GuardrailNotice | null; frame: JSONRPCMessage }
 
 /**
  * The allow-list for a session: what the file granted, intersected with the
@@ -104,6 +105,42 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/**
+ * One value as **plain JSON data**, or nothing.
+ *
+ * `JSON.stringify` then `JSON.parse` is the whole of it, and every property of
+ * that round trip is load-bearing here:
+ *
+ * - it invokes `toJSON` **once**, where there is one, so the value this gate
+ *   inspects is the value a serializer would produce rather than the object
+ *   standing in front of it. An enumerable `toJSON` copied onto a rebuilt
+ *   arguments object is what defeated the previous rewrite: the rebuild carried
+ *   `rehearsal: true` and the wire did not;
+ * - it reads every getter **once**, so a property cannot answer the check and
+ *   the wire differently;
+ * - it drops functions, accessors, symbol keys and the prototype, so what comes
+ *   out has no behaviour left to surprise anybody with;
+ * - and it throws on a cycle, which is a refusal rather than an exception
+ *   thrown at the socket.
+ *
+ * Undefined is returned for anything that does not survive — a cycle, a
+ * `BigInt`, a bare `undefined` — and every caller treats that as a refusal.
+ */
+function canonical(value: unknown): unknown {
+  let text: string | undefined
+  try {
+    text = JSON.stringify(value)
+  } catch {
+    return undefined
+  }
+  if (text === undefined) return undefined
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return undefined
+  }
+}
+
 /** The refusal every malformed frame gets, in one place. */
 function refuse(tool: string, detail: string): FrameVerdict {
   return {
@@ -114,71 +151,84 @@ function refuse(tool: string, detail: string): FrameVerdict {
 }
 
 /**
- * The own, enumerable properties of an argument object, read **once** each.
- *
- * Once, because a getter or a proxy may answer differently on a second read:
- * a gate that checked one value and serialized another is a gate that can be
- * told two different things about the same call. What this returns is the
- * object that will be sent, and it is the object the check was made against.
- */
-function ownArguments(args: Record<string, unknown>): Record<string, unknown> {
-  const copy: Record<string, unknown> = {}
-  for (const key of Object.keys(args)) copy[key] = args[key]
-  return copy
-}
-
-/**
  * What must happen to one outbound frame before it may leave the page.
  *
- * **It fails closed.** A frame that is not a well-formed single JSON-RPC
- * request, notification or response is refused rather than waved through as
- * traffic this gate has no opinion about. That rule is here because the old one
- * — "anything without `method` equal to `tools/call` passes" — let a **batch**
- * out: a JSON-RPC array has no `method`, so a batch carrying an allowed call
- * beside a `write_file` reached the socket whole. The SDK's type says one
- * message; the type is not what runs, and the whole point of a gate at the wire
- * is that it covers callers the type never described.
+ * **The frame is canonicalized to bytes before anything is decided, and what
+ * leaves is the canonical frame.** That is the whole shape of this function,
+ * and it is the lesson the chassis' relay learned over four review rounds: a
+ * classification made about a mutable object is a classification the object can
+ * change out from under you. A `method` getter can answer `undefined` while the
+ * gate is looking and `tools/call` while `JSON.stringify` is; a response-shaped
+ * object with a `toJSON` can serialize as a request. So the object is serialized
+ * once, the bytes are parsed back to plain data, and every rule below is applied
+ * to that plain data — which has no getters, no `toJSON`, no functions, no
+ * symbol keys and no prototype left to disagree with.
  *
- * A near-spelling of the guarded method is refused too — `Tools/Call`,
- * ` tools/call `, `tools/call\u200b`. Some server somewhere folds case or trims,
- * and a frame two readers disagree about is one this desk will not send. That
- * is the chassis' own ruling about its query, applied here.
+ * What is checked, in order:
  *
- * What still passes untouched: `initialize`, `tools/list`, `prompts/get`, a
- * notification, and a response to a request the server made. Reading what the
- * runtime serves is not one of the things the assistant *does*.
+ * 1. the frame survives a JSON round trip at all (a cycle does not) and is a
+ *    plain object;
+ * 2. `jsonrpc` is exactly `"2.0"`;
+ * 3. it is exactly one of three shapes — a **request** (a string `method`, an
+ *    `id` that is a string or a number, `params` absent or a plain object), a
+ *    **notification** (a string `method`, no `id`), or a **response** (an `id`,
+ *    exactly one of `result` and `error`, and no `method`). Anything else is
+ *    refused;
+ * 4. a method that is not `tools/call` but is a spelling of it to some other
+ *    reader — `Tools/Call`, ` tools/call ` — is refused, on the chassis' own
+ *    reasoning about its query;
+ * 5. for `tools/call`: the tool is on the session's allow-list, and
+ *    `experimental_evaluate` gets an own `rehearsal: true` written last onto
+ *    the canonical arguments.
  */
 export function inspectOutboundFrame(
   message: JSONRPCMessage,
   allowed: ReadonlySet<string>
 ): FrameVerdict {
   const unreadable = '(a frame this gate could not read)'
-  if (!isRecord(message)) {
+  const frame = canonical(message)
+  if (!isRecord(frame)) {
     return refuse(
       unreadable,
-      Array.isArray(message)
+      Array.isArray(frame)
         ? 'a JSON-RPC batch is not a frame this gate can check one call at a time, so it is ' +
             'refused whole; nothing left the page'
-        : 'an outbound frame must be a single JSON-RPC object; this one is not, and nothing ' +
-            'left the page'
+        : 'an outbound frame must be a single JSON-RPC object that survives serialization; ' +
+            'this one is not, and nothing left the page'
     )
   }
+  if (frame.jsonrpc !== '2.0') {
+    return refuse(unreadable, 'an outbound frame must declare jsonrpc "2.0"')
+  }
 
-  const method = (message as { method?: unknown }).method
-  if (method === undefined) {
-    // A response to a request the server made: an id, and one of result/error.
-    const hasId = 'id' in message && message.id !== null && message.id !== undefined
-    const answers = 'result' in message || 'error' in message
-    if (hasId && answers) return { verdict: 'pass' }
+  const method = frame.method
+  const hasMethod = 'method' in frame
+  const hasId = 'id' in frame
+  const hasResult = 'result' in frame
+  const hasError = 'error' in frame
+
+  if (!hasMethod) {
+    // A response to a request the server made: an id, and exactly one of
+    // result and error. Both, or neither, is not a response.
+    const idIsOk =
+      typeof frame.id === 'string' || typeof frame.id === 'number' || frame.id === null
+    if (hasId && idIsOk && hasResult !== hasError) return { verdict: 'send', notice: null, frame: frame as unknown as JSONRPCMessage }
     return refuse(
       unreadable,
-      'an outbound frame with no method must be a response carrying an id and a result or an ' +
-        'error; this one is neither a request nor a response'
+      'an outbound frame with no method must be a response carrying an id and exactly one of ' +
+        'result and error; this one is neither a request nor a response'
     )
   }
   if (typeof method !== 'string') {
-    return refuse(unreadable, 'an outbound frame\'s method must be a string')
+    return refuse(unreadable, "an outbound frame's method must be a string")
   }
+  if (hasResult || hasError) {
+    return refuse(unreadable, 'an outbound frame may not carry both a method and a result or an error')
+  }
+  if (hasId && typeof frame.id !== 'string' && typeof frame.id !== 'number') {
+    return refuse(unreadable, "a request's id must be a string or a number")
+  }
+
   if (method !== TOOLS_CALL) {
     // Fail closed on a spelling that is `tools/call` to some other reader.
     if (method.trim().toLowerCase() === TOOLS_CALL) {
@@ -188,10 +238,13 @@ export function inspectOutboundFrame(
           `frame two readers disagree about is one it cannot check`
       )
     }
-    return { verdict: 'pass' }
+    if ('params' in frame && !isRecord(frame.params)) {
+      return refuse(unreadable, "a frame's params must be an object where it has any")
+    }
+    return { verdict: 'send', notice: null, frame: frame as unknown as JSONRPCMessage }
   }
 
-  const params = (message as { params?: unknown }).params
+  const params = frame.params
   if (!isRecord(params)) {
     return refuse(unreadable, `a ${TOOLS_CALL} frame must carry a params object`)
   }
@@ -210,40 +263,35 @@ export function inspectOutboundFrame(
     return refuse(name, `a ${TOOLS_CALL} frame's arguments must be an object where it has any`)
   }
 
-  if (name !== REHEARSAL_TOOL) return { verdict: 'pass' }
+  if (name !== REHEARSAL_TOOL) {
+    return { verdict: 'send', notice: null, frame: frame as unknown as JSONRPCMessage }
+  }
 
   /**
-   * **The evaluate frame is never passed through as it arrived.**
+   * **The rehearsal member is written onto the canonical data, last.**
    *
-   * It is rebuilt from the own, enumerable properties of what the caller gave,
-   * with an own `rehearsal: true` written last. An inherited `rehearsal: true`
-   * — `Object.create({ rehearsal: true })` — reads as `true` to every check and
-   * is dropped by `JSON.stringify`, so a gate that inspected and forwarded
-   * would have sent an unrehearsed evaluation and the runtime would have
-   * appended an audit record. There is no branch here that forwards the
-   * original object, which is why there is no shape that can slip past it.
+   * The arguments here have already been through the round trip with the rest
+   * of the frame, so there is no `toJSON` left to invoke at serialization, no
+   * getter left to re-read, and no inherited property that reads as `true` and
+   * serializes as nothing. What is set is an own, plain `true` on plain data,
+   * and that plain data is what the transport is handed.
    */
-  const args = ownArguments(supplied ?? {})
+  const args = (supplied ?? {}) as Record<string, unknown>
   const already = Object.hasOwn(args, REHEARSAL_MEMBER) && args[REHEARSAL_MEMBER] === true
+  const had = Object.hasOwn(args, REHEARSAL_MEMBER)
+    ? `the call carried ${REHEARSAL_MEMBER}: ${JSON.stringify(args[REHEARSAL_MEMBER])}`
+    : `the call carried no ${REHEARSAL_MEMBER} member that survived serialization`
   args[REHEARSAL_MEMBER] = true
-  const rebuilt = {
-    ...(message as object),
-    params: { ...params, arguments: args }
-  } as unknown as JSONRPCMessage
+  frame.params = { ...params, arguments: args }
   if (already) {
-    // Nothing to report: the caller asked for exactly what it got. The frame
-    // is still the rebuilt one, because "own and last" is what travels.
-    return { verdict: 'rewrote', notice: null, frame: rebuilt }
+    // Nothing to report: the caller asked for exactly what it got. The frame is
+    // still the canonical one, because canonical is what travels.
+    return { verdict: 'send', notice: null, frame: frame as unknown as JSONRPCMessage }
   }
   // What was there, and only that. The pack and the facts travel in the same
   // object and neither is ever named here.
-  const had = Object.hasOwn(supplied ?? {}, REHEARSAL_MEMBER)
-    ? `the call carried ${REHEARSAL_MEMBER}: ${JSON.stringify((supplied ?? {})[REHEARSAL_MEMBER])}`
-    : REHEARSAL_MEMBER in (supplied ?? {})
-      ? `the call carried an inherited ${REHEARSAL_MEMBER}, which no serializer sends`
-      : `the call carried no ${REHEARSAL_MEMBER} member`
   return {
-    verdict: 'rewrote',
+    verdict: 'send',
     notice: {
       tool: name,
       action: 'rewrote',
@@ -251,7 +299,7 @@ export function inspectOutboundFrame(
         `${had}; it was rewritten to an own ${REHEARSAL_MEMBER}: true before the frame left ` +
         `the page, so the runtime appends no audit record (runtime ADR-0018, ADR-0028)`
     },
-    frame: rebuilt
+    frame: frame as unknown as JSONRPCMessage
   }
 }
 
@@ -282,11 +330,10 @@ export function gateTransport(
       options.onGuardrail?.(decided.notice)
       return Promise.reject(decided.violation)
     }
-    if (decided.verdict === 'rewrote') {
-      if (decided.notice !== null) options.onGuardrail?.(decided.notice)
-      return send(decided.frame, sendOptions)
-    }
-    return send(message, sendOptions)
+    if (decided.notice !== null) options.onGuardrail?.(decided.notice)
+    // **The canonical frame, always.** Never the caller's object: what was
+    // checked and what is sent have to be the same bytes.
+    return send(decided.frame, sendOptions)
   }
   return inner
 }

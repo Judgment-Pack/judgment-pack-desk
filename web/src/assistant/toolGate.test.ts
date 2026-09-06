@@ -181,7 +181,9 @@ describe('the rehearsal rewrite, read off the wire', () => {
       const { transport, onWire, notices } = gated(FIVE)
       await transport.send(call('experimental_evaluate', inherited))
       expect(wireArguments(onWire)).toEqual({ pack: '{"a":1}', rehearsal: true })
-      expect(notices[0]!.detail).toContain('inherited')
+      // The canonical arguments never carried it — an inherited property is one
+      // no serializer sends — so that is what the notice says.
+      expect(notices[0]!.detail).toContain('survived serialization')
     })
 
     it('sends an own rehearsal: true for a null-prototype object', async () => {
@@ -331,11 +333,14 @@ describe('what the gate leaves alone', () => {
     ['a notification with no params', { jsonrpc: '2.0', method: 'notifications/cancelled' }],
     ['a response', { jsonrpc: '2.0', id: 4, result: {} }],
     ['an error response', { jsonrpc: '2.0', id: 5, error: { code: -32601, message: 'no' } }]
-  ])('passes %s through by identity', async (_what, frame) => {
-    const { transport, sent, notices } = gated(FIVE)
+  ])('sends %s on as the same bytes, and says nothing', async (_what, frame) => {
+    // **Not by identity, and that is the point.** What travels is the canonical
+    // frame, so an object that would serialize into something else does not get
+    // to be classified as one thing and sent as another.
+    const { transport, sent, onWire, notices } = gated(FIVE)
     await transport.send(frame as unknown as JSONRPCMessage)
-    expect(sent).toEqual([frame])
-    expect(sent[0]).toBe(frame)
+    expect(onWire()).toEqual([frame])
+    expect(sent[0]).not.toBe(frame)
     expect(notices).toEqual([])
   })
 
@@ -361,31 +366,40 @@ describe('what the gate leaves alone', () => {
 
 describe('inspectOutboundFrame, with no socket at all', () => {
   it('reports the verdict a frame would get', () => {
-    expect(inspectOutboundFrame(call('validate', { document: '{}' }), FIVE).verdict).toBe('pass')
+    expect(inspectOutboundFrame(call('validate', { document: '{}' }), FIVE).verdict).toBe('send')
     expect(inspectOutboundFrame(call('write_file'), FIVE).verdict).toBe('refused')
     expect(inspectOutboundFrame(call('experimental_evaluate', { pack: '{}' }), FIVE).verdict).toBe(
-      'rewrote'
+      'send'
     )
   })
 
+  it('hands back canonical data and never the caller’s object', () => {
+    // The whole shape of the fix: what was checked and what is sent are the
+    // same bytes, and the caller keeps whatever it had.
+    const original = call('validate', { document: '{}' })
+    const decided = inspectOutboundFrame(original, FIVE)
+    expect(decided.verdict).toBe('send')
+    expect(decided.verdict === 'send' && decided.frame).not.toBe(original)
+    expect(decided.verdict === 'send' && decided.frame).toEqual(original)
+  })
+
   it('leaves the caller’s frame unmutated when it rewrites', () => {
-    // The rewrite builds a new frame. A gate that edited the caller's object
-    // would change what the engine believes it asked for, which is the one
-    // thing a guardrail may not do quietly.
+    // The rewrite writes onto canonical data. A gate that edited the caller's
+    // object would change what the engine believes it asked for, which is the
+    // one thing a guardrail may not do quietly.
     const original = call('experimental_evaluate', { pack: '{}' })
     const decided = inspectOutboundFrame(original, FIVE)
-    expect(decided.verdict).toBe('rewrote')
+    expect(decided.verdict).toBe('send')
     const params = (original as unknown as { params: { arguments: Record<string, unknown> } }).params
     expect(params.arguments.rehearsal).toBeUndefined()
   })
 
   it('rebuilds an evaluate frame even where nothing needed reporting', () => {
-    // There is no branch that forwards the caller's object, which is why there
-    // is no shape that can slip past.
+    // There is no branch that forwards the caller's object.
     const original = call('experimental_evaluate', { pack: '{}', rehearsal: true })
     const decided = inspectOutboundFrame(original, FIVE)
-    expect(decided.verdict).toBe('rewrote')
-    expect(decided.verdict === 'rewrote' && decided.notice).toBeNull()
-    expect(decided.verdict === 'rewrote' && decided.frame).not.toBe(original)
+    expect(decided.verdict).toBe('send')
+    expect(decided.verdict === 'send' && decided.notice).toBeNull()
+    expect(decided.verdict === 'send' && decided.frame).not.toBe(original)
   })
 })
