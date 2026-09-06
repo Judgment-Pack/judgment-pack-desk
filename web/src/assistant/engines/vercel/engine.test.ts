@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ASSISTANT_TOOLS } from '../../../config/deskConfig'
+import { loadEngine } from '../index'
 import { vercel } from './index'
 import { REHEARSAL_HOOK, SUPPRESSED_REJECTION } from './loop'
 import { ADDRESS_REFUSED, PLACEHOLDER_ORIGIN, placeholderBase, reframe, relayFetch, suffixOf } from './relay'
@@ -115,6 +116,17 @@ async function drain(events: AsyncIterable<AssistantEvent>): Promise<AssistantEv
   for await (const event of events) seen.push(event)
   return seen
 }
+
+describe('the registry', () => {
+  it('loads this adapter for the id a desk.json names, and not another', async () => {
+    // A `vercel` entry pointing at `builtin` would pass every conformance leg
+    // twice over and certify nothing — which is exactly what the fallback this
+    // build removed used to do on purpose.
+    const engine = await loadEngine('vercel')
+    expect(engine.id).toBe('vercel')
+    expect(engine).toBe(vercel)
+  })
+})
 
 describe('the address the SDK composes, and what this desk will send', () => {
   it('reduces the SDK’s absolute URL to the suffix the built-in engine uses', () => {

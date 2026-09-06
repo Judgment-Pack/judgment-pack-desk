@@ -3542,6 +3542,9 @@ if [ "$which" = all ] || [ "$which" = web ]; then
 
   CT=web/src/assistant/conformance/conformance.test.ts
   EN=web/src/assistant/engines/index.ts
+  EC=web/src/assistant/engines/contract.ts
+  VL=web/src/assistant/engines/vercel/loop.ts
+  VR=web/src/assistant/engines/vercel/relay.ts
 
   # ---- Canonical bytes ----------------------------------------------------
   #
@@ -3782,7 +3785,10 @@ export function assistantTransport(): Transport {
 }"
   # The proposal taken from the prose rather than from the fenced block: a
   # worked example in an explanation becomes the document a person accepts.
-  mutate web "the proposal is taken from the prose" "$BL" \
+  # **The reading moved to `engines/contract.ts` when the second engine landed**,
+  # because it is the contract's rule and not either loop's — so this row now
+  # breaks it for both of them at once, which is a stronger row than it was.
+  mutate web "the proposal is taken from the prose" "$EC" \
     "  const blocks = [...(text ?? '').matchAll(FENCE)].map((match) => match[1] ?? '')" \
     "  const blocks = [(text ?? '').slice((text ?? '').indexOf('{'), (text ?? '').lastIndexOf('}') + 1)]"
 
@@ -3837,6 +3843,82 @@ export function assistantTransport(): Transport {
     '              id: 1,
               name: AUTHOR_PACK_PROMPT,
               args: { policy: typed }'
+
+  # ---- The `vercel` adapter: what the SDK makes the desk's business --------
+  #
+  # ADR-0001 lists four defects against this SDK and the desk's answer to each
+  # is a line in the adapter. Every row here breaks one of them. The engine's
+  # own suite is the catcher where the conformance legs cannot be — the legs
+  # STAY green for the first row, which is the point of it.
+
+  # **The refine hook, removed entirely.** The desk's gate is the layer that
+  # holds, so every conformance leg stays green: the rehearsal still reaches the
+  # runtime and `write_file` still never does. What is lost is the SDK's own
+  # layer — the rewritten input the model is shown on its next turn — which is
+  # the only observable consequence the hook has, and the only thing that can
+  # discriminate this row. A row whose catcher were a leg would be a row lying
+  # about which layer holds.
+  mutate web "the SDK's rehearsal hook never fires, and only the gate holds" "$VL" \
+    '        [REHEARSAL_TOOL]: (input: unknown) => {' \
+    '        [`${REHEARSAL_TOOL}_NEVER_CALLED`]: (input: unknown) => {'
+
+  # The gate handed a call somebody already fixed reports nothing, and the
+  # guardrail line in the tab is the only place a person learns the flag was
+  # forced. K3a goes red on every leg of both engines' matrix.
+  mutate web "the gate is handed the call the adapter already rehearsed" "$VL" \
+    "      const args = (name === REHEARSAL_TOOL && asked.length > 0 ? asked.shift() : input) as Record<
+        string,
+        unknown
+      >" \
+    "      const args = input as Record<string, unknown>"
+
+  # The whole reason `session.model` is a capability: the SDK composes an
+  # absolute URL and the wrapper is what reduces it to a suffix the desk admits.
+  # Passing it through hands the desk's own capability a URL, which it refuses —
+  # and this row proves the wrapper is the layer doing the reducing.
+  mutate web "the SDK's absolute URL is handed to the capability whole" "$VR" \
+    "  const suffix = url.slice(PLACEHOLDER_ORIGIN.length + 1)
+  return suffix === '' ? undefined : suffix" \
+    '  return url'
+
+  # K1. `createAnthropic` throws without a key, so the provider is handed a
+  # placeholder — and a wrapper that forwarded whatever the SDK set would send
+  # `x-api-key` to this desk's own route. The allow-list is the guard; the
+  # capability's own is the second one, and this row shows the first is real.
+  mutate web "the wrapper forwards every header the SDK set" "$VR" \
+    '      if (PROTOCOL_HEADERS.includes(name.toLowerCase())) headers[name] = value' \
+    '      if (PROTOCOL_HEADERS.length >= 0) headers[name] = value'
+
+  # K2. The model is offered the runtime's own five and nothing else. A sixth
+  # tool bound here would be a tool the session never handed over — and the gate
+  # below would still refuse the call, which is why the row that matters is the
+  # one about what the model was **shown** rather than what it reached.
+  mutate web "a tool the session never offered is bound to the model" "$VL" \
+    '  for (const tool of tools) {' \
+    "  for (const tool of [...tools, { name: 'write_file', description: '' }]) {"
+
+  # `end` exactly once, on the path an error takes.
+  mutate web "the vercel engine ends twice on the error path" "$VL" \
+    "    release()
+    yield { type: 'end' }" \
+    "    release()
+    yield { type: 'end' }
+    yield { type: 'end' }"
+
+  # The guard is scoped to the run: a listener that outlived the session would
+  # swallow the same error class for a page no longer running an assistant.
+  mutate web "the rejection guard is left installed after the run" "$VL" \
+    '    release()
+    yield { type: '"'"'end'"'"' }' \
+    '    void release
+    yield { type: '"'"'end'"'"' }'
+
+  # The registry's own entry. A `vercel` that loaded `builtin` would pass every
+  # leg twice over and certify nothing — which is exactly what the fallback this
+  # PR removed used to do on purpose.
+  mutate web "the vercel entry in the registry points at builtin" "$EN" \
+    "  vercel: async () => (await import('./vercel')).vercel" \
+    "  vercel: async () => (await import('./builtin')).builtin"
 
   # ---- The proposal as a diff, and accepting it into the draft -------------
   #

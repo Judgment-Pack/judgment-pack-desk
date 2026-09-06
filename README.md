@@ -1308,13 +1308,12 @@ admits `off`, `on` and `ultra`; the two states it cannot express — a model tha
 always thinks, and an endpoint that offers no thinking at all — are the desk's
 to report when it meets them rather than settings anyone selects.
 
-`engine` is acted on now: the page loads the named engine's chunk and runs it.
-**This build carries an adapter for `builtin` only.** A desk configured for
-`vercel` — the default — therefore runs `builtin`, and the tab says so in one
-line rather than refusing: a default nobody typed is not a reason to have no
-assistant. `thinking` is still stored and shown and shapes no request; the
-built-in engine reports a tier other than `off` as unavailable and carries on,
-which is what ADR-0001 means by degrading visibly.
+`engine` is acted on now: the page loads the named engine's chunk and runs it,
+and **this build certifies both ids**, so the tab's status line names the engine
+the file asked for and nothing is ever substituted. `thinking` is still stored
+and shown and shapes no request; either engine reports a tier other than `off`
+as unavailable and carries on, which is what ADR-0001 means by degrading
+visibly.
 
 **Admin › Assistant** shows the configured endpoint, its protocol, its model
 and its tools with the file each came from, the engine and the tier, the exact JSON to paste, the key
@@ -1636,26 +1635,79 @@ the provider's `fetch` option, so the shape survives the next chunk.
 ### The engine slot, as it stands
 
 `web/src/assistant/engine.ts` is ADR-0001's contract. `assistant/engines/` is
-the registry: one lazily loaded chunk per certified engine, so a session
-downloads one. `builtin` is the port of the bake-off's control loop — a
-hand-written turn loop over an explicit messages array, both wire formats, no
-new dependency — restricted to the contract: it takes the runtime's prompt and
-the runtime's own tool definitions, speaks to the chassis relay **with no
-credential of its own**, reads a stream or a whole answer by what came back
-rather than by what it asked for, ends on one fenced JSON block, bounds itself
-at twenty model turns, and emits `end` exactly once.
+the registry: one lazily loaded chunk per certified engine, so a **release**
+carries every certified chunk and a **session** downloads one. The registry is a
+total map over the ids `desk.json` may name, so an id the decoder admits without
+an adapter is a compile error rather than a setting that appears to grant
+something and quietly runs something else.
 
-It reaches a model only through `session.model.call`, naming a path suffix; the
-address, the token and the header allow-list are the desk's. Both wire formats
-put `stream` in the body, so no engine ever needs a query — which is as well,
-because the relay refuses one.
+`assistant/engines/contract.ts` holds what belongs to the contract rather than to
+either loop — the twenty-turn bound, the desk's own sentence to the model, the
+one reading of a proposal (exactly one fenced block, never the prose beside it),
+and the rule that an answer is read by **what came back** rather than by what
+was asked for. Both engines import it, because a rule written twice is a rule
+two readers can disagree about.
+
+| engine | what runs the loop | added download (gzip) | what it guards | what it does not do yet |
+| --- | --- | --- | --- | --- |
+| `vercel` **(default)** | Vercel AI SDK v7 — `ai` 7.0.93, `@ai-sdk/openai-compatible` 3.0.44, `@ai-sdk/anthropic` 4.0.49, all pinned exactly | **91.3 KiB** for the lazy chunk, plus 0.8 KiB of shared contract and 1.7 KiB the main chunk grows by sharing `zod` with it | the rehearsal hook named as a key of the SDK's own options type, so an upstream rename is a compile error rather than a guard that fails open; the desk's gate handed the call **as the model made it**; a placeholder origin the adapter never resolves, and a query refused at both layers; the SDK's own retries off; the `unhandledrejection` the SDK's refusal path leaks | the thinking tier and the refutation pass (chunk 4). A tier other than `off` is reported unavailable and the session continues |
+| `builtin` | the bake-off's control loop, by hand — two SSE parsers, both wire formats | 2.5 KiB, and no new dependency at all | the same promises, held one level below it in the ToolGate and the model capability, which is where they are held for **every** engine | the same, and it is not the default: it is the fallback that adds nothing to the supply chain |
+
+`builtin` is the port of the bake-off's control loop — a hand-written turn loop
+over an explicit messages array, both wire formats, no new dependency —
+restricted to the contract: it takes the runtime's prompt and the runtime's own
+tool definitions, speaks to the chassis relay **with no credential of its own**,
+reads a stream or a whole answer by what came back rather than by what it asked
+for, ends on one fenced JSON block, bounds itself at twenty model turns, and
+emits `end` exactly once.
+
+`vercel` is the same contract on `streamText`. Its adapter is a translation and
+never a second opinion, and four things about the SDK are the adapter's business
+rather than the desk's:
+
+- **the rehearsal hook is `experimental_`.** `streamText`'s options carry a rest
+  parameter, so a misspelled `experimental_refineToolInput` is accepted in
+  silence and the rewrite is simply never applied — measured at **zero** compile
+  errors on a rename. It is named once, as a key of the SDK's own options type,
+  so the day `ai` drops the option the adapter stops compiling.
+- **the desk's gate is handed the call the model made.** The hook rewrites what
+  the SDK carries — which is what the model is shown on its next turn — and the
+  ToolGate rewrites what leaves the page. A gate handed a call somebody already
+  fixed reports nothing, and the guardrail line in the tab is the only place a
+  person learns that the rehearsal flag was forced.
+- **the SDK reads the answer it asked for.** `streamText` picks its response
+  handler when it picks to stream, so an endpoint that answers whole to a request
+  that asked to stream yields no events at all: `AI_InvalidResponseDataError` on
+  one path and `AI_NoOutputGeneratedError` on the other, both on the shipped
+  release. The adapter re-frames a whole answer into the events the same protocol
+  defines. That is the only wire knowledge in it, and two of the four conformance
+  legs exercise it.
+- **the SDK retries a 409 twice, with a backoff** — and 409 is what the desk's
+  own relay answers when no key is stored on this machine. Three requests and six
+  seconds for a refusal a person has to go and fix. Retries are off, so both
+  engines make one request per turn.
+
+Either engine reaches a model only through `session.model.call`, naming a path
+suffix; the address, the token and the header allow-list are the desk's. The
+SDK's providers are built against `https://relay.invalid`, a placeholder origin
+nothing ever resolves, and the `fetch` they are given reduces the absolute URL
+the SDK composed to that suffix — refusing any other address, any query and any
+fragment, and stripping every header outside the protocol's own, including the
+placeholder key `createAnthropic` throws without. Both wire formats put `stream`
+in the body, so no engine ever needs a query — which is as well, because the
+relay refuses one.
 
 ### The conformance session
 
 `web/src/assistant/conformance/` is the bake-off's scenario carried into the
 repository and run in CI — keyless, deterministic, no network, no runtime
-binary. It runs against the engine **registry**, so a future adapter is
-certified by adding its id to one list.
+binary. **It runs over the registry**, not over one engine: every id in
+`CERTIFIED_ENGINES` is put through all four legs and every check below, so
+certifying an adapter is adding its id to one list and a further engine is one
+PR — the adapter, its conformance run, and its row in the table above. Where the
+two engines' wire shapes differ, the scripted model is held to what each **wire
+format** defines rather than to either engine's spelling; a leg that needed an
+engine-specific branch in the fixture would be a finding rather than a fix.
 
 - `scenario.json` is the experiment's own fixture, whose DRAFT_V1, DRAFT_V2 and
   FACTS were proved against the runtime before it was written.
@@ -1692,11 +1744,28 @@ certified by adding its id to one list.
   promise chain with no timer at all — and leaves an interval ticking; one
   clears the interval it starts and cancels a timer it schedules, so it passes
   the interval rule, is never credited with the reach it cancelled, and still
-  fails on the timeout it meant; and one throws from a callback nobody is
+  fails on the timeout it meant **and on a reach from a microtask it wrote a
+  `clearTimeout(undefined)` beside**; and one throws from a callback nobody is
   awaiting, so the cleanup can be shown to run anyway. Each must fail its leg,
   and does. **A conformance session that only ever runs conformant engines
   proves nothing about the session** — and a rule that fails everything proves
   as little as one that fails nothing, which is what the third is for.
+
+**Three bounds this session does not hold**, stated because a guard whose limits
+are not written down gets read as a proof. A reaction chained off something that
+resolves *after* the drain — a fetch to a real host, a socket, a `MessageChannel`
+— is outside it. So is an engine that stops reading a stream: a reader left
+attached schedules nothing, and no drain can see it. And so is an unhandled
+rejection: these legs run in jsdom under Node, where a rejection nobody claims
+goes to Node's own handler and never becomes a `window` event, which is why the
+guard ADR-0001 asks the default engine for is exercised in
+`assistant/engines/vercel/engine.test.ts` by dispatching the event a browser
+would.
+
+Each leg also records **what the engine actually sent** — the step, how many
+results its own messages carried back, the route, the body's own top-level
+members, the tools offered and the header names — as a test annotation, so a
+reviewer can read the wire rather than only the assertions about it.
 
 Four legs — OpenAI-compatible and Anthropic, each answered as a stream and as
 one whole object, because an endpoint may ignore what the request asked for —
@@ -2508,8 +2577,9 @@ web/                 Vite + React + TypeScript SPA
                      control that renders it
   src/assistant/     the assistant slot: one nullable field and two settings
                      about how it runs, the four chassis calls, the Admin
-                     section that configures it and holds the key, and the one
-                     hook a future pane will read — nothing here renders a pane
+                     section that configures it and holds the key, the tab, the
+                     ToolGate, and engines/ — one lazily loaded chunk per
+                     certified engine behind one contract
   scripts/smoke.ts   the desk's own client, driven outside a browser
 ```
 
@@ -2660,7 +2730,13 @@ conformance session, described above, and is the one that certifies an engine.
 `assistant/engines/builtin/engine.test.ts` holds the handful of properties that
 session only exercises incidentally — the request's headers and URL, the turn
 bound, `end` exactly once, and a proposal taken from the fenced block rather
-than from the prose beside it. `assistant/AssistantPane.test.tsx` drives the
+than from the prose beside it. `assistant/engines/vercel/engine.test.ts` holds
+the ones that are about **that SDK** rather than about the contract: the address
+discipline on the `fetch` its providers are given, the placeholder credential
+that never leaves it, the two layers that put `rehearsal: true` on an evaluate
+and which of them the desk's gate must see, the whole-answer re-framing, the
+retry count, and the `unhandledrejection` guard installed for one run and
+removed after it. `assistant/AssistantPane.test.tsx` drives the
 page's **real** transport against the recorded runtime through a stand-in
 `WebSocket`, so the socket, the gate and the SDK client above it are the
 production ones.
