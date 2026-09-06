@@ -50,7 +50,15 @@ let wrote = 0
  * comparison and the coalescing are the page's own rather than a fixture's —
  * which is what makes "one undo entry" a measurement rather than a claim.
  */
-function DraftHarness({ initial, editing }: { initial: string; editing: boolean }) {
+function DraftHarness({
+  initial,
+  editing,
+  diagnostics
+}: {
+  initial: string
+  editing: boolean
+  diagnostics?: { code?: string; instancePath?: string; message?: string }[]
+}) {
   const buffer = useDocumentBuffer({
     path: 'packs/vendor-onboarding.pack.json',
     bytes: initial.length,
@@ -79,7 +87,7 @@ function DraftHarness({ initial, editing }: { initial: string; editing: boolean 
   )
   return (
     <EditingContext.Provider value={session}>
-      <AssistantPane draft={text} editing={editing} />
+      <AssistantPane draft={text} editing={editing} diagnostics={diagnostics} />
     </EditingContext.Provider>
   )
 }
@@ -110,6 +118,8 @@ async function draw(options: {
   editing?: boolean
   /** Draw the pane over a real buffer instead, and edit that. */
   buffer?: { text: string; editing?: boolean }
+  /** The runtime's diagnostics for the bytes on this page. */
+  diagnostics?: { code?: string; instancePath?: string; message?: string }[]
 } = {}) {
   const model = scriptedModel({ api: 'openai-compatible', answerAs: 'stream' })
   const keyRead = JSON.stringify({
@@ -139,11 +149,12 @@ async function draw(options: {
   runtime = scriptedWebSocket({ deaf: options.deafSocket ?? false })
   vi.stubGlobal('WebSocket', runtime.WebSocket)
 
-  const { client } = stubClient(
+  const { client, prompted } = stubClient(
     {},
     {
       prompts: options.prompts ?? {
-        author_pack: { text: 'The runtime’s authoring prompt, with the policy in it.' }
+        author_pack: { text: 'The runtime’s authoring prompt, with the policy in it.' },
+        fix_pack: { text: 'The runtime’s repair prompt, with the diagnostics in it.' }
       }
     }
   )
@@ -152,18 +163,23 @@ async function draw(options: {
       <McpContext.Provider value={connected({ client })}>
         <DeskConfigFixture value={config(options.assistant ?? { endpoint: ENDPOINT })}>
           {options.buffer === undefined ? (
-            <AssistantPane draft={options.draft} editing={options.editing ?? false} />
+            <AssistantPane
+              draft={options.draft}
+              editing={options.editing ?? false}
+              diagnostics={options.diagnostics}
+            />
           ) : (
             <DraftHarness
               initial={options.buffer.text}
               editing={options.buffer.editing ?? true}
+              diagnostics={options.diagnostics}
             />
           )}
         </DeskConfigFixture>
       </McpContext.Provider>
     </QueryClientProvider>
   )
-  return { model, relayed }
+  return { model, relayed, prompted }
 }
 
 beforeEach(() => {
@@ -659,5 +675,103 @@ describe('the draft the session is given', () => {
     expect(withDraft('the prompt', '{"a":1}')).toBe(
       `the prompt\n\n${DRAFT_SENTENCE}\n\n\`\`\`json\n{"a":1}\n\`\`\``
     )
+  })
+})
+
+describe('fixing what the check refused', () => {
+  const DIAGNOSTICS = [
+    {
+      code: 'JPS-STRUCTURAL-REQUIRED',
+      layer: 'structural',
+      severity: 'error',
+      instancePath: '/rules/0/outcomeId',
+      message: 'the member is required'
+    },
+    {
+      code: 'JPS-SEMANTIC-UNKNOWN-OUTCOME',
+      layer: 'semantic',
+      severity: 'error',
+      instancePath: '/rules/1/outcomeId',
+      message: 'no outcome declares this id'
+    }
+  ]
+
+  it('is offered only where the check reports something to fix', async () => {
+    await draw()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Fix' }).hasAttribute('disabled')).toBe(true)
+    )
+    expect(screen.getByRole('button', { name: 'Fix' }).getAttribute('title')).toContain(
+      'no diagnostic to fix'
+    )
+    cleanup()
+    await draw({ diagnostics: DIAGNOSTICS })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Fix' }).hasAttribute('disabled')).toBe(false)
+    )
+  })
+
+  it('is refused where the runtime advertises no fix_pack prompt', async () => {
+    await draw({
+      diagnostics: DIAGNOSTICS,
+      prompts: { author_pack: { text: 'the authoring prompt' } }
+    })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Fix' }).hasAttribute('disabled')).toBe(true)
+    )
+    expect(screen.getByRole('button', { name: 'Fix' }).getAttribute('title')).toContain(
+      'advertises no fix_pack'
+    )
+  })
+
+  it('runs fix_pack with the runtime’s diagnostics, as the runtime wrote them', async () => {
+    const { prompted } = await draw({ diagnostics: DIAGNOSTICS })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Fix' }).hasAttribute('disabled')).toBe(false)
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Fix' }))
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    const asked = prompted.filter((entry) => entry.name === 'fix_pack')
+    expect(asked).toHaveLength(1)
+    // Byte for byte the report's own array. Not a message list, not a count,
+    // not a severity filter: the runtime's words, whole.
+    expect(asked[0]!.args.diagnostics).toBe(JSON.stringify(DIAGNOSTICS, null, 2))
+    expect(JSON.parse(asked[0]!.args.diagnostics!)).toEqual(DIAGNOSTICS)
+  })
+
+  it('says which prompt ran, and over how many diagnostics', async () => {
+    await draw({ diagnostics: DIAGNOSTICS })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Fix' }).hasAttribute('disabled')).toBe(false)
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Fix' }))
+    expect(await screen.findByText(/Running the runtime’s fix_pack prompt/)).toBeTruthy()
+    expect(screen.getByText(/over 2 diagnostics/)).toBeTruthy()
+  })
+
+  it('names author_pack where that is what ran', async () => {
+    await draw({ diagnostics: DIAGNOSTICS })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    )
+    fireEvent.change(screen.getByLabelText('What should this pack decide?'), {
+      target: { value: scenario.policy }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    expect(await screen.findByText(/Running the runtime’s author_pack prompt/)).toBeTruthy()
+  })
+
+  it('sends the draft with the repair prompt too', async () => {
+    const DRAFT = '{\n    "specVersion": "0.2.0-draft"\n}\n'
+    const { relayed } = await draw({ diagnostics: DIAGNOSTICS, buffer: { text: DRAFT } })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Fix' }).hasAttribute('disabled')).toBe(false)
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Fix' }))
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    const body = JSON.parse(relayed[0]!.body) as { messages: { role: string; content: string }[] }
+    const sent = body.messages.find((message) => message.role === 'user')!.content
+    expect(sent).toContain('The runtime’s repair prompt, with the diagnostics in it.')
+    expect(sent).toContain(DRAFT)
   })
 })

@@ -24,7 +24,8 @@
  * connection; coming back is a new one.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AUTHOR_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
+import { AUTHOR_PACK_PROMPT, FIX_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
+import type { Diagnostic } from '../mcp/types'
 import { Button } from '../ui/Button'
 import { CodeArea } from '../ui/CodeArea'
 import { TextArea } from '../ui/TextArea'
@@ -48,6 +49,15 @@ import type { AssistantEvent } from './engine'
 export const DRAFT_SENTENCE = 'This is the draft being edited; propose the whole document.'
 
 /**
+ * No diagnostics, as one object.
+ *
+ * A default of `[]` written at the call site is a new array on every render,
+ * which would re-serialize the argument — and re-key the prompt query — for a
+ * page where nothing changed.
+ */
+const NOTHING_TO_FIX: readonly Diagnostic[] = []
+
+/**
  * The runtime's prompt, with the draft after it — **verbatim, and fenced**.
  *
  * Fenced so the model can tell the document it was handed from the
@@ -69,6 +79,13 @@ export function carriesDraft(draft: string | undefined): draft is string {
   return draft !== undefined && draft.trim() !== ''
 }
 
+/** Why Fix is not offered, where it is not. */
+function fixWhy(diagnostics: number, advertised: boolean, listed: boolean): string | undefined {
+  if (!advertised && listed) return 'This runtime advertises no fix_pack prompt.'
+  if (diagnostics === 0) return 'The check on this page reports no diagnostic to fix.'
+  return undefined
+}
+
 /** The bytes of one tool answer, said the way the desk says byte counts. */
 function byteCount(text: string): number {
   return new TextEncoder().encode(text).length
@@ -77,7 +94,8 @@ function byteCount(text: string): number {
 export function AssistantPane({
   draft,
   editing = false,
-  saving = false
+  saving = false,
+  diagnostics = NOTHING_TO_FIX
 }: {
   /**
    * The bytes this page is about: the editor's buffer on `?edit`, the saved
@@ -100,6 +118,15 @@ export function AssistantPane({
   editing?: boolean
   /** True while a save is in flight, which is not a moment to move the buffer. */
   saving?: boolean
+  /**
+   * The runtime's own diagnostics for the bytes on this page, from the check
+   * that already ran beside them.
+   *
+   * They are handed to `fix_pack` as the runtime wrote them. Nothing here
+   * summarises, filters or re-words one: a repair session works from the
+   * validator's report, and a paraphrase of a refusal is a second refusal.
+   */
+  diagnostics?: readonly Diagnostic[]
 } = {}) {
   const slot = useAssistantSlot()
   // The editing session is the only way bytes change on this desk, and `write`
@@ -108,6 +135,15 @@ export function AssistantPane({
   const session = useEditing()
   const prompts = usePromptNames()
   const advertised = (prompts.data ?? []).includes(AUTHOR_PACK_PROMPT)
+  const canFix = (prompts.data ?? []).includes(FIX_PACK_PROMPT)
+  /**
+   * The diagnostics as the runtime wrote them, as one JSON text.
+   *
+   * `JSON.stringify` of the report's own array and nothing else — no message
+   * concatenation, no severity filter, no count. It is also the prompt query's
+   * key, which is why it is memoised on the diagnostics themselves.
+   */
+  const diagnosticsText = useMemo(() => JSON.stringify(diagnostics, null, 2), [diagnostics])
 
   const [typed, setTyped] = useState('')
   /**
@@ -120,7 +156,13 @@ export function AssistantPane({
    * thing to want — a model is not a pure function — so each press is its own
    * submission whatever it says.
    */
-  const [submitted, setSubmitted] = useState<{ id: number; policy: string } | null>(null)
+  const [submitted, setSubmitted] = useState<{
+    id: number
+    /** Which of the runtime's prompts this run is of. */
+    name: string
+    /** Its arguments, as `prompts/get` takes them. */
+    args: Record<string, string>
+  } | null>(null)
   const nextRun = useRef(0)
   /**
    * What has been done about this proposal, which is not what the run did.
@@ -147,10 +189,12 @@ export function AssistantPane({
   const draftNow = useRef<string | undefined>(draft)
   draftNow.current = draft
   const prompt = usePromptText(
-    AUTHOR_PACK_PROMPT,
-    advertised && submitted !== null,
-    submitted === null ? undefined : { policy: submitted.policy }
+    submitted?.name ?? AUTHOR_PACK_PROMPT,
+    submitted !== null && (prompts.data ?? []).includes(submitted.name),
+    submitted?.args
   )
+  /** Which prompt the run on screen is of, once one has started. */
+  const [ran, setRan] = useState<string | undefined>(undefined)
 
   const run = useAssistantRun({
     // Only rendered where the endpoint exists; the fallback keeps the hook
@@ -171,6 +215,7 @@ export function AssistantPane({
     started.current = submitted.id
     setDisposition('open')
     setSentDraft(carriesDraft(draftNow.current))
+    setRan(submitted.name)
     startRun(withDraft(prompt.data.text, draftNow.current))
   }, [submitted, prompt.data, startRun])
 
@@ -259,6 +304,15 @@ export function AssistantPane({
         {run.engineId} · {slot.endpoint.model} · thinking {slot.thinking}
       </p>
       {run.substituted !== undefined && <p className={styles.notice}>{run.substituted}</p>}
+      {ran !== undefined && (
+        <p className={styles.status}>
+          Running the runtime’s {ran} prompt
+          {ran === FIX_PACK_PROMPT ? `, over ${diagnostics.length} diagnostic${
+            diagnostics.length === 1 ? '' : 's'
+          }` : ''}
+          .
+        </p>
+      )}
 
       <label className={styles.label} htmlFor="assistant-policy">
         What should this pack decide?
@@ -274,9 +328,34 @@ export function AssistantPane({
         <Button
           variant="primary"
           disabled={running || typed.trim() === '' || !advertised}
-          onClick={() => setSubmitted({ id: (nextRun.current += 1), policy: typed })}
+          onClick={() =>
+            setSubmitted({
+              id: (nextRun.current += 1),
+              name: AUTHOR_PACK_PROMPT,
+              args: { policy: typed }
+            })
+          }
         >
           Run
+        </Button>
+        {/*
+          **Fix is the same session with the runtime's other prompt.** Same
+          engine, same gate, same proposal path — what changes is which of the
+          runtime's own words the model is given, and that it is handed the
+          diagnostics the check on this page already produced.
+        */}
+        <Button
+          disabled={running || diagnostics.length === 0 || !canFix}
+          title={fixWhy(diagnostics.length, canFix, prompts.isSuccess)}
+          onClick={() =>
+            setSubmitted({
+              id: (nextRun.current += 1),
+              name: FIX_PACK_PROMPT,
+              args: { diagnostics: diagnosticsText }
+            })
+          }
+        >
+          Fix
         </Button>
         <Button disabled={!running} onClick={stop}>
           Stop
@@ -290,7 +369,7 @@ export function AssistantPane({
       )}
       {prompt.error !== null && submitted !== null && (
         <p className={styles.notice}>
-          The runtime’s {AUTHOR_PACK_PROMPT} prompt could not be read: {prompt.error.message}
+          The runtime’s {submitted.name} prompt could not be read: {prompt.error.message}
         </p>
       )}
 

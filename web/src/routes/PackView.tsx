@@ -741,6 +741,12 @@ export function PackView() {
                 // and the editor cannot disagree about what is editable.
                 editing={editing && onPath}
                 saving={editor.write.isPending}
+                // The runtime's own diagnostics for the bytes on screen, and
+                // only where the report is about them: a stale report is
+                // withheld here exactly as it is withheld from every block,
+                // because a repair session over diagnostics about bytes that
+                // have moved is a repair of a document nobody has.
+                diagnostics={report?.diagnostics ?? []}
               />
             )
           }
