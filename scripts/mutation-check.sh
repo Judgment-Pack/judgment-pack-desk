@@ -4320,6 +4320,66 @@ export function assistantTransport(): Transport {
   # `fix_pack` works from the validator's report, and what it is given is the
   # runtime's own bytes: a re-serialization of a parse of them is this desk's
   # spelling of a refusal it did not write.
+  # ---- Describe it, and Create writing what it proposed --------------------
+  #
+  # ADR-0001 again, in this chunk's form: nothing is written until Create is
+  # pressed, the name field is the authority over identity, and what is written
+  # is the canonical frozen snapshot that was on screen. Each row below breaks
+  # one half of one of those.
+  DI=web/src/shell/DescribeIt.tsx
+
+  # **The desk's shaping, skipped.** The proposal's own `id` and `title` are a
+  # model's statement about a document nobody has named yet; writing them is a
+  # pack arriving under an identity the person creating it never chose.
+  mutate web "Create writes the proposal without shaping it" "$X" \
+    '            ? packFromProposal(source.document, { name, description, slug, idBase })' \
+    '            ? `${JSON.stringify(source.document, null, 2)}\n`'
+
+  # And the narrower half of the same claim: the shaping runs, and the name it
+  # is given comes from the proposal instead of from the field above it.
+  mutate web "the name field loses to the name the proposal gave itself" "$X" \
+    '            ? packFromProposal(source.document, { name, description, slug, idBase })' \
+    '            ? packFromProposal(source.document, {
+                name: String((source.document as { title?: unknown }).title ?? name),
+                description,
+                slug,
+                idBase
+              })'
+
+  # A run still in flight is about to replace the events the proposal is on,
+  # and Create with a half-finished session behind it writes a document nobody
+  # has seen the end of.
+  mutate web "Create is enabled while the assistant is still running" "$X" \
+    '    !describe.running &&' \
+    '    true &&'
+
+  # **The snapshot, not the event.** An engine may put a live object on
+  # `document`; the run hook ingests it once and hands on plain frozen data, and
+  # this row makes the canonical event carry the live one instead — so the
+  # document the dialog displayed and the document Create writes are two
+  # readings of one getter.
+  mutate web "the proposal is written from event.document, not the snapshot" "$AR" \
+    "    type: 'proposal',
+    document," \
+    "    type: 'proposal',
+    document: event.document,"
+
+  # The section renders as a control only where there is an assistant to run.
+  # An endpoint with no key on this machine is a session that cannot start, and
+  # a control that would refuse is worse than a sentence saying where the key
+  # goes.
+  mutate web "Describe is drawn with no key stored on this machine" "$DI" \
+    '    usable: slot.endpoint !== null && slot.keyPresent,' \
+    '    usable: slot.endpoint !== null,'
+
+  # Closing the dialog ends the session, and it has to end it **through the run
+  # hook**: an unmount alone aborts the iterator and closes the socket without
+  # ever writing the run's terminal event, so the next session cannot start and
+  # the contract's one `end` is nowhere.
+  mutate web "the run is left open when the dialog closes" "$X" \
+    '    if (!next) describe.discard()' \
+    '    void next'
+
   mutate web "Fix re-serializes the runtime's diagnostics" "$CK" \
     '  const span = spanAt(indexDocument(raw), '"'"'/diagnostics'"'"')
   return span === undefined ? undefined : raw.slice(span.valueStart, span.valueEnd)' \
