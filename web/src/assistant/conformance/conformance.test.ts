@@ -61,7 +61,14 @@ const DRAFT_V2 = scenario.documents.DRAFT_V2 as unknown
  */
 const NETWORK_GLOBALS = ['fetch', 'WebSocket', 'XMLHttpRequest', 'EventSource'] as const
 
-class EngineTouchedANetworkGlobal extends Error {}
+class EngineTouchedANetworkGlobal extends Error {
+  // Assigned, because a subclass does not get one: every assertion below is by
+  // this name, and round 3 pointed out it was `Error` on all of them.
+  constructor(message: string) {
+    super(message)
+    this.name = 'EngineTouchedANetworkGlobal'
+  }
+}
 
 /** One sealed interval: the sentinels, and what they caught. */
 interface Seal {
@@ -102,19 +109,171 @@ function sealNetwork(): Seal {
 }
 
 /**
- * Let deferred work run while the seal is still up.
+ * One deferred callback an engine scheduled while the seal was up.
  *
- * A timer an engine set before it finished is exactly the reach the seal used
- * to miss, so the barrier is real time rather than a microtask flush: fake
- * timers fight the SDK's own in-memory transport, which settles on
- * microtasks, and a run that hangs is worse than a bound that is stated. The
- * length is the interval the fixture schedules inside, several times over.
+ * `fire` runs it now; `cancel` stops the real handle. An interval is pending
+ * until it is cancelled, so it is fired a bounded number of times and then
+ * cleared — an engine that reaches on a tick reaches on the first one.
  */
-const DRAIN_MS = 200
-async function drainDeferredWork(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, DRAIN_MS))
-  // And a few microtask ticks, for anything the timers queued on their way out.
-  for (let tick = 0; tick < 5; tick += 1) await Promise.resolve()
+interface Tracked {
+  kind: string
+  pending: boolean
+  runs: number
+  fire(): void
+  cancel(): void
+}
+
+const INTERVAL_RUNS = 3
+
+/**
+ * Track every handle an engine creates, instead of waiting for one to fire.
+ *
+ * The barrier this replaces was a fixed wait — 200ms — and a fixed wait is a
+ * delay an engine can out-wait: 201ms, an interval, or a timer that schedules
+ * another timer. Round 3 named all three. So the timer functions are wrapped
+ * for the sealed window: each call is recorded **and** scheduled for real, so
+ * an engine that legitimately depends on a timer still makes progress; and the
+ * drain afterwards fires whatever has not fired yet, repeatedly, so a chain is
+ * followed to its end.
+ *
+ * `queueMicrotask` is wrapped and forwarded rather than deferred: promise
+ * machinery runs on it, and holding one back would deadlock the very run this
+ * is measuring.
+ */
+function trackDeferredWork(): {
+  pending(): Tracked[]
+  restore(): void
+} {
+  const scope = globalThis as unknown as Record<string, unknown>
+  const before = new Map<string, unknown>()
+  const tracked: Tracked[] = []
+  const keep = (name: string) => before.set(name, scope[name])
+
+  const realSetTimeout = globalThis.setTimeout
+  const realClearTimeout = globalThis.clearTimeout
+  const realSetInterval = globalThis.setInterval
+  const realClearInterval = globalThis.clearInterval
+  const realQueueMicrotask = globalThis.queueMicrotask
+
+  /** One entry, and the handle the caller gets back. */
+  function record(kind: string, run: () => void, schedule: (wrapped: () => void) => unknown,
+                  clear: (handle: unknown) => void, repeating: boolean): unknown {
+    const entry: Tracked = {
+      kind,
+      pending: true,
+      runs: 0,
+      fire() {
+        if (!entry.pending) return
+        entry.runs += 1
+        if (!repeating) {
+          entry.pending = false
+          clear(handle)
+        } else if (entry.runs >= INTERVAL_RUNS) {
+          // Bounded, then cleared: an interval is pending for ever otherwise.
+          entry.pending = false
+          clear(handle)
+        }
+        run()
+      },
+      cancel() {
+        entry.pending = false
+        clear(handle)
+      }
+    }
+    const handle = schedule(() => {
+      if (!repeating) entry.pending = false
+      entry.runs += 1
+      run()
+    })
+    tracked.push(entry)
+    return handle
+  }
+
+  keep('setTimeout')
+  scope.setTimeout = (fn: unknown, ms?: number, ...args: unknown[]) => {
+    if (typeof fn !== 'function') return realSetTimeout(fn as never, ms)
+    return record(
+      'setTimeout',
+      () => (fn as (...rest: unknown[]) => void)(...args),
+      (wrapped) => realSetTimeout(wrapped, ms),
+      (handle) => realClearTimeout(handle as never),
+      false
+    )
+  }
+  keep('setInterval')
+  scope.setInterval = (fn: unknown, ms?: number, ...args: unknown[]) => {
+    if (typeof fn !== 'function') return realSetInterval(fn as never, ms)
+    return record(
+      'setInterval',
+      () => (fn as (...rest: unknown[]) => void)(...args),
+      (wrapped) => realSetInterval(wrapped, ms),
+      (handle) => realClearInterval(handle as never),
+      true
+    )
+  }
+  keep('queueMicrotask')
+  scope.queueMicrotask = (fn: () => void) =>
+    record(
+      'queueMicrotask',
+      fn,
+      (wrapped) => {
+        realQueueMicrotask(wrapped)
+        return undefined
+      },
+      () => {},
+      false
+    )
+  if (typeof scope.setImmediate === 'function') {
+    const realSetImmediate = scope.setImmediate as (fn: () => void) => unknown
+    const realClearImmediate = scope.clearImmediate as ((handle: unknown) => void) | undefined
+    keep('setImmediate')
+    scope.setImmediate = (fn: () => void, ...args: unknown[]) =>
+      record(
+        'setImmediate',
+        () => fn(...(args as [])),
+        (wrapped) => realSetImmediate(wrapped),
+        (handle) => realClearImmediate?.(handle),
+        false
+      )
+  }
+  if (typeof scope.requestAnimationFrame === 'function') {
+    const realRaf = scope.requestAnimationFrame as (fn: (t: number) => void) => unknown
+    const realCancelRaf = scope.cancelAnimationFrame as ((handle: unknown) => void) | undefined
+    keep('requestAnimationFrame')
+    scope.requestAnimationFrame = (fn: (t: number) => void) =>
+      record(
+        'requestAnimationFrame',
+        () => fn(0),
+        (wrapped) => realRaf(() => wrapped()),
+        (handle) => realCancelRaf?.(handle),
+        false
+      )
+  }
+
+  return {
+    pending: () => tracked.filter((entry) => entry.pending),
+    restore() {
+      for (const [name, value] of before) scope[name] = value
+    }
+  }
+}
+
+/**
+ * Run everything an engine left behind, under the seal, until nothing is left.
+ *
+ * Repeatedly, because a timer may schedule another one — the chained shape the
+ * fixed wait could not see. Bounded, because an engine that schedules for ever
+ * must end the drain rather than the drain ending the suite; what is left over
+ * is reported and asserted rather than waited on.
+ */
+async function drainDeferredWork(tracker: { pending(): Tracked[] }): Promise<number> {
+  for (let round = 0; round < 32; round += 1) {
+    const due = tracker.pending()
+    if (due.length === 0) break
+    for (const entry of due) entry.fire()
+    for (let tick = 0; tick < 5; tick += 1) await Promise.resolve()
+  }
+  return tracker.pending().length
 }
 
 interface Leg {
@@ -135,6 +294,8 @@ interface Run {
   seen: ServerObservation[]
   /** Every network global the engine reached for, deferred reaches included. */
   violations: string[]
+  /** Handles still pending when the drain gave up. Zero, or the seal is a wait. */
+  leftPending: number
 }
 
 /**
@@ -167,11 +328,15 @@ async function runLeg(
   // lets an engine be sealed off from every network global while its own calls
   // still work. Binding it under the sentinel would capture the sentinel.
   let seal: Seal | null = null
+  let tracker: ReturnType<typeof trackDeferredWork> | null = null
+  let leftPending = 0
   try {
     const ready = await connection.ready
     const call = bindModelCall()
-    // Sealed from here: the engine's chunk is imported under it.
+    // Sealed from here: the engine's chunk is imported under it, and every
+    // handle it creates from here is tracked rather than waited on.
     seal = sealNetwork()
+    tracker = trackDeferredWork()
     const engine = await load()
     await runAssistantSession(
       engine,
@@ -193,7 +358,10 @@ async function runLeg(
     // harness's problem: it lands on the stream like any other failure.
     events.push({ type: 'error', message: `${(cause as Error).name}: ${(cause as Error).message}` })
   } finally {
-    await drainDeferredWork()
+    if (tracker !== null) {
+      leftPending = await drainDeferredWork(tracker)
+      tracker.restore()
+    }
     seal?.lift()
     await connection.close()
     await runtime.close()
@@ -202,7 +370,8 @@ async function runLeg(
     events,
     requests: model.requests,
     seen: runtime.seen,
-    violations: seal?.violations ?? []
+    violations: seal?.violations ?? [],
+    leftPending
   }
 }
 
@@ -334,8 +503,11 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
       // after deferred work has been drained, and they **record** as well as
       // throwing — a reach from a timer throws into nobody's catch, so the
       // list is what says it happened.
-      const { events, violations } = await runLeg(fromRegistry(engineId), leg)
+      const { events, violations, leftPending } = await runLeg(fromRegistry(engineId), leg)
       expect(violations).toEqual([])
+      // Nothing was still waiting when the seal came down: the barrier is a
+      // drain of tracked handles, not a delay somebody chose.
+      expect(leftPending).toBe(0)
       const errors = events.filter(
         (event): event is Extract<AssistantEvent, { type: 'error' }> => event.type === 'error'
       )
@@ -474,31 +646,70 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
  * They are loaded through the same `runLeg` every certified engine goes
  * through, so what is being shown is the harness and not a rehearsal of it.
  */
+/**
+ * The certification fixtures, reachable **through the registry's own loader**.
+ *
+ * Round 3's point: certified engines go through `loadEngine`, and a fixture
+ * imported directly proves the seal on a route nothing ships. The loader takes
+ * its table as a parameter for exactly this — the fixtures are never in the
+ * build's own table, so nothing a `desk.json` can name reaches them, and the
+ * path they travel is the one `builtin` travels.
+ */
+const CERTIFICATION_LOADERS = {
+  'touches-on-load': async () =>
+    (await import('./certification/touchesOnLoad')).touchesOnLoad,
+  'touches-after-run': async () =>
+    (await import('./certification/touchesAfterRun')).touchesAfterRun
+}
+
+const fromCertification = (id: keyof typeof CERTIFICATION_LOADERS) => () =>
+  loadEngine(id, CERTIFICATION_LOADERS)
+
+/**
+ * **The guard, shown to fail.**
+ *
+ * A conformance session that only ever runs conformant engines proves nothing
+ * about the session. These two are engines the desk would never certify — one
+ * reaches for a network global while its module loads, the other schedules four
+ * reaches for after its run has ended cleanly, at four shapes of schedule the
+ * old fixed wait could not have seen — and each is the exact hole a round
+ * found: the seal used to go up after the `import()`, and to come down after a
+ * delay an engine could out-wait.
+ *
+ * They are loaded through the same `runLeg` and the same `loadEngine` every
+ * certified engine goes through, so what is shown is the harness and not a
+ * rehearsal of it.
+ */
 describe('the seal, shown to fail', () => {
   const leg: Leg = { api: 'openai-compatible', answerAs: 'stream' }
 
   it('catches an engine that touches the network as its module loads', async () => {
-    const { violations, events } = await runLeg(
-      async () => (await import('./certification/touchesOnLoad')).touchesOnLoad,
-      leg
-    )
+    const { violations, events } = await runLeg(fromCertification('touches-on-load'), leg)
     expect(violations).toHaveLength(1)
     expect(violations[0]).toContain('globalThis.fetch')
-    // And the leg fails: the import itself threw, so no session ran.
-    expect(events.some((event) => event.type === 'error')).toBe(true)
+    // And the leg fails: the import itself threw, so no session ran — by the
+    // sentinel's own name, which is what says the seal is why.
+    const errors = events.filter(
+      (event): event is Extract<AssistantEvent, { type: 'error' }> => event.type === 'error'
+    )
+    expect(errors).toHaveLength(1)
+    expect(errors[0]!.message).toContain('EngineTouchedANetworkGlobal')
     expect(events.some((event) => event.type === 'proposal')).toBe(false)
   })
 
-  it('catches an engine that schedules its reach for after the run', async () => {
-    const { violations, events } = await runLeg(
-      async () => (await import('./certification/touchesAfterRun')).touchesAfterRun,
+  it('catches four reaches an engine scheduled for after its run', async () => {
+    const { violations, events, leftPending } = await runLeg(
+      fromCertification('touches-after-run'),
       leg
     )
     // The run itself is clean — it ends, and nothing throws into the harness.
-    // The barrier is what sees it: the timer fires while the seal is still up.
-    expect(violations).toHaveLength(1)
-    expect(violations[0]).toContain('globalThis.fetch')
+    // Four schedules, none of which a fixed wait would have caught: soon, five
+    // minutes out, chained behind another timer, and on an interval.
     expect(events.map((event) => event.type)).toEqual(['end'])
+    expect(violations.length).toBeGreaterThanOrEqual(4)
+    for (const violation of violations) expect(violation).toContain('globalThis.fetch')
+    // And the drain finished: nothing was left waiting when the seal lifted.
+    expect(leftPending).toBe(0)
   })
 
   it('leaves no sentinel behind when the leg is over', async () => {
@@ -514,5 +725,16 @@ describe('the seal, shown to fail', () => {
     }
     // And WebSocket, which the harness never stubs here, is the real one.
     expect(typeof globalThis.WebSocket).toBe('function')
+  })
+
+  it('leaves the timer functions exactly as it found them', async () => {
+    const before = ['setTimeout', 'setInterval', 'queueMicrotask'].map(
+      (name) => (globalThis as unknown as Record<string, unknown>)[name]
+    )
+    await runLeg(fromRegistry('builtin'), leg)
+    const after = ['setTimeout', 'setInterval', 'queueMicrotask'].map(
+      (name) => (globalThis as unknown as Record<string, unknown>)[name]
+    )
+    expect(after).toEqual(before)
   })
 })

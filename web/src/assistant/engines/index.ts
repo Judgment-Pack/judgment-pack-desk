@@ -27,7 +27,10 @@ import type { Engine } from '../engine'
 export const CERTIFIED_ENGINES = ['builtin'] as const
 export type CertifiedEngine = (typeof CERTIFIED_ENGINES)[number]
 
-const LOADERS: Record<CertifiedEngine, () => Promise<Engine>> = {
+/** One engine's chunk, by id. */
+export type EngineLoaders = Record<string, () => Promise<Engine>>
+
+const LOADERS: EngineLoaders = {
   builtin: async () => (await import('./builtin')).builtin
 }
 
@@ -55,7 +58,22 @@ export function resolveEngine(configured: AssistantEngine): {
   }
 }
 
-/** Load one engine's chunk. */
-export async function loadEngine(id: CertifiedEngine): Promise<Engine> {
-  return LOADERS[id]()
+/**
+ * Load one engine's chunk.
+ *
+ * `loaders` exists for the **conformance session's certification fixtures**,
+ * and for nothing else. Those fixtures are engines the desk would never ship —
+ * one reaches for the network as it loads, one after it has finished — and the
+ * point of them is to be loaded down the path a certified engine takes, under
+ * the same seal, rather than by a test import that proves a different route. It
+ * defaults to this build's own table, so the page has one registry and nothing
+ * a `desk.json` can name reaches anything else.
+ */
+export async function loadEngine(
+  id: string,
+  loaders: EngineLoaders = LOADERS
+): Promise<Engine> {
+  const load = loaders[id]
+  if (load === undefined) throw new Error(`no engine chunk is registered for ${id}`)
+  return load()
 }
