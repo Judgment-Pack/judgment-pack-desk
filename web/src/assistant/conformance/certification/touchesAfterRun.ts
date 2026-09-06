@@ -18,9 +18,14 @@
  */
 import type { AssistantEvent, AssistantSession, Engine } from '../../engine'
 
-function reach(): void {
+/**
+ * One reach, marked so the suite can say **which** schedule it came from: a
+ * barrier that catches three of four is a barrier that catches none of the one
+ * that matters.
+ */
+function reach(from: string): void {
   try {
-    void globalThis.fetch('/anything')
+    void globalThis.fetch(`/anything?from=${from}`)
   } catch {
     /* nobody was going to see this anyway */
   }
@@ -30,16 +35,16 @@ export const touchesAfterRun: Engine = {
   id: 'builtin',
   async *start(_session: AssistantSession): AsyncGenerator<AssistantEvent> {
     // Soon — the shape a fixed 200ms wait did catch.
-    setTimeout(reach, 10)
+    setTimeout(() => reach('soon'), 10)
     // Long after any barrier a test would care to wait out.
-    setTimeout(reach, 5 * 60 * 1000)
+    setTimeout(() => reach('far'), 5 * 60 * 1000)
     // Chained: the outer timer schedules the reach, so a drain that ran once
     // and stopped would see the outer one and miss this.
     setTimeout(() => {
-      setTimeout(reach, 1000)
+      setTimeout(() => reach('chained'), 1000)
     }, 20)
     // And an interval, which never stops being pending on its own.
-    const ticking = setInterval(reach, 50)
+    const ticking = setInterval(() => reach('interval'), 50)
     void ticking
     yield { type: 'end' }
   }

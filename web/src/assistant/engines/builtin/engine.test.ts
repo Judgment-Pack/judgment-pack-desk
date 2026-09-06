@@ -393,6 +393,24 @@ describe('the registry', () => {
     expect(engine).toBe(builtin)
   })
 
+  it('refuses an id no table registers, by name', async () => {
+    // The registry's loader takes its table as a parameter so the conformance
+    // session can put its certification fixtures down the path a certified
+    // engine travels. That parameter is also the way an id with no chunk can
+    // reach it, so the refusal is the loader's own and says which id.
+    await expect(loadEngine('not-an-engine')).rejects.toThrow(
+      'no engine chunk is registered for not-an-engine'
+    )
+    await expect(loadEngine('builtin', {})).rejects.toThrow(
+      'no engine chunk is registered for builtin'
+    )
+  })
+
+  it('loads from the table it is given, which is how a fixture is certified', async () => {
+    const stub = { id: 'builtin' as const, start: () => [] as never }
+    await expect(loadEngine('anything', { anything: async () => stub })).resolves.toBe(stub)
+  })
+
   it('falls back to builtin for an engine this build does not carry, and says which', () => {
     expect(isCertified('vercel')).toBe(false)
     expect(resolveEngine('vercel')).toEqual({

@@ -3535,6 +3535,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   AP=web/src/assistant/AssistantPane.tsx
 
   CT=web/src/assistant/conformance/conformance.test.ts
+  EN=web/src/assistant/engines/index.ts
 
   # ---- Canonical bytes ----------------------------------------------------
   #
@@ -3591,6 +3592,47 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '    const engine = await load()
     seal = sealNetwork()'
 
+  # The SDK's own message schema, which replaced this desk's hand-written shape
+  # rules: an id of null beside a result, a string error and a fractional id all
+  # satisfied those and none of them is a JSON-RPC message.
+  mutate web "a frame need not be a message the SDK would accept" "$TG" \
+    '  if (!JSONRPCMessageSchema.safeParse(frame).success) {' \
+    '  if (false) {'
+
+  # ---- The model answer, and what an engine can reach through it -----------
+  #
+  # A Response built from a ReadableStream keeps that very object as its body,
+  # so a stream somebody decorated is reachable through the facade.
+  mutate web "the facade carries the answer's own body stream" "$ASN" \
+    '    empty || answered.body === null ? null : answered.body.pipeThrough(new TransformStream())' \
+    '    empty ? null : answered.body'
+  # A rejection named AbortError can carry the URL in its message and again in
+  # its cause; only the classification may travel.
+  mutate web "an aborted call rethrows the error it caught" "$ASN" \
+    '        throw new DOMException(CALL_ABORTED, '"'"'AbortError'"'"')' \
+    '        throw cause'
+
+  # ---- The seal's barrier, which is itself a claim -------------------------
+  #
+  # A fixed wait is a delay an engine can out-wait. The fixture schedules at
+  # five minutes, on an interval, and chained behind another timer.
+  mutate web "the deferred barrier is a fixed wait again" "$CT" \
+    '      leftPending = await drainDeferredWork(tracker)
+      tracker.restore()' \
+    '      await new Promise((resolve) => setTimeout(resolve, 200))
+      tracker.restore()'
+  # **Not a row: the certification fixtures travelling `loadEngine`.** They do —
+  # `fromCertification` calls it, which is why the loader takes its table as a
+  # parameter — but a mutant that called the table directly would import the
+  # same chunk under the same seal and be caught by the same sentinel, so the
+  # row would report "nothing failed" for ever. What IS observable is the
+  # loader's own contract, below.
+  mutate web "an unregistered engine id loads something anyway" "$EN" \
+    '  const load = loaders[id]
+  if (load === undefined) throw new Error(`no engine chunk is registered for ${id}`)
+  return load()' \
+    '  return loaders[id]!()'
+
   # K3(b). Without the allow-list, write_file leaves the page and reaches the
   # runtime — which is the arrival the scripted server counts as a failure.
   mutate web "the allow-list check is removed" "$TG" \
@@ -3619,9 +3661,17 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # above: an evaluate forwarded because it read as rehearsed.
   # Fail closed. A batch has no method, and "no method is harmless traffic" is
   # what let an array carrying write_file out whole.
+  # **Explicitly `send`, not merely a disabled branch.** Round 3 pointed out that
+  # `if (false)` let a batch fall through to the next check and be refused
+  # there, so the row went red on a *different* corpus member throwing — a true
+  # failure for the wrong reason. This mutant sends the unreadable frame, which
+  # is the named defect, and the batch-carrying-write_file case is what fails.
   mutate web "a frame this gate cannot read is passed as harmless traffic" "$TG" \
-    '  if (!isRecord(frame)) {' \
-    '  if (false) {'
+    '  if (!isRecord(frame)) {
+    return refuse(' \
+    '  if (!isRecord(frame)) {
+    return { verdict: '"'"'send'"'"', notice: null, frame: frame as unknown as JSONRPCMessage }
+    return refuse('
   mutate web "a frame with no method at all is passed" "$TG" \
     '  if (!hasMethod) {' \
     '  if (hasMethod === false && true) {

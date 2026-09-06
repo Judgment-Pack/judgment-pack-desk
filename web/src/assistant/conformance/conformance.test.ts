@@ -90,10 +90,15 @@ function sealNetwork(): Seal {
   const violations: string[] = []
   for (const name of NETWORK_GLOBALS) {
     before.set(name, scope[name])
-    const sentinel = function sealed(): never {
+    const sentinel = function sealed(...args: unknown[]): never {
+      // The address it asked for is recorded beside the reach, so a leg can say
+      // **which** of an engine's schedules got through rather than only that
+      // one did. A barrier that catches three of four catches none of the one
+      // that matters.
+      const asked = args.length > 0 ? ` for ${String(args[0])}` : ''
       const reach =
-        `the engine reached for globalThis.${name}; a session's only reach to a model is ` +
-        `session.model.call, and its only reach to the runtime is session.callTool`
+        `the engine reached for globalThis.${name}${asked}; a session's only reach to a model ` +
+        `is session.model.call, and its only reach to the runtime is session.callTool`
       violations.push(reach)
       throw new EngineTouchedANetworkGlobal(reach)
     }
@@ -706,8 +711,16 @@ describe('the seal, shown to fail', () => {
     // Four schedules, none of which a fixed wait would have caught: soon, five
     // minutes out, chained behind another timer, and on an interval.
     expect(events.map((event) => event.type)).toEqual(['end'])
-    expect(violations.length).toBeGreaterThanOrEqual(4)
     for (const violation of violations) expect(violation).toContain('globalThis.fetch')
+    // **Each schedule by name.** A count would be satisfied by an interval
+    // ticking four times while the three that actually defeat a fixed wait went
+    // uncaught, which is the defect this fixture exists for.
+    const from = (marker: string) =>
+      violations.some((violation) => violation.includes(`from=${marker}`))
+    expect(from('soon'), 'the 10ms reach').toBe(true)
+    expect(from('far'), 'the five-minute reach').toBe(true)
+    expect(from('chained'), 'the reach behind another timer').toBe(true)
+    expect(from('interval'), 'the reach on an interval').toBe(true)
     // And the drain finished: nothing was left waiting when the seal lifted.
     expect(leftPending).toBe(0)
   })
