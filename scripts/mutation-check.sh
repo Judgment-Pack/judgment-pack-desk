@@ -2860,10 +2860,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  const formAvailable = isRecord(read?.index.value)'
   mutate web "the check gates the save" "$PV" \
     '      const submitted = bufferText
-      const flight = {}' \
+      // **Which buffer this save is for**' \
     '      if ((check.data?.report.diagnostics?.length ?? 0) > 0) return
       const submitted = bufferText
-      const flight = {}'
+      // **Which buffer this save is for**'
   mutate web "Mod+S is swallowed inside the field it exists to fire in" "$PV" \
     '      if (event.repeat || event.defaultPrevented) return
       event.preventDefault()' \
@@ -3854,6 +3854,24 @@ export function assistantTransport(): Transport {
   mutate web "the diff is not computed against the draft" "$PD" \
     '  const draft = readDraft(draftText)' \
     '  const draft = readDraft(undefined)'
+
+  # **A save that answers about another file.** A PUT takes as long as it takes;
+  # without the ticket, A's read-back became B's base and B's identity.
+  mutate web "an old save rebases whatever buffer is on screen" "$BUF" \
+    '      if (expect.generation !== generationNow.current) return false
+      if (seeded.current !== undefined && seeded.current !== expect.path) return false
+      if (fresh.path !== expect.path) return false
+    }
+    seeded.current = fresh.path' \
+    '      void expect
+    }
+    seeded.current = fresh.path'
+  # Work held beside the bytes is still work: a reload asked for before it was
+  # typed must go stale, exactly as a commit makes it.
+  mutate web "text held beside the bytes moves no revision" "$PV" \
+    '    touchBuffer.current()
+    setDrafts((held) => {' \
+    '    setDrafts((held) => {'
 
   # **A reload that lands over an edit made while it was in flight.** The
   # generation moves only where the buffer is put down, so an edit — a

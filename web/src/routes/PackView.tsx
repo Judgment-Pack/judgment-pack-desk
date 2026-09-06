@@ -142,7 +142,16 @@ export function PackView() {
    * — the JSON view, and a save — unmount the field. See `EditingSession`.
    */
   const [drafts, setDrafts] = useState<ReadonlyMap<string, PendingText>>(new Map())
+  /**
+   * **This is an edit, and the buffer is told so.** The text lives here rather
+   * than in the bytes, so it moved no revision — and a reload asked for before
+   * it was typed still held a valid ticket, adopted its answer, and cleared the
+   * drafts on the way in. Work entered after a read began went with it, with
+   * nothing having asked.
+   */
+  const touchBuffer = useRef<() => void>(() => {})
   const hold = useCallback((pointer: string, draft: PendingText | null) => {
+    touchBuffer.current()
     setDrafts((held) => {
       const next = new Map(held)
       if (draft === null) next.delete(pointer)
@@ -161,6 +170,7 @@ export function PackView() {
     otherWork: drafts.size > 0,
     onAdopt: forgetDrafts
   })
+  touchBuffer.current = buffer.touch
   /**
    * **The path is part of the buffer's identity.**
    *
@@ -565,6 +575,11 @@ export function PackView() {
       // with the file read, so the two are not always about one file.
       if (buffer.base.path !== path) return
       const submitted = bufferText
+      // **Which buffer this save is for**, captured with the request exactly as
+      // the bytes are. A PUT takes as long as it takes and the page can be
+      // about another pack when it answers; without this the read-back became
+      // *that* pack's base and identity.
+      const ticket = buffer.identity
       const flight = {}
       saving.current = flight
       // The check runs before the save and does **not** gate it. Sending the
@@ -583,9 +598,13 @@ export function PackView() {
           if (saving.current === flight) saving.current = undefined
         },
         onSaved: (landed) => {
-          buffer.landed(landed, submitted)
+          // Refused where this buffer is no longer the buffer that was saved.
+          buffer.landed(landed, submitted, ticket)
           // The runtime is now serving a file it has already read. These three
           // are what would otherwise keep answering about the old revision.
+          // They are invalidated whichever buffer is on screen: a refetch of a
+          // query is not a claim about the page, and the file that was written
+          // really did move.
           void queryClient.invalidateQueries({ queryKey: ['list_packs'] })
           void queryClient.invalidateQueries({ queryKey: ['get_pack', packId] })
           void queryClient.invalidateQueries({ queryKey: ['validate'] })
@@ -971,7 +990,14 @@ export function PackView() {
                 heading="The file on disk has changed since this was loaded"
                 actions={
                   <Button variant="quiet" onClick={reloadNow}>
-                    {dirty ? 'Reload, losing these changes' : 'Reload'}
+                    {/*
+                      **What Reload discards is work, not bytes.** An operand
+                      holding text that is not JSON yet moves no bytes, so a
+                      label reading `dirty` alone said plain "Reload" over an
+                      unfinished field — the same reason Discard is enabled by
+                      `hasWork` rather than by `dirty`.
+                    */}
+                    {hasWork ? 'Reload, losing these changes' : 'Reload'}
                   </Button>
                 }
               >
