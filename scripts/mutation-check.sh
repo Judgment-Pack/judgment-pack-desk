@@ -4205,14 +4205,16 @@ export function assistantTransport(): Transport {
       return { type: 'thinking_unavailable', detail: thinkingNotice('unavailable', reason) }
     },"
 
-  # The closed list is what keeps an endpoint's prose about a *document* from
-  # being read as a refusal of the parameter — and what keeps a refusal of the
-  # parameter from being reported as an ordinary failure.
-  mutate web "any 400 at all is read as a refusal of the tier" "$TH" \
-    "  if (status !== 400 && status !== 422) return false
-  if (UNSUPPORTED.some((pattern) => pattern.test(message))) return true
-  return members.some((member) => message.includes(member))" \
-    "  return status === 400 || status === 422"
+  # **The conjunction.** `Unsupported parameter` and `Extra inputs are not
+  # permitted` are what an endpoint says about *any* member, so prose alone
+  # degraded the tier on a refusal about `temperature` and hid a real failure
+  # behind a misleading "thinking is unavailable" line. (This replaces the
+  # "any 400" row, which did not prove the conjunction it was named for.)
+  mutate web "a refusal need not name a member the desk sent" "$TH" \
+    "  if (status !== 400) return false
+  return namesSent(members).some((name) => message.includes(name))" \
+    "  if (status !== 400) return false
+  return /unsupported parameter|extra inputs are not permitted|not supported/i.test(message)"
 
   # vercel/ai#19663. A block whose signature came back as a fragment is removed
   # rather than sent: a malformed thinking block is a request the endpoint

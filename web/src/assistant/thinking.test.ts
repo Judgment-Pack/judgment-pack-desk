@@ -105,43 +105,68 @@ describe('the table, per family and tier', () => {
   })
 })
 
-describe('the closed list of refusals', () => {
-  const members = ['reasoning_effort']
+describe('what counts as a refusal of the tier', () => {
+  const effort = { reasoning_effort: 'high' }
+  const adaptive = { thinking: { type: 'adaptive' }, output_config: { effort: 'high' } }
+  const budget = { thinking: { type: 'enabled', budget_tokens: 8000 }, max_tokens: 12096 }
 
-  it('reads only 400 and 422', () => {
-    expect(unsupportedThinking(500, 'Unsupported parameter: reasoning_effort', members)).toBe(false)
-    expect(unsupportedThinking(400, 'Unsupported parameter: reasoning_effort', members)).toBe(true)
-    expect(unsupportedThinking(422, 'Unsupported parameter: reasoning_effort', members)).toBe(true)
+  it('reads only a 400, and never a 422', () => {
+    // The status every provider documents for a member it will not take. A 422
+    // is something else, whatever its prose says.
+    expect(unsupportedThinking(400, 'Unsupported parameter: reasoning_effort', effort)).toBe(true)
+    expect(unsupportedThinking(422, 'Unsupported parameter: reasoning_effort', effort)).toBe(false)
+    expect(unsupportedThinking(422, 'thinking is not supported', adaptive)).toBe(false)
+    expect(unsupportedThinking(500, 'Unsupported parameter: reasoning_effort', effort)).toBe(false)
   })
 
-  it('matches each documented pattern', () => {
-    for (const message of [
-      'Unsupported parameter: reasoning_effort',
-      'Unknown parameter: thinking',
-      'Unrecognized request argument supplied: thinking',
-      'Extra inputs are not permitted',
-      'thinking.type.enabled: Extended thinking is not supported for this model',
-      'Adaptive thinking is not supported by this model',
-      'This model does not support the reasoning_effort parameter'
-    ]) {
-      expect(unsupportedThinking(400, message, ['thinking']), message).toBe(true)
+  it('requires the message to name a member this desk actually sent', () => {
+    // **The conjunction, which is the whole of the finding.** `Unsupported
+    // parameter` and `Extra inputs are not permitted` are what an endpoint says
+    // about *any* member; on their own they turned a real failure into a silent
+    // degrade and a misleading "thinking is unavailable" line.
+    expect(unsupportedThinking(400, 'Unsupported parameter: temperature', effort)).toBe(false)
+    expect(unsupportedThinking(400, 'Extra inputs are not permitted: tools', adaptive)).toBe(false)
+    expect(unsupportedThinking(400, 'messages: at least one message is required', effort)).toBe(
+      false
+    )
+    expect(unsupportedThinking(400, 'the pack is invalid: rule 3 names no outcome', effort)).toBe(
+      false
+    )
+  })
+
+  it('accepts each documented refusal, because each names the member', () => {
+    for (const [message, members] of [
+      ['Unsupported parameter: reasoning_effort', effort],
+      ['This model does not support the reasoning_effort parameter', effort],
+      ['Unknown parameter: thinking', adaptive],
+      ['Unrecognized request argument supplied: thinking', adaptive],
+      ['thinking: Extra inputs are not permitted', adaptive],
+      ['thinking.type.enabled: Extended thinking is not supported for this model', budget],
+      ['Adaptive thinking is not supported by this model', adaptive],
+      ['output_config.effort: not supported on this model', adaptive],
+      ['thinking.budget_tokens: must be less than max_tokens', budget]
+    ] as [string, Record<string, unknown>][]) {
+      expect(unsupportedThinking(400, message, members), message).toBe(true)
     }
   })
 
-  it('matches a gateway that names only the member this desk sent', () => {
-    expect(unsupportedThinking(400, 'bad request: output_config', ['thinking', 'output_config'])).toBe(
-      true
-    )
-    // …and never a member this desk did not send.
-    expect(unsupportedThinking(400, 'bad request: temperature', ['thinking'])).toBe(false)
+  it('reads a member one level down as well as at the top', () => {
+    // `budget_tokens` and `effort` live inside the members the desk sends, and
+    // an endpoint names the member it actually refused.
+    expect(unsupportedThinking(400, 'budget_tokens is out of range', budget)).toBe(true)
+    expect(unsupportedThinking(400, 'budget_tokens is out of range', effort)).toBe(false)
   })
 
-  it('does not read an endpoint’s prose about a document as a refusal of the tier', () => {
-    // The list is closed for this: an open search for "thinking" in a body
-    // would turn a real failure into a silent degrade.
-    expect(
-      unsupportedThinking(400, 'the pack is invalid: rule 3 names no outcome', ['reasoning_effort'])
-    ).toBe(false)
+  it('does not read a member the desk did not send', () => {
+    // The desk sent `reasoning_effort`; a refusal about `thinking` is about
+    // somebody else's request.
+    expect(unsupportedThinking(400, 'thinking is not supported here', effort)).toBe(false)
+  })
+
+  it('does not read a refusal about the size of an answer as one about thinking', () => {
+    // `max_tokens` is raised *because* a budget was asked for, but a refusal
+    // about it alone is about how long an answer may be.
+    expect(unsupportedThinking(400, 'max_tokens exceeds the model maximum', budget)).toBe(false)
   })
 })
 
@@ -174,7 +199,7 @@ describe('the five states', () => {
       thinking: { type: 'enabled', budget_tokens: 8000 },
       max_tokens: 8000 + RESPONSE_TOKENS
     })
-    const degraded = it0.refused(400, 'Extra inputs are not permitted')
+    const degraded = it0.refused(400, 'thinking: Extra inputs are not permitted')
     expect(degraded.kind).toBe('degrade')
     expect((degraded as { event: AssistantEvent }).event!.type).toBe('thinking_unavailable')
     expect(it0.state()).toBe('unavailable')

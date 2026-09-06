@@ -140,43 +140,60 @@ export function nextDialect(dialect: ThinkingDialect): ThinkingDialect | null {
 }
 
 /**
- * The documented refusals, as a **closed list**.
+ * The member names a thinking refusal may be **about**, and the whole of them.
  *
- * From the providers' own error references and the fixture's degrade shape. It
- * is closed on purpose: an open reading of an endpoint's body — a search for
- * "thinking" anywhere in it — would let an endpoint's prose about a document
- * turn a real failure into a silent degrade.
- *
- * **Nothing here quotes the body beyond matching it.** The sentence a person
- * reads is the desk's, with the status in it; the endpoint's own words are
- * matched against these patterns and against the member names this desk
- * actually sent, and go no further.
+ * A closed list, and it is one half of the test below. `max_tokens` is not on
+ * it: the desk raises the maximum *because* it asked for a budget, but a
+ * refusal about `max_tokens` alone is a refusal about the size of an answer and
+ * not about thinking.
  */
-const UNSUPPORTED: readonly RegExp[] = [
-  /unsupported parameter/i,
-  /unknown parameter/i,
-  /unrecognized (?:request )?argument/i,
-  /extra inputs are not permitted/i,
-  /is not supported for this model/i,
-  /adaptive thinking is not supported/i,
-  /does not support .{0,40}reasoning[_ ]effort/i
+const THINKING_MEMBERS: readonly string[] = [
+  'thinking',
+  'reasoning_effort',
+  'output_config',
+  'budget_tokens'
 ]
+
+/** Every name this desk actually sent, one level down as well as at the top. */
+function namesSent(members: Record<string, unknown>): string[] {
+  const names: string[] = []
+  for (const [name, value] of Object.entries(members)) {
+    if (!names.includes(name)) names.push(name)
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      for (const inner of Object.keys(value as Record<string, unknown>)) {
+        if (!names.includes(inner)) names.push(inner)
+      }
+    }
+  }
+  return names.filter((name) => THINKING_MEMBERS.includes(name))
+}
 
 /**
  * Is this refusal about the thinking parameter this desk sent, or about the
  * request at large?
  *
- * A 400 or a 422, one of the documented patterns **or** the name of a member
- * this desk actually added — never a match against the request as a whole.
+ * **Two conditions, and both are required.** A 400 — and only a 400, because
+ * that is the status every provider documents for a member it will not take —
+ * whose message **names a member this desk actually added**, out of a closed
+ * list of the members that ask for thinking at all.
+ *
+ * The prose alone is not enough, and that was the defect: `Unsupported
+ * parameter` and `Extra inputs are not permitted` are the sentences an endpoint
+ * writes about *any* member, so `400 Unsupported parameter: temperature`
+ * degraded the tier, said "thinking is unavailable for this endpoint", and hid
+ * a real failure behind it. A refusal that names none of the desk's own
+ * thinking members is an ordinary model error and is reported as one.
+ *
+ * **Nothing here quotes the body beyond matching it.** The sentence a person
+ * reads is the desk's, with the status in it.
  */
 export function unsupportedThinking(
   status: number,
   message: string,
-  members: readonly string[]
+  members: Record<string, unknown>
 ): boolean {
-  if (status !== 400 && status !== 422) return false
-  if (UNSUPPORTED.some((pattern) => pattern.test(message))) return true
-  return members.some((member) => message.includes(member))
+  if (status !== 400) return false
+  return namesSent(members).some((name) => message.includes(name))
 }
 
 /**
@@ -353,7 +370,7 @@ export function openThinking(session: Pick<AssistantSession, 'thinking' | 'model
     refused(status, message) {
       const current = wire()
       if (current === null) return { kind: 'other' }
-      if (!unsupportedThinking(status, message, Object.keys(current.members))) {
+      if (!unsupportedThinking(status, message, current.members)) {
         return { kind: 'other' }
       }
       const next = nextDialect(dialect)
