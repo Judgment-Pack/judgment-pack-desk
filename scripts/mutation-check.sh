@@ -2265,8 +2265,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # A report that does not carry the bytes it ran over cannot be compared with
   # the bytes on screen, and the comparison is the whole of the anchoring rule.
   mutate web "the report claims bytes it did not check" "$QR" \
-    '      return { report: parsed, checkedBytes: documentText! }' \
-    "      return { report: parsed, checkedBytes: '' }"
+    '      return { report: parsed, checkedBytes: documentText!, raw }' \
+    "      return { report: parsed, checkedBytes: '', raw }"
   mutate web "validate is assumed present" "$CAP" \
     "    validateSupported: names.has('validate')" \
     "    validateSupported: true"
@@ -3957,14 +3957,14 @@ export function assistantTransport(): Transport {
     "    const held = event.type === 'proposal' ? canonicalProposal(event) : event" \
     '    const held = event'
 
-  # `fix_pack` works from the validator's report. A message list is a
-  # paraphrase, and a paraphrase of a refusal is a second refusal.
-  mutate web "Fix re-words the runtime's diagnostics" "$AP" \
-    '  const diagnosticsText = useMemo(() => JSON.stringify(diagnostics, null, 2), [diagnostics])' \
-    '  const diagnosticsText = useMemo(
-    () => diagnostics.map((entry) => entry.message ?? '"'"''"'"').join('"'"'\n'"'"'),
-    [diagnostics]
-  )'
+  # `fix_pack` works from the validator's report, and what it is given is the
+  # runtime's own bytes: a re-serialization of a parse of them is this desk's
+  # spelling of a refusal it did not write.
+  mutate web "Fix re-serializes the runtime's diagnostics" "$CK" \
+    '  const span = spanAt(indexDocument(raw), '"'"'/diagnostics'"'"')
+  return span === undefined ? undefined : raw.slice(span.valueStart, span.valueEnd)' \
+    '  const parsed = JSON.parse(raw) as { diagnostics?: unknown }
+  return parsed.diagnostics === undefined ? undefined : JSON.stringify(parsed.diagnostics, null, 2)'
 fi
 
 restore

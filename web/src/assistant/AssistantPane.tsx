@@ -35,7 +35,6 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AUTHOR_PACK_PROMPT, FIX_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
-import type { Diagnostic } from '../mcp/types'
 import { Button } from '../ui/Button'
 import { CodeArea } from '../ui/CodeArea'
 import { TextArea } from '../ui/TextArea'
@@ -58,15 +57,6 @@ import type { AssistantEvent } from './engine'
  * pane's.
  */
 export const DRAFT_SENTENCE = 'This is the draft being edited; propose the whole document.'
-
-/**
- * No diagnostics, as one object.
- *
- * A default of `[]` written at the call site is a new array on every render,
- * which would re-serialize the argument — and re-key the prompt query — for a
- * page where nothing changed.
- */
-const NOTHING_TO_FIX: readonly Diagnostic[] = []
 
 /**
  * The runtime's prompt, with the draft after it — **verbatim, and fenced**.
@@ -117,7 +107,7 @@ export function AssistantPane({
   editing = false,
   identity,
   busy = noBusy,
-  diagnostics = NOTHING_TO_FIX
+  diagnostics
 }: {
   /**
    * The bytes this page is about: the editor's buffer on `?edit`, the saved
@@ -158,13 +148,17 @@ export function AssistantPane({
   busy?: () => string
   /**
    * The runtime's own diagnostics for the bytes on this page, from the check
-   * that already ran beside them.
+   * that already ran beside them: how many there are, and **the exact bytes**
+   * the runtime wrote them as.
    *
-   * They are handed to `fix_pack` as the runtime wrote them. Nothing here
-   * summarises, filters or re-words one: a repair session works from the
-   * validator's report, and a paraphrase of a refusal is a second refusal.
+   * The bytes and not the objects. `fix_pack` takes the validator's
+   * diagnostics, and what this pane hands it is the member cut out of the
+   * runtime's own answer — not a re-serialization of a parse of it, which
+   * would differ in whitespace, in escaping, and possibly in member order. A
+   * paraphrase of a refusal is a second refusal. Undefined where there is
+   * nothing to fix.
    */
-  diagnostics?: readonly Diagnostic[]
+  diagnostics?: { count: number; bytes: string }
 } = {}) {
   const slot = useAssistantSlot()
   // The editing session is the only way bytes change on this desk, and `write`
@@ -178,14 +172,8 @@ export function AssistantPane({
   const prompts = usePromptNames()
   const advertised = (prompts.data ?? []).includes(AUTHOR_PACK_PROMPT)
   const canFix = (prompts.data ?? []).includes(FIX_PACK_PROMPT)
-  /**
-   * The diagnostics as the runtime wrote them, as one JSON text.
-   *
-   * `JSON.stringify` of the report's own array and nothing else — no message
-   * concatenation, no severity filter, no count. It is also the prompt query's
-   * key, which is why it is memoised on the diagnostics themselves.
-   */
-  const diagnosticsText = useMemo(() => JSON.stringify(diagnostics, null, 2), [diagnostics])
+  /** How many the check found, for the control and the line beside it. */
+  const diagnosticCount = diagnostics?.count ?? 0
 
   const [typed, setTyped] = useState('')
   /**
@@ -391,8 +379,8 @@ export function AssistantPane({
       {ran !== undefined && (
         <p className={styles.status}>
           Running the runtime’s {ran} prompt
-          {ran === FIX_PACK_PROMPT ? `, over ${diagnostics.length} diagnostic${
-            diagnostics.length === 1 ? '' : 's'
+          {ran === FIX_PACK_PROMPT ? `, over ${diagnosticCount} diagnostic${
+            diagnosticCount === 1 ? '' : 's'
           }` : ''}
           .
         </p>
@@ -429,15 +417,17 @@ export function AssistantPane({
           diagnostics the check on this page already produced.
         */}
         <Button
-          disabled={running || diagnostics.length === 0 || !canFix}
-          title={fixWhy(diagnostics.length, canFix, prompts.isSuccess)}
-          onClick={() =>
+          disabled={running || diagnostics === undefined || !canFix}
+          title={fixWhy(diagnosticCount, canFix, prompts.isSuccess)}
+          onClick={() => {
+            if (diagnostics === undefined) return
             setSubmitted({
               id: (nextRun.current += 1),
               name: FIX_PACK_PROMPT,
-              args: { diagnostics: diagnosticsText }
+              // The runtime's own bytes, handed on unread.
+              args: { diagnostics: diagnostics.bytes }
             })
-          }
+          }}
         >
           Fix
         </Button>

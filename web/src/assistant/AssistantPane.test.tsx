@@ -76,7 +76,7 @@ function DraftHarness({
 }: {
   initial: string
   editing: boolean
-  diagnostics?: { code?: string; instancePath?: string; message?: string }[]
+  diagnostics?: { count: number; bytes: string }
 }) {
   const buffer = useDocumentBuffer({
     path: 'packs/vendor-onboarding.pack.json',
@@ -143,8 +143,8 @@ async function draw(options: {
   editing?: boolean
   /** Draw the pane over a real buffer instead, and edit that. */
   buffer?: { text: string; editing?: boolean }
-  /** The runtime's diagnostics for the bytes on this page. */
-  diagnostics?: { code?: string; instancePath?: string; message?: string }[]
+  /** What the route would hand `fix_pack`: a count, and the runtime's bytes. */
+  diagnostics?: { count: number; bytes: string }
 } = {}) {
   const model = scriptedModel({ api: 'openai-compatible', answerAs: 'stream' })
   const keyRead = JSON.stringify({
@@ -774,22 +774,26 @@ describe('the draft the session is given', () => {
 })
 
 describe('fixing what the check refused', () => {
-  const DIAGNOSTICS = [
-    {
-      code: 'JPS-STRUCTURAL-REQUIRED',
-      layer: 'structural',
-      severity: 'error',
-      instancePath: '/rules/0/outcomeId',
-      message: 'the member is required'
-    },
-    {
-      code: 'JPS-SEMANTIC-UNKNOWN-OUTCOME',
-      layer: 'semantic',
-      severity: 'error',
-      instancePath: '/rules/1/outcomeId',
-      message: 'no outcome declares this id'
-    }
-  ]
+  /**
+   * A validation answer as a runtime might really write it: minified, with an
+   * escaped solidus, a non-ASCII character and a newline inside a string.
+   *
+   * The bytes are what matters here. A re-serialization of a parse of this
+   * would spell every one of those differently — which is the desk putting its
+   * own words on a refusal it did not write.
+   */
+  const ANSWER =
+    '{"outputVersion":"2","status":"invalid","diagnostics":' +
+    '[{"code":"JPS-STRUCTURAL-REQUIRED","instancePath":"/rules/0/outcomeId",' +
+    '"message":"the member is required at packs\\/x.pack.json;\\nsee the schéma"},' +
+    '{"code":"JPS-SEMANTIC-UNKNOWN-OUTCOME","instancePath":"/rules/1/outcomeId",' +
+    '"message":"no outcome declares this id"}],"diagnosticsTruncated":false}'
+  /** Exactly the bytes of the `diagnostics` member, as the route cuts them. */
+  const DIAGNOSTIC_BYTES = ANSWER.slice(
+    ANSWER.indexOf('[{"code"'),
+    ANSWER.indexOf(',"diagnosticsTruncated"')
+  )
+  const DIAGNOSTICS = { count: 2, bytes: DIAGNOSTIC_BYTES }
 
   it('is offered only where the check reports something to fix', async () => {
     await draw()
@@ -830,8 +834,13 @@ describe('fixing what the check refused', () => {
     expect(asked).toHaveLength(1)
     // Byte for byte the report's own array. Not a message list, not a count,
     // not a severity filter: the runtime's words, whole.
-    expect(asked[0]!.args.diagnostics).toBe(JSON.stringify(DIAGNOSTICS, null, 2))
-    expect(JSON.parse(asked[0]!.args.diagnostics!)).toEqual(DIAGNOSTICS)
+    // Byte for byte the member the runtime wrote — the minification, the
+    // escaped solidus, the é and the newline escape included.
+    expect(asked[0]!.args.diagnostics).toBe(DIAGNOSTIC_BYTES)
+    expect(asked[0]!.args.diagnostics).toContain('packs\\/x.pack.json')
+    expect(asked[0]!.args.diagnostics).toContain('sch\u00e9ma')
+    expect(asked[0]!.args.diagnostics).not.toContain('\n  ')
+    expect(JSON.parse(asked[0]!.args.diagnostics!)).toEqual(JSON.parse(ANSWER).diagnostics)
   })
 
   it('says which prompt ran, and over how many diagnostics', async () => {

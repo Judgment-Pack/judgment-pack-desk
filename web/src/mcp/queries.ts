@@ -174,6 +174,17 @@ export interface ValidationResult {
    * know that is to have them both.
    */
   checkedBytes: string
+  /**
+   * The runtime's answer, **as the runtime wrote it**.
+   *
+   * Kept beside the parsed report because a parse is a reading and some callers
+   * need the bytes: `fix_pack` takes the validator's diagnostics, and a
+   * re-serialization of them is this desk's spelling of a refusal rather than
+   * the runtime's — different whitespace, different escaping, possibly a
+   * different member order. What is handed to a prompt about a refusal has to
+   * be the refusal.
+   */
+  raw: string
 }
 
 export function useValidate(
@@ -193,13 +204,13 @@ export function useValidate(
       documentText !== undefined &&
       documentText !== '',
     queryFn: async ({ signal }) => {
-      const { parsed } = await callToolJSON<ValidationReport>(
+      const { parsed, raw } = await callToolJSON<ValidationReport>(
         client!,
         'validate',
         { document: documentText },
         signal
       )
-      return { report: parsed, checkedBytes: documentText! }
+      return { report: parsed, checkedBytes: documentText!, raw }
     }
   })
 }

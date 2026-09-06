@@ -54,7 +54,7 @@ import { useMcp } from '../mcp/McpProvider'
 import { usePack, usePacks, useValidate } from '../mcp/queries'
 import type { PackDocument } from '../mcp/types'
 import { agreesWithParse } from '../packs/documentText'
-import { CHECK_BEHIND_BUFFER, anchor, isStale, truncationNote } from '../packs/checks'
+import { CHECK_BEHIND_BUFFER, anchor, diagnosticsBytes, isStale, truncationNote } from '../packs/checks'
 import type { AnchoredDiagnostic } from '../packs/checks'
 import { CheckStrip } from '../packs/CheckStrip'
 import { AssistantPane } from '../assistant/AssistantPane'
@@ -390,6 +390,24 @@ export function PackView() {
           : undefined
 
   const report = stale ? undefined : check.data?.report
+  /**
+   * What `fix_pack` would be given: how many diagnostics, and **their own
+   * bytes**, cut out of the runtime's answer rather than re-serialized.
+   *
+   * The span comes from this desk's own scanner — the one the editor splices
+   * with — so the member handed to the prompt is the member the runtime wrote,
+   * escaping and whitespace included. Undefined where the report is stale (it
+   * is about bytes that have moved, exactly as no diagnostic is anchored
+   * across an edit), where there is nothing to fix, or where the answer is not
+   * bytes this desk can address.
+   */
+  const diagnosticsToFix = useMemo(() => {
+    const raw = stale ? undefined : check.data?.raw
+    const count = report?.diagnostics?.length ?? 0
+    if (raw === undefined || count === 0) return undefined
+    const bytes = diagnosticsBytes(raw)
+    return bytes === undefined ? undefined : { count, bytes }
+  }, [stale, check.data, report])
   const anchored = useMemo(() => anchor(report, rendered), [report, rendered])
   const byPointer = useMemo(() => {
     const found = new Map<string, AnchoredDiagnostic[]>()
@@ -766,12 +784,7 @@ export function PackView() {
                 // the tab does not remount.
                 identity={onPath ? buffer.identity : undefined}
                 busy={busyDraft}
-                // The runtime's own diagnostics for the bytes on screen, and
-                // only where the report is about them: a stale report is
-                // withheld here exactly as it is withheld from every block,
-                // because a repair session over diagnostics about bytes that
-                // have moved is a repair of a document nobody has.
-                diagnostics={report?.diagnostics ?? []}
+                diagnostics={diagnosticsToFix}
               />
             )
           }
