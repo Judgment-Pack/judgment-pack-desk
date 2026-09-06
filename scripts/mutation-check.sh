@@ -3549,11 +3549,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  if ((supplied ?? {})[REHEARSAL_MEMBER] === true) return { verdict: '"'"'pass'"'"' }
   const args = ownArguments(supplied ?? {})
   const already = false'
-  # Each own property read once is what stops a getter or a proxy answering the
-  # check and the wire differently.
-  mutate web "the arguments are read twice instead of once" "$TG" \
-    '  for (const key of Object.keys(args)) copy[key] = args[key]' \
-    '  for (const key of Object.keys(args)) copy[key] = args[key] === undefined ? args[key] : args[key]'
+  # **Deliberately not a row: reading each own property twice.** It was one, and
+  # it reported "nothing failed" — correctly. `ownArguments` reads once so that
+  # a getter cannot answer the check and the wire differently, but the value
+  # that check is about is written unconditionally straight afterwards, so a
+  # second read of `rehearsal` is overwritten and a second read of `pack` is
+  # observed by nothing. The property is real and cheap; it is not, on its own,
+  # observable, and a row that says otherwise for ever reads as a missing
+  # safeguard rather than an unobservable one. What IS observable is the branch
+  # above: an evaluate forwarded because it read as rehearsed.
   # Fail closed. A batch has no method, and "no method is harmless traffic" is
   # what let an array carrying write_file out whole.
   mutate web "a frame this gate cannot read is passed as harmless traffic" "$TG" \
@@ -3666,13 +3670,24 @@ export function assistantTransport(): Transport {
   mutate web "a second end is appended rather than dropped" "$AR" \
     "    if (event.type === 'end') run.ended = true" \
     '    void event'
-  # The connection recorded only once its setup returned is a connection Stop
-  # and unmount cannot close while the setup is still in flight.
-  mutate web "the connection is recorded only after it is ready" "$AR" \
-    '          run.connection = opened
-          const ready = await opened.ready' \
-    '          const ready = await opened.ready
-          run.connection = opened'
+  # **Both halves at once, because either alone holds it.** A connection whose
+  # setup is still in flight is releasable two ways: the run records the handle
+  # synchronously, and the run's signal is handed to the setup. Breaking one
+  # leaves the other holding, and a row that breaks one reports "nothing
+  # failed" — which is a true statement about that edit and a false impression
+  # of the safeguard. So this row removes the signal AND the recording, which
+  # is the state the finding described: nothing anywhere can close a hung setup.
+  mutate web "a hung setup can be closed by nothing" "$AR" \
+    '          const opened = openAssistantConnection({
+            allowed: endpoint.tools,
+            onEvent: (event) => push(run, event),
+            signal: run.controller.signal
+          })
+          run.connection = opened' \
+    '          const opened = openAssistantConnection({
+            allowed: endpoint.tools,
+            onEvent: (event) => push(run, event)
+          })'
   # An identical policy run twice: the run id is what makes the second press a
   # second submission rather than the same state value.
   mutate web "a second run of the same policy is suppressed" "$AP" \
