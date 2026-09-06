@@ -1036,9 +1036,12 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # The part after a colon is a verb: an open list would let whoever holds the
   # session token ask the configured endpoint to *do* something nobody wrote
   # down, with the stored credential attached.
+  # Only the method half is broken: leaving `method` unused would not compile,
+  # and a mutation that does not compile has not been survived — it has not
+  # been tested.
   mutate go "the method after a colon is not held to the list" "$MR" \
     '			if name == "" || !contains(relayPathMethods, method) {' \
-    '			if name == "" || false {'
+    '			if name == "" || (false && !contains(relayPathMethods, method)) {'
   # The one pair the page may send is admitted for one wire and refused for the
   # other two, which carry streaming in the request body and need none.
   mutate go "the stream pair is admitted on every kind" "$MR" \
