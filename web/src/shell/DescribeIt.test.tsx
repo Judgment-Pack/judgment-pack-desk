@@ -514,13 +514,18 @@ describe('Create writes the proposal', () => {
   })
 
   it('will not create while the assistant is still running, and says why', async () => {
+    // **Measured as a change**, not as a state. A dialog that has not yet been
+    // given a name, or whose template has not arrived, is disabled for its own
+    // reasons — so the first `waitFor` here would succeed against a Create
+    // button that was about to become enabled, and a row that removed the
+    // run's own condition would report nothing failing. The claim is that a
+    // Create which *was* offered stops being offered while a run is in flight.
     serve({ hang: true })
     draw()
+    await nameIt('Vendor Onboarding')
+    expect(createButton().disabled).toBe(false)
     await propose()
     await waitFor(() => expect(runtime!.opened.length).toBe(1))
-    fireEvent.change(screen.getByLabelText('Name (required)'), {
-      target: { value: 'Vendor Onboarding' }
-    })
     await waitFor(() => expect(createButton().disabled).toBe(true))
     expect(createButton().title).toBe(
       'The assistant is still running. Stop it or wait for it to end.'
