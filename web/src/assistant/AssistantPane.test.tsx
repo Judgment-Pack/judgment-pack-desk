@@ -505,8 +505,19 @@ describe('stopping', () => {
 })
 
 describe('accepting the proposal into the draft', () => {
-  /** The draft as an author's file: four spaces, so a rewrite is visible. */
-  const DRAFT = `${JSON.stringify(scenario.documents.DRAFT_V1, null, 4)}\n`
+  /**
+   * The draft as an author's file: four spaces, and `decision` collapsed onto
+   * one line.
+   *
+   * The flourish is what makes the byte claim below a measurement. A fixture
+   * shaped exactly like `JSON.stringify` cannot tell "this member was not
+   * written" from "this member was written again and came back the same".
+   */
+  const DRAFT = (() => {
+    const text = `${JSON.stringify(scenario.documents.DRAFT_V1, null, 4)}\n`
+    const held = bytesAt(buffered(text), '/decision')!
+    return text.replace(held, JSON.stringify(JSON.parse(held)))
+  })()
 
   async function runOver(options: { editing?: boolean } = {}) {
     await draw({ buffer: { text: DRAFT, editing: options.editing ?? true } })
@@ -534,8 +545,10 @@ describe('accepting the proposal into the draft', () => {
       if (name === 'version' || name === 'rules') continue
       expect(bytesAt(after, `/${name}`)).toBe(bytesAt(before, `/${name}`))
     }
-    // And the author's own four spaces are still the document's layout.
+    // And the author's own layout is still the document's: four spaces, and
+    // the one member they wrote on a single line.
     expect(after.text).toContain('\n    "specVersion"')
+    expect(bytesAt(after, '/decision')).toBe(JSON.stringify(scenario.documents.DRAFT_V1.decision))
   })
 
   it('is one write, one undo entry, and one step back to where it started', async () => {

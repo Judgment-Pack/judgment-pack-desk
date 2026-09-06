@@ -74,9 +74,10 @@ export function applyProposal(current: Buffered, document: unknown): Buffered {
     // The bytes scan and are not an object, or the proposal is not one: one
     // value replaces another, in place, and the file's own leading and
     // trailing bytes stay where they are.
-    return setRawJson(current, '', text(proposed, ''))
+    return setRawJson(current, '', text(proposed, '', stepOf(current)))
   }
 
+  const step = stepOf(current)
   let next = current
   for (const name of Object.keys(draft)) {
     if (Object.hasOwn(proposed, name)) continue
@@ -90,15 +91,21 @@ export function applyProposal(current: Buffered, document: unknown): Buffered {
     // Untouched: no write at all, so the member's bytes are the bytes it had.
     if (sameValue(before, after)) continue
     if (Array.isArray(before) && Array.isArray(after) && isArrayAt(next, at)) {
-      next = applyArray(next, at, before, after)
+      next = applyArray(next, at, before, after, step)
       continue
     }
-    next = setRawJson(next, at, text(after, indentOf(next, at)))
+    next = setRawJson(next, at, text(after, indentOf(next, at), step))
   }
   for (const name of Object.keys(proposed)) {
     if (Object.hasOwn(draft, name)) continue
     const value = proposed[name]
-    next = addMember(next, '', name, text(value, childIndent(next, '')), placeAfter(next, proposed, name))
+    next = addMember(
+      next,
+      '',
+      name,
+      text(value, childIndent(next, ''), step),
+      placeAfter(next, proposed, name)
+    )
   }
   return next
 }
@@ -120,7 +127,8 @@ function applyArray(
   current: Buffered,
   at: string,
   before: readonly unknown[],
-  after: readonly unknown[]
+  after: readonly unknown[],
+  step: string
 ): Buffered {
   const { pairs } = matchElements(before, after)
   const kept = new Map<number, number>()
@@ -155,7 +163,7 @@ function applyArray(
     const from = pairs[to]!
     if (sameValue(before[from], after[to])) continue
     const pointer = `${at}/${position}`
-    next = setRawJson(next, pointer, text(after[to], indentOf(next, pointer)))
+    next = setRawJson(next, pointer, text(after[to], indentOf(next, pointer), step))
   }
 
   // The new elements, in ascending order — so positions 0…j-1 are already
@@ -164,7 +172,7 @@ function applyArray(
     if (pairs[to] !== undefined) continue
     const placement: Placement = to === 0 ? { first: true } : { after: `${at}/${to - 1}` }
     const neighbour = to === 0 ? `${at}/0` : `${at}/${to - 1}`
-    next = addElement(next, at, text(after[to], indentOf(next, neighbour)), placement)
+    next = addElement(next, at, text(after[to], indentOf(next, neighbour), step), placement)
   }
   return next
 }
@@ -178,22 +186,40 @@ function applyArray(
  */
 function whole(current: Buffered, proposed: unknown): Buffered {
   const tail = current.text === '' || current.text.endsWith('\n') ? '\n' : ''
-  return buffered(`${text(proposed, '')}${tail}`)
+  // Bytes nobody can read say nothing about a step either, so this one is the
+  // runtime's own.
+  return buffered(`${text(proposed, '', '  ')}${tail}`)
 }
 
 /**
  * One value as the bytes to write, laid out where it is going.
  *
- * Two spaces per level, which is the layout of every fixture and of everything
- * `jpack` writes — and then every line after the first carries the indentation
- * the member itself sits at, so a rule written into a rules array four columns
- * in is not left hanging at column zero. The first line is not indented: the
- * writer is splicing it in after `"name": ` or after a neighbour's own leading
- * run.
+ * **The step is the document's own**, read off its first member — four spaces
+ * in a file written with four, a tab in a file written with tabs — because a
+ * member written with this module's house style inside somebody else's file is
+ * a diff line for every line of it. And every line after the first carries the
+ * indentation the member itself sits at, so a rule written into a rules array
+ * four columns in is not left hanging at column zero. The first line is not
+ * indented: the writer is splicing it in after `"name": ` or after a
+ * neighbour's own leading run.
  */
-function text(value: unknown, indent: string): string {
-  const written = JSON.stringify(value, null, 2) ?? 'null'
+function text(value: unknown, indent: string, step: string): string {
+  const written = JSON.stringify(value, null, step) ?? 'null'
   return indent === '' ? written : written.split('\n').join(`\n${indent}`)
+}
+
+/**
+ * The indentation step one document is written with.
+ *
+ * Read off the first member the document declares, which is the same rule
+ * `insertMember` follows for the whitespace *around* a member: the layout is
+ * the document's and is never invented. A document with no member to learn
+ * from — an empty object, or one written on a single line — says nothing about
+ * a step, and two spaces is what `jpack` itself writes.
+ */
+function stepOf(current: Buffered): string {
+  const first = childIndent(current, '')
+  return first === '' ? '  ' : first
 }
 
 /** The whitespace one member sits behind on its own line. */

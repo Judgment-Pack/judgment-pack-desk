@@ -20,8 +20,23 @@ import { bytesAt, buffered } from '../packs/edit/writes'
 const DRAFT_V1 = scenario.documents.DRAFT_V1 as Record<string, unknown>
 const DRAFT_V2 = scenario.documents.DRAFT_V2 as Record<string, unknown>
 
-/** The draft as an author's file: four spaces, and a trailing newline. */
-const fileText = (value: unknown) => `${JSON.stringify(value, null, 4)}\n`
+/**
+ * The draft as an author's file: four spaces, a trailing newline, and one
+ * member the author collapsed onto a single line.
+ *
+ * The flourish is the point. A fixture whose every member is exactly what
+ * `JSON.stringify` would produce cannot tell "the member was not written" from
+ * "the member was written again and came back the same", and the byte claim
+ * this file exists for would pass for a writer that rewrote the whole file.
+ */
+const fileText = (value: unknown) => collapse(`${JSON.stringify(value, null, 4)}\n`)
+
+/** `decision`, as somebody who liked it on one line left it. */
+function collapse(text: string): string {
+  const held = bytesAt(buffered(text), '/decision')
+  if (held === undefined) return text
+  return text.replace(held, JSON.stringify(JSON.parse(held)))
+}
 
 describe('the scenario’s own accept', () => {
   const before = buffered(fileText(DRAFT_V1))
@@ -37,6 +52,10 @@ describe('the scenario’s own accept', () => {
       if (moved.has(name)) continue
       expect(bytesAt(after, `/${name}`)).toBe(bytesAt(before, `/${name}`))
     }
+    // Including the one the author wrote their own way, which is the member a
+    // re-serialization would quietly reformat.
+    expect(bytesAt(after, '/decision')).toBe(JSON.stringify(DRAFT_V1.decision))
+    expect(after.text).toContain(`\n    "decision": ${JSON.stringify(DRAFT_V1.decision)},`)
   })
 
   it('leaves the rules it did not touch byte-identical, in their new places', () => {
@@ -50,8 +69,10 @@ describe('the scenario’s own accept', () => {
 
   it('keeps the file’s own layout for what it wrote', () => {
     // The member the proposal adds is written at the indentation the document
-    // uses, not at this module's own.
+    // uses, and with the step the document is written in — four spaces, not
+    // this module's own two.
     expect(after.text).toContain('\n    "exceptions": [')
+    expect(after.text).toContain('\n        {\n            "id": "large-claim-to-finance"')
     expect(after.text.endsWith('\n')).toBe(true)
     // And nothing was re-indented: the draft's four spaces survive.
     expect(after.text).not.toContain('\n  "specVersion"')
@@ -107,7 +128,8 @@ describe('members', () => {
     const after = applyProposal(before, { a: 1, b: { deep: [1] } })
     expect(JSON.parse(after.text)).toEqual({ a: 1, b: { deep: [1] } })
     expect(after.text).toContain('\n\t"b": {')
-    expect(after.text).toContain('\n\t  "deep"')
+    // The step is the document's own, read off its first member.
+    expect(after.text).toContain('\n\t\t"deep"')
   })
 })
 
