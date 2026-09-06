@@ -77,6 +77,15 @@ export function withAbort<T>(work: () => Promise<T>, signal: AbortSignal): Promi
         reject(cause)
       }
     )
+    // **Read again, after the listener exists.** A run that closed *while*
+    // `work()` was running — a capability that aborts the session itself, a
+    // consumer that left during a synchronous dispatch — fired its `abort`
+    // before this listener was registered, so the listener never ran and the
+    // await hung on whatever `work()` returned. The check at the top of this
+    // function cannot see that: it happens before the work starts. Rejecting
+    // here after the handlers are attached settles the wait and leaves nothing
+    // unclaimed, because `started` already has both of them.
+    if (signal.aborted) cancelled()
   })
 }
 

@@ -99,6 +99,17 @@ export type ModelCall = (suffix: string, request: ModelRequest) => Promise<Respo
 export interface AssistantSession {
   /** The runtime's prompt text, from `prompts/get`. */
   prompt: string
+  /**
+   * The runtime's **testing** prompt, for the refutation pass, or `''`.
+   *
+   * A second string rather than a capability, and read where the session's
+   * other prompt is read: an engine cannot ask the runtime for a prompt —
+   * `callTool` is the whole of its reach and `prompts/get` is not a tool — and
+   * giving it one would be a second door beside the gate. Empty where the
+   * runtime advertises no `test_pack`, or where the tier is off and no critic
+   * will run; the critic then works from the desk's one fixed sentence alone.
+   */
+  testPrompt: string
   /** The allow-listed tools, exactly as `tools/list` served them. */
   tools: McpTool[]
   /** Bound through the ToolGate. */

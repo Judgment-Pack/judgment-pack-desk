@@ -34,12 +34,13 @@ import { EventList } from '../assistant/EventList'
 import {
   ProposalSummaryLine,
   ProposalUnknowns,
+  RefutationReport,
   RuntimeChecks
 } from '../assistant/ProposalReport'
 import { useAssistantRun } from '../assistant/useAssistantRun'
 import { outcomeOf, type ProposalEvent } from '../assistant/runOutcome'
 import { useAssistantSlot } from '../assistant/useAssistantSlot'
-import { AUTHOR_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
+import { AUTHOR_PACK_PROMPT, TEST_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
 import { Button } from '../ui/Button'
 import { CodeArea } from '../ui/CodeArea'
 import { TextArea } from '../ui/TextArea'
@@ -198,12 +199,19 @@ export function useDescribeIt(): DescribeItState {
     submitted !== null && submitted.id !== stoppedId && advertised,
     submitted?.args
   )
+  // The runtime's testing prompt, for the refutation pass, and only where a
+  // critic will run. Same reading as the Assistant tab's, for the same reason.
+  const testPrompt = usePromptText(
+    TEST_PACK_PROMPT,
+    slot.thinking !== 'off' && (prompts.data ?? []).includes(TEST_PACK_PROMPT)
+  )
   const run = useAssistantRun({
     // Only ever started where the endpoint exists; the fallback keeps the hook
     // unconditional, which is the rule React enforces.
     endpoint: slot.endpoint ?? NO_ENDPOINT,
     engine: slot.engine,
-    thinking: slot.thinking
+    thinking: slot.thinking,
+    testPrompt: testPrompt.data?.text ?? ''
   })
 
   // The run starts once the prompt this submission asked for has arrived, and
@@ -479,6 +487,7 @@ function Section({ state }: { state: DescribeItState }) {
           <ProposalSummaryLine document={proposal.document} />
           <ProposalUnknowns unknowns={proposal.unknowns} />
           <RuntimeChecks events={state.events} />
+          <RefutationReport events={state.events} />
           <details className={styles.disclosure}>
             <summary className={styles.summary}>Show document</summary>
             <CodeArea

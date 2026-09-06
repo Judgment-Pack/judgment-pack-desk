@@ -86,6 +86,53 @@ export function ProposalUnknowns({ unknowns }: { unknowns: readonly string[] }) 
 }
 
 /**
+ * The refutation pass, reported: what the runtime said, and what the critic
+ * said about it.
+ *
+ * **The verdict is the runtime's and the prose is the model's, and the two are
+ * never mixed.** The `critique` event carries a verdict this desk computed from
+ * the runtime's own statuses (`assistant/refutation.ts`); the critic's own
+ * words are shown beneath it, labelled, because they are worth reading and are
+ * not evidence.
+ *
+ * A pass that reached no runtime check says so and states no verdict — which is
+ * ADR-0001's first rule: a non-empty list of checks before "not refuted" is
+ * rendered.
+ */
+export function RefutationReport({ events }: { events: readonly AssistantEvent[] }) {
+  const critique = [...events]
+    .reverse()
+    .find(
+      (event): event is Extract<AssistantEvent, { type: 'critique' }> => event.type === 'critique'
+    )
+  if (critique === undefined) return null
+  return (
+    <div>
+      <p className={styles.label}>The refutation pass</p>
+      {critique.checks.length === 0 ? (
+        <p className={styles.honesty}>{critique.text}</p>
+      ) : (
+        <>
+          <p className={critique.refuted ? styles.notice : styles.honesty}>
+            {critique.refuted
+              ? 'The runtime refuted this proposal.'
+              : 'The runtime did not refute this proposal.'}{' '}
+            {critique.text}
+          </p>
+          <ul className={styles.unknowns}>
+            {critique.checks.map((check, index) => (
+              <li key={`${check.tool}:${index}`}>
+                <code>{check.tool}</code> → <strong>{check.status}</strong>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
  * The runtime's two answers, quoted.
  *
  * The **last** answer for each name, because a session that validated a draft

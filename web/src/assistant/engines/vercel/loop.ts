@@ -58,11 +58,20 @@ import {
   withAbort
 } from '../contract'
 import { openThinking } from '../../thinking'
+import {
+  CRITIC_SYSTEM,
+  MAX_CRITIC_TURNS,
+  criticMessage,
+  critiqueEvent,
+  critiqueOnProposal,
+  openCritique
+} from '../../refutation'
 import { eventChannel } from './channel'
 import { placeholderBase, relayFetch, signatureLedger } from './relay'
 import type { LanguageModel, ToolSet } from 'ai'
 import type { EndpointKind } from '../../../config/deskConfig'
 import type { AssistantEvent, AssistantSession, McpTool, McpToolResult } from '../../engine'
+import type { CritiqueRecorder } from '../../refutation'
 import type { SignatureLedger } from './relay'
 
 /**
@@ -391,6 +400,15 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
       produced.count += 1
       await channel.push(event)
     }
+    /**
+     * The critic's recorder, while the critic is running.
+     *
+     * The tool dispatch below is the **same** one the main loop uses — same
+     * gate, same events, same rehearsal hook — so the pass does not get a
+     * dispatch of its own to be outside anything with. What changes for the
+     * length of the pass is that the answers are also shown to the recorder.
+     */
+    let recording: CritiqueRecorder | null = null
     /** The degrade notice a fetch may have produced, flushed in stream order. */
     const flush = async (): Promise<void> => {
       if (owed === null) return
@@ -437,12 +455,28 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
         text: said.text,
         ...(said.structured === undefined ? {} : { structured: said.structured })
       })
+      // Every answer that came back through the gate, while the critic is the
+      // one asking. Which of them is a check is the desk's decision.
+      recording?.saw(name, said.text, said.isError)
       return answer
     })
 
+    // One model and one refinement hook, shared by the loop and the critic:
+    // the pass runs on the same everything, which is what makes "inside the
+    // same ToolGate" structural rather than a habit.
+    const model = modelFor(session, gate.signal, ledger, onTruncated)
+    // See REHEARSAL_HOOK. The key is the constant, never a literal.
+    const refine = {
+      [REHEARSAL_TOOL]: (input: unknown) => {
+        asked.push(input)
+        const already = (input as { rehearsal?: unknown } | null)?.rehearsal === true
+        return already ? input : { ...(input as object), rehearsal: true }
+      }
+    }
+
     let streamed: unknown = null
     const result = streamText({
-      model: modelFor(session, gate.signal, ledger, onTruncated),
+      model,
       instructions: SYSTEM,
       tools,
       messages: [{ role: 'user', content: session.prompt }],
@@ -467,14 +501,7 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
       onError: (event: { error: unknown }) => {
         streamed ??= event.error
       },
-      // See REHEARSAL_HOOK. The key is the constant, never a literal.
-      [REHEARSAL_HOOK]: {
-        [REHEARSAL_TOOL]: (input: unknown) => {
-          asked.push(input)
-          const already = (input as { rehearsal?: unknown } | null)?.rehearsal === true
-          return already ? input : { ...(input as object), rehearsal: true }
-        }
-      }
+      [REHEARSAL_HOOK]: refine
     })
 
     // **Before anything is awaited, and the only claim there is.** Every
@@ -585,10 +612,87 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
     const proposal = extractProposal(
       final !== '' ? final : await withAbort(() => Promise.resolve(result.text), gate.signal)
     )
+
+    /**
+     * The refutation pass: a second `streamText`, which is this SDK's own
+     * subagent shape, on the same model, the same tool set and the same
+     * refinement hook.
+     *
+     * It runs after the proposal exists and **before** the proposal event is
+     * delivered, and every call it makes is a read.
+     */
+    let critique = null as ReturnType<CritiqueRecorder['critique']> | null
+    if (slot.runsRefutation()) {
+      const recorder = openCritique()
+      recording = recorder
+      let criticText = ''
+      let criticReasoning = ''
+      try {
+        const critic = streamText({
+          model,
+          instructions: CRITIC_SYSTEM,
+          tools,
+          messages: [
+            { role: 'user', content: criticMessage(session.testPrompt, proposal.document) }
+          ],
+          stopWhen: stepCountIs(MAX_CRITIC_TURNS),
+          abortSignal: gate.signal,
+          maxRetries: 0,
+          onError: (event: { error: unknown }) => {
+            streamed ??= event.error
+          },
+          prepareStep: () => sdkThinking(session.model.family, slot.members()),
+          [REHEARSAL_HOOK]: refine
+        })
+        claimPromises(critic)
+        const criticParts = critic.stream[Symbol.asyncIterator]()
+        for (;;) {
+          const step = await withAbort(() => criticParts.next(), gate.signal)
+          if (step.done === true) break
+          await flush()
+          const part = step.value
+          if (part.type === 'start-step') {
+            criticText = ''
+            continue
+          }
+          if (part.type === 'error') {
+            streamed ??= (part as { error: unknown }).error
+            continue
+          }
+          if (part.type === 'reasoning-delta') {
+            const text = (part as { text?: string }).text ?? ''
+            criticReasoning += text
+            const carried = (
+              part as { providerMetadata?: { anthropic?: { signature?: unknown } } }
+            ).providerMetadata?.anthropic?.signature
+            if (typeof carried === 'string') {
+              ledger.fragment(String((part as { id?: unknown }).id ?? ''), carried)
+            }
+            if (text !== '') await deliver({ type: 'reasoning', text, done: false })
+            continue
+          }
+          if (part.type === 'reasoning-end') {
+            await deliver({ type: 'reasoning', text: criticReasoning, done: true })
+            criticReasoning = ''
+            continue
+          }
+          if (part.type === 'text-delta') criticText += (part as { text?: string }).text ?? ''
+        }
+      } finally {
+        // Whatever happened, the main loop's dispatch stops feeding a recorder
+        // nobody is reading.
+        recording = null
+      }
+      if (streamed !== null) throw streamed
+      critique = recorder.critique(criticText)
+      await deliver(critiqueEvent(critique))
+    }
+
     await deliver({
       type: 'proposal',
       document: proposal.document,
-      unknowns: proposal.unknowns
+      unknowns: proposal.unknowns,
+      ...critiqueOnProposal(critique)
     })
   }
 

@@ -66,3 +66,39 @@ describe('what a run stands behind', () => {
     expect(outcome.failure).toBe('while unwinding')
   })
 })
+
+describe('a refuted proposal is still a clean run', () => {
+  /**
+   * **Refutation is information, not failure.**
+   *
+   * The refutation pass runs the runtime over the document the session
+   * proposed, and a `critique` saying the runtime refused it is exactly the
+   * thing a person needs to see before deciding. It is not an `error`, it does
+   * not withdraw the proposal, and the two surfaces that act on one — the tab's
+   * Accept and the Create dialog's write — read the same selector, so a rule
+   * about that lives here rather than in either of them.
+   */
+  it('lets a refuted proposal be acted on, with the runtime’s words beside it', () => {
+    const outcome = outcomeOf({
+      events: [
+        { type: 'critique', refuted: true, checks: [{ tool: 'validate', status: 'invalid' }], text: 'quoted from the runtime: validate → "status": "invalid", 1 diagnostic(s)' },
+        { type: 'proposal', document: { id: 'a' }, unknowns: [], critique: { refuted: true } },
+        { type: 'end' }
+      ]
+    })
+    expect(outcome.failure).toBe('')
+    expect(outcome.proposal?.critique).toEqual({ refuted: true })
+  })
+
+  it('is unmoved by a critique that found nothing either', () => {
+    const outcome = outcomeOf({
+      events: [
+        { type: 'critique', refuted: false, checks: [], text: 'the critic ran no runtime check' },
+        { type: 'proposal', document: { id: 'a' }, unknowns: [] },
+        { type: 'end' }
+      ]
+    })
+    expect(outcome.failure).toBe('')
+    expect(outcome.proposal).toBeDefined()
+  })
+})

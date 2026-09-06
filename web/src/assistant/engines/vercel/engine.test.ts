@@ -30,6 +30,7 @@ import {
   withoutTruncatedThinking
 } from './relay'
 import { normalize } from '../../thinking'
+import { REFUTATION_MARKER } from '../../refutation'
 import type { streamText } from 'ai'
 import type { AssistantEvent, AssistantSession, McpTool, ModelCall, McpToolResult } from '../../engine'
 
@@ -170,6 +171,7 @@ function session(
 ): AssistantSession {
   return {
     prompt: 'the runtime’s prompt',
+    testPrompt: 'the runtime’s test_pack guidance',
     tools: TOOLS,
     callTool:
       callTool ??
@@ -1039,6 +1041,13 @@ describe('the thinking tier, through the SDK’s own call settings', () => {
   it('degrades once on a 400 that names the member, and completes', async () => {
     const seen: Record<string, unknown>[] = []
     const call: ModelCall = async (_suffix, request) => {
+      // The critic is a second conversation and is not what this measures.
+      if (request.body.includes(REFUTATION_MARKER)) {
+        return new Response(turn({ text: 'REFUTATION: nothing to report.' }), {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' }
+        })
+      }
       seen.push(JSON.parse(request.body) as Record<string, unknown>)
       if (seen.length === 1) {
         return new Response(
@@ -1060,13 +1069,19 @@ describe('the thinking tier, through the SDK’s own call settings', () => {
     expect(Object.keys(seen[1]!)).not.toContain('reasoning_effort')
     const notices = events.filter((event) => event.type === 'thinking_unavailable')
     expect(notices).toHaveLength(1)
-    expect(events[events.length - 2]!.type).toBe('proposal')
+    expect(events.some((event) => event.type === 'proposal')).toBe(true)
     expect(events[events.length - 1]!.type).toBe('end')
   })
 
   it('falls back once to the other Anthropic spelling, and says nothing about it', async () => {
     const seen: Record<string, unknown>[] = []
     const call: ModelCall = async (_suffix, request) => {
+      if (request.body.includes(REFUTATION_MARKER)) {
+        return new Response(anthropicTurn({ text: 'REFUTATION: nothing to report.' }), {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' }
+        })
+      }
       seen.push(JSON.parse(request.body) as Record<string, unknown>)
       if (seen.length === 1) {
         return new Response(
@@ -1101,7 +1116,7 @@ describe('the thinking tier, through the SDK’s own call settings', () => {
     const notices = events.filter((event) => event.type === 'thinking_unavailable')
     expect(notices).toHaveLength(1)
     expect((notices[0] as { detail: string }).detail).toContain('no reasoning block')
-    expect(events[events.length - 2]!.type).toBe('proposal')
+    expect(events.some((event) => event.type === 'proposal')).toBe(true)
   })
 })
 
@@ -1163,6 +1178,12 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
   it('detects the truncation on a real session and degrades once', async () => {
     const seen: Record<string, unknown>[] = []
     const call: ModelCall = async (_suffix, request) => {
+      if (request.body.includes(REFUTATION_MARKER)) {
+        return new Response(anthropicTurn({ text: 'REFUTATION: nothing to report.' }), {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' }
+        })
+      }
       seen.push(JSON.parse(request.body) as Record<string, unknown>)
       if (seen.length === 1) {
         return new Response(
@@ -1206,5 +1227,178 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
     // The session still completes: a degrade is not a refusal.
     expect(events[events.length - 1]!.type).toBe('end')
     expect(events.some((event) => event.type === 'proposal')).toBe(true)
+  })
+})
+
+describe('the refutation pass, on this SDK’s second streamText', () => {
+  const VALID = JSON.stringify({ status: 'valid', diagnostics: [] })
+  const INVALID = JSON.stringify({
+    status: 'invalid',
+    diagnostics: [{ code: 'JPS-SEMANTIC-UNRESOLVED-OUTCOME' }]
+  })
+
+  /** A session whose main loop proposes at once and whose critic runs a script. */
+  function criticised(options: {
+    tier: 'off' | 'on' | 'ultra'
+    criticCalls?: { name: string; args: Record<string, unknown> }[]
+    criticSays: string
+    answer: string
+  }): { session: AssistantSession; asked: { name: string; args: unknown }[]; critic: string[] } {
+    const asked: { name: string; args: unknown }[] = []
+    const critic: string[] = []
+    let criticTurn = 0
+    const call: ModelCall = async (_suffix, request) => {
+      const stream = (text: string) =>
+        new Response(text, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+      if (request.body.includes(REFUTATION_MARKER)) {
+        critic.push(request.body)
+        criticTurn += 1
+        const next = (options.criticCalls ?? [])[criticTurn - 1]
+        return stream(
+          next === undefined ? turn({ text: options.criticSays }) : turn({ tool: next })
+        )
+      }
+      return stream(turn({ text: PROPOSAL_TEXT }))
+    }
+    return {
+      session: session(
+        call,
+        { thinking: normalize(options.tier, 'openai-compatible') },
+        async (name, args) => {
+          asked.push({ name, args })
+          return { content: [{ type: 'text', text: options.answer }] }
+        }
+      ),
+      asked,
+      critic
+    }
+  }
+
+  it('does not run at all where the tier is off', async () => {
+    const one = criticised({ tier: 'off', criticSays: 'x', answer: VALID })
+    const events = await drain(vercel.start(one.session))
+    expect(one.critic).toEqual([])
+    expect(events.some((event) => event.type === 'critique')).toBe(false)
+  })
+
+  it('runs after the proposal exists and before it is shown', async () => {
+    const one = criticised({
+      tier: 'on',
+      criticCalls: [{ name: 'validate', args: { document: '{}' } }],
+      criticSays: 'REFUTATION: none found.',
+      answer: VALID
+    })
+    const events = await drain(vercel.start(one.session))
+    const kinds = events.map((event) => event.type)
+    expect(kinds).toContain('critique')
+    expect(kinds.indexOf('critique')).toBeLessThan(kinds.indexOf('proposal'))
+    // The critic's own call travelled the session's `callTool` — the same
+    // capability, through the same gate, as the main loop's.
+    expect(one.asked).toEqual([{ name: 'validate', args: { document: '{}' } }])
+    expect(kinds.filter((kind) => kind === 'tool_call')).toHaveLength(1)
+  })
+
+  it('takes the verdict from the runtime and not from the critic’s prose', async () => {
+    const one = criticised({
+      tier: 'on',
+      criticCalls: [{ name: 'validate', args: { document: '{}' } }],
+      criticSays: 'REFUTATION: this pack is broken and must not be used.',
+      answer: VALID
+    })
+    const events = await drain(vercel.start(one.session))
+    const critique = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'critique' }> => event.type === 'critique'
+    )!
+    expect(critique.refuted).toBe(false)
+    expect(critique.checks).toEqual([{ tool: 'validate', status: 'valid' }])
+  })
+
+  it('reports refuted where the runtime refused, whatever the critic said', async () => {
+    const one = criticised({
+      tier: 'on',
+      criticCalls: [{ name: 'validate', args: { document: '{}' } }],
+      criticSays: 'REFUTATION: none found. Everything checks out.',
+      answer: INVALID
+    })
+    const events = await drain(vercel.start(one.session))
+    const critique = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'critique' }> => event.type === 'critique'
+    )!
+    expect(critique.refuted).toBe(true)
+    const proposal = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'proposal' }> => event.type === 'proposal'
+    )!
+    expect(proposal.critique).toEqual({ refuted: true })
+    expect(proposal.document).toBeDefined()
+  })
+
+  it('says the critic ran no check, and puts no line on the proposal', async () => {
+    const one = criticised({ tier: 'on', criticSays: 'I had a look.', answer: VALID })
+    const events = await drain(vercel.start(one.session))
+    const critique = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'critique' }> => event.type === 'critique'
+    )!
+    expect(critique.checks).toEqual([])
+    expect(critique.text).toContain('no runtime check')
+    const proposal = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'proposal' }> => event.type === 'proposal'
+    )!
+    expect(proposal.critique).toBeUndefined()
+  })
+
+  it('rehearses the critic’s evaluate through the same hook as the main loop’s', async () => {
+    // The critic gets the **same** tool set and the same refinement hook, so an
+    // evaluate it asks for without a rehearsal member is rewritten before it is
+    // executed — and the desk's gate below rewrites it again on the wire.
+    const one = criticised({
+      tier: 'on',
+      criticCalls: [{ name: 'experimental_evaluate', args: { pack: '{}', facts: '{}' } }],
+      criticSays: 'REFUTATION: none found.',
+      answer: JSON.stringify({ status: 'evaluated', rehearsal: true })
+    })
+    const events = await drain(vercel.start(one.session))
+    expect(one.asked).toEqual([
+      { name: 'experimental_evaluate', args: { pack: '{}', facts: '{}' } }
+    ])
+    const critique = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'critique' }> => event.type === 'critique'
+    )!
+    expect(critique.checks).toEqual([{ tool: 'experimental_evaluate', status: 'evaluated' }])
+    // **`evaluated` is not `valid`, and it does not refute.** One word over
+    // both tools would report every session ever run as refuted.
+    expect(critique.refuted).toBe(false)
+  })
+
+  it('hands the critic the runtime’s testing prompt and the proposed document', async () => {
+    const one = criticised({ tier: 'on', criticSays: 'done', answer: VALID })
+    await drain(vercel.start(one.session))
+    expect(one.critic[0]).toContain('test_pack guidance')
+    expect(one.critic[0]).toContain(REFUTATION_MARKER)
+    expect(one.critic[0]).toContain('A pack')
+  })
+
+  it('ends where the run does, and says nothing after it', async () => {
+    const controller = new AbortController()
+    const call: ModelCall = async (_suffix, request) => {
+      if (request.body.includes(REFUTATION_MARKER)) {
+        controller.abort()
+        return new Promise<Response>(() => {})
+      }
+      return new Response(turn({ text: PROPOSAL_TEXT }), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' }
+      })
+    }
+    const events = await drain(
+      vercel.start(
+        session(call, {
+          signal: controller.signal,
+          thinking: normalize('on', 'openai-compatible')
+        })
+      )
+    )
+    expect(events.map((event) => event.type)).not.toContain('critique')
+    expect(events.map((event) => event.type)).not.toContain('proposal')
+    expect(events.map((event) => event.type)).not.toContain('end')
   })
 })

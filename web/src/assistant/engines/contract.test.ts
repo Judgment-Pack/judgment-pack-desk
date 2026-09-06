@@ -70,6 +70,7 @@ function waiting(): {
 function sessionWith(signal: AbortSignal): AssistantSession {
   return {
     prompt: 'p',
+    testPrompt: '',
     tools: [],
     callTool: async () => ({ content: [] }),
     model: { family: 'openai-compatible', model: 'm', call: async () => new Response('{}') },

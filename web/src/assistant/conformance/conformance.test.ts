@@ -44,6 +44,9 @@ import runtime from './runtime.json'
 import type { AssistantEvent, Engine } from '../engine'
 
 const FIVE = scenario.scenarioTools
+
+/** The stand-in for the runtime's `test_pack` prompt. See `runLeg`. */
+const TEST_PROMPT = 'THE RUNTIME’S TEST_PACK GUIDANCE, AS PROMPTS/GET SERVED IT'
 const DRAFT_V2 = scenario.documents.DRAFT_V2 as unknown
 
 /**
@@ -606,6 +609,11 @@ async function runLeg(
         // runtime's; what matters here is that the engine sends it and adds
         // no authoring instructions of its own.
         prompt: `${scenario.policy}`,
+        // The runtime's own `test_pack` guidance is what the critic works from
+        // on the page. This session carries no recorded `prompts/get`, so it
+        // hands over a stand-in and the legs assert the stand-in travelled —
+        // which measures the engine and models the runtime's text.
+        testPrompt: TEST_PROMPT,
         tools: ready.tools,
         callTool: ready.callTool,
         model: { family: leg.api, model: 'scripted-model', call },

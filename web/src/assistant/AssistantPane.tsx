@@ -34,7 +34,13 @@
  * connection; coming back is a new one.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AUTHOR_PACK_PROMPT, FIX_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
+import {
+  AUTHOR_PACK_PROMPT,
+  FIX_PACK_PROMPT,
+  TEST_PACK_PROMPT,
+  usePromptNames,
+  usePromptText
+} from '../mcp/prompts'
 import { Button } from '../ui/Button'
 import { CodeArea } from '../ui/CodeArea'
 import { TextArea } from '../ui/TextArea'
@@ -42,7 +48,7 @@ import { useEditing } from '../packs/edit/editingContext'
 import type { BufferIdentity } from '../packs/edit/useDocumentBuffer'
 import { EventList } from './EventList'
 import { ProposalDiffView } from './ProposalDiff'
-import { ProposalUnknowns, RuntimeChecks } from './ProposalReport'
+import { ProposalUnknowns, RefutationReport, RuntimeChecks } from './ProposalReport'
 import { DRAFT_MOVED, acceptState, applyProposal, writable, type Disposition } from './acceptProposal'
 import { diffProposal } from './proposalDiff'
 import { outcomeOf } from './runOutcome'
@@ -230,12 +236,26 @@ export function AssistantPane({
   /** Which prompt the run on screen is of, once one has started. */
   const [ran, setRan] = useState<string | undefined>(undefined)
 
+  /**
+   * The runtime's testing prompt, for the refutation pass.
+   *
+   * Read **only where a critic will run** — the pass is gated on the tier, so a
+   * desk at `off` spends no `prompts/get` on it — and read with no `pack`
+   * argument, because the document the critic will be given does not exist
+   * until the session has produced it. The critic is handed the document
+   * itself, fenced, beside this guidance.
+   */
+  const testPrompt = usePromptText(
+    TEST_PACK_PROMPT,
+    slot.thinking !== 'off' && (prompts.data ?? []).includes(TEST_PACK_PROMPT)
+  )
   const run = useAssistantRun({
     // Only rendered where the endpoint exists; the fallback keeps the hook
     // unconditional, which is the rule React enforces.
     endpoint: slot.endpoint ?? { url: '', kind: 'openai-compatible', model: '', tools: [] },
     engine: slot.engine,
-    thinking: slot.thinking
+    thinking: slot.thinking,
+    testPrompt: testPrompt.data?.text ?? ''
   })
 
   // The run starts when the prompt this submission asked for has arrived, and
@@ -496,6 +516,7 @@ export function AssistantPane({
           />
           <ProposalUnknowns unknowns={proposal.unknowns} />
           <RuntimeChecks events={run.events} />
+          <RefutationReport events={run.events} />
           <div className={styles.actions}>
             {/*
               **The reading route has no draft to accept into**, so it says

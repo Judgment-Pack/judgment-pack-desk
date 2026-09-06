@@ -14,6 +14,8 @@ import { MAX_TURNS, extractProposal } from './loop'
 import { protocolHeaders } from './providers/types'
 import { ASSISTANT_ENGINES } from '../../../config/deskConfig'
 import { normalize } from '../../thinking'
+import { REFUTATION_MARKER } from '../../refutation'
+import { REFUTE_ON_A_DEGRADED_ENDPOINT } from '../../thinking'
 import type {
   AssistantEvent,
   AssistantSession,
@@ -65,6 +67,7 @@ function stubModel(
 function session(overrides: Partial<AssistantSession> = {}): AssistantSession {
   return {
     prompt: 'the runtime’s prompt',
+    testPrompt: 'the runtime’s test_pack guidance',
     tools: TOOLS,
     callTool: async () => ({ content: [{ type: 'text', text: '{"status":"valid"}' }] }),
     model: { family: 'openai-compatible', model: 'a-model', call: async () => new Response('{}') },
@@ -382,17 +385,33 @@ describe('the event stream', () => {
 })
 
 describe('the thinking tier, on this engine’s own wire', () => {
-  /** A model capability that answers a scripted list of Responses in order. */
-  function answering(answers: (turn: number) => Response): {
+  /**
+   * A model capability that answers a scripted list of Responses in order.
+   *
+   * `turn` counts only the **main loop's** requests: the refutation pass is a
+   * second conversation and is answered by `criticAnswer` below, so a test
+   * about the tier is not also a test about the critic.
+   */
+  function answering(
+    answers: (turn: number) => Response,
+    criticAnswer: () => Response = () => whole({ choices: [{ message: { role: 'assistant', content: 'REFUTATION: nothing to report.' } }] })
+  ): {
     call: ModelCall
     bodies: Record<string, unknown>[]
+    critic: Record<string, unknown>[]
   } {
     const bodies: Record<string, unknown>[] = []
+    const critic: Record<string, unknown>[] = []
     const call: ModelCall = async (_suffix, request) => {
-      bodies.push(JSON.parse(request.body) as Record<string, unknown>)
+      const body = JSON.parse(request.body) as Record<string, unknown>
+      if (request.body.includes(REFUTATION_MARKER)) {
+        critic.push(body)
+        return criticAnswer()
+      }
+      bodies.push(body)
       return answers(bodies.length)
     }
-    return { call, bodies }
+    return { call, bodies, critic }
   }
 
   const whole = (payload: unknown) =>
@@ -476,7 +495,8 @@ describe('the thinking tier, on this engine’s own wire', () => {
     expect(model.bodies[1]!.thinking).toEqual({ type: 'enabled', budget_tokens: 8000 })
     expect(Object.keys(model.bodies[1]!)).not.toContain('output_config')
     // A fallback is not a degrade: the session still thinks and says nothing.
-    expect(events.map((event) => event.type)).toEqual(['reasoning', 'proposal', 'end'])
+    expect(events.some((event) => event.type === 'thinking_unavailable')).toBe(false)
+    expect(events.map((event) => event.type)).toContain('reasoning')
   })
 
   it('degrades once, retries plain, and completes the session', async () => {
@@ -489,11 +509,9 @@ describe('the thinking tier, on this engine’s own wire', () => {
     const notices = events.filter((event) => event.type === 'thinking_unavailable')
     // **Once.** A degrade said twice is a reader learning to skip the line.
     expect(notices).toHaveLength(1)
-    expect(events.map((event) => event.type)).toEqual([
-      'thinking_unavailable',
-      'proposal',
-      'end'
-    ])
+    expect(events[0]!.type).toBe('thinking_unavailable')
+    expect(events[events.length - 1]!.type).toBe('end')
+    expect(events.some((event) => event.type === 'proposal')).toBe(true)
   })
 
   it('reports a model that always thinks, where the tier is off', async () => {
@@ -513,17 +531,16 @@ describe('the thinking tier, on this engine’s own wire', () => {
       'end'
     ])
     expect((events[1] as { detail: string }).detail).toContain('always thinks')
+    // …and no critic ran at all, because the tier is off.
+    expect(model.critic).toEqual([])
   })
 
   it('reports unavailable where the first turn carried no reasoning at all', async () => {
     const model = answering(() => whole(proposalMessage))
     const events = await drain(builtin.start(withModel(model.call, 'openai-compatible', 'on')))
-    expect(events.map((event) => event.type)).toEqual([
-      'thinking_unavailable',
-      'proposal',
-      'end'
-    ])
-    expect((events[0] as { detail: string }).detail).toContain('no reasoning block')
+    const notices = events.filter((event) => event.type === 'thinking_unavailable')
+    expect(notices).toHaveLength(1)
+    expect((notices[0] as { detail: string }).detail).toContain('no reasoning block')
   })
 
   it('rethrows a refusal that is not about the tier', async () => {
@@ -597,6 +614,10 @@ describe('what an Anthropic thinking turn survives on the way back', () => {
   it('carries the whole block back — text, a reassembled signature, and a redacted one', async () => {
     const bodies: Record<string, unknown>[] = []
     const call: ModelCall = async (_suffix, request) => {
+      // The critic is a second conversation and is not what this measures.
+      if (request.body.includes(REFUTATION_MARKER)) {
+        return anthropicStream([{ type: 'text', text: 'REFUTATION: nothing to report.' }])
+      }
       bodies.push(JSON.parse(request.body) as Record<string, unknown>)
       if (bodies.length === 1) {
         return anthropicStream([
@@ -617,6 +638,8 @@ describe('what an Anthropic thinking turn survives on the way back', () => {
       'reasoning',
       'tool_call',
       'tool_result',
+      // The refutation pass runs at this tier and reached no runtime check.
+      'critique',
       'proposal',
       'end'
     ])
@@ -638,6 +661,9 @@ describe('what an Anthropic thinking turn survives on the way back', () => {
   it('never sends the model’s reasoning text to the runtime', async () => {
     const asked: unknown[] = []
     const call: ModelCall = async (_suffix, request) => {
+      if (request.body.includes(REFUTATION_MARKER)) {
+        return anthropicStream([{ type: 'text', text: 'REFUTATION: nothing to report.' }])
+      }
       const body = JSON.parse(request.body) as { messages?: unknown[] }
       if ((body.messages ?? []).length <= 1) {
         return anthropicStream([
@@ -1026,4 +1052,244 @@ describe('the registry', () => {
     await expect(loadEngine('anything', { anything: async () => stub })).resolves.toBe(stub)
   })
 
+})
+
+describe('the refutation pass, on this engine’s second loop', () => {
+  const VALID = JSON.stringify({ status: 'valid', diagnostics: [] })
+  const INVALID = JSON.stringify({
+    status: 'invalid',
+    diagnostics: [{ code: 'JPS-SEMANTIC-UNRESOLVED-OUTCOME' }]
+  })
+
+  /**
+   * A session whose main loop proposes at once and whose critic runs a script.
+   *
+   * `criticSays` is the critic's final prose, and `answer` is what the runtime
+   * gives it: the point of the pair is that the two can disagree and the
+   * verdict follows the runtime.
+   */
+  function criticised(options: {
+    tier: 'off' | 'on' | 'ultra'
+    criticCalls?: { name: string; args: Record<string, unknown> }[]
+    criticSays: string
+    answer: string
+    isError?: boolean
+  }): { session: AssistantSession; asked: { name: string; args: unknown }[]; critic: string[] } {
+    const asked: { name: string; args: unknown }[] = []
+    const critic: string[] = []
+    let criticTurn = 0
+    const call: ModelCall = async (_suffix, request) => {
+      const body = JSON.parse(request.body) as { messages?: { content?: unknown }[] }
+      if (request.body.includes(REFUTATION_MARKER)) {
+        critic.push(JSON.stringify(body.messages))
+        criticTurn += 1
+        const calls = options.criticCalls ?? []
+        const next = calls[criticTurn - 1]
+        const message =
+          next === undefined
+            ? { role: 'assistant', content: options.criticSays }
+            : {
+                role: 'assistant',
+                content: null,
+                tool_calls: [
+                  {
+                    id: `call_c${criticTurn}`,
+                    type: 'function',
+                    function: { name: next.name, arguments: JSON.stringify(next.args) }
+                  }
+                ]
+              }
+        return new Response(JSON.stringify({ choices: [{ message }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      }
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: { role: 'assistant', content: PROPOSAL_TEXT, reasoning_content: 'thought' }
+            }
+          ]
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    }
+    return {
+      session: {
+        ...session({
+          callTool: async (name, args) => {
+            asked.push({ name, args })
+            return {
+              content: [{ type: 'text', text: options.answer }],
+              ...(options.isError === true ? { isError: true } : {})
+            }
+          }
+        }),
+        model: { family: 'openai-compatible', model: 'a-model', call },
+        thinking: normalize(options.tier, 'openai-compatible')
+      },
+      asked,
+      critic
+    }
+  }
+
+  it('does not run at all where the tier is off', async () => {
+    const one = criticised({ tier: 'off', criticSays: 'x', answer: VALID })
+    const events = await drain(builtin.start(one.session))
+    expect(one.critic).toEqual([])
+    expect(events.some((event) => event.type === 'critique')).toBe(false)
+    const proposal = events.find((event) => event.type === 'proposal')!
+    expect((proposal as { critique?: unknown }).critique).toBeUndefined()
+  })
+
+  it('runs after the proposal exists and before it is shown', async () => {
+    const one = criticised({
+      tier: 'on',
+      criticCalls: [{ name: 'validate', args: { document: '{}' } }],
+      criticSays: 'REFUTATION: none found.',
+      answer: VALID
+    })
+    const events = await drain(builtin.start(one.session))
+    const kinds = events.map((event) => event.type)
+    // The critic's own call and its answer are on the same stream, then the
+    // critique, and only then the proposal.
+    expect(kinds).toEqual([
+      'reasoning',
+      'tool_call',
+      'tool_result',
+      'critique',
+      'proposal',
+      'end'
+    ])
+    expect(kinds.indexOf('critique')).toBeLessThan(kinds.indexOf('proposal'))
+    expect(one.asked).toEqual([{ name: 'validate', args: { document: '{}' } }])
+  })
+
+  it('takes the verdict from the runtime and not from the critic’s prose', async () => {
+    // The runtime says valid; the critic says the pack is broken.
+    const one = criticised({
+      tier: 'on',
+      criticCalls: [{ name: 'validate', args: { document: '{}' } }],
+      criticSays: 'REFUTATION: this pack is broken and must not be used.',
+      answer: VALID
+    })
+    const events = await drain(builtin.start(one.session))
+    const critique = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'critique' }> => event.type === 'critique'
+    )!
+    expect(critique.refuted).toBe(false)
+    expect(critique.checks).toEqual([{ tool: 'validate', status: 'valid' }])
+    const proposal = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'proposal' }> => event.type === 'proposal'
+    )!
+    expect(proposal.critique).toEqual({ refuted: false })
+  })
+
+  it('reports refuted where the runtime refused, whatever the critic said', async () => {
+    const one = criticised({
+      tier: 'on',
+      criticCalls: [{ name: 'validate', args: { document: '{}' } }],
+      criticSays: 'REFUTATION: none found. Everything checks out.',
+      answer: INVALID
+    })
+    const events = await drain(builtin.start(one.session))
+    const critique = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'critique' }> => event.type === 'critique'
+    )!
+    expect(critique.refuted).toBe(true)
+    expect(critique.text).toContain('1 diagnostic(s)')
+    const proposal = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'proposal' }> => event.type === 'proposal'
+    )!
+    // **And the proposal is still shown.** Refutation is information, not a
+    // failure: the desk shows the document with the runtime's words beside it.
+    expect(proposal.critique).toEqual({ refuted: true })
+    expect(proposal.document).toBeDefined()
+  })
+
+  it('says the critic ran no check, and puts no line on the proposal', async () => {
+    const one = criticised({ tier: 'on', criticSays: 'I had a look.', answer: VALID })
+    const events = await drain(builtin.start(one.session))
+    const critique = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'critique' }> => event.type === 'critique'
+    )!
+    expect(critique.checks).toEqual([])
+    expect(critique.text).toContain('no runtime check')
+    const proposal = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'proposal' }> => event.type === 'proposal'
+    )!
+    expect(proposal.critique).toBeUndefined()
+  })
+
+  it('hands the critic the runtime’s testing prompt and the proposed document', async () => {
+    const one = criticised({ tier: 'on', criticSays: 'done', answer: VALID })
+    await drain(builtin.start(one.session))
+    expect(one.critic[0]).toContain('test_pack guidance')
+    expect(one.critic[0]).toContain(REFUTATION_MARKER)
+    // The document the main loop proposed, and no other.
+    expect(one.critic[0]).toContain('A pack')
+  })
+
+  it('still runs where the endpoint degraded, under this chunk’s ruling', async () => {
+    expect(REFUTE_ON_A_DEGRADED_ENDPOINT).toBe(true)
+    let refused = false
+    const asked: string[] = []
+    const call: ModelCall = async (_suffix, request) => {
+      if (request.body.includes(REFUTATION_MARKER)) {
+        asked.push('critic')
+        return new Response(
+          JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'REFUTATION: none.' } }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      }
+      if (!refused) {
+        refused = true
+        return new Response(
+          JSON.stringify({ error: { message: 'Unsupported parameter: reasoning_effort' } }),
+          { status: 400, headers: { 'content-type': 'application/json' } }
+        )
+      }
+      return new Response(
+        JSON.stringify({ choices: [{ message: { role: 'assistant', content: PROPOSAL_TEXT } }] }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    }
+    const one: AssistantSession = {
+      ...session(),
+      model: { family: 'openai-compatible', model: 'a-model', call },
+      thinking: normalize('on', 'openai-compatible')
+    }
+    const events = await drain(builtin.start(one))
+    expect(events.filter((event) => event.type === 'thinking_unavailable')).toHaveLength(1)
+    // The tab's line is the degrade's; the pass ran anyway, because its value
+    // is the runtime's checks rather than the model's thinking.
+    expect(asked).toEqual(['critic'])
+    expect(events.some((event) => event.type === 'critique')).toBe(true)
+  })
+
+  it('ends where the run does, and says nothing after it', async () => {
+    // The cancellation seam holds for the critic exactly as for the first loop.
+    const controller = new AbortController()
+    const call: ModelCall = async (_suffix, request) => {
+      if (request.body.includes(REFUTATION_MARKER)) {
+        controller.abort()
+        return new Promise<Response>(() => {})
+      }
+      return new Response(
+        JSON.stringify({ choices: [{ message: { role: 'assistant', content: PROPOSAL_TEXT } }] }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    }
+    const one: AssistantSession = {
+      ...session({ signal: controller.signal }),
+      model: { family: 'openai-compatible', model: 'a-model', call },
+      thinking: normalize('on', 'openai-compatible')
+    }
+    const events = await drain(builtin.start(one))
+    // Nothing at all after the cancel: no critique, no proposal, no `end`.
+    expect(events.map((event) => event.type)).not.toContain('critique')
+    expect(events.map((event) => event.type)).not.toContain('proposal')
+    expect(events.map((event) => event.type)).not.toContain('end')
+  })
 })
