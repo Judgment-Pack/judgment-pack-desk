@@ -13,7 +13,7 @@ import { builtin } from './index'
 import { MAX_TURNS, extractProposal } from './loop'
 import { protocolHeaders } from './providers/types'
 import { ASSISTANT_ENGINES } from '../../../config/deskConfig'
-import { normalize } from '../../thinking'
+import { RESPONSE_TOKENS, normalize } from '../../thinking'
 import { REFUTATION_MARKER } from '../../refutation'
 import { REFUTE_ON_A_DEGRADED_ENDPOINT } from '../../thinking'
 import type {
@@ -494,6 +494,11 @@ describe('the thinking tier, on this engine’s own wire', () => {
     // The other spelling, with the budget in it — and no `output_config`.
     expect(model.bodies[1]!.thinking).toEqual({ type: 'enabled', budget_tokens: 8000 })
     expect(Object.keys(model.bodies[1]!)).not.toContain('output_config')
+    // **And the maximum the budget requires.** The budget is spent out of
+    // `max_tokens`, so a request carrying 8000 beside the provider's own 4096
+    // is one an endpoint on this dialect refuses.
+    expect(model.bodies[1]!.max_tokens).toBe(8000 + RESPONSE_TOKENS)
+    expect(model.bodies[0]!.max_tokens).toBe(RESPONSE_TOKENS)
     // A fallback is not a degrade: the session still thinks and says nothing.
     expect(events.some((event) => event.type === 'thinking_unavailable')).toBe(false)
     expect(events.map((event) => event.type)).toContain('reasoning')

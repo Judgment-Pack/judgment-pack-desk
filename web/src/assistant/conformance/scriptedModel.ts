@@ -602,6 +602,7 @@ export function scriptedModel(options: {
       messages?: unknown[]
       tools?: { name?: string; function?: { name?: string } }[]
       stream?: boolean
+      max_tokens?: unknown
       [member: string]: unknown
     }
     const messages = body.messages ?? []
@@ -653,11 +654,25 @@ export function scriptedModel(options: {
           : 'Unsupported parameter: reasoning_effort'
       )
     }
-    if (
-      mode === 'enabled-only' &&
-      (param?.value as { type?: unknown } | undefined)?.type === 'adaptive'
-    ) {
-      return refuse('Adaptive thinking is not supported by this model')
+    if (mode === 'enabled-only') {
+      const asked = param?.value as { type?: unknown; budget_tokens?: unknown } | undefined
+      if (asked?.type === 'adaptive') {
+        return refuse('Adaptive thinking is not supported by this model')
+      }
+      // **The endpoint enforces what the protocol requires.** The thinking
+      // budget is spent out of the request's maximum, so a budget at or above
+      // `max_tokens` is a request this endpoint refuses — which is what a real
+      // one does, and what a fixture that merely accepted the member could not
+      // have shown.
+      if (typeof asked?.budget_tokens === 'number') {
+        const maximum = body.max_tokens
+        if (typeof maximum !== 'number' || asked.budget_tokens >= maximum) {
+          return refuse(
+            `thinking.budget_tokens: must be less than max_tokens (budget ${asked.budget_tokens}, ` +
+              `max_tokens ${String(maximum)})`
+          )
+        }
+      }
     }
 
     // Thinking output must not change the step logic: neither a thinking block

@@ -45,7 +45,12 @@ import {
   type ThinkingMode
 } from './scriptedModel'
 import { RECORDED_TOOLS, scriptedRuntime, type ServerObservation } from './scriptedServer'
-import { REFUTE_ON_A_DEGRADED_ENDPOINT, normalize } from '../thinking'
+import {
+  REFUTE_ON_A_DEGRADED_ENDPOINT,
+  RESPONSE_TOKENS,
+  normalize,
+  wireFor
+} from '../thinking'
 import type { ThinkingTier } from '../../config/deskConfig'
 import runtime from './runtime.json'
 import type { AssistantEvent, Engine } from '../engine'
@@ -1265,6 +1270,12 @@ describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
       )
       expect(accepted.length).toBeGreaterThan(5)
       expect(accepted[0]!.thinkingParam!.value).toEqual({ type: 'enabled', budget_tokens: 8000 })
+      // **And the request is internally consistent**, which this endpoint now
+      // enforces: the budget is spent out of `max_tokens`, so a request whose
+      // budget is not strictly below it is refused. Every accepted row got past
+      // that check, and the maximum is the desk's table's.
+      expect(wireFor('on', 'anthropic-enabled')!.members.max_tokens).toBe(8000 + RESPONSE_TOKENS)
+      expect(wireFor('ultra', 'anthropic-enabled')!.members.max_tokens).toBe(16000 + RESPONSE_TOKENS)
       // A fallback is not a degrade: nothing is said and the session thinks.
       expect(notices(events)).toEqual([])
       expect(reasoningEvents(events).length).toBeGreaterThan(0)

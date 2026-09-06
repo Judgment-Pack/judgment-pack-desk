@@ -29,7 +29,7 @@ import {
   suffixOf,
   withoutTruncatedThinking
 } from './relay'
-import { normalize } from '../../thinking'
+import { normalize, wireFor } from '../../thinking'
 import { REFUTATION_MARKER } from '../../refutation'
 import type { streamText } from 'ai'
 import type { AssistantEvent, AssistantSession, McpTool, ModelCall, McpToolResult } from '../../engine'
@@ -1016,6 +1016,13 @@ describe('the thinking tier, through the SDK’s own call settings', () => {
     for (const [member, value] of Object.entries(table)) {
       expect(seen[0]!.body[member], `${family} ${tier} ${member}`).toEqual(value)
     }
+    // The fallback dialect's pair, through the SDK's own call settings.
+    const fallback = wireFor(tier, 'anthropic-enabled')!.members as { max_tokens: number }
+    if (family === 'anthropic') {
+      expect(sdkThinking(family, wireFor(tier, 'anthropic-enabled')!.members)).toMatchObject({
+        maxOutputTokens: fallback.max_tokens
+      })
+    }
   })
 
   it('sends no tier member at all where the tier is off', async () => {
@@ -1033,8 +1040,16 @@ describe('the thinking tier, through the SDK’s own call settings', () => {
     expect(
       sdkThinking('anthropic', { thinking: { type: 'adaptive' }, output_config: { effort: 'high' } })
     ).toEqual({ providerOptions: { anthropic: { thinking: { type: 'adaptive' }, effort: 'high' } } })
-    expect(sdkThinking('anthropic', { thinking: { type: 'enabled', budget_tokens: 16000 } })).toEqual({
-      providerOptions: { anthropic: { thinking: { type: 'enabled', budgetTokens: 16000 } } }
+    expect(
+      sdkThinking('anthropic', {
+        thinking: { type: 'enabled', budget_tokens: 16000 },
+        max_tokens: 20096
+      })
+    ).toEqual({
+      providerOptions: { anthropic: { thinking: { type: 'enabled', budgetTokens: 16000 } } },
+      // The SDK's spelling of the number the desk's table chose beside the
+      // budget: Anthropic spends the budget out of the request's maximum.
+      maxOutputTokens: 20096
     })
   })
 

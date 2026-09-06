@@ -21,6 +21,7 @@
  * Ported from the bake-off's `none` prototype, thinking handling included.
  */
 import { servedSchema, withAbort } from '../../contract'
+import { RESPONSE_TOKENS } from '../../../thinking'
 import { isEventStream, sseEvents } from './sse'
 import { ModelHttpError, protocolHeaders } from './types'
 import type { McpTool } from '../../../engine'
@@ -92,7 +93,10 @@ export const anthropic: Provider = {
   async send(options: SendOptions): Promise<ModelTurn> {
     const body: Record<string, unknown> = {
       model: options.model,
-      max_tokens: 4096,
+      // The desk's response allowance. The tier's members below may raise it:
+      // the enabled thinking dialect's budget is spent out of this number, so
+      // the table that chooses the budget chooses the maximum with it.
+      max_tokens: RESPONSE_TOKENS,
       system: options.system,
       messages: options.messages,
       tools: options.tools,

@@ -58,12 +58,29 @@ export interface WireThinking {
 }
 
 /**
+ * The tokens the desk leaves for the model's **answer**, beyond any thinking
+ * budget.
+ *
+ * The built-in Anthropic provider asks for this many by default, and it is
+ * enough for a whole pack and its explanation. It is here rather than only
+ * there because the enabled dialect's budget and the request's maximum are one
+ * decision — see the table.
+ */
+export const RESPONSE_TOKENS = 4096
+
+/**
  * **The table.** One place, both engines, every family.
  *
  * `null` for `off`, because off is omission. `high` and `xhigh` are the two
- * efforts the desk's two tiers mean; the Anthropic budgets are the prototype's
- * measured pair, 8000 for `on` and 16000 for `ultra`, both above the documented
- * 1024 floor and below the desk's `max_tokens`.
+ * efforts the desk's two tiers mean.
+ *
+ * **The enabled dialect sets two numbers, and it has to.** Anthropic's
+ * `budget_tokens` must fit *below* the request's `max_tokens` — the budget is
+ * spent out of the maximum — so a table that chose a budget of 8000 while the
+ * provider asked for `max_tokens: 4096` produced a request every endpoint
+ * requiring that dialect refuses. Both numbers are therefore this table's, per
+ * tier: the budget, and the budget plus the desk's own response allowance. The
+ * adaptive dialect needs neither, because there is no budget in it.
  */
 export function wireFor(tier: ThinkingTier, dialect: ThinkingDialect): WireThinking | null {
   if (tier === 'off') return null
@@ -82,7 +99,11 @@ export function wireFor(tier: ThinkingTier, dialect: ThinkingDialect): WireThink
     case 'anthropic-enabled': {
       const budget = tier === 'ultra' ? 16000 : 8000
       return {
-        members: { thinking: { type: 'enabled', budget_tokens: budget } },
+        members: {
+          thinking: { type: 'enabled', budget_tokens: budget },
+          // Strictly above the budget, or the endpoint refuses the request.
+          max_tokens: budget + RESPONSE_TOKENS
+        },
         expect: { path: 'thinking', value: { type: 'enabled', budget_tokens: budget } }
       }
     }

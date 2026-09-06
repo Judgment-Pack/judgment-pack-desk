@@ -138,6 +138,13 @@ export function sdkThinking(
     else if (thinking?.type === 'enabled') {
       anthropic.thinking = { type: 'enabled', budgetTokens: thinking.budget_tokens }
     }
+    // **The maximum travels with the budget.** Anthropic spends the thinking
+    // budget out of `max_tokens`, so the two are one decision and the table
+    // makes it; this is the SDK's spelling of the number the table chose.
+    const maximum = members.max_tokens
+    if (typeof maximum === 'number') {
+      return { providerOptions: { anthropic }, maxOutputTokens: maximum }
+    }
     // The depth is a sibling on the wire and a sibling here: the provider puts
     // `effort` into `output_config`, which is the member the desk's table names.
     if (effort !== undefined) anthropic.effort = effort

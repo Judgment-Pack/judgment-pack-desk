@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   REFUTE_ON_A_DEGRADED_ENDPOINT,
+  RESPONSE_TOKENS,
   THINKING_ALWAYS,
   THINKING_UNAVAILABLE,
   firstDialect,
@@ -56,13 +57,34 @@ describe('the table, per family and tier', () => {
     })
   })
 
-  it('falls back to a token budget above the documented floor', () => {
+  it('falls back to a token budget, with the maximum that budget requires', () => {
+    // **Two numbers, one decision.** Anthropic spends the thinking budget out
+    // of `max_tokens`, so a table that chose a budget of 8000 while the request
+    // asked for 4096 produced a request every enabled-dialect endpoint refuses.
     expect(wireFor('on', 'anthropic-enabled')!.members).toEqual({
-      thinking: { type: 'enabled', budget_tokens: 8000 }
+      thinking: { type: 'enabled', budget_tokens: 8000 },
+      max_tokens: 8000 + RESPONSE_TOKENS
     })
     expect(wireFor('ultra', 'anthropic-enabled')!.members).toEqual({
-      thinking: { type: 'enabled', budget_tokens: 16000 }
+      thinking: { type: 'enabled', budget_tokens: 16000 },
+      max_tokens: 16000 + RESPONSE_TOKENS
     })
+    // Strictly above, on every tier, which is what the endpoint enforces.
+    for (const tier of ['on', 'ultra'] as const) {
+      const members = wireFor(tier, 'anthropic-enabled')!.members as {
+        thinking: { budget_tokens: number }
+        max_tokens: number
+      }
+      expect(members.max_tokens, tier).toBeGreaterThan(members.thinking.budget_tokens)
+    }
+  })
+
+  it('leaves the maximum alone on the dialect that has no budget', () => {
+    expect(Object.keys(wireFor('on', 'anthropic-adaptive')!.members).sort()).toEqual([
+      'output_config',
+      'thinking'
+    ])
+    expect(Object.keys(wireFor('on', 'openai')!.members)).toEqual(['reasoning_effort'])
   })
 
   it('starts each family at its own dialect and offers exactly one fallback', () => {
@@ -148,7 +170,10 @@ describe('the five states', () => {
     expect(retry.kind).toBe('retry')
     // Silent: the desk asked in the other spelling, and the session still thinks.
     expect(it0.state()).toBe('on')
-    expect(it0.members()).toEqual({ thinking: { type: 'enabled', budget_tokens: 8000 } })
+    expect(it0.members()).toEqual({
+      thinking: { type: 'enabled', budget_tokens: 8000 },
+      max_tokens: 8000 + RESPONSE_TOKENS
+    })
     const degraded = it0.refused(400, 'Extra inputs are not permitted')
     expect(degraded.kind).toBe('degrade')
     expect((degraded as { event: AssistantEvent }).event!.type).toBe('thinking_unavailable')

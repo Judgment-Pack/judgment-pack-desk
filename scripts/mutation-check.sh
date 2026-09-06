@@ -4183,6 +4183,14 @@ export function assistantTransport(): Transport {
     "      // The status, and the desk's own sentence. The endpoint's body is
       // matched against a closed list and never quoted past it."
 
+  # Anthropic spends the thinking budget out of `max_tokens`, so the table that
+  # chooses the budget chooses the maximum with it. Without the allowance the
+  # budget is not below the maximum and every enabled-dialect endpoint refuses
+  # the request — which the conformance endpoint now enforces.
+  mutate web "the enabled dialect's response allowance is dropped" "$TH" \
+    "          max_tokens: budget + RESPONSE_TOKENS" \
+    "          max_tokens: budget"
+
   # **The line, once.** A degrade said on every request is a reader learning to
   # skip it; the split-signature leg is where a second one can actually happen,
   # because a fresh block arrives on every turn.
