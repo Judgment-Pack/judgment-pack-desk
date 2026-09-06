@@ -10,7 +10,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useMemo } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AssistantPane } from './AssistantPane'
+import { AssistantPane, DRAFT_SENTENCE, withDraft } from './AssistantPane'
 import { EditingContext, type EditingSession } from '../packs/edit/editingContext'
 import { useDocumentBuffer, type DocumentBuffer } from '../packs/edit/useDocumentBuffer'
 import { buffered, bytesAt } from '../packs/edit/writes'
@@ -116,13 +116,14 @@ async function draw(options: {
     present: options.keyPresent ?? true,
     fingerprint: options.keyPresent === false ? '' : 'sk-a…wxyz'
   })
-  const relayed: { url: string; headerNames: string[] }[] = []
+  const relayed: { url: string; headerNames: string[]; body: string }[] = []
   vi.stubGlobal('fetch', async (input: unknown, init?: RequestInit) => {
     const url = String(input)
     if (url.startsWith('/api/assistant/relay/')) {
       relayed.push({
         url,
-        headerNames: Object.keys((init?.headers ?? {}) as Record<string, string>)
+        headerNames: Object.keys((init?.headers ?? {}) as Record<string, string>),
+        body: String(init?.body ?? '')
       })
       if (options.hang) return new Promise<Response>(() => {})
       if (options.refuse) {
@@ -587,6 +588,76 @@ describe('accepting the proposal into the draft', () => {
       expect(
         screen.getByRole('button', { name: 'Accept into draft' }).hasAttribute('disabled')
       ).toBe(false)
+    )
+  })
+})
+
+describe('the draft the session is given', () => {
+  const DRAFT = `${JSON.stringify(scenario.documents.DRAFT_V1, null, 4)}\n`
+
+  /** The first user message of the first request the pane made. */
+  const firstUserMessage = (relayed: { body: string }[]) => {
+    const body = JSON.parse(relayed[0]!.body) as { messages: { role: string; content: string }[] }
+    return body.messages.find((message) => message.role === 'user')!.content
+  }
+
+  async function runOver(options: { buffer?: { text: string }; draft?: string } = {}) {
+    const drawn = await draw({ ...options, editing: true })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    )
+    fireEvent.change(screen.getByLabelText('What should this pack decide?'), {
+      target: { value: scenario.policy }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    return drawn
+  }
+
+  it('carries the bytes in the editor, verbatim and fenced, after the prompt', async () => {
+    const { relayed } = await runOver({ buffer: { text: DRAFT } })
+    const sent = firstUserMessage(relayed)
+    // The runtime's own prompt first, then the sentence, then the draft as it
+    // is — byte for byte, not a re-serialization of it.
+    expect(sent.startsWith('The runtime’s authoring prompt, with the policy in it.')).toBe(true)
+    expect(sent).toContain(DRAFT_SENTENCE)
+    expect(sent).toContain(`\`\`\`json\n${DRAFT}\n\`\`\``)
+    expect(sent.indexOf(DRAFT_SENTENCE)).toBeGreaterThan(0)
+  })
+
+  it('calls the proposal an update where a draft was sent', async () => {
+    await runOver({ buffer: { text: DRAFT } })
+    expect(screen.getByRole('region', { name: 'The proposal' }).textContent).toContain(
+      'an update to the draft it was given'
+    )
+  })
+
+  it('sends the prompt alone where the page has no bytes, and calls it a new document', async () => {
+    const { relayed } = await runOver()
+    expect(firstUserMessage(relayed)).toBe('The runtime’s authoring prompt, with the policy in it.')
+    expect(screen.getByRole('region', { name: 'The proposal' }).textContent).toContain(
+      'a new document'
+    )
+  })
+
+  it('sends the saved document on the reading route too', async () => {
+    const drawn = await draw({ draft: DRAFT })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    )
+    fireEvent.change(screen.getByLabelText('What should this pack decide?'), {
+      target: { value: scenario.policy }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    expect(firstUserMessage(drawn.relayed)).toContain(DRAFT)
+  })
+
+  it('adds nothing where there is nothing to add', () => {
+    expect(withDraft('the prompt', undefined)).toBe('the prompt')
+    expect(withDraft('the prompt', '   ')).toBe('the prompt')
+    expect(withDraft('the prompt', '{"a":1}')).toBe(
+      `the prompt\n\n${DRAFT_SENTENCE}\n\n\`\`\`json\n{"a":1}\n\`\`\``
     )
   })
 })

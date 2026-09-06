@@ -37,6 +37,38 @@ import { useAssistantSlot } from './useAssistantSlot'
 import styles from './AssistantPane.module.css'
 import type { AssistantEvent } from './engine'
 
+/**
+ * The one sentence the draft travels under, fixed.
+ *
+ * It says what the bytes are and what to do with them, and nothing else: a
+ * sentence that also described the draft would be this desk telling a model
+ * what a document says, which is the runtime's prompt's job and not this
+ * pane's.
+ */
+export const DRAFT_SENTENCE = 'This is the draft being edited; propose the whole document.'
+
+/**
+ * The runtime's prompt, with the draft after it — **verbatim, and fenced**.
+ *
+ * Fenced so the model can tell the document it was handed from the
+ * instructions around it, which is the shape the runtime's own prompts use for
+ * caller-supplied material (`writeFencedBlock` in `internal/mcp/prompts.go`).
+ * Verbatim because the bytes in the editor are the bytes the proposal has to be
+ * an edit of: a reformatted copy would be a draft nobody has.
+ *
+ * A page with no bytes sends the prompt alone, and what comes back is a
+ * document rather than an edit.
+ */
+export function withDraft(prompt: string, draft: string | undefined): string {
+  if (!carriesDraft(draft)) return prompt
+  return `${prompt}\n\n${DRAFT_SENTENCE}\n\n\`\`\`json\n${draft}\n\`\`\``
+}
+
+/** Whether there are bytes on this page worth calling a draft. */
+export function carriesDraft(draft: string | undefined): draft is string {
+  return draft !== undefined && draft.trim() !== ''
+}
+
 /** The bytes of one tool answer, said the way the desk says byte counts. */
 function byteCount(text: string): number {
   return new TextEncoder().encode(text).length
@@ -99,6 +131,21 @@ export function AssistantPane({
    */
   const [disposition, setDisposition] = useState<Disposition>('open')
   const accepts = useRef(0)
+  /**
+   * Whether **this desk** sent a draft, which is what makes a proposal an
+   * update rather than a new document.
+   *
+   * It is the desk's own knowledge and never the model's word for it: a
+   * `kind` in the fenced block is a statement about the model's own work, and
+   * the diff below is computed rather than quoted for exactly that reason.
+   * Recorded where the run starts, because the buffer moves while a session
+   * runs and the answer is about the bytes that were sent.
+   */
+  const [sentDraft, setSentDraft] = useState(false)
+  // The bytes as of now, readable from the effect that starts a run without
+  // making that effect restart on every keystroke in the editor beside it.
+  const draftNow = useRef<string | undefined>(draft)
+  draftNow.current = draft
   const prompt = usePromptText(
     AUTHOR_PACK_PROMPT,
     advertised && submitted !== null,
@@ -123,7 +170,8 @@ export function AssistantPane({
     if (started.current === submitted.id) return
     started.current = submitted.id
     setDisposition('open')
-    startRun(prompt.data.text)
+    setSentDraft(carriesDraft(draftNow.current))
+    startRun(withDraft(prompt.data.text, draftNow.current))
   }, [submitted, prompt.data, startRun])
 
   /**
@@ -265,7 +313,9 @@ export function AssistantPane({
 
       {proposal !== undefined && disposition !== 'rejected' && (
         <section className={styles.proposal} aria-label="The proposal">
-          <p className={styles.heading}>Proposal</p>
+          <p className={styles.heading}>
+            Proposal — {sentDraft ? 'an update to the draft it was given' : 'a new document'}
+          </p>
           <p className={styles.honesty}>
             Nothing has been written. This is a document to accept or reject, and the checks below
             are the runtime’s own words.
