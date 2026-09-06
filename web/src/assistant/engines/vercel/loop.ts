@@ -39,7 +39,14 @@
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { dynamicTool, jsonSchema, stepCountIs, streamText } from 'ai'
-import { MAX_TURNS, SYSTEM, extractProposal, textOf, thinkingUnavailable } from '../contract'
+import {
+  MAX_TURNS,
+  SYSTEM,
+  extractProposal,
+  servedSchema,
+  textOf,
+  thinkingUnavailable
+} from '../contract'
 import { eventChannel } from './channel'
 import { placeholderBase, relayFetch } from './relay'
 import type { LanguageModel, ToolSet } from 'ai'
@@ -107,13 +114,10 @@ function toolsFor(
     set[tool.name] = dynamicTool({
       description: tool.description ?? '',
       // The served schema, as served. Nothing is re-typed through a schema
-      // library, so the model sees the runtime's contract rather than this
-      // adapter's reading of it.
-      inputSchema: jsonSchema<unknown>(
-        (tool.inputSchema ?? { type: 'object', properties: {} }) as Parameters<
-          typeof jsonSchema
-        >[0]
-      ),
+      // library and nothing is written here where the runtime served none —
+      // `servedSchema` refuses that, and the session ends rather than showing
+      // the model a contract this desk invented.
+      inputSchema: jsonSchema<unknown>(servedSchema(tool) as Parameters<typeof jsonSchema>[0]),
       execute: (input: unknown) => execute(tool.name, input)
     })
   }

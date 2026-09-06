@@ -350,6 +350,22 @@ describe('the tools this engine offers, and the schemas it writes', () => {
     expect(tools[0]!.function.parameters).toEqual(served)
   })
 
+  it('refuses a tool the runtime served without a schema, rather than inventing one', async () => {
+    // The desk never writes a contract the runtime does not enforce. A
+    // permissive `{"type":"object"}` written here would tell the model that
+    // anything is acceptable for a tool whose real contract this desk does not
+    // know — so the session ends instead, naming the tool.
+    const { call, seen } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
+    const events = await drain(
+      vercel.start(session(call, { tools: [{ name: 'a_new_tool', description: 'd' }] }))
+    )
+    expect(events.map((event) => event.type)).toEqual(['error', 'end'])
+    expect((events[0] as { message: string }).message).toContain('a_new_tool')
+    expect((events[0] as { message: string }).message).toContain('without an input schema')
+    // And nothing was asked of the model at all: the refusal is before the loop.
+    expect(seen).toHaveLength(0)
+  })
+
   it('names one tool in its whole source: the one the ADR names', () => {
     // The model is shown the contract the runtime enforces or it is shown
     // nothing, so the adapter has nothing to say about any particular tool. The

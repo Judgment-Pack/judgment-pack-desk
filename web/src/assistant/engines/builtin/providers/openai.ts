@@ -6,6 +6,7 @@
  * or attach a credential the page was never given. Ported from the bake-off's
  * `none` prototype, minus the reasoning fields (chunk 4).
  */
+import { servedSchema } from '../../contract'
 import { isEventStream, sseEvents } from './sse'
 import { ModelHttpError, protocolHeaders } from './types'
 import type { McpTool } from '../../../engine'
@@ -52,13 +53,14 @@ export const openai: Provider = {
   tools(defs: McpTool[]) {
     // The schema is the runtime's own `inputSchema`, passed through untouched.
     // Nothing here writes a schema of its own: the model is shown the contract
-    // the runtime actually enforces, or it is shown nothing.
+    // the runtime actually enforces, or — `servedSchema` refusing — nothing at
+    // all, and the session ends rather than showing an invented one.
     return defs.map((def) => ({
       type: 'function',
       function: {
         name: def.name,
         description: def.description ?? '',
-        parameters: def.inputSchema ?? { type: 'object', properties: {} }
+        parameters: servedSchema(def)
       }
     }))
   },

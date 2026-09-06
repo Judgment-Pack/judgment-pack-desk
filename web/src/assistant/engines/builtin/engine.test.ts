@@ -386,6 +386,18 @@ describe('the thinking tier this chunk does not run', () => {
   })
 })
 
+describe('a tool the runtime served without a schema', () => {
+  it('ends the session naming it, rather than inventing a contract for it', async () => {
+    const { session: one } = scripted(() => finalMessage(PROPOSAL_TEXT), {
+      tools: [{ name: 'a_new_tool', description: 'd' }]
+    })
+    const events = await drain(builtin.start(one))
+    expect(events.map((event) => event.type)).toEqual(['error', 'end'])
+    expect((events[0] as { message: string }).message).toContain('a_new_tool')
+    expect((events[0] as { message: string }).message).toContain('without an input schema')
+  })
+})
+
 describe('the registry', () => {
   it('carries builtin, and loads it as its own chunk', async () => {
     expect([...CERTIFIED_ENGINES]).toEqual(['builtin', 'vercel'])

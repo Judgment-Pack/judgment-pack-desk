@@ -13,6 +13,7 @@
  *
  * Ported from the bake-off's `none` prototype, minus the thinking handling.
  */
+import { servedSchema } from '../../contract'
 import { isEventStream, sseEvents } from './sse'
 import { ModelHttpError, protocolHeaders } from './types'
 import type { McpTool } from '../../../engine'
@@ -52,7 +53,8 @@ export const anthropic: Provider = {
     return defs.map((def) => ({
       name: def.name,
       description: def.description ?? '',
-      input_schema: def.inputSchema ?? { type: 'object', properties: {} }
+      // The runtime's own, or nothing at all: see `servedSchema`.
+      input_schema: servedSchema(def)
     }))
   },
 

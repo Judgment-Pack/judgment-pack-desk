@@ -14,7 +14,7 @@
  * engine would be an engine the slot did not really separate.
  */
 import type { ThinkingTier } from '../../config/deskConfig'
-import type { McpToolResult } from '../engine'
+import type { McpTool, McpToolResult } from '../engine'
 
 /**
  * The most model turns one session may take.
@@ -76,6 +76,32 @@ export function extractProposal(text: string): Proposal {
     document: parsed.proposal.document,
     unknowns: Array.isArray(unknowns) ? unknowns.map((entry) => String(entry)) : []
   }
+}
+
+/**
+ * The schema the runtime served for one tool, or a refusal.
+ *
+ * **The desk never invents a contract the runtime does not enforce.** Every
+ * engine passes the served `inputSchema` through untouched, and a tool that
+ * arrived without one used to be given a permissive `{"type":"object"}` written
+ * here — which is this desk telling the model that anything is acceptable for a
+ * tool whose actual contract it does not know. K2 says the model is shown the
+ * runtime's contract *or it is shown nothing*, and a session that cannot show
+ * it does not run.
+ *
+ * The five the runtime serves all carry one, so this refuses nothing a real
+ * `jpack mcp` offers; what it refuses is a future tool, or another server, that
+ * does not.
+ */
+export function servedSchema(tool: McpTool): unknown {
+  if (tool.inputSchema === undefined || tool.inputSchema === null) {
+    throw new Error(
+      `the runtime served ${tool.name} without an input schema, and this desk will not write ` +
+        `one for it: the model is shown the contract the runtime enforces or it is shown ` +
+        `nothing. Nothing was written.`
+    )
+  }
+  return tool.inputSchema
 }
 
 /** The text half of one tool answer, joined in the runtime's own order. */

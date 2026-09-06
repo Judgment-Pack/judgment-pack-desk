@@ -575,16 +575,32 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
   // instead, which is a guard over *behaviour* and needs no list.
 
   it('writes no tool schema of its own: the runtime’s served one is the only one', () => {
-    // K2. The model is shown the contract the runtime enforces, or it is shown
-    // nothing — so no engine source may carry a tool name or a schema literal.
-    const providers = join(SRC, 'assistant', 'engines', 'builtin', 'providers')
-    for (const name of readdirSync(providers)) {
-      if (!name.endsWith('.ts') || name.includes('.test.')) continue
-      const text = readFileSync(join(providers, name), 'utf8')
+    // K2, over **every** engine source rather than one directory of one engine.
+    // The sweep used to read `builtin/providers` and nothing else, so the whole
+    // of `engines/vercel/` — where an adapter-authored permissive schema
+    // actually was — went unlooked-at.
+    //
+    // The model is shown the contract the runtime enforces or it is shown
+    // nothing, so no engine may carry a schema of its own. The one tool name any
+    // engine may write is `experimental_evaluate`, because ADR-0001 names it:
+    // the SDK-backed adapter's rehearsal hook is keyed by tool name. Every other
+    // name is a capability the engine would be asserting.
+    const sources = sourcesUnder('assistant/engines')
+    expect(sources.length, 'the sweep found no engine sources at all').toBeGreaterThan(5)
+    for (const source of sources) {
+      if (source.path.includes('.test.')) continue
       for (const tool of ASSISTANT_TOOLS) {
-        expect(text, `${name} names the tool ${tool}`).not.toContain(`'${tool}'`)
-        expect(text, `${name} names the tool ${tool}`).not.toContain(`"${tool}"`)
+        if (tool === 'experimental_evaluate') continue
+        expect(source.text, `${source.path} names the tool ${tool}`).not.toContain(`'${tool}'`)
+        expect(source.text, `${source.path} names the tool ${tool}`).not.toContain(`"${tool}"`)
       }
+      // A schema is an object with `properties` or a `type: 'object'` beside a
+      // tool. Weak, and enumerated — what actually holds the rule is that a
+      // served schema is the only thing any engine passes on, and that a tool
+      // arriving without one is refused rather than given one.
+      expect(source.text, `${source.path} writes a schema of its own`).not.toMatch(
+        /properties\s*:\s*\{/
+      )
     }
   })
 })
