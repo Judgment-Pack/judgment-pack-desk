@@ -90,7 +90,9 @@ describe('the run hook writes the terminal event itself', () => {
     act(() => result.current.stop())
     expect(ends(result.current.events)).toHaveLength(1)
     expect(result.current.status).toBe('finished')
-    await waitFor(() => expect(runtime!.closed).toBeGreaterThan(0))
+    // Exactly once: an engine that ignores its signal must not be able to make
+    // the hook close the same socket twice either.
+    await waitFor(() => expect(runtime!.closed).toBe(1))
   })
 
   it('a second Stop adds nothing', async () => {
@@ -117,7 +119,7 @@ describe('the run hook writes the terminal event itself', () => {
     await waitFor(() => expect(runtime!.opened).toHaveLength(1))
     unmount()
     // The socket is a `jpack mcp`; an engine that ignores its signal must not
-    // be able to keep one alive past the pane that started it.
-    await waitFor(() => expect(runtime!.closed).toBeGreaterThan(0))
+    // be able to keep one alive past the pane that started it. Once.
+    await waitFor(() => expect(runtime!.closed).toBe(1))
   })
 })

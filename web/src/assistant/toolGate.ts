@@ -33,6 +33,7 @@
  * function for exactly that reason.
  */
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
+import { JSONRPCMessageSchema } from '@modelcontextprotocol/sdk/types.js'
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
 import { ASSISTANT_TOOLS } from '../config/deskConfig'
 
@@ -168,16 +169,18 @@ function refuse(tool: string, detail: string): FrameVerdict {
  *
  * 1. the frame survives a JSON round trip at all (a cycle does not) and is a
  *    plain object;
- * 2. `jsonrpc` is exactly `"2.0"`;
- * 3. it is exactly one of three shapes — a **request** (a string `method`, an
- *    `id` that is a string or a number, `params` absent or a plain object), a
- *    **notification** (a string `method`, no `id`), or a **response** (an `id`,
- *    exactly one of `result` and `error`, and no `method`). Anything else is
- *    refused;
- * 4. a method that is not `tools/call` but is a spelling of it to some other
+ * 2. it satisfies the **SDK's own `JSONRPCMessageSchema`** — a request, a
+ *    notification, a response or an error, each whole. That is the check this
+ *    replaces a hand-written one with, and the reason is that the hand-written
+ *    one was overclaimed: `{"id": null, "result": 7}`, an `error` that is a
+ *    string, and a fractional id all satisfied "an id and exactly one of result
+ *    and error" and none of them is a JSON-RPC message. The schema is the same
+ *    one the client validates *inbound* frames against, so what this desk will
+ *    send is what its own SDK will accept;
+ * 3. a method that is not `tools/call` but is a spelling of it to some other
  *    reader — `Tools/Call`, ` tools/call ` — is refused, on the chassis' own
  *    reasoning about its query;
- * 5. for `tools/call`: the tool is on the session's allow-list, and
+ * 4. for `tools/call`: the tool is on the session's allow-list, and
  *    `experimental_evaluate` gets an own `rehearsal: true` written last onto
  *    the canonical arguments.
  */
@@ -197,36 +200,28 @@ export function inspectOutboundFrame(
             'this one is not, and nothing left the page'
     )
   }
-  if (frame.jsonrpc !== '2.0') {
-    return refuse(unreadable, 'an outbound frame must declare jsonrpc "2.0"')
+  // **The SDK's own schema, not this desk's reading of the spec.** A request,
+  // a notification, a response or an error, each whole — ids that are strings
+  // or integers, results that are objects, errors with an integer code and a
+  // string message. Anything else is refused before a rule of this desk's is
+  // applied to it.
+  if (!JSONRPCMessageSchema.safeParse(frame).success) {
+    return refuse(
+      unreadable,
+      'an outbound frame must be a JSON-RPC message the SDK itself would accept — a request, ' +
+        'a notification, a response or an error, each whole; this one is not, and nothing left ' +
+        'the page'
+    )
   }
 
   const method = frame.method
-  const hasMethod = 'method' in frame
-  const hasId = 'id' in frame
-  const hasResult = 'result' in frame
-  const hasError = 'error' in frame
-
-  if (!hasMethod) {
-    // A response to a request the server made: an id, and exactly one of
-    // result and error. Both, or neither, is not a response.
-    const idIsOk =
-      typeof frame.id === 'string' || typeof frame.id === 'number' || frame.id === null
-    if (hasId && idIsOk && hasResult !== hasError) return { verdict: 'send', notice: null, frame: frame as unknown as JSONRPCMessage }
-    return refuse(
-      unreadable,
-      'an outbound frame with no method must be a response carrying an id and exactly one of ' +
-        'result and error; this one is neither a request nor a response'
-    )
+  if (method === undefined) {
+    // A response or an error. The schema above has already established which,
+    // and that it is complete.
+    return { verdict: 'send', notice: null, frame: frame as unknown as JSONRPCMessage }
   }
   if (typeof method !== 'string') {
     return refuse(unreadable, "an outbound frame's method must be a string")
-  }
-  if (hasResult || hasError) {
-    return refuse(unreadable, 'an outbound frame may not carry both a method and a result or an error')
-  }
-  if (hasId && typeof frame.id !== 'string' && typeof frame.id !== 'number') {
-    return refuse(unreadable, "a request's id must be a string or a number")
   }
 
   if (method !== TOOLS_CALL) {

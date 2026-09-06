@@ -7,6 +7,8 @@
  * fails. That is the same discipline the chassis' relay tests use, and it is
  * the reason these are not assertions on `inspectOutboundFrame` alone.
  */
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
 import { describe, expect, it } from 'vitest'
@@ -431,7 +433,18 @@ describe('the frames the gate will not send at all', () => {
     [
       'a non-tools/call frame whose params are a string',
       { jsonrpc: '2.0', id: 1, method: 'prompts/get', params: 'name=p' }
-    ]
+    ],
+    // The three the hand-written rule accepted and the SDK's own schema does
+    // not: an id that is not a string or an integer, a result that is not an
+    // object, and an error that is not one.
+    ['a response with a null id', { jsonrpc: '2.0', id: null, result: {} }],
+    ['a response whose result is a number', { jsonrpc: '2.0', id: 1, result: 7 }],
+    ['a response whose error is a string', { jsonrpc: '2.0', id: 1, error: 'nope' }],
+    [
+      'a response whose error carries no code',
+      { jsonrpc: '2.0', id: 1, error: { message: 'no code' } }
+    ],
+    ['a request with a fractional id', { jsonrpc: '2.0', id: 1.5, method: 'tools/list' }]
   ])('refuses %s, and nothing reaches the socket', async (_what, frame) => {
     // **Fail closed.** The rule this replaces was "anything whose method is not
     // exactly tools/call is traffic I have no opinion about", and a batch has
@@ -630,3 +643,108 @@ describe('inspectOutboundFrame, with no socket at all', () => {
     expect(decided.verdict === 'send' && decided.frame).not.toBe(original)
   })
 })
+
+/**
+ * **One whole conversation, through the gate, with a real SDK client.**
+ *
+ * Every rule above is a refusal, and a suite made only of refusals can be
+ * satisfied by a gate that refuses everything. This is the other half: an
+ * ordinary MCP session — the handshake, the notification that follows it, the
+ * server's own `ping` and the client's automatic answer to it, a listing, a
+ * prompt, a tool call, and a response to a request the server made — every
+ * frame of which has to pass. Round 3 asked for it in exactly these terms,
+ * because tightening the frame rules to the SDK's own schema is the kind of
+ * change that can break a connection while every refusal test stays green.
+ */
+describe('an ordinary session, every frame of it', () => {
+  it('completes a handshake, a listing, a prompt, a call and a server request', async () => {
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()
+    const sentByClient: Record<string, unknown>[] = []
+    const refused: string[] = []
+
+    // The gate on the client's side, exactly as a session installs it, with a
+    // recorder in front of the socket so every frame it let out is readable.
+    const realSend = clientSide.send.bind(clientSide)
+    clientSide.send = async (message) => {
+      sentByClient.push(JSON.parse(JSON.stringify(message)) as Record<string, unknown>)
+      return realSend(message)
+    }
+    gateTransport(clientSide, {
+      allowed: FIVE,
+      onGuardrail: (notice) => {
+        if (notice.action === 'refused') refused.push(notice.detail)
+      }
+    })
+
+    serverSide.onmessage = (message: JSONRPCMessage) => {
+      const frame = message as unknown as {
+        id?: number
+        method?: string
+        params?: { name?: string }
+      }
+      if (frame.method === undefined) return // the client's answer to our ping
+      const reply = (result: unknown) =>
+        void serverSide.send({ jsonrpc: '2.0', id: frame.id, result } as never)
+      if (frame.method === 'initialize') {
+        reply({
+          protocolVersion: '2025-06-18',
+          capabilities: { tools: {}, prompts: {} },
+          serverInfo: { name: 'exchange', version: '0' }
+        })
+        return
+      }
+      if (frame.method === 'notifications/initialized') return
+      if (frame.method === 'tools/list') {
+        reply({ tools: [{ name: 'validate', description: 'check', inputSchema: { type: 'object' } }] })
+        return
+      }
+      if (frame.method === 'prompts/get') {
+        reply({ messages: [{ role: 'user', content: { type: 'text', text: 'the prompt' } }] })
+        return
+      }
+      if (frame.method === 'tools/call') {
+        reply({ content: [{ type: 'text', text: '{"status":"valid"}' }] })
+        return
+      }
+      reply({})
+    }
+    await serverSide.start()
+
+    const client = new Client({ name: 'exchange', version: '0' }, { capabilities: {} })
+    await client.connect(clientSide)
+
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(['validate'])
+    const prompt = (await client.getPrompt({ name: 'author_pack' })) as {
+      messages: { content: { text: string } }[]
+    }
+    expect(prompt.messages[0]!.content.text).toBe('the prompt')
+    const answered = (await client.callTool({
+      name: 'validate',
+      arguments: { document: '{}' }
+    })) as { content: { text: string }[] }
+    expect(answered.content[0]!.text).toBe('{"status":"valid"}')
+
+    // A request the **server** makes, which the client answers — the one frame
+    // shape a client only ever sends in reply.
+    await serverSide.send({ jsonrpc: '2.0', id: 9001, method: 'ping' } as never)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    // Nothing was refused, and the whole conversation is on the record.
+    expect(refused).toEqual([])
+    const methods = sentByClient.map((frame) => frame.method ?? '(a response)')
+    expect(methods).toContain('initialize')
+    expect(methods).toContain('notifications/initialized')
+    expect(methods).toContain('tools/list')
+    expect(methods).toContain('prompts/get')
+    expect(methods).toContain('tools/call')
+    expect(methods).toContain('(a response)')
+    // And the client's answer to the ping is a well-formed response.
+    const answer = sentByClient.find((frame) => frame.method === undefined)!
+    expect(answer.id).toBe(9001)
+    expect(answer.result).toEqual({})
+
+    await client.close()
+    await serverSide.close()
+  })
+})
+
