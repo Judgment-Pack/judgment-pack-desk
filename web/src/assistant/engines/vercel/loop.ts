@@ -72,6 +72,7 @@ import type { LanguageModel, ToolSet } from 'ai'
 import type { EndpointKind } from '../../../config/deskConfig'
 import type { AssistantEvent, AssistantSession, McpTool, McpToolResult } from '../../engine'
 import type { CritiqueRecorder } from '../../refutation'
+import type { ThinkingSlot } from '../../thinking'
 import type { SignatureLedger } from './relay'
 
 /**
@@ -158,14 +159,18 @@ function modelFor(
   session: AssistantSession,
   signal: AbortSignal,
   ledger: SignatureLedger,
-  onTruncated: (reason: string) => void
+  onTruncated: (reason: string) => void,
+  slot: ThinkingSlot
 ): LanguageModel {
   const fetch = relayFetch({
     family: session.model.family,
     call: session.model.call,
     signal,
     ledger,
-    onTruncated
+    onTruncated,
+    // Read after `onTruncated` has told the slot, so the rebuilt request
+    // carries what the desk asks for now: after a truncation, nothing.
+    membersNow: () => slot.members()
   })
   const baseURL = placeholderBase(session.model.family)
   if (session.model.family === 'anthropic') {
@@ -488,7 +493,7 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
     // One model and one refinement hook, shared by the loop and the critic:
     // the pass runs on the same everything, which is what makes "inside the
     // same ToolGate" structural rather than a habit.
-    const model = modelFor(session, gate.signal, ledger, onTruncated)
+    const model = modelFor(session, gate.signal, ledger, onTruncated, slot)
     // See REHEARSAL_HOOK. The key is the constant, never a literal.
     const refine = {
       [REHEARSAL_TOOL]: (input: unknown) => {

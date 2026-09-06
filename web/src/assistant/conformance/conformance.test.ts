@@ -1298,6 +1298,21 @@ describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
         expect(request.signaturesTruncated, `${request.step} sent a fragment`).toEqual([])
         expect(request.signaturesMalformed, `${request.step} sent an empty block`).toEqual([])
       }
+      // **The rebuild, measured at the endpoint.** This endpoint now refuses a
+      // continuation that asks for thinking and does not carry back every block
+      // it signed — so an engine that merely *filtered* the damaged block out
+      // of an otherwise unchanged request would be refused here, and an engine
+      // that rebuilt it without the tier is not.
+      const askedAndShort = requests.filter(
+        (request) =>
+          request.thinkingRequested &&
+          request.results >= 1 &&
+          request.signaturesMissing.length > 0
+      )
+      expect(
+        askedAndShort.map((request) => request.step),
+        'a request asked for thinking without carrying back what it was signed'
+      ).toEqual([])
       const said = notices(events).map((notice) => notice.detail)
       const carried = requests.some((request) => request.signaturesCarried.length > 0)
       await annotate(

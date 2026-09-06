@@ -26,7 +26,7 @@
  * - **the answer is presented in the framing the SDK asked for.** See below.
  */
 import { isEventStream, withAbort } from '../contract'
-import { isTruncatedSignature } from '../../thinking'
+import { TIER_MEMBERS, isTruncatedSignature } from '../../thinking'
 import type { EndpointKind } from '../../../config/deskConfig'
 import type { ModelCall } from '../../engine'
 
@@ -346,24 +346,38 @@ interface WireBlock {
 }
 
 /**
- * The same request with every truncated thinking block taken out of it, or the
- * body unchanged.
+ * The request this desk will actually send, once a truncated signature has been
+ * found in the one the SDK composed.
  *
- * Removing the block is the only honest repair: the desk holds the whole
- * signature but the *text* it belongs to came through the SDK's own
- * accumulation, so putting the whole signature back would be this desk
- * asserting that a block it did not reassemble is intact. What it does instead
- * is send the turn without the block and say why.
+ * **A filter was not enough, and this is the difference.** Removing the damaged
+ * block leaves a request that still *asks for thinking* while no longer
+ * carrying a signed block it was given — which is a continuation a real
+ * endpoint may refuse outright. And the body was composed before the slot
+ * degraded, so it still carried the tier member the desk had by then stopped
+ * asking for.
+ *
+ * So the request is **rebuilt** rather than filtered: the damaged block is
+ * removed, every member the table can use to ask for thinking is taken off, and
+ * whatever the slot says *now* is put back — which, after a truncation, is
+ * nothing. `max_tokens` stays as composed: the protocol requires one on every
+ * Anthropic request, and one larger than a degraded session needs is legal.
+ *
+ * Removing the block is the only honest repair for the block itself: the desk
+ * holds the whole signature but the *text* it belongs to came through the SDK's
+ * own accumulation, so putting the whole signature back would be this desk
+ * asserting that a block it did not reassemble is intact.
  */
 export function withoutTruncatedThinking(
   body: string,
-  ledger: SignatureLedger
+  ledger: SignatureLedger,
+  /** What the slot asks for **after** the degrade. Null where it asks nothing. */
+  membersAfter: () => Record<string, unknown> | null = () => null
 ): { body: string; truncated: string } {
   const wholes = ledger.wholes()
   if (wholes.length === 0) return { body, truncated: '' }
-  let payload: { messages?: { content?: unknown }[] }
+  let payload: { messages?: { content?: unknown }[] } & Record<string, unknown>
   try {
-    payload = JSON.parse(body) as { messages?: { content?: unknown }[] }
+    payload = JSON.parse(body) as { messages?: { content?: unknown }[] } & Record<string, unknown>
   } catch {
     return { body, truncated: '' }
   }
@@ -377,12 +391,17 @@ export function withoutTruncatedThinking(
       if (!isTruncatedSignature(wholes, block.signature)) return true
       found =
         'the SDK carried a thinking signature back as a fragment of the one the endpoint sent ' +
-        '(vercel/ai#19663); the block was removed rather than sent malformed'
+        '(vercel/ai#19663); the block was removed and the request rebuilt without the tier'
       return false
     })
     if (kept.length !== content.length) message.content = kept
   }
-  return found === '' ? { body, truncated: '' } : { body: JSON.stringify(payload), truncated: found }
+  if (found === '') return { body, truncated: '' }
+  // The rebuild. `membersAfter` is read here, after the caller has told the
+  // slot — so what goes back on is what the desk is asking for now.
+  for (const member of TIER_MEMBERS) delete payload[member]
+  Object.assign(payload, membersAfter() ?? {})
+  return { body: JSON.stringify(payload), truncated: found }
 }
 
 /**
@@ -404,6 +423,14 @@ export function relayFetch(options: {
   ledger?: SignatureLedger
   /** Said once, where a signature came back short. */
   onTruncated?: (reason: string) => void
+  /**
+   * What the slot asks for, read **after** `onTruncated` has been told.
+   *
+   * The body was composed before the degrade; this is how the request that
+   * actually leaves carries what the desk is asking for now rather than what it
+   * was asking for a moment ago.
+   */
+  membersNow?: () => Record<string, unknown> | null
 }): typeof fetch {
   const base = placeholderBase(options.family)
   const run = options.signal
@@ -420,11 +447,21 @@ export function relayFetch(options: {
     }
     // **Checked before it leaves, not after it is refused.** See
     // `withoutTruncatedThinking`.
-    const { body, truncated } =
-      options.family === 'anthropic' && options.ledger !== undefined
-        ? withoutTruncatedThinking(composed, options.ledger)
-        : { body: composed, truncated: '' }
-    if (truncated !== '') options.onTruncated?.(truncated)
+    //
+    // **The order is the whole of it.** The slot is told first, and the body is
+    // rebuilt from what it says afterwards — so the request that leaves is not
+    // the one composed before the desk changed its mind.
+    let body = composed
+    let truncated = ''
+    if (options.family === 'anthropic' && options.ledger !== undefined) {
+      const looked = withoutTruncatedThinking(composed, options.ledger, () => null)
+      if (looked.truncated !== '') {
+        truncated = looked.truncated
+        options.onTruncated?.(truncated)
+        body = withoutTruncatedThinking(composed, options.ledger, () => options.membersNow?.() ?? null)
+          .body
+      }
+    }
     // **Bounded by the run's own signal**, and a thunk, so a closed run makes no
     // request at all. The desk's capability is handed the signal too — an abort
     // has to reach the request the desk actually made — but a capability that

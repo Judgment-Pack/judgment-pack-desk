@@ -580,8 +580,15 @@ export function scriptedModel(options: {
   const state = { lastBase: undefined as number | undefined, repeats: 0 }
   const mode: ThinkingMode = options.thinking ?? 'off'
   const critic = criticSteps(options.refuted === true)
-  /** The step ids this endpoint has emitted reasoning for, in order. */
-  const emitted: string[] = []
+  /**
+   * The step ids this endpoint has emitted reasoning for, **per conversation**.
+   *
+   * The refutation pass is a second conversation with its own history, and it
+   * carries none of the main loop's thinking blocks — correctly. A single list
+   * would have demanded the loop's signatures back from the critic and refused
+   * a session that did exactly the right thing.
+   */
+  const emitted: { loop: string[]; critic: string[] } = { loop: [], critic: [] }
 
   /** The 400 an endpoint with no thinking answers, in each protocol's shape. */
   const refuse = (message: string): Response =>
@@ -617,11 +624,12 @@ export function scriptedModel(options: {
       ? critic[Math.min(n, critic.length - 1)]!
       : chooseStep(state, n)
 
+    const lane = refutation ? emitted.critic : emitted.loop
+    const expected = lane.map((id) => thinkSignature({ id }))
     const carried =
       options.api === 'anthropic'
-        ? anthropicCarried(messages, emitted.map((id) => thinkSignature({ id })))
+        ? anthropicCarried(messages, expected)
         : { carried: [], truncated: [], malformed: [] }
-    const expected = emitted.map((id) => thinkSignature({ id }))
     requests.push({
       url,
       headerNames: Object.keys(headers).map((name) => name.toLowerCase()),
@@ -675,10 +683,27 @@ export function scriptedModel(options: {
       }
     }
 
+    // **A continuation that asks for thinking must carry what it was given.**
+    // Anthropic's rule is that thinking blocks come back complete and
+    // unmodified while thinking is on, so an endpoint refuses a request that
+    // both asks for it and has dropped or altered a block it signed. The split
+    // probe is where a client is most likely to produce exactly that, which is
+    // why the check lives on this mode: a desk that merely *filtered* the
+    // damaged block out of an otherwise unchanged request fails here.
+    if (mode === 'split' && param !== null && n >= 1) {
+      const missing = expected.filter((signature) => !carried.carried.includes(signature))
+      if (missing.length > 0 || carried.truncated.length > 0 || carried.malformed.length > 0) {
+        return refuse(
+          'thinking blocks must be preserved while thinking is enabled: this request asks for ' +
+            'thinking and does not carry back every block this endpoint signed'
+        )
+      }
+    }
+
     // Thinking output must not change the step logic: neither a thinking block
     // nor a reasoning member is a tool result, so `chooseStep` is untouched.
     const reasoning = mode !== 'off' && mode !== 'nothink' && param !== null
-    if (reasoning && !emitted.includes(step.id)) emitted.push(step.id)
+    if (reasoning && !lane.includes(step.id)) lane.push(step.id)
 
     if (options.answerAs === 'whole') {
       const answer =

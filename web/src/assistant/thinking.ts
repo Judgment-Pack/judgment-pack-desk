@@ -110,6 +110,19 @@ export function wireFor(tier: ThinkingTier, dialect: ThinkingDialect): WireThink
   }
 }
 
+/**
+ * Every member the table can add to a request in order to **ask for thinking**.
+ *
+ * A closed list, because it is what a request is stripped of when the slot
+ * degrades: a request that both asks for thinking and no longer carries a
+ * signed block it was given is a request an endpoint may refuse outright.
+ * `max_tokens` is deliberately not here — it is a member the protocol requires
+ * on every Anthropic request, and a maximum left larger than the degraded
+ * session needs is legal and harmless, where a *missing* one is not a request
+ * at all.
+ */
+export const TIER_MEMBERS: readonly string[] = ['reasoning_effort', 'thinking', 'output_config']
+
 /** The dialect a family is tried at first. */
 export function firstDialect(family: EndpointKind): ThinkingDialect {
   return family === 'anthropic' ? 'anthropic-adaptive' : 'openai'

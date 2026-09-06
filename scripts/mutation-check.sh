@@ -4221,6 +4221,16 @@ export function assistantTransport(): Transport {
     "      if (!isTruncatedSignature(wholes, block.signature)) return true" \
     "      if (true) return true"
 
+  # **A filter is not a rebuild.** The body was composed before the slot
+  # degraded, so filtering the damaged block out of it leaves a request that
+  # still asks for thinking while no longer carrying a block the endpoint
+  # signed — a continuation the split-signature endpoint refuses.
+  mutate web "the degraded request is filtered rather than rebuilt" "$VR" \
+    "  for (const member of TIER_MEMBERS) delete payload[member]
+  Object.assign(payload, membersAfter() ?? {})" \
+    "  void TIER_MEMBERS
+  void membersAfter"
+
   # The block ids repeat every turn on the Anthropic wire, so a ledger with no
   # turn boundary concatenates one turn's signature onto the next and reports
   # the next turn's whole signature as a fragment of the pair — degrading a

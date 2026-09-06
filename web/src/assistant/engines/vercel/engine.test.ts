@@ -1158,6 +1158,36 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
     expect(sent.messages[0]!.content.map((block) => block.type)).toEqual(['text'])
   })
 
+  it('rebuilds the request from the slot rather than filtering the composed one', () => {
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'c2lnbmF0dXJlLVQx')
+    const body = JSON.stringify({
+      model: 'm',
+      max_tokens: 12096,
+      thinking: { type: 'enabled', budget_tokens: 8000 },
+      output_config: { effort: 'high' },
+      messages: [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: 'I read it.', signature: 'dXJlLVQx' },
+            { type: 'text', text: 'hello' }
+          ]
+        }
+      ]
+    })
+    // The slot has degraded by the time this is read, so it asks for nothing.
+    const rebuilt = withoutTruncatedThinking(body, ledger, () => null)
+    const sent = JSON.parse(rebuilt.body) as Record<string, unknown>
+    expect(rebuilt.truncated).toContain('19663')
+    expect(Object.keys(sent)).not.toContain('thinking')
+    expect(Object.keys(sent)).not.toContain('output_config')
+    // `max_tokens` stays: the protocol requires one on every request, and one
+    // larger than a degraded session needs is legal.
+    expect(sent.max_tokens).toBe(12096)
+    expect(sent.model).toBe('m')
+  })
+
   it('leaves a whole signature exactly where it was', () => {
     const ledger = signatureLedger()
     ledger.fragment('0', 'c2lnbmF0dXJlLVQx')
@@ -1252,6 +1282,12 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
       .flatMap((message) => (Array.isArray(message.content) ? message.content : []))
       .filter((block) => (block as { type?: string }).type === 'thinking')
     expect(carried).toEqual([])
+    // **And it does not ask for thinking either.** A request that both asks for
+    // thinking and has dropped a block the endpoint signed is a continuation a
+    // real endpoint may refuse: the body was composed before the slot degraded,
+    // so it is rebuilt from what the slot says afterwards rather than filtered.
+    expect(Object.keys(seen[1]!)).not.toContain('thinking')
+    expect(Object.keys(seen[1]!)).not.toContain('output_config')
     // The session still completes: a degrade is not a refusal.
     expect(events[events.length - 1]!.type).toBe('end')
     expect(events.some((event) => event.type === 'proposal')).toBe(true)
