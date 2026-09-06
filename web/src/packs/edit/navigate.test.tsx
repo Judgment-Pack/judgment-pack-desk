@@ -453,11 +453,22 @@ describe('a read that lands after the page has moved on', () => {
 
   it('leaves the file the page is on alone when another file’s save lands', async () => {
     // **A PUT takes as long as it takes.** Save A, leave for B, edit B, and let
-    // A's save answer: A's read-back became B's *base* and B's identity, so B
-    // was dirty against A, the page was about a file it was not on, and the
-    // editor could disappear behind the served fallback. The save's own text
-    // comparison cannot catch it — it decides whether to replace the text, not
-    // whose file this is.
+    // A's save answer.
+    //
+    // **This case is guarded twice, and it is worth saying which guard it
+    // measures.** On this route the read-back never reaches the buffer at all:
+    // the address change calls `editor.reset()`, which detaches the mutation's
+    // observer, so the per-mutation `onSuccess` — and with it `buffer.landed` —
+    // is never delivered. That is the guard this case exercises, and it is a
+    // property of react-query's delivery rather than of the buffer.
+    //
+    // The buffer's own guard is the ticket `landed` now takes, and it is
+    // measured where it can be: `useDocumentBuffer.test.ts` calls `landed` with
+    // a stale identity directly, because a caller that *did* deliver here —
+    // `onSettled` already arrives through the promise rather than the observer —
+    // would otherwise make A's read-back B's base and B's identity, with the
+    // save's own text comparison unable to catch it: that comparison decides
+    // whether to replace the text, not whose file this is.
     const log = chassis({
       content: ALPHA,
       sha256: PACK_DIGEST,
