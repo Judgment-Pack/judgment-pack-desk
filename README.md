@@ -1309,20 +1309,33 @@ Type what the pack should decide and press **Run**. The desk fetches the
 runtime's own `author_pack` prompt over `prompts/get` with what you typed as its
 `policy` argument, hands it to the engine, and shows what happens: each tool
 call by name, each answer's `isError` and byte count, each guardrail in the
-desk's warning colour, and at the end the **proposal** — the document as
-read-only JSON, the unknowns the assistant declared, and beneath them the
-runtime's own checks **quoted whole**: the `validate` report and the rehearsal
-evaluation, as the runtime wrote them. A summary of a verdict is a second
-verdict, so there is none.
+desk's warning colour, and at the end the **proposal** — the diff below, the
+document as read-only JSON, the unknowns the assistant declared, and beneath
+them the runtime's own checks **quoted whole**: the `validate` report and the
+rehearsal evaluation, as the runtime wrote them. A summary of a verdict is a
+second verdict, so there is none.
 
-**Accept and Reject are drawn and disabled**, with a title saying they arrive in
-the next chunk. Nothing here writes to the draft, produces a diff, or touches a
-file. `Escape` stops a session; leaving the route stops it too. A session has
-two phases — the desk reading the runtime's prompt, then the engine running —
-and Stop ends either. Every session emits exactly one `end`, whichever way it
+`Escape` stops a session; leaving the route stops it too. A session has two
+phases — the desk reading the runtime's prompt, then the engine running — and
+Stop ends either. Every session emits exactly one `end`, whichever way it
 finishes. Pressing Run again with the text unchanged is a second run, because a
 model is not a pure function. Nothing about a session is persisted — coming back
 is a new one.
+
+**The session is given the draft it is editing.** The first user message carries
+the runtime's prompt and then the bytes in the editor, verbatim and fenced,
+under one fixed sentence: *This is the draft being edited; propose the whole
+document.* On the reading route the saved document plays the same part. So what
+comes back is a whole document, which is what the diff needs, and the tab says
+whether it is *an update to the draft it was given* or *a new document* — from
+what this desk sent, never from a `kind` the model wrote.
+
+**Fix** runs the runtime's `fix_pack` prompt beside Run, with the diagnostics the
+check on this page already produced as its `diagnostics` argument — the report's
+own array as JSON text, not a message list, a count or a severity filter. Same
+engine, same gate, same proposal path, and the draft in the first message as
+above. It is offered only where the check reports something to fix and the
+runtime advertises the prompt, and the tab says which prompt is running.
 
 **The assistant opens its own MCP connection**, and that costs one more
 `jpack mcp` process while the tab is running. The reason is the ToolGate below:
@@ -1332,6 +1345,55 @@ that transport would break the desk. A second socket, gated at the wire, is what
 makes "no page code path can bypass it" a structural claim rather than a habit.
 The connection lives exactly as long as the session and is closed on stop, on
 unmount and on navigation.
+
+### The proposal as a diff, and Accept into draft
+
+The proposal is drawn as **what accepting it would do to the draft**, member by
+member: each top-level member added, removed or changed, with the draft's text
+and the proposal's beside it, and each array member compared *element by
+element* — matched by `id` where the elements carry one, by position where they
+do not. Members that did not move collapse to one line with a count.
+
+The comparison is **computed here and never quoted**. The contract's proposal
+event carries a document and its unknowns and nothing else; there is no account
+of its own work for this desk to repeat, and a model's account of what it
+changed is not evidence about a document. Everything is canonicalized —
+`JSON.parse(JSON.stringify(x))` — before it is compared and before anything is
+written, on the ToolGate's own reasoning: a value with a getter or a `toJSON`
+can answer one thing while the diff is looking and another while the writer
+serializes, and the two readings would be two documents.
+
+An id that names two elements of one array matches nothing, and a keyed element
+is never paired positionally: a new rule at index 0 must not be reported as an
+edit of whichever rule happened to sit there. Where the draft cannot be read at
+all — no bytes, bytes that are not JSON, or bytes this desk and `JSON.parse`
+disagree about (a duplicated member) — the diff says so and the whole proposal
+is new.
+
+**Accept into draft** applies it through the same span-preserving writer a form
+edit uses (`packs/edit/writes.ts`), in exactly one `write` on the editing
+session:
+
+- one undo entry, so **Undo takes the whole accept back in one step**;
+- every byte the proposal did not move survives — the author's own indentation,
+  spacing and member order included — because each change is a splice at a
+  pointer and an untouched member is not written at all. ADR-0019 makes a human
+  read the diff of a save, and an accept that re-serialized the file would hand
+  that human every line of it;
+- **nothing is saved.** The on-idle check runs again over the new bytes, the
+  toolbar's dirty count moves, the navigation guard covers an accepted-but-
+  unsaved draft exactly as it covers typing, and Save is still yours to press;
+- a draft with nothing to splice into — bytes that do not scan, or a duplicated
+  member — is replaced whole, which is the one case where there are no spans to
+  preserve.
+
+Accept is enabled only on `?edit`, with a proposal, once the run has ended. It
+is disabled with the reason in its `title` while a run is in flight, while a
+save is in flight, once accepted and once rejected; on the reading route it is
+not drawn at all and one line stands in its place — *Open Edit to accept.*
+**Reject** drops the proposal and keeps the event stream. There is no partial
+accept: per-member checkboxes are a later refinement, and this chunk deliberately
+does not ship half of one.
 
 ### The ToolGate
 

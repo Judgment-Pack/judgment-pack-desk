@@ -3818,9 +3818,96 @@ export function assistantTransport(): Transport {
           })'
   # An identical policy run twice: the run id is what makes the second press a
   # second submission rather than the same state value.
+  # An identical policy run twice: the run id is what makes the second press a
+  # second submission rather than the same state value. (The submission grew a
+  # prompt name and its arguments when Fix landed; the id is still what this row
+  # is about.)
   mutate web "a second run of the same policy is suppressed" "$AP" \
-    '          onClick={() => setSubmitted({ id: (nextRun.current += 1), policy: typed })}' \
-    '          onClick={() => setSubmitted({ id: 1, policy: typed })}'
+    '              id: (nextRun.current += 1),
+              name: AUTHOR_PACK_PROMPT,
+              args: { policy: typed }' \
+    '              id: 1,
+              name: AUTHOR_PACK_PROMPT,
+              args: { policy: typed }'
+
+  # ---- The proposal as a diff, and accepting it into the draft -------------
+  #
+  # ADR-0001: "the desk renders the diff and applies an accepted proposal
+  # through the span-preserving writer. No engine event writes anything." Each
+  # row below breaks one half of that sentence.
+  PD=web/src/assistant/proposalDiff.ts
+  AC=web/src/assistant/acceptProposal.ts
+
+  # **The diff is computed, never quoted.** There is no sentence from the model
+  # for a mutant to quote — the contract's proposal event carries a document and
+  # its unknowns, and nothing else — so what this row breaks is the computation
+  # itself: the comparison stops being against the draft, and every member is
+  # reported as new, which is exactly what quoting a model that says "I rewrote
+  # the pack" would produce.
+  mutate web "the diff is not computed against the draft" "$PD" \
+    '  const draft = readDraft(draftText)' \
+    '  const draft = readDraft(undefined)'
+
+  # A member the proposal did not move must not be written. The fixture drafts
+  # are indented with four spaces, so a member written again comes back with
+  # this module's own layout and the byte comparison sees it.
+  mutate web "an unchanged member is written again under Accept" "$AC" \
+    '    if (sameValue(before, after)) continue' \
+    '    if (false) continue'
+
+  # **The whole document, instead of a splice.** This is the row for "Accept
+  # writes through something other than the editing session's writer": the pane
+  # cannot reach `commit` — the context does not carry one — so the reachable
+  # version of that defect is the writer being bypassed one layer down, and the
+  # accept re-serializing the file it was asked to edit.
+  mutate web "Accept writes the whole document instead of splicing it" "$AC" \
+    '  const readable =
+    current.index.parseError === undefined &&
+    agreesWithParse(current.text, current.index).length === 0' \
+    '  const readable = false'
+
+  # One accept is one undo entry. A second write with its own key is a second
+  # entry, so the first Undo leaves the author where the accept put them.
+  mutate web "Accept pushes a second undo entry" "$AP" \
+    '    write((current) => applyProposal(current, proposed), {
+      coalesceKey: `assistant-accept:${(accepts.current += 1)}`
+    })' \
+    '    write((current) => applyProposal(current, proposed), {
+      coalesceKey: `assistant-accept:${(accepts.current += 1)}`
+    })
+    write((current) => applyProposal(current, proposed), {
+      coalesceKey: `assistant-accept:${(accepts.current += 1)}`
+    })'
+
+  # The reading route has no buffer a save can reach, so it is offered one line
+  # rather than a control.
+  mutate web "Accept is drawn on the reading route" "$AP" \
+    '            {editing ? (' \
+    '            {true ? ('
+
+  # A run still in flight is about to replace the events the proposal is on.
+  mutate web "Accept is enabled while the session is still running" "$AC" \
+    '  if (input.running) {
+    return { enabled: false, why: '"'"'The session is still running. Stop it or wait for it to end.'"'"' }
+  }' \
+    '  if (false) {
+    return { enabled: false, why: '"'"''"'"' }
+  }'
+
+  # The draft in the first message is what makes the proposal an edit of this
+  # document rather than a document about nothing.
+  mutate web "the draft is left out of the first message" "$AP" \
+    '    startRun(withDraft(prompt.data.text, draftNow.current))' \
+    '    startRun(prompt.data.text)'
+
+  # `fix_pack` works from the validator's report. A message list is a
+  # paraphrase, and a paraphrase of a refusal is a second refusal.
+  mutate web "Fix re-words the runtime's diagnostics" "$AP" \
+    '  const diagnosticsText = useMemo(() => JSON.stringify(diagnostics, null, 2), [diagnostics])' \
+    '  const diagnosticsText = useMemo(
+    () => diagnostics.map((entry) => entry.message ?? '"'"''"'"').join('"'"'\n'"'"'),
+    [diagnostics]
+  )'
 fi
 
 restore
