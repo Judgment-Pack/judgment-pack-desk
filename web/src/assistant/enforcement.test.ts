@@ -662,3 +662,39 @@ describe('the proposal is canonicalized in one place, and nowhere else', () => {
     }
   })
 })
+
+describe('(9) the page sends no request header the chassis would drop', () => {
+  it('holds MODEL_REQUEST_HEADERS inside the chassis outbound allow-list', () => {
+    // **Two hand-mirrored allow-lists, and nothing held them together.** The
+    // page filters a model request's headers to `MODEL_REQUEST_HEADERS` and
+    // the chassis rebuilds the outbound set from `relayedRequestHeaders`; a
+    // name on the page's list and not the chassis' is a header the engine
+    // believes it sent and the endpoint never sees, which is exactly the kind
+    // of failure a protocol change produces and no test would have named.
+    //
+    // **Containment and not equality**, because the two lists are not the same
+    // list and should not be: the chassis additionally carries what a *browser*
+    // sets on its own — `accept-encoding`, `content-length`, `user-agent` — and
+    // the `X-Stainless-*` family, none of which a page-side engine writes. What
+    // must hold is one direction: everything the page may send, the chassis
+    // carries.
+    const go = readFileSync(join(SRC, '..', '..', 'internal', 'desk', 'modelrelay.go'), 'utf8')
+    const declared = /var relayedRequestHeaders = \[\]string\{([^}]*)\}/.exec(go)
+    expect(declared, 'relayedRequestHeaders is declared in internal/desk/modelrelay.go').not.toBeNull()
+    const carried = [...declared![1]!.matchAll(/"([^"]+)"/g)].map((match) =>
+      match[1]!.toLowerCase()
+    )
+    expect(carried.length).toBeGreaterThan(5)
+
+    const page = /const MODEL_REQUEST_HEADERS: readonly string\[\] = \[([^\]]*)\]/.exec(
+      read('assistant/session.ts')
+    )
+    expect(page, 'MODEL_REQUEST_HEADERS is declared in assistant/session.ts').not.toBeNull()
+    const sent = [...page![1]!.matchAll(/'([^']+)'/g)].map((match) => match[1]!.toLowerCase())
+    expect(sent.length).toBeGreaterThan(5)
+
+    for (const header of sent) {
+      expect(carried, `the chassis drops ${header}, which the page may send`).toContain(header)
+    }
+  })
+})

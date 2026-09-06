@@ -2461,6 +2461,20 @@ no CORS, so a page calling one directly could not read the answer.
   Anything else is refused with `assistant-relay-path` and nothing leaves this
   process. The suffix is appended to the configured URL's **escaped** path, so
   `%2F` in a configured base stays one segment.
+- **One exception to that class, and it is a shape rather than a character.**
+  A segment may be `<name>:<method>` where the method is one of
+  `generateContent`, `streamGenerateContent` or `countTokens` — the way the
+  native Gemini wire addresses a method, as in
+  `v1beta/models/gemini-2.5-pro:streamGenerateContent`. A colon anywhere else,
+  a second colon, an empty name, an escaped colon, or a method outside those
+  three is refused exactly as before. The list is closed because the part after
+  the colon is a **verb**: an open one would let whoever holds the session
+  token ask the configured endpoint to *do* something nobody wrote down, with
+  the stored credential attached, and adding a method is a reviewed change to
+  that list. The rule is about the **path** and is not gated on `kind` — the
+  kind decides the credential, and a relay that read one to decide the other
+  would be two rules where there is one — though in practice only the gemini
+  wire writes such a path.
 - **The `v1` in that address belongs to this route, not to any endpoint**, which
   is how one mount point serves both protocols: an OpenAI-compatible client
   appends `/chat/completions` and an Anthropic one appends `/v1/messages`, and
@@ -2497,10 +2511,25 @@ no CORS, so a page calling one directly could not read the answer.
   comparison every parser downstream makes — so it is not filtered, it is
   refused, and refusing is the one rule every parser agrees on because there is
   nothing left for them to disagree about.
-- **One query reaches the endpoint and it is the configured one** — the
+- **One pair is the exception, on one kind, byte for byte.** The native Gemini
+  wire asks for a server-sent-event stream with a query parameter and has
+  nowhere else to put it — it is not a header, and the configured URL cannot
+  carry it because the same endpoint serves the unary call too. So for a
+  configured `gemini` endpoint the page may send exactly `alt=sse` beside the
+  token: the literal nine bytes, at most once. `alt=json`, `ALT=sse`,
+  `%61lt=sse`, `alt=sse&alt=sse`, `alt=sse&x=1` and `alt=sse;x=1` are each
+  refused with `assistant-relay-path` and nothing sent, and the pair is refused
+  entirely on the other two kinds, which carry streaming in the request body
+  and need none. This is a **closed exception and not a loosening**: byte
+  equality against one fixed literal is the one comparison that has no second
+  reading, which is precisely what the refusal above exists to guarantee.
+  What the request said is settled before anything is read off this machine;
+  whether the configured kind admits it is settled as soon as the kind is
+  known, before the key is opened, and nothing outbound happens either way.
+- **One query reaches the endpoint: the configured one, then that pair** — the
   endpoint's own routing, out of the file on this machine, carried across byte
-  for byte. So **the page chooses a path suffix and nothing else**, and that
-  sentence is now literally true.
+  for byte and first, with `alt=sse` after it where the page sent one. So **the
+  page chooses a path suffix, and one pair on one protocol**, and nothing else.
 - **Method and body verbatim**, bounded at 8 MiB — a whole schema, several
   examples and a draft ride in one request — **refused with `too-large`, never
   truncated**. The whole body is read before a byte of it is dispatched, so an

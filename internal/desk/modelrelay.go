@@ -272,6 +272,17 @@ func appendQueryPair(raw, pair string) string {
 //   - **No backslash**, which some servers read as a separator and this one
 //     therefore never sends.
 //   - **A bound**, because a suffix is an address and not a payload.
+//
+// **One closed exception, and it is a shape rather than a character.** The
+// native Gemini wire addresses a method with a colon in the last segment —
+// `models/gemini-2.5-pro:streamGenerateContent` — so a segment may be
+// `<name>:<method>` where the method is one of `relayPathMethods` and the name
+// either side of it is the same class as before. A colon anywhere else, a
+// second colon, a method outside the list, or an empty name is refused with
+// `assistant-relay-path` exactly as it was. The rule is about the **path** and
+// is not gated on the configured kind: the kind decides the credential, and a
+// relay that read one to decide the other would be two rules where there is
+// one. In practice only the gemini wire writes such a path.
 func relaySuffixProblem(suffix string) string {
 	if suffix == "" {
 		return "a relayed request must name at least one path segment after " +
@@ -288,6 +299,17 @@ func relaySuffixProblem(suffix string) string {
 		if segment == "." || segment == ".." {
 			return `a relayed path may not contain a "." or ".." segment`
 		}
+		// The one exception, taken at the **first** colon: `a:b:generateContent`
+		// leaves `b:generateContent` as the method, which is on no list, and
+		// `a:generateContent:x` leaves `generateContent:x`. So a second colon
+		// refuses itself and there is no arithmetic to get wrong.
+		if name, method, found := strings.Cut(segment, ":"); found {
+			if name == "" || !contains(relayPathMethods, method) {
+				return "a colon in a relayed path may only introduce one of " +
+					strings.Join(relayPathMethods, ", ") + ", after a non-empty segment"
+			}
+			segment = name
+		}
 		for _, r := range segment {
 			if !relayPathRune(r) {
 				return "a relayed path may contain only letters, digits, \".\", \"_\" and \"-\" " +
@@ -298,6 +320,16 @@ func relaySuffixProblem(suffix string) string {
 	}
 	return ""
 }
+
+// relayPathMethods is the closed list of methods a colon may introduce.
+//
+// The three the native Gemini wire documents on a model resource, and no more.
+// **Closed rather than "anything after a colon"**, because the segment before
+// the colon is a resource and the part after it is a *verb*: an open list would
+// let whoever holds the session token ask the configured endpoint to do
+// something nobody wrote down, with the stored credential attached. Adding one
+// is a change to this list, reviewed, exactly as adding a request header is.
+var relayPathMethods = []string{"generateContent", "streamGenerateContent", "countTokens"}
 
 func relayPathRune(r rune) bool {
 	switch {
@@ -350,12 +382,34 @@ func relayPathRune(r rune) bool {
 // — and while nothing of it would be forwarded, a desk that accepted a request
 // two parsers read differently would be a desk with an argument to make about
 // why that is safe. It has none to make now.
-func relayQueryProblem(raw string) string {
+//
+// # The one closed exception, and why it is a pair and not a filter
+//
+// The native Gemini wire asks for a server-sent-event stream with a **query**
+// parameter — `?alt=sse` — and there is nowhere else to put it: it is not a
+// header, and the configured URL cannot carry it because the same endpoint
+// serves the unary call too. So exactly one pair is admitted beside the token,
+// **byte for byte and at most once**: the literal nine bytes `alt=sse`.
+// `alt=json`, `ALT=sse`, `%61lt=sse`, a second copy, anything with a value of
+// its own — each is refused with `assistant-relay-path` and nothing is sent.
+//
+// That is a closed exception rather than a loosening, and the difference is
+// the reason the refusal above exists: the class was created because *any*
+// comparison this desk writes is a comparison some parser downstream makes
+// differently. Byte equality against one fixed literal is the one comparison
+// that has no second reading — there is nothing to decode, fold or split.
+//
+// **Whether the configured endpoint may carry it is decided elsewhere**, once
+// the kind is known and before the key is opened: see `relayExtraQueryPair`
+// and `handleModelRelay`. This function answers only what the request said,
+// which is a property of the request alone and is settled before anything is
+// read off this machine.
+func relayQueryProblem(raw string) (extra, problem string) {
 	if raw == "" {
-		return ""
+		return "", ""
 	}
 	if strings.ContainsRune(raw, ';') {
-		return "a relayed query may not contain a semicolon: it is a separator to some " +
+		return "", "a relayed query may not contain a semicolon: it is a separator to some " +
 			"servers and a value to others, and this desk will not send one it cannot " +
 			"read the same way twice"
 	}
@@ -363,12 +417,50 @@ func relayQueryProblem(raw string) string {
 		name, _, _ := strings.Cut(parameter, "=")
 		decoded, err := url.QueryUnescape(name)
 		if err != nil || decoded != sessionTokenParameter {
-			return "a relayed request carries this desk's session token and no other query " +
+			// The exception, and every word of this condition is load-bearing:
+			// the name must *decode* to the one this desk knows (the same
+			// comparison the token gets), the raw pair must be that literal
+			// byte for byte (so an encoded spelling is not a second reading of
+			// it), and there must not already be one (so `alt=sse&alt=sse` is
+			// a query two parsers could count differently).
+			if err == nil && decoded == relayStreamParameter &&
+				parameter == relayStreamPair && extra == "" {
+				extra = parameter
+				continue
+			}
+			return "", "a relayed request carries this desk's session token and no other query " +
 				"parameter: nothing of the page's query is forwarded, because no comparison " +
 				"this desk can write is the one every server downstream makes"
 		}
 	}
-	return ""
+	return extra, ""
+}
+
+// The one query pair a page may send, and the name inside it.
+//
+// A literal rather than a builder: what is admitted is these bytes, and a
+// `name + "=" + value` would be an invitation to admit a second value later
+// without noticing that the rule had changed shape.
+const (
+	relayStreamParameter = "alt"
+	relayStreamPair      = "alt=sse"
+)
+
+// relayExtraQueryPair is the query pair each wire protocol admits from the
+// page, or the empty string for one that admits none.
+//
+// **A table beside `credentialHeader`, and closed the same way.** The page's
+// query is refused for `openai-compatible` and `anthropic` exactly as it was
+// before this existed: both protocols carry streaming in the request body, so
+// a pair admitted for them would be a capability nothing asked for. Only the
+// gemini wire needs one, and it needs precisely one.
+func relayExtraQueryPair(kind string) string {
+	switch kind {
+	case "gemini":
+		return relayStreamPair
+	default:
+		return ""
+	}
 }
 
 // relayTarget is the address one relayed request is sent to.
@@ -379,17 +471,28 @@ func relayQueryProblem(raw string) string {
 // configured segment into two, which is a different resource with the
 // credential attached.
 //
-// **One query travels and it is the configured one.** It is the endpoint's own
-// routing, out of the file on this machine — some gateways route on one — and
-// `appendPath` carries it across unchanged. Nothing of the page's query is
-// added, because nothing of the page's query is accepted: see
-// `relayQueryProblem`.
-func relayTarget(base, suffix string) (*url.URL, error) {
+// **The configured query travels, and after it at most one pair of the page's.**
+// The configured one is the endpoint's own routing, out of the file on this
+// machine — some gateways route on one — and `appendPath` carries it across
+// unchanged, first and byte for byte. `extra` is the single literal
+// `relayQueryProblem` admitted and `handleModelRelay` checked against the
+// configured kind; everything else of the page's query was refused, and the
+// request never reached here.
+//
+// `ForceQuery` is cleared with the pair appended, because a configured base
+// written as `https://gw/v1?` would otherwise emit `?` and then `&alt=sse`,
+// which is a query with an empty first pair in it — the kind of thing two
+// parsers read differently, and the one thing this route will not send.
+func relayTarget(base, suffix, extra string) (*url.URL, error) {
 	parsed, err := url.Parse(base)
 	if err != nil {
 		return nil, err
 	}
 	appendPath(parsed, "/"+suffix)
+	if extra != "" {
+		parsed.RawQuery = appendQueryPair(parsed.RawQuery, extra)
+		parsed.ForceQuery = false
+	}
 	return parsed, nil
 }
 
@@ -414,8 +517,12 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 	}
 	// The query, on the same footing and decided in the same breath: a
 	// property of the request alone, and the page's half of it is refused
-	// rather than filtered. See `relayQueryProblem`.
-	if reason := relayQueryProblem(r.URL.RawQuery); reason != "" {
+	// rather than filtered. `extra` is the one closed exception it may have
+	// admitted — a pair whose *shape* is settled here and whose *permission*
+	// is settled below, once the configured kind is known. See
+	// `relayQueryProblem`.
+	extra, reason := relayQueryProblem(r.URL.RawQuery)
+	if reason != "" {
 		writeJSONCoded(w, http.StatusBadRequest, CodeAssistantRelayPath, reason)
 		return
 	}
@@ -433,6 +540,18 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 	endpoint, err := s.configuredEndpoint()
 	if err != nil {
 		writeJSONError(w, statusForRefusal(err), err)
+		return
+	}
+	// **The other half of the query rule, and it is here because this is the
+	// first line at which the kind is known.** The shape was settled before
+	// anything was read off this machine; whether *this* endpoint's protocol
+	// admits that pair is a per-kind allow-list, and it is checked before the
+	// key is opened so that a request nobody was ever going to forward does
+	// not cause a credential to be read. Nothing outbound happens either way.
+	if extra != "" && extra != relayExtraQueryPair(endpoint.kind) {
+		writeJSONCoded(w, http.StatusBadRequest, CodeAssistantRelayPath,
+			fmt.Sprintf("a relayed request to a %q endpoint carries this desk's session token "+
+				"and no other query parameter; nothing was sent", endpoint.kind))
 		return
 	}
 	key, err := s.assistant.readKey()
@@ -456,7 +575,7 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 			"no relay is defined for that endpoint's wire protocol")
 		return
 	}
-	target, err := relayTarget(endpoint.url, suffix)
+	target, err := relayTarget(endpoint.url, suffix, extra)
 	if err != nil {
 		writeJSONCoded(w, http.StatusConflict, CodeAssistantUnconfigured,
 			"the configured endpoint is not an address a request can be sent to")

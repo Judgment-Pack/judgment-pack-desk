@@ -630,6 +630,225 @@ func TestRelayRefusesAQueryCarryingASemicolon(t *testing.T) {
 	}
 }
 
+func TestRelayAdmitsAMethodColonOnlyAsAClosedShape(t *testing.T) {
+	// **The one exception to the segment class, tested as a shape.** The
+	// native Gemini wire addresses a method with a colon in the last segment,
+	// so `<name>:<method>` is accepted for a method on the closed list and
+	// nothing else is — a colon before a name nobody wrote down would let
+	// whoever holds the session token ask the configured endpoint to *do*
+	// something, with the stored credential attached.
+	for _, suffix := range []string{
+		"v1beta/models/gemini-2.5-pro:generateContent",
+		"v1beta/models/gemini-2.5-pro:streamGenerateContent",
+		"v1beta/models/gemini-2.5-pro:countTokens",
+		"v1beta/models/a_model-1.5:generateContent",
+		// A colon deeper than the last segment is still the same shape, and
+		// the rule is about a segment rather than about a position.
+		"v1beta/a:countTokens/b",
+	} {
+		if problem := relaySuffixProblem(suffix); problem != "" {
+			t.Errorf("%q was refused: %s", suffix, problem)
+		}
+	}
+	for _, testCase := range []struct{ name, suffix string }{
+		{"a method nobody wrote down", "v1beta/models/m:deleteModel"},
+		{"an empty method", "v1beta/models/m:"},
+		{"an empty name", "v1beta/models/:generateContent"},
+		{"a bare colon", "v1beta/models/:"},
+		{"a second colon", "v1beta/models/a:b:generateContent"},
+		{"a method with a tail", "v1beta/models/m:generateContent:x"},
+		{"a case-folded method", "v1beta/models/m:GenerateContent"},
+		// The escaped spelling stays refused: no percent sign has ever been in
+		// the class, which is what keeps the escaped and unescaped readings of
+		// an accepted suffix the same string.
+		{"an encoded colon", "v1beta/models/m%3AgenerateContent"},
+		{"a colon in place of a separator", "v1beta:models:generateContent"},
+	} {
+		if problem := relaySuffixProblem(testCase.suffix); problem == "" {
+			t.Errorf("%s: %q was accepted", testCase.name, testCase.suffix)
+		}
+	}
+}
+
+func TestRelayCarriesAMethodColonToTheEndpointByteForByte(t *testing.T) {
+	// Through the whole server and measured at the upstream, because the
+	// promise is about what the endpoint receives: a path this desk re-encoded
+	// on the way through would be a request to a different resource with the
+	// credential attached.
+	u := newUpstream(t, nil)
+	_, ts, _ := relayDesk(t, "gemini", u)
+	const suffix = "v1beta/models/gemini-2.5-pro:streamGenerateContent"
+	resp, body := relayGet(t, ts, suffix)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	seen := u.only(t)
+	if seen.path != "/"+suffix {
+		t.Errorf("the endpoint saw %q, want %q", seen.path, "/"+suffix)
+	}
+	if got := seen.header.Values("x-goog-api-key"); len(got) != 1 || got[0] != testKey {
+		t.Errorf("x-goog-api-key = %v, want exactly one configured key", got)
+	}
+}
+
+func TestRelayRefusesAMethodColonWithoutReachingTheEndpoint(t *testing.T) {
+	counter := countingRelays(t)
+	u := newUpstream(t, nil)
+	_, ts, _ := relayDesk(t, "gemini", u)
+	for _, suffix := range []string{
+		"v1beta/models/m:deleteModel",
+		"v1beta/models/m:generateContent:x",
+		"v1beta/models/:generateContent",
+	} {
+		resp, body := relayGet(t, ts, suffix)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%q: status %d, want 400 (%s)", suffix, resp.StatusCode, body)
+			continue
+		}
+		if got := codeOfBody(t, body); got != CodeAssistantRelayPath {
+			t.Errorf("%q: code %q, want %q", suffix, got, CodeAssistantRelayPath)
+		}
+	}
+	if calls, to := counter.seen(); calls != 0 {
+		t.Fatalf("a refused method colon made %d outbound request(s), to %v", calls, to)
+	}
+}
+
+func TestRelayAdmitsTheStreamPairOnGeminiAndOnNoOtherKind(t *testing.T) {
+	// **The per-kind half of the query rule.** The pair is admitted for the
+	// one wire that has nowhere else to ask for a stream, and the page's query
+	// stays refused entirely for the other two — both of which carry streaming
+	// in the request body, so a pair admitted for them would be a capability
+	// nothing asked for.
+	for _, kind := range AssistantKinds {
+		t.Run(kind, func(t *testing.T) {
+			u := newUpstream(t, nil)
+			if kind != "gemini" {
+				// Counted at the transport, because "the endpoint saw
+				// nothing" is only a fact if nothing left this process.
+				counter := countingRelays(t)
+				_, ts, _ := relayDesk(t, kind, u)
+				resp, body := relayGet(t, ts, "v1beta/models?alt=sse")
+				if resp.StatusCode != http.StatusBadRequest {
+					t.Fatalf("status %d, want 400: %s", resp.StatusCode, body)
+				}
+				if got := codeOfBody(t, body); got != CodeAssistantRelayPath {
+					t.Errorf("code %q, want %q", got, CodeAssistantRelayPath)
+				}
+				if calls, to := counter.seen(); calls != 0 {
+					t.Fatalf("%d outbound request(s), to %v", calls, to)
+				}
+				return
+			}
+			// The accepted leg is measured at the endpoint itself: the
+			// counting transport answers on its own behalf and would record a
+			// request nobody could inspect the query of.
+			_, ts, _ := relayDesk(t, kind, u)
+			resp, body := relayGet(t, ts, "v1beta/models?alt=sse")
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status %d, want 200: %s", resp.StatusCode, body)
+			}
+			seen := u.only(t)
+			// Byte for byte, and the whole query: the token the page had to
+			// send is not among it.
+			if seen.rawQuery != "alt=sse" {
+				t.Errorf("query %q, want exactly %q", seen.rawQuery, "alt=sse")
+			}
+			if strings.Contains(seen.rawQuery, "token") {
+				t.Errorf("the session token reached the endpoint: %q", seen.rawQuery)
+			}
+		})
+	}
+}
+
+func TestRelayRefusesEveryOtherSpellingOfTheStreamPair(t *testing.T) {
+	// Byte equality against one fixed literal is the one comparison that has
+	// no second reading. Each of these is a spelling some parser would fold
+	// into `alt=sse`, and every one of them is refused with nothing sent.
+	// The rule itself first, over every spelling — including the ones no
+	// client can put on a request line, which the server below therefore
+	// cannot exercise. A guard reachable by one route only is a guard that
+	// stops being tested when that route changes.
+	for _, query := range []string{
+		"alt=json",
+		"ALT=sse",
+		"Alt=sse",
+		"alt=SSE",
+		"alt=sse&alt=sse",
+		"%61lt=sse",
+		"alt=sse&x=1",
+		"alt",
+		"alt=",
+		"alt=sse ",
+		"alt=sse&",
+		"=sse",
+	} {
+		extra, problem := relayQueryProblem("token=" + testToken + "&" + query)
+		if problem == "" {
+			t.Errorf("%q was accepted, carrying %q", query, extra)
+		}
+	}
+	counter := countingRelays(t)
+	u := newUpstream(t, nil)
+	_, ts, _ := relayDesk(t, "gemini", u)
+	for _, query := range []string{
+		"alt=json",
+		"ALT=sse",
+		"Alt=sse",
+		"alt=SSE",
+		"alt=sse&alt=sse",
+		"%61lt=sse",
+		"alt=sse&x=1",
+		"alt",
+		"alt=",
+	} {
+		resp, body := relayDo(t, ts, http.MethodGet, "v1beta/models?"+query, nil, nil)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%q: status %d, want 400 (%s)", query, resp.StatusCode, body)
+			continue
+		}
+		if got := codeOfBody(t, body); got != CodeAssistantRelayPath {
+			t.Errorf("%q: code %q, want %q", query, got, CodeAssistantRelayPath)
+		}
+	}
+	// The semicolon spelling is refused by the rule that came before this one,
+	// and is checked here so that the exception cannot be read as reopening it.
+	resp, body := relayDo(t, ts, http.MethodGet, "v1beta/models?alt=sse;x=1", nil, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("a semicolon: status %d, want 400 (%s)", resp.StatusCode, body)
+	}
+	if calls, to := counter.seen(); calls != 0 {
+		t.Fatalf("a refused query made %d outbound request(s), to %v", calls, to)
+	}
+	if seen := u.arrivals(); len(seen) != 0 {
+		t.Fatalf("the endpoint saw %d request(s)", len(seen))
+	}
+}
+
+func TestRelayPutsTheStreamPairAfterTheConfiguredQuery(t *testing.T) {
+	// The configured query is the endpoint's own routing and keeps its place;
+	// the one pair the page may send goes after it. The order is `relayTarget`'s
+	// and the probe's alike, which is why `appendQueryPair` is one function.
+	u := newUpstream(t, nil)
+	_, ts, _ := relayDeskAt(t, "gemini", u.server.URL+"/?route=eu%3Bwest")
+	resp, body := relayDo(t, ts, http.MethodPost,
+		"v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse",
+		strings.NewReader(`{"contents":[]}`), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	seen := u.only(t)
+	if seen.rawQuery != "route=eu%3Bwest&alt=sse" {
+		t.Errorf("query %q, want the configured one then the pair", seen.rawQuery)
+	}
+	if seen.path != "/v1beta/models/gemini-2.5-pro:streamGenerateContent" {
+		t.Errorf("path %q", seen.path)
+	}
+	if seen.method != http.MethodPost || string(seen.body) != `{"contents":[]}` {
+		t.Errorf("the endpoint saw %s with body %q", seen.method, seen.body)
+	}
+}
+
 func TestRelayRefusesEverySuffixOutsideTheClass(t *testing.T) {
 	// The rule itself, case by case. Two of these — an empty segment and a dot
 	// segment written literally — never reach the handler through a mux that
@@ -645,7 +864,10 @@ func TestRelayRefusesEverySuffixOutsideTheClass(t *testing.T) {
 		{"backslash", `chat\completions`, "only letters, digits"},
 		{"percent", "%2e%2e/secret", "only letters, digits"},
 		{"space", "chat completions", "only letters, digits"},
-		{"a whole URL", "https://elsewhere.example/v1", "only letters, digits"},
+		// The scheme's colon introduces no method, so this meets the colon
+		// rule before the character class — a different sentence, the same
+		// refusal, and worth pinning so the exception cannot quietly widen.
+		{"a whole URL", "https://elsewhere.example/v1", "a colon in a relayed path"},
 		{"too long", strings.Repeat("a", maxRelaySuffix+1), "at most"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {

@@ -784,11 +784,23 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if false {'
   # Caught by the live drive: the protocol path was appended to the whole URL
   # string, so a configured query put it after the query.
+  #
+  # **Repaired**: the body this named moved into `probeAddressWithQuery` when
+  # the gemini arm needed a parameter of its own, and the needle went stale
+  # silently. The mutation is the same defect — the path after the query — and
+  # it now reproduces it for both arms at once.
   mutate go "the protocol path is appended to the whole URL" "$A" \
     '	appendPath(parsed, suffix)
+	if pair != "" {
+		parsed.RawQuery = appendQueryPair(parsed.RawQuery, pair)
+		parsed.ForceQuery = false
+	}
 	return parsed.String()' \
     '	_ = parsed
-	return base + suffix'
+	if pair == "" {
+		return base + suffix
+	}
+	return base + suffix + "?" + pair'
   # `u.Path` is the decoded path; writing it alone re-encodes %2F into a
   # separator and sends the credential to a different resource.
   mutate go "an escaped path is re-encoded on the way out" "$A" \
@@ -985,6 +997,23 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # filled it, which is not a state this route can produce. The cap above is the
   # safeguard; the constant is the size of the tail behind it, and it is asserted
   # by reading rather than by measurement.
+  # **The colon exception, and the three ways it could stop being closed.**
+  # The part after a colon is a verb: an open list would let whoever holds the
+  # session token ask the configured endpoint to *do* something nobody wrote
+  # down, with the stored credential attached.
+  mutate go "the method after a colon is not held to the list" "$MR" \
+    '			if name == "" || !contains(relayPathMethods, method) {' \
+    '			if name == "" || false {'
+  # The one pair the page may send is admitted for one wire and refused for the
+  # other two, which carry streaming in the request body and need none.
+  mutate go "the stream pair is admitted on every kind" "$MR" \
+    '	if extra != "" && extra != relayExtraQueryPair(endpoint.kind) {' \
+    '	if false {'
+  # At most once: `alt=sse&alt=sse` is a query two parsers could count
+  # differently, which is the whole class this rule exists to keep out.
+  mutate go "a second copy of the stream pair is admitted" "$MR" \
+    '				parameter == relayStreamPair && extra == "" {' \
+    '				parameter == relayStreamPair {'
   mutate go "the relay's log line carries the whole address" "$MR" \
     '	s.log.Printf("desk: assistant relay %s answered %d", loggableOrigin(endpoint.url), status)' \
     '	s.log.Printf("desk: assistant relay %s %s answered %d", endpoint.url, suffix, status)'
