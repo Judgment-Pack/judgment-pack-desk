@@ -410,10 +410,18 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
   // whatever notice it hands back; it never decides what a refusal meant.
   const slot = openThinking(session)
   const ledger = signatureLedger()
-  /** The degrade notice this run still owes the stream, at most one. */
-  let owed: AssistantEvent | null = null
-  const onTruncated = (reason: string) => {
-    owed ??= slot.truncated(reason)
+  /**
+   * The truncation notice, **delivered at the transition rather than owed**.
+   *
+   * The slot goes unavailable the instant this is called and the request that
+   * leaves is already the degraded one, so a notice held until the next stream
+   * part arrived left the tab saying `thinking on` about a request that carried
+   * none — for as long as that request took, or for ever if it hung. The relay
+   * awaits this, so the line is on the stream before the request goes.
+   */
+  const onTruncated = async (reason: string): Promise<void> => {
+    const said = slot.truncated(reason)
+    if (said !== null) await channel.push(said)
   }
   const offered = new Set(session.tools.map((tool) => tool.name))
   // What the model asked for, before the SDK's refinement touched it.
@@ -453,13 +461,6 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
      * length of the pass is that the answers are also shown to the recorder.
      */
     let recording: CritiqueRecorder | null = null
-    /** The degrade notice a fetch may have produced, flushed in stream order. */
-    const flush = async (): Promise<void> => {
-      if (owed === null) return
-      const said = owed
-      owed = null
-      await deliver(said)
-    }
     // A fresh attempt takes nothing from the one before it.
     asked.length = 0
     const tools = toolsFor(session.tools, async (name, input) => {
@@ -572,8 +573,6 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
     for (;;) {
       const step = await withAbort(() => parts.next(), gate.signal)
       if (step.done === true) break
-      // In stream order: a notice a `fetch` produced belongs where it happened.
-      await flush()
       const part = step.value
       if (part.type === 'start-step') {
         // A step boundary is the end of the turn before it. ADR-0001's second
@@ -650,11 +649,9 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
       if (part.type === 'text-delta') final += (part as { text?: string }).text ?? ''
     }
     if (streamed !== null) throw streamed
-    // The last turn's own accounting, and the notice a `fetch` may have
-    // produced while the stream was being read.
+    // The last turn's own accounting.
     const noticed = slot.turnEnded(final !== '')
     if (noticed !== null) await deliver(noticed)
-    await flush()
 
     // `result.text` mints a fresh promise on every read, so it is read here,
     // where it is awaited, and nowhere it would be left standing.
@@ -680,6 +677,8 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
     } else if (slot.runsRefutation()) {
       const recorder = openCritique()
       recording = recorder
+      // A fresh conversation: its history carries none of the loop's blocks.
+      ledger.conversation()
       let criticText = ''
       let criticReasoning = ''
       try {
@@ -704,7 +703,6 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
         for (;;) {
           const step = await withAbort(() => criticParts.next(), gate.signal)
           if (step.done === true) break
-          await flush()
           const part = step.value
           if (part.type === 'start-step') {
             ledger.boundary()

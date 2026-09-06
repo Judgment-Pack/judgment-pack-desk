@@ -4205,6 +4205,16 @@ export function assistantTransport(): Transport {
       return { type: 'thinking_unavailable', detail: thinkingNotice('unavailable', reason) }
     },"
 
+  # The slot changes at the transition and the request that leaves is already
+  # the degraded one, so a notice held until the next stream part left the tab
+  # saying `thinking on` about a request that carried none — for as long as it
+  # took, or for ever.
+  mutate web "the truncation notice waits for the next stream part" "$VL" \
+    "    const said = slot.truncated(reason)
+    if (said !== null) await channel.push(said)" \
+    "    const said = slot.truncated(reason)
+    if (said !== null) void Promise.resolve().then(() => channel.push(said))"
+
   # **A turn is not a capability.** One unsolicited passage at tier off used to
   # label the model "always thinks" for the whole session.
   mutate web "one reasoning turn makes a model that always thinks" "$TH" \
@@ -4247,16 +4257,16 @@ export function assistantTransport(): Transport {
   # rather than sent: a malformed thinking block is a request the endpoint
   # refuses, and sending one is the defect the ledger exists for.
   mutate web "a truncated thinking signature is sent back anyway" "$VR" \
-    "      if (sent === undefined || !isTruncatedSignature(sent, block.signature)) return true" \
+    "      if (sent === undefined || !isTruncatedSignature(sent.signature, block.signature)) return true" \
     "      if (true) return true"
 
   # **Block identity, by position.** Comparing a carried signature against every
   # signature ever ledgered threw away a later block whose own signature was
   # legitimately shorter and happened to be a prefix of an earlier one.
   mutate web "a carried signature is compared with every signature ever seen" "$VR" \
-    "      const sent = wholes[at]
+    "      const sent = signed[at]
       at += 1" \
-    "      const sent = wholes.find((whole) => isTruncatedSignature(whole, String(block.signature)))
+    "      const sent = signed.find((one) => isTruncatedSignature(one.signature, String(block.signature)))
       at += 1"
 
   # **A filter is not a rebuild.** The body was composed before the slot
@@ -4276,6 +4286,19 @@ export function assistantTransport(): Transport {
   mutate web "the signature ledger has no turn boundary" "$VR" \
     "    boundary: settle," \
     "    boundary: () => {},"
+  # **Two blocks signed the same are two blocks.** Collapsing them left a later
+  # block compared against the wrong entry, or against none, and sent.
+  mutate web "two blocks signed the same collapse into one" "$VR" \
+    "      if (signature !== '') done.push({ conversation, turn, block, signature })" \
+    "      if (signature !== '' && !done.some((one) => one.signature === signature)) {
+        done.push({ conversation, turn, block, signature })
+      }"
+  # The critic's history carries none of the main loop's blocks, so comparing
+  # its first block against the loop's first signature compares two different
+  # conversations' positions.
+  mutate web "the critic is compared against the main loop's blocks" "$VR" \
+    "      return done.filter((entry) => entry.conversation === conversation)" \
+    "      return [...done]"
 
   # **The verdict is the runtime's.** The critic's prose disagrees with the
   # runtime on purpose on both conformance legs, so a verdict read out of it is

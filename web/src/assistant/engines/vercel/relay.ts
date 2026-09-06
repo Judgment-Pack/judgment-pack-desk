@@ -295,6 +295,17 @@ function anthropicEvents(payload: unknown): string {
  * the wire shape is this file's, because this is where the desk already knows
  * one.
  */
+/** One block this endpoint signed, and where it was signed. */
+export interface SignedBlock {
+  /** Which conversation: the main loop is 0, the critic is 1. */
+  conversation: number
+  /** Which turn of that conversation. */
+  turn: number
+  /** The block's own id within the turn, as the SDK keys its reasoning parts. */
+  block: string
+  signature: string
+}
+
 export interface SignatureLedger {
   /** One fragment, for one reasoning block of the turn in progress. */
   fragment(id: string, signature: string): void
@@ -309,18 +320,33 @@ export interface SignatureLedger {
    * its third turn. A turn boundary is where a block's signature is finished.
    */
   boundary(): void
-  /** Each block's signature, whole. */
-  wholes(): string[]
+  /**
+   * A **new conversation** begins: the refutation pass.
+   *
+   * The critic's history carries none of the main loop's blocks, correctly, so
+   * comparing what it sends against the loop's signatures would compare a first
+   * block against a signature from another conversation entirely.
+   */
+  conversation(): void
+  /** The blocks this conversation signed, in the order they were signed. */
+  signed(): SignedBlock[]
 }
 
 export function signatureLedger(): SignatureLedger {
   const inFlight = new Map<string, string>()
-  const done: string[] = []
+  const done: SignedBlock[] = []
+  let conversation = 0
+  let turn = 0
   const settle = () => {
-    for (const signature of inFlight.values()) {
-      if (signature !== '' && !done.includes(signature)) done.push(signature)
+    // **Duplicates are kept, because two blocks are two blocks.** A ledger that
+    // held distinct signatures collapsed `abcdef, abcdef, uvwxyz` into two
+    // entries, and a third block that came back as `uvw` was then compared
+    // against the second entry — or against nothing at all — and sent.
+    for (const [block, signature] of inFlight) {
+      if (signature !== '') done.push({ conversation, turn, block, signature })
     }
     inFlight.clear()
+    turn += 1
   }
   return {
     fragment(id, signature) {
@@ -332,9 +358,14 @@ export function signatureLedger(): SignatureLedger {
       inFlight.set(id, before.endsWith(signature) ? before : before + signature)
     },
     boundary: settle,
-    wholes() {
+    conversation() {
       settle()
-      return [...done]
+      conversation += 1
+      turn = 0
+    },
+    signed() {
+      settle()
+      return done.filter((entry) => entry.conversation === conversation)
     }
   }
 }
@@ -373,8 +404,8 @@ export function withoutTruncatedThinking(
   /** What the slot asks for **after** the degrade. Null where it asks nothing. */
   membersAfter: () => Record<string, unknown> | null = () => null
 ): { body: string; truncated: string } {
-  const wholes = ledger.wholes()
-  if (wholes.length === 0) return { body, truncated: '' }
+  const signed = ledger.signed()
+  if (signed.length === 0) return { body, truncated: '' }
   let payload: { messages?: { content?: unknown }[] } & Record<string, unknown>
   try {
     payload = JSON.parse(body) as { messages?: { content?: unknown }[] } & Record<string, unknown>
@@ -382,12 +413,14 @@ export function withoutTruncatedThinking(
     return { body, truncated: '' }
   }
   let found = ''
-  // **Position is the block's identity.** The ledger holds one signature per
-  // signed block in the order the endpoint sent them, and the outgoing history
-  // carries the same blocks in the same order — so the k-th block back is
-  // compared with the k-th signature out and with no other. Comparing against
-  // every signature ever ledgered threw away a later block whose own signature
-  // was legitimately shorter and happened to be a prefix of an earlier one.
+  // **The block's identity is (conversation, turn, block), and position is how
+  // the two histories are lined up.** The ledger holds one entry per signed
+  // block of *this* conversation, in the order the endpoint signed them, and
+  // the outgoing history carries the same blocks in the same order — so the
+  // k-th block back is compared with the k-th block signed and with no other.
+  // Comparing against every signature ever ledgered threw away a later block
+  // whose own signature was legitimately shorter; collapsing duplicates left a
+  // later block compared against the wrong entry, or against none.
   let at = 0
   for (const message of payload.messages ?? []) {
     const content = message?.content
@@ -395,10 +428,10 @@ export function withoutTruncatedThinking(
     const kept = content.filter((item) => {
       const block = item as WireBlock
       if (block?.type !== 'thinking' || typeof block.signature !== 'string') return true
-      const sent = wholes[at]
+      const sent = signed[at]
       at += 1
       // A block this desk never saw signed is somebody else's business.
-      if (sent === undefined || !isTruncatedSignature(sent, block.signature)) return true
+      if (sent === undefined || !isTruncatedSignature(sent.signature, block.signature)) return true
       found =
         'the SDK carried a thinking signature back as a fragment of the one the endpoint sent ' +
         '(vercel/ai#19663); the block was removed and the request rebuilt without the tier'
@@ -431,8 +464,16 @@ export function relayFetch(options: {
   signal: AbortSignal
   /** What came in, for the outgoing body to be compared against. */
   ledger?: SignatureLedger
-  /** Said once, where a signature came back short. */
-  onTruncated?: (reason: string) => void
+  /**
+   * Said once, where a signature came back short — and **awaited**.
+   *
+   * The slot changes at the moment this is called, and the request that leaves
+   * a moment later is already the degraded one. So the line a person reads has
+   * to be on the stream by then: awaiting it here is what keeps the tab from
+   * saying `thinking on` about a request that carries none, for as long as that
+   * request takes to answer — or for ever, if it hangs.
+   */
+  onTruncated?: (reason: string) => void | Promise<void>
   /**
    * What the slot asks for, read **after** `onTruncated` has been told.
    *
@@ -467,7 +508,8 @@ export function relayFetch(options: {
       const looked = withoutTruncatedThinking(composed, options.ledger, () => null)
       if (looked.truncated !== '') {
         truncated = looked.truncated
-        options.onTruncated?.(truncated)
+        // **Told, and heard, before the request goes.** See `onTruncated`.
+        await options.onTruncated?.(truncated)
         body = withoutTruncatedThinking(composed, options.ledger, () => options.membersNow?.() ?? null)
           .body
       }

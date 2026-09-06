@@ -1183,7 +1183,7 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
     const ledger = signatureLedger()
     ledger.fragment('0', 'c2lnbmF0')
     ledger.fragment('0', 'dXJlLVQx')
-    expect(ledger.wholes()).toEqual(['c2lnbmF0dXJlLVQx'])
+    expect(ledger.signed().map((one) => one.signature)).toEqual(['c2lnbmF0dXJlLVQx'])
     const body = JSON.stringify({
       messages: [
         {
@@ -1244,6 +1244,58 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
     expect(filtered.body).toBe(body)
   })
 
+  it('says the endpoint has no thinking before the degraded request is answered', async () => {
+    // **The slot changes at the transition, so the line must too.** The rebuilt
+    // request carries no thinking member at all; a notice held until that
+    // request produced a stream part left the tab saying `thinking on` about a
+    // request that carried none — for as long as it took, or for ever. This
+    // holds the second request open and asserts the line has already arrived.
+    let holding = 0
+    const call: ModelCall = async (_suffix, request) => {
+      const body = JSON.parse(request.body) as Record<string, unknown>
+      if (!('thinking' in body)) {
+        // The rebuilt request: never answered.
+        holding += 1
+        return new Promise<Response>(() => {})
+      }
+      return new Response(
+        anthropicTurn({
+          reasoning: 'I will check it.',
+          signature: 'c2lnbmF0dXJlLVQx',
+          splitSignature: true,
+          tool: { name: 'validate', args: { document: '{}' } }
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } }
+      )
+    }
+    const iterator = vercel
+      .start(
+        session(call, {
+          model: { family: 'anthropic', model: 'a-model', call },
+          thinking: normalize('on', 'anthropic')
+        })
+      )
+      [Symbol.asyncIterator]()
+    const seen: AssistantEvent[] = []
+    for (;;) {
+      const step = await iterator.next()
+      if (step.done === true) break
+      seen.push(step.value)
+      if (step.value.type === 'thinking_unavailable') break
+    }
+    // It arrived — **before the degraded request was even dispatched**, which
+    // is stronger than "before it was answered". Under the shape this replaces
+    // the notice waited for a stream part from that request, and this request
+    // never produces one: the loop above would have run to the test's timeout
+    // with the tab still saying `thinking on`.
+    const notice = seen.find((event) => event.type === 'thinking_unavailable')
+    expect(notice, 'the notice waited for a request that never answered').toBeDefined()
+    expect((notice as { detail: string }).detail).toContain('19663')
+    expect(holding, 'the notice came after the request went out').toBe(0)
+    // And the run ends when the consumer stops listening, holding nothing.
+    await iterator.return?.()
+  }, 20000)
+
   it('starts a new signature at each turn, because the block ids repeat', () => {
     // **The turn boundary, which is not decoration.** On the Anthropic wire a
     // reasoning part is keyed by its index in the message, so every turn starts
@@ -1254,7 +1306,7 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
     ledger.fragment('0', 'c2lnLVQx')
     ledger.boundary()
     ledger.fragment('0', 'c2lnLVQy')
-    expect(ledger.wholes()).toEqual(['c2lnLVQx', 'c2lnLVQy'])
+    expect(ledger.signed().map((one) => one.signature)).toEqual(['c2lnLVQx', 'c2lnLVQy'])
   })
 
   it('lets a later block whose own signature is shorter survive', () => {
@@ -1297,13 +1349,66 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
     expect(sent.messages[1]!.content).toHaveLength(1)
   })
 
+  it('keeps two blocks that were signed the same, because they are two blocks', () => {
+    // **Collapsing duplicates lost a block's identity.** With `abcdef`,
+    // `abcdef`, `uvwxyz` the ledger became two entries, so a third block that
+    // came back as `uvw` was compared against the second entry — or against
+    // nothing — and was sent.
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'abcdef')
+    ledger.boundary()
+    ledger.fragment('0', 'abcdef')
+    ledger.boundary()
+    ledger.fragment('0', 'uvwxyz')
+    expect(ledger.signed().map((one) => one.signature)).toEqual(['abcdef', 'abcdef', 'uvwxyz'])
+    const body = JSON.stringify({
+      messages: [
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'one', signature: 'abcdef' }] },
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'two', signature: 'abcdef' }] },
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'three', signature: 'uvw' }] }
+      ]
+    })
+    const looked = withoutTruncatedThinking(body, ledger, () => null)
+    expect(looked.truncated).toContain('19663')
+    const sent = JSON.parse(looked.body) as { messages: { content: unknown[] }[] }
+    expect(sent.messages[0]!.content).toHaveLength(1)
+    expect(sent.messages[1]!.content).toHaveLength(1)
+    expect(sent.messages[2]!.content).toEqual([])
+  })
+
+  it('compares the critic’s fresh conversation against its own blocks only', () => {
+    // The critic's history carries none of the main loop's blocks, correctly.
+    // Comparing its first block against the loop's first signature would be
+    // comparing two different conversations' positions.
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'abcdef')
+    ledger.boundary()
+    ledger.conversation()
+    expect(ledger.signed()).toEqual([])
+    const body = JSON.stringify({
+      messages: [
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'critic', signature: 'abc' }] }
+      ]
+    })
+    // Nothing signed in this conversation yet, so nothing is compared.
+    expect(withoutTruncatedThinking(body, ledger, () => null).truncated).toBe('')
+    ledger.fragment('0', 'zzzzzz')
+    expect(ledger.signed().map((one) => one.signature)).toEqual(['zzzzzz'])
+    const short = JSON.stringify({
+      messages: [
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'critic', signature: 'zzz' }] }
+      ]
+    })
+    expect(withoutTruncatedThinking(short, ledger, () => null).truncated).toContain('19663')
+  })
+
   it('does not double a signature the SDK repeated whole', () => {
     // The SDK re-emits the same value where the endpoint sent one event, and a
     // ledger that appended blindly would invent a truncation nobody caused.
     const ledger = signatureLedger()
     ledger.fragment('0', 'c2ln')
     ledger.fragment('0', 'c2ln')
-    expect(ledger.wholes()).toEqual(['c2ln'])
+    expect(ledger.signed().map((one) => one.signature)).toEqual(['c2ln'])
   })
 
   /**
