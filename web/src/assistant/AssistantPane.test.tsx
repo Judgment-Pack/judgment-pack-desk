@@ -7,9 +7,13 @@
  * written to make a pane look right.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useMemo } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AssistantPane } from './AssistantPane'
+import { EditingContext, type EditingSession } from '../packs/edit/editingContext'
+import { useDocumentBuffer, type DocumentBuffer } from '../packs/edit/useDocumentBuffer'
+import { buffered, bytesAt } from '../packs/edit/writes'
 import { scriptedModel } from './conformance/scriptedModel'
 import { scriptedWebSocket } from './conformance/scriptedServer'
 import scenario from './conformance/scenario.json'
@@ -34,6 +38,51 @@ function config(assistant: unknown): EffectiveConfig {
 }
 
 let runtime: ReturnType<typeof scriptedWebSocket> | null = null
+/** The buffer the draft harness is holding, for a case that drives Undo. */
+let held: DocumentBuffer | null = null
+/** How many times the pane wrote, which is the undo-entry claim's other half. */
+let wrote = 0
+
+/**
+ * The pane over a **real** buffer, through the editing session the route builds.
+ *
+ * `useDocumentBuffer` is the production hook, so the undo stack, the dirty
+ * comparison and the coalescing are the page's own rather than a fixture's —
+ * which is what makes "one undo entry" a measurement rather than a claim.
+ */
+function DraftHarness({ initial, editing }: { initial: string; editing: boolean }) {
+  const buffer = useDocumentBuffer({
+    path: 'packs/vendor-onboarding.pack.json',
+    bytes: initial.length,
+    sha256: 'a'.repeat(64),
+    content: initial
+  })
+  held = buffer
+  const text = buffer.text
+  const read = useMemo(() => (text === undefined ? undefined : buffered(text)), [text])
+  const commit = buffer.commit
+  const session: EditingSession = useMemo(
+    () => ({
+      editing,
+      buffer: read ?? { text: '', index: { spans: new Map(), duplicates: [] } },
+      write: (edit, options) => {
+        if (read === undefined) return
+        wrote += 1
+        commit(edit(read).text, options)
+      },
+      diagnosticsAt: () => [],
+      ids: { outcomes: [], evidence: [], sources: [], rules: [], factPaths: [] },
+      pending: new Map(),
+      hold: () => {}
+    }),
+    [editing, read, commit]
+  )
+  return (
+    <EditingContext.Provider value={session}>
+      <AssistantPane draft={text} editing={editing} />
+    </EditingContext.Provider>
+  )
+}
 
 /**
  * Everything the pane needs, and nothing it does not.
@@ -57,6 +106,10 @@ async function draw(options: {
   deafSocket?: boolean
   /** The bytes the page is about, which the diff is computed against. */
   draft?: string
+  /** True where the page is being edited, which is what Accept needs. */
+  editing?: boolean
+  /** Draw the pane over a real buffer instead, and edit that. */
+  buffer?: { text: string; editing?: boolean }
 } = {}) {
   const model = scriptedModel({ api: 'openai-compatible', answerAs: 'stream' })
   const keyRead = JSON.stringify({
@@ -97,7 +150,14 @@ async function draw(options: {
     <QueryClientProvider client={testQueryClient()}>
       <McpContext.Provider value={connected({ client })}>
         <DeskConfigFixture value={config(options.assistant ?? { endpoint: ENDPOINT })}>
-          <AssistantPane draft={options.draft} />
+          {options.buffer === undefined ? (
+            <AssistantPane draft={options.draft} editing={options.editing ?? false} />
+          ) : (
+            <DraftHarness
+              initial={options.buffer.text}
+              editing={options.buffer.editing ?? true}
+            />
+          )}
         </DeskConfigFixture>
       </McpContext.Provider>
     </QueryClientProvider>
@@ -114,6 +174,8 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   runtime = null
+  held = null
+  wrote = 0
   window.sessionStorage.clear()
 })
 
@@ -268,13 +330,13 @@ describe('one whole run', () => {
     )
   })
 
-  it('draws Accept and Reject disabled, and says when they arrive', async () => {
+  it('offers no Accept on the reading route, and says where one is', async () => {
     await runIt()
-    for (const name of ['Accept', 'Reject']) {
-      const button = screen.getByRole('button', { name })
-      expect(button.hasAttribute('disabled')).toBe(true)
-      expect(button.getAttribute('title')).toBe('Accept into draft arrives in the next chunk')
-    }
+    expect(screen.queryByRole('button', { name: /Accept/ })).toBeNull()
+    expect(screen.getByText('Open Edit to accept.')).toBeTruthy()
+    // Reject is the desk's other action on the proposal, and it is the desk's
+    // wherever the proposal is shown.
+    expect(screen.getByRole('button', { name: 'Reject' }).hasAttribute('disabled')).toBe(false)
   })
 
   it('never lets write_file reach the runtime', async () => {
@@ -422,5 +484,109 @@ describe('stopping', () => {
     expect(runtime!.closed).toBe(0)
     cleanup()
     await waitFor(() => expect(runtime!.closed).toBeGreaterThan(0))
+  })
+})
+
+describe('accepting the proposal into the draft', () => {
+  /** The draft as an author's file: four spaces, so a rewrite is visible. */
+  const DRAFT = `${JSON.stringify(scenario.documents.DRAFT_V1, null, 4)}\n`
+
+  async function runOver(options: { editing?: boolean } = {}) {
+    await draw({ buffer: { text: DRAFT, editing: options.editing ?? true } })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    )
+    fireEvent.change(screen.getByLabelText('What should this pack decide?'), {
+      target: { value: scenario.policy }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+  }
+
+  const acceptNow = () =>
+    fireEvent.click(screen.getByRole('button', { name: 'Accept into draft' }))
+
+  it('leaves a buffer that parses to the proposal, with the untouched members byte for byte', async () => {
+    await runOver()
+    const before = buffered(held!.text!)
+    acceptNow()
+    await waitFor(() => expect(held!.text).not.toBe(DRAFT))
+    const after = buffered(held!.text!)
+    expect(JSON.parse(after.text)).toEqual(scenario.documents.DRAFT_V2)
+    for (const name of Object.keys(scenario.documents.DRAFT_V1)) {
+      if (name === 'version' || name === 'rules') continue
+      expect(bytesAt(after, `/${name}`)).toBe(bytesAt(before, `/${name}`))
+    }
+    // And the author's own four spaces are still the document's layout.
+    expect(after.text).toContain('\n    "specVersion"')
+  })
+
+  it('is one write, one undo entry, and one step back to where it started', async () => {
+    await runOver()
+    acceptNow()
+    await waitFor(() => expect(held!.dirty).toBe(true))
+    expect(wrote).toBe(1)
+    expect(held!.canUndo).toBe(true)
+    act(() => held!.undo())
+    await waitFor(() => expect(held!.text).toBe(DRAFT))
+    expect(held!.dirty).toBe(false)
+    expect(held!.canUndo).toBe(false)
+  })
+
+  it('says it is in the draft and nothing is saved, and disables both controls', async () => {
+    await runOver()
+    acceptNow()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Accept into draft' }).hasAttribute('disabled')).toBe(
+        true
+      )
+    )
+    expect(screen.getByRole('button', { name: 'Reject' }).hasAttribute('disabled')).toBe(true)
+    const region = screen.getByRole('region', { name: 'The proposal' })
+    expect(region.textContent).toContain('Accepted into the draft.')
+    expect(region.textContent).toContain('Nothing has been saved.')
+    expect(
+      screen.getByRole('button', { name: 'Accept into draft' }).getAttribute('title')
+    ).toContain('already in the draft')
+  })
+
+  it('does not write twice when Accept is pressed twice', async () => {
+    await runOver()
+    acceptNow()
+    await waitFor(() => expect(held!.dirty).toBe(true))
+    const settled = held!.text
+    fireEvent.click(screen.getByRole('button', { name: 'Accept into draft' }))
+    expect(wrote).toBe(1)
+    expect(held!.text).toBe(settled)
+  })
+
+  it('writes nothing at all on the reading route', async () => {
+    await runOver({ editing: false })
+    expect(screen.queryByRole('button', { name: /Accept/ })).toBeNull()
+    expect(screen.getByText('Open Edit to accept.')).toBeTruthy()
+    expect(wrote).toBe(0)
+    expect(held!.dirty).toBe(false)
+  })
+
+  it('rejects the proposal, keeps the stream, and writes nothing', async () => {
+    await runOver()
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull())
+    expect(screen.getByRole('list', { name: 'What the assistant did' })).toBeTruthy()
+    expect(screen.getByText(/The proposal was rejected/)).toBeTruthy()
+    expect(wrote).toBe(0)
+    expect(held!.dirty).toBe(false)
+  })
+
+  it('offers the next run its own proposal after one was accepted', async () => {
+    await runOver()
+    acceptNow()
+    await waitFor(() => expect(held!.dirty).toBe(true))
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Accept into draft' }).hasAttribute('disabled')
+      ).toBe(false)
+    )
   })
 })

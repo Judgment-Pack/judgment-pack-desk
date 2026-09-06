@@ -6,10 +6,15 @@
  * screen is either the assistant's own account of what it did or the runtime's
  * words quoted whole — the `validate` report and the rehearsal evaluation are
  * shown as the runtime wrote them, never summarised, because a summary of a
- * verdict is a second verdict. Accept and Reject are drawn and disabled: the
- * diff on the draft and the span-preserving write are the next chunk, and a
- * button that looked ready would be this pane promising something nothing here
- * does.
+ * verdict is a second verdict.
+ *
+ * **Accept into draft is the desk's action on the proposal, not an engine
+ * call.** It applies the diff to the buffer through the same span-preserving
+ * writer a form edit uses, in one `write` — so it is one undo entry, every byte
+ * the proposal did not move survives, and nothing is saved: the check runs
+ * again over the new bytes and Save is still the author's to press. On the
+ * reading route there is no buffer to write into, and the pane says so in one
+ * line rather than drawing a control that would refuse.
  *
  * **It renders only where there is an assistant to run.** No endpoint, or no
  * key on this machine, and it says in one line where that is configured rather
@@ -23,14 +28,14 @@ import { AUTHOR_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompt
 import { Button } from '../ui/Button'
 import { CodeArea } from '../ui/CodeArea'
 import { TextArea } from '../ui/TextArea'
+import { useEditing } from '../packs/edit/editingContext'
 import { ProposalDiffView } from './ProposalDiff'
+import { acceptState, applyProposal, writable, type Disposition } from './acceptProposal'
 import { diffProposal } from './proposalDiff'
 import { useAssistantRun } from './useAssistantRun'
 import { useAssistantSlot } from './useAssistantSlot'
 import styles from './AssistantPane.module.css'
 import type { AssistantEvent } from './engine'
-
-const ACCEPT_LATER = 'Accept into draft arrives in the next chunk'
 
 /** The bytes of one tool answer, said the way the desk says byte counts. */
 function byteCount(text: string): number {
@@ -38,7 +43,9 @@ function byteCount(text: string): number {
 }
 
 export function AssistantPane({
-  draft
+  draft,
+  editing = false,
+  saving = false
 }: {
   /**
    * The bytes this page is about: the editor's buffer on `?edit`, the saved
@@ -51,8 +58,22 @@ export function AssistantPane({
    * sent.
    */
   draft?: string
+  /**
+   * True where this page is being edited **and** has bytes to edit.
+   *
+   * The route's own condition for whether the JSON view is writable, passed in
+   * rather than derived here: a pane that decided for itself would be a second
+   * reading of what "editable" means, and the two would drift.
+   */
+  editing?: boolean
+  /** True while a save is in flight, which is not a moment to move the buffer. */
+  saving?: boolean
 } = {}) {
   const slot = useAssistantSlot()
+  // The editing session is the only way bytes change on this desk, and `write`
+  // is the whole of what this pane uses it for. There is no `commit` here to
+  // reach for: the context does not carry one.
+  const session = useEditing()
   const prompts = usePromptNames()
   const advertised = (prompts.data ?? []).includes(AUTHOR_PACK_PROMPT)
 
@@ -69,6 +90,15 @@ export function AssistantPane({
    */
   const [submitted, setSubmitted] = useState<{ id: number; policy: string } | null>(null)
   const nextRun = useRef(0)
+  /**
+   * What has been done about this proposal, which is not what the run did.
+   *
+   * It is reset where a run **starts** rather than where a submission is made,
+   * so that Stop — which clears the submission — does not put an accepted
+   * proposal back on offer.
+   */
+  const [disposition, setDisposition] = useState<Disposition>('open')
+  const accepts = useRef(0)
   const prompt = usePromptText(
     AUTHOR_PACK_PROMPT,
     advertised && submitted !== null,
@@ -92,6 +122,7 @@ export function AssistantPane({
     if (submitted === null || prompt.data === undefined) return
     if (started.current === submitted.id) return
     started.current = submitted.id
+    setDisposition('open')
     startRun(prompt.data.text)
   }, [submitted, prompt.data, startRun])
 
@@ -137,6 +168,18 @@ export function AssistantPane({
     [draft, proposed]
   )
 
+  const write = session.write
+  const acceptIntoDraft = useCallback(() => {
+    if (proposed === undefined) return
+    // **One write, and one undo entry.** The key is this accept's own, so a
+    // second accept is a second action rather than being coalesced into the
+    // first — which would make one Undo take both of them back.
+    write((current) => applyProposal(current, proposed), {
+      coalesceKey: `assistant-accept:${(accepts.current += 1)}`
+    })
+    setDisposition('accepted')
+  }, [proposed, write])
+
   if (slot.endpoint === null || !slot.keyPresent) {
     return (
       <p className={styles.empty}>
@@ -148,6 +191,14 @@ export function AssistantPane({
   }
 
   const running = run.status === 'running' || (submitted !== null && prompt.isFetching)
+  const accept = acceptState({
+    editing,
+    proposal: proposal !== undefined,
+    running,
+    saving,
+    disposition,
+    writable: proposed !== undefined && writable(proposed)
+  })
   const results = run.events.filter(
     (event): event is Extract<AssistantEvent, { type: 'tool_result' }> =>
       event.type === 'tool_result'
@@ -205,7 +256,14 @@ export function AssistantPane({
         </ol>
       )}
 
-      {proposal !== undefined && (
+      {proposal !== undefined && disposition === 'rejected' && (
+        <p className={styles.honesty}>
+          The proposal was rejected. Nothing was written, and what the assistant did is still
+          above.
+        </p>
+      )}
+
+      {proposal !== undefined && disposition !== 'rejected' && (
         <section className={styles.proposal} aria-label="The proposal">
           <p className={styles.heading}>Proposal</p>
           <p className={styles.honesty}>
@@ -242,13 +300,34 @@ export function AssistantPane({
             )
           })}
           <div className={styles.actions}>
-            <Button variant="primary" disabled title={ACCEPT_LATER}>
-              Accept
-            </Button>
-            <Button disabled title={ACCEPT_LATER}>
+            {/*
+              **The reading route has no draft to accept into**, so it says
+              where one is rather than drawing a control that would refuse.
+              The rest of the tab runs there exactly as it does on `?edit`.
+            */}
+            {editing ? (
+              <Button
+                variant="primary"
+                disabled={!accept.enabled}
+                title={accept.why === '' ? undefined : accept.why}
+                onClick={acceptIntoDraft}
+              >
+                Accept into draft
+              </Button>
+            ) : (
+              <p className={styles.honesty}>Open Edit to accept.</p>
+            )}
+            <Button disabled={disposition !== 'open' || running} onClick={() => setDisposition('rejected')}>
               Reject
             </Button>
           </div>
+          {disposition === 'accepted' && (
+            <p className={styles.honesty}>
+              Accepted into the draft. <strong>Nothing has been saved.</strong> The check runs
+              again over the new bytes, Undo takes the whole accept back in one step, and Save is
+              yours to press.
+            </p>
+          )}
         </section>
       )}
     </div>

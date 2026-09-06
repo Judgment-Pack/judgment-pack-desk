@@ -732,7 +732,17 @@ export function PackView() {
             // same string Try it sends, and for the same reason — a pane over
             // one revision beside a page over another is the failure the
             // digest binding exists to prevent.
-            panel: <AssistantPane draft={bufferText ?? servedText} />
+            panel: (
+              <AssistantPane
+                draft={bufferText ?? servedText}
+                // The route's own condition for whether these bytes may be
+                // written: `?edit`, and a file behind them. It is the same
+                // predicate the JSON view is made read-only by, so the pane
+                // and the editor cannot disagree about what is editable.
+                editing={editing && onPath}
+                saving={editor.write.isPending}
+              />
+            )
           }
         ]}
       />
