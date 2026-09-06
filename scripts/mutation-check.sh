@@ -3954,7 +3954,7 @@ export function assistantTransport(): Transport {
   # during certification and ran in Chrome after the seal lifted. The harness
   # installs one; this mutant installs it without tracking it.
   mutate web "an idle callback is scheduled but not tracked" "$CT" \
-    "      return record('requestIdleCallback', label, run, schedule, clear, false)" \
+    "      return record('requestIdleCallback', label, run, schedule, clear, false, timeout ?? 1)" \
     '      void record
       void label
       void clear
@@ -3990,22 +3990,6 @@ export function assistantTransport(): Transport {
     channel.close()
   }
   /**
-   * Everything this run holds, released once.
-   *
-   * Called by the iterator **before** it awaits anything, which is the whole
-   * reason the outer shape is not an async generator: a generator serves
-   * `next()` and `return()` from one queue, so the `return()` carrying this
-   * abort would have been queued behind the very `next()` the abort was going
-   * to release. `channel.abandon()` aborts first in its own right; the explicit
-   * `stop.abort()` beside it is the same claim made where a reader is.
-   */
-  const cancel = () => {
-    session.signal.removeEventListener('"'"'abort'"'"', onAbort)
-    stop.abort()
-    channel.abandon()
-  }
-
-  /**
    * The run itself starts on the consumer'"'"'s first `next()`.
    *
    * A consumer that opens a session and leaves without asking for an event has
@@ -4013,9 +3997,9 @@ export function assistantTransport(): Transport {
    */
   const open = (): AsyncGenerator<AssistantEvent> => {
     const loop = drive().catch(async (cause: unknown) => {
-      // An abort is the viewer stopping the session, and it ends it: there is
-      // no failure to report and nothing more to say than `end`.
-      if (stop.signal.aborted || (cause as Error)?.name === '"'"'AbortError'"'"') return
+      // A cancelled run is the viewer stopping the session, or a consumer
+      // walking away: it ends the run and there is no failure to report.
+      if (isCancelled(cause) || stop.signal.aborted) return
       await channel.push({ type: '"'"'error'"'"', message: describe(cause) })
     })
     // Nothing else awaits this; a rejection out of the catch above would be
@@ -4028,14 +4012,9 @@ export function assistantTransport(): Transport {
     '  const finish = async (): Promise<void> => {
     channel.close()
   }
-  const cancel = () => {
-    session.signal.removeEventListener('"'"'abort'"'"', onAbort)
-    stop.abort()
-    channel.abandon()
-  }
   const open = (): AsyncGenerator<AssistantEvent> => {
     const loop = drive().catch(async (cause: unknown) => {
-      if (stop.signal.aborted || (cause as Error)?.name === '"'"'AbortError'"'"') return
+      if (isCancelled(cause) || stop.signal.aborted) return
       await channel.push({ type: '"'"'error'"'"', message: describe(cause) })
     })
     void loop.then(finish, finish)
@@ -4073,6 +4052,42 @@ export function assistantTransport(): Transport {
   mutate web "the connection is closed once per release, not once" "$ASN" \
     '    shutting ??= (async () => {' \
     '    shutting = (async () => {'
+  # ---- What review round 4 found: the class, broken again -----------------
+  #
+  # Every await on the world outside an engine is bounded by the run's own
+  # signal, because aborting the awaited thing only works where the thing
+  # honours a signal — a model request does, a `tools/call` over a socket does
+  # not. Each row here unbinds one of them.
+  mutate web "the vercel adapter's tool call is not bounded by the run" "$VL" \
+    '  const callTool = guardedCallTool(session, stop.signal)' \
+    '  const callTool: CallTool = (name, args) => session.callTool(name, args)'
+  mutate web "the built-in engine's tool call is not bounded by the run" "$BL" \
+    '    const callTool = guardedCallTool(session, signal)' \
+    '    const callTool: CallTool = (name, args) => session.callTool(name, args)'
+  # The guard is read **before** the call is dispatched, so a late model answer
+  # arriving on a closed run has nowhere to send it.
+  mutate web "the runtime is asked without reading the run's signal first" "$EC" \
+    '    if (signal.aborted) throw new RunCancelled()
+    return withAbort(session.callTool(name, args), signal)' \
+    '    return withAbort(session.callTool(name, args), signal)'
+  # The session's own signal reaches the same cancellation everything else does.
+  # It used to abort the SDK and leave the channel alone, so a `next()` waiting
+  # on a tool call that never settled waited for ever.
+  mutate web "a session abort aborts the SDK and abandons nothing" "$VL" \
+    '  function onAbort(): void {
+    cancel()
+  }' \
+    '  function onAbort(): void {
+    stop.abort()
+  }'
+  # The drain runs what an engine left behind in the order a browser would
+  # have, not all at once: a sixty-second idle callback must not run before the
+  # one-second timer that was going to cancel it.
+  mutate web "the drain fires every pending handle at once again" "$CT" \
+    '    tracker.advanceTo(next.dueAt)
+    next.fire()' \
+    '    for (const entry of tracker.pending()) entry.fire()'
+
   # A timeout is a deadline, not a hint: firing every positive one after a
   # millisecond credits an engine with work it would have cancelled first.
   mutate web "the idle callback is fired before its deadline" "$CT" \
@@ -4087,8 +4102,8 @@ export function assistantTransport(): Transport {
     '          timeRemaining: () => 0'
   # And the other half of the same object: code that waits for its own timeout.
   mutate web "the idle deadline never reports its own timeout" "$CT" \
-    '      const didTimeout = timeout !== undefined' \
-    '      const didTimeout = false'
+    '        const didTimeout = deadlineAt !== undefined && now() >= deadlineAt' \
+    '        const didTimeout = false'
 
   # ---- The proposal as a diff, and accepting it into the draft -------------
   #

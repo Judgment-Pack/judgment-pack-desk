@@ -1622,12 +1622,19 @@ certification and reached the network in Chrome, after the seal would have
 lifted: a primitive the *browser* has and the *harness* does not is a hole in a
 guard whose whole claim is that everything an engine scheduled has already run.
 
+**The drain runs what an engine left behind in the order a browser would have.**
+One entry at a time, soonest first, with its clock advanced to that entry's due
+time — never before it. Firing every pending handle at once ran them in the order
+they were *scheduled* rather than the order they were *due*, so a sixty-second
+idle callback ran before the one-second timer that was going to cancel it, and,
+being run, was told a deadline it had not reached had been reached.
+
 **Realistic means the deadline, not only the callback.** The shim takes the
 `IdleRequestOptions` it is given, hands the callback a budget that is positive
 at its first read and decreasing from the moment it starts — the browser's own
 rule — and **honours the timeout it was asked for**: the callback is not run
-before that deadline, and `didTimeout` is true because the deadline is what ran
-it. Firing every positive timeout after a millisecond and calling that a timeout
+before that deadline, and `didTimeout` is computed **when the callback runs**, from
+whether the deadline was actually reached. Firing every positive timeout after a millisecond and calling that a timeout
 credited an engine with work it would have cancelled long first; a callback with
 no timeout is offered an idle slot on the next turn, and reports `false`. Held
 under controlled time, deadline by deadline. A shim that answered
@@ -1667,6 +1674,21 @@ beside them, and the two sets are asserted equal at the type level, so an id
 cannot become loadable without being put in front of the conformance session and
 an id the decoder declares cannot be left without an adapter. Both directions are
 compile errors.
+
+**No loop in either engine awaits anything outside it directly.** Every await on
+the world — the model request, every `session.callTool`, every read of an SDK's
+stream — goes through one function that settles the moment the run's own signal
+does, whatever the thing underneath decides to do. Aborting the awaited thing is
+not enough: a model request honours a signal and a `tools/call` over a socket
+does not, and a cleanup queued behind an await on something it was meant to end
+waits for ever. One `cancel()` per run is reached four ways — the consumer's
+`return()`, its `throw()`, the session's signal, and the run's natural end —
+and runs the same statements in the same order, synchronously, before anything
+is awaited. The runtime is reached through a guard that reads that signal
+**before it dispatches**, so no `tools/call` arrives after the consumer has left.
+A cancelled run says nothing at all, on either engine, not even `end`: the
+terminal event belongs to a run that finished, and the page's own terminal
+accounting is the run hook's.
 
 **An engine's outer shape is a hand-written iterator, not an async generator.**
 A generator serves `next()`, `return()` and `throw()` from one queue, so a
