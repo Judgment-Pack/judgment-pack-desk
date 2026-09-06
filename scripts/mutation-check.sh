@@ -4045,8 +4045,8 @@ export function assistantTransport(): Transport {
   # before the `next()` it was holding had come back.
   mutate web "a closed iterator's pending next waits on the closing too" "$EC" \
     '      if (options.gate.isClosed()) return done
-      events ??= options.open()' \
-    '      events ??= options.open()'
+      if (step.done === true) {' \
+    '      if (step.done === true || options.gate.isClosed()) {'
   # The connection is closed once however many times it is released: the abort
   # closes it and the setup's own failure closes it again.
   mutate web "the connection is closed once per release, not once" "$ASN" \
@@ -4098,18 +4098,23 @@ export function assistantTransport(): Transport {
   mutate web "the built-in engine's tool call is not bounded by the run" "$BL" \
     '    const callTool = guardedCallTool(session, signal)' \
     '    const callTool: CallTool = (name, args) => session.callTool(name, args)'
-  # The guard is read **before** the call is dispatched, so a late model answer
-  # arriving on a closed run has nowhere to send it.
-  mutate web "the runtime is asked without reading the run's signal first" "$EC" \
-    '    if (signal.aborted) throw new RunCancelled()
-    return withAbort(() => session.callTool(name, args), signal)' \
-    '    return withAbort(() => session.callTool(name, args), signal)'
-  # The session's own signal reaches the same cancellation everything else does.
-  # It used to abort the SDK and leave the channel alone, so a `next()` waiting
-  # on a tool call that never settled waited for ever.
-  mutate web "a session abort aborts the SDK and abandons nothing" "$VL" \
-    '  const gate = openRun(session, () => channel.abandon())' \
-    '  const gate = openRun(session, () => {})'
+  # **Retired: "the runtime is asked without reading the run's signal first".**
+  # `guardedCallTool` still reads the signal before it dispatches, and that is
+  # the readable statement of the rule where the rule lives — but it is no
+  # longer the line that *holds* it. `withAbort` takes a thunk and refuses a
+  # closed run **without invoking it**, so removing the explicit check changes
+  # nothing anyone can observe, and a row saying otherwise would read as a
+  # missing safeguard rather than a doubly-held one. The row that holds it is
+  # "an await on the world is started before the signal is read", above.
+  # **Retired: "a session abort aborts the SDK and abandons nothing".** It was
+  # discriminating when the abandon was the only thing that could settle a
+  # `next()` waiting behind a tool call. It is not any more: the tool call is
+  # bounded by the run's signal, so the loop unwinds on its own and its `end`
+  # reaches the waiting consumer, which the closed gate then drops. What
+  # `abandon()` still does is release a producer nobody will ever take from
+  # after a consumer's `return()`, and the channel's own tests hold that — "the
+  # drain does not settle the event it was yielding", below. Two layers, and
+  # the row that broke one of them stopped saying anything.
   # The drain runs what an engine left behind in the order a browser would
   # have, not all at once: a sixty-second idle callback must not run before the
   # one-second timer that was going to cancel it.

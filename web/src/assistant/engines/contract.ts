@@ -228,12 +228,14 @@ export function eventIterator(options: {
       return { value: step.value, done: false }
     },
     async return(): Promise<IteratorResult<AssistantEvent>> {
-      options.gate.close()
+      // `close` shuts the gate as its first statement, before it awaits — an
+      // async function's body runs synchronously to its first `await`, so this
+      // is the synchronous close, and saying it twice would only hide which
+      // line is the one that matters.
       await close()
       return done
     },
     async throw(cause?: unknown): Promise<IteratorResult<AssistantEvent>> {
-      options.gate.close()
       await close()
       throw cause
     }
