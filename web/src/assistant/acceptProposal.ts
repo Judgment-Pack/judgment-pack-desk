@@ -274,6 +274,19 @@ export function writable(document: unknown): boolean {
   return plain(document) !== undefined
 }
 
+/**
+ * The one sentence for a proposal that is about bytes the page no longer holds.
+ *
+ * **A proposal is an edit of the draft it was given, and of no other.** The
+ * session was handed one document; if the author has typed since, applying it
+ * writes the whole document the model saw and the typing is gone — silently,
+ * because the proposal still looks like an answer. There is no repair for this
+ * that is not a guess about which change the author meant, so the desk says
+ * what happened and offers the only honest way forward.
+ */
+export const DRAFT_MOVED =
+  'The draft changed since this proposal was made — run again to propose against it.'
+
 /** What the proposal is called once a person has acted on it. */
 export type Disposition = 'open' | 'accepted' | 'rejected'
 
@@ -299,8 +312,13 @@ export function acceptState(input: {
   proposal: boolean
   /** True while the session is still running, in either of its phases. */
   running: boolean
-  /** True while a save is in flight. */
-  saving: boolean
+  /**
+   * True while the draft on the page is still the draft this proposal is about
+   * — the same file, the same incarnation of the buffer, and the same bytes.
+   */
+  onBaseline: boolean
+  /** Why the draft cannot be moved at all right now, or the empty string. */
+  busy: string
   disposition: Disposition
   /** True where the proposal is JSON data this desk could write. */
   writable: boolean
@@ -310,11 +328,12 @@ export function acceptState(input: {
   if (input.running) {
     return { enabled: false, why: 'The session is still running. Stop it or wait for it to end.' }
   }
+  if (input.disposition === 'rejected') return { enabled: false, why: 'This proposal was rejected.' }
   if (input.disposition === 'accepted') {
     return { enabled: false, why: 'This proposal is already in the draft.' }
   }
-  if (input.disposition === 'rejected') return { enabled: false, why: 'This proposal was rejected.' }
-  if (input.saving) return { enabled: false, why: 'This draft is being saved.' }
+  if (!input.onBaseline) return { enabled: false, why: DRAFT_MOVED }
+  if (input.busy !== '') return { enabled: false, why: input.busy }
   if (!input.writable) {
     return { enabled: false, why: 'The proposal is not JSON data, so there is nothing to write.' }
   }

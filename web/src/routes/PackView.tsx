@@ -595,6 +595,26 @@ export function PackView() {
    * is this page's in this mode, and handing a clean buffer's Mod+S back to the
    * browser would make the behaviour depend on something the viewer cannot see.
    */
+  /**
+   * Why the draft may not be moved at all right now.
+   *
+   * **The save latch is synchronous and its React state is not.** `save` claims
+   * `saving.current` in the same turn as the click and react-query reports
+   * `isPending` a render later, so a surface that consulted only the rendered
+   * value could start an edit into a buffer whose save is already in the air.
+   * A function, so a caller can ask again at the instant it acts. A reload is
+   * the other half: what lands is a whole file, and the buffer refuses an
+   * answer that arrives over an edit — this is the same fact offered before
+   * the edit rather than after it.
+   */
+  const reloading = editor.reloading
+  const savePending = editor.write.isPending
+  const busyDraft = useCallback(() => {
+    if (saving.current !== undefined || savePending) return 'This draft is being saved.'
+    if (reloading) return 'This draft is being reloaded.'
+    return ''
+  }, [savePending, reloading])
+
   const saveNow = useRef(save)
   saveNow.current = save
   useEffect(() => {
@@ -740,7 +760,12 @@ export function PackView() {
                 // predicate the JSON view is made read-only by, so the pane
                 // and the editor cannot disagree about what is editable.
                 editing={editing && onPath}
-                saving={editor.write.isPending}
+                // Which document these bytes are, so a proposal made about one
+                // pack cannot be accepted onto another: this pane outlives a
+                // navigation between packs, because the route re-renders and
+                // the tab does not remount.
+                identity={onPath ? buffer.identity : undefined}
+                busy={busyDraft}
                 // The runtime's own diagnostics for the bytes on screen, and
                 // only where the report is about them: a stale report is
                 // withheld here exactly as it is withheld from every block,

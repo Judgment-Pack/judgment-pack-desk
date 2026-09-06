@@ -52,6 +52,16 @@ export interface FileEditing {
    * sentence about a file nothing had tried to read.
    */
   reloadError: { path: string; error: Error } | undefined
+  /**
+   * True while a reload is in the air.
+   *
+   * A read takes as long as it takes, and what lands is a whole file: anything
+   * that moves the buffer meanwhile is work the answer may replace. The buffer
+   * refuses a stale answer on its own (`BufferIdentity.revision`), and this is
+   * the other half — so a surface can decline to *start* an edit it knows is
+   * about to be argued with, and say why.
+   */
+  reloading: boolean
   /** The read-back is byte for byte what was sent. */
   verified: boolean
   /**
@@ -91,6 +101,7 @@ export function useFileEditing(): FileEditing {
   const [reloadError, setReloadError] = useState<{ path: string; error: Error } | undefined>(
     undefined
   )
+  const [reloading, setReloading] = useState(false)
   // Only the last reload asked for counts. An earlier one resolving afterwards
   // is answering a question that has been replaced.
   const reloads = useRef(0)
@@ -108,6 +119,7 @@ export function useFileEditing(): FileEditing {
     (path: string, onLoaded: (fresh: FileContent) => boolean) => {
       const ticket = (reloads.current += 1)
       setReloadError(undefined)
+      setReloading(true)
       // **The conflict stands until the read lands.** Clearing it first left a
       // failed reload with nothing on screen at all: no stale-write notice, no
       // error, and a Save button that would 409 again — the page had forgotten
@@ -118,6 +130,7 @@ export function useFileEditing(): FileEditing {
       void readFile(path)
         .then((fresh) => {
           if (ticket !== reloads.current) return
+          setReloading(false)
           // **The buffer decides first.** Resetting the mutation and dropping
           // the verdict before asking made a refused reload destructive in the
           // one way that matters: a save in flight for *another* file was
@@ -131,6 +144,7 @@ export function useFileEditing(): FileEditing {
         })
         .catch((cause: unknown) => {
           if (ticket !== reloads.current) return
+          setReloading(false)
           setReloadError({
             path,
             error: cause instanceof Error ? cause : new Error(String(cause))
@@ -222,7 +236,7 @@ export function useFileEditing(): FileEditing {
   // after the rename, and this compares that to the bytes that were sent.
   const verified = outcome !== undefined && outcome.landed.content === outcome.submitted
 
-  return { write, outcome, reloadError, verified, save, reload, reset }
+  return { write, outcome, reloadError, reloading, verified, save, reload, reset }
 }
 
 /** The listing with one entry replaced, or added where it was not there. */

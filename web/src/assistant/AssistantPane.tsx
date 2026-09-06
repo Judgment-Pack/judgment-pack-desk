@@ -16,6 +16,16 @@
  * reading route there is no buffer to write into, and the pane says so in one
  * line rather than drawing a control that would refuse.
  *
+ * **A proposal belongs to the draft it was given, and to no other.** A run
+ * captures its baseline where it starts — which file, which incarnation of the
+ * buffer, and the exact bytes it sent — and everything about the proposal is
+ * about that: the diff is computed against the baseline snapshot rather than
+ * against the live buffer, so what is on screen is what Accept would apply, and
+ * Accept is offered only while the page still holds those bytes. An author who
+ * typed while the model was thinking is told so and offered another run, which
+ * is the only honest way forward: applying the proposal would write the whole
+ * document the model saw and take the typing with it.
+ *
  * **It renders only where there is an assistant to run.** No endpoint, or no
  * key on this machine, and it says in one line where that is configured rather
  * than showing a control that would refuse.
@@ -30,8 +40,9 @@ import { Button } from '../ui/Button'
 import { CodeArea } from '../ui/CodeArea'
 import { TextArea } from '../ui/TextArea'
 import { useEditing } from '../packs/edit/editingContext'
+import type { BufferIdentity } from '../packs/edit/useDocumentBuffer'
 import { ProposalDiffView } from './ProposalDiff'
-import { acceptState, applyProposal, writable, type Disposition } from './acceptProposal'
+import { DRAFT_MOVED, acceptState, applyProposal, writable, type Disposition } from './acceptProposal'
 import { diffProposal } from './proposalDiff'
 import { useAssistantRun } from './useAssistantRun'
 import { useAssistantSlot } from './useAssistantSlot'
@@ -79,6 +90,16 @@ export function carriesDraft(draft: string | undefined): draft is string {
   return draft !== undefined && draft.trim() !== ''
 }
 
+/** What one run was about: which document, and the bytes of it. */
+interface Baseline {
+  bytes: string | undefined
+  path: string | undefined
+  generation: number | undefined
+}
+
+/** Nothing is in the way. The default, for a caller with no draft to speak of. */
+const noBusy = () => ''
+
 /** Why Fix is not offered, where it is not. */
 function fixWhy(diagnostics: number, advertised: boolean, listed: boolean): string | undefined {
   if (!advertised && listed) return 'This runtime advertises no fix_pack prompt.'
@@ -94,7 +115,8 @@ function byteCount(text: string): number {
 export function AssistantPane({
   draft,
   editing = false,
-  saving = false,
+  identity,
+  busy = noBusy,
   diagnostics = NOTHING_TO_FIX
 }: {
   /**
@@ -116,8 +138,24 @@ export function AssistantPane({
    * reading of what "editable" means, and the two would drift.
    */
   editing?: boolean
-  /** True while a save is in flight, which is not a moment to move the buffer. */
-  saving?: boolean
+  /**
+   * Which document these bytes are, and which incarnation of the buffer.
+   *
+   * Bytes alone would let a proposal made about pack A be accepted onto pack B
+   * that happens to read the same, and the pane outlives a navigation between
+   * packs: the route re-renders, the tab does not remount.
+   */
+  identity?: BufferIdentity
+  /**
+   * Why the draft cannot be moved at all right now, or the empty string.
+   *
+   * **A function, and it is called again at the instant of the click.** A save
+   * is claimed synchronously by the route's own latch and reported to React a
+   * render later, so a control that consulted only the rendered value could
+   * write into a buffer whose save had already been submitted. The rendered
+   * value disables the button; the call at the click is what refuses.
+   */
+  busy?: () => string
   /**
    * The runtime's own diagnostics for the bytes on this page, from the check
    * that already ran beside them.
@@ -133,6 +171,10 @@ export function AssistantPane({
   // is the whole of what this pane uses it for. There is no `commit` here to
   // reach for: the context does not carry one.
   const session = useEditing()
+  // The bytes and the identity as of now, readable from a callback that must
+  // not be rebuilt on every keystroke in the editor beside this pane.
+  const busyNow = useRef(busy)
+  busyNow.current = busy
   const prompts = usePromptNames()
   const advertised = (prompts.data ?? []).includes(AUTHOR_PACK_PROMPT)
   const canFix = (prompts.data ?? []).includes(FIX_PACK_PROMPT)
@@ -164,30 +206,35 @@ export function AssistantPane({
     args: Record<string, string>
   } | null>(null)
   const nextRun = useRef(0)
-  /**
-   * What has been done about this proposal, which is not what the run did.
-   *
-   * It is reset where a run **starts** rather than where a submission is made,
-   * so that Stop — which clears the submission — does not put an accepted
-   * proposal back on offer.
-   */
-  const [disposition, setDisposition] = useState<Disposition>('open')
   const accepts = useRef(0)
   /**
-   * Whether **this desk** sent a draft, which is what makes a proposal an
-   * update rather than a new document.
+   * **What this run is about**: the document it was given, and the bytes of it.
    *
-   * It is the desk's own knowledge and never the model's word for it: a
-   * `kind` in the fenced block is a statement about the model's own work, and
-   * the diff below is computed rather than quoted for exactly that reason.
-   * Recorded where the run starts, because the buffer moves while a session
-   * runs and the answer is about the bytes that were sent.
+   * Captured where the run starts rather than read as the pane renders, because
+   * the buffer moves while a session runs. Everything downstream is about this:
+   * the diff is computed against these bytes, Accept applies to a page that
+   * still holds them, and whether the proposal is an update or a new document
+   * is decided by whether there were any — never by a `kind` the model wrote,
+   * which is a statement about its own work.
    */
-  const [sentDraft, setSentDraft] = useState(false)
-  // The bytes as of now, readable from the effect that starts a run without
-  // making that effect restart on every keystroke in the editor beside it.
+  const [baseline, setBaseline] = useState<Baseline | null>(null)
+  /**
+   * The bytes an accept left behind, so "accepted" can be **derived** rather
+   * than remembered.
+   *
+   * Undo puts the draft back exactly as it was, and a stored disposition then
+   * said "already in the draft" about a draft that no longer carried it — with
+   * Accept disabled and no way to put it back. What is true is a comparison:
+   * this proposal is in the draft exactly while the draft is the bytes it made.
+   */
+  const [accepted, setAccepted] = useState<string | null>(null)
+  const [rejected, setRejected] = useState(false)
+  // The bytes and the identity as of now, readable from the effect that starts
+  // a run without making it restart on every keystroke in the editor beside it.
   const draftNow = useRef<string | undefined>(draft)
   draftNow.current = draft
+  const identityNow = useRef<BufferIdentity | undefined>(identity)
+  identityNow.current = identity
   const prompt = usePromptText(
     submitted?.name ?? AUTHOR_PACK_PROMPT,
     submitted !== null && (prompts.data ?? []).includes(submitted.name),
@@ -213,8 +260,13 @@ export function AssistantPane({
     if (submitted === null || prompt.data === undefined) return
     if (started.current === submitted.id) return
     started.current = submitted.id
-    setDisposition('open')
-    setSentDraft(carriesDraft(draftNow.current))
+    setRejected(false)
+    setAccepted(null)
+    setBaseline({
+      bytes: draftNow.current,
+      path: identityNow.current?.path,
+      generation: identityNow.current?.generation
+    })
     setRan(submitted.name)
     startRun(withDraft(prompt.data.text, draftNow.current))
   }, [submitted, prompt.data, startRun])
@@ -256,22 +308,53 @@ export function AssistantPane({
    * re-renders on every event of the next run.
    */
   const proposed = proposal?.document
+  /**
+   * The diff, against the **baseline** and never against the live buffer.
+   *
+   * What is drawn has to be what Accept would apply, and Accept applies the
+   * proposal to the draft it was made about. A diff recomputed against a buffer
+   * that has moved describes an edit nobody proposed.
+   */
   const diff = useMemo(
-    () => (proposed === undefined ? undefined : diffProposal(draft, proposed)),
-    [draft, proposed]
+    () => (proposed === undefined ? undefined : diffProposal(baseline?.bytes, proposed)),
+    [baseline, proposed]
   )
+  /** Whether the page still holds the document this proposal is about. */
+  const onBaseline =
+    baseline !== null &&
+    baseline.bytes === draft &&
+    baseline.path === identity?.path &&
+    baseline.generation === identity?.generation
+  const sentDraft = carriesDraft(baseline?.bytes)
+  const disposition: Disposition = rejected
+    ? 'rejected'
+    : accepted !== null && draft === accepted
+      ? 'accepted'
+      : 'open'
 
   const write = session.write
   const acceptIntoDraft = useCallback(() => {
     if (proposed === undefined) return
+    // **Asked again at the instant of the click.** The rendered `busy` disables
+    // the button a render after a save is claimed, and the claim is
+    // synchronous; the baseline is re-checked here for the same reason.
+    if (busyNow.current() !== '' || !onBaseline) return
     // **One write, and one undo entry.** The key is this accept's own, so a
     // second accept is a second action rather than being coalesced into the
     // first — which would make one Undo take both of them back.
-    write((current) => applyProposal(current, proposed), {
-      coalesceKey: `assistant-accept:${(accepts.current += 1)}`
-    })
-    setDisposition('accepted')
-  }, [proposed, write])
+    const landed = { text: '' }
+    write(
+      (current) => {
+        const next = applyProposal(current, proposed)
+        // Read back on the next line: `write` runs this synchronously, and the
+        // bytes it produced are what "already in the draft" is a claim about.
+        landed.text = next.text
+        return next
+      },
+      { coalesceKey: `assistant-accept:${(accepts.current += 1)}` }
+    )
+    setAccepted(landed.text)
+  }, [proposed, write, onBaseline])
 
   if (slot.endpoint === null || !slot.keyPresent) {
     return (
@@ -288,7 +371,8 @@ export function AssistantPane({
     editing,
     proposal: proposal !== undefined,
     running,
-    saving,
+    onBaseline,
+    busy: busy(),
     disposition,
     writable: proposed !== undefined && writable(proposed)
   })
@@ -446,10 +530,13 @@ export function AssistantPane({
             ) : (
               <p className={styles.honesty}>Open Edit to accept.</p>
             )}
-            <Button disabled={disposition !== 'open' || running} onClick={() => setDisposition('rejected')}>
+            <Button disabled={disposition !== 'open' || running} onClick={() => setRejected(true)}>
               Reject
             </Button>
           </div>
+          {disposition === 'open' && editing && !onBaseline && (
+            <p className={styles.notice}>{DRAFT_MOVED}</p>
+          )}
           {disposition === 'accepted' && (
             <p className={styles.honesty}>
               Accepted into the draft. <strong>Nothing has been saved.</strong> The check runs

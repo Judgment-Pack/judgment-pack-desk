@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import scenario from './conformance/scenario.json'
-import { acceptState, applyProposal, writable } from './acceptProposal'
+import { DRAFT_MOVED, acceptState, applyProposal, writable } from './acceptProposal'
 import { bytesAt, buffered } from '../packs/edit/writes'
 
 const DRAFT_V1 = scenario.documents.DRAFT_V1 as Record<string, unknown>
@@ -294,7 +294,8 @@ describe('when Accept may be pressed', () => {
     editing: true,
     proposal: true,
     running: false,
-    saving: false,
+    onBaseline: true,
+    busy: '',
     disposition: 'open' as const,
     writable: true
   }
@@ -316,11 +317,27 @@ describe('when Accept may be pressed', () => {
     expect(state.why).toContain('still running')
   })
 
-  it('is refused with no proposal, once accepted, once rejected, and mid-save', () => {
+  it('is refused where the draft is no longer the one the proposal is about', () => {
+    expect(acceptState({ ...open, onBaseline: false })).toEqual({
+      enabled: false,
+      why: DRAFT_MOVED
+    })
+    expect(DRAFT_MOVED).toContain('run again')
+  })
+
+  it('is refused while the draft is busy, in the caller’s own words', () => {
+    expect(acceptState({ ...open, busy: 'This draft is being saved.' }).why).toBe(
+      'This draft is being saved.'
+    )
+    expect(acceptState({ ...open, busy: 'This draft is being reloaded.' }).why).toBe(
+      'This draft is being reloaded.'
+    )
+  })
+
+  it('is refused with no proposal, once accepted, and once rejected', () => {
     expect(acceptState({ ...open, proposal: false }).why).toContain('no proposal')
     expect(acceptState({ ...open, disposition: 'accepted' }).why).toContain('already in the draft')
     expect(acceptState({ ...open, disposition: 'rejected' }).why).toContain('rejected')
-    expect(acceptState({ ...open, saving: true }).why).toContain('being saved')
   })
 
   it('is refused for a proposal this desk could not write', () => {
@@ -329,9 +346,16 @@ describe('when Accept may be pressed', () => {
 
   it('gives one reason at a time, in the order a reader would ask', () => {
     // Every reason is a real state, and the first one is the one that answers
-    // "why can I not press this": the route before the run, the run before the
-    // save.
+    // "why can I not press this": the route, then the run, then what has
+    // already been done about this proposal, then the draft under it.
     expect(acceptState({ ...open, editing: false, running: true }).why).toBe('Open Edit to accept.')
-    expect(acceptState({ ...open, running: true, saving: true }).why).toContain('still running')
+    expect(acceptState({ ...open, running: true, busy: 'This draft is being saved.' }).why).toContain(
+      'still running'
+    )
+    // An accepted proposal has moved the draft off its own baseline by
+    // construction, and "already in the draft" is the answer to why.
+    expect(acceptState({ ...open, disposition: 'accepted', onBaseline: false }).why).toContain(
+      'already in the draft'
+    )
   })
 })

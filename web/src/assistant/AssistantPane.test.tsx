@@ -59,6 +59,8 @@ let runtime: ReturnType<typeof scriptedWebSocket> | null = null
 let held: DocumentBuffer | null = null
 /** How many times the pane wrote, which is the undo-entry claim's other half. */
 let wrote = 0
+/** What the route would say is in the way of an edit, for the cases about that. */
+let busyReason = ''
 
 /**
  * The pane over a **real** buffer, through the editing session the route builds.
@@ -104,7 +106,13 @@ function DraftHarness({
   )
   return (
     <EditingContext.Provider value={session}>
-      <AssistantPane draft={text} editing={editing} diagnostics={diagnostics} />
+      <AssistantPane
+        draft={text}
+        editing={editing}
+        identity={buffer.identity}
+        busy={() => busyReason}
+        diagnostics={diagnostics}
+      />
     </EditingContext.Provider>
   )
 }
@@ -211,6 +219,7 @@ afterEach(() => {
   held = null
   injected = null
   wrote = 0
+  busyReason = ''
   window.sessionStorage.clear()
 })
 
@@ -581,6 +590,61 @@ describe('accepting the proposal into the draft', () => {
     expect(held!.canUndo).toBe(false)
   })
 
+  it('stops calling the proposal accepted once Undo has taken it out again', async () => {
+    // "Accepted" is a comparison, not a memory: the draft went back to what it
+    // was, so the proposal is on offer again rather than disabled for ever
+    // with a sentence that is no longer true.
+    await runOver()
+    acceptNow()
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Accept into draft' }).hasAttribute('disabled')
+      ).toBe(true)
+    )
+    act(() => held!.undo())
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Accept into draft' }).hasAttribute('disabled')
+      ).toBe(false)
+    )
+    expect(screen.getByRole('region', { name: 'The proposal' }).textContent).not.toContain(
+      'Accepted into the draft.'
+    )
+    expect(screen.getByRole('button', { name: 'Reject' }).hasAttribute('disabled')).toBe(false)
+    // And accepting again is one more write, not a no-op.
+    acceptNow()
+    await waitFor(() => expect(held!.dirty).toBe(true))
+    expect(wrote).toBe(2)
+  })
+
+  it('refuses while the route says the draft is busy, and says which', async () => {
+    await runOver()
+    busyReason = 'This draft is being saved.'
+    // A render, so the button picks the reason up.
+    act(() => held!.commit(DRAFT))
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Accept into draft' }).getAttribute('title')
+      ).toBe('This draft is being saved.')
+    )
+    expect(wrote).toBe(0)
+  })
+
+  it('refuses a save claimed between the render and the click', async () => {
+    // The synchronous latch: the route claims a save in the same turn as the
+    // click and React hears about it a render later. A control that consulted
+    // only the rendered value would write into a buffer whose save is in the
+    // air.
+    await runOver()
+    expect(
+      screen.getByRole('button', { name: 'Accept into draft' }).hasAttribute('disabled')
+    ).toBe(false)
+    busyReason = 'This draft is being saved.'
+    acceptNow()
+    expect(wrote).toBe(0)
+    expect(held!.dirty).toBe(false)
+  })
+
   it('says it is in the draft and nothing is saved, and disables both controls', async () => {
     await runOver()
     acceptNow()
@@ -883,5 +947,89 @@ describe('the proposal the pane reads is the one the hook canonicalized', () => 
     )
     expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull()
     expect(wrote).toBe(0)
+  })
+})
+
+describe('a proposal belongs to the draft it was given', () => {
+  const DRAFT_A = '{\n    "title": "the draft the session was given"\n}\n'
+  const DRAFT_B = '{\n    "title": "what the author typed meanwhile"\n}\n'
+  const PROPOSED = { title: 'what the model proposed' }
+
+  let started = false
+  let release: () => void = () => {}
+
+  /** An engine that proposes only when this suite lets it. */
+  const waits = (): Engine => ({
+    id: 'builtin',
+    async *start(): AsyncGenerator<AssistantEvent> {
+      started = true
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      yield { type: 'proposal', document: PROPOSED, unknowns: [] }
+      yield { type: 'end' }
+    }
+  })
+
+  beforeEach(() => {
+    started = false
+    release = () => {}
+  })
+
+  async function runAndEdit() {
+    injected = waits()
+    await draw({ buffer: { text: DRAFT_A } })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    )
+    fireEvent.change(screen.getByLabelText('What should this pack decide?'), {
+      target: { value: 'a policy' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    // The model is thinking. The author keeps working.
+    await waitFor(() => expect(started).toBe(true))
+    act(() => held!.commit(DRAFT_B))
+    await act(async () => {
+      release()
+      await Promise.resolve()
+    })
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+  }
+
+  it('refuses to apply a proposal to a draft that moved under it, and says so', async () => {
+    await runAndEdit()
+    const accept = screen.getByRole('button', { name: 'Accept into draft' })
+    expect(accept.hasAttribute('disabled')).toBe(true)
+    expect(accept.getAttribute('title')).toBe(
+      'The draft changed since this proposal was made — run again to propose against it.'
+    )
+    expect(
+      screen.getByText(/The draft changed since this proposal was made/)
+    ).toBeTruthy()
+    // And pressing it anyway writes nothing.
+    fireEvent.click(accept)
+    expect(wrote).toBe(0)
+    expect(held!.text).toBe(DRAFT_B)
+  })
+
+  it('draws the diff against the draft that was sent, not the one on screen now', async () => {
+    await runAndEdit()
+    const diff = screen.getByRole('region', { name: 'The proposal as a diff' })
+    // The comparison is against the bytes the session was given: the draft's
+    // own title, not the one typed while the model was thinking.
+    expect(diff.textContent).toContain('the draft the session was given')
+    expect(diff.textContent).not.toContain('what the author typed meanwhile')
+  })
+
+  it('offers it again once the draft is back to the bytes it was made about', async () => {
+    await runAndEdit()
+    act(() => held!.undo())
+    await waitFor(() => expect(held!.text).toBe(DRAFT_A))
+    const accept = screen.getByRole('button', { name: 'Accept into draft' })
+    await waitFor(() => expect(accept.hasAttribute('disabled')).toBe(false))
+    expect(screen.queryByText(/The draft changed since this proposal was made/)).toBeNull()
+    fireEvent.click(accept)
+    await waitFor(() => expect(held!.dirty).toBe(true))
+    expect(JSON.parse(held!.text!)).toEqual(PROPOSED)
   })
 })
