@@ -907,11 +907,23 @@ code, and offers Reload — which says that it discards — and *Overwrite anywa
 which is never the primary control. On success `list_packs`, `get_pack` and the
 `validate` queries are invalidated.
 
+**A save still in flight when the author leaves the pack completes on disk, and
+its read-back is dropped with the editor.** The per-save callbacks reach the
+route through react-query's observer, and leaving the pack — or a reload landing
+first — detaches it: the write happens, and nothing here is moved onto it.
+Nothing is retained, because the file on disk is the truth and the next open
+re-reads it; what the page owes the author is to say so, and it does — *This save
+finished, and this page has no account of it*, with the read that would settle it
+beside the sentence. The same line stands where an answer does arrive and the
+buffer refuses it, which is a read-back for a file this buffer is no longer about.
+
 **A read or a write that lands over an edit is refused.** Both take as long as
 they take, and what comes back is a whole file. The ticket a reload carries names
 the file, the incarnation of the buffer *and* the edit revision it was issued at
 — a number every commit, undo, discard **and unwritten operand** moves, because
-text typed into a field that is not JSON yet is work too — so an edit made while
+text typed into a field that is not JSON yet is work too (holding it counts once,
+where it changes; releasing it does not, because the write that follows a release
+is the edit) — so an edit made while
 the read was in flight makes the answer stale and the buffer declines it, keeping
 both the work and the undo entry that could take it back. The stale-file offer
 stays on screen, which is the honest state: the file did move, and this buffer
