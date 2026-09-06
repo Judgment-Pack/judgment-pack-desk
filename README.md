@@ -1463,11 +1463,30 @@ a `setTimeout` throws into nobody's `catch`.
 The barrier at the end **tracks handles rather than waiting**. It was a fixed
 200ms, and a fixed wait is a delay an engine can out-wait — 201ms, an interval,
 a timer that schedules another timer. `setTimeout`, `setInterval`,
-`queueMicrotask`, and `setImmediate` and `requestAnimationFrame` where they
-exist, are wrapped for the sealed window: each call is recorded *and* scheduled
-for real, so an engine that legitimately needs a timer still makes progress, and
-whatever has not fired when the run ends is fired, repeatedly, until nothing is
-left. What remains is asserted to be zero rather than waited on. The desk's capability still works; an engine that reaches for a
+`clearTimeout`, `clearInterval`, `queueMicrotask`, and `setImmediate` and
+`requestAnimationFrame` where they exist, are wrapped for the sealed window:
+each call is recorded *and* scheduled for real, so an engine that legitimately
+needs a timer still makes progress, and whatever has not fired when the run ends
+is fired, repeatedly, until nothing is left. What remains when the bound is
+reached is a **failure**, not a pass. A handle the engine itself cancelled is
+never fired on its behalf — the clear functions are wrapped for exactly that —
+because running one would report a reach the engine had already decided not to
+make.
+
+**A certified engine leaves no live interval when its iterator ends.** An
+interval is never run by the drain at all: running a few ticks and calling it
+drained is a bound an engine can hide a reach behind, and an interval nobody
+clears is one no bounded drain can exhaust. It is reported by name and the leg
+fails for it. Promise reactions are flushed rather than tracked — the drain
+turns the microtask queue over between rounds, which is how a `.then` chain an
+engine left behind is caught while the seal is still up — and what that does not
+cover is a reaction chained off something that resolves *after* the drain: a
+fetch to a real host, a socket, a `MessageChannel`. That bound is real and is
+stated here rather than papered over.
+
+The cleanup is nested so that the drain, the timer wrappers, the sentinels and
+both connection closes all come off whatever throws: a deferred callback that
+threw used to leave a leg's globals installed for every leg after it. The desk's capability still works; an engine that reaches for a
 global fails the leg by name (`K1a`). The string-enumeration guard that used to
 forbid a handful of spellings under `engines/` is gone: it said of itself that a
 novel spelling walks past it, and `new globalThis["Web"+"Socket"]` is that
@@ -1527,10 +1546,17 @@ certified by adding its id to one list.
   matches a call by its **arguments**: an `experimental_evaluate` arriving
   without `rehearsal: true` is a failure, and so is a `write_file` arriving at
   all.
-- `certification/` holds two engines the desk would never certify: one touches
-  the network as its module loads, one schedules the reach for after its run
-  ends cleanly. Each must fail its leg, and does. **A conformance session that
-  only ever runs conformant engines proves nothing about the session.**
+- `certification/` holds four engines the desk would never certify: one touches
+  the network as its module loads; one schedules four reaches for after its run
+  ends cleanly — soon, five minutes out, chained behind another timer, and on a
+  promise chain with no timer at all — and leaves an interval ticking; one
+  clears the interval it starts and cancels a timer it schedules, so it passes
+  the interval rule, is never credited with the reach it cancelled, and still
+  fails on the timeout it meant; and one throws from a callback nobody is
+  awaiting, so the cleanup can be shown to run anyway. Each must fail its leg,
+  and does. **A conformance session that only ever runs conformant engines
+  proves nothing about the session** — and a rule that fails everything proves
+  as little as one that fails nothing, which is what the third is for.
 
 Four legs — OpenAI-compatible and Anthropic, each answered as a stream and as
 one whole object, because an endpoint may ignore what the request asked for —
@@ -2498,6 +2524,13 @@ than from the prose beside it. `assistant/AssistantPane.test.tsx` drives the
 page's **real** transport against the recorded runtime through a stand-in
 `WebSocket`, so the socket, the gate and the SDK client above it are the
 production ones.
+
+`scripts/needle-check.sh .` says whether every mutation needle still matches its
+file, exactly once. A row whose needle has drifted reports `MUTATION DID NOT
+APPLY` and is silently dead, and a full pass takes long enough that nobody finds
+out until a review does — which is how a re-indentation in one PR left a row
+from an earlier one broken. It applies nothing and runs no suite, and it is not
+a substitute for running the rows.
 
 CI runs `gofmt`, `go vet` and `go test` on one job and `npm ci`, `tsc`, the
 component tests and `vite build` on another. It supplies neither a runtime binary
