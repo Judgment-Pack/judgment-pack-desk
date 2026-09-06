@@ -46,7 +46,7 @@ import {
   extractProposal,
   guardedCallTool,
   isCancelled,
-  onceOnly,
+  openRun,
   servedSchema,
   textOf,
   thinkingUnavailable,
@@ -263,35 +263,34 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
   // The run's own controller, chained to the session's: the SDK is given this
   // one so a consumer that walks away ends the run, and the session's abort
   // reaches it the moment the viewer presses Stop.
-  const stop = new AbortController()
-  // **The channel aborts the run as it releases what it was holding**, because
-  // the producer resumes on a microtask and would otherwise carry on into a
-  // tool call for a session nobody is listening to any more.
-  const channel = eventChannel({ onAbandon: () => stop.abort() })
   /**
-   * Everything this run holds, released once.
+   * One gate, reached four ways.
    *
-   * **One cancellation, reached four ways**: the consumer's `return()`, its
-   * `throw()`, the session's own signal and the run's natural end all run these
-   * statements and no others, once, synchronously, before anything is awaited —
-   * because what is waiting is exactly what this releases. The session's signal
-   * used to abort the SDK and nothing else, which left a `next()` waiting on
-   * the channel for a run that had already been told to stop.
+   * The consumer's `return()`, its `throw()`, the session's own signal and the
+   * run's natural end all close it — once, synchronously, marking the run closed
+   * *before* it aborts or releases anything, because what a released loop
+   * produces next must already be nobody's. A session already aborted when this
+   * is called closes it before a provider is built or a request is made.
    */
-  const cancel = onceOnly(() => {
-    session.signal.removeEventListener('abort', onAbort)
-    stop.abort()
-    channel.abandon()
-  })
-  function onAbort(): void {
-    cancel()
-  }
-  if (session.signal.aborted) stop.abort()
-  else session.signal.addEventListener('abort', onAbort, { once: true })
+  /**
+   * The channel and the gate, in the only order that works on the one path
+   * this is all for.
+   *
+   * A session already aborted closes the gate the moment it is opened, and
+   * closing it abandons the channel — so the channel has to exist first. But
+   * abandoning calls back into the gate, which does not exist yet. Both are
+   * true, and neither is a problem: during that first synchronous close the
+   * hook below is still the no-op, which is exactly right, because the thing it
+   * would have called is already closing.
+   */
+  let closeRun = () => {}
+  const channel = eventChannel({ onAbandon: () => closeRun() })
+  const gate = openRun(session, () => channel.abandon())
+  closeRun = gate.close
   // The runtime, reachable only while the run is: read before dispatch, so
   // nothing reaches `jpack mcp` after the consumer has left, and bounded, so a
   // call in flight cannot hold the cleanup that is ending it.
-  const callTool = guardedCallTool(session, stop.signal)
+  const callTool = guardedCallTool(session, gate.signal)
   const offered = new Set(session.tools.map((tool) => tool.name))
   // What the model asked for, before the SDK's refinement touched it.
   //
@@ -351,12 +350,12 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
 
     let streamed: unknown = null
     const result = streamText({
-      model: modelFor(session, stop.signal),
+      model: modelFor(session, gate.signal),
       instructions: SYSTEM,
       tools,
       messages: [{ role: 'user', content: session.prompt }],
       stopWhen: stepCountIs(MAX_TURNS),
-      abortSignal: stop.signal,
+      abortSignal: gate.signal,
       // **No retries, deliberately.** The SDK's default is two, with an
       // exponential backoff, and its retryable set includes 409 — which is the
       // status the *desk's own relay* answers with when no key is stored on
@@ -400,7 +399,7 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
     // is held to.
     const parts = result.stream[Symbol.asyncIterator]()
     for (;;) {
-      const step = await withAbort(parts.next(), stop.signal)
+      const step = await withAbort(() => parts.next(), gate.signal)
       if (step.done === true) break
       const part = step.value
       if (part.type === 'start-step') {
@@ -461,7 +460,9 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
 
     // `result.text` mints a fresh promise on every read, so it is read here,
     // where it is awaited, and nowhere it would be left standing.
-    const proposal = extractProposal(final !== '' ? final : await result.text)
+    const proposal = extractProposal(
+      final !== '' ? final : await withAbort(() => Promise.resolve(result.text), gate.signal)
+    )
     await channel.push({
       type: 'proposal',
       document: proposal.document,
@@ -494,7 +495,7 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
     const loop = drive().catch(async (cause: unknown) => {
       // A cancelled run is the viewer stopping the session, or a consumer
       // walking away: it ends the run and there is no failure to report.
-      if (isCancelled(cause) || stop.signal.aborted) return
+      if (isCancelled(cause) || gate.signal.aborted) return
       await channel.push({ type: 'error', message: describe(cause) })
     })
     // Nothing else awaits this; a rejection out of the catch above would be
@@ -503,5 +504,5 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
     return channel.drain()
   }
 
-  return eventIterator({ open, cancel })
+  return eventIterator({ gate, open })
 }

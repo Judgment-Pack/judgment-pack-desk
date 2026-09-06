@@ -1675,20 +1675,35 @@ cannot become loadable without being put in front of the conformance session and
 an id the decoder declares cannot be left without an adapter. Both directions are
 compile errors.
 
-**No loop in either engine awaits anything outside it directly.** Every await on
-the world — the model request, every `session.callTool`, every read of an SDK's
-stream — goes through one function that settles the moment the run's own signal
-does, whatever the thing underneath decides to do. Aborting the awaited thing is
-not enough: a model request honours a signal and a `tools/call` over a socket
-does not, and a cleanup queued behind an await on something it was meant to end
-waits for ever. One `cancel()` per run is reached four ways — the consumer's
-`return()`, its `throw()`, the session's signal, and the run's natural end —
-and runs the same statements in the same order, synchronously, before anything
-is awaited. The runtime is reached through a guard that reads that signal
-**before it dispatches**, so no `tools/call` arrives after the consumer has left.
-A cancelled run says nothing at all, on either engine, not even `end`: the
-terminal event belongs to a run that finished, and the page's own terminal
-accounting is the run hook's.
+**A run is a gate, and it is closed before it is aborted.** `openRun` gives each
+run a gate the consumer's `return()`, its `throw()`, the session's own signal and
+the run's natural end all close — once, synchronously — and closing it marks it
+**closed first**, then aborts, then releases. The order is the point: a signal
+says "stop soon", and a closed gate says "nothing more from this run reaches
+anybody". When the thing an engine was awaiting wins its race with the abort by
+a microtask, the loop resumes holding a value; aborting cannot stop it delivering
+that, and a flag the delivery path reads can. A session already aborted when
+`start` is called closes the gate before a provider is built or a request is
+made: no event, no model work, nothing.
+
+**`withAbort(() => work(), signal)` bounds each await on the world**, and takes a
+thunk so a closed run starts no work at all — evaluating the argument *is* the
+request. It is used at each model request, each `session.callTool`, each read of
+the AI SDK's stream and of its result promise, and at the relay's and the
+providers' request and body reads; `sseEvents` takes the run's signal so a
+stalled stream cannot outlive its run. **Two waits are not wrapped, and are
+bounded differently:** the channel take and the channel's wake wait are released
+by `abandon()`, which the gate calls as it closes — a wrapped race there would be
+a second way to end the same wait. Aborting the awaited thing alone was never
+enough: a model request honours a signal and a `tools/call` over a socket does
+not, and a cleanup queued behind an await on something it was meant to end waits
+for ever.
+
+The runtime is reached through a guard that reads the run's signal **before it
+dispatches**, so no `tools/call` arrives after the consumer has left. A cancelled
+run says nothing at all, on either engine, not even `end`: the terminal event
+belongs to a run that finished, and the page's own terminal accounting is the run
+hook's.
 
 **An engine's outer shape is a hand-written iterator, not an async generator.**
 A generator serves `next()`, `return()` and `throw()` from one queue, so a

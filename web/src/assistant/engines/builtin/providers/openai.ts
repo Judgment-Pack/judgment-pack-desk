@@ -6,7 +6,7 @@
  * or attach a credential the page was never given. Ported from the bake-off's
  * `none` prototype, minus the reasoning fields (chunk 4).
  */
-import { servedSchema } from '../../contract'
+import { servedSchema, withAbort } from '../../contract'
 import { isEventStream, sseEvents } from './sse'
 import { ModelHttpError, protocolHeaders } from './types'
 import type { McpTool } from '../../../engine'
@@ -81,23 +81,30 @@ export const openai: Provider = {
     }
     if (options.stream) body.stream_options = { include_usage: true }
 
-    const response = await options.call(openai.suffix, {
-      headers: protocolHeaders(),
-      body: JSON.stringify(body),
-      signal: options.signal
-    })
+    // **Bounded by the run's signal**, and a thunk: a closed run makes no
+    // request at all, and a capability that never settled could not hold
+    // this loop open.
+    const response = await withAbort(
+      () =>
+        options.call(openai.suffix, {
+          headers: protocolHeaders(),
+          body: JSON.stringify(body),
+          signal: options.signal
+        }),
+      options.signal
+    )
     if (!response.ok) {
-      throw new ModelHttpError(response.status, await response.text(), openai.suffix)
+      throw new ModelHttpError(response.status, await withAbort(() => response.text(), options.signal), openai.suffix)
     }
 
     if (!isEventStream(response)) {
-      const payload = (await response.json()) as { choices?: { message?: OpenAiMessage }[] }
+      const payload = (await withAbort(() => response.json(), options.signal)) as { choices?: { message?: OpenAiMessage }[] }
       return turnOf(payload.choices?.[0]?.message ?? {})
     }
 
     let text = ''
     const slots = new Map<number, { id: string; name: string; argsText: string }>()
-    for await (const data of sseEvents(response)) {
+    for await (const data of sseEvents(response, options.signal)) {
       if (data === '[DONE]') break
       const chunk = JSON.parse(data) as {
         choices?: { delta?: { content?: string; tool_calls?: OpenAiToolCall[] } }[]

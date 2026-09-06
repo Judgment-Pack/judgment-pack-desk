@@ -20,7 +20,7 @@ import {
   extractProposal,
   guardedCallTool,
   isCancelled,
-  onceOnly,
+  openRun,
   textOf,
   thinkingUnavailable,
   withAbort
@@ -96,24 +96,12 @@ function providerFor(family: AssistantSession['model']['family']): Provider {
  * that consumer to be owed no terminal event.
  */
 export function runBuiltin(session: AssistantSession): AsyncIterable<AssistantEvent> {
-  const stop = new AbortController()
-  // **One cancellation, reached four ways.** The consumer's `return()`, its
-  // `throw()`, the session's own signal and the run's natural end all run these
-  // statements and no others, once, synchronously, before anything is awaited —
-  // because what is waiting is exactly what this releases.
-  const cancel = onceOnly(() => {
-    session.signal.removeEventListener('abort', onAbort)
-    stop.abort()
-  })
-  function onAbort(): void {
-    cancel()
-  }
-  if (session.signal.aborted) stop.abort()
-  else session.signal.addEventListener('abort', onAbort, { once: true })
-  return eventIterator({
-    open: () => builtinEvents(session, stop.signal),
-    cancel
-  })
+  // **One gate, reached four ways.** The consumer's `return()`, its `throw()`,
+  // the session's own signal and the run's natural end all close the same gate,
+  // once, synchronously — and a session already aborted when this is called
+  // closes it before a provider is built or a request is made.
+  const gate = openRun(session, () => {})
+  return eventIterator({ gate, open: () => builtinEvents(session, gate.signal) })
 }
 
 async function* builtinEvents(
@@ -146,17 +134,19 @@ async function* builtinEvents(
     for (let turn = 1; turn <= MAX_TURNS; turn += 1) {
       turns = turn
       // Bounded by the run's signal and not only by the request's: a capability
-      // that never settles must not be able to hold this loop open.
+      // that never settles must not be able to hold this loop open. A thunk,
+      // so a closed run makes no request at all.
       const reply = await withAbort(
-        provider.send({
-          call: session.model.call,
-          model: session.model.model,
-          system: SYSTEM,
-          messages,
-          tools,
-          stream: true,
-          signal
-        }),
+        () =>
+          provider.send({
+            call: session.model.call,
+            model: session.model.model,
+            system: SYSTEM,
+            messages,
+            tools,
+            stream: true,
+            signal
+          }),
         signal
       )
 

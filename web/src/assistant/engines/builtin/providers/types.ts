@@ -87,7 +87,13 @@ export interface SendOptions {
   tools: unknown[]
   /** Whether the request asks for a stream. What comes back decides how it is read. */
   stream: boolean
-  signal?: AbortSignal
+  /**
+   * The run's own signal, and **required**.
+   *
+   * Every await below it — the request, the body read, each read of the stream
+   * — is bounded by this. An optional signal is an await nobody bounded.
+   */
+  signal: AbortSignal
 }
 
 export interface Provider {

@@ -1,3 +1,5 @@
+import { withAbort } from '../../contract'
+
 /**
  * A hand-rolled SSE reader. No dependency: `fetch` plus `TextDecoderStream` is
  * enough, and both are in every browser this desk targets.
@@ -6,12 +8,16 @@
  * here, and each provider's event grammar on top of it. Ported unchanged from
  * the bake-off's `none` prototype.
  */
-export async function* sseEvents(response: Response): AsyncGenerator<string> {
+export async function* sseEvents(
+  response: Response,
+  /** The run's signal: a stream that stalls must not outlive its run. */
+  signal: AbortSignal
+): AsyncGenerator<string> {
   if (!response.body) throw new Error('the model answer carried no body')
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
   let buffer = ''
   for (;;) {
-    const { done, value } = await reader.read()
+    const { done, value } = await withAbort(() => reader.read(), signal)
     if (done) break
     buffer += value
     let newline: number

@@ -182,6 +182,95 @@ describe('the ordered channel, when the consumer stops listening', () => {
   })
 })
 
+describe('a session that was already over before the run began', () => {
+  it.each(['off', 'ultra'] as const)('emits nothing and asks nothing, at tier %s', async (tier) => {
+    // An aborted signal is a run that is over. It used to abort the SDK's
+    // controller and nothing else, so the engine still said
+    // `thinking_unavailable`, still built a provider, and still delivered
+    // `end` — an engine reporting on a session that never happened.
+    const controller = new AbortController()
+    controller.abort()
+    let requests = 0
+    let tools = 0
+    const call: ModelCall = async () => {
+      requests += 1
+      return new Response(turn({ text: PROPOSAL_TEXT }), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' }
+      })
+    }
+    const events = await drain(
+      vercel.start(
+        session(call, { signal: controller.signal, thinking: { tier } }, async () => {
+          tools += 1
+          return { content: [] }
+        })
+      )
+    )
+    expect(events).toEqual([])
+    expect(requests, 'a request was made for a run that was already over').toBe(0)
+    expect(tools, 'the runtime was asked by a run that was already over').toBe(0)
+  })
+})
+
+describe('when the thing being awaited wins its race with the abort', () => {
+  it('delivers nothing after the run closed, and no error and no end', async () => {
+    // `withAbort` settles with the **value** when the work wins by a
+    // microtask; the abort then runs while the loop is still holding it. What
+    // stops the loop delivering is not the abort — it is that the run is
+    // already marked closed and the delivery path reads that.
+    const controller = new AbortController()
+    const { call } = scriptedCall([
+      turn({ tool: { name: 'validate', args: { document: {} } } }),
+      turn({ text: PROPOSAL_TEXT })
+    ])
+    const events: AssistantEvent[] = []
+    const iterator = vercel.start(
+      session(call, { signal: controller.signal }, async () => {
+        // The answer arrives, and the session is aborted in the same turn: the
+        // value wins, and the abort lands a microtask later.
+        const answer: McpToolResult = { content: [{ type: 'text', text: '{"status":"ok"}' }] }
+        controller.abort()
+        return answer
+      })
+    )[Symbol.asyncIterator]()
+    const first = await iterator.next()
+    expect(first.value).toMatchObject({ type: 'tool_call' })
+    for (;;) {
+      const step = await iterator.next()
+      if (step.done === true) break
+      events.push(step.value)
+    }
+    expect(events, 'an event was delivered after the run closed').toEqual([])
+  })
+
+  it('delivers no error where the awaited thing failed first', async () => {
+    // The other half: the underlying promise **rejected** just before the
+    // abort, so the loop's catch sees the original failure rather than a
+    // cancellation — and would have reported an `error` and an `end` for a run
+    // that was already over.
+    const controller = new AbortController()
+    const { call } = scriptedCall([
+      turn({ tool: { name: 'validate', args: { document: {} } } }),
+      turn({ text: PROPOSAL_TEXT })
+    ])
+    const events: AssistantEvent[] = []
+    const iterator = vercel.start(
+      session(call, { signal: controller.signal }, async () => {
+        controller.abort()
+        throw new Error('the socket went away')
+      })
+    )[Symbol.asyncIterator]()
+    expect((await iterator.next()).value).toMatchObject({ type: 'tool_call' })
+    for (;;) {
+      const step = await iterator.next()
+      if (step.done === true) break
+      events.push(step.value)
+    }
+    expect(events).toEqual([])
+  })
+})
+
 describe('the registry', () => {
   it('cannot make an engine loadable without certifying it', () => {
     // The loader table and the certified list used to be independent: adding a
@@ -244,7 +333,7 @@ describe('the address the SDK composes, and what this desk will send', () => {
       called += 1
       return new Response('{}')
     }
-    const fetch = relayFetch({ family: 'openai-compatible', call })
+    const fetch = relayFetch({ family: 'openai-compatible', call, signal: new AbortController().signal })
     await expect(fetch('https://api.openai.com/v1/chat/completions', { body: '{}' })).rejects.toThrow(
       ADDRESS_REFUSED
     )
@@ -257,7 +346,7 @@ describe('the address the SDK composes, and what this desk will send', () => {
       seen.push(Object.keys(request.headers ?? {}).map((name) => name.toLowerCase()))
       return new Response('{}', { headers: { 'content-type': 'application/json' } })
     }
-    const fetch = relayFetch({ family: 'anthropic', call })
+    const fetch = relayFetch({ family: 'anthropic', call, signal: new AbortController().signal })
     await fetch(`${PLACEHOLDER_ORIGIN}/v1/messages`, {
       body: '{}',
       headers: {

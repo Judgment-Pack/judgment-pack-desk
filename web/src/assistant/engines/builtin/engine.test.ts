@@ -606,6 +606,128 @@ describe('a run stopped while it is waiting on the runtime', () => {
   })
 })
 
+describe('a session that was already over before the run began', () => {
+  it.each(['off', 'ultra'] as const)('emits nothing and asks nothing, at tier %s', async (tier) => {
+    // An aborted signal is a run that is over. It used to abort this engine's
+    // controller and nothing else, so it still said `thinking_unavailable` and
+    // still evaluated `provider.send(...)` — a request made for a session that
+    // never happened.
+    const controller = new AbortController()
+    controller.abort()
+    let requests = 0
+    let tools = 0
+    const one = session({
+      signal: controller.signal,
+      thinking: { tier },
+      model: {
+        family: 'openai-compatible',
+        model: 'a-model',
+        call: async () => {
+          requests += 1
+          return new Response(JSON.stringify(finalMessage(PROPOSAL_TEXT)), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          })
+        }
+      },
+      callTool: async () => {
+        tools += 1
+        return { content: [] }
+      }
+    })
+    const events = await drain(builtin.start(one))
+    expect(events).toEqual([])
+    expect(requests, 'a request was made for a run that was already over').toBe(0)
+    expect(tools, 'the runtime was asked by a run that was already over').toBe(0)
+  })
+})
+
+describe('when the thing being awaited wins its race with the abort', () => {
+  /** A model that calls one tool, then proposes. */
+  function callsAToolThenProposes(): ModelCall {
+    let turn = 0
+    return async () => {
+      turn += 1
+      return new Response(
+        JSON.stringify(
+          turn === 1
+            ? {
+                choices: [
+                  {
+                    message: {
+                      role: 'assistant',
+                      content: null,
+                      tool_calls: [
+                        {
+                          id: 'call_1',
+                          type: 'function',
+                          function: { name: 'validate', arguments: '{}' }
+                        }
+                      ]
+                    },
+                    finish_reason: 'tool_calls'
+                  }
+                ]
+              }
+            : { choices: [{ message: { role: 'assistant', content: PROPOSAL_TEXT } }] }
+        ),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    }
+  }
+
+  it('delivers nothing after the run closed, and no error and no end', async () => {
+    // `withAbort` settles with the **value** when the work wins by a
+    // microtask; the abort then runs while the loop is still holding it. What
+    // stops the loop delivering a `tool_result` is not the abort — it is that
+    // the run is already marked closed and the delivery path reads that.
+    const controller = new AbortController()
+    const one = session({
+      signal: controller.signal,
+      model: { family: 'openai-compatible', model: 'a-model', call: callsAToolThenProposes() },
+      callTool: async () => {
+        const answer: McpToolResult = { content: [{ type: 'text', text: '{"status":"ok"}' }] }
+        controller.abort()
+        return answer
+      }
+    })
+    const iterator = builtin.start(one)[Symbol.asyncIterator]()
+    expect((await iterator.next()).value).toMatchObject({ type: 'tool_call' })
+    const after: AssistantEvent[] = []
+    for (;;) {
+      const step = await iterator.next()
+      if (step.done === true) break
+      after.push(step.value)
+    }
+    expect(after, 'an event was delivered after the run closed').toEqual([])
+  })
+
+  it('delivers no error where the awaited thing failed first', async () => {
+    // The other half, and the one this engine got wrong: the underlying promise
+    // **rejected** just before the abort, so the catch saw the original failure
+    // rather than a cancellation and reported an `error` and an `end` for a run
+    // that was already over.
+    const controller = new AbortController()
+    const one = session({
+      signal: controller.signal,
+      model: { family: 'openai-compatible', model: 'a-model', call: callsAToolThenProposes() },
+      callTool: async () => {
+        controller.abort()
+        throw new Error('the socket went away')
+      }
+    })
+    const iterator = builtin.start(one)[Symbol.asyncIterator]()
+    expect((await iterator.next()).value).toMatchObject({ type: 'tool_call' })
+    const after: AssistantEvent[] = []
+    for (;;) {
+      const step = await iterator.next()
+      if (step.done === true) break
+      after.push(step.value)
+    }
+    expect(after).toEqual([])
+  })
+})
+
 describe('the registry', () => {
   it('carries builtin, and loads it as its own chunk', async () => {
     expect([...CERTIFIED_ENGINES]).toEqual(['builtin', 'vercel'])

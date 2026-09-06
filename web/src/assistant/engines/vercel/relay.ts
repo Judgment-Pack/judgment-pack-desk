@@ -25,7 +25,7 @@
  *   capability drops everything outside its own allow-list again;
  * - **the answer is presented in the framing the SDK asked for.** See below.
  */
-import { isEventStream } from '../contract'
+import { isEventStream, withAbort } from '../contract'
 import type { EndpointKind } from '../../../config/deskConfig'
 import type { ModelCall } from '../../engine'
 
@@ -248,9 +248,11 @@ function anthropicEvents(payload: unknown): string {
 export function relayFetch(options: {
   family: EndpointKind
   call: ModelCall
-  signal?: AbortSignal
+  /** The run's own signal: every await below is bounded by it. */
+  signal: AbortSignal
 }): typeof fetch {
   const base = placeholderBase(options.family)
+  const run = options.signal
   const send = async (input: unknown, init?: RequestInit): Promise<Response> => {
     const suffix = typeof input === 'string' ? suffixOf(input, base) : undefined
     if (suffix === undefined) throw new Error(ADDRESS_REFUSED)
@@ -262,16 +264,24 @@ export function relayFetch(options: {
     if (typeof body !== 'string') {
       throw new Error('a model request body must be the JSON text the SDK composed')
     }
-    const answered = await options.call(suffix, {
-      headers,
-      body,
-      // The run's signal, not the SDK's: an abort has to reach the request the
-      // desk actually made, and the SDK's own is passed through where it set one.
-      signal: (init?.signal ?? options.signal) ?? undefined
-    })
+    // **Bounded by the run's own signal**, and a thunk, so a closed run makes no
+    // request at all. The desk's capability is handed the signal too — an abort
+    // has to reach the request the desk actually made — but a capability that
+    // ignored it could otherwise hold this open.
+    const answered = await withAbort(
+      () =>
+        options.call(suffix, {
+          headers,
+          body,
+          signal: (init?.signal ?? options.signal) ?? undefined
+        }),
+      run
+    )
     // The SDK asked to stream and the endpoint answered whole. See `reframe`.
     if (!answered.ok || isEventStream(answered) || !asksToStream(body)) return answered
-    const payload: unknown = await answered.json().catch(() => undefined)
+    // Reading a body is an await on the world like any other: a stalled body
+    // must not outlive the run it belongs to.
+    const payload: unknown = await withAbort(() => answered.json(), run).catch(() => undefined)
     if (payload === undefined) return answered
     return new Response(reframe(options.family, payload), {
       status: answered.status,

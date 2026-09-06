@@ -13,7 +13,7 @@
  *
  * Ported from the bake-off's `none` prototype, minus the thinking handling.
  */
-import { servedSchema } from '../../contract'
+import { servedSchema, withAbort } from '../../contract'
 import { isEventStream, sseEvents } from './sse'
 import { ModelHttpError, protocolHeaders } from './types'
 import type { McpTool } from '../../../engine'
@@ -72,19 +72,26 @@ export const anthropic: Provider = {
       stream: options.stream
     }
 
-    const response = await options.call(anthropic.suffix, {
-      // `anthropic-version` is on the relay's outbound allow-list; nothing
-      // resembling a credential is, and nothing here is one.
-      headers: protocolHeaders({ 'anthropic-version': '2023-06-01' }),
-      body: JSON.stringify(body),
-      signal: options.signal
-    })
+    // **Bounded by the run's signal**, and a thunk: a closed run makes no
+    // request at all, and a capability that never settled could not hold
+    // this loop open.
+    const response = await withAbort(
+      () =>
+        options.call(anthropic.suffix, {
+          // `anthropic-version` is on the relay's outbound allow-list; nothing
+          // resembling a credential is, and nothing here is one.
+          headers: protocolHeaders({ 'anthropic-version': '2023-06-01' }),
+          body: JSON.stringify(body),
+          signal: options.signal
+        }),
+      options.signal
+    )
     if (!response.ok) {
-      throw new ModelHttpError(response.status, await response.text(), anthropic.suffix)
+      throw new ModelHttpError(response.status, await withAbort(() => response.text(), options.signal), anthropic.suffix)
     }
 
     if (!isEventStream(response)) {
-      const payload = (await response.json()) as { content?: Block[] }
+      const payload = (await withAbort(() => response.json(), options.signal)) as { content?: Block[] }
       const content = Array.isArray(payload.content) ? payload.content : []
       const text = content
         .filter((block) => block.type === 'text')
@@ -98,7 +105,7 @@ export const anthropic: Provider = {
     let text = ''
     const blocks = new Map<number, Block>()
     const partial = new Map<number, string>()
-    for await (const data of sseEvents(response)) {
+    for await (const data of sseEvents(response, options.signal)) {
       const event = JSON.parse(data) as {
         type?: string
         index?: number

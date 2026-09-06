@@ -3771,9 +3771,9 @@ export function assistantTransport(): Transport {
   # socket to /ws with this chassis' token. Every leg seals fetch, WebSocket,
   # XMLHttpRequest and EventSource for the duration of the engine's run.
   mutate web "the engine reaches for globalThis.fetch" "$BO" \
-    '    const response = await options.call(openai.suffix, {' \
-    "    const response = await globalThis.fetch('/api/assistant/relay/v1/chat/completions', {
-      method: 'POST',"
+    '        options.call(openai.suffix, {' \
+    "        globalThis.fetch('/api/assistant/relay/v1/chat/completions', {
+          method: 'POST',"
   # `end` twice: a pane that renders "running" until it sees one would be right
   # either way, so what this breaks is the contract's own "exactly once".
   mutate web "end is emitted twice" "$BL" \
@@ -3999,7 +3999,7 @@ export function assistantTransport(): Transport {
     const loop = drive().catch(async (cause: unknown) => {
       // A cancelled run is the viewer stopping the session, or a consumer
       // walking away: it ends the run and there is no failure to report.
-      if (isCancelled(cause) || stop.signal.aborted) return
+      if (isCancelled(cause) || gate.signal.aborted) return
       await channel.push({ type: '"'"'error'"'"', message: describe(cause) })
     })
     // Nothing else awaits this; a rejection out of the catch above would be
@@ -4008,13 +4008,13 @@ export function assistantTransport(): Transport {
     return channel.drain()
   }
 
-  return eventIterator({ open, cancel })' \
+  return eventIterator({ gate, open })' \
     '  const finish = async (): Promise<void> => {
     channel.close()
   }
   const open = (): AsyncGenerator<AssistantEvent> => {
     const loop = drive().catch(async (cause: unknown) => {
-      if (isCancelled(cause) || stop.signal.aborted) return
+      if (isCancelled(cause) || gate.signal.aborted) return
       await channel.push({ type: '"'"'error'"'"', message: describe(cause) })
     })
     void loop.then(finish, finish)
@@ -4025,7 +4025,7 @@ export function assistantTransport(): Transport {
     try {
       yield* open()
     } finally {
-      cancel()
+      gate.close()
       yield { type: '"'"'end'"'"' }
     }
   })()'
@@ -4034,24 +4034,58 @@ export function assistantTransport(): Transport {
   # waiting on is exactly what the cancel ends, and the queued close cannot run
   # until that `next()` settles.
   mutate web "the iterator cancels only after it has waited" "$EC" \
-    '      options.cancel()
+    '      options.gate.close()
       await events?.return(undefined)' \
     '      await events?.return(undefined)
-      options.cancel()'
+      options.gate.close()'
 
   # A `next()` that finds the iterator closed under it must not wait on the same
   # closing promise the `return()` is waiting on: the `return()` registered
   # first and would settle first, telling the consumer the iterator was closed
   # before the `next()` it was holding had come back.
   mutate web "a closed iterator's pending next waits on the closing too" "$EC" \
-    '      if (closed) return done
-      if (step.done === true) {' \
-    '      if (step.done === true || closed) {'
+    '      if (options.gate.isClosed()) return done
+      events ??= options.open()' \
+    '      events ??= options.open()'
   # The connection is closed once however many times it is released: the abort
   # closes it and the setup's own failure closes it again.
   mutate web "the connection is closed once per release, not once" "$ASN" \
     '    shutting ??= (async () => {' \
     '    shutting = (async () => {'
+  # ---- What review round 5 found: the two orderings a signal cannot hold ---
+  #
+  # A session already aborted is a run that is over. It used to abort the run's
+  # controller and nothing else, so an engine still reported a tier, still built
+  # a provider, and still made a request — for a session that never happened.
+  mutate web "a session aborted before the run is not closed, only aborted" "$EC" \
+    "  if (session.signal.aborted) close()" \
+    '  if (session.signal.aborted) stop.abort()'
+  # **Closed, then aborted, then released.** When the thing an engine was
+  # awaiting wins its race with the abort by a microtask, the loop resumes
+  # holding a value; aborting cannot stop it delivering that, and a flag the
+  # delivery path reads can — but only if it is set first.
+  mutate web "the run is aborted and released before it is marked closed" "$EC" \
+    "    closed = true
+    session.signal.removeEventListener('abort', close)
+    stop.abort()
+    release()" \
+    "    session.signal.removeEventListener('abort', close)
+    stop.abort()
+    release()
+    closed = true"
+  # And the delivery path is where that flag is read. A loop that resumed after
+  # the run closed can yield whatever it likes; none of it is anybody's.
+  mutate web "the delivery path does not read the closed gate" "$EC" \
+    '      if (options.gate.isClosed()) return done
+      if (step.done === true) {' \
+    '      if (step.done === true) {'
+  # A thunk, so a closed run starts no work at all: taking a promise meant the
+  # call had already been made by the time the signal was read.
+  mutate web "an await on the world is started before the signal is read" "$EC" \
+    '  if (signal.aborted) return Promise.reject(new RunCancelled())
+  let started: Promise<T>' \
+    '  let started: Promise<T>'
+
   # ---- What review round 4 found: the class, broken again -----------------
   #
   # Every await on the world outside an engine is bounded by the run's own
@@ -4059,7 +4093,7 @@ export function assistantTransport(): Transport {
   # honours a signal — a model request does, a `tools/call` over a socket does
   # not. Each row here unbinds one of them.
   mutate web "the vercel adapter's tool call is not bounded by the run" "$VL" \
-    '  const callTool = guardedCallTool(session, stop.signal)' \
+    '  const callTool = guardedCallTool(session, gate.signal)' \
     '  const callTool: CallTool = (name, args) => session.callTool(name, args)'
   mutate web "the built-in engine's tool call is not bounded by the run" "$BL" \
     '    const callTool = guardedCallTool(session, signal)' \
@@ -4068,18 +4102,14 @@ export function assistantTransport(): Transport {
   # arriving on a closed run has nowhere to send it.
   mutate web "the runtime is asked without reading the run's signal first" "$EC" \
     '    if (signal.aborted) throw new RunCancelled()
-    return withAbort(session.callTool(name, args), signal)' \
-    '    return withAbort(session.callTool(name, args), signal)'
+    return withAbort(() => session.callTool(name, args), signal)' \
+    '    return withAbort(() => session.callTool(name, args), signal)'
   # The session's own signal reaches the same cancellation everything else does.
   # It used to abort the SDK and leave the channel alone, so a `next()` waiting
   # on a tool call that never settled waited for ever.
   mutate web "a session abort aborts the SDK and abandons nothing" "$VL" \
-    '  function onAbort(): void {
-    cancel()
-  }' \
-    '  function onAbort(): void {
-    stop.abort()
-  }'
+    '  const gate = openRun(session, () => channel.abandon())' \
+    '  const gate = openRun(session, () => {})'
   # The drain runs what an engine left behind in the order a browser would
   # have, not all at once: a sixty-second idle callback must not run before the
   # one-second timer that was going to cancel it.

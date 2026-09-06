@@ -11,8 +11,8 @@
  * would have released. Both hung for ever, on both engines, measured.
  */
 import { describe, expect, it } from 'vitest'
-import { eventIterator, servedSchema } from './contract'
-import type { AssistantEvent } from '../engine'
+import { RunCancelled, eventIterator, openRun, servedSchema, withAbort } from './contract'
+import type { AssistantEvent, AssistantSession } from '../engine'
 
 /** A promise, or a marker where it did not settle inside the bound. */
 async function within(ms: number, work: Promise<unknown>): Promise<string> {
@@ -65,6 +65,109 @@ function waiting(): {
   }
 }
 
+/** The least session a gate needs. */
+function sessionWith(signal: AbortSignal): AssistantSession {
+  return {
+    prompt: 'p',
+    tools: [],
+    callTool: async () => ({ content: [] }),
+    model: { family: 'openai-compatible', model: 'm', call: async () => new Response('{}') },
+    thinking: { tier: 'off' },
+    signal
+  }
+}
+
+describe('the run gate', () => {
+  it('closes before it aborts, and before it releases', () => {
+    const order: string[] = []
+    const controller = new AbortController()
+    let gate: ReturnType<typeof openRun>
+    // eslint-disable-next-line prefer-const
+    gate = openRun(sessionWith(controller.signal), () => {
+      // **The order the whole class fix rests on.** By the time anything else
+      // runs, the run is already closed: a loop released here can yield
+      // whatever it likes and none of it is anybody's.
+      order.push(`released closed=${String(gate.isClosed())} aborted=${String(gate.signal.aborted)}`)
+    })
+    expect(gate.isClosed()).toBe(false)
+    gate.close()
+    expect(order).toEqual(['released closed=true aborted=true'])
+    expect(gate.isClosed()).toBe(true)
+  })
+
+  it('is already closed where the session was aborted before it opened', () => {
+    const controller = new AbortController()
+    controller.abort()
+    let released = 0
+    const gate = openRun(sessionWith(controller.signal), () => {
+      released += 1
+    })
+    expect(gate.isClosed()).toBe(true)
+    expect(gate.signal.aborted).toBe(true)
+    expect(released).toBe(1)
+  })
+
+  it('closes once, however many ways it is reached', () => {
+    const controller = new AbortController()
+    let released = 0
+    const gate = openRun(sessionWith(controller.signal), () => {
+      released += 1
+    })
+    gate.close()
+    gate.close()
+    controller.abort()
+    expect(released).toBe(1)
+  })
+})
+
+describe('one await on the world outside an engine', () => {
+  it('starts no work at all on a closed run', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    let started = 0
+    await expect(
+      withAbort(() => {
+        started += 1
+        return Promise.resolve('never asked')
+      }, controller.signal)
+    ).rejects.toThrow(RunCancelled)
+    // The defect a thunk closes: taking a promise meant the call had already
+    // been made by the time the signal was read.
+    expect(started, 'work was started on a closed run').toBe(0)
+  })
+
+  it('settles when the run does, whatever the work decides to do', async () => {
+    const controller = new AbortController()
+    const waiting = withAbort(() => new Promise<string>(() => {}), controller.signal)
+    controller.abort()
+    await expect(waiting).rejects.toThrow(RunCancelled)
+  })
+
+  it('carries the work’s own answer, and its own failure', async () => {
+    const live = new AbortController().signal
+    await expect(withAbort(() => Promise.resolve('answered'), live)).resolves.toBe('answered')
+    await expect(withAbort(() => Promise.reject(new Error('failed')), live)).rejects.toThrow(
+      'failed'
+    )
+  })
+})
+
+/**
+ * One iterator over a waiting source, with a gate whose release ends the wait.
+ *
+ * The engines build exactly this shape: a gate the consumer, the session and
+ * the run's own end all close, and a source that only finishes when it does.
+ */
+function iterate(source: ReturnType<typeof waiting>, onClose?: () => void) {
+  let closes = 0
+  const gate = openRun(sessionWith(new AbortController().signal), () => {
+    closes += 1
+    onClose?.()
+    source.release()
+  })
+  return { iterator: eventIterator({ gate, open: source.open }), gate, closes: () => closes }
+}
+
 describe('the iterator every engine is wrapped in', () => {
   it('cancels before it waits, so a pending next settles and then the return does', async () => {
     // The exact sequence: `next()` is in flight and waiting; `return()` arrives.
@@ -72,12 +175,8 @@ describe('the iterator every engine is wrapped in', () => {
     // `return()` never runs and neither promise ever settles.
     const source = waiting()
     let cancelled = 0
-    const iterator = eventIterator({
-      open: source.open,
-      cancel: () => {
-        cancelled += 1
-        source.release()
-      }
+    const { iterator } = iterate(source, () => {
+      cancelled += 1
     })
     const settledInOrder: string[] = []
     const pending = iterator.next().then(() => settledInOrder.push('next'))
@@ -96,7 +195,7 @@ describe('the iterator every engine is wrapped in', () => {
 
   it('answers a pending next with done rather than an event', async () => {
     const source = waiting()
-    const iterator = eventIterator({ open: source.open, cancel: source.release })
+    const { iterator } = iterate(source)
     const pending = iterator.next()
     await Promise.resolve()
     void iterator.return!()
@@ -106,12 +205,8 @@ describe('the iterator every engine is wrapped in', () => {
   it('cancels once however many times it is asked to', async () => {
     const source = waiting()
     let cancelled = 0
-    const iterator = eventIterator({
-      open: source.open,
-      cancel: () => {
-        cancelled += 1
-        source.release()
-      }
+    const { iterator } = iterate(source, () => {
+      cancelled += 1
     })
     void iterator.next()
     await Promise.resolve()
@@ -123,7 +218,7 @@ describe('the iterator every engine is wrapped in', () => {
 
   it('is done after a return, without asking what is underneath', async () => {
     const source = waiting()
-    const iterator = eventIterator({ open: source.open, cancel: source.release })
+    const { iterator } = iterate(source)
     void iterator.next()
     await Promise.resolve()
     await iterator.return!()
@@ -136,11 +231,8 @@ describe('the iterator every engine is wrapped in', () => {
   it('opens nothing at all where the consumer leaves before its first next', async () => {
     const source = waiting()
     let cancelled = 0
-    const iterator = eventIterator({
-      open: source.open,
-      cancel: () => {
-        cancelled += 1
-      }
+    const { iterator } = iterate(source, () => {
+      cancelled += 1
     })
     expect(await within(1000, iterator.return!() as Promise<unknown>)).toBe('settled')
     expect(source.opened(), 'the run was never started').toBe(0)
@@ -150,12 +242,8 @@ describe('the iterator every engine is wrapped in', () => {
   it('cancels and rethrows on throw, including while a next is pending', async () => {
     const source = waiting()
     let cancelled = 0
-    const iterator = eventIterator({
-      open: source.open,
-      cancel: () => {
-        cancelled += 1
-        source.release()
-      }
+    const { iterator } = iterate(source, () => {
+      cancelled += 1
     })
     const pending = iterator.next()
     await Promise.resolve()
@@ -170,11 +258,8 @@ describe('the iterator every engine is wrapped in', () => {
   it('reports done and closes once when the run ends by itself', async () => {
     const source = waiting()
     let cancelled = 0
-    const iterator = eventIterator({
-      open: source.open,
-      cancel: () => {
-        cancelled += 1
-      }
+    const { iterator } = iterate(source, () => {
+      cancelled += 1
     })
     const pending = iterator.next()
     source.release()
@@ -186,7 +271,7 @@ describe('the iterator every engine is wrapped in', () => {
 
   it('is its own iterable, so `for await` drives it', async () => {
     const source = waiting()
-    const iterator = eventIterator({ open: source.open, cancel: source.release })
+    const { iterator } = iterate(source)
     expect(iterator[Symbol.asyncIterator]()).toBe(iterator)
     source.release()
     const seen: AssistantEvent[] = []

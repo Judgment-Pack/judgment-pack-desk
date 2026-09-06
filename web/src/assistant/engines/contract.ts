@@ -53,16 +53,22 @@ export function isCancelled(cause: unknown): boolean {
  * either way, so nothing it does later reaches the page as an unclaimed
  * rejection.
  */
-export function withAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) {
-    // Still claimed: the work is in flight and its outcome is nobody's now.
-    void work.catch(() => undefined)
-    return Promise.reject(new RunCancelled())
+export function withAbort<T>(work: () => Promise<T>, signal: AbortSignal): Promise<T> {
+  // **A thunk, so the work is not even started on a closed run.** Taking a
+  // promise meant the call had already been made by the time the signal was
+  // read: a session aborted before `start` still reached the model, because
+  // evaluating the argument *is* the request.
+  if (signal.aborted) return Promise.reject(new RunCancelled())
+  let started: Promise<T>
+  try {
+    started = work()
+  } catch (cause) {
+    return Promise.reject(cause as Error)
   }
   return new Promise<T>((resolve, reject) => {
     const cancelled = () => reject(new RunCancelled())
     signal.addEventListener('abort', cancelled, { once: true })
-    work.then(
+    started.then(
       (value) => {
         signal.removeEventListener('abort', cancelled)
         resolve(value)
@@ -73,6 +79,49 @@ export function withAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> 
       }
     )
   })
+}
+
+/**
+ * One run's own gate: closed, then aborted, then released — in that order.
+ *
+ * **`closed` is the single source of truth, and it is set first.** A signal
+ * says "stop soon"; a closed gate says "nothing more from this run reaches
+ * anybody", and the difference is a whole class of race. `withAbort` settles
+ * with a *value* when the thing underneath wins by a microtask, and the abort
+ * that arrived a moment later then runs while the loop is still holding that
+ * value — so the loop resumes, yields a `tool_call`, or catches the original
+ * failure and reports an `error` and an `end`, all after the run was cancelled.
+ * Aborting cannot prevent that; a flag the delivery path reads can, and does.
+ *
+ * The session's own signal is chained here, so a viewer pressing Stop and a
+ * consumer walking away reach the same statements in the same order. A session
+ * that is **already** aborted closes the gate before anything is constructed:
+ * no event, no provider, no request.
+ */
+export interface RunGate {
+  /** The run's own signal. Aborted the instant the gate closes. */
+  readonly signal: AbortSignal
+  /** True from the instant the run closes, before anything else happens. */
+  isClosed(): boolean
+  /** Close it: marks closed, aborts, releases — once, and synchronously. */
+  close(): void
+}
+
+export function openRun(session: AssistantSession, release: () => void): RunGate {
+  const stop = new AbortController()
+  let closed = false
+  const close = () => {
+    if (closed) return
+    // **First**, and before anything is awaited or aborted: what follows can
+    // resume a loop, and what a resumed loop produces must already be nobody's.
+    closed = true
+    session.signal.removeEventListener('abort', close)
+    stop.abort()
+    release()
+  }
+  if (session.signal.aborted) close()
+  else session.signal.addEventListener('abort', close, { once: true })
+  return { signal: stop.signal, isClosed: () => closed, close }
 }
 
 /**
@@ -87,7 +136,7 @@ export function withAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> 
 export function guardedCallTool(session: AssistantSession, signal: AbortSignal): CallTool {
   return async (name, args) => {
     if (signal.aborted) throw new RunCancelled()
-    return withAbort(session.callTool(name, args), signal)
+    return withAbort(() => session.callTool(name, args), signal)
   }
 }
 
@@ -132,23 +181,22 @@ export function onceOnly(work: () => void): () => void {
  * `return()` leaves the consumer holding a value `for await` discards.
  */
 export function eventIterator(options: {
-  /** Opened on the first `next()`; never, if the consumer leaves before one. */
+  /** The run's gate. Closed is closed, whoever closed it. */
+  gate: RunGate
+  /** Opened on the first `next()`; never, if the run closed before one. */
   open: () => AsyncGenerator<AssistantEvent>
-  /** Ends whatever the events come from. Called once, before anything waits. */
-  cancel: () => void
 }): AsyncIterableIterator<AssistantEvent> {
   const done = { value: undefined, done: true } as const
   let events: AsyncGenerator<AssistantEvent> | null = null
-  let closed = false
   let closing: Promise<void> | null = null
 
   const close = (): Promise<void> =>
     (closing ??= (async () => {
       // **Before anything is awaited.** A pending `next()` is waiting on
       // something only this can end, and the `return()` below is queued behind
-      // that `next()`: cancelling first is what lets it settle, and its settling
+      // that `next()`: closing first is what lets it settle, and its settling
       // is what lets the queued `return()` run at all.
-      options.cancel()
+      options.gate.close()
       await events?.return(undefined)
     })())
 
@@ -157,31 +205,35 @@ export function eventIterator(options: {
       return iterator
     },
     async next(): Promise<IteratorResult<AssistantEvent>> {
-      // After `return()`, without touching what is underneath: the run is over
-      // and there is nothing there to ask.
-      if (closed) return done
+      // **Nothing is opened on a closed run**, so a session aborted before
+      // `start` builds no provider and makes no request; and after a `return()`
+      // there is nothing left to ask.
+      if (options.gate.isClosed()) return done
       events ??= options.open()
       const step = await events.next()
-      // **A `return()` that overtook this read owns the closing, and this does
-      // not wait on it.** Both would otherwise be waiting on the same promise,
-      // and the `return()` — which registered first — would settle first: the
-      // consumer would be told the iterator was closed before the `next()` it
-      // was still holding had come back at all.
-      if (closed) return done
+      // **The one place delivery is decided, and it reads the gate.** A loop
+      // that resumed after the run closed — because the thing it was awaiting
+      // won its race with the abort by a microtask — can yield whatever it
+      // likes: a `tool_call`, an `error`, an `end`. None of it is anybody's.
+      //
+      // And this does **not** wait on the closing: a `return()` that overtook
+      // this read owns that, and both waiting on the same promise would settle
+      // the `return()` first — telling the consumer the iterator was closed
+      // before the `next()` it was holding had come back at all.
+      if (options.gate.isClosed()) return done
       if (step.done === true) {
-        closed = true
         await close()
         return done
       }
       return { value: step.value, done: false }
     },
     async return(): Promise<IteratorResult<AssistantEvent>> {
-      closed = true
+      options.gate.close()
       await close()
       return done
     },
     async throw(cause?: unknown): Promise<IteratorResult<AssistantEvent>> {
-      closed = true
+      options.gate.close()
       await close()
       throw cause
     }
