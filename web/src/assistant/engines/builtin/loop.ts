@@ -13,81 +13,21 @@
  * continues), the refutation pass, and any writing at all. The proposal is the
  * only sink; the desk renders it and a person accepts it.
  */
+import { MAX_TURNS, SYSTEM, extractProposal, textOf, thinkingUnavailable } from '../contract'
 import { anthropic } from './providers/anthropic'
 import { openai } from './providers/openai'
 import { ModelHttpError } from './providers/types'
+import type { Proposal } from '../contract'
 import type { Provider, ToolCall } from './providers/types'
-import type { AssistantEvent, AssistantSession, McpToolResult } from '../../engine'
+import type { AssistantEvent, AssistantSession } from '../../engine'
 
-/**
- * The most model turns one session may take.
- *
- * Eight is the whole scripted scenario; twenty leaves room for a model that
- * asks the runtime more questions than the fixture does, and bounds a loop
- * whose stopping condition is a model's own decision to stop calling tools.
- * A session that reaches it ends with an error rather than quietly.
- */
-export const MAX_TURNS = 20
-
-/**
- * What the desk tells the model about itself, above the runtime's own prompt.
- *
- * Short on purpose: the authoring instructions are the runtime's, fetched over
- * `prompts/get`, and a system prompt that restated them would be this desk
- * having a second opinion about how a pack is written. What is here is the two
- * things the runtime's prompt does not know — that this loop proposes rather
- * than writes, and the shape the proposal has to arrive in.
- */
-export const SYSTEM =
-  'You are the judgment-pack desk’s authoring assistant. You propose; you never ' +
-  'write a file and never state a verdict of your own. When you report a check you ' +
-  'quote the runtime. End by proposing the pack as a single fenced JSON block ' +
-  'shaped {"proposal": {"kind": "create", "document": …, "unknowns": […]}}.'
-
-const FENCE = /```(?:json)?\s*\n([\s\S]*?)\n```/g
-
-export interface Proposal {
-  document: unknown
-  unknowns: string[]
-}
-
-/**
- * The proposal, and **only** out of the fenced block.
- *
- * Never out of the prose around it. The model's sentences are the model's; the
- * document this desk offers a person to accept is the one the model set apart
- * as a document, and reading a JSON object out of an explanation would let a
- * worked example become a proposal. Exactly one block, because two is a
- * message this engine cannot choose between and should not guess at.
- */
-export function extractProposal(text: string): Proposal {
-  const blocks = [...(text ?? '').matchAll(FENCE)].map((match) => match[1] ?? '')
-  if (blocks.length !== 1) {
-    throw new Error(
-      `the final message must carry exactly one fenced JSON block holding the proposal; ` +
-        `this one carried ${blocks.length}`
-    )
-  }
-  const parsed = JSON.parse(blocks[0]!) as {
-    proposal?: { document?: unknown; unknowns?: unknown }
-  }
-  if (parsed.proposal === undefined) {
-    throw new Error('the fenced block in the final message carries no "proposal" member')
-  }
-  const unknowns = parsed.proposal.unknowns
-  return {
-    document: parsed.proposal.document,
-    unknowns: Array.isArray(unknowns) ? unknowns.map((entry) => String(entry)) : []
-  }
-}
-
-/** The text half of one tool answer, joined in the runtime's own order. */
-function textOf(result: McpToolResult): string {
-  return (result.content ?? [])
-    .filter((block) => block.type === 'text')
-    .map((block) => block.text ?? '')
-    .join('\n')
-}
+// The contract's own vocabulary — the turn bound, the desk's sentence to the
+// model, and the one reading of a proposal — is `engines/contract.ts`, shared
+// with every other adapter. Re-exported because this engine's own suite and the
+// mutation matrix name them here, and because a reader of this loop should not
+// have to go looking for the two constants it is bounded by.
+export { MAX_TURNS, SYSTEM, extractProposal }
+export type { Proposal } from '../contract'
 
 /**
  * One tool call, and an answer whatever happens.
@@ -138,10 +78,7 @@ export async function* runBuiltin(session: AssistantSession): AsyncGenerator<Ass
       // be this desk answering a question nobody asked it.
       yield {
         type: 'thinking_unavailable',
-        detail:
-          `this desk is configured for thinking "${session.thinking.tier}", and the built-in ` +
-          `engine does not run a thinking tier yet; the session ran with the model's own ` +
-          `default reasoning and no tier parameter was sent`
+        detail: thinkingUnavailable(session.thinking.tier, 'built-in')
       }
     }
 

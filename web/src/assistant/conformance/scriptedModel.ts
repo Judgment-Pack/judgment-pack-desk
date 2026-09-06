@@ -45,6 +45,16 @@ export interface RecordedRequest {
   step: string
   /** How many scenario tool results the request's own messages carried. */
   results: number
+  /**
+   * The body's own top-level members, sorted.
+   *
+   * Recorded so a leg can say **what the engine actually sent** rather than
+   * only that the session worked: the two engines differ here — one puts
+   * `stream_options` on an OpenAI-compatible request and the other a
+   * `tool_choice` — and the conformance session holds them to what the two wire
+   * formats define rather than to each other's spelling.
+   */
+  bodyMembers: string[]
 }
 
 interface OpenAiMessage {
@@ -225,6 +235,18 @@ function openAiStream(step: ScenarioStep): string {
   return lines.join('')
 }
 
+/**
+ * **`message_delta` carries `usage`, because the protocol says it does.**
+ *
+ * The fixture used to send `{"type":"message_delta","delta":{"stop_reason":…}}`
+ * and nothing else, which no Anthropic endpoint sends: the documented event
+ * carries the message's running output-token count, and `stop_sequence` beside
+ * the stop reason. The built-in engine never noticed, because it reads only
+ * `content_block_*` and `message_stop` — so the gap was invisible until an
+ * engine that validates the whole event grammar ran the same leg and refused
+ * it. That is the fixture being wrong about the wire, not an engine being
+ * fussy, and it is fixed here rather than branched around.
+ */
 function anthropicStream(step: ScenarioStep): string {
   const lines: string[] = []
   const event = (name: string, object: unknown) =>
@@ -256,7 +278,11 @@ function anthropicStream(step: ScenarioStep): string {
       })
     }
     event('content_block_stop', { type: 'content_block_stop', index: 0 })
-    event('message_delta', { type: 'message_delta', delta: { stop_reason: 'tool_use' } })
+    event('message_delta', {
+      type: 'message_delta',
+      delta: { stop_reason: 'tool_use', stop_sequence: null },
+      usage: { output_tokens: 1 }
+    })
   } else {
     event('content_block_start', {
       type: 'content_block_start',
@@ -271,7 +297,11 @@ function anthropicStream(step: ScenarioStep): string {
       })
     }
     event('content_block_stop', { type: 'content_block_stop', index: 0 })
-    event('message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn' } })
+    event('message_delta', {
+      type: 'message_delta',
+      delta: { stop_reason: 'end_turn', stop_sequence: null },
+      usage: { output_tokens: 1 }
+    })
   }
   event('message_stop', { type: 'message_stop' })
   return lines.join('')
@@ -306,6 +336,7 @@ export function scriptedModel(options: {
       messages?: unknown[]
       tools?: { name?: string; function?: { name?: string } }[]
       stream?: boolean
+      [member: string]: unknown
     }
     const messages = body.messages ?? []
     const n = options.api === 'anthropic' ? countAnthropic(messages) : countOpenAi(messages)
@@ -318,7 +349,8 @@ export function scriptedModel(options: {
       toolNames: (body.tools ?? []).map((tool) => String(tool.function?.name ?? tool.name ?? '')),
       messageCount: messages.length,
       step: step.id,
-      results: n
+      results: n,
+      bodyMembers: Object.keys(body as Record<string, unknown>).sort()
     })
 
     if (options.answerAs === 'whole') {

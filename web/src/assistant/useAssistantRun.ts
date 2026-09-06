@@ -38,7 +38,7 @@
  * and nothing to write.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { loadEngine, resolveEngine } from './engines'
+import { loadEngine } from './engines'
 import { bindModelCall, openAssistantConnection, runAssistantSession } from './session'
 import type { AssistantEvent } from './engine'
 import type { AssistantConnection } from './session'
@@ -49,9 +49,12 @@ export type RunStatus = 'idle' | 'running' | 'finished'
 export interface AssistantRun {
   status: RunStatus
   events: AssistantEvent[]
-  /** Which engine actually ran, and why it is not the configured one. */
+  /**
+   * Which engine ran. The configured one, always: every id a `desk.json` may
+   * name is certified in this build, and the registry is a total map over them,
+   * so there is no substitution left for this to report.
+   */
   engineId: AssistantEngine
-  substituted: string | undefined
   /** Start one run with the prompt text the desk already fetched. */
   start: (prompt: string) => void
   stop: () => void
@@ -235,8 +238,7 @@ export function useAssistantRun(options: {
           })
           run.connection = opened
           const ready = await opened.ready
-          const { id } = resolveEngine(engine)
-          const loaded = await loadEngine(id)
+          const loaded = await loadEngine(engine)
           await runAssistantSession(
             loaded,
             {
@@ -273,6 +275,5 @@ export function useAssistantRun(options: {
     [finish, push, release]
   )
 
-  const { id, substituted } = resolveEngine(options.engine)
-  return { status, events, engineId: id, substituted, start, stop }
+  return { status, events, engineId: options.engine, start, stop }
 }

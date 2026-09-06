@@ -8,10 +8,11 @@
  * once, the proposal's provenance, and the tier this chunk does not implement.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CERTIFIED_ENGINES, isCertified, loadEngine, resolveEngine } from '../index'
+import { CERTIFIED_ENGINES, loadEngine } from '../index'
 import { builtin } from './index'
 import { MAX_TURNS, extractProposal } from './loop'
 import { protocolHeaders } from './providers/types'
+import { ASSISTANT_ENGINES } from '../../../config/deskConfig'
 import type { AssistantEvent, AssistantSession, McpTool, ModelCall } from '../../engine'
 
 
@@ -387,10 +388,19 @@ describe('the thinking tier this chunk does not run', () => {
 
 describe('the registry', () => {
   it('carries builtin, and loads it as its own chunk', async () => {
-    expect([...CERTIFIED_ENGINES]).toEqual(['builtin'])
+    expect([...CERTIFIED_ENGINES]).toEqual(['builtin', 'vercel'])
     const engine = await loadEngine('builtin')
     expect(engine.id).toBe('builtin')
     expect(engine).toBe(builtin)
+  })
+
+  it('certifies every engine a desk.json may name, so nothing is substituted', () => {
+    // The registry used to fall back to `builtin` for an id this build carried
+    // no adapter for, and the tab said so in one line. Both engines ship now,
+    // and `LOADERS` is a total map over `AssistantEngine`: an id added to the
+    // decoder's closed list without a chunk is a compile error, which is a
+    // stronger statement than a fallback nobody could reach.
+    expect([...ASSISTANT_ENGINES].sort()).toEqual([...CERTIFIED_ENGINES].sort())
   })
 
   it('refuses an id no table registers, by name', async () => {
@@ -411,15 +421,4 @@ describe('the registry', () => {
     await expect(loadEngine('anything', { anything: async () => stub })).resolves.toBe(stub)
   })
 
-  it('falls back to builtin for an engine this build does not carry, and says which', () => {
-    expect(isCertified('vercel')).toBe(false)
-    expect(resolveEngine('vercel')).toEqual({
-      id: 'builtin',
-      substituted: 'vercel is not certified in this build; running builtin'
-    })
-  })
-
-  it('substitutes nothing where the configured engine is certified', () => {
-    expect(resolveEngine('builtin')).toEqual({ id: 'builtin' })
-  })
 })

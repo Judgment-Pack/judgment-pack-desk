@@ -7,10 +7,12 @@
  * adding an adapter is one line here plus its module — and the suite certifies
  * it or the suite goes red.
  *
- * **`vercel` is not here yet.** It is the ADR's default and this build carries
- * no adapter for it, so a desk configured for it runs `builtin` and the tab
- * says so in one line. The alternative — refusing to run — would make a
- * default nobody typed into a desk that does nothing.
+ * **Every engine a `desk.json` may name is certified in this build.** `LOADERS`
+ * is declared as a total map over `AssistantEngine`, so an id added to the
+ * decoder's closed list without an adapter is a compile error rather than a
+ * setting that appears to grant something and quietly runs something else. The
+ * substitution this used to do — a desk configured for `vercel` running
+ * `builtin` and a line in the tab saying so — is gone with the reason for it.
  *
  * The loaders are `import()` so a session downloads one chunk. The release
  * grows by the sum of certified engines; a session does not.
@@ -21,41 +23,21 @@ import type { Engine } from '../engine'
 /**
  * The engines this build carries, in the order the conformance suite runs them.
  *
- * The one list the suite reads. A `vercel` entry added without an adapter
- * fails to load rather than falling through to something else.
+ * The one list the suite reads.
  */
-export const CERTIFIED_ENGINES = ['builtin'] as const
+export const CERTIFIED_ENGINES = ['builtin', 'vercel'] as const satisfies readonly AssistantEngine[]
 export type CertifiedEngine = (typeof CERTIFIED_ENGINES)[number]
 
 /** One engine's chunk, by id. */
 export type EngineLoaders = Record<string, () => Promise<Engine>>
 
-const LOADERS: EngineLoaders = {
-  builtin: async () => (await import('./builtin')).builtin
-}
-
-/** Whether this build carries an adapter for an id a `desk.json` may name. */
-export function isCertified(id: AssistantEngine): id is CertifiedEngine {
-  return (CERTIFIED_ENGINES as readonly string[]).includes(id)
-}
-
 /**
- * The id a session will actually run, and what to say where it is not the
- * configured one.
- *
- * `substituted` is a sentence for the pane rather than a boolean, because the
- * only useful thing to render is which engine ran and why it was not the one
- * the file named.
+ * **Total over `AssistantEngine`, deliberately.** A declared engine with no
+ * chunk here does not compile.
  */
-export function resolveEngine(configured: AssistantEngine): {
-  id: CertifiedEngine
-  substituted?: string
-} {
-  if (isCertified(configured)) return { id: configured }
-  return {
-    id: 'builtin',
-    substituted: `${configured} is not certified in this build; running builtin`
-  }
+const LOADERS: Record<AssistantEngine, () => Promise<Engine>> = {
+  builtin: async () => (await import('./builtin')).builtin,
+  vercel: async () => (await import('./vercel')).vercel
 }
 
 /**

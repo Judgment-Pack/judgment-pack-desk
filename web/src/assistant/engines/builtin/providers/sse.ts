@@ -25,16 +25,7 @@ export async function* sseEvents(response: Response): AsyncGenerator<string> {
   if (tail.startsWith('data:')) yield tail.slice(5).trim()
 }
 
-/**
- * Whether an answer is a stream, read off the answer rather than off the
- * request.
- *
- * A request that asked to stream may be answered whole — a gateway that
- * buffers, an endpoint that ignores the member, an error envelope from the
- * desk's own relay — and an engine that parsed by what it *asked for* would
- * read a JSON object as an event stream and report an empty turn. So the
- * content type decides, and the non-stream path is the fallback.
- */
-export function isEventStream(response: Response): boolean {
-  return (response.headers.get('content-type') ?? '').toLowerCase().includes('text/event-stream')
-}
+// **Reading the answer rather than the request is the contract's rule, not this
+// provider's**, and both engines keep it, so it lives in `engines/contract.ts`
+// and is re-exported here for the two providers that read a body.
+export { isEventStream } from '../../contract'

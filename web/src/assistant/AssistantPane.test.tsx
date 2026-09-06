@@ -244,12 +244,13 @@ describe('the tab before a run', () => {
     expect(await screen.findByText('builtin · a-model · thinking ultra')).toBeTruthy()
   })
 
-  it('says which engine ran where the configured one is not certified here', async () => {
-    await draw({ assistant: { endpoint: ENDPOINT, engine: 'vercel' } })
-    expect(
-      await screen.findByText('vercel is not certified in this build; running builtin')
-    ).toBeTruthy()
-    expect(screen.getByText('builtin · a-model · thinking off')).toBeTruthy()
+  it('names the default engine where the file names none, and runs it', async () => {
+    // `vercel` is the decoder's default and this build certifies it, so the
+    // line names what actually ran. The substitution notice that used to stand
+    // here — a desk configured for `vercel` running `builtin` — is gone with
+    // the fallback: `engines/index.ts` is a total map over the declared ids.
+    await draw({ assistant: { endpoint: ENDPOINT } })
+    expect(await screen.findByText('vercel · a-model · thinking off')).toBeTruthy()
   })
 
   it('will not run with an empty policy', async () => {

@@ -375,7 +375,6 @@ export function AssistantPane({
       <p className={styles.status}>
         {run.engineId} · {slot.endpoint.model} · thinking {slot.thinking}
       </p>
-      {run.substituted !== undefined && <p className={styles.notice}>{run.substituted}</p>}
       {ran !== undefined && (
         <p className={styles.status}>
           Running the runtime’s {ran} prompt
