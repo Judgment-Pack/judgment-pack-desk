@@ -4452,8 +4452,8 @@ export function assistantTransport(): Transport {
   # (The rule moved into `runOutcome.ts` when the Assistant tab was made to read
   # the same one; the row names it where it lives.)
   mutate web "an error after a proposal leaves it on offer" "$RO" \
-    '    : said(events.slice(proposedAt + 1)))' \
-    '    : undefined)'
+    '? said(events) : said(events.slice(proposedAt + 1)))' \
+    '? said(events) : undefined)'
 
   # **The runtime is what says a document is a pack.** Without this term Create
   # is offered on a document nobody checked, which is how a `specVersion` a
