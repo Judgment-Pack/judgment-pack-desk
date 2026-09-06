@@ -227,24 +227,26 @@ export const REFUTE_ON_A_DEGRADED_ENDPOINT = true
 export const PERMANENCE = 2
 
 /**
- * A signature that came back shorter than it went out.
+ * Whether **this** block's signature came back shorter than it went out.
  *
  * `vercel/ai#19663`: an Anthropic thinking signature split across two stream
  * events is truncated, and what is carried back on the next turn is one half of
  * it. Real Anthropic sends one `signature_delta`; a re-chunking proxy might
  * not, and a malformed thinking block is a request the endpoint refuses.
  *
+ * **One block against the one signature it was given, and not against every
+ * signature ever seen.** The comparison used to be a search over the whole
+ * ledger, so a later block whose own signature was legitimately shorter — and
+ * happened to be a prefix of an earlier one — was thrown away as a fragment.
+ * Production signatures make that collision unlikely; the predicate is what has
+ * to establish truncation, and a global membership test does not.
+ *
  * The rule is a **strict** prefix or suffix: a signature carried back whole is
- * equal to what was received and is not truncated, and a signature this desk
- * never saw is somebody else's and is not this desk's business.
+ * equal to what was sent and is not truncated.
  */
-export function isTruncatedSignature(received: readonly string[], carried: string): boolean {
-  if (carried === '') return false
-  return received.some(
-    (whole) =>
-      whole !== carried && whole.length > carried.length &&
-      (whole.startsWith(carried) || whole.endsWith(carried))
-  )
+export function isTruncatedSignature(sent: string, carried: string): boolean {
+  if (carried === '' || sent === '' || sent === carried) return false
+  return sent.length > carried.length && (sent.startsWith(carried) || sent.endsWith(carried))
 }
 
 /**

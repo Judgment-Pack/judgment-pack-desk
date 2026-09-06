@@ -1243,6 +1243,46 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
     expect(ledger.wholes()).toEqual(['c2lnLVQx', 'c2lnLVQy'])
   })
 
+  it('lets a later block whose own signature is shorter survive', () => {
+    // **Block identity, by position.** The ledger holds one signature per
+    // signed block in the order they were sent, and the history carries the
+    // same blocks in the same order. A global membership test threw the second
+    // block away because its signature happened to be a prefix of the first's.
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'abcdef')
+    ledger.boundary()
+    ledger.fragment('0', 'abc')
+    const body = JSON.stringify({
+      messages: [
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'one', signature: 'abcdef' }] },
+        { role: 'user', content: [{ type: 'text', text: 'and?' }] },
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'two', signature: 'abc' }] }
+      ]
+    })
+    const looked = withoutTruncatedThinking(body, ledger, () => null)
+    expect(looked.truncated).toBe('')
+    expect(looked.body).toBe(body)
+  })
+
+  it('still catches the block that did come back as a fragment', () => {
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'abcdef')
+    ledger.boundary()
+    ledger.fragment('0', 'abc')
+    // The FIRST block came back halved; the second is its own whole signature.
+    const body = JSON.stringify({
+      messages: [
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'one', signature: 'abc' }] },
+        { role: 'assistant', content: [{ type: 'thinking', thinking: 'two', signature: 'abc' }] }
+      ]
+    })
+    const looked = withoutTruncatedThinking(body, ledger, () => null)
+    expect(looked.truncated).toContain('19663')
+    const sent = JSON.parse(looked.body) as { messages: { content: { type: string }[] }[] }
+    expect(sent.messages[0]!.content).toEqual([])
+    expect(sent.messages[1]!.content).toHaveLength(1)
+  })
+
   it('does not double a signature the SDK repeated whole', () => {
     // The SDK re-emits the same value where the endpoint sent one event, and a
     // ledger that appended blindly would invent a truncation nobody caused.

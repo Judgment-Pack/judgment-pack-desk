@@ -382,13 +382,23 @@ export function withoutTruncatedThinking(
     return { body, truncated: '' }
   }
   let found = ''
+  // **Position is the block's identity.** The ledger holds one signature per
+  // signed block in the order the endpoint sent them, and the outgoing history
+  // carries the same blocks in the same order — so the k-th block back is
+  // compared with the k-th signature out and with no other. Comparing against
+  // every signature ever ledgered threw away a later block whose own signature
+  // was legitimately shorter and happened to be a prefix of an earlier one.
+  let at = 0
   for (const message of payload.messages ?? []) {
     const content = message?.content
     if (!Array.isArray(content)) continue
     const kept = content.filter((item) => {
       const block = item as WireBlock
       if (block?.type !== 'thinking' || typeof block.signature !== 'string') return true
-      if (!isTruncatedSignature(wholes, block.signature)) return true
+      const sent = wholes[at]
+      at += 1
+      // A block this desk never saw signed is somebody else's business.
+      if (sent === undefined || !isTruncatedSignature(sent, block.signature)) return true
       found =
         'the SDK carried a thinking signature back as a fragment of the one the endpoint sent ' +
         '(vercel/ai#19663); the block was removed and the request rebuilt without the tier'

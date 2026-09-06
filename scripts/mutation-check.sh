@@ -4239,8 +4239,17 @@ export function assistantTransport(): Transport {
   # rather than sent: a malformed thinking block is a request the endpoint
   # refuses, and sending one is the defect the ledger exists for.
   mutate web "a truncated thinking signature is sent back anyway" "$VR" \
-    "      if (!isTruncatedSignature(wholes, block.signature)) return true" \
+    "      if (sent === undefined || !isTruncatedSignature(sent, block.signature)) return true" \
     "      if (true) return true"
+
+  # **Block identity, by position.** Comparing a carried signature against every
+  # signature ever ledgered threw away a later block whose own signature was
+  # legitimately shorter and happened to be a prefix of an earlier one.
+  mutate web "a carried signature is compared with every signature ever seen" "$VR" \
+    "      const sent = wholes[at]
+      at += 1" \
+    "      const sent = wholes.find((whole) => isTruncatedSignature(whole, String(block.signature)))
+      at += 1"
 
   # **A filter is not a rebuild.** The body was composed before the slot
   # degraded, so filtering the damaged block out of it leaves a request that

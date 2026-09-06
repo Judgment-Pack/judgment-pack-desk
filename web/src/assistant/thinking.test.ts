@@ -327,19 +327,23 @@ describe('the refutation pass’s gate, and the ruling on a degraded endpoint', 
 })
 
 describe('a signature that came back short', () => {
-  it('catches a strict prefix and a strict suffix', () => {
-    expect(isTruncatedSignature(['abcdef'], 'abc')).toBe(true)
-    expect(isTruncatedSignature(['abcdef'], 'def')).toBe(true)
+  it('catches a strict prefix and a strict suffix of the one it was given', () => {
+    expect(isTruncatedSignature('abcdef', 'abc')).toBe(true)
+    expect(isTruncatedSignature('abcdef', 'def')).toBe(true)
   })
 
   it('passes a signature carried whole', () => {
-    expect(isTruncatedSignature(['abcdef'], 'abcdef')).toBe(false)
+    expect(isTruncatedSignature('abcdef', 'abcdef')).toBe(false)
   })
 
-  it('says nothing about a signature this desk never received', () => {
-    expect(isTruncatedSignature(['abcdef'], 'zzz')).toBe(false)
-    expect(isTruncatedSignature([], 'abc')).toBe(false)
-    expect(isTruncatedSignature(['abcdef'], '')).toBe(false)
+  it('is about one block and its own signature, and no other', () => {
+    // **The predicate has to establish truncation.** A later block whose own
+    // signature is legitimately shorter is not a fragment of an earlier block's
+    // — and a search over every signature ever ledgered said it was.
+    expect(isTruncatedSignature('abc', 'abc')).toBe(false)
+    expect(isTruncatedSignature('xyz', 'abc')).toBe(false)
+    expect(isTruncatedSignature('', 'abc')).toBe(false)
+    expect(isTruncatedSignature('abcdef', '')).toBe(false)
   })
 })
 
