@@ -42,6 +42,7 @@ import { dynamicTool, jsonSchema, stepCountIs, streamText } from 'ai'
 import {
   MAX_TURNS,
   SYSTEM,
+  eventIterator,
   extractProposal,
   servedSchema,
   textOf,
@@ -254,7 +255,7 @@ function endpointSentence(body: unknown): string {
  * Stop has not been told about a failure. A consumer that stops listening is
  * owed no terminal event and gets none: its `return()` closes the generator.
  */
-export async function* runVercel(session: AssistantSession): AsyncGenerator<AssistantEvent> {
+export function runVercel(session: AssistantSession): AsyncIterable<AssistantEvent> {
   // The run's own controller, chained to the session's: the SDK is given this
   // one so a consumer that walks away ends the run, and the session's abort
   // reaches it the moment the viewer presses Stop.
@@ -435,55 +436,52 @@ export async function* runVercel(session: AssistantSession): AsyncGenerator<Assi
   /**
    * The contract's terminal event, on the same ordered stream as the rest.
    *
-   * **Not yielded from a `finally`.** That is the one shape an async generator
-   * makes surprising: a `finally` that yields makes the consumer's first
-   * `return()` resolve `{ value: end, done: false }` with the generator still
-   * suspended, and `for await`'s own closing discards that value — so the
-   * terminal event a direct consumer is owed was never delivered at all, and
-   * the page only worked because the run hook writes an `end` of its own. So
-   * `end` travels the way every other event does: pushed, delivered in order,
-   * and once.
-   *
-   * On the path where the consumer left early the channel is already abandoned,
-   * this push resolves at once, and the event is dropped — which is right: a
-   * consumer that stopped listening is not owed a terminal event, and it has
-   * closed the iterator to say so.
+   * **Not delivered by the iterator's `return()` and not yielded from any
+   * `finally`.** Both are the same mistake wearing different hats: a consumer
+   * that has stopped listening is owed no terminal event, and an answer of
+   * `{ done: false }` to a `return()` hands it a value `for await` discards. So
+   * `end` travels the way every other event does — pushed, delivered in order,
+   * and once — and where the consumer left early the channel is already
+   * abandoned, this push resolves at once, and the event is dropped.
    */
   const finish = async (): Promise<void> => {
     await channel.push({ type: 'end' })
     channel.close()
   }
-  const loop = drive().catch(async (cause: unknown) => {
-    // An abort is the viewer stopping the session, and it ends it: there is no
-    // failure to report and nothing more to say than `end`.
-    if (stop.signal.aborted || (cause as Error)?.name === 'AbortError') return
-    await channel.push({ type: 'error', message: describe(cause) })
-  })
-  // Nothing else awaits this; a rejection out of the catch above would be
-  // unhandled. It cannot reject, and this is what says so.
-  const settled = loop.then(finish, finish)
-
-  try {
-    yield* channel.drain()
-    await settled
-  } finally {
-    // **Cleanup, and nothing yielded.** The consumer that stopped listening
-    // releases whatever the framework's pipeline is waiting to deliver, and the
-    // run is aborted rather than left running behind a pane nobody is watching.
-    // The abort goes first, so the loop that is about to be released finds a run
-    // already over. Reaching here on a `return()` closes this generator —
-    // `done: true`, no further events — which is what a consumer asking to stop
-    // means.
+  /**
+   * Everything this run holds, released once.
+   *
+   * Called by the iterator **before** it awaits anything, which is the whole
+   * reason the outer shape is not an async generator: a generator serves
+   * `next()` and `return()` from one queue, so the `return()` carrying this
+   * abort would have been queued behind the very `next()` the abort was going
+   * to release. `channel.abandon()` aborts first in its own right; the explicit
+   * `stop.abort()` beside it is the same claim made where a reader is.
+   */
+  const cancel = () => {
     session.signal.removeEventListener('abort', onAbort)
-    // `abandon` aborts the run before it releases anything; calling it again
-    // where the drain already did is harmless and keeps this path honest.
-    channel.abandon()
     stop.abort()
-    // **Not awaited here.** On the ordinary path `settled` was awaited above,
-    // where waiting is what it means. On this one the consumer has stopped
-    // listening, and waiting for a loop that is itself waiting on a tool call
-    // would make `return()` on this iterator as slow as the slowest thing the
-    // session was doing.
-    void settled
+    channel.abandon()
   }
+
+  /**
+   * The run itself starts on the consumer's first `next()`.
+   *
+   * A consumer that opens a session and leaves without asking for an event has
+   * asked the model nothing, and this is what makes that true.
+   */
+  const open = (): AsyncGenerator<AssistantEvent> => {
+    const loop = drive().catch(async (cause: unknown) => {
+      // An abort is the viewer stopping the session, and it ends it: there is
+      // no failure to report and nothing more to say than `end`.
+      if (stop.signal.aborted || (cause as Error)?.name === 'AbortError') return
+      await channel.push({ type: 'error', message: describe(cause) })
+    })
+    // Nothing else awaits this; a rejection out of the catch above would be
+    // unhandled. It cannot reject, and this is what says so.
+    void loop.then(finish, finish)
+    return channel.drain()
+  }
+
+  return eventIterator({ open, cancel })
 }

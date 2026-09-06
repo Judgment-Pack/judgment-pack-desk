@@ -526,6 +526,51 @@ describe('a consumer that stops in the middle of a run', () => {
     expect(seen, 'the model was never asked anything').toHaveLength(0)
   })
 
+  it('stops a run whose model request only ends when it is aborted', async () => {
+    // The sequence the outer shape exists for. An async generator serves
+    // `next()` and `return()` from one queue, so the `return()` carrying the
+    // abort was queued behind the very `next()` the abort would have released,
+    // and both hung for ever. Measured on this engine before the iterator.
+    let sawAbort = false
+    let arrived = () => {}
+    const entered = new Promise<void>((resolve) => {
+      arrived = resolve
+    })
+    const call: ModelCall = (_suffix, request) =>
+      new Promise<Response>((_resolve, reject) => {
+        arrived()
+        const stopped = () => {
+          sawAbort = true
+          reject(new DOMException('the model request was aborted', 'AbortError'))
+        }
+        if (request.signal?.aborted === true) stopped()
+        else request.signal?.addEventListener('abort', stopped)
+      })
+
+    const settledInOrder: string[] = []
+    const iterator = vercel.start(session(call))[Symbol.asyncIterator]()
+    const pending = iterator.next().then((step) => {
+      settledInOrder.push('next')
+      return step
+    })
+    await entered
+    const returned = iterator.return!(undefined).then((step) => {
+      settledInOrder.push('return')
+      return step
+    })
+
+    expect(await within(2000, pending), 'the pending next').toBe('settled')
+    expect(await within(2000, returned), 'the return').toBe('settled')
+    expect(await pending).toEqual({ value: undefined, done: true })
+    expect(await returned).toEqual({ value: undefined, done: true })
+    expect(settledInOrder).toEqual(['next', 'return'])
+    expect(sawAbort, 'the request in flight observed the abort').toBe(true)
+    // And it is closed: nothing more is produced, and nothing underneath is
+    // asked again.
+    expect(await iterator.next()).toEqual({ value: undefined, done: true })
+    expect(await iterator.return!(undefined)).toEqual({ value: undefined, done: true })
+  })
+
   it('returns promptly, and asks the runtime nothing more', async () => {
     // The whole path: the model asks for a tool, the adapter's `execute` waits
     // for the `tool_call` event to reach the consumer, and the consumer stops

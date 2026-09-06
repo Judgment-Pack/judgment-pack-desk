@@ -14,7 +14,88 @@
  * engine would be an engine the slot did not really separate.
  */
 import type { ThinkingTier } from '../../config/deskConfig'
-import type { McpTool, McpToolResult } from '../engine'
+import type { AssistantEvent, McpTool, McpToolResult } from '../engine'
+
+/**
+ * An engine's events, behind an iterator whose `return()` acts **at once**.
+ *
+ * **An async generator cannot be the engine's outer shape.** Its `next()`,
+ * `return()` and `throw()` are served from one queue: a `return()` that arrives
+ * while a `next()` is pending is not run until that `next()` settles. So a run
+ * waiting on a model request that only ends when it is aborted could never be
+ * stopped by the consumer that owned it — the `return()` carrying the abort was
+ * queued behind the very `next()` the abort would have released, and both hung
+ * for ever. Reproduced on both engines before this existed.
+ *
+ * This is the hand-written iterator that fixes it. `return()` **cancels first**,
+ * synchronously, before it awaits anything: whatever the pending `next()` is
+ * waiting on ends, that `next()` settles `{ done: true }`, and only then does
+ * `return()` settle `{ done: true }` itself. The generator underneath is opened
+ * on the first `next()` and never at all if the consumer leaves before then, and
+ * the cancellation runs exactly once however many times it is asked for.
+ *
+ * **Nothing is delivered by `return()`.** A consumer that has stopped listening
+ * is owed no terminal event, and an iterator that answered one would be the
+ * `finally`-that-yields defect wearing a different hat: `{ done: false }` from a
+ * `return()` leaves the consumer holding a value `for await` discards.
+ */
+export function eventIterator(options: {
+  /** Opened on the first `next()`; never, if the consumer leaves before one. */
+  open: () => AsyncGenerator<AssistantEvent>
+  /** Ends whatever the events come from. Called once, before anything waits. */
+  cancel: () => void
+}): AsyncIterableIterator<AssistantEvent> {
+  const done = { value: undefined, done: true } as const
+  let events: AsyncGenerator<AssistantEvent> | null = null
+  let closed = false
+  let closing: Promise<void> | null = null
+
+  const close = (): Promise<void> =>
+    (closing ??= (async () => {
+      // **Before anything is awaited.** A pending `next()` is waiting on
+      // something only this can end, and the `return()` below is queued behind
+      // that `next()`: cancelling first is what lets it settle, and its settling
+      // is what lets the queued `return()` run at all.
+      options.cancel()
+      await events?.return(undefined)
+    })())
+
+  const iterator: AsyncIterableIterator<AssistantEvent> = {
+    [Symbol.asyncIterator]() {
+      return iterator
+    },
+    async next(): Promise<IteratorResult<AssistantEvent>> {
+      // After `return()`, without touching what is underneath: the run is over
+      // and there is nothing there to ask.
+      if (closed) return done
+      events ??= options.open()
+      const step = await events.next()
+      // **A `return()` that overtook this read owns the closing, and this does
+      // not wait on it.** Both would otherwise be waiting on the same promise,
+      // and the `return()` — which registered first — would settle first: the
+      // consumer would be told the iterator was closed before the `next()` it
+      // was still holding had come back at all.
+      if (closed) return done
+      if (step.done === true) {
+        closed = true
+        await close()
+        return done
+      }
+      return { value: step.value, done: false }
+    },
+    async return(): Promise<IteratorResult<AssistantEvent>> {
+      closed = true
+      await close()
+      return done
+    },
+    async throw(cause?: unknown): Promise<IteratorResult<AssistantEvent>> {
+      closed = true
+      await close()
+      throw cause
+    }
+  }
+  return iterator
+}
 
 /**
  * The most model turns one session may take.

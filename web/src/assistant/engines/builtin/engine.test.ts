@@ -398,6 +398,58 @@ describe('a tool the runtime served without a schema', () => {
   })
 })
 
+describe('a consumer that stops in the middle of a run', () => {
+  it('stops a run whose model request only ends when it is aborted', async () => {
+    // This engine had the same defect the SDK-backed one did, and for the same
+    // reason: an async generator serves `next()` and `return()` from one queue,
+    // so the `return()` was queued behind the `next()` it would have released.
+    // It also had no abort of its own — the session's was the caller's — so
+    // there was nothing for a `return()` to cancel with even if it had run.
+    let sawAbort = false
+    let arrived = () => {}
+    const entered = new Promise<void>((resolve) => {
+      arrived = resolve
+    })
+    const call: ModelCall = (_suffix, request) =>
+      new Promise<Response>((_resolve, reject) => {
+        arrived()
+        const stopped = () => {
+          sawAbort = true
+          reject(new DOMException('the model request was aborted', 'AbortError'))
+        }
+        if (request.signal?.aborted === true) stopped()
+        else request.signal?.addEventListener('abort', stopped)
+      })
+    const bound = (work: Promise<unknown>) =>
+      Promise.race([
+        work.then(() => 'settled'),
+        new Promise<string>((resolve) => setTimeout(() => resolve('STILL WAITING'), 2000))
+      ])
+
+    const settledInOrder: string[] = []
+    const iterator = builtin.start(session({ model: { family: 'openai-compatible', model: 'a-model', call } }))[
+      Symbol.asyncIterator
+    ]()
+    const pending = iterator.next().then((step) => {
+      settledInOrder.push('next')
+      return step
+    })
+    await entered
+    const returned = iterator.return!(undefined).then((step) => {
+      settledInOrder.push('return')
+      return step
+    })
+
+    expect(await bound(pending), 'the pending next').toBe('settled')
+    expect(await bound(returned), 'the return').toBe('settled')
+    expect(await pending).toEqual({ value: undefined, done: true })
+    expect(await returned).toEqual({ value: undefined, done: true })
+    expect(settledInOrder).toEqual(['next', 'return'])
+    expect(sawAbort, 'the request in flight observed the abort').toBe(true)
+    expect(await iterator.next()).toEqual({ value: undefined, done: true })
+  })
+})
+
 describe('the registry', () => {
   it('carries builtin, and loads it as its own chunk', async () => {
     expect([...CERTIFIED_ENGINES]).toEqual(['builtin', 'vercel'])

@@ -13,7 +13,14 @@
  * continues), the refutation pass, and any writing at all. The proposal is the
  * only sink; the desk renders it and a person accepts it.
  */
-import { MAX_TURNS, SYSTEM, extractProposal, textOf, thinkingUnavailable } from '../contract'
+import {
+  MAX_TURNS,
+  SYSTEM,
+  eventIterator,
+  extractProposal,
+  textOf,
+  thinkingUnavailable
+} from '../contract'
 import { anthropic } from './providers/anthropic'
 import { openai } from './providers/openai'
 import { ModelHttpError } from './providers/types'
@@ -65,11 +72,39 @@ function providerFor(family: AssistantSession['model']['family']): Provider {
 /**
  * Run one session, as a stream of events.
  *
- * `end` is emitted exactly once, from the `finally`, whatever happened above
- * it — including an abort. A pane that renders "running" until it sees `end`
- * would otherwise spin for ever on the one path nobody tests.
+ * **The outer shape is an iterator and not this generator**, for the reason
+ * `engines/contract.ts` gives at length: an async generator serves `next()` and
+ * `return()` from one queue, so a `return()` arriving while a `next()` waits on
+ * a model request is not run until that request settles — and the abort that
+ * would have settled it was inside the `return()`. Measured on this engine as
+ * well as on the SDK-backed one: both promises hung for ever.
+ *
+ * So the abort is this engine's own, chained to the session's, and it is what
+ * the iterator cancels with. What the provider is given is `stop`'s signal, not
+ * the session's, so a consumer that walks away ends the request in flight.
+ *
+ * `end` is emitted exactly once and **not from a `finally`**: a consumer that
+ * stops listening closes this generator, and closing it is what it means for
+ * that consumer to be owed no terminal event.
  */
-export async function* runBuiltin(session: AssistantSession): AsyncGenerator<AssistantEvent> {
+export function runBuiltin(session: AssistantSession): AsyncIterable<AssistantEvent> {
+  const stop = new AbortController()
+  const onAbort = () => stop.abort()
+  if (session.signal.aborted) stop.abort()
+  else session.signal.addEventListener('abort', onAbort, { once: true })
+  return eventIterator({
+    open: () => builtinEvents(session, stop.signal),
+    cancel: () => {
+      session.signal.removeEventListener('abort', onAbort)
+      stop.abort()
+    }
+  })
+}
+
+async function* builtinEvents(
+  session: AssistantSession,
+  signal: AbortSignal
+): AsyncGenerator<AssistantEvent> {
   try {
     if (session.thinking.tier !== 'off') {
       // Reported and then carried on with, which is what ADR-0001 means by
@@ -97,7 +132,7 @@ export async function* runBuiltin(session: AssistantSession): AsyncGenerator<Ass
         messages,
         tools,
         stream: true,
-        signal: session.signal
+        signal
       })
 
       if (reply.calls.length === 0) {
@@ -134,9 +169,14 @@ export async function* runBuiltin(session: AssistantSession): AsyncGenerator<Ass
     }
   } catch (cause) {
     yield { type: 'error', message: describe(cause) }
-  } finally {
-    yield { type: 'end' }
   }
+  // **After the `try`, not inside a `finally`.** A `finally` that yields makes
+  // a consumer's first `return()` resolve `{ value: end, done: false }` with
+  // this generator still suspended, and `for await`'s own closing discards that
+  // value — so the terminal event is delivered to nobody. Here it is reached on
+  // every path the run itself takes, and skipped on the one path where it
+  // should be: a consumer that asked to stop.
+  yield { type: 'end' }
 }
 
 /**
