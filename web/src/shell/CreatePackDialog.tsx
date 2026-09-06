@@ -36,8 +36,8 @@
  * has no delete verb — and claiming one would be worse than the residue.
  */
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState, type RefObject } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { FileRequestError, readFile, writeFile, type FileContent } from '../files/client'
 import { useFileContent, useFileListing } from '../files/queries'
@@ -158,6 +158,7 @@ export function CreatePackDialog({
   const schema0 = useSchema(schemaSupported)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const location = useLocation()
   /**
    * The **Describe it** section's own state, held here rather than inside it.
    *
@@ -574,6 +575,35 @@ export function CreatePackDialog({
       setBusy(false)
     }
   }
+
+  /**
+   * **A route change closes this dialog**, and closing it ends the session.
+   *
+   * This dialog is mounted by the rail, which sits above the route's own
+   * `<Routes>`: a browser Back, a Forward, or any programmatic navigation
+   * changes the page underneath without unmounting the dialog or telling it
+   * anything. A run would go on running over a page it has nothing to do with,
+   * with no terminal event and no connection close, because only a Radix
+   * dismissal and a successful Create ever reached `close`.
+   *
+   * A navigation is a dismissal like Escape, so it takes the same path. The one
+   * exception is the one the dismissal handler already makes: while the create
+   * sequence is running this dialog is the only place its outcome is reported,
+   * and it stays to report it.
+   */
+  const closeNow = useRef(close)
+  closeNow.current = close
+  const shownAt = useRef(location.key)
+  useEffect(() => {
+    if (!open) {
+      shownAt.current = location.key
+      return
+    }
+    if (location.key === shownAt.current) return
+    shownAt.current = location.key
+    if (busy) return
+    closeNow.current(false)
+  }, [location.key, open, busy])
 
   return (
     <Dialog

@@ -40,7 +40,10 @@ import { decodeDeskConfig, effectiveConfig, type EffectiveConfig } from '../conf
 import { McpContext } from '../mcp/McpProvider'
 import { ASSISTANT_KEY_QUERY_KEY } from '../assistant/queries'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
+import { AppShell } from './AppShell'
 import { CreatePackDialog } from './CreatePackDialog'
+import { forgetAuthorBridge } from './authorBridge'
+import { forgetConsole } from './consoleLog'
 
 const ENDPOINT = {
   url: 'https://api.example.invalid/v1',
@@ -296,11 +299,14 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  forgetConsole()
+  forgetAuthorBridge()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   runtime = null
   injected = null
   window.sessionStorage.clear()
+  window.localStorage.clear()
 })
 
 describe('where there is no assistant to run', () => {
@@ -798,5 +804,106 @@ describe('losing the assistant ends the session', () => {
     fireEvent.click(createButton())
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(sent).toEqual([])
+  })
+})
+
+
+describe('a route change is a dismissal', () => {
+  /**
+   * The whole shell, which is where this dialog actually lives.
+   *
+   * The rail mounts it **above** the route's own `<Routes>`, so a Back, a
+   * Forward or any programmatic navigation changes the page underneath without
+   * unmounting the dialog or telling it anything. Only the composition can show
+   * that; the dialog mounted alone cannot.
+   */
+  function drawShell() {
+    const stub = stubClient(
+      {
+        list_packs: () => ({ text: JSON.stringify({ status: 'valid', packs: [] }) }),
+        list_examples: () => ({ text: EXAMPLES }),
+        get_example: () => ({ text: TEMPLATE })
+      },
+      {
+        prompts: {
+          author_pack: { text: 'The runtime’s authoring prompt, with the policy in it.' }
+        }
+      }
+    )
+    const deskConfig = config({ endpoint: ENDPOINT })
+    const router = createMemoryRouter(
+      [
+        {
+          path: '*',
+          element: (
+            <McpContext.Provider
+              value={connected({
+                client: stub.client,
+                exampleSupported: true,
+                schemaSupported: false
+              })}
+            >
+              <DeskConfigFixture value={deskConfig}>
+                <AppShell>
+                  <h1>a route</h1>
+                </AppShell>
+              </DeskConfigFixture>
+            </McpContext.Provider>
+          )
+        }
+      ],
+      { initialEntries: ['/'] }
+    )
+    render(
+      <QueryClientProvider client={testQueryClient()}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    )
+    return router
+  }
+
+  it('closes the dialog and ends the run when the route changes under it', async () => {
+    serve({ hang: true })
+    const router = drawShell()
+    fireEvent.click(await screen.findByRole('button', { name: 'Create a pack' }))
+    await screen.findByRole('dialog', { name: 'Create a pack' })
+    await propose()
+    await waitFor(() => expect(runtime!.opened.length).toBe(1))
+    expect(runtime!.closed).toBe(0)
+
+    // A navigation the dialog is never told about: the rail sits above the
+    // route, so nothing here unmounts.
+    await act(async () => {
+      await router.navigate('/packs')
+    })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Create a pack' })).toBeNull())
+    await waitFor(() => expect(runtime!.closed).toBe(1))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(runtime!.closed, 'the socket was closed twice').toBe(1)
+
+    // And the run ended rather than being abandoned: the hook refuses a second
+    // run while the first is open, so the next session starting is the first
+    // one's terminal event, observed.
+    fireEvent.click(screen.getByRole('button', { name: 'Create a pack' }))
+    await screen.findByRole('dialog', { name: 'Create a pack' })
+    await propose()
+    await waitFor(() => expect(runtime!.opened.length).toBe(2))
+  })
+
+  it('closes it on a history Back as well', async () => {
+    serve({ hang: true })
+    const router = drawShell()
+    await act(async () => {
+      await router.navigate('/packs')
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Create a pack' }))
+    await screen.findByRole('dialog', { name: 'Create a pack' })
+    await propose()
+    await waitFor(() => expect(runtime!.opened.length).toBe(1))
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Create a pack' })).toBeNull())
+    await waitFor(() => expect(runtime!.closed).toBe(1))
   })
 })

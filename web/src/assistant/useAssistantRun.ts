@@ -214,9 +214,20 @@ export function useAssistantRun(options: {
 
   // A run that is still open when this unmounts is a `jpack mcp` nobody is
   // watching. The route change that unmounts the pane is the same event.
+  //
+  // **It goes through `finish` and not through `release` alone.** Releasing
+  // aborts and closes; it does not account for the run's one terminal event,
+  // and this hook's whole claim is that every run has exactly one however it
+  // ended. An unmounted component paints nothing, so the `setEvents` is a
+  // no-op — but `run.ended` is not: it is what a second `end` is dropped
+  // against, and what lets the next run start where the component comes back.
   useEffect(() => {
-    return () => release(active.current)
-  }, [release])
+    return () => {
+      const run = active.current
+      if (run !== null) finish(run)
+      release(run)
+    }
+  }, [finish, release])
 
   const start = useCallback(
     (prompt: string) => {
