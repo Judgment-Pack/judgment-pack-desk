@@ -45,6 +45,7 @@ import { ProposalDiffView } from './ProposalDiff'
 import { ProposalUnknowns, RuntimeChecks } from './ProposalReport'
 import { DRAFT_MOVED, acceptState, applyProposal, writable, type Disposition } from './acceptProposal'
 import { diffProposal } from './proposalDiff'
+import { outcomeOf } from './runOutcome'
 import { useAssistantRun } from './useAssistantRun'
 import { useAssistantSlot } from './useAssistantSlot'
 import styles from './AssistantPane.module.css'
@@ -282,6 +283,20 @@ export function AssistantPane({
     return () => document.removeEventListener('keydown', onKey)
   }, [stop])
 
+  /**
+   * The proposal this session produced, and whether the session stands behind
+   * it — **two questions, and only one of them is this pane's to answer.**
+   *
+   * `outcomeOf` is the desk's one reading of "is this run clean", shared with
+   * the Create dialog so that a rule about a session is not kept in two places.
+   * What the two do about the answer differs, and reasonably: the dialog offers
+   * no source to write, and this pane keeps the session on screen — the stream,
+   * the document, the runtime's quoted checks — with Accept refused and the
+   * run's own words on the control. A reader who has just watched a session
+   * fail is better served by seeing what it produced and why it cannot be used
+   * than by the whole thing disappearing.
+   */
+  const outcome = outcomeOf(run)
   const proposal = run.events.find(
     (event): event is Extract<AssistantEvent, { type: 'proposal' }> => event.type === 'proposal'
   )
@@ -355,6 +370,7 @@ export function AssistantPane({
   const accept = acceptState({
     editing,
     proposal: proposal !== undefined,
+    failure: outcome.failure,
     running,
     onBaseline,
     busy: busy(),
@@ -437,7 +453,7 @@ export function AssistantPane({
         </p>
       )}
 
-      <EventList events={run.events} />
+      <EventList events={run.events} failure={run.failure} />
 
       {proposal !== undefined && disposition === 'rejected' && (
         <p className={styles.honesty}>
@@ -455,6 +471,12 @@ export function AssistantPane({
             Nothing has been written. This is a document to accept or reject, and the checks below
             are the runtime’s own words.
           </p>
+          {outcome.failure !== '' && (
+            <p className={styles.notice}>
+              This session did not stand behind what it proposed: {outcome.failure}. It cannot be
+              accepted into the draft.
+            </p>
+          )}
           {diff !== undefined && <ProposalDiffView diff={diff} onBaseline={onBaseline} />}
           <p className={styles.label}>The whole proposed document</p>
           <CodeArea

@@ -37,6 +37,7 @@ import {
   RuntimeChecks
 } from '../assistant/ProposalReport'
 import { useAssistantRun } from '../assistant/useAssistantRun'
+import { outcomeOf, type ProposalEvent } from '../assistant/runOutcome'
 import { useAssistantSlot } from '../assistant/useAssistantSlot'
 import { AUTHOR_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
 import { Button } from '../ui/Button'
@@ -63,8 +64,6 @@ export const NOTHING_PROPOSED =
 /** Said where the assistant was taken away with a session in progress. */
 export const SLOT_LOST =
   'The assistant went away while this was open, so its session was ended and anything it had proposed was discarded.'
-
-type ProposalEvent = Extract<AssistantEvent, { type: 'proposal' }>
 
 /**
  * The section's whole state, held by the dialog around it.
@@ -106,6 +105,13 @@ export interface DescribeItState {
   /** The prompt is being read, or the engine is running. */
   running: boolean
   events: readonly AssistantEvent[]
+  /**
+   * What the run failed with after its terminal event, where it did.
+   *
+   * Rendered as the event list's last line, because a session that fell over
+   * while unwinding otherwise reads as one that ended cleanly.
+   */
+  failure: string | undefined
   /**
    * The proposal **of the latest submission**, where that submission's run
    * ended with one and nothing went wrong after it.
@@ -329,21 +335,19 @@ export function useDescribeIt(): DescribeItState {
    * What this run failed with **after** its terminal event, where it did.
    *
    * The stream cannot carry it — one `end` is the contract — so the run hook
-   * reports it beside the events, and it counts the same way an `error` on the
-   * stream does: a session that fell over while unwinding is not one whose
-   * document this dialog may write.
+   * reports it beside the events, gated by the submission exactly as the events
+   * are: a failure belonging to the run before this one is not this section's.
    */
   const unwound = discarded || submitted === null || ranId !== submitted.id ? undefined : run.failure
-  const proposedAt = events.findIndex((event) => event.type === 'proposal')
-  const withdrawn =
-    proposedAt !== -1 &&
-    (unwound !== undefined ||
-      events.slice(proposedAt + 1).some((event) => event.type === 'error'))
-  const proposal =
-    proposedAt === -1 || withdrawn ? undefined : (events[proposedAt] as ProposalEvent)
-  const failures = events.filter(
-    (event): event is Extract<AssistantEvent, { type: 'error' }> => event.type === 'error'
-  )
+  /**
+   * **Is this run clean, and what may be done with what it produced.**
+   *
+   * The desk's one reading of that, shared with the Assistant tab — a rule kept
+   * in two places is two rules, which is how the tab came to offer a document
+   * this dialog had already withdrawn.
+   */
+  const outcome = outcomeOf({ events, failure: unwound })
+  const proposal = outcome.proposal
   const promptFailed =
     submitted !== null && prompt.error !== null ? prompt.error.message : undefined
   /**
@@ -379,7 +383,7 @@ export function useDescribeIt(): DescribeItState {
    * wrong — a refused prompt, a run that failed, a proposal withdrawn by an
    * error after it, or a document that could not be read as JSON data.
    */
-  const problem = promptFailed ?? unwound ?? failures[failures.length - 1]?.message ?? ''
+  const problem = promptFailed ?? outcome.failure
   const blocking =
     lost !== ''
       ? lost
@@ -407,6 +411,7 @@ export function useDescribeIt(): DescribeItState {
     blocking,
     running,
     events,
+    failure: unwound,
     proposal,
     problem,
     propose,
@@ -463,7 +468,12 @@ function Section({ state }: { state: DescribeItState }) {
           assistant to run.
         </p>
       )}
-      <EventList events={state.events} label="What the assistant did" compact />
+      <EventList
+        events={state.events}
+        failure={state.failure}
+        label="What the assistant did"
+        compact
+      />
       {proposal !== undefined && (
         <section className={styles.proposal} aria-label="The proposal">
           <ProposalSummaryLine document={proposal.document} />

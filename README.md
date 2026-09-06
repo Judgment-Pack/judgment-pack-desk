@@ -89,10 +89,13 @@ in silence: what the assistant proposed is what the runtime is asked about. The
 exact bytes that would be written go to `validate`, Create is offered only
 where the answer is `valid` for those bytes, and a refusal shows the check
 strip's own sentence and **every** diagnostic the runtime returned, in the same
-rendering the Checks panel uses — code, layer, severity, message and pointer,
-unreworded — with the runtime's own truncation note where it stopped at its
-limit. A proposal is refused outright where the connection serves no `validate`
-to ask.
+rendering the Checks panel uses — `code`, `codeStability`, `layer`, `severity`,
+the message and the pointer, each as the runtime gave it and none of them
+reworded. Where the answer sets `diagnosticsTruncated`, the runtime stopped at
+its own limit and the desk says so in a line of its own naming that limit; the
+sentence is the desk's, and the number in it is the desk's copy of the
+runtime's cap rather than a figure the answer carries. A proposal is refused
+outright where the connection serves no `validate` to ask.
 
 **Losing the assistant ends the session**, it does not merely hide it: the key
 leaving this machine or the endpoint leaving the file stops the run through the

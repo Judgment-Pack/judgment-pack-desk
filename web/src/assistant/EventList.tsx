@@ -80,10 +80,20 @@ export function lineClass(event: AssistantEvent): string {
 
 export function EventList({
   events,
+  failure,
   label = 'What the assistant did',
   compact = false
 }: {
   events: readonly AssistantEvent[]
+  /**
+   * What the run failed with **after** its terminal event, where it did.
+   *
+   * It cannot be on `events` — one `end` is the contract and nothing follows
+   * it — so it is passed beside them and printed as the list's last line. A
+   * session that fell over while unwinding otherwise reads as one that ended
+   * cleanly, which is exactly what it did not do.
+   */
+  failure?: string | undefined
   /** The list's accessible name. Two of these can be on one page. */
   label?: string
   compact?: boolean
@@ -103,7 +113,7 @@ export function EventList({
     .filter(({ event }) =>
       compact ? COMPACT.has(event.type) : event.type !== 'reasoning' || event.done
     )
-  if (reported.length === 0) return null
+  if (reported.length === 0 && failure === undefined) return null
   return (
     <ol
       className={[styles.stream, compact ? styles.compact : undefined].filter(Boolean).join(' ')}
@@ -114,6 +124,11 @@ export function EventList({
           {describeEvent(event)}
         </li>
       ))}
+      {failure !== undefined && (
+        <li key="failure" className={styles.error}>
+          the session failed after it ended: {failure}
+        </li>
+      )}
     </ol>
   )
 }

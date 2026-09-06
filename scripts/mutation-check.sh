@@ -3542,6 +3542,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   BO=web/src/assistant/engines/builtin/providers/openai.ts
   AR=web/src/assistant/useAssistantRun.ts
   AP=web/src/assistant/AssistantPane.tsx
+  RO=web/src/assistant/runOutcome.ts
 
   CT=web/src/assistant/conformance/conformance.test.ts
   EN=web/src/assistant/engines/index.ts
@@ -4387,6 +4388,21 @@ export function assistantTransport(): Transport {
   })
 }"
 
+  # **One reading of "is this run clean", for both consumers.** The tab used to
+  # find the proposal on the event list itself, so a run that failed after
+  # proposing was offered for accepting into a draft with no reason shown —
+  # while the dialog, reading the same run, had already withdrawn it.
+  mutate web "the Assistant tab ignores what the run failed with" "$AP" \
+    '    failure: outcome.failure,' \
+    "    failure: '',"
+
+  # And the selector itself: a failure reported after the terminal event
+  # withdraws the proposal for everybody that reads it.
+  mutate web "a post-end failure does not withdraw the proposal" "$RO" \
+    '  const spoiled =
+    run.failure ?? (proposedAt === -1 ? said(events) : said(events.slice(proposedAt + 1)))' \
+    '  const spoiled = proposedAt === -1 ? said(events) : said(events.slice(proposedAt + 1))'
+
   # **A failure after the terminal event is still a failure.** One `end` is the
   # contract, so a throw while an engine unwinds cannot go on the stream — and
   # dropping it made `proposal -> end -> throw` read as a clean run to
@@ -4433,12 +4449,11 @@ export function assistantTransport(): Transport {
 
   # The contract does not make `proposal` an engine's last non-terminal event.
   # One that proposes and then fails has said the work does not stand.
-  mutate web "an error after a proposal leaves it on offer" "$DI" \
-    '  const withdrawn =
-    proposedAt !== -1 &&
-    (unwound !== undefined ||
-      events.slice(proposedAt + 1).some((event) => event.type === '"'"'error'"'"'))' \
-    '  const withdrawn = false'
+  # (The rule moved into `runOutcome.ts` when the Assistant tab was made to read
+  # the same one; the row names it where it lives.)
+  mutate web "an error after a proposal leaves it on offer" "$RO" \
+    '    : said(events.slice(proposedAt + 1)))' \
+    '    : undefined)'
 
   # **The runtime is what says a document is a pack.** Without this term Create
   # is offered on a document nobody checked, which is how a `specVersion` a
