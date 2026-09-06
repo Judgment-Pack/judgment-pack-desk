@@ -332,6 +332,8 @@ export async function* runVercel(session: AssistantSession): AsyncGenerator<Assi
     // before calling a tool would otherwise have that prose concatenated onto
     // the message the proposal is read out of.
     let final = ''
+    /** One reasoning passage, accumulated so `done` can carry the whole of it. */
+    let reasoning = ''
     for await (const part of result.stream) {
       if (part.type === 'start-step') {
         final = ''
@@ -339,6 +341,26 @@ export async function* runVercel(session: AssistantSession): AsyncGenerator<Assi
       }
       if (part.type === 'error') {
         streamed ??= (part as { error: unknown }).error
+        continue
+      }
+      // **Reasoning is reported whatever the tier is.** The tier is what this
+      // desk *asks* for, and this chunk asks for nothing; but a model that
+      // always thinks reasons anyway, and an endpoint that returns
+      // `reasoning_content` on its own default behaviour is the ordinary case
+      // rather than the exotic one. An adapter that dropped those parts would
+      // be deciding, on the desk's behalf, that what the model said about its
+      // own reasoning is not worth showing.
+      if (part.type === 'reasoning-delta') {
+        const text = (part as { text?: string }).text ?? ''
+        reasoning += text
+        await channel.push({ type: 'reasoning', text, done: false })
+        continue
+      }
+      if (part.type === 'reasoning-end') {
+        // The whole of it, once, so a reader has the passage rather than the
+        // pieces — which is the shape the contract's `done` marks.
+        await channel.push({ type: 'reasoning', text: reasoning, done: true })
+        reasoning = ''
         continue
       }
       const unoffered = unofferedTool(part, offered)

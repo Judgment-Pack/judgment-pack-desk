@@ -38,10 +38,18 @@ const PROPOSAL_TEXT =
   '\n```\n'
 
 /** One assistant turn, as the OpenAI-compatible wire streams it. */
-function turn(step: { text?: string; tool?: { name: string; args: unknown } }): string {
+function turn(step: {
+  text?: string
+  tool?: { name: string; args: unknown }
+  /** What an endpoint that reasons on its own default behaviour sends. */
+  reasoning?: string[]
+}): string {
   const frame = (choices: unknown[]) =>
     `data: ${JSON.stringify({ id: 'c', object: 'chat.completion.chunk', model: 'm', choices })}\n\n`
   const lines = [frame([{ index: 0, delta: { role: 'assistant', content: null }, finish_reason: null }])]
+  for (const piece of step.reasoning ?? []) {
+    lines.push(frame([{ index: 0, delta: { reasoning_content: piece }, finish_reason: null }]))
+  }
   if (step.tool) {
     lines.push(
       frame([
@@ -474,6 +482,37 @@ describe('the unhandled rejection the SDK’s refusal path leaks', () => {
     // A listener that outlived the session would swallow the same error class
     // for a page that is no longer running an assistant at all.
     expect(reject(SUPPRESSED_REJECTION).defaultPrevented).toBe(false)
+  })
+})
+
+describe('what the model said about its own reasoning', () => {
+  it('reaches the contract as reasoning events, whatever the tier is', async () => {
+    // The tier is what this desk *asks* for, and this chunk asks for nothing.
+    // A model that always thinks reasons anyway, and the SDK surfaces that as
+    // its own `reasoning-start` / `-delta` / `-end` part types.
+    const { call } = scriptedCall([
+      turn({ reasoning: ['I check the schema ', 'before I propose.'], text: PROPOSAL_TEXT })
+    ])
+    const events = await drain(vercel.start(session(call)))
+    expect(events.map((event) => event.type)).toEqual([
+      'reasoning',
+      'reasoning',
+      'reasoning',
+      'proposal',
+      'end'
+    ])
+    expect(events.slice(0, 3)).toEqual([
+      { type: 'reasoning', text: 'I check the schema ', done: false },
+      { type: 'reasoning', text: 'before I propose.', done: false },
+      // The whole passage on `done`, so a reader has it rather than the pieces.
+      { type: 'reasoning', text: 'I check the schema before I propose.', done: true }
+    ])
+  })
+
+  it('says nothing where the endpoint reasoned about nothing', async () => {
+    const { call } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
+    const events = await drain(vercel.start(session(call)))
+    expect(events.some((event) => event.type === 'reasoning')).toBe(false)
   })
 })
 
