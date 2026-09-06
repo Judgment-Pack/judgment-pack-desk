@@ -10,7 +10,7 @@
  * model behind the relay, and every write recorded with its parsed body.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -38,6 +38,7 @@ import scenario from '../assistant/conformance/scenario.json'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
 import { decodeDeskConfig, effectiveConfig, type EffectiveConfig } from '../config/deskConfig'
 import { McpContext } from '../mcp/McpProvider'
+import { ASSISTANT_KEY_QUERY_KEY } from '../assistant/queries'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { CreatePackDialog } from './CreatePackDialog'
 
@@ -165,6 +166,8 @@ function Mounted({
   secondPrompt?: 'ok' | 'reject' | 'hang'
 }) {
   const [open, setOpen] = useState(true)
+  /** The desk-level file, as an admin might rewrite it while this is open. */
+  const [live, setLive] = useState(deskConfig)
   const [stub] = useState(() =>
     stubClient(
       {
@@ -205,7 +208,10 @@ function Mounted({
   })
   return (
     <McpContext.Provider value={connection}>
-      <DeskConfigFixture value={deskConfig}>
+      <button type="button" onClick={() => setLive(config({ endpoint: null }))}>
+        Drop the endpoint
+      </button>
+      <DeskConfigFixture value={live}>
         {persist ? (
           <>
             <button type="button" onClick={() => setOpen(true)}>
@@ -241,11 +247,22 @@ function draw(
     ],
     { initialEntries: ['/'] }
   )
-  return render(
-    <QueryClientProvider client={testQueryClient()}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
-  )
+  const queryClient = testQueryClient()
+  return {
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    ),
+    /** The key store, as the desk reports it. Tests move it. */
+    setKey: (present: boolean) =>
+      act(() => {
+        queryClient.setQueryData(ASSISTANT_KEY_QUERY_KEY, {
+          present,
+          fingerprint: present ? 'sk-a…wxyz' : ''
+        })
+      })
+  }
 }
 
 /** Open the disclosure. Its content is behind a summary, as in the page. */
@@ -714,6 +731,70 @@ describe('a proposal belongs to the submission that produced it', () => {
     await waitFor(() => expect(createButton().disabled).toBe(true))
     expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull()
     expect(createButton().title).toContain('the final check did not complete')
+    fireEvent.click(createButton())
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(sent).toEqual([])
+  })
+})
+
+
+describe('losing the assistant ends the session', () => {
+  it('stops a run in flight, closes its connection, and holds Create', async () => {
+    serve({ hang: true })
+    const { setKey } = draw({ endpoint: ENDPOINT }, { persist: true })
+    await nameIt('Vendor Onboarding')
+    await propose()
+    await waitFor(() => expect(runtime!.opened.length).toBe(1))
+    expect(runtime!.closed).toBe(0)
+
+    // The key leaves the store on this machine, exactly as Remove key does.
+    setKey(false)
+    await waitFor(() => expect(runtime!.closed).toBe(1))
+    expect(await screen.findByText(/no key is stored on this machine/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Propose' })).toBeNull()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(runtime!.closed, 'the socket was closed twice').toBe(1)
+
+    // And the run ended rather than merely being abandoned: the run hook
+    // refuses a second run while the first is open, so a session that starts
+    // once the key is back is the first one's terminal event, observed.
+    setKey(true)
+    await propose()
+    await waitFor(() => expect(runtime!.opened.length).toBe(2))
+  })
+
+  it('discards a finished proposal when the key leaves the store', async () => {
+    const { sent } = serve()
+    const { setKey } = draw({ endpoint: ENDPOINT }, { persist: true })
+    await propose()
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    await nameIt('Vendor Onboarding')
+    expect(createButton().disabled).toBe(false)
+
+    setKey(false)
+    await waitFor(() => expect(createButton().disabled).toBe(true))
+    expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull()
+    expect(screen.getByLabelText('Template').textContent).not.toContain('The assistant’s proposal')
+    fireEvent.click(createButton())
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(sent).toEqual([])
+  })
+
+  it('discards a finished proposal when the endpoint leaves the file', async () => {
+    const { sent } = serve()
+    draw({ endpoint: ENDPOINT }, { persist: true })
+    await propose()
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    await nameIt('Vendor Onboarding')
+    expect(createButton().disabled).toBe(false)
+
+    // By text and not by role: Radix marks everything outside an open modal
+    // `aria-hidden`, which is exactly right and takes this control out of the
+    // accessibility tree while the dialog is up.
+    fireEvent.click(screen.getByText('Drop the endpoint'))
+    await waitFor(() => expect(createButton().disabled).toBe(true))
+    expect(await screen.findByText(/No assistant is configured on this desk/)).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull()
     fireEvent.click(createButton())
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(sent).toEqual([])

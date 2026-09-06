@@ -60,6 +60,9 @@ export const NO_KEY =
 export const STILL_RUNNING = 'The assistant is still running. Stop it or wait for it to end.'
 export const NOTHING_PROPOSED =
   'The assistant ended without a document, so there is nothing to write.'
+/** Said where the assistant was taken away with a session in progress. */
+export const SLOT_LOST =
+  'The assistant went away while this was open, so its session was ended and anything it had proposed was discarded.'
 
 type ProposalEvent = Extract<AssistantEvent, { type: 'proposal' }>
 
@@ -175,6 +178,15 @@ export function useDescribeIt(): DescribeItState {
   const [stoppedId, setStoppedId] = useState<number | null>(null)
   /** True once this session has been thrown away, until the next Propose. */
   const [discarded, setDiscarded] = useState(true)
+  /**
+   * Set where the assistant was taken away mid-session.
+   *
+   * It holds Create afterwards, and that is deliberate: the source the author
+   * chose has just been discarded, and a Create that quietly fell back to a
+   * template would write a document they did not pick — the same trap as a
+   * stale proposal, arriving from the other side.
+   */
+  const [lost, setLost] = useState('')
   const prompt = usePromptText(
     AUTHOR_PACK_PROMPT,
     submitted !== null && submitted.id !== stoppedId && advertised,
@@ -220,7 +232,14 @@ export function useDescribeIt(): DescribeItState {
     stopRun()
   }, [stopRun])
 
+  /**
+   * The latest `discard`, callable from an effect that must not re-run when it
+   * is rebuilt. The effect above is about `usable` changing and nothing else.
+   */
+  const discardNow = useRef<() => void>(() => {})
+
   const discard = useCallback(() => {
+    setLost('')
     setSubmitted(null)
     setRanId(null)
     setStoppedId(null)
@@ -228,6 +247,7 @@ export function useDescribeIt(): DescribeItState {
     setDiscarded(true)
     stopRun()
   }, [stopRun])
+  discardNow.current = discard
 
   /**
    * A new submission, and the previous proposal gone **at the press**.
@@ -237,7 +257,43 @@ export function useDescribeIt(): DescribeItState {
    * old proposal is still on `run.events`, and a second Propose that fails
    * before its run begins never reaches the place that would have cleared it.
    */
+  /**
+   * **Losing the assistant ends the session, it does not merely hide it.**
+   *
+   * `usable` used to control rendering alone: the key going out of the store,
+   * or the endpoint leaving the file, replaced the controls with a sentence
+   * while the run behind them carried on — its `jpack mcp` alive, its proposal
+   * still selected, and Create still willing to write it. A slot that is gone
+   * is a session that cannot be finished, so it is stopped through the run hook
+   * (one terminal event, one connection close) and everything it produced goes
+   * with it.
+   *
+   * It runs on the way in as well, where there is nothing to discard: the key
+   * read has not answered yet and `usable` is honestly false.
+   */
+  const usable = slot.endpoint !== null && slot.keyPresent
+  /**
+   * Whether there is a session to take away, read at the instant of the loss.
+   *
+   * A ref because the effect below is about `usable` changing and nothing else:
+   * on the way in, before the key read has answered, `usable` is honestly false
+   * and there is nothing to end — and a dialog that opened holding Create shut
+   * over a session nobody started would be worse than the defect this fixes.
+   */
+  const hadSession = useRef(false)
+  hadSession.current = !discarded && submitted !== null
+  useEffect(() => {
+    if (usable) {
+      setLost('')
+      return
+    }
+    if (!hadSession.current) return
+    discardNow.current()
+    setLost(SLOT_LOST)
+  }, [usable])
+
   const propose = useCallback(() => {
+    setLost('')
     setDiscarded(false)
     setRanId(null)
     setStoppedId(null)
@@ -308,18 +364,20 @@ export function useDescribeIt(): DescribeItState {
    */
   const problem = promptFailed ?? failures[failures.length - 1]?.message ?? ''
   const blocking =
-    discarded || submitted === null
-      ? ''
-      : running
-        ? STILL_RUNNING
-        : proposal === undefined
-          ? problem === ''
-            ? NOTHING_PROPOSED
-            : problem
-          : ''
+    lost !== ''
+      ? lost
+      : discarded || submitted === null
+        ? ''
+        : running
+          ? STILL_RUNNING
+          : proposal === undefined
+            ? problem === ''
+              ? NOTHING_PROPOSED
+              : problem
+            : ''
 
   return {
-    usable: slot.endpoint !== null && slot.keyPresent,
+    usable,
     unusableBecause: slot.endpoint === null ? NO_ASSISTANT : NO_KEY,
     advertised,
     standing:
