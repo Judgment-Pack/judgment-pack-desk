@@ -16,6 +16,16 @@ import { useMcp } from './McpProvider'
 /** The prompt whose method guidance the authoring surfaces link to. */
 export const AUTHOR_PACK_PROMPT = 'author_pack'
 
+/**
+ * The runtime's repair prompt, which takes the validator's own diagnostics.
+ *
+ * `internal/mcp/prompts.go` names the argument `diagnostics` and describes it
+ * as "the diagnostics from a failed validate call". What the desk hands it is
+ * exactly that — the runtime's own report, as JSON text — because a prompt
+ * about a refusal is only as good as the refusal it was given.
+ */
+export const FIX_PACK_PROMPT = 'fix_pack'
+
 interface PromptSummary {
   name: string
   description?: string

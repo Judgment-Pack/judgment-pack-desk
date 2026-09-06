@@ -7,9 +7,30 @@
  * written to make a pane look right.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useMemo } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AssistantPane } from './AssistantPane'
+import { AssistantPane, DRAFT_SENTENCE, withDraft } from './AssistantPane'
+import { EditingContext, type EditingSession } from '../packs/edit/editingContext'
+import { useDocumentBuffer, type DocumentBuffer } from '../packs/edit/useDocumentBuffer'
+import { buffered, bytesAt } from '../packs/edit/writes'
+import type { AssistantEvent, Engine } from './engine'
+
+/**
+ * An engine this suite puts in the registry's place, where a case needs one.
+ *
+ * Null by default, so every other case runs the real `builtin` chunk against
+ * the scripted model exactly as it did before.
+ */
+let injected: Engine | null = null
+
+vi.mock('./engines', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./engines')>()
+  return {
+    ...original,
+    loadEngine: async (id: 'builtin' | 'vercel') => injected ?? original.loadEngine(id)
+  }
+})
 import { scriptedModel } from './conformance/scriptedModel'
 import { scriptedWebSocket } from './conformance/scriptedServer'
 import scenario from './conformance/scenario.json'
@@ -34,6 +55,67 @@ function config(assistant: unknown): EffectiveConfig {
 }
 
 let runtime: ReturnType<typeof scriptedWebSocket> | null = null
+/** The buffer the draft harness is holding, for a case that drives Undo. */
+let held: DocumentBuffer | null = null
+/** How many times the pane wrote, which is the undo-entry claim's other half. */
+let wrote = 0
+/** What the route would say is in the way of an edit, for the cases about that. */
+let busyReason = ''
+
+/**
+ * The pane over a **real** buffer, through the editing session the route builds.
+ *
+ * `useDocumentBuffer` is the production hook, so the undo stack, the dirty
+ * comparison and the coalescing are the page's own rather than a fixture's —
+ * which is what makes "one undo entry" a measurement rather than a claim.
+ */
+function DraftHarness({
+  initial,
+  editing,
+  diagnostics
+}: {
+  initial: string
+  editing: boolean
+  diagnostics?: { count: number; bytes: string }
+}) {
+  const buffer = useDocumentBuffer({
+    path: 'packs/vendor-onboarding.pack.json',
+    bytes: initial.length,
+    sha256: 'a'.repeat(64),
+    content: initial
+  })
+  held = buffer
+  const text = buffer.text
+  const read = useMemo(() => (text === undefined ? undefined : buffered(text)), [text])
+  const commit = buffer.commit
+  const session: EditingSession = useMemo(
+    () => ({
+      editing,
+      buffer: read ?? { text: '', index: { spans: new Map(), duplicates: [] } },
+      write: (edit, options) => {
+        if (read === undefined) return
+        wrote += 1
+        commit(edit(read).text, options)
+      },
+      diagnosticsAt: () => [],
+      ids: { outcomes: [], evidence: [], sources: [], rules: [], factPaths: [] },
+      pending: new Map(),
+      hold: () => {}
+    }),
+    [editing, read, commit]
+  )
+  return (
+    <EditingContext.Provider value={session}>
+      <AssistantPane
+        draft={text}
+        editing={editing}
+        identity={buffer.identity}
+        busy={() => busyReason}
+        diagnostics={diagnostics}
+      />
+    </EditingContext.Provider>
+  )
+}
 
 /**
  * Everything the pane needs, and nothing it does not.
@@ -55,19 +137,28 @@ async function draw(options: {
   refuse?: boolean
   /** A socket that opens and then answers nothing, not even `initialize`. */
   deafSocket?: boolean
+  /** The bytes the page is about, which the diff is computed against. */
+  draft?: string
+  /** True where the page is being edited, which is what Accept needs. */
+  editing?: boolean
+  /** Draw the pane over a real buffer instead, and edit that. */
+  buffer?: { text: string; editing?: boolean }
+  /** What the route would hand `fix_pack`: a count, and the runtime's bytes. */
+  diagnostics?: { count: number; bytes: string }
 } = {}) {
   const model = scriptedModel({ api: 'openai-compatible', answerAs: 'stream' })
   const keyRead = JSON.stringify({
     present: options.keyPresent ?? true,
     fingerprint: options.keyPresent === false ? '' : 'sk-a…wxyz'
   })
-  const relayed: { url: string; headerNames: string[] }[] = []
+  const relayed: { url: string; headerNames: string[]; body: string }[] = []
   vi.stubGlobal('fetch', async (input: unknown, init?: RequestInit) => {
     const url = String(input)
     if (url.startsWith('/api/assistant/relay/')) {
       relayed.push({
         url,
-        headerNames: Object.keys((init?.headers ?? {}) as Record<string, string>)
+        headerNames: Object.keys((init?.headers ?? {}) as Record<string, string>),
+        body: String(init?.body ?? '')
       })
       if (options.hang) return new Promise<Response>(() => {})
       if (options.refuse) {
@@ -83,11 +174,12 @@ async function draw(options: {
   runtime = scriptedWebSocket({ deaf: options.deafSocket ?? false })
   vi.stubGlobal('WebSocket', runtime.WebSocket)
 
-  const { client } = stubClient(
+  const { client, prompted } = stubClient(
     {},
     {
       prompts: options.prompts ?? {
-        author_pack: { text: 'The runtime’s authoring prompt, with the policy in it.' }
+        author_pack: { text: 'The runtime’s authoring prompt, with the policy in it.' },
+        fix_pack: { text: 'The runtime’s repair prompt, with the diagnostics in it.' }
       }
     }
   )
@@ -95,12 +187,24 @@ async function draw(options: {
     <QueryClientProvider client={testQueryClient()}>
       <McpContext.Provider value={connected({ client })}>
         <DeskConfigFixture value={config(options.assistant ?? { endpoint: ENDPOINT })}>
-          <AssistantPane />
+          {options.buffer === undefined ? (
+            <AssistantPane
+              draft={options.draft}
+              editing={options.editing ?? false}
+              diagnostics={options.diagnostics}
+            />
+          ) : (
+            <DraftHarness
+              initial={options.buffer.text}
+              editing={options.buffer.editing ?? true}
+              diagnostics={options.diagnostics}
+            />
+          )}
         </DeskConfigFixture>
       </McpContext.Provider>
     </QueryClientProvider>
   )
-  return { model, relayed }
+  return { model, relayed, prompted }
 }
 
 beforeEach(() => {
@@ -112,6 +216,10 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   runtime = null
+  held = null
+  injected = null
+  wrote = 0
+  busyReason = ''
   window.sessionStorage.clear()
 })
 
@@ -163,8 +271,8 @@ describe('the tab before a run', () => {
 })
 
 describe('one whole run', () => {
-  async function runIt() {
-    const drawn = await draw()
+  async function runIt(already?: Awaited<ReturnType<typeof draw>>) {
+    const drawn = already ?? (await draw())
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
     )
@@ -223,6 +331,33 @@ describe('one whole run', () => {
     }
   })
 
+  it('shows the proposal as a diff against the draft it was given', async () => {
+    const drawn = await draw({ draft: JSON.stringify(scenario.documents.DRAFT_V1, null, 2) })
+    await runIt(drawn)
+    const diff = screen.getByRole('region', { name: 'The proposal as a diff' })
+    expect(diff.textContent).toContain('Compared with the draft on this page')
+    // The two members that moved, the one that arrived, and the eleven that
+    // did not — under one line with a count.
+    expect(diff.textContent).toContain('/version')
+    expect(diff.textContent).toContain('/rules')
+    expect(diff.textContent).toContain('/exceptions')
+    expect(diff.textContent).toContain('11 members unchanged')
+    // The rule the proposal drops is named, and the three it keeps are not
+    // redrawn as rewrites.
+    expect(diff.textContent).toContain('/rules/3')
+    expect(diff.textContent).toContain('3 elements unchanged, in the same place.')
+    // And the draft's own bytes are quoted beside the proposal's.
+    const before = screen.getByLabelText('/version, in the draft') as HTMLTextAreaElement
+    expect(JSON.parse(before.value)).toBe('0.0.1')
+  })
+
+  it('says there was nothing to compare with where the page has no bytes', async () => {
+    await runIt()
+    const diff = screen.getByRole('region', { name: 'The proposal as a diff' })
+    expect(diff.textContent).toContain('There was nothing to compare with')
+    expect(diff.textContent).toContain('no draft on this page')
+  })
+
   it('quotes the runtime’s checks beside it rather than summarising them', async () => {
     await runIt()
     const validate = screen.getByLabelText('validate, as the runtime wrote it') as HTMLTextAreaElement
@@ -239,13 +374,13 @@ describe('one whole run', () => {
     )
   })
 
-  it('draws Accept and Reject disabled, and says when they arrive', async () => {
+  it('offers no Accept on the reading route, and says where one is', async () => {
     await runIt()
-    for (const name of ['Accept', 'Reject']) {
-      const button = screen.getByRole('button', { name })
-      expect(button.hasAttribute('disabled')).toBe(true)
-      expect(button.getAttribute('title')).toBe('Accept into draft arrives in the next chunk')
-    }
+    expect(screen.queryByRole('button', { name: /Accept/ })).toBeNull()
+    expect(screen.getByText('Open Edit to accept.')).toBeTruthy()
+    // Reject is the desk's other action on the proposal, and it is the desk's
+    // wherever the proposal is shown.
+    expect(screen.getByRole('button', { name: 'Reject' }).hasAttribute('disabled')).toBe(false)
   })
 
   it('never lets write_file reach the runtime', async () => {
@@ -393,5 +528,533 @@ describe('stopping', () => {
     expect(runtime!.closed).toBe(0)
     cleanup()
     await waitFor(() => expect(runtime!.closed).toBeGreaterThan(0))
+  })
+})
+
+describe('accepting the proposal into the draft', () => {
+  /**
+   * The draft as an author's file: four spaces, and `decision` collapsed onto
+   * one line.
+   *
+   * The flourish is what makes the byte claim below a measurement. A fixture
+   * shaped exactly like `JSON.stringify` cannot tell "this member was not
+   * written" from "this member was written again and came back the same".
+   */
+  const DRAFT = (() => {
+    const text = `${JSON.stringify(scenario.documents.DRAFT_V1, null, 4)}\n`
+    const held = bytesAt(buffered(text), '/decision')!
+    return text.replace(held, JSON.stringify(JSON.parse(held)))
+  })()
+
+  async function runOver(options: { editing?: boolean } = {}) {
+    await draw({ buffer: { text: DRAFT, editing: options.editing ?? true } })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    )
+    fireEvent.change(screen.getByLabelText('What should this pack decide?'), {
+      target: { value: scenario.policy }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+  }
+
+  const acceptNow = () =>
+    fireEvent.click(screen.getByRole('button', { name: 'Accept into draft' }))
+
+  it('leaves a buffer that parses to the proposal, with the untouched members byte for byte', async () => {
+    await runOver()
+    const before = buffered(held!.text!)
+    acceptNow()
+    await waitFor(() => expect(held!.text).not.toBe(DRAFT))
+    const after = buffered(held!.text!)
+    expect(JSON.parse(after.text)).toEqual(scenario.documents.DRAFT_V2)
+    for (const name of Object.keys(scenario.documents.DRAFT_V1)) {
+      if (name === 'version' || name === 'rules') continue
+      expect(bytesAt(after, `/${name}`)).toBe(bytesAt(before, `/${name}`))
+    }
+    // And the author's own layout is still the document's: four spaces, and
+    // the one member they wrote on a single line.
+    expect(after.text).toContain('\n    "specVersion"')
+    expect(bytesAt(after, '/decision')).toBe(JSON.stringify(scenario.documents.DRAFT_V1.decision))
+  })
+
+  it('is one write, one undo entry, and one step back to where it started', async () => {
+    await runOver()
+    acceptNow()
+    await waitFor(() => expect(held!.dirty).toBe(true))
+    expect(wrote).toBe(1)
+    expect(held!.canUndo).toBe(true)
+    act(() => held!.undo())
+    await waitFor(() => expect(held!.text).toBe(DRAFT))
+    expect(held!.dirty).toBe(false)
+    expect(held!.canUndo).toBe(false)
+  })
+
+  it('stops calling the proposal accepted once Undo has taken it out again', async () => {
+    // "Accepted" is a comparison, not a memory: the draft went back to what it
+    // was, so the proposal is on offer again rather than disabled for ever
+    // with a sentence that is no longer true.
+    await runOver()
+    acceptNow()
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Accept into draft' }).hasAttribute('disabled')
+      ).toBe(true)
+    )
+    act(() => held!.undo())
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Accept into draft' }).hasAttribute('disabled')
+      ).toBe(false)
+    )
+    expect(screen.getByRole('region', { name: 'The proposal' }).textContent).not.toContain(
+      'Accepted into the draft.'
+    )
+    expect(screen.getByRole('button', { name: 'Reject' }).hasAttribute('disabled')).toBe(false)
+    // And accepting again is one more write, not a no-op.
+    acceptNow()
+    await waitFor(() => expect(held!.dirty).toBe(true))
+    expect(wrote).toBe(2)
+  })
+
+  it('refuses while the route says the draft is busy, and says which', async () => {
+    await runOver()
+    busyReason = 'This draft is being saved.'
+    // A render, so the button picks the reason up.
+    act(() => held!.commit(DRAFT))
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Accept into draft' }).getAttribute('title')
+      ).toBe('This draft is being saved.')
+    )
+    expect(wrote).toBe(0)
+  })
+
+  it('refuses a save claimed between the render and the click', async () => {
+    // The synchronous latch: the route claims a save in the same turn as the
+    // click and React hears about it a render later. A control that consulted
+    // only the rendered value would write into a buffer whose save is in the
+    // air.
+    await runOver()
+    expect(
+      screen.getByRole('button', { name: 'Accept into draft' }).hasAttribute('disabled')
+    ).toBe(false)
+    busyReason = 'This draft is being saved.'
+    acceptNow()
+    expect(wrote).toBe(0)
+    expect(held!.dirty).toBe(false)
+  })
+
+  it('says it is in the draft and nothing is saved, and disables both controls', async () => {
+    await runOver()
+    acceptNow()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Accept into draft' }).hasAttribute('disabled')).toBe(
+        true
+      )
+    )
+    expect(screen.getByRole('button', { name: 'Reject' }).hasAttribute('disabled')).toBe(true)
+    const region = screen.getByRole('region', { name: 'The proposal' })
+    expect(region.textContent).toContain('Accepted into the draft.')
+    expect(region.textContent).toContain('Nothing has been saved.')
+    expect(
+      screen.getByRole('button', { name: 'Accept into draft' }).getAttribute('title')
+    ).toContain('already in the draft')
+  })
+
+  it('does not write twice when Accept is pressed twice', async () => {
+    await runOver()
+    acceptNow()
+    await waitFor(() => expect(held!.dirty).toBe(true))
+    const settled = held!.text
+    fireEvent.click(screen.getByRole('button', { name: 'Accept into draft' }))
+    expect(wrote).toBe(1)
+    expect(held!.text).toBe(settled)
+  })
+
+  it('writes nothing at all on the reading route', async () => {
+    await runOver({ editing: false })
+    expect(screen.queryByRole('button', { name: /Accept/ })).toBeNull()
+    expect(screen.getByText('Open Edit to accept.')).toBeTruthy()
+    expect(wrote).toBe(0)
+    expect(held!.dirty).toBe(false)
+  })
+
+  it('rejects the proposal, keeps the stream, and writes nothing', async () => {
+    await runOver()
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull())
+    expect(screen.getByRole('list', { name: 'What the assistant did' })).toBeTruthy()
+    expect(screen.getByText(/The proposal was rejected/)).toBeTruthy()
+    expect(wrote).toBe(0)
+    expect(held!.dirty).toBe(false)
+  })
+
+  it('offers the next run its own proposal after one was accepted', async () => {
+    await runOver()
+    acceptNow()
+    await waitFor(() => expect(held!.dirty).toBe(true))
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Accept into draft' }).hasAttribute('disabled')
+      ).toBe(false)
+    )
+  })
+})
+
+describe('the draft the session is given', () => {
+  const DRAFT = `${JSON.stringify(scenario.documents.DRAFT_V1, null, 4)}\n`
+
+  /** The first user message of the first request the pane made. */
+  const firstUserMessage = (relayed: { body: string }[]) => {
+    const body = JSON.parse(relayed[0]!.body) as { messages: { role: string; content: string }[] }
+    return body.messages.find((message) => message.role === 'user')!.content
+  }
+
+  async function runOver(options: { buffer?: { text: string }; draft?: string } = {}) {
+    const drawn = await draw({ ...options, editing: true })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    )
+    fireEvent.change(screen.getByLabelText('What should this pack decide?'), {
+      target: { value: scenario.policy }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    return drawn
+  }
+
+  it('carries the bytes in the editor, verbatim and fenced, after the prompt', async () => {
+    const { relayed } = await runOver({ buffer: { text: DRAFT } })
+    const sent = firstUserMessage(relayed)
+    // The runtime's own prompt first, then the sentence, then the draft as it
+    // is — byte for byte, not a re-serialization of it.
+    expect(sent.startsWith('The runtime’s authoring prompt, with the policy in it.')).toBe(true)
+    expect(sent).toContain(DRAFT_SENTENCE)
+    expect(sent).toContain(`\`\`\`json\n${DRAFT}\n\`\`\``)
+    expect(sent.indexOf(DRAFT_SENTENCE)).toBeGreaterThan(0)
+  })
+
+  it('calls the proposal an update where a draft was sent', async () => {
+    await runOver({ buffer: { text: DRAFT } })
+    expect(screen.getByRole('region', { name: 'The proposal' }).textContent).toContain(
+      'an update to the draft it was given'
+    )
+  })
+
+  it('sends the prompt alone where the page has no bytes, and calls it a new document', async () => {
+    const { relayed } = await runOver()
+    expect(firstUserMessage(relayed)).toBe('The runtime’s authoring prompt, with the policy in it.')
+    expect(screen.getByRole('region', { name: 'The proposal' }).textContent).toContain(
+      'a new document'
+    )
+  })
+
+  it('sends the saved document on the reading route too', async () => {
+    const drawn = await draw({ draft: DRAFT })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    )
+    fireEvent.change(screen.getByLabelText('What should this pack decide?'), {
+      target: { value: scenario.policy }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    expect(firstUserMessage(drawn.relayed)).toContain(DRAFT)
+  })
+
+  it('adds nothing where there is nothing to add', () => {
+    expect(withDraft('the prompt', undefined)).toBe('the prompt')
+    expect(withDraft('the prompt', '   ')).toBe('the prompt')
+    expect(withDraft('the prompt', '{"a":1}')).toBe(
+      `the prompt\n\n${DRAFT_SENTENCE}\n\n\`\`\`json\n{"a":1}\n\`\`\``
+    )
+  })
+})
+
+describe('fixing what the check refused', () => {
+  /**
+   * A validation answer as a runtime might really write it: minified, with an
+   * escaped solidus, a non-ASCII character and a newline inside a string.
+   *
+   * The bytes are what matters here. A re-serialization of a parse of this
+   * would spell every one of those differently — which is the desk putting its
+   * own words on a refusal it did not write.
+   */
+  const ANSWER =
+    '{"outputVersion":"2","status":"invalid","diagnostics":' +
+    '[{"code":"JPS-STRUCTURAL-REQUIRED","instancePath":"/rules/0/outcomeId",' +
+    '"message":"the member is required at packs\\/x.pack.json;\\nsee the schéma"},' +
+    '{"code":"JPS-SEMANTIC-UNKNOWN-OUTCOME","instancePath":"/rules/1/outcomeId",' +
+    '"message":"no outcome declares this id"}],"diagnosticsTruncated":false}'
+  /** Exactly the bytes of the `diagnostics` member, as the route cuts them. */
+  const DIAGNOSTIC_BYTES = ANSWER.slice(
+    ANSWER.indexOf('[{"code"'),
+    ANSWER.indexOf(',"diagnosticsTruncated"')
+  )
+  const DIAGNOSTICS = { count: 2, bytes: DIAGNOSTIC_BYTES }
+
+  it('is offered only where the check reports something to fix', async () => {
+    await draw()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Fix' }).hasAttribute('disabled')).toBe(true)
+    )
+    expect(screen.getByRole('button', { name: 'Fix' }).getAttribute('title')).toContain(
+      'no diagnostic to fix'
+    )
+    cleanup()
+    await draw({ diagnostics: DIAGNOSTICS })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Fix' }).hasAttribute('disabled')).toBe(false)
+    )
+  })
+
+  it('is refused where the runtime advertises no fix_pack prompt', async () => {
+    await draw({
+      diagnostics: DIAGNOSTICS,
+      prompts: { author_pack: { text: 'the authoring prompt' } }
+    })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Fix' }).hasAttribute('disabled')).toBe(true)
+    )
+    expect(screen.getByRole('button', { name: 'Fix' }).getAttribute('title')).toContain(
+      'advertises no fix_pack'
+    )
+  })
+
+  it('runs fix_pack with the runtime’s diagnostics, as the runtime wrote them', async () => {
+    const { prompted } = await draw({ diagnostics: DIAGNOSTICS })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Fix' }).hasAttribute('disabled')).toBe(false)
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Fix' }))
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    const asked = prompted.filter((entry) => entry.name === 'fix_pack')
+    expect(asked).toHaveLength(1)
+    // Byte for byte the report's own array. Not a message list, not a count,
+    // not a severity filter: the runtime's words, whole.
+    // Byte for byte the member the runtime wrote — the minification, the
+    // escaped solidus, the é and the newline escape included.
+    expect(asked[0]!.args.diagnostics).toBe(DIAGNOSTIC_BYTES)
+    expect(asked[0]!.args.diagnostics).toContain('packs\\/x.pack.json')
+    expect(asked[0]!.args.diagnostics).toContain('sch\u00e9ma')
+    expect(asked[0]!.args.diagnostics).not.toContain('\n  ')
+    expect(JSON.parse(asked[0]!.args.diagnostics!)).toEqual(JSON.parse(ANSWER).diagnostics)
+  })
+
+  it('says which prompt ran, and over how many diagnostics', async () => {
+    await draw({ diagnostics: DIAGNOSTICS })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Fix' }).hasAttribute('disabled')).toBe(false)
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Fix' }))
+    expect(await screen.findByText(/Running the runtime’s fix_pack prompt/)).toBeTruthy()
+    expect(screen.getByText(/over 2 diagnostics/)).toBeTruthy()
+  })
+
+  it('names author_pack where that is what ran', async () => {
+    await draw({ diagnostics: DIAGNOSTICS })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    )
+    fireEvent.change(screen.getByLabelText('What should this pack decide?'), {
+      target: { value: scenario.policy }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    expect(await screen.findByText(/Running the runtime’s author_pack prompt/)).toBeTruthy()
+  })
+
+  it('sends the draft with the repair prompt too', async () => {
+    const DRAFT = '{\n    "specVersion": "0.2.0-draft"\n}\n'
+    const { relayed } = await draw({ diagnostics: DIAGNOSTICS, buffer: { text: DRAFT } })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Fix' }).hasAttribute('disabled')).toBe(false)
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Fix' }))
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    const body = JSON.parse(relayed[0]!.body) as { messages: { role: string; content: string }[] }
+    const sent = body.messages.find((message) => message.role === 'user')!.content
+    expect(sent).toContain('The runtime’s repair prompt, with the diagnostics in it.')
+    expect(sent).toContain(DRAFT)
+  })
+})
+
+describe('the proposal the pane reads is the one the hook canonicalized', () => {
+  /** An engine that proposes one document and ends. */
+  const proposes = (document: unknown): Engine => ({
+    id: 'builtin',
+    async *start(): AsyncGenerator<AssistantEvent> {
+      yield { type: 'proposal', document, unknowns: [] }
+      yield { type: 'end' }
+    }
+  })
+
+  async function runIt() {
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    )
+    fireEvent.change(screen.getByLabelText('What should this pack decide?'), {
+      target: { value: 'a policy' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+  }
+
+  it('reads a live document once, for the diff, the display and the write together', async () => {
+    let reads = 0
+    injected = proposes({
+      get title() {
+        reads += 1
+        return `title ${reads}`
+      }
+    })
+    await draw({ buffer: { text: '{\n    "title": "the draft’s own"\n}\n' } })
+    await runIt()
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    // The diff and the whole-document display are both on screen by now.
+    expect(screen.getByRole('region', { name: 'The proposal as a diff' }).textContent).toContain(
+      '/title'
+    )
+    expect(
+      JSON.parse((screen.getByLabelText('The proposed document') as HTMLTextAreaElement).value)
+    ).toEqual({ title: 'title 1' })
+    fireEvent.click(screen.getByRole('button', { name: 'Accept into draft' }))
+    await waitFor(() => expect(held!.dirty).toBe(true))
+    // One reading, and it is the one that was drawn and the one that was written.
+    expect(reads).toBe(1)
+    expect(JSON.parse(held!.text!)).toEqual({ title: 'title 1' })
+  })
+
+  it('draws a replaced element as two rows, with no duplicate key', async () => {
+    // React reports duplicate keys through `console.error`, and a warning
+    // nobody reads is a warning nobody fixes.
+    const complaints: string[] = []
+    const spy = vi.spyOn(console, 'error').mockImplementation((...parts: unknown[]) => {
+      complaints.push(parts.map((part) => String(part)).join(' '))
+    })
+    injected = proposes({ rules: [{ id: 'b' }] })
+    await draw({ buffer: { text: '{\n    "rules": [\n        { "id": "a" }\n    ]\n}\n' } })
+    await runIt()
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+    const diff = screen.getByRole('region', { name: 'The proposal as a diff' })
+    expect(diff.textContent).toContain('added')
+    expect(diff.textContent).toContain('removed')
+    expect(complaints.filter((line) => /same key|duplicate/i.test(line))).toEqual([])
+    spy.mockRestore()
+  })
+
+  it('shows the failure and offers no proposal where the document is not JSON data', async () => {
+    const document: Record<string, unknown> = {}
+    document.self = document
+    injected = proposes(document)
+    await draw({ buffer: { text: '{\n    "title": "the draft’s own"\n}\n' } })
+    await runIt()
+    await waitFor(() =>
+      expect(
+        screen.getByRole('list', { name: 'What the assistant did' }).textContent
+      ).toContain('could not be read as JSON data')
+    )
+    expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull()
+    expect(wrote).toBe(0)
+  })
+})
+
+describe('a proposal belongs to the draft it was given', () => {
+  const DRAFT_A = '{\n    "title": "the draft the session was given"\n}\n'
+  const DRAFT_B = '{\n    "title": "what the author typed meanwhile"\n}\n'
+  const PROPOSED = { title: 'what the model proposed' }
+
+  let started = false
+  let release: () => void = () => {}
+
+  /** An engine that proposes only when this suite lets it. */
+  const waits = (): Engine => ({
+    id: 'builtin',
+    async *start(): AsyncGenerator<AssistantEvent> {
+      started = true
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      yield { type: 'proposal', document: PROPOSED, unknowns: [] }
+      yield { type: 'end' }
+    }
+  })
+
+  beforeEach(() => {
+    started = false
+    release = () => {}
+  })
+
+  async function runAndEdit() {
+    injected = waits()
+    await draw({ buffer: { text: DRAFT_A } })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Run' }).hasAttribute('disabled')).toBe(true)
+    )
+    fireEvent.change(screen.getByLabelText('What should this pack decide?'), {
+      target: { value: 'a policy' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    // The model is thinking. The author keeps working.
+    await waitFor(() => expect(started).toBe(true))
+    act(() => held!.commit(DRAFT_B))
+    await act(async () => {
+      release()
+      await Promise.resolve()
+    })
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
+  }
+
+  it('refuses to apply a proposal to a draft that moved under it, and says so', async () => {
+    await runAndEdit()
+    const accept = screen.getByRole('button', { name: 'Accept into draft' })
+    expect(accept.hasAttribute('disabled')).toBe(true)
+    expect(accept.getAttribute('title')).toBe(
+      'The draft changed since this proposal was made — run again to propose against it.'
+    )
+    expect(
+      screen.getByText(/The draft changed since this proposal was made/)
+    ).toBeTruthy()
+    // And pressing it anyway writes nothing.
+    fireEvent.click(accept)
+    expect(wrote).toBe(0)
+    expect(held!.text).toBe(DRAFT_B)
+  })
+
+  it('draws the diff against the draft that was sent, not the one on screen now', async () => {
+    await runAndEdit()
+    const diff = screen.getByRole('region', { name: 'The proposal as a diff' })
+    // The comparison is against the bytes the session was given: the draft's
+    // own title, not the one typed while the model was thinking.
+    expect(diff.textContent).toContain('the draft the session was given')
+    expect(diff.textContent).not.toContain('what the author typed meanwhile')
+    // **And the caption says which draft that is.** "The draft on this page" is
+    // a different document now, and a caption that named it would make the
+    // comparison look like one it is not.
+    expect(diff.textContent).toContain('Compared with the draft this proposal was given')
+    expect(diff.textContent).toContain('the draft on this page has changed since')
+    expect(diff.textContent).not.toContain('Compared with the draft on this page')
+  })
+
+  it('goes back to naming the page’s own draft once it is that draft again', async () => {
+    await runAndEdit()
+    act(() => held!.undo())
+    await waitFor(() =>
+      expect(
+        screen.getByRole('region', { name: 'The proposal as a diff' }).textContent
+      ).toContain('Compared with the draft on this page')
+    )
+  })
+
+  it('offers it again once the draft is back to the bytes it was made about', async () => {
+    await runAndEdit()
+    act(() => held!.undo())
+    await waitFor(() => expect(held!.text).toBe(DRAFT_A))
+    const accept = screen.getByRole('button', { name: 'Accept into draft' })
+    await waitFor(() => expect(accept.hasAttribute('disabled')).toBe(false))
+    expect(screen.queryByText(/The draft changed since this proposal was made/)).toBeNull()
+    fireEvent.click(accept)
+    await waitFor(() => expect(held!.dirty).toBe(true))
+    expect(JSON.parse(held!.text!)).toEqual(PROPOSED)
   })
 })

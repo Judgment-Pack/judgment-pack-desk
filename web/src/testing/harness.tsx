@@ -53,8 +53,11 @@ export function stubClient(
 ): {
   client: Client
   calls: { name: string; args: Record<string, unknown> }[]
+  /** Every `prompts/get`, with the arguments it was made with. */
+  prompted: { name: string; args: Record<string, string> }[]
 } {
   const calls: { name: string; args: Record<string, unknown> }[] = []
+  const prompted: { name: string; args: Record<string, string> }[] = []
   const client = {
     async callTool(request: { name: string; arguments?: Record<string, unknown> }) {
       const args = request.arguments ?? {}
@@ -71,7 +74,8 @@ export function stubClient(
     async listPrompts() {
       return { prompts: Object.keys(extras.prompts ?? {}).map((name) => ({ name })) }
     },
-    async getPrompt(params: { name: string }) {
+    async getPrompt(params: { name: string; arguments?: Record<string, string> }) {
+      prompted.push({ name: params.name, args: params.arguments ?? {} })
       const prompt = (extras.prompts ?? {})[params.name]
       if (!prompt) throw new Error(`no stub answers the prompt ${params.name}`)
       return {
@@ -80,7 +84,7 @@ export function stubClient(
       }
     }
   }
-  return { client: client as unknown as Client, calls }
+  return { client: client as unknown as Client, calls, prompted }
 }
 
 /**

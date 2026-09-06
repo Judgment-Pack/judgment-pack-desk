@@ -54,7 +54,7 @@ import { useMcp } from '../mcp/McpProvider'
 import { usePack, usePacks, useValidate } from '../mcp/queries'
 import type { PackDocument } from '../mcp/types'
 import { agreesWithParse } from '../packs/documentText'
-import { CHECK_BEHIND_BUFFER, anchor, isStale, truncationNote } from '../packs/checks'
+import { CHECK_BEHIND_BUFFER, anchor, diagnosticsBytes, isStale, truncationNote } from '../packs/checks'
 import type { AnchoredDiagnostic } from '../packs/checks'
 import { CheckStrip } from '../packs/CheckStrip'
 import { AssistantPane } from '../assistant/AssistantPane'
@@ -66,10 +66,10 @@ import {
   EditingContext,
   declaredIds,
   ownerOf,
-  type EditingSession,
-  type PendingText
+  type EditingSession
 } from '../packs/edit/editingContext'
 import { editShape, isEditing, withEditing, withShape } from '../packs/edit/editMode'
+import { useHeldText } from '../packs/edit/heldText'
 import { LockLine } from '../packs/edit/LockLine'
 import { RawJsonEditor, positionOf } from '../packs/edit/RawJsonEditor'
 import { StaleWriteAlert } from '../packs/edit/StaleWriteAlert'
@@ -141,16 +141,21 @@ export function PackView() {
    * It is the route's rather than the field's, because both ways out of a form
    * — the JSON view, and a save — unmount the field. See `EditingSession`.
    */
-  const [drafts, setDrafts] = useState<ReadonlyMap<string, PendingText>>(new Map())
-  const hold = useCallback((pointer: string, draft: PendingText | null) => {
-    setDrafts((held) => {
-      const next = new Map(held)
-      if (draft === null) next.delete(pointer)
-      else next.set(pointer, draft)
-      return next
-    })
-  }, [])
-  const forgetDrafts = useCallback(() => setDrafts(new Map()), [])
+  /**
+   * **This is an edit, and the buffer is told so.** The text lives here rather
+   * than in the bytes, so it moved no revision — and a reload asked for before
+   * it was typed still held a valid ticket, adopted its answer, and cleared the
+   * drafts on the way in. Work entered after a read began went with it, with
+   * nothing having asked. Which holds count as edits is `heldText.ts`'s one
+   * rule: a release is not one, and neither is re-holding what is already held.
+   */
+  const touchBuffer = useRef<() => void>(() => {})
+  const touchNow = useCallback(() => touchBuffer.current(), [])
+  const held = useHeldText(touchNow)
+  const drafts = held.drafts
+  const hold = held.hold
+  const setDrafts = held.update
+  const forgetDrafts = held.forget
   /**
    * **The drafts are work, and the buffer has to know.** They live beside the
    * bytes, so a buffer asking only "are the bytes dirty" adopted another
@@ -161,6 +166,7 @@ export function PackView() {
     otherWork: drafts.size > 0,
     onAdopt: forgetDrafts
   })
+  touchBuffer.current = buffer.touch
   /**
    * **The path is part of the buffer's identity.**
    *
@@ -195,6 +201,7 @@ export function PackView() {
     opened.current = path
     if (first) return
     reset()
+    setUnaccounted(false)
     saving.current = undefined
   }, [path, reset])
 
@@ -390,6 +397,24 @@ export function PackView() {
           : undefined
 
   const report = stale ? undefined : check.data?.report
+  /**
+   * What `fix_pack` would be given: how many diagnostics, and **their own
+   * bytes**, cut out of the runtime's answer rather than re-serialized.
+   *
+   * The span comes from this desk's own scanner — the one the editor splices
+   * with — so the member handed to the prompt is the member the runtime wrote,
+   * escaping and whitespace included. Undefined where the report is stale (it
+   * is about bytes that have moved, exactly as no diagnostic is anchored
+   * across an edit), where there is nothing to fix, or where the answer is not
+   * bytes this desk can address.
+   */
+  const diagnosticsToFix = useMemo(() => {
+    const raw = stale ? undefined : check.data?.raw
+    const count = report?.diagnostics?.length ?? 0
+    if (raw === undefined || count === 0) return undefined
+    const bytes = diagnosticsBytes(raw)
+    return bytes === undefined ? undefined : { count, bytes }
+  }, [stale, check.data, report])
   const anchored = useMemo(() => anchor(report, rendered), [report, rendered])
   const byPointer = useMemo(() => {
     const found = new Map<string, AnchoredDiagnostic[]>()
@@ -533,6 +558,25 @@ export function PackView() {
    * was still in the air. A token is only ever equal to itself.
    */
   const saving = useRef<object | undefined>(undefined)
+  /**
+   * A save that finished with nobody here to account for it.
+   *
+   * The per-save callbacks arrive through react-query's observer, and this
+   * route detaches that observer whenever the address moves or a reload lands
+   * (`editor.reset()`, `write.reset()`). The write still completes on disk;
+   * what does not arrive is the read-back, so the base never moves onto it and
+   * neither "Saved, and verified" nor a refusal is ever printed. Reported
+   * rather than retained: the file on disk is the truth, and Reload is what
+   * takes it.
+   *
+   * It is also set where an answer *does* arrive and the buffer refuses it —
+   * a read-back for another file, or for a buffer that has been put down and
+   * taken up again.
+   */
+  const [unaccounted, setUnaccounted] = useState(false)
+  /** The address as of now, for a callback that outlives the render it was made in. */
+  const pathNow = useRef<string | undefined>(path)
+  pathNow.current = path
   const save = useCallback(
     (override?: boolean) => {
       if (path === undefined || bufferText === undefined || buffer.base === undefined) return
@@ -547,8 +591,14 @@ export function PackView() {
       // with the file read, so the two are not always about one file.
       if (buffer.base.path !== path) return
       const submitted = bufferText
+      // **Which buffer this save is for**, captured with the request exactly as
+      // the bytes are. A PUT takes as long as it takes and the page can be
+      // about another pack when it answers; without this the read-back became
+      // *that* pack's base and identity.
+      const ticket = buffer.identity
       const flight = {}
       saving.current = flight
+      setUnaccounted(false)
       // The check runs before the save and does **not** gate it. Sending the
       // buffer now means the diagnostics on screen afterwards are about the
       // bytes that were written rather than about whatever was last idle.
@@ -558,16 +608,25 @@ export function PackView() {
         content: submitted,
         baseSha256: buffer.base.sha256,
         override,
-        onSettled: () => {
+        onSettled: ({ delivered }) => {
           // Only the flight that took the latch releases it. A settlement
           // arriving after the page moved on — or after another save has taken
           // it — is about a write nobody is waiting for.
           if (saving.current === flight) saving.current = undefined
+          // **A save nobody here saw the answer to.** Said only on the page the
+          // save was made from: on another pack it would be a sentence about a
+          // file this address is not about.
+          if (!delivered && pathNow.current === path) setUnaccounted(true)
         },
         onSaved: (landed) => {
-          buffer.landed(landed, submitted)
+          // Refused where this buffer is no longer the buffer that was saved —
+          // and a refusal is reported rather than dropped, for the same reason.
+          if (!buffer.landed(landed, submitted, ticket)) setUnaccounted(true)
           // The runtime is now serving a file it has already read. These three
           // are what would otherwise keep answering about the old revision.
+          // They are invalidated whichever buffer is on screen: a refetch of a
+          // query is not a claim about the page, and the file that was written
+          // really did move.
           void queryClient.invalidateQueries({ queryKey: ['list_packs'] })
           void queryClient.invalidateQueries({ queryKey: ['get_pack', packId] })
           void queryClient.invalidateQueries({ queryKey: ['validate'] })
@@ -595,6 +654,26 @@ export function PackView() {
    * is this page's in this mode, and handing a clean buffer's Mod+S back to the
    * browser would make the behaviour depend on something the viewer cannot see.
    */
+  /**
+   * Why the draft may not be moved at all right now.
+   *
+   * **The save latch is synchronous and its React state is not.** `save` claims
+   * `saving.current` in the same turn as the click and react-query reports
+   * `isPending` a render later, so a surface that consulted only the rendered
+   * value could start an edit into a buffer whose save is already in the air.
+   * A function, so a caller can ask again at the instant it acts. A reload is
+   * the other half: what lands is a whole file, and the buffer refuses an
+   * answer that arrives over an edit — this is the same fact offered before
+   * the edit rather than after it.
+   */
+  const reloading = editor.reloading
+  const savePending = editor.write.isPending
+  const busyDraft = useCallback(() => {
+    if (saving.current !== undefined || savePending) return 'This draft is being saved.'
+    if (reloading) return 'This draft is being reloaded.'
+    return ''
+  }, [savePending, reloading])
+
   const saveNow = useRef(save)
   saveNow.current = save
   useEffect(() => {
@@ -627,8 +706,8 @@ export function PackView() {
   const hasWork = dirty || unwritten > 0
   const discardAll = useCallback(() => {
     buffer.discard()
-    setDrafts(new Map())
-  }, [buffer])
+    forgetDrafts()
+  }, [buffer, forgetDrafts])
 
   usePublishedDirty(path ?? `pack:${packId ?? ''}`, hasWork)
   useDirtyGuard(hasWork, LEAVING)
@@ -724,7 +803,32 @@ export function PackView() {
         onValueChange={setRightTab}
         tabs={[
           { value: 'inspector', label: 'Inspector', panel: inspectorNode },
-          { value: 'assistant', label: 'Assistant', panel: <AssistantPane /> }
+          {
+            value: 'assistant',
+            label: 'Assistant',
+            // The bytes this page is about: the editor's buffer where a file
+            // has been read, the runtime's served copy before that. It is the
+            // same string Try it sends, and for the same reason — a pane over
+            // one revision beside a page over another is the failure the
+            // digest binding exists to prevent.
+            panel: (
+              <AssistantPane
+                draft={bufferText ?? servedText}
+                // The route's own condition for whether these bytes may be
+                // written: `?edit`, and a file behind them. It is the same
+                // predicate the JSON view is made read-only by, so the pane
+                // and the editor cannot disagree about what is editable.
+                editing={editing && onPath}
+                // Which document these bytes are, so a proposal made about one
+                // pack cannot be accepted onto another: this pane outlives a
+                // navigation between packs, because the route re-renders and
+                // the tab does not remount.
+                identity={onPath ? buffer.identity : undefined}
+                busy={busyDraft}
+                diagnostics={diagnosticsToFix}
+              />
+            )
+          }
         ]}
       />
     )
@@ -908,7 +1012,14 @@ export function PackView() {
                 heading="The file on disk has changed since this was loaded"
                 actions={
                   <Button variant="quiet" onClick={reloadNow}>
-                    {dirty ? 'Reload, losing these changes' : 'Reload'}
+                    {/*
+                      **What Reload discards is work, not bytes.** An operand
+                      holding text that is not JSON yet moves no bytes, so a
+                      label reading `dirty` alone said plain "Reload" over an
+                      unfinished field — the same reason Discard is enabled by
+                      `hasWork` rather than by `dirty`.
+                    */}
+                    {hasWork ? 'Reload, losing these changes' : 'Reload'}
                   </Button>
                 }
               >
@@ -916,6 +1027,28 @@ export function PackView() {
                   What is on screen is the revision this editor loaded. Saving from here states
                   the digest it started from, so the chassis will refuse the write rather than
                   overwrite whatever landed since.
+                </p>
+              </AlertPanel>
+            )}
+            {/*
+              A save that completed with nobody here to take its answer. It is
+              not a conflict and not a failure: the bytes are on disk and this
+              page simply has no account of them, so what it offers is the read
+              that would settle it.
+            */}
+            {unaccounted && staleWrite === undefined && (
+              <AlertPanel
+                heading="This save finished, and this page has no account of it"
+                actions={
+                  <Button variant="quiet" onClick={reloadNow}>
+                    {hasWork ? 'Reload, losing these changes' : 'Reload'}
+                  </Button>
+                }
+              >
+                <p>
+                  The write went to the chassis and this page moved on before the answer came
+                  back — another pack, or a reload that landed first — so nothing here was moved
+                  onto what was written. The file on disk is what is true; reloading takes it.
                 </p>
               </AlertPanel>
             )}

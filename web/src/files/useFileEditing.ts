@@ -52,6 +52,16 @@ export interface FileEditing {
    * sentence about a file nothing had tried to read.
    */
   reloadError: { path: string; error: Error } | undefined
+  /**
+   * True while a reload is in the air.
+   *
+   * A read takes as long as it takes, and what lands is a whole file: anything
+   * that moves the buffer meanwhile is work the answer may replace. The buffer
+   * refuses a stale answer on its own (`BufferIdentity.revision`), and this is
+   * the other half — so a surface can decline to *start* an edit it knows is
+   * about to be argued with, and say why.
+   */
+  reloading: boolean
   /** The read-back is byte for byte what was sent. */
   verified: boolean
   /**
@@ -67,8 +77,19 @@ export interface FileEditing {
     override?: boolean
     createParents?: boolean
     onSaved?: (landed: FileContent) => void
-    /** However it ended — so a caller holding a single-flight latch can let go. */
-    onSettled?: () => void
+    /**
+     * However it ended — so a caller holding a single-flight latch can let go.
+     *
+     * `delivered` says whether **this page saw the answer**. The per-save
+     * callbacks reach the caller through react-query's observer, and the route
+     * detaches that observer whenever the address moves or a reload lands: the
+     * write still completes on disk, and neither `onSaved` nor the mutation's
+     * own error state ever arrives. A caller that reported nothing there would
+     * leave a save that finished with no account of itself anywhere on screen.
+     * This promise settles either way, which is what makes the difference
+     * reportable.
+     */
+    onSettled?: (settled: { delivered: boolean }) => void
   }) => void
   /**
    * Read the file again and hand back what is on disk now.
@@ -91,6 +112,7 @@ export function useFileEditing(): FileEditing {
   const [reloadError, setReloadError] = useState<{ path: string; error: Error } | undefined>(
     undefined
   )
+  const [reloading, setReloading] = useState(false)
   // Only the last reload asked for counts. An earlier one resolving afterwards
   // is answering a question that has been replaced.
   const reloads = useRef(0)
@@ -108,6 +130,7 @@ export function useFileEditing(): FileEditing {
     (path: string, onLoaded: (fresh: FileContent) => boolean) => {
       const ticket = (reloads.current += 1)
       setReloadError(undefined)
+      setReloading(true)
       // **The conflict stands until the read lands.** Clearing it first left a
       // failed reload with nothing on screen at all: no stale-write notice, no
       // error, and a Save button that would 409 again — the page had forgotten
@@ -118,6 +141,7 @@ export function useFileEditing(): FileEditing {
       void readFile(path)
         .then((fresh) => {
           if (ticket !== reloads.current) return
+          setReloading(false)
           // **The buffer decides first.** Resetting the mutation and dropping
           // the verdict before asking made a refused reload destructive in the
           // one way that matters: a save in flight for *another* file was
@@ -131,6 +155,7 @@ export function useFileEditing(): FileEditing {
         })
         .catch((cause: unknown) => {
           if (ticket !== reloads.current) return
+          setReloading(false)
           setReloadError({
             path,
             error: cause instanceof Error ? cause : new Error(String(cause))
@@ -149,7 +174,7 @@ export function useFileEditing(): FileEditing {
       override?: boolean
       createParents?: boolean
       onSaved?: (landed: FileContent) => void
-      onSettled?: () => void
+      onSettled?: (settled: { delivered: boolean }) => void
     }) => {
       // A previous verdict does not survive into a new attempt: leaving
       // "Saved, and verified" on screen while the next save is pending or
@@ -168,6 +193,9 @@ export function useFileEditing(): FileEditing {
       // flight across that never settled, so a caller holding a single-flight
       // latch held it for ever and every later Save returned silently. The
       // promise resolves either way, whatever happens to the observer.
+      // Set by the per-save callbacks below, which only run while the observer
+      // is still attached. See `onSettled`.
+      let delivered = false
       void write
         .mutateAsync(
           {
@@ -179,6 +207,7 @@ export function useFileEditing(): FileEditing {
           },
           {
           onSuccess: (landed) => {
+            delivered = true
             setOutcome({ submitted, landed })
             input.onSaved?.(landed)
             // The read-back is authoritative about the bytes this save wrote,
@@ -206,13 +235,17 @@ export function useFileEditing(): FileEditing {
                     })
                   }
             )
+          },
+          onError: () => {
+            // The observer was still attached, so `write.error` is on screen.
+            delivered = true
           }
           }
         )
         // The mutation's own error is rendered from `write.error`; this catch
         // exists so a rejected promise is not an unhandled one.
         .catch(() => {})
-        .finally(() => input.onSettled?.())
+        .finally(() => input.onSettled?.({ delivered }))
       // eslint-disable-next-line react-hooks/exhaustive-deps
     },
     [queryClient]
@@ -222,7 +255,7 @@ export function useFileEditing(): FileEditing {
   // after the rename, and this compares that to the bytes that were sent.
   const verified = outcome !== undefined && outcome.landed.content === outcome.submitted
 
-  return { write, outcome, reloadError, verified, save, reload, reset }
+  return { write, outcome, reloadError, reloading, verified, save, reload, reset }
 }
 
 /** The listing with one entry replaced, or added where it was not there. */

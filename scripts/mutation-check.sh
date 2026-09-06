@@ -2265,8 +2265,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # A report that does not carry the bytes it ran over cannot be compared with
   # the bytes on screen, and the comparison is the whole of the anchoring rule.
   mutate web "the report claims bytes it did not check" "$QR" \
-    '      return { report: parsed, checkedBytes: documentText! }' \
-    "      return { report: parsed, checkedBytes: '' }"
+    '      return { report: parsed, checkedBytes: documentText!, raw }' \
+    "      return { report: parsed, checkedBytes: '', raw }"
   mutate web "validate is assumed present" "$CAP" \
     "    validateSupported: names.has('validate')" \
     "    validateSupported: true"
@@ -2730,6 +2730,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # asks for.
   WRT=web/src/packs/edit/writes.ts
   BUF=web/src/packs/edit/useDocumentBuffer.ts
+  HT=web/src/packs/edit/heldText.ts
   COP=web/src/packs/edit/conditionOps.ts
   CB=web/src/packs/edit/ConditionBuilder.tsx
   CF=web/src/packs/edit/CardForm.tsx
@@ -2860,10 +2861,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  const formAvailable = isRecord(read?.index.value)'
   mutate web "the check gates the save" "$PV" \
     '      const submitted = bufferText
-      const flight = {}' \
+      // **Which buffer this save is for**' \
     '      if ((check.data?.report.diagnostics?.length ?? 0) > 0) return
       const submitted = bufferText
-      const flight = {}'
+      // **Which buffer this save is for**'
   mutate web "Mod+S is swallowed inside the field it exists to fire in" "$PV" \
     '      if (event.repeat || event.defaultPrevented) return
       event.preventDefault()' \
@@ -3119,12 +3120,17 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the buffer takes a revision it is no longer about" "$BUF" \
     '      if (expect !== undefined) {
         if (expect.generation !== generationNow.current) return false
+        // **An edit since the read was asked for is a refusal.** Including one
+        // made by Accept, which is an edit like any other: adopting here would
+        // replace it and clear the stack that could have taken it back.
+        if (expect.revision !== edits.current) return false
         if (seeded.current !== undefined && seeded.current !== expect.path) return false
         if (fresh.path !== expect.path) return false
       }' \
     '      void expect'
   mutate web "an earlier reload answers over a later one" "$FE" \
     '          if (ticket !== reloads.current) return
+          setReloading(false)
           // **The buffer decides first.**' \
     '          // **The buffer decides first.**'
   mutate web "a failed reload names whatever file is on screen" "$FE" \
@@ -3188,11 +3194,11 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '    if (!runnable) return'
   # The latch, and the two ways it has to be let go.
   mutate web "a save left in flight by a navigation wedges every later one" "$PV" \
-    '    reset()
+    '    setUnaccounted(false)
     saving.current = undefined' \
-    '    reset()'
+    '    setUnaccounted(false)'
   mutate web "the latch is released only through the mutation observer" "$FE" \
-    '        .finally(() => input.onSettled?.())' \
+    '        .finally(() => input.onSettled?.({ delivered }))' \
     '        .finally(() => {})'
   # The Inspector: a defined base, and no served fallback behind the buffer.
   mutate web "an absent base digest is read as a match" "$MTB" \
@@ -3355,7 +3361,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  const hasWork = dirty'
   mutate web "Discard leaves the text it did not write" "$PV" \
     '    buffer.discard()
-    setDrafts(new Map())' \
+    forgetDrafts()' \
     '    buffer.discard()'
   mutate web "a draft is masked rather than retired" "$PV" \
     '          ownerOf(read, pointer) === draft.owner
@@ -3795,9 +3801,11 @@ export function assistantTransport(): Transport {
     setStatus((current) => (current === '"'"'running'"'"' ? '"'"'finished'"'"' : current))' \
     '    release(run)
     setStatus((current) => (current === '"'"'running'"'"' ? '"'"'finished'"'"' : current))'
+  # (The event became `held` when the proposal's canonicalization landed in this
+  # function; the row is the same claim about the same line.)
   mutate web "a second end is appended rather than dropped" "$AR" \
-    "    if (event.type === 'end') run.ended = true" \
-    '    void event'
+    "    if (held.type === 'end') run.ended = true" \
+    '    void held'
   # **Both halves at once, because either alone holds it.** A connection whose
   # setup is still in flight is releasable two ways: the run records the handle
   # synchronously, and the run's signal is handed to the setup. Breaking one
@@ -3818,9 +3826,190 @@ export function assistantTransport(): Transport {
           })'
   # An identical policy run twice: the run id is what makes the second press a
   # second submission rather than the same state value.
+  # An identical policy run twice: the run id is what makes the second press a
+  # second submission rather than the same state value. (The submission grew a
+  # prompt name and its arguments when Fix landed; the id is still what this row
+  # is about.)
   mutate web "a second run of the same policy is suppressed" "$AP" \
-    '          onClick={() => setSubmitted({ id: (nextRun.current += 1), policy: typed })}' \
-    '          onClick={() => setSubmitted({ id: 1, policy: typed })}'
+    '              id: (nextRun.current += 1),
+              name: AUTHOR_PACK_PROMPT,
+              args: { policy: typed }' \
+    '              id: 1,
+              name: AUTHOR_PACK_PROMPT,
+              args: { policy: typed }'
+
+  # ---- The proposal as a diff, and accepting it into the draft -------------
+  #
+  # ADR-0001: "the desk renders the diff and applies an accepted proposal
+  # through the span-preserving writer. No engine event writes anything." Each
+  # row below breaks one half of that sentence.
+  PD=web/src/assistant/proposalDiff.ts
+  AC=web/src/assistant/acceptProposal.ts
+
+  # **The diff is computed, never quoted.** There is no sentence from the model
+  # for a mutant to quote — the contract's proposal event carries a document and
+  # its unknowns, and nothing else — so what this row breaks is the computation
+  # itself: the comparison stops being against the draft, and every member is
+  # reported as new, which is exactly what quoting a model that says "I rewrote
+  # the pack" would produce.
+  mutate web "the diff is not computed against the draft" "$PD" \
+    '  const draft = readDraft(draftText)' \
+    '  const draft = readDraft(undefined)'
+
+  # **A save that answers about another file.** A PUT takes as long as it takes;
+  # without the ticket, A's read-back became B's base and B's identity.
+  mutate web "an old save rebases whatever buffer is on screen" "$BUF" \
+    '      if (expect.generation !== generationNow.current) return false
+      if (seeded.current !== undefined && seeded.current !== expect.path) return false
+      if (fresh.path !== expect.path) return false
+    }
+    seeded.current = fresh.path' \
+    '      void expect
+    }
+    seeded.current = fresh.path'
+  # Work held beside the bytes is still work: a reload asked for before it was
+  # typed must go stale, exactly as a commit makes it.
+  mutate web "text held beside the bytes moves no revision" "$HT" \
+    '    if (heldChanged(now.current.get(pointer), draft)) touchNow.current()' \
+    '    void pointer'
+
+  # **A save that finished with nobody here to take its answer.** The per-save
+  # callbacks arrive through react-query's observer, and a reload landing — or
+  # leaving the pack — detaches it: the write completes on disk and the page
+  # would otherwise say nothing at all about it.
+  mutate web "a save that answers to nobody is not reported" "$PV" \
+    '          if (!delivered && pathNow.current === path) setUnaccounted(true)' \
+    '          void delivered'
+  # Releasing held text is not an edit — the write that follows it is — and the
+  # operand does both in one gesture, so counting both makes the revision
+  # something other than a count of edits.
+  mutate web "every hold counts as an edit, released or not" "$HT" \
+    '    if (heldChanged(now.current.get(pointer), draft)) touchNow.current()' \
+    '    touchNow.current()'
+
+  # **A reload that lands over an edit made while it was in flight.** The
+  # generation moves only where the buffer is put down, so an edit — a
+  # keystroke, or an accepted proposal — left the ticket matching, and the
+  # answer was adopted over the work with its undo entry.
+  mutate web "a reload adopts over an edit made while it was in flight" "$BUF" \
+    '        if (expect.revision !== edits.current) return false' \
+    '        void expect.revision'
+
+  # **What ingestion hands on cannot be moved afterwards.** The snapshot travels
+  # to the pane on the run's event list; unfrozen, anything holding the event
+  # can reach into it between the memoised diff and the accept, and the writer
+  # then writes a document nobody was shown.
+  mutate web "the ingested proposal is left mutable" "$AR" \
+    '  return Object.freeze(value)' \
+    '  return value'
+  # **One canonicalization, and the guard that keeps it one.** A second round
+  # trip added back "for safety" is a second reading of one proposal.
+  mutate web "the writer canonicalizes the proposal again" "$AC" \
+    '  const proposed = document' \
+    '  const proposed = JSON.parse(JSON.stringify(document)) as unknown'
+
+  # **A row's identity is its kind and its pointer.** A proposal that replaces
+  # one rule with a rule of another id produces two rows about position 0, and
+  # a list keyed on the pointer alone hands React one key for both.
+  mutate web "two rows about one position share an identity" "$PD" \
+    '  return { key: `${entry.status}:${entry.pointer}`, ...entry }' \
+    '  return { key: entry.pointer, ...entry }'
+
+  # A member the proposal did not move must not be written. The fixture drafts
+  # are indented with four spaces, so a member written again comes back with
+  # this module's own layout and the byte comparison sees it.
+  mutate web "an unchanged member is written again under Accept" "$AC" \
+    '    if (sameValue(before, after)) continue' \
+    '    if (false) continue'
+
+  # **The whole document, instead of a splice.** This is the row for "Accept
+  # writes through something other than the editing session's writer": the pane
+  # cannot reach `commit` — the context does not carry one — so the reachable
+  # version of that defect is the writer being bypassed one layer down, and the
+  # accept re-serializing the file it was asked to edit.
+  mutate web "Accept writes the whole document instead of splicing it" "$AC" \
+    '  const readable =
+    current.index.parseError === undefined &&
+    agreesWithParse(current.text, current.index).length === 0' \
+    '  const readable = false'
+
+  # One accept is one undo entry. A second write with its own key is a second
+  # entry, so the first Undo leaves the author where the accept put them.
+  mutate web "Accept pushes a second undo entry" "$AP" \
+    '      { coalesceKey: `assistant-accept:${(accepts.current += 1)}` }
+    )
+    setAccepted(landed.text)' \
+    '      { coalesceKey: `assistant-accept:${(accepts.current += 1)}` }
+    )
+    write((current) => applyProposal(current, proposed), {
+      coalesceKey: `assistant-accept:${(accepts.current += 1)}`
+    })
+    setAccepted(landed.text)'
+
+  # **A proposal is an edit of the draft it was given.** The run captures its
+  # baseline where it starts; the comparison against the bytes on the page now
+  # is what refuses to write a document the author has typed past.
+  mutate web "the draft may move under a proposal and still be accepted" "$AP" \
+    '    baseline.bytes === draft &&' \
+    '    true &&'
+  # And the diff has to be about the same bytes Accept would apply, or what is
+  # on screen is an edit nobody proposed.
+  mutate web "the diff follows the live buffer instead of the baseline" "$AP" \
+    '    () => (proposed === undefined ? undefined : diffProposal(baseline?.bytes, proposed)),' \
+    '    () => (proposed === undefined ? undefined : diffProposal(draft, proposed)),'
+  # The save latch is claimed synchronously and reported to React a render
+  # later, so the click has to ask again.
+  mutate web "Accept trusts the rendered busy state at the click" "$AP" \
+    "    if (busyNow.current() !== '' || !onBaseline) return" \
+    '    void onBaseline'
+  # "Accepted" is a comparison. Stored, it outlived the bytes it was about:
+  # Undo put the draft back and the pane still said the proposal was in it.
+  mutate web "an accepted proposal stays accepted after Undo" "$AP" \
+    "    : accepted !== null && draft === accepted
+      ? 'accepted'
+      : 'open'" \
+    "    : accepted !== null
+      ? 'accepted'
+      : 'open'"
+
+  # The reading route has no buffer a save can reach, so it is offered one line
+  # rather than a control.
+  mutate web "Accept is drawn on the reading route" "$AP" \
+    '            {editing ? (' \
+    '            {true ? ('
+
+  # A run still in flight is about to replace the events the proposal is on.
+  mutate web "Accept is enabled while the session is still running" "$AC" \
+    '  if (input.running) {
+    return { enabled: false, why: '"'"'The session is still running. Stop it or wait for it to end.'"'"' }
+  }' \
+    '  if (false) {
+    return { enabled: false, why: '"'"''"'"' }
+  }'
+
+  # The draft in the first message is what makes the proposal an edit of this
+  # document rather than a document about nothing.
+  mutate web "the draft is left out of the first message" "$AP" \
+    '    startRun(withDraft(prompt.data.text, draftNow.current))' \
+    '    startRun(prompt.data.text)'
+
+  # **One canonicalization, where the event arrives.** An engine may put a live
+  # object on `document`, and three readings of one getter are three documents:
+  # the diff describes A, the pane displays B, the writer writes C. The row
+  # takes the canonicalization out of the hook, so the pane's own readers each
+  # take their own.
+  mutate web "the proposal reaches the pane uncanonicalized" "$AR" \
+    "    const held = event.type === 'proposal' ? canonicalProposal(event) : event" \
+    '    const held = event'
+
+  # `fix_pack` works from the validator's report, and what it is given is the
+  # runtime's own bytes: a re-serialization of a parse of them is this desk's
+  # spelling of a refusal it did not write.
+  mutate web "Fix re-serializes the runtime's diagnostics" "$CK" \
+    '  const span = spanAt(indexDocument(raw), '"'"'/diagnostics'"'"')
+  return span === undefined ? undefined : raw.slice(span.valueStart, span.valueEnd)' \
+    '  const parsed = JSON.parse(raw) as { diagnostics?: unknown }
+  return parsed.diagnostics === undefined ? undefined : JSON.stringify(parsed.diagnostics, null, 2)'
 fi
 
 restore

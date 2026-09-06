@@ -25,6 +25,17 @@
  * document; there is no draft of it to restore, and a page that reopened one
  * would be re-showing a proposal nobody accepted as though it were still on
  * offer.
+ *
+ * **The proposal is canonicalized here, once, and nowhere else.** An engine may
+ * put any value on `document` — the contract says `unknown` — and a value with
+ * a getter or a `toJSON` can answer one thing while the diff is computed,
+ * another while the pane renders it and a third while the writer serializes it.
+ * Three readings are three documents, and the one a person accepted would be
+ * none of them. So the event that reaches the stream carries plain JSON data
+ * and every reader downstream reads that. A document that cannot be read as
+ * JSON data at all — a cycle, a throwing getter, a value that is not an object
+ * — becomes an `error` on the stream and no proposal: there is nothing to show
+ * and nothing to write.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { loadEngine, resolveEngine } from './engines'
@@ -54,6 +65,91 @@ interface Active {
   ended: boolean
 }
 
+/**
+ * One value as plain JSON data, or undefined where it is not JSON data at all.
+ *
+ * **The only canonicalization in the assistant**, and `enforcement.test.ts`
+ * holds that: no other module here round-trips a proposal, because a second
+ * round trip is a second reading, and the whole point of ingesting once is that
+ * there is one. A cycle, a `BigInt` and a `toJSON` that throws all end here as
+ * `undefined`.
+ */
+export function plain(value: unknown): unknown {
+  let text: string | undefined
+  try {
+    text = JSON.stringify(value)
+  } catch {
+    return undefined
+  }
+  if (text === undefined) return undefined
+  return JSON.parse(text) as unknown
+}
+
+/**
+ * Plain data, frozen all the way down.
+ *
+ * Canonicalizing once is not enough on its own: what comes out is an ordinary
+ * object, and it travels to the pane on `AssistantRun.events` where anything
+ * holding the event could reach into it between the diff and the accept. The
+ * diff would then describe one document and the writer write another — which is
+ * the defect ingestion exists to prevent, one layer out. Frozen, the two are
+ * the same object and there is nothing to disagree about.
+ *
+ * The recursion terminates because this only ever runs over the output of
+ * `JSON.parse`, which has no cycles.
+ */
+export function frozen<T>(value: T): T {
+  if (typeof value !== 'object' || value === null) return value
+  for (const held of Object.values(value as Record<string, unknown>)) frozen(held)
+  return Object.freeze(value)
+}
+
+/**
+ * One proposal event as plain, frozen JSON data — or the error that says why
+ * there is none.
+ *
+ * The whole payload together: the document, the unknowns and the critique. So
+ * nothing an engine put on the event survives as a live object — no getters, no
+ * `toJSON`, no functions, no symbol keys, no prototype — and nothing downstream
+ * can move what is left.
+ *
+ * **A document that is not a JSON object is refused rather than shown.** A pack
+ * is an object; `null`, `[]`, `7` and `"a pack"` are each a value this desk
+ * cannot draw a diff of member by member and cannot write into a draft, and a
+ * proposal offering one is a session that produced nothing to accept.
+ */
+export function canonicalProposal(
+  event: Extract<AssistantEvent, { type: 'proposal' }>
+): AssistantEvent {
+  const held = plain({
+    document: event.document,
+    unknowns: event.unknowns,
+    critique: event.critique
+  }) as { document?: unknown; unknowns?: unknown; critique?: { refuted: boolean } } | undefined
+  if (held === undefined) {
+    return {
+      type: 'error',
+      message:
+        'the proposal could not be read as JSON data; nothing was proposed and nothing was written'
+    }
+  }
+  const document = held.document
+  if (typeof document !== 'object' || document === null || Array.isArray(document)) {
+    return {
+      type: 'error',
+      message:
+        'the proposal carries no document object, so there is nothing to diff and nothing to ' +
+        'write; nothing was written'
+    }
+  }
+  return frozen({
+    type: 'proposal',
+    document,
+    unknowns: Array.isArray(held.unknowns) ? held.unknowns.map((entry) => String(entry)) : [],
+    ...(held.critique === undefined ? {} : { critique: held.critique })
+  })
+}
+
 export function useAssistantRun(options: {
   endpoint: AssistantEndpointConfig
   engine: AssistantEngine
@@ -76,8 +172,10 @@ export function useAssistantRun(options: {
    */
   const push = useCallback((run: Active, event: AssistantEvent) => {
     if (active.current !== run || run.ended) return
-    if (event.type === 'end') run.ended = true
-    setEvents((previous) => [...previous, event])
+    // The one canonicalization site. See the module doc.
+    const held = event.type === 'proposal' ? canonicalProposal(event) : event
+    if (held.type === 'end') run.ended = true
+    setEvents((previous) => [...previous, held])
   }, [])
 
   /** The run's one terminal event, where nothing else has written it. */

@@ -281,6 +281,56 @@ describe('a path that moves under one address', () => {
     expect(screen.queryByText('1 field is not written yet')).toBeNull()
   })
 
+  it('keeps operand text typed after a reload was asked for', async () => {
+    // **Unwritten operand text is work, and the reload ticket has to know.**
+    // The text lives beside the bytes, so typing it moved no revision: a read
+    // asked for before it still held a valid ticket, the buffer adopted the
+    // answer, and adoption clears the drafts — so text entered *after* Reload
+    // was pressed disappeared with nothing having asked about it.
+    const log = chassis({ content: ALPHA_FACT, sha256: PACK_DIGEST })
+    const { queryClient } = drawPack(
+      servedPacks([{ id: 'alpha', path: PACK_PATH, text: ALPHA_FACT, sha256: PACK_DIGEST }]),
+      { path: '/packs/alpha?edit=1' }
+    )
+    await screen.findByDisplayValue('Alpha pack')
+
+    // The file moves on disk, which is what puts Reload on screen.
+    act(() => {
+      queryClient.setQueryData(['desk-file', PACK_PATH], {
+        path: PACK_PATH,
+        bytes: ALPHA_FACT.length,
+        sha256: 'd0d0d0'.padEnd(64, '0'),
+        content: ALPHA_FACT
+      })
+    })
+    const offer = await screen.findByRole('button', { name: 'Reload' })
+    log.hold(PACK_PATH)
+    fireEvent.click(offer)
+
+    // The read is in the air. The author keeps working, in a field whose text
+    // is not JSON yet.
+    const operand = inside(document.getElementById('/rules/0/when/value')!).getByDisplayValue(
+      '"5000"'
+    )
+    fireEvent.change(operand, { target: { value: '{"shade"' } })
+    await waitFor(() => expect(screen.getByText('1 field is not written yet')).toBeTruthy())
+    // And the offer now says what it would cost, though no byte has moved.
+    expect(screen.getByRole('button', { name: 'Reload, losing these changes' })).toBeTruthy()
+
+    // The read answers now.
+    log.release(PACK_PATH)
+    await act(async () => {})
+
+    // The work is still here, the buffer is untouched, and the offer stands —
+    // which is the honest state: the file did move, and so has this page.
+    expect(screen.getByText('1 field is not written yet')).toBeTruthy()
+    expect(screen.getByDisplayValue('{"shade"')).toBeTruthy()
+    expect(screen.getByDisplayValue('Alpha pack')).toBeTruthy()
+    expect(
+      screen.getByText(/The file on disk has changed since this was loaded/)
+    ).toBeTruthy()
+  })
+
   it('forgets an offer the address has come back from', async () => {
     // A→B→A left B waiting behind the page, and its offer — "open it and lose
     // these changes" — was still on screen: pressing it discarded a dirty A for
@@ -399,6 +449,102 @@ describe('a read that lands after the page has moved on', () => {
     expect(screen.getByDisplayValue('Bravo pack, revised')).toBeTruthy()
     expect(screen.queryByDisplayValue('Alpha pack')).toBeNull()
     expect(screen.getByLabelText('unsaved changes')).toBeTruthy()
+  })
+
+  it('leaves the file the page is on alone when another file’s save lands', async () => {
+    // **A PUT takes as long as it takes.** Save A, leave for B, edit B, and let
+    // A's save answer.
+    //
+    // **This case is guarded twice, and it is worth saying which guard it
+    // measures.** On this route the read-back never reaches the buffer at all:
+    // the address change calls `editor.reset()`, which detaches the mutation's
+    // observer, so the per-mutation `onSuccess` — and with it `buffer.landed` —
+    // is never delivered. That is the guard this case exercises, and it is a
+    // property of react-query's delivery rather than of the buffer.
+    //
+    // The buffer's own guard is the ticket `landed` now takes, and it is
+    // measured where it can be: `useDocumentBuffer.test.ts` calls `landed` with
+    // a stale identity directly, because a caller that *did* deliver here —
+    // `onSettled` already arrives through the promise rather than the observer —
+    // would otherwise make A's read-back B's base and B's identity, with the
+    // save's own text comparison unable to catch it: that comparison decides
+    // whether to replace the text, not whose file this is.
+    const log = chassis({
+      content: ALPHA,
+      sha256: PACK_DIGEST,
+      also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } },
+      holdWrite: true
+    })
+    vi.stubGlobal('confirm', () => true)
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const alpha = await screen.findByDisplayValue('Alpha pack')
+    fireEvent.change(alpha, { target: { value: 'Alpha pack, revised' } })
+    const release = log.holdWrite()
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(log.writes).toHaveLength(1))
+
+    // The page leaves for B while A's PUT is still in the air, and B is edited.
+    await act(async () => {
+      await router.navigate('/packs/bravo?edit=1')
+    })
+    const bravo = await screen.findByDisplayValue('Bravo pack')
+    fireEvent.change(bravo, { target: { value: 'Bravo pack, revised' } })
+    await waitFor(() => expect(screen.getByLabelText('unsaved changes')).toBeTruthy())
+
+    // A's save answers now.
+    release()
+    await act(async () => {})
+
+    // B's buffer is B's: its bytes, its base, its identity, its undo entry, and
+    // no offer of a file this page never asked for.
+    expect(screen.getByDisplayValue('Bravo pack, revised')).toBeTruthy()
+    expect(screen.queryByDisplayValue(/Alpha pack/)).toBeNull()
+    expect(screen.getByLabelText('unsaved changes')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Undo' }).hasAttribute('disabled')).toBe(false)
+    expect(screen.queryByText(/This page is now about a different file/)).toBeNull()
+    expect(screen.queryByText(/The file on disk has changed since this was loaded/)).toBeNull()
+    // And Save is still offered for B, against B's own base.
+    expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('says a save finished unaccounted for when the author comes back to it', async () => {
+    // A→B→A with the PUT in the air. Leaving detaches the mutation's observer,
+    // so the read-back never arrives: the write completed on disk and this page
+    // has no account of it. Nothing is retained — the file on disk is the truth
+    // — and what the page owes the author is to say so and offer the read.
+    const log = chassis({
+      content: ALPHA,
+      sha256: PACK_DIGEST,
+      also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } },
+      holdWrite: true
+    })
+    vi.stubGlobal('confirm', () => true)
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const alpha = await screen.findByDisplayValue('Alpha pack')
+    fireEvent.change(alpha, { target: { value: 'Alpha pack, revised' } })
+    const release = log.holdWrite()
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(log.writes).toHaveLength(1))
+
+    await act(async () => {
+      await router.navigate('/packs/bravo?edit=1')
+    })
+    await screen.findByDisplayValue('Bravo pack')
+    await act(async () => {
+      await router.navigate('/packs/alpha?edit=1')
+    })
+    // The editor is back over Alpha's own bytes — the file query still holds
+    // them, because the save that would move them has not answered.
+    await waitFor(() => expect(document.getElementById('/title')).not.toBeNull())
+
+    release()
+    await act(async () => {})
+
+    expect(
+      screen.getByText(/This save finished, and this page has no account of it/)
+    ).toBeTruthy()
+    expect(screen.queryByText(/Saved, and verified/)).toBeNull()
+    expect(screen.getByRole('button', { name: /^Reload/ })).toBeTruthy()
   })
 
   it('names the file a failed reload was for, not the one on screen', async () => {

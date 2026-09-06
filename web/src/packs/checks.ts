@@ -15,6 +15,7 @@
  * about which layers ran, and nothing may be inferred from `status` alone.
  */
 import type { Diagnostic, ValidationReport } from '../mcp/types'
+import { indexDocument, spanAt } from './documentText'
 import { parentPointers } from './pointers'
 
 /** The ladder, in the order the runtime runs it. */
@@ -203,3 +204,21 @@ export function diagnosticsFor(
  */
 export const CHECK_BEHIND_BUFFER =
   'This check ran over bytes the editor has moved past, so nothing it found is placed on this document.'
+
+/**
+ * The `diagnostics` member of a validate answer, **as the runtime wrote it**.
+ *
+ * Cut out of the answer's own bytes rather than serialized from the parse of
+ * it, and by the same scanner the editor splices with. The runtime's repair
+ * prompt takes the validator's diagnostics, and a desk that re-serialized them
+ * would hand it its own spelling of a refusal: different whitespace, different
+ * escaping — `\/` and a non-ASCII character each have two legal spellings —
+ * and, where two members repeat, possibly a different reading altogether.
+ *
+ * Undefined where the answer carries no such member, or does not scan.
+ */
+export function diagnosticsBytes(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined
+  const span = spanAt(indexDocument(raw), '/diagnostics')
+  return span === undefined ? undefined : raw.slice(span.valueStart, span.valueEnd)
+}

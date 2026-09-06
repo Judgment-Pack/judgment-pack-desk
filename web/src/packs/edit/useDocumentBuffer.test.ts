@@ -283,6 +283,122 @@ describe('a read that resolves before the next render', () => {
   })
 })
 
+describe('a read that lands over an edit made while it was in flight', () => {
+  it('is refused, and the work and its undo entry stay', () => {
+    // The defect this exists for: a reload takes as long as it takes, and an
+    // edit made while it is in flight moves no generation and no path. The
+    // ticket still matched, the answer was adopted over the edit, and the undo
+    // stack went with it — so there was no way back to the work either.
+    const { result } = renderHook(() => useDocumentBuffer(file('{"a": 1}')))
+    const ticket = result.current.identity!
+    // The read is in flight. Now an edit — a keystroke, a form field, or an
+    // accepted proposal, which is an edit like any other.
+    act(() => result.current.commit('{"a": 2}'))
+    let took: boolean | undefined
+    act(() => {
+      took = result.current.rebase(file('{"a": 9}'), ticket)
+    })
+    expect(took).toBe(false)
+    expect(result.current.text).toBe('{"a": 2}')
+    expect(result.current.canUndo).toBe(true)
+    // And the ticket the caller would take *now* is accepted, so a reload
+    // asked for after the edit still works.
+    act(() => {
+      took = result.current.rebase(file('{"a": 9}'), result.current.identity)
+    })
+    expect(took).toBe(true)
+    expect(result.current.text).toBe('{"a": 9}')
+  })
+
+  it('is refused after an undo, and after a discard', () => {
+    const { result } = renderHook(() => useDocumentBuffer(file('{"a": 1}')))
+    act(() => result.current.commit('{"a": 2}'))
+    const afterCommit = result.current.identity!
+    act(() => result.current.undo())
+    let took: boolean | undefined
+    act(() => {
+      took = result.current.rebase(file('{"a": 9}'), afterCommit)
+    })
+    expect(took).toBe(false)
+
+    act(() => result.current.commit('{"a": 3}'))
+    const afterSecond = result.current.identity!
+    act(() => result.current.discard())
+    act(() => {
+      took = result.current.rebase(file('{"a": 9}'), afterSecond)
+    })
+    expect(took).toBe(false)
+  })
+
+  it('counts the revision in the identity it hands out', () => {
+    const { result } = renderHook(() => useDocumentBuffer(file('{"a": 1}')))
+    expect(result.current.identity!.revision).toBe(0)
+    act(() => result.current.commit('{"a": 2}'))
+    expect(result.current.identity!.revision).toBe(1)
+    act(() => result.current.undo())
+    expect(result.current.identity!.revision).toBe(2)
+  })
+})
+
+describe('a save that answers about another file', () => {
+  it('is refused, and moves neither the base nor the identity', () => {
+    // A PUT takes as long as it takes. Save A, leave for B, edit B, and let A's
+    // save answer: A's bytes became B's *base* and B's identity, so B was dirty
+    // against A, the page said it was about a file it was not, and the editor
+    // disappeared behind the served fallback. The text comparison cannot catch
+    // it — it decides whether to replace the text, not whose file this is.
+    const { result, rerender } = renderHook(
+      ({ answer }: { answer: FileContent }) => useDocumentBuffer(answer),
+      { initialProps: { answer: file('{"a": 1}') } }
+    )
+    const ticket = result.current.identity!
+    const other = file('{"b": 9}', 'packs/other.pack.json')
+    rerender({ answer: other })
+    act(() => result.current.commit('{"b": 10}'))
+
+    let took: boolean | undefined
+    act(() => {
+      took = result.current.landed(file('{"a": 1}'), '{"a": 1}', ticket)
+    })
+    expect(took).toBe(false)
+    expect(result.current.base).toBe(other)
+    expect(result.current.identity!.path).toBe('packs/other.pack.json')
+    expect(result.current.text).toBe('{"b": 10}')
+    expect(result.current.canUndo).toBe(true)
+    expect(result.current.waiting).toBeUndefined()
+  })
+
+  it('is refused where the buffer was put down and taken up again', () => {
+    const { result } = renderHook(() => useDocumentBuffer(file('{"a": 1}')))
+    const ticket = result.current.identity!
+    let took: boolean | undefined
+    act(() => {
+      result.current.forget()
+      took = result.current.landed(file('{"a": 2}'), '{"a": 2}', ticket)
+    })
+    expect(took).toBe(false)
+  })
+
+  it('takes an edit made while the save was in flight as work to keep', () => {
+    // The revision is deliberately *not* compared: this is the case the text
+    // comparison already answers, and it answers it by keeping the work.
+    const { result } = renderHook(() => useDocumentBuffer(file('{"a": 1}')))
+    act(() => result.current.commit('{"a": 2}'))
+    const ticket = result.current.identity!
+    act(() => result.current.commit('{"a": 3}'))
+    let took: boolean | undefined
+    const landed = { ...file('{"a": 2}'), sha256: 'b'.repeat(64) }
+    act(() => {
+      took = result.current.landed(landed, '{"a": 2}', ticket)
+    })
+    expect(took).toBe(true)
+    expect(result.current.base).toBe(landed)
+    // The keystroke that arrived while the PUT was in the air is still here.
+    expect(result.current.text).toBe('{"a": 3}')
+    expect(result.current.dirty).toBe(true)
+  })
+})
+
 describe('what a save lands on', () => {
   it('replaces the buffer where the save carried everything', () => {
     const { result } = renderHook(() => useDocumentBuffer(file('{"a": 1}')))

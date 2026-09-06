@@ -62,8 +62,21 @@ export interface DocumentBuffer {
    * leaves the buffer where it is, dirty against the new base, because the
    * alternative is an editor that throws away an author's last sentence
    * whenever a save is slower than they are.
+   *
+   * `expect` is the identity the save was issued against, and a mismatch is
+   * refused — it returns false and moves nothing. A PUT takes as long as it
+   * takes, and the page can be about another pack by the time it answers:
+   * installing that answer made pack A's bytes pack B's *base* and pack B's
+   * identity, so B was dirty against A, `onPath` went false, and the editor
+   * disappeared behind a document nobody had asked for. The text comparison
+   * above cannot catch it — it decides whether to replace the text, not whose
+   * file this is.
+   *
+   * **The revision is not compared.** An edit made while a save was in flight
+   * is exactly the case the text comparison already handles: the base moves and
+   * the buffer keeps the work, dirty against it.
    */
-  landed: (fresh: FileContent, submitted: string) => void
+  landed: (fresh: FileContent, submitted: string, expect?: BufferIdentity) => boolean
   /**
    * A revision for **another path**, held because this buffer has unsaved
    * work.
@@ -78,12 +91,37 @@ export interface DocumentBuffer {
   takeWaiting: () => void
   /** Forget this document entirely, so the next file seeds cleanly. */
   forget: () => void
+  /**
+   * Record work this buffer cannot see.
+   *
+   * Text an author has typed into an operand that is not JSON yet lives beside
+   * the bytes, in the route. It is work — the route already counts it as work
+   * and refuses to adopt another file over it — but it moved no revision, so a
+   * reload asked for *before* it was typed still held a valid ticket: the
+   * answer was adopted, `onAdopt` cleared the drafts, and text entered after
+   * the read began disappeared with nothing having asked. Whoever holds that
+   * work says so here, and the ticket goes stale exactly as a commit makes it.
+   */
+  touch: () => void
 }
 
 /** Which document a buffer is holding, and which incarnation of it. */
 export interface BufferIdentity {
   path: string
   generation: number
+  /**
+   * How many edits this buffer has taken, ever.
+   *
+   * **The generation is not enough, and this is the half it was missing.** A
+   * reload is a read that takes as long as it takes, and an edit made while it
+   * is in flight moves no generation: the ticket still named the same file and
+   * the same incarnation, so the answer was adopted over work that arrived
+   * after the read was asked for — silently, and taking the undo stack with it,
+   * so there was no way back to it either. A number that moves on every commit
+   * and every undo is what says the buffer is not the buffer the read was asked
+   * about.
+   */
+  revision: number
 }
 
 /** One entry on the stack: the bytes, and what was being typed into. */
@@ -152,6 +190,39 @@ export function useDocumentBuffer(
   // the pure function React is entitled to call twice.
   const current = useRef<string | undefined>(undefined)
   current.current = text
+
+  /**
+   * The edit counter behind `BufferIdentity.revision`.
+   *
+   * A ref and not state, for the reason the generation is one: a read can
+   * resolve before the next render, and what decides whether it may be adopted
+   * has to be true *now*. Every path that moves the text moves it — commit,
+   * undo, discard, and work held beside the bytes — and it is never reset.
+   *
+   * **The bound, stated rather than implied**: it is a JavaScript number, so
+   * the claim is that a ticket cannot collide within 2^53 edits of one page
+   * session. Past `Number.MAX_SAFE_INTEGER` an increment can leave the counter
+   * where it was; nothing here claims more than that bound, and no session
+   * reaches it — nine quadrillion keystrokes is not a case this desk is
+   * designed for, and pretending otherwise would need a representation whose
+   * cost every edit pays.
+   */
+  const edits = useRef(0)
+  /**
+   * The same number as state, so the identity this hook hands out is rebuilt
+   * when it moves.
+   *
+   * The ref is the authority — a read can resolve before the next render — and
+   * this is only for rendering, exactly as the generation is kept in both. Most
+   * edits move the text and would rebuild the memo anyway; work held *beside*
+   * the bytes does not, and that is the case this exists for.
+   */
+  const [revision, setRevision] = useState(0)
+  /** One more edit, however it was made. */
+  const edited = useCallback(() => {
+    edits.current += 1
+    setRevision(edits.current)
+  }, [])
 
   const seeded = useRef<string | undefined>(undefined)
   const [waiting, setWaiting] = useState<FileContent | undefined>(undefined)
@@ -223,6 +294,7 @@ export function useDocumentBuffer(
       setText(next)
       return
     }
+    edited()
     setStack((entries) => {
       const key = options?.coalesceKey
       const top = entries[entries.length - 1]
@@ -235,7 +307,7 @@ export function useDocumentBuffer(
     })
     current.current = next
     setText(next)
-  }, [])
+  }, [edited])
 
   const undo = useCallback(() => {
     // **The updater is pure.** React is entitled to call an updater twice —
@@ -245,19 +317,23 @@ export function useDocumentBuffer(
     const entries = stackNow.current
     const top = entries[entries.length - 1]
     if (top === undefined) return
+    edited()
     current.current = top.text
     setText(top.text)
     setStack(entries.slice(0, -1))
-  }, [])
+  }, [edited])
 
   const discard = useCallback(() => {
+    // A discard is an undo of everything, and it moves the bytes: a reload
+    // asked for before it is a reload about a buffer that no longer exists.
+    edited()
     if (base !== undefined) {
       current.current = base.content
       setText(base.content)
     }
     setStack([])
     onDiscard?.()
-  }, [base, onDiscard])
+  }, [base, onDiscard, edited])
 
   // This file is now seeded, whichever way it got here — so a watcher answer
   // arriving after a save or a reload is still a refetch and still does not
@@ -271,6 +347,10 @@ export function useDocumentBuffer(
     (fresh: FileContent, expect?: BufferIdentity): boolean => {
       if (expect !== undefined) {
         if (expect.generation !== generationNow.current) return false
+        // **An edit since the read was asked for is a refusal.** Including one
+        // made by Accept, which is an edit like any other: adopting here would
+        // replace it and clear the stack that could have taken it back.
+        if (expect.revision !== edits.current) return false
         if (seeded.current !== undefined && seeded.current !== expect.path) return false
         if (fresh.path !== expect.path) return false
       }
@@ -280,7 +360,14 @@ export function useDocumentBuffer(
     [adopt]
   )
 
-  const landed = useCallback((fresh: FileContent, submitted: string) => {
+  const landed = useCallback((fresh: FileContent, submitted: string, expect?: BufferIdentity) => {
+    if (expect !== undefined) {
+      // Which file, and which incarnation of this buffer. Not the revision:
+      // see the interface.
+      if (expect.generation !== generationNow.current) return false
+      if (seeded.current !== undefined && seeded.current !== expect.path) return false
+      if (fresh.path !== expect.path) return false
+    }
     seeded.current = fresh.path
     setBase(fresh)
     setWaiting(undefined)
@@ -289,10 +376,11 @@ export function useDocumentBuffer(
     // keystrokes is work this save did not send; so is a read-back that is not
     // what was sent. Either way the text stays exactly where it is and `dirty`
     // says what is true of it against the revision that landed.
-    if (current.current !== submitted || fresh.content !== submitted) return
+    if (current.current !== submitted || fresh.content !== submitted) return true
     current.current = fresh.content
     setText(fresh.content)
     setStack([])
+    return true
   }, [])
 
   const takeWaiting = useCallback(() => {
@@ -339,12 +427,21 @@ export function useDocumentBuffer(
       identity:
         seeded.current === undefined
           ? undefined
-          : { path: seeded.current, generation: generationNow.current },
+          : {
+              path: seeded.current,
+              generation: generationNow.current,
+              // Read off the ref, and re-read whenever this memo is rebuilt —
+              // which every edit does, because every edit moves `text`. Two
+              // commits that produce the same bytes leave a ticket carrying the
+              // earlier number, and a refusal is the safe direction.
+              revision: edits.current
+            },
       generation,
       landed,
       waiting,
       takeWaiting,
-      forget
+      forget,
+      touch: edited
     }),
     [
       base,
@@ -356,10 +453,12 @@ export function useDocumentBuffer(
       discard,
       rebase,
       generation,
+      revision,
       landed,
       waiting,
       takeWaiting,
-      forget
+      forget,
+      edited
     ]
   )
 }

@@ -907,6 +907,37 @@ code, and offers Reload — which says that it discards — and *Overwrite anywa
 which is never the primary control. On success `list_packs`, `get_pack` and the
 `validate` queries are invalidated.
 
+**A save still in flight when the author leaves the pack completes on disk, and
+its read-back is dropped with the editor.** The per-save callbacks reach the
+route through react-query's observer, and leaving the pack — or a reload landing
+first — detaches it: the write happens, and nothing here is moved onto it.
+Nothing is retained, because the file on disk is the truth and the next open
+re-reads it; what the page owes the author is to say so, and it does — *This save
+finished, and this page has no account of it*, with the read that would settle it
+beside the sentence. The same line stands where an answer does arrive and the
+buffer refuses it, which is a read-back for a file this buffer is no longer about.
+
+**A read or a write that lands over an edit is refused.** Both take as long as
+they take, and what comes back is a whole file. The ticket a reload carries names
+the file, the incarnation of the buffer *and* the edit revision it was issued at
+— a number every commit, undo, discard **and unwritten operand** moves, because
+text typed into a field that is not JSON yet is work too (holding it counts once,
+where it changes; releasing it does not, because the write that follows a release
+is the edit) — so an edit made while
+the read was in flight makes the answer stale and the buffer declines it, keeping
+both the work and the undo entry that could take it back. The stale-file offer
+stays on screen, which is the honest state: the file did move, and this buffer
+has moved too; and the offer says what it would cost — *Reload, losing these
+changes* — for unwritten text exactly as it does for unsaved bytes.
+
+A **save** carries the same identity, and `landed` refuses a read-back for
+another file: a PUT in flight across a navigation used to make one pack's bytes
+another pack's base. An edit made *during* a save is not refused — that is the
+case the save's own text comparison answers, by keeping the work and leaving it
+dirty against the revision that landed. (The counters are JavaScript numbers, so
+the claim is bounded and stated as such: a ticket cannot collide within 2^53
+edits of one page session.)
+
 **A refusal does not take the page away.** Save writes bytes the runtime may
 then refuse to serve, so `get_pack` failing is a state this editor can produce —
 and the way out of it is the editor. The refusal is printed above the bytes
@@ -1309,20 +1340,46 @@ Type what the pack should decide and press **Run**. The desk fetches the
 runtime's own `author_pack` prompt over `prompts/get` with what you typed as its
 `policy` argument, hands it to the engine, and shows what happens: each tool
 call by name, each answer's `isError` and byte count, each guardrail in the
-desk's warning colour, and at the end the **proposal** — the document as
-read-only JSON, the unknowns the assistant declared, and beneath them the
-runtime's own checks **quoted whole**: the `validate` report and the rehearsal
-evaluation, as the runtime wrote them. A summary of a verdict is a second
-verdict, so there is none.
+desk's warning colour, and at the end the **proposal** — the diff below, the
+document as read-only JSON, the unknowns the assistant declared, and beneath
+them the runtime's own checks **quoted whole**: the `validate` report and the
+rehearsal evaluation, as the runtime wrote them. A summary of a verdict is a
+second verdict, so there is none.
 
-**Accept and Reject are drawn and disabled**, with a title saying they arrive in
-the next chunk. Nothing here writes to the draft, produces a diff, or touches a
-file. `Escape` stops a session; leaving the route stops it too. A session has
-two phases — the desk reading the runtime's prompt, then the engine running —
-and Stop ends either. Every session emits exactly one `end`, whichever way it
+`Escape` stops a session; leaving the route stops it too. A session has two
+phases — the desk reading the runtime's prompt, then the engine running — and
+Stop ends either. Every session emits exactly one `end`, whichever way it
 finishes. Pressing Run again with the text unchanged is a second run, because a
 model is not a pure function. Nothing about a session is persisted — coming back
 is a new one.
+
+**The session is given the draft it is editing.** The first user message carries
+the runtime's prompt and then the bytes in the editor, verbatim and fenced,
+under one fixed sentence: *This is the draft being edited; propose the whole
+document.* On the reading route the saved document plays the same part. So what
+comes back is a whole document, which is what the diff needs, and the tab says
+whether it is *an update to the draft it was given* or *a new document* — from
+what this desk sent, never from a `kind` the model wrote.
+
+**A run captures its baseline, and the proposal belongs to it.** What the run
+records where it starts is the whole of what the proposal is about: which file,
+which incarnation of the buffer, and the exact bytes it sent. The diff is
+computed against those bytes rather than against the live buffer, so what is on
+screen is what Accept would apply; and Accept is offered only while the page
+still holds them. An author who kept typing while the model was thinking is told
+so — *The draft changed since this proposal was made — run again to propose
+against it* — rather than having their sentences replaced by a document the
+model never saw. Undo back to those bytes puts the proposal back on offer.
+
+**Fix** runs the runtime's `fix_pack` prompt beside Run, with the diagnostics the
+check on this page already produced as its `diagnostics` argument — **the bytes
+of the `diagnostics` member, cut out of the runtime's own answer** by the same
+scanner the editor splices with. Not a message list, not a count, not a severity
+filter, and not a re-serialization of a parse: a re-serialization is this desk's
+whitespace and this desk's escaping on a refusal it did not write. Same engine,
+same gate, same proposal path, and the draft in the first message as above. It is
+offered only where the check reports something to fix and the runtime advertises
+the prompt, and the tab says which prompt is running.
 
 **The assistant opens its own MCP connection**, and that costs one more
 `jpack mcp` process while the tab is running. The reason is the ToolGate below:
@@ -1332,6 +1389,89 @@ that transport would break the desk. A second socket, gated at the wire, is what
 makes "no page code path can bypass it" a structural claim rather than a habit.
 The connection lives exactly as long as the session and is closed on stop, on
 unmount and on navigation.
+
+### The proposal as a diff, and Accept into draft
+
+The proposal is drawn as **what accepting it would do to the draft**, member by
+member: each top-level member added, removed or changed, with the draft's text
+and the proposal's beside it, and each array member compared *element by
+element* — matched by `id` where the elements carry one, by position where they
+do not. Members that did not move collapse to one line with a count.
+
+The comparison is **computed here and never quoted**. The contract's proposal
+event carries a document and its unknowns and nothing else; there is no account
+of its own work for this desk to repeat, and a model's account of what it
+changed is not evidence about a document.
+
+**The proposal is canonicalized once, where the event arrives**, in the run hook
+— `JSON.parse(JSON.stringify(x))` — and **frozen all the way down**; the diff,
+the rendering, the writability check and the writer read that one snapshot and
+never round-trip it again. The reasoning is the ToolGate's: an engine may put any
+value on `document`, and a getter or a `toJSON` can answer one thing while the
+diff is looking, another while the pane renders and a third while the writer
+serializes — three readings are three documents, and the one a person accepted
+would be none of them. The freeze closes the same gap one layer out: the snapshot
+travels to the pane on the run's event list, and anything holding that event
+could otherwise reach into it between the memoised diff and the accept. A
+document that cannot be read as JSON data at all — a cycle, a throwing getter, a
+value that is not an object — becomes an `error` on the stream and no proposal:
+there is nothing to show and nothing to write. That there is exactly one
+canonicalization site is swept for in `assistant/enforcement.test.ts`, because a
+second round trip added back "for safety" is a second reading.
+
+The caption names the draft it actually compared: on a page whose bytes have
+moved since the run began it says *the draft this proposal was given*, because
+"the draft on this page" is by then a different document.
+
+Each row is identified by its **kind and its pointer**, not by the pointer alone.
+A proposal that replaces one rule with a rule of another id produces two rows
+about position 0 — the rule that left, on the draft's pointer, and the one that
+arrived, on the proposal's — and one key for both is a warning from React and two
+rows a reader cannot tell apart.
+
+An id that names two elements of one array matches nothing, and a keyed element
+is never paired positionally: a new rule at index 0 must not be reported as an
+edit of whichever rule happened to sit there. Where the draft cannot be read at
+all — no bytes, bytes that are not JSON, or bytes this desk and `JSON.parse`
+disagree about (a duplicated member) — the diff says so and the whole proposal
+is new.
+
+**Accept into draft** applies it through the same span-preserving writer a form
+edit uses (`packs/edit/writes.ts`), in exactly one `write` on the editing
+session:
+
+- one undo entry, so **Undo takes the whole accept back in one step**;
+- every byte the proposal did not move survives — the author's own indentation,
+  spacing and member order included — because each change is a splice at a
+  pointer and an untouched member is not written at all. ADR-0019 makes a human
+  read the diff of a save, and an accept that re-serialized the file would hand
+  that human every line of it;
+- **nothing is saved.** The on-idle check runs again over the new bytes, the
+  toolbar's dirty count moves, the navigation guard covers an accepted-but-
+  unsaved draft exactly as it covers typing, and Save is still yours to press;
+- a draft with nothing to splice into — bytes that do not scan, or a duplicated
+  member — is replaced whole, which is the one case where there are no spans to
+  preserve.
+
+Accept is enabled only on `?edit`, with a proposal, once the run has ended, and
+only while the page still holds the baseline the run captured. It is disabled
+with the reason in its `title` while a run is in flight, while a save or a reload
+is in flight, once accepted, once rejected, and where the draft has moved; on the
+reading route it is not drawn at all and one line stands in its place — *Open Edit
+to accept.* **"Accepted" is a comparison, not a memory**: the pane holds the bytes
+the accept produced and says the proposal is in the draft exactly while the draft
+is those bytes, so Undo puts it back on offer instead of leaving a control
+disabled under a sentence that has stopped being true.
+
+The save gate is asked **again at the instant of the click**: the route claims a
+save synchronously and react-query reports it a render later, so a control that
+consulted only the rendered value could write into a buffer whose save is already
+in the air. A reload is the other direction — the buffer refuses a read that
+lands over an edit made while it was in flight (`BufferIdentity.revision`), and
+the pane declines to start one it knows is about to be argued with.
+**Reject** drops the proposal and keeps the event stream. There is no partial
+accept: per-member checkboxes are a later refinement, and this chunk deliberately
+does not ship half of one.
 
 ### The ToolGate
 

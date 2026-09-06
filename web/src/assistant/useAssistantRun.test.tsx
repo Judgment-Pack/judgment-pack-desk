@@ -14,7 +14,7 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { scriptedWebSocket } from './conformance/scriptedServer'
 import scenario from './conformance/scenario.json'
-import { useAssistantRun } from './useAssistantRun'
+import { canonicalProposal, frozen, plain, useAssistantRun } from './useAssistantRun'
 import type { AssistantEvent, AssistantSession, Engine } from './engine'
 
 /** An engine that yields nothing, ends never, and ignores its abort signal. */
@@ -121,5 +121,138 @@ describe('the run hook writes the terminal event itself', () => {
     // The socket is a `jpack mcp`; an engine that ignores its signal must not
     // be able to keep one alive past the pane that started it. Once.
     await waitFor(() => expect(runtime!.closed).toBe(1))
+  })
+})
+
+describe('the proposal is canonicalized once, where it arrives', () => {
+  /** An engine that puts one value on the stream and ends. */
+  const emits = (event: AssistantEvent): Engine => ({
+    id: 'builtin',
+    // eslint-disable-next-line require-yield
+    async *start(): AsyncGenerator<AssistantEvent> {
+      yield event
+      yield { type: 'end' }
+    }
+  })
+
+  it('reads a live document exactly once, and puts plain data on the stream', async () => {
+    let reads = 0
+    const document = {
+      get title() {
+        reads += 1
+        return `title ${reads}`
+      }
+    }
+    engine = emits({ type: 'proposal', document, unknowns: ['one'] })
+    const { result } = drive()
+    act(() => result.current.start('the runtime’s prompt'))
+    await waitFor(() => expect(ends(result.current.events)).toHaveLength(1))
+    const proposal = result.current.events.find((event) => event.type === 'proposal')
+    expect(reads).toBe(1)
+    expect((proposal as { document: unknown }).document).toEqual({ title: 'title 1' })
+    // And what is on the stream is inert: reading it again cannot move it.
+    expect((proposal as { document: { title: string } }).document.title).toBe('title 1')
+    expect(reads).toBe(1)
+  })
+
+  it('refuses a document that cannot be read as JSON data, and proposes nothing', async () => {
+    const document: Record<string, unknown> = {}
+    document.self = document
+    engine = emits({ type: 'proposal', document, unknowns: [] })
+    const { result } = drive()
+    act(() => result.current.start('the runtime’s prompt'))
+    await waitFor(() => expect(ends(result.current.events)).toHaveLength(1))
+    expect(result.current.events.find((event) => event.type === 'proposal')).toBeUndefined()
+    const failure = result.current.events.find((event) => event.type === 'error')
+    expect((failure as { message: string }).message).toContain('could not be read as JSON data')
+  })
+
+  it('refuses a proposal whose document is not an object', () => {
+    for (const document of [null, [1, 2], 7, 'a pack', undefined]) {
+      const held = canonicalProposal({ type: 'proposal', document, unknowns: [] })
+      expect(held.type).toBe('error')
+      expect((held as { message: string }).message).toContain('no document object')
+    }
+  })
+
+  it('keeps the unknowns and the critique, as data', () => {
+    const held = canonicalProposal({
+      type: 'proposal',
+      document: { a: 1 },
+      unknowns: ['one', 'two'],
+      critique: { refuted: false }
+    })
+    expect(held).toEqual({
+      type: 'proposal',
+      document: { a: 1 },
+      unknowns: ['one', 'two'],
+      critique: { refuted: false }
+    })
+  })
+})
+
+describe('what ingestion hands on cannot be moved afterwards', () => {
+  const emits = (event: AssistantEvent): Engine => ({
+    id: 'builtin',
+    async *start(): AsyncGenerator<AssistantEvent> {
+      yield event
+      yield { type: 'end' }
+    }
+  })
+
+  it('freezes the document all the way down, so nothing between diff and accept can move it', async () => {
+    engine = emits({
+      type: 'proposal',
+      document: { title: 'as proposed', rules: [{ id: 'a', when: { value: '5000' } }] },
+      unknowns: ['one']
+    })
+    const { result } = drive()
+    act(() => result.current.start('the runtime’s prompt'))
+    await waitFor(() => expect(ends(result.current.events)).toHaveLength(1))
+    const proposal = result.current.events.find((event) => event.type === 'proposal') as {
+      document: { title: string; rules: { id: string; when: { value: string } }[] }
+      unknowns: string[]
+    }
+    // A consumer holding the public event cannot reach into it between the
+    // memoised diff and the accept: the diff would describe one document and
+    // the writer write another.
+    expect(Object.isFrozen(proposal.document)).toBe(true)
+    expect(Object.isFrozen(proposal.document.rules)).toBe(true)
+    expect(Object.isFrozen(proposal.document.rules[0]!.when)).toBe(true)
+    expect(Object.isFrozen(proposal.unknowns)).toBe(true)
+    expect(() => {
+      proposal.document.rules[0]!.when.value = '9999'
+    }).toThrow(TypeError)
+    expect(() => {
+      proposal.document.title = 'something else'
+    }).toThrow(TypeError)
+    expect(() => proposal.document.rules.push({ id: 'b', when: { value: '1' } })).toThrow(TypeError)
+    expect(proposal.document).toEqual({
+      title: 'as proposed',
+      rules: [{ id: 'a', when: { value: '5000' } }]
+    })
+  })
+
+  it('canonicalizes and freezes as two functions with one job each', () => {
+    expect(plain({ a: 1, b: undefined, c: () => 1 })).toEqual({ a: 1 })
+    expect(plain(undefined)).toBeUndefined()
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    expect(plain(cyclic)).toBeUndefined()
+    // A getter is read once, and what comes back is inert.
+    let reads = 0
+    const held = plain({
+      get title() {
+        reads += 1
+        return `title ${reads}`
+      }
+    })
+    expect(held).toEqual({ title: 'title 1' })
+    expect(reads).toBe(1)
+
+    const deep = frozen({ a: { b: [{ c: 1 }] } })
+    expect(Object.isFrozen(deep.a.b[0])).toBe(true)
+    expect(frozen('a string')).toBe('a string')
+    expect(frozen(null)).toBeNull()
   })
 })

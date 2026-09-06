@@ -8,7 +8,14 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { ValidationReport } from '../mcp/types'
-import { anchor, diagnosticsFor, isStale, layersReached, truncationNote } from './checks'
+import {
+  anchor,
+  diagnosticsBytes,
+  diagnosticsFor,
+  isStale,
+  layersReached,
+  truncationNote
+} from './checks'
 
 const passed = (name: string) => ({ name, status: 'passed' })
 
@@ -213,5 +220,34 @@ describe('a list the runtime cut', () => {
     expect(truncationNote({ diagnostics: [], diagnosticsTruncated: true })).toContain('100')
     expect(truncationNote({ diagnostics: [], diagnosticsTruncated: false })).toBeUndefined()
     expect(truncationNote(undefined)).toBeUndefined()
+  })
+})
+
+describe('the diagnostics a repair prompt is given', () => {
+  it('are the runtime’s own bytes, not a re-serialization of them', () => {
+    // Minified, with an escaped solidus, a non-ASCII character and an escaped
+    // newline inside a string: every one of them has another legal spelling,
+    // and a re-serialization would choose it.
+    const answer =
+      '{"outputVersion":"2","status":"invalid","diagnostics":' +
+      '[{"code":"JPS-STRUCTURAL-REQUIRED","message":"at packs\\/x.json;\\nthe schéma"}],' +
+      '"diagnosticsTruncated":false}'
+    const bytes = diagnosticsBytes(answer)!
+    expect(bytes).toBe(
+      '[{"code":"JPS-STRUCTURAL-REQUIRED","message":"at packs\\/x.json;\\nthe schéma"}]'
+    )
+    expect(bytes).not.toBe(JSON.stringify(JSON.parse(answer).diagnostics))
+    expect(JSON.parse(bytes)).toEqual(JSON.parse(answer).diagnostics)
+  })
+
+  it('keeps the runtime’s own layout where it pretty-prints', () => {
+    const answer = '{\n  "diagnostics": [\n    { "code": "X" }\n  ]\n}'
+    expect(diagnosticsBytes(answer)).toBe('[\n    { "code": "X" }\n  ]')
+  })
+
+  it('is undefined where there is no such member, or no reading at all', () => {
+    expect(diagnosticsBytes('{"status":"valid"}')).toBeUndefined()
+    expect(diagnosticsBytes('{"diagnostics":')).toBeUndefined()
+    expect(diagnosticsBytes(undefined)).toBeUndefined()
   })
 })
