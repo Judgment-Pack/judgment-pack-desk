@@ -1240,21 +1240,60 @@ left beside the console button, and a link that neither shrinks nor wraps
 painted straight across it. The link's accessible name is the full sentence at
 every width.
 
-**Admin never PUTs configuration.** It renders effective values, their source,
-the path they came from and the exact JSON to paste, and its controls that
-change **persisted desk-layout state** are one: the pane record above; the Copy
-button beside each paste block changes the clipboard and its own transient
-"copied" label, which is why the claim is scoped to persisted layout rather
-than to state in general.
+**Admin renders configuration; it does not rewrite a file you edited.** It
+shows effective values, their source, the path they came from and the exact
+JSON to paste, and its controls that change **persisted desk-layout state** are
+one: the pane record above; the Copy button beside each paste block changes the
+clipboard and its own transient "copied" label, which is why the claim is
+scoped to persisted layout rather than to state in general.
 
-**The one thing Admin does write is a key**, on Admin › Assistant, and the
-exception is exactly as wide as its reason. A key must never be pasted into a
+**Two things are written, and each is exactly as wide as its reason.** The key
+is one, below. The other is the `assistant` object of the desk-level file, over
+`PUT /api/desk-config`, under the same token and origin guard as everything
+else. It exists because choosing a model and a thinking tier is something an
+author does while working, and the alternative is telling them to edit a file
+in `~/.config` by hand between attempts. Four things bound it:
+
+- **The request names no file.** There is no path in the body: the chassis
+  writes the one file on that machine, through the same pinned custody
+  directory the key is written through — validated once at startup, and every
+  operation through the descriptor rather than a pathname.
+- **It is a conditional commit.** The page sends `ifMatch`, the digest of the
+  bytes it last read — `GET /api/desk-config` now answers that digest beside
+  the content, and the empty string means "there is no file". A file that moved
+  underneath the page is `409 desk-config-changed`, with both digests, and
+  **nothing is written**. There is no `override`, unlike the file API: this file
+  names the endpoint a credential is presented to, and "write anyway" is not a
+  choice a page should be able to make about it.
+- **The chassis composes the bytes and decodes them before any of them reach
+  the disk.** Not the object the page sent — the *file* this desk would store —
+  through the whole-file decoder the browser shares. A key-shaped member, an
+  unknown kind, a missing `tools`: each is `422 desk-config-refused` carrying
+  the decoder's own problems key by key, with nothing written. So a page cannot
+  store a configuration Admin would then report as refused, and the credential
+  scan applies to a write exactly as it applies to a file somebody typed.
+- **Every other member survives.** `identity`, `deskConfigVersion` and anything
+  else present are carried across **by their own bytes, in their own order** —
+  re-indented and never re-serialised, so `1e2` does not silently become `100`
+  and a member's place in a file somebody wrote stays theirs. The file is
+  written owner-only (`0600`) by staging, `fsync`, and rename inside the same
+  directory; a `0644` file is still *read*, because a checkout or an editor
+  leaves one, but this desk publishes its own writes at the mode it chose.
+
+The answer carries the new digest and the **decoded** slot — read back off the
+disk rather than echoed, defaults applied — so the page can verify what landed
+and has the digest its next write needs.
+
+**The key is the other**, on Admin › Assistant, and the exception is exactly as
+wide as its reason. A key must never be pasted into a
 project file — a project is a shared checkout, and a key committed to one is a
 key published to every clone — so it cannot go through the file API, which
 writes only inside the project, and it is not in the configuration schema at
-any depth. It gets its own endpoint instead. Everything else on the page,
-including the endpoint the key belongs to, stays a value you write in a file
-yourself.
+any depth. It gets its own endpoint instead. Everything else in the desk-level
+file — `identity` and every section the project file also takes — stays a value
+you write in a file yourself; the two exceptions above are a key, which cannot
+live in a file at all, and the `assistant` object, which a chassis route
+rewrites in place under the four bounds listed there.
 
 That is a claim about **Admin**, and it is deliberately not the broader one it
 used to make. `jpack-desk.json` is an ordinary project file — the desk reads it
@@ -1262,8 +1301,11 @@ through the same `GET /api/file` every other file goes through — so the generi
 Author editor lists it and can write it exactly like any project file. Saying
 "nothing is ever PUT to a configuration file" was a sentence this repository's
 own file API refutes; what is true is that no *configuration surface* writes
-it, and the editor that can is the one that treats it as bytes and forms no
-opinion about what they mean. `runtime.jpackBin` and
+the project's file, and the editor that can is the one that treats it as bytes
+and forms no opinion about what they mean. The desk-level write above is the
+one place a configuration surface writes a configuration member, and it is
+narrow by construction: one file, one member, a conditional commit, and a
+decode of the composed bytes before any of them land. `runtime.jpackBin` and
 `project.dir` are not in the schema at all: the chassis executes the binary it
 was given, so a config-supplied path would be a way to run code on this machine
 by editing a file.

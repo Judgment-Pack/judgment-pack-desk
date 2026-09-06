@@ -41,6 +41,11 @@ interface DeskLevelAnswer {
   path: string
   present: boolean
   content?: string
+  /**
+   * The digest of those bytes, bare hex, and the empty string where there is
+   * no file. It is what a write sends back as `ifMatch`.
+   */
+  sha256?: string
 }
 
 /**
@@ -89,12 +94,17 @@ export async function loadDeskLevelConfig(signal?: AbortSignal): Promise<DeskLev
     return {
       path: answered.path,
       present: false,
+      // The empty string is this route's sentinel for "there is no file", and
+      // it is carried rather than left undefined so a write that creates one
+      // sends the same value a write that replaces one sends.
+      sha256: answered.sha256 ?? '',
       note: `no desk-level configuration file at ${answered.path}`
     }
   }
   return {
     path: answered.path,
     present: true,
+    sha256: answered.sha256 ?? '',
     decoded: decodeDeskConfig(answered.content, 'desk')
   }
 }

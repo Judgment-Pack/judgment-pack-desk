@@ -178,6 +178,12 @@ func New(cfg Config) (*Server, error) {
 	// into a project file, and the key must never reach the page. See
 	// assistant.go for the whole argument.
 	s.mux.HandleFunc("GET /api/desk-config", s.handleDeskConfig)
+	// The one write to that file, and it replaces one member of it. It is
+	// under the same guard as everything else, takes no path, composes the
+	// bytes itself and decodes them before any of them reach the disk. See
+	// `handleDeskConfigWrite` for why a chassis with no per-feature endpoints
+	// has this one.
+	s.mux.HandleFunc("PUT /api/desk-config", s.handleDeskConfigWrite)
 	s.mux.HandleFunc("GET /api/assistant/key", s.handleAssistantKeyRead)
 	s.mux.HandleFunc("PUT /api/assistant/key", s.handleAssistantKeyWrite)
 	s.mux.HandleFunc("DELETE /api/assistant/key", s.handleAssistantKeyDelete)

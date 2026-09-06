@@ -503,6 +503,95 @@ func ownedByUs(path string, info fs.FileInfo) error {
 	return nil
 }
 
+// writeConfigFile replaces the desk-level file, atomically, through the pinned
+// directory — the same staging-and-rename the key gets, and for the same
+// reason.
+//
+// **`desk.json` is not an ordinary file to this desk**, so it is not written
+// with `os.WriteFile` on a pathname. It names the endpoint a credential is
+// presented to, which makes writing it equivalent to choosing where the key
+// goes: the staging file is created through the *descriptor* this store
+// validated and pinned at startup, the mode is set on that descriptor rather
+// than by name (`Root.Chmod` is documented as racing a regular-file-to-symlink
+// swap on Unix), and the rename happens inside the same directory so it is
+// atomic.
+//
+// **Owner-only, 0600.** This desk writes its own configuration for itself. It
+// still *reads* a `0644` file, because a plain checkout or a text editor
+// leaves one and refusing that would refuse an ordinary machine — what is
+// refused on the way in is one anybody else could have *written*. What it will
+// not do is publish a file it wrote at a mode it did not choose.
+//
+// A store that failed validation writes nothing: `usable()` is checked first,
+// and a custody directory that was ever writable by anyone else is refused
+// rather than narrowed, which is the rule `safeDirectory` states.
+func (s *assistantStore) writeConfigFile(data []byte) error {
+	if !s.usable() {
+		return s.problem
+	}
+	staged, name, err := s.stageConfig()
+	if err != nil {
+		return err
+	}
+	remove := func() { _ = s.root.Remove(name) }
+	if _, err := staged.Write(data); err != nil {
+		staged.Close()
+		remove()
+		return err
+	}
+	if err := staged.Chmod(custodyFileMode); err != nil {
+		staged.Close()
+		remove()
+		return err
+	}
+	if err := staged.Sync(); err != nil {
+		staged.Close()
+		remove()
+		return err
+	}
+	if err := staged.Close(); err != nil {
+		remove()
+		return err
+	}
+	if err := s.root.Rename(name, deskConfigName); err != nil {
+		remove()
+		return err
+	}
+	if d, derr := s.root.Open("."); derr == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
+	return nil
+}
+
+// stageConfig makes an exclusive, randomly named staging file beside the
+// desk-level file.
+//
+// `O_EXCL` for the reason `stage` gives: it makes a name collision a retry
+// rather than a silent overwrite, and a preplanted name a refusal rather than
+// a write through somebody else's symlink. A prefix of its own, because these
+// live beside `desk.json` in the desk's own directory rather than in
+// `secrets/`, and one name read as covering both would be one exclusion list
+// doing two jobs.
+func (s *assistantStore) stageConfig() (*os.File, string, error) {
+	for attempt := 0; attempt < 10; attempt++ {
+		name, err := configStagingName()
+		if err != nil {
+			return nil, "", err
+		}
+		file, err := s.root.OpenFile(
+			name, os.O_RDWR|os.O_CREATE|os.O_EXCL|openNoFollow, custodyFileMode)
+		if err == nil {
+			return file, name, nil
+		}
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		return nil, "", err
+	}
+	return nil, "", errors.New("no unused staging name")
+}
+
 /* The key, through the pinned directory ------------------------------------ */
 
 // readKey answers the stored key, or the empty string where there is none.

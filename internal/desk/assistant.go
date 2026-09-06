@@ -37,6 +37,7 @@ package desk
 // contract the page decodes it under, and a request body cannot move it.
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
@@ -74,6 +75,12 @@ const (
 	// directory, and a shared name would invite one list of exclusions to be
 	// read as covering both.
 	keyStagingPrefix = ".assistant-"
+	// configStagingPrefix names the files a store creates while replacing the
+	// desk-level file. Distinct from the key's for the reason that one is
+	// distinct from the project API's: these live in a different directory,
+	// and one prefix read as covering both would be one exclusion doing two
+	// jobs.
+	configStagingPrefix = ".desk-"
 )
 
 // maxKeyBytes bounds a stored key. An API key is tens of characters; four
@@ -140,12 +147,17 @@ func (s *Server) assistantKeyPath() string {
 }
 
 // stagingName is one unused name for a staged key write.
-func stagingName() (string, error) {
+func stagingName() (string, error) { return randomStagingName(keyStagingPrefix) }
+
+// configStagingName is one unused name for a staged desk-level file write.
+func configStagingName() (string, error) { return randomStagingName(configStagingPrefix) }
+
+func randomStagingName(prefix string) (string, error) {
 	var raw [12]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return "", err
 	}
-	return keyStagingPrefix + hex.EncodeToString(raw[:]) + ".tmp", nil
+	return prefix + hex.EncodeToString(raw[:]) + ".tmp", nil
 }
 
 // readBounded reads at most limit bytes and refuses anything longer.
@@ -177,6 +189,38 @@ type DeskLevelConfig struct {
 	Present bool   `json:"present"`
 	// Content is the file's bytes, present exactly where Present is true.
 	Content string `json:"content,omitempty"`
+	// SHA256 is the digest of those bytes, bare hex — the payload-member
+	// convention, not the `sha256:` prefixed form — and **the empty string
+	// where there is no file**.
+	//
+	// It is here so the page can send it back on `PUT /api/desk-config` and
+	// have the write refused if the file moved underneath it. The empty string
+	// is the same sentinel the file API uses for `baseSha256`: "I believe
+	// there is nothing there". A zero-byte file is not that — it digests to
+	// the hash of no bytes, which is a value — so the two states are never
+	// confused.
+	SHA256 string `json:"sha256"`
+}
+
+// DeskConfigWrite is the body of a desk-level write.
+//
+// **Two members and no path**, for the reason the probe takes no URL: this
+// route writes exactly one file, the one on this machine, and a request body
+// that could name another would be a way to write anywhere with the desk's own
+// authority.
+type DeskConfigWrite struct {
+	// Assistant is the `assistant` object exactly as the whole-file decoder
+	// accepts it, carried as **raw bytes rather than a decoded object**.
+	//
+	// That is the canonical-bytes discipline this repository decides
+	// everything else by: what is checked has to be what is written. A decode
+	// into `map[string]any` and a re-encode would turn `1e2` into `100` and a
+	// large integer into a float, so the bytes examined would not be the bytes
+	// stored. These are re-indented and never re-serialised.
+	Assistant json.RawMessage `json:"assistant"`
+	// IfMatch is the digest of the desk.json bytes the page last read, bare
+	// hex, or the empty string for "there was no file".
+	IfMatch string `json:"ifMatch"`
 }
 
 // readDeskFile reads the desk-level file through the validated, pinned
@@ -218,6 +262,8 @@ func (s *Server) handleDeskConfig(w http.ResponseWriter, r *http.Request) {
 		s.refuseDeskRead(w, path, err)
 		return
 	}
+	// `SHA256` is left empty below, which is this route's sentinel for "there
+	// is no file" and is what a page sends back as `ifMatch` to create one.
 	if !present {
 		writeJSON(w, http.StatusOK, DeskLevelConfig{Path: path, Present: false})
 		return
@@ -227,7 +273,8 @@ func (s *Server) handleDeskConfig(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("%s is not UTF-8 text", path))
 		return
 	}
-	writeJSON(w, http.StatusOK, DeskLevelConfig{Path: path, Present: true, Content: string(data)})
+	writeJSON(w, http.StatusOK, DeskLevelConfig{
+		Path: path, Present: true, Content: string(data), SHA256: digestOf(data)})
 }
 
 // refuseDeskRead answers a read that found something and could not use it.
@@ -250,6 +297,383 @@ func (s *Server) refuseDeskRead(w http.ResponseWriter, path string, err error) {
 	}
 	writeJSONCoded(w, http.StatusInternalServerError, CodeInternal,
 		fmt.Sprintf("%s could not be read: %v", path, err))
+}
+
+/* The one write to the desk-level file ------------------------------------- */
+
+// maxDeskConfigBytes bounds a desk-level write.
+//
+// The same bound the read is held to, because a file this route wrote and then
+// could not read back would be a route that breaks its own configuration. The
+// envelope allowance covers the JSON around the object.
+const maxDeskConfigBytes = maxFileBytes
+
+// deskConfigWritten is what a successful write answers.
+//
+// **The new digest and the decoded assistant object**, both taken from the
+// bytes that landed rather than from the request: the point of the answer is
+// that the page can verify what is on disk, and an echo verifies only that the
+// request survived the trip out. It is the same discipline `PUT /api/file`
+// follows for a project file.
+type deskConfigWritten struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
+	// Assistant is the slot as the shared decoder read it **out of the file
+	// that landed**, defaults applied — not the object the request carried.
+	// A page that took its own request as the outcome would be reporting what
+	// it asked for, and the two differ wherever a default filled a member in.
+	Assistant AssistantSlotView `json:"assistant"`
+	// Created is true exactly where the write brought the file into existence.
+	Created bool `json:"created"`
+}
+
+// AssistantSlotView is a decoded `assistant` object, as an answer.
+//
+// It is the decode and never the request: `engine` and `thinking` carry their
+// defaults where the file names neither, and `endpoint` is null where there is
+// none. There is no member for a key, here as everywhere else.
+type AssistantSlotView struct {
+	Endpoint *AssistantEndpointView `json:"endpoint"`
+	Engine   string                 `json:"engine"`
+	Thinking string                 `json:"thinking"`
+}
+
+// AssistantEndpointView is the four members an endpoint has, decoded.
+type AssistantEndpointView struct {
+	URL   string   `json:"url"`
+	Kind  string   `json:"kind"`
+	Model string   `json:"model"`
+	Tools []string `json:"tools"`
+}
+
+// slotView renders one accepted decode as an answer.
+func slotView(decoded deskDecode) AssistantSlotView {
+	view := AssistantSlotView{Engine: decoded.Engine, Thinking: decoded.Thinking}
+	if decoded.Endpoint == nil {
+		return view
+	}
+	// An empty list rather than null: `[]` means an assistant that may call
+	// nothing, which is a state this schema has, and `null` is not it.
+	tools := decoded.Endpoint.tools
+	if tools == nil {
+		tools = []string{}
+	}
+	view.Endpoint = &AssistantEndpointView{
+		URL:   decoded.Endpoint.url,
+		Kind:  decoded.Endpoint.kind,
+		Model: decoded.Endpoint.model,
+		Tools: tools,
+	}
+	return view
+}
+
+// deskConfigRefusal is a 422: the composed bytes, decoded, were not a
+// configuration this desk reads.
+//
+// It carries the decoder's own problems key by key, because the page's next
+// action is to say which member is wrong — and because these are the same
+// problems Admin already renders for a file somebody wrote by hand.
+type deskConfigRefusal struct {
+	Error    string        `json:"error"`
+	Code     string        `json:"code"`
+	Problems []deskProblem `json:"problems"`
+}
+
+// handleDeskConfigWrite replaces the `assistant` object in the desk-level file.
+//
+// # What this route is, and what it deliberately is not
+//
+// It is **not** "Admin can now PUT configuration". It writes exactly one
+// member of exactly one file, the one on this machine, and everything else in
+// that file is carried across untouched. The reason it exists at all is the
+// reason the key endpoint exists: the page is going to let an author choose a
+// model and a thinking tier, and the alternative is telling them to edit a
+// file in `~/.config` by hand between every attempt.
+//
+// # The four things that make it safe to have
+//
+//   - **The destination cannot come from the page.** No path in the body, and
+//     the write goes through the pinned custody root — the same descriptor the
+//     key is written through, validated once at startup.
+//   - **A conditional commit.** The page sends the digest of the bytes it last
+//     read; a file that moved underneath it is a 409 and nothing is written.
+//     There is no `override`: this file names the endpoint a credential is
+//     presented to, and "write anyway" is not a choice a page should be able
+//     to make about it.
+//   - **The bytes are composed here and decoded before they are written.** Not
+//     the object the page sent — the *file* this desk would store — through the
+//     same whole-file decoder the browser shares. A key-shaped member, an
+//     unknown kind, a missing `tools`: each refuses the write with the
+//     decoder's own problems, and nothing reaches the disk. Deciding on the
+//     canonical bytes rather than on an object that is then serialised is the
+//     rule this repository has arrived at everywhere else.
+//   - **Every other member survives.** `identity`, `deskConfigVersion` and
+//     anything else present are carried across by their own raw bytes, in
+//     their own order, re-indented and never re-serialised.
+func (s *Server) handleDeskConfigWrite(w http.ResponseWriter, r *http.Request) {
+	if !s.guard(w, r) {
+		return
+	}
+	if s.refuseUnusableStore(w) {
+		return
+	}
+	var req DeskConfigWrite
+	decoder := json.NewDecoder(io.LimitReader(r.Body, maxDeskConfigBytes+1024))
+	if err := decoder.Decode(&req); err != nil {
+		// The decoder's own sentence names where in the body it gave up, and
+		// the body is a configuration somebody is editing; the shape is what a
+		// caller can act on.
+		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,
+			`the request body must be JSON of the shape {"assistant": {…}, "ifMatch": "…"}`)
+		return
+	}
+	if len(req.Assistant) == 0 {
+		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,
+			"assistant is required; write null for a desk that configures none")
+		return
+	}
+
+	// The whole compare-and-commit under the same mutex every other write on
+	// this desk takes. One mutex and not one per path, for the reason
+	// `Server.writes` gives: a per-path key is a spelling.
+	s.writes.Lock()
+	status, body := s.commitDeskConfigLocked(req)
+	s.writes.Unlock()
+	writeJSON(w, status, body)
+}
+
+// commitDeskConfigLocked is the whole transaction: read what is there, compare
+// it to the digest the page stated, compose the new file, decode it, write it,
+// and read back what landed.
+//
+// It touches no ResponseWriter, which is what keeps client-speed I/O out of the
+// critical section.
+func (s *Server) commitDeskConfigLocked(req DeskConfigWrite) (int, any) {
+	path := s.deskConfigPath()
+	present, current, err := s.readDeskFile()
+	if err != nil {
+		// Every refusal the read makes is a refusal to write as well: a
+		// symlinked `desk.json`, one somebody else may write, one that changed
+		// between being inspected and being opened. Treating any of them as
+		// absence is what would let this route replace an out-pointing symlink
+		// with a regular file — and this is the file that names where a
+		// credential goes.
+		refusal := withCode(codeOf(err), fmt.Errorf(
+			"%s could not be read, so it was not written: %w", path, err))
+		return statusForRefusal(refusal), errorBody(refusal)
+	}
+	if present && !validUTF8(current) {
+		return http.StatusUnsupportedMediaType, codedBody(CodeNotUTF8,
+			fmt.Sprintf("%s is not UTF-8 text, so it was not rewritten", path))
+	}
+	actual := ""
+	if present {
+		actual = digestOf(current)
+	}
+	// **Conditional, and never optional.** The page states the bytes it read;
+	// a disagreement means the file changed underneath it, and the answer
+	// carries both digests so the page can show what happened rather than
+	// overwrite a change nobody saw. The empty string means "I believe there
+	// is no file", which is the same sentinel `PUT /api/file` uses.
+	if !strings.EqualFold(strings.TrimSpace(req.IfMatch), actual) {
+		return http.StatusConflict, conflict{
+			Error: "the desk-level configuration on disk is not the one this page read; " +
+				"read it again and decide about what is actually in it",
+			Code:           CodeDeskConfigChanged,
+			Path:           path,
+			ExpectedSHA256: strings.ToLower(strings.TrimSpace(req.IfMatch)),
+			ActualSHA256:   actual,
+			Exists:         present,
+		}
+	}
+
+	composed, problem := composeDeskFile(current, present, req.Assistant)
+	if problem != "" {
+		return http.StatusUnprocessableEntity, deskConfigRefusal{
+			Error: problem, Code: CodeDeskConfigRefused, Problems: []deskProblem{}}
+	}
+	// **The round trip, and it is the whole safety argument.** What is decoded
+	// is the file this desk would store, byte for byte, under the same
+	// contract the browser applies — so a key-shaped member, an unknown kind
+	// or a missing tool list refuses the *write*, and the page cannot store a
+	// configuration Admin would then report as refused. Nothing it sent is
+	// written without passing this.
+	decoded := decodeDeskFile(composed)
+	if decoded.refused() {
+		return http.StatusUnprocessableEntity, deskConfigRefusal{
+			Error: fmt.Sprintf(
+				"the configuration this would write is not one this desk reads, so nothing "+
+					"was written: %s", describeProblems(decoded.Problems)),
+			Code:     CodeDeskConfigRefused,
+			Problems: decoded.Problems,
+		}
+	}
+
+	if err := s.assistant.writeConfigFile(composed); err != nil {
+		return http.StatusInternalServerError, errorBody(fmt.Errorf(
+			"%s could not be written: %w", path, err))
+	}
+
+	// Read back from the disk rather than echo the request, for the reason the
+	// file API does it: the point of the answer is that the page can verify
+	// what landed. Decoded again on the way out, off those same bytes, so the
+	// answer is the desk's reading of the file and not the page's of its own
+	// request.
+	wrotePresent, wrote, err := s.readDeskFile()
+	if err != nil || !wrotePresent {
+		return http.StatusInternalServerError, errorBody(fmt.Errorf(
+			"%s was written and could not be read back: %v", path, err))
+	}
+	landed := decodeDeskFile(wrote)
+	if landed.refused() {
+		// Unreachable: the same bytes decoded clean a moment ago. It is an
+		// answer rather than a panic because the alternative is a desk that
+		// wrote a file and then said nothing about it.
+		return http.StatusInternalServerError, errorBody(fmt.Errorf(
+			"%s was written and does not read back as a configuration: %s",
+			path, describeProblems(landed.Problems)))
+	}
+	s.log.Printf("desk: the desk-level assistant configuration was written on this machine")
+	return http.StatusOK, deskConfigWritten{
+		Path:      path,
+		SHA256:    digestOf(wrote),
+		Assistant: slotView(landed),
+		Created:   !present,
+	}
+}
+
+// composeDeskFile builds the bytes this desk would store.
+//
+// **Every member's own bytes, in the file's own order, re-indented and never
+// re-serialised.** `json.Indent` rewrites the whitespace between tokens and
+// nothing else, so a number stays the number that was written — `1e2` does not
+// become `100`, and an integer past a float64's precision is not rounded on
+// its way through a `map[string]any`. That is the same canonical-bytes rule
+// the rest of this repository decides by: what is checked must be what is
+// stored.
+//
+// The `assistant` member is replaced where it is, or appended where the file
+// had none, so a file's own layout survives a write to one member of it.
+//
+// An absent file becomes the smallest one this decoder accepts: the version
+// this desk declares, and the assistant object. The version is the chassis'
+// own constant rather than something the page supplies, because a page that
+// could choose it could ask this desk to write a file it will not read.
+func composeDeskFile(current []byte, present bool, assistant json.RawMessage) ([]byte, string) {
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, assistant, "  ", "  "); err != nil {
+		return nil, "the assistant object is not JSON, so nothing was written"
+	}
+	members := []deskMember{}
+	if present {
+		var order []string
+		record := map[string]json.RawMessage{}
+		if err := json.Unmarshal(current, &record); err != nil {
+			return nil, fmt.Sprintf(
+				"the file on disk is not a JSON object, so its other members could not be "+
+					"carried across and nothing was written: %v", err)
+		}
+		var err error
+		order, err = topLevelOrder(current)
+		if err != nil {
+			return nil, fmt.Sprintf(
+				"the file on disk could not be read member by member, so nothing was "+
+					"written: %v", err)
+		}
+		for _, name := range order {
+			members = append(members, deskMember{name: name, raw: record[name]})
+		}
+	} else {
+		members = append(members, deskMember{
+			name: "deskConfigVersion",
+			raw:  json.RawMessage(fmt.Sprintf("%d", deskConfigVersion)),
+		})
+	}
+
+	replaced := false
+	for index, member := range members {
+		if member.name != "assistant" {
+			continue
+		}
+		members[index].raw = json.RawMessage(indented.String())
+		replaced = true
+	}
+	if !replaced {
+		members = append(members, deskMember{
+			name: "assistant", raw: json.RawMessage(indented.String())})
+	}
+
+	var out bytes.Buffer
+	out.WriteString("{\n")
+	for index, member := range members {
+		out.WriteString("  ")
+		encoded, err := json.Marshal(member.name)
+		if err != nil {
+			return nil, "a member name in the file on disk could not be written back"
+		}
+		out.Write(encoded)
+		out.WriteString(": ")
+		var value bytes.Buffer
+		if err := json.Indent(&value, member.raw, "  ", "  "); err != nil {
+			return nil, fmt.Sprintf(
+				"the %q member of the file on disk is not JSON, so nothing was written",
+				member.name)
+		}
+		out.Write(value.Bytes())
+		if index < len(members)-1 {
+			out.WriteString(",")
+		}
+		out.WriteString("\n")
+	}
+	out.WriteString("}\n")
+	return out.Bytes(), ""
+}
+
+// deskMember is one top-level member, by name and by its own bytes.
+type deskMember struct {
+	name string
+	raw  json.RawMessage
+}
+
+// topLevelOrder is the top-level member names of a JSON object, in the order
+// the file writes them.
+//
+// **Order, because a member's place in a file somebody wrote is theirs.** A
+// `map[string]json.RawMessage` alone answers what the members are and loses
+// where they were, and a rewrite that reordered `identity` and `assistant`
+// would be this desk editing a file it was asked to leave alone.
+func topLevelOrder(data []byte) ([]string, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	opening, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	if delimiter, ok := opening.(json.Delim); !ok || delimiter != '{' {
+		return nil, errors.New("not a JSON object")
+	}
+	var order []string
+	for decoder.More() {
+		name, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		key, ok := name.(string)
+		if !ok {
+			return nil, errors.New("a member name is not a string")
+		}
+		// The value, whatever it is, skipped whole.
+		var skipped json.RawMessage
+		if err := decoder.Decode(&skipped); err != nil {
+			return nil, err
+		}
+		// A duplicate name is written once, where it first appeared: that is
+		// what `encoding/json` reads the object as, and a file that carried
+		// both spellings through would be a file two readers disagree about.
+		if !contains(order, key) {
+			order = append(order, key)
+		}
+	}
+	return order, nil
 }
 
 /* The key this machine keeps ----------------------------------------------- */

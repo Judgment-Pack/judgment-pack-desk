@@ -200,6 +200,25 @@ const (
 	// a body under the endpoint's control can carry a derived representation of
 	// the credential.
 	CodeAssistantRelayUpstream = "assistant-relay-upstream"
+	// CodeDeskConfigChanged is a desk-level write whose `ifMatch` is not the
+	// file on disk.
+	//
+	// Its own code rather than `stale`, because the two are not the same
+	// conflict to a client: `stale` is a project file another editor touched,
+	// and this is the one file on this machine that names the endpoint a
+	// credential is presented to. There is no `override` on this route either
+	// — the repair is to read the file again and decide about what is
+	// actually in it.
+	CodeDeskConfigChanged = "desk-config-changed"
+	// CodeDeskConfigRefused is a desk-level write whose composed bytes the
+	// whole-file decoder would not accept.
+	//
+	// Its own code because nothing on this machine is wrong: the bytes the
+	// page asked for are not a configuration this desk reads, and the answer
+	// carries the decoder's own problems, key by key, so the page can say
+	// which member. **Nothing is written**, which is the point of composing
+	// the file and decoding it before it goes anywhere near the disk.
+	CodeDeskConfigRefused = "desk-config-refused"
 	// CodeInternal is everything with no better answer. A client that branches
 	// on this is a client guessing, which is what the others are for.
 	CodeInternal = "internal"
@@ -243,7 +262,12 @@ var codeStatus = map[string]int{
 	CodeAssistantRelayPath:     http.StatusBadRequest,
 	CodeAssistantRelayBusy:     http.StatusServiceUnavailable,
 	CodeAssistantRelayUpstream: http.StatusBadGateway,
-	CodeInternal:               http.StatusInternalServerError,
+	// The desk-level write's two: a file that moved under the writer is the
+	// same 409 every conditional commit here answers, and bytes this desk
+	// would not read back are a request it understood and will not act on.
+	CodeDeskConfigChanged: http.StatusConflict,
+	CodeDeskConfigRefused: http.StatusUnprocessableEntity,
+	CodeInternal:          http.StatusInternalServerError,
 }
 
 // allCodes is every code this API declares, for the tests that walk them.
@@ -254,6 +278,7 @@ var allCodes = []string{
 	CodeStagingFile, CodeExcludedDirectory,
 	CodeAssistantUnconfigured, CodeAssistantNoKey, CodeAssistantUnusableStore,
 	CodeAssistantRelayPath, CodeAssistantRelayBusy, CodeAssistantRelayUpstream,
+	CodeDeskConfigChanged, CodeDeskConfigRefused,
 	CodeInternal,
 }
 

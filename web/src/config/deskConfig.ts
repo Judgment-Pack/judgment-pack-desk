@@ -1218,6 +1218,16 @@ export interface DeskLevelRead {
   /** Absolute, on this machine, and known even where nothing was read. */
   path: string
   present: boolean
+  /**
+   * The digest of the bytes the chassis read, bare hex, and the empty string
+   * where there is no file.
+   *
+   * **It is what a write sends back**, so that a `desk.json` somebody edited
+   * between this read and that write refuses the write rather than losing
+   * their edit. Undefined where nothing answered at all: a page that invented
+   * a digest there would be asserting the state of a file it never saw.
+   */
+  sha256?: string
   /** The decode, where a file was read at all. */
   decoded?: DecodedConfig
   /** Why nothing was read, where the file is simply absent. */

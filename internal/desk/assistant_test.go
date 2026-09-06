@@ -634,6 +634,512 @@ func TestDeskConfigRead(t *testing.T) {
 	})
 }
 
+/* The one write to the desk-level file ------------------------------------- */
+
+// putDeskConfig sends one desk-level write.
+func putDeskConfig(
+	t *testing.T, ts *httptest.Server, assistant, ifMatch string,
+) (int, map[string]any) {
+	t.Helper()
+	return sendJSON(t, ts, http.MethodPut, "/api/desk-config", map[string]any{
+		"assistant": json.RawMessage(assistant),
+		"ifMatch":   ifMatch,
+	})
+}
+
+// deskConfigDigest is what `GET /api/desk-config` says the file hashes to.
+func deskConfigDigest(t *testing.T, ts *httptest.Server) (string, bool) {
+	t.Helper()
+	status, body := sendJSON(t, ts, http.MethodGet, "/api/desk-config", nil)
+	if status != http.StatusOK {
+		t.Fatalf("read: status %d, body %v", status, body)
+	}
+	digest, _ := body["sha256"].(string)
+	present, _ := body["present"].(bool)
+	return digest, present
+}
+
+// geminiAssistant is the object a page would send to configure the wire this
+// chunk added.
+const geminiAssistant = `{"endpoint":{"url":"https://api.example.invalid/",` +
+	`"kind":"gemini","model":"a-model","tools":["validate"]},"engine":"vercel",` +
+	`"thinking":"on"}`
+
+func TestDeskConfigReadCarriesTheDigestItsWriteWillQuote(t *testing.T) {
+	s, ts, _ := assistantServer(t)
+	// Absent: the sentinel, and not a digest of no bytes. The two are
+	// different states and a page sends the sentinel back to create the file.
+	if digest, present := deskConfigDigest(t, ts); digest != "" || present {
+		t.Fatalf("an absent file answered %q / present %v", digest, present)
+	}
+	writeDeskConfig(t, s, `{"deskConfigVersion":1}`)
+	digest, present := deskConfigDigest(t, ts)
+	if !present {
+		t.Fatal("present false for a file that is there")
+	}
+	if want := digestOf([]byte(`{"deskConfigVersion":1}`)); digest != want {
+		t.Errorf("sha256 %q, want %q", digest, want)
+	}
+}
+
+func TestDeskConfigWriteRoundTrips(t *testing.T) {
+	s, ts, _ := assistantServer(t)
+	writeDeskConfig(t, s, "{\n  \"deskConfigVersion\": 1,\n  \"identity\": {\n"+
+		"    \"provider\": null\n  }\n}\n")
+	before, _ := deskConfigDigest(t, ts)
+
+	status, body := putDeskConfig(t, ts, geminiAssistant, before)
+	if status != http.StatusOK {
+		t.Fatalf("status %d, body %v", status, body)
+	}
+	// The answer is taken off the disk, so its digest is the file's.
+	after, present := deskConfigDigest(t, ts)
+	if !present {
+		t.Fatal("the file is not there after a write")
+	}
+	if body["sha256"] != after {
+		t.Errorf("the answer's sha256 %v is not the file's %q", body["sha256"], after)
+	}
+	if body["created"] != false {
+		t.Errorf("created %v, want false for a file that was already there", body["created"])
+	}
+	// **The decoded slot, off the bytes that landed**, and not the request
+	// echoed: the tier the page asked for, and the engine default it did not.
+	slot, _ := body["assistant"].(map[string]any)
+	if slot["thinking"] != "on" || slot["engine"] != "vercel" {
+		t.Errorf("the answer's slot is %v", slot)
+	}
+	answered, _ := slot["endpoint"].(map[string]any)
+	if answered["kind"] != "gemini" || answered["model"] != "a-model" {
+		t.Errorf("the answer's endpoint is %v", answered)
+	}
+
+	// **The composed bytes decode to what the page sent.** Read back through
+	// the decoder both sides share rather than compared as text.
+	written, err := os.ReadFile(s.deskConfigPath())
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	decoded := decodeDeskFile(written)
+	if decoded.refused() {
+		t.Fatalf("the written file is refused: %v", decoded.Problems)
+	}
+	if decoded.Endpoint == nil {
+		t.Fatal("the written file configures no endpoint")
+	}
+	if decoded.Endpoint.kind != "gemini" || decoded.Endpoint.model != "a-model" {
+		t.Errorf("endpoint %+v", *decoded.Endpoint)
+	}
+	if decoded.Thinking != "on" || decoded.Engine != "vercel" {
+		t.Errorf("engine %q thinking %q", decoded.Engine, decoded.Thinking)
+	}
+	// And the relay agrees, which is the only reason this route exists: the
+	// endpoint the desk would now reach is the one the page asked for.
+	endpoint, err := s.configuredEndpoint()
+	if err != nil {
+		t.Fatalf("configuredEndpoint: %v", err)
+	}
+	if endpoint.kind != "gemini" {
+		t.Errorf("the desk would reach a %q endpoint", endpoint.kind)
+	}
+}
+
+func TestDeskConfigWriteKeepsEveryOtherMemberByteForByte(t *testing.T) {
+	// **The identity block is somebody's, and this route was asked about the
+	// assistant.** It is carried across by its own bytes, in its own place,
+	// re-indented and never re-serialised — so a rewrite of one member does
+	// not quietly restate the rest of the file.
+	s, ts, _ := assistantServer(t)
+	const identity = "  \"identity\": {\n" +
+		"    \"provider\": {\n" +
+		"      \"label\": \"Sign in\",\n" +
+		"      \"issuer\": \"https://issuer.example.invalid/\",\n" +
+		"      \"clientId\": \"abc\",\n" +
+		"      \"scopes\": [\n" +
+		"        \"openid\",\n" +
+		"        \"profile\"\n" +
+		"      ],\n" +
+		"      \"audience\": null,\n" +
+		"      \"showRemoteAvatar\": false,\n" +
+		"      \"signOut\": \"local\"\n" +
+		"    }\n" +
+		"  }"
+	writeDeskConfig(t, s, "{\n  \"deskConfigVersion\": 1,\n"+identity+",\n"+
+		"  \"assistant\": {\n    \"endpoint\": null\n  }\n}\n")
+	before, _ := deskConfigDigest(t, ts)
+	if status, body := putDeskConfig(t, ts, geminiAssistant, before); status != http.StatusOK {
+		t.Fatalf("status %d, body %v", status, body)
+	}
+	written, err := os.ReadFile(s.deskConfigPath())
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !strings.Contains(string(written), identity) {
+		t.Errorf("the identity block did not survive byte for byte:\n%s", written)
+	}
+	// Its place, too: `identity` was written before `assistant` and still is.
+	if strings.Index(string(written), `"identity"`) >
+		strings.Index(string(written), `"assistant"`) {
+		t.Errorf("the members were reordered:\n%s", written)
+	}
+	if !strings.HasSuffix(string(written), "}\n") {
+		t.Errorf("no trailing newline:\n%q", written)
+	}
+}
+
+func TestDeskConfigWriteCreatesAFileWhereThereWasNone(t *testing.T) {
+	_, ts, _ := assistantServer(t)
+	status, body := putDeskConfig(t, ts, geminiAssistant, "")
+	if status != http.StatusOK {
+		t.Fatalf("status %d, body %v", status, body)
+	}
+	if body["created"] != true {
+		t.Errorf("created %v, want true", body["created"])
+	}
+	// The defaults are in the answer because they are in the decode, and a
+	// page that read its own request back would not have them.
+	slot, _ := body["assistant"].(map[string]any)
+	if slot["engine"] != "vercel" || slot["thinking"] != "on" {
+		t.Errorf("the answer's slot is %v", slot)
+	}
+	// The version is the chassis' own constant. A page that could choose it
+	// could ask this desk to write a file it will not read.
+	if _, present := deskConfigDigest(t, ts); !present {
+		t.Fatal("no file was created")
+	}
+}
+
+func TestDeskConfigWriteRefusesAMismatchedIfMatch(t *testing.T) {
+	s, ts, _ := assistantServer(t)
+	const original = "{\n  \"deskConfigVersion\": 1\n}\n"
+	writeDeskConfig(t, s, original)
+
+	for _, testCase := range []struct{ name, ifMatch string }{
+		{"a digest of other bytes", digestOf([]byte("something else"))},
+		{"the empty-file sentinel against a file that is there", ""},
+		{"nothing at all", "                "},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			status, body := putDeskConfig(t, ts, geminiAssistant, testCase.ifMatch)
+			if status != http.StatusConflict {
+				t.Fatalf("status %d, want 409: %v", status, body)
+			}
+			if body["code"] != CodeDeskConfigChanged {
+				t.Errorf("code %v, want %q", body["code"], CodeDeskConfigChanged)
+			}
+			// Both digests, the same discipline the file API follows: the page
+			// can show what happened rather than overwrite a change nobody saw.
+			if body["actualSha256"] != digestOf([]byte(original)) {
+				t.Errorf("actualSha256 %v", body["actualSha256"])
+			}
+			// **And the file is unchanged, byte for byte.**
+			after, err := os.ReadFile(s.deskConfigPath())
+			if err != nil {
+				t.Fatalf("read back: %v", err)
+			}
+			if string(after) != original {
+				t.Errorf("the file was written anyway:\n%s", after)
+			}
+		})
+	}
+	// A file the page believes is absent and is: the sentinel accepted, and
+	// the positive control for the three refusals above.
+	empty, tsEmpty, _ := assistantServer(t)
+	if status, body := putDeskConfig(t, tsEmpty, geminiAssistant, ""); status != http.StatusOK {
+		t.Fatalf("the sentinel was refused for an absent file: %d %v", status, body)
+	}
+	_ = empty
+}
+
+func TestDeskConfigWriteRefusesWhatTheDecoderWouldRefuse(t *testing.T) {
+	// **The round trip is the whole safety argument**, and every one of these
+	// is a file the browser refuses whole. Nothing the page sent is written
+	// without the composed bytes passing the decoder both sides share.
+	for _, testCase := range []struct{ name, assistant, key string }{
+		{
+			"a key pasted into the endpoint",
+			`{"endpoint":{"url":"https://api.example.invalid/","kind":"gemini",` +
+				`"model":"m","tools":[],"apiKey":"nope"}}`,
+			"assistant.endpoint.apiKey",
+		},
+		{
+			"the vendor's own header name as a member",
+			`{"endpoint":{"url":"https://api.example.invalid/","kind":"gemini",` +
+				`"model":"m","tools":[],"x-goog-api-key":"nope"}}`,
+			"assistant.endpoint.x-goog-api-key",
+		},
+		{
+			"a kind nothing defines",
+			`{"endpoint":{"url":"https://api.example.invalid/","kind":"Gemini",` +
+				`"model":"m","tools":[]}}`,
+			"assistant.endpoint.kind",
+		},
+		{
+			"an absent tool list",
+			`{"endpoint":{"url":"https://api.example.invalid/","kind":"gemini","model":"m"}}`,
+			"assistant.endpoint.tools",
+		},
+		{
+			"a tool outside the allow-list",
+			`{"endpoint":{"url":"https://api.example.invalid/","kind":"gemini",` +
+				`"model":"m","tools":["write_file"]}}`,
+			"assistant.endpoint.tools",
+		},
+		{
+			"a URL that is not https and not loopback",
+			`{"endpoint":{"url":"http://models.example.invalid/","kind":"gemini",` +
+				`"model":"m","tools":[]}}`,
+			"assistant.endpoint.url",
+		},
+		{
+			"an engine nobody certified",
+			`{"endpoint":null,"engine":"something-else"}`,
+			"assistant.engine",
+		},
+		{
+			"a member the slot does not declare",
+			`{"endpoint":null,"vendor":"someone"}`,
+			"assistant.vendor",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			s, ts, _ := assistantServer(t)
+			const original = "{\n  \"deskConfigVersion\": 1\n}\n"
+			writeDeskConfig(t, s, original)
+			before, _ := deskConfigDigest(t, ts)
+			status, body := putDeskConfig(t, ts, testCase.assistant, before)
+			if status != http.StatusUnprocessableEntity {
+				t.Fatalf("status %d, want 422: %v", status, body)
+			}
+			if body["code"] != CodeDeskConfigRefused {
+				t.Errorf("code %v, want %q", body["code"], CodeDeskConfigRefused)
+			}
+			// The decoder's own problems, key by key, so the page can say
+			// which member rather than "configuration refused".
+			named := false
+			problems, _ := body["problems"].([]any)
+			for _, problem := range problems {
+				entry, _ := problem.(map[string]any)
+				if entry["key"] == testCase.key {
+					named = true
+				}
+			}
+			if !named {
+				t.Errorf("%q is not among the problems: %v", testCase.key, body["problems"])
+			}
+			// **And nothing was written.**
+			after, err := os.ReadFile(s.deskConfigPath())
+			if err != nil {
+				t.Fatalf("read back: %v", err)
+			}
+			if string(after) != original {
+				t.Errorf("the file changed:\n%s", after)
+			}
+		})
+	}
+}
+
+func TestDeskConfigWriteRefusesASymlinkedFile(t *testing.T) {
+	// The custody rule, on the way in: `desk.json` names the endpoint a
+	// credential is presented to, so a name reached through a symlink is not
+	// read — and therefore not written either. A write that treated the read's
+	// refusal as absence would replace an out-pointing link with a regular
+	// file.
+	config := t.TempDir()
+	elsewhere := filepath.Join(t.TempDir(), "somewhere.json")
+	if err := os.WriteFile(elsewhere, []byte(`{"deskConfigVersion":1}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.Symlink(elsewhere, filepath.Join(config, deskConfigName)); err != nil {
+		t.Skipf("symlinks are not available here: %v", err)
+	}
+	_, ts, _ := assistantServerIn(t, config)
+	status, body := putDeskConfig(t, ts, geminiAssistant, digestOf([]byte(`{"deskConfigVersion":1}`)))
+	if status != http.StatusBadRequest || body["code"] != CodeNotAFile {
+		t.Fatalf("status %d, body %v; want 400 %s", status, body, CodeNotAFile)
+	}
+	// The file the link points at is untouched.
+	target, err := os.ReadFile(elsewhere)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if string(target) != `{"deskConfigVersion":1}` {
+		t.Errorf("the symlink's target was written through:\n%s", target)
+	}
+}
+
+func TestDeskConfigWriteRefusesWhereNoKeyCanBeKept(t *testing.T) {
+	// A desk whose configuration directory is not safe to keep a credential in
+	// keeps no configuration either: the store holds no descriptors at all, so
+	// there is nothing to write through.
+	_, ts := unusableDesk(t)
+	status, body := putDeskConfig(t, ts, geminiAssistant, "")
+	if status != http.StatusConflict || body["code"] != CodeAssistantUnusableStore {
+		t.Fatalf("status %d, body %v", status, body)
+	}
+}
+
+func TestDeskConfigWriteIsOwnerOnlyAndAtomic(t *testing.T) {
+	s, ts, _ := assistantServer(t)
+	writeDeskConfig(t, s, "{\n  \"deskConfigVersion\": 1\n}\n")
+	before, _ := deskConfigDigest(t, ts)
+	if status, body := putDeskConfig(t, ts, geminiAssistant, before); status != http.StatusOK {
+		t.Fatalf("status %d, body %v", status, body)
+	}
+	info, err := os.Stat(s.deskConfigPath())
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Errorf("mode %#o, want 0600: this desk writes its own configuration for itself", got)
+	}
+	// No staging file left behind, and nothing but the file itself added.
+	entries, err := os.ReadDir(s.configDir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), configStagingPrefix) {
+			t.Errorf("a staging file survived the write: %s", entry.Name())
+		}
+	}
+}
+
+func TestDeskConfigWriteSerialisesConcurrentWriters(t *testing.T) {
+	// **Two writers, one digest, and exactly one of them lands.** The
+	// compare-and-commit is under the same mutex every other write on this
+	// desk takes, so the second finds a file that is no longer the one it read
+	// and is refused rather than overwriting the first.
+	s, ts, _ := assistantServer(t)
+	writeDeskConfig(t, s, "{\n  \"deskConfigVersion\": 1\n}\n")
+	before, _ := deskConfigDigest(t, ts)
+
+	type outcome struct {
+		status int
+		body   map[string]any
+	}
+	results := make(chan outcome, 2)
+	start := make(chan struct{})
+	for _, thinking := range []string{"on", "ultra"} {
+		go func(tier string) {
+			<-start
+			status, body := putDeskConfig(t, ts,
+				`{"endpoint":null,"thinking":"`+tier+`"}`, before)
+			results <- outcome{status, body}
+		}(thinking)
+	}
+	close(start)
+	ok, conflicted := 0, 0
+	for range 2 {
+		result := <-results
+		switch result.status {
+		case http.StatusOK:
+			ok++
+		case http.StatusConflict:
+			conflicted++
+			if result.body["code"] != CodeDeskConfigChanged {
+				t.Errorf("code %v", result.body["code"])
+			}
+		default:
+			t.Errorf("status %d, body %v", result.status, result.body)
+		}
+	}
+	if ok != 1 || conflicted != 1 {
+		t.Fatalf("%d wrote and %d were refused; want exactly one of each", ok, conflicted)
+	}
+	// And what is on disk is one of the two, whole, rather than a blend.
+	written, err := os.ReadFile(s.deskConfigPath())
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if decoded := decodeDeskFile(written); decoded.refused() {
+		t.Fatalf("the file is not readable after two writers: %v", decoded.Problems)
+	}
+}
+
+func TestDeskConfigWriteRefusesWithoutTheSessionGuard(t *testing.T) {
+	s, ts, _ := assistantServer(t)
+	writeDeskConfig(t, s, "{\n  \"deskConfigVersion\": 1\n}\n")
+	body := strings.NewReader(`{"assistant":{"endpoint":null},"ifMatch":""}`)
+	req, err := http.NewRequest(http.MethodPut, ts.URL+"/api/desk-config", body)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestDeskConfigWriteRefusesAForeignOrigin(t *testing.T) {
+	s, ts, _ := assistantServer(t)
+	writeDeskConfig(t, s, "{\n  \"deskConfigVersion\": 1\n}\n")
+	req, err := http.NewRequest(http.MethodPut,
+		ts.URL+"/api/desk-config?token="+testToken,
+		strings.NewReader(`{"assistant":{"endpoint":null},"ifMatch":""}`))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	req.Header.Set("Origin", "http://evil.example.invalid")
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status %d, want 403", resp.StatusCode)
+	}
+}
+
+func TestComposeDeskFileKeepsTheBytesItWasGiven(t *testing.T) {
+	// **Numbers are the reason this composes rather than re-serialises.** A
+	// decode into `map[string]any` and a re-encode turns `1e2` into `100` and
+	// rounds an integer past a float64's precision, so what was checked would
+	// not be what was stored.
+	current := []byte(`{"deskConfigVersion":1,"panes":{"left":{"width":2e2}},` +
+		`"organization":{"name":"acme"}}`)
+	composed, problem := composeDeskFile(current, true, json.RawMessage(`{"endpoint":null}`))
+	if problem != "" {
+		t.Fatalf("compose: %s", problem)
+	}
+	if !strings.Contains(string(composed), "2e2") {
+		t.Errorf("the number was re-serialised:\n%s", composed)
+	}
+	if !strings.HasSuffix(string(composed), "}\n") {
+		t.Errorf("no trailing newline:\n%q", composed)
+	}
+	// The order of the file, kept, with the new member appended where there
+	// was none.
+	order := []string{`"deskConfigVersion"`, `"panes"`, `"organization"`, `"assistant"`}
+	at := -1
+	for _, name := range order {
+		found := strings.Index(string(composed), name)
+		if found <= at {
+			t.Fatalf("%s is out of order:\n%s", name, composed)
+		}
+		at = found
+	}
+	// And the composed bytes are a file this desk reads.
+	if decoded := decodeDeskFile(composed); decoded.refused() {
+		t.Errorf("the composed file is refused: %v", decoded.Problems)
+	}
+}
+
+func TestComposeDeskFileRefusesAFileItCannotCarryAcross(t *testing.T) {
+	// Not an object, so there are no other members to preserve — and this
+	// route will not silently drop what it could not read.
+	for _, current := range []string{`[1,2,3]`, `"a string"`, `not json at all`} {
+		if _, problem := composeDeskFile([]byte(current), true,
+			json.RawMessage(`{"endpoint":null}`)); problem == "" {
+			t.Errorf("%q was composed over", current)
+		}
+	}
+}
+
 func TestConfigDirHonoursXDG(t *testing.T) {
 	// The README names one path. A build that resolved a different one on some
 	// platform would make the README false there without saying so.

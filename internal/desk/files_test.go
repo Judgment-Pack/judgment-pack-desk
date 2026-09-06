@@ -2727,6 +2727,22 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 				`"tools":[]}}}`)
 			return postJSON(t, ts, "/api/assistant/probe")
 		},
+		CodeDeskConfigChanged: func(t *testing.T) (int, map[string]any) {
+			writeDeskConfig(t, server, `{"deskConfigVersion":1}`)
+			// A digest of bytes that are not the ones on disk: the file moved
+			// under the writer, and there is no override on this route.
+			return putDeskConfig(t, ts, `{"endpoint":null}`, digestOf([]byte("other bytes")))
+		},
+		CodeDeskConfigRefused: func(t *testing.T) (int, map[string]any) {
+			const current = `{"deskConfigVersion":1}`
+			writeDeskConfig(t, server, current)
+			// A key pasted into the endpoint: the composed bytes are decoded
+			// before any of them reach the disk, and this file is refused
+			// whole by the decoder both sides share.
+			return putDeskConfig(t, ts, `{"endpoint":{"url":"https://e.example/v1",`+
+				`"kind":"gemini","model":"m","tools":[],"apiKey":"nope"}}`,
+				digestOf([]byte(current)))
+		},
 	}
 
 	for _, code := range allCodes {

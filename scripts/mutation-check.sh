@@ -782,6 +782,41 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "a key smuggled into the URL is accepted" "$DF" \
     '	if parsed.User != nil {' \
     '	if false {'
+  # **The desk-level write, and the four ways it could stop being narrow.**
+  # This is the one route that changes a configuration file, and the argument
+  # for having it is entirely in these four checks.
+  #
+  # The round trip is the whole safety argument: what is decoded is the file
+  # this desk would store, so a key-shaped member or an unknown kind refuses
+  # the write rather than being written and then reported as refused.
+  mutate go "a configuration write is not decoded before it lands" "$A" \
+    '	decoded := decodeDeskFile(composed)
+	if decoded.refused() {' \
+    '	decoded := decodeDeskFile(composed)
+	if false && decoded.refused() {'
+  # No override on this route: a file that moved under the writer is refused,
+  # because this is the file that names where a credential goes.
+  mutate go "a configuration write ignores the digest it was given" "$A" \
+    '	if !strings.EqualFold(strings.TrimSpace(req.IfMatch), actual) {' \
+    '	if false {'
+  # Through the pinned custody descriptor, staged and renamed, published at the
+  # mode this desk chose — `os.WriteFile` follows a name and keeps whatever
+  # mode it finds, which is the observable difference the suite measures.
+  mutate go "a configuration write goes round the custody root" "$A" \
+    '	if err := s.assistant.writeConfigFile(composed); err != nil {' \
+    '	if err := os.WriteFile(path, composed, 0o600); err != nil {'
+  # Every other member is carried across by its own bytes, in its own place: a
+  # rewrite of one member must not restate the rest of a file somebody wrote.
+  mutate go "a rewrite drops the other members of the file" "$A" \
+    '		for _, name := range order {
+			members = append(members, deskMember{name: name, raw: record[name]})
+		}' \
+    '		for _, name := range order {
+			if name != "deskConfigVersion" {
+				continue
+			}
+			members = append(members, deskMember{name: name, raw: record[name]})
+		}'
   # Caught by the live drive: the protocol path was appended to the whole URL
   # string, so a configured query put it after the query.
   #
