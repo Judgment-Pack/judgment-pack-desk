@@ -221,6 +221,90 @@ describe('the model capability the desk binds', () => {
     expect(await answered.text()).toBe('{"ok":true}')
   })
 
+  it('carries no relay address through clone(), a reader, or an async iterator', async () => {
+    // The walk reads `clone` as a function and never called it, so a clone's
+    // own `url` and its own body were never looked at. Every door out of the
+    // facade is opened here.
+    window.sessionStorage.setItem('jpack-desk-token', 'a-secret-session-token')
+    vi.stubGlobal('fetch', async (url: unknown) => {
+      const real = new Response('{"ok":true}', {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+      Object.defineProperty(real, 'url', { value: String(url), configurable: true })
+      Object.defineProperty(real.body, 'leak', {
+        value: String(url),
+        enumerable: true,
+        configurable: true
+      })
+      return real
+    })
+    const answered = await bindModelCall()('chat/completions', { body: '{}' })
+
+    // A clone is a second Response built from the same facade: it must be as
+    // empty of an address as the one it came from.
+    const copy = answered.clone()
+    expect(copy.url).toBe('')
+    expect(everythingReachable(copy)).not.toContain('a-secret-session-token')
+    expect(everythingReachable(copy)).not.toContain('/api/assistant/relay')
+
+    // The reader, and the locked-state transition around it.
+    expect(answered.body!.locked).toBe(false)
+    const reader = answered.body!.getReader()
+    expect(answered.body!.locked).toBe(true)
+    expect(everythingReachable(reader)).not.toContain('a-secret-session-token')
+    expect(everythingReachable(reader)).not.toContain('/api/assistant/relay')
+    // A stream has no async iterator in this runtime unless one is defined;
+    // whatever is there is walked rather than assumed absent.
+    const iterator = (answered.body as unknown as Record<symbol, unknown>)[Symbol.asyncIterator]
+    expect(everythingReachable(iterator)).not.toContain('a-secret-session-token')
+    reader.releaseLock()
+
+    // And the clone's own body, which is a different stream again.
+    expect(copy.body).not.toBe(answered.body)
+    expect((copy.body as unknown as Record<string, unknown>).leak).toBeUndefined()
+    expect(await copy.text()).toBe('{"ok":true}')
+  })
+
+  it('delivers the first chunk before the last is written, and cancels upstream', async () => {
+    // A facade that buffered would still pass every identity check and would
+    // break streaming for every engine. And a facade that dropped the link
+    // upstream would leave a relayed request running after the engine gave up.
+    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
+    let write: ((chunk: string) => void) | null = null
+    let cancelled: unknown = 'not cancelled'
+    vi.stubGlobal('fetch', async () => {
+      const upstream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const encoder = new TextEncoder()
+          write = (chunk: string) => controller.enqueue(encoder.encode(chunk))
+        },
+        cancel(reason: unknown) {
+          cancelled = reason
+        }
+      })
+      return new Response(upstream, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' }
+      })
+    })
+    const answered = await bindModelCall()('chat/completions', { body: '{}' })
+    const reader = answered.body!.getReader()
+    write!('first')
+    const first = await reader.read()
+    expect(new TextDecoder().decode(first.value)).toBe('first')
+    // The last chunk has not been written yet, and the first is already read:
+    // nothing between here and the endpoint is holding the answer.
+    write!('second')
+    const second = await reader.read()
+    expect(new TextDecoder().decode(second.value)).toBe('second')
+
+    // Cancelling the facade's body reaches the stream it was piped from.
+    await reader.cancel('the engine stopped reading')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(cancelled).toBe('the engine stopped reading')
+  })
+
   it('reports an abort as a fresh AbortError, with no message or cause of its own', async () => {
     // A rejection named AbortError can carry the request URL in its message and
     // again in its cause. Rethrowing it whole handed the engine the address by
