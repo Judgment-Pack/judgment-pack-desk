@@ -203,9 +203,18 @@ export function useDescribeIt(): DescribeItState {
   // critic will run. Same reading as the Assistant tab's, for the same reason.
   const advertisesTest = (prompts.data ?? []).includes(TEST_PACK_PROMPT)
   const testPrompt = usePromptText(TEST_PACK_PROMPT, slot.thinking !== 'off' && advertisesTest)
-  /** Both prompts, or neither. See the Assistant tab's `waitingForTest`. */
+  /**
+   * Both prompts, or neither. See the Assistant tab's `waitingForTest`.
+   *
+   * A read that **failed** is a settled read: `data` alone stays undefined for
+   * ever on the error state, so a `prompts/get` the runtime refused left this
+   * section saying "running" with nothing running at all.
+   */
   const waitingForTest =
-    slot.thinking !== 'off' && advertisesTest && testPrompt.data === undefined
+    slot.thinking !== 'off' &&
+    advertisesTest &&
+    testPrompt.data === undefined &&
+    testPrompt.error === null
   const run = useAssistantRun({
     // Only ever started where the endpoint exists; the fallback keeps the hook
     // unconditional, which is the rule React enforces.

@@ -131,8 +131,9 @@ export const NO_CHECKS =
  * refutation line, because a pass that did not run refuted nothing.
  */
 export const NO_TEST_PROMPT =
-  'the refutation pass did not run: this runtime advertises no test_pack prompt, and the ' +
-  'critic works from the runtime’s instructions rather than from words of this desk’s own'
+  'the refutation pass did not run: this desk has no test_pack prompt from the runtime to ' +
+  'work from, and the critic works from the runtime’s instructions rather than from words ' +
+  'of this desk’s own'
 
 /** The verdict, and the words on either side of it. */
 export interface Critique {

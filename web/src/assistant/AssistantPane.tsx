@@ -256,9 +256,19 @@ export function AssistantPane({
    * none of the runtime's instructions — the one thing the pass is not allowed
    * to be. A runtime that advertises no `test_pack` is not waited for: the pass
    * reports that it cannot run, and the proposal is shown without a line.
+   *
+   * **A read that failed is a settled read.** `data` alone stays undefined for
+   * ever on the error state, so a `prompts/get` the runtime refused deadlocked
+   * the whole session: the authoring prompt had arrived, no engine started, and
+   * the tab said nothing about why. A rejection settles this the same way an
+   * answer does — the run goes ahead **without a critic**, and the reason is a
+   * line of its own beside the stream.
    */
   const waitingForTest =
-    slot.thinking !== 'off' && advertisesTest && testPrompt.data === undefined
+    slot.thinking !== 'off' &&
+    advertisesTest &&
+    testPrompt.data === undefined &&
+    testPrompt.error === null
   const run = useAssistantRun({
     // Only rendered where the endpoint exists; the fallback keeps the hook
     // unconditional, which is the rule React enforces.
@@ -399,7 +409,11 @@ export function AssistantPane({
     )
   }
 
-  const running = run.status === 'running' || (submitted !== null && prompt.isFetching)
+  // **Running covers the whole of a session**, including the reading of the
+  // runtime's prompts. Stop has to be usable while the desk is waiting for one:
+  // a wait nobody can end is the same trap as a run nobody can end.
+  const running =
+    run.status === 'running' || (submitted !== null && (prompt.isFetching || waitingForTest))
   const accept = acceptState({
     editing,
     proposal: proposal !== undefined,
@@ -492,6 +506,17 @@ export function AssistantPane({
       {prompt.error !== null && submitted !== null && (
         <p className={styles.notice}>
           The runtime’s {submitted.name} prompt could not be read: {prompt.error.message}
+        </p>
+      )}
+      {/*
+        **Which of the two ways the desk has no testing prompt.** The engine
+        says only that it has none; this says why, because only this knows. The
+        session runs either way — without a critic.
+      */}
+      {testPrompt.error !== null && (
+        <p className={styles.notice}>
+          The runtime’s {TEST_PACK_PROMPT} prompt could not be read, so the refutation pass did
+          not run: {testPrompt.error.message}
         </p>
       )}
 

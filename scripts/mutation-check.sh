@@ -4347,6 +4347,15 @@ export function assistantTransport(): Transport {
   # **Both prompts, or neither.** Starting on the author prompt alone handed the
   # engine an empty `testPrompt`, and the critic then ran on this desk's one
   # sentence with none of the runtime's instructions.
+  # **A read that failed is a settled read.** `data` alone stays undefined for
+  # ever on the error state, so a `prompts/get` the runtime refused deadlocked
+  # the whole session: the authoring prompt had arrived, no engine started, and
+  # the tab said nothing about why.
+  mutate web "a refused testing prompt is waited for for ever" "$AP" \
+    '    testPrompt.data === undefined &&
+    testPrompt.error === null' \
+    '    testPrompt.data === undefined'
+
   mutate web "the run starts before the runtime's testing prompt arrives" "$AP" \
     '    if (waitingForTest) return' \
     '    void waitingForTest'

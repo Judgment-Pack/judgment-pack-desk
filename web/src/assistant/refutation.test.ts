@@ -209,7 +209,7 @@ describe('what the critic is told', () => {
     expect(message.indexOf('```json')).toBeGreaterThan(message.indexOf(CRITIC_SENTENCE))
   })
 
-  it('does not run at all where the runtime advertises no testing prompt', () => {
+  it('does not run at all where the desk has no testing prompt', () => {
     // **Never a critic on this desk's sentence alone.** The instructions are
     // the runtime's; the desk adds one sentence to them and has none of its own
     // to fall back on.
@@ -218,7 +218,7 @@ describe('what the critic is told', () => {
     expect(cannot!.checks).toEqual([])
     expect(cannot!.refuted).toBe(false)
     expect(cannot!.text).toBe(NO_TEST_PROMPT)
-    expect(cannot!.text).toContain('advertises no test_pack')
+    expect(cannot!.text).toContain('no test_pack prompt from the runtime')
     // Zero checks, so the proposal is shown without a refutation line.
     expect(critiqueOnProposal(cannot)).toEqual({})
     // Whitespace is not a prompt either.

@@ -246,7 +246,8 @@ function Mounted({
   deskConfig,
   persist,
   secondPrompt = 'ok',
-  validateSupported = true
+  validateSupported = true,
+  testPrompt = 'none'
 }: {
   deskConfig: EffectiveConfig
   persist: boolean
@@ -254,6 +255,15 @@ function Mounted({
   secondPrompt?: 'ok' | 'reject' | 'hang'
   /** Whether the connection advertises the tool the check needs. */
   validateSupported?: boolean
+  /**
+   * What this runtime does about `test_pack`, which the refutation pass needs.
+   *
+   * `none` is the ordinary case here — most of this file runs at tier `off`.
+   * `reject` advertises it and refuses the read, which is the state that
+   * deadlocked a session: the authoring prompt had arrived, the wait never
+   * settled, and this section said "running" with nothing running.
+   */
+  testPrompt?: 'none' | 'ok' | 'reject'
 }) {
   const [open, setOpen] = useState(true)
   /** The desk-level file, as an admin might rewrite it while this is open. */
@@ -268,7 +278,15 @@ function Mounted({
       },
       {
         prompts: {
-          author_pack: { text: 'The runtime’s authoring prompt, with the policy in it.' }
+          author_pack: { text: 'The runtime’s authoring prompt, with the policy in it.' },
+          ...(testPrompt === 'none'
+            ? {}
+            : {
+                test_pack: {
+                  text: 'The runtime’s testing prompt.',
+                  ...(testPrompt === 'reject' ? { fails: 'the runtime refused test_pack' } : {})
+                }
+              })
         }
       }
     )
@@ -327,6 +345,7 @@ function draw(
     persist?: boolean
     secondPrompt?: 'ok' | 'reject' | 'hang'
     validateSupported?: boolean
+    testPrompt?: 'none' | 'ok' | 'reject'
   } = {}
 ) {
   const deskConfig = config(assistant)
@@ -340,6 +359,7 @@ function draw(
             persist={options.persist ?? false}
             secondPrompt={options.secondPrompt}
             validateSupported={options.validateSupported}
+            testPrompt={options.testPrompt}
           />
         )
       }
@@ -1223,4 +1243,41 @@ describe('a refusal shows the runtime’s whole diagnosis', () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(sent).toEqual([])
   })
+})
+
+describe('the runtime’s testing prompt, which the refutation pass needs', () => {
+  const THINKING = { endpoint: ENDPOINT, engine: 'builtin', thinking: 'on' }
+
+  it('runs without a critic where the read is refused, rather than waiting for ever', async () => {
+    // **A read that failed is a settled read.** `data` alone stays undefined on
+    // the error state, so a `prompts/get` the runtime refused left this section
+    // saying "running" with nothing running at all: the authoring prompt had
+    // arrived and no engine ever started.
+    serve()
+    draw(THINKING, { testPrompt: 'reject' })
+    await propose()
+    // The session runs to its end…
+    await waitFor(() => expect(ends()).toHaveLength(1), { timeout: 20000 })
+    const stream = document.querySelector('[aria-label="What the assistant did"]')!
+    // …and the refutation pass says it had no instructions to work from,
+    // rather than a critic having run on this desk's sentence alone.
+    expect(
+      [...document.querySelectorAll('p')].some((line) =>
+        /no test_pack prompt from the runtime/.test(line.textContent ?? '')
+      )
+    ).toBe(true)
+    expect(stream.textContent).not.toContain('REFUTATION PASS')
+  }, 30000)
+
+  it('runs with a critic where the runtime serves it', async () => {
+    serve()
+    draw(THINKING, { testPrompt: 'ok' })
+    await propose()
+    await waitFor(() => expect(ends()).toHaveLength(1), { timeout: 20000 })
+    expect(
+      [...document.querySelectorAll('p')].some((line) =>
+        /no test_pack prompt from the runtime/.test(line.textContent ?? '')
+      )
+    ).toBe(false)
+  }, 30000)
 })

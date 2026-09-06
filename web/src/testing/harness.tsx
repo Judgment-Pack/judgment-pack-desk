@@ -49,7 +49,16 @@ export interface StubExtras {
    * case can put one prompt's answer behind another's and watch what a caller
    * does in between.
    */
-  prompts?: Record<string, { description?: string; text: string; hold?: Promise<void> }>
+  prompts?: Record<
+    string,
+    {
+      description?: string
+      text: string
+      hold?: Promise<void>
+      /** Advertised, and refused on `prompts/get` with this message. */
+      fails?: string
+    }
+  >
 }
 
 /** A client that answers from handlers, and remembers what it was asked. */
@@ -85,6 +94,7 @@ export function stubClient(
       const prompt = (extras.prompts ?? {})[params.name]
       if (!prompt) throw new Error(`no stub answers the prompt ${params.name}`)
       if (prompt.hold !== undefined) await prompt.hold
+      if (prompt.fails !== undefined) throw new Error(prompt.fails)
       return {
         description: prompt.description,
         messages: [{ role: 'user', content: { type: 'text', text: prompt.text } }]
