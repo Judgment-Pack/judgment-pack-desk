@@ -700,7 +700,10 @@ describe('the Checks panel while the check is in flight', () => {
     )
     await screen.findByRole('heading', { level: 1 })
     await waitFor(() => expect(screen.getByText('Checking…')).toBeTruthy())
-    const panel = screen.getByRole('tabpanel')
+    // Two tab sets now, one inside the other: the right pane's Inspector /
+    // Assistant, and the Inspector's own three panels inside it. The innermost
+    // panel is the one this case is about.
+    const panel = screen.getAllByRole('tabpanel').at(-1)!
     expect(panel.textContent).toContain('The check has not answered yet.')
     expect(panel.textContent).not.toContain('No other diagnostic names this member.')
   })

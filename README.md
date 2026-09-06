@@ -1277,9 +1277,13 @@ admits `off`, `on` and `ultra`; the two states it cannot express — a model tha
 always thinks, and an endpoint that offers no thinking at all — are the desk's
 to report when it meets them rather than settings anyone selects.
 
-**Nothing in this release acts on either.** They are decoded, refused if wrong,
-exposed by `useAssistantSlot()` and shown on Admin. No request is shaped by
-`thinking` and no engine is loaded.
+`engine` is acted on now: the page loads the named engine's chunk and runs it.
+**This build carries an adapter for `builtin` only.** A desk configured for
+`vercel` — the default — therefore runs `builtin`, and the tab says so in one
+line rather than refusing: a default nobody typed is not a reason to have no
+assistant. `thinking` is still stored and shown and shapes no request; the
+built-in engine reports a tier other than `off` as unavailable and carries on,
+which is what ADR-0001 means by degrading visibly.
 
 **Admin › Assistant** shows the configured endpoint, its protocol, its model
 and its tools with the file each came from, the engine and the tier, the exact JSON to paste, the key
@@ -1291,10 +1295,281 @@ lets the key line say whether one is still kept here.
 
 **What the assistant is, and is not**, in the sentence the page carries: it
 proposes edits to the draft; you accept them; the runtime checks them. It never
-saves a file and never decides an outcome. Nothing in this release renders an
-assistant pane — this is the slot, its configuration and its key custody. The
-pane is the next piece of work, and `useAssistantSlot()` is the one reading it
-will consume.
+saves a file and never decides an outcome.
+
+### The Assistant tab
+
+On a pack's route — reading or `?edit` — the right pane carries two tabs,
+**Inspector** and **Assistant**. The Assistant tab renders only where an
+endpoint is configured *and* a key is stored on this machine; otherwise it says
+in one line where that is configured, because a control that would refuse is
+worse than a sentence that explains.
+
+Type what the pack should decide and press **Run**. The desk fetches the
+runtime's own `author_pack` prompt over `prompts/get` with what you typed as its
+`policy` argument, hands it to the engine, and shows what happens: each tool
+call by name, each answer's `isError` and byte count, each guardrail in the
+desk's warning colour, and at the end the **proposal** — the document as
+read-only JSON, the unknowns the assistant declared, and beneath them the
+runtime's own checks **quoted whole**: the `validate` report and the rehearsal
+evaluation, as the runtime wrote them. A summary of a verdict is a second
+verdict, so there is none.
+
+**Accept and Reject are drawn and disabled**, with a title saying they arrive in
+the next chunk. Nothing here writes to the draft, produces a diff, or touches a
+file. `Escape` stops a session; leaving the route stops it too. A session has
+two phases — the desk reading the runtime's prompt, then the engine running —
+and Stop ends either. Every session emits exactly one `end`, whichever way it
+finishes. Pressing Run again with the text unchanged is a second run, because a
+model is not a pure function. Nothing about a session is persisted — coming back
+is a new one.
+
+**The assistant opens its own MCP connection**, and that costs one more
+`jpack mcp` process while the tab is running. The reason is the ToolGate below:
+the desk's one client serves the page's own calls — `list_packs`, `get_pack`,
+Try it — every one of which is outside the assistant's allow-list, so a gate on
+that transport would break the desk. A second socket, gated at the wire, is what
+makes "no page code path can bypass it" a structural claim rather than a habit.
+The connection lives exactly as long as the session and is closed on stop, on
+unmount and on navigation.
+
+### The ToolGate
+
+`web/src/assistant/toolGate.ts` wraps the assistant transport's `send`, and
+every outbound `tools/call` frame passes through it:
+
+- a name outside the session's allow-list is **refused** — the frame never
+  leaves the page, the caller's promise rejects with a `GateViolation` naming
+  the tool, and a `guardrail` line appears in the tab. The engine turns the
+  rejection into a result the model is told about, because a call dropped in
+  silence is a turn the model spends re-asking for it;
+- `experimental_evaluate` is **rewritten** to carry `rehearsal: true` whatever
+  the arguments said, with a `guardrail` line saying what was there — the
+  `rehearsal` member's previous value, and never the pack text;
+- everything else passes untouched, including `initialize`, `tools/list` and
+  `prompts/get`. The gate is about what the assistant may *do*.
+
+The allow-list is `assistant.endpoint.tools` **intersected with the five**, and
+the order is allow-list first: an `experimental_evaluate` the file never granted
+is refused rather than politely corrected on its way out.
+
+**The frame is canonicalized to bytes before anything is decided, and what
+leaves is the canonical frame.** That is the shape of the whole check, and it is
+the lesson the chassis' relay learned over four review rounds: a classification
+made about a mutable object is a classification the object can change out from
+under you. A `method` getter can answer `undefined` while the gate is looking
+and `tools/call` while `JSON.stringify` is; a response-shaped object with a
+`toJSON` can serialize as a request; an enumerable `toJSON` on a call's
+arguments is invoked at serialization and drops whatever the gate had just
+written. So the object is serialized once, the bytes are parsed back to plain
+data — which has no getters, no `toJSON`, no functions, no symbol keys and no
+prototype left — and every rule is applied to that. The transport is handed the
+plain data and never the caller's object.
+
+What is checked, in order:
+
+1. the frame survives a JSON round trip at all (a cycle does not, and is a
+   refusal rather than an exception thrown at the socket) and is a plain object;
+2. **every frame is checked against the SDK's own message schema**
+   (`JSONRPCMessageSchema`) — a request, a notification, a response or an error,
+   each whole. That replaced a hand-written set of shape rules, and the reason
+   is that the hand-written ones were looser than the sentence describing them:
+   `{"id": null, "result": 7}`, an `error` that is a string, and a fractional id
+   all satisfied "an id and exactly one of `result` and `error`", and not one of
+   them is a JSON-RPC message. It is the same schema the client validates
+   *inbound* frames against, so what this desk will send is what its own SDK
+   will accept. A JSON-RPC batch is refused here too: an array is not a message,
+   and "anything that is not `tools/call` is traffic I have no opinion about"
+   let a batch carrying an allowed call beside a `write_file` out whole;
+3. a method that is not `tools/call` but is a spelling of it to some other
+   reader — `Tools/Call`, ` tools/call ` — is refused, on the chassis' own
+   reasoning about its query: a frame two readers disagree about is one this
+   desk will not send;
+4. for `tools/call`, the tool is on the session's allow-list — checked against
+   the name the frame **serializes into**, not the one it claims — and
+   `experimental_evaluate` gets an own `rehearsal: true` written last onto the
+   canonical arguments.
+
+One whole conversation through the gate — the handshake, the notification after
+it, a listing, a prompt, a tool call, and the client's automatic answer to the
+server's own `ping` — is in the suite, because tightening frame rules is the
+kind of change that breaks a connection while every refusal test stays green.
+
+### What these guards do not claim
+
+They are structural guards against **mistakes, SDK-internal paths and
+uncertified adapters**, and certification is what the desk trusts. They are not
+a sandbox. An engine runs in the page's own realm, and same-realm code that
+patches a prototype or replaces a global is outside what any page-side guard can
+contain — a module that redefines `Response.prototype.body`, or captures `fetch`
+before the desk does, is not a threat the ToolGate or the model capability claim
+to hold. What they do hold is that an engine which behaves itself cannot reach a
+tool nobody granted, cannot send an unrehearsed evaluation, and is never handed
+this chassis' credential; and that an engine which does not behave itself fails
+the conformance session rather than shipping.
+
+The engine is handed a `callTool` bound through this gate and **nothing else** —
+no client, no transport, no `fetch`, and **no URL** — and the session's member
+set is asserted whole in `assistant/enforcement.test.ts`, because the guarantee
+is that there is nothing else there.
+
+### Why the engine gets a capability and not a base URL
+
+ADR-0001's contract sketch writes `model: { family, baseUrl, model }`, with
+`baseUrl` "the chassis relay". This desk deviates, and the reason is that the
+relay authenticates with **this chassis' session token in the query**: a
+`baseUrl` an engine can read is this desk's own credential in the engine's
+hands, and an adapter holding it can open `/ws?token=…` itself with
+`globalThis.WebSocket` and drive a third MCP connection the ToolGate is not on.
+Nothing in the contract would have been violated. The guarantee would simply
+have been gone.
+
+So `model` is `{ family, model, call }`. `call(suffix, request)` is bound by the
+desk: it builds the address itself, admits only a path suffix that passes the
+relay's own segment rule, carries only the headers on the chassis' outbound
+allow-list, and captures `fetch` when the session is bound rather than reading
+it at call time. The engine chooses a suffix — `chat/completions`,
+`v1/messages` — and nothing else.
+
+**The answer is a facade this desk builds**, not the one `fetch` produced: a
+browser `Response` carries the requested URL on `.url`, which is the relay
+address with the token in it, so returning it handed the engine everything it
+needed to derive `/ws?token=…`. What comes back is a constructed `Response` —
+empty `url`, the status and reason phrase, a filtered header copy, and **a body
+stream of this desk's own**, piped through an identity transform: a `Response`
+built from a `ReadableStream` keeps that very object, so a stream somebody
+decorated was reachable as `facade.body.leak`.
+
+The failure path goes the same way: a browser's `TypeError` for a failed fetch
+quotes the URL, so the error is replaced with a fixed sentence. An **abort**
+reaches the engine as a fresh `AbortError` with a fixed sentence and no `cause`
+— the classification travels because a loop has to tell "stopped" from "failed",
+and nothing else does, because a rejection named `AbortError` can carry the URL
+in its own message and again in its cause.
+
+The suffix must be a **primitive string** before anything else happens. The
+TypeScript signature said `string` and the type is not what runs: a string-like
+object can answer an innocuous `length` and `split()` while the validator is
+looking and a different `toString()` when the URL is built, which would turn
+this capability into an authenticated POST to another same-origin chassis route.
+
+That capture of `fetch` is what makes the guarantee structural instead of
+inspected: the conformance session replaces `fetch`, `WebSocket`,
+`XMLHttpRequest` and `EventSource` with throwing sentinels **from before the
+engine's chunk is imported until after everything it scheduled has run**, on
+every leg. The sentinels record as well as throwing, because a reach from inside
+a `setTimeout` throws into nobody's `catch`.
+
+The barrier at the end **tracks handles rather than waiting**. It was a fixed
+200ms, and a fixed wait is a delay an engine can out-wait — 201ms, an interval,
+a timer that schedules another timer. `setTimeout`, `setInterval`,
+`clearTimeout`, `clearInterval`, `queueMicrotask`, and `setImmediate` and
+`requestAnimationFrame` where they exist, are wrapped for the sealed window:
+each call is recorded *and* scheduled for real, so an engine that legitimately
+needs a timer still makes progress, and whatever has not fired when the run ends
+is fired, repeatedly, until nothing is left. What remains when the bound is
+reached is a **failure**, not a pass. A handle the engine itself cancelled is
+never fired on its behalf — the clear functions are wrapped for exactly that —
+because running one would report a reach the engine had already decided not to
+make.
+
+**A certified engine leaves no live interval when its iterator ends.** An
+interval is never run by the drain at all: running a few ticks and calling it
+drained is a bound an engine can hide a reach behind, and an interval nobody
+clears is one no bounded drain can exhaust. It is reported by name and the leg
+fails for it. Promise reactions are flushed rather than tracked — the drain
+turns the microtask queue over between rounds, which is how a `.then` chain an
+engine left behind is caught while the seal is still up — and what that does not
+cover is a reaction chained off something that resolves *after* the drain: a
+fetch to a real host, a socket, a `MessageChannel`. That bound is real and is
+stated here rather than papered over.
+
+The cleanup is nested so that the drain, the timer wrappers, the sentinels and
+both connection closes all come off whatever throws: a deferred callback that
+threw used to leave a leg's globals installed for every leg after it. The desk's capability still works; an engine that reaches for a
+global fails the leg by name (`K1a`). The string-enumeration guard that used to
+forbid a handful of spellings under `engines/` is gone: it said of itself that a
+novel spelling walks past it, and `new globalThis["Web"+"Socket"]` is that
+spelling. When the `vercel` adapter lands, this capability is what is passed as
+the provider's `fetch` option, so the shape survives the next chunk.
+
+### The engine slot, as it stands
+
+`web/src/assistant/engine.ts` is ADR-0001's contract. `assistant/engines/` is
+the registry: one lazily loaded chunk per certified engine, so a session
+downloads one. `builtin` is the port of the bake-off's control loop — a
+hand-written turn loop over an explicit messages array, both wire formats, no
+new dependency — restricted to the contract: it takes the runtime's prompt and
+the runtime's own tool definitions, speaks to the chassis relay **with no
+credential of its own**, reads a stream or a whole answer by what came back
+rather than by what it asked for, ends on one fenced JSON block, bounds itself
+at twenty model turns, and emits `end` exactly once.
+
+It reaches a model only through `session.model.call`, naming a path suffix; the
+address, the token and the header allow-list are the desk's. Both wire formats
+put `stream` in the body, so no engine ever needs a query — which is as well,
+because the relay refuses one.
+
+### The conformance session
+
+`web/src/assistant/conformance/` is the bake-off's scenario carried into the
+repository and run in CI — keyless, deterministic, no network, no runtime
+binary. It runs against the engine **registry**, so a future adapter is
+certified by adding its id to one list.
+
+- `scenario.json` is the experiment's own fixture, whose DRAFT_V1, DRAFT_V2 and
+  FACTS were proved against the runtime before it was written.
+- `runtime.json` is a recording of a real `jpack mcp`: `tools/list` filtered to
+  the five, exactly as served with the runtime's own schemas, and one
+  `tools/call` answer per step T1–T6, taken from judgment-pack-runtime v0.19.0
+  in a project copy that declared an audit trail. No audit record was written by
+  any of them. It is **produced by a checked-in recorder** rather than by hand:
+
+  ```sh
+  # regenerate, or byte-compare what is committed against a runtime
+  JPACK_COMMIT=<full commit> npm --prefix web run conformance:record -- ./bin/jpack /path/to/project
+  JPACK_COMMIT=<full commit> npm --prefix web run conformance:verify -- ./bin/jpack /path/to/project
+  ```
+
+  The fixture carries the binary's SHA-256 and the runtime's full commit, and
+  `verify` fails on a byte of drift — which is what makes "recorded" a claim
+  somebody can check rather than a word in a comment. The project directory must
+  declare an audit trail, so a recording pass that wrote one would leave the
+  evidence behind. `sourceCommit` is stated by whoever runs the recorder and is
+  the one member there that is a claim rather than a measurement; the fixture
+  says so itself.
+- `scriptedModel.ts` is the fixture's step logic in TypeScript, installed as a
+  `fetch` stub that records every request; it decides the next step from the
+  results present in the request's own messages, so a run that mishandled a
+  message array gets a different script.
+- `scriptedServer.ts` replays the recording on an in-memory transport pair, and
+  matches a call by its **arguments**: an `experimental_evaluate` arriving
+  without `rehearsal: true` is a failure, and so is a `write_file` arriving at
+  all.
+- `certification/` holds four engines the desk would never certify: one touches
+  the network as its module loads; one schedules four reaches for after its run
+  ends cleanly — soon, five minutes out, chained behind another timer, and on a
+  promise chain with no timer at all — and leaves an interval ticking; one
+  clears the interval it starts and cancels a timer it schedules, so it passes
+  the interval rule, is never credited with the reach it cancelled, and still
+  fails on the timeout it meant; and one throws from a callback nobody is
+  awaiting, so the cleanup can be shown to run anyway. Each must fail its leg,
+  and does. **A conformance session that only ever runs conformant engines
+  proves nothing about the session** — and a rule that fails everything proves
+  as little as one that fails nothing, which is what the third is for.
+
+Four legs — OpenAI-compatible and Anthropic, each answered as a stream and as
+one whole object, because an endpoint may ignore what the request asked for —
+and the checks are the experiment's own, plus one this desk added: **K1a** the
+engine touches no network global at all — at load, during its run, or from a
+timer it left behind — held by sealing `fetch`, `WebSocket`, `XMLHttpRequest`
+and `EventSource` from before its chunk is imported until after deferred work
+has been drained; **K1** no
+credential in any request and nothing called but the relay; **K2** the five
+tools out of `tools/list`, with no schema literal in any engine source; **K3a**
+the rewrite, measured at the scripted server rather than at the page; **K3b**
+`write_file` never arriving; **K3c** the proposal equal to DRAFT_V2; T8's
+unknowns; and the event stream's exact order with one `end`.
 
 ## Requirements
 
@@ -1719,9 +1994,12 @@ the endpoint the desk-level file names, and it is good only at the endpoint that
 already holds it.** What this route guarantees is that the desk never volunteers
 it — not that an endpoint cannot give away a secret it was given.
 
-Nothing in this release calls it. It is the seam the assistant's engine slot
-needs ([ADR-0001](docs/adr/0001-make-the-assistant-engine-a-slot.md)), built
-before the engine so that the engine is page work.
+The assistant calls it, and nothing else does
+([ADR-0001](docs/adr/0001-make-the-assistant-engine-a-slot.md)). The **desk**
+builds each relayed address, with this chassis' session token — the one
+parameter the rule above admits — and hands the engine a capability rather than
+a URL, so no engine ever holds the token or chooses a query. See
+[Why the engine gets a capability and not a base URL](#why-the-engine-gets-a-capability-and-not-a-base-url).
 
 ## Authoring (issue #14, phase 1)
 
@@ -2234,6 +2512,25 @@ appears anywhere on the page. `files/useFileEditing.test.ts` and
 `shell/useDirtyGuard.test.tsx` hold the discipline lifted out of the authoring
 view — `routes/AuthorView.test.tsx` staying green unedited is the proof the
 extraction preserved its behaviour.
+
+The assistant's suites are named the same way. `assistant/toolGate.test.ts`
+holds the gate at a **recording transport**: what left the page, never what the
+gate believes it did. `assistant/conformance/conformance.test.ts` is the desk's
+conformance session, described above, and is the one that certifies an engine.
+`assistant/engines/builtin/engine.test.ts` holds the handful of properties that
+session only exercises incidentally — the request's headers and URL, the turn
+bound, `end` exactly once, and a proposal taken from the fenced block rather
+than from the prose beside it. `assistant/AssistantPane.test.tsx` drives the
+page's **real** transport against the recorded runtime through a stand-in
+`WebSocket`, so the socket, the gate and the SDK client above it are the
+production ones.
+
+`scripts/needle-check.sh .` says whether every mutation needle still matches its
+file, exactly once. A row whose needle has drifted reports `MUTATION DID NOT
+APPLY` and is silently dead, and a full pass takes long enough that nobody finds
+out until a review does — which is how a re-indentation in one PR left a row
+from an earlier one broken. It applies nothing and runs no suite, and it is not
+a substitute for running the rows.
 
 CI runs `gofmt`, `go vet` and `go test` on one job and `npm ci`, `tsc`, the
 component tests and `vite build` on another. It supplies neither a runtime binary

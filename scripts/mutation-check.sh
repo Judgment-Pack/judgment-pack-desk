@@ -3199,8 +3199,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '    baseSha256 === fileSha256' \
     '    (baseSha256 === undefined || baseSha256 === fileSha256)'
   mutate web "the Inspector falls back to the document the runtime served" "$PV" \
-    '          document={drawn}' \
-    '          document={drawn ?? pack.data.document}'
+    '        document={drawn}' \
+    '        document={drawn ?? pack.data.document}'
   mutate web "the Inspector says nothing about having no document" "$PINS" \
     '  if (doc === undefined) {' \
     '  if (false) {'
@@ -3517,6 +3517,310 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "a diagnostic is rendered as the bare word" "$AS" \
     "      {result.diagnostic !== '' && (" \
     "      {false && result.diagnostic !== '' && ("
+
+  # ---- The assistant's guardrails, below whatever runs the loop -----------
+  #
+  # ADR-0001 puts these under the engine slot on purpose: they are the desk's
+  # promises and not a framework's features, so each one is broken here and the
+  # test that notices is named. Every row's catcher is either the conformance
+  # session — the bake-off scenario, run against the engine registry, with every
+  # network global sealed for the duration of the engine's run — or a test that
+  # measures at a recording transport or on the serialized bytes.
+  TG=web/src/assistant/toolGate.ts
+  ASN=web/src/assistant/session.ts
+  BL=web/src/assistant/engines/builtin/loop.ts
+  BT=web/src/assistant/engines/builtin/providers/types.ts
+  BO=web/src/assistant/engines/builtin/providers/openai.ts
+  AR=web/src/assistant/useAssistantRun.ts
+  AP=web/src/assistant/AssistantPane.tsx
+
+  CT=web/src/assistant/conformance/conformance.test.ts
+  EN=web/src/assistant/engines/index.ts
+
+  # ---- Canonical bytes ----------------------------------------------------
+  #
+  # The lesson the chassis' relay learned over four rounds, and the one this
+  # gate learned in round 2: a classification made about a mutable object is a
+  # classification the object can change out from under you. Each row here
+  # restores one version of that mistake.
+  mutate web "the frame is classified before it is canonicalized" "$TG" \
+    '  const frame = canonical(message)' \
+    '  const frame = message as unknown'
+  # The round-2 defect exactly: copy the caller's own properties — toJSON
+  # included — and let the serializer invoke it after the member was written.
+  mutate web "the arguments are copied rather than canonicalized" "$TG" \
+    '  const args = (supplied ?? {}) as Record<string, unknown>' \
+    '  const args = { ...((message as { params?: { arguments?: Record<string, unknown> } }).params?.arguments ?? {}) }'
+  # **Two rows retired here, and a third below, because one row replaced all
+  # three.** "a frame need not declare jsonrpc 2.0", "a response is exempted
+  # without checking its shape" and "a frame with no method at all is passed"
+  # each needled a hand-written shape rule, and those rules are gone: the
+  # canonical frame is checked against the SDK's own JSONRPCMessageSchema, which
+  # is stricter than the three were together — it is what refuses an id of null
+  # beside a result, an error that is a string and a fractional id, none of
+  # which the old rules caught. "a frame need not be a message the SDK would
+  # accept" breaks that check, and the corpus it fails on is every case those
+  # three used to own plus five they did not.
+
+  # ---- The model capability's own answer ----------------------------------
+  #
+  # A browser Response carries the requested URL on `.url`, and that URL is the
+  # relay address with this chassis' session token in it.
+  mutate web "the model answer is handed back as fetch produced it" "$ASN" \
+    '    return facade(answered)' \
+    '    return answered'
+  # A fetch TypeError quotes the URL, so the browser's own error is the token.
+  mutate web "a failed model call rethrows the browser's own error" "$ASN" \
+    '      throw new Error(CALL_FAILED)' \
+    '      throw cause'
+  mutate web "the answer's headers are not filtered" "$ASN" \
+    '    if (MODEL_ANSWER_HEADERS.includes(name.toLowerCase())) carried.set(name, value)' \
+    '    carried.set(name, value)'
+  # A string-like object answers an innocuous split() while the validator looks
+  # and a different toString() when the URL is built.
+  mutate web "the suffix is not required to be a primitive string" "$ASN" \
+    "  if (typeof suffix !== 'string') {" \
+    '  if (false) {'
+
+  # ---- The seal, which is itself a claim -----------------------------------
+  #
+  # **A row over the harness, deliberately.** "The engine touches no network
+  # global" is a property of the conformance session, and the two certification
+  # fixtures are what hold it. Moving the seal back to where round 2 found it —
+  # after the import — is the defect, and the load-time fixture is what notices.
+  mutate web "the seal goes up after the engine's chunk is loaded" "$CT" \
+    '    seal = sealNetwork()
+    tracker = trackDeferredWork()
+    const engine = await load()' \
+    '    const engine = await load()
+    seal = sealNetwork()
+    tracker = trackDeferredWork()'
+
+  # The SDK's own message schema, which replaced this desk's hand-written shape
+  # rules: an id of null beside a result, a string error and a fractional id all
+  # satisfied those and none of them is a JSON-RPC message.
+  mutate web "a frame need not be a message the SDK would accept" "$TG" \
+    '  if (!JSONRPCMessageSchema.safeParse(frame).success) {' \
+    '  if (false) {'
+
+  # ---- The model answer, and what an engine can reach through it -----------
+  #
+  # A Response built from a ReadableStream keeps that very object as its body,
+  # so a stream somebody decorated is reachable through the facade.
+  mutate web "the facade carries the answer's own body stream" "$ASN" \
+    '    empty || answered.body === null ? null : answered.body.pipeThrough(new TransformStream())' \
+    '    empty ? null : answered.body'
+  # A rejection named AbortError can carry the URL in its message and again in
+  # its cause; only the classification may travel.
+  mutate web "an aborted call rethrows the error it caught" "$ASN" \
+    '        throw new DOMException(CALL_ABORTED, '"'"'AbortError'"'"')' \
+    '        throw cause'
+
+  # ---- The seal's barrier, which is itself a claim -------------------------
+  #
+  # A fixed wait is a delay an engine can out-wait. The fixture schedules at
+  # five minutes, on an interval, and chained behind another timer.
+  mutate web "the deferred barrier is a fixed wait again" "$CT" \
+    '        leftPending = await drainDeferredWork(tracker)' \
+    '        await new Promise((resolve) => setTimeout(resolve, 200))'
+
+  # ---- The seal's two rules about what an engine leaves behind ------------
+  #
+  # An interval nobody cleared is a certification failure in its own right:
+  # running it a few times and clearing it on the engine's behalf let a reach
+  # hide behind a later tick and report a clean drain.
+  mutate web "the drain runs an engine's interval on its behalf" "$CT" \
+    '    pending: () => tracked.filter((entry) => entry.pending && !entry.repeating),' \
+    '    pending: () => tracked.filter((entry) => entry.pending),'
+  mutate web "a live interval is not reported" "$CT" \
+    '    liveIntervals: () => tracked.filter((entry) => entry.repeating && !entry.cancelled),' \
+    '    liveIntervals: () => [],'
+  # A handle the engine itself cancelled must never be run on its behalf: doing
+  # so reports a reach the engine had already decided not to make.
+  mutate web "a cancelled handle is fired anyway" "$CT" \
+    '    byHandle.get(handle)?.cancel()
+    clear(handle)' \
+    '    clear(handle)'
+  # A deferred callback that throws used to leave the finally before the
+  # sentinels and the timer wrappers came off, poisoning every later leg.
+  mutate web "a throwing callback escapes the cleanup" "$CT" \
+    '    } catch (cause) {
+      drainThrew = `${(cause as Error).name}: ${(cause as Error).message}`
+    } finally {' \
+    '    } finally {'
+  # **Not a row: the certification fixtures travelling `loadEngine`.** They do —
+  # `fromCertification` calls it, which is why the loader takes its table as a
+  # parameter — but a mutant that called the table directly would import the
+  # same chunk under the same seal and be caught by the same sentinel, so the
+  # row would report "nothing failed" for ever. What IS observable is the
+  # loader's own contract, below.
+  mutate web "an unregistered engine id loads something anyway" "$EN" \
+    '  const load = loaders[id]
+  if (load === undefined) throw new Error(`no engine chunk is registered for ${id}`)
+  return load()' \
+    '  return loaders[id]!()'
+
+  # K3(b). Without the allow-list, write_file leaves the page and reaches the
+  # runtime — which is the arrival the scripted server counts as a failure.
+  mutate web "the allow-list check is removed" "$TG" \
+    "  if (typeof name !== 'string' || !allowed.has(name)) {" \
+    '  if (false) {'
+  # K3(a) — and the one an inspect-and-forward gate cannot hold. A call that
+  # already reads as rehearsed still may not be forwarded as it arrived: the
+  # object can serialize without the member it appears to carry.
+  mutate web "an evaluate that reads as rehearsed is forwarded unchanged" "$TG" \
+    '  if (already) {
+    // Nothing to report: the caller asked for exactly what it got. The frame is
+    // still the canonical one, because canonical is what travels.
+    return { verdict: '"'"'send'"'"', notice: null, frame: frame as unknown as JSONRPCMessage }
+  }' \
+    '  if (already) {
+    return { verdict: '"'"'send'"'"', notice: null, frame: message }
+  }'
+  # **Deliberately not a row: reading each own property twice.** It was one, and
+  # it reported "nothing failed" — correctly. `ownArguments` reads once so that
+  # a getter cannot answer the check and the wire differently, but the value
+  # that check is about is written unconditionally straight afterwards, so a
+  # second read of `rehearsal` is overwritten and a second read of `pack` is
+  # observed by nothing. The property is real and cheap; it is not, on its own,
+  # observable, and a row that says otherwise for ever reads as a missing
+  # safeguard rather than an unobservable one. What IS observable is the branch
+  # above: an evaluate forwarded because it read as rehearsed.
+  # Fail closed. A batch has no method, and "no method is harmless traffic" is
+  # what let an array carrying write_file out whole.
+  # **Explicitly `send`, not merely a disabled branch.** Round 3 pointed out that
+  # `if (false)` let a batch fall through to the next check and be refused
+  # there, so the row went red on a *different* corpus member throwing — a true
+  # failure for the wrong reason. This mutant sends the unreadable frame, which
+  # is the named defect, and the batch-carrying-write_file case is what fails.
+  mutate web "a frame this gate cannot read is passed as harmless traffic" "$TG" \
+    '  if (!isRecord(frame)) {
+    return refuse(' \
+    '  if (!isRecord(frame)) {
+    return { verdict: '"'"'send'"'"', notice: null, frame: frame as unknown as JSONRPCMessage }
+    return refuse('
+  # (The third retired row was here — see the note above.)
+  # A near-spelling some other reader folds to tools/call.
+  mutate web "a near-spelling of tools/call is waved through" "$TG" \
+    '    if (method.trim().toLowerCase() === TOOLS_CALL) {' \
+    '    if (false) {'
+
+  # The gate is not installed at all: the engine's calls go straight to the
+  # socket. Both K3 rows fail together, which is the point of a wire-level gate.
+  mutate web "the gate is not installed on the assistant's transport" "$ASN" \
+    '  const gated = gateTransport(raw, { allowed, onGuardrail: notify })' \
+    '  const gated = raw'
+  # **The row this replaces only widened a TypeScript interface.** It added
+  # `client?: unknown` to AssistantSession, which no engine could use and no
+  # gate was bypassed by: the member-set test failed, and that demonstrated
+  # interface-shape sensitivity rather than the guardrail it was named for.
+  # This one is a real bypass — the gate is installed and reporting, on a decoy,
+  # while the client the engine's caller is bound to speaks straight to the
+  # socket — and the conformance server observes the ungated arrivals.
+  mutate web "the engine's caller is bound to an ungated client" "$ASN" \
+    '  const gated = gateTransport(raw, { allowed, onGuardrail: notify })' \
+    '  const decoy: Transport = {
+    start: () => raw.start(),
+    close: () => raw.close(),
+    send: (message, sendOptions) => raw.send(message, sendOptions)
+  }
+  gateTransport(decoy, { allowed, onGuardrail: notify })
+  const gated = raw'
+  # One shared transport instead of one per session: two sessions would share a
+  # jpack mcp and a gate, and closing either would take the other's connection.
+  mutate web "the assistant reuses one shared transport" "$ASN" \
+    'export function assistantTransport(): Transport {
+  return new DeskWebSocketTransport(socketURL(sessionToken()))
+}' \
+    'let sharedTransport: Transport | undefined
+export function assistantTransport(): Transport {
+  sharedTransport ??= new DeskWebSocketTransport(socketURL(sessionToken()))
+  return sharedTransport
+}'
+  # A setup that fails leaves a socket and a jpack mcp with nothing holding a
+  # reference to either.
+  mutate web "a failed setup leaves the connection open" "$ASN" \
+    '      await close()
+      throw cause' \
+    '      throw cause'
+  # The desk's model capability, which is what an engine is handed instead of a
+  # URL: the address, the header allow-list and the suffix rule are all here.
+  mutate web "the model call forwards every header it is handed" "$ASN" \
+    '      if (MODEL_REQUEST_HEADERS.includes(name.toLowerCase())) headers[name] = value' \
+    '      headers[name] = value'
+  mutate web "the model call accepts any suffix at all" "$ASN" \
+    '    const problem = suffixProblem(suffix)' \
+    "    const problem = ''"
+
+  # K1. The page holds no key; a header here is a credential it had to have got.
+  mutate web "a credential header is restored to the model request" "$BT" \
+    "  return { 'content-type': 'application/json', ...extra }" \
+    "  return { 'content-type': 'application/json', authorization: 'Bearer x', ...extra }"
+  # The whole reason session.model is a capability rather than a base URL: an
+  # engine that reaches for a network global is an engine that can open its own
+  # socket to /ws with this chassis' token. Every leg seals fetch, WebSocket,
+  # XMLHttpRequest and EventSource for the duration of the engine's run.
+  mutate web "the engine reaches for globalThis.fetch" "$BO" \
+    '    const response = await options.call(openai.suffix, {' \
+    "    const response = await globalThis.fetch('/api/assistant/relay/v1/chat/completions', {
+      method: 'POST',"
+  # `end` twice: a pane that renders "running" until it sees one would be right
+  # either way, so what this breaks is the contract's own "exactly once".
+  mutate web "end is emitted twice" "$BL" \
+    "    yield { type: 'end' }
+  }
+}" \
+    "    yield { type: 'end' }
+    yield { type: 'end' }
+  }
+}"
+  # The proposal taken from the prose rather than from the fenced block: a
+  # worked example in an explanation becomes the document a person accepts.
+  mutate web "the proposal is taken from the prose" "$BL" \
+    "  const blocks = [...(text ?? '').matchAll(FENCE)].map((match) => match[1] ?? '')" \
+    "  const blocks = [(text ?? '').slice((text ?? '').indexOf('{'), (text ?? '').lastIndexOf('}') + 1)]"
+
+  # The run's terminal event, normalized in the hook. Stop used to clear the
+  # run's identity before the engine handled the abort, so no end was observed.
+  #
+  # **The catcher is `useAssistantRun.test.tsx` and not the pane's suite**, and
+  # the difference is the point: the pane drives the built-in engine, which
+  # honours its abort signal and yields `end` from its own `finally`, so the
+  # hook could write nothing at all and those cases still pass. The hook's test
+  # uses an engine that ignores the signal and never settles — nothing but the
+  # hook can end that session.
+  mutate web "Stop writes no terminal event" "$AR" \
+    '    finish(run)
+    release(run)
+    setStatus((current) => (current === '"'"'running'"'"' ? '"'"'finished'"'"' : current))' \
+    '    release(run)
+    setStatus((current) => (current === '"'"'running'"'"' ? '"'"'finished'"'"' : current))'
+  mutate web "a second end is appended rather than dropped" "$AR" \
+    "    if (event.type === 'end') run.ended = true" \
+    '    void event'
+  # **Both halves at once, because either alone holds it.** A connection whose
+  # setup is still in flight is releasable two ways: the run records the handle
+  # synchronously, and the run's signal is handed to the setup. Breaking one
+  # leaves the other holding, and a row that breaks one reports "nothing
+  # failed" — which is a true statement about that edit and a false impression
+  # of the safeguard. So this row removes the signal AND the recording, which
+  # is the state the finding described: nothing anywhere can close a hung setup.
+  mutate web "a hung setup can be closed by nothing" "$AR" \
+    '          const opened = openAssistantConnection({
+            allowed: endpoint.tools,
+            onEvent: (event) => push(run, event),
+            signal: run.controller.signal
+          })
+          run.connection = opened' \
+    '          const opened = openAssistantConnection({
+            allowed: endpoint.tools,
+            onEvent: (event) => push(run, event)
+          })'
+  # An identical policy run twice: the run id is what makes the second press a
+  # second submission rather than the same state value.
+  mutate web "a second run of the same policy is suppressed" "$AP" \
+    '          onClick={() => setSubmitted({ id: (nextRun.current += 1), policy: typed })}' \
+    '          onClick={() => setSubmitted({ id: 1, policy: typed })}'
 fi
 
 restore

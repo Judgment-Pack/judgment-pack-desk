@@ -57,6 +57,7 @@ import { agreesWithParse } from '../packs/documentText'
 import { CHECK_BEHIND_BUFFER, anchor, isStale, truncationNote } from '../packs/checks'
 import type { AnchoredDiagnostic } from '../packs/checks'
 import { CheckStrip } from '../packs/CheckStrip'
+import { AssistantPane } from '../assistant/AssistantPane'
 import { PackDocumentView } from '../packs/document/PackDocumentView'
 import { describe as describeShape, isRecord } from '../packs/document/MisshapenMember'
 import { SelectionContext } from '../packs/document/Block'
@@ -84,6 +85,7 @@ import { useInspectorPortal, useInspectorSlot } from '../shell/InspectorSlot'
 import { usePublishedDirty } from '../shell/authorBridge'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useMeasuredBox } from '../shell/measured'
+import { Tabs } from '../ui/Tabs'
 import styles from './PackView.module.css'
 
 /**
@@ -665,29 +667,67 @@ export function PackView() {
       />
     ) : null
 
-  const inspector = useInspectorPortal(
+  /**
+   * What stands where the Inspector's panels normally do.
+   *
+   * The what-if pane takes that place when the editor has no room beside it,
+   * which is the rule this route has had since Try it was built. It is the
+   * first tab's *content*, not a replacement for the tab set: the Assistant has
+   * to be reachable while a what-if is open, and the pane's own heading already
+   * says Inspector in both cases.
+   */
+  const inspectorNode =
     paneNode !== null && !roomInMain ? (
       paneNode
     ) : pack.data === undefined ? null : (
-        <PackInspector
-          packId={packId ?? ''}
-          document={drawn}
-          at={at}
-          meta={pack.data.meta}
-          fileSha256={file.data?.sha256}
-          fileBytes={file.data?.bytes}
-          baseSha256={onPath ? buffer.base?.sha256 : undefined}
-          dirty={dirty}
-          anchored={anchored}
-          truncation={truncationNote(report)}
-          stale={stale}
-          pending={fetching}
-          checkedWhat={provenance}
-          unavailable={unavailable}
-          tab={slot.tab}
-          onTabChange={slot.setTab}
-        />
-      )
+      <PackInspector
+        packId={packId ?? ''}
+        document={drawn}
+        at={at}
+        meta={pack.data.meta}
+        fileSha256={file.data?.sha256}
+        fileBytes={file.data?.bytes}
+        baseSha256={onPath ? buffer.base?.sha256 : undefined}
+        dirty={dirty}
+        anchored={anchored}
+        truncation={truncationNote(report)}
+        stale={stale}
+        pending={fetching}
+        checkedWhat={provenance}
+        unavailable={unavailable}
+        tab={slot.tab}
+        onTabChange={slot.setTab}
+      />
+    )
+
+  /**
+   * The right pane's two tabs, on the pack routes only.
+   *
+   * **The selection is held here rather than in the shell slot.** `slot.tab`
+   * is the Inspector's *inner* tab (Member, References, Checks) and pairing a
+   * second meaning onto it would make selecting a member change which pane is
+   * showing. This route does not remount at the 1100px breakpoint — the pane
+   * does, and the portal's contents are rendered from here — so state held in
+   * the route survives the swap the slot exists to survive.
+   *
+   * **Assistant is mounted only while it is the selected tab.** Radix keeps an
+   * unselected panel out of the DOM, and that is what this pane needs rather
+   * than merely tolerates: mounting it would open the assistant's MCP
+   * connection — one more `jpack mcp` — for every reader who opened a pack.
+   */
+  const [rightTab, setRightTab] = useState('inspector')
+  const inspector = useInspectorPortal(
+    inspectorNode === null ? null : (
+      <Tabs
+        label="Right pane"
+        value={rightTab}
+        onValueChange={setRightTab}
+        tabs={[
+          { value: 'inspector', label: 'Inspector', panel: inspectorNode },
+          { value: 'assistant', label: 'Assistant', panel: <AssistantPane /> }
+        ]}
+      />
+    )
   )
 
   if (pack.isPending) return <Loading what={`pack ${packId}`} />

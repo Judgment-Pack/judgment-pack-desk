@@ -23,7 +23,7 @@ interface PromptSummary {
 
 interface PromptLister {
   listPrompts?: () => Promise<{ prompts?: PromptSummary[] }>
-  getPrompt?: (params: { name: string }) => Promise<{
+  getPrompt?: (params: { name: string; arguments?: Record<string, string> }) => Promise<{
     description?: string
     messages?: { role?: string; content?: { type?: string; text?: string } }[]
   }>
@@ -61,18 +61,32 @@ export interface PromptText {
   text: string
 }
 
-/** One prompt's message text, verbatim. */
-export function usePromptText(name: string, advertised: boolean): UseQueryResult<PromptText, Error> {
+/**
+ * One prompt's message text, verbatim.
+ *
+ * `args` are the prompt's own arguments, as `prompts/get` takes them — the
+ * runtime fills them into the text it returns, so a prompt read with different
+ * arguments is a different answer and is keyed as one. It is optional because
+ * the surfaces that only *show* a prompt pass none; the assistant passes the
+ * policy a person typed, which is the whole of what it adds to the runtime's
+ * own words.
+ */
+export function usePromptText(
+  name: string,
+  advertised: boolean,
+  args?: Record<string, string>
+): UseQueryResult<PromptText, Error> {
   const { client, status } = useMcp()
   return useQuery({
-    queryKey: ['prompts/get', name],
+    // The arguments are part of the key, because they are part of the answer.
+    queryKey: ['prompts/get', name, args ?? null],
     enabled: advertised && status === 'ready' && client !== null,
     queryFn: async () => {
       const lister = client as unknown as PromptLister
       if (typeof lister.getPrompt !== 'function') {
         throw new Error('this connection cannot fetch a prompt')
       }
-      const answer = await lister.getPrompt({ name })
+      const answer = await lister.getPrompt(args === undefined ? { name } : { name, arguments: args })
       const text = (answer.messages ?? [])
         .map((message) => message.content?.text ?? '')
         .filter((part) => part !== '')

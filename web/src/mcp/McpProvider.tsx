@@ -78,7 +78,14 @@ export function sessionToken(): string {
   return window.sessionStorage.getItem(TOKEN_KEY) ?? ''
 }
 
-function socketURL(token: string): string {
+/**
+ * The one address a desk MCP connection is opened at.
+ *
+ * Exported because the assistant opens a **second** connection over the same
+ * relay with its own client and its own gate (`assistant/session.ts`), and two
+ * spellings of this address would be two answers about where the chassis is.
+ */
+export function socketURL(token: string): string {
   const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${scheme}//${window.location.host}/ws?token=${encodeURIComponent(token)}`
 }
