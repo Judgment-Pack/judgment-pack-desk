@@ -3777,12 +3777,10 @@ export function assistantTransport(): Transport {
   # `end` twice: a pane that renders "running" until it sees one would be right
   # either way, so what this breaks is the contract's own "exactly once".
   mutate web "end is emitted twice" "$BL" \
-    "    yield { type: 'end' }
-  }
+    "  yield { type: 'end' }
 }" \
-    "    yield { type: 'end' }
-    yield { type: 'end' }
-  }
+    "  yield { type: 'end' }
+  yield { type: 'end' }
 }"
   # The proposal taken from the prose rather than from the fenced block: a
   # worked example in an explanation becomes the document a person accepts.
@@ -3979,22 +3977,108 @@ export function assistantTransport(): Transport {
   mutate web "a second consumer of the channel is admitted" "$VC" \
     '      if (consuming) throw new ChannelHasOneConsumer()' \
     '      void ChannelHasOneConsumer'
-  # A `finally` that yields makes the consumer's first `return()` resolve
-  # `{ value, done: false }` with the generator still suspended, and `for await`
-  # discards that value — so the terminal event is never delivered at all.
-  mutate web "the terminal event is yielded from the finally again" "$VL" \
-    "  const finish = async (): Promise<void> => {
-    await channel.push({ type: 'end' })
+  # **The whole regression, not half of it.** Round 3 was right that removing the
+  # channel's terminal event alone kills the mutant for the wrong reason: the
+  # named claim is about `return()` semantics, so the mutant has to be the shape
+  # that had them wrong — an async generator again, with `end` yielded from its
+  # `finally` and nothing pushed on the channel. The return-semantics test then
+  # fails for the reason it is named after: the first `return()` answers
+  # `{ done: false }` carrying an event.
+  mutate web "the run is a generator again, with end yielded from its finally" "$VL" \
+    '  const finish = async (): Promise<void> => {
+    await channel.push({ type: '"'"'end'"'"' })
     channel.close()
-  }" \
-    "  const finish = async (): Promise<void> => {
+  }
+  /**
+   * Everything this run holds, released once.
+   *
+   * Called by the iterator **before** it awaits anything, which is the whole
+   * reason the outer shape is not an async generator: a generator serves
+   * `next()` and `return()` from one queue, so the `return()` carrying this
+   * abort would have been queued behind the very `next()` the abort was going
+   * to release. `channel.abandon()` aborts first in its own right; the explicit
+   * `stop.abort()` beside it is the same claim made where a reader is.
+   */
+  const cancel = () => {
+    session.signal.removeEventListener('"'"'abort'"'"', onAbort)
+    stop.abort()
+    channel.abandon()
+  }
+
+  /**
+   * The run itself starts on the consumer'"'"'s first `next()`.
+   *
+   * A consumer that opens a session and leaves without asking for an event has
+   * asked the model nothing, and this is what makes that true.
+   */
+  const open = (): AsyncGenerator<AssistantEvent> => {
+    const loop = drive().catch(async (cause: unknown) => {
+      // An abort is the viewer stopping the session, and it ends it: there is
+      // no failure to report and nothing more to say than `end`.
+      if (stop.signal.aborted || (cause as Error)?.name === '"'"'AbortError'"'"') return
+      await channel.push({ type: '"'"'error'"'"', message: describe(cause) })
+    })
+    // Nothing else awaits this; a rejection out of the catch above would be
+    // unhandled. It cannot reject, and this is what says so.
+    void loop.then(finish, finish)
+    return channel.drain()
+  }
+
+  return eventIterator({ open, cancel })' \
+    '  const finish = async (): Promise<void> => {
     channel.close()
-  }"
+  }
+  const cancel = () => {
+    session.signal.removeEventListener('"'"'abort'"'"', onAbort)
+    stop.abort()
+    channel.abandon()
+  }
+  const open = (): AsyncGenerator<AssistantEvent> => {
+    const loop = drive().catch(async (cause: unknown) => {
+      if (stop.signal.aborted || (cause as Error)?.name === '"'"'AbortError'"'"') return
+      await channel.push({ type: '"'"'error'"'"', message: describe(cause) })
+    })
+    void loop.then(finish, finish)
+    return channel.drain()
+  }
+  void eventIterator
+  return (async function* (): AsyncGenerator<AssistantEvent> {
+    try {
+      yield* open()
+    } finally {
+      cancel()
+      yield { type: '"'"'end'"'"' }
+    }
+  })()'
+
+  # `return()` has to cancel **before** it awaits: what a pending `next()` is
+  # waiting on is exactly what the cancel ends, and the queued close cannot run
+  # until that `next()` settles.
+  mutate web "the iterator cancels only after it has waited" "$EC" \
+    '      options.cancel()
+      await events?.return(undefined)' \
+    '      await events?.return(undefined)
+      options.cancel()'
+
+  # A `next()` that finds the iterator closed under it must not wait on the same
+  # closing promise the `return()` is waiting on: the `return()` registered
+  # first and would settle first, telling the consumer the iterator was closed
+  # before the `next()` it was holding had come back.
+  mutate web "a closed iterator's pending next waits on the closing too" "$EC" \
+    '      if (closed) return done
+      if (step.done === true) {' \
+    '      if (step.done === true || closed) {'
   # The connection is closed once however many times it is released: the abort
   # closes it and the setup's own failure closes it again.
   mutate web "the connection is closed once per release, not once" "$ASN" \
     '    shutting ??= (async () => {' \
     '    shutting = (async () => {'
+  # A timeout is a deadline, not a hint: firing every positive one after a
+  # millisecond credits an engine with work it would have cancelled first.
+  mutate web "the idle callback is fired before its deadline" "$CT" \
+    '            realSetTimeout(wrapped, timeout ?? 1)' \
+    '            realSetTimeout(wrapped, timeout === undefined ? 1 : Math.min(1, timeout))'
+
   # A shim that answers zero to `timeRemaining()` runs the ordinary idle
   # pattern, watches it decline to do anything, and certifies a clean leg —
   # while a browser gives it a real budget and lets it reach.

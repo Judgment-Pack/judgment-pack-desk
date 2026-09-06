@@ -1625,8 +1625,12 @@ guard whose whole claim is that everything an engine scheduled has already run.
 **Realistic means the deadline, not only the callback.** The shim takes the
 `IdleRequestOptions` it is given, hands the callback a budget that is positive
 at its first read and decreasing from the moment it starts — the browser's own
-rule — and reports `didTimeout` truthfully: a sealed leg never goes idle, so a
-callback that asked for a timeout is run because of it. A shim that answered
+rule — and **honours the timeout it was asked for**: the callback is not run
+before that deadline, and `didTimeout` is true because the deadline is what ran
+it. Firing every positive timeout after a millisecond and calling that a timeout
+credited an engine with work it would have cancelled long first; a callback with
+no timeout is offered an idle slot on the next turn, and reports `false`. Held
+under controlled time, deadline by deadline. A shim that answered
 zero and false to everything would run the ordinary idle pattern
 (`if (deadline.timeRemaining() > 0) work()`), watch it decline to do anything,
 and certify a clean leg while a browser gave it a real budget and let it reach.
@@ -1663,6 +1667,17 @@ beside them, and the two sets are asserted equal at the type level, so an id
 cannot become loadable without being put in front of the conformance session and
 an id the decoder declares cannot be left without an adapter. Both directions are
 compile errors.
+
+**An engine's outer shape is a hand-written iterator, not an async generator.**
+A generator serves `next()`, `return()` and `throw()` from one queue, so a
+`return()` arriving while a `next()` is pending is not run until that `next()`
+settles — and a run waiting on a model request that ends only when it is aborted
+could never be stopped by the consumer that owned it, because the abort was
+inside the `return()` queued behind the very `next()` it would have released.
+Both promises hung for ever, on both engines, measured. So `return()` cancels
+**first**, synchronously, before it awaits anything: the pending `next()` settles
+`{ done: true }`, and only then does `return()`. Each engine holds an abort of
+its own, chained to the session's, and gives its model requests that one.
 
 **One channel, one consumer, and no terminal event out of a `finally`.** The
 adapter's events reach the contract through an ordered channel whose `push`

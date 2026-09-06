@@ -349,10 +349,12 @@ function trackDeferredWork(): {
       options?: IdleRequestOptions
     ) => {
       const timeout = options?.timeout
-      // **A sealed leg never goes idle.** There is no spare frame time in a
-      // suite: a callback that asked for a timeout is run *because* of it, and
-      // saying otherwise would certify `didTimeout` against a state this
-      // harness can never reach.
+      // **A sealed leg never goes idle**, so a callback that asked for a
+      // timeout is run because of it — and it is run **at that timeout and not
+      // before**. Firing every positive timeout after a millisecond and calling
+      // it a timeout was the same fiction one step further on: an engine that
+      // would have cancelled a sixty-second callback long before its deadline
+      // was credited with work a browser would never have let it do.
       const didTimeout = timeout !== undefined
       const label = didTimeout
         ? `requestIdleCallback(${String(timeout)}ms timeout)`
@@ -370,7 +372,10 @@ function trackDeferredWork(): {
       const schedule = (wrapped: () => void): unknown =>
         realIdle !== undefined
           ? realIdle(wrapped, options)
-          : realSetTimeout(wrapped, timeout === undefined ? 1 : Math.min(1, timeout))
+          : // The requested deadline, honoured. An idle slot with no timeout is
+            // modelled as the next turn, which is the soonest a browser could
+            // have offered one.
+            realSetTimeout(wrapped, timeout ?? 1)
       const clear = (handle: unknown) =>
         realCancelIdle !== undefined ? realCancelIdle(handle) : realClearTimeout(handle as never)
       return record('requestIdleCallback', label, run, schedule, clear, false)
@@ -961,6 +966,72 @@ const fromCertification = (id: keyof typeof CERTIFICATION_LOADERS) => () =>
  * certified engine goes through, so what is shown is the harness and not a
  * rehearsal of it.
  */
+describe('the idle callback this harness brings with it', () => {
+  /**
+   * The shim on its own, under controlled time.
+   *
+   * `trackDeferredWork` is the whole of the barrier and it is not exported, so
+   * this installs it exactly as a leg does — with fake timers already in place,
+   * so what it captures is the clock this test advances — and takes it off
+   * again afterwards.
+   */
+  function installed(work: (scope: Record<string, unknown>) => void): void {
+    vi.useFakeTimers()
+    const scope = globalThis as unknown as Record<string, unknown>
+    const tracker = trackDeferredWork()
+    try {
+      work(scope)
+    } finally {
+      tracker.restore()
+      vi.useRealTimers()
+    }
+  }
+
+  it('does not run a timeout callback before its deadline, and says so when it does', () => {
+    installed((scope) => {
+      const seen: { didTimeout: boolean; budget: number }[] = []
+      const request = scope.requestIdleCallback as typeof requestIdleCallback
+      request((deadline) => seen.push({ didTimeout: deadline.didTimeout, budget: deadline.timeRemaining() }), {
+        timeout: 60_000
+      })
+      // A minute is a minute. Firing it after a millisecond and calling that a
+      // timeout is what let an engine be credited with work it would have
+      // cancelled first.
+      vi.advanceTimersByTime(1)
+      expect(seen, 'invoked before its deadline').toEqual([])
+      vi.advanceTimersByTime(59_998)
+      expect(seen, 'invoked before its deadline').toEqual([])
+      vi.advanceTimersByTime(1)
+      expect(seen).toHaveLength(1)
+      expect(seen[0]!.didTimeout, 'it ran because the deadline was reached').toBe(true)
+      expect(seen[0]!.budget, 'a positive budget at the first read').toBeGreaterThan(0)
+    })
+  })
+
+  it('never runs one the engine cancelled before its deadline', () => {
+    installed((scope) => {
+      let ran = 0
+      const request = scope.requestIdleCallback as typeof requestIdleCallback
+      const cancel = scope.cancelIdleCallback as typeof cancelIdleCallback
+      const handle = request(() => (ran += 1), { timeout: 60_000 })
+      vi.advanceTimersByTime(1_000)
+      cancel(handle)
+      vi.advanceTimersByTime(120_000)
+      expect(ran).toBe(0)
+    })
+  })
+
+  it('offers an idle slot with no timeout on the next turn, and says it did not time out', () => {
+    installed((scope) => {
+      const seen: boolean[] = []
+      const request = scope.requestIdleCallback as typeof requestIdleCallback
+      request((deadline) => seen.push(deadline.didTimeout))
+      vi.advanceTimersByTime(1)
+      expect(seen).toEqual([false])
+    })
+  })
+})
+
 describe('the seal, shown to fail', () => {
   const leg: Leg = { api: 'openai-compatible', answerAs: 'stream' }
 
