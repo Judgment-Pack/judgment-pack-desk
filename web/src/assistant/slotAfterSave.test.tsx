@@ -13,9 +13,10 @@
  * slot is read through `useAssistantSlot` — the one hook every consumer uses.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigProvider, useEffectiveConfig } from '../config/DeskConfigProvider'
+import { DESK_CONFIG_QUERY_KEY } from '../config/queries'
 import { testQueryClient } from '../testing/harness'
 import { AssistantSection } from './AssistantSection'
 import { useAssistantSlot } from './useAssistantSlot'
@@ -115,26 +116,44 @@ function DigestReading() {
   return <p id="desk-digest">{desk?.sha256 ?? 'none'}</p>
 }
 
+/** The slot as `SlotReading` renders it, found by its id and not by its role. */
+function slotLine(): string {
+  return document.querySelector('#slot-reading')?.textContent ?? ''
+}
+
 /** What every surface that reads the slot reads. */
 function SlotReading() {
   const slot = useAssistantSlot()
   return (
-    <output>
+    // An id rather than the implicit `status` role: the section under test
+    // renders its own status notices, and a query by role would find them too.
+    <output id="slot-reading">
       {slot.state} · {slot.endpoint?.model ?? 'none'} · {slot.engine} · {slot.thinking}
     </output>
   )
 }
 
 function renderDesk() {
-  return render(
-    <QueryClientProvider client={testQueryClient()}>
+  // The client is handed back so a case can stand in for the things that
+  // re-read a query in the page — a remount, the chassis' watcher, a later
+  // visit to Admin — without pretending any one of them is what happened.
+  const client = testQueryClient()
+  return renderWith(client)
+}
+
+function renderWith(client: ReturnType<typeof testQueryClient>) {
+  return {
+    client,
+    ...render(
+    <QueryClientProvider client={client}>
       <DeskConfigProvider>
         <DigestReading />
         <SlotReading />
         <AssistantSection id="assistant" title="Assistant" />
       </DeskConfigProvider>
     </QueryClientProvider>
-  )
+    )
+  }
 }
 
 describe('what a save reaches', () => {
@@ -142,7 +161,7 @@ describe('what a save reaches', () => {
     const state = stubDesk()
     renderDesk()
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toBe(
+      expect(slotLine()).toBe(
         'configured · the-model-in-the-file · vercel · off'
       )
     )
@@ -155,7 +174,7 @@ describe('what a save reaches', () => {
     // query, the read runs again, and the value every consumer of the slot
     // reads is the one on disk — without anything reloading the page.
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toBe(
+      expect(slotLine()).toBe(
         'configured · the-model-chosen · vercel · ultra'
       )
     )
@@ -211,14 +230,14 @@ describe('what a save reaches', () => {
     })
     renderDesk()
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toBe(
+      expect(slotLine()).toBe(
         'configured · the-model-in-the-file · vercel · off'
       )
     )
     fireEvent.change(screen.getByLabelText('Model'), { target: { value: '   ' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText('must be a non-empty string')).toBeTruthy()
-    expect(screen.getByRole('status').textContent).toBe(
+    expect(slotLine()).toBe(
       'configured · the-model-in-the-file · vercel · off'
     )
   })
@@ -317,7 +336,7 @@ describe('Reload after a file that moved', () => {
     // Save with no digest yet does nothing at all — which is a different
     // failure wearing this one's clothes.
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toContain('the-model-in-the-file')
+      expect(slotLine()).toContain('the-model-in-the-file')
     )
     const before = state.reads
 
@@ -434,12 +453,12 @@ describe('a write that landed while the read after it did not', () => {
     const state = stubWriteThen('hangs')
     renderDesk()
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toContain('the-model-in-the-file')
+      expect(slotLine()).toContain('the-model-in-the-file')
     )
     fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'the-model-chosen' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toBe(
+      expect(slotLine()).toBe(
         'configured · the-model-chosen · vercel · off'
       )
     )
@@ -458,14 +477,14 @@ describe('a write that landed while the read after it did not', () => {
     const state = stubWriteThen('fails')
     renderDesk()
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toContain('the-model-in-the-file')
+      expect(slotLine()).toContain('the-model-in-the-file')
     )
     fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'the-model-chosen' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toBe('unavailable · none · vercel · off')
+      expect(slotLine()).toBe('unavailable · none · vercel · off')
     )
-    expect(screen.getByRole('status').textContent).not.toContain('configured ·')
+    expect(slotLine()).not.toContain('configured ·')
     expect(state.writes).toBe(1)
   })
 
@@ -478,12 +497,12 @@ describe('a write that landed while the read after it did not', () => {
     vi.stubGlobal('fetch', withStoredKey(globalThis.fetch as typeof fetch))
     renderDesk()
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toContain('the-model-in-the-file')
+      expect(slotLine()).toContain('the-model-in-the-file')
     )
     fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'the-model-chosen' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toBe('unavailable · none · vercel · off')
+      expect(slotLine()).toBe('unavailable · none · vercel · off')
     )
     // The chassis says there is an endpoint and the key is for it, so the row
     // says that — rather than overruling it with a file it could not read.
@@ -503,7 +522,7 @@ describe('a write that landed while the read after it did not', () => {
     const state = stubWriteThen('fails')
     renderDesk()
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toContain('the-model-in-the-file')
+      expect(slotLine()).toContain('the-model-in-the-file')
     )
     fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'the-model-chosen' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
@@ -524,12 +543,12 @@ describe('a write that landed while the read after it did not', () => {
     const state = stubWriteThen('ok')
     renderDesk()
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toContain('the-model-in-the-file')
+      expect(slotLine()).toContain('the-model-in-the-file')
     )
     fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'the-model-chosen' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toBe(
+      expect(slotLine()).toBe(
         'configured · the-model-chosen · vercel · off'
       )
     )
@@ -549,12 +568,12 @@ describe('removing the endpoint', () => {
     vi.stubGlobal('fetch', withStoredKey(globalThis.fetch as typeof fetch))
     renderDesk()
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toContain('the-model-in-the-file')
+      expect(slotLine()).toContain('the-model-in-the-file')
     )
     fireEvent.click(screen.getByRole('button', { name: 'Remove endpoint' }))
     fireEvent.click(screen.getByRole('button', { name: 'Remove it' }))
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toBe('none · none · vercel · off')
+      expect(slotLine()).toBe('none · none · vercel · off')
     )
     expect(state.writes).toBe(1)
     // The two are separate: the endpoint went and the key did not.
@@ -600,3 +619,124 @@ function withStoredKey(inner: typeof fetch): typeof fetch {
     return inner(address as never, init as never)
   }) as unknown as typeof fetch
 }
+
+describe('Admin, where the configuration could not be read', () => {
+  /**
+   * The scenario the round-2 disposition left half-done: the write lands, the
+   * read after it *answers* with a refusal, and the key read is fine and says
+   * the endpoint is there and the key is for it.
+   *
+   * The tab and Describe it had their own state for this. Admin did not, and
+   * Admin is where a reader goes to find out **why** — so it was the one
+   * surface still printing "none — no endpoint configured" over a form painted
+   * as editable, on the same page as its own notice saying the file could not
+   * be read.
+   */
+  function stubRefusedRead(): { refuse: (yes: boolean) => void } {
+    let refusing = false
+    const assistant = { endpoint: ENDPOINT, engine: 'vercel', thinking: 'off' }
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      const address = String(url)
+      const method = init?.method ?? 'GET'
+      if (address.includes('/api/desk-config') && method === 'PUT') {
+        refusing = true
+        return {
+          ok: true,
+          status: 200,
+          statusText: '',
+          text: async () =>
+            JSON.stringify({
+              path: DESK_PATH,
+              sha256: 'b'.repeat(64),
+              assistant,
+              created: false,
+              keyRebindRequired: false
+            })
+        }
+      }
+      if (address.includes('/api/desk-config')) {
+        if (refusing) {
+          return {
+            ok: false,
+            status: 503,
+            statusText: '',
+            text: async () => JSON.stringify({ error: 'the desk could not read it' })
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          statusText: '',
+          text: async () =>
+            JSON.stringify({
+              path: DESK_PATH,
+              present: true,
+              sha256: 'a'.repeat(64),
+              content: JSON.stringify({ deskConfigVersion: 1, assistant })
+            })
+        }
+      }
+      if (address.includes('/api/assistant/key')) {
+        // A perfectly good key read: the endpoint is there and the key is for
+        // it. The row follows this, and the heading above it must not
+        // contradict it.
+        return {
+          ok: true,
+          status: 200,
+          statusText: '',
+          text: async () =>
+            JSON.stringify({
+              present: true,
+              fingerprint: 'sk-a…wxyz',
+              origin: 'https://api.example.invalid',
+              kind: 'openai-compatible',
+              configuredOrigin: 'https://api.example.invalid',
+              configuredKind: 'openai-compatible',
+              bound: true
+            })
+        }
+      }
+      return { ok: false, status: 404, statusText: '', text: async () => '{}' }
+    })
+    return { refuse: (yes: boolean) => (refusing = yes) }
+  }
+
+  it('says the file could not be read, claims no absence, and edits nothing', async () => {
+    const chassis = stubRefusedRead()
+    const { client } = renderDesk()
+    await waitFor(() => expect(slotLine()).toContain('the-model-in-the-file'))
+    expect(screen.getAllByText('a model endpoint').length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(
+      await screen.findByText('this desk could not read its own configuration')
+    ).toBeTruthy()
+    // **No absence claimed anywhere on the section.**
+    expect(screen.queryByText('none — no endpoint configured')).toBeNull()
+    expect(screen.getByText(/Nothing below is what this desk is configured for/)).toBeTruthy()
+    // The fields are shown and not editable: they are the built-in defaults,
+    // and typing into them would compose a write over a file nobody has seen.
+    const fields = (screen.getByLabelText('Model') as HTMLInputElement).closest('fieldset')
+    expect((fields as HTMLFieldSetElement).disabled).toBe(true)
+    // And the key row still follows the chassis, which said the endpoint is
+    // there and the key is for it.
+    expect(screen.getByText(/which is where this desk is configured/)).toBeTruthy()
+    expect(screen.queryByText(/Save an endpoint above before storing a key/)).toBeNull()
+
+    // **A later read that works puts the configured form back**, which is what
+    // makes this a state and not a mode: nothing latches, and the section
+    // returns to describing the file the moment there is one to describe.
+    chassis.refuse(false)
+    await act(async () => {
+      await client.refetchQueries({ queryKey: DESK_CONFIG_QUERY_KEY })
+    })
+    await waitFor(() => expect(slotLine()).toContain('the-model-in-the-file'))
+    expect(screen.queryByText('this desk could not read its own configuration')).toBeNull()
+    expect(screen.queryByText(/Nothing below is what this desk is configured for/)).toBeNull()
+    expect(
+      ((screen.getByLabelText('Model') as HTMLInputElement).closest(
+        'fieldset'
+      ) as HTMLFieldSetElement).disabled
+    ).toBe(false)
+  })
+})

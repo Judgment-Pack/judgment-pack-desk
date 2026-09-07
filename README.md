@@ -1542,13 +1542,18 @@ this desk says nothing about a file it could not read rather than describing
 one from memory: Admin reports it and Save is refused until it can be read.
 **And "nothing" is its own state rather than the defaults.** The slot every
 consumer reads has a third value — `unavailable` — because falling through to
-the built-in defaults told the tab and Describe it that *no assistant is
-configured*, which is an absence this page had not established about a file it
-could not open. The tab and Describe it say what happened instead and offer no
-control; the key row is unaffected, because it reads the chassis' own
-`configuredOrigin`, `configuredKind` and `bound` and never the page's copy of
-the configuration — a row that read the page first said "save an endpoint
-first" while a perfectly good key read beside it named the endpoint.
+the built-in defaults told every surface that *no assistant is configured*,
+which is an absence this page had not established about a file it could not
+open. **All three surfaces read it**: the tab and Describe it say what happened
+and offer no control, and **Admin** — where a reader goes to find out why —
+says the configuration could not be read, claims no absence, and shows its
+fields disabled, because they are the built-in defaults there and typing into
+them would compose a write over a file nobody has seen. Nothing latches: a
+later read that works puts the configured form back. The key row is unaffected
+throughout, because it reads the chassis' own `configuredOrigin`,
+`configuredKind` and `bound` and never the page's copy of the configuration —
+a row that read the page first said "save an endpoint first" while a perfectly
+good key read beside it named the endpoint.
 The test drives the real provider over a stubbed file rather than a fixture,
 because a fixture would hold the mechanism constant and prove nothing about
 it.

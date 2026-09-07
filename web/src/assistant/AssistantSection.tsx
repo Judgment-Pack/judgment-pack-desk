@@ -23,6 +23,13 @@
  * would give one of the three somewhere to acquire an affordance the other two
  * lack. So they are described, and what is configurable is the endpoint.
  *
+ * **A configuration this desk could not read is its own state here too.** The
+ * tab and Describe it say so; this section used to fall through to the
+ * built-in defaults and print "none — no endpoint configured" over a form
+ * painted as editable, on the same page as the notice saying the file could
+ * not be read. Two claims about one file, and the confident one was the false
+ * one.
+ *
  * **The key row says which host the key is for.** The chassis records the
  * scheme, host and wire protocol a key was entered for and presents it only
  * there; a configuration write that moves any of the three leaves the key in
@@ -39,6 +46,7 @@ import { SourceBadge } from '../routes/adminBlocks'
 import { DIAGNOSTIC_SAYS, type AssistantKeyState } from './client'
 import { EndpointForm } from './EndpointForm'
 import { keyBinding, type KeyBinding } from './keyBinding'
+import { useAssistantSlot } from './useAssistantSlot'
 import {
   useAssistantKey,
   useProbeAssistant,
@@ -75,6 +83,12 @@ export const DEPLOYMENT_STATES: [string, string][] = [
 
 export function AssistantSection({ id, title }: { id: string; title: string }) {
   const { config, sources, desk } = useEffectiveConfig()
+  // **The same reading the tab and Describe it take.** A read that did not
+  // produce a file establishes nothing about what is in it, and this section
+  // is where a reader would go to find that out — so it must not be the one
+  // surface still asserting an absence.
+  const slot = useAssistantSlot()
+  const unavailable = slot.state === 'unavailable'
   const endpoint = config.assistant.endpoint
   const key = useAssistantKey()
   const store = useStoreAssistantKey()
@@ -132,7 +146,11 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
       <p>
         Assistant:{' '}
         <strong>
-          {endpoint === null ? 'none — no endpoint configured' : 'a model endpoint'}
+          {unavailable
+            ? 'this desk could not read its own configuration'
+            : endpoint === null
+              ? 'none — no endpoint configured'
+              : 'a model endpoint'}
         </strong>
         <br />
         <SourceBadge source={sources.assistant} path="jpack-desk.json" deskPath={desk?.path} />
@@ -154,8 +172,18 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
         for one endpoint than another.
       </p>
 
+      {unavailable && (
+        <p className="note note-warn" role="status">
+          <strong>Nothing below is what this desk is configured for.</strong> The file that would
+          say could not be read, so the form is showing its own defaults and is not editable —
+          changing it would be writing over something nobody has seen. The problem is named at
+          the top of this page, and the form comes back as soon as the file can be read.
+        </p>
+      )}
+
       <EndpointForm
         bound={binding === 'bound'}
+        unavailable={unavailable}
         onWritten={(answer) => setRebindAsked(answer.keyRebindRequired)}
       />
 

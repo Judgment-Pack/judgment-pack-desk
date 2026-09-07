@@ -3828,8 +3828,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # retains nothing, and the row above holds that.
   # A key is not removed by removing the endpoint, so the page must not say so.
   mutate web "no endpoint is reported as no key" "$AS" \
-    "          {endpoint === null ? 'none — no endpoint configured' : 'a model endpoint'}" \
-    "          {endpoint === null ? 'none — no assistant, and no key' : 'a model endpoint'}"
+    "              ? 'none — no endpoint configured'" \
+    "              ? 'none — no assistant, and no key'"
   mutate web "a diagnostic is rendered as the bare word" "$AS" \
     "      {result.diagnostic !== '' && (" \
     "      {false && result.diagnostic !== '' && ("
@@ -3969,11 +3969,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # saved cleanly into the field and produced a 422 on the next Save.
   ML=web/src/assistant/modelListing.ts
   mutate web "a listed id is offered without asking the decoder" "$ML" \
-    '    if (modelIdProblem(raw) !== undefined) continue' \
-    "    if (typeof raw !== 'string' || raw === '') continue"
+    "    const { id: raw, display_name: shown } = entry as { id?: unknown; display_name?: unknown }
+    if (modelIdProblem(raw) !== undefined) continue" \
+    "    const { id: raw, display_name: shown } = entry as { id?: unknown; display_name?: unknown }
+    if (typeof raw !== 'string' || raw === '') continue"
   mutate web "a listed Gemini id is offered without asking the decoder" "$ML" \
-    '      if (modelIdProblem(raw) !== undefined) continue' \
-    "      if (raw === '') continue"
+    "      const raw = name.startsWith('models/') ? name.slice('models/'.length) : name
+      if (modelIdProblem(raw) !== undefined) continue" \
+    "      const raw = name.startsWith('models/') ? name.slice('models/'.length) : name
+      if (raw === '') continue"
   # The id is what the endpoint answers to; the label is what a person reads,
   # and the two differ on two of the three protocols.
   mutate web "the model is saved from the listing label rather than its id" "$MF" \
@@ -5130,6 +5134,23 @@ export function assistantTransport(): Transport {
   # assistant is configured" is an absence this page did not establish about a
   # file it could not open, and it offers a repair that sends them to a form
   # which will not write either.
+  # **Admin is where a reader goes to find out why**, so it was the worst place
+  # to be still asserting an absence: it printed "none — no endpoint
+  # configured" over a form painted as editable, on the same page as its own
+  # notice saying the file could not be read.
+  AS2=web/src/assistant/AssistantSection.tsx
+  mutate web "Admin claims no endpoint from a file it could not read" "$AS2" \
+    "          {unavailable
+            ? 'this desk could not read its own configuration'
+            : endpoint === null" \
+    "          {false
+            ? 'this desk could not read its own configuration'
+            : endpoint === null"
+  # And the fields with it: they are the built-in defaults there, and typing
+  # into them would compose a write over a file nobody has seen.
+  mutate web "the form is editable over a file this desk could not read" "$EF" \
+    '      <fieldset disabled={busy || unavailable}>' \
+    '      <fieldset disabled={busy}>'
   # The tab's own half of the same sentence: it renders the state directly
   # rather than through `unusableBecause`, so breaking one does not break the
   # other and each has its own row.

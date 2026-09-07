@@ -92,6 +92,7 @@ const REMOVAL_MEANS =
 
 export function EndpointForm({
   bound,
+  unavailable,
   onWritten
 }: {
   /**
@@ -102,6 +103,16 @@ export function EndpointForm({
    * credential may go. It gates List models and nothing else.
    */
   bound: boolean
+  /**
+   * Whether this desk could not read the file these fields are about.
+   *
+   * The fields then hold the built-in defaults rather than anything anybody
+   * configured, so they are shown and not edited: typing into them would be
+   * composing a write over a file nobody has seen. Save is refused for the
+   * same reason one layer along — there is no digest — and this is what says
+   * so before somebody has typed.
+   */
+  unavailable: boolean
   /** Called with every answer to a write that landed. */
   onWritten: (answer: AssistantConfigWritten) => void
 }) {
@@ -195,10 +206,12 @@ export function EndpointForm({
         save()
       }}
     >
-      {/* Disabled as a whole while a write is in flight: a field edited
+      {/* Disabled as a whole while a write is in flight — a field edited
           between the request and its answer would be a value the author
-          believes was saved and was not. */}
-      <fieldset disabled={busy}>
+          believes was saved and was not — and while the file these fields are
+          about could not be read, when they are the built-in defaults rather
+          than anything anybody configured. */}
+      <fieldset disabled={busy || unavailable}>
         <Field
           label="Wire protocol"
           hint="It says how a request is shaped — which header carries the key and which path the call goes on — and nothing about who is at the other end."

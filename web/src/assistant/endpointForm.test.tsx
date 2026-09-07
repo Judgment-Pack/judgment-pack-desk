@@ -99,12 +99,20 @@ function stubWrites(
   return { sent }
 }
 
-function renderForm(value: EffectiveConfig = configured(), bound = false) {
+function renderForm(
+  value: EffectiveConfig = configured(),
+  bound = false,
+  unavailable = false
+) {
   const written: unknown[] = []
   const rendered = render(
     <QueryClientProvider client={testQueryClient()}>
       <DeskConfigFixture value={value}>
-        <EndpointForm bound={bound} onWritten={(answer) => written.push(answer)} />
+        <EndpointForm
+          bound={bound}
+          unavailable={unavailable}
+          onWritten={(answer) => written.push(answer)}
+        />
       </DeskConfigFixture>
     </QueryClientProvider>
   )
@@ -199,7 +207,7 @@ describe('the fields', () => {
     const { rerender } = render(
       <QueryClientProvider client={testQueryClient()}>
         <DeskConfigFixture value={effectiveConfig(undefined)}>
-          <EndpointForm bound={false} onWritten={() => {}} />
+          <EndpointForm bound={false} unavailable={false} onWritten={() => {}} />
         </DeskConfigFixture>
       </QueryClientProvider>
     )
@@ -207,7 +215,7 @@ describe('the fields', () => {
     rerender(
       <QueryClientProvider client={testQueryClient()}>
         <DeskConfigFixture value={configured()}>
-          <EndpointForm bound={false} onWritten={() => {}} />
+          <EndpointForm bound={false} unavailable={false} onWritten={() => {}} />
         </DeskConfigFixture>
       </QueryClientProvider>
     )
