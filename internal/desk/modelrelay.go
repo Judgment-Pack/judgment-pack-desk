@@ -157,11 +157,19 @@ var (
 //
 // **Every JSON string in the body**, keys and values alike, compared to the
 // configured key: equal to it, or containing it where the key is long enough
-// to be looked for inside a longer string. That is the answer-header rule
-// applied to the one body this desk reads, on the same twelve-byte floor and
-// for the same reason — below it a key is a substring of ordinary text, and a
-// filter that deletes an answer to protect three characters is a worse answer
-// than the three characters.
+// to be looked for inside a longer string. Numbers too, by the text they were
+// written as — a key of digits is a key, and `UseNumber` keeps that text
+// rather than a float somebody would have to render back. That is the
+// answer-header rule applied to the one body this desk reads, on the same
+// twelve-byte floor and for the same reason — below it a key is a substring of
+// ordinary text, and a filter that deletes an answer to protect three
+// characters is a worse answer than the three characters.
+//
+// **`UseNumber` is also what makes the validity rule honest.** Without it the
+// decoder converts every number to a `float64` and *fails* on one outside that
+// range, so `1e1000` — a syntactically valid JSON document — was refused by a
+// rule that says every shape of exactly one valid value is carried. Whether a
+// number is representable in Go is not a fact about the endpoint's listing.
 //
 // **The strings are the decoded ones**, because a key written into JSON with
 // escapes is one string to a decoder and different bytes on the wire. What no
@@ -173,6 +181,7 @@ func listingProblem(body []byte, key string) error {
 		return key != "" && (value == key || (long && strings.Contains(value, key)))
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
 	// One value, and the decoder is what says where it ends. `Token` walks the
 	// whole of it; `More` afterwards is what catches a second value behind it,
 	// which is the shape every other reader on this desk refuses too.
@@ -198,6 +207,16 @@ func listingProblem(body []byte, key string) error {
 			}
 		case string:
 			if carries(typed) {
+				return errListingCarriesKey
+			}
+			if depth == 0 {
+				values++
+			}
+		case json.Number:
+			// The digits as they were written. A `json.Number` is not a
+			// `string` to a type switch, so without this arm a key of digits
+			// would travel through the one member the scan did not look at.
+			if carries(string(typed)) {
 				return errListingCarriesKey
 			}
 			if depth == 0 {
@@ -256,6 +275,40 @@ const relayFinalWrite = 5 * time.Second
 // on a cross-host redirect and knows nothing about `x-api-key`, so a followed
 // redirect could walk the injected credential to a host nobody configured.
 var relayTransport http.RoundTripper
+
+// beforeTheFirstByte bounds the wait for the **upstream's response headers**,
+// which is the half of the answer no other bound here reached.
+//
+// `boundedByIdle` is installed in `ModifyResponse`, and `ModifyResponse` runs
+// only once the transport has a response — so an endpoint that accepted the
+// request and then sent nothing at all, not a header and not a byte, was held
+// by the ten-minute *overall* deadline rather than the two-minute idle one.
+// Four of those exhausted every relay slot for ten minutes, against a README
+// promising two.
+//
+// **A wrapper rather than `ResponseHeaderTimeout` on the shared transport**,
+// for one reason: the bound is `relayIdle`, which is a var a test shortens so
+// the bound can be shown to *apply*, and a field read off one long-lived
+// transport cannot follow it without cloning the connection pool per request.
+// The timer is armed before the round trip and stopped when it returns —
+// which is the instant the headers are in hand, since the body streams
+// afterwards — and firing it cancels the request's own context, so the
+// refusal, the slot release and the log line are the ones every other
+// transport failure takes.
+type beforeTheFirstByte struct {
+	inner  http.RoundTripper
+	cancel context.CancelFunc
+}
+
+func (b beforeTheFirstByte) RoundTrip(r *http.Request) (*http.Response, error) {
+	timer := time.AfterFunc(relayIdle, b.cancel)
+	defer timer.Stop()
+	inner := b.inner
+	if inner == nil {
+		inner = http.DefaultTransport
+	}
+	return inner.RoundTrip(r)
+}
 
 // relayedRequestHeaders is the closed set of request headers that travel to
 // the endpoint. **Everything else is dropped.**
@@ -822,7 +875,7 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 			}
 			out.Header = carried
 		},
-		Transport:     relayTransport,
+		Transport:     beforeTheFirstByte{inner: relayTransport, cancel: cancel},
 		FlushInterval: -1,
 		ModifyResponse: func(response *http.Response) error {
 			status = response.StatusCode

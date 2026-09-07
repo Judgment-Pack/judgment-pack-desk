@@ -2470,6 +2470,19 @@ func TestRelayCarriesEveryShapeOfOneJSONDocument(t *testing.T) {
 		`[{"id":"a-model"}]`,
 		`{}`,
 		"\n  {\"data\":[]}  \n",
+		// **Every shape, and the name is now true of the table.** A bare
+		// scalar is exactly one JSON value, so the rule carries it; a table of
+		// objects and arrays was proving the rule over half its subject.
+		`"a bare string"`,
+		`42`,
+		`-1.5e3`,
+		`null`,
+		`true`,
+		`false`,
+		// A syntactically valid number outside `float64`. Whether Go can hold
+		// it is not a fact about the endpoint's listing, and the decoder used
+		// to refuse the document for it.
+		`1e1000`,
 	} {
 		t.Run(body, func(t *testing.T) {
 			u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -2545,6 +2558,85 @@ func TestRelayBoundsAStalledListingByTheIdleDeadline(t *testing.T) {
 		_, _ = w.Write([]byte(`{"data":[]}`))
 	}
 	after, afterBody := relayGet(t, ts, "models")
+	if after.StatusCode != http.StatusOK {
+		t.Fatalf("the slot did not come back: %d %s", after.StatusCode, afterBody)
+	}
+}
+
+func TestRelayRefusesAListingWhoseNumberIsTheKey(t *testing.T) {
+	// A key of digits is a key. `json.Number` is not a `string` to a type
+	// switch, so without an arm of its own it would travel through the one
+	// member the scan did not look at.
+	const digits = "123456789012345"
+	u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":` + digits + `}]}`))
+	})
+	s, ts, _ := assistantServer(t)
+	writeDeskConfig(t, s, fmt.Sprintf(
+		`{"deskConfigVersion":1,"assistant":{"endpoint":`+
+			`{"url":%q,"kind":"openai-compatible","model":"a-model","tools":[]}}}`,
+		u.server.URL+"/v1"))
+	if status, body := storeKey(t, ts, digits); status != http.StatusOK {
+		t.Fatalf("store: %d %v", status, body)
+	}
+	resp, body := relayGet(t, ts, "models")
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status %d, want 502: %s", resp.StatusCode, body)
+	}
+	if got := codeOfBody(t, body); got != CodeAssistantListingRefused {
+		t.Errorf("code %q, want %q", got, CodeAssistantListingRefused)
+	}
+	if strings.Contains(body, digits) {
+		t.Errorf("the refusal carries the key: %s", body)
+	}
+}
+
+func TestRelayBoundsTheWaitForTheFirstByte(t *testing.T) {
+	// **The half of the answer no bound reached.** `boundedByIdle` is
+	// installed in `ModifyResponse`, and that runs only once the transport has
+	// a response — so an endpoint that accepted the request and then sent
+	// nothing at all, not a header and not a byte, was held by the *overall*
+	// deadline. Four of those exhausted every relay slot for ten minutes,
+	// against a README promising two between two writes.
+	//
+	// A long overall bound and a short idle one, so that only the idle bound
+	// can end this. Not the listing path either: this is the relay's general
+	// shape and not the listing's.
+	shortDeadlines(t, 30*time.Second, 300*time.Millisecond)
+	stop := make(chan struct{})
+	t.Cleanup(func() { close(stop) })
+	u := newUpstream(t, func(_ http.ResponseWriter, r *http.Request) {
+		// Accepted, and then nothing: no `WriteHeader`, no body.
+		select {
+		case <-stop:
+		case <-r.Context().Done():
+		case <-time.After(20 * time.Second):
+		}
+	})
+	_, ts, _ := relayDesk(t, "openai-compatible", u)
+
+	began := time.Now()
+	resp, body := relayDo(t, ts, http.MethodPost, "chat/completions", strings.NewReader("{}"), nil)
+	took := time.Since(began)
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status %d, want 502: %s", resp.StatusCode, body)
+	}
+	if got := codeOfBody(t, body); got != CodeAssistantRelayUpstream {
+		t.Errorf("code %q, want %q", got, CodeAssistantRelayUpstream)
+	}
+	if took > 10*time.Second {
+		t.Errorf("held for %s, past the idle bound and into the overall one", took)
+	}
+
+	// **Released exactly once.** A desk that carries four answers has all four
+	// slots back if the silent request gave up its own, so a later request
+	// answers rather than reporting the desk busy.
+	u.respond = func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}
+	after, afterBody := relayDo(t, ts, http.MethodPost, "chat/completions",
+		strings.NewReader("{}"), nil)
 	if after.StatusCode != http.StatusOK {
 		t.Fatalf("the slot did not come back: %d %s", after.StatusCode, afterBody)
 	}

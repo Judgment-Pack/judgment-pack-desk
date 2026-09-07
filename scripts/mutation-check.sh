@@ -1264,6 +1264,18 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '		if err != nil {
 			break
 		}'
+  # **The half of the answer no bound reached.** `boundedByIdle` is installed
+  # once the transport has a response, so an endpoint that accepted a request
+  # and then sent nothing at all — not a header, not a byte — was held by the
+  # overall deadline, and four of them exhausted every slot for ten minutes.
+  mutate go "the wait for the first byte is bounded by nothing but the overall deadline" "$MR" \
+    '		Transport:     beforeTheFirstByte{inner: relayTransport, cancel: cancel},' \
+    '		Transport:     relayTransport,'
+  # A number outside float64 is a valid JSON document, and whether Go can hold
+  # it is not a fact about the endpoint's listing.
+  mutate go "a listing is refused for a number Go cannot hold" "$MR" \
+    '	decoder.UseNumber()' \
+    ''
   # The listing branch buffers rather than streams, so the wrapper that bounds
   # every other answer never reached it: one byte and a stall held a slot until
   # the overall deadline.

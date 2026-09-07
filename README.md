@@ -2989,9 +2989,15 @@ no CORS, so a page calling one directly could not read the answer.
   the page has the first SSE event in hand *before the endpoint has written the
   second*, which a relay that buffered would fail while still delivering both.
 - **Bounded in time rather than in bytes**, because a model answer has no length
-  worth guessing: **ten minutes** for one whole relayed request and **two
-  minutes** between two writes from the endpoint. A stream that stalls is cut
-  rather than left holding the page. Writes **to the page** are bounded by the
+  worth guessing: **ten minutes** for one whole relayed request, **two minutes
+  before the first byte of the answer**, and **two minutes between two writes**
+  after it. The first of those two was missing and is the reason this sentence
+  now names three numbers: the idle bound was installed once the transport had
+  a response, so an endpoint that accepted a request and then sent nothing at
+  all — not a header, not a byte — was held by the ten-minute bound instead,
+  and four of them exhausted every relay slot for ten minutes. A stream that
+  stalls, and a connection that never answers, are both cut rather than left
+  holding the page. Writes **to the page** are bounded by the
   same pair — a page that authenticates and then stops reading would otherwise
   hold its slot for ever, since neither deadline ends a write to a client that
   is not listening and this desk's server has no `WriteTimeout` on purpose
@@ -3107,10 +3113,16 @@ clear it. It costs nothing real — the three protocols' listings are JSON
 documents, and an endpoint answering something else at its own listing path has
 not answered a listing.
 
+"Exactly one JSON value" is the decoder's own reading and not a shape list: a
+bare string, a number, `null` and `true` are each one value and are carried,
+and numbers are read as the digits they were written as, so a valid document
+carrying `1e1000` is not refused for what Go can hold a float in.
+
 The scan is **exact-and-contains**, on the same twelve-byte floor the answer
 headers use, and it compares the **decoded** strings — member names and values,
-at any depth — because a key written into JSON with escapes is one string to a
-decoder and different bytes on the wire. **A derived representation — base64,
+at any depth, and a number's own digits, because a key of digits is a key —
+since a key written into JSON with escapes is one string to a decoder and
+different bytes on the wire. **A derived representation — base64,
 percent-encoded, hex, half of it — is not detectable by any comparison**, which
 is the ruling chunk 1 already took for the probe, and it is stated here rather
 than implied away. A listing is asked for
