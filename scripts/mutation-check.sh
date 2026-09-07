@@ -1328,13 +1328,11 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # **The equality check is the whole ruling.** Without it a page can name any
   # path, and the value it writes chooses the root of the next launch — an
   # authority the page itself never had.
+  # The replacement keeps `text` in use, because a mutation that does not
+  # compile is not one the suite survived — it is one nothing ran.
   mutate go "the page may nominate a project it is not running in" "$A" \
-    '	if strings.TrimSpace(text) == s.projectPaths().File {
-		return nil
-	}' \
-    '	if true {
-		return nil
-	}'
+    '	if strings.TrimSpace(text) == s.projectPaths().File {' \
+    '	if strings.TrimSpace(text) != "" {'
 
   # **A default that is not there is not a project.** Honouring one takes the
   # parent of a name nobody wrote a file at — the review's `/jpack-desk.json`
