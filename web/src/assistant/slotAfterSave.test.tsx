@@ -494,3 +494,53 @@ describe('a write that landed while the read after it did not', () => {
     expect(state.writes).toBe(1)
   })
 })
+
+describe('removing the endpoint', () => {
+  it('leaves the desk with none, and the key still kept here', async () => {
+    // **Driven through the real provider**, because what is being asserted is
+    // that the *slot* went to None — which the fixture-backed suite cannot
+    // see, since a fixture is a value handed to the tree rather than one the
+    // write changes.
+    const state = stubDesk()
+    // A key stored for the endpoint that is about to go, so the row has
+    // something to keep saying afterwards.
+    vi.stubGlobal('fetch', withStoredKey(globalThis.fetch as typeof fetch))
+    renderDesk()
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toContain('the-model-in-the-file')
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Remove endpoint' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove it' }))
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe('none · none · vercel · off')
+    )
+    expect(state.writes).toBe(1)
+    // The two are separate: the endpoint went and the key did not.
+    expect(await screen.findByText('stored on this machine — sk-a…wxyz')).toBeTruthy()
+    expect(screen.getByText(/Save an endpoint above before storing a key/)).toBeTruthy()
+    expect(screen.getByText('none — no endpoint configured')).toBeTruthy()
+  })
+})
+
+/** The same chassis, answering the key read with one that is stored and bound. */
+function withStoredKey(inner: typeof fetch): typeof fetch {
+  return (async (url: string, init?: RequestInit) => {
+    if (String(url).includes('/api/assistant/key')) {
+      return {
+        ok: true,
+        status: 200,
+        statusText: '',
+        text: async () =>
+          JSON.stringify({
+            present: true,
+            fingerprint: 'sk-a…wxyz',
+            origin: 'https://api.example.invalid',
+            kind: 'openai-compatible',
+            configuredOrigin: 'https://api.example.invalid',
+            bound: true
+          })
+      }
+    }
+    return inner(url as never, init as never)
+  }) as unknown as typeof fetch
+}

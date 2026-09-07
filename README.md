@@ -1512,6 +1512,17 @@ worse than either alone.
 | **Engine** | `vercel` or `builtin`, with the two things the SDK-backed one cannot do named beside it: it shows the model a tool schema narrowed where the SDK declares one narrower (the tab says `narrowed` when it does, and on the Gemini wire `list_examples` arrives with no parameters at all), and it cannot carry an empty signed thought part back across a tool turn on that wire. Both are measured in this repository's own suite, and both are why an author might choose `builtin` for a Gemini endpoint. |
 | **Thinking** | `off`, `on` or `ultra`, with **what that tier puts on this protocol's wire read off `thinking.ts` itself** rather than restated beside it — so the line changes when the table does. On the Gemini rows it also says that the two budgets are this desk's choice inside a documented field. |
 
+**Remove endpoint** writes the other state the slot has: `endpoint: null`,
+through the same conditional commit and with the same digest. Until it existed
+the form could not reach it — clearing the boxes sends an object the decoder
+refuses — so a desk that had configured an endpoint could get back to **None**
+only through the generic file editor, while this page described None as one of
+three deployment states. It confirms in one line first, and the line is about
+the key rather than the endpoint: the key stays on this machine, still entered
+for the endpoint being removed, and this desk will not present it anywhere.
+`engine` and `thinking` survive, because they say *how* an assistant would run
+and not whether there is one.
+
 **Save** writes the `assistant` object over `PUT /api/desk-config` and nothing
 else in the file moves. The status line on the Assistant tab and **Describe
 it** name the new model and tier at once, and **from the write's own answer**:

@@ -596,3 +596,55 @@ describe('the model, and the list the endpoint offers', () => {
     expect(await screen.findByText('The endpoint listed none.')).toBeTruthy()
   })
 })
+
+describe('removing the endpoint', () => {
+  it('is offered only where there is one, and never as the primary action', () => {
+    stubWrites([{}])
+    renderForm(noFile())
+    expect(screen.queryByRole('button', { name: 'Remove endpoint' })).toBeNull()
+    cleanup()
+    stubWrites([{}])
+    renderForm()
+    const remove = screen.getByRole('button', { name: 'Remove endpoint' })
+    // Quiet, beside the primary Save. A destructive action whose primary
+    // button is the destructive one is a client with no story about a
+    // mis-click.
+    expect(remove.className).not.toContain('primary')
+  })
+
+  it('says what it means for the key before it does anything', async () => {
+    const { sent } = stubWrites([{}])
+    renderForm()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove endpoint' }))
+    expect(screen.getByText(/The key stays on this machine/)).toBeTruthy()
+    // Nothing is written by asking.
+    expect(sent.filter((each) => each.method === 'PUT')).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Keep it' }))
+    await waitFor(() => expect(screen.queryByText(/The key stays on this machine/)).toBeNull())
+    expect(sent.filter((each) => each.method === 'PUT')).toHaveLength(0)
+  })
+
+  it('writes the null the schema spells, and keeps how it would run', async () => {
+    const { sent } = stubWrites([
+      {
+        body: {
+          path: DESK_PATH,
+          sha256: NEXT,
+          assistant: { endpoint: null, engine: 'builtin', thinking: 'ultra' },
+          created: false,
+          keyRebindRequired: true
+        }
+      }
+    ])
+    renderForm(configured({ endpoint: ENDPOINT, engine: 'builtin', thinking: 'ultra' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove endpoint' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove it' }))
+    await waitFor(() => expect(sent.some((each) => each.method === 'PUT')).toBe(true))
+    const body = theWrite(sent)
+    expect(body.assistant).toEqual({ endpoint: null, engine: 'builtin', thinking: 'ultra' })
+    // The digest, exactly as an ordinary Save states it: this is the same
+    // conditional commit and not a second, looser write.
+    expect(body.ifMatch).toBe(DIGEST)
+    expect(await screen.findByText(/no assistant endpoint configured/)).toBeTruthy()
+  })
+})

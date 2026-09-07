@@ -47,6 +47,7 @@ import {
   ENGINE_SAYS,
   KIND_OPTIONS,
   TIER_OPTIONS,
+  assistantWithoutEndpoint,
   assistantWrite,
   draftFrom,
   seedOf,
@@ -73,6 +74,21 @@ const NO_DIGEST =
 
 const SAVED = 'Saved. The rest of the file is exactly as it was.'
 const CREATED = 'Saved, and the file was created. Nothing else is in it.'
+const REMOVED = 'Removed. This desk has no assistant endpoint configured.'
+
+/**
+ * The one line a removal confirms, and it is about the key rather than the
+ * endpoint.
+ *
+ * Taking the endpoint away does not take the key away — the two are separate,
+ * which the section says in its own words — but it does mean there is nothing
+ * to present it to, and storing another one needs an endpoint to bind it to.
+ * Saying that here is what stops a removal reading as "and the key is gone".
+ */
+const REMOVAL_MEANS =
+  'The key stays on this machine, still entered for the endpoint you are removing, and this ' +
+  'desk will not present it anywhere. Configuring an endpoint again is what makes it usable ' +
+  'again, and a key entered for a different one has to be entered again.'
 
 export function EndpointForm({
   bound,
@@ -108,6 +124,10 @@ export function EndpointForm({
     setDraft(draftFrom(config.assistant))
   }
   const [saved, setSaved] = useState<string | undefined>(undefined)
+  // Two steps, and the first one only says what the second would do. A
+  // destructive action whose primary button is the destructive one is a
+  // client with no story about a mis-click.
+  const [removing, setRemoving] = useState(false)
 
   const edit = (next: EndpointDraft) => {
     setDirty(true)
@@ -143,23 +163,27 @@ export function EndpointForm({
       ? (write.error?.message ?? undefined)
       : undefined
 
-  const save = () => {
+  const commit = (assistant: unknown, said: (answer: AssistantConfigWritten) => string) => {
     if (digest === undefined) return
     setSaved(undefined)
     write.mutate(
-      { assistant: assistantWrite(draft), ifMatch: digest },
+      { assistant, ifMatch: digest },
       {
         onSuccess: (answer) => {
           // Re-seeded from the file the chassis read back, not from the draft:
           // the answer is what landed, and a form that showed what it sent
           // would be reporting its own request as an outcome.
           setDirty(false)
-          setSaved(answer.created ? CREATED : SAVED)
+          setRemoving(false)
+          setSaved(said(answer))
           onWritten(answer)
         }
       }
     )
   }
+
+  const save = () => commit(assistantWrite(draft), (answer) => (answer.created ? CREATED : SAVED))
+  const removeEndpoint = () => commit(assistantWithoutEndpoint(draft), () => REMOVED)
 
   const busy = write.isPending
   const blocked = digest === undefined || urlProblem !== undefined
@@ -268,9 +292,36 @@ export function EndpointForm({
           <Button variant="primary" type="submit" disabled={blocked || busy}>
             Save
           </Button>{' '}
+          {/* **The slot's other state, which the schema has and the form did
+              not.** `assistant.endpoint` is one nullable field; clearing the
+              boxes sends an object the decoder refuses, so without this a desk
+              that had configured an endpoint could only get back to None
+              through the generic file editor — while this page describes None
+              as one of three deployment states. */}
+          {config.assistant.endpoint !== null && !removing && (
+            <Button
+              variant="quiet"
+              disabled={digest === undefined || busy}
+              onClick={() => setRemoving(true)}
+            >
+              Remove endpoint
+            </Button>
+          )}
           {busy && <span className="quiet">writing…</span>}
           {saved !== undefined && !busy && <span className="quiet">{saved}</span>}
         </p>
+
+        {removing && (
+          <p className="quiet">
+            {REMOVAL_MEANS}{' '}
+            <Button variant="quiet" disabled={busy} onClick={removeEndpoint}>
+              Remove it
+            </Button>{' '}
+            <Button variant="quiet" disabled={busy} onClick={() => setRemoving(false)}>
+              Keep it
+            </Button>
+          </p>
+        )}
       </fieldset>
 
       {digest === undefined && <p className="quiet">{NO_DIGEST}</p>}

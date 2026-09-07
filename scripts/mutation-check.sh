@@ -3848,8 +3848,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # file that names the endpoint a credential goes to. The empty string is not
   # "no opinion": it is the claim that there is no file.
   mutate web "the configuration write states no digest at all" "$EF" \
-    '      { assistant: assistantWrite(draft), ifMatch: digest },' \
-    "      { assistant: assistantWrite(draft), ifMatch: '' },"
+    '      { assistant, ifMatch: digest },' \
+    "      { assistant, ifMatch: '' },"
   # **The write already answers with the slot and the digest**, and leaving the
   # tab, Describe it and the key row to a second GET meant a write that landed
   # under a read that hung left every one of them describing the endpoint that
@@ -3915,6 +3915,18 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the model is saved from the listing label rather than its id" "$MF" \
     '              options={rows!.map((row) => ({ value: row.id, label: row.label }))}' \
     '              options={rows!.map((row) => ({ value: row.label, label: row.label }))}'
+  # **The slot's other state, which the schema has.** `assistant.endpoint` is
+  # one nullable field, and a form that could not write the null left a desk
+  # that had configured an endpoint able to reach None only through the generic
+  # file editor — while this page describes None as one of three states.
+  mutate web "removing the endpoint writes an endpoint object anyway" "$ED" \
+    '  return { endpoint: null, engine: draft.engine, thinking: draft.thinking }' \
+    '  return assistantWrite(draft)'
+  # How an assistant would run is not whether there is one, which is why the
+  # schema allows both beside a null endpoint.
+  mutate web "removing the endpoint discards the engine and the tier" "$ED" \
+    '  return { endpoint: null, engine: draft.engine, thinking: draft.thinking }' \
+    "  return { endpoint: null, engine: 'vercel', thinking: 'off' }"
   # A picker offering a fourth tier offers a configuration the decoder refuses
   # by name — and the two states it cannot express are the desk's to report.
   mutate web "the tier picker offers a value outside the union" "$EF" \

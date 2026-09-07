@@ -167,6 +167,25 @@ export function assistantWrite(draft: EndpointDraft): unknown {
   }
 }
 
+/**
+ * The other state the slot has: **None**, written as the schema spells it.
+ *
+ * `assistant.endpoint` is one nullable field, and until this existed the form
+ * could not write the null — clearing the fields sent an object the decoder
+ * refuses, so a desk that had configured an endpoint could only get back to
+ * None through the generic file editor. The page describes None as one of the
+ * three deployment states, so a page that cannot reach it is a page describing
+ * something it does not offer.
+ *
+ * **`engine` and `thinking` survive**, because they say *how* an assistant
+ * would run and not whether there is one — the schema allows both beside a
+ * null endpoint for exactly that reason, and a removal that reset them would
+ * be discarding a decision nobody asked about.
+ */
+export function assistantWithoutEndpoint(draft: EndpointDraft): unknown {
+  return { endpoint: null, engine: draft.engine, thinking: draft.thinking }
+}
+
 /** The engine options, in the order the closed list declares them. */
 export const ENGINE_OPTIONS = ASSISTANT_ENGINES.map((engine) => ({
   value: engine,
