@@ -200,6 +200,21 @@ const (
 	// a body under the endpoint's control can carry a derived representation of
 	// the credential.
 	CodeAssistantRelayUpstream = "assistant-relay-upstream"
+	// CodeAssistantKeyUnbound is a stored key that was not entered for the
+	// endpoint this desk is now configured for.
+	//
+	// **The key is bound to a destination**, and this is the refusal that says
+	// so: the scheme, host and wire protocol of the endpoint configured when
+	// the key was stored are kept beside it, and neither the probe nor the
+	// relay presents it anywhere else. A configuration write can move the
+	// endpoint — that is what it is for — but it cannot move the credential,
+	// because the repair is to enter the key again and page code has never
+	// held it.
+	//
+	// It also answers a key file this build cannot read as a bound key, for
+	// one reason: the repair is identical — store the key again — and this
+	// repository's rule is one code per state a caller acts on differently.
+	CodeAssistantKeyUnbound = "assistant-key-unbound"
 	// CodeDeskConfigChanged is a desk-level write whose `ifMatch` is not the
 	// file on disk.
 	//
@@ -265,9 +280,12 @@ var codeStatus = map[string]int{
 	// The desk-level write's two: a file that moved under the writer is the
 	// same 409 every conditional commit here answers, and bytes this desk
 	// would not read back are a request it understood and will not act on.
-	CodeDeskConfigChanged: http.StatusConflict,
-	CodeDeskConfigRefused: http.StatusUnprocessableEntity,
-	CodeInternal:          http.StatusInternalServerError,
+	// The desk's own state disagrees with the request, and retrying does not
+	// change that: the key on this machine was entered for another endpoint.
+	CodeAssistantKeyUnbound: http.StatusConflict,
+	CodeDeskConfigChanged:   http.StatusConflict,
+	CodeDeskConfigRefused:   http.StatusUnprocessableEntity,
+	CodeInternal:            http.StatusInternalServerError,
 }
 
 // allCodes is every code this API declares, for the tests that walk them.
@@ -278,7 +296,7 @@ var allCodes = []string{
 	CodeStagingFile, CodeExcludedDirectory,
 	CodeAssistantUnconfigured, CodeAssistantNoKey, CodeAssistantUnusableStore,
 	CodeAssistantRelayPath, CodeAssistantRelayBusy, CodeAssistantRelayUpstream,
-	CodeDeskConfigChanged, CodeDeskConfigRefused,
+	CodeAssistantKeyUnbound, CodeDeskConfigChanged, CodeDeskConfigRefused,
 	CodeInternal,
 }
 

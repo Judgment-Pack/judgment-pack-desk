@@ -565,13 +565,12 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 				"and no other query parameter; nothing was sent", endpoint.kind))
 		return
 	}
-	key, err := s.assistant.readKey()
+	stored, err := s.assistant.readKey()
 	if err != nil {
-		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal,
-			fmt.Sprintf("the assistant key could not be read: %v", err))
+		s.refuseKeyRead(w, err)
 		return
 	}
-	if key == "" {
+	if !stored.present {
 		// The same state the probe names, and the same repair: store a key on
 		// Admin. A second code for one state would be two answers to one
 		// question.
@@ -579,6 +578,18 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 			"no key is stored on this machine, so there is nothing to present to the endpoint")
 		return
 	}
+	// **The binding, and it is what keeps "the destination cannot come from
+	// the page" true now that the page can write the configuration.** The
+	// endpoint may be anything the file says; the credential goes only to the
+	// destination it was entered for. A configuration naming another one is
+	// refused here, before a socket is opened, and the repair is a person
+	// entering the key again — which page code cannot do, because it has never
+	// held it.
+	if reason := bindingProblem(stored, endpoint); reason != "" {
+		writeJSONCoded(w, http.StatusConflict, CodeAssistantKeyUnbound, reason)
+		return
+	}
+	key := stored.key
 	name, value, ok := credentialHeader(endpoint.kind, key)
 	if !ok {
 		// Unreachable: `decodeDeskFile` refuses every other kind by name.

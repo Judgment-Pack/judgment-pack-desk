@@ -41,7 +41,10 @@ const WRITTEN = {
   path: '/home/someone/.config/jpack-desk/desk.json',
   sha256: 'b'.repeat(64),
   assistant: GEMINI,
-  created: false
+  created: false,
+  // The write moves the endpoint and never the credential; this is how the
+  // page learns whether somebody has to enter one for the new destination.
+  keyRebindRequired: false
 }
 
 /** One chassis answer, and every request it was sent. */
@@ -171,5 +174,36 @@ describe('the write hook', () => {
     expect(client.getQueryData(DESK_CONFIG_QUERY_KEY)).toEqual({
       marker: 'the value read before'
     })
+  })
+})
+
+describe('the answer to a write that moved the endpoint', () => {
+  it('carries the desk s request for a new key rather than hiding it', async () => {
+    // **The credential does not follow the configuration.** A key is bound to
+    // the scheme, host and wire protocol it was entered for; a write that
+    // changes any of those leaves the stored key in place and unusable, and
+    // the probe and the relay refuse with `assistant-key-unbound` rather than
+    // presenting it somewhere new. The page is told at the moment of the write
+    // instead of discovering it by making a request that fails.
+    respond(200, { ...WRITTEN, keyRebindRequired: true })
+    const answered = await updateAssistantConfig({
+      assistant: GEMINI,
+      ifMatch: 'a'.repeat(64)
+    })
+    expect(answered.keyRebindRequired).toBe(true)
+  })
+
+  it('raises the chassis code where a bound key is asked to travel elsewhere', async () => {
+    respond(409, {
+      error:
+        'the key on this machine was entered for https://first.example over "gemini", ' +
+        'and this desk is configured for https://second.example over "gemini"',
+      code: 'assistant-key-unbound'
+    })
+    // A 409 with a body is read as a stale write by the shared envelope, and
+    // the code is what a caller branches on either way.
+    await expect(
+      updateAssistantConfig({ assistant: GEMINI, ifMatch: '' })
+    ).rejects.toMatchObject({ code: 'assistant-key-unbound' })
   })
 })

@@ -217,10 +217,14 @@ func TestARefusedFileSendsNothing(t *testing.T) {
 				t.Fatalf("read: %v", err)
 			}
 			s, ts, _ := assistantServer(t)
+			// **The key is stored first, against an endpoint this desk
+			// accepts, and only then is the refused file put in its place.**
+			// Storing binds the key to what is configured at that moment, so
+			// this is also the stronger claim: a key that exists and is
+			// perfectly usable still authorises nothing under a file the desk
+			// refuses.
+			storeKeyBoundTo(t, s, ts, defaultTestKind, defaultTestEndpoint)
 			writeDeskConfig(t, s, string(data))
-			if status, body := storeKey(t, ts, testKey); status != http.StatusOK {
-				t.Fatalf("store: %d %v", status, body)
-			}
 			status, body := postJSON(t, ts, "/api/assistant/probe")
 			if status != http.StatusConflict {
 				t.Fatalf("status %d, want 409; body %v", status, body)
@@ -258,6 +262,8 @@ func TestAnAcceptedFileDoesReachTheTransport(t *testing.T) {
 		tried++
 		s, ts, _ := assistantServer(t)
 		writeDeskConfig(t, s, string(data))
+		// Stored against the fixture's own endpoint, so the key is bound to
+		// exactly what this probe is about to reach.
 		if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
 			t.Fatalf("%s: store", name)
 		}

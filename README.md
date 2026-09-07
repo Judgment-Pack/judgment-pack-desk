@@ -2348,11 +2348,29 @@ outbound connection". It now holds exactly one credential and makes exactly one
 kind of outbound request, and this section is what that sentence was replaced
 with rather than quietly edited around.
 
-**The key is on this machine, in one file, owner-only.**
+**The key is on this machine, in one file, owner-only — and it is stored
+together with the destination it was entered for.**
 
 ```
 ~/.config/jpack-desk/secrets/assistant     mode 0600, in a directory of mode 0700
 ```
+
+```json
+{ "assistantKeyVersion": 1, "origin": "https://gw.example", "kind": "gemini", "key": "…" }
+```
+
+**The binding is the point of that record.** A key that travelled wherever the
+configuration happened to point would be a key page code could redirect by
+writing one member of a file — and this desk has a route that writes that
+member. So the probe and the relay present the key only where the configured
+endpoint's scheme, host and `kind` still equal the ones stored beside it, and
+refuse with `assistant-key-unbound` otherwise, sending nothing. Changing the
+path or the query keeps the binding; changing the host, the scheme or the wire
+protocol breaks it, and the repair is to enter the key again. Storing one
+therefore requires an endpoint to bind it to, and a key file **without
+`assistantKeyVersion`** — the format this replaces, a bare key — is refused
+rather than read: a credential with no binding is the state the record exists
+to end, and the sentence names the one action that repairs it.
 
 `XDG_CONFIG_HOME` is honoured where it is set to an absolute path; a relative
 one is ignored, as the specification says. The write is staged in the same
@@ -2523,11 +2541,34 @@ protocol, and forwards everything else verbatim. It is also what makes the
 arrangement possible in a browser: an ordinary bring-your-own endpoint answers
 no CORS, so a page calling one directly could not read the answer.
 
-- **The destination cannot come from the page.** It is `configuredEndpoint` —
-  the same whole-file decode the probe uses, so a `desk.json` the browser
-  refuses authorises no relayed request either. The page chooses a **path
-  suffix** and nothing else: not the host, not the path around it, and not one
-  parameter of the query.
+- **The page can choose a destination; the key travels only to the destination
+  it was entered for.** This sentence used to be "the destination cannot come
+  from the page", and `PUT /api/desk-config` made it false: code holding the
+  session token could write an endpoint of its own — same-origin, so the origin
+  guard never applied — and then probe or relay and receive the machine-held
+  key there.
+
+  The answer is not to withdraw the write. It is that **the key is bound**.
+  Storing one records the scheme, host and `kind` of the endpoint configured at
+  that instant, beside the key and in the same file; the probe and the relay
+  present it only where both still match, and refuse with
+  `assistant-key-unbound` (409) otherwise, with **nothing sent**. A path or a
+  query may change — that is the endpoint's own routing, and an author edits
+  one without changing who is at the other end — but a host, a scheme or a wire
+  protocol may not. A configuration write that moves any of those leaves the
+  stored key in place and unusable and says so, `keyRebindRequired: true`, so
+  the repair is a person entering the key again — which page code cannot do,
+  because no endpoint returns the key, nothing in the chassis sends it to the
+  browser, and the store endpoint takes a value the page must already hold.
+  Storing a key therefore **requires an endpoint to bind it to**, and
+  `GET /api/assistant/key` reports the binding beside the fingerprint so a form
+  can say which host the key is for.
+
+  The rest is unchanged: the destination is still `configuredEndpoint`, the
+  same whole-file decode the probe uses, so a `desk.json` the browser refuses
+  authorises no relayed request either. The page chooses a **path suffix** and
+  one query pair on one protocol, and nothing else: not the host, not the path
+  around it, and not the rest of the query.
 - **The suffix is held to a closed class**: one or more segments of
   `[A-Za-z0-9._-]`, no dot segment, no empty segment, at most 256 bytes, and
   **no percent sign** — so the escaped and unescaped readings of an accepted

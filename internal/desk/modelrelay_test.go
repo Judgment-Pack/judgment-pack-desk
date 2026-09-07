@@ -792,7 +792,12 @@ func TestAConfiguredQueryCannotCarryWhatTheRelayReserves(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			counter := countingRelays(t)
 			u := newUpstream(t, nil)
-			_, ts, _ := relayDeskAt(t, "gemini", u.server.URL+"/?"+testCase.query)
+			s, ts, _ := assistantServer(t)
+			// The key is stored against the same endpoint without the
+			// offending query, so what is refused below is the query and not
+			// the absence of a key.
+			storeKeyBoundTo(t, s, ts, "gemini", u.server.URL+"/")
+			configureEndpoint(t, s, "gemini", u.server.URL+"/?"+testCase.query)
 			resp, body := relayGet(t, ts, "v1beta/models")
 			if resp.StatusCode != http.StatusConflict {
 				t.Fatalf("status %d, want 409: %s", resp.StatusCode, body)
@@ -1346,10 +1351,13 @@ func TestRelayRefusesAForeignOrigin(t *testing.T) {
 
 func TestRelayRefusesWithNoEndpointConfigured(t *testing.T) {
 	counter := countingRelays(t)
-	_, ts, _ := assistantServer(t)
-	if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
-		t.Fatalf("store")
-	}
+	s, ts, _ := assistantServer(t)
+	// A key that was stored, and then a file that names no endpoint. Storing
+	// needs one, so the endpoint is configured, the key is bound to it, and
+	// the configuration is then taken away — which is the state this case is
+	// about and is now reachable only that way.
+	storeKeyBoundTo(t, s, ts, defaultTestKind, defaultTestEndpoint)
+	writeDeskConfig(t, s, `{"deskConfigVersion":1}`)
 	resp, body := relayGet(t, ts, "chat/completions")
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("status %d, want 409: %s", resp.StatusCode, body)
@@ -1370,11 +1378,12 @@ func TestRelayRefusesARefusedConfiguration(t *testing.T) {
 	// through here either.
 	counter := countingRelays(t)
 	s, ts, _ := assistantServer(t)
+	// The key is stored against an endpoint this desk accepts, and the file is
+	// then replaced by one it refuses — so the refusal under test is the
+	// file's and not the key's absence.
+	storeKeyBoundTo(t, s, ts, defaultTestKind, defaultTestEndpoint)
 	writeDeskConfig(t, s, `{"deskConfigVersion":1,"assistant":{"endpoint":`+
 		`{"url":"http://endpoint.example/v1","kind":"openai-compatible","model":"m","tools":[]}}}`)
-	if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
-		t.Fatalf("store")
-	}
 	resp, body := relayGet(t, ts, "chat/completions")
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("status %d, want 409: %s", resp.StatusCode, body)

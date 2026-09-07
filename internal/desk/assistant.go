@@ -325,6 +325,17 @@ type deskConfigWritten struct {
 	Assistant AssistantSlotView `json:"assistant"`
 	// Created is true exactly where the write brought the file into existence.
 	Created bool `json:"created"`
+	// KeyRebindRequired is true where a key is stored on this machine and is
+	// **not** the key for the endpoint this write just configured.
+	//
+	// **The write moves the endpoint and never the credential.** A key is
+	// bound to the scheme, host and wire protocol it was entered for; changing
+	// either of those leaves the stored key in place and unusable, and the
+	// probe and the relay refuse with `assistant-key-unbound` rather than
+	// presenting it somewhere new. This member is how the page learns that
+	// without having to make a request that fails: it says "the endpoint is
+	// written, and somebody has to enter the key for it".
+	KeyRebindRequired bool `json:"keyRebindRequired"`
 }
 
 // deskConfigMoved is the file changing under a write that was already staged.
@@ -637,12 +648,24 @@ func (s *Server) commitDeskConfigLocked(req DeskConfigWrite) (int, any) {
 			"%s was written and does not read back as a configuration: %s",
 			path, describeProblems(landed.Problems)))
 	}
+	// Whether the key on this machine is still the key for what was just
+	// configured. Read after the write, off the file that landed, so it is a
+	// statement about the desk's actual state rather than about the request.
+	// A read that fails is reported as "rebind required": the honest answer
+	// where the binding cannot be established is that it has not been.
+	rebind := false
+	if stored, kerr := s.assistant.readKey(); kerr != nil {
+		rebind = true
+	} else if stored.present {
+		rebind = landed.Endpoint == nil || bindingProblem(stored, *landed.Endpoint) != ""
+	}
 	s.log.Printf("desk: the desk-level assistant configuration was written on this machine")
 	return http.StatusOK, deskConfigWritten{
-		Path:      path,
-		SHA256:    digestOf(wrote),
-		Assistant: slotView(landed),
-		Created:   !present,
+		Path:              path,
+		SHA256:            digestOf(wrote),
+		Assistant:         slotView(landed),
+		Created:           !present,
+		KeyRebindRequired: rebind,
 	}
 }
 
@@ -815,6 +838,30 @@ type AssistantKeyState struct {
 	// Fingerprint is four characters from each end, or empty — for an absent
 	// key, and for one too short to fingerprint without disclosing it.
 	Fingerprint string `json:"fingerprint"`
+	// Origin and Kind are the destination this key was entered for: the
+	// scheme and host of the endpoint configured at the moment it was stored,
+	// and that endpoint's wire protocol. Empty where there is no key.
+	//
+	// **Reported so the page can say where the key goes**, which is the whole
+	// user-facing half of the binding: a form that says "key stored for
+	// api.example.invalid" is a form whose reader can see that changing the
+	// endpoint means entering it again. Neither member is a secret — the
+	// origin is already in the file the page reads.
+	Origin string `json:"origin"`
+	Kind   string `json:"kind"`
+}
+
+// keyState renders one stored key as the answer the page gets.
+func keyState(stored storedKey) AssistantKeyState {
+	if !stored.present {
+		return AssistantKeyState{}
+	}
+	return AssistantKeyState{
+		Present:     true,
+		Fingerprint: fingerprint(stored.key),
+		Origin:      stored.origin,
+		Kind:        stored.kind,
+	}
 }
 
 // fingerprint is enough of a key to recognise and not enough to use.
@@ -853,13 +900,26 @@ func (s *Server) handleAssistantKeyRead(w http.ResponseWriter, r *http.Request) 
 	if s.refuseUnusableStore(w) {
 		return
 	}
-	key, err := s.assistant.readKey()
+	stored, err := s.assistant.readKey()
 	if err != nil {
-		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal,
-			fmt.Sprintf("the assistant key could not be read: %v", err))
+		s.refuseKeyRead(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, AssistantKeyState{Present: key != "", Fingerprint: fingerprint(key)})
+	writeJSON(w, http.StatusOK, keyState(stored))
+}
+
+// refuseKeyRead answers a key read that found something and could not use it.
+//
+// A refusal carrying its own code answers with it — the code-to-status matrix
+// is the one place that decides — and everything else is genuinely a failure
+// here. The same shape `refuseDeskRead` has, for the same reason.
+func (s *Server) refuseKeyRead(w http.ResponseWriter, err error) {
+	if code := codeOf(err); code != CodeInternal {
+		writeJSONError(w, statusForRefusal(err), err)
+		return
+	}
+	writeJSONCoded(w, http.StatusInternalServerError, CodeInternal,
+		fmt.Sprintf("the assistant key could not be read: %v", err))
 }
 
 func (s *Server) handleAssistantKeyWrite(w http.ResponseWriter, r *http.Request) {
@@ -917,16 +977,39 @@ func (s *Server) handleAssistantKeyWrite(w http.ResponseWriter, r *http.Request)
 			fmt.Sprintf("a key must be at most %d bytes; nothing was stored", maxKeyBytes))
 		return
 	}
-	if err := s.assistant.storeKey(key); err != nil {
+	// **Storing a key binds it**, and that is why an endpoint is required to
+	// store one at all. The scheme, host and wire protocol of the endpoint
+	// configured at this instant are kept beside the key, and neither the
+	// probe nor the relay presents it anywhere else — so a configuration write
+	// can move the endpoint and cannot move the credential.
+	//
+	// Refused where there is no endpoint, and refused with the same code and
+	// sentence Admin already renders for that state: a key with nothing to be
+	// bound to would be a key bound to whatever is configured next, which is
+	// the arrangement this replaces.
+	endpoint, err := s.configuredEndpoint()
+	if err != nil {
+		writeJSONError(w, statusForRefusal(err), err)
+		return
+	}
+	origin, ok := endpointOrigin(endpoint.url)
+	if !ok {
+		writeJSONCoded(w, http.StatusConflict, CodeAssistantUnconfigured,
+			"the configured endpoint is not an address a key can be bound to")
+		return
+	}
+	bound := storedKey{present: true, key: key, origin: origin, kind: endpoint.kind}
+	if err := s.assistant.storeKey(bound); err != nil {
 		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal,
 			fmt.Sprintf("the assistant key could not be stored: %v", err))
 		return
 	}
-	// The event, never the value. This line is what the "never in the log"
-	// test is measured against: a log with nothing in it proves nothing about
-	// a handler that never ran.
-	s.log.Printf("desk: the assistant key was stored on this machine")
-	writeJSON(w, http.StatusOK, AssistantKeyState{Present: true, Fingerprint: fingerprint(key)})
+	// The event and the destination, never the value. This line is what the
+	// "never in the log" test is measured against: a log with nothing in it
+	// proves nothing about a handler that never ran. The origin is the same
+	// scheme-and-host every other line here carries.
+	s.log.Printf("desk: the assistant key was stored on this machine for %s", origin)
+	writeJSON(w, http.StatusOK, keyState(bound))
 }
 
 func (s *Server) handleAssistantKeyDelete(w http.ResponseWriter, r *http.Request) {
@@ -942,7 +1025,7 @@ func (s *Server) handleAssistantKeyDelete(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.log.Printf("desk: the assistant key was removed from this machine")
-	writeJSON(w, http.StatusOK, AssistantKeyState{Present: false, Fingerprint: ""})
+	writeJSON(w, http.StatusOK, AssistantKeyState{})
 }
 
 // isControl reports the characters a header value may not carry.
@@ -1180,18 +1263,25 @@ func (s *Server) handleAssistantProbe(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, statusForRefusal(err), err)
 		return
 	}
-	key, err := s.assistant.readKey()
+	stored, err := s.assistant.readKey()
 	if err != nil {
-		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal,
-			fmt.Sprintf("the assistant key could not be read: %v", err))
+		s.refuseKeyRead(w, err)
 		return
 	}
-	if key == "" {
+	if !stored.present {
 		writeJSONCoded(w, http.StatusConflict, CodeAssistantNoKey,
 			"no key is stored on this machine, so there is nothing to present to the endpoint")
 		return
 	}
-	result := probeEndpoint(r.Context(), endpoint, key)
+	// **The binding, checked before a socket is opened.** The key on this
+	// machine was entered for one destination; a configuration that now names
+	// another gets no credential at all, and this refusal rather than a
+	// request.
+	if reason := bindingProblem(stored, endpoint); reason != "" {
+		writeJSONCoded(w, http.StatusConflict, CodeAssistantKeyUnbound, reason)
+		return
+	}
+	result := probeEndpoint(r.Context(), endpoint, stored.key)
 	// **Scheme and host only.** A configured URL may legitimately carry a
 	// query string — some gateways route on one — and a query string is a
 	// place people put credentials, deliberately or by pasting a presigned
@@ -1271,6 +1361,57 @@ func appendPath(u *url.URL, suffix string) {
 	// RawPath is honoured only where it is a valid encoding of Path; setting
 	// both from the same source is what makes it so.
 	u.RawPath = escaped
+}
+
+// endpointOrigin is the part of a configured URL a key is bound to: its scheme
+// and its host, and nothing else.
+//
+// **Scheme and host, not the whole URL**, and the line is worth stating
+// exactly. A path or a query is the endpoint's own routing and an author
+// changes one without changing who is at the other end — binding to the whole
+// URL would mean re-entering the key to add `?route=eu`, which is a rule
+// nobody would keep. A *host* change is a different party. So the binding is
+// the origin, and the port is in it: `https://gw.example:8443` and
+// `https://gw.example` are two destinations.
+//
+// Lower-cased, because a host is case-insensitive and a binding that answered
+// differently for `API.example` than for `api.example` would be a binding two
+// readers disagree about. `ok` is false for a URL with no host, which
+// `endpointURLProblem` already refuses.
+func endpointOrigin(raw string) (string, bool) {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed == nil || parsed.Host == "" {
+		return "", false
+	}
+	return strings.ToLower(parsed.Scheme) + "://" + strings.ToLower(parsed.Host), true
+}
+
+// bindingProblem is why a stored key may not be presented to this endpoint, or
+// the empty string where it may.
+//
+// **The whole of HIGH 1's answer is these six lines.** Page code can write the
+// desk-level file, so it can name any endpoint it likes — and that is fine,
+// because the credential does not follow. What the key travels to is the
+// destination it was entered for, and entering one is something only a person
+// at the keyboard can do: no endpoint returns the key, nothing in this package
+// sends it to the browser, and the store endpoint takes a value the page must
+// already have.
+func bindingProblem(stored storedKey, endpoint assistantEndpoint) string {
+	origin, ok := endpointOrigin(endpoint.url)
+	if !ok {
+		return "the configured endpoint is not an address a key can be presented to"
+	}
+	if stored.origin == origin && stored.kind == endpoint.kind {
+		return ""
+	}
+	// The stored binding is named because the reader has to be able to see
+	// which of the two moved. Neither half is a secret: both are in the file
+	// the page already reads.
+	return fmt.Sprintf(
+		"the key on this machine was entered for %s over %q, and this desk is configured for "+
+			"%s over %q; nothing was sent. A key travels only to the endpoint it was entered "+
+			"for — store it again on Admin › Assistant to bind it to this one",
+		stored.origin, stored.kind, origin, endpoint.kind)
 }
 
 // loggableOrigin is the most of a configured URL that is ever written down:

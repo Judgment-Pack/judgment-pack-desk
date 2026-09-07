@@ -28,6 +28,22 @@ import type { AssistantConfig } from '../config/deskConfig'
 export interface AssistantKeyState {
   present: boolean
   fingerprint: string
+  /**
+   * The destination this key was entered for: the scheme and host of the
+   * endpoint configured when it was stored, and that endpoint's wire protocol.
+   * Empty where there is no key.
+   *
+   * **The key travels only there.** A configuration write can move the
+   * endpoint — that is what it is for — and the credential does not follow:
+   * the probe and the relay refuse with `assistant-key-unbound` rather than
+   * presenting it somewhere new, and the repair is a person entering it again,
+   * which page code cannot do because it has never held it. These two members
+   * are what lets a form say "key stored for gw.example" instead of leaving a
+   * reader to discover the binding by meeting a refusal. Neither is a secret:
+   * both are in the file this page already reads.
+   */
+  origin: string
+  kind: string
 }
 
 /**
@@ -146,6 +162,14 @@ export interface AssistantConfigWritten {
   assistant: AssistantConfig
   /** True exactly where the write brought the file into existence. */
   created: boolean
+  /**
+   * True where a key is stored on this machine and is **not** the key for the
+   * endpoint this write just configured.
+   *
+   * The write moves the endpoint and never the credential; this is how a page
+   * learns that without having to make a request that fails.
+   */
+  keyRebindRequired: boolean
 }
 
 /**

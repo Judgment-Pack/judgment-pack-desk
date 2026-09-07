@@ -51,6 +51,7 @@ package desk
 // start or, worse, keeping one anyway.
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -633,27 +634,71 @@ func (s *assistantStore) stageConfig() (*os.File, string, error) {
 
 /* The key, through the pinned directory ------------------------------------ */
 
-// readKey answers the stored key, or the empty string where there is none.
+// storedKey is a key and the destination it was entered for.
+//
+// **The binding is the point, and it is why this is a record rather than a
+// string.** See `assistant.go`'s account of it: a key that travels wherever
+// the configuration happens to point is a key page code can redirect by
+// writing one member of a file, and this desk now has a route that writes that
+// member. So the key carries the origin and the wire protocol of the endpoint
+// configured at the instant it was stored, and the probe and the relay present
+// it only where both still match.
+//
+// `present` is false where there is no key at all, which is not a refusal.
+type storedKey struct {
+	present bool
+	key     string
+	// origin is scheme://host, exactly as `endpointOrigin` renders it.
+	origin string
+	kind   string
+}
+
+// storedKeyVersion is the format `secrets/assistant` is written in.
+//
+// **Versioned, and an unversioned file is refused rather than guessed at.**
+// The file used to be the key's bytes and nothing else; a build that read
+// those as a key would be a build presenting a credential with no binding at
+// all, which is the state this whole mechanism exists to end. So a file
+// without this member is refused by name, and the repair — store the key
+// again, which binds it — is in the sentence.
+const storedKeyVersion = 1
+
+// storedKeyFile is the file's shape on disk.
+//
+// The member holding the credential is called `key`, in the one file on this
+// machine whose whole purpose is to hold one. That is not the rule
+// `isKeyLike` enforces: that rule is about *configuration*, and it exists
+// precisely so a credential lives here instead.
+type storedKeyFile struct {
+	Version int    `json:"assistantKeyVersion"`
+	Origin  string `json:"origin"`
+	Kind    string `json:"kind"`
+	Key     string `json:"key"`
+}
+
+// readKey answers the stored key with its binding, or `present: false` where
+// there is none.
 //
 // **`Lstat` first, and `O_NOFOLLOW` on the open.** `os.Root` follows a symlink
 // that stays inside the root, which is exactly the case an attacker who can
 // write to the directory would arrange — so the type is checked before the
 // open and the open refuses to traverse a link regardless. The mode is checked
 // too: a key file somebody else can read is not a key this desk will present.
-func (s *assistantStore) readKey() (string, error) {
+func (s *assistantStore) readKey() (storedKey, error) {
+	var none storedKey
 	if !s.usable() {
-		return "", s.problem
+		return none, s.problem
 	}
 	keyPath := filepath.Join(s.dir, secretsDirName, assistantKeyName)
 	info, err := s.secrets.Lstat(assistantKeyName)
 	if errors.Is(err, os.ErrNotExist) {
-		return "", nil
+		return none, nil
 	}
 	if err != nil {
-		return "", err
+		return none, err
 	}
 	if info.Mode()&fs.ModeSymlink != 0 {
-		return "", fmt.Errorf(
+		return none, fmt.Errorf(
 			"%s is a symbolic link rather than a key, and was not read", keyPath)
 	}
 	// **The rule lives in one function, applied twice.** It used to be written
@@ -662,7 +707,7 @@ func (s *assistantStore) readKey() (string, error) {
 	// reported a safeguard nothing was holding when in fact two things were.
 	// Defence in depth is worth having; two spellings of one rule are not.
 	if err := ownerOnlyFile(keyPath, info.Mode()); err != nil {
-		return "", err
+		return none, err
 	}
 	// **The open is checked against the thing that was inspected, by
 	// identity.** The `Lstat` above establishes what is at that name at that
@@ -680,15 +725,15 @@ func (s *assistantStore) readKey() (string, error) {
 	afterKeyStat(filepath.Join(s.dir, secretsDirName, assistantKeyName))
 	file, err := s.secrets.OpenFile(assistantKeyName, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
 	if err != nil {
-		return "", err
+		return none, err
 	}
 	defer file.Close()
 	opened, err := file.Stat()
 	if err != nil {
-		return "", err
+		return none, err
 	}
 	if !os.SameFile(info, opened) {
-		return "", fmt.Errorf(
+		return none, fmt.Errorf(
 			"%s changed between being inspected and being opened, and was not read",
 			filepath.Join(s.dir, secretsDirName, assistantKeyName))
 	}
@@ -697,17 +742,38 @@ func (s *assistantStore) readKey() (string, error) {
 	// Re-asserted on the descriptor, because the check above was made on a
 	// name. Same function, so there is one rule to break and one row for it.
 	if err := ownerOnlyFile(keyPath, opened.Mode()); err != nil {
-		return "", err
+		return none, err
 	}
-	data, err := readBounded(file, maxKeyBytes)
+	data, err := readBounded(file, maxKeyBytes+storedKeyEnvelope)
 	if err != nil {
-		return "", err
+		return none, err
 	}
-	// Trimmed on the way out as well as in, so a file a person wrote by hand
+	var record storedKeyFile
+	if jerr := json.Unmarshal(data, &record); jerr != nil || record.Version != storedKeyVersion {
+		// **Refused, and never read as a bare key.** A file this build cannot
+		// read as a bound key is a file it will not present as an unbound one.
+		// The repair is one action and the sentence names it.
+		return none, withCode(CodeAssistantKeyUnbound, fmt.Errorf(
+			"%s is not a key this build can read: store the key again on Admin › Assistant, "+
+				"which binds it to the endpoint configured at that moment", keyPath))
+	}
+	// Trimmed on the way out as well as in, so a file a person edited by hand
 	// with a trailing newline presents the same key this desk would have
 	// stored from the same paste.
-	return strings.TrimSpace(string(data)), nil
+	return storedKey{
+		present: true,
+		key:     strings.TrimSpace(record.Key),
+		origin:  record.Origin,
+		kind:    record.Kind,
+	}, nil
 }
+
+// storedKeyEnvelope is how much of the key file is not the key.
+//
+// The four members' names, the braces and the quoting, plus room for an origin
+// and a kind. Generous on purpose: a key of exactly the maximum length must
+// not be refused for the JSON around it.
+const storedKeyEnvelope = 2048
 
 // storeKey writes the key, atomically, owner-only, through the pinned
 // directory.
@@ -715,16 +781,25 @@ func (s *assistantStore) readKey() (string, error) {
 // The mode is set on the **descriptor** rather than by name: `Root.Chmod` is
 // documented as racing a regular-file-to-symlink swap on Unix, and a chmod
 // that lands on a link is a chmod on somebody else's file.
-func (s *assistantStore) storeKey(key string) error {
+func (s *assistantStore) storeKey(bound storedKey) error {
 	if !s.usable() {
 		return s.problem
+	}
+	encoded, err := json.Marshal(storedKeyFile{
+		Version: storedKeyVersion,
+		Origin:  bound.origin,
+		Kind:    bound.kind,
+		Key:     bound.key,
+	})
+	if err != nil {
+		return err
 	}
 	staged, name, err := s.stage()
 	if err != nil {
 		return err
 	}
 	remove := func() { _ = s.secrets.Remove(name) }
-	if _, err := staged.WriteString(key); err != nil {
+	if _, err := staged.Write(encoded); err != nil {
 		staged.Close()
 		remove()
 		return err

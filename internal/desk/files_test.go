@@ -2727,6 +2727,16 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 				`"tools":[]}}}`)
 			return postJSON(t, ts, "/api/assistant/probe")
 		},
+		CodeAssistantKeyUnbound: func(t *testing.T) (int, map[string]any) {
+			// A key entered for one endpoint, and a desk now configured for
+			// another: the credential does not follow the configuration, and
+			// this is the refusal that says so.
+			storeKeyBoundTo(t, server, ts, "anthropic", "https://first.example/v1")
+			writeDeskConfig(t, server, `{"deskConfigVersion":1,"assistant":{"endpoint":`+
+				`{"url":"https://second.example/v1","kind":"anthropic","model":"m",`+
+				`"tools":[]}}}`)
+			return postJSON(t, ts, "/api/assistant/probe")
+		},
 		CodeDeskConfigChanged: func(t *testing.T) (int, map[string]any) {
 			writeDeskConfig(t, server, `{"deskConfigVersion":1}`)
 			// A digest of bytes that are not the ones on disk: the file moved

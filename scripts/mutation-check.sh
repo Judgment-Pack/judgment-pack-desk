@@ -529,15 +529,20 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		return err
 	}' \
     '	remove()
-	if err := s.secrets.WriteFile(assistantKeyName, []byte(key), custodyFileMode); err != nil {
+	if err := s.secrets.WriteFile(assistantKeyName, encoded, custodyFileMode); err != nil {
 		return err
 	}'
+  # **Repaired**: the line gained the destination the key is bound to, which
+  # is a scheme and a host and never a secret. The mutation is the same defect.
   mutate go "the key is logged beside the event" "$A" \
-    '	s.log.Printf("desk: the assistant key was stored on this machine")' \
-    '	s.log.Printf("desk: the assistant key %s was stored on this machine", key)'
+    '	s.log.Printf("desk: the assistant key was stored on this machine for %s", origin)' \
+    '	s.log.Printf("desk: the assistant key %s was stored on this machine for %s", key, origin)'
+  # **Repaired**: the answer is built by `keyState` now that it carries the
+  # binding too. The mutation is the same defect — the value where the
+  # fingerprint belongs.
   mutate go "the key is answered to the page instead of its fingerprint" "$A" \
-    '	writeJSON(w, http.StatusOK, AssistantKeyState{Present: key != "", Fingerprint: fingerprint(key)})' \
-    '	writeJSON(w, http.StatusOK, AssistantKeyState{Present: key != "", Fingerprint: key})'
+    '		Fingerprint: fingerprint(stored.key),' \
+    '		Fingerprint: stored.key,'
   # Four and four discloses a short key in full. Eight and not one: at one,
   # `runes[:4]` on a shorter key panics, and a mutation that crashes the suite
   # has not been survived — it has not been tested.
@@ -566,7 +571,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'func (s *Server) handleAssistantKeyWrite(w http.ResponseWriter, r *http.Request) {
 '
   mutate go "a probe runs with no key to present" "$A" \
-    '	if key == "" {
+    '	if !stored.present {
 		writeJSONCoded(w, http.StatusConflict, CodeAssistantNoKey,' \
     '	if false {
 		writeJSONCoded(w, http.StatusConflict, CodeAssistantNoKey,'
@@ -608,6 +613,32 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		return ""
 	}'
   # Go strips Authorization across hosts and knows nothing about x-api-key.
+  # **The binding, and the three ways it could stop holding.** Round 1: the
+  # page can write the desk-level file, so it can name any endpoint it likes —
+  # what keeps "the destination cannot come from the page" true is that the
+  # credential travels only to the destination it was entered for.
+  mutate go "the relay presents the key to an endpoint it was not entered for" "$MR" \
+    '	if reason := bindingProblem(stored, endpoint); reason != "" {' \
+    '	if reason := ""; reason != "" {'
+  mutate go "the probe presents the key to an endpoint it was not entered for" "$A" \
+    '	if reason := bindingProblem(stored, endpoint); reason != "" {' \
+    '	if reason := ""; reason != "" {'
+  # A write that moved the host must say a new key is needed; a page told
+  # otherwise would report a working assistant that refuses every request.
+  mutate go "a write across a host change reports no new key is needed" "$A" \
+    '		rebind = landed.Endpoint == nil || bindingProblem(stored, *landed.Endpoint) != ""' \
+    '		rebind = false'
+  # A file this build cannot read as a bound key must not be read as an
+  # unbound one: a credential with no binding is the state this ends.
+  mutate go "an unversioned key file is read as a bare key" "$CU" \
+    '	if jerr := json.Unmarshal(data, &record); jerr != nil || record.Version != storedKeyVersion {' \
+    '	if jerr := json.Unmarshal(data, &record); false && jerr != nil {'
+  # The origin is scheme and host: a binding to the whole URL would lapse on
+  # adding `?route=eu`, and a binding to the host alone would not notice a
+  # scheme change.
+  mutate go "a binding compares the whole configured URL" "$A" \
+    '	return strings.ToLower(parsed.Scheme) + "://" + strings.ToLower(parsed.Host), true' \
+    '	return strings.ToLower(parsed.String()), true'
   mutate go "the probe follows a redirect with the credential" "$A" \
     '	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },' \
     '	CheckRedirect: nil,'
@@ -692,10 +723,10 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # The key file itself, which is the name an attacker plants a link at.
   mutate go "a symlinked key file is followed" "$CU" \
     '	if info.Mode()&fs.ModeSymlink != 0 {
-		return "", fmt.Errorf(
+		return none, fmt.Errorf(
 			"%s is a symbolic link rather than a key, and was not read",' \
     '	if false {
-		return "", fmt.Errorf(
+		return none, fmt.Errorf(
 			"%s is a symbolic link rather than a key, and was not read",'
   # **One rule, one row.** It used to be written out at both the name and the
   # descriptor, which made each copy invisible: break one and the other
@@ -719,9 +750,9 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # one by identity, so that is what is broken here.
   mutate go "the opened key is not checked against the inspected one" "$CU" \
     '	if !os.SameFile(info, opened) {
-		return "", fmt.Errorf(' \
+		return none, fmt.Errorf(' \
     '	if false {
-		return "", fmt.Errorf('
+		return none, fmt.Errorf('
   # The same check on the file that names where a credential goes.
   mutate go "the opened configuration is not checked against the inspected one" "$CU" \
     '	if !os.SameFile(info, opened) {

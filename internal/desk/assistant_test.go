@@ -146,6 +146,43 @@ func storeKey(t *testing.T, ts *httptest.Server, key string) (int, map[string]an
 // that searching a log or a response body for it means something.
 const testKey = "sk-desk-test-0123456789-abcdefghij"
 
+// The endpoint a key is bound to where the case is about the key rather than
+// about the destination.
+const (
+	defaultTestEndpoint = "https://e.example/v1"
+	defaultTestOrigin   = "https://e.example"
+	defaultTestKind     = "anthropic"
+)
+
+// configureAnEndpoint puts one acceptable endpoint in the desk-level file.
+//
+// **Storing a key needs one**, and that is the whole of the binding: the key
+// is kept together with the scheme, host and wire protocol of the endpoint
+// configured at that instant, and is presented nowhere else. A key with
+// nothing to bind to would be a key bound to whatever was configured next,
+// which is the arrangement the binding replaces.
+func configureAnEndpoint(t *testing.T, s *Server) {
+	t.Helper()
+	configureEndpoint(t, s, defaultTestKind, defaultTestEndpoint)
+}
+
+func configureEndpoint(t *testing.T, s *Server, kind, endpointURL string) {
+	t.Helper()
+	writeDeskConfig(t, s, fmt.Sprintf(
+		`{"deskConfigVersion":1,"assistant":{"endpoint":`+
+			`{"url":%q,"kind":%q,"model":"a-model","tools":[]}}}`, endpointURL, kind))
+}
+
+// storeKeyBoundTo configures one endpoint and stores the key against it,
+// leaving the file for the caller to replace.
+func storeKeyBoundTo(t *testing.T, s *Server, ts *httptest.Server, kind, endpointURL string) {
+	t.Helper()
+	configureEndpoint(t, s, kind, endpointURL)
+	if status, body := storeKey(t, ts, testKey); status != http.StatusOK {
+		t.Fatalf("store: %d %v", status, body)
+	}
+}
+
 /* Custody ------------------------------------------------------------------ */
 
 func TestAssistantKeyModeBits(t *testing.T) {
@@ -166,6 +203,8 @@ func TestAssistantKeyModeBits(t *testing.T) {
 		t.Fatalf("chmod: %v", err)
 	}
 	s, ts, _ := assistantServerIn(t, config)
+	// Storing binds, so there has to be something to bind to.
+	configureAnEndpoint(t, s)
 
 	if status, body := storeKey(t, ts, testKey); status != http.StatusOK {
 		t.Fatalf("store: %d %v", status, body)
@@ -189,13 +228,33 @@ func TestAssistantKeyModeBits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read key: %v", err)
 	}
-	if string(stored) != testKey {
-		t.Errorf("stored %q, want %q", stored, testKey)
+	// **The file is the key and the destination it was entered for**, in the
+	// versioned record `readKey` insists on. Asserted on the bytes so the
+	// format is pinned here as well as in the reader: a build that wrote a
+	// bare key again would be a build presenting a credential with no binding.
+	if got := onDiskKey(t, stored); got.Key != testKey {
+		t.Errorf("stored key %q, want %q", got.Key, testKey)
+	} else if got.Origin != defaultTestOrigin || got.Kind != defaultTestKind {
+		t.Errorf("stored binding %s over %q", got.Origin, got.Kind)
 	}
+}
+
+// onDiskKey reads the key file's own bytes as the record they are.
+func onDiskKey(t *testing.T, data []byte) storedKeyFile {
+	t.Helper()
+	var record storedKeyFile
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatalf("the key file is not the versioned record: %q", data)
+	}
+	if record.Version != storedKeyVersion {
+		t.Errorf("assistantKeyVersion %d, want %d", record.Version, storedKeyVersion)
+	}
+	return record
 }
 
 func TestAssistantKeyReplacedAtomically(t *testing.T) {
 	s, ts, _ := assistantServer(t)
+	configureAnEndpoint(t, s)
 
 	if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
 		t.Fatalf("first store: %d", status)
@@ -226,8 +285,8 @@ func TestAssistantKeyReplacedAtomically(t *testing.T) {
 		t.Errorf("replaced key is %#o, want 0600", got)
 	}
 	stored, _ := os.ReadFile(s.assistantKeyPath())
-	if string(stored) != second {
-		t.Errorf("stored %q, want %q", stored, second)
+	if got := onDiskKey(t, stored); got.Key != second {
+		t.Errorf("stored %q, want %q", got.Key, second)
 	}
 
 	// And nothing staged is left behind: the directory holds the key and
@@ -288,7 +347,8 @@ func TestAssistantKeyNeverInTheLog(t *testing.T) {
 }
 
 func TestAssistantKeyNeverInAResponse(t *testing.T) {
-	_, ts, _ := assistantServer(t)
+	s, ts, _ := assistantServer(t)
+	configureAnEndpoint(t, s)
 
 	for _, call := range []struct {
 		name   string
@@ -316,7 +376,8 @@ func TestAssistantKeyNeverInAResponse(t *testing.T) {
 }
 
 func TestAssistantKeyFingerprintShape(t *testing.T) {
-	_, ts, _ := assistantServer(t)
+	s, ts, _ := assistantServer(t)
+	configureAnEndpoint(t, s)
 
 	t.Run("absent", func(t *testing.T) {
 		status, body := sendJSON(t, ts, http.MethodGet, "/api/assistant/key", nil)
@@ -379,7 +440,8 @@ func TestAssistantFingerprintRefusesToDiscloseAShortKey(t *testing.T) {
 }
 
 func TestAssistantKeyRefusals(t *testing.T) {
-	_, ts, _ := assistantServer(t)
+	s, ts, _ := assistantServer(t)
+	configureAnEndpoint(t, s)
 
 	t.Run("empty", func(t *testing.T) {
 		status, body := storeKey(t, ts, "")
@@ -487,7 +549,8 @@ func TestAssistantKeyAtTheSizeBoundary(t *testing.T) {
 	if maxKeyBytes != 4<<10 {
 		t.Fatalf("maxKeyBytes = %d, want 4096", maxKeyBytes)
 	}
-	_, ts, _ := assistantServer(t)
+	s, ts, _ := assistantServer(t)
+	configureAnEndpoint(t, s)
 	// Exactly the maximum is accepted: the envelope allowance exists so that
 	// the quotes and braces around a maximal key do not refuse it.
 	status, body := storeKey(t, ts, strings.Repeat("k", 4<<10))
@@ -1364,13 +1427,288 @@ func TestConfigDirHonoursXDG(t *testing.T) {
 	}
 }
 
+/* The key is bound to the destination it was entered for ------------------- */
+
+func TestTheReviewsRetargetSequenceReachesTheAttackerWithNothing(t *testing.T) {
+	// **Round 1's exact sequence, in order.** Code holding the session token:
+	// reads the digest, PUTs an assistant object naming an endpoint of its
+	// own, and then probes or relays — and used to receive the machine-held
+	// key at that endpoint. The desk-level write is same-origin, so the origin
+	// guard never applied; only the resulting upstream was foreign.
+	//
+	// The answer is not to take the write away. It is that the key travels
+	// only to the destination it was entered for, and entering one is
+	// something only a person at the keyboard can do.
+	attacker := newUpstream(t, nil)
+	s, ts, _ := assistantServer(t)
+
+	// 0. A key, stored for the endpoint the author actually configured.
+	authors := newUpstream(t, nil)
+	storeKeyBoundTo(t, s, ts, "gemini", authors.server.URL)
+
+	// 1. The digest.
+	digest, present := deskConfigDigest(t, ts)
+	if !present {
+		t.Fatal("no file to read a digest from")
+	}
+
+	// 2. An accepted assistant object naming the attacker's endpoint. **This
+	// succeeds**, and it is meant to: the write is what the route is for.
+	status, body := putDeskConfig(t, ts, fmt.Sprintf(
+		`{"endpoint":{"url":%q,"kind":"gemini","model":"m","tools":[]}}`,
+		attacker.server.URL), digest)
+	if status != http.StatusOK {
+		t.Fatalf("the write was refused: %d %v", status, body)
+	}
+	// And it says so: the endpoint moved, the key did not, and somebody has to
+	// enter one for the new destination.
+	if body["keyRebindRequired"] != true {
+		t.Errorf("keyRebindRequired %v, want true", body["keyRebindRequired"])
+	}
+
+	// 3. The probe, and the relay.
+	probeCounter := countingProbes(t)
+	status, body = postJSON(t, ts, "/api/assistant/probe")
+	if status != http.StatusConflict || body["code"] != CodeAssistantKeyUnbound {
+		t.Fatalf("probe: status %d, body %v; want 409 %s",
+			status, body, CodeAssistantKeyUnbound)
+	}
+	if calls, to := probeCounter.seen(); calls != 0 {
+		t.Fatalf("the probe made %d outbound request(s), to %v", calls, to)
+	}
+
+	relayCounter := countingRelays(t)
+	resp, raw := relayGet(t, ts, "v1beta/models")
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("relay: status %d, want 409: %s", resp.StatusCode, raw)
+	}
+	if got := codeOfBody(t, raw); got != CodeAssistantKeyUnbound {
+		t.Errorf("relay code %q, want %q", got, CodeAssistantKeyUnbound)
+	}
+	if calls, to := relayCounter.seen(); calls != 0 {
+		t.Fatalf("the relay made %d outbound request(s), to %v", calls, to)
+	}
+
+	// 4. **The attacker received nothing at all** — not a request without the
+	// key, not a request at all.
+	if seen := attacker.arrivals(); len(seen) != 0 {
+		t.Fatalf("the attacker's endpoint saw %d request(s): %v", len(seen), seen)
+	}
+	// And no answer this desk gave carries the key either.
+	if strings.Contains(raw, testKey) {
+		t.Errorf("a refusal carried the key: %s", raw)
+	}
+}
+
+func TestABindingSurvivesAPathOrQueryChangeAndNotAHostOrKindChange(t *testing.T) {
+	// **The line is the origin.** A path or a query is the endpoint's own
+	// routing and an author changes one without changing who is at the other
+	// end; a host is a different party, and a kind is a different wire — and
+	// the credential is presented differently on each.
+	for _, testCase := range []struct {
+		name, kind, url string
+		bound           bool
+	}{
+		{"the same endpoint", "gemini", "%s", true},
+		{"a path added", "gemini", "%s/v1beta", true},
+		{"a query added", "gemini", "%s/?route=eu", true},
+		{"the host in another case", "gemini", "%s", true},
+		{"a different host", "gemini", "https://elsewhere.example.invalid/", false},
+		{"a different scheme", "gemini", "https://127.0.0.1/", false},
+		{"a different kind", "anthropic", "%s", false},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			u := newUpstream(t, nil)
+			s, ts, _ := assistantServer(t)
+			storeKeyBoundTo(t, s, ts, "gemini", u.server.URL)
+
+			target := testCase.url
+			if strings.Contains(target, "%s") {
+				target = fmt.Sprintf(target, u.server.URL)
+			}
+			if testCase.name == "the host in another case" {
+				target = strings.ToUpper(target[:len("http")]) + target[len("http"):]
+			}
+			configureEndpoint(t, s, testCase.kind, target)
+
+			counter := countingRelays(t)
+			resp, body := relayGet(t, ts, "v1beta/models")
+			if testCase.bound {
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("status %d, want 200: %s", resp.StatusCode, body)
+				}
+				if calls, _ := counter.seen(); calls != 1 {
+					t.Fatalf("%d outbound request(s), want 1", calls)
+				}
+				return
+			}
+			if resp.StatusCode != http.StatusConflict {
+				t.Fatalf("status %d, want 409: %s", resp.StatusCode, body)
+			}
+			if got := codeOfBody(t, body); got != CodeAssistantKeyUnbound {
+				t.Errorf("code %q, want %q", got, CodeAssistantKeyUnbound)
+			}
+			if calls, to := counter.seen(); calls != 0 {
+				t.Fatalf("%d outbound request(s), to %v", calls, to)
+			}
+		})
+	}
+}
+
+func TestABindingSurvivesARestart(t *testing.T) {
+	// **It is in the file, not in memory.** A binding a restart forgot would
+	// be a binding that lapses every time the desk is started, which is the
+	// state it exists to prevent.
+	config := t.TempDir()
+	s, ts, _ := assistantServerIn(t, config)
+	storeKeyBoundTo(t, s, ts, "gemini", "https://first.example.invalid/")
+
+	// A second desk over the same directory: a restart, in the only form a
+	// test can take it.
+	next, nextTS, _ := assistantServerIn(t, config)
+	stored, err := next.assistant.readKey()
+	if err != nil {
+		t.Fatalf("read after restart: %v", err)
+	}
+	if !stored.present || stored.key != testKey {
+		t.Fatalf("the key did not survive: %+v", stored.present)
+	}
+	if stored.origin != "https://first.example.invalid" || stored.kind != "gemini" {
+		t.Errorf("binding %s over %q", stored.origin, stored.kind)
+	}
+	// And the endpoint the second desk is asked about is still checked against
+	// it.
+	configureEndpoint(t, next, "gemini", "https://second.example.invalid/")
+	counter := countingProbes(t)
+	status, body := postJSON(t, nextTS, "/api/assistant/probe")
+	if status != http.StatusConflict || body["code"] != CodeAssistantKeyUnbound {
+		t.Fatalf("status %d, body %v", status, body)
+	}
+	if calls, to := counter.seen(); calls != 0 {
+		t.Fatalf("%d outbound request(s), to %v", calls, to)
+	}
+}
+
+func TestAnUnversionedKeyFileIsRefusedRatherThanRead(t *testing.T) {
+	// A file this build cannot read as a *bound* key is not read as an unbound
+	// one: a credential with no binding is exactly the state this mechanism
+	// ends. The repair is one action, and the sentence names it.
+	config := t.TempDir()
+	s, ts, _ := assistantServerIn(t, config)
+	configureAnEndpoint(t, s)
+	if err := os.MkdirAll(s.secretsDir(), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	for _, contents := range []string{
+		testKey,                               // the format this replaces
+		`{"key":"` + testKey + `"}`,           // JSON, and unversioned
+		`{"assistantKeyVersion":2,"key":"x"}`, // a version this build does not read
+	} {
+		if err := os.WriteFile(s.assistantKeyPath(), []byte(contents), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		status, body := sendJSON(t, ts, http.MethodGet, "/api/assistant/key", nil)
+		if status != http.StatusConflict || body["code"] != CodeAssistantKeyUnbound {
+			t.Fatalf("%q: status %d, body %v", contents, status, body)
+		}
+		message, _ := body["error"].(string)
+		if !strings.Contains(message, "store the key again") {
+			t.Errorf("%q: the refusal does not name the repair: %q", contents, message)
+		}
+		if strings.Contains(message, testKey) {
+			t.Errorf("the refusal carries the key: %q", message)
+		}
+		// And nothing reaches an endpoint on the strength of it.
+		counter := countingProbes(t)
+		if status, body := postJSON(t, ts, "/api/assistant/probe"); status != http.StatusConflict ||
+			body["code"] != CodeAssistantKeyUnbound {
+			t.Errorf("%q: probe status %d, body %v", contents, status, body)
+		}
+		if calls, to := counter.seen(); calls != 0 {
+			t.Errorf("%q: %d outbound request(s), to %v", contents, calls, to)
+		}
+	}
+}
+
+func TestStoringAKeyNeedsAnEndpointToBindItTo(t *testing.T) {
+	// A key with nothing to bind to would be a key bound to whatever is
+	// configured next, which is the arrangement the binding replaces. The
+	// state and the repair are the ones Admin already renders.
+	_, ts, _ := assistantServer(t)
+	status, body := storeKey(t, ts, testKey)
+	if status != http.StatusConflict || body["code"] != CodeAssistantUnconfigured {
+		t.Fatalf("status %d, body %v; want 409 %s", status, body, CodeAssistantUnconfigured)
+	}
+	// And a refused store keeps none of it: the read still says there is no key.
+	if status, body := sendJSON(t, ts, http.MethodGet, "/api/assistant/key", nil); status !=
+		http.StatusOK || body["present"] != false {
+		t.Fatalf("read: status %d, body %v", status, body)
+	}
+}
+
+func TestTheKeyReadReportsWhereTheKeyGoes(t *testing.T) {
+	// The page needs it to say "key stored for <host>", which is the whole
+	// user-facing half of the binding: a reader who can see the destination
+	// can see that changing it means entering the key again. Neither member is
+	// a secret — both are in the file the page already reads.
+	s, ts, _ := assistantServer(t)
+	storeKeyBoundTo(t, s, ts, "gemini", "https://gw.example.invalid/v1?route=eu")
+	status, body := sendJSON(t, ts, http.MethodGet, "/api/assistant/key", nil)
+	if status != http.StatusOK {
+		t.Fatalf("status %d, body %v", status, body)
+	}
+	if body["present"] != true {
+		t.Fatalf("present %v", body["present"])
+	}
+	// The origin, and neither the path nor the query: a binding is about who
+	// is at the other end.
+	if body["origin"] != "https://gw.example.invalid" {
+		t.Errorf("origin %v", body["origin"])
+	}
+	if body["kind"] != "gemini" {
+		t.Errorf("kind %v", body["kind"])
+	}
+	// And still not the key.
+	raw, _ := json.Marshal(body)
+	if strings.Contains(string(raw), testKey) {
+		t.Errorf("the key reached the page: %s", raw)
+	}
+}
+
+func TestAWriteThatKeepsTheDestinationKeepsTheKey(t *testing.T) {
+	// The positive control for `keyRebindRequired`: a write that changes the
+	// model, the tools or the tier leaves the credential exactly where it was,
+	// and the page is told so rather than asked to enter it again.
+	u := newUpstream(t, nil)
+	s, ts, _ := assistantServer(t)
+	storeKeyBoundTo(t, s, ts, "gemini", u.server.URL)
+	digest, _ := deskConfigDigest(t, ts)
+	status, body := putDeskConfig(t, ts, fmt.Sprintf(
+		`{"endpoint":{"url":%q,"kind":"gemini","model":"another-model",`+
+			`"tools":["validate"]},"thinking":"ultra"}`, u.server.URL+"/v1beta"), digest)
+	if status != http.StatusOK {
+		t.Fatalf("status %d, body %v", status, body)
+	}
+	if body["keyRebindRequired"] != false {
+		t.Errorf("keyRebindRequired %v, want false", body["keyRebindRequired"])
+	}
+	// And the relay still carries it.
+	if resp, raw := relayGet(t, ts, "models"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("the relay refused after a same-destination write: %d %s",
+			resp.StatusCode, raw)
+	}
+	if seen := u.only(t); seen.header.Get("x-goog-api-key") != testKey {
+		t.Errorf("the endpoint did not receive the bound key: %v", seen.header)
+	}
+}
+
 /* The endpoint the file names ---------------------------------------------- */
 
 func TestConfiguredEndpointRefusals(t *testing.T) {
 	s, ts, _ := assistantServer(t)
-	if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
-		t.Fatal("store")
-	}
+	// A key stored against an endpoint this desk accepts, before each refused
+	// file is written over it — so every refusal below is the file's.
+	storeKeyBoundTo(t, s, ts, defaultTestKind, defaultTestEndpoint)
 
 	for _, tc := range []struct{ name, file, names string }{
 		{
@@ -1693,12 +2031,12 @@ func TestAConfiguredQueryCarryingACredentialIsNeverProbed(t *testing.T) {
 	// request at all — the same gate a refused file has always had.
 	counter := countingProbes(t)
 	s, ts, _ := assistantServer(t)
+	// The key is stored against the same endpoint without the query, so the
+	// refusal below is the query's.
+	storeKeyBoundTo(t, s, ts, "gemini", "https://gw.example.invalid/v1")
 	writeDeskConfig(t, s, `{"deskConfigVersion":1,"assistant":{"endpoint":`+
 		`{"url":"https://gw.example.invalid/v1?key=sk-nope","kind":"gemini",`+
 		`"model":"m","tools":[]}}}`)
-	if status, body := storeKey(t, ts, testKey); status != http.StatusOK {
-		t.Fatalf("store: %d %v", status, body)
-	}
 	status, body := postJSON(t, ts, "/api/assistant/probe")
 	if status != http.StatusConflict || body["code"] != CodeAssistantUnconfigured {
 		t.Fatalf("status %d, body %v", status, body)
