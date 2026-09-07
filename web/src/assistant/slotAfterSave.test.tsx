@@ -15,7 +15,7 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DeskConfigProvider } from '../config/DeskConfigProvider'
+import { DeskConfigProvider, useEffectiveConfig } from '../config/DeskConfigProvider'
 import { testQueryClient } from '../testing/harness'
 import { AssistantSection } from './AssistantSection'
 import { useAssistantSlot } from './useAssistantSlot'
@@ -103,6 +103,18 @@ function stubDesk(): { writes: number } {
   return state
 }
 
+/**
+ * The digest the form would send, read from the same place the form reads it.
+ *
+ * Rendered so a case can wait for a re-read to have **landed** rather than for
+ * the request to have been made: a read that has been issued is not a read the
+ * form has, and a Save in between would state the digest from before it.
+ */
+function DigestReading() {
+  const { desk } = useEffectiveConfig()
+  return <p id="desk-digest">{desk?.sha256 ?? 'none'}</p>
+}
+
 /** What every surface that reads the slot reads. */
 function SlotReading() {
   const slot = useAssistantSlot()
@@ -117,6 +129,7 @@ function renderDesk() {
   return render(
     <QueryClientProvider client={testQueryClient()}>
       <DeskConfigProvider>
+        <DigestReading />
         <SlotReading />
         <AssistantSection id="assistant" title="Assistant" />
       </DeskConfigProvider>
@@ -208,5 +221,129 @@ describe('what a save reaches', () => {
     expect(screen.getByRole('status').textContent).toBe(
       'configured · the-model-in-the-file · vercel · off'
     )
+  })
+})
+
+describe('Reload after a file that moved', () => {
+  /**
+   * A chassis whose file somebody else edits, and which refuses a write that
+   * states the digest from before that edit.
+   *
+   * **The fixture-driven suite cannot measure this.** What Reload has to do is
+   * *read the file again*, and a form over a fixture would show the same thing
+   * whether it read or not — which is exactly how a Reload that only cleared
+   * its own notice passed a mutation row. So this drives the real provider and
+   * counts the reads, and then asserts the digest the **next** write states.
+   */
+  function stubMoving(): { reads: number; sent: string[] } {
+    const state = { reads: 0, sent: [] as string[] }
+    let digest = 'a'.repeat(64)
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET'
+      if (url.includes('/api/desk-config') && method === 'PUT') {
+        const body = JSON.parse(String(init?.body)) as { ifMatch: string }
+        state.sent.push(body.ifMatch)
+        if (body.ifMatch !== digest) {
+          return {
+            ok: false,
+            status: 409,
+            statusText: '',
+            text: async () =>
+              JSON.stringify({
+                error: 'the desk-level configuration on disk is not the one this page read',
+                code: 'desk-config-changed',
+                path: DESK_PATH,
+                expectedSha256: body.ifMatch,
+                actualSha256: digest,
+                exists: true
+              })
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          statusText: '',
+          text: async () =>
+            JSON.stringify({
+              path: DESK_PATH,
+              sha256: digest,
+              assistant: { endpoint: ENDPOINT, engine: 'vercel', thinking: 'off' },
+              created: false,
+              keyRebindRequired: false
+            })
+        }
+      }
+      if (url.includes('/api/desk-config')) {
+        state.reads += 1
+        return {
+          ok: true,
+          status: 200,
+          statusText: '',
+          text: async () =>
+            JSON.stringify({
+              path: DESK_PATH,
+              present: true,
+              sha256: digest,
+              content: JSON.stringify({
+                deskConfigVersion: 1,
+                assistant: { endpoint: ENDPOINT, engine: 'vercel', thinking: 'off' }
+              })
+            })
+        }
+      }
+      if (url.includes('/api/assistant/key')) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: '',
+          text: async () =>
+            JSON.stringify({ present: false, fingerprint: '', origin: '', kind: '' })
+        }
+      }
+      return { ok: false, status: 404, statusText: '', text: async () => '{}' }
+    })
+    /** Somebody else writes the file. */
+    ;(state as unknown as { move: () => void }).move = () => {
+      digest = 'c'.repeat(64)
+    }
+    return state
+  }
+
+  it('reads the file again, so the next write states a digest that is true', async () => {
+    const state = stubMoving() as { reads: number; sent: string[]; move: () => void }
+    renderDesk()
+    // Waited on the *rendered* configuration rather than on the request:
+    // a read that has been made is not a read that has reached the form, and
+    // Save with no digest yet does nothing at all — which is a different
+    // failure wearing this one's clothes.
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toContain('the-model-in-the-file')
+    )
+    const before = state.reads
+
+    state.move()
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'chosen-and-unsaved' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText(/changed on disk. Nothing was written/)).toBeTruthy()
+    expect(state.sent).toEqual(['a'.repeat(64)])
+    // Nothing was read on the refusal: a refused write changed nothing.
+    expect(state.reads).toBe(before)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
+    // **The assertion the row is for.** Reload reads the file again — a button
+    // that only cleared its own notice would leave the next Save stating the
+    // same stale digest, and the author pressing it twice. Waited on the value
+    // the form holds, not on the request: the request having been made says
+    // nothing about the form having the answer.
+    await waitFor(() => expect(state.reads).toBe(before + 1))
+    await waitFor(() =>
+      expect(document.querySelector('#desk-digest')?.textContent).toBe('c'.repeat(64))
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(state.sent).toHaveLength(2))
+    expect(state.sent[1]).toBe('c'.repeat(64))
+    // And the value typed before the refusal survived both.
+    expect((screen.getByLabelText('Model') as HTMLInputElement).value).toBe('chosen-and-unsaved')
   })
 })
