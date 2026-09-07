@@ -1074,6 +1074,9 @@ func TestTheRuntimeStartsInTheDirectoryThatWasPinned(t *testing.T) {
 	// *spelling*, so after a rename-and-replace the runtime judged one tree
 	// while the file API edited another — with neither half able to tell.
 	s, was, pathname := swappedServer(t)
+	// Never started here — what is asserted is which directory the command
+	// would land in — so the runtime is a stand-in named by absolute path.
+	withRuntimeBinary(t, s, "exit 0")
 
 	cmd, err := s.runtimeCommand(t.Context())
 	if err != nil {
@@ -1106,6 +1109,10 @@ func TestTheRuntimeStartsInTheDirectoryThatWasPinned(t *testing.T) {
 // desk starts would be in, taken off the command this desk actually builds.
 func theProjectARuntimeWouldGet(t *testing.T, s *Server) os.FileInfo {
 	t.Helper()
+	// A stand-in, by absolute path: this asks where a runtime *would* start
+	// and never starts one, so requiring a runtime on the host would be asking
+	// for something the question does not need.
+	withRuntimeBinary(t, s, "exit 0")
 	cmd, err := s.runtimeCommand(t.Context())
 	if err != nil {
 		t.Fatalf("runtime command: %v", err)
@@ -1253,6 +1260,9 @@ func TestAMissingShellIsRefusedByNameAtTheSpawn(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	defer s.Close()
+	// So that the refusal under test is the shell's absence and not a runtime
+	// this case never runs.
+	withRuntimeBinary(t, s, "exit 0")
 
 	was := runtimeShellName
 	runtimeShellName = "no-such-shell-on-this-machine"
@@ -1268,8 +1278,23 @@ func TestAMissingShellIsRefusedByNameAtTheSpawn(t *testing.T) {
 	}
 }
 
-// withRuntimeBinary points this server's runtime at a shell script, so a test
-// can start something that reports and waits instead of a real `jpack mcp`.
+// withRuntimeBinary points this server's runtime at a shell script, by
+// **absolute path**, so a test can start something that reports and waits
+// instead of a real `jpack mcp`.
+//
+// # Why every case here uses one
+//
+// What these cases prove is **this desk's spawn mechanism** — which directory
+// the child lands in, which descriptors it inherits — and none of that is a
+// claim about the runtime binary. `runtimeCommand` resolves `JpackBin` so that
+// a missing runtime is this desk's own sentence, which means a case that left
+// it as the bare name `jpack` would ask the host for a runtime it does not
+// need: green on a machine with one installed and red on CI, which is exactly
+// what happened. An absolute path asks nothing.
+//
+// A case that genuinely needs the real runtime uses `requireBinary`, which
+// skips with "no runtime binary: build one to ./bin/jpack or set JPACK_BIN".
+// None here does.
 func withRuntimeBinary(t *testing.T, s *Server, script string) {
 	t.Helper()
 	binary := filepath.Join(t.TempDir(), "fake-runtime")
