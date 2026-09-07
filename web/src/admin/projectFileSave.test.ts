@@ -60,14 +60,26 @@ describe('composing one member of the project file', () => {
     expect(composed.text!.endsWith('}\n')).toBe(true)
   })
 
-  it('writes the member at its own indentation, and only its own span', () => {
+  it('writes a one-line member back on one line', () => {
+    // The file writes `appearance` on one line, so a one-word change is one
+    // line of diff. Expanding it would turn every edit into four.
     const composed = composeProjectFile(FILE, '/appearance', [
       { path: ['theme'], value: 'dark' }
     ])
-    // The file is four-space indented, so the member's own continuation lines
-    // are too. Nothing here imposes a house style on the rest of the file.
-    expect(composed.text).toContain('    "appearance": {\n      "theme": "dark",')
-    expect(composed.text).toContain('"density": "comfortable"')
+    expect(composed.text).toContain(
+      '    "appearance": {"theme":"dark","density":"comfortable"},'
+    )
+  })
+
+  it('writes a member the file lays out over several lines the same way', () => {
+    // And at the indentation the file gives it — four spaces here, not two.
+    const composed = composeProjectFile(FILE, '/panes', [
+      { path: ['left', 'width'], value: 300 }
+    ])
+    expect(composed.text).toContain(
+      '    "panes": {\n      "left": {\n        "mode": "expanded",'
+    )
+    expect(composed.text).toContain('\n        "width": 300\n      }\n    }')
   })
 
   it('adds a member the file omits rather than dropping the edit', () => {

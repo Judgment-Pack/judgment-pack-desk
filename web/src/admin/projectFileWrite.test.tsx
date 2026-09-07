@@ -149,7 +149,8 @@ describe('a project-file card’s save', () => {
     // The digest the read carried, and not the empty string, which is a claim
     // that there is no file.
     expect(body.baseSha256).toBe(DIGEST)
-    expect(String(body.content)).toContain('"name": "Renamed"')
+    // The member this card wrote, on the one line the file already gave it.
+    expect(String(body.content)).toContain('"organization": {"name":"Renamed","mark":null}')
     // And every other member, byte for byte, in the request itself.
     expect(String(body.content)).toContain('"panes": { "left": { "mode": "expanded", "width": 248 } }')
     expect(desk.puts[0]!.url).toContain('/api/file?')

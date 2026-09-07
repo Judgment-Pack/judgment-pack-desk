@@ -174,7 +174,7 @@ describe('a project-file card’s form', () => {
     // The digest of the bytes this edit started from — so the desk refuses it —
     // and the member spliced into **those** bytes rather than the newer ones.
     expect(body.baseSha256).toBe('a'.repeat(64))
-    expect(String(body.content)).toContain('"name": "What I typed"')
+    expect(String(body.content)).toContain('"name":"What I typed"')
     expect(String(body.content)).not.toContain('Renamed elsewhere')
   })
 

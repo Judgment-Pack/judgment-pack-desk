@@ -140,7 +140,7 @@ export function composeProjectFile(
     }
   }
   const member = compose(valueAt(current.index.value, pointer), edits)
-  const next = setRawJson(current, pointer, memberJson(member, indentFor(current, pointer)))
+  const next = setRawJson(current, pointer, memberJson(member, shapeOf(current, pointer)))
   // The same decoder the file's reader runs, over the file this would write.
   const decoded = decodeDeskConfig(next.text, 'project')
   if (decoded.problems.length > 0) return { problems: decoded.problems }
@@ -176,36 +176,57 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/**
- * The bytes one member is written with.
- *
- * Two spaces per level, and every line after the first carries the member's own
- * indentation, so a member written into a two-space file reads as part of it.
- * Only these bytes are the desk's: the rest of the file is spliced around them
- * untouched, so the shape chosen here is a shape for one member rather than a
- * house style imposed on a file somebody wrote.
- */
-function memberJson(value: unknown, indent: string): string {
-  return JSON.stringify(value, null, 2).split('\n').join(`\n${indent}`)
+/** How one member is laid out in the file it is written back into. */
+interface MemberShape {
+  /** The indentation its own line sits at. */
+  indent: string
+  /** Whether the file writes it on one line. */
+  inline: boolean
 }
 
 /**
- * The indentation the member sits at, read off the file rather than assumed.
+ * The bytes one member is written with.
  *
- * Its own where the file already carries it, the first top-level member's where
- * it does not — an added member takes the layout its neighbours use — and two
- * spaces for a file that has no member to read one off.
+ * **The shape the file already gives that member**, and only that member: a
+ * one-line member is written back on one line, and a member laid out over
+ * several keeps two spaces per level, with every line after the first carrying
+ * its own indentation. Neither is a house style imposed on the file — the rest
+ * of it is spliced around these bytes untouched — and the reason for following
+ * the member rather than picking one is that either choice, applied always, is
+ * a reformatting nobody asked for: expanding a one-line member turns a one-word
+ * edit into four lines of diff, and collapsing a member somebody aligned by
+ * hand throws that alignment away.
  */
-function indentFor(current: Buffered, pointer: ProjectFilePointer): string {
+function memberJson(value: unknown, shape: MemberShape): string {
+  if (shape.inline) return JSON.stringify(value)
+  return JSON.stringify(value, null, 2).split('\n').join(`\n${shape.indent}`)
+}
+
+/**
+ * How the file lays this member out, read off it rather than assumed.
+ *
+ * Its own layout where the file already carries the member; otherwise the first
+ * top-level member's indentation — an added member takes the layout its
+ * neighbours use — on one line, which is the smaller addition to a file this
+ * desk did not write and the shape the chassis composes a member in.
+ */
+function shapeOf(current: Buffered, pointer: ProjectFilePointer): MemberShape {
   const own = current.index.spans.get(pointer)
-  const measured = own === undefined ? undefined : runBefore(current.text, own.memberStart)
-  if (measured !== undefined) return measured
+  if (own !== undefined) {
+    const measured = runBefore(current.text, own.memberStart)
+    if (measured !== undefined) {
+      return {
+        indent: measured,
+        inline: !current.text.slice(own.valueStart, own.valueEnd).includes('\n')
+      }
+    }
+  }
   for (const span of current.index.spans.values()) {
     if (span.pointer === '' || span.pointer.indexOf('/', 1) >= 0) continue
     const neighbour = runBefore(current.text, span.memberStart)
-    if (neighbour !== undefined) return neighbour
+    if (neighbour !== undefined) return { indent: neighbour, inline: true }
   }
-  return '  '
+  return { indent: '  ', inline: true }
 }
 
 /** The run of spaces or tabs immediately before an offset, on its own line. */
