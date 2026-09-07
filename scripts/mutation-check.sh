@@ -3850,6 +3850,19 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the configuration write states no digest at all" "$EF" \
     '      { assistant: assistantWrite(draft), ifMatch: digest },' \
     "      { assistant: assistantWrite(draft), ifMatch: '' },"
+  # **The write already answers with the slot and the digest**, and leaving the
+  # tab, Describe it and the key row to a second GET meant a write that landed
+  # under a read that hung left every one of them describing the endpoint that
+  # had just been replaced, under a form that said "Saved".
+  mutate web "the write's own answer is thrown away" "$AQ" \
+    '      client.setQueryData<EffectiveConfig>(DESK_CONFIG_QUERY_KEY, (previous) =>
+        configAfterWrite(previous, written)
+      )' \
+    '      void written'
+  # The binding is the desk's verdict and a write can move it either way.
+  mutate web "the key binding is not re-read after a write" "$AQ" \
+    '      void client.invalidateQueries({ queryKey: ASSISTANT_KEY_QUERY_KEY })' \
+    ''
   # A 409 says the file moved and nothing was written. Reload has to *read it
   # again*: a button that only cleared the alert would leave the next Save
   # stating the same stale digest, and the author pressing it twice.

@@ -1514,10 +1514,21 @@ worse than either alone.
 
 **Save** writes the `assistant` object over `PUT /api/desk-config` and nothing
 else in the file moves. The status line on the Assistant tab and **Describe
-it** name the new model and tier at once, because the write invalidates the
-configuration query and the read runs again — no reload, and a test drives the
-real provider over a stubbed file rather than a fixture, because a fixture
-would hold the mechanism constant and prove nothing about it.
+it** name the new model and tier at once, and **from the write's own answer**:
+it carries the slot the chassis read back off the disk and the digest the next
+write states, both of which are set into the cached configuration before the
+re-read is asked for. Leaving them to that second read meant a write which
+landed while the read hung left every one of those surfaces describing the
+endpoint that had just been replaced, under a form saying "Saved". The re-read
+still happens, for the parts a write cannot speak about — the project's own
+file, every other section's badge — and the key is re-read with it, because a
+write can move the binding in either direction. A read that *answers* and
+refuses is newer information about the same file than the write's answer, and
+this desk says nothing about a file it could not read rather than describing
+one from memory: Admin reports it and Save is refused until it can be read.
+The test drives the real provider over a stubbed file rather than a fixture,
+because a fixture would hold the mechanism constant and prove nothing about
+it.
 
 **List models** reads the endpoint's own listing through the relay by naming a
 path suffix — `models`, `v1/models`, `v1beta/models` — and fills a picker. Two

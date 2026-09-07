@@ -347,3 +347,150 @@ describe('Reload after a file that moved', () => {
     expect((screen.getByLabelText('Model') as HTMLInputElement).value).toBe('chosen-and-unsaved')
   })
 })
+
+describe('a write that landed while the read after it did not', () => {
+  /**
+   * A chassis whose write always succeeds and whose **read** can be made to
+   * fail or to hang.
+   *
+   * This is the case the first version of this suite could not see: the status
+   * line was updated by a second `GET`, so a write that landed under a read
+   * that failed left the tab describing the endpoint that had just been
+   * replaced, under a form that said "Saved".
+   */
+  function stubWriteThen(read: 'ok' | 'fails' | 'hangs'): { writes: number } {
+    const state = { writes: 0 }
+    let assistant: Record<string, unknown> = {
+      endpoint: ENDPOINT,
+      engine: 'vercel',
+      thinking: 'off'
+    }
+    let written = false
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET'
+      if (url.includes('/api/desk-config') && method === 'PUT') {
+        state.writes += 1
+        const sent = JSON.parse(String(init?.body)) as { assistant: Record<string, unknown> }
+        assistant = sent.assistant
+        written = true
+        return {
+          ok: true,
+          status: 200,
+          statusText: '',
+          text: async () =>
+            JSON.stringify({
+              path: DESK_PATH,
+              sha256: 'b'.repeat(64),
+              assistant,
+              created: false,
+              keyRebindRequired: false
+            })
+        }
+      }
+      if (url.includes('/api/desk-config')) {
+        // The first read always works — the page has to have something to
+        // start from — and every read after the write behaves as the case says.
+        if (written && read === 'hangs') return new Promise(() => {})
+        if (written && read === 'fails') {
+          return {
+            ok: false,
+            status: 503,
+            statusText: '',
+            text: async () => JSON.stringify({ error: 'the desk could not read it' })
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          statusText: '',
+          text: async () =>
+            JSON.stringify({
+              path: DESK_PATH,
+              present: true,
+              sha256: written ? 'b'.repeat(64) : 'a'.repeat(64),
+              content: JSON.stringify({ deskConfigVersion: 1, assistant })
+            })
+        }
+      }
+      if (url.includes('/api/assistant/key')) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: '',
+          text: async () =>
+            JSON.stringify({ present: false, fingerprint: '', origin: '', kind: '', configuredOrigin: '', bound: false })
+        }
+      }
+      return { ok: false, status: 404, statusText: '', text: async () => '{}' }
+    })
+    return state
+  }
+
+  it('reflects the slot the write answered with while the read is still in flight', async () => {
+    // **The write's own answer, and nothing waiting on a second request.** It
+    // carries the slot the chassis read back off the disk and the digest the
+    // next write states, so a read that never comes back leaves neither the
+    // status line nor the next Save stranded.
+    const state = stubWriteThen('hangs')
+    renderDesk()
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toContain('the-model-in-the-file')
+    )
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'the-model-chosen' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe(
+        'configured · the-model-chosen · vercel · off'
+      )
+    )
+    expect(state.writes).toBe(1)
+    await waitFor(() =>
+      expect(document.querySelector('#desk-digest')?.textContent).toBe('b'.repeat(64))
+    )
+  })
+
+  it('reports the state as unverified where the read after it failed', async () => {
+    // **The other branch the review admitted, and the one that is right here.**
+    // A read that *answered* is newer information about the same file than the
+    // write's own answer, and this desk's standing doctrine is that a file it
+    // could not read is a file it says nothing about — not one it describes
+    // from memory. So the write's value is not defended against it: the page
+    // says it cannot read its own configuration and refuses to write again,
+    // which is a louder and truer thing than a status line quietly holding a
+    // value nothing on disk has been seen to confirm.
+    const state = stubWriteThen('fails')
+    renderDesk()
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toContain('the-model-in-the-file')
+    )
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'the-model-chosen' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText(/has not seen them/)).toBeTruthy()
+    expect(
+      (screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled
+    ).toBe(true)
+    expect(state.writes).toBe(1)
+    // And nothing claims the write did not happen either: the slot is not
+    // reported as some third state invented for the occasion.
+    expect(document.querySelector('#desk-digest')?.textContent).toBe('none')
+  })
+
+  it('still re-reads, for the parts a write cannot speak about', async () => {
+    // The write answers about one slot; the cache holds two files layered,
+    // every section's source and the problems each file carries. Setting the
+    // slot is not a reason to stop reading the rest.
+    const state = stubWriteThen('ok')
+    renderDesk()
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toContain('the-model-in-the-file')
+    )
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'the-model-chosen' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe(
+        'configured · the-model-chosen · vercel · off'
+      )
+    )
+    expect(state.writes).toBe(1)
+  })
+})
