@@ -5882,12 +5882,21 @@ export function assistantTransport(): Transport {
     '  return { text: next.text, problems: [] }' \
     '  return { text: JSON.stringify(JSON.parse(next.text), null, 2), problems: [] }'
 
+  # **The chassis watches the project and invalidates every query when this
+  # file changes.** A revision read off that query moves onto bytes nobody saw,
+  # and the Save that follows overwrites somebody's edit with no refusal at all
+  # — the exact failure the conditional commit exists to prevent, and the rule
+  # `useFileEditing` already carries for the pack editor.
+  mutate web "the revision follows the watcher while a value is unsaved" "$PFS" \
+    '  if (live !== undefined && live.sha256 !== base?.sha256 && (base === undefined || !unsaved)) {' \
+    '  if (live !== undefined && live.sha256 !== base?.sha256) {'
+
   # **A write states the bytes it replaces.** The empty string is not a missing
   # digest — it is a claim that there is no file — so this is the page asserting
   # the state of a file it never saw, and a change made between the read and the
   # save is lost rather than refused.
   mutate web "a card's Save is sent without the identity it read against" "$PFS" \
-    '      { path: PROJECT_CONFIG_PATH, content: composed.text, baseSha256: digest },' \
+    '      { path: PROJECT_CONFIG_PATH, content: composed.text, baseSha256: base.sha256 },' \
     "      { path: PROJECT_CONFIG_PATH, content: composed.text, baseSha256: '' },"
 
   # **The file API offers an override, and a configuration card offers none.**

@@ -1410,7 +1410,11 @@ keeps its bytes, order and whitespace, and a value this desk would then refuse
 to read never reaches the disk. **The write states the digest its read carried
 and asks for no override**: a file that moved underneath the card is a `409`
 with nothing written, and Reload reads it again while keeping every value that
-was typed. A card writes only the fields that differ from what the file
+was typed. The bytes and that digest are one revision, **held** rather than
+read live — the chassis invalidates every query when it sees this file change,
+and a card that followed would rebase onto bytes nobody saw and overwrite them
+with no refusal at all — so it moves on an arrival while nothing is unsaved, on
+Reload, and on a save that landed, and nowhere else. A card writes only the fields that differ from what the file
 supplies, so a pane dimension nobody touched stays undeclared — and where a
 value comes from the desk-level file, which this page does not write, the card
 says so and offers no Save.

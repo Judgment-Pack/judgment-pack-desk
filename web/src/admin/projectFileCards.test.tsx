@@ -14,7 +14,7 @@
  */
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactElement } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigProvider } from '../config/DeskConfigProvider'
 import { testQueryClient } from '../testing/harness'
@@ -54,8 +54,11 @@ function answered(body: unknown, status = 200): Response {
  * A desk whose project file is `ON_DISK` on the first read and `MOVED` on
  * every one after it, and whose write is refused as stale.
  */
-function servesAMovedFile(deskFile?: object): { puts: number } {
-  const seen = { puts: 0, reads: 0 }
+function servesAMovedFile(deskFile?: object): {
+  puts: number
+  bodies: Record<string, unknown>[]
+} {
+  const seen = { puts: 0, reads: 0, bodies: [] as Record<string, unknown>[] }
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     if (url.includes('/api/desk-config')) {
       return answered({
@@ -72,6 +75,7 @@ function servesAMovedFile(deskFile?: object): { puts: number } {
     }
     if (init?.method === 'PUT') {
       seen.puts += 1
+      seen.bodies.push(JSON.parse(String(init.body)) as Record<string, unknown>)
       return answered(
         {
           error: 'the file on disk is not the file this edit started from',
@@ -97,11 +101,15 @@ function servesAMovedFile(deskFile?: object): { puts: number } {
 }
 
 function renderForm(form: ReactElement) {
-  return render(
-    <QueryClientProvider client={testQueryClient()}>
-      <DeskConfigProvider>{form}</DeskConfigProvider>
-    </QueryClientProvider>
-  )
+  const client = testQueryClient()
+  return {
+    client,
+    ...render(
+      <QueryClientProvider client={client}>
+        <DeskConfigProvider>{form}</DeskConfigProvider>
+      </QueryClientProvider>
+    )
+  }
 }
 
 describe('a project-file card’s form', () => {
@@ -139,6 +147,35 @@ describe('a project-file card’s form', () => {
     // other file's, and typing over it would compose a write over this one.
     expect(container.querySelector('fieldset')?.disabled).toBe(true)
     expect(screen.getByDisplayValue('elsewhere')).toBeTruthy()
+  })
+
+  it('states the revision it was composed against, not the one that arrived under it', async () => {
+    // The chassis watches the project and invalidates every query when it sees
+    // this file change. A digest read off that query would move onto bytes
+    // nobody saw, and this Save would then overwrite somebody's edit with no
+    // refusal at all — which is the whole of what the conditional commit is
+    // for. The bytes and the digest are held together and move only where the
+    // reader acts.
+    const desk = servesAMovedFile()
+    const { client } = renderForm(<OrganizationForm />)
+    const name = await screen.findByDisplayValue('Unveil')
+    fireEvent.change(name, { target: { value: 'What I typed' } })
+
+    // The file changes on disk and the desk says so: every query is refetched.
+    await act(async () => {
+      await client.invalidateQueries()
+    })
+    // The field is untouched by that, and so is the revision behind it.
+    expect(screen.getByDisplayValue('What I typed')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(desk.puts).toBe(1))
+    const body = desk.bodies[0]!
+    // The digest of the bytes this edit started from — so the desk refuses it —
+    // and the member spliced into **those** bytes rather than the newer ones.
+    expect(body.baseSha256).toBe('a'.repeat(64))
+    expect(String(body.content)).toContain('"name": "What I typed"')
+    expect(String(body.content)).not.toContain('Renamed elsewhere')
   })
 
   it('disables Save until the draft differs from the file, and again once it matches', async () => {

@@ -72,12 +72,16 @@ export function useProjectFileDraft<D>(
   seed: D,
   editsOf: (draft: D, seed: D) => MemberEdit[]
 ): ProjectFileDraft<D> {
-  const save = useProjectFileSave(pointer)
   const identity = JSON.stringify(seed)
   const [seeded, setSeeded] = useState(identity)
   const [draft, setDraft] = useState<D>(seed)
   const drafted = JSON.stringify(draft)
   const changed = drafted !== identity
+  // **What the fields hold is what decides whether the revision may move.** A
+  // card holding a value nobody has written keeps the bytes and the digest it
+  // was composed against, so a change made underneath it is refused rather than
+  // overwritten. See `useProjectFileSave`.
+  const save = useProjectFileSave(pointer, changed)
   if (identity !== seeded && (drafted === seeded || !changed)) {
     setSeeded(identity)
     setDraft(seed)
@@ -120,10 +124,15 @@ export function ProjectFileForm<D>({
       <fieldset disabled={save.pending || !save.ready}>
         {children}
         <p className="actions">
-          <Button variant="primary" type="submit" disabled={!changed || save.pending}>
+          <Button
+            variant="primary"
+            type="submit"
+            disabled={!changed || save.pending || save.reloading}
+          >
             Save
           </Button>{' '}
           {save.pending && <span className="quiet">writing…</span>}
+          {save.reloading && <span className="quiet">reading…</span>}
           {save.said !== undefined && !save.pending && (
             <span className="quiet">{save.said}</span>
           )}
@@ -153,7 +162,7 @@ export function ProjectFileForm<D>({
           actions={
             <Button
               variant="primary"
-              disabled={save.pending}
+              disabled={save.pending || save.reloading}
               onClick={() => save.reload()}
             >
               Reload

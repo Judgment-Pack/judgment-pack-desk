@@ -31,6 +31,16 @@
  * override: a card offering "write anyway" would have no concurrency story,
  * only an unstated one.
  *
+ * **And the revision it states is held, not read live.** The chassis watches
+ * the project and invalidates every query when it sees this file change, so a
+ * digest taken from the configuration query would silently move onto bytes
+ * nobody saw — and the Save that followed would overwrite somebody else's edit
+ * with no 409 at all, which is precisely what the conditional commit exists to
+ * prevent. So the bytes and their digest are taken together, once, and move
+ * only where the reader acts: an arrival while nothing is unsaved, an explicit
+ * Reload, or a save that landed. It is the rule `useFileEditing` holds for the
+ * pack editor, and it is here for the same reason rather than by analogy.
+ *
  * **The composed value is the file's own, with the edited fields laid over
  * it.** Not the effective value: `panes` is the case that proves it. A file
  * that declares only the rail's width means the other two to stay as they are —
@@ -46,7 +56,7 @@
  * the API takes. Nothing here composes a path.
  */
 import { useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query'
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
   PROJECT_CONFIG_PATH,
@@ -57,7 +67,7 @@ import {
   type EffectiveConfig
 } from '../config/deskConfig'
 import { DESK_CONFIG_QUERY_KEY } from '../config/queries'
-import { StaleWrite, writeFile, type FileContent } from '../files/client'
+import { StaleWrite, readFile, writeFile, type FileContent } from '../files/client'
 import { agreesWithParse } from '../packs/documentText'
 import { valueAt } from '../packs/pointers'
 import { buffered, setRawJson, type Buffered } from '../packs/edit/writes'
@@ -264,10 +274,27 @@ export interface ProjectFileSave {
   said: string | undefined
   /** Write the member, with only the fields the reader actually changed. */
   save: (edits: readonly MemberEdit[]) => void
-  /** Read the file again, so the next save states a digest that is true. */
+  /**
+   * Read the file again and hold what it says, so the next save states a
+   * digest that is true.
+   *
+   * A direct read rather than a refetch, for the reason `useFileEditing` gives:
+   * the watcher's broad `cancelQueries` makes `refetch` report success from
+   * cache when it cancels the request in flight, so its success is not proof
+   * that anything was fetched — and installing cached bytes as the new base is
+   * a reload that replaces nothing with what it was already showing.
+   */
   reload: () => void
+  /** True while that read is in the air. */
+  reloading: boolean
   /** Forget the last attempt's verdict, which an edit does. */
   forget: () => void
+}
+
+/** One revision of the file: the bytes, and what they hash to. */
+interface Revision {
+  text: string
+  sha256: string
 }
 
 /**
@@ -284,22 +311,50 @@ export interface ProjectFileSave {
  * **A refused write invalidates nothing.** Re-reading after a 409 or a 422 would
  * be this page telling itself that something happened.
  */
-export function useProjectFileSave(pointer: ProjectFilePointer): ProjectFileSave {
+export function useProjectFileSave(
+  pointer: ProjectFilePointer,
+  /**
+   * Whether the card is holding a value nobody has written yet.
+   *
+   * **This is what decides when the revision may move.** A live query moves on
+   * a watcher notification; a base that followed it would rebase this card onto
+   * bytes nobody saw, and the next Save would overwrite a change with no
+   * refusal at all.
+   */
+  unsaved = false
+): ProjectFileSave {
   const effective = useEffectiveConfig()
   const client = useQueryClient()
   const write = useWriteProjectFile()
   const [problems, setProblems] = useState<readonly ConfigProblem[]>([])
   const [said, setSaid] = useState<string | undefined>(undefined)
+  const [base, setBase] = useState<Revision | undefined>(undefined)
+  const [reloading, setReloading] = useState(false)
+  const [readFailure, setReadFailure] = useState<string | undefined>(undefined)
+  // Only the last reload asked for counts. An earlier one resolving afterwards
+  // is answering a question that has been replaced.
+  const reloads = useRef(0)
 
-  const text = effective.text
-  const digest = effective.sha256
+  const live: Revision | undefined =
+    effective.text === undefined || effective.sha256 === undefined
+      ? undefined
+      : { text: effective.text, sha256: effective.sha256 }
+  // **Taken on arrival, and afterwards only while there is nothing to lose.**
+  // A card nobody is typing into follows the file, which is what makes an edit
+  // in another editor show up here; a card that is holding a value does not,
+  // which is what makes the next Save state the revision it was composed
+  // against.
+  if (live !== undefined && live.sha256 !== base?.sha256 && (base === undefined || !unsaved)) {
+    setBase(live)
+  }
+
   const source = effective.sources[sectionOf(pointer)]
   const blocked =
     source === 'desk file'
       ? FROM_THE_DESK_FILE
       : effective.problems.length > 0
         ? REFUSED
-        : text === undefined || digest === undefined
+        : base === undefined
           ? NOT_READ
           : undefined
 
@@ -313,11 +368,14 @@ export function useProjectFileSave(pointer: ProjectFilePointer): ProjectFileSave
   }, [])
 
   const save = (edits: readonly MemberEdit[]) => {
-    if (blocked !== undefined || text === undefined || digest === undefined) return
+    if (blocked !== undefined || base === undefined) return
     setProblems([])
     setSaid(undefined)
+    setReadFailure(undefined)
     write.reset()
-    const composed = composeProjectFile(text, pointer, edits)
+    // The bytes this digest is the digest **of**. Composing against anything
+    // else would send a file built on one revision under a claim about another.
+    const composed = composeProjectFile(base.text, pointer, edits)
     // **Refused here, and nothing is sent.** The file API would write these
     // bytes without an opinion; the decoder that has one is this page's, and it
     // is asked before the request rather than after it.
@@ -326,9 +384,12 @@ export function useProjectFileSave(pointer: ProjectFilePointer): ProjectFileSave
       return
     }
     write.mutate(
-      { path: PROJECT_CONFIG_PATH, content: composed.text, baseSha256: digest },
+      { path: PROJECT_CONFIG_PATH, content: composed.text, baseSha256: base.sha256 },
       {
         onSuccess: (landed) => {
+          // The revision moves because the reader acted, and it moves onto what
+          // the chassis read back off the disk rather than onto what was sent.
+          setBase({ text: landed.content, sha256: landed.sha256 })
           client.setQueryData<EffectiveConfig>(DESK_CONFIG_QUERY_KEY, (previous) =>
             configAfterProjectFileWrite(previous, landed)
           )
@@ -340,10 +401,29 @@ export function useProjectFileSave(pointer: ProjectFilePointer): ProjectFileSave
   }
 
   const reload = () => {
+    const ticket = (reloads.current += 1)
     write.reset()
     setProblems([])
     setSaid(undefined)
-    void client.refetchQueries({ queryKey: DESK_CONFIG_QUERY_KEY })
+    setReadFailure(undefined)
+    setReloading(true)
+    void readFile(PROJECT_CONFIG_PATH)
+      .then((fresh) => {
+        if (ticket !== reloads.current) return
+        setReloading(false)
+        setBase({ text: fresh.content, sha256: fresh.sha256 })
+        client.setQueryData<EffectiveConfig>(DESK_CONFIG_QUERY_KEY, (previous) =>
+          configAfterProjectFileWrite(previous, fresh)
+        )
+      })
+      .catch((cause: unknown) => {
+        if (ticket !== reloads.current) return
+        setReloading(false)
+        // **The conflict stands until the read lands.** A failed reload that
+        // cleared it would leave the card with no notice at all and a Save that
+        // would be refused again.
+        setReadFailure(cause instanceof Error ? cause.message : String(cause))
+      })
   }
 
   const stale = write.error instanceof StaleWrite ? write.error : undefined
@@ -355,12 +435,14 @@ export function useProjectFileSave(pointer: ProjectFilePointer): ProjectFileSave
     problems: problems.length > 0 ? problems : chassisProblems,
     stale,
     refusal:
-      stale === undefined && chassisProblems.length === 0
+      readFailure ??
+      (stale === undefined && chassisProblems.length === 0
         ? (write.error?.message ?? undefined)
-        : undefined,
+        : undefined),
     said,
     save,
     reload,
+    reloading,
     forget
   }
 }
