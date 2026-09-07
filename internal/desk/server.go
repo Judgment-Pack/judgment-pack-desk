@@ -94,6 +94,13 @@ type Server struct {
 	// through it, so containment is a held directory descriptor rather than a
 	// pathname that was true when it was checked — see files.go.
 	root *os.Root
+	// project is the whole pinned root, and this server owns it.
+	//
+	// It is kept beside `root` because the two consumers that cannot go
+	// through `os.Root` — a subprocess's working directory and the file
+	// watcher — need the descriptor itself. See `ProjectRoot` and
+	// `runtimeWorkingDir`.
+	project *ProjectRoot
 	// projectDir is ProjectDir with its symlinks resolved, taken once at
 	// construction. It is the pathname every part of the chassis that cannot
 	// hold a descriptor uses: the runtime's working directory and the file
@@ -173,6 +180,7 @@ func New(cfg Config) (*Server, error) {
 		log:        cfg.Logger,
 		conns:      make(map[*conn]struct{}),
 		root:       pinned.root,
+		project:    pinned,
 		projectDir: pinned.dir,
 		configDir:  configDirFor(cfg.DeskConfigDir),
 		relaySlots: make(chan struct{}, maxRelayInFlight),
@@ -223,7 +231,16 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc(relayPrefix+"{suffix...}", s.handleModelRelay)
 	s.mux.HandleFunc("/", s.handleStatic)
 
-	w, werr := newWatcher(pinned.dir, s.log, s.broadcastFileChange)
+	// **Watched through the descriptor where the host has a way to name one.**
+	// The watcher takes a path because inotify does; on Linux that path
+	// resolves through this desk's own descriptor, so a rename of the project
+	// cannot move what is being watched. Off Linux it is the resolved
+	// spelling, as it always was.
+	watchRoot := pinned.dir
+	if through, ok := pinned.descriptorWorkingDir(); ok {
+		watchRoot = through
+	}
+	w, werr := newWatcher(watchRoot, s.log, s.broadcastFileChange)
 	if werr != nil {
 		// A desk without live reload is still a working desk; a desk that
 		// refuses to start because the tree is large or the inotify budget is
@@ -242,8 +259,8 @@ func (s *Server) Close() error {
 	if s.watcher != nil {
 		err = s.watcher.Close()
 	}
-	if s.root != nil {
-		if rerr := s.root.Close(); err == nil {
+	if s.project != nil {
+		if rerr := s.project.Close(); err == nil {
 			err = rerr
 		}
 	}

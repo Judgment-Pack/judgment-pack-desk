@@ -37,6 +37,15 @@ type ProjectRoot struct {
 	dir string
 	// root is the pinned directory. Every file-API operation goes through it.
 	root *os.Root
+	// dir file is the same directory as an ordinary descriptor, opened
+	// **through** the root rather than by name.
+	//
+	// It exists because a descriptor is the only thing that can be handed to a
+	// subprocess or an inotify watch without a pathname step: `os.Root` has no
+	// exported file descriptor, and everything that needs one needs it for a
+	// consumer this desk cannot make go through `os.Root`. See
+	// `descriptorWorkingDir`.
+	dirFile *os.File
 	// info is the identity that was validated, kept so a caller that validated
 	// something about this directory earlier can prove it is the same one.
 	info fs.FileInfo
@@ -45,12 +54,21 @@ type ProjectRoot struct {
 // Dir is the resolved pathname of the pinned directory.
 func (p *ProjectRoot) Dir() string { return p.dir }
 
-// Close releases the descriptor.
+// Close releases the descriptors.
 func (p *ProjectRoot) Close() error {
-	if p == nil || p.root == nil {
+	if p == nil {
 		return nil
 	}
-	return p.root.Close()
+	var err error
+	if p.dirFile != nil {
+		err = p.dirFile.Close()
+	}
+	if p.root != nil {
+		if rerr := p.root.Close(); err == nil {
+			err = rerr
+		}
+	}
+	return err
 }
 
 // OpenProjectRoot validates a directory and pins it in one operation.
@@ -98,7 +116,17 @@ func OpenProjectRoot(dir string) (*ProjectRoot, error) {
 		return nil, fmt.Errorf(
 			"%s changed between being inspected and being opened, and was not served", resolved)
 	}
-	return &ProjectRoot{dir: resolved, root: root, info: held}, nil
+	// **Through the root, not by name.** This is the same directory as an
+	// ordinary descriptor, for the two consumers that cannot go through
+	// `os.Root` at all — a subprocess's working directory and an inotify
+	// watch. Opening it by pathname here would reintroduce the resolution this
+	// whole type exists to remove.
+	dirFile, err := root.Open(".")
+	if err != nil {
+		root.Close()
+		return nil, fmt.Errorf("%s: %w", resolved, err)
+	}
+	return &ProjectRoot{dir: resolved, root: root, dirFile: dirFile, info: held}, nil
 }
 
 // testHookAfterInspectingProject runs between establishing what a directory is

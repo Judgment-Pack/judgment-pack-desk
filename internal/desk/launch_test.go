@@ -4,10 +4,13 @@ package desk
 // `PUT` that writes it, and the launch decision it feeds.
 
 import (
+	"bufio"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -1013,5 +1016,244 @@ func TestPinningRefusesADirectorySwappedBetweenInspectionAndOpening(t *testing.T
 	}
 	if !strings.Contains(err.Error(), "changed between being inspected and being opened") {
 		t.Errorf("refusal: %v", err)
+	}
+}
+
+/* What the runtime and the watcher follow ---------------------------------- */
+
+// swappedServer is one server on a project directory that is then renamed away
+// and replaced at the same pathname.
+//
+// This is round 3's scenario: the descriptor is pinned, the *name* now means
+// something else, and every authoritative consumer has to still be about the
+// directory that was pinned.
+func swappedServer(t *testing.T) (*Server, os.FileInfo, string) {
+	t.Helper()
+	holder := t.TempDir()
+	project := filepath.Join(holder, "a-project")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(project, projectConfigName), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	pinned, err := OpenProject(project, t.TempDir())
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	was, err := os.Stat(pinned.Dir())
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken,
+		DeskConfigDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	// The swap: the validated directory is renamed away and another one takes
+	// its pathname.
+	replacement := filepath.Join(holder, "replacement")
+	if err := os.MkdirAll(replacement, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.Rename(project, project+".moved"); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if err := os.Rename(replacement, project); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	return s, was, project
+}
+
+func TestTheRuntimeStartsInTheDirectoryThatWasPinned(t *testing.T) {
+	// **Round 3's finding.** Every new `jpack mcp` started at the resolved
+	// *spelling*, so after a rename-and-replace the runtime judged one tree
+	// while the file API edited another — with neither half able to tell.
+	s, was, pathname := swappedServer(t)
+
+	working, err := s.runtimeWorkingDir()
+	if err != nil {
+		// The honest answer off Linux: refused rather than started somewhere
+		// else. Nothing further to check.
+		return
+	}
+	found, err := os.Stat(working)
+	if err != nil {
+		t.Fatalf("stat %s: %v", working, err)
+	}
+	if !os.SameFile(was, found) {
+		t.Fatalf("the runtime would start in %s, which is not the pinned project", working)
+	}
+	// And it is *not* the replacement now sitting at the pathname, which is
+	// the failure this exists for.
+	replacement, err := os.Stat(pathname)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if os.SameFile(replacement, found) {
+		t.Fatal("the runtime would start in the replacement directory")
+	}
+}
+
+func TestAChildActuallyLandsInThePinnedDirectory(t *testing.T) {
+	// The claim is about a **subprocess's own working directory**, so this
+	// starts one and reads it back from the kernel rather than asserting the
+	// string this desk would pass. `/proc/<pid>/cwd` is the child's answer.
+	if runtime.GOOS != "linux" {
+		t.Skip("/proc/<pid>/cwd is Linux's")
+	}
+	s, was, pathname := swappedServer(t)
+	working, err := s.runtimeWorkingDir()
+	if err != nil {
+		t.Fatalf("runtime working directory: %v", err)
+	}
+
+	cmd := exec.Command("/bin/sh", "-c", "read _ </dev/stdin")
+	cmd.Dir = working
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("stdin: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer func() {
+		stdin.Close()
+		_ = cmd.Wait()
+	}()
+
+	cwd, err := os.Stat(fmt.Sprintf("/proc/%d/cwd", cmd.Process.Pid))
+	if err != nil {
+		t.Fatalf("reading the child's working directory: %v", err)
+	}
+	if !os.SameFile(was, cwd) {
+		t.Error("the child did not start in the directory this desk pinned")
+	}
+	replacement, err := os.Stat(pathname)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if os.SameFile(replacement, cwd) {
+		t.Fatal("the child started in the replacement directory")
+	}
+}
+
+func TestTheRuntimeDescriptorIsNotInheritedPastTheExec(t *testing.T) {
+	// The child needs a working directory and not a capability: the descriptor
+	// is close-on-exec and is in no `ExtraFiles`, so what survives the exec is
+	// the `chdir` and nothing else.
+	if runtime.GOOS != "linux" {
+		t.Skip("/proc/<pid>/fd is Linux's")
+	}
+	dir, _ := aProject(t)
+	pinned, err := OpenProjectRoot(dir)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken,
+		DeskConfigDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+	working, err := s.runtimeWorkingDir()
+	if err != nil {
+		t.Fatalf("runtime working directory: %v", err)
+	}
+
+	// **Waited for, not raced.** `Start` returns once the fork is under way;
+	// close-on-exec descriptors are still in the table until the exec
+	// completes, so the child says when it is there.
+	cmd := exec.Command("/bin/sh", "-c", "echo ready; read _ </dev/stdin")
+	cmd.Dir = working
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("stdin: %v", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer func() {
+		stdin.Close()
+		_ = cmd.Wait()
+	}()
+	if _, err := bufio.NewReader(stdout).ReadString('\n'); err != nil {
+		t.Fatalf("the child never reported ready: %v", err)
+	}
+	entries, err := os.ReadDir(fmt.Sprintf("/proc/%d/fd", cmd.Process.Pid))
+	if err != nil {
+		t.Fatalf("reading the child's descriptors: %v", err)
+	}
+	// **None of them is the project**, which is the claim. Counting them is
+	// not: a shell duplicates its own standard input for job control, and that
+	// is the shell's business rather than something this desk handed it.
+	pinnedDir, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	for _, entry := range entries {
+		at := fmt.Sprintf("/proc/%d/fd/%s", cmd.Process.Pid, entry.Name())
+		found, serr := os.Stat(at)
+		if serr != nil {
+			continue
+		}
+		if os.SameFile(pinnedDir, found) {
+			link, _ := os.Readlink(at)
+			t.Errorf("the child inherited a descriptor for the project: %s -> %s",
+				entry.Name(), link)
+		}
+	}
+}
+
+func TestTheWatcherFollowsTheDescriptorWhereTheHostCanNameOne(t *testing.T) {
+	// The watcher takes a path because inotify does. On Linux that path
+	// resolves through this desk's own descriptor, so a rename of the project
+	// cannot move what is being watched.
+	s, was, _ := swappedServer(t)
+	if s.watcher == nil {
+		t.Skip("this host installed no watcher")
+	}
+	found, err := os.Stat(s.watcher.root)
+	if err != nil {
+		t.Fatalf("stat %s: %v", s.watcher.root, err)
+	}
+	if runtime.GOOS == "linux" && !os.SameFile(was, found) {
+		t.Errorf("the watcher is watching %s, which is not the pinned project", s.watcher.root)
+	}
+}
+
+func TestThePathnameFallbackRefusesAMovedProject(t *testing.T) {
+	// The non-Linux answer, tested on every host: one `Stat`, compared by
+	// identity, refusing where the pathname has stopped naming what was
+	// pinned. A rule reachable only from the branch that uses it would be held
+	// by nothing on the host the suite actually runs on.
+	dir, _ := aProject(t)
+	was, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got, err := runtimeWorkingDirByPathname(dir, was); err != nil || got != dir {
+		t.Fatalf("an unmoved project was refused: %q %v", got, err)
+	}
+	// Moved away: the pathname names nothing.
+	if err := os.Rename(dir, dir+".moved"); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if _, err := runtimeWorkingDirByPathname(dir, was); err == nil {
+		t.Error("a pathname that names nothing was accepted")
+	}
+	// Replaced: the pathname names something else.
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if _, err := runtimeWorkingDirByPathname(dir, was); err == nil {
+		t.Error("a replaced directory was accepted")
 	}
 }

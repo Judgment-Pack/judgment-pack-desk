@@ -1275,6 +1275,38 @@ anything is served: validating a pathname and then resolving it again to open
 is a window in which a rename can substitute another tree for the one that was
 checked. It is the pattern the credential directory is already held to.
 
+**Two consumers cannot go through `os.Root` at all**, and they are why that
+sentence needs a second paragraph rather than a footnote. A subprocess's working
+directory is set by the kernel with `chdir`, and an inotify watch is taken by
+path; neither accepts a `*os.Root`. Both used to be given the resolved
+*spelling*, so a rename-and-replace at that spelling left every new `jpack mcp`
+judging one tree while the file API edited another.
+
+- **On Linux, both follow the descriptor.** `/proc/self/fd/N` on this desk's own
+  pinned directory resolves to the open file description rather than to a name,
+  so it means that directory however it is called afterwards, or whether it is
+  called anything at all. `os/exec` applies `Dir` with a `chdir` in the forked
+  child **before** the descriptor shuffle, so the number means there what it
+  means here; the descriptor is close-on-exec and is in no `ExtraFiles`, so the
+  runtime inherits a working directory and not a capability.
+- **On every other host it is check-then-use, and the desk says so rather than
+  implying otherwise.** There is no portable way to hand a subprocess a working
+  directory by descriptor, so the pathname is re-verified by identity
+  immediately before each spawn and a moved project **refuses the relay** rather
+  than starting a runtime somewhere else. The window between that check and the
+  child's `chdir` is not closed by it. Only Linux is race-free here, and Linux
+  is the only host on which this desk keeps a key at all.
+
+**The paths `GET /api/desk-config` reports are informational.** `project.dir`,
+`project.file` and `runtime.bin` are the spellings captured at launch and are
+never re-read, so a rename cannot make the desk report something new — and the
+nomination rule compares against that same captured spelling, so a pathname that
+has stopped naming the pinned root cannot authorise anything either. What a page
+could persist through it is at most the string this desk already told it. And a
+principal who can rename the project directory out from under a running desk
+already holds more than the page does: what this section promises is that the
+desk's own halves do not come apart, not that such a principal is harmless.
+
 **Precedence**: project file → desk-level file → built-in default, and for the
 three pane flags one layer in front of all three — this browser's record of
 what the viewer chose, for the panes they chose it for. The project's own file

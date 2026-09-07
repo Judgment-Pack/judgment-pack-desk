@@ -6,7 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os/exec"
 	"sync"
@@ -109,8 +111,14 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	defer s.unregister(c)
 	defer c.stop()
 
+	workingDir, err := s.runtimeWorkingDir()
+	if err != nil {
+		s.log.Printf("desk: no runtime was started: %v", err)
+		s.closeWith(ws, websocket.StatusInternalError, err.Error())
+		return
+	}
 	cmd := exec.CommandContext(ctx, s.cfg.JpackBin, "mcp")
-	cmd.Dir = s.runtimeWorkingDir()
+	cmd.Dir = workingDir
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		s.closeWith(ws, websocket.StatusInternalError, "cannot open runtime stdin")
@@ -225,13 +233,38 @@ func (s *Server) closeWith(ws *websocket.Conn, code websocket.StatusCode, reason
 
 // runtimeWorkingDir is the directory every `jpack mcp` subprocess starts in.
 //
-// The *resolved* project directory, not the configured pathname. A subprocess
-// cannot portably inherit this process's directory descriptor, so the runtime
-// is necessarily addressed by name — and the name it is given has to be the one
-// the file API's root was pinned from. Otherwise repointing a symlinked
-// ProjectDir leaves the desk writing one tree while every new runtime judges
-// another, with neither half able to tell.
+// **The descriptor, where the host has a way to name one.** Round 3 found this
+// returning the resolved *spelling*: a rename-and-replace at that spelling left
+// every new runtime judging one tree while the file API edited another — with
+// neither half able to tell, and with the desk claiming a guarantee it was not
+// keeping. On Linux the answer is `/proc/self/fd/N` on the pinned directory,
+// which the kernel resolves to the open file description rather than to a name.
+//
+// **Off Linux it is check-then-use, and it says so.** There is no portable way
+// to hand a subprocess a working directory by descriptor, so the pathname is
+// re-verified by identity immediately before each spawn and a moved directory
+// refuses the relay rather than starting a runtime somewhere else. The window
+// between that check and the child's `chdir` is not closed by it; the README
+// states which hosts are race-free.
 //
 // A method rather than a field read at the call site, so a test can assert it
 // without starting a subprocess.
-func (s *Server) runtimeWorkingDir() string { return s.projectDir }
+func (s *Server) runtimeWorkingDir() (string, error) {
+	if through, ok := s.project.descriptorWorkingDir(); ok {
+		return through, nil
+	}
+	return runtimeWorkingDirByPathname(s.projectDir, s.project.info)
+}
+
+// runtimeWorkingDirByPathname is the fallback, as its own function.
+//
+// One spelling of the check, tested directly on every platform: a rule written
+// inline in the one branch that uses it would be unreachable from a Linux test
+// run and so held by nothing at all.
+func runtimeWorkingDirByPathname(dir string, pinned fs.FileInfo) (string, error) {
+	if !sameDirectory(dir, pinned) {
+		return "", fmt.Errorf(
+			"%s is no longer the project this desk pinned, so no runtime was started there", dir)
+	}
+	return dir, nil
+}
