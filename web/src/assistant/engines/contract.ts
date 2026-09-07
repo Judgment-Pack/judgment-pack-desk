@@ -13,6 +13,8 @@
  * are each adapter's own, and an engine that needed a helper from another
  * engine would be an engine the slot did not really separate.
  */
+import { withoutUnsupportedKeywords } from '../geminiSchema'
+import type { EndpointKind } from '../../config/deskConfig'
 import type { AssistantEvent, AssistantSession, CallTool, McpTool, McpToolResult } from '../engine'
 
 /**
@@ -337,6 +339,26 @@ export function servedSchema(tool: McpTool): unknown {
     )
   }
   return tool.inputSchema
+}
+
+/**
+ * The schema one family is shown, out of the one the runtime served.
+ *
+ * **Two families are shown the runtime's schema and the third is shown it minus
+ * a closed list.** `servedSchema` above is the rule — the contract the runtime
+ * enforces, or nothing — and this is the one documented exception to it: the
+ * native Gemini wire takes an OpenAPI subset in `parameters` and refuses
+ * keywords an ordinary JSON Schema carries, `additionalProperties` among them,
+ * which every one of the runtime's five declares.
+ *
+ * The removal list, what it costs and why an unlisted keyword is an error
+ * rather than a strip are all `assistant/geminiSchema.ts`'s, in one place, so
+ * that both engines show the model the same thing. Nothing is added or
+ * rewritten here, and nothing at all happens on the other two families.
+ */
+export function servedSchemaFor(family: EndpointKind, tool: McpTool): unknown {
+  const schema = servedSchema(tool)
+  return family === 'gemini' ? withoutUnsupportedKeywords(schema) : schema
 }
 
 /** The text half of one tool answer, joined in the runtime's own order. */

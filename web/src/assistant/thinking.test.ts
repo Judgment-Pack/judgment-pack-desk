@@ -10,6 +10,8 @@ import { describe, expect, it } from 'vitest'
 import {
   REFUTE_ON_A_DEGRADED_ENDPOINT,
   RESPONSE_TOKENS,
+  ALWAYS_FROM_ABSENCE,
+  GEMINI_BUDGET,
   THINKING_ALWAYS,
   THINKING_UNAVAILABLE,
   firstDialect,
@@ -32,10 +34,50 @@ const slot = (tier: ThinkingTier, family: EndpointKind = 'openai-compatible') =>
   } as Pick<AssistantSession, 'thinking' | 'model'>)
 
 describe('the table, per family and tier', () => {
-  it('expresses off by omission on every dialect', () => {
+  it('expresses off by omission on the two dialects that accept omission', () => {
     expect(wireFor('off', 'openai')).toBeNull()
     expect(wireFor('off', 'anthropic-adaptive')).toBeNull()
     expect(wireFor('off', 'anthropic-enabled')).toBeNull()
+  })
+
+  it('expresses off by a member on the Gemini wire, where omission means thinking', () => {
+    // **The one place off is sent rather than omitted**, and the reason is the
+    // wire's own default: a model with a thinkingConfig reasons unless told
+    // not to, so "send nothing" would be asking for thinking by accident.
+    expect(wireFor('off', 'gemini-budget')!.members).toEqual({
+      thinkingConfig: { thinkingBudget: 0 }
+    })
+    expect(wireFor('off', 'gemini-level')!.members).toEqual({
+      thinkingConfig: { thinkingLevel: 'minimal' }
+    })
+  })
+
+  it('asks for thought summaries and a depth on the Gemini wire, in both spellings', () => {
+    // `includeThoughts` is what makes the summaries arrive at all; the budget
+    // or the level is how deep they go. Both, or the tier asks for thinking
+    // nobody can read.
+    expect(wireFor('on', 'gemini-budget')!.members).toEqual({
+      thinkingConfig: { includeThoughts: true, thinkingBudget: GEMINI_BUDGET.on }
+    })
+    expect(wireFor('ultra', 'gemini-budget')!.members).toEqual({
+      thinkingConfig: { includeThoughts: true, thinkingBudget: GEMINI_BUDGET.ultra }
+    })
+    expect(wireFor('on', 'gemini-level')!.members).toEqual({
+      thinkingConfig: { includeThoughts: true, thinkingLevel: 'medium' }
+    })
+    expect(wireFor('ultra', 'gemini-level')!.members).toEqual({
+      thinkingConfig: { includeThoughts: true, thinkingLevel: 'high' }
+    })
+    expect(GEMINI_BUDGET.ultra).toBeGreaterThan(GEMINI_BUDGET.on)
+    // The member is named and not placed: the path a checker reads is the one
+    // each engine writes it at, and the members themselves carry no wrapper.
+    expect(wireFor('on', 'gemini-budget')!.expect.path).toBe('generationConfig.thinkingConfig')
+  })
+
+  it('tries the budget spelling first and the level second, and then stops', () => {
+    expect(firstDialect('gemini')).toBe('gemini-budget')
+    expect(nextDialect('gemini-budget')).toBe('gemini-level')
+    expect(nextDialect('gemini-level')).toBeNull()
   })
 
   it('sends reasoning_effort on the OpenAI-compatible wire', () => {
@@ -381,5 +423,77 @@ describe('the line the tab shows', () => {
       'unavailable'
     )
     expect(stateFromEvents('off', [notice(`${THINKING_ALWAYS}.`)])).toBe('always')
+  })
+})
+
+describe('the Gemini wire, where off is a member the endpoint may refuse', () => {
+  const gemini = (tier: ThinkingTier) => slot(tier, 'gemini')
+
+  it('sends the off member, so a refusal of it is a thing the endpoint said', () => {
+    const it0 = gemini('off')
+    expect(it0.members()).toEqual({ thinkingConfig: { thinkingBudget: 0 } })
+    expect(it0.state()).toBe('off')
+  })
+
+  it('tries the other spelling before concluding anything from a refusal at off', () => {
+    // **A 400 naming `thinkingBudget` is two different endpoints.** It is "this
+    // model cannot be turned off" and it is "this model spells it
+    // `thinkingLevel`", and concluding on the first refusal would label a
+    // newer model as one that always thinks because the desk used an older
+    // field name. The fallback is silent, exactly as Anthropic's is.
+    const it0 = gemini('off')
+    const first = it0.refused(400, 'Unknown name "thinkingBudget" in generationConfig.thinkingConfig')
+    expect(first.kind).toBe('retry')
+    expect(it0.state()).toBe('off')
+    expect(it0.members()).toEqual({ thinkingConfig: { thinkingLevel: 'minimal' } })
+  })
+
+  it('reports "always" when every spelling of off is refused, at once and once', () => {
+    const it0 = gemini('off')
+    expect(it0.refused(400, 'Unknown name "thinkingBudget"').kind).toBe('retry')
+    const said = it0.refused(400, 'thinkingLevel: minimal is not supported by this model')
+    expect(said.kind).toBe('degrade')
+    expect((said as { event: AssistantEvent }).event).not.toBeNull()
+    expect(((said as { event: { detail: string } }).event).detail).toContain(THINKING_ALWAYS)
+    expect(((said as { event: { detail: string } }).event).detail).toContain('400')
+    expect(it0.state()).toBe('always')
+    // **And the member comes off with it**, which is the same rule the degrade
+    // follows: there is nothing left to ask.
+    expect(it0.members()).toBeNull()
+    // A refusal after that is somebody else's business, and says nothing again.
+    expect(it0.refused(400, 'thinkingBudget').kind).toBe('other')
+  })
+
+  it('reaches "always" from absence too, and keeps asking for what the file asked', () => {
+    // The other road to the same state: the desk asked for a zero budget, the
+    // endpoint took it and reasoned anyway, twice. Nothing was refused, so
+    // nothing is withdrawn — the file said off and the desk goes on saying so.
+    const it0 = gemini('off')
+    it0.sawReasoning()
+    expect(it0.turnEnded(true)).toBeNull()
+    it0.sawReasoning()
+    const second = it0.turnEnded(true)
+    expect((second as { detail: string }).detail).toContain(THINKING_ALWAYS)
+    expect((second as { detail: string }).detail).toContain(ALWAYS_FROM_ABSENCE)
+    expect(it0.state()).toBe('always')
+    expect(it0.members()).toEqual({ thinkingConfig: { thinkingBudget: 0 } })
+  })
+
+  it('degrades rather than reporting "always" where the tier asked to think', () => {
+    const it0 = gemini('on')
+    expect(it0.refused(400, 'Unknown name "thinkingBudget"').kind).toBe('retry')
+    const said = it0.refused(400, 'thinkingLevel is not supported')
+    expect(said.kind).toBe('degrade')
+    expect(it0.state()).toBe('unavailable')
+    expect(it0.members()).toBeNull()
+  })
+
+  it('reads a refusal that names none of its members as an ordinary failure', () => {
+    // The lesson the classifier already carries: `Unsupported parameter` is a
+    // sentence an endpoint writes about anything at all.
+    const it0 = gemini('on')
+    expect(it0.refused(400, 'The document was too large').kind).toBe('other')
+    expect(it0.refused(429, 'thinkingBudget').kind).toBe('other')
+    expect(it0.state()).toBe('on')
   })
 })
