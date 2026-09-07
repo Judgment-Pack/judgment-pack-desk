@@ -1099,32 +1099,58 @@ func TestTheRuntimeStartsInTheDirectoryThatWasPinned(t *testing.T) {
 	}
 }
 
-func TestAChildActuallyLandsInThePinnedDirectory(t *testing.T) {
-	// The claim is about a **subprocess's own working directory**, so this
-	// starts one and reads it back from the kernel rather than asserting the
-	// string this desk would pass. `/proc/<pid>/cwd` is the child's answer.
-	if runtime.GOOS != "linux" {
-		t.Skip("/proc/<pid>/cwd is Linux's")
-	}
-	s, was, pathname := swappedServer(t)
-	working, err := s.runtimeWorkingDir()
+// aRuntimeLikeChild starts one process through the very command the relay
+// builds, and holds it open until the caller is done looking at it.
+//
+// Through `runtimeCommand` rather than an imitation of it: what is asserted
+// below is where **this desk's own spawn** lands, and a test that assembled
+// its own command would be asserting about the test.
+func aRuntimeLikeChild(t *testing.T, s *Server) *exec.Cmd {
+	t.Helper()
+	cmd, err := s.runtimeCommand(t.Context())
 	if err != nil {
-		t.Fatalf("runtime working directory: %v", err)
+		t.Fatalf("runtime command: %v", err)
 	}
-
-	cmd := exec.Command("/bin/sh", "-c", "read _ </dev/stdin")
-	cmd.Dir = working
+	if err := s.aimAtTheProject(cmd); err != nil {
+		t.Fatalf("aim: %v", err)
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatalf("stdin: %v", err)
 	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout: %v", err)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	defer func() {
+	t.Cleanup(func() {
 		stdin.Close()
 		_ = cmd.Wait()
-	}()
+	})
+	// **Waited for, not raced.** `Start` returns once the fork is under way,
+	// and everything asserted below is true only after the exec.
+	if _, err := bufio.NewReader(stdout).ReadString('\n'); err != nil {
+		t.Fatalf("the child never reported ready: %v", err)
+	}
+	return cmd
+}
+
+func TestAChildActuallyLandsInThePinnedDirectory(t *testing.T) {
+	// The claim is about a **subprocess's own working directory**, so this
+	// starts one through the desk's own command and reads the answer back from
+	// the kernel rather than asserting the string this desk would pass.
+	if runtime.GOOS != "linux" {
+		t.Skip("/proc/<pid>/cwd is Linux's")
+	}
+	s, was, pathname := swappedServer(t)
+	// The runtime this desk would start is a shell trampoline that becomes the
+	// binary; here it is a shell that reports and waits, so the cwd can be
+	// read while it is alive.
+	t.Setenv("PATH", os.Getenv("PATH"))
+	withRuntimeBinary(t, s, "echo ready; read _ </dev/stdin")
+	cmd := aRuntimeLikeChild(t, s)
 
 	cwd, err := os.Stat(fmt.Sprintf("/proc/%d/cwd", cmd.Process.Pid))
 	if err != nil {
@@ -1142,10 +1168,10 @@ func TestAChildActuallyLandsInThePinnedDirectory(t *testing.T) {
 	}
 }
 
-func TestTheRuntimeDescriptorIsNotInheritedPastTheExec(t *testing.T) {
-	// The child needs a working directory and not a capability: the descriptor
-	// is close-on-exec and is in no `ExtraFiles`, so what survives the exec is
-	// the `chdir` and nothing else.
+func TestTheRuntimeInheritsNoDescriptorForTheProject(t *testing.T) {
+	// A working directory and not a capability: the trampoline closes the
+	// descriptor with `exec 3<&-` before the runtime is executed, so what
+	// survives the exec is the `chdir` and nothing else.
 	if runtime.GOOS != "linux" {
 		t.Skip("/proc/<pid>/fd is Linux's")
 	}
@@ -1160,34 +1186,9 @@ func TestTheRuntimeDescriptorIsNotInheritedPastTheExec(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	defer s.Close()
-	working, err := s.runtimeWorkingDir()
-	if err != nil {
-		t.Fatalf("runtime working directory: %v", err)
-	}
+	withRuntimeBinary(t, s, "echo ready; read _ </dev/stdin")
+	cmd := aRuntimeLikeChild(t, s)
 
-	// **Waited for, not raced.** `Start` returns once the fork is under way;
-	// close-on-exec descriptors are still in the table until the exec
-	// completes, so the child says when it is there.
-	cmd := exec.Command("/bin/sh", "-c", "echo ready; read _ </dev/stdin")
-	cmd.Dir = working
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		t.Fatalf("stdin: %v", err)
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		t.Fatalf("stdout: %v", err)
-	}
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	defer func() {
-		stdin.Close()
-		_ = cmd.Wait()
-	}()
-	if _, err := bufio.NewReader(stdout).ReadString('\n'); err != nil {
-		t.Fatalf("the child never reported ready: %v", err)
-	}
 	entries, err := os.ReadDir(fmt.Sprintf("/proc/%d/fd", cmd.Process.Pid))
 	if err != nil {
 		t.Fatalf("reading the child's descriptors: %v", err)
@@ -1207,10 +1208,54 @@ func TestTheRuntimeDescriptorIsNotInheritedPastTheExec(t *testing.T) {
 		}
 		if os.SameFile(pinnedDir, found) {
 			link, _ := os.Readlink(at)
-			t.Errorf("the child inherited a descriptor for the project: %s -> %s",
+			t.Errorf("the runtime inherited a descriptor for the project: %s -> %s",
 				entry.Name(), link)
 		}
 	}
+}
+
+func TestAMissingShellIsRefusedByNameAtTheSpawn(t *testing.T) {
+	// The trampoline's one dependency, said out loud. A host without a POSIX
+	// shell gets this desk's own sentence rather than an exec failure nobody
+	// can read.
+	if runtime.GOOS != "linux" {
+		t.Skip("the trampoline is Linux's")
+	}
+	dir, _ := aProject(t)
+	pinned, err := OpenProjectRoot(dir)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken,
+		DeskConfigDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	was := runtimeShellName
+	runtimeShellName = "no-such-shell-on-this-machine"
+	t.Cleanup(func() { runtimeShellName = was })
+	_, err = s.runtimeCommand(t.Context())
+	if err == nil {
+		t.Fatal("a command was built with no shell to run it")
+	}
+	for _, says := range []string{"no-such-shell-on-this-machine", "no runtime was started"} {
+		if !strings.Contains(err.Error(), says) {
+			t.Errorf("the refusal does not say %q: %v", says, err)
+		}
+	}
+}
+
+// withRuntimeBinary points this server's runtime at a shell script, so a test
+// can start something that reports and waits instead of a real `jpack mcp`.
+func withRuntimeBinary(t *testing.T, s *Server, script string) {
+	t.Helper()
+	binary := filepath.Join(t.TempDir(), "fake-runtime")
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	s.cfg.JpackBin = binary
 }
 
 func TestTheWatcherFollowsTheDescriptorWhereTheHostCanNameOne(t *testing.T) {

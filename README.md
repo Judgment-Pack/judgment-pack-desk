@@ -1285,10 +1285,17 @@ judging one tree while the file API edited another.
 - **On Linux, both follow the descriptor.** `/proc/self/fd/N` on this desk's own
   pinned directory resolves to the open file description rather than to a name,
   so it means that directory however it is called afterwards, or whether it is
-  called anything at all. `os/exec` applies `Dir` with a `chdir` in the forked
-  child **before** the descriptor shuffle, so the number means there what it
-  means here; the descriptor is close-on-exec and is in no `ExtraFiles`, so the
-  runtime inherits a working directory and not a capability.
+  called anything at all. The watcher is given that path directly.
+- **The runtime gets there through a shell trampoline**, so that nothing rests
+  on an `os/exec` internal. The descriptor is passed in `ExtraFiles`, which is
+  documented to make it descriptor **3** in the child, and the child runs
+  `sh -c 'cd /proc/self/fd/3/. && exec 3<&- && exec "$0" "$@"' <jpack> mcp`: the
+  `cd` resolves through the inherited open description at a number this desk
+  knows rather than one it inferred, `exec 3<&-` closes the descriptor before
+  the runtime is executed — so the runtime inherits a working directory and not
+  a capability — and the final `exec` leaves no extra process in the tree. The
+  one cost is a dependency on a POSIX `sh`, and a host without one is refused by
+  name at the spawn rather than failing somewhere a reader cannot see.
 - **On every other host it is check-then-use, and the desk says so rather than
   implying otherwise.** There is no portable way to hand a subprocess a working
   directory by descriptor, so the pathname is re-verified by identity

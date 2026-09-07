@@ -10,7 +10,6 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
-	"os/exec"
 	"sync"
 
 	"github.com/coder/websocket"
@@ -111,7 +110,12 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	defer s.unregister(c)
 	defer c.stop()
 
-	cmd := exec.CommandContext(ctx, s.cfg.JpackBin, "mcp")
+	cmd, err := s.runtimeCommand(ctx)
+	if err != nil {
+		s.log.Printf("desk: no runtime was started: %v", err)
+		s.closeWith(ws, websocket.StatusInternalError, err.Error())
+		return
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		s.closeWith(ws, websocket.StatusInternalError, "cannot open runtime stdin")
@@ -258,23 +262,10 @@ func (s *Server) runtimeWorkingDir() (string, error) {
 	return runtimeWorkingDirByPathname(s.projectDir, s.project.info)
 }
 
-// aimAtTheProject points one prepared command at the pinned project, and is
-// called with nothing between it and `Start`.
-//
-// It is the last statement before the spawn because on a host that cannot name
-// a descriptor it is a **check** — and everything after a check and before the
-// use is window. Round 4 found command construction and three pipe setups
-// sitting in that window. The residual it cannot close is the one the README
-// states: between this and the child's own `chdir` there is still a rename
-// nobody can see.
-func (s *Server) aimAtTheProject(cmd *exec.Cmd) error {
-	dir, err := s.runtimeWorkingDir()
-	if err != nil {
-		return err
-	}
-	cmd.Dir = dir
-	return nil
-}
+// `aimAtTheProject` is per platform: on Linux the command already carries the
+// descriptor and there is nothing left to do, and elsewhere it is the identity
+// check, called with nothing between it and `Start`. See `project_linux.go`
+// and `project_other.go`.
 
 // runtimeWorkingDirByPathname is the fallback, as its own function.
 //
