@@ -5069,16 +5069,15 @@ export function assistantTransport(): Transport {
   # **The model turn goes back as it came, or the signature does not.** The
   # scripted endpoint refuses a continuation that dropped a signed part, so this
   # fails at the wire rather than at an assertion about the page.
-  # **Retargeted, and the row it replaces is gone with the defect.** It used to
-  # break the carry-over of a signature onto a *joined* part — the very thing
-  # round 1 found was wrong. There is no carry-over now: a signed part is never
-  # joined, so the property to break is that the part goes back at all.
+  # **Retargeted twice, and both reasons are worth keeping.** It first broke the
+  # carry-over of a signature onto a *joined* part — the very thing round 1
+  # found was wrong, so there is no such carry-over to break. It then broke
+  # `signaturesOf`, which turned out to feed nothing the wire can see: reported
+  # NOT DISCRIMINATING, and correctly. What actually decides whether a signature
+  # goes back is the part this accumulator keeps, so that is what this breaks.
   mutate web "a Gemini thought signature is dropped on the way back" "$BG" \
-    "  return parts
-    .map((part) => (typeof part.thoughtSignature === 'string' ? part.thoughtSignature : ''))" \
-    "  return []
-  return parts
-    .map((part) => (typeof part.thoughtSignature === 'string' ? part.thoughtSignature : ''))"
+    '  parts.push({ ...arriving })' \
+    '  parts.push({ ...arriving, thoughtSignature: undefined })'
   mutate web "the Gemini turn is rebuilt rather than echoed back" "$BG" \
     '    messages.push(
       turn.assistant ?? {' \
@@ -5185,18 +5184,13 @@ export function assistantTransport(): Transport {
     '    !signed(last) &&
     !signed(arriving) &&' \
     ''
-  # And the other half of the same rule: the earlier signature must not be
-  # overwritten by a later one, which is what a merge of two signed parts does.
-  mutate web "the joined Gemini part takes the later signature" "$BG" \
-    '    (last!.thought === true) === (arriving.thought === true)
-  ) {
-    last!.text = (last!.text ?? '"'"''"'"') + (arriving.text ?? '"'"''"'"')
-    return' \
-    '    (last!.thought === true) === (arriving.thought === true)
-  ) {
-    last!.text = (last!.text ?? '"'"''"'"') + (arriving.text ?? '"'"''"'"')
-    if (signed(arriving)) last!.thoughtSignature = arriving.thoughtSignature
-    return'
+  # **Retired, with its reason: NOT DISCRIMINATING, and unavoidably so.** It was
+  # "the joined part takes the later signature", the other half of Google's rule
+  # — and with the fix in place a signed part is never joined at all, so the
+  # branch the mutation adds is unreachable code that no test can provoke. The
+  # row above breaks the guard itself, and both halves of the rule fall with it:
+  # its failures name the signed-plus-unsigned case and the two-signed case by
+  # name. One row, one guard.
 
   # **A signed thought part with no text is the endpoint reasoning.** The wire
   # emits one when a summary is empty, and counting only readable passages let a
@@ -5236,13 +5230,15 @@ export function assistantTransport(): Transport {
     '      typeof block?.thoughtSignature === '"'"'string'"'"' &&
       (block.thought === true || block.functionCall !== undefined)' \
     "      typeof block?.thoughtSignature === 'string' && block.thought === true"
-  # And the ledger's: a signature the SDK surfaces on a tool call has to be
-  # recorded, or there is nothing to compare the outgoing one against.
-  mutate web "the SDK-backed engine ledgers no signature from a function call" "$VL" \
-    "      if (part.type === 'tool-call') {
-        const onCall = signatureOf(session.model.family, part)" \
-    "      if (false) {
-        const onCall = signatureOf(session.model.family, part)"
+  # **Retired, with its reason: NOT DISCRIMINATING, and the reason is worth
+  # writing down.** It was "the SDK-backed engine ledgers no signature from a
+  # function call". The ledger's only observable consequence is the truncation
+  # comparison, and the pinned SDK carries a call signature back whole — so with
+  # the recording removed the wire is byte-identical and no leg can tell. The
+  # recording is defence for the day that provider truncates a call signature
+  # the way `vercel/ai#19663` truncates a summary one, and there is no way to
+  # provoke it while the SDK is correct. The half that *can* be observed is the
+  # scanner, and the row below breaks that.
 
   # **The declaration is derived, or it is a sentence that rots.** Widening it by
   # hand is the failure this leg exists for.
@@ -5264,11 +5260,16 @@ export function assistantTransport(): Transport {
   mutate web "the empty-schema omission is not declared" "$GS" \
     "  if (engine === 'vercel' && isEmptyObjectSchema(served)) return undefined" \
     '  if (false) return undefined'
-  # **Deep equality, or the leg is a claim about a handful of words.** A subset
-  # assertion is what let two engines show two contracts and pass.
-  mutate web "the schema leg asserts a subset rather than the whole schema" "$CT" \
-    '        expect(request.schemas, `${request.step} sent a different schema`).toEqual(shown)' \
-    '        expect(request.schemas.length).toBe(shown.length)'
+  # **Deep equality, or the claim is about a handful of words.** Retargeted from
+  # the assertion onto the code it holds: a row that weakens a *test* cannot
+  # discriminate, because a weakened test is exactly a test that does not fail.
+  # What the leg has to catch is the desk saying one thing and the engine doing
+  # another, and this is that — the declared narrowing not applied at all.
+  mutate web "the declared narrowing is not applied to what the model is shown" "$GS" \
+    '  if (engine === '"'"'vercel'"'"' && isEmptyObjectSchema(served)) return undefined
+  return withoutKeywords(served, removals)' \
+    '  if (engine === '"'"'vercel'"'"' && isEmptyObjectSchema(served)) return undefined
+  return served'
   # **Never silent.** An author reading a proposal should not have to discover
   # that the model saw a wider contract than the runtime enforces.
   mutate web "the narrowing is not reported to the author" "$EC" \
