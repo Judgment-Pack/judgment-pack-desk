@@ -2731,7 +2731,7 @@ the page in order to be presented to an endpoint:
 | `PUT /api/assistant/key` | store one — non-empty, at most 4 KiB, no control character |
 | `DELETE /api/assistant/key` | remove it |
 | `POST /api/assistant/probe` | reach the configured endpoint once and report what came back |
-| `ANY /api/assistant/relay/v1/…` | carry one model request to the configured endpoint, with the key attached here |
+| `ANY /api/assistant/relay/v1/…` | carry one model request to the configured endpoint, with the key attached here — and, for the one shape it renders, read the answer before forwarding it |
 
 The probe's four answer `409` with `assistant-unusable-store` where this machine
 has no directory safe to keep a credential in, `assistant-unconfigured` where
@@ -3006,17 +3006,65 @@ filter that deletes the answer to protect a credential is a worse answer than
 the credential. Twelve is the same length below which this desk will not show a
 key's fingerprint either.
 
-**The body is not filtered, and that is a decision rather than an oversight.**
+**One relayed answer is read, and it is the model listing.** The rule above —
+the body is carried and never inspected — is a rule about **model traffic**,
+which an engine consumes in code. A *listing* is different in kind: it is a set
+of strings this desk **renders**, into a picker on Admin, into the page's own
+state, and into a field a person can copy from. So an endpoint that reflects
+its own credential as a model `id` or a `display_name` would hand the
+machine-held key to the browser through the one route whose entire purpose is
+that it never gets there — and no filter the *page* could write would help,
+because the page has never held the key and could not recognise one.
+
+So for a **listing-shaped** relayed request — a `GET` at the suffix the
+configured `kind`'s listing is at, decided from the file on this machine and
+never from anything the page said — the relay reads the answer's body **whole,
+before a byte of it is forwarded**, bounded at **1 MiB**, and:
+
+- if any JSON string in it **equals** the configured key, or **contains** it
+  where the key is twelve bytes or longer, the answer is
+  `502 assistant-listing-refused` — *"the endpoint put the credential in its
+  model listing; this desk will not list it"* — and **nothing of the body
+  travels**, not the id, not the endpoint's own words around it;
+- a body **past the bound** answers the same code: a listing this desk cannot
+  read to the end is one it cannot say anything about, and forwarding the part
+  it did read would be the truncation every other bound here refuses;
+- otherwise the bytes are forwarded verbatim, with the length re-declared from
+  what was actually read.
+
+The scan is **exact-and-contains**, on the same twelve-byte floor the answer
+headers use, and it decodes: a key written into JSON with escapes is one string
+to a decoder and different bytes on the wire, so the decoded strings are what is
+compared and the raw bytes are the fallback for a body that is not JSON at all.
+**A derived representation — base64, percent-encoded, hex, half of it — is not
+detectable by any comparison**, which is the ruling chunk 1 already took for the
+probe, and it is stated here rather than implied away. A listing is asked for
+uncompressed so that what is scanned is what was sent. Every status is scanned,
+not only a success: a 401's body can carry the credential it rejected as easily
+as a 200's can carry it as a model id, and a rule with a status in it is a rule
+with a hole in it. The suffix table is
+[mirrored on the page](web/src/assistant/modelListing.ts) and held equal to the
+chassis' by a test that reads the Go declaration.
+
+**The page does not read a refused listing's body at all — not even its
+`code`.** The relay forwards a 4xx verbatim, so the body on a failed listing is
+sometimes the desk's envelope and sometimes the endpoint's, and no header tells
+them apart. What Admin says is the status and one sentence from a closed list;
+on `502` that sentence names both readings without claiming either, and the
+desk's own log is where the distinction lives.
+
+**Every other body is not filtered, and that is a decision rather than an oversight.**
 The relay parses none of the traffic it carries; a streamed answer cannot be
 scrubbed as it passes; and the probe's own ruling already applies — a *derived*
 representation of a credential (base64, percent-encoded, hex, half of it) is not
 detectable by any substitution, so a filter over bodies would be a categorical
-promise held by a `strings.Replace`. An endpoint that writes the key into its own
-body therefore hands it to the page. **The residual is stated rather than
-papered over: the key is the endpoint's own credential, it is presented only to
-the endpoint the desk-level file names, and it is good only at the endpoint that
+promise held by a `strings.Replace`. An endpoint that writes the key into a *completion*
+therefore hands it to the page. **The residual is stated rather than papered
+over: the key is the endpoint's own credential, it is presented only to the
+endpoint the desk-level file names, and it is good only at the endpoint that
 already holds it.** What this route guarantees is that the desk never volunteers
-it — not that an endpoint cannot give away a secret it was given.
+it — not that an endpoint cannot give away a secret it was given. The listing is
+the one exception above, and it is an exception because the desk renders it.
 
 The assistant calls it, and nothing else does
 ([ADR-0001](docs/adr/0001-make-the-assistant-engine-a-slot.md)). The **desk**

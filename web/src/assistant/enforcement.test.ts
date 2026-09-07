@@ -39,6 +39,7 @@ import {
 } from '../config/deskConfig'
 import { PROBE_DIAGNOSTICS } from './client'
 import { PREFILLED_URL } from './endpointDraft'
+import { LISTING_SUFFIX } from './modelListing'
 import { suffixProblem } from './session'
 import type { AssistantSlot } from './useAssistantSlot'
 
@@ -495,6 +496,30 @@ describe('(5) no endpoint literal in the source — a WEAK, enumerated guard', (
     // base would be a picker that changes the protocol and not the endpoint.
     expect(Object.keys(PREFILLED_URL).sort()).toEqual([...ASSISTANT_KINDS].sort())
     expect(new Set(Object.values(PREFILLED_URL)).size).toBe(ASSISTANT_KINDS.length)
+  })
+})
+
+describe('(5a) the listing suffixes are one table, on both sides', () => {
+  it('is the same map the relay scans by', () => {
+    // **The relay reads a listing's body and no other answer's**, because a
+    // listing is the one relayed answer the desk *renders* — into a picker,
+    // into state, into a field somebody can copy. Which requests are listings
+    // is decided by this table on both sides: a suffix the page asks at and
+    // the relay does not scan is an answer rendered unscanned, and one the
+    // relay scans and the page never asks at is a scan of nothing.
+    const source = readFileSync(
+      join(SRC, '..', '..', 'internal', 'desk', 'modelrelay.go'),
+      'utf8'
+    )
+    const block = /var relayListingSuffix = map\[string\]string\{([\s\S]*?)\n\}/.exec(source)
+    expect(block, 'relayListingSuffix is declared in internal/desk/modelrelay.go').not.toBeNull()
+    const declared = Object.fromEntries(
+      [...block![1]!.matchAll(/"([^"]+)":\s*"([^"]*)"/g)].map((match) => [match[1]!, match[2]!])
+    )
+    expect(declared).toEqual({ ...LISTING_SUFFIX })
+    // And it covers every kind either side admits, so a fourth protocol
+    // cannot arrive with no listing rule at all.
+    expect(Object.keys(declared).sort()).toEqual([...ASSISTANT_KINDS].sort())
   })
 })
 

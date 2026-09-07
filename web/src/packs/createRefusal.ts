@@ -50,6 +50,7 @@ export const CHASSIS_CODES = [
   'assistant-relay-path',
   'assistant-relay-busy',
   'assistant-relay-upstream',
+  'assistant-listing-refused',
   'assistant-key-unbound',
   'desk-config-changed',
   'desk-config-refused',
@@ -93,6 +94,9 @@ export const OTHER_ENDPOINT_CODES = [
   'assistant-relay-path',
   'assistant-relay-busy',
   'assistant-relay-upstream',
+  // …and the one the relay answers about a listing whose body carried the
+  // configured key. A create carries no model traffic and asks for no listing.
+  'assistant-listing-refused',
   // The key binding's one: a credential entered for one endpoint and a desk
   // now configured for another. A create carries no model traffic.
   'assistant-key-unbound',

@@ -1224,6 +1224,31 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		return
 	}' \
     ''
+
+  # ---- The one relayed answer the desk reads ------------------------------
+  #
+  # A listing is a set of strings this desk renders — into a picker, into page
+  # state, into a field somebody can copy — so an endpoint that reflects its own
+  # credential as a model id would hand the machine-held key to the browser
+  # through the route that exists so it never gets there. The page cannot help:
+  # it has never held the key and could not recognise one.
+  mutate go "a model listing is forwarded without being scanned" "$MR" \
+    '				if listingCarriesKey(read, key) {
+					return errListingCarriesKey
+				}' \
+    '				if false {
+					return errListingCarriesKey
+				}'
+  # A listing this desk cannot read to the end is one it cannot say anything
+  # about, and forwarding the part it did read is the truncation every other
+  # bound here refuses.
+  mutate go "an over-long listing is forwarded as far as it was read" "$MR" \
+    '				if len(read) > maxListingBody {
+					return errListingTooLarge
+				}' \
+    '				if false {
+					return errListingTooLarge
+				}'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx

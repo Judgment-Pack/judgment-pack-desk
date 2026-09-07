@@ -191,3 +191,37 @@ describe('a listing that did not answer with one', () => {
     expect((failure as Error).message).not.toContain('sk-a-real-looking-key-wxyz')
   })
 })
+
+describe('a listing the desk itself refused', () => {
+  it('says so without reading the body, on the status the desk answers on', async () => {
+    // **`assistant-listing-refused` arrives as a 502 with the desk's own
+    // envelope in it, and this page still does not read it.** The body on a
+    // refused listing is sometimes the desk's and sometimes the endpoint's —
+    // the relay forwards a 4xx verbatim — and no header tells them apart, so
+    // reading the `code` would be reading a body under the endpoint's control.
+    // What is said is what both readings have in common.
+    serves({ error: 'sk-a-real-looking-key-wxyz', code: 'assistant-listing-refused' }, { status: 502 })
+    const failure = await listModels('gemini', bindModelCall('gemini')).catch(
+      (cause: Error) => cause
+    )
+    expect((failure as Error).message).toContain('answered 502')
+    expect((failure as Error).message).toContain('will not put on the page')
+    expect((failure as Error).message).not.toContain('sk-a-real-looking-key-wxyz')
+    expect((failure as Error).message).not.toContain('assistant-listing-refused')
+  })
+
+  it('produces no rows at all from a refusal, whatever the body carried', async () => {
+    // The other half of the HIGH finding: the page never renders a listing it
+    // did not get, and a refused one yields no options for anything to copy.
+    serves({ data: [{ id: 'sk-a-real-looking-key-wxyz' }] }, { status: 502 })
+    await expect(listModels('openai-compatible', bindModelCall('openai-compatible'))).rejects.toThrow()
+  })
+
+  it('names the busy refusal on its own status', async () => {
+    serves({}, { status: 503 })
+    const failure = await listModels('gemini', bindModelCall('gemini')).catch(
+      (cause: Error) => cause
+    )
+    expect((failure as Error).message).toContain('as many requests to the endpoint as it will')
+  })
+})

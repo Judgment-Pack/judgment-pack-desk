@@ -22,6 +22,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1681,7 +1682,15 @@ func relaySlotIsReleased(t *testing.T, overall, idle time.Duration) {
 		}
 		t.Cleanup(func() { conn.Close() })
 		// Written, and then never read from again.
-		if _, err := fmt.Fprintf(conn, "GET %smodels?token=%s HTTP/1.1\r\nHost: %s\r\n"+
+		//
+		// **Not the listing path**, and that is an arrangement rather than a
+		// detail: a `GET` at this protocol's listing suffix is the one answer
+		// this desk reads whole and bounds at a megabyte, so a hundred-and-
+		// twenty-eight-megabyte stream there is refused before a byte of it is
+		// forwarded and there is no stalled write left to bound. What is under
+		// test here is the write to a client that stopped reading, which is
+		// ordinary model traffic.
+		if _, err := fmt.Fprintf(conn, "GET %schat/completions?token=%s HTTP/1.1\r\nHost: %s\r\n"+
 			"Connection: close\r\n\r\n", relayPrefix, testToken, address); err != nil {
 			t.Fatalf("write: %v", err)
 		}
@@ -1710,7 +1719,7 @@ func relaySlotIsReleased(t *testing.T, overall, idle time.Duration) {
 	deadline := time.Now().Add(overall + relayFinalWrite + time.Second)
 	var last int
 	for time.Now().Before(deadline) {
-		resp, err := impatient.Get(relayURL(ts, "models"))
+		resp, err := impatient.Get(relayURL(ts, "chat/completions"))
 		if err != nil {
 			time.Sleep(100 * time.Millisecond)
 			continue
@@ -2181,5 +2190,221 @@ func TestTheProbeAndTheRelayPresentTheSameCredential(t *testing.T) {
 	}
 	if _, _, ok := credentialHeader("something-else", testKey); ok {
 		t.Error("a kind nothing defines was given a credential header")
+	}
+}
+
+func TestRelayRefusesAModelListingThatCarriesTheKey(t *testing.T) {
+	// **The one relayed answer this desk reads, and the reason it reads it.**
+	// Model traffic is consumed by an engine in code; a model *listing* is a
+	// set of strings the page renders into a picker, stores in state and lets
+	// a person copy into a field. So an endpoint that reflects its own
+	// credential as a model id — a debug gateway, a misconfigured proxy, a
+	// hostile one — would hand the machine-held key to the browser through the
+	// one route whose whole purpose is that it never gets there.
+	//
+	// Each family reflects it in the member that family's listing carries, and
+	// what is asserted is that **nothing of the body travels**: not the id, not
+	// the endpoint's own words around it, and not the key.
+	for _, testCase := range []struct {
+		kind, base, suffix, body string
+	}{
+		{
+			"openai-compatible", "/v1", "models",
+			`{"object":"list","data":[{"id":"` + testKey + `","object":"model"}]}`,
+		},
+		{
+			"anthropic", "", "v1/models",
+			`{"data":[{"id":"claude-x","display_name":"presented ` + testKey + `"}]}`,
+		},
+		{
+			"gemini", "", "v1beta/models",
+			`{"models":[{"name":"models/` + testKey + `","displayName":"a model",` +
+				`"supportedGenerationMethods":["generateContent"]}]}`,
+		},
+	} {
+		t.Run(testCase.kind, func(t *testing.T) {
+			u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(testCase.body))
+			})
+			_, ts, logged := relayDeskAt(t, testCase.kind, u.server.URL+testCase.base)
+			resp, body := relayGet(t, ts, testCase.suffix)
+			if resp.StatusCode != http.StatusBadGateway {
+				t.Fatalf("status %d, want 502: %s", resp.StatusCode, body)
+			}
+			if got := codeOfBody(t, body); got != CodeAssistantListingRefused {
+				t.Errorf("code %q, want %q", got, CodeAssistantListingRefused)
+			}
+			// Nothing of what the endpoint wrote, and the key least of all.
+			if strings.Contains(body, testKey) {
+				t.Errorf("the refusal carries the key: %s", body)
+			}
+			for _, word := range []string{"claude-x", "a model", `"data"`, `"models"`} {
+				if strings.Contains(body, word) {
+					t.Errorf("the refusal repeats the endpoint's %q: %s", word, body)
+				}
+			}
+			if strings.Contains(logged.String(), testKey) {
+				t.Errorf("the log carries the key: %s", logged.String())
+			}
+		})
+	}
+}
+
+func TestRelayScansTheListingsDecodedStringsAndItsBytes(t *testing.T) {
+	// **Two scans, because one of them is not enough.** A key written into
+	// JSON with escapes is one string to a decoder and different bytes on the
+	// wire, so the decoded strings are what is compared; a body that is not
+	// JSON at all has no strings to decode, so the bytes are what there is.
+	escaped := `{"data":[{"id":"s` + testKey[1:] + `"}]}`
+	for _, testCase := range []struct{ name, body string }{
+		{"escaped into a JSON string", escaped},
+		{"in a body that is not JSON", "not json at all: " + testKey},
+		{"as a member name", `{"` + testKey + `":1}`},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(testCase.body))
+			})
+			_, ts, _ := relayDeskAt(t, "openai-compatible", u.server.URL+"/v1")
+			resp, body := relayGet(t, ts, "models")
+			if resp.StatusCode != http.StatusBadGateway ||
+				codeOfBody(t, body) != CodeAssistantListingRefused {
+				t.Fatalf("status %d body %s, want a refused listing", resp.StatusCode, body)
+			}
+		})
+	}
+}
+
+func TestRelayForwardsAnOrdinaryListingVerbatim(t *testing.T) {
+	// The scan refuses a class and changes nothing else: a listing with no
+	// credential in it arrives byte for byte, which is what the page parses.
+	const listing = `{"object":"list","data":[{"id":"a-model"},{"id":"b-model"}]}`
+	u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(listing))
+	})
+	_, ts, _ := relayDeskAt(t, "openai-compatible", u.server.URL+"/v1")
+	resp, body := relayGet(t, ts, "models")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	if body != listing {
+		t.Errorf("body %q, want the endpoint's own %q", body, listing)
+	}
+	// Declared from what was read, so the page reads to a length rather than
+	// to EOF.
+	if got := resp.Header.Get("Content-Length"); got != strconv.Itoa(len(listing)) {
+		t.Errorf("Content-Length %q, want %d", got, len(listing))
+	}
+}
+
+func TestRelayRefusesAListingPastTheBound(t *testing.T) {
+	// A listing this desk cannot read to the end is one it cannot say anything
+	// about, and forwarding the part it did read would be the truncation every
+	// other bound here refuses.
+	u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":["`))
+		_, _ = w.Write(bytes.Repeat([]byte("a"), maxListingBody+16))
+		_, _ = w.Write([]byte(`"]}`))
+	})
+	_, ts, _ := relayDeskAt(t, "openai-compatible", u.server.URL+"/v1")
+	resp, body := relayGet(t, ts, "models")
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status %d, want 502: %.80s", resp.StatusCode, body)
+	}
+	if got := codeOfBody(t, body); got != CodeAssistantListingRefused {
+		t.Errorf("code %q, want %q", got, CodeAssistantListingRefused)
+	}
+	if strings.Contains(body, strings.Repeat("a", 64)) {
+		t.Error("part of the over-long listing was forwarded")
+	}
+}
+
+func TestRelayScansOnlyTheListingShape(t *testing.T) {
+	// **The scan is a property of the request, read off the configured kind.**
+	// Model traffic keeps the residual chunk 1 recorded: the relay parses none
+	// of it, a streamed answer cannot be scrubbed as it passes, and an endpoint
+	// that writes the key into a completion hands it to the page. What changed
+	// is the listing, which the desk renders — and a POST to the listing path,
+	// or a GET at another path, is not one.
+	for _, testCase := range []struct{ name, method, suffix string }{
+		{"a completion", http.MethodPost, "chat/completions"},
+		{"a POST at the listing path", http.MethodPost, "models"},
+		{"a GET at another path", http.MethodGet, "v1beta/models"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(`{"echo":"` + testKey + `"}`))
+			})
+			_, ts, _ := relayDeskAt(t, "openai-compatible", u.server.URL+"/v1")
+			resp, body := relayDo(t, ts, testCase.method, testCase.suffix,
+				strings.NewReader("{}"), nil)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status %d: %s", resp.StatusCode, body)
+			}
+			if !strings.Contains(body, testKey) {
+				t.Skip("the body is filtered after all; this records a residual that has gone")
+			}
+		})
+	}
+}
+
+func TestRelayComparesAShortKeyExactlyOnly(t *testing.T) {
+	// The answer-header rule's own floor, applied to the one body this desk
+	// reads: below twelve bytes a key is a substring of ordinary text, and a
+	// filter that deletes an answer to protect three characters is a worse
+	// answer than the three characters.
+	const short = "sk-abc"
+	for _, testCase := range []struct {
+		name, body string
+		refused    bool
+	}{
+		{"the key inside a longer id", `{"data":[{"id":"` + short + `-turbo"}]}`, false},
+		{"the key exactly", `{"data":[{"id":"` + short + `"}]}`, true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(testCase.body))
+			})
+			s, ts, _ := assistantServer(t)
+			writeDeskConfig(t, s, fmt.Sprintf(
+				`{"deskConfigVersion":1,"assistant":{"endpoint":`+
+					`{"url":%q,"kind":"openai-compatible","model":"a-model","tools":[]}}}`,
+				u.server.URL+"/v1"))
+			if status, body := storeKey(t, ts, short); status != http.StatusOK {
+				t.Fatalf("store: %d %v", status, body)
+			}
+			resp, body := relayGet(t, ts, "models")
+			refused := resp.StatusCode == http.StatusBadGateway
+			if refused != testCase.refused {
+				t.Fatalf("status %d (refused=%v), want refused=%v: %s",
+					resp.StatusCode, refused, testCase.refused, body)
+			}
+		})
+	}
+}
+
+func TestRelayListingSuffixesAreTheOnesThePageAsksFor(t *testing.T) {
+	// **One table on each side, held equal by reading the other.** A suffix on
+	// the page's list and not this one is an answer the page renders unscanned;
+	// one here and not there is a scan of something nobody asks for.
+	source, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "assistant", "modelListing.ts"))
+	if err != nil {
+		t.Fatalf("read the page's table: %v", err)
+	}
+	if len(relayListingSuffix) != len(AssistantKinds) {
+		t.Fatalf("the relay lists %d kinds, the desk declares %d",
+			len(relayListingSuffix), len(AssistantKinds))
+	}
+	for _, kind := range AssistantKinds {
+		suffix, ok := relayListingSuffix[kind]
+		if !ok {
+			t.Fatalf("%s has no listing suffix", kind)
+		}
+		if !strings.Contains(string(source), `'`+suffix+`'`) {
+			t.Errorf("the page's table does not carry %q for %s", suffix, kind)
+		}
 	}
 }
