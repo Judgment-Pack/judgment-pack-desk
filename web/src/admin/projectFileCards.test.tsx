@@ -16,7 +16,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactElement } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DeskConfigProvider } from '../config/DeskConfigProvider'
+import { DeskConfigProvider, useEffectiveConfig } from '../config/DeskConfigProvider'
 import { testQueryClient } from '../testing/harness'
 import { OrganizationForm, StorageForm } from './projectFileCards'
 import { FROM_THE_DESK_FILE } from './useProjectFileSave'
@@ -100,13 +100,32 @@ function servesAMovedFile(deskFile?: object): {
   return seen
 }
 
+/**
+ * What revision the **page** is on, which every case below has to be able to
+ * see.
+ *
+ * Two of these cases proved nothing without it. A card that follows the
+ * watcher and one that holds its revision look identical if the click lands
+ * before the newer read has reached the component at all; and the stale notice
+ * disappears the instant Reload is pressed, so waiting for it to go is waiting
+ * for a button press rather than for a read. The digest the page is holding is
+ * the one thing that says which of those has happened.
+ */
+function Spy() {
+  const effective = useEffectiveConfig()
+  return <span data-testid="live">{effective.sha256 ?? 'none'}</span>
+}
+
 function renderForm(form: ReactElement) {
   const client = testQueryClient()
   return {
     client,
     ...render(
       <QueryClientProvider client={client}>
-        <DeskConfigProvider>{form}</DeskConfigProvider>
+        <DeskConfigProvider>
+          <Spy />
+          {form}
+        </DeskConfigProvider>
       </QueryClientProvider>
     )
   }
@@ -126,11 +145,14 @@ describe('a project-file card’s form', () => {
     expect(screen.getByDisplayValue('What I typed')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
-    // The read lands — the file on disk now says something else — and the
-    // value that was typed is still in the field.
-    await waitFor(() =>
-      expect(screen.queryByText('The file changed on disk — nothing was written.')).toBeNull()
-    )
+    // **Wait for the read to land, not for the notice to go.** The notice goes
+    // the instant Reload is pressed, so asserting on it proves only that the
+    // button was pressed — and a form that took the fresh read over the draft
+    // would look exactly like one that keeps it.
+    await waitFor(() => expect(screen.getByTestId('live').textContent).toBe('c'.repeat(64)))
+    expect(screen.queryByText('The file changed on disk — nothing was written.')).toBeNull()
+    // The file on disk now says something else, and the value that was typed is
+    // still in the field.
     expect(screen.getByDisplayValue('What I typed')).toBeTruthy()
     expect(screen.queryByDisplayValue('Renamed elsewhere')).toBeNull()
   })
@@ -165,6 +187,10 @@ describe('a project-file card’s form', () => {
     await act(async () => {
       await client.invalidateQueries()
     })
+    // **And the page has seen it.** Without this the case proves nothing: the
+    // click lands before the newer revision ever reaches the component, and a
+    // card that follows the watcher looks exactly like one that does not.
+    await waitFor(() => expect(screen.getByTestId('live').textContent).toBe('c'.repeat(64)))
     // The field is untouched by that, and so is the revision behind it.
     expect(screen.getByDisplayValue('What I typed')).toBeTruthy()
 
