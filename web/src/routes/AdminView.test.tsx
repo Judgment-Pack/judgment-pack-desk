@@ -378,7 +378,7 @@ describe('the Admin page', () => {
     expect(await screen.findByText(/the file listing has not answered yet/)).toBeTruthy()
   })
 
-  it('names the two future kinds in the decoder’s own words, and offers neither', () => {
+  it('names the two future kinds in the decoder’s own words, and offers neither', async () => {
     // The sentence is the one the decoder refuses `"database"` with, exported
     // and quoted rather than written again here: two answers about what is
     // available would be free to disagree, and the mutation table could break
@@ -387,7 +387,14 @@ describe('the Admin page', () => {
     expect(screen.getByText(STORAGE_KIND_SAYS)).toBeTruthy()
     expect(STORAGE_KIND_SAYS).toContain('database')
     expect(STORAGE_KIND_SAYS).toContain('cloud storage')
-    expect(screen.queryByRole('option', { name: /database/ })).toBeNull()
+    // **Opened first, because a closed Radix Select has no options at all.**
+    // Round 1 caught this: asking a closed one what it offers is a query that
+    // answers "nothing" whatever is configured in it, so the absence it was
+    // asserting was the primitive's and not this page's.
+    // (`testing/radixGround.test.tsx` writes that behaviour down once.)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Kind' }))
+    const offered = (await screen.findAllByRole('option')).map((each) => each.textContent)
+    expect(offered).toEqual(['filesystem'])
     expect(screen.queryByRole('radio')).toBeNull()
   })
 
