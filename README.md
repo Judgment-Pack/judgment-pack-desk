@@ -1240,12 +1240,15 @@ left beside the console button, and a link that neither shrinks nor wraps
 painted straight across it. The link's accessible name is the full sentence at
 every width.
 
-**Admin renders configuration; it does not rewrite a file you edited.** It
-shows effective values, their source, the path they came from and the exact
-JSON to paste, and its controls that change **persisted desk-layout state** are
-one: the pane record above; the Copy button beside each paste block changes the
-clipboard and its own transient "copied" label, which is why the claim is
-scoped to persisted layout rather than to state in general.
+**Admin renders configuration; it rewrites exactly one member of it.** Every
+section shows effective values, their source, the path they came from and the
+exact JSON to paste — except **Assistant**, which is a form, and whose Save
+rewrites the `assistant` object of the desk-level file under the four bounds
+below. Everything else on the page is read-only: the one control that changes
+**persisted desk-layout state** is the pane record above, and the Copy button
+beside each paste block changes the clipboard and its own transient "copied"
+label, which is why that claim is scoped to persisted layout rather than to
+state in general.
 
 **Two things are written, and each is exactly as wide as its reason.** The key
 is one, below. The other is the `assistant` object of the desk-level file, over
@@ -1305,14 +1308,17 @@ The answer carries the new digest and the **decoded** slot — read back off the
 disk rather than echoed, defaults applied — so the page can verify what landed
 and has the digest its next write needs.
 
-**Nothing in the page calls it yet, and that is deliberate.** This release ships
-the route, the client call and the query hook; the Admin form that lets an
-author choose an endpoint, a model and a thinking tier — and that shows
-`keyRebindRequired` when the destination moves — is the next chunk. Until it
-lands, Admin › Assistant still renders the paste block and says so in its own
-words, so that a reader meeting a read-only section does not conclude the write
-does not exist. What is true today: the route is reachable by anything holding
-the session token, and every bound above applies to it.
+**Admin › Assistant is what calls it.** The section is a form — the wire
+protocol, the endpoint, the five tool grants, the model, the engine and the
+tier — and Save is this route. Three things bound what the page may get wrong,
+and each is held by a test that reads the request on the wire: the digest it
+sends is the one its read carried, and a read that produced none disables Save
+and says why; the object is composed by **naming its members**, never by
+spreading the form's draft, so a member nobody declared cannot reach this file;
+and a refusal is rendered in the decoder's own sentences, against the field
+each problem's key path names. A 409 keeps every value that was typed and
+offers Reload, which reads the file again so the next Save states a digest that
+is true — there is no overwrite, because this route offers none.
 
 **The key is the other**, on Admin › Assistant, and the exception is exactly as
 wide as its reason. A key must never be pasted into a
@@ -1485,20 +1491,61 @@ key custody; the Assistant tab, with propose and accept-into-draft; the engine
 slot itself, with `vercel` and `builtin` both certified against the conformance
 session; **Describe it** in the Create dialog, which runs the same session with
 no draft and hands what comes back to Create rather than to a diff; the thinking
-tier with its refutation pass; and the native Gemini wire on **both** engines —
+tier with its refutation pass; the native Gemini wire on **both** engines —
 function declarations, thought summaries streamed into the tab as reasoning,
 thought signatures carried back verbatim across tool turns, and the tier mapped
 to Gemini's own thinking configuration — certified by the same session that
-certifies the other two families. What is **not** here yet is a model chooser:
-the model name is the file's, typed.
+certifies the other two families; and the **Admin form** below, which chooses
+the endpoint, the model and the tier and writes them.
 
-**Admin › Assistant** shows the configured endpoint, its protocol, its model
-and its tools with the file each came from, the engine and the tier, the exact JSON to paste, the key
-control described under [Security model](#security-model), and a **Check
-reachability** button that reports the desk's own probe. The key and the
-endpoint are separate: removing the endpoint from the file does not remove the
-key from this machine, so the page says `none — no endpoint configured` and
-lets the key line say whether one is still kept here.
+**Admin › Assistant is a form**, and the paste block that stood here is gone —
+it existed because the page could not write the file, and a second way to do
+one thing where the second is hand-editing a file this desk also rewrites is
+worse than either alone.
+
+| the form asks for | and it is |
+| --- | --- |
+| **Wire protocol** | one of the three, by name. Choosing one offers the base that protocol's own reference documents — `https://api.openai.com/v1`, `https://api.anthropic.com`, `https://generativelanguage.googleapis.com` — as a **default in an editable field**, replaced by typing over it. Nothing reads those back, compares an endpoint to them, or treats an endpoint at one of them differently: the enforcement guard admits the three literals only as values of one table in one module, and the sharper guard beside it — every host comparison in the page's source is a loopback name — is untouched. |
+| **Endpoint** | the base, held to the transport rule and the configured-query rule **by the decoder's own function**, so a URL those rules refuse is shown refused in the sentence the file's reader would write and is not sent. |
+| **Tools it may call** | the five, as five checkboxes. All on for a desk that has configured nothing, because `[]` is a real choice — an assistant that may call nothing — and a form opening on it would have a blank field making it. |
+| **Model** | typed, with **List models** beside it. |
+| **Engine** | `vercel` or `builtin`, with the two things the SDK-backed one cannot do named beside it: it shows the model a tool schema narrowed where the SDK declares one narrower (the tab says `narrowed` when it does, and on the Gemini wire `list_examples` arrives with no parameters at all), and it cannot carry an empty signed thought part back across a tool turn on that wire. Both are measured in this repository's own suite, and both are why an author might choose `builtin` for a Gemini endpoint. |
+| **Thinking** | `off`, `on` or `ultra`, with **what that tier puts on this protocol's wire read off `thinking.ts` itself** rather than restated beside it — so the line changes when the table does. On the Gemini rows it also says that the two budgets are this desk's choice inside a documented field. |
+
+**Save** writes the `assistant` object over `PUT /api/desk-config` and nothing
+else in the file moves. The status line on the Assistant tab and **Describe
+it** name the new model and tier at once, because the write invalidates the
+configuration query and the read runs again — no reload, and a test drives the
+real provider over a stubbed file rather than a fixture, because a fixture
+would hold the mechanism constant and prove nothing about it.
+
+**List models** reads the endpoint's own listing through the relay by naming a
+path suffix — `models`, `v1/models`, `v1beta/models` — and fills a picker. It
+is enabled only where the stored key is bound to the endpoint that is *saved*,
+because the relay refuses a credential entered for another destination before
+opening a socket and a button that could only produce that refusal lies about
+what the page can do. **The field beside it never goes away**: the listing is
+first-page-only, an endpoint may refuse to list at all, and a gateway may route
+on a name of its own — a picker that was the only way to choose would make
+every one of those unconfigurable. **What is saved is the id and never the
+label**, which differ on two of the three protocols. A refusal is its status
+and one word from the probe's own closed vocabulary, and the body is not read;
+an answer that is not JSON gets a fixed sentence, because `JSON.parse` quotes
+the text it failed on and that text is the body.
+
+**The key row says which endpoint the key is for**, in five states: not read
+yet; **no endpoint**, where the entry field is not offered at all because
+storing a key requires one to bind it to; **none stored**, with the field
+labelled for the host it would be entered for; **stored and bound**, with
+Replace and Remove and no masked box standing beside a working key; and
+**stored for somewhere else**, naming both hosts, because a reader has to be
+able to see which of the two moved. A write answering `keyRebindRequired`
+moves the row at that instant rather than waiting for the key read.
+
+The **Check reachability** button still reports the desk's own probe. The key
+and the endpoint stay separate: removing the endpoint does not remove the key
+from this machine, so the page says `none — no endpoint configured` and lets
+the key line say whether one is still kept here.
 
 **What the assistant is, and is not**, in the sentence the page carries: it
 proposes edits to the draft; you accept them; the runtime checks them. It never
@@ -2589,6 +2636,13 @@ therefore requires an endpoint to bind it to, and a key file **without
 rather than read: a credential with no binding is the state the record exists
 to end, and the sentence names the one action that repairs it.
 
+**Admin's key row reads that binding rather than waiting to meet it.** It says
+which host and which protocol the stored key was entered for, offers no entry
+field at all where no endpoint is configured — there would be nothing to bind
+to — and, where the two disagree, names *both* destinations so a reader can see
+which of the pair moved. Neither half is a secret: both are in the file the
+page already reads.
+
 `XDG_CONFIG_HOME` is honoured where it is set to an absolute path; a relative
 one is ignored, as the specification says. The write is staged in the same
 directory and renamed over the target, so a reader during a replace sees the
@@ -2915,6 +2969,20 @@ no CORS, so a page calling one directly could not read the answer.
   first page and no more. Supporting the rest would need a mechanism that
   passes a cursor safely, and this release does not have one. Nothing on the
   chassis is added for the listing; it is the relay.
+
+  **The page's half is Admin's List models**, and it goes over the same
+  capability an engine gets rather than round it: it names the suffix, and
+  `bindModelCall` builds the address, attaches this chassis' token and holds
+  the suffix to the rule above. `ModelRequest` carries a `method` for it — a
+  closed `'GET' | 'POST'` pair, because the relay forwards the method verbatim
+  and an open member would let whoever holds a capability ask the endpoint to
+  *do* something nobody wrote down with the machine-held credential attached.
+  The three families' answers differ — Gemini's `models[].name` is
+  `models/<id>` with a `displayName` and the methods each model supports,
+  OpenAI-compatible's is `data[].id`, Anthropic's is `data[].id` with a
+  `display_name` — and each is read apart rather than guessed at. Gemini's rows
+  are filtered to models whose own declaration includes `generateContent`,
+  because that listing carries embedding models an assistant cannot run on.
 - **Nothing else.** No retry (a retried model request is a second charge on
   somebody's account for an answer nobody saw), no caching, no request
   rewriting, no model-name inspection. A refusal carries `assistant-relay-*`
@@ -3287,8 +3355,10 @@ web/                 Vite + React + TypeScript SPA
                      (the "select a pack" page and the pack document),
                      evaluation, matrix, graphs, the authoring shell, the
                      Admin page and Help & About — Admin being read-only
-                     everywhere but the key control, and the source badge and
-                     paste block every section of it uses
+                     everywhere but the Assistant section, which is a form over
+                     the endpoint, the model and the tier and carries the key
+                     control beside it, and the source badge and paste block
+                     every other section of it uses
   src/components/    evaluation, coverage, row and graph-walk views, plus the
                      trace and handoff-target renderers both the pack and graph
                      surfaces share
@@ -3338,10 +3408,13 @@ web/                 Vite + React + TypeScript SPA
                      control that renders it
   src/assistant/     the assistant slot: one nullable field and two settings
                      about how it runs, the four chassis calls, the Admin
-                     section that configures it and holds the key, the tab, the
-                     event list and proposal report both surfaces render, the
-                     ToolGate, and engines/ — one lazily loaded chunk per
-                     certified engine behind one contract
+                     section — a form over the endpoint, the tool grants, the
+                     model, the engine and the tier, with the key row beside it
+                     reading the desk's binding and the endpoint's own model
+                     listing read through the relay — the tab, the event list
+                     and proposal report both surfaces render, the ToolGate,
+                     and engines/ — one lazily loaded chunk per certified
+                     engine behind one contract
   scripts/smoke.ts   the desk's own client, driven outside a browser
 ```
 

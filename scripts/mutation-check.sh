@@ -3769,6 +3769,87 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "      {result.diagnostic !== '' && (" \
     "      {false && result.diagnostic !== '' && ("
 
+  # ---- The Admin form: what it writes, and what it will not ---------------
+  #
+  # Chunk 5c turns this section into a form, so the desk's *second* write is
+  # now made by page code. Each row below breaks one of the bounds that makes
+  # that safe, and every catcher is a test that reads the request on the wire
+  # rather than the rendering — a form that showed the right thing and sent the
+  # wrong one is exactly the failure these exist for.
+  ED=web/src/assistant/endpointDraft.ts
+  EF=web/src/assistant/EndpointForm.tsx
+  MF=web/src/assistant/ModelField.tsx
+
+  # **A draft is page state, and a spread writes whatever it is carrying** into
+  # the one file on this machine that names where a credential is presented.
+  # The chassis would refuse a key-shaped member, which is what makes this a
+  # rule rather than a hole — and the difference between a rule and a backstop
+  # is that the rule is the one you can point at.
+  mutate web "the written object is spread from the draft rather than named" "$ED" \
+    '  return {
+    endpoint: {
+      url: draft.url.trim(),
+      kind: draft.kind,
+      model: draft.model.trim(),
+      tools: ASSISTANT_TOOLS.filter((tool) => draft.tools.includes(tool))
+    },
+    engine: draft.engine,
+    thinking: draft.thinking
+  }' \
+    '  return {
+    ...(draft as unknown as Record<string, unknown>),
+    endpoint: {
+      ...(draft as unknown as Record<string, unknown>),
+      url: draft.url.trim(),
+      kind: draft.kind,
+      model: draft.model.trim(),
+      tools: ASSISTANT_TOOLS.filter((tool) => draft.tools.includes(tool))
+    },
+    engine: draft.engine,
+    thinking: draft.thinking
+  }'
+  # **A write with no digest is a page overwriting whatever it found**, on the
+  # file that names the endpoint a credential goes to. The empty string is not
+  # "no opinion": it is the claim that there is no file.
+  mutate web "the configuration write states no digest at all" "$EF" \
+    '      { assistant: assistantWrite(draft), ifMatch: digest },' \
+    "      { assistant: assistantWrite(draft), ifMatch: '' },"
+  # A 409 says the file moved and nothing was written. Reload has to *read it
+  # again*: a button that only cleared the alert would leave the next Save
+  # stating the same stale digest, and the author pressing it twice.
+  mutate web "Reload clears the notice without reading the file again" "$EF" \
+    '                void client.refetchQueries({ queryKey: DESK_CONFIG_QUERY_KEY })' \
+    '                void client'
+  # The relay refuses a credential entered for another destination before it
+  # opens a socket, so a listing offered here can only produce that refusal.
+  mutate web "List models is offered with no key bound to the endpoint" "$MF" \
+    '        <Button onClick={ask} disabled={!bound || asking}>' \
+    '        <Button onClick={ask} disabled={asking}>'
+  # **The page names a suffix; the desk builds the address.** A listing that
+  # built its own URL would hold the endpoint — and, on this route, this
+  # chassis' session token — in page code that no gate is on.
+  mutate web "the listing address is built on the page" "$MF" \
+    '    listModels(draft.kind as EndpointKind, bindModelCall(draft.kind)).then(' \
+    "    listModels(draft.kind as EndpointKind, async (suffix) =>
+      globalThis.fetch(\`\${draft.url}/\${suffix}\`, { method: 'GET' })
+    ).then("
+  # The id is what the endpoint answers to; the label is what a person reads,
+  # and the two differ on two of the three protocols.
+  mutate web "the model is saved from the listing label rather than its id" "$MF" \
+    '              options={rows.map((row) => ({ value: row.id, label: row.label }))}' \
+    '              options={rows.map((row) => ({ value: row.label, label: row.label }))}'
+  # A picker offering a fourth tier offers a configuration the decoder refuses
+  # by name — and the two states it cannot express are the desk's to report.
+  mutate web "the tier picker offers a value outside the union" "$EF" \
+    '              options={TIER_OPTIONS}' \
+    "              options={[...TIER_OPTIONS, { value: 'always', label: 'always' }]}"
+  # **Deliberately not added: a second row for the key field being cleared
+  # before the request.** "the field is cleared only once the store has
+  # answered" above breaks exactly that assignment, and the form moved the
+  # field without moving the clearing — so a row here would be the same edit
+  # under a second name, and a duplicate row reports coverage twice for one
+  # safeguard held once.
+
   # ---- The assistant's guardrails, below whatever runs the loop -----------
   #
   # ADR-0001 puts these under the engine slot on purpose: they are the desk's
