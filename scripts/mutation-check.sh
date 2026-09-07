@@ -1302,8 +1302,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # **The whole point of the member.** A fallback that ignored it would open
   # whatever directory the process happened to start in and report success.
   mutate go "the launch fallback ignores the configured file" "$LA" \
-    '	dir, err := usableProjectDir(deskFile.file)' \
-    '	dir, err := ".", error(nil)'
+    '	chosen, err := usableProjectDir(deskFile.file)' \
+    '	chosen, err := projectChoice{dir: "."}, error(nil)'
 
   # **Read before there is a working directory to resolve one against.** A
   # relative path accepted here is a default project that means a different
@@ -1331,22 +1331,38 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # The replacement keeps `text` in use, because a mutation that does not
   # compile is not one the suite survived — it is one nothing ran.
   mutate go "the page may nominate a project it is not running in" "$A" \
-    '	if strings.TrimSpace(text) == s.projectPaths().File {' \
-    '	if strings.TrimSpace(text) != "" {'
+    '	if text == s.projectPaths().File {' \
+    '	if text != "" {'
 
   # **A default that is not there is not a project.** Honouring one takes the
   # parent of a name nobody wrote a file at — the review's `/jpack-desk.json`
   # is exactly that shape.
+  #
+  # **Round 2 found the first spelling of this proving nothing.** It replaced
+  # the resolution with `resolved := file`, and a nonexistent path then failed
+  # at the very next `Lstat` — so the mutant refused the same paths and the
+  # test killed it on a diagnostic word. This one *honours* the missing file,
+  # returning its parent, so the test has to observe a nonexistent default
+  # being opened.
   mutate go "the launch honours a configured file that is not there" "$LA" \
     '	resolved, err := filepath.EvalSymlinks(file)
 	if err != nil {
-		return "", fmt.Errorf("it could not be resolved: %w", err)
+		return projectChoice{}, fmt.Errorf("it could not be resolved: %w", err)
 	}' \
-    '	resolved := file'
+    '	resolved, err := filepath.EvalSymlinks(file)
+	if err != nil {
+		return projectChoice{dir: filepath.Dir(file)}, nil
+	}'
 
-  # **Absolute on this host, not in the shared spelling.** A Windows-shaped
-  # path is a relative one here, and `filepath.Dir` then answers "." — which is
-  # the launch directory, by accident.
+  # **Absolute on this host, not in the shared spelling.** A drive-letter path
+  # is a relative one here, so without this the desk resolves it against
+  # whatever directory it was launched from.
+  #
+  # **Round 2 found the first spelling of this proving nothing** either: the
+  # test used a temporary directory with nothing in it, so the mutant still
+  # refused — at the basename check, for a path that does not exist. The test
+  # now builds `<cwd>/C:/p/jpack-desk.json`, so removing this check opens a
+  # real launch-directory-relative project and the row is behavioural.
   mutate go "a foreign-platform path is honoured on this host" "$LA" \
     '	if !filepath.IsAbs(file) {' \
     '	if false {'
@@ -1363,6 +1379,48 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if req.IfMatch == nil {
 		empty := ""
 		req.IfMatch = &empty
+	}'
+
+  # ---- Round 2: what is validated has to be what is served ---------------
+  PJ=internal/desk/project.go
+
+  # **The identity check is the whole of the pinning argument.** Without it a
+  # rename between validating the configured file and opening its directory
+  # substitutes another tree, and the desk serves what it never checked.
+  mutate go "the pinned directory is not the one that was validated" "$PJ" \
+    '	if !os.SameFile(c.dirInfo, pinned.info) {
+		return errProjectMoved
+	}' \
+    '	if false {
+		return errProjectMoved
+	}'
+  # The second half: the directory may be the one validated and the file that
+  # chose it may have been replaced inside it.
+  mutate go "the configuration file that chose the project is not re-checked" "$PJ" \
+    '	if !held.Mode().IsRegular() || !os.SameFile(c.fileInfo, held) {
+		return errProjectMoved
+	}' \
+    '	if false {
+		return errProjectMoved
+	}'
+  # And the smaller window inside the open itself: a name inspected and then
+  # opened is two operations, and what is held has to be what was inspected.
+  mutate go "the descriptor is not compared to the directory that was inspected" "$PJ" \
+    '	if !os.SameFile(inspected, held) {' \
+    '	if false {'
+
+  # **An omission is not a withdrawal.** Without this, `{"project":{}}` clears
+  # an operator's hand-edited default and answers 200.
+  mutate go "an unstated project file is treated as a withdrawal" "$A" \
+    '	if !present {
+		// **An omission is not a withdrawal.** `{}` replaced the member with
+		// an empty object, which the decoder reads as no default — so a
+		// request that meant nothing by leaving `file` out silently cleared an
+		// operator'"'"'s own setting.
+		return &deskProblem{Key: "project.file", Reason: projectFileMustBeStated}
+	}' \
+    '	if !present {
+		return nil
 	}'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then

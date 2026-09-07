@@ -88,6 +88,8 @@ func TestAConfiguredDefaultThisHostCannotOpenRefusesTheLaunch(t *testing.T) {
 		says string
 	}{
 		{"a file that is not there", filepath.Join(dir, "gone", projectConfigName), "resolved"},
+		{"a file whose parent is not there either",
+			filepath.Join(dir, "gone", "x", projectConfigName), "resolved"},
 		{"a directory", notAFile, "regular file"},
 		{"a link to another name", linked, "rather than a"},
 		{"the filesystem root", "/" + projectConfigName, "filesystem root"},
@@ -109,42 +111,75 @@ func TestAConfiguredDefaultThisHostCannotOpenRefusesTheLaunch(t *testing.T) {
 
 func TestAWindowsShapedDefaultRefusesRatherThanOpeningTheLaunchDirectory(t *testing.T) {
 	// **The shared corpus proves decoder parity, not that a value is
-	// actionable on the host that launches.** `C:\p\jpack-desk.json` is one
-	// path component to `path/filepath` here, so `filepath.Dir` answers "."
-	// and the desk would open whatever directory it was started in — the exact
-	// accident this member exists to remove. The fixture below is the one the
-	// shared corpus *accepts*, so this is the gap and not a second decoder.
+	// actionable on the host that launches.** A drive-letter path is one path
+	// component to `path/filepath` here, so without the host's own
+	// absoluteness check the desk resolves it **relative to wherever it was
+	// launched** — the exact accident this member exists to remove.
+	//
+	// **Round 2 found the first version of this proving nothing.** It used the
+	// backslash fixture and a temporary directory with nothing in it, so a
+	// desk with the `IsAbs` check removed still refused — at the basename
+	// check, for a path that does not exist. What it asserted was a diagnostic
+	// word. So the forward-slash spelling is used too, and the tree it names is
+	// **built inside the launch directory**: with the check removed the desk
+	// opens `<cwd>/C:/p`, and this fails on what it observed rather than on
+	// what the message said.
 	if runtime.GOOS == "windows" {
 		t.Skip("the shape is native here")
 	}
-	accepted := readAcceptedWindowsFixture(t)
-	config := t.TempDir()
-	writeLaunchConfig(t, config, accepted)
-	// The launch directory, so that a fall-through would be visible as itself.
+	// **Read before the working directory moves**, because the corpus is found
+	// relative to this package and `t.Chdir` would put it out of reach.
+	fixtures := map[string]string{}
+	for _, name := range []string{
+		"accepted-project-file-windows-slashes",
+		"accepted-project-file-windows",
+	} {
+		fixtures[name] = readAcceptedFixture(t, name)
+	}
 	elsewhere := t.TempDir()
+	// `<cwd>/C:/p/jpack-desk.json`, so a launch-directory-relative resolution
+	// finds a real, well-named project rather than nothing.
+	relative := filepath.Join(elsewhere, "C:", "p")
+	if err := os.MkdirAll(relative, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(relative, projectConfigName), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
 	t.Chdir(elsewhere)
-	got, err := ResolveProjectDir("", config)
-	if err == nil {
-		t.Fatalf("the Windows-shaped default resolved to %q", got)
-	}
-	if !strings.Contains(err.Error(), "absolute path on this system") {
-		t.Errorf("refusal: %v", err)
-	}
-	if strings.Contains(got, elsewhere) {
-		t.Errorf("it fell through to the launch directory %q", elsewhere)
+
+	for fixture, text := range fixtures {
+		t.Run(fixture, func(t *testing.T) {
+			config := t.TempDir()
+			writeLaunchConfig(t, config, text)
+			got, err := ResolveProjectDir("", config)
+			if err == nil {
+				t.Fatalf("the Windows-shaped default resolved to %q", got)
+			}
+			// **What it must not have done**, said as itself: the launch
+			// directory's own tree is what a relative resolution finds.
+			if got != "" {
+				t.Errorf("it resolved to %q", got)
+			}
+			resolvedRelative, _ := filepath.EvalSymlinks(relative)
+			if got == relative || got == resolvedRelative {
+				t.Errorf("it opened the launch-directory-relative project %q", got)
+			}
+		})
 	}
 }
 
-// readAcceptedWindowsFixture is the shared corpus' own Windows path, so this
-// test cannot drift from what the decoders accept.
-func readAcceptedWindowsFixture(t *testing.T) string {
+// readAcceptedFixture is a fixture the shared corpus **accepts**, so a test
+// built on one cannot drift from what the decoders admit.
+func readAcceptedFixture(t *testing.T, name string) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(fixtureDir(t), "accepted-project-file-windows.json"))
+	data, err := os.ReadFile(filepath.Join(fixtureDir(t), name+".json"))
 	if err != nil {
 		t.Fatalf("fixture: %v", err)
 	}
 	if decoded := decodeDeskFile(data); decoded.refused() {
-		t.Fatalf("the fixture is no longer accepted: %v", decoded.Problems)
+		t.Fatalf("%s is no longer accepted: %v", name, decoded.Problems)
 	}
 	return string(data)
 }

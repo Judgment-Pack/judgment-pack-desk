@@ -169,6 +169,13 @@
     "thinking": "off",
     "projectFile": "C:\\Users\\someone\\a-project\\jpack-desk.json"
   },
+  "accepted-project-file-windows-slashes": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "projectFile": "C:/p/jpack-desk.json"
+  },
   "accepted-storage-nested-dir": {
     "accepted": true,
     "keys": [],
