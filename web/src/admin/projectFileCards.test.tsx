@@ -195,6 +195,35 @@ function servesTwoRevisions(first: string, second: string): {
   return seen
 }
 
+/** A desk that reads one revision and lets every write land on it. */
+function servesLandingWrites(content: string): { bodies: Record<string, unknown>[] } {
+  const seen = { bodies: [] as Record<string, unknown>[], latest: content, digest: 'a'.repeat(64) }
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url.includes('/api/desk-config')) {
+      return answered({
+        path: '/home/someone/.config/jpack-desk/desk.json',
+        present: false,
+        sha256: '',
+        project: { dir: '/p', file: '/p/jpack-desk.json' },
+        runtime: { bin: 'jpack' }
+      })
+    }
+    if (init?.method === 'PUT') {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>
+      seen.bodies.push(body)
+      seen.latest = String(body.content)
+      seen.digest = 'b'.repeat(64)
+    }
+    return answered({
+      path: 'jpack-desk.json',
+      bytes: seen.latest.length,
+      sha256: seen.digest,
+      content: seen.latest
+    })
+  })
+  return seen
+}
+
 /** The member one card wrote, as the request carried it. */
 function memberOf(body: Record<string, unknown>, name: string): unknown {
   return (JSON.parse(String(body.content)) as Record<string, unknown>)[name]
@@ -350,6 +379,34 @@ describe('a project-file card’s form', () => {
       expect(memberOf(desk.bodies[1]!, member)).toEqual(expected)
     }
   )
+
+  /**
+   * **A save that lands is over**, and the normalisation is what makes that
+   * worth asserting. The decoder adds the separator an `idBase` was missing and
+   * takes the one a `dir` ended with, so the file afterwards says something the
+   * reader did not type — and a form still holding the raw input would stay
+   * dirty for ever over a save that succeeded, offering to write again what the
+   * file already says and never showing the value its own hint promised.
+   */
+  it('shows the decoded value a landed save produced, and disables Save', async () => {
+    const before = `{\n  "deskConfigVersion": 1,\n  "storage": { "packs": { "dir": "packs", "idBase": "https://acme.example/d/" } }\n}\n`
+    const desk = servesLandingWrites(before)
+    renderForm(<StorageForm dirSays="holds files" />)
+    await waitFor(() => expect(screen.getByTestId('live').textContent).toBe('a'.repeat(64)))
+
+    // Two values the decoder accepts and then normalises.
+    fireEvent.change(screen.getByLabelText('Id prefix'), {
+      target: { value: 'https://acme.example/packs' }
+    })
+    fireEvent.change(screen.getByLabelText('Packs go to'), { target: { value: 'decisions/' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(desk.bodies).toHaveLength(1))
+
+    // What the file says now, which is not what was typed.
+    await waitFor(() => expect(screen.getByDisplayValue('https://acme.example/packs/')).toBeTruthy())
+    expect(screen.getByDisplayValue('decisions')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
+  })
 
   it('offers no Save where the value comes from the desk-level file', async () => {
     // The card's Location names the file the value came from, and this page

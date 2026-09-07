@@ -5922,6 +5922,14 @@ export function assistantTransport(): Transport {
     '  const draft = { ...seed, ...touched } as D' \
     '  const draft = { ...touched, ...seed } as D'
 
+  # **A save that lands is over.** The decoder normalises what it accepts — an
+  # `idBase` gains the separator it was missing, a `dir` loses the one it ended
+  # with — so a form still holding the raw input stays dirty for ever over a save
+  # that succeeded, offering to write again what the file already says.
+  mutate web "a form goes on holding what it typed after the save landed" "$PFF" \
+    '    submit: () => save.save(edits, () => setTouched({})),' \
+    '    submit: () => save.save(edits),'
+
   # **A whole draft is not a record of what anybody edited**, and round 1 of the
   # review found the lost edit: edit Name while another writer adds a mark, take
   # the 409, Reload, Save — and a form that treats every field as touched writes

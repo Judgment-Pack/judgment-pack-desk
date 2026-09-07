@@ -112,7 +112,13 @@ export function useProjectFileDraft<D>(
       setTouched(touchedIn(next, seed))
     },
     changed,
-    submit: () => save.save(edits),
+    // **A save that landed withdraws what this form was holding.** The file
+    // then says the decoded value — `https://acme.example/packs` comes back as
+    // `…/packs/`, `packs/` as `packs` — and a form still holding the raw input
+    // would stay dirty over a save that succeeded, offering to write again what
+    // the file already says and never showing the normalised value its own hint
+    // promised.
+    submit: () => save.save(edits, () => setTouched({})),
     save
   }
 }

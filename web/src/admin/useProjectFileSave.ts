@@ -293,8 +293,17 @@ export interface ProjectFileSave {
   refusal: string | undefined
   /** What the last save that landed said. */
   said: string | undefined
-  /** Write the member, with only the fields the reader actually changed. */
-  save: (edits: readonly MemberEdit[]) => void
+  /**
+   * Write the member, with only the fields the reader actually changed.
+   *
+   * `onSaved` runs when the write lands, and only then. It is how a form
+   * withdraws the values it was holding: what the file says afterwards is the
+   * **decoded** value, which is not always what was typed — an `idBase` gains
+   * the separator it was missing, a `dir` loses its trailing one — and a form
+   * that went on holding the raw input would stay dirty for ever over a save
+   * that succeeded, offering to write again what the file already says.
+   */
+  save: (edits: readonly MemberEdit[], onSaved?: () => void) => void
   /**
    * Read the file again and hold what it says, so the next save states a
    * digest that is true.
@@ -388,7 +397,7 @@ export function useProjectFileSave(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const save = (edits: readonly MemberEdit[]) => {
+  const save = (edits: readonly MemberEdit[], onSaved?: () => void) => {
     if (blocked !== undefined || base === undefined) return
     setProblems([])
     setSaid(undefined)
@@ -416,6 +425,9 @@ export function useProjectFileSave(
           )
           void client.invalidateQueries({ queryKey: DESK_CONFIG_QUERY_KEY })
           setSaid(SAVED)
+          // Last, and only on a write that landed: the fields go back to
+          // following the file, which now says what the decoder made of them.
+          onSaved?.()
         }
       }
     )
