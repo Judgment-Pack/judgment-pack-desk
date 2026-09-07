@@ -5069,11 +5069,16 @@ export function assistantTransport(): Transport {
   # **The model turn goes back as it came, or the signature does not.** The
   # scripted endpoint refuses a continuation that dropped a signed part, so this
   # fails at the wire rather than at an assertion about the page.
-  mutate web "a Gemini thought signature is dropped when the summary is joined" "$BG" \
-    "    if (typeof arriving.thoughtSignature === 'string' && arriving.thoughtSignature !== '') {
-      last!.thoughtSignature = arriving.thoughtSignature
-    }" \
-    '    void arriving.thoughtSignature'
+  # **Retargeted, and the row it replaces is gone with the defect.** It used to
+  # break the carry-over of a signature onto a *joined* part — the very thing
+  # round 1 found was wrong. There is no carry-over now: a signed part is never
+  # joined, so the property to break is that the part goes back at all.
+  mutate web "a Gemini thought signature is dropped on the way back" "$BG" \
+    "  return parts
+    .map((part) => (typeof part.thoughtSignature === 'string' ? part.thoughtSignature : ''))" \
+    "  return []
+  return parts
+    .map((part) => (typeof part.thoughtSignature === 'string' ? part.thoughtSignature : ''))"
   mutate web "the Gemini turn is rebuilt rather than echoed back" "$BG" \
     '    messages.push(
       turn.assistant ?? {' \
@@ -5109,7 +5114,7 @@ export function assistantTransport(): Transport {
   # …and applied at every depth, because a schema'"'"'s keywords live inside
   # `properties`, `items` and `$defs` as much as at the top.
   mutate web "the removal list is applied at the top level only" "$GS" \
-    '    const walked = withoutUnsupportedKeywords(value, key === '"'"'properties'"'"' || key === '"'"'$defs'"'"')' \
+    '    const walked = withoutKeywords(value, removals, inNameMap ? false : namesUnder(key))' \
     '    const walked = value'
   # A keyword the list does not name is **reported**, never stripped: a desk
   # that widened its idea of the runtime'"'"'s contract on being refused would show
@@ -5167,6 +5172,108 @@ export function assistantTransport(): Transport {
   mutate web "the Gemini re-framing decides from the body rather than the address" "$VR" \
     "  if (family === 'gemini') return suffix.includes(':streamGenerateContent')" \
     '  if (false) return false'
+
+  # ---- Round 1's five findings, each broken again ---------------------------
+  #
+  # A row per ruling, and each one restores the exact shape the review found.
+  SM=web/src/assistant/conformance/scriptedModel.ts
+
+  # **A signature certifies the exact bytes it came with.** Merging a signed
+  # part with an unsigned one produces a signature over text the endpoint never
+  # signed; merging two signed parts throws one away.
+  mutate web "a signed Gemini part is merged with the one beside it" "$BG" \
+    '    !signed(last) &&
+    !signed(arriving) &&' \
+    ''
+  # And the other half of the same rule: the earlier signature must not be
+  # overwritten by a later one, which is what a merge of two signed parts does.
+  mutate web "the joined Gemini part takes the later signature" "$BG" \
+    '    (last!.thought === true) === (arriving.thought === true)
+  ) {
+    last!.text = (last!.text ?? '"'"''"'"') + (arriving.text ?? '"'"''"'"')
+    return' \
+    '    (last!.thought === true) === (arriving.thought === true)
+  ) {
+    last!.text = (last!.text ?? '"'"''"'"') + (arriving.text ?? '"'"''"'"')
+    if (signed(arriving)) last!.thoughtSignature = arriving.thoughtSignature
+    return'
+
+  # **A signed thought part with no text is the endpoint reasoning.** The wire
+  # emits one when a summary is empty, and counting only readable passages let a
+  # model think through every turn at tier off without the desk noticing.
+  mutate web "an empty signed thought part is not reasoning seen" "$BG" \
+    '    (part) => part.thought === true && (signed(part) || (part.text ?? '"'"''"'"') !== '"'"''"'"')' \
+    "    (part) => part.thought === true && (part.text ?? '') !== ''"
+
+  # **A name is not a keyword.** A definition called `const` was deleted as
+  # though it were the keyword, leaving a `$ref` pointing at nothing.
+  mutate web "the walker knows only two of the schema name maps" "$GS" \
+    "  'properties',
+  '\$defs',
+  'definitions',
+  'dependentSchemas',
+  'dependentRequired',
+  'patternProperties'
+]" \
+    "  'properties',
+  '\$defs'
+]"
+  # And the second layer of the same mistake, found by writing the test: a key
+  # *inside* a name map is a name, so its value is an ordinary schema.
+  mutate web "a name inside a name map is read as a name-map keyword" "$GS" \
+    '    const walked = withoutKeywords(value, removals, inNameMap ? false : namesUnder(key))' \
+    '    const walked = withoutKeywords(value, removals, namesUnder(key))'
+
+  # **Gemini signs the first functionCall part**, and the fixture's validator
+  # called every placement outside a thought part malformed — which would have
+  # refused the shape the wire actually sends.
+  mutate web "a signature on a function call is called malformed" "$SM" \
+    '      const onCall = part.functionCall !== undefined' \
+    '      const onCall = false'
+  # The desk's own half of it: a scanner that reads only thought parts never
+  # compares the signature function calling actually carries.
+  mutate web "the Gemini scanner reads a signature only off a thought part" "$VR" \
+    '      typeof block?.thoughtSignature === '"'"'string'"'"' &&
+      (block.thought === true || block.functionCall !== undefined)' \
+    "      typeof block?.thoughtSignature === 'string' && block.thought === true"
+  # And the ledger's: a signature the SDK surfaces on a tool call has to be
+  # recorded, or there is nothing to compare the outgoing one against.
+  mutate web "the SDK-backed engine ledgers no signature from a function call" "$VL" \
+    "      if (part.type === 'tool-call') {
+        const onCall = signatureOf(session.model.family, part)" \
+    "      if (false) {
+        const onCall = signatureOf(session.model.family, part)"
+
+  # **The declaration is derived, or it is a sentence that rots.** Widening it by
+  # hand is the failure this leg exists for.
+  mutate web "the declared SDK removal set is widened by hand" "$GS" \
+    "  'uniqueItems',
+  'writeOnly'
+]" \
+    "  'uniqueItems',
+  'writeOnly',
+  'format'
+]"
+  # …and narrowing it is the same failure the other way.
+  mutate web "the declared SDK removal set loses a keyword" "$GS" \
+    "  'pattern',
+  'prefixItems'," \
+    "  'prefixItems',"
+  # The empty-object omission is not a keyword and is declared separately: a
+  # tool with no properties is declared to the model with no parameters at all.
+  mutate web "the empty-schema omission is not declared" "$GS" \
+    "  if (engine === 'vercel' && isEmptyObjectSchema(served)) return undefined" \
+    '  if (false) return undefined'
+  # **Deep equality, or the leg is a claim about a handful of words.** A subset
+  # assertion is what let two engines show two contracts and pass.
+  mutate web "the schema leg asserts a subset rather than the whole schema" "$CT" \
+    '        expect(request.schemas, `${request.step} sent a different schema`).toEqual(shown)' \
+    '        expect(request.schemas.length).toBe(shown.length)'
+  # **Never silent.** An author reading a proposal should not have to discover
+  # that the model saw a wider contract than the runtime enforces.
+  mutate web "the narrowing is not reported to the author" "$EC" \
+    '    events.push({ type: '"'"'guardrail'"'"', tool: tool.name, action: '"'"'narrowed'"'"', detail: narrowingNotice(lost) })' \
+    '    void narrowingNotice(lost)'
 fi
 
 restore
