@@ -46,6 +46,25 @@ const ENDPOINT = {
   tools: scenario.scenarioTools
 }
 
+/**
+ * A desk whose desk-level read **answered with a refusal**.
+ *
+ * Not an absent file and not a refused decode: a read that did not produce one
+ * at all, which establishes nothing about what is in it. The slot reports that
+ * as its own state rather than falling through to the defaults, which is what
+ * used to make the tab say no assistant was configured.
+ */
+const UNREAD: EffectiveConfig = effectiveConfig(undefined, undefined, undefined, {
+  path: '/home/someone/.config/jpack-desk/desk.json',
+  present: false,
+  readFailure: {
+    reason: 'the desk could not read it',
+    responseReceived: true,
+    status: 503,
+    source: 'chassis'
+  }
+})
+
 function config(assistant: unknown): EffectiveConfig {
   return effectiveConfig(undefined, undefined, undefined, {
     path: '/home/someone/.config/jpack-desk/desk.json',
@@ -129,6 +148,8 @@ function DraftHarness({
  */
 async function draw(options: {
   assistant?: unknown
+  /** A desk whose own configuration read did not produce a file. */
+  unreadConfiguration?: boolean
   keyPresent?: boolean
   prompts?: Record<string, { text: string; hold?: Promise<void>; fails?: string }>
   /** Leave the model's answer in flight, so a run is still open. */
@@ -186,7 +207,13 @@ async function draw(options: {
   render(
     <QueryClientProvider client={testQueryClient()}>
       <McpContext.Provider value={connected({ client })}>
-        <DeskConfigFixture value={config(options.assistant ?? { endpoint: ENDPOINT })}>
+        <DeskConfigFixture
+          value={
+            options.unreadConfiguration === true
+              ? UNREAD
+              : config(options.assistant ?? { endpoint: ENDPOINT })
+          }
+        >
           {options.buffer === undefined ? (
             <AssistantPane
               draft={options.draft}
@@ -234,6 +261,18 @@ describe('where there is no assistant to run', () => {
   it('says where a key goes where an endpoint is configured and none is stored', async () => {
     await draw({ keyPresent: false })
     expect(await screen.findByText(/no key is stored on this machine/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Run' })).toBeNull()
+  })
+
+  it('says the configuration could not be read, rather than that there is none', async () => {
+    // **Three sentences and not two.** A read that did not produce a file
+    // establishes nothing about what is in it; saying "no assistant is
+    // configured" there is the page reporting an absence it did not observe,
+    // and offering the configure-one repair sends a reader to a form that
+    // will not write either.
+    await draw({ unreadConfiguration: true })
+    expect(await screen.findByText(/could not read its own configuration/)).toBeTruthy()
+    expect(screen.queryByText(/No assistant is configured on this desk/)).toBeNull()
     expect(screen.queryByRole('button', { name: 'Run' })).toBeNull()
   })
 })

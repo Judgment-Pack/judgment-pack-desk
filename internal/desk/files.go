@@ -234,6 +234,27 @@ const (
 	// which member. **Nothing is written**, which is the point of composing
 	// the file and decoding it before it goes anywhere near the disk.
 	CodeDeskConfigRefused = "desk-config-refused"
+	// CodeAssistantListingRefused is a model listing whose body carried the
+	// configured key.
+	//
+	// **The one relayed answer this desk reads, and the one it may refuse for
+	// its content.** Model traffic is consumed by an engine in code; a model
+	// *listing* is a set of strings the desk puts on the page, into React
+	// state and into a field a person can copy — so an endpoint that reflects
+	// its own credential as a model id would hand the machine-held key to the
+	// browser through a route whose whole purpose is that it never reaches
+	// there. The body is read whole, bounded, scanned, and forwarded verbatim
+	// or not at all: **nothing of it travels** when this answers.
+	//
+	// A body past the bound answers this too. A listing this desk cannot read
+	// to the end is a listing it cannot say anything about, and forwarding the
+	// part it did read would be the truncation every other bound here refuses.
+	//
+	// It is exact-and-contains, on the same twelve-byte floor the answer
+	// headers use, and the README says what that does not catch: a *derived*
+	// representation — base64, percent-encoded, hex, half of it — is not
+	// detectable by any comparison, which is the ruling chunk 1 already took.
+	CodeAssistantListingRefused = "assistant-listing-refused"
 	// CodeInternal is everything with no better answer. A client that branches
 	// on this is a client guessing, which is what the others are for.
 	CodeInternal = "internal"
@@ -277,6 +298,10 @@ var codeStatus = map[string]int{
 	CodeAssistantRelayPath:     http.StatusBadRequest,
 	CodeAssistantRelayBusy:     http.StatusServiceUnavailable,
 	CodeAssistantRelayUpstream: http.StatusBadGateway,
+	// The endpoint answered and this desk will not repeat what it said: a bad
+	// gateway, like an endpoint that never answered, because the fault is at
+	// the other end and no retry of the same request changes it.
+	CodeAssistantListingRefused: http.StatusBadGateway,
 	// The desk-level write's two: a file that moved under the writer is the
 	// same 409 every conditional commit here answers, and bytes this desk
 	// would not read back are a request it understood and will not act on.
@@ -296,6 +321,7 @@ var allCodes = []string{
 	CodeStagingFile, CodeExcludedDirectory,
 	CodeAssistantUnconfigured, CodeAssistantNoKey, CodeAssistantUnusableStore,
 	CodeAssistantRelayPath, CodeAssistantRelayBusy, CodeAssistantRelayUpstream,
+	CodeAssistantListingRefused,
 	CodeAssistantKeyUnbound, CodeDeskConfigChanged, CodeDeskConfigRefused,
 	CodeInternal,
 }

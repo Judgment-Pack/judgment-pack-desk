@@ -38,6 +38,8 @@ import {
   type AssistantEndpointConfig
 } from '../config/deskConfig'
 import { PROBE_DIAGNOSTICS } from './client'
+import { PREFILLED_URL } from './endpointDraft'
+import { LISTING_SUFFIX } from './modelListing'
 import { suffixProblem } from './session'
 import type { AssistantSlot } from './useAssistantSlot'
 
@@ -456,15 +458,68 @@ describe('(5) no endpoint literal in the source — a WEAK, enumerated guard', (
       // would fail rather than arrive somewhere.
       'https://relay.invalid'
     ]
+    // **The three prefills, admitted in one module and as nothing but values
+    // of one table.** Admin's form offers the base each protocol's own
+    // reference documents, so that choosing a wire protocol does not mean
+    // retyping an address the README already names — and every one of them is
+    // replaced by typing over it. That is a *default in an editable field*,
+    // which is a different thing from a destination the desk holds: nothing
+    // reads them back, and the sharper guard above — every host comparison in
+    // these directories is a loopback name — is what says so and is untouched.
+    // Admitting them anywhere else, or under any other name, still fails.
+    const prefills = Object.values(PREFILLED_URL)
+    const PREFILL_MODULE = 'assistant/endpointDraft.ts'
     for (const source of sourcesUnder('assistant', 'config', 'routes')) {
       if (source.path.includes('.test.')) continue
       for (const literal of [...source.text.matchAll(/https:\/\/[^\s'"`)]+/g)].map((m) => m[0])) {
+        const prefill = prefills.includes(literal) && source.path === PREFILL_MODULE
         expect(
-          allowed.some((prefix) => literal.startsWith(prefix)),
+          prefill || allowed.some((prefix) => literal.startsWith(prefix)),
           `${source.path} carries the literal ${literal}`
         ).toBe(true)
       }
     }
+  })
+
+  it('keeps every prefill inside that one table, and nothing else in it', () => {
+    // The other half of the allowance: the module admitted above must carry
+    // the three literals **as the table** and carry no fourth address of its
+    // own. Read off the file rather than off the export, so a literal written
+    // beside the table — a comment's example, a second map — fails here.
+    const source = sourcesUnder('assistant').find(
+      (each) => each.path === 'assistant/endpointDraft.ts'
+    )
+    expect(source, 'the prefill table is in its own module').toBeDefined()
+    const literals = [...source!.text.matchAll(/https:\/\/[^\s'"`)]+/g)].map((m) => m[0])
+    expect(literals.sort()).toEqual(Object.values(PREFILLED_URL).sort())
+    // One per kind, and each a distinct address: a table with two kinds on one
+    // base would be a picker that changes the protocol and not the endpoint.
+    expect(Object.keys(PREFILLED_URL).sort()).toEqual([...ASSISTANT_KINDS].sort())
+    expect(new Set(Object.values(PREFILLED_URL)).size).toBe(ASSISTANT_KINDS.length)
+  })
+})
+
+describe('(5a) the listing suffixes are one table, on both sides', () => {
+  it('is the same map the relay scans by', () => {
+    // **The relay reads a listing's body and no other answer's**, because a
+    // listing is the one relayed answer the desk *renders* — into a picker,
+    // into state, into a field somebody can copy. Which requests are listings
+    // is decided by this table on both sides: a suffix the page asks at and
+    // the relay does not scan is an answer rendered unscanned, and one the
+    // relay scans and the page never asks at is a scan of nothing.
+    const source = readFileSync(
+      join(SRC, '..', '..', 'internal', 'desk', 'modelrelay.go'),
+      'utf8'
+    )
+    const block = /var relayListingSuffix = map\[string\]string\{([\s\S]*?)\n\}/.exec(source)
+    expect(block, 'relayListingSuffix is declared in internal/desk/modelrelay.go').not.toBeNull()
+    const declared = Object.fromEntries(
+      [...block![1]!.matchAll(/"([^"]+)":\s*"([^"]*)"/g)].map((match) => [match[1]!, match[2]!])
+    )
+    expect(declared).toEqual({ ...LISTING_SUFFIX })
+    // And it covers every kind either side admits, so a fourth protocol
+    // cannot arrive with no listing rule at all.
+    expect(Object.keys(declared).sort()).toEqual([...ASSISTANT_KINDS].sort())
   })
 })
 
@@ -576,11 +631,29 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
     // chassis' session token, and an engine holding it can open `/ws?token=…`
     // itself over a connection no gate is on.
     const source = read('assistant/engine.ts')
-    expect(membersOf(interfaceBody(source, 'ModelRequest'))).toEqual(['headers', 'body', 'signal'])
+    expect(membersOf(interfaceBody(source, 'ModelRequest'))).toEqual([
+      'headers',
+      'method',
+      'body',
+      'signal'
+    ])
     expect(source).toContain(
       'export type ModelCall = (suffix: string, request: ModelRequest) => Promise<Response>'
     )
     expect(source).toContain('model: { family: EndpointKind; model: string; call: ModelCall }')
+  })
+
+  it('admits two methods and no more, because the relay forwards the method', () => {
+    // **`method` is the one member this set has grown, and it is a closed
+    // pair.** The relay carries the method verbatim, so an open member would
+    // let whoever holds a capability ask the configured endpoint to *do*
+    // something nobody wrote down with the machine-held credential attached —
+    // the same argument that closes the path's colon methods. `GET` is here
+    // because each protocol's model listing is one and the listing goes over
+    // this capability rather than round it; the type is what holds the pair,
+    // and this reads the declaration so that widening it fails here.
+    const source = read('assistant/engine.ts')
+    expect(source).toContain("method?: 'GET' | 'POST'")
   })
 
   // **The string-enumeration guard that used to stand here is gone.** It

@@ -537,12 +537,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the key is logged beside the event" "$A" \
     '	s.log.Printf("desk: the assistant key was stored on this machine for %s", origin)' \
     '	s.log.Printf("desk: the assistant key %s was stored on this machine for %s", key, origin)'
-  # **Repaired**: the answer is built by `keyState` now that it carries the
-  # binding too. The mutation is the same defect — the value where the
-  # fingerprint belongs.
+  # **Repaired twice**: the answer is built by `keyState`, which now carries
+  # the binding *and this desk's verdict about it* — so gofmt aligned the
+  # literal and the needle moved with it. The mutation is the same defect it
+  # always was: the value where the fingerprint belongs.
   mutate go "the key is answered to the page instead of its fingerprint" "$A" \
-    '		Fingerprint: fingerprint(stored.key),' \
-    '		Fingerprint: stored.key,'
+    'Fingerprint:      fingerprint(stored.key),' \
+    'Fingerprint:      stored.key,'
   # Four and four discloses a short key in full. Eight and not one: at one,
   # `runes[:4]` on a shorter key panics, and a mutation that crashes the suite
   # has not been survived — it has not been tested.
@@ -1224,6 +1225,70 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		return
 	}' \
     ''
+
+  # ---- The one relayed answer the desk reads ------------------------------
+  #
+  # A listing is a set of strings this desk renders — into a picker, into page
+  # state, into a field somebody can copy — so an endpoint that reflects its own
+  # credential as a model id would hand the machine-held key to the browser
+  # through the route that exists so it never gets there. The page cannot help:
+  # it has never held the key and could not recognise one.
+  # `false &&` rather than `false`: the mutation has to keep `typed` used, or it
+  # does not compile — and a mutation that does not compile has not been
+  # survived, it has not been tested.
+  mutate go "a model listing is forwarded without being scanned" "$MR" \
+    '			if carries(typed) {
+				return errListingCarriesKey
+			}' \
+    '			if false && carries(typed) {
+				return errListingCarriesKey
+			}'
+  # A listing this desk cannot read to the end is one it cannot say anything
+  # about, and forwarding the part it did read is the truncation every other
+  # bound here refuses.
+  # **A scan that cannot read a body cannot clear it.** A decode error used to
+  # fall back to the raw bytes, so plain text, an empty answer, a truncated
+  # document or malformed JSON with an escaped credential past the error was
+  # forwarded whenever the literal key bytes happened to be absent.
+  mutate go "a listing this desk cannot read is forwarded anyway" "$MR" \
+    '	if values != 1 || depth != 0 {
+		return errListingNotJSON
+	}' \
+    '	if false {
+		return errListingNotJSON
+	}'
+  mutate go "a decode failure is not a refusal" "$MR" \
+    '		if err != nil {
+			return errListingNotJSON
+		}' \
+    '		if err != nil {
+			break
+		}'
+  # **The half of the answer no bound reached.** `boundedByIdle` is installed
+  # once the transport has a response, so an endpoint that accepted a request
+  # and then sent nothing at all — not a header, not a byte — was held by the
+  # overall deadline, and four of them exhausted every slot for ten minutes.
+  mutate go "the wait for the first byte is bounded by nothing but the overall deadline" "$MR" \
+    '		Transport:     beforeTheFirstByte{inner: relayTransport, cancel: cancel},' \
+    '		Transport:     relayTransport,'
+  # A number outside float64 is a valid JSON document, and whether Go can hold
+  # it is not a fact about the endpoint's listing.
+  mutate go "a listing is refused for a number Go cannot hold" "$MR" \
+    '	decoder.UseNumber()' \
+    ''
+  # The listing branch buffers rather than streams, so the wrapper that bounds
+  # every other answer never reached it: one byte and a stall held a slot until
+  # the overall deadline.
+  mutate go "a stalled listing is bounded only by the overall deadline" "$MR" \
+    '				bounded := boundedByIdle(response.Body, cancel)' \
+    '				bounded := response.Body'
+  mutate go "an over-long listing is forwarded as far as it was read" "$MR" \
+    '				if len(read) > maxListingBody {
+					return errListingTooLarge
+				}' \
+    '				if false {
+					return errListingTooLarge
+				}'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -3763,11 +3828,184 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # retains nothing, and the row above holds that.
   # A key is not removed by removing the endpoint, so the page must not say so.
   mutate web "no endpoint is reported as no key" "$AS" \
-    "          {endpoint === null ? 'none — no endpoint configured' : 'a model endpoint'}" \
-    "          {endpoint === null ? 'none — no assistant, and no key' : 'a model endpoint'}"
+    "              ? 'none — no endpoint configured'" \
+    "              ? 'none — no assistant, and no key'"
   mutate web "a diagnostic is rendered as the bare word" "$AS" \
     "      {result.diagnostic !== '' && (" \
     "      {false && result.diagnostic !== '' && ("
+
+  # ---- The Admin form: what it writes, and what it will not ---------------
+  #
+  # Chunk 5c turns this section into a form, so the desk's *second* write is
+  # now made by page code. Each row below breaks one of the bounds that makes
+  # that safe, and every catcher is a test that reads the request on the wire
+  # rather than the rendering — a form that showed the right thing and sent the
+  # wrong one is exactly the failure these exist for.
+  ED=web/src/assistant/endpointDraft.ts
+  EF=web/src/assistant/EndpointForm.tsx
+  MF=web/src/assistant/ModelField.tsx
+  KB=web/src/assistant/keyBinding.ts
+
+  # **The page must not compute the binding**, and it did: with the browser's
+  # `URL`, which drops an explicit `:443` where Go's `url.Parse` keeps it. A
+  # key stored for a host and a configuration naming the same host with its
+  # default port written out showed as bound here while the relay answered
+  # `assistant-key-unbound` and sent nothing. The verdict is the desk's.
+  mutate web "the page decides the binding for itself again" "$KB"     '  return key.bound ? '"'"'bound'"'"' : '"'"'rebind'"'"''     '  return key.origin === key.configuredOrigin && key.kind === endpoint.kind
+    ? '"'"'bound'"'"'
+    : '"'"'rebind'"'"''
+
+  # **A draft is page state, and a spread writes whatever it is carrying** into
+  # the one file on this machine that names where a credential is presented.
+  # The chassis would refuse a key-shaped member, which is what makes this a
+  # rule rather than a hole — and the difference between a rule and a backstop
+  # is that the rule is the one you can point at.
+  mutate web "the written object is spread from the draft rather than named" "$ED" \
+    '  return {
+    endpoint: {
+      url: draft.url.trim(),
+      kind: draft.kind,
+      model: draft.model.trim(),
+      tools: ASSISTANT_TOOLS.filter((tool) => draft.tools.includes(tool))
+    },
+    engine: draft.engine,
+    thinking: draft.thinking
+  }' \
+    '  return {
+    ...(draft as unknown as Record<string, unknown>),
+    endpoint: {
+      ...(draft as unknown as Record<string, unknown>),
+      url: draft.url.trim(),
+      kind: draft.kind,
+      model: draft.model.trim(),
+      tools: ASSISTANT_TOOLS.filter((tool) => draft.tools.includes(tool))
+    },
+    engine: draft.engine,
+    thinking: draft.thinking
+  }'
+  # **A write with no digest is a page overwriting whatever it found**, on the
+  # file that names the endpoint a credential goes to. The empty string is not
+  # "no opinion": it is the claim that there is no file.
+  mutate web "the configuration write states no digest at all" "$EF" \
+    '      { assistant, ifMatch: digest },' \
+    "      { assistant, ifMatch: '' },"
+  # **The write already answers with the slot and the digest**, and leaving the
+  # tab, Describe it and the key row to a second GET meant a write that landed
+  # under a read that hung left every one of them describing the endpoint that
+  # had just been replaced, under a form that said "Saved".
+  mutate web "the write's own answer is thrown away" "$AQ" \
+    '      client.setQueryData<EffectiveConfig>(DESK_CONFIG_QUERY_KEY, (previous) =>
+        configAfterWrite(previous, written)
+      )' \
+    '      void written'
+  # The binding is the desk's verdict and a write can move it either way.
+  mutate web "the key binding is not re-read after a write" "$AQ" \
+    '      void client.invalidateQueries({ queryKey: ASSISTANT_KEY_QUERY_KEY })' \
+    ''
+  # A 409 says the file moved and nothing was written. Reload has to *read it
+  # again*: a button that only cleared the alert would leave the next Save
+  # stating the same stale digest, and the author pressing it twice.
+  mutate web "Reload clears the notice without reading the file again" "$EF" \
+    '                void client.refetchQueries({ queryKey: DESK_CONFIG_QUERY_KEY })' \
+    '                void client'
+  # **The row reads the desk's answer and nothing else.** It consulted the
+  # page's copy of the configuration first — which is exactly the thing that
+  # goes missing — so a desk-level read that answered with a refusal made the
+  # row say "save an endpoint first" while a perfectly good key read beside it
+  # named the endpoint and carried this desk's verdict about it.
+  mutate web "the key row consults the page before the chassis" "$KB" \
+    "  if (key.configuredOrigin === '') return 'no-endpoint'" \
+    "  if (key.configuredOrigin === '' || key.origin === '') return 'no-endpoint'"
+  # A read that did not produce a file is not a file that says none.
+  SL=web/src/assistant/useAssistantSlot.ts
+  mutate web "an unreadable configuration is reported as no assistant" "$SL" \
+    "    state: unread ? 'unavailable' : endpoint === null ? 'none' : 'configured'," \
+    "    state: endpoint === null ? 'none' : 'configured',"
+  # The relay refuses a credential entered for another destination before it
+  # opens a socket, so a listing offered here can only produce that refusal.
+  mutate web "List models is offered with no key bound to the endpoint" "$MF" \
+    '        <Button onClick={ask} disabled={!bound || !matchesSaved || asking}>' \
+    '        <Button onClick={ask} disabled={!matchesSaved || asking}>'
+  # **The gate came off the saved endpoint and the request came off the draft**,
+  # so choosing Gemini without saving sent `v1beta/models` to a still-saved
+  # OpenAI endpoint: a request composed for one destination and sent to another.
+  mutate web "the listing is offered while the form says another endpoint" "$MF" \
+    '        <Button onClick={ask} disabled={!bound || !matchesSaved || asking}>' \
+    '        <Button onClick={ask} disabled={!bound || asking}>'
+  # **Retired, with its reason.** It replaced the captured `saved` endpoint
+  # with the draft, and nothing failed — because the row above makes the two
+  # *equal* whenever the button can be pressed at all. The capture is still
+  # the clearer expression of "ask the endpoint in the file", and it is the
+  # second line of the same defence; what actually holds it is the gate, which
+  # has its own row. A row that cannot discriminate is worse than no row: it
+  # reports coverage for a safeguard nothing is measuring.
+  # A picker left standing after the endpoint moved is a list of models from
+  # somewhere else, offered against a form that no longer says that host — and
+  # rows merely *hidden* came back when the URL was changed away and back, with
+  # no request behind them. **Dropped from state**, and this is what says so:
+  # the mutation keeps them and hides them, which is the arrangement that was
+  # wrong rather than a weaker version of the right one.
+  mutate web "the rows are hidden when the endpoint moves rather than cleared" "$MF" \
+    '  const here = identityOf(draft)
+  if (rows !== undefined && askedFor !== here) {
+    setRows(undefined)
+    setAskedFor(undefined)
+    setRefusal(undefined)
+  }
+  const showing = rows !== undefined' \
+    '  const here = identityOf(draft)
+  const showing = rows !== undefined && askedFor === here'
+  # **The page names a suffix; the desk builds the address.** A listing that
+  # built its own URL would hold the endpoint — and, on this route, this
+  # chassis' session token — in page code that no gate is on.
+  mutate web "the listing address is built on the page" "$MF" \
+    '    listModels(target.kind, bindModelCall(target.kind)).then(' \
+    "    listModels(target.kind, async (suffix) =>
+      globalThis.fetch(\`\${target.url}/\${suffix}\`, { method: 'GET' })
+    ).then("
+  # **The picker offers what the file's reader would take, and asks the reader
+  # rather than carrying a copy of it.** A copy is how a whitespace-only id
+  # came to be an option: the decoder trims and the copy did not, so the choice
+  # saved cleanly into the field and produced a 422 on the next Save.
+  ML=web/src/assistant/modelListing.ts
+  mutate web "a listed id is offered without asking the decoder" "$ML" \
+    "    const { id: raw, display_name: shown } = entry as { id?: unknown; display_name?: unknown }
+    if (modelIdProblem(raw) !== undefined) continue" \
+    "    const { id: raw, display_name: shown } = entry as { id?: unknown; display_name?: unknown }
+    if (typeof raw !== 'string' || raw === '') continue"
+  mutate web "a listed Gemini id is offered without asking the decoder" "$ML" \
+    "      const raw = name.startsWith('models/') ? name.slice('models/'.length) : name
+      if (modelIdProblem(raw) !== undefined) continue" \
+    "      const raw = name.startsWith('models/') ? name.slice('models/'.length) : name
+      if (raw === '') continue"
+  # The id is what the endpoint answers to; the label is what a person reads,
+  # and the two differ on two of the three protocols.
+  mutate web "the model is saved from the listing label rather than its id" "$MF" \
+    '              options={rows!.map((row) => ({ value: row.id, label: row.label }))}' \
+    '              options={rows!.map((row) => ({ value: row.label, label: row.label }))}'
+  # **The slot's other state, which the schema has.** `assistant.endpoint` is
+  # one nullable field, and a form that could not write the null left a desk
+  # that had configured an endpoint able to reach None only through the generic
+  # file editor — while this page describes None as one of three states.
+  mutate web "removing the endpoint writes an endpoint object anyway" "$ED" \
+    '  return { endpoint: null, engine: draft.engine, thinking: draft.thinking }' \
+    '  return assistantWrite(draft)'
+  # How an assistant would run is not whether there is one, which is why the
+  # schema allows both beside a null endpoint.
+  mutate web "removing the endpoint discards the engine and the tier" "$ED" \
+    '  return { endpoint: null, engine: draft.engine, thinking: draft.thinking }' \
+    "  return { endpoint: null, engine: 'vercel', thinking: 'off' }"
+  # A picker offering a fourth tier offers a configuration the decoder refuses
+  # by name — and the two states it cannot express are the desk's to report.
+  mutate web "the tier picker offers a value outside the union" "$EF" \
+    '              options={TIER_OPTIONS}' \
+    "              options={[...TIER_OPTIONS, { value: 'always', label: 'always' }]}"
+  # **Deliberately not added: a second row for the key field being cleared
+  # before the request.** "the field is cleared only once the store has
+  # answered" above breaks exactly that assignment, and the form moved the
+  # field without moving the clearing — so a row here would be the same edit
+  # under a second name, and a duplicate row reports coverage twice for one
+  # safeguard held once.
 
   # ---- The assistant's guardrails, below whatever runs the loop -----------
   #
@@ -4887,8 +5125,43 @@ export function assistantTransport(): Transport {
   # a control that would refuse is worse than a sentence saying where the key
   # goes.
   mutate web "Describe is drawn with no key stored on this machine" "$DI" \
-    '  const usable = slot.endpoint !== null && slot.keyPresent' \
-    '  const usable = slot.endpoint !== null'
+    "  const usable = slot.state === 'configured' && slot.endpoint !== null && slot.keyPresent" \
+    "  const usable = slot.state === 'configured' && slot.endpoint !== null"
+  # **Aimed at the sentence, which is what differs.** Breaking `usable` cannot
+  # discriminate: a configuration this desk could not read falls through to the
+  # defaults, so the endpoint is null and the control is withheld by that
+  # clause anyway. What is not the same is what a reader is told — "no
+  # assistant is configured" is an absence this page did not establish about a
+  # file it could not open, and it offers a repair that sends them to a form
+  # which will not write either.
+  # **Admin is where a reader goes to find out why**, so it was the worst place
+  # to be still asserting an absence: it printed "none — no endpoint
+  # configured" over a form painted as editable, on the same page as its own
+  # notice saying the file could not be read.
+  AS2=web/src/assistant/AssistantSection.tsx
+  mutate web "Admin claims no endpoint from a file it could not read" "$AS2" \
+    "          {unavailable
+            ? 'this desk could not read its own configuration'
+            : endpoint === null" \
+    "          {false
+            ? 'this desk could not read its own configuration'
+            : endpoint === null"
+  # And the fields with it: they are the built-in defaults there, and typing
+  # into them would compose a write over a file nobody has seen.
+  mutate web "the form is editable over a file this desk could not read" "$EF" \
+    '      <fieldset disabled={busy || unavailable}>' \
+    '      <fieldset disabled={busy}>'
+  # The tab's own half of the same sentence: it renders the state directly
+  # rather than through `unusableBecause`, so breaking one does not break the
+  # other and each has its own row.
+  mutate web "the tab describes an unreadable configuration as having no assistant" "$AP" \
+    "        {slot.state === 'unavailable'" \
+    '        {false'
+  mutate web "an unreadable configuration is described as having no assistant" "$DI" \
+    "      slot.state === 'unavailable'
+        ? UNREAD_CONFIGURATION" \
+    "      false
+        ? UNREAD_CONFIGURATION"
 
   # Closing the dialog ends the session, and it has to end it **through the run
   # hook**: an unmount alone aborts the iterator and closes the socket without

@@ -82,6 +82,25 @@ export type CallTool = (name: string, args: Record<string, unknown>) => Promise<
 export interface ModelRequest {
   /** Protocol headers only. Anything outside the relay's allow-list is dropped. */
   headers?: Record<string, string>
+  /**
+   * `POST` where it is absent, which is what every model call is.
+   *
+   * **A closed pair rather than any method a caller names.** The relay
+   * forwards the method verbatim, so an open member would let whoever holds a
+   * capability ask the configured endpoint to *do* something nobody wrote
+   * down, with the machine-held credential attached — the same argument that
+   * makes the path's colon methods a closed list. `GET` is here because each
+   * protocol's model listing is one, and the listing goes over this capability
+   * for the reason everything else does: the page names a suffix, and the desk
+   * builds the address.
+   */
+  method?: 'GET' | 'POST'
+  /**
+   * Required, because every model call has one. A `GET` states the empty
+   * string and the desk sends none: `fetch` refuses a body on a `GET`, and an
+   * optional member here would make a body something a caller could forget on
+   * a `POST` rather than something it must decide.
+   */
   body: string
   signal?: AbortSignal
 }

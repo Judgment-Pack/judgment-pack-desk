@@ -339,6 +339,22 @@ function Mounted({
   )
 }
 
+/** A desk whose own configuration read did not produce a file. */
+function drawUnread() {
+  return drawWith(
+    effectiveConfig(undefined, undefined, undefined, {
+      path: '/home/someone/.config/jpack-desk/desk.json',
+      present: false,
+      readFailure: {
+        reason: 'the desk could not read it',
+        responseReceived: true,
+        status: 503,
+        source: 'chassis'
+      }
+    })
+  )
+}
+
 function draw(
   assistant: unknown = { endpoint: ENDPOINT },
   options: {
@@ -348,7 +364,18 @@ function draw(
     testPrompt?: 'none' | 'ok' | 'reject'
   } = {}
 ) {
-  const deskConfig = config(assistant)
+  return drawWith(config(assistant), options)
+}
+
+function drawWith(
+  deskConfig: EffectiveConfig,
+  options: {
+    persist?: boolean
+    secondPrompt?: 'ok' | 'reject' | 'hang'
+    validateSupported?: boolean
+    testPrompt?: 'none' | 'ok' | 'reject'
+  } = {}
+) {
   const router = createMemoryRouter(
     [
       {
@@ -440,6 +467,19 @@ describe('where there is no assistant to run', () => {
     serve({ keyPresent: false })
     draw()
     expect(await screen.findByText(/no key is stored on this machine/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Propose' })).toBeNull()
+  })
+
+  it('will not run against a configuration this desk could not read', async () => {
+    // **Not "no assistant is configured".** A read that did not produce a file
+    // establishes nothing about what is in it, and offering the configure-one
+    // repair there sends a reader to a form that will not write either. The
+    // control is withheld for the same reason: there is no slot to run
+    // against, only an absence nobody established.
+    serve()
+    drawUnread()
+    expect(await screen.findByText(/could not read its own configuration/)).toBeTruthy()
+    expect(screen.queryByText(/No assistant is configured on this desk/)).toBeNull()
     expect(screen.queryByRole('button', { name: 'Propose' })).toBeNull()
   })
 })

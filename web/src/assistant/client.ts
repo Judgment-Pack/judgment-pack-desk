@@ -44,6 +44,24 @@ export interface AssistantKeyState {
    */
   origin: string
   kind: string
+  /**
+   * The origin of the endpoint this desk is configured for **now**, and this
+   * desk's own verdict about whether the stored key would be presented to it.
+   *
+   * **Computed by the chassis, never by this page**, and the reason is a
+   * measured disagreement rather than a preference: the browser's `URL` drops
+   * an explicit `:443` where Go's `url.Parse` keeps it, so a key stored for a
+   * host and a configuration naming the same host with its default port
+   * written out read as bound here while the relay answered
+   * `assistant-key-unbound` and sent nothing. Two implementations of one rule
+   * is one too many, and the one that decides has to be the one that presents
+   * the credential. `configuredOrigin` is empty where no endpoint is
+   * configured or the configured URL has no origin to take.
+   */
+  configuredOrigin: string
+  /** That endpoint's wire protocol, empty alongside an empty origin. */
+  configuredKind: string
+  bound: boolean
 }
 
 /**
@@ -74,6 +92,29 @@ export const PROBE_DIAGNOSTICS = [
   'unexpected-status'
 ] as const
 export type ProbeDiagnostic = (typeof PROBE_DIAGNOSTICS)[number]
+
+/**
+ * What each of those words means, in plain English.
+ *
+ * A lookup rather than the word itself, because `unexpected-status` is not a
+ * sentence and `tls` is not English. It sits beside the vocabulary rather than
+ * in the section that first rendered it, because the model listing reports a
+ * refusal in the same words: two tables of one vocabulary drift, and the
+ * page's copy is what turns a word into a sentence a reader sees. A word
+ * outside the list has no entry, and a caller renders the word it was given
+ * rather than a blank — the desk does not invent a meaning for something it
+ * did not define.
+ */
+export const DIAGNOSTIC_SAYS: Record<string, string> = {
+  unauthorized: 'the endpoint did not accept the key',
+  forbidden: 'the endpoint refused this request',
+  'not-found': 'nothing is at that address',
+  timeout: 'no answer within ten seconds',
+  tls: 'the secure connection could not be established',
+  refused: 'nothing is listening there',
+  dns: 'that host name did not resolve',
+  'unexpected-status': 'the endpoint answered something unexpected'
+}
 
 /** What one reachability check established. */
 export interface ProbeResult {

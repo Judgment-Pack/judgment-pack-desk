@@ -190,6 +190,11 @@ describe('useAssistantSlot', () => {
     walk('')
     expect(offenders, 'the slot is read somewhere new').toEqual([
       'assistant/AssistantPane.tsx',
+      // Admin joined the list on purpose. It is where a reader goes to find
+      // out *why* an assistant is not running, so it was the one surface still
+      // asserting an absence — "none — no endpoint configured" — over a file
+      // this desk had just said it could not read. One reading, three readers.
+      'assistant/AssistantSection.tsx',
       'shell/DescribeIt.tsx'
     ])
   })

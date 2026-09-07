@@ -1,22 +1,20 @@
 /**
- * Admin › Assistant: the model slot, and the one key this desk keeps.
+ * Admin › Assistant: the endpoint this desk is configured for, and the one key
+ * it keeps.
  *
- * **This section carries the only write control on Admin today**, and the
- * reason is narrow enough to state in a sentence: a key must never be pasted
- * into a project file, so it cannot go through the file API, which writes only
- * inside the project. Everything else *rendered here* is read-only — effective
- * values, their source, and the exact JSON to paste.
+ * **This section carries the desk's two writes**, and each is exactly as wide
+ * as its reason. A key must never be pasted into a project file, so it cannot
+ * go through the file API — which writes only inside the project — and gets
+ * its own endpoint. The `assistant` object of the desk-level file is the
+ * other: choosing a model and a thinking tier is something an author does
+ * while working, and the alternative is telling them to edit a file in a
+ * configuration directory by hand between attempts.
  *
- * **That is a statement about this component, and no longer about the desk.**
- * The chassis has gained `PUT /api/desk-config`, which rewrites the
- * `assistant` object of the desk-level file under a conditional commit, and
- * `updateAssistantConfig` / `useUpdateAssistantConfig` are the page's call and
- * hook for it. **Nothing here invokes them yet**: the form that lets an author
- * choose an endpoint, a model and a thinking tier — and that shows
- * `keyRebindRequired` when the destination moves — is the next chunk. Until it
- * lands, the paste block below is how the endpoint is configured, and this
- * paragraph is here so that a reader meeting a read-only section does not
- * conclude the write does not exist.
+ * **The paste block is gone, and this paragraph is why.** It existed because
+ * the page could not write the file. It can, under a conditional commit that
+ * refuses a write the shared decoder would refuse — so the block would now be
+ * a second way to do one thing, and the one where a reader hand-edits the file
+ * this desk is also rewriting.
  *
  * **The three deployment states are text, not a control.** None, an endpoint
  * you already have, and an endpoint someone operates for you are not three
@@ -25,14 +23,30 @@
  * would give one of the three somewhere to acquire an affordance the other two
  * lack. So they are described, and what is configurable is the endpoint.
  *
+ * **A configuration this desk could not read is its own state here too.** The
+ * tab and Describe it say so; this section used to fall through to the
+ * built-in defaults and print "none — no endpoint configured" over a form
+ * painted as editable, on the same page as the notice saying the file could
+ * not be read. Two claims about one file, and the confident one was the false
+ * one.
+ *
+ * **The key row says which host the key is for.** The chassis records the
+ * scheme, host and wire protocol a key was entered for and presents it only
+ * there; a configuration write that moves any of the three leaves the key in
+ * place and unusable and answers `keyRebindRequired`. So the row reads the
+ * binding rather than leaving somebody to discover it by meeting a refusal.
+ *
  * Nothing on this page says chassis, bytes or path to the reader. The words
  * are the desk, this machine, and the file.
  */
-import { useRef, useState, type RefObject } from 'react'
+import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Fields } from '../components/primitives'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
-import { ASSISTANT_TOOLS } from '../config/deskConfig'
-import { PasteBlock, SourceBadge } from '../routes/adminBlocks'
+import { SourceBadge } from '../routes/adminBlocks'
+import { DIAGNOSTIC_SAYS, type AssistantKeyState } from './client'
+import { EndpointForm } from './EndpointForm'
+import { keyBinding, type KeyBinding } from './keyBinding'
+import { useAssistantSlot } from './useAssistantSlot'
 import {
   useAssistantKey,
   useProbeAssistant,
@@ -69,12 +83,24 @@ export const DEPLOYMENT_STATES: [string, string][] = [
 
 export function AssistantSection({ id, title }: { id: string; title: string }) {
   const { config, sources, desk } = useEffectiveConfig()
+  // **The same reading the tab and Describe it take.** A read that did not
+  // produce a file establishes nothing about what is in it, and this section
+  // is where a reader would go to find that out — so it must not be the one
+  // surface still asserting an absence.
+  const slot = useAssistantSlot()
+  const unavailable = slot.state === 'unavailable'
   const endpoint = config.assistant.endpoint
-  const { engine, thinking } = config.assistant
   const key = useAssistantKey()
   const store = useStoreAssistantKey()
   const remove = useRemoveAssistantKey()
   const probe = useProbeAssistant()
+  // **The answer to the last write, held until the key read disagrees with
+  // it.** The chassis says `keyRebindRequired` at the instant the endpoint
+  // moves, and waiting for the key read to be re-fetched would leave the row
+  // saying the key is bound for as long as that took. The read is the
+  // authority afterwards: storing a key answers with the new binding, and the
+  // row goes back to reading it.
+  const [rebindAsked, setRebindAsked] = useState(false)
   // **The field is uncontrolled, and that is the point.** It used to be React
   // state cleared with `setTyped('')` immediately before the request — which
   // reads as synchronous and is not: React batches the update, so `fetch`
@@ -94,6 +120,9 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
   const [storeProblem, setStoreProblem] = useState<string | undefined>(undefined)
   const [removeProblem, setRemoveProblem] = useState<string | undefined>(undefined)
 
+  const read = keyBinding(key.data)
+  const binding: KeyBinding = rebindAsked && read === 'bound' ? 'rebind' : read
+
   const submitKey = () => {
     const input = field.current
     const value = input?.value ?? ''
@@ -101,7 +130,10 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
     // taken effect by the next statement; a `setState` would not have.
     if (input) input.value = ''
     setStoreProblem(undefined)
-    store.submit(value, { onError: (error) => setStoreProblem(error.message) })
+    store.submit(value, {
+      onError: (error) => setStoreProblem(error.message),
+      onStored: () => setRebindAsked(false)
+    })
   }
 
   return (
@@ -114,7 +146,11 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
       <p>
         Assistant:{' '}
         <strong>
-          {endpoint === null ? 'none — no endpoint configured' : 'a model endpoint'}
+          {unavailable
+            ? 'this desk could not read its own configuration'
+            : endpoint === null
+              ? 'none — no endpoint configured'
+              : 'a model endpoint'}
         </strong>
         <br />
         <SourceBadge source={sources.assistant} path="jpack-desk.json" deskPath={desk?.path} />
@@ -130,98 +166,45 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
 
       <p className="quiet">
         The one member that does branch is <code>kind</code>, and it names the endpoint&apos;s{' '}
-        <strong>wire protocol</strong> rather than who runs it: the two protocols put the key in
+        <strong>wire protocol</strong> rather than who runs it: the three protocols put the key in
         different headers and the call on a different path, so no single request could satisfy
-        both. Nothing in the desk reads the host, compares it to a list, or behaves differently
+        them. Nothing in the desk reads the host, compares it to a list, or behaves differently
         for one endpoint than another.
       </p>
 
-      {endpoint !== null ? (
-        <Fields
-          items={[
-            ['Endpoint', <code key="url">{endpoint.url}</code>],
-            ['Protocol', <code key="kind">{endpoint.kind}</code>],
-            ['Model', <code key="model">{endpoint.model}</code>],
-            [
-              'Tools it may call',
-              endpoint.tools.length === 0 ? (
-                <span key="tools" className="quiet">
-                  none — the assistant may call no tool
-                </span>
-              ) : (
-                <code key="tools">{endpoint.tools.join(' · ')}</code>
-              )
-            ]
-          ]}
-        />
-      ) : (
-        <p className="quiet">
-          No endpoint is configured, so nothing here is set. Writing the block below into the
-          desk-level file configures one.
+      {unavailable && (
+        <p className="note note-warn" role="status">
+          <strong>Nothing below is what this desk is configured for.</strong> The file that would
+          say could not be read, so the form is showing its own defaults and is not editable —
+          changing it would be writing over something nobody has seen. The problem is named at
+          the top of this page, and the form comes back as soon as the file can be read.
         </p>
       )}
 
-      <Fields
-        items={[
-          ['Engine', <code key="engine">{engine}</code>],
-          ['Thinking', <code key="thinking">{thinking}</code>]
-        ]}
+      <EndpointForm
+        bound={binding === 'bound'}
+        unavailable={unavailable}
+        onWritten={(answer) => setRebindAsked(answer.keyRebindRequired)}
       />
-      <p className="quiet">
-        <strong>Both say how the assistant runs, not whether there is one</strong>, so they are
-        set beside the endpoint rather than inside it and apply with no endpoint configured.{' '}
-        <code>engine</code> names the loop — <code>vercel</code> by default,{' '}
-        <code>builtin</code> for a fallback that adds nothing to what this desk already ships —
-        and every one of them is held to the same promises by the desk rather than by itself.{' '}
-        <code>thinking</code> is the depth: <code>off</code> by default, then <code>on</code> and{' '}
-        <code>ultra</code>. Nothing in this release acts on either; they are read from the file
-        and shown here. A value outside those lists refuses the whole file by name.
-      </p>
 
       <p className="quiet">
-        The assistant may be given only these tools:{' '}
-        <code>{ASSISTANT_TOOLS.join(', ')}</code>. Every one of them is a question put to the
-        runtime, and the last is a rehearsal — it consults no reviewed set and decides no outcome.{' '}
-        <code>list_examples</code> is on the list because the runtime&apos;s own authoring prompt
-        tells the model to call it. A name outside that list is refused when the file is read,
-        rather than accepted and ignored, because a setting that appears to grant something is a
-        grant to whoever wrote it.
-      </p>
-
-      <PasteBlock
-        label="Add to the desk-level desk.json"
-        json={{
-          deskConfigVersion: 1,
-          assistant: {
-            endpoint: {
-              url: 'https://api.example.invalid/v1',
-              kind: 'openai-compatible',
-              model: 'a-model',
-              tools: [...ASSISTANT_TOOLS]
-            },
-            engine: 'vercel',
-            thinking: 'off'
-          }
-        }}
-      />
-      <p className="quiet">
-        <strong>This page does not write that block yet.</strong> The desk can — it rewrites just
-        the assistant part of the desk-level file, leaving everything else in it exactly as you
-        wrote it, and refusing the write if the file changed since this page read it. The controls
-        that use it, for choosing a model and how deeply it thinks, arrive in the next release.
-        Until then, paste the block above into the file yourself.
+        Saving writes only the assistant part of the file on this machine and carries everything
+        else in it across exactly as you wrote it. It refuses the write outright if the file
+        changed since this page read it, and refuses it again — before anything is written — if
+        what it would write is not something this desk reads.
       </p>
       <p className="quiet">
-        <strong>The key is not in that block, and there is no member it could go in.</strong> A
-        name that looks like a key — <code>apiKey</code>, <code>secret</code>, <code>token</code> —
-        refuses the whole file where it is written, rather than being quietly carried in a file
-        that may be committed. The key is stored below instead, on this machine only.
+        <strong>There is no key on this form, and no field it could go in.</strong> A name that
+        looks like a key — <code>apiKey</code>, <code>secret</code>, <code>token</code> — refuses
+        the whole file wherever it is written, rather than being quietly carried in a file that
+        may be committed. The key is stored below instead, on this machine only.
       </p>
 
       <KeyControl
-        state={key.data ?? { present: false, fingerprint: '' }}
+        state={key.data ?? NOTHING_READ}
         answered={key.isSuccess}
         failed={key.error}
+        binding={binding}
         field={field}
         onStore={submitKey}
         storeProblem={storeProblem}
@@ -260,51 +243,99 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
   )
 }
 
+/** What a row that has not been answered renders from. */
+const NOTHING_READ: AssistantKeyState = {
+  present: false,
+  fingerprint: '',
+  origin: '',
+  kind: '',
+  configuredOrigin: '',
+  configuredKind: '',
+  bound: false
+}
+
 /**
- * The key: whether there is one, and the two things that can be done about it.
+ * The key: whether there is one, **which endpoint it is for**, and the two
+ * things that can be done about it.
  *
  * **The field is never populated from anything.** There is no value to
  * populate it with — no endpoint returns the key — and a masked field showing
  * a placeholder of the right length would be this page inventing evidence
  * about a value it has never seen.
+ *
+ * **The field is not offered where storing one cannot work.** A key is written
+ * bound to the endpoint configured at that instant, so a desk with none has
+ * nothing to bind it to and the chassis refuses. The row asks for an endpoint
+ * to be saved instead of offering a field and letting the refusal explain.
  */
 function KeyControl({
   state,
   answered,
   failed,
+  binding,
   field,
   onStore,
   storeProblem,
   onRemove,
   removeProblem
 }: {
-  state: { present: boolean; fingerprint: string }
+  state: AssistantKeyState
   answered: boolean
   failed: Error | null
+  binding: KeyBinding
   field: RefObject<HTMLInputElement | null>
   onStore: () => void
   storeProblem: string | undefined
   onRemove: () => void
   removeProblem: string | undefined
 }) {
+  // Replace is a state of this row and not a second control: it opens the one
+  // field there is. It is cleared whenever the binding changes underneath it,
+  // because a row that has become "enter the key for another host" is already
+  // asking for exactly what Replace asked for.
+  const [replacing, setReplacing] = useState(false)
+  const [openedAt, setOpenedAt] = useState(binding)
+  if (openedAt !== binding) {
+    setOpenedAt(binding)
+    setReplacing(false)
+  }
+  const wanted = binding === 'none' || binding === 'rebind'
+  const entry = wanted || (binding === 'bound' && replacing)
+  // **The desk's own origin for the configured endpoint**, never one this
+  // page computed: the browser and Go disagree about an explicit default port,
+  // and a label that named a destination the chassis would not present to
+  // would be this page inventing the very fact the row exists to report.
+  const destination = state.configuredOrigin === '' ? undefined : state.configuredOrigin
+  const label = destination === undefined ? 'Key' : `Key for ${destination}`
+
   return (
     <>
       <p>
         Key: <strong>{keySays(state, answered, failed)}</strong>
       </p>
+      <p>{bindingSays(binding, state, destination)}</p>
+      {entry && (
+        <p>
+          <label htmlFor="assistant-key">{label}</label>{' '}
+          <input
+            id="assistant-key"
+            ref={field}
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            defaultValue=""
+          />{' '}
+          <button type="button" onClick={onStore}>
+            Store key
+          </button>
+        </p>
+      )}
       <p>
-        <label htmlFor="assistant-key">Key</label>{' '}
-        <input
-          id="assistant-key"
-          ref={field}
-          type="password"
-          autoComplete="off"
-          spellCheck={false}
-          defaultValue=""
-        />{' '}
-        <button type="button" onClick={onStore}>
-          Store key
-        </button>
+        {binding === 'bound' && !replacing && (
+          <button type="button" onClick={() => setReplacing(true)}>
+            Replace key
+          </button>
+        )}
         {state.present && (
           <>
             {' '}
@@ -333,10 +364,59 @@ function KeyControl({
       </p>
       <p className="quiet">
         <strong>The key and the endpoint are separate.</strong> Removing the endpoint from the
-        file above does not remove the key; the line above is what says whether one is still kept
-        here, and Remove key is what takes it away.
+        form above does not remove the key; the line above is what says whether one is still kept
+        here, and Remove key is what takes it away. It travels only to the endpoint it was
+        entered for: change the host or the protocol and it stays here, unusable, until somebody
+        enters it again — which this page cannot do for you, because it has never held it.
       </p>
     </>
+  )
+}
+
+/**
+ * The one sentence the binding is worth, per state.
+ *
+ * **Both halves of a mismatch are named.** A row that said only "enter the key
+ * again" would leave a reader unable to see *which* of the two moved — the
+ * endpoint they just saved, or a key entered months ago for somewhere else —
+ * and neither half is a secret: both are in the file this page already reads.
+ */
+function bindingSays(
+  binding: KeyBinding,
+  state: AssistantKeyState,
+  destination: string | undefined
+): ReactNode {
+  if (binding === 'unread') return <span className="quiet">this desk has not been asked yet</span>
+  if (binding === 'no-endpoint') {
+    return (
+      <span className="quiet">
+        Save an endpoint above before storing a key: a key is kept bound to the endpoint it was
+        entered for, so there has to be one to bind it to.
+      </span>
+    )
+  }
+  if (binding === 'none') {
+    return (
+      <span className="quiet">
+        No key is stored for <code>{destination}</code>.
+      </span>
+    )
+  }
+  if (binding === 'bound') {
+    return (
+      <span className="quiet">
+        The key stored here was entered for <code>{state.origin}</code> over{' '}
+        <code>{state.kind}</code>, which is where this desk is configured.
+      </span>
+    )
+  }
+  return (
+    <span className="quiet">
+      The key stored here was entered for <code>{state.origin}</code> over{' '}
+      <code>{state.kind}</code>. This desk is configured for <code>{destination}</code> over{' '}
+      <code>{state.configuredKind}</code>, so it will not be presented and nothing will be sent —
+      enter the key for <code>{destination}</code>.
+    </span>
   )
 }
 
@@ -348,7 +428,7 @@ function KeyControl({
  * which is said rather than rendered as a stored key with a blank beside it.
  */
 function keySays(
-  state: { present: boolean; fingerprint: string },
+  state: AssistantKeyState,
   answered: boolean,
   failed: Error | null
 ): string {
@@ -368,25 +448,6 @@ function keySays(
  * credential is therefore not reachable — a page that called a 401 reachable
  * would report a desk that cannot make one call as ready to work.
  */
-/**
- * What each word of the probe's vocabulary means, in plain English.
- *
- * A lookup rather than the word itself, because `unexpected-status` is not a
- * sentence and `tls` is not English. An answer outside the list renders as the
- * word it was given rather than as a blank — the desk does not invent a
- * meaning for something it did not define.
- */
-const DIAGNOSTIC_SAYS: Record<string, string> = {
-  unauthorized: 'the endpoint did not accept the key',
-  forbidden: 'the endpoint refused this request',
-  'not-found': 'nothing is at that address',
-  timeout: 'no answer within ten seconds',
-  tls: 'the secure connection could not be established',
-  refused: 'nothing is listening there',
-  dns: 'that host name did not resolve',
-  'unexpected-status': 'the endpoint answered something unexpected'
-}
-
 function ProbeReading({
   result
 }: {

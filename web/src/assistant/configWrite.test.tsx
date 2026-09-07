@@ -16,10 +16,11 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DESK_CONFIG_QUERY_KEY } from '../config/queries'
+import { effectiveConfig, type EffectiveConfig } from '../config/deskConfig'
 import { FileRequestError, StaleWrite } from '../files/client'
 import { testQueryClient } from '../testing/harness'
 import { updateAssistantConfig } from './client'
-import { useUpdateAssistantConfig } from './queries'
+import { ASSISTANT_KEY_QUERY_KEY, useUpdateAssistantConfig } from './queries'
 
 afterEach(() => {
   cleanup()
@@ -149,11 +150,73 @@ describe('the write hook', () => {
     )
     screen.getByRole('button', { name: 'write' }).click()
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('written'))
-    // **Invalidated rather than written into**, because what is cached is the
-    // *effective* configuration — two files layered, with each section's
-    // source — and a write answers with the assistant slot alone.
+    // **Set from the answer *and* invalidated**, in that order. The answer
+    // carries the slot the chassis read back off the disk and the digest the
+    // next write states; the re-read is for the parts a write cannot speak
+    // about — the project's own file, every other section's source badge.
     await waitFor(() =>
       expect(client.getQueryState(DESK_CONFIG_QUERY_KEY)?.isInvalidated).toBe(true)
+    )
+  })
+
+  it('sets the slot and the digest from the answer before it re-reads', async () => {
+    respond(200, WRITTEN)
+    const client = testQueryClient()
+    // A whole effective configuration, so the merge can be shown to carry the
+    // parts a write says nothing about rather than to rebuild them.
+    client.setQueryData(DESK_CONFIG_QUERY_KEY, {
+      ...effectiveConfig(undefined),
+      path: 'jpack-desk.json',
+      note: 'a note about the project file, which this write is not about'
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <Writer ifMatch={'a'.repeat(64)} />
+      </QueryClientProvider>
+    )
+    screen.getByRole('button', { name: 'write' }).click()
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('written'))
+    const cached = client.getQueryData(DESK_CONFIG_QUERY_KEY) as EffectiveConfig
+    expect(cached.config.assistant).toEqual(GEMINI)
+    expect(cached.sources.assistant).toBe('desk file')
+    expect(cached.desk).toEqual({
+      path: WRITTEN.path,
+      present: true,
+      problems: [],
+      sha256: WRITTEN.sha256
+    })
+    // Untouched, because the answer says nothing about it.
+    expect(cached.note).toBe('a note about the project file, which this write is not about')
+  })
+
+  it('writes nothing into a cache that holds nothing yet', async () => {
+    // There is nothing to carry across, and inventing the parts a write does
+    // not speak about is the thing this merge exists not to do.
+    respond(200, WRITTEN)
+    const client = testQueryClient()
+    render(
+      <QueryClientProvider client={client}>
+        <Writer ifMatch={'a'.repeat(64)} />
+      </QueryClientProvider>
+    )
+    screen.getByRole('button', { name: 'write' }).click()
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('written'))
+    expect(client.getQueryData(DESK_CONFIG_QUERY_KEY)).toBeUndefined()
+  })
+
+  it('re-reads the key too, because a write can move the binding either way', async () => {
+    respond(200, WRITTEN)
+    const client = testQueryClient()
+    client.setQueryData(ASSISTANT_KEY_QUERY_KEY, { marker: 'the binding read before' })
+    render(
+      <QueryClientProvider client={client}>
+        <Writer ifMatch={'a'.repeat(64)} />
+      </QueryClientProvider>
+    )
+    screen.getByRole('button', { name: 'write' }).click()
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('written'))
+    await waitFor(() =>
+      expect(client.getQueryState(ASSISTANT_KEY_QUERY_KEY)?.isInvalidated).toBe(true)
     )
   })
 

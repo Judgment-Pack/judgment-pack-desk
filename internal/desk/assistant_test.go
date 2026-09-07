@@ -2607,3 +2607,133 @@ func TestTheProbeDrainsTheWholeBody(t *testing.T) {
 		t.Errorf("diagnostic %v", body["diagnostic"])
 	}
 }
+
+func TestKeyReadCarriesThisDesksOwnBindingVerdict(t *testing.T) {
+	// **The page must not compute the binding, and this is what it reads
+	// instead.** It tried, with the browser's `URL`, which drops an explicit
+	// `:443` where Go's `url.Parse` keeps it — so a key stored for a host and
+	// a configuration naming the same host with its default port written out
+	// showed as bound on the page while the relay answered
+	// `assistant-key-unbound` and sent nothing at all.
+	//
+	// Both spellings are exercised in both directions, because the mismatch is
+	// symmetric and only one of the two is the one somebody types.
+	for _, testCase := range []struct {
+		name, stored, configured string
+		bound                    bool
+	}{
+		{"the same URL", "https://gw.example.invalid/v1", "https://gw.example.invalid/v1", true},
+		{"a path that moved", "https://gw.example.invalid/v1", "https://gw.example.invalid/v2?a=b", true},
+		{"the default port written out", "https://gw.example.invalid/v1", "https://gw.example.invalid:443/v1", false},
+		{"the default port taken away", "https://gw.example.invalid:443/v1", "https://gw.example.invalid/v1", false},
+		{"another host", "https://gw.example.invalid/v1", "https://other.example.invalid/v1", false},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			s, ts, _ := assistantServer(t)
+			storeKeyBoundTo(t, s, ts, "openai-compatible", testCase.stored)
+			writeDeskConfig(t, s, fmt.Sprintf(
+				`{"deskConfigVersion":1,"assistant":{"endpoint":`+
+					`{"url":%q,"kind":"openai-compatible","model":"m","tools":[]}}}`,
+				testCase.configured))
+			status, body := getJSON(t, ts, "/api/assistant/key?token="+testToken)
+			if status != http.StatusOK {
+				t.Fatalf("status %d: %v", status, body)
+			}
+			if got, _ := body["bound"].(bool); got != testCase.bound {
+				t.Errorf("bound %v, want %v (%v)", got, testCase.bound, body)
+			}
+			// The two origins the row names, both as this desk computes them.
+			origin, _ := endpointOrigin(testCase.configured)
+			if got, _ := body["configuredOrigin"].(string); got != origin {
+				t.Errorf("configuredOrigin %q, want %q", got, origin)
+			}
+			stored, _ := endpointOrigin(testCase.stored)
+			if got, _ := body["origin"].(string); got != stored {
+				t.Errorf("origin %q, want %q", got, stored)
+			}
+			// The configured protocol travels too, so the row that names both
+			// destinations reads both of them from the desk that decides
+			// rather than half from here and half from a configuration the
+			// page may not have been able to read.
+			if got, _ := body["configuredKind"].(string); got != "openai-compatible" {
+				t.Errorf("configuredKind %q", got)
+			}
+			// **And the verdict is the relay's own**: a request either goes or
+			// it does not, and the page is told which before it asks.
+			resp, relayBody := relayGet(t, ts, "models")
+			refused := codeOfBody(t, relayBody) == CodeAssistantKeyUnbound
+			if refused == testCase.bound {
+				t.Errorf("the relay answered %d %s while the read said bound=%v",
+					resp.StatusCode, relayBody, testCase.bound)
+			}
+		})
+	}
+}
+
+func TestKeyReadIsNotBoundWithNoEndpointToBindTo(t *testing.T) {
+	// A key stays in custody when the endpoint goes; it is simply not
+	// presentable. `configuredOrigin` is empty and the verdict is false, which
+	// is what the row on Admin renders as "save an endpoint first".
+	s, ts, _ := assistantServer(t)
+	storeKeyBoundTo(t, s, ts, "gemini", "https://gw.example.invalid")
+	writeDeskConfig(t, s, `{"deskConfigVersion":1,"assistant":{"endpoint":null}}`)
+	status, body := getJSON(t, ts, "/api/assistant/key?token="+testToken)
+	if status != http.StatusOK {
+		t.Fatalf("status %d: %v", status, body)
+	}
+	if present, _ := body["present"].(bool); !present {
+		t.Error("removing the endpoint removed the key")
+	}
+	if bound, _ := body["bound"].(bool); bound {
+		t.Error("a key with no endpoint to go to reported itself bound")
+	}
+	if got, _ := body["configuredOrigin"].(string); got != "" {
+		t.Errorf("configuredOrigin %q, want empty", got)
+	}
+	if got, _ := body["configuredKind"].(string); got != "" {
+		t.Errorf("configuredKind %q, want empty", got)
+	}
+}
+
+func TestKeyWriteAndRemovalCarryTheSameVerdict(t *testing.T) {
+	// One shape from all three key endpoints: a page that had to tell which
+	// call it was answering would be a page reassembling the state itself.
+	s, ts, _ := assistantServer(t)
+	writeDeskConfig(t, s, `{"deskConfigVersion":1,"assistant":{"endpoint":`+
+		`{"url":"https://gw.example.invalid/v1","kind":"openai-compatible",`+
+		`"model":"m","tools":[]}}}`)
+	status, body := storeKey(t, ts, testKey)
+	if status != http.StatusOK {
+		t.Fatalf("store: %d %v", status, body)
+	}
+	if bound, _ := body["bound"].(bool); !bound {
+		t.Errorf("a key just stored for the configured endpoint is not bound: %v", body)
+	}
+	if got, _ := body["configuredOrigin"].(string); got != "https://gw.example.invalid" {
+		t.Errorf("configuredOrigin %q", got)
+	}
+	req, err := http.NewRequest(http.MethodDelete,
+		ts.URL+"/api/assistant/key?token="+testToken, nil)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	defer resp.Body.Close()
+	var removed map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&removed); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if present, _ := removed["present"].(bool); present {
+		t.Error("the key is still present after a removal")
+	}
+	if bound, _ := removed["bound"].(bool); bound {
+		t.Error("no key reported itself bound")
+	}
+	// The endpoint did not go anywhere, so the row can still name it.
+	if got, _ := removed["configuredOrigin"].(string); got != "https://gw.example.invalid" {
+		t.Errorf("configuredOrigin after a removal %q", got)
+	}
+}

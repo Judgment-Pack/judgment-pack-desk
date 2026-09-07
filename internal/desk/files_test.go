@@ -2721,6 +2721,24 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 			}
 			return getJSON(t, ts, relayPrefix+"models?token="+testToken)
 		},
+		CodeAssistantListingRefused: func(t *testing.T) (int, map[string]any) {
+			// An endpoint that reflects the credential it was presented as a
+			// model id. It is the one relayed answer this desk reads, because
+			// it is the one it renders — and none of it travels.
+			echo := httptest.NewServer(http.HandlerFunc(
+				func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"data":[{"id":"` + testKey + `"}]}`))
+				}))
+			t.Cleanup(echo.Close)
+			writeDeskConfig(t, server, `{"deskConfigVersion":1,"assistant":{"endpoint":`+
+				`{"url":"`+echo.URL+`/v1","kind":"openai-compatible","model":"m",`+
+				`"tools":[]}}}`)
+			if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
+				t.Fatalf("store")
+			}
+			return getJSON(t, ts, relayPrefix+"models?token="+testToken)
+		},
 		CodeAssistantNoKey: func(t *testing.T) (int, map[string]any) {
 			writeDeskConfig(t, server, `{"deskConfigVersion":1,"assistant":{"endpoint":`+
 				`{"url":"https://e.example/v1","kind":"openai-compatible","model":"m",`+

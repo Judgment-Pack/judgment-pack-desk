@@ -14,7 +14,10 @@ because the runtime has no write tools; the assistant's key, because a
 credential must never be pasted into a project; and the **model relay**, a
 per-feature *route* that carries the assistant's model traffic because the key
 must never reach the page. None of them parses what it carries either: the relay
-adds one header to a request and reads no body, no model name and no answer. See
+adds one header to a request and reads no request body and no model name. It
+reads **one** kind of answer, and only to refuse it — a model listing, which is
+the one relayed answer the desk *renders*, so that an endpoint cannot hand the
+machine-held credential to the browser as a model id. See
 [Where the assistant key lives](#where-the-assistant-key-lives).
 
 ## What it shows
@@ -1240,12 +1243,15 @@ left beside the console button, and a link that neither shrinks nor wraps
 painted straight across it. The link's accessible name is the full sentence at
 every width.
 
-**Admin renders configuration; it does not rewrite a file you edited.** It
-shows effective values, their source, the path they came from and the exact
-JSON to paste, and its controls that change **persisted desk-layout state** are
-one: the pane record above; the Copy button beside each paste block changes the
-clipboard and its own transient "copied" label, which is why the claim is
-scoped to persisted layout rather than to state in general.
+**Admin renders configuration; it rewrites exactly one member of it.** Every
+section shows effective values, their source, the path they came from and the
+exact JSON to paste — except **Assistant**, which is a form, and whose Save
+rewrites the `assistant` object of the desk-level file under the four bounds
+below. Everything else on the page is read-only: the one control that changes
+**persisted desk-layout state** is the pane record above, and the Copy button
+beside each paste block changes the clipboard and its own transient "copied"
+label, which is why that claim is scoped to persisted layout rather than to
+state in general.
 
 **Two things are written, and each is exactly as wide as its reason.** The key
 is one, below. The other is the `assistant` object of the desk-level file, over
@@ -1305,14 +1311,17 @@ The answer carries the new digest and the **decoded** slot — read back off the
 disk rather than echoed, defaults applied — so the page can verify what landed
 and has the digest its next write needs.
 
-**Nothing in the page calls it yet, and that is deliberate.** This release ships
-the route, the client call and the query hook; the Admin form that lets an
-author choose an endpoint, a model and a thinking tier — and that shows
-`keyRebindRequired` when the destination moves — is the next chunk. Until it
-lands, Admin › Assistant still renders the paste block and says so in its own
-words, so that a reader meeting a read-only section does not conclude the write
-does not exist. What is true today: the route is reachable by anything holding
-the session token, and every bound above applies to it.
+**Admin › Assistant is what calls it.** The section is a form — the wire
+protocol, the endpoint, the five tool grants, the model, the engine and the
+tier — and Save is this route. Three things bound what the page may get wrong,
+and each is held by a test that reads the request on the wire: the digest it
+sends is the one its read carried, and a read that produced none disables Save
+and says why; the object is composed by **naming its members**, never by
+spreading the form's draft, so a member nobody declared cannot reach this file;
+and a refusal is rendered in the decoder's own sentences, against the field
+each problem's key path names. A 409 keeps every value that was typed and
+offers Reload, which reads the file again so the next Save states a digest that
+is true — there is no overwrite, because this route offers none.
 
 **The key is the other**, on Admin › Assistant, and the exception is exactly as
 wide as its reason. A key must never be pasted into a
@@ -1485,20 +1494,110 @@ key custody; the Assistant tab, with propose and accept-into-draft; the engine
 slot itself, with `vercel` and `builtin` both certified against the conformance
 session; **Describe it** in the Create dialog, which runs the same session with
 no draft and hands what comes back to Create rather than to a diff; the thinking
-tier with its refutation pass; and the native Gemini wire on **both** engines —
+tier with its refutation pass; the native Gemini wire on **both** engines —
 function declarations, thought summaries streamed into the tab as reasoning,
 thought signatures carried back verbatim across tool turns, and the tier mapped
 to Gemini's own thinking configuration — certified by the same session that
-certifies the other two families. What is **not** here yet is a model chooser:
-the model name is the file's, typed.
+certifies the other two families; and the **Admin form** below, which chooses
+the endpoint, the model and the tier and writes them.
 
-**Admin › Assistant** shows the configured endpoint, its protocol, its model
-and its tools with the file each came from, the engine and the tier, the exact JSON to paste, the key
-control described under [Security model](#security-model), and a **Check
-reachability** button that reports the desk's own probe. The key and the
-endpoint are separate: removing the endpoint from the file does not remove the
-key from this machine, so the page says `none — no endpoint configured` and
-lets the key line say whether one is still kept here.
+**Admin › Assistant is a form**, and the paste block that stood here is gone —
+it existed because the page could not write the file, and a second way to do
+one thing where the second is hand-editing a file this desk also rewrites is
+worse than either alone.
+
+| the form asks for | and it is |
+| --- | --- |
+| **Wire protocol** | one of the three, by name. Choosing one offers the base that protocol's own reference documents — `https://api.openai.com/v1`, `https://api.anthropic.com`, `https://generativelanguage.googleapis.com` — as a **default in an editable field**, replaced by typing over it. Nothing reads those back, compares an endpoint to them, or treats an endpoint at one of them differently: the enforcement guard admits the three literals only as values of one table in one module, and the sharper guard beside it — every host comparison in the page's source is a loopback name — is untouched. |
+| **Endpoint** | the base, held to the transport rule and the configured-query rule **by the decoder's own function**, so a URL those rules refuse is shown refused in the sentence the file's reader would write and is not sent. |
+| **Tools it may call** | the five, as five checkboxes. All on for a desk that has configured nothing, because `[]` is a real choice — an assistant that may call nothing — and a form opening on it would have a blank field making it. |
+| **Model** | typed, with **List models** beside it. |
+| **Engine** | `vercel` or `builtin`, with the two things the SDK-backed one cannot do named beside it: it shows the model a tool schema narrowed where the SDK declares one narrower (the tab says `narrowed` when it does, and on the Gemini wire `list_examples` arrives with no parameters at all), and it cannot carry an empty signed thought part back across a tool turn on that wire. Both are measured in this repository's own suite, and both are why an author might choose `builtin` for a Gemini endpoint. |
+| **Thinking** | `off`, `on` or `ultra`, with **what that tier puts on this protocol's wire read off `thinking.ts` itself** rather than restated beside it — so the line changes when the table does. On the Gemini rows it also says that the two budgets are this desk's choice inside a documented field. |
+
+**Remove endpoint** writes the other state the slot has: `endpoint: null`,
+through the same conditional commit and with the same digest. Until it existed
+the form could not reach it — clearing the boxes sends an object the decoder
+refuses — so a desk that had configured an endpoint could get back to **None**
+only through the generic file editor, while this page described None as one of
+three deployment states. It confirms in one line first, and the line is about
+the key rather than the endpoint: the key stays on this machine, still entered
+for the endpoint being removed, and this desk will not present it anywhere.
+`engine` and `thinking` survive, because they say *how* an assistant would run
+and not whether there is one.
+
+**Save** writes the `assistant` object over `PUT /api/desk-config` and nothing
+else in the file moves. The status line on the Assistant tab and **Describe
+it** name the new model and tier at once, and **from the write's own answer**:
+it carries the slot the chassis read back off the disk and the digest the next
+write states, both of which are set into the cached configuration before the
+re-read is asked for. Leaving them to that second read meant a write which
+landed while the read hung left every one of those surfaces describing the
+endpoint that had just been replaced, under a form saying "Saved". The re-read
+still happens, for the parts a write cannot speak about — the project's own
+file, every other section's badge — and the key is re-read with it, because a
+write can move the binding in either direction. A read that *answers* and
+refuses is newer information about the same file than the write's answer, and
+this desk says nothing about a file it could not read rather than describing
+one from memory: Admin reports it and Save is refused until it can be read.
+**And "nothing" is its own state rather than the defaults.** The slot every
+consumer reads has a third value — `unavailable` — because falling through to
+the built-in defaults told every surface that *no assistant is configured*,
+which is an absence this page had not established about a file it could not
+open. **All three surfaces read it**: the tab and Describe it say what happened
+and offer no control, and **Admin** — where a reader goes to find out why —
+says the configuration could not be read, claims no absence, and shows its
+fields disabled, because they are the built-in defaults there and typing into
+them would compose a write over a file nobody has seen. Nothing latches: a
+later read that works puts the configured form back. The key row is unaffected
+throughout, because it reads the chassis' own `configuredOrigin`,
+`configuredKind` and `bound` and never the page's copy of the configuration —
+a row that read the page first said "save an endpoint first" while a perfectly
+good key read beside it named the endpoint.
+The test drives the real provider over a stubbed file rather than a fixture,
+because a fixture would hold the mechanism constant and prove nothing about
+it.
+
+**List models** reads the endpoint's own listing through the relay by naming a
+path suffix — `models`, `v1/models`, `v1beta/models` — and fills a picker. Two
+things gate it and one of them is new: the stored key must be bound to the
+endpoint that is *saved*, because the relay refuses a credential entered for
+another destination before opening a socket; and the form on screen must **be**
+that endpoint. The family and the suffix used to come off the editable draft
+while the gate came off the file, so choosing Gemini without saving sent
+`v1beta/models` to a still-saved OpenAI-compatible endpoint — a request the page
+composed for one destination and the desk sent to another. The endpoint it asks
+about is captured at the click, and the rows are **dropped from state** the
+moment the form says a different host or protocol: a picker left standing after
+that is a list of models from somewhere else, and rows merely *hidden* came
+back when the URL was typed away and back again — an arbitrarily stale listing
+with no request behind it. **The field beside it never goes away**: the listing is
+first-page-only, an endpoint may refuse to list at all, and a gateway may route
+on a name of its own — a picker that was the only way to choose would make
+every one of those unconfigurable. **What is saved is the id and never the
+label**, which differ on two of the three protocols — and **an id is an option
+only if the configuration decoder would take it**, asked of that decoder rather
+than re-stated here: a copy of the rule is how a whitespace-only id came to be
+offered, saved cleanly into the field, and produced a 422 on the next Save.
+Typing the same value still gets the decoder's own sentence against the field,
+because the chassis is what decides. A refusal is its status
+and one word from the probe's own closed vocabulary, and the body is not read;
+an answer that is not JSON gets a fixed sentence, because `JSON.parse` quotes
+the text it failed on and that text is the body.
+
+**The key row says which endpoint the key is for**, in five states: not read
+yet; **no endpoint**, where the entry field is not offered at all because
+storing a key requires one to bind it to; **none stored**, with the field
+labelled for the host it would be entered for; **stored and bound**, with
+Replace and Remove and no masked box standing beside a working key; and
+**stored for somewhere else**, naming both hosts, because a reader has to be
+able to see which of the two moved. A write answering `keyRebindRequired`
+moves the row at that instant rather than waiting for the key read.
+
+The **Check reachability** button still reports the desk's own probe. The key
+and the endpoint stay separate: removing the endpoint does not remove the key
+from this machine, so the page says `none — no endpoint configured` and lets
+the key line say whether one is still kept here.
 
 **What the assistant is, and is not**, in the sentence the page carries: it
 proposes edits to the draft; you accept them; the runtime checks them. It never
@@ -2589,6 +2688,25 @@ therefore requires an endpoint to bind it to, and a key file **without
 rather than read: a credential with no binding is the state the record exists
 to end, and the sentence names the one action that repairs it.
 
+**Admin's key row reads that binding rather than waiting to meet it.** It says
+which host and which protocol the stored key was entered for, offers no entry
+field at all where no endpoint is configured — there would be nothing to bind
+to — and, where the two disagree, names *both* destinations so a reader can see
+which of the pair moved. Neither half is a secret: both are in the file the
+page already reads.
+
+**The verdict is this desk's, and the page computes none of its own.**
+`GET /api/assistant/key` answers `configuredOrigin` — the origin of the
+endpoint the file names now, as *this* desk computes it — and `bound`, which is
+the relay's own predicate rather than a second reading of it. The page tried to
+work it out and got it wrong in a way nothing on the page could have caught:
+the browser's `URL` drops an explicit `:443` where Go's `url.Parse` keeps it, so
+a key stored for a host and a configuration naming the same host with its
+default port written out read as *stored and bound* while the relay answered
+`assistant-key-unbound` and sent nothing. **Two implementations of one rule is
+one too many, and the one that decides has to be the one that presents the
+credential.**
+
 `XDG_CONFIG_HOME` is honoured where it is set to an absolute path; a relative
 one is ignored, as the specification says. The write is staged in the same
 directory and renamed over the target, so a reader during a replace sees the
@@ -2677,7 +2795,7 @@ the page in order to be presented to an endpoint:
 | `PUT /api/assistant/key` | store one — non-empty, at most 4 KiB, no control character |
 | `DELETE /api/assistant/key` | remove it |
 | `POST /api/assistant/probe` | reach the configured endpoint once and report what came back |
-| `ANY /api/assistant/relay/v1/…` | carry one model request to the configured endpoint, with the key attached here |
+| `ANY /api/assistant/relay/v1/…` | carry one model request to the configured endpoint, with the key attached here — and, for the one shape it renders, read the answer before forwarding it |
 
 The probe's four answer `409` with `assistant-unusable-store` where this machine
 has no directory safe to keep a credential in, `assistant-unconfigured` where
@@ -2876,9 +2994,15 @@ no CORS, so a page calling one directly could not read the answer.
   the page has the first SSE event in hand *before the endpoint has written the
   second*, which a relay that buffered would fail while still delivering both.
 - **Bounded in time rather than in bytes**, because a model answer has no length
-  worth guessing: **ten minutes** for one whole relayed request and **two
-  minutes** between two writes from the endpoint. A stream that stalls is cut
-  rather than left holding the page. Writes **to the page** are bounded by the
+  worth guessing: **ten minutes** for one whole relayed request, **two minutes
+  before the first byte of the answer**, and **two minutes between two writes**
+  after it. The first of those two was missing and is the reason this sentence
+  now names three numbers: the idle bound was installed once the transport had
+  a response, so an endpoint that accepted a request and then sent nothing at
+  all — not a header, not a byte — was held by the ten-minute bound instead,
+  and four of them exhausted every relay slot for ten minutes. A stream that
+  stalls, and a connection that never answers, are both cut rather than left
+  holding the page. Writes **to the page** are bounded by the
   same pair — a page that authenticates and then stops reading would otherwise
   hold its slot for ever, since neither deadline ends a write to a client that
   is not listening and this desk's server has no `WriteTimeout` on purpose
@@ -2915,6 +3039,20 @@ no CORS, so a page calling one directly could not read the answer.
   first page and no more. Supporting the rest would need a mechanism that
   passes a cursor safely, and this release does not have one. Nothing on the
   chassis is added for the listing; it is the relay.
+
+  **The page's half is Admin's List models**, and it goes over the same
+  capability an engine gets rather than round it: it names the suffix, and
+  `bindModelCall` builds the address, attaches this chassis' token and holds
+  the suffix to the rule above. `ModelRequest` carries a `method` for it — a
+  closed `'GET' | 'POST'` pair, because the relay forwards the method verbatim
+  and an open member would let whoever holds a capability ask the endpoint to
+  *do* something nobody wrote down with the machine-held credential attached.
+  The three families' answers differ — Gemini's `models[].name` is
+  `models/<id>` with a `displayName` and the methods each model supports,
+  OpenAI-compatible's is `data[].id`, Anthropic's is `data[].id` with a
+  `display_name` — and each is read apart rather than guessed at. Gemini's rows
+  are filtered to models whose own declaration includes `generateContent`,
+  because that listing carries embedding models an assistant cannot run on.
 - **Nothing else.** No retry (a retried model request is a second charge on
   somebody's account for an answer nobody saw), no caching, no request
   rewriting, no model-name inspection. A refusal carries `assistant-relay-*`
@@ -2938,17 +3076,87 @@ filter that deletes the answer to protect a credential is a worse answer than
 the credential. Twelve is the same length below which this desk will not show a
 key's fingerprint either.
 
-**The body is not filtered, and that is a decision rather than an oversight.**
+**One relayed answer is read, and it is the model listing.** The rule above —
+the body is carried and never inspected — is a rule about **model traffic**,
+which an engine consumes in code. A *listing* is different in kind: it is a set
+of strings this desk **renders**, into a picker on Admin, into the page's own
+state, and into a field a person can copy from. So an endpoint that reflects
+its own credential as a model `id` or a `display_name` would hand the
+machine-held key to the browser through the one route whose entire purpose is
+that it never gets there — and no filter the *page* could write would help,
+because the page has never held the key and could not recognise one.
+
+So for a **listing-shaped** relayed request — a `GET` at the suffix the
+configured `kind`'s listing is at, decided from the file on this machine and
+never from anything the page said — the relay reads the answer's body **whole,
+before a byte of it is forwarded**, bounded at **1 MiB**, and:
+
+- if any JSON string in it **equals** the configured key, or **contains** it
+  where the key is twelve bytes or longer, the answer is
+  `502 assistant-listing-refused` — *"the endpoint put the credential in its
+  model listing; this desk will not list it"* — and **nothing of the body
+  travels**, not the id, not the endpoint's own words around it;
+- a body **past the bound** answers the same code: a listing this desk cannot
+  read to the end is one it cannot say anything about, and forwarding the part
+  it did read would be the truncation every other bound here refuses. **The
+  read is bounded in time by the same idle deadline every other answer is** —
+  it buffers rather than streams, and the wrapper that bounds the rest was once
+  applied only after it, so an endpoint that sent one byte here and stalled
+  held a relay slot until the overall deadline;
+- otherwise the bytes are forwarded verbatim, with the length re-declared from
+  what was actually read.
+
+**A listing is forwarded only if it is exactly one JSON value**, decoded end to
+end, with nothing behind it. Anything else — plain text, an empty answer, a
+truncated document, a second value behind the first, a redirect, malformed JSON
+whose escaped credential sits in the half a decoder never reaches — is refused
+with the same code and none of it travels. This is the repair for a rule that
+read the other way round: a decode error used to fall back to comparing the raw
+bytes, so a body the scan *could not read* was forwarded whenever the literal
+key bytes happened to be absent, and a scan that cannot read a body cannot
+clear it. It costs nothing real — the three protocols' listings are JSON
+documents, and an endpoint answering something else at its own listing path has
+not answered a listing.
+
+"Exactly one JSON value" is the decoder's own reading and not a shape list: a
+bare string, a number, `null` and `true` are each one value and are carried,
+and numbers are read as the digits they were written as, so a valid document
+carrying `1e1000` is not refused for what Go can hold a float in.
+
+The scan is **exact-and-contains**, on the same twelve-byte floor the answer
+headers use, and it compares the **decoded** strings — member names and values,
+at any depth, and a number's own digits, because a key of digits is a key —
+since a key written into JSON with escapes is one string to a decoder and
+different bytes on the wire. **A derived representation — base64,
+percent-encoded, hex, half of it — is not detectable by any comparison**, which
+is the ruling chunk 1 already took for the probe, and it is stated here rather
+than implied away. A listing is asked for
+uncompressed so that what is scanned is what was sent. Every status is scanned,
+not only a success: a 401's body can carry the credential it rejected as easily
+as a 200's can carry it as a model id, and a rule with a status in it is a rule
+with a hole in it. The suffix table is
+[mirrored on the page](web/src/assistant/modelListing.ts) and held equal to the
+chassis' by a test that reads the Go declaration.
+
+**The page does not read a refused listing's body at all — not even its
+`code`.** The relay forwards a 4xx verbatim, so the body on a failed listing is
+sometimes the desk's envelope and sometimes the endpoint's, and no header tells
+them apart. What Admin says is the status and one sentence from a closed list;
+on `502` that sentence names both readings without claiming either, and the
+desk's own log is where the distinction lives.
+
+**Every other body is not filtered, and that is a decision rather than an oversight.**
 The relay parses none of the traffic it carries; a streamed answer cannot be
 scrubbed as it passes; and the probe's own ruling already applies — a *derived*
 representation of a credential (base64, percent-encoded, hex, half of it) is not
 detectable by any substitution, so a filter over bodies would be a categorical
-promise held by a `strings.Replace`. An endpoint that writes the key into its own
-body therefore hands it to the page. **The residual is stated rather than
-papered over: the key is the endpoint's own credential, it is presented only to
-the endpoint the desk-level file names, and it is good only at the endpoint that
+promise held by a `strings.Replace`. An endpoint that writes the key into a *completion*
+therefore hands it to the page. **The residual is stated rather than papered
+over: the key is the endpoint's own credential, it is presented only to the
+endpoint the desk-level file names, and it is good only at the endpoint that
 already holds it.** What this route guarantees is that the desk never volunteers
-it — not that an endpoint cannot give away a secret it was given.
+it — not that an endpoint cannot give away a secret it was given. The listing is
+the one exception above, and it is an exception because the desk renders it.
 
 The assistant calls it, and nothing else does
 ([ADR-0001](docs/adr/0001-make-the-assistant-engine-a-slot.md)). The **desk**
@@ -3287,8 +3495,10 @@ web/                 Vite + React + TypeScript SPA
                      (the "select a pack" page and the pack document),
                      evaluation, matrix, graphs, the authoring shell, the
                      Admin page and Help & About — Admin being read-only
-                     everywhere but the key control, and the source badge and
-                     paste block every section of it uses
+                     everywhere but the Assistant section, which is a form over
+                     the endpoint, the model and the tier and carries the key
+                     control beside it, and the source badge and paste block
+                     every other section of it uses
   src/components/    evaluation, coverage, row and graph-walk views, plus the
                      trace and handoff-target renderers both the pack and graph
                      surfaces share
@@ -3338,10 +3548,13 @@ web/                 Vite + React + TypeScript SPA
                      control that renders it
   src/assistant/     the assistant slot: one nullable field and two settings
                      about how it runs, the four chassis calls, the Admin
-                     section that configures it and holds the key, the tab, the
-                     event list and proposal report both surfaces render, the
-                     ToolGate, and engines/ — one lazily loaded chunk per
-                     certified engine behind one contract
+                     section — a form over the endpoint, the tool grants, the
+                     model, the engine and the tier, with the key row beside it
+                     reading the desk's binding and the endpoint's own model
+                     listing read through the relay — the tab, the event list
+                     and proposal report both surfaces render, the ToolGate,
+                     and engines/ — one lazily loaded chunk per certified
+                     engine behind one contract
   scripts/smoke.ts   the desk's own client, driven outside a browser
 ```
 

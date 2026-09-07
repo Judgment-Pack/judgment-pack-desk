@@ -87,18 +87,31 @@ export class FileRequestError extends Error {
    * for anything older than the codes.
    */
   readonly code: string | undefined
+  /**
+   * The decoder's own problems, key by key, where the chassis sent them.
+   *
+   * **One refusal carries the sentences that repair it.** `desk-config-refused`
+   * answers with the same `{key, reason}` list the browser's decoder produces
+   * for a file somebody typed — that is what makes the two one contract — and
+   * a form that dropped it would have to invent a sentence for a member the
+   * decoder already named. Empty for every refusal that carries none, so a
+   * caller never has to tell absent from empty.
+   */
+  readonly problems: readonly { key: string; reason: string }[]
 
   constructor(
     status: number,
     message: string,
     source: 'chassis' | 'desk',
-    code?: string
+    code?: string,
+    problems: readonly { key: string; reason: string }[] = []
   ) {
     super(message)
     this.name = 'FileRequestError'
     this.status = status
     this.source = source
     this.code = code
+    this.problems = problems
   }
 }
 
@@ -195,14 +208,17 @@ export async function answer<T>(response: Response): Promise<T> {
   if (response.status === 409 && body !== undefined) {
     throw new StaleWrite(body as ConstructorParameters<typeof StaleWrite>[0])
   }
-  const envelope = body as { error?: string; code?: string } | undefined
+  const envelope = body as
+    | { error?: string; code?: string; problems?: unknown }
+    | undefined
   const message = envelope?.error
   if (message !== undefined) {
     throw new FileRequestError(
       response.status,
       message,
       'chassis',
-      typeof envelope?.code === 'string' ? envelope.code : undefined
+      typeof envelope?.code === 'string' ? envelope.code : undefined,
+      problemsIn(envelope?.problems)
     )
   }
   // No `{error}` envelope to quote, so the sentence is the status line and it
@@ -212,6 +228,27 @@ export async function answer<T>(response: Response): Promise<T> {
     `the desk answered ${response.status} ${response.statusText}`,
     'desk'
   )
+}
+
+/**
+ * The `{key, reason}` pairs out of a refusal envelope, and nothing else.
+ *
+ * **Read member by member rather than cast.** The list is rendered beside the
+ * fields of a form, so an entry with a number where a sentence should be would
+ * put `[object Object]` under a label; and a body is a body, whoever wrote it.
+ * A pair missing either half is dropped rather than repaired, because a
+ * problem with no key names no field and a problem with no reason says nothing.
+ */
+function problemsIn(value: unknown): { key: string; reason: string }[] {
+  if (!Array.isArray(value)) return []
+  const problems: { key: string; reason: string }[] = []
+  for (const entry of value) {
+    if (entry === null || typeof entry !== 'object') continue
+    const { key, reason } = entry as { key?: unknown; reason?: unknown }
+    if (typeof key !== 'string' || typeof reason !== 'string') continue
+    problems.push({ key, reason })
+  }
+  return problems
 }
 
 /** Every regular file in the project tree. */

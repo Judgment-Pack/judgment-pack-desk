@@ -26,8 +26,20 @@ import type {
 } from '../config/deskConfig'
 
 export interface AssistantSlot {
-  /** `configured` exactly where an endpoint is; the key is reported apart. */
-  state: 'none' | 'configured'
+  /**
+   * `configured` exactly where an endpoint is, `none` where the file says
+   * there is none — and `unavailable` where **this desk could not read the
+   * file that would say**.
+   *
+   * The third is not a third deployment state and is not a shape: it is the
+   * absence of an answer, reported as one. A read that failed used to fall
+   * through to the built-in defaults, so a desk whose configuration could not
+   * be read told every consumer of this hook that no assistant was configured
+   * — after a write the chassis had just confirmed. "Absence was not
+   * established" is the desk's own doctrine everywhere else, and this is it
+   * here.
+   */
+  state: 'none' | 'configured' | 'unavailable'
   /** Null exactly where `state` is `none`. There is no third value. */
   endpoint: AssistantEndpointConfig | null
   /**
@@ -53,11 +65,17 @@ export interface AssistantSlot {
 }
 
 export function useAssistantSlot(): AssistantSlot {
-  const { config } = useEffectiveConfig()
+  const { config, desk } = useEffectiveConfig()
   const key = useAssistantKey()
   const endpoint = config.assistant.endpoint
+  // **A read that did not produce a file is not a file that says none.** A
+  // refused *decode* is different and is deliberately not here: that file was
+  // read, this desk will not honour it, and the defaults are what apply — which
+  // is `none`, truthfully. What this covers is the read that never produced
+  // one at all.
+  const unread = desk?.readFailure !== undefined
   return {
-    state: endpoint === null ? 'none' : 'configured',
+    state: unread ? 'unavailable' : endpoint === null ? 'none' : 'configured',
     endpoint,
     keyPresent: key.data?.present ?? false,
     engine: config.assistant.engine,

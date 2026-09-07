@@ -230,38 +230,90 @@ describe('the Admin page', () => {
     }
   })
 
-  it('carries exactly four state-changing controls, and names each of them', () => {
-    // This used to say "exactly one". It was true, and the sentence it stood
-    // for — Admin never writes — is still true of every *configuration* value
-    // on this page. What changed is that a key is not a configuration value:
-    // it must never be pasted into a project file, so it cannot be written the
-    // way every other setting is, and Admin gained the one control that writes
-    // it. The assertion is therefore the whole list rather than a count, so a
-    // fifth control cannot be added without appearing here.
+  it('carries exactly the state-changing controls it names, and no others', () => {
+    // This used to say "exactly one", then "exactly four". It was true each
+    // time, and the sentence it stood for — Admin never writes — is still true
+    // of every configuration value **except the assistant slot**, which now
+    // has a form: choosing a model and a tier is something an author does
+    // while working, and the alternative is telling them to edit a file on
+    // this machine by hand between attempts. The assertion is the whole list
+    // rather than a count, so a control cannot be added without appearing
+    // here.
     const { container } = renderAdmin()
     const interactive = container.querySelectorAll('button, input, select, textarea')
     const labels = Array.from(interactive).map((element) => element.textContent?.trim())
-    const writes = ['Reset panes on this machine', 'Store key', 'Check reachability']
+    const writes = ['Reset panes on this machine', 'Save', 'Check reachability']
     for (const label of writes) {
       expect(labels.filter((each) => each === label), label).toHaveLength(1)
     }
-    // Remove key appears only where a key is stored, which is not the case in
-    // this render — so the fourth control is asserted by its absence here and
-    // by its own test in the Assistant section's suite.
-    expect(labels).not.toContain('Remove key')
-    // Every other control on the page is a Copy, and a copy changes nothing here.
-    const others = labels.filter((label) => label !== undefined && !writes.includes(label))
+    // Three controls appear only in a state this render is not in, and each is
+    // asserted by its absence here and by its own case in the Assistant
+    // section's suite: Store key and Remove key need a key row that offers
+    // them, and List models needs a key bound to the configured endpoint.
+    for (const conditional of ['Store key', 'Remove key']) {
+      expect(labels, conditional).not.toContain(conditional)
+    }
+    // The form's three pickers, asserted as themselves and in two shapes,
+    // because a Radix Select is two elements: a trigger button showing the
+    // value, and a hidden native `<select>` carrying every option for form
+    // participation. A picker offering a fourth value would change the second
+    // list. None of the three changes anything until Save is pressed.
+    const triggers = Array.from(container.querySelectorAll('[role="combobox"]')).map(
+      (element) => element.textContent
+    )
+    expect(triggers).toEqual(['OpenAI-compatible', 'vercel', 'off'])
+    const offered = Array.from(container.querySelectorAll('select')).map(
+      (element) => element.textContent
+    )
+    expect(offered).toEqual(['OpenAI-compatibleAnthropicGemini', 'vercelbuiltin', 'offonultra'])
+    // Every other control on the page is a Copy or a tool checkbox, and
+    // neither changes anything on this machine.
+    const picker = [...triggers, ...offered]
+    const others = labels.filter(
+      (label) =>
+        label !== undefined &&
+        !writes.includes(label) &&
+        label !== 'List models' &&
+        !picker.includes(label)
+    )
     expect(others.length).toBeGreaterThan(0)
-    expect(others.every((label) => label === '' || label?.includes('Copy'))).toBe(true)
-    // One field, and it is the key: masked, and never carrying a value the
-    // page was given rather than typed.
-    const fields = container.querySelectorAll('input, select, textarea')
-    expect(fields).toHaveLength(1)
-    expect(fields[0]!.getAttribute('type')).toBe('password')
-    expect((fields[0] as HTMLInputElement).value).toBe('')
-    // And still nothing that is permanently disabled: a control that will
-    // never enable is an affordance that lies about what the page can do.
-    expect(container.querySelectorAll('[disabled]')).toHaveLength(0)
+    expect(
+      others.every((label) => label === '' || label?.includes('Copy')),
+      others.join(' | ')
+    ).toBe(true)
+    // No password field in this render: no endpoint is configured, so there is
+    // nothing to bind a key to and the row says so instead of offering one.
+    expect(container.querySelectorAll('input[type="password"]')).toHaveLength(0)
+    // **One control is disabled here, and it is not a permanent one.** This
+    // fixture is the state in which nothing asked for the desk-level file at
+    // all, so this page has never seen the bytes a write would replace — and
+    // a Save that stated a digest it invented would overwrite a file it never
+    // read. It says so in words beside itself, and it enables the moment a
+    // read answers, which the case below is.
+    const disabled = Array.from(container.querySelectorAll('[disabled]')).map(
+      (element) => element.textContent
+    )
+    expect(disabled).toEqual(['List models', 'Save'])
+    expect(screen.getByText(/has not seen them/)).toBeTruthy()
+    expect(screen.getByText(/its key stored before this desk can ask it/)).toBeTruthy()
+  })
+
+  it('enables the one write once the desk-level file has been read', () => {
+    // The other half of the case above: nothing on this page is disabled for
+    // ever, and the form's own suite holds what it does with the digest.
+    const { container } = renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: '/home/someone/.config/jpack-desk/desk.json',
+        present: false,
+        sha256: ''
+      })
+    )
+    // Save enables; List models does not, and for its own reason — it needs a
+    // key bound to the endpoint that is saved, and this fixture has neither.
+    expect(
+      Array.from(container.querySelectorAll('[disabled]')).map((element) => element.textContent)
+    ).toEqual(['List models'])
+    expect(screen.queryByText(/has not seen them/)).toBeNull()
   })
 
   it('clears exactly one localStorage key when the reset is pressed, and says so', () => {

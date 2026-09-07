@@ -28,6 +28,7 @@ import {
   type ProbeResult
 } from './client'
 import { DESK_CONFIG_QUERY_KEY } from '../config/queries'
+import type { EffectiveConfig } from '../config/deskConfig'
 
 export const ASSISTANT_KEY_QUERY_KEY = ['assistant-key'] as const
 
@@ -64,8 +65,22 @@ export function useAssistantKey(): UseQueryResult<AssistantKeyState, Error> {
  * window in which it is being sent, which is the shortest one there is.
  */
 export interface StoreAssistantKey {
-  /** Send one key. It is dropped as soon as the request has been made. */
-  submit: (key: string, handlers?: { onError?: (error: Error) => void }) => void
+  /**
+   * Send one key. It is dropped as soon as the request has been made.
+   *
+   * `onStored` is handed the state the chassis answered with — `present`, the
+   * fingerprint, and the destination the key is now bound to — and never the
+   * key. It exists because a store is what *repairs* a binding the page is
+   * reporting as broken, and the row has to stop saying so at the moment the
+   * chassis says otherwise.
+   */
+  submit: (
+    key: string,
+    handlers?: {
+      onError?: (error: Error) => void
+      onStored?: (state: AssistantKeyState) => void
+    }
+  ) => void
   isPending: boolean
 }
 
@@ -91,6 +106,7 @@ export function useStoreAssistantKey(): StoreAssistantKey {
       pending.current = key
       mutation.mutate(undefined, {
         onError: handlers?.onError,
+        onSuccess: (state) => handlers?.onStored?.(state),
         onSettled: () => {
           pending.current = null
         }
@@ -112,17 +128,54 @@ export function useProbeAssistant(): UseMutationResult<ProbeResult, Error, void>
 }
 
 /**
+ * What the cached configuration becomes once a write has landed.
+ *
+ * **The members the answer actually carries, over the value already there.**
+ * The write answers with the `assistant` slot as the chassis read it back off
+ * the disk, the file's path, and the new digest — so those are set, and every
+ * other part of the effective configuration is carried across untouched rather
+ * than assembled. That distinction is the whole of it: the objection to
+ * writing this cache was that a write answers about one slot while the cache
+ * holds two files layered, and it is answered by not touching the layers.
+ *
+ * `undefined` where nothing is cached yet, because there is nothing to carry
+ * across and the read that follows is what fills it.
+ *
+ * **`problems: []` is told, not assumed**: the chassis decodes the file it
+ * composed before any of it reaches the disk, so a write that landed is a file
+ * its own reader accepted. `note` and `readFailure` are dropped for the same
+ * reason — they described a file that was absent or unread, and it is neither.
+ */
+export function configAfterWrite(
+  previous: EffectiveConfig | undefined,
+  written: AssistantConfigWritten
+): EffectiveConfig | undefined {
+  if (previous === undefined) return undefined
+  return {
+    ...previous,
+    config: { ...previous.config, assistant: written.assistant },
+    // `assistant` may only come from the desk-level file, and there now is one.
+    sources: { ...previous.sources, assistant: 'desk file' },
+    desk: { path: written.path, present: true, problems: [], sha256: written.sha256 }
+  }
+}
+
+/**
  * Write the desk-level `assistant` object, and re-read the configuration.
  *
- * **Invalidated rather than written into the cache**, which is the opposite of
- * what the key mutations above do, and the difference is worth stating. The
- * key endpoint answers with the whole of what this page may know about the key
- * — `present` and a fingerprint — so setting the cache from its answer is
- * setting it from the truth. This one answers with the `assistant` slot alone,
- * while the cached value is the **effective** configuration: two files layered,
- * every section's source badge, and the problems each file carries. Assembling
- * that from a write's answer would be this page inventing the parts it was not
- * told, so the file is read again instead.
+ * **Set from the answer *and* invalidated**, in that order, and the order is
+ * the point. The tab's status line, Describe it and the key row all read the
+ * slot through this cache; leaving them to a second `GET` meant that a write
+ * which landed while the read that follows it failed — or simply hung — left
+ * every one of those surfaces describing the endpoint that had just been
+ * replaced, under a form that said "Saved". The answer already carries what
+ * they need: the decoded slot, read back off the disk rather than echoed, and
+ * the digest the next write states. So it is written in, and the re-read still
+ * happens for the parts a write cannot speak about.
+ *
+ * **The key query is invalidated too.** The binding is the desk's verdict and
+ * a write can move it in either direction; `keyRebindRequired` covers the
+ * moment for the direction that matters, and the read is what settles it.
  *
  * No retry, for the reason none of the others has one: a retried write is one
  * conditional commit becoming two, and the second would carry an `ifMatch` the
@@ -139,8 +192,12 @@ export function useUpdateAssistantConfig(): UseMutationResult<
     retry: false,
     // On success only: a refused write changed nothing, and re-reading after
     // one would be this page telling itself that something happened.
-    onSuccess: () => {
+    onSuccess: (written) => {
+      client.setQueryData<EffectiveConfig>(DESK_CONFIG_QUERY_KEY, (previous) =>
+        configAfterWrite(previous, written)
+      )
       void client.invalidateQueries({ queryKey: DESK_CONFIG_QUERY_KEY })
+      void client.invalidateQueries({ queryKey: ASSISTANT_KEY_QUERY_KEY })
     }
   })
 }

@@ -1074,12 +1074,10 @@ function endpointValue(
     problems.push({ key: 'assistant.endpoint.kind', reason: 'required' })
   }
 
+  const modelProblem = modelIdProblem(endpoint.model)
   const model = typeof endpoint.model === 'string' ? endpoint.model.trim() : undefined
-  if (model === undefined || model === '') {
-    problems.push({
-      key: 'assistant.endpoint.model',
-      reason: `must be a non-empty string; found ${describe(endpoint.model)}`
-    })
+  if (modelProblem !== undefined) {
+    problems.push({ key: 'assistant.endpoint.model', reason: modelProblem })
   }
 
   let tools: string[] = []
@@ -1123,6 +1121,27 @@ function endpointValue(
 }
 
 /**
+ * The rule a model id is held to, and the whole of it.
+ *
+ * **Lifted out of the decoder so that one rule can have one reader.** Admin's
+ * model picker offers what an endpoint listed, and an endpoint may list a name
+ * this schema refuses — a whitespace-only id is the case that was found — so
+ * the picker asks this function rather than carrying a copy of the reasoning.
+ * A copy is how the picker came to offer an option that produced a 422 as soon
+ * as it was saved: the file's reader trims and this did not.
+ *
+ * `undefined` where the value is acceptable; otherwise the decoder's own
+ * sentence, which is what a reader sees whether the value was typed or picked.
+ */
+export function modelIdProblem(value: unknown): string | undefined {
+  const model = typeof value === 'string' ? value.trim() : undefined
+  if (model === undefined || model === '') {
+    return `must be a non-empty string; found ${describe(value)}`
+  }
+  return undefined
+}
+
+/**
  * The transport rule, and the credential rule beside it.
  *
  * **`https:`, or `http:` on `localhost` or `127.0.0.1`** — about transport,
@@ -1145,7 +1164,7 @@ function endpointValue(
  * Held identical to `endpointURLProblem` in `internal/desk/deskfile.go` by the
  * shared fixtures both decoders read.
  */
-function endpointUrlProblem(raw: string): string | undefined {
+export function endpointUrlProblem(raw: string): string | undefined {
   let url: URL
   try {
     url = new URL(raw)
@@ -1350,6 +1369,18 @@ export interface DeskLevelSummary {
   path: string
   present: boolean
   problems: ConfigProblem[]
+  /**
+   * The digest of the bytes this read saw, carried through from
+   * `DeskLevelRead` so that a form on Admin can send it back as `ifMatch`.
+   *
+   * **Undefined is not the empty string here, and the difference is the whole
+   * point.** The empty string is the chassis saying "there is no file", which
+   * is a digest a write may state; undefined is a read that never produced
+   * one, and a page that wrote with a digest it invented would be asserting
+   * the state of a file it never saw. The form refuses to write on undefined
+   * rather than guessing either way.
+   */
+  sha256?: string
   note?: string
   readFailure?: ReadFailure
 }
@@ -1473,6 +1504,7 @@ export function effectiveConfig(
             path: desk.path,
             present: desk.present,
             problems: desk.decoded?.problems ?? [],
+            sha256: desk.sha256,
             note: desk.note,
             readFailure: desk.readFailure
           }

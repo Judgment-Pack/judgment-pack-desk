@@ -56,12 +56,14 @@ package desk
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -100,7 +102,137 @@ const (
 	// critic — and past it the answer is an immediate, named refusal that a
 	// caller can act on.
 	maxRelayInFlight = 4
+
+	// maxListingBody bounds the one relayed answer this desk reads.
+	//
+	// A megabyte, which is two orders of magnitude past the largest model
+	// listing any of the three protocols serves and small enough that reading
+	// it whole costs nothing. A body past it is **refused**, not truncated and
+	// not forwarded unread: this desk cannot say whether the part it did not
+	// read carries the credential, and an answer it cannot say that about is
+	// one it will not put on the page.
+	maxListingBody = 1 << 20
 )
+
+// relayListingSuffix is the path each protocol's model listing is at, relative
+// to the configured base — and the whole of what this desk treats as a listing.
+//
+// **Mirrored on the page** (`LISTING_SUFFIX` in `web/src/assistant/modelListing.ts`)
+// and held equal to it by a test that reads this declaration, exactly as the
+// method list and the query pair are. A suffix on one side and not the other is
+// either an answer the page renders unscanned or a scan of something nobody
+// asked for.
+var relayListingSuffix = map[string]string{
+	"openai-compatible": "models",
+	"anthropic":         "v1/models",
+	"gemini":            "v1beta/models",
+}
+
+// The three ways a listing is refused, carried out of `ModifyResponse` — which
+// is the one place a relayed answer can still be refused before a byte of it
+// has reached the page.
+var (
+	errListingCarriesKey = errors.New("listing carries the key")
+	errListingTooLarge   = errors.New("listing past the bound")
+	errListingNotJSON    = errors.New("listing is not one JSON value")
+)
+
+// listingProblem is the scan, and what it refuses is a **class** rather than a
+// match.
+//
+// **A listing is forwarded only if it is exactly one JSON value, decoded end to
+// end, with nothing behind it, and no string in it is the key.** Anything else
+// is refused. That is the repair for a rule that read the other way round: a
+// decode error used to fall back to comparing the raw bytes, so a body that was
+// not JSON at all — `not a listing`, an empty answer, a truncated one, one with
+// a second value behind it, malformed JSON with an escaped credential in the
+// half the decoder never reached — was **forwarded** whenever the literal key
+// bytes happened to be absent. A scan that cannot read a body cannot clear it,
+// and clearing it anyway is the whole of what went wrong.
+//
+// It costs nothing real: the three protocols' listings are JSON documents, and
+// an endpoint that answers something else at its own listing path has not
+// answered a listing. The page says `NOT_A_LISTING` for the same body today,
+// so what changes is where that is decided and whether the bytes travel.
+//
+// **Every JSON string in the body**, keys and values alike, compared to the
+// configured key: equal to it, or containing it where the key is long enough
+// to be looked for inside a longer string. Numbers too, by the text they were
+// written as — a key of digits is a key, and `UseNumber` keeps that text
+// rather than a float somebody would have to render back. That is the
+// answer-header rule applied to the one body this desk reads, on the same
+// twelve-byte floor and for the same reason — below it a key is a substring of
+// ordinary text, and a filter that deletes an answer to protect three
+// characters is a worse answer than the three characters.
+//
+// **`UseNumber` is also what makes the validity rule honest.** Without it the
+// decoder converts every number to a `float64` and *fails* on one outside that
+// range, so `1e1000` — a syntactically valid JSON document — was refused by a
+// rule that says every shape of exactly one valid value is carried. Whether a
+// number is representable in Go is not a fact about the endpoint's listing.
+//
+// **The strings are the decoded ones**, because a key written into JSON with
+// escapes is one string to a decoder and different bytes on the wire. What no
+// comparison catches is a *derived* representation — base64, hex, half of it —
+// and the README says so rather than implying a completeness no comparison has.
+func listingProblem(body []byte, key string) error {
+	long := key != "" && len(key) >= minFingerprintable
+	carries := func(value string) bool {
+		return key != "" && (value == key || (long && strings.Contains(value, key)))
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	// One value, and the decoder is what says where it ends. `Token` walks the
+	// whole of it; `More` afterwards is what catches a second value behind it,
+	// which is the shape every other reader on this desk refuses too.
+	depth := 0
+	values := 0
+	for {
+		token, err := decoder.Token()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return errListingNotJSON
+		}
+		switch typed := token.(type) {
+		case json.Delim:
+			if typed == '[' || typed == '{' {
+				if depth == 0 {
+					values++
+				}
+				depth++
+			} else {
+				depth--
+			}
+		case string:
+			if carries(typed) {
+				return errListingCarriesKey
+			}
+			if depth == 0 {
+				values++
+			}
+		case json.Number:
+			// The digits as they were written. A `json.Number` is not a
+			// `string` to a type switch, so without this arm a key of digits
+			// would travel through the one member the scan did not look at.
+			if carries(string(typed)) {
+				return errListingCarriesKey
+			}
+			if depth == 0 {
+				values++
+			}
+		default:
+			if depth == 0 {
+				values++
+			}
+		}
+	}
+	if values != 1 || depth != 0 {
+		return errListingNotJSON
+	}
+	return nil
+}
 
 // The two deadlines every relayed request is held to.
 //
@@ -143,6 +275,40 @@ const relayFinalWrite = 5 * time.Second
 // on a cross-host redirect and knows nothing about `x-api-key`, so a followed
 // redirect could walk the injected credential to a host nobody configured.
 var relayTransport http.RoundTripper
+
+// beforeTheFirstByte bounds the wait for the **upstream's response headers**,
+// which is the half of the answer no other bound here reached.
+//
+// `boundedByIdle` is installed in `ModifyResponse`, and `ModifyResponse` runs
+// only once the transport has a response — so an endpoint that accepted the
+// request and then sent nothing at all, not a header and not a byte, was held
+// by the ten-minute *overall* deadline rather than the two-minute idle one.
+// Four of those exhausted every relay slot for ten minutes, against a README
+// promising two.
+//
+// **A wrapper rather than `ResponseHeaderTimeout` on the shared transport**,
+// for one reason: the bound is `relayIdle`, which is a var a test shortens so
+// the bound can be shown to *apply*, and a field read off one long-lived
+// transport cannot follow it without cloning the connection pool per request.
+// The timer is armed before the round trip and stopped when it returns —
+// which is the instant the headers are in hand, since the body streams
+// afterwards — and firing it cancels the request's own context, so the
+// refusal, the slot release and the log line are the ones every other
+// transport failure takes.
+type beforeTheFirstByte struct {
+	inner  http.RoundTripper
+	cancel context.CancelFunc
+}
+
+func (b beforeTheFirstByte) RoundTrip(r *http.Request) (*http.Response, error) {
+	timer := time.AfterFunc(relayIdle, b.cancel)
+	defer timer.Stop()
+	inner := b.inner
+	if inner == nil {
+		inner = http.DefaultTransport
+	}
+	return inner.RoundTrip(r)
+}
 
 // relayedRequestHeaders is the closed set of request headers that travel to
 // the endpoint. **Everything else is dropped.**
@@ -597,6 +763,15 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 			"no relay is defined for that endpoint's wire protocol")
 		return
 	}
+	// **Listing-shaped, decided here and once.** A `GET` at the suffix this
+	// protocol's model listing is at is the only relayed answer this desk
+	// reads: everything else is model traffic an engine consumes in code,
+	// while a listing is a set of strings the page renders, stores and lets a
+	// person copy. Read off the configured kind rather than off anything the
+	// page said, so a page cannot ask for the scan to be skipped — or asked
+	// for.
+	listing := r.Method == http.MethodGet && suffix == relayListingSuffix[endpoint.kind]
+
 	target, err := relayTarget(endpoint.url, suffix, extra)
 	if err != nil {
 		writeJSONCoded(w, http.StatusConflict, CodeAssistantUnconfigured,
@@ -689,9 +864,18 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 			}
 			// The one thing this relay adds.
 			carried.Set(name, value)
+			// **A listing is asked for uncompressed**, because a scan of
+			// compressed bytes is not a scan. Deleting the page's own
+			// `Accept-Encoding` lets Go's transport add and transparently undo
+			// its own gzip, so what reaches the scan below is the listing's
+			// text. Nothing else is touched: model traffic keeps whatever
+			// encoding the page negotiated.
+			if listing {
+				carried.Del("Accept-Encoding")
+			}
 			out.Header = carried
 		},
-		Transport:     relayTransport,
+		Transport:     beforeTheFirstByte{inner: relayTransport, cancel: cancel},
 		FlushInterval: -1,
 		ModifyResponse: func(response *http.Response) error {
 			status = response.StatusCode
@@ -710,10 +894,76 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 			// desk carried would be a header nobody had checked.
 			response.Trailer = nil
 			response.Header.Del("Trailer")
+			// **The one body this desk reads, and it is read whole before any
+			// of it is forwarded.** Every status, not only a success: a 401's
+			// body can carry the credential it rejected as easily as a 200's
+			// can carry it as a model id, and a rule with a status in it is a
+			// rule with a hole in it. Refusing here is what makes "nothing of
+			// it travels" true — `ModifyResponse` runs before the headers are
+			// copied, so the error below reaches `ErrorHandler` with the page
+			// still holding nothing.
+			if listing {
+				// **Read through the same idle bound everything else is**, and
+				// not with a bare `io.ReadAll`. This branch buffers rather than
+				// streams, so the wrapper that was applied *after* it never
+				// reached it: an endpoint that sent one byte at its listing
+				// path and then stalled held a relay slot until the overall
+				// ten-minute deadline, and four of them denied every slot for
+				// that long — against a README that promises two minutes
+				// between two writes, unqualified. The bound cancels the
+				// request's own context, which ends this read.
+				bounded := boundedByIdle(response.Body, cancel)
+				read, err := io.ReadAll(io.LimitReader(bounded, maxListingBody+1))
+				// Stopped whether the read ended or was cut: the timer holds a
+				// reference to the cancel function for as long as it is armed.
+				_ = bounded.Close()
+				if err != nil {
+					return err
+				}
+				if len(read) > maxListingBody {
+					return errListingTooLarge
+				}
+				if problem := listingProblem(read, key); problem != nil {
+					return problem
+				}
+				// Re-declared from what was actually read: Go removes the
+				// length and the encoding when it undoes a transparent gzip,
+				// and a listing forwarded with neither is one the page reads
+				// to EOF rather than to a length.
+				response.Body = io.NopCloser(bytes.NewReader(read))
+				response.ContentLength = int64(len(read))
+				response.Header.Set("Content-Length", strconv.Itoa(len(read)))
+				response.Header.Del("Content-Encoding")
+				return nil
+			}
 			response.Body = boundedByIdle(response.Body, cancel)
 			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
+			// **The listing refusals, and nothing of the body with them.** The
+			// sentence is this desk's own and is the whole of what is said:
+			// what the endpoint wrote is exactly the thing being withheld.
+			if errors.Is(err, errListingCarriesKey) {
+				status = http.StatusBadGateway
+				writeJSONCoded(w, http.StatusBadGateway, CodeAssistantListingRefused,
+					"the endpoint put the credential in its model listing; "+
+						"this desk will not list it")
+				return
+			}
+			if errors.Is(err, errListingTooLarge) {
+				status = http.StatusBadGateway
+				writeJSONCoded(w, http.StatusBadGateway, CodeAssistantListingRefused,
+					fmt.Sprintf("the endpoint's model listing is past the %d bytes this desk "+
+						"reads, so none of it was listed", maxListingBody))
+				return
+			}
+			if errors.Is(err, errListingNotJSON) {
+				status = http.StatusBadGateway
+				writeJSONCoded(w, http.StatusBadGateway, CodeAssistantListingRefused,
+					"the endpoint's model listing is not one JSON document, so this desk "+
+						"could not read it and did not list it")
+				return
+			}
 			var tooLarge *http.MaxBytesError
 			if errors.As(err, &tooLarge) {
 				writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge,
