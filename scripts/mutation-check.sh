@@ -841,12 +841,25 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	if decoded.refused() {' \
     '	decoded := decodeDeskFile(composed)
 	if false && decoded.refused() {'
+  # **The UTF-8 rule, broken where it has one spelling.**
+  #
   # Round 1: Go's decoder replaces an invalid byte inside a string while
   # decoding and `json.RawMessage` keeps the original, so a `0xff` decoded
   # clean and would have been written into a file every later read refuses.
-  mutate go "a configuration write accepts bytes that are not UTF-8" "$A" \
-    '	if !validUTF8(raw) {' \
-    '	if false {'
+  # The repair applies the rule three times on this route — to the request
+  # body, to the composed file before staging, and to the read-back — which is
+  # wanted (each covers bytes the others never see: a body, a current file
+  # carried across, and whatever actually landed).
+  #
+  # **A row that broke one of the three reported NOT DISCRIMINATING, and it was
+  # right to**: with the body check gone the composed check refuses the same
+  # request, with the same status and the same code. Three applications of one
+  # rule are not three safeguards. So the row is the rule itself — the
+  # predicate all three call — which is the same shape `ownerOnlyFile` took for
+  # the same reason, and it is the row that can actually fail.
+  mutate go "bytes that are not text are treated as text" "$DF" \
+    'func validUTF8(data []byte) bool { return utf8.Valid(data) }' \
+    'func validUTF8(data []byte) bool { _ = data; return true }'
   # Round 1: the composed file was never bounded, so an envelope inside the
   # request bound could compose past the bound every reader applies.
   mutate go "a composed configuration is not bounded before it is staged" "$A" \
