@@ -830,9 +830,12 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # Round 2: `url.QueryUnescape("%FF")` answers one byte and no error while the
   # browser's decoder throws, so the chassis accepted a file the page refused —
   # and could send the key on the strength of it.
+  # Only the UTF-8 half is broken: dropping `decoded` altogether leaves it
+  # unused and does not compile, and a mutation that does not compile has not
+  # been survived — it has not been tested.
   mutate go "a configured query is read as bytes the browser cannot read" "$DF" \
     '			if err != nil || !utf8.ValidString(decoded) {' \
-    '			if err != nil {'
+    '			if err != nil || (false && !utf8.ValidString(decoded)) {'
   # Round 2: the reserved names were compared case-sensitively, so `?ALT=sse`
   # was accepted and the relay added its own pair beside it.
   mutate go "a reserved query name in another case is accepted" "$DF" \
