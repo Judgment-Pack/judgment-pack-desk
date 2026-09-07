@@ -23,14 +23,24 @@
  * Google's own rule is that thought blocks are resent exactly as they were
  * received; this provider has no code that could do otherwise.
  *
- * **The one accumulation, and its limit.** A streamed answer arrives as several
- * `GenerateContentResponse` chunks whose `parts` are the continuation of one
- * another — a thought summary comes in pieces and its signature arrives on the
- * last of them — so consecutive text parts of the same kind are joined into
- * one, which is what the wire means and what makes a signature land on a part
- * that still has its text. Nothing else is joined: a `functionCall` part is
- * never merged, a thought part is never merged into an answer part, and no
- * value is rewritten.
+ * **The one accumulation, and the two things it will not do.** A streamed answer
+ * arrives as several `GenerateContentResponse` chunks whose `parts` are the
+ * continuation of one another — a thought summary comes in pieces — so
+ * consecutive text parts of the same kind are joined into one, which is what the
+ * wire means.
+ *
+ * **A part carrying a `thoughtSignature` is never joined with anything**, and
+ * that is Google's own rule rather than a precaution: a signed part must not be
+ * merged with an unsigned one, and two signed parts must not be combined. The
+ * first version of this joined them anyway, so `{"text":"A","thought":true,
+ * "thoughtSignature":"sig-A"}` followed by `{"text":"B","thought":true}` became
+ * one part reading `AB` under `sig-A` — a signature attached to text Google
+ * never signed — and two signed parts lost the earlier signature outright. The
+ * echoed history now keeps the part count, the order, the text and the
+ * signatures exactly as they arrived, which is what "as received" has to mean.
+ *
+ * Nothing else is joined either: a `functionCall` part is never merged, a
+ * thought part is never merged into an answer part, and no value is rewritten.
  *
  * The reference this was written against is in the README, with the date it was
  * read.
@@ -73,38 +83,88 @@ function isText(part: Part | undefined): boolean {
   return part !== undefined && typeof part.text === 'string' && part.functionCall === undefined
 }
 
+/** Whether a part carries a signature of its own. */
+function signed(part: Part | undefined): boolean {
+  return typeof part?.thoughtSignature === 'string' && part.thoughtSignature !== ''
+}
+
 /**
  * Add one arriving part to the turn being assembled.
  *
  * Consecutive text parts of the same kind — both a thought summary, or both an
- * answer — are one part, because that is what a streamed continuation is. A
- * signature arriving on a later piece belongs to the part it continues, so it
- * is carried onto the joined part rather than left on a fragment with no text
- * of its own, which is a block a continuation may be refused for.
+ * answer — are one part, because that is what a streamed continuation is.
+ *
+ * **Unless either of them is signed.** Google's rule is that a signed part is
+ * neither merged with an unsigned one nor combined with another signed one, and
+ * the reason is what a signature is *for*: it certifies the exact bytes it came
+ * with. Joining a signed part to its neighbour produces a signature over text
+ * the endpoint never saw, and joining two signed parts throws one of them away.
+ * Either is a continuation the endpoint may refuse — and, refused or not, it is
+ * this desk asserting something about a block it did not sign.
  */
 function absorb(parts: Part[], arriving: Part): void {
   const last = parts[parts.length - 1]
   if (
     isText(arriving) &&
     isText(last) &&
+    !signed(last) &&
+    !signed(arriving) &&
     (last!.thought === true) === (arriving.thought === true)
   ) {
     last!.text = (last!.text ?? '') + (arriving.text ?? '')
-    if (typeof arriving.thoughtSignature === 'string' && arriving.thoughtSignature !== '') {
-      last!.thoughtSignature = arriving.thoughtSignature
-    }
     return
   }
-  // A copy, so the object this provider goes on to write a signature onto is
-  // never the one the JSON parser handed a caller elsewhere.
+  // A copy, so the object this provider holds is never the one the JSON parser
+  // handed a caller elsewhere.
   parts.push({ ...arriving })
 }
 
-/** The thought summaries in one turn, in the endpoint's own order. */
+/**
+ * The thought summaries in one turn, in the endpoint's own order.
+ *
+ * **A run of consecutive thought parts is one passage**, and this is where the
+ * joining that `absorb` refuses belongs. The two are not in tension: `absorb`
+ * decides what goes back on the wire, where a signature must stay on the exact
+ * bytes it certifies, and this decides what a person reads, where a summary
+ * split across three parts is one thing to read. Doing it here costs nothing and
+ * asserts nothing about a block this desk did not sign.
+ */
 function reasoningOf(parts: Part[]): string[] {
-  return parts
-    .filter((part) => part.thought === true && typeof part.text === 'string' && part.text !== '')
-    .map((part) => part.text!)
+  const passages: string[] = []
+  let joining = false
+  for (const part of parts) {
+    const thought = part.thought === true
+    const text = typeof part.text === 'string' ? part.text : ''
+    if (!thought || part.functionCall !== undefined) {
+      joining = false
+      continue
+    }
+    if (joining) passages[passages.length - 1] += text
+    else if (text !== '') {
+      passages.push(text)
+      joining = true
+    }
+    // An empty thought part neither starts a passage nor ends one: there is
+    // nothing to read in it, and `reasonedIn` is what notices it happened.
+  }
+  return passages.filter((passage) => passage !== '')
+}
+
+/**
+ * Whether this turn reasoned at all, which is not the same as whether it said
+ * anything a person can read.
+ *
+ * **A signed thought part with no text is still the endpoint reasoning**, and
+ * the signature is the evidence: the wire emits one when a summary is empty or
+ * has not been streamed, and a desk that counted only readable passages would
+ * watch a model think through every turn at tier `off` and never conclude that
+ * it always thinks. The passage list stays text-only — there is nothing to show
+ * a reader — and this is the separate signal the tier's own rule reads.
+ */
+function reasonedIn(parts: Part[]): boolean {
+  return parts.some(
+    (part) => part.thought === true && (signed(part) || (part.text ?? '') !== '')
+  )
 }
 
 /** Every signature the turn carried, whole and in order. */
@@ -149,6 +209,7 @@ function turnOf(parts: Part[]): ModelTurn {
     // The array that arrived, kept: no map, no filter, no rebuild.
     assistant: { role: 'model', parts },
     reasoning: reasoningOf(parts),
+    reasoned: reasonedIn(parts),
     signatures: signaturesOf(parts)
   }
 }

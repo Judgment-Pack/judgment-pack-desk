@@ -69,6 +69,37 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * The keywords whose **keys are names somebody wrote**, not keywords.
+ *
+ * **Two of these were missing and the omission deleted a definition.** The walk
+ * knew `properties` and `$defs`; JSON Schema has more places where an author's
+ * word is a key, and a schema with `{"definitions": {"const": {…}}}` had its
+ * definition *called* `const` removed as though it were the keyword — leaving
+ * `{"$ref": "#/definitions/const"}` pointing at nothing. A dangling reference is
+ * worse than the keyword this list exists to take out.
+ *
+ * `patternProperties` is here for the same reason and is on the removal list
+ * besides: its keys are regular expressions, which are as much the author's as a
+ * property name is. `dependentRequired` and `dependentSchemas` key on property
+ * names. A map this list does not know is walked as a schema, which is the
+ * conservative half of the mistake — a keyword inside it is still removed — and
+ * the list is what stops the *keys* being read as keywords.
+ */
+const NAME_MAPS: readonly string[] = [
+  'properties',
+  '$defs',
+  'definitions',
+  'dependentSchemas',
+  'dependentRequired',
+  'patternProperties'
+]
+
+/** Whether this key's own object holds authored names rather than keywords. */
+function namesUnder(key: string): boolean {
+  return NAME_MAPS.includes(key)
+}
+
+/**
  * The served schema, minus exactly the keywords above, at every depth.
  *
  * **A structural walk and not a filter over one level.** A schema's keywords
@@ -77,11 +108,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * `additionalProperties` on every nested object and the endpoint would refuse
  * the request anyway.
  *
- * **The one place a key is not a keyword is under a property map**, where the
- * names are the author's rather than JSON Schema's: a document with a member
- * actually called `const` or `examples` must keep it. So the walk carries
- * whether it is standing in a map of names, and removes nothing there — it only
- * descends into the schemas the names point at.
+ * **The places a key is not a keyword are the name maps** — see `NAME_MAPS` —
+ * where the keys are the author's words rather than JSON Schema's: a document
+ * with a member actually called `const`, or a definition of that name, must keep
+ * it. So the walk carries whether it is standing in a map of names, and removes
+ * nothing there — it only descends into the schemas the names point at.
  *
  * Nothing is copied that does not have to be: a subtree with no removal in it
  * is returned by identity, so the object the runtime served is the object that
@@ -100,10 +131,11 @@ export function withoutUnsupportedKeywords(schema: unknown, inNameMap = false): 
       changed = true
       continue
     }
-    // `properties`, `patternProperties` and `$defs` hold *names*, not keywords.
-    // `patternProperties` is on the removal list and never reached; the other
-    // two are descended into with the flag set.
-    const walked = withoutUnsupportedKeywords(value, key === 'properties' || key === '$defs')
+    // **A key inside a name map is a name, so its value is an ordinary schema.**
+    // Reading `namesUnder` on it would ask whether the *author's word* is a
+    // name-map keyword — and a definition called `patternProperties` would have
+    // its own children read as names, so a keyword inside it would survive.
+    const walked = withoutUnsupportedKeywords(value, inNameMap ? false : namesUnder(key))
     if (walked !== value) changed = true
     out[key] = walked
   }
@@ -119,10 +151,11 @@ export function withoutUnsupportedKeywords(schema: unknown, inNameMap = false): 
  * set of names this request actually carried. A refusal naming none of them is
  * an ordinary model error and is reported as one.
  *
- * Property names are excluded for the reason the walk excludes them: a member
- * called `title` is the author's word and not a schema keyword, and matching a
- * refusal against it would let a document's own vocabulary decide what an error
- * meant.
+ * Authored names are excluded for the reason the walk excludes them — the same
+ * `NAME_MAPS`, so the two classifications cannot disagree: a member called
+ * `title`, or a definition called `const`, is the author's word and not a schema
+ * keyword, and matching a refusal against it would let a document's own
+ * vocabulary decide what an error meant.
  */
 export function keywordsSent(schema: unknown, into?: Set<string>, inNameMap = false): Set<string> {
   const found = into ?? new Set<string>()
@@ -133,7 +166,7 @@ export function keywordsSent(schema: unknown, into?: Set<string>, inNameMap = fa
   if (!isRecord(schema)) return found
   for (const [key, value] of Object.entries(schema)) {
     if (!inNameMap) found.add(key)
-    keywordsSent(value, found, key === 'properties' || key === '$defs')
+    keywordsSent(value, found, inNameMap ? false : namesUnder(key))
   }
   return found
 }

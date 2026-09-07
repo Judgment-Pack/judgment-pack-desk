@@ -70,12 +70,16 @@ function callsOf(raw: OpenAiToolCall[]): ToolCall[] {
 
 function turnOf(message: OpenAiMessage): ModelTurn {
   const text = typeof message.content === 'string' ? message.content : ''
+  const reasoning = reasoningOf(message)
   return {
     text,
     calls: callsOf(message.tool_calls ?? []),
     // As received, with whatever reasoning member the endpoint put on it.
     assistant: message,
-    reasoning: reasoningOf(message),
+    reasoning,
+    // This protocol carries reasoning as prose and nothing else, so a passage
+    // and the fact of one are the same thing here.
+    reasoned: reasoning.length > 0,
     // Signatures are Anthropic's; this protocol has none.
     signatures: []
   }
@@ -203,7 +207,14 @@ export const openai: Provider = {
         break
       }
     }
-    return { text, calls, assistant, reasoning: passages, signatures: [] }
+    return {
+      text,
+      calls,
+      assistant,
+      reasoning: passages,
+      reasoned: passages.length > 0,
+      signatures: []
+    }
   },
 
   appendTurn(messages, turn, results) {

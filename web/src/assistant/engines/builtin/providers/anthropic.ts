@@ -146,6 +146,9 @@ export const anthropic: Provider = {
         calls: callsOf(content),
         assistant: { role: 'assistant', content },
         reasoning: reasoningOf(content),
+        // A thinking block on this wire always carries its text, so a passage
+        // and the fact of one are the same thing here.
+        reasoned: reasoningOf(content).length > 0,
         signatures: signaturesOf(content)
       }
     }
@@ -208,6 +211,7 @@ export const anthropic: Provider = {
       calls: callsOf(content),
       assistant: { role: 'assistant', content },
       reasoning: reasoningOf(content),
+      reasoned: reasoningOf(content).length > 0,
       signatures: signaturesOf(content)
     }
   },

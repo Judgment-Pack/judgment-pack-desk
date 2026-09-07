@@ -239,7 +239,10 @@ async function* builtinEvents(
       // The **turn** is the unit of evidence about an endpoint, and whether it
       // produced an answer of its own is half of it: a turn that only called a
       // tool says nothing about whether an endpoint will reason.
-      if (reply.reasoning.length > 0) slot.sawReasoning()
+      //
+      // `reasoned` and not the passage count: a signed thought part with no text
+      // is the endpoint reasoning even though there is nothing to show for it.
+      if (reply.reasoned) slot.sawReasoning()
       const noticed = slot.turnEnded(reply.text !== '')
       if (noticed !== null) yield noticed
 
@@ -363,7 +366,7 @@ async function* refute(options: {
       yield { type: 'reasoning', text: passage, done: true }
     }
     // The critic's turns are this session's turns, on this session's endpoint.
-    if (reply.reasoning.length > 0) options.slot.sawReasoning()
+    if (reply.reasoned) options.slot.sawReasoning()
     const noticed = options.slot.turnEnded(reply.text !== '')
     if (noticed !== null) yield noticed
     if (reply.calls.length === 0) {

@@ -43,6 +43,18 @@ export interface ModelTurn {
    */
   reasoning: string[]
   /**
+   * Whether this turn **reasoned**, which is not the same as whether it produced
+   * a passage a person can read.
+   *
+   * On two wires those are the same thing and this is `reasoning.length > 0`. On
+   * the Gemini wire they are not: a thought part may carry a signature and no
+   * text — the summary was empty, or was not streamed — and a desk that counted
+   * only readable passages would watch a model think through every turn at tier
+   * `off` and never conclude that it always thinks. The tier's own rule reads
+   * this; the tab reads `reasoning`.
+   */
+  reasoned: boolean
+  /**
    * Every thinking signature this turn carried, whole.
    *
    * Anthropic and Gemini — the two wires that sign a model's reasoning — and

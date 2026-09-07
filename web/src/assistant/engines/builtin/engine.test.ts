@@ -1461,11 +1461,11 @@ describe('the native Gemini wire, on this engine’s own provider', () => {
     ])
   })
 
-  it('joins a thought summary streamed in pieces, and keeps its signature on it', async () => {
-    // **The one accumulation this provider does**, and the reason: a signature
-    // arrives on the last piece of the summary it belongs to, and a client that
-    // kept the pieces apart would send back a signature on a part with no text
-    // — which is a continuation the endpoint refuses.
+  it('reads a thought summary streamed in pieces as one passage', async () => {
+    // **The passage is joined for the reader and the parts are not joined for
+    // the wire**, which are two different questions: a signature has to stay on
+    // the exact bytes it certifies, and a summary split across three parts is
+    // still one thing to read.
     const call: ModelCall = async () =>
       streamed([
         [{ text: 'I read ', thought: true }],
@@ -1587,5 +1587,152 @@ describe('the native Gemini wire, on this engine’s own provider', () => {
     // refuses both, so the session reports the endpoint has no thinking.
     const notices = events.filter((event) => event.type === 'thinking_unavailable')
     expect(notices).toHaveLength(1)
+  })
+})
+
+describe('a signed Gemini part is never merged with anything', () => {
+  /** One whole Gemini answer, in the endpoint's own shape. */
+  const answer = (parts: unknown[]) => ({
+    candidates: [{ content: { role: 'model', parts }, finishReason: 'STOP' }]
+  })
+  const fenced = (text: string) => answer([{ text }])
+
+  function streamed(frames: unknown[][]): Response {
+    const body = frames.map((parts) => `data: ${JSON.stringify(answer(parts))}\n\n`).join('')
+    return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+  }
+
+  /** Drive one turn of parts, then a final message, and keep what was sent. */
+  async function replay(
+    first: unknown[][],
+    tier: 'off' | 'on' = 'on'
+  ): Promise<Record<string, unknown>[]> {
+    const seen: Record<string, unknown>[] = []
+    let turn = 0
+    const call: ModelCall = async (_suffix, request) => {
+      turn += 1
+      seen.push(JSON.parse(request.body) as Record<string, unknown>)
+      if (turn === 1) return streamed(first)
+      return new Response(JSON.stringify(fenced(PROPOSAL_TEXT)), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    }
+    await drain(
+      builtin.start({
+        ...session(),
+        model: { family: 'gemini', model: 'a-model', call },
+        thinking: normalize(tier, 'gemini')
+      })
+    )
+    return seen
+  }
+
+  /** The model turn out of the request that carried the tool result back. */
+  const modelParts = (seen: Record<string, unknown>[]): Record<string, unknown>[] => {
+    const contents = seen[1]!.contents as { role: string; parts: Record<string, unknown>[] }[]
+    return contents.find((content) => content.role === 'model')!.parts
+  }
+
+  it('keeps a signed part and the unsigned one beside it as two parts', async () => {
+    // **The review's shape, exactly.** Merged, this became one part reading
+    // `AB` under `sig-A` — a signature over text the endpoint never signed.
+    const seen = await replay([
+      [{ text: 'A', thought: true, thoughtSignature: 'sig-A' }],
+      [{ text: 'B', thought: true }],
+      [{ functionCall: { name: 'validate', args: { document: '{}' } } }]
+    ])
+    expect(modelParts(seen)).toEqual([
+      { text: 'A', thought: true, thoughtSignature: 'sig-A' },
+      { text: 'B', thought: true },
+      { functionCall: { name: 'validate', args: { document: '{}' } } }
+    ])
+  })
+
+  it('keeps two distinctly signed parts, rather than losing the earlier signature', async () => {
+    const seen = await replay([
+      [{ text: 'A', thought: true, thoughtSignature: 'sig-A' }],
+      [{ text: 'B', thought: true, thoughtSignature: 'sig-B' }],
+      [{ functionCall: { name: 'validate', args: { document: '{}' } } }]
+    ])
+    expect(modelParts(seen)).toEqual([
+      { text: 'A', thought: true, thoughtSignature: 'sig-A' },
+      { text: 'B', thought: true, thoughtSignature: 'sig-B' },
+      { functionCall: { name: 'validate', args: { document: '{}' } } }
+    ])
+  })
+
+  it('keeps a signed part followed by a functionCall exactly as it arrived', async () => {
+    const seen = await replay([
+      [{ text: 'A', thought: true, thoughtSignature: 'sig-A' }],
+      [{ functionCall: { name: 'validate', args: { document: '{}' } } }]
+    ])
+    expect(modelParts(seen)).toEqual([
+      { text: 'A', thought: true, thoughtSignature: 'sig-A' },
+      { functionCall: { name: 'validate', args: { document: '{}' } } }
+    ])
+  })
+
+  it('carries a signature on the functionCall part itself, untouched', async () => {
+    // Gemini's documented placement for function calling: the signature rides
+    // on the FIRST functionCall part, and later parallel calls are unsigned.
+    const seen = await replay([
+      [
+        {
+          functionCall: { name: 'validate', args: { document: '{}' } },
+          thoughtSignature: 'sig-call'
+        }
+      ]
+    ])
+    expect(modelParts(seen)).toEqual([
+      { functionCall: { name: 'validate', args: { document: '{}' } }, thoughtSignature: 'sig-call' }
+    ])
+  })
+
+  it('still joins the unsigned pieces of one summary, which is what a stream is', async () => {
+    const seen = await replay([
+      [{ text: 'I read ', thought: true }],
+      [{ text: 'the policy.', thought: true }],
+      [{ functionCall: { name: 'validate', args: { document: '{}' } } }]
+    ])
+    expect(modelParts(seen)).toEqual([
+      { text: 'I read the policy.', thought: true },
+      { functionCall: { name: 'validate', args: { document: '{}' } } }
+    ])
+  })
+
+  it('counts a signed thought part with no text as reasoning seen', async () => {
+    // **The signature is the evidence.** Two answering turns each carrying an
+    // empty signed thought part reach `always`, and only after the second.
+    const answered = (n: number) =>
+      answer([
+        { text: '', thought: true, thoughtSignature: `sig-${n}` },
+        { text: `answer ${n}` },
+        { functionCall: { name: 'validate', args: { document: '{}' } } }
+      ])
+    let turn = 0
+    const call: ModelCall = async () => {
+      turn += 1
+      const body = turn >= 3 ? fenced(PROPOSAL_TEXT) : answered(turn)
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    }
+    const events = await drain(
+      builtin.start({
+        ...session(),
+        model: { family: 'gemini', model: 'a-model', call },
+        thinking: normalize('off', 'gemini')
+      })
+    )
+    const notices = events.filter(
+      (event): event is Extract<AssistantEvent, { type: 'thinking_unavailable' }> =>
+        event.type === 'thinking_unavailable'
+    )
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.detail).toContain('this model always thinks')
+    // …and nothing was shown as a passage, because there was nothing to read.
+    expect(events.filter((event) => event.type === 'reasoning')).toEqual([])
   })
 })

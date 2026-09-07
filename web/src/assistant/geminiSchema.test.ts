@@ -78,6 +78,76 @@ describe('the closed removal list for the Gemini function-declaration schema', (
     expect(withoutUnsupportedKeywords(schema)).toEqual(schema)
   })
 
+  it.each(['properties', '$defs', 'definitions', 'dependentSchemas'])(
+    'leaves an authored name alone under %s, and still walks the schema it points at',
+    (map) => {
+      // **The defect this row was written against**: a definition *called*
+      // `const` was deleted as though it were the keyword, leaving
+      // `{"$ref": "#/definitions/const"}` pointing at nothing. A dangling
+      // reference is worse than the keyword the list exists to take out.
+      const schema = {
+        type: 'object',
+        [map]: Object.fromEntries(
+          GEMINI_SCHEMA_REMOVALS.map((keyword) => [
+            keyword,
+            { type: 'string', additionalProperties: false, const: 'x' }
+          ])
+        )
+      }
+      const walked = withoutUnsupportedKeywords(schema) as Record<
+        string,
+        Record<string, Record<string, unknown>>
+      >
+      // Every authored name survives, whatever it is called…
+      expect(Object.keys(walked[map]!).sort()).toEqual([...GEMINI_SCHEMA_REMOVALS].sort())
+      // …and the removable keywords inside each child schema are still gone.
+      for (const name of GEMINI_SCHEMA_REMOVALS) {
+        expect(walked[map]![name]!.additionalProperties, name).toBeUndefined()
+        expect(walked[map]![name]!.const, name).toBeUndefined()
+        expect(walked[map]![name]!.type, name).toBe('string')
+      }
+    }
+  )
+
+  it('removes patternProperties whole, names and all, because it is on the list', () => {
+    // The fifth name map is the one that does not survive: it is a removal in
+    // its own right, so its keys never reach the wire at all. It is still
+    // classified as a name map, because `keywordsSent` must not read a regular
+    // expression somebody wrote as a schema keyword.
+    const schema = { type: 'object', patternProperties: { '^const$': { type: 'string' } } }
+    expect(withoutUnsupportedKeywords(schema)).toEqual({ type: 'object' })
+    const sent = keywordsSent({ patternProperties: { const: { type: 'string' } } })
+    expect(sent.has('patternProperties')).toBe(true)
+    expect(sent.has('const')).toBe(false)
+  })
+
+  it('keeps a $ref resolvable, which is the point of the rule', () => {
+    const schema = {
+      type: 'object',
+      definitions: { const: { type: 'string', additionalProperties: false } },
+      properties: { x: { $ref: '#/definitions/const' } }
+    }
+    const walked = withoutUnsupportedKeywords(schema) as {
+      definitions: Record<string, unknown>
+      properties: { x: { $ref: string } }
+    }
+    expect(Object.keys(walked.definitions)).toEqual(['const'])
+    expect(walked.properties.x.$ref).toBe('#/definitions/const')
+  })
+
+  it('reads a keyword under a name map as a name and not as a keyword sent', () => {
+    // The classifier has to agree with the walk, or a refusal naming a
+    // definition would be reported as a refusal about a schema keyword.
+    const sent = keywordsSent({
+      type: 'object',
+      definitions: { pattern: { type: 'string' } },
+      dependentRequired: { pattern: ['x'] }
+    })
+    expect(sent.has('definitions')).toBe(true)
+    expect(sent.has('dependentRequired')).toBe(true)
+    expect(sent.has('pattern')).toBe(false)
+  })
+
   it('leaves a property actually named like a keyword alone', () => {
     // Under `properties` the keys are the author's words, not JSON Schema's. A
     // document with a member called `const` keeps it; the *schema* of that
