@@ -99,12 +99,12 @@ function stubWrites(
   return { sent }
 }
 
-function renderForm(value: EffectiveConfig = configured()) {
+function renderForm(value: EffectiveConfig = configured(), bound = false) {
   const written: unknown[] = []
   const rendered = render(
     <QueryClientProvider client={testQueryClient()}>
       <DeskConfigFixture value={value}>
-        <EndpointForm onWritten={(answer) => written.push(answer)} />
+        <EndpointForm bound={bound} onWritten={(answer) => written.push(answer)} />
       </DeskConfigFixture>
     </QueryClientProvider>
   )
@@ -199,7 +199,7 @@ describe('the fields', () => {
     const { rerender } = render(
       <QueryClientProvider client={testQueryClient()}>
         <DeskConfigFixture value={effectiveConfig(undefined)}>
-          <EndpointForm onWritten={() => {}} />
+          <EndpointForm bound={false} onWritten={() => {}} />
         </DeskConfigFixture>
       </QueryClientProvider>
     )
@@ -207,7 +207,7 @@ describe('the fields', () => {
     rerender(
       <QueryClientProvider client={testQueryClient()}>
         <DeskConfigFixture value={configured()}>
-          <EndpointForm onWritten={() => {}} />
+          <EndpointForm bound={false} onWritten={() => {}} />
         </DeskConfigFixture>
       </QueryClientProvider>
     )
@@ -390,5 +390,125 @@ describe('a file that moved underneath the page', () => {
     )
     // The whole point: the read is taken again and the draft is not.
     expect((screen.getByLabelText('Model') as HTMLInputElement).value).toBe('a-model-being-chosen')
+  })
+})
+
+describe('the model, and the list the endpoint offers', () => {
+  /** A `fetch` that answers the listing and records what it was asked. */
+  function servesListing(
+    body: unknown,
+    status = 200
+  ): { urls: string[]; inits: RequestInit[] } {
+    const urls: string[] = []
+    const inits: RequestInit[] = []
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      urls.push(url)
+      inits.push(init)
+      if (!url.includes('/api/assistant/relay/')) {
+        return { ok: true, status: 200, statusText: '', text: async () => JSON.stringify(WRITTEN) }
+      }
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' }
+      })
+    })
+    return { urls, inits }
+  }
+
+  const GEMINI = configured({
+    endpoint: { ...ENDPOINT, kind: 'gemini', url: 'https://api.example.invalid' }
+  })
+  const LISTED = {
+    models: [
+      {
+        name: 'models/gemini-2.5-pro',
+        displayName: 'Gemini 2.5 Pro',
+        supportedGenerationMethods: ['generateContent']
+      }
+    ]
+  }
+
+  it('offers the listing only where the key is bound to the saved endpoint', () => {
+    servesListing(LISTED)
+    renderForm(GEMINI, false)
+    expect(
+      (screen.getByRole('button', { name: 'List models' }) as HTMLButtonElement).disabled
+    ).toBe(true)
+    expect(screen.getByText(/its key stored before this desk can ask it/)).toBeTruthy()
+    cleanup()
+    servesListing(LISTED)
+    renderForm(GEMINI, true)
+    expect(
+      (screen.getByRole('button', { name: 'List models' }) as HTMLButtonElement).disabled
+    ).toBe(false)
+  })
+
+  it('asks through the relay, by a suffix, and never builds an address', async () => {
+    const seen = servesListing(LISTED)
+    renderForm(GEMINI, true)
+    fireEvent.click(screen.getByRole('button', { name: 'List models' }))
+    await waitFor(() =>
+      expect(seen.urls.some((url) => url.includes('/api/assistant/relay/'))).toBe(true)
+    )
+    const listing = seen.urls.find((url) => url.includes('/api/assistant/relay/'))!
+    expect(listing).toContain('/api/assistant/relay/v1/v1beta/models')
+    expect(listing).not.toContain('api.example.invalid')
+  })
+
+  it('fills a picker with what came back, showing the label', async () => {
+    servesListing(LISTED)
+    renderForm(GEMINI, true)
+    fireEvent.click(screen.getByRole('button', { name: 'List models' }))
+    const picker = await screen.findByRole('combobox', { name: 'Models this endpoint listed' })
+    fireEvent.click(picker)
+    expect(await screen.findByRole('option', { name: 'Gemini 2.5 Pro' })).toBeTruthy()
+  })
+
+  it('saves the id it was listed under, and never the label', async () => {
+    const seen = servesListing(LISTED)
+    renderForm(GEMINI, true)
+    fireEvent.click(screen.getByRole('button', { name: 'List models' }))
+    const picker = await screen.findByRole('combobox', { name: 'Models this endpoint listed' })
+    fireEvent.click(picker)
+    fireEvent.click(await screen.findByRole('option', { name: 'Gemini 2.5 Pro' }))
+    // The field beside the list takes the id, because the id is what the
+    // endpoint answers to and the label is what a person reads.
+    await waitFor(() =>
+      expect((screen.getByLabelText('Model') as HTMLInputElement).value).toBe('gemini-2.5-pro')
+    )
+    save()
+    await waitFor(() => expect(seen.urls.some((url) => url.includes('/api/desk-config'))).toBe(true))
+    const put = seen.inits.find((init) => init.method === 'PUT')!
+    const body = JSON.parse(String(put.body)) as { assistant: { endpoint: { model: string } } }
+    expect(body.assistant.endpoint.model).toBe('gemini-2.5-pro')
+  })
+
+  it('keeps the field usable for a model the first page does not carry', async () => {
+    // A listing is first-page-only and an endpoint may refuse to list at all.
+    // Neither may stop an author configuring a model they know the name of.
+    servesListing(LISTED)
+    renderForm(GEMINI, true)
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'a-model-not-listed' } })
+    fireEvent.click(screen.getByRole('button', { name: 'List models' }))
+    await screen.findByRole('combobox', { name: 'Models this endpoint listed' })
+    expect((screen.getByLabelText('Model') as HTMLInputElement).value).toBe('a-model-not-listed')
+    expect(screen.getByText(/A model that is not here is typed into the field/)).toBeTruthy()
+  })
+
+  it('reports a refused listing in the probe s words, and never the body', async () => {
+    servesListing({ error: 'sk-a-real-looking-key-wxyz' }, 401)
+    const { container } = renderForm(GEMINI, true)
+    fireEvent.click(screen.getByRole('button', { name: 'List models' }))
+    expect(await screen.findByText(/the endpoint did not accept the key/)).toBeTruthy()
+    expect(container.textContent).not.toContain('sk-a-real-looking-key-wxyz')
+    // And no picker, because there is nothing to pick from.
+    expect(screen.queryByRole('combobox', { name: 'Models this endpoint listed' })).toBeNull()
+  })
+
+  it('says the endpoint listed none rather than showing an empty picker unexplained', async () => {
+    servesListing({ models: [] })
+    renderForm(GEMINI, true)
+    fireEvent.click(screen.getByRole('button', { name: 'List models' }))
+    expect(await screen.findByText('The endpoint listed none.')).toBeTruthy()
   })
 })

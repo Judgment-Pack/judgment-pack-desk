@@ -606,11 +606,29 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
     // chassis' session token, and an engine holding it can open `/ws?token=…`
     // itself over a connection no gate is on.
     const source = read('assistant/engine.ts')
-    expect(membersOf(interfaceBody(source, 'ModelRequest'))).toEqual(['headers', 'body', 'signal'])
+    expect(membersOf(interfaceBody(source, 'ModelRequest'))).toEqual([
+      'headers',
+      'method',
+      'body',
+      'signal'
+    ])
     expect(source).toContain(
       'export type ModelCall = (suffix: string, request: ModelRequest) => Promise<Response>'
     )
     expect(source).toContain('model: { family: EndpointKind; model: string; call: ModelCall }')
+  })
+
+  it('admits two methods and no more, because the relay forwards the method', () => {
+    // **`method` is the one member this set has grown, and it is a closed
+    // pair.** The relay carries the method verbatim, so an open member would
+    // let whoever holds a capability ask the configured endpoint to *do*
+    // something nobody wrote down with the machine-held credential attached —
+    // the same argument that closes the path's colon methods. `GET` is here
+    // because each protocol's model listing is one and the listing goes over
+    // this capability rather than round it; the type is what holds the pair,
+    // and this reads the declaration so that widening it fails here.
+    const source = read('assistant/engine.ts')
+    expect(source).toContain("method?: 'GET' | 'POST'")
   })
 
   // **The string-enumeration guard that used to stand here is gone.** It

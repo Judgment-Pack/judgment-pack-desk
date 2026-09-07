@@ -267,9 +267,12 @@ export function bindModelCall(family: EndpointKind): ModelCall {
     let answered: Response
     try {
       answered = await send(chassisUrl(`${RELAY_PREFIX}/${path}`, extra), {
-        method: 'POST',
+        // `POST` unless the caller named the one other method this capability
+        // admits. A `GET` carries no body: `fetch` refuses one that does, and
+        // the model listing is the only caller that asks for either.
+        method: request.method ?? 'POST',
         headers,
-        body: request.body,
+        body: request.method === 'GET' ? undefined : request.body,
         signal: request.signal
       })
     } catch (cause) {

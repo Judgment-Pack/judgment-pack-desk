@@ -56,6 +56,7 @@ import {
   withTool,
   type EndpointDraft
 } from './endpointDraft'
+import { ModelField } from './ModelField'
 import { useUpdateAssistantConfig } from './queries'
 
 /**
@@ -74,8 +75,17 @@ const SAVED = 'Saved. The rest of the file is exactly as it was.'
 const CREATED = 'Saved, and the file was created. Nothing else is in it.'
 
 export function EndpointForm({
+  bound,
   onWritten
 }: {
+  /**
+   * Whether the stored key is the key for the endpoint that is **saved**.
+   *
+   * The saved one and not the draft: a key is bound to what is in the file,
+   * and a host typed but not written has changed nothing about where the
+   * credential may go. It gates List models and nothing else.
+   */
+  bound: boolean
   /** Called with every answer to a write that landed. */
   onWritten: (answer: AssistantConfigWritten) => void
 }) {
@@ -197,20 +207,12 @@ export function EndpointForm({
 
         <ToolChoice draft={draft} onChange={edit} problem={problemFor('assistant.endpoint.tools')} />
 
-        <Field
-          label="Model"
-          hint="The model id this endpoint knows it by, exactly as the endpoint spells it."
-          error={problemFor('assistant.endpoint.model')}
-        >
-          {(wiring) => (
-            <Input
-              {...wiring}
-              value={draft.model}
-              spellCheck={false}
-              onChange={(event) => edit({ ...draft, model: event.target.value })}
-            />
-          )}
-        </Field>
+        <ModelField
+          draft={draft}
+          bound={bound}
+          onChange={edit}
+          problem={problemFor('assistant.endpoint.model')}
+        />
 
         <Field
           label="Engine"

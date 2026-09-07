@@ -37,7 +37,7 @@ import { Fields } from '../components/primitives'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import type { AssistantEndpointConfig } from '../config/deskConfig'
 import { SourceBadge } from '../routes/adminBlocks'
-import type { AssistantKeyState } from './client'
+import { DIAGNOSTIC_SAYS, type AssistantKeyState } from './client'
 import { EndpointForm } from './EndpointForm'
 import { endpointOrigin, keyBinding, type KeyBinding } from './keyBinding'
 import {
@@ -155,7 +155,10 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
         for one endpoint than another.
       </p>
 
-      <EndpointForm onWritten={(answer) => setRebindAsked(answer.keyRebindRequired)} />
+      <EndpointForm
+        bound={binding === 'bound'}
+        onWritten={(answer) => setRebindAsked(answer.keyRebindRequired)}
+      />
 
       <p className="quiet">
         Saving writes only the assistant part of the file on this machine and carries everything
@@ -408,25 +411,6 @@ function keySays(
  * credential is therefore not reachable — a page that called a 401 reachable
  * would report a desk that cannot make one call as ready to work.
  */
-/**
- * What each word of the probe's vocabulary means, in plain English.
- *
- * A lookup rather than the word itself, because `unexpected-status` is not a
- * sentence and `tls` is not English. An answer outside the list renders as the
- * word it was given rather than as a blank — the desk does not invent a
- * meaning for something it did not define.
- */
-const DIAGNOSTIC_SAYS: Record<string, string> = {
-  unauthorized: 'the endpoint did not accept the key',
-  forbidden: 'the endpoint refused this request',
-  'not-found': 'nothing is at that address',
-  timeout: 'no answer within ten seconds',
-  tls: 'the secure connection could not be established',
-  refused: 'nothing is listening there',
-  dns: 'that host name did not resolve',
-  'unexpected-status': 'the endpoint answered something unexpected'
-}
-
 function ProbeReading({
   result
 }: {

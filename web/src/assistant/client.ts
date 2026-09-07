@@ -75,6 +75,29 @@ export const PROBE_DIAGNOSTICS = [
 ] as const
 export type ProbeDiagnostic = (typeof PROBE_DIAGNOSTICS)[number]
 
+/**
+ * What each of those words means, in plain English.
+ *
+ * A lookup rather than the word itself, because `unexpected-status` is not a
+ * sentence and `tls` is not English. It sits beside the vocabulary rather than
+ * in the section that first rendered it, because the model listing reports a
+ * refusal in the same words: two tables of one vocabulary drift, and the
+ * page's copy is what turns a word into a sentence a reader sees. A word
+ * outside the list has no entry, and a caller renders the word it was given
+ * rather than a blank — the desk does not invent a meaning for something it
+ * did not define.
+ */
+export const DIAGNOSTIC_SAYS: Record<string, string> = {
+  unauthorized: 'the endpoint did not accept the key',
+  forbidden: 'the endpoint refused this request',
+  'not-found': 'nothing is at that address',
+  timeout: 'no answer within ten seconds',
+  tls: 'the secure connection could not be established',
+  refused: 'nothing is listening there',
+  dns: 'that host name did not resolve',
+  'unexpected-status': 'the endpoint answered something unexpected'
+}
+
 /** What one reachability check established. */
 export interface ProbeResult {
   /**

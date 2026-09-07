@@ -250,7 +250,7 @@ describe('the Admin page', () => {
     // asserted by its absence here and by its own case in the Assistant
     // section's suite: Store key and Remove key need a key row that offers
     // them, and List models needs a key bound to the configured endpoint.
-    for (const conditional of ['Store key', 'Remove key', 'List models']) {
+    for (const conditional of ['Store key', 'Remove key']) {
       expect(labels, conditional).not.toContain(conditional)
     }
     // The form's three pickers, asserted as themselves and in two shapes,
@@ -270,7 +270,11 @@ describe('the Admin page', () => {
     // neither changes anything on this machine.
     const picker = [...triggers, ...offered]
     const others = labels.filter(
-      (label) => label !== undefined && !writes.includes(label) && !picker.includes(label)
+      (label) =>
+        label !== undefined &&
+        !writes.includes(label) &&
+        label !== 'List models' &&
+        !picker.includes(label)
     )
     expect(others.length).toBeGreaterThan(0)
     expect(
@@ -289,8 +293,9 @@ describe('the Admin page', () => {
     const disabled = Array.from(container.querySelectorAll('[disabled]')).map(
       (element) => element.textContent
     )
-    expect(disabled).toEqual(['Save'])
+    expect(disabled).toEqual(['List models', 'Save'])
     expect(screen.getByText(/has not seen them/)).toBeTruthy()
+    expect(screen.getByText(/its key stored before this desk can ask it/)).toBeTruthy()
   })
 
   it('enables the one write once the desk-level file has been read', () => {
@@ -303,7 +308,11 @@ describe('the Admin page', () => {
         sha256: ''
       })
     )
-    expect(container.querySelectorAll('[disabled]')).toHaveLength(0)
+    // Save enables; List models does not, and for its own reason — it needs a
+    // key bound to the endpoint that is saved, and this fixture has neither.
+    expect(
+      Array.from(container.querySelectorAll('[disabled]')).map((element) => element.textContent)
+    ).toEqual(['List models'])
     expect(screen.queryByText(/has not seen them/)).toBeNull()
   })
 
