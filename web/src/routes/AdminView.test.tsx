@@ -1,14 +1,14 @@
 /**
- * Admin: six headed sections, a sentence carried verbatim, and exactly one
- * control that changes persisted desk-layout state.
+ * Admin: eight cards, one shape, and no narration.
  *
- * The last of those is the assertion worth having, and it is scoped rather
- * than rounded. A read-only page that grew a *configuration* control would be
- * a page that writes configuration, which is a decision nobody has taken. It
- * is not the claim that nothing on the page is interactive: the Copy buttons
- * are, and they change the clipboard and their own transient label. What holds
- * is that the pane reset is the only control that touches anything persisted,
- * and it clears a single `localStorage` key rather than the origin's storage.
+ * Three assertions carry this file. The **order** case fails if a section is
+ * added without being declared, declared without being rendered, or rendered
+ * out of order. The **narration sweep** fails on any text node over 140
+ * characters that is not quoted material — a path, a decoder's own refusal, a
+ * member of the file — which is what "remove the narration" means as a rule
+ * rather than as a preference. And the **controls** case is the whole list of
+ * what on this page changes anything, so a control cannot be added without
+ * appearing here.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -20,7 +20,7 @@ import { McpContext } from '../mcp/McpProvider'
 import { ShellStateProvider, projectKey, shellStateKey } from '../shell/paneState'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { AdminView } from './AdminView'
-import { ADMIN_DISCLAIMER, ADMIN_SECTIONS } from './adminSections'
+import { ADMIN_SECTIONS } from './adminSections'
 
 afterEach(() => {
   cleanup()
@@ -41,6 +41,7 @@ const CHASSIS_413 = {
 /** The chassis' project root, and the key the record therefore lives under. */
 const ROOT = '/home/someone/a-project'
 const KEY = shellStateKey(projectKey(ROOT))
+const DESK_PATH = '/home/someone/.config/jpack-desk/desk.json'
 
 /**
  * `null` means "the chassis has not answered yet". Not `undefined`: a default
@@ -79,7 +80,7 @@ function renderAdmin(
   )
 }
 
-/** One file listing, or a refusal, for the Storage section to describe. */
+/** One file listing, or a refusal, for the Storage card to describe. */
 function servesListing(options: {
   files?: { path: string; bytes: number; sha256: string }[]
   partial?: string[]
@@ -107,24 +108,94 @@ function servesListing(options: {
   )
 }
 
+/**
+ * Every text node the page renders that is **this page's own prose**.
+ *
+ * Quoted material is exempt and the exemption is the definition: a path, a
+ * refusal in the decoder's own sentence, and a member of the file as it is
+ * written are not narration, they are the thing the card exists to show. A
+ * `<code>` or a `<pre>` is where each of those goes.
+ */
+function proseNodes(container: HTMLElement): string[] {
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+  const found: string[] = []
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    const quoted = node.parentElement?.closest('code, pre')
+    if (quoted !== null && quoted !== undefined) continue
+    const text = node.textContent ?? ''
+    if (text.trim() !== '') found.push(text)
+  }
+  return found
+}
+
 describe('the Admin page', () => {
-  it('renders every section in order, with those exact headings and no others', () => {
-    // The whole list, not a slice of it. `slice(0, 6)` said nothing about a
-    // seventh section and nothing about a heading nobody declared; this fails
-    // if a section is added without being declared, declared without being
-    // rendered, or rendered out of order.
+  it('renders every card in order, with those exact titles and no others', () => {
+    // The whole list, not a slice of it. It fails if a section is added
+    // without being declared, declared without being rendered, or rendered out
+    // of order — and there is nothing under the heading but the cards now, so
+    // no eighth heading can appear without being one.
     renderAdmin()
     const headings = screen
       .getAllByRole('heading', { level: 2 })
       .map((heading) => heading.textContent)
-    expect(headings).toEqual([
-      ...ADMIN_SECTIONS.map((section) => section.title),
-      // The paste block at the foot, which is not a section of the page.
-      'The whole file'
-    ])
+    expect(headings).toEqual(ADMIN_SECTIONS.map((section) => section.title))
+    expect(headings[0]).toBe('Project file')
   })
 
-  it('names the storage kind, the location, the id prefix and where it read them', () => {
+  it('carries no paragraph: every sentence this page writes is one line', () => {
+    // **The narration guard.** 140 characters is a line; anything longer is a
+    // paragraph, and the page that stood here had thirty of them. Quoted
+    // material is exempt — see `proseNodes`.
+    const { container } = renderAdmin(
+      effectiveConfig(
+        decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1 }), 'project'),
+        undefined,
+        undefined,
+        { path: DESK_PATH, present: false, sha256: '' }
+      )
+    )
+    const long = proseNodes(container).filter((text) => text.length > 140)
+    expect(long, long.join(' | ')).toEqual([])
+  })
+
+  it('sweeps a reintroduced paragraph, wherever on the page it appears', () => {
+    // The guard's own instrument, checked against a deliberate failure: a
+    // sweep that passed over a clean page would prove nothing about the sweep.
+    const { container } = renderAdmin()
+    const paragraph = document.createElement('p')
+    paragraph.textContent = 'x'.repeat(141)
+    container.append(paragraph)
+    expect(proseNodes(container).filter((text) => text.length > 140)).toHaveLength(1)
+  })
+
+  it('says where each card’s value is written, and what state that file is in', () => {
+    const { container } = renderAdmin(
+      effectiveConfig(undefined, 'no configuration was read: no such file', undefined, {
+        path: DESK_PATH,
+        present: false,
+        sha256: ''
+      })
+    )
+    const rows = Array.from(container.querySelectorAll('dt')).map((each) => each.textContent)
+    // Two per card, in one order, on every one of the eight.
+    expect(rows.filter((label) => label === 'Location')).toHaveLength(ADMIN_SECTIONS.length)
+    expect(rows.filter((label) => label === 'Status')).toHaveLength(ADMIN_SECTIONS.length)
+    expect(rows.slice(0, 2)).toEqual(['Location', 'Status'])
+    // The desk-level file is named wherever a card is about it.
+    expect(screen.getAllByText(DESK_PATH).length).toBeGreaterThan(0)
+    // And an absent file is absent, never "read".
+    expect(screen.getAllByText('not present — defaults in use').length).toBeGreaterThan(0)
+  })
+
+  it('shows a member of the file as it is written, not as a decode of it', () => {
+    // `1e2` is not `100`. A disclosure that re-serialised would show a reader
+    // a file that is not on disk, which is the one thing it must not do.
+    const text = '{\n  "deskConfigVersion": 1,\n  "panes": {"left": {"width": 2.48e2}}\n}'
+    renderAdmin(effectiveConfig(decodeDeskConfig(text, 'project'), undefined, undefined, undefined, text))
+    expect(screen.getByText('{"left": {"width": 2.48e2}}')).toBeTruthy()
+  })
+
+  it('names the storage kind, the location and the id prefix', () => {
     const decoded = decodeDeskConfig(
       JSON.stringify({
         deskConfigVersion: 1,
@@ -137,7 +208,6 @@ describe('the Admin page', () => {
     expect(screen.getByText('decisions')).toBeTruthy()
     // The prefix as it will actually be written — normalised at decode.
     expect(screen.getByText('https://acme.example/d/')).toBeTruthy()
-    expect(screen.getAllByText(/source: project file/).length).toBeGreaterThan(0)
   })
 
   it('shows the built-in location and prefix where the project configured none', () => {
@@ -155,9 +225,6 @@ describe('the Admin page', () => {
   })
 
   it('says only that no file is under it, which is what the listing can show', async () => {
-    // The listing reports regular files only, so an empty directory is
-    // invisible to it. "The first pack creates it" was a claim about a
-    // directory the page has no evidence about either way.
     servesListing({ files: [{ path: 'jpack.json', bytes: 1, sha256: 'aa' }] })
     renderAdmin()
     expect(
@@ -193,7 +260,6 @@ describe('the Admin page', () => {
   })
 
   it('says the listing has not answered rather than describing what it has not seen', async () => {
-    // A request that never resolves. Nothing is known, and nothing is claimed.
     vi.stubGlobal('fetch', () => new Promise(() => {}))
     renderAdmin()
     expect(await screen.findByText('the file listing has not answered yet')).toBeTruthy()
@@ -203,23 +269,8 @@ describe('the Admin page', () => {
     renderAdmin()
     expect(screen.getByText('database — coming soon')).toBeTruthy()
     expect(screen.getByText('cloud storage — coming soon')).toBeTruthy()
-    // Neither is a control, and neither is a disabled one — which the page's
-    // "exactly one interactive control" case is what actually proves.
     expect(screen.queryByRole('option', { name: /database/ })).toBeNull()
     expect(screen.queryByRole('radio')).toBeNull()
-  })
-
-  it('says the future kinds change nothing about creating a pack', () => {
-    renderAdmin()
-    expect(screen.getByText(/not available yet/)).toBeTruthy()
-    expect(screen.getByText(/creates a pack by writing a file, always/)).toBeTruthy()
-  })
-
-  it('carries the standing disclaimer character for character', () => {
-    renderAdmin()
-    expect(screen.getByText(ADMIN_DISCLAIMER)).toBeTruthy()
-    expect(ADMIN_DISCLAIMER).toContain('defines no accounts and no roles')
-    expect(ADMIN_DISCLAIMER).toContain('the loopback bind, the session token this tab holds')
   })
 
   it('names no user management, roles, invitations or assignment anywhere', () => {
@@ -231,14 +282,11 @@ describe('the Admin page', () => {
   })
 
   it('carries exactly the state-changing controls it names, and no others', () => {
-    // This used to say "exactly one", then "exactly four". It was true each
-    // time, and the sentence it stood for — Admin never writes — is still true
-    // of every configuration value **except the assistant slot**, which now
-    // has a form: choosing a model and a tier is something an author does
-    // while working, and the alternative is telling them to edit a file on
-    // this machine by hand between attempts. The assertion is the whole list
-    // rather than a count, so a control cannot be added without appearing
-    // here.
+    // The whole list rather than a count, so a control cannot be added without
+    // appearing here. The Copy buttons are gone with the paste blocks: the
+    // card's Location line says where the file is, and its Content shows what
+    // is in it, so a second way to get the same JSON was a second way to do
+    // one thing.
     const { container } = renderAdmin()
     const interactive = container.querySelectorAll('button, input, select, textarea')
     const labels = Array.from(interactive).map((element) => element.textContent?.trim())
@@ -248,16 +296,12 @@ describe('the Admin page', () => {
     }
     // Three controls appear only in a state this render is not in, and each is
     // asserted by its absence here and by its own case in the Assistant
-    // section's suite: Store key and Remove key need a key row that offers
-    // them, and List models needs a key bound to the configured endpoint.
+    // section's suite.
     for (const conditional of ['Store key', 'Remove key']) {
       expect(labels, conditional).not.toContain(conditional)
     }
-    // The form's three pickers, asserted as themselves and in two shapes,
-    // because a Radix Select is two elements: a trigger button showing the
-    // value, and a hidden native `<select>` carrying every option for form
-    // participation. A picker offering a fourth value would change the second
-    // list. None of the three changes anything until Save is pressed.
+    // The form's three pickers, in two shapes, because a Radix Select is a
+    // trigger button and a hidden native `<select>`.
     const triggers = Array.from(container.querySelectorAll('[role="combobox"]')).map(
       (element) => element.textContent
     )
@@ -266,8 +310,7 @@ describe('the Admin page', () => {
       (element) => element.textContent
     )
     expect(offered).toEqual(['OpenAI-compatibleAnthropicGemini', 'vercelbuiltin', 'offonultra'])
-    // Every other control on the page is a Copy or a tool checkbox, and
-    // neither changes anything on this machine.
+    // Every other control is a tool checkbox, which changes nothing until Save.
     const picker = [...triggers, ...offered]
     const others = labels.filter(
       (label) =>
@@ -276,44 +319,32 @@ describe('the Admin page', () => {
         label !== 'List models' &&
         !picker.includes(label)
     )
-    expect(others.length).toBeGreaterThan(0)
-    expect(
-      others.every((label) => label === '' || label?.includes('Copy')),
-      others.join(' | ')
-    ).toBe(true)
+    expect(others.every((label) => label === ''), others.join(' | ')).toBe(true)
     // No password field in this render: no endpoint is configured, so there is
     // nothing to bind a key to and the row says so instead of offering one.
     expect(container.querySelectorAll('input[type="password"]')).toHaveLength(0)
     // **One control is disabled here, and it is not a permanent one.** This
-    // fixture is the state in which nothing asked for the desk-level file at
-    // all, so this page has never seen the bytes a write would replace — and
-    // a Save that stated a digest it invented would overwrite a file it never
-    // read. It says so in words beside itself, and it enables the moment a
-    // read answers, which the case below is.
+    // fixture is the state in which nothing asked for the desk-level file, so
+    // this page has never seen the bytes a write would replace.
     const disabled = Array.from(container.querySelectorAll('[disabled]')).map(
       (element) => element.textContent
     )
     expect(disabled).toEqual(['List models', 'Save'])
-    expect(screen.getByText(/has not seen them/)).toBeTruthy()
-    expect(screen.getByText(/its key stored before this desk can ask it/)).toBeTruthy()
+    expect(screen.getByText(/a write states the bytes it replaces/)).toBeTruthy()
   })
 
   it('enables the one write once the desk-level file has been read', () => {
-    // The other half of the case above: nothing on this page is disabled for
-    // ever, and the form's own suite holds what it does with the digest.
     const { container } = renderAdmin(
       effectiveConfig(undefined, undefined, undefined, {
-        path: '/home/someone/.config/jpack-desk/desk.json',
+        path: DESK_PATH,
         present: false,
         sha256: ''
       })
     )
-    // Save enables; List models does not, and for its own reason — it needs a
-    // key bound to the endpoint that is saved, and this fixture has neither.
     expect(
       Array.from(container.querySelectorAll('[disabled]')).map((element) => element.textContent)
     ).toEqual(['List models'])
-    expect(screen.queryByText(/has not seen them/)).toBeNull()
+    expect(screen.queryByText(/a write states the bytes it replaces/)).toBeNull()
   })
 
   it('clears exactly one localStorage key when the reset is pressed, and says so', () => {
@@ -325,12 +356,10 @@ describe('the Admin page', () => {
     expect(window.localStorage.getItem(KEY)).toBeNull()
     expect(window.localStorage.getItem('jpack-desk:shell:v1:another')).toBe('{"v":1}')
     expect(window.localStorage.getItem('jpack-desk-token')).toBe('a token')
-    expect(screen.getByText(/Cleared, and the panes are back/)).toBeTruthy()
+    expect(screen.getByText(/Cleared — the panes are back/)).toBeTruthy()
   })
 
   it('reports a reset it could not make, rather than reporting one it did', () => {
-    // A storage that refuses the deletion answered "Cleared." before. The page
-    // reads the key back and says what it found.
     const backing = new Map<string, string>([[KEY, '{"v":1}']])
     vi.stubGlobal('localStorage', {
       getItem: (key: string) => backing.get(key) ?? null,
@@ -341,29 +370,22 @@ describe('the Admin page', () => {
     renderAdmin()
     fireEvent.click(screen.getByRole('button', { name: 'Reset panes on this machine' }))
     expect(screen.getByText(/did not clear the record/)).toBeTruthy()
-    expect(screen.queryByText(/Cleared, and the panes/)).toBeNull()
+    expect(screen.queryByText(/Cleared — the panes/)).toBeNull()
   })
 
   it('refuses to reset a provisional key, and says which key it is', () => {
-    // Before the chassis reports the project root the key is the literal
-    // `default`, which is not this project's record — clearing it would delete
-    // whatever else had been written there and report success for a project
-    // whose layout is untouched.
     window.localStorage.setItem(shellStateKey('default'), '{"v":1}')
     renderAdmin(effectiveConfig(undefined), '/admin', null)
-    expect(screen.getByText(/provisional, because the chassis/)).toBeTruthy()
+    expect(screen.getByText(/provisional/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Reset panes on this machine' }))
-    expect(screen.getByText(/has not yet been told which project/)).toBeTruthy()
+    expect(screen.getByText(/has not been told which project/)).toBeTruthy()
     expect(window.localStorage.getItem(shellStateKey('default'))).toBe('{"v":1}')
   })
 
   it('names a configuration that could not be read, and does not call it absent', () => {
-    // A 413, a permission error or a dead socket resolved to the defaults with
-    // the reason recorded where nothing rendered it, so a desk that could not
-    // open its own file looked exactly like a desk with no file.
     renderAdmin(effectiveConfig(undefined, undefined, CHASSIS_413))
-    expect(screen.getByText(/could not be read, and the desk is on its defaults/)).toBeTruthy()
-    expect(screen.getByText('the file is too large to read')).toBeTruthy()
+    expect(screen.getAllByText(/not read — the desk answered/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('the file is too large to read').length).toBeGreaterThan(0)
   })
 
   it('sources an unread reason to whoever actually said it', () => {
@@ -372,9 +394,8 @@ describe('the Admin page', () => {
     // error; "the request never got an answer" is false for a 200 whose body
     // this desk cannot use, which is what inferring from a status produced.
     renderAdmin(effectiveConfig(undefined, undefined, CHASSIS_413))
-    expect(screen.getByText(/The chassis answered/)).toBeTruthy()
-    expect(screen.getByText('413')).toBeTruthy()
-    expect(screen.queryByText(/this desk’s sentence|this desk's sentence/)).toBeNull()
+    expect(screen.getAllByText(/and its own reason/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/this page’s reason/)).toBeNull()
     cleanup()
 
     renderAdmin(
@@ -384,9 +405,8 @@ describe('the Admin page', () => {
         source: 'browser'
       })
     )
-    expect(screen.getByText(/The request never got an answer/)).toBeTruthy()
-    expect(screen.getByText(/the reason below is the browser/)).toBeTruthy()
-    expect(screen.queryByText(/The chassis answered/)).toBeNull()
+    expect(screen.getAllByText(/the browser’s own reason/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/the desk answered/)).toBeNull()
     cleanup()
 
     // The case the inference got wrong: an answer arrived, and the sentence
@@ -399,16 +419,14 @@ describe('the Admin page', () => {
         source: 'desk'
       })
     )
-    expect(screen.getByText(/The chassis answered/)).toBeTruthy()
-    expect(screen.getByText('200')).toBeTruthy()
-    expect(screen.getByText(/sentence about that answer/)).toBeTruthy()
-    expect(screen.queryByText(/The request never got an answer/)).toBeNull()
+    expect(screen.getAllByText(/this page’s reason/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/the browser’s own reason/)).toBeNull()
   })
 
-  it('says why no file was read where the file is simply absent', () => {
+  it('says a file is absent where it is simply absent, and never refused', () => {
     renderAdmin(effectiveConfig(undefined, 'no configuration was read: no such file'))
-    expect(screen.getByText('no configuration was read: no such file')).toBeTruthy()
-    expect(screen.queryByText(/could not be read, and the desk/)).toBeNull()
+    expect(screen.getAllByText('not present — defaults in use').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/^refused:/)).toBeNull()
   })
 
   it('reports a refused configuration by naming every problem, and stays on defaults', () => {
@@ -417,67 +435,37 @@ describe('the Admin page', () => {
       problems: [{ key: 'colour', reason: 'unknown key' }]
     })
     renderAdmin(value)
-    expect(screen.getByText(/was refused, and the desk is on its defaults/)).toBeTruthy()
-    expect(screen.getByText('colour: unknown key')).toBeTruthy()
-  })
-
-  it('says what the desk-level file is for, and no longer that it goes unread', () => {
-    // It is read now, through its own endpoint. The sentence that stood here
-    // described a desk that could not read its own desk-level configuration.
-    renderAdmin()
-    expect(screen.getByText(/desk-level desk.json is the only place/)).toBeTruthy()
-    expect(screen.queryByText(/open question 2/)).toBeNull()
-    expect(screen.queryByText(/is not read yet/)).toBeNull()
-  })
-
-  it('names the desk-level file it read, and says which state it found', () => {
-    renderAdmin(
-      effectiveConfig(undefined, undefined, undefined, {
-        path: '/home/someone/.config/jpack-desk/desk.json',
-        present: false,
-        note: 'no desk-level configuration file at /home/someone/.config/jpack-desk/desk.json'
-      })
-    )
-    // Named in more than one place — the Project section, and each source
-    // badge for a section only that file can supply — which is the point:
-    // wherever the page mentions it, it mentions the path it actually read.
-    expect(
-      screen.getAllByText('/home/someone/.config/jpack-desk/desk.json').length
-    ).toBeGreaterThan(0)
-    expect(
-      screen.getByText('no file is there — the desk is on its defaults for it')
-    ).toBeTruthy()
+    expect(screen.getAllByText('refused:', { exact: false }).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('colour: unknown key').length).toBeGreaterThan(0)
   })
 
   it('refuses the desk-level file on its own, without blaming the project one', () => {
     // Two files, two verdicts. A bad key in one must not be reported as the
     // other's, and neither is repaired by the other being fine.
     renderAdmin(
-      effectiveConfig(decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1 }), 'project'), undefined, undefined, {
-        path: '/home/someone/.config/jpack-desk/desk.json',
-        present: true,
-        decoded: decodeDeskConfig(
-          JSON.stringify({ deskConfigVersion: 1, assistant: { endpoint: { apiKey: 'sk-oops' } } }),
-          'desk'
-        )
-      })
+      effectiveConfig(
+        decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1 }), 'project'),
+        undefined,
+        undefined,
+        {
+          path: DESK_PATH,
+          present: true,
+          decoded: decodeDeskConfig(
+            JSON.stringify({ deskConfigVersion: 1, assistant: { endpoint: { apiKey: 'sk-oops' } } }),
+            'desk'
+          )
+        }
+      )
     )
-    expect(screen.getByText(/The desk-level configuration was refused/)).toBeTruthy()
-    expect(screen.queryByText(/The project configuration was refused/)).toBeNull()
-    // And the refusal says the thing that is actually wrong.
-    expect(screen.getByText(/assistant.endpoint.apiKey: a key is never stored/)).toBeTruthy()
-  })
-
-  it('states that identity gates nothing', () => {
-    renderAdmin()
-    expect(screen.getByText(/Configuring a provider gates nothing/)).toBeTruthy()
+    // The refusal says the thing that is actually wrong, in the decoder's words.
+    expect(
+      screen.getAllByText(/assistant.endpoint.apiKey: a key is never stored/).length
+    ).toBeGreaterThan(0)
+    // And the project file's own cards do not report it.
+    expect(screen.getAllByText('read').length).toBeGreaterThan(0)
   })
 
   it('scrolls to the section a fragment names', () => {
-    // The rail's Admin menu and the user menu both link to `/admin#…`. The
-    // router does no fragment scrolling, and the document is not the scroll
-    // container here — `.desk-main` is — so without the hook those links
-    // changed the address bar and moved nothing.
     const scrolled: string[] = []
     const original = Element.prototype.scrollIntoView
     Element.prototype.scrollIntoView = function scrollIntoView(this: Element) {
@@ -491,35 +479,19 @@ describe('the Admin page', () => {
     }
   })
 
-  it('prints every accepted range, inclusive, and the caps that follow them', () => {
-    // Admin printed a decoded number and said nothing about what bounds it or
-    // what the frame then does to it, so an operator could not tell an
-    // accepted value from a rendered one or know why 720 was refused.
+  it('prints every accepted range, inclusive', () => {
     renderAdmin()
     for (const [key, bounds] of Object.entries(PANE_BOUNDS)) {
       expect(screen.getByText(`${key}: ${bounds.min}–${bounds.max}px`)).toBeTruthy()
     }
-    const caps = screen.getByText(/capped against the viewport it is actually in/)
-    // Read off the paragraph rather than through a text matcher: `40vw`,
-    // `120px` and `80px` are each inside their own `<code>`, so the sentence
-    // is split across elements and no single node carries it.
-    const text = caps.closest('p')!.textContent ?? ''
-    expect(text).toContain('40vw')
-    expect(text).toContain('120px')
-    // And the short-viewport rule, which is the one that is not a cap.
-    expect(text).toContain('never falls below')
-    expect(text).toContain('80px')
   })
 
   it('labels the configured numbers as configured, and measures the rendered ones', () => {
     // The mismatch this fixes: an accepted 720px Inspector renders 440px at
     // 1100px, and an undeclared drawer renders 320px while Admin said 360.
-    // Printing one and calling it the other is a page reporting a width
-    // nothing on screen has.
     const { container } = renderAdmin()
     expect(container.textContent).toContain('configured')
     expect(container.textContent).toContain('rendered')
-    expect(screen.getByText(/Configured is not rendered/)).toBeTruthy()
     // No pane is in this document at all — Admin is rendered on its own here —
     // so every rendered figure says so rather than reporting a zero.
     expect(screen.getAllByText('not mounted at this width')).toHaveLength(3)
@@ -550,17 +522,15 @@ describe('the Admin page', () => {
     inspector.id = 'desk-inspector'
     for (const element of [rail, inspector]) document.body.append(element)
     // 251 rather than 248: the configured rail width is 248 and appears in the
-    // same paragraph, so a matching number would not tell a measurement from
-    // the configured value it is there to be different from.
+    // same row, so a matching number would not tell a measurement from the
+    // configured value it is there to be different from.
     rail.getBoundingClientRect = () =>
       ({ width: 251, height: 600, top: 0, left: 0, right: 251, bottom: 600, x: 0, y: 0 }) as DOMRect
 
     try {
       renderAdmin()
       expect(screen.getByText('251px')).toBeTruthy()
-      // The Inspector is mounted and measures zero — collapsed, not absent.
       expect(screen.getByText('collapsed')).toBeTruthy()
-      // The console is not in the document at all.
       expect(screen.getAllByText('not mounted at this width')).toHaveLength(1)
     } finally {
       rail.remove()
@@ -570,29 +540,14 @@ describe('the Admin page', () => {
 
   it('says the theme is applied and the density is not, rather than claiming both', () => {
     renderAdmin()
-    expect(screen.getByText(/values are the light ones/)).toBeTruthy()
+    expect(screen.getByText(/Applied. The palette it selects is the light one./)).toBeTruthy()
     expect(screen.getByText(/read by nothing yet/)).toBeTruthy()
   })
 
-  it('reports a copy that did not happen as one that did not happen', async () => {
-    // `navigator.clipboard` is absent in an insecure context and `writeText`
-    // can be refused; a page that says "copied" on the strength of having
-    // asked is stating what it did not observe.
-    vi.stubGlobal('navigator', { clipboard: { writeText: async () => Promise.reject(new Error('no')) } })
+  it('reports the runtime connection rather than a file', async () => {
     renderAdmin()
-    fireEvent.click(screen.getAllByRole('button', { name: /Copy/ })[0]!)
-    expect(await screen.findByText(/did not allow the copy/)).toBeTruthy()
-    expect(screen.queryByText('copied')).toBeNull()
-  })
-
-  it('says copied only where the clipboard took it', async () => {
-    const written: string[] = []
-    vi.stubGlobal('navigator', {
-      clipboard: { writeText: async (text: string) => void written.push(text) }
-    })
-    renderAdmin()
-    fireEvent.click(screen.getAllByRole('button', { name: /Copy/ })[0]!)
-    await waitFor(() => expect(screen.getByText('copied')).toBeTruthy())
-    expect(written[0]).toContain('deskConfigVersion')
+    // The card that is about a process and not a configuration file: its
+    // status is the connection, in the connection's own words.
+    await waitFor(() => expect(screen.getByText(/^connected — /)).toBeTruthy())
   })
 })

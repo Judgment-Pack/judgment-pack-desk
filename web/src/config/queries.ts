@@ -105,6 +105,9 @@ export async function loadDeskLevelConfig(signal?: AbortSignal): Promise<DeskLev
     path: answered.path,
     present: true,
     sha256: answered.sha256 ?? '',
+    // The bytes, carried alongside the decode. Admin quotes a member out of
+    // them rather than re-serialising what the decode produced.
+    text: answered.content,
     decoded: decodeDeskConfig(answered.content, 'desk')
   }
 }
@@ -171,7 +174,8 @@ export async function loadDeskConfig(signal?: AbortSignal): Promise<EffectiveCon
     decodeDeskConfig(text, 'project'),
     undefined,
     undefined,
-    await deskLevel
+    await deskLevel,
+    text
   )
 }
 

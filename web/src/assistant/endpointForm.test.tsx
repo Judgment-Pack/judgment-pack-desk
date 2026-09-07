@@ -162,7 +162,7 @@ describe('what a save sends', () => {
     expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(
       true
     )
-    expect(screen.getByText(/has not seen them/)).toBeTruthy()
+    expect(screen.getByText(/a write states the bytes it replaces/)).toBeTruthy()
     save()
     await Promise.resolve()
     expect(sent.filter((each) => each.method === 'PUT')).toHaveLength(0)
@@ -281,11 +281,12 @@ describe('the fields', () => {
     expect(screen.getByText(/this desk’s choice inside a documented field/)).toBeTruthy()
   })
 
-  it('names the two things the SDK-backed engine cannot do', async () => {
+  it('says in one line what the SDK-backed engine does to a tool schema', async () => {
+    // One line rather than the two paragraphs that stood here: what an author
+    // decides on is that the engine narrows a schema and says when it does.
     stubWrites([{}])
     renderForm()
-    expect(screen.getByText(/narrowed/)).toBeTruthy()
-    expect(screen.getByText(/empty signed thought part/)).toBeTruthy()
+    expect(screen.getByText(/Narrows a tool schema where the SDK declares one narrower/)).toBeTruthy()
   })
 })
 
@@ -442,7 +443,7 @@ describe('the model, and the list the endpoint offers', () => {
     expect(
       (screen.getByRole('button', { name: 'List models' }) as HTMLButtonElement).disabled
     ).toBe(true)
-    expect(screen.getByText(/its key stored before this desk can ask it/)).toBeTruthy()
+    expect(screen.getByText(/Save the endpoint and store its key/)).toBeTruthy()
     cleanup()
     servesListing(LISTED)
     renderForm(GEMINI, true)
@@ -505,7 +506,7 @@ describe('the model, and the list the endpoint offers', () => {
     await screen.findByRole('combobox', { name: 'Models this endpoint listed' })
     fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'a-model-not-listed' } })
     expect((screen.getByLabelText('Model') as HTMLInputElement).value).toBe('a-model-not-listed')
-    expect(screen.getByText(/A model that is not here is typed into the field/)).toBeTruthy()
+    expect(screen.getByText(/Anything else is typed in/)).toBeTruthy()
   })
 
   it('asks the endpoint that is saved, never the one being typed', async () => {

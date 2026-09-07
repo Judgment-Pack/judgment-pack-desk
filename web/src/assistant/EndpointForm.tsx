@@ -69,8 +69,7 @@ import { useUpdateAssistantConfig } from './queries'
  * and a wrong one would replace somebody's file with this form's idea of it.
  */
 const NO_DIGEST =
-  'This desk has not been able to read its own configuration file, so nothing can be written ' +
-  'to it: a write states the bytes it is replacing, and this page has not seen them.'
+  'This desk has not read its own configuration file, and a write states the bytes it replaces.'
 
 const SAVED = 'Saved. The rest of the file is exactly as it was.'
 const CREATED = 'Saved, and the file was created. Nothing else is in it.'
@@ -86,9 +85,7 @@ const REMOVED = 'Removed. This desk has no assistant endpoint configured.'
  * Saying that here is what stops a removal reading as "and the key is gone".
  */
 const REMOVAL_MEANS =
-  'The key stays on this machine, still entered for the endpoint you are removing, and this ' +
-  'desk will not present it anywhere. Configuring an endpoint again is what makes it usable ' +
-  'again, and a key entered for a different one has to be entered again.'
+  'The key stays on this machine, entered for the endpoint you are removing, and goes nowhere.'
 
 export function EndpointForm({
   bound,
@@ -214,7 +211,7 @@ export function EndpointForm({
       <fieldset disabled={busy || unavailable}>
         <Field
           label="Wire protocol"
-          hint="It says how a request is shaped — which header carries the key and which path the call goes on — and nothing about who is at the other end."
+          hint="How a request is shaped: which header carries the key, and which path the call goes on."
           error={problemFor('assistant.endpoint.kind')}
         >
           {(wiring) => (
@@ -229,7 +226,7 @@ export function EndpointForm({
 
         <Field
           label="Endpoint"
-          hint="The base this protocol documents. Choosing a protocol offers the address its own reference names; type over it for a proxy or an endpoint you run."
+          hint="The base this protocol documents. Type over it for a proxy or an endpoint you run."
           error={urlProblem ?? problemFor('assistant.endpoint.url')}
         >
           {(wiring) => (
@@ -259,7 +256,7 @@ export function EndpointForm({
 
         <Field
           label="Engine"
-          hint={ENGINE_SAYS[draft.engine].join(' ')}
+          hint={ENGINE_SAYS[draft.engine]}
           error={problemFor('assistant.engine')}
         >
           {(wiring) => (
@@ -368,10 +365,8 @@ export function EndpointForm({
           }
         >
           <span>
-            Something else wrote to it since this page read it. Everything you have typed is
-            still here: Reload reads the file again and keeps these fields, so Save can state a
-            digest that is true. There is no overwrite here — this is the file that names where
-            a key is presented.
+            Everything typed here is still here. Reload reads the file again and keeps these
+            fields, so the next Save states a digest that is true.
           </span>
         </AlertPanel>
       )}
@@ -441,9 +436,7 @@ function ToolChoice({
         </label>
       ))}
       <p className="quiet">
-        Every one of them is a read: four questions put to the runtime and a rehearsal, which
-        consults no reviewed set and decides no outcome. Turning them all off is a real choice
-        and means an assistant that may call nothing.
+        Each is a read. None of them is a real choice: an assistant that may call nothing.
       </p>
       {problem !== undefined && <p className="partial-reason">{problem}</p>}
     </fieldset>

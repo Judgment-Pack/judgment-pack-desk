@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
 import { decodeDeskConfig, effectiveConfig, type EffectiveConfig } from '../config/deskConfig'
 import { testQueryClient } from '../testing/harness'
-import { AssistantSection, ASSISTANT_STANDING_SENTENCE } from './AssistantSection'
+import { AssistantSection } from './AssistantSection'
 
 afterEach(() => {
   cleanup()
@@ -189,33 +189,20 @@ function retainedVariables(client: QueryClient): unknown[] {
 }
 
 describe('the Assistant section', () => {
-  it('carries the standing sentence character for character', () => {
-    stubChassis({})
-    renderSection()
-    expect(screen.getByText(ASSISTANT_STANDING_SENTENCE)).toBeTruthy()
-    // The three claims that sentence exists to make, spelled out here so that
-    // softening any of them fails rather than reads as an edit.
-    expect(ASSISTANT_STANDING_SENTENCE).toContain('proposes edits')
-    expect(ASSISTANT_STANDING_SENTENCE).toContain('never saves a file')
-    expect(ASSISTANT_STANDING_SENTENCE).toContain('never decides an outcome')
-    expect(ASSISTANT_STANDING_SENTENCE).toContain('never written into a project')
-  })
-
-  it('describes the three deployment states as text, and never as controls', () => {
+  it('renders as a card: the file it is in, its state, and no paragraph', () => {
+    // The three paragraphs that stood here — a standing sentence, three
+    // deployment states and a note about the one branching member — were prose
+    // about a slot the card now states in four facts. What is left is the
+    // states, each of which is one answer out of a fixed set.
     stubChassis({})
     const { container } = renderSection()
-    // Read off the list itself rather than by text: "None" is also the word
-    // the two-settings sentence above uses, and a text query that matched
-    // both would pass without the list existing at all.
-    const states = Array.from(
-      container.querySelector('dl.fields')?.querySelectorAll('dt') ?? []
-    ).map((term) => term.textContent)
-    expect(states).toEqual(['None', 'Bring your own', 'Supplied'])
-    // Supplied is an ordinary endpoint. That is the whole claim, and it is
-    // made in words on the page rather than left to be inferred.
-    expect(screen.getByText(/ordinary endpoint, the same code path/)).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Assistant')
+    const keys = Array.from(container.querySelectorAll('dt')).map((each) => each.textContent)
+    expect(keys).toEqual(['Location', 'Status'])
+    expect(screen.getByText(DESK_PATH)).toBeTruthy()
+    expect(screen.getByText('not present — defaults in use')).toBeTruthy()
     // Still not three shapes: the form has one endpoint, and the deployment
-    // states are not a choice on it.
+    // states were never a choice on it.
     expect(screen.queryByRole('radio')).toBeNull()
   })
 
@@ -228,7 +215,8 @@ describe('the Assistant section', () => {
     renderSection()
     expect(screen.getByText('none — no endpoint configured')).toBeTruthy()
     expect(screen.queryByText(/no assistant, and no key/)).toBeNull()
-    expect(screen.getByText(/The key and the endpoint are separate/)).toBeTruthy()
+    // And the key row is still its own answer beside it.
+    expect(screen.getByText('Key')).toBeTruthy()
   })
 
   it('still reports a stored key where no endpoint is configured', async () => {
@@ -502,7 +490,7 @@ describe('the Assistant section', () => {
     ]) {
       expect(screen.getByRole('checkbox', { name: tool }), tool).toBeTruthy()
     }
-    expect(screen.getByText(/consults no reviewed set and decides no outcome/)).toBeTruthy()
+    expect(screen.getByText(/Each is a read/)).toBeTruthy()
   })
 
   it('says nothing to the reader about a chassis, bytes or a path', () => {
@@ -522,7 +510,7 @@ describe('the key row and the endpoint it is bound to', () => {
     stubChassis({ key: NO_ENDPOINT })
     const { container } = renderSection()
     await screen.findByText('none stored on this machine')
-    expect(screen.getByText(/Save an endpoint above before storing a key/)).toBeTruthy()
+    expect(screen.getByText(/Save an endpoint first/)).toBeTruthy()
     expect(keyField(container)).toBeNull()
     expect(screen.queryByRole('button', { name: 'Store key' })).toBeNull()
   })
@@ -550,7 +538,7 @@ describe('the key row and the endpoint it is bound to', () => {
     // moved — the endpoint they just saved, or a key entered for elsewhere.
     stubChassis({ key: ELSEWHERE })
     const { container } = renderSection(configured())
-    expect(await screen.findByText(/will not be presented and nothing will be sent/)).toBeTruthy()
+    expect(await screen.findByText(/nothing will be sent/)).toBeTruthy()
     expect(screen.getByText('https://first.example.invalid')).toBeTruthy()
     expect(screen.getByLabelText('Key for https://api.example.invalid')).toBeTruthy()
     expect(keyField(container)).not.toBeNull()
@@ -563,7 +551,7 @@ describe('the key row and the endpoint it is bound to', () => {
     // have produced — and the row reports what it was told.
     stubChassis({ key: { ...BOUND, bound: false } })
     renderSection(configured())
-    expect(await screen.findByText(/will not be presented and nothing will be sent/)).toBeTruthy()
+    expect(await screen.findByText(/nothing will be sent/)).toBeTruthy()
   })
 
   it('asks for the key again the moment a write says the endpoint moved', async () => {
@@ -584,7 +572,7 @@ describe('the key row and the endpoint it is bound to', () => {
     renderSection(configured())
     expect(await screen.findByText(/which is where this desk is configured/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(await screen.findByText(/will not be presented and nothing will be sent/)).toBeTruthy()
+    expect(await screen.findByText(/nothing will be sent/)).toBeTruthy()
   })
 
   it('stops asking once a key has been stored for the new endpoint', async () => {
@@ -601,7 +589,7 @@ describe('the key row and the endpoint it is bound to', () => {
     const { container } = renderSection(configured())
     await screen.findByText(/which is where this desk is configured/)
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    await screen.findByText(/will not be presented and nothing will be sent/)
+    await screen.findByText(/nothing will be sent/)
     fireEvent.change(keyField(container)!, { target: { value: 'sk-another-real-looking-key' } })
     fireEvent.click(screen.getByRole('button', { name: 'Store key' }))
     // The store answers with the binding the chassis now holds, and the row

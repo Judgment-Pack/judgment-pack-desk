@@ -1347,6 +1347,14 @@ export interface DeskLevelRead {
   path: string
   present: boolean
   /**
+   * The file's own bytes, where a file was read.
+   *
+   * Carried so that Admin can show a member **as it is written** rather than
+   * a re-serialisation of the decode: `1e2` is not `100`, and a member's
+   * indentation and key order are whoever wrote them. See `memberBytes`.
+   */
+  text?: string
+  /**
    * The digest of the bytes the chassis read, bare hex, and the empty string
    * where there is no file.
    *
@@ -1369,6 +1377,8 @@ export interface DeskLevelSummary {
   path: string
   present: boolean
   problems: ConfigProblem[]
+  /** The file's own bytes, where a file was read. See `DeskLevelRead.text`. */
+  text?: string
   /**
    * The digest of the bytes this read saw, carried through from
    * `DeskLevelRead` so that a form on Admin can send it back as `ifMatch`.
@@ -1392,6 +1402,14 @@ export interface EffectiveConfig {
   problems: ConfigProblem[]
   /** The project-relative path the project file is read from. */
   path: string
+  /**
+   * The project file's own bytes, where one was read.
+   *
+   * Admin quotes a member out of these rather than re-serialising the decode,
+   * for the reason `memberBytes` gives: what is shown has to be what is in the
+   * file.
+   */
+  text?: string
   /**
    * Why no file was read, where none was **absent**. Not an error the page
    * reports — an absent config is defaults with no banner — but Admin says
@@ -1449,7 +1467,8 @@ export function effectiveConfig(
   decoded: DecodedConfig | undefined,
   note?: string,
   readFailure?: ReadFailure,
-  desk?: DeskLevelRead
+  desk?: DeskLevelRead,
+  text?: string
 ): EffectiveConfig {
   const values = decoded?.values
   const deskValues = desk?.decoded?.values
@@ -1494,6 +1513,7 @@ export function effectiveConfig(
     },
     problems: decoded?.problems ?? [],
     path: PROJECT_CONFIG_PATH,
+    text,
     note,
     readFailure,
     declaredPanes: panesDeclaredBy ?? NOTHING_DECLARED,
@@ -1504,6 +1524,7 @@ export function effectiveConfig(
             path: desk.path,
             present: desk.present,
             problems: desk.decoded?.problems ?? [],
+            text: desk.text,
             sha256: desk.sha256,
             note: desk.note,
             readFailure: desk.readFailure

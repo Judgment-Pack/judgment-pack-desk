@@ -233,11 +233,7 @@ export function tierSays(family: EndpointKind, tier: ThinkingTier): string {
  */
 export function tierProvenance(family: EndpointKind): string | undefined {
   if (family !== 'gemini') return undefined
-  return (
-    'The two budgets are this desk’s choice inside a documented field, not a range quoted ' +
-    'from anywhere: the allowed range is per model. A model whose range excludes one answers ' +
-    'with a refusal and the desk asks again in the other spelling, once.'
-  )
+  return 'The two budgets are this desk’s choice inside a documented field; the range is per model.'
 }
 
 /**
@@ -249,16 +245,8 @@ export function tierProvenance(family: EndpointKind): string | undefined {
  * a behaviour this desk's own suite pins, and each is stated in the README
  * beside the measurement.
  */
-export const ENGINE_SAYS: Readonly<Record<AssistantEngine, string[]>> = {
-  vercel: [
-    'The default. It shows the model the tool schemas the runtime served, narrowed where the ' +
-      'SDK declares one narrower — the tab says “narrowed” when it does, and on the Gemini ' +
-      'wire list_examples arrives with no parameters at all.',
-    'It cannot carry an empty signed thought part back across a tool turn on the Gemini wire, ' +
-      'so a session that meets one degrades once and says so.'
-  ],
-  builtin: [
-    'A fallback that adds nothing to what this desk already ships, and has neither limit above: ' +
-      'it shows the runtime’s own schemas and echoes a model’s turn exactly as it arrived.'
-  ]
+export const ENGINE_SAYS: Readonly<Record<AssistantEngine, string>> = {
+  vercel:
+    'The default. Narrows a tool schema where the SDK declares one narrower, and says when it does.',
+  builtin: 'A fallback with neither limit: the runtime’s own schemas, and a turn echoed as it arrived.'
 }
