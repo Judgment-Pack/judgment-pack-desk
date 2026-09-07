@@ -221,6 +221,8 @@ echo "| --- | --- |"
 if [ "$which" = all ] || [ "$which" = go ]; then
   F=internal/desk/files.go
   S=internal/desk/server.go
+  PJ=internal/desk/project.go
+  PL=internal/desk/project_linux.go
 
   mutate go "lexical path guard: the project itself allowed" "$F" \
     '	if clean == "." {' \
@@ -294,12 +296,10 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the watcher reports success with no watches" internal/desk/watch.go \
     '	if watched == 0 {' \
     '	if watched < 0 {'
-  mutate go "the runtime starts from the unresolved pathname" internal/desk/relay.go \
-    '	if through, ok := s.project.descriptorWorkingDir(); ok {
-		return through, nil
-	}
-	return runtimeWorkingDirByPathname(s.projectDir, s.project.info)' \
-    '	return s.cfg.ProjectDir, nil'
+  mutate go "the runtime starts from the unresolved pathname" "$PL" \
+    '	cmd.ExtraFiles = []*os.File{dirFile}' \
+    '	cmd = exec.CommandContext(ctx, binary, "mcp")
+	cmd.Dir = s.cfg.ProjectDir'
   mutate go "the walk does not detect a repeated ancestor" "$F" \
     '		if os.SameFile(ancestor, info) {' \
     '		if false && os.SameFile(ancestor, info) {'
@@ -1385,8 +1385,6 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	}'
 
   # ---- Round 2: what is validated has to be what is served ---------------
-  PJ=internal/desk/project.go
-
   # **The identity check is the whole of the pinning argument.** Without it a
   # rename between validating the configured file and opening its directory
   # substitutes another tree, and the desk serves what it never checked.
@@ -1412,18 +1410,47 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 
   # **An omission is not a withdrawal.** Without this, `{"project":{}}` clears
   # an operator's hand-edited default and answers 200.
+  # ---- Round 4: one owner, and a documented descriptor number ------------
+
+  # **The descriptor closed before the runtime execs**, or the runtime inherits
+  # a capability it never asked for and this desk never meant to grant.
+  mutate go "the project descriptor is left open across the exec" "$PL" \
+    'const runtimeTrampoline = `cd /proc/self/fd/3/. && exec 3<&- && exec "$0" "$@"`' \
+    'const runtimeTrampoline = `cd /proc/self/fd/3/. && exec "$0" "$@"`'
+
+  # **One cell, or a copy made before the hand-over closes a running server's
+  # descriptors.** A flag inside an exported struct copies with it.
+  mutate go "ownership is per copy rather than shared" "$PJ" \
+    '	p.own.mu.Lock()
+	adopted := p.own.adopted
+	p.own.mu.Unlock()
+	if adopted {
+		return errAdoptedByServer
+	}' \
+    '	if false {
+		return errAdoptedByServer
+	}'
+
+  # **At most one release, however many callers ask.** Closing a descriptor
+  # twice is closing whatever took its number in between.
+  mutate go "the descriptors are released once per caller" "$PJ" \
+    '	o.once.Do(func() {
+		o.closes++' \
+    '	func() {
+		o.closes++'
+
   # ---- Round 3: what the runtime and the watcher actually follow ---------
 
   # **The descriptor or a name, and a name is what came apart.** Started from
   # the pathname again, a rename-and-replace leaves the runtime judging one
   # tree while the file API edits another.
-  mutate go "the child is started from the pathname again" internal/desk/relay.go \
-    '	if through, ok := s.project.descriptorWorkingDir(); ok {
-		return through, nil
-	}' \
-    '	if through, ok := s.project.descriptorWorkingDir(); ok {
-		_ = through
-	}'
+  # **The trampoline dropped for `cmd.Dir`**, which is the shape round 3 had
+  # and round 4 refused: it works only while an ordering inside `os/exec`
+  # happens to hold, and it is the parent's descriptor number.
+  mutate go "the child is started from the pathname again" "$PL" \
+    '	cmd := exec.CommandContext(ctx, shell, "-c", runtimeTrampoline, binary, "mcp")' \
+    '	cmd := exec.CommandContext(ctx, binary, "mcp")
+	cmd.Dir = s.projectDir'
   # The same for the watcher, which takes a path because inotify does.
   mutate go "the watcher is initialised from the pathname again" "$S" \
     '	watchRoot := pinned.dir

@@ -1075,18 +1075,21 @@ func TestTheRuntimeStartsInTheDirectoryThatWasPinned(t *testing.T) {
 	// while the file API edited another — with neither half able to tell.
 	s, was, pathname := swappedServer(t)
 
-	working, err := s.runtimeWorkingDir()
+	cmd, err := s.runtimeCommand(t.Context())
 	if err != nil {
+		t.Fatalf("runtime command: %v", err)
+	}
+	if err := s.aimAtTheProject(cmd); err != nil {
 		// The honest answer off Linux: refused rather than started somewhere
 		// else. Nothing further to check.
 		return
 	}
-	found, err := os.Stat(working)
+	found, err := s.runtimeProject(cmd)
 	if err != nil {
-		t.Fatalf("stat %s: %v", working, err)
+		t.Fatalf("the runtime's project: %v", err)
 	}
 	if !os.SameFile(was, found) {
-		t.Fatalf("the runtime would start in %s, which is not the pinned project", working)
+		t.Fatal("the runtime would start somewhere that is not the pinned project")
 	}
 	// And it is *not* the replacement now sitting at the pathname, which is
 	// the failure this exists for.
@@ -1097,6 +1100,24 @@ func TestTheRuntimeStartsInTheDirectoryThatWasPinned(t *testing.T) {
 	if os.SameFile(replacement, found) {
 		t.Fatal("the runtime would start in the replacement directory")
 	}
+}
+
+// theProjectARuntimeWouldGet is the identity of the directory a runtime this
+// desk starts would be in, taken off the command this desk actually builds.
+func theProjectARuntimeWouldGet(t *testing.T, s *Server) os.FileInfo {
+	t.Helper()
+	cmd, err := s.runtimeCommand(t.Context())
+	if err != nil {
+		t.Fatalf("runtime command: %v", err)
+	}
+	if err := s.aimAtTheProject(cmd); err != nil {
+		t.Fatalf("aim: %v", err)
+	}
+	found, err := s.runtimeProject(cmd)
+	if err != nil {
+		t.Fatalf("the runtime's project: %v", err)
+	}
+	return found
 }
 
 // aRuntimeLikeChild starts one process through the very command the relay

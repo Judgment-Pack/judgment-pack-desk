@@ -1496,20 +1496,12 @@ func TestRuntimeAndFileAPIShareOneProject(t *testing.T) {
 	// this answers `/proc/self/fd/N`, which is the pinned directory whatever
 	// it is called — so what is asserted is what the path *is*, which is the
 	// property either answer has to have.
-	working, err := s.runtimeWorkingDir()
-	if err != nil {
-		t.Fatalf("runtime working directory: %v", err)
-	}
 	wants, err := os.Stat(resolvedReal)
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	has, err := os.Stat(working)
-	if err != nil {
-		t.Fatalf("stat %s: %v", working, err)
-	}
-	if !os.SameFile(wants, has) {
-		t.Fatalf("the runtime would start in %s, not %s", working, resolvedReal)
+	if !os.SameFile(wants, theProjectARuntimeWouldGet(t, s)) {
+		t.Fatalf("the runtime would not start in %s", resolvedReal)
 	}
 	if s.root.Name() != resolvedReal {
 		t.Fatalf("the file API root is %s, not %s", s.root.Name(), resolvedReal)

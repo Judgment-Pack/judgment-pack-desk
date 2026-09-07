@@ -10,6 +10,8 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"os"
+	"os/exec"
 	"sync"
 
 	"github.com/coder/websocket"
@@ -237,29 +239,22 @@ func (s *Server) closeWith(ws *websocket.Conn, code websocket.StatusCode, reason
 	_ = ws.Close(code, reason)
 }
 
-// runtimeWorkingDir is the directory every `jpack mcp` subprocess starts in.
+// runtimeProject is the identity of the directory a runtime this desk starts
+// would be in.
 //
-// **The descriptor, where the host has a way to name one.** Round 3 found this
-// returning the resolved *spelling*: a rename-and-replace at that spelling left
-// every new runtime judging one tree while the file API edited another — with
-// neither half able to tell, and with the desk claiming a guarantee it was not
-// keeping. On Linux the answer is `/proc/self/fd/N` on the pinned directory,
-// which the kernel resolves to the open file description rather than to a name.
-//
-// **Off Linux it is check-then-use, and it says so.** There is no portable way
-// to hand a subprocess a working directory by descriptor, so the pathname is
-// re-verified by identity immediately before each spawn and a moved directory
-// refuses the relay rather than starting a runtime somewhere else. The window
-// between that check and the child's `chdir` is not closed by it; the README
-// states which hosts are race-free.
-//
-// A method rather than a field read at the call site, so a test can assert it
-// without starting a subprocess.
-func (s *Server) runtimeWorkingDir() (string, error) {
-	if through, ok := s.project.descriptorWorkingDir(); ok {
-		return through, nil
+// **Derived from the command that is actually built**, so it cannot drift from
+// it: on Linux that is the descriptor the trampoline changes into, and
+// elsewhere it is the pathname `aimAtTheProject` checked and set. A method that
+// answered from a field instead would be a second account of the same fact, and
+// the first thing to go stale.
+func (s *Server) runtimeProject(cmd *exec.Cmd) (os.FileInfo, error) {
+	if len(cmd.ExtraFiles) > 0 {
+		return cmd.ExtraFiles[0].Stat()
 	}
-	return runtimeWorkingDirByPathname(s.projectDir, s.project.info)
+	if cmd.Dir == "" {
+		return nil, errors.New("this command was not aimed at a project")
+	}
+	return os.Stat(cmd.Dir)
 }
 
 // `aimAtTheProject` is per platform: on Linux the command already carries the
