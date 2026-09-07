@@ -24,10 +24,15 @@ import { useState } from 'react'
 import { AssistantSection } from '../assistant/AssistantSection'
 import { CardField, SourceCard, type SourceStatus } from '../admin/SourceCard'
 import { useDefaultProject } from '../admin/DefaultProject'
+import {
+  AppearanceForm,
+  OrganizationForm,
+  PanesForm,
+  StorageForm
+} from '../admin/projectFileCards'
 import { useHashTarget } from '../shell/useHashTarget'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
-  DESK_FALLBACK_NAME,
   PANE_BOUNDS,
   type ConfigProblem,
   type DeskConfig,
@@ -158,24 +163,7 @@ export function AdminView() {
           member: 'storage',
           value: config.storage
         }}
-        fields={
-          <>
-            <CardField label="Kind">
-              <strong>{config.storage.packs.kind}</strong>
-            </CardField>
-            <CardField label="Packs go to" rule={PACK_LOCATION_SAYS[packLocation]}>
-              <code>{config.storage.packs.dir}</code>
-            </CardField>
-            <CardField label="Id prefix">
-              <code>{config.storage.packs.idBase}</code>
-            </CardField>
-            <CardField label="Not available yet">
-              <span>database — coming soon</span>
-              {', '}
-              <span>cloud storage — coming soon</span>
-            </CardField>
-          </>
-        }
+        save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocation]} />}
       />
 
       <SourceCard
@@ -188,18 +176,7 @@ export function AdminView() {
           member: 'organization',
           value: config.organization
         }}
-        fields={
-          <>
-            <CardField label="Name">
-              <strong>
-                {config.organization.name ?? `${DESK_FALLBACK_NAME} (no name configured)`}
-              </strong>
-            </CardField>
-            <CardField label="Mark">
-              {config.organization.mark ? 'configured in the file' : 'none — a monogram'}
-            </CardField>
-          </>
-        }
+        save={<OrganizationForm />}
       />
 
       <SourceCard
@@ -212,16 +189,7 @@ export function AdminView() {
           member: 'appearance',
           value: config.appearance
         }}
-        fields={
-          <>
-            <CardField label="Theme" rule="Applied. The palette it selects is the light one.">
-              <code>{config.appearance.theme}</code>
-            </CardField>
-            <CardField label="Density" rule="Accepted and read by nothing yet.">
-              <code>{config.appearance.density}</code>
-            </CardField>
-          </>
-        }
+        save={<AppearanceForm />}
       />
 
       <SourceCard
@@ -269,29 +237,35 @@ export function AdminView() {
           </>
         }
         save={
-          <p className="actions">
-            <button type="button" onClick={() => setReset(shell.resetPanes())}>
-              Reset panes on this machine
-            </button>{' '}
-            {/* What happened, not what was attempted. The reset runs inside
-                the provider that owns the record — it cancels a write already
-                on its way, refuses to clear the provisional key before the
-                chassis has said which project this is, and reads the key back
-                afterwards — and each of those is a different sentence. */}
-            {reset === 'cleared' && (
-              <span className="quiet">Cleared — the panes are back on their defaults.</span>
-            )}
-            {reset === 'refused' && (
-              <span className="quiet">
-                this browser did not clear the record — the layout is unchanged
-              </span>
-            )}
-            {reset === 'unresolved' && (
-              <span className="quiet">
-                nothing was cleared: this desk has not been told which project it is open on
-              </span>
-            )}
-          </p>
+          <>
+            {/* Two controls, and they are two different kinds of thing: the
+                form writes the file, and the reset clears this browser's own
+                record of a layout the file never saw. */}
+            <PanesForm />
+            <p className="actions">
+              <button type="button" onClick={() => setReset(shell.resetPanes())}>
+                Reset panes on this machine
+              </button>{' '}
+              {/* What happened, not what was attempted. The reset runs inside
+                  the provider that owns the record — it cancels a write already
+                  on its way, refuses to clear the provisional key before the
+                  chassis has said which project this is, and reads the key back
+                  afterwards — and each of those is a different sentence. */}
+              {reset === 'cleared' && (
+                <span className="quiet">Cleared — the panes are back on their defaults.</span>
+              )}
+              {reset === 'refused' && (
+                <span className="quiet">
+                  this browser did not clear the record — the layout is unchanged
+                </span>
+              )}
+              {reset === 'unresolved' && (
+                <span className="quiet">
+                  nothing was cleared: this desk has not been told which project it is open on
+                </span>
+              )}
+            </p>
+          </>
         }
       />
     </article>
