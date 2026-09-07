@@ -554,6 +554,37 @@ describe('the model, and the list the endpoint offers', () => {
     )
   })
 
+  it('does not resurrect a listing when the endpoint is changed away and back', async () => {
+    // **Hidden is not cleared.** Rows kept in state while the identity
+    // differed came back the moment the URL was typed back — an arbitrarily
+    // stale listing on screen with no request behind it and nothing on the
+    // page saying when it was taken.
+    const seen = servesListing(LISTED)
+    renderForm(GEMINI, true)
+    fireEvent.click(screen.getByRole('button', { name: 'List models' }))
+    await screen.findByRole('combobox', { name: 'Models this endpoint listed' })
+    const original = (screen.getByLabelText('Endpoint') as HTMLInputElement).value
+    fireEvent.change(screen.getByLabelText('Endpoint'), {
+      target: { value: 'https://elsewhere.example.invalid' }
+    })
+    await waitFor(() =>
+      expect(screen.queryByRole('combobox', { name: 'Models this endpoint listed' })).toBeNull()
+    )
+    const asked = seen.urls.filter((url) => url.includes('/api/assistant/relay/')).length
+    fireEvent.change(screen.getByLabelText('Endpoint'), { target: { value: original } })
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('button', { name: 'List models' }) as HTMLButtonElement).disabled
+      ).toBe(false)
+    )
+    // Back to the saved endpoint, the button live again — and still no list,
+    // because none has been asked for since.
+    expect(screen.queryByRole('combobox', { name: 'Models this endpoint listed' })).toBeNull()
+    expect(seen.urls.filter((url) => url.includes('/api/assistant/relay/'))).toHaveLength(asked)
+    fireEvent.click(screen.getByRole('button', { name: 'List models' }))
+    expect(await screen.findByRole('combobox', { name: 'Models this endpoint listed' })).toBeTruthy()
+  })
+
   it('offers no option for an id the decoder refuses, and still refuses one typed', async () => {
     // Two halves of one rule. The picker never offers a whitespace-only id —
     // it would save cleanly into the field and produce a 422 on the next Save

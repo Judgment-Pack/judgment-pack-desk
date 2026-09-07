@@ -21,9 +21,13 @@
  * enabled only while the draft **equals** the saved configuration, and the
  * endpoint it asks about is the saved one, captured at the click.
  *
- * **And the rows are cleared when the endpoint moves.** A picker left standing
- * after a kind or a URL changed is a list of models from somewhere else,
- * offered against a form that no longer says that host.
+ * **And the rows are cleared — dropped from state — when the endpoint moves.**
+ * A picker left standing after a kind or a URL changed is a list of models from
+ * somewhere else, offered against a form that no longer says that host; and
+ * rows merely *hidden* while the identity differed came back when the URL was
+ * changed away and back again, resurrecting an arbitrarily stale listing with
+ * no request behind it. Hiding is a rendering decision about state that is
+ * still there, and what this needs is for it not to be there.
  *
  * **It is offered only where the key is bound**, too. The relay refuses a
  * request whose credential was entered for another destination, before opening
@@ -109,8 +113,16 @@ export function ModelField({
     )
   }
 
-  // A list is shown only while the form still says the endpoint it came from.
-  const showing = rows !== undefined && askedFor === identityOf(draft)
+  // **Dropped, not hidden**, the instant the form says a different endpoint.
+  // Adjusted during render rather than in an effect, so there is never a frame
+  // in which a list from one endpoint is on screen under another's address.
+  const here = identityOf(draft)
+  if (rows !== undefined && askedFor !== here) {
+    setRows(undefined)
+    setAskedFor(undefined)
+    setRefusal(undefined)
+  }
+  const showing = rows !== undefined
 
   return (
     <>

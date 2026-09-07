@@ -901,7 +901,14 @@ type AssistantKeyState struct {
 	// of one rule is one implementation too many, and the one that decides is
 	// the one that presents the credential.
 	ConfiguredOrigin string `json:"configuredOrigin"`
-	Bound            bool   `json:"bound"`
+	// ConfiguredKind is that endpoint's wire protocol, empty alongside an
+	// empty origin. It is here for the same reason the origin is: the row that
+	// names *both* destinations — the one the key was entered for and the one
+	// this desk is configured for — should read both of them from the desk
+	// that decides, and not half from the desk and half from a configuration
+	// the page may not have been able to read.
+	ConfiguredKind string `json:"configuredKind"`
+	Bound          bool   `json:"bound"`
 }
 
 // keyState renders one stored key as the answer the page gets, together with
@@ -912,11 +919,12 @@ type AssistantKeyState struct {
 // present the key to, and storing one requires something to bind it to.
 func keyState(stored storedKey, configured assistantEndpoint) AssistantKeyState {
 	origin, ok := endpointOrigin(configured.url)
+	kind := configured.kind
 	if !ok {
-		origin = ""
+		origin, kind = "", ""
 	}
 	if !stored.present {
-		return AssistantKeyState{ConfiguredOrigin: origin}
+		return AssistantKeyState{ConfiguredOrigin: origin, ConfiguredKind: kind}
 	}
 	return AssistantKeyState{
 		Present:          true,
@@ -924,6 +932,7 @@ func keyState(stored storedKey, configured assistantEndpoint) AssistantKeyState 
 		Origin:           stored.origin,
 		Kind:             stored.kind,
 		ConfiguredOrigin: origin,
+		ConfiguredKind:   kind,
 		// **The relay's own predicate, not a second reading of it.** A verdict
 		// computed any other way here would be a third implementation of the
 		// rule two others already hold.

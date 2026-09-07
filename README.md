@@ -1540,6 +1540,15 @@ write can move the binding in either direction. A read that *answers* and
 refuses is newer information about the same file than the write's answer, and
 this desk says nothing about a file it could not read rather than describing
 one from memory: Admin reports it and Save is refused until it can be read.
+**And "nothing" is its own state rather than the defaults.** The slot every
+consumer reads has a third value — `unavailable` — because falling through to
+the built-in defaults told the tab and Describe it that *no assistant is
+configured*, which is an absence this page had not established about a file it
+could not open. The tab and Describe it say what happened instead and offer no
+control; the key row is unaffected, because it reads the chassis' own
+`configuredOrigin`, `configuredKind` and `bound` and never the page's copy of
+the configuration — a row that read the page first said "save an endpoint
+first" while a perfectly good key read beside it named the endpoint.
 The test drives the real provider over a stubbed file rather than a fixture,
 because a fixture would hold the mechanism constant and prove nothing about
 it.
@@ -1553,9 +1562,11 @@ that endpoint. The family and the suffix used to come off the editable draft
 while the gate came off the file, so choosing Gemini without saving sent
 `v1beta/models` to a still-saved OpenAI-compatible endpoint — a request the page
 composed for one destination and the desk sent to another. The endpoint it asks
-about is captured at the click, and the rows are cleared the moment the form
-says a different host or protocol: a picker left standing after that is a list
-of models from somewhere else. **The field beside it never goes away**: the listing is
+about is captured at the click, and the rows are **dropped from state** the
+moment the form says a different host or protocol: a picker left standing after
+that is a list of models from somewhere else, and rows merely *hidden* came
+back when the URL was typed away and back again — an arbitrarily stale listing
+with no request behind it. **The field beside it never goes away**: the listing is
 first-page-only, an endpoint may refuse to list at all, and a gateway may route
 on a name of its own — a picker that was the only way to choose would make
 every one of those unconfigurable. **What is saved is the id and never the

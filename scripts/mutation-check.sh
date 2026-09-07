@@ -3895,6 +3895,19 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "Reload clears the notice without reading the file again" "$EF" \
     '                void client.refetchQueries({ queryKey: DESK_CONFIG_QUERY_KEY })' \
     '                void client'
+  # **The row reads the desk's answer and nothing else.** It consulted the
+  # page's copy of the configuration first — which is exactly the thing that
+  # goes missing — so a desk-level read that answered with a refusal made the
+  # row say "save an endpoint first" while a perfectly good key read beside it
+  # named the endpoint and carried this desk's verdict about it.
+  mutate web "the key row consults the page before the chassis" "$KB" \
+    "  if (key.configuredOrigin === '') return 'no-endpoint'" \
+    "  if (key.configuredOrigin === '' || key.origin === '') return 'no-endpoint'"
+  # A read that did not produce a file is not a file that says none.
+  SL=web/src/assistant/useAssistantSlot.ts
+  mutate web "an unreadable configuration is reported as no assistant" "$SL" \
+    "    state: unread ? 'unavailable' : endpoint === null ? 'none' : 'configured'," \
+    "    state: endpoint === null ? 'none' : 'configured',"
   # The relay refuses a credential entered for another destination before it
   # opens a socket, so a listing offered here can only produce that refusal.
   mutate web "List models is offered with no key bound to the endpoint" "$MF" \
@@ -3914,10 +3927,21 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # has its own row. A row that cannot discriminate is worse than no row: it
   # reports coverage for a safeguard nothing is measuring.
   # A picker left standing after the endpoint moved is a list of models from
-  # somewhere else, offered against a form that no longer says that host.
-  mutate web "the rows outlive the endpoint they came from" "$MF" \
-    '  const showing = rows !== undefined && askedFor === identityOf(draft)' \
-    '  const showing = rows !== undefined'
+  # somewhere else, offered against a form that no longer says that host — and
+  # rows merely *hidden* came back when the URL was changed away and back, with
+  # no request behind them. **Dropped from state**, and this is what says so:
+  # the mutation keeps them and hides them, which is the arrangement that was
+  # wrong rather than a weaker version of the right one.
+  mutate web "the rows are hidden when the endpoint moves rather than cleared" "$MF" \
+    '  const here = identityOf(draft)
+  if (rows !== undefined && askedFor !== here) {
+    setRows(undefined)
+    setAskedFor(undefined)
+    setRefusal(undefined)
+  }
+  const showing = rows !== undefined' \
+    '  const here = identityOf(draft)
+  const showing = rows !== undefined && askedFor === here'
   # **The page names a suffix; the desk builds the address.** A listing that
   # built its own URL would hold the endpoint — and, on this route, this
   # chassis' session token — in page code that no gate is on.
@@ -5084,8 +5108,14 @@ export function assistantTransport(): Transport {
   # a control that would refuse is worse than a sentence saying where the key
   # goes.
   mutate web "Describe is drawn with no key stored on this machine" "$DI" \
-    '  const usable = slot.endpoint !== null && slot.keyPresent' \
-    '  const usable = slot.endpoint !== null'
+    "  const usable = slot.state === 'configured' && slot.endpoint !== null && slot.keyPresent" \
+    "  const usable = slot.state === 'configured' && slot.endpoint !== null"
+  # A configuration this desk could not read is not one that says there is no
+  # assistant, and Describe must not offer a session against a slot nobody has
+  # been able to confirm.
+  mutate web "Describe is drawn against a configuration nobody could read" "$DI" \
+    "  const usable = slot.state === 'configured' && slot.endpoint !== null && slot.keyPresent" \
+    '  const usable = slot.endpoint !== null && slot.keyPresent'
 
   # Closing the dialog ends the session, and it has to end it **through the run
   # hook**: an unmount alone aborts the iterator and closes the socket without

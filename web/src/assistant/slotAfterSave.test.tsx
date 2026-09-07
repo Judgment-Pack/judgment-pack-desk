@@ -449,6 +449,48 @@ describe('a write that landed while the read after it did not', () => {
     )
   })
 
+  it('reports the slot as unavailable, never as none, where the read refused', async () => {
+    // **The false `none`.** The chassis confirmed a write; the read after it
+    // answered with a refusal; `loadDeskConfig` resolves to the built-in
+    // defaults, and every consumer of the slot was then told that no assistant
+    // was configured — an absence this page had not established, about a file
+    // it could not open. It is its own state now, and the tab says so.
+    const state = stubWriteThen('fails')
+    renderDesk()
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toContain('the-model-in-the-file')
+    )
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'the-model-chosen' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe('unavailable · none · vercel · off')
+    )
+    expect(screen.getByRole('status').textContent).not.toContain('configured ·')
+    expect(state.writes).toBe(1)
+  })
+
+  it('follows the chassis for the key row even where the configuration refused', async () => {
+    // **The row read the page's copy of the file first**, and that copy is
+    // exactly what goes missing here: it said "save an endpoint first" while a
+    // perfectly good key read beside it named the endpoint and carried this
+    // desk's verdict about it. Every state comes from the answer now.
+    stubWriteThen('fails')
+    vi.stubGlobal('fetch', withStoredKey(globalThis.fetch as typeof fetch))
+    renderDesk()
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toContain('the-model-in-the-file')
+    )
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'the-model-chosen' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe('unavailable · none · vercel · off')
+    )
+    // The chassis says there is an endpoint and the key is for it, so the row
+    // says that — rather than overruling it with a file it could not read.
+    expect(screen.getByText(/which is where this desk is configured/)).toBeTruthy()
+    expect(screen.queryByText(/Save an endpoint above before storing a key/)).toBeNull()
+  })
+
   it('reports the state as unverified where the read after it failed', async () => {
     // **The other branch the review admitted, and the one that is right here.**
     // A read that *answered* is newer information about the same file than the
@@ -522,10 +564,23 @@ describe('removing the endpoint', () => {
   })
 })
 
-/** The same chassis, answering the key read with one that is stored and bound. */
+/**
+ * The same chassis, answering the key read with one that is stored and bound —
+ * **and answering it as the chassis would once the endpoint has gone.**
+ *
+ * The key row reads `configuredOrigin` and `bound` from this answer and from
+ * nothing else, so a stub that went on naming an endpoint after a removal
+ * would be a stub disagreeing with the desk it stands for.
+ */
 function withStoredKey(inner: typeof fetch): typeof fetch {
+  let configured = true
   return (async (url: string, init?: RequestInit) => {
-    if (String(url).includes('/api/assistant/key')) {
+    const address = String(url)
+    if (address.includes('/api/desk-config') && (init?.method ?? 'GET') === 'PUT') {
+      const sent = JSON.parse(String(init?.body)) as { assistant: { endpoint: unknown } }
+      configured = sent.assistant.endpoint !== null
+    }
+    if (address.includes('/api/assistant/key')) {
       return {
         ok: true,
         status: 200,
@@ -536,11 +591,12 @@ function withStoredKey(inner: typeof fetch): typeof fetch {
             fingerprint: 'sk-a…wxyz',
             origin: 'https://api.example.invalid',
             kind: 'openai-compatible',
-            configuredOrigin: 'https://api.example.invalid',
-            bound: true
+            configuredOrigin: configured ? 'https://api.example.invalid' : '',
+            configuredKind: configured ? 'openai-compatible' : '',
+            bound: configured
           })
       }
     }
-    return inner(url as never, init as never)
+    return inner(address as never, init as never)
   }) as unknown as typeof fetch
 }

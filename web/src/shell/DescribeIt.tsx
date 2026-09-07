@@ -53,6 +53,17 @@ export const DESCRIBE_LABEL =
   'What should this pack decide? Who decides, on what facts, with what outcomes?'
 
 /** Said where the disclosure is opened and there is no assistant to run. */
+/**
+ * What is said where this desk could not read the file that would say.
+ *
+ * Not `NO_ASSISTANT`: a configuration that could not be read is not a
+ * configuration that names none, and offering the "configure one" repair for
+ * it sends a reader to a form that will not write either.
+ */
+export const UNREAD_CONFIGURATION =
+  'This desk could not read its own configuration, so it cannot say whether an assistant is ' +
+  'configured. Admin › Assistant names the problem.'
+
 export const NO_ASSISTANT =
   'No assistant is configured on this desk. Configure an endpoint in Admin › Assistant.'
 export const NO_KEY =
@@ -288,7 +299,7 @@ export function useDescribeIt(): DescribeItState {
    * It runs on the way in as well, where there is nothing to discard: the key
    * read has not answered yet and `usable` is honestly false.
    */
-  const usable = slot.endpoint !== null && slot.keyPresent
+  const usable = slot.state === 'configured' && slot.endpoint !== null && slot.keyPresent
   /**
    * Whether there is a session to take away, read at the instant of the loss.
    *
@@ -418,7 +429,12 @@ export function useDescribeIt(): DescribeItState {
 
   return {
     usable,
-    unusableBecause: slot.endpoint === null ? NO_ASSISTANT : NO_KEY,
+    unusableBecause:
+      slot.state === 'unavailable'
+        ? UNREAD_CONFIGURATION
+        : slot.endpoint === null
+          ? NO_ASSISTANT
+          : NO_KEY,
     advertised,
     standing:
       slot.endpoint === null

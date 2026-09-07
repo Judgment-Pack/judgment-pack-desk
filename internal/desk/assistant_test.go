@@ -2651,6 +2651,13 @@ func TestKeyReadCarriesThisDesksOwnBindingVerdict(t *testing.T) {
 			if got, _ := body["origin"].(string); got != stored {
 				t.Errorf("origin %q, want %q", got, stored)
 			}
+			// The configured protocol travels too, so the row that names both
+			// destinations reads both of them from the desk that decides
+			// rather than half from here and half from a configuration the
+			// page may not have been able to read.
+			if got, _ := body["configuredKind"].(string); got != "openai-compatible" {
+				t.Errorf("configuredKind %q", got)
+			}
 			// **And the verdict is the relay's own**: a request either goes or
 			// it does not, and the page is told which before it asks.
 			resp, relayBody := relayGet(t, ts, "models")
@@ -2682,6 +2689,9 @@ func TestKeyReadIsNotBoundWithNoEndpointToBindTo(t *testing.T) {
 	}
 	if got, _ := body["configuredOrigin"].(string); got != "" {
 		t.Errorf("configuredOrigin %q, want empty", got)
+	}
+	if got, _ := body["configuredKind"].(string); got != "" {
+		t.Errorf("configuredKind %q, want empty", got)
 	}
 }
 

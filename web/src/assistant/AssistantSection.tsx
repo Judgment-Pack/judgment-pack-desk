@@ -35,7 +35,6 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Fields } from '../components/primitives'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
-import type { AssistantEndpointConfig } from '../config/deskConfig'
 import { SourceBadge } from '../routes/adminBlocks'
 import { DIAGNOSTIC_SAYS, type AssistantKeyState } from './client'
 import { EndpointForm } from './EndpointForm'
@@ -107,7 +106,7 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
   const [storeProblem, setStoreProblem] = useState<string | undefined>(undefined)
   const [removeProblem, setRemoveProblem] = useState<string | undefined>(undefined)
 
-  const read = keyBinding(key.data, endpoint)
+  const read = keyBinding(key.data)
   const binding: KeyBinding = rebindAsked && read === 'bound' ? 'rebind' : read
 
   const submitKey = () => {
@@ -178,7 +177,6 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
         answered={key.isSuccess}
         failed={key.error}
         binding={binding}
-        endpoint={endpoint}
         field={field}
         onStore={submitKey}
         storeProblem={storeProblem}
@@ -224,6 +222,7 @@ const NOTHING_READ: AssistantKeyState = {
   origin: '',
   kind: '',
   configuredOrigin: '',
+  configuredKind: '',
   bound: false
 }
 
@@ -246,7 +245,6 @@ function KeyControl({
   answered,
   failed,
   binding,
-  endpoint,
   field,
   onStore,
   storeProblem,
@@ -257,7 +255,6 @@ function KeyControl({
   answered: boolean
   failed: Error | null
   binding: KeyBinding
-  endpoint: AssistantEndpointConfig | null
   field: RefObject<HTMLInputElement | null>
   onStore: () => void
   storeProblem: string | undefined
@@ -288,7 +285,7 @@ function KeyControl({
       <p>
         Key: <strong>{keySays(state, answered, failed)}</strong>
       </p>
-      <p>{bindingSays(binding, state, endpoint, destination)}</p>
+      <p>{bindingSays(binding, state, destination)}</p>
       {entry && (
         <p>
           <label htmlFor="assistant-key">{label}</label>{' '}
@@ -359,7 +356,6 @@ function KeyControl({
 function bindingSays(
   binding: KeyBinding,
   state: AssistantKeyState,
-  endpoint: AssistantEndpointConfig | null,
   destination: string | undefined
 ): ReactNode {
   if (binding === 'unread') return <span className="quiet">this desk has not been asked yet</span>
@@ -390,7 +386,7 @@ function bindingSays(
     <span className="quiet">
       The key stored here was entered for <code>{state.origin}</code> over{' '}
       <code>{state.kind}</code>. This desk is configured for <code>{destination}</code> over{' '}
-      <code>{endpoint?.kind}</code>, so it will not be presented and nothing will be sent —
+      <code>{state.configuredKind}</code>, so it will not be presented and nothing will be sent —
       enter the key for <code>{destination}</code>.
     </span>
   )

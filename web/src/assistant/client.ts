@@ -59,6 +59,8 @@ export interface AssistantKeyState {
    * configured or the configured URL has no origin to take.
    */
   configuredOrigin: string
+  /** That endpoint's wire protocol, empty alongside an empty origin. */
+  configuredKind: string
   bound: boolean
 }
 

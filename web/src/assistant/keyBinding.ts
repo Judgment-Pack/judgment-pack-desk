@@ -16,7 +16,6 @@
  * the one that decides has to be the one that presents the credential. What is
  * left is a mapping from the desk's answer to the five things a row can say.
  */
-import type { AssistantEndpointConfig } from '../config/deskConfig'
 import type { AssistantKeyState } from './client'
 
 /**
@@ -31,29 +30,31 @@ import type { AssistantKeyState } from './client'
 export type KeyBinding = 'unread' | 'no-endpoint' | 'none' | 'bound' | 'rebind'
 
 /**
- * Read the row's state off the key answer and the endpoint that is **saved**.
+ * Read the row's state off the key answer, and off **nothing else**.
  *
- * The saved endpoint and not the draft: a key is bound to what is in the file,
- * and a form with an unsaved host typed into it has changed nothing about
- * where the credential may go. A row that read the draft would tell an author
- * their key had stopped working because they were in the middle of typing.
+ * It used to consult the page's copy of the configuration first, to tell "no
+ * endpoint" from "one is configured" — and that copy is exactly the thing that
+ * can be missing. A desk-level read that answered with a refusal resolves to
+ * the built-in defaults, so a page whose configuration could not be read said
+ * "save an endpoint first" while a perfectly good key read beside it named the
+ * endpoint *and* carried this desk's verdict about it. The row was overruling
+ * the chassis with an absence it had not established.
  *
- * The endpoint is taken as an argument for exactly one thing — telling "there
- * is none configured" from "there is one" — because that is a fact about the
- * *file* the page already holds, and the desk's `configuredOrigin` can be empty
- * for a second reason (a URL with no origin) that reads the same to a reader.
+ * So every state comes from the answer: an empty `configuredOrigin` is the
+ * desk saying it is configured for nowhere, `bound` is its verdict about the
+ * pair, and `present` is whether there is a key at all. The saved endpoint is
+ * still what all of that is about — the desk computes it from the file, not
+ * from anything the form is holding — which is why a host typed and not saved
+ * never moves this row.
  */
-export function keyBinding(
-  key: AssistantKeyState | undefined,
-  endpoint: AssistantEndpointConfig | null
-): KeyBinding {
+export function keyBinding(key: AssistantKeyState | undefined): KeyBinding {
   if (key === undefined) return 'unread'
-  // **No endpoint is `no-endpoint` whether or not a key is kept here**, and
-  // not "rebind". Storing a key requires an endpoint to bind it to, so a row
-  // that offered the field here would offer a repair the chassis refuses; and
-  // a key that is stored is still reported on the line above, because removing
-  // an endpoint never removed a key.
-  if (endpoint === null) return 'no-endpoint'
+  // **Nowhere to bind to is `no-endpoint` whether or not a key is kept here**,
+  // and not "rebind". Storing a key requires an endpoint to bind it to, so a
+  // row that offered the field here would offer a repair the chassis refuses;
+  // and a key that is stored is still reported on the line above, because
+  // removing an endpoint never removed a key.
+  if (key.configuredOrigin === '') return 'no-endpoint'
   if (!key.present) return 'none'
   return key.bound ? 'bound' : 'rebind'
 }

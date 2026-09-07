@@ -399,12 +399,18 @@ export function AssistantPane({
     setAccepted(landed.text)
   }, [proposed, write, onBaseline])
 
-  if (slot.endpoint === null || !slot.keyPresent) {
+  if (slot.state === 'unavailable' || slot.endpoint === null || !slot.keyPresent) {
     return (
       <p className={styles.empty}>
-        {slot.endpoint === null
-          ? 'No assistant is configured on this desk. Configure an endpoint in Admin › Assistant.'
-          : 'An endpoint is configured and no key is stored on this machine. Add one in Admin › Assistant.'}
+        {/* **Three sentences and not two.** A desk whose configuration could
+            not be read is not a desk that has none: saying "no assistant is
+            configured" there is the page reporting an absence it did not
+            establish, about a file it could not open. */}
+        {slot.state === 'unavailable'
+          ? 'This desk could not read its own configuration, so it cannot say what assistant is configured. Admin › Assistant names the problem.'
+          : slot.endpoint === null
+            ? 'No assistant is configured on this desk. Configure an endpoint in Admin › Assistant.'
+            : 'An endpoint is configured and no key is stored on this machine. Add one in Admin › Assistant.'}
       </p>
     )
   }
