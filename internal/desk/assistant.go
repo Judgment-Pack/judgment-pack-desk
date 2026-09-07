@@ -327,6 +327,19 @@ type deskConfigWritten struct {
 	Created bool `json:"created"`
 }
 
+// deskConfigMoved is the file changing under a write that was already staged.
+//
+// A type rather than a sentinel because the answer carries the digest that is
+// actually on disk now, and the caller reports both.
+type deskConfigMoved struct {
+	actual string
+	exists bool
+}
+
+func (d *deskConfigMoved) Error() string {
+	return "the desk-level configuration on disk changed while this write was being staged"
+}
+
 // AssistantSlotView is a decoded `assistant` object, as an answer.
 //
 // It is the decode and never the request: `engine` and `thinking` carry their
@@ -518,10 +531,15 @@ func (s *Server) commitDeskConfigLocked(req DeskConfigWrite) (int, any) {
 		}
 	}
 
-	composed, problem := composeDeskFile(current, present, req.Assistant)
-	if problem != "" {
+	composed, problems := composeDeskFile(current, present, req.Assistant)
+	if len(problems) > 0 {
 		return http.StatusUnprocessableEntity, deskConfigRefusal{
-			Error: problem, Code: CodeDeskConfigRefused, Problems: []deskProblem{}}
+			Error: fmt.Sprintf(
+				"the configuration this would write could not be composed, so nothing was "+
+					"written: %s", describeProblems(problems)),
+			Code:     CodeDeskConfigRefused,
+			Problems: problems,
+		}
 	}
 	// **Bounded, and UTF-8, before a byte is staged.** Both are properties of
 	// the composed file rather than of the request, and round 1 found each of
@@ -555,7 +573,40 @@ func (s *Server) commitDeskConfigLocked(req DeskConfigWrite) (int, any) {
 		}
 	}
 
-	if err := s.assistant.writeConfigFile(composed); err != nil {
+	// **The digest, compared again immediately before the rename.** The
+	// comparison above is against the bytes this transaction read; round 1
+	// found the window between the two open to an ordinary editor, whose write
+	// this desk's mutex knows nothing about — it landed in between, was
+	// overwritten, and the route reported success. `writeConfigFile` runs this
+	// after staging and before publishing, so all of that window but the
+	// rename itself is closed.
+	var moved *deskConfigMoved
+	if err := s.assistant.writeConfigFile(composed, func() error {
+		nowPresent, now, rerr := s.readDeskFile()
+		if rerr != nil {
+			return rerr
+		}
+		digest := ""
+		if nowPresent {
+			digest = digestOf(now)
+		}
+		if !strings.EqualFold(strings.TrimSpace(req.IfMatch), digest) {
+			moved = &deskConfigMoved{actual: digest, exists: nowPresent}
+			return moved
+		}
+		return nil
+	}); err != nil {
+		if moved != nil {
+			return http.StatusConflict, conflict{
+				Error: "the desk-level configuration on disk changed while this write was " +
+					"being staged; nothing was written",
+				Code:           CodeDeskConfigChanged,
+				Path:           path,
+				ExpectedSHA256: strings.ToLower(strings.TrimSpace(req.IfMatch)),
+				ActualSHA256:   moved.actual,
+				Exists:         moved.exists,
+			}
+		}
 		return http.StatusInternalServerError, errorBody(fmt.Errorf(
 			"%s could not be written: %w", path, err))
 	}
@@ -612,29 +663,32 @@ func (s *Server) commitDeskConfigLocked(req DeskConfigWrite) (int, any) {
 // this desk declares, and the assistant object. The version is the chassis'
 // own constant rather than something the page supplies, because a page that
 // could choose it could ask this desk to write a file it will not read.
-func composeDeskFile(current []byte, present bool, assistant json.RawMessage) ([]byte, string) {
+func composeDeskFile(
+	current []byte, present bool, assistant json.RawMessage,
+) ([]byte, []deskProblem) {
 	var indented bytes.Buffer
 	if err := json.Indent(&indented, assistant, "  ", "  "); err != nil {
-		return nil, "the assistant object is not JSON, so nothing was written"
+		return nil, []deskProblem{{Key: "assistant",
+			Reason: "is not JSON, so nothing was written"}}
 	}
 	members := []deskMember{}
 	if present {
-		var order []string
-		record := map[string]json.RawMessage{}
-		if err := json.Unmarshal(current, &record); err != nil {
-			return nil, fmt.Sprintf(
-				"the file on disk is not a JSON object, so its other members could not be "+
-					"carried across and nothing was written: %v", err)
-		}
 		var err error
-		order, err = topLevelOrder(current)
-		if err != nil {
-			return nil, fmt.Sprintf(
-				"the file on disk could not be read member by member, so nothing was "+
-					"written: %v", err)
+		var duplicate string
+		members, duplicate, err = topLevelMembers(current)
+		if duplicate != "" {
+			// Named by its own key, the way every other refusal on this route
+			// is: whoever has to repair the file needs the member, not a
+			// sentence about parsing.
+			return nil, []deskProblem{{Key: duplicate, Reason: fmt.Sprintf(
+				"appears twice at the top level of %s, and two readers of that file would "+
+					"not agree which value it has; this desk will not compose over one",
+				deskConfigName)}}
 		}
-		for _, name := range order {
-			members = append(members, deskMember{name: name, raw: record[name]})
+		if err != nil {
+			return nil, []deskProblem{{Key: "", Reason: fmt.Sprintf(
+				"the file on disk could not be read member by member, so nothing was "+
+					"written: %v", err)}}
 		}
 	} else {
 		members = append(members, deskMember{
@@ -649,6 +703,7 @@ func composeDeskFile(current []byte, present bool, assistant json.RawMessage) ([
 			continue
 		}
 		members[index].raw = json.RawMessage(indented.String())
+		members[index].rendered = true
 		replaced = true
 	}
 	if !replaced {
@@ -662,71 +717,87 @@ func composeDeskFile(current []byte, present bool, assistant json.RawMessage) ([
 		out.WriteString("  ")
 		encoded, err := json.Marshal(member.name)
 		if err != nil {
-			return nil, "a member name in the file on disk could not be written back"
+			return nil, []deskProblem{{Key: member.name,
+				Reason: "could not be written back as a member name"}}
 		}
 		out.Write(encoded)
 		out.WriteString(": ")
-		var value bytes.Buffer
-		if err := json.Indent(&value, member.raw, "  ", "  "); err != nil {
-			return nil, fmt.Sprintf(
-				"the %q member of the file on disk is not JSON, so nothing was written",
-				member.name)
-		}
-		out.Write(value.Bytes())
+		// **The member's own bytes, unless this route wrote them.** Round 1
+		// found the earlier version passing every retained member through
+		// `json.Indent`, which rewrites the whitespace inside it — so the
+		// "byte for byte" claim held only for a file that was already in
+		// exactly the shape `json.Indent` emits, which is the shape the one
+		// test happened to use. A member this route was not asked about is now
+		// copied verbatim; only `assistant`, which it *was* asked about, is
+		// rendered.
+		out.Write(member.raw)
 		if index < len(members)-1 {
 			out.WriteString(",")
 		}
 		out.WriteString("\n")
 	}
 	out.WriteString("}\n")
-	return out.Bytes(), ""
+	return out.Bytes(), nil
 }
 
 // deskMember is one top-level member, by name and by its own bytes.
+//
+// `rendered` marks the one member this route composed itself; every other
+// member's `raw` is a slice of the file on disk and is written back unchanged.
 type deskMember struct {
-	name string
-	raw  json.RawMessage
+	name     string
+	raw      json.RawMessage
+	rendered bool
 }
 
-// topLevelOrder is the top-level member names of a JSON object, in the order
-// the file writes them.
+// topLevelMembers is the top-level members of a JSON object, in the order the
+// file writes them and **with each value's own bytes**.
 //
-// **Order, because a member's place in a file somebody wrote is theirs.** A
-// `map[string]json.RawMessage` alone answers what the members are and loses
-// where they were, and a rewrite that reordered `identity` and `assistant`
-// would be this desk editing a file it was asked to leave alone.
-func topLevelOrder(data []byte) ([]string, error) {
+// **Order, because a member's place in a file somebody wrote is theirs**, and
+// bytes for the same reason: a rewrite that reordered `identity` and
+// `assistant`, or reflowed the whitespace inside one, would be this desk
+// editing a file it was asked to leave alone.
+//
+// **A duplicate top-level name is an error rather than a collapse.** The
+// earlier version took values from a map and positions from the walk, so two
+// spellings of one name became the *last* value written at the *first*
+// position — a rewrite that silently changed what the file says. `encoding/json`
+// keeps the last, a JSON reader in another language may keep the first, and a
+// file two readers disagree about is one this desk will not compose over. The
+// caller refuses the write and names the member.
+func topLevelMembers(data []byte) ([]deskMember, string, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	opening, err := decoder.Token()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if delimiter, ok := opening.(json.Delim); !ok || delimiter != '{' {
-		return nil, errors.New("not a JSON object")
+		return nil, "", errors.New("not a JSON object")
 	}
-	var order []string
+	var members []deskMember
+	seen := map[string]bool{}
 	for decoder.More() {
 		name, err := decoder.Token()
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		key, ok := name.(string)
 		if !ok {
-			return nil, errors.New("a member name is not a string")
+			return nil, "", errors.New("a member name is not a string")
 		}
-		// The value, whatever it is, skipped whole.
-		var skipped json.RawMessage
-		if err := decoder.Decode(&skipped); err != nil {
-			return nil, err
+		if seen[key] {
+			return nil, key, nil
 		}
-		// A duplicate name is written once, where it first appeared: that is
-		// what `encoding/json` reads the object as, and a file that carried
-		// both spellings through would be a file two readers disagree about.
-		if !contains(order, key) {
-			order = append(order, key)
+		seen[key] = true
+		// The value's own bytes. `json.RawMessage` is handed the slice the
+		// decoder read, whitespace inside it included.
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, "", err
 		}
+		members = append(members, deskMember{name: key, raw: value})
 	}
-	return order, nil
+	return members, "", nil
 }
 
 /* The key this machine keeps ----------------------------------------------- */

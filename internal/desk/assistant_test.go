@@ -746,24 +746,20 @@ func TestDeskConfigWriteRoundTrips(t *testing.T) {
 
 func TestDeskConfigWriteKeepsEveryOtherMemberByteForByte(t *testing.T) {
 	// **The identity block is somebody's, and this route was asked about the
-	// assistant.** It is carried across by its own bytes, in its own place,
-	// re-indented and never re-serialised — so a rewrite of one member does
-	// not quietly restate the rest of the file.
+	// assistant.** It is carried across by its own bytes, in its own place, so
+	// a rewrite of one member does not quietly restate the rest of the file.
+	//
+	// **Round 1 rewrote this case.** The block it used was already formatted
+	// exactly as `json.Indent` emits, so the test passed while every retained
+	// member was in fact being reflowed — it proved the fixture's shape rather
+	// than the property. This one is compact on one line, with tabs and odd
+	// spacing that nothing in this repository would emit, so it can only
+	// survive by being copied.
 	s, ts, _ := assistantServer(t)
-	const identity = "  \"identity\": {\n" +
-		"    \"provider\": {\n" +
-		"      \"label\": \"Sign in\",\n" +
-		"      \"issuer\": \"https://issuer.example.invalid/\",\n" +
-		"      \"clientId\": \"abc\",\n" +
-		"      \"scopes\": [\n" +
-		"        \"openid\",\n" +
-		"        \"profile\"\n" +
-		"      ],\n" +
-		"      \"audience\": null,\n" +
-		"      \"showRemoteAvatar\": false,\n" +
-		"      \"signOut\": \"local\"\n" +
-		"    }\n" +
-		"  }"
+	const identity = "  \"identity\": {\"provider\":{\"label\":\"Sign in\",   " +
+		"\"issuer\":\"https://issuer.example.invalid/\",\t\"clientId\":\"abc\",\n" +
+		"\t\t\t\"scopes\":[\"openid\",\"profile\"],\"audience\":null," +
+		"\"showRemoteAvatar\":false,\"signOut\":\"local\"}}"
 	writeDeskConfig(t, s, "{\n  \"deskConfigVersion\": 1,\n"+identity+",\n"+
 		"  \"assistant\": {\n    \"endpoint\": null\n  }\n}\n")
 	before, _ := deskConfigDigest(t, ts)
@@ -784,6 +780,99 @@ func TestDeskConfigWriteKeepsEveryOtherMemberByteForByte(t *testing.T) {
 	}
 	if !strings.HasSuffix(string(written), "}\n") {
 		t.Errorf("no trailing newline:\n%q", written)
+	}
+	// And the file still reads, which is what makes preserving somebody's
+	// whitespace a service rather than a hazard.
+	if decoded := decodeDeskFile(written); decoded.refused() {
+		t.Fatalf("the rewritten file is refused: %v", decoded.Problems)
+	}
+}
+
+func TestDeskConfigWriteRefusesAFileWithADuplicateTopLevelMember(t *testing.T) {
+	// **Round 1.** Values came from a map and positions from the walk, so two
+	// spellings of one name became the *last* value written at the *first*
+	// position — a rewrite that silently changed what the file says.
+	// `encoding/json` keeps the last and a reader in another language may keep
+	// the first, so this desk will not compose over one at all.
+	s, ts, _ := assistantServer(t)
+	const original = "{\n  \"deskConfigVersion\": 1,\n" +
+		"  \"organization\": {\"name\": \"first\"},\n" +
+		"  \"organization\": {\"name\": \"second\"}\n}\n"
+	writeDeskConfig(t, s, original)
+	before, _ := deskConfigDigest(t, ts)
+	status, body := putDeskConfig(t, ts, geminiAssistant, before)
+	if status != http.StatusUnprocessableEntity || body["code"] != CodeDeskConfigRefused {
+		t.Fatalf("status %d, body %v; want 422 %s", status, body, CodeDeskConfigRefused)
+	}
+	named := false
+	problems, _ := body["problems"].([]any)
+	for _, problem := range problems {
+		entry, _ := problem.(map[string]any)
+		if entry["key"] == "organization" {
+			named = true
+		}
+	}
+	if !named {
+		t.Errorf("the duplicated member is not named: %v", body["problems"])
+	}
+	after, err := os.ReadFile(s.deskConfigPath())
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(after) != original {
+		t.Errorf("the file was rewritten anyway:\n%s", after)
+	}
+}
+
+func TestDeskConfigWriteRefusesAFileReplacedWhileItWasBeingStaged(t *testing.T) {
+	// **Round 1, and the window the mutex could never cover.** The digest is
+	// compared against the bytes the transaction read; an ordinary editor —
+	// which takes no lock of this desk's — could replace `desk.json` between
+	// that comparison and the rename, and the route overwrote its revision and
+	// reported success. The comparison now runs again after staging and before
+	// publishing, and this hook is that instant exactly.
+	s, ts, _ := assistantServer(t)
+	writeDeskConfig(t, s, "{\n  \"deskConfigVersion\": 1\n}\n")
+	before, _ := deskConfigDigest(t, ts)
+
+	const editors = "{\n  \"deskConfigVersion\": 1,\n  \"organization\": " +
+		"{\n    \"name\": \"what the editor wrote\"\n  }\n}\n"
+	swapped := false
+	testHookBeforeConfigRename = func(path string) {
+		if swapped {
+			return
+		}
+		swapped = true
+		if err := os.WriteFile(path, []byte(editors), 0o600); err != nil {
+			t.Errorf("the editor's write failed: %v", err)
+		}
+	}
+	t.Cleanup(func() { testHookBeforeConfigRename = nil })
+
+	status, body := putDeskConfig(t, ts, geminiAssistant, before)
+	if status != http.StatusConflict || body["code"] != CodeDeskConfigChanged {
+		t.Fatalf("status %d, body %v; want 409 %s", status, body, CodeDeskConfigChanged)
+	}
+	if body["actualSha256"] != digestOf([]byte(editors)) {
+		t.Errorf("actualSha256 %v, want the editor's bytes", body["actualSha256"])
+	}
+	// **The editor's file is what is there**, whole, and no staging file is
+	// left beside it.
+	after, err := os.ReadFile(s.deskConfigPath())
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(after) != editors {
+		t.Errorf("the editor's write was overwritten:\n%s", after)
+	}
+	entries, err := os.ReadDir(s.configDir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), configStagingPrefix) {
+			t.Errorf("a staging file survived the refusal: %s", entry.Name())
+		}
 	}
 }
 
@@ -1216,9 +1305,9 @@ func TestComposeDeskFileKeepsTheBytesItWasGiven(t *testing.T) {
 	// not be what was stored.
 	current := []byte(`{"deskConfigVersion":1,"panes":{"left":{"width":2e2}},` +
 		`"organization":{"name":"acme"}}`)
-	composed, problem := composeDeskFile(current, true, json.RawMessage(`{"endpoint":null}`))
-	if problem != "" {
-		t.Fatalf("compose: %s", problem)
+	composed, problems := composeDeskFile(current, true, json.RawMessage(`{"endpoint":null}`))
+	if len(problems) > 0 {
+		t.Fatalf("compose: %v", problems)
 	}
 	if !strings.Contains(string(composed), "2e2") {
 		t.Errorf("the number was re-serialised:\n%s", composed)
@@ -1247,8 +1336,8 @@ func TestComposeDeskFileRefusesAFileItCannotCarryAcross(t *testing.T) {
 	// Not an object, so there are no other members to preserve — and this
 	// route will not silently drop what it could not read.
 	for _, current := range []string{`[1,2,3]`, `"a string"`, `not json at all`} {
-		if _, problem := composeDeskFile([]byte(current), true,
-			json.RawMessage(`{"endpoint":null}`)); problem == "" {
+		if _, problems := composeDeskFile([]byte(current), true,
+			json.RawMessage(`{"endpoint":null}`)); len(problems) == 0 {
 			t.Errorf("%q was composed over", current)
 		}
 	}

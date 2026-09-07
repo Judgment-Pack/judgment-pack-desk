@@ -1274,11 +1274,32 @@ in `~/.config` by hand between attempts. Four things bound it:
   scan applies to a write exactly as it applies to a file somebody typed.
 - **Every other member survives.** `identity`, `deskConfigVersion` and anything
   else present are carried across **by their own bytes, in their own order** —
-  re-indented and never re-serialised, so `1e2` does not silently become `100`
-  and a member's place in a file somebody wrote stays theirs. The file is
-  written owner-only (`0600`) by staging, `fsync`, and rename inside the same
+  copied out of the file verbatim, whitespace included, and never re-serialised
+  or reflowed, so `1e2` does not silently become `100` and a member's place and
+  shape in a file somebody wrote stay theirs. Only `assistant`, the member this
+  route was asked about, is rendered. A file with a **duplicate top-level
+  member** is refused rather than composed over (`422`, naming the member):
+  `encoding/json` keeps the last value and a reader in another language may
+  keep the first, so a rewrite would silently choose one. The file is written
+  owner-only (`0600`) by staging, `fsync`, and rename inside the same
   directory; a `0644` file is still *read*, because a checkout or an editor
   leaves one, but this desk publishes its own writes at the mode it chose.
+- **The bytes are checked as bytes.** The request body must be UTF-8 and
+  exactly one JSON object with nothing behind it, and the composed file must be
+  UTF-8 and within the same bound every read applies — each refused before
+  anything is staged. Go's JSON decoder replaces an invalid byte inside a
+  string while decoding and `json.RawMessage` keeps the original, so without
+  the first of those a `0xff` in a model name decoded clean and would have been
+  written into a file every later read then refuses. A file this route writes
+  and this desk cannot read is worse than a write refused.
+- **The digest is compared twice**: once against the bytes this transaction
+  read, and again after the new bytes are staged and immediately before the
+  rename that publishes them. The second is what covers an ordinary editor,
+  which takes none of this desk's locks — without it a write that landed
+  between the two was overwritten and the route reported success. **The
+  residual is the rename itself**: a writer whose own write lands between that
+  second check and the rename still loses, and no compare-and-swap on a POSIX
+  rename exists to close it.
 
 The answer carries the new digest and the **decoded** slot — read back off the
 disk rather than echoed, defaults applied — so the page can verify what landed

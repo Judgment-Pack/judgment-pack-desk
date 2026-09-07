@@ -130,6 +130,20 @@ func afterConfigStat(path string) {
 	}
 }
 
+// testHookBeforeConfigRename runs after a desk-level write has been staged and
+// before the digest is compared again, and is nil outside tests.
+//
+// It exists so a test can be the ordinary editor the mutex knows nothing
+// about, at the one instant where the compare-and-commit could otherwise lose
+// somebody's file.
+var testHookBeforeConfigRename func(path string)
+
+func beforeConfigRename(path string) {
+	if testHookBeforeConfigRename != nil {
+		testHookBeforeConfigRename(path)
+	}
+}
+
 // openAssistantStore validates the chain and pins what it found.
 //
 // Called once, when the server is built. Everything it can repair — a missing
@@ -525,7 +539,21 @@ func ownedByUs(path string, info fs.FileInfo) error {
 // A store that failed validation writes nothing: `usable()` is checked first,
 // and a custody directory that was ever writable by anyone else is refused
 // rather than narrowed, which is the rule `safeDirectory` states.
-func (s *assistantStore) writeConfigFile(data []byte) error {
+//
+// **`stillMatches` is the conditional half of the commit, and it runs here
+// rather than at the caller** — after the bytes are staged and immediately
+// before the rename that publishes them. The digest the page sent was compared
+// at the *read*, and round 1 found the window between that comparison and this
+// rename open to an ordinary editor: a write the desk's own mutex knows nothing
+// about landed in between and was overwritten, and the route reported success.
+// Running the comparison again from here closes all of that window but the
+// rename itself.
+//
+// **The residual is the rename.** A writer whose own write lands between this
+// check and `Rename` still loses, and no compare-and-swap on a POSIX rename
+// exists to close it. It is stated here and in the README rather than implied
+// away.
+func (s *assistantStore) writeConfigFile(data []byte, stillMatches func() error) error {
 	if !s.usable() {
 		return s.problem
 	}
@@ -552,6 +580,17 @@ func (s *assistantStore) writeConfigFile(data []byte) error {
 	if err := staged.Close(); err != nil {
 		remove()
 		return err
+	}
+	// The hook a test performs the swap at: an ordinary editor replacing
+	// `desk.json` with bytes nobody here has seen, at the instant where it
+	// would matter. Without it the argument above would rest on reading the
+	// code and believing it.
+	beforeConfigRename(filepath.Join(s.dir, deskConfigName))
+	if stillMatches != nil {
+		if err := stillMatches(); err != nil {
+			remove()
+			return err
+		}
 	}
 	if err := s.root.Rename(name, deskConfigName); err != nil {
 		remove()

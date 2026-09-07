@@ -818,21 +818,55 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # Through the pinned custody descriptor, staged and renamed, published at the
   # mode this desk chose — `os.WriteFile` follows a name and keeps whatever
   # mode it finds, which is the observable difference the suite measures.
+  # **Repaired**: the call gained the pre-rename revalidation round 1 asked for.
+  # The mutation is the same defect — a write by pathname rather than through
+  # the pinned descriptor, which follows a name and keeps whatever mode it
+  # finds.
   mutate go "a configuration write goes round the custody root" "$A" \
-    '	if err := s.assistant.writeConfigFile(composed); err != nil {' \
-    '	if err := os.WriteFile(path, composed, 0o600); err != nil {'
+    '	var moved *deskConfigMoved
+	if err := s.assistant.writeConfigFile(composed, func() error {' \
+    '	var moved *deskConfigMoved
+	if err := func(data []byte, _ func() error) error {
+		return os.WriteFile(path, data, 0o600)
+	}(composed, func() error {'
   # Every other member is carried across by its own bytes, in its own place: a
   # rewrite of one member must not restate the rest of a file somebody wrote.
+  #
+  # **Repaired**: the needle named the map-and-order pair that round 1 replaced
+  # with a single ordered walk. The mutation is the same defect — the other
+  # members gone — and the version is kept so the composed file still decodes
+  # and the row measures the preservation rather than the round trip.
   mutate go "a rewrite drops the other members of the file" "$A" \
-    '		for _, name := range order {
-			members = append(members, deskMember{name: name, raw: record[name]})
-		}' \
-    '		for _, name := range order {
-			if name != "deskConfigVersion" {
-				continue
-			}
-			members = append(members, deskMember{name: name, raw: record[name]})
+    '		members = append(members, deskMember{name: key, raw: value})' \
+    '		if key == "deskConfigVersion" {
+			members = append(members, deskMember{name: key, raw: value})
 		}'
+  # Round 1: every retained member went through `json.Indent`, so the
+  # byte-for-byte claim held only for a file already in the shape that emits.
+  mutate go "a retained member is reflowed rather than copied" "$A" \
+    '		out.Write(member.raw)' \
+    '		var reflowed bytes.Buffer
+		if ierr := json.Indent(&reflowed, member.raw, "  ", "  "); ierr == nil {
+			member.raw = json.RawMessage(reflowed.String())
+		}
+		out.Write(member.raw)'
+  # Round 1: values came from a map and positions from the walk, so two
+  # spellings of one name became the last value at the first position.
+  mutate go "a duplicate top-level member is collapsed rather than refused" "$A" \
+    '		if seen[key] {
+			return nil, key, nil
+		}' \
+    ''
+  # Round 1: the digest was compared at the read and never again, so an
+  # ordinary editor writing between that and the rename was overwritten.
+  mutate go "a configuration write does not look again before it publishes" "$CU" \
+    '	if stillMatches != nil {
+		if err := stillMatches(); err != nil {
+			remove()
+			return err
+		}
+	}' \
+    ''
   # Caught by the live drive: the protocol path was appended to the whole URL
   # string, so a configured query put it after the query.
   #
