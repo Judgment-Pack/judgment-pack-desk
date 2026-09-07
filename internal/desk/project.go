@@ -49,15 +49,27 @@ type ProjectRoot struct {
 	// info is the identity that was validated, kept so a caller that validated
 	// something about this directory earlier can prove it is the same one.
 	info fs.FileInfo
+	// adopted marks a root a server has taken over. See `detach`.
+	adopted bool
 }
 
 // Dir is the resolved pathname of the pinned directory.
 func (p *ProjectRoot) Dir() string { return p.dir }
 
-// Close releases the descriptors.
+// Close releases the descriptors, unless a server has adopted them.
+//
+// **A handed-over root is no longer the caller's to close**, and round 3 found
+// what that cost while it was only documented: the wrapper stayed live, its
+// `Close` closed the very `os.Root` the running server holds, and the file API
+// went dead while the runtime kept working. So adoption *detaches* — the
+// caller's wrapper stops owning anything and says so — rather than asking
+// every caller to remember.
 func (p *ProjectRoot) Close() error {
 	if p == nil {
 		return nil
+	}
+	if p.adopted {
+		return errAdoptedByServer
 	}
 	var err error
 	if p.dirFile != nil {
@@ -69,6 +81,20 @@ func (p *ProjectRoot) Close() error {
 		}
 	}
 	return err
+}
+
+// errAdoptedByServer is what a caller gets for closing a root it handed over.
+var errAdoptedByServer = errors.New(
+	"this project root was adopted by a server, which closes it; nothing was closed here")
+
+// detach marks this wrapper as no longer owning its descriptors.
+//
+// Called by `New` at the instant it succeeds, so there is exactly one owner
+// from then on and no window in which two things could close one descriptor.
+func (p *ProjectRoot) detach() {
+	if p != nil {
+		p.adopted = true
+	}
 }
 
 // OpenProjectRoot validates a directory and pins it in one operation.

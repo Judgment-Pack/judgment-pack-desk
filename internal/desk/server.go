@@ -186,6 +186,10 @@ func New(cfg Config) (*Server, error) {
 		relaySlots: make(chan struct{}, maxRelayInFlight),
 	}
 	adopted = true
+	// **One owner from here on.** The wrapper the caller still holds stops
+	// owning anything, so a `Close` on it cannot take the descriptor out from
+	// under a running server. See `ProjectRoot.detach`.
+	pinned.detach()
 	// Validated and pinned once. Doing it per request would let the authority
 	// itself be retargeted between requests, which is the same argument the
 	// project root is pinned for.
@@ -260,6 +264,9 @@ func (s *Server) Close() error {
 		err = s.watcher.Close()
 	}
 	if s.project != nil {
+		// The server is the owner, so it closes both descriptors. The wrapper
+		// was detached at adoption and closes nothing.
+		s.project.adopted = false
 		if rerr := s.project.Close(); err == nil {
 			err = rerr
 		}

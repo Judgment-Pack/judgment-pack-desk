@@ -6,6 +6,7 @@ package desk
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -1255,5 +1256,38 @@ func TestThePathnameFallbackRefusesAMovedProject(t *testing.T) {
 	}
 	if _, err := runtimeWorkingDirByPathname(dir, was); err == nil {
 		t.Error("a replaced directory was accepted")
+	}
+}
+
+func TestAHandedRootCannotBeClosedOutFromUnderTheServer(t *testing.T) {
+	// **Adoption detaches.** The wrapper stayed live and its `Close` closed the
+	// very descriptor the running server holds, so the file API went dead
+	// while the runtime kept working — a caller doing the tidy thing broke the
+	// desk.
+	dir, _ := aProject(t)
+	pinned, err := OpenProjectRoot(dir)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken,
+		DeskConfigDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	// The caller tidies up. It must close nothing, and say so.
+	if err := pinned.Close(); !errors.Is(err, errAdoptedByServer) {
+		t.Errorf("closing an adopted root answered %v", err)
+	}
+	// And the file API still serves.
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+	status, body := sendJSON(t, ts, http.MethodGet, "/api/files", nil)
+	if status != http.StatusOK {
+		t.Fatalf("the file API answered %d: %v", status, body)
+	}
+	if _, err := s.root.Stat("."); err != nil {
+		t.Errorf("the server's root was closed: %v", err)
 	}
 }
