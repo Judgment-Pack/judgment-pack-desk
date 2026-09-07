@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
 import { decodeDeskConfig, effectiveConfig, type EffectiveConfig } from '../config/deskConfig'
 import { testQueryClient } from '../testing/harness'
+import { narrationIn } from '../admin/narration'
 import { EndpointForm } from './EndpointForm'
 import { PREFILLED_URL } from './endpointDraft'
 
@@ -686,5 +687,70 @@ describe('removing the endpoint', () => {
     // conditional commit and not a second, looser write.
     expect(body.ifMatch).toBe(DIGEST)
     expect(await screen.findByText(/no assistant endpoint configured/)).toBeTruthy()
+  })
+})
+
+describe('the narration guard, over the states only the form can reach', () => {
+  /**
+   * **Admin's sweep renders configurations; these are the states a *control*
+   * produces**, and they were outside it. A stale-write panel, a decoder's
+   * refusal beside a field, and a removal confirmation are each a sentence
+   * this desk writes, and each was written after the page that carries the
+   * sweep had already been rendered.
+   */
+  const swept = (container: HTMLElement) =>
+    narrationIn(container).map((each) => `${each.where}: ${each.says}`)
+
+  it('carries no paragraph on a stale write', async () => {
+    stubWrites([
+      {
+        status: 409,
+        body: {
+          error: 'changed',
+          code: 'desk-config-changed',
+          path: DESK_PATH,
+          expectedSha256: DIGEST,
+          actualSha256: NEXT,
+          exists: true
+        }
+      }
+    ])
+    const { container } = renderForm()
+    save()
+    await screen.findByText(/changed on disk. Nothing was written/)
+    expect(swept(container), swept(container).join(' | ')).toEqual([])
+  })
+
+  it('carries no paragraph on a refusal rendered against its fields', async () => {
+    stubWrites([
+      {
+        status: 422,
+        body: {
+          error: 'refused',
+          code: 'desk-config-refused',
+          problems: [
+            { key: 'assistant.endpoint.url', reason: 'must be an https: URL' },
+            { key: 'somewhere.else', reason: 'unknown key' }
+          ]
+        }
+      }
+    ])
+    const { container } = renderForm()
+    save()
+    await screen.findByText(/This configuration was refused/)
+    expect(swept(container), swept(container).join(' | ')).toEqual([])
+  })
+
+  it('carries no paragraph while a removal is being confirmed', () => {
+    stubWrites([{}])
+    const { container } = renderForm()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove endpoint' }))
+    expect(swept(container), swept(container).join(' | ')).toEqual([])
+  })
+
+  it('carries no paragraph over a file this desk could not read', () => {
+    stubWrites([{}])
+    const { container } = renderForm(noFile(), false, true)
+    expect(swept(container), swept(container).join(' | ')).toEqual([])
   })
 })

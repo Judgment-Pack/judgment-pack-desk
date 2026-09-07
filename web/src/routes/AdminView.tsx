@@ -83,7 +83,10 @@ export function AdminView() {
         title={SECTION.project!.title}
         location={projectLocation(effective)}
         status={projectStatus(effective)}
-        content={{ text: effective.text, value: {} }}
+        // The whole file, and only where it was accepted: the card's own
+        // Status is what gates it, and a refused document is exactly the one
+        // that must not be rendered.
+        content={{ text: effective.text }}
         fields={defaultProject.field}
         save={defaultProject.save}
       />

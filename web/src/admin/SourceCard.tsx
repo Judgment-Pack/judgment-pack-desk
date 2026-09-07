@@ -20,8 +20,17 @@
  * decoder's own sentence, key path and all. The warning notes this replaced
  * were prose about a problem; a status line is the problem.
  *
- * **Content is the member's own bytes** where this page read the file, and the
- * decoded value — labelled as decoded — where it did not. See `memberBytes`.
+ * **Content is the member's own bytes** where the file was *accepted*, and the
+ * decoded value — labelled as decoded — where there are no bytes to show. See
+ * `memberBytes`.
+ *
+ * **A refused file shows no content at all**, and that is a safety rule rather
+ * than a tidiness one. The decoder refuses a whole file for one credential-
+ * shaped member, and the point of refusing it is that the desk will not act on
+ * it; rendering its bytes anyway put the very member the refusal is about —
+ * `identity.apiKey`, and on the Project card the whole document around it —
+ * into the DOM of the page that reported the refusal. What a reader needs
+ * there is the refusal, which the Status line already is.
  */
 import type { ReactNode } from 'react'
 import type { ConfigProblem, ReadFailure } from '../config/deskConfig'
@@ -51,8 +60,13 @@ export interface CardContent {
   text?: string
   /** The top-level member to quote, or the whole file where absent. */
   member?: string
-  /** What is shown where the bytes cannot be established. */
-  value: unknown
+  /**
+   * What is shown where the bytes cannot be established.
+   *
+   * Optional: a card whose file has no bytes to quote and no decoded value
+   * worth showing renders no disclosure rather than an empty one.
+   */
+  value?: unknown
 }
 
 export function SourceCard({
@@ -97,11 +111,25 @@ export function SourceCard({
           </dd>
         </div>
       </dl>
-      {content !== undefined && <Content content={content} />}
+      {content !== undefined && showsContent(status) && (
+        <Content content={content} accepted={status.state === 'read'} />
+      )}
       {fields !== undefined && <div className={styles.fields}>{fields}</div>}
       {save !== undefined && <div className={styles.save}>{save}</div>}
     </section>
   )
+}
+
+/**
+ * Whether a card may show what is in its file at all.
+ *
+ * **Not on a refusal, and not on a read that did not produce one.** A refused
+ * file's bytes are the thing the refusal is about; an unread file's are bytes
+ * this page never had. Every other state either has bytes it may quote or a
+ * decoded value that is the desk's own answer.
+ */
+function showsContent(status: SourceStatus): boolean {
+  return status.state !== 'refused' && status.state !== 'unread'
 }
 
 /**
@@ -156,9 +184,13 @@ function UnreadLine({ failure }: { failure: ReadFailure }) {
 }
 
 /** The file, or the one member of it this card is about. */
-function Content({ content }: { content: CardContent }) {
+function Content({ content, accepted }: { content: CardContent; accepted: boolean }) {
+  // **Only where the file was accepted.** `accepted` is the card's own Status
+  // rather than a second opinion about the file: the decode that produced the
+  // status produced the verdict, and a disclosure that quoted a file the desk
+  // refused would put the refused member on the page that refused it.
   const bytes =
-    content.text === undefined
+    !accepted || content.text === undefined
       ? undefined
       : content.member === undefined
         ? content.text
@@ -166,7 +198,9 @@ function Content({ content }: { content: CardContent }) {
   // The bytes where this page has them; the decoded value, said to be decoded,
   // where it does not. Showing a re-serialisation and calling it the file is
   // the one thing this disclosure must not do.
-  const shown = bytes ?? JSON.stringify(content.value, null, 2)
+  const shown =
+    bytes ?? (content.value === undefined ? undefined : JSON.stringify(content.value, null, 2))
+  if (shown === undefined) return null
   return (
     <details className={styles.content}>
       <summary className={styles.summary}>

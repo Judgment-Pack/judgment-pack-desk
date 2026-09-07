@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -30,42 +31,117 @@ func TestResolveProjectDirPrefersTheArgument(t *testing.T) {
 }
 
 func TestResolveProjectDirTakesTheDirectoryOfTheConfiguredFile(t *testing.T) {
-	got, err := resolveProjectDir("", deskLaunchFile{
-		path: "/config/desk.json", file: "/home/someone/a-project/jpack-desk.json"})
+	project, file := aProject(t)
+	got, err := resolveProjectDir("", deskLaunchFile{path: "/config/desk.json", file: file})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if got != "/home/someone/a-project" {
-		t.Errorf("resolved %q, want the configured file's directory", got)
+	if got != project {
+		t.Errorf("resolved %q, want %q", got, project)
 	}
 }
 
-func TestResolveProjectDirRefusesWithNeitherAndNamesTheMember(t *testing.T) {
-	// **Not the current directory.** A project chosen by where the process
-	// happened to start is a project nobody chose, and every consequence of
-	// that choice is silent. The refusal has to be actionable, so it names the
-	// file to write and the member to write in it.
-	_, err := resolveProjectDir("", deskLaunchFile{path: "/config/desk.json"})
-	if err == nil {
-		t.Fatal("no argument and no configured file was accepted")
+func TestResolveProjectDirIsTheCurrentDirectoryWithNeither(t *testing.T) {
+	// The default this desk has always had, and the state most desks are in.
+	got, err := resolveProjectDir("", deskLaunchFile{path: "/config/desk.json"})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
 	}
-	for _, expected := range []string{"/config/desk.json", "project.file", "jpack-desk.json"} {
-		if !strings.Contains(err.Error(), expected) {
-			t.Errorf("the refusal does not name %q: %v", expected, err)
-		}
+	if got != "." {
+		t.Errorf("resolved %q, want the current directory", got)
+	}
+	// And with no configuration file at all, which is the same answer.
+	if got, err := resolveProjectDir("", deskLaunchFile{}); err != nil || got != "." {
+		t.Errorf("with nothing at all: %q %v", got, err)
 	}
 }
 
-func TestResolveProjectDirSaysSoWhereThereIsNoConfigurationFileAtAll(t *testing.T) {
-	// A machine with no configuration directory has no path to name, and the
-	// refusal says that rather than printing an empty one.
-	_, err := resolveProjectDir("", deskLaunchFile{})
-	if err == nil {
-		t.Fatal("accepted with nothing at all")
+func TestAConfiguredDefaultThisHostCannotOpenRefusesTheLaunch(t *testing.T) {
+	// **Never a silent fall back to the current directory.** Somebody who
+	// configured a default and got some other project would have no way to see
+	// that the member they wrote was ignored, so an unusable one is named.
+	dir, _ := aProject(t)
+	notAFile := filepath.Join(dir, "sub")
+	if err := os.MkdirAll(notAFile, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
 	}
-	if !strings.Contains(err.Error(), "desk configuration file") {
+	elsewhere := filepath.Join(t.TempDir(), "elsewhere.json")
+	if err := os.WriteFile(elsewhere, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	link := filepath.Join(dir, "linked-away")
+	if err := os.MkdirAll(link, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	linked := filepath.Join(link, projectConfigName)
+	if err := os.Symlink(elsewhere, linked); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	for _, each := range []struct {
+		what string
+		file string
+		says string
+	}{
+		{"a file that is not there", filepath.Join(dir, "gone", projectConfigName), "resolved"},
+		{"a directory", notAFile, "regular file"},
+		{"a link to another name", linked, "rather than a"},
+		{"the filesystem root", "/" + projectConfigName, "filesystem root"},
+		{"a path this host reads as relative", `C:\p\` + projectConfigName, "absolute path"},
+	} {
+		t.Run(each.what, func(t *testing.T) {
+			_, err := resolveProjectDir("", deskLaunchFile{path: "/config/desk.json", file: each.file})
+			if err == nil {
+				t.Fatalf("%s was honoured", each.what)
+			}
+			for _, expected := range []string{"project.file", "/config/desk.json", each.says} {
+				if !strings.Contains(err.Error(), expected) {
+					t.Errorf("the refusal does not name %q: %v", expected, err)
+				}
+			}
+		})
+	}
+}
+
+func TestAWindowsShapedDefaultRefusesRatherThanOpeningTheLaunchDirectory(t *testing.T) {
+	// **The shared corpus proves decoder parity, not that a value is
+	// actionable on the host that launches.** `C:\p\jpack-desk.json` is one
+	// path component to `path/filepath` here, so `filepath.Dir` answers "."
+	// and the desk would open whatever directory it was started in — the exact
+	// accident this member exists to remove. The fixture below is the one the
+	// shared corpus *accepts*, so this is the gap and not a second decoder.
+	if runtime.GOOS == "windows" {
+		t.Skip("the shape is native here")
+	}
+	accepted := readAcceptedWindowsFixture(t)
+	config := t.TempDir()
+	writeLaunchConfig(t, config, accepted)
+	// The launch directory, so that a fall-through would be visible as itself.
+	elsewhere := t.TempDir()
+	t.Chdir(elsewhere)
+	got, err := ResolveProjectDir("", config)
+	if err == nil {
+		t.Fatalf("the Windows-shaped default resolved to %q", got)
+	}
+	if !strings.Contains(err.Error(), "absolute path on this system") {
 		t.Errorf("refusal: %v", err)
 	}
+	if strings.Contains(got, elsewhere) {
+		t.Errorf("it fell through to the launch directory %q", elsewhere)
+	}
+}
+
+// readAcceptedWindowsFixture is the shared corpus' own Windows path, so this
+// test cannot drift from what the decoders accept.
+func readAcceptedWindowsFixture(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(fixtureDir(t), "accepted-project-file-windows.json"))
+	if err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	if decoded := decodeDeskFile(data); decoded.refused() {
+		t.Fatalf("the fixture is no longer accepted: %v", decoded.Problems)
+	}
+	return string(data)
 }
 
 func TestResolveProjectDirReadsTheConfiguredFileThroughTheStore(t *testing.T) {
@@ -73,9 +149,8 @@ func TestResolveProjectDirReadsTheConfiguredFileThroughTheStore(t *testing.T) {
 	// this file goes through: it names a directory this desk will then serve
 	// out of, so a file anybody else could have written must not choose it.
 	config := t.TempDir()
-	project := t.TempDir()
-	writeLaunchConfig(t, config, `{"deskConfigVersion":1,"project":{"file":`+
-		quoted(filepath.Join(project, "jpack-desk.json"))+`}}`)
+	project, file := aProject(t)
+	writeLaunchConfig(t, config, `{"deskConfigVersion":1,"project":{"file":`+quoted(file)+`}}`)
 	got, err := ResolveProjectDir("", config)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
@@ -108,14 +183,11 @@ func TestARefusedDeskFileNamesNoProject(t *testing.T) {
 	}
 }
 
-func TestAnAbsentDeskFileIsTheUsageErrorAndNotAFailedRead(t *testing.T) {
+func TestAnAbsentDeskFileIsTheCurrentDirectoryAndNotAFailedRead(t *testing.T) {
 	config := t.TempDir()
-	_, err := ResolveProjectDir("", config)
-	if err == nil {
-		t.Fatal("accepted with no file at all")
-	}
-	if !strings.Contains(err.Error(), "project.file") {
-		t.Errorf("refusal: %v", err)
+	got, err := ResolveProjectDir("", config)
+	if err != nil || got != "." {
+		t.Fatalf("with no desk-level file: %q %v", got, err)
 	}
 }
 
@@ -124,8 +196,21 @@ func TestAnAbsentDeskFileIsTheUsageErrorAndNotAFailedRead(t *testing.T) {
 func writeLaunchConfig(t *testing.T, dir, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, deskConfigName), []byte(content), 0o644); err != nil {
-		t.Fatalf("write desk.json: %v", err)
+		t.Fatalf("write %s: %v", deskConfigName, err)
 	}
+}
+
+// aProject puts an empty `jpack-desk.json` in a fresh directory and answers
+// where it is, because a configured default now has to be a file that is
+// actually there.
+func aProject(t *testing.T) (dir, file string) {
+	t.Helper()
+	dir = t.TempDir()
+	file = filepath.Join(dir, projectConfigName)
+	if err := os.WriteFile(file, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write %s: %v", projectConfigName, err)
+	}
+	return dir, file
 }
 
 // quoted is `%q` for a path, so a separator survives into the JSON.
@@ -206,6 +291,8 @@ func TestDeskConfigWriteReplacesOnlyTheMembersItWasSent(t *testing.T) {
 	// re-rendered.
 	s, ts, _ := assistantServer(t)
 	writeDeskConfig(t, s, `{"deskConfigVersion":1}`)
+	// The only project a page may nominate: the one this desk is running in.
+	thisProject := filepath.Join(s.projectDir, projectConfigName)
 
 	digest, _ := deskConfigDigest(t, ts)
 	status, body := putMembers(t, ts, map[string]any{
@@ -216,7 +303,7 @@ func TestDeskConfigWriteReplacesOnlyTheMembersItWasSent(t *testing.T) {
 
 	digest, _ = deskConfigDigest(t, ts)
 	status, body = putMembers(t, ts, map[string]any{
-		"project": json.RawMessage(`{"file":"/home/someone/a-project/jpack-desk.json"}`),
+		"project": json.RawMessage(`{"file":` + quoted(thisProject) + `}`),
 		"ifMatch": digest})
 	if status != http.StatusOK {
 		t.Fatalf("project: %d %v", status, body)
@@ -229,7 +316,7 @@ func TestDeskConfigWriteReplacesOnlyTheMembersItWasSent(t *testing.T) {
 		t.Fatalf("the assistant slot did not survive a project write: %v", body["assistant"])
 	}
 	project, _ := body["project"].(map[string]any)
-	if project["file"] != "/home/someone/a-project/jpack-desk.json" {
+	if project["file"] != thisProject {
 		t.Errorf("project %v", body["project"])
 	}
 
@@ -241,7 +328,7 @@ func TestDeskConfigWriteReplacesOnlyTheMembersItWasSent(t *testing.T) {
 		t.Fatalf("assistant again: %d %v", status, body)
 	}
 	project, _ = body["project"].(map[string]any)
-	if project["file"] != "/home/someone/a-project/jpack-desk.json" {
+	if project["file"] != thisProject {
 		t.Errorf("the project slot did not survive an assistant write: %v", body["project"])
 	}
 	// Read off the disk, not off the answer: the file is what the next launch
@@ -250,8 +337,7 @@ func TestDeskConfigWriteReplacesOnlyTheMembersItWasSent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}
-	if decoded := decodeDeskFile(data); decoded.ProjectFile !=
-		"/home/someone/a-project/jpack-desk.json" {
+	if decoded := decodeDeskFile(data); decoded.ProjectFile != thisProject {
 		t.Errorf("on disk: %q", decoded.ProjectFile)
 	}
 }
@@ -306,13 +392,17 @@ func TestAWrittenDefaultProjectIsTheOneTheNextLaunchOpens(t *testing.T) {
 	// The two halves meeting: what the card saves is what `ResolveProjectDir`
 	// reads, through one file and one contract.
 	config := t.TempDir()
-	project := t.TempDir()
 	s, ts, _ := assistantServerIn(t, config)
-	_ = s
+	// **The project this desk is running in**, which is the only one a page
+	// may nominate. Its own configuration file has to exist for the launch to
+	// honour it, so it is written here.
+	file := filepath.Join(s.projectDir, projectConfigName)
+	if err := os.WriteFile(file, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
 	digest, _ := deskConfigDigest(t, ts)
 	status, body := putMembers(t, ts, map[string]any{
-		"project": json.RawMessage(`{"file":` +
-			quoted(filepath.Join(project, "jpack-desk.json")) + `}`),
+		"project": json.RawMessage(`{"file":` + quoted(file) + `}`),
 		"ifMatch": digest})
 	if status != http.StatusOK {
 		t.Fatalf("status %d, body %v", status, body)
@@ -321,7 +411,153 @@ func TestAWrittenDefaultProjectIsTheOneTheNextLaunchOpens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if opened != project {
-		t.Errorf("the next launch would open %q, want %q", opened, project)
+	if opened != s.projectDir {
+		t.Errorf("the next launch would open %q, want %q", opened, s.projectDir)
+	}
+}
+
+/* What a page may persist, and what it may not ----------------------------- */
+
+func TestAPageMayNominateOnlyTheProjectThisDeskIsRunningIn(t *testing.T) {
+	// **The key-retarget class, in the shape this member takes it.** The desk
+	// pins one project root and serves the file API through it; `project.file`
+	// chooses the root of the *next* launch. A page that could write any path
+	// could hand its successor an authority the page never had — round 1's
+	// example is `/jpack-desk.json`, which would pin `/` and serve the host —
+	// so the page may write this project's own file, or null, and nothing else.
+	s, ts, _ := assistantServer(t)
+	writeDeskConfig(t, s, `{"deskConfigVersion":1}`)
+	before, _ := deskConfigDigest(t, ts)
+
+	for _, file := range []string{
+		`"/jpack-desk.json"`,
+		`"/etc/jpack-desk.json"`,
+		`"` + filepath.Join(t.TempDir(), projectConfigName) + `"`,
+	} {
+		status, body := putMembers(t, ts, map[string]any{
+			"project": json.RawMessage(`{"file":` + file + `}`), "ifMatch": before})
+		if status != http.StatusUnprocessableEntity {
+			t.Fatalf("%s: status %d, body %v", file, status, body)
+		}
+		if body["code"] != CodeDeskConfigRefused {
+			t.Errorf("%s: code %v", file, body["code"])
+		}
+		problems, _ := body["problems"].([]any)
+		if len(problems) != 1 {
+			t.Fatalf("%s: problems %v", file, body["problems"])
+		}
+		first, _ := problems[0].(map[string]any)
+		if first["key"] != "project.file" {
+			t.Errorf("%s: refused by %v", file, first["key"])
+		}
+		if first["reason"] != pageMayNominateOnlyThisProject {
+			t.Errorf("%s: reason %v", file, first["reason"])
+		}
+	}
+	// **Nothing was written by any of them**, which is the half that matters:
+	// a refusal that had already landed the value would be no refusal at all.
+	if now, present := deskConfigDigest(t, ts); now != before || !present {
+		t.Errorf("a refused nomination changed the file: %q, was %q", now, before)
+	}
+}
+
+func TestAPageMayNominateThisProjectAndMayWithdrawADefault(t *testing.T) {
+	// The two things a page may do: nominate the project it is already
+	// serving, which grants it nothing it does not already have, and withdraw
+	// a default, which takes authority away.
+	s, ts, _ := assistantServer(t)
+	writeDeskConfig(t, s, `{"deskConfigVersion":1}`)
+	thisProject := filepath.Join(s.projectDir, projectConfigName)
+
+	digest, _ := deskConfigDigest(t, ts)
+	status, body := putMembers(t, ts, map[string]any{
+		"project": json.RawMessage(`{"file":` + quoted(thisProject) + `}`), "ifMatch": digest})
+	if status != http.StatusOK {
+		t.Fatalf("nominating this project: %d %v", status, body)
+	}
+	project, _ := body["project"].(map[string]any)
+	if project["file"] != thisProject {
+		t.Errorf("project %v, want %q", body["project"], thisProject)
+	}
+
+	digest, _ = deskConfigDigest(t, ts)
+	status, body = putMembers(t, ts, map[string]any{
+		"project": json.RawMessage(`{"file":null}`), "ifMatch": digest})
+	if status != http.StatusOK {
+		t.Fatalf("withdrawing: %d %v", status, body)
+	}
+	project, _ = body["project"].(map[string]any)
+	if project["file"] != nil {
+		t.Errorf("project %v, want null", body["project"])
+	}
+}
+
+func TestTheReviewsRootNominationDoesNotSurviveIntoTheNextLaunch(t *testing.T) {
+	// End to end on the finding as it was written: the PUT the review named,
+	// then the resolution the next argument-less launch would make. The root
+	// must not be `/` — and, because the write was refused, the desk-level
+	// file names no project at all.
+	config := t.TempDir()
+	_, ts, _ := assistantServerIn(t, config)
+	digest, _ := deskConfigDigest(t, ts)
+	status, _ := putMembers(t, ts, map[string]any{
+		"project": json.RawMessage(`{"file":"/jpack-desk.json"}`), "ifMatch": digest})
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("the root nomination was answered %d", status)
+	}
+	opened, err := ResolveProjectDir("", config)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if opened != "." {
+		t.Errorf("the next launch would open %q, want the current directory", opened)
+	}
+}
+
+func TestAHandEditedRootDefaultRefusesTheLaunchRatherThanPinningTheRoot(t *testing.T) {
+	// The operator's own editor is not gated by the route above, so the
+	// launch's own validation is what stands between a hand-written
+	// `/jpack-desk.json` and a desk serving the host.
+	config := t.TempDir()
+	writeLaunchConfig(t, config, `{"deskConfigVersion":1,"project":{"file":"/jpack-desk.json"}}`)
+	opened, err := ResolveProjectDir("", config)
+	if err == nil {
+		t.Fatalf("the root was honoured as %q", opened)
+	}
+	if !strings.Contains(err.Error(), "filesystem root") {
+		t.Errorf("refusal: %v", err)
+	}
+}
+
+func TestADeskLevelWriteStatesItsDigestOrIsRefused(t *testing.T) {
+	// **An omitted `ifMatch` is not the empty sentinel.** Where the file is
+	// absent the actual digest is the empty string too, so a body carrying no
+	// `ifMatch` compared equal and created the file — a write with no
+	// precondition, from a route whose whole argument is that the commit is
+	// conditional.
+	s, ts, _ := assistantServer(t)
+	thisProject := filepath.Join(s.projectDir, projectConfigName)
+	for _, body := range []map[string]any{
+		{"project": json.RawMessage(`{"file":` + quoted(thisProject) + `}`)},
+		{"assistant": json.RawMessage(`{"endpoint":null}`)},
+	} {
+		status, answer := putMembers(t, ts, body)
+		if status != http.StatusBadRequest {
+			t.Fatalf("status %d, body %v", status, answer)
+		}
+		if !strings.Contains(answer["error"].(string), "ifMatch") {
+			t.Errorf("the refusal does not name the member: %v", answer["error"])
+		}
+	}
+	// And no file was created by either, which is the state that made the
+	// omission invisible in the first place.
+	if _, err := os.Stat(s.deskConfigPath()); !os.IsNotExist(err) {
+		t.Errorf("a write with no precondition created %s", s.deskConfigPath())
+	}
+	// The sentinel, stated, still creates one.
+	status, answer := putMembers(t, ts, map[string]any{
+		"assistant": json.RawMessage(`{"endpoint":null}`), "ifMatch": ""})
+	if status != http.StatusOK {
+		t.Fatalf("the stated sentinel was refused: %d %v", status, answer)
 	}
 }

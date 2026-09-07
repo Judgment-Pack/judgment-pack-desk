@@ -1209,13 +1209,7 @@ appear here:
 naming a `jpack-desk.json`, and the desk opens the directory that file is in;
 `null` or absent means it names none. It is desk-level only — which project a
 machine opens by default is not a fact about any one project, and committing one
-would push one operator's filesystem onto every clone — and it is refused by
-`project.file` where it is relative (it is read before there is a working
-directory worth resolving one against) or where it names anything but the file
-the desk reads. The absoluteness test is **lexical on both sides on purpose**: a
-leading separator, or a drive letter with one. `filepath.IsAbs` answers
-differently per platform and the browser has no such function, so a corpus
-walked by both decoders would be walked under two rules.
+would push one operator's filesystem onto every clone.
 
 ```json
 {
@@ -1223,6 +1217,40 @@ walked by both decoders would be walked under two rules.
   "project": { "file": "/home/someone/a-project/jpack-desk.json" }
 }
 ```
+
+**Writing it is an operator's, and Admin may only nominate the project it is
+running in.** The two are different authorities and the difference is the whole
+of this member's safety. The desk pins one project root at startup and serves
+the file API through it; `project.file` chooses the root of the **next** launch.
+So page code that could write any path could hand its successor a root outside
+the authority the page itself had: `{"project":{"file":"/jpack-desk.json"}}`
+would pin `/` on the next argument-less start — the file need not exist, and
+`..` and symlinks are followed later — and the file API would then serve the
+host. That is the key-retarget class, in a member instead of a credential.
+
+`PUT /api/desk-config` therefore accepts exactly two values for it from the
+page: **this project's own file**, spelled as the chassis reports it in the same
+answer, which nominates the project the desk is already serving and grants
+nothing it does not already have; and **null**, which withdraws a default and so
+takes authority away. Anything else is `422 desk-config-refused` naming
+`project.file`, with nothing written. Admin's Project card is that rule as a
+shape rather than as a validation on top of one: one button, **Use this project
+as the default** (or **Clear the default** where it already is), and no field for
+a path. A different default is set by editing the desk-level file yourself,
+which is custody-validated and is the operator's own authority.
+
+**A configured default is validated on the host that is about to act on it**,
+and refuses the launch where it fails. The decoder's rule is lexical, because it
+is shared with a browser that has no filesystem to ask — a leading separator, or
+a drive letter with one — and a spelling that is absolute on one platform is a
+*relative path* on another: `C:\p\jpack-desk.json` is one path component to Go
+on Unix, so `filepath.Dir` answers `.` and the desk would open whatever
+directory it happened to be launched from. So the launch checks the value again,
+against this machine: absolute here, resolving through its symlinks to a regular
+file still named `jpack-desk.json`, in a directory that is not the filesystem
+root. A default that fails any of those **refuses the launch by name** — never a
+silent fall back — because somebody who configured a default and got some other
+project would have no way to see that the member they wrote was ignored.
 
 **Precedence**: project file → desk-level file → built-in default, and for the
 three pane flags one layer in front of all three — this browser's record of
@@ -1297,11 +1325,21 @@ problem is a card's Status line, and the Copy buttons went with the blocks
 because the Location line says where the file is and Content shows what is in
 it.
 
+**A refused file's bytes are never rendered.** The decoder refuses a whole file
+for one credential-shaped member, and the point of refusing it is that the desk
+will not act on it — so a Content disclosure that quoted it anyway would put the
+member the refusal is about, and on the Project card the whole document around
+it, into the DOM of the page reporting the refusal. On a refusal, and on a read
+that produced no file, a card shows its Status line and no content at all.
+
 **Two cards write, and each writes one member of the desk-level file.** The
-Project card writes `project`, the Assistant form writes `assistant`, and
-neither sends the other's — a member absent from the request is carried across
-untouched. Everything else on the page is read-only; the one remaining control
-is Panes' reset, which clears a single `localStorage` key.
+Project card nominates this project as the default (or withdraws one), the
+Assistant form writes `assistant`, and neither sends the other's — a member
+absent from the request is carried across untouched. The Project card's other
+three slots are about the *project's* file, so the one line under its control
+names the file it actually writes, from the chassis' own answer. Everything else
+on the page is read-only; the one remaining control is Panes' reset, which
+clears a single `localStorage` key.
 
 **Two things are written, and each is exactly as wide as its reason.** The key
 is one, below. The other is the desk-level file, over `PUT /api/desk-config`,
@@ -1311,7 +1349,12 @@ member that is absent is untouched**, which is what lets two Admin cards write
 two members of one file without either sending the other's. A body naming
 neither is a `400` — a conditional commit that would change nothing is a request
 with no meaning, and answering it `200` would report a write that did not
-happen. It exists because choosing a model and a thinking tier is something an
+happen. **`ifMatch` is required and never defaulted**: it is a pointer, so an
+omitted member and the empty sentinel are two different requests. They were one,
+and where `desk.json` is absent the actual digest is the empty string too — so a
+body carrying no `ifMatch` compared equal and created the file, which is a write
+with no precondition from the route whose whole argument is that the commit is
+conditional. `""` is a claim about the disk and has to be made. It exists because choosing a model and a thinking tier is something an
 author does while working, and the alternative is telling them to edit a file
 in `~/.config` by hand between attempts. Four things bound it:
 
@@ -2626,13 +2669,16 @@ judgment-pack desk
   open:    http://127.0.0.1:8791/?token=1f3c…
 ```
 
-**Without `projectDir`, the desk opens the project named by `project.file` in
-this machine's desk-level file**, read through the same custody-validated store
-every other read of that file goes through. Where that file names none — or is
-refused, because any problem refuses the whole of it — the desk refuses to
-start and names the file and the member, rather than opening whatever directory
-the process happened to be launched in: a project chosen that way is a project
-nobody chose, and every consequence of the choice is silent.
+**The project is chosen in three steps, in this order**: the argument, then
+`project.file` in this machine's desk-level file — read through the same
+custody-validated store every other read of that file goes through, and
+validated against this host before it is honoured — then the current directory,
+exactly as it always was. A configured default this host cannot open (not
+absolute here, not resolving to a regular `jpack-desk.json`, or in the
+filesystem root) **refuses the launch and names the member**, rather than
+falling through: a person who configured one and silently got some other project
+would have no way to see that what they wrote was ignored. A desk-level file
+that is refused as a whole names no project, and the launch says which problem.
 
 `--jpack` defaults to `jpack` on `PATH`, and `--port` defaults to `8791`.
 
@@ -3601,7 +3647,9 @@ web/                 Vite + React + TypeScript SPA
                      the stale-write alert and the lock line
   src/admin/         the card every Admin section renders through, the member
                      slicer that quotes a file rather than re-serialising it,
-                     and the default-project field and its conditional commit
+                     the narration sweep both this page and the assistant form
+                     are held to, and the one control that nominates this
+                     project as the default
   src/config/        the schema both configuration files share, its strict
                      decoder, the two queries that read them, the precedence
                      between them, and the theme attribute it writes

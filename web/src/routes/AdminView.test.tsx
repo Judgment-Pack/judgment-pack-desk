@@ -19,6 +19,7 @@ import { PANE_BOUNDS, decodeDeskConfig, effectiveConfig } from '../config/deskCo
 import { McpContext } from '../mcp/McpProvider'
 import { ShellStateProvider, projectKey, shellStateKey } from '../shell/paneState'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
+import { narrationIn } from '../admin/narration'
 import { AdminView } from './AdminView'
 import { ADMIN_SECTIONS } from './adminSections'
 
@@ -108,24 +109,19 @@ function servesListing(options: {
   )
 }
 
-/**
- * Every text node the page renders that is **this page's own prose**.
- *
- * Quoted material is exempt and the exemption is the definition: a path, a
- * refusal in the decoder's own sentence, and a member of the file as it is
- * written are not narration, they are the thing the card exists to show. A
- * `<code>` or a `<pre>` is where each of those goes.
- */
-function proseNodes(container: HTMLElement): string[] {
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
-  const found: string[] = []
-  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-    const quoted = node.parentElement?.closest('code, pre')
-    if (quoted !== null && quoted !== undefined) continue
-    const text = node.textContent ?? ''
-    if (text.trim() !== '') found.push(text)
+/** One desk-level read that answered, with whatever the file says. */
+function deskRead(file: object) {
+  return {
+    path: DESK_PATH,
+    present: true,
+    sha256: 'a'.repeat(64),
+    chassis: {
+      projectDir: '/this/launch',
+      projectFile: '/this/launch/jpack-desk.json',
+      runtimeBin: 'jpack'
+    },
+    decoded: decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1, ...file }), 'desk')
   }
-  return found
 }
 
 describe('the Admin page', () => {
@@ -142,31 +138,128 @@ describe('the Admin page', () => {
     expect(headings[0]).toBe('Project file')
   })
 
-  it('carries no paragraph: every sentence this page writes is one line', () => {
-    // **The narration guard.** 140 characters is a line; anything longer is a
-    // paragraph, and the page that stood here had thirty of them. Quoted
-    // material is exempt — see `proseNodes`.
-    const { container } = renderAdmin(
-      effectiveConfig(
-        decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1 }), 'project'),
-        undefined,
-        undefined,
-        { path: DESK_PATH, present: false, sha256: '' }
-      )
-    )
-    const long = proseNodes(container).filter((text) => text.length > 140)
-    expect(long, long.join(' | ')).toEqual([])
+
+  /**
+   * **The narration guard, over every state this page has.**
+   *
+   * 140 characters is a line; anything longer is a paragraph, and the page
+   * that stood here had thirty of them. Quoted material is exempt — see
+   * `narrationIn`. Parameterised because the first version rendered one
+   * default state, so the configured assistant's sentences, a refusal and a
+   * file that could not be read were never swept at all.
+   */
+  it.each([
+    ['nothing configured, nothing read', () => effectiveConfig(undefined)],
+    [
+      'both files read and empty',
+      () =>
+        effectiveConfig(
+          decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1 }), 'project'),
+          undefined,
+          undefined,
+          { path: DESK_PATH, present: false, sha256: '' }
+        )
+    ],
+    [
+      'an assistant configured on the Gemini wire, at the deepest tier',
+      () =>
+        effectiveConfig(
+          undefined,
+          undefined,
+          undefined,
+          deskRead({
+            assistant: {
+              endpoint: {
+                url: 'https://api.example.invalid/v1',
+                kind: 'gemini',
+                model: 'a-model',
+                tools: ['validate']
+              },
+              engine: 'builtin',
+              thinking: 'ultra'
+            }
+          })
+        )
+    ],
+    [
+      'an identity provider configured',
+      () =>
+        effectiveConfig(
+          undefined,
+          undefined,
+          undefined,
+          deskRead({
+            identity: {
+              provider: { label: 'Acme SSO', issuer: 'https://issuer.example', clientId: 'a' }
+            }
+          })
+        )
+    ],
+    [
+      'this project already the default',
+      () =>
+        effectiveConfig(
+          undefined,
+          undefined,
+          undefined,
+          deskRead({ project: { file: '/this/launch/jpack-desk.json' } })
+        )
+    ],
+    [
+      'a refused project file',
+      () =>
+        effectiveConfig({
+          values: undefined,
+          problems: [{ key: 'colour', reason: 'unknown key' }]
+        })
+    ],
+    [
+      'a project file that could not be read',
+      () => effectiveConfig(undefined, undefined, CHASSIS_413)
+    ],
+    [
+      'a refused desk-level file',
+      () =>
+        effectiveConfig(undefined, undefined, undefined, {
+          path: DESK_PATH,
+          present: true,
+          decoded: decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1, nope: true }), 'desk')
+        })
+    ]
+  ])('carries no paragraph with %s', (_state, build) => {
+    const { container } = renderAdmin(build())
+    const long = narrationIn(container)
+    expect(long, long.map((each) => `${each.where}: ${each.says}`).join(' | ')).toEqual([])
   })
 
-  it('sweeps a reintroduced paragraph, wherever on the page it appears', () => {
-    // The guard's own instrument, checked against a deliberate failure: a
-    // sweep that passed over a clean page would prove nothing about the sweep.
+  it('sweeps a paragraph split into short spans, which a node-length rule misses', () => {
+    // The guard's own instrument, checked against the exact defeat the review
+    // named: two eighty-character spans are a hundred and sixty characters of
+    // prose to a reader and two compliant text nodes to a node-length rule.
     const { container } = renderAdmin()
     const paragraph = document.createElement('p')
-    paragraph.textContent = 'x'.repeat(141)
+    for (const half of ['x'.repeat(80), 'y'.repeat(80)]) {
+      const span = document.createElement('span')
+      span.textContent = half
+      paragraph.append(span)
+    }
     container.append(paragraph)
-    expect(proseNodes(container).filter((text) => text.length > 140)).toHaveLength(1)
+    const found = narrationIn(container)
+    expect(found).toHaveLength(1)
+    expect(found[0]!.where).toBe('p')
+    expect(found[0]!.length).toBe(160)
   })
+
+  it('leaves a long path alone, because a quotation is not narration', () => {
+    const { container } = renderAdmin()
+    const paragraph = document.createElement('p')
+    const quotation = document.createElement('code')
+    quotation.textContent = '/'.padEnd(300, 'a')
+    paragraph.append(quotation)
+    container.append(paragraph)
+    expect(narrationIn(container)).toEqual([])
+  })
+
 
   it('says where each card’s value is written, and what state that file is in', () => {
     const { container } = renderAdmin(
@@ -290,14 +383,20 @@ describe('the Admin page', () => {
     const { container } = renderAdmin()
     const interactive = container.querySelectorAll('button, input, select, textarea')
     const labels = Array.from(interactive).map((element) => element.textContent?.trim())
-    const writes = ['Reset panes on this machine', 'Save', 'Check reachability']
-    // Two Saves, and each is one card's: the Project card writes `project` and
-    // the Assistant form writes `assistant`, through the same conditional
-    // commit and neither sending the other's member.
-    expect(labels.filter((each) => each === 'Save')).toHaveLength(2)
-    for (const label of ['Reset panes on this machine', 'Check reachability']) {
+    // The Project card's control is a nomination and not a path: the page may
+    // name the project it is already running in, or withdraw a default, and
+    // nothing else — so there is one button and no field for a path.
+    const writes = [
+      'Reset panes on this machine',
+      'Save',
+      'Check reachability',
+      'Use this project as the default'
+    ]
+    for (const label of writes) {
       expect(labels.filter((each) => each === label), label).toHaveLength(1)
     }
+    expect(labels).not.toContain('Clear the default')
+    expect(screen.queryByLabelText('Default project')).toBeNull()
     // Three controls appear only in a state this render is not in, and each is
     // asserted by its absence here and by its own case in the Assistant
     // section's suite.
@@ -333,24 +432,49 @@ describe('the Admin page', () => {
     const disabled = Array.from(container.querySelectorAll('[disabled]')).map(
       (element) => element.textContent
     )
-    // The Project card's Save first, then the Assistant form's: neither has a
-    // digest to state, and both say so in the same words.
-    expect(disabled).toEqual(['Save', 'List models', 'Save'])
+    // The Project card's nomination first, then the Assistant form's Save:
+    // neither has a digest to state, and both say so in the same words.
+    expect(disabled).toEqual(['Use this project as the default', 'List models', 'Save'])
     expect(screen.getAllByText(/a write states the bytes it replaces/).length).toBe(2)
   })
 
-  it('enables the one write once the desk-level file has been read', () => {
+  it('enables the two writes once the desk-level file has been read', () => {
+    // The Project card's nomination needs one thing more than a digest: the
+    // chassis' own path for this project, because that is the only value the
+    // route will accept and the page must not compose one.
     const { container } = renderAdmin(
       effectiveConfig(undefined, undefined, undefined, {
         path: DESK_PATH,
         present: false,
-        sha256: ''
+        sha256: '',
+        chassis: {
+          projectDir: '/this/launch',
+          projectFile: '/this/launch/jpack-desk.json',
+          runtimeBin: 'jpack'
+        }
       })
     )
     expect(
       Array.from(container.querySelectorAll('[disabled]')).map((element) => element.textContent)
     ).toEqual(['List models'])
     expect(screen.queryByText(/a write states the bytes it replaces/)).toBeNull()
+  })
+
+  it('will not offer the nomination where the chassis has not named this project', () => {
+    // The one value the route accepts is the chassis'. A page that offered the
+    // control without it could only compose a path or send nothing.
+    renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: DESK_PATH,
+        present: false,
+        sha256: ''
+      })
+    )
+    const nominate = screen.getByRole('button', {
+      name: 'Use this project as the default'
+    }) as HTMLButtonElement
+    expect(nominate.disabled).toBe(true)
+    expect(screen.getByText(/has not said where its own configuration file is/)).toBeTruthy()
   })
 
   it('clears exactly one localStorage key when the reset is pressed, and says so', () => {
@@ -578,6 +702,71 @@ describe('the Admin page', () => {
     expect(screen.getAllByText('jpack-desk.json').length).toBeGreaterThan(0)
   })
 
+  it('renders no bytes of a file the decoder refused, on either card', () => {
+    // **The refusal is about a member, and rendering the file anyway puts that
+    // member on the page that reported it.** The desk-level example is the
+    // review's own; the project one is worse, because the Project card quotes
+    // the whole document rather than one member of it.
+    renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: DESK_PATH,
+        present: true,
+        text: '{"deskConfigVersion":1,"identity":{"apiKey":"sk-live-secret"}}',
+        decoded: decodeDeskConfig(
+          '{"deskConfigVersion":1,"identity":{"apiKey":"sk-live-secret"}}',
+          'desk'
+        )
+      })
+    )
+    expect(document.body.textContent).not.toContain('sk-live-secret')
+    // And the refusal itself is still said, in the decoder's own words.
+    expect(screen.getAllByText(/identity.apiKey: a key is never stored/).length).toBeGreaterThan(0)
+    cleanup()
+
+    const project = '{"deskConfigVersion":1,"storage":{"apiKey":"sk-live-secret"}}'
+    renderAdmin(effectiveConfig(decodeDeskConfig(project, 'project'), undefined, undefined, undefined, project))
+    expect(document.body.textContent).not.toContain('sk-live-secret')
+    expect(screen.getAllByText(/storage.apiKey: a key is never stored/).length).toBeGreaterThan(0)
+  })
+
+  it('renders no bytes of a file that could not be read at all', () => {
+    // There are none to render, and a card that offered a disclosure would be
+    // offering the decoded defaults as though they were the file.
+    const { container } = renderAdmin(effectiveConfig(undefined, undefined, CHASSIS_413))
+    const project = [...container.querySelectorAll('section')].find(
+      (section) => section.querySelector('h2')?.textContent === 'Project file'
+    )!
+    expect(project.querySelector('details')).toBeNull()
+  })
+
+  it('names the file the Project card’s control writes, which is not the one it shows', () => {
+    // The card's Location, Status and Content are about the project's own
+    // file; its one control writes the desk-level one. The line under the
+    // control names that file, from the chassis' answer and never composed.
+    const { container } = renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: DESK_PATH,
+        present: false,
+        sha256: '',
+        chassis: {
+          projectDir: '/this/launch',
+          projectFile: '/this/launch/jpack-desk.json',
+          runtimeBin: 'jpack'
+        }
+      })
+    )
+    const project = [...container.querySelectorAll('section')].find(
+      (section) => section.querySelector('h2')?.textContent === 'Project file'
+    )!
+    // Location: the project's own file.
+    expect(project.querySelector('dd')!.textContent).toBe('/this/launch/jpack-desk.json')
+    // The control's own line: the desk-level file it writes, and this launch.
+    const rule = project.querySelector('p')!.textContent ?? ''
+    expect(rule).toContain(DESK_PATH)
+    expect(rule).toContain('used on the next launch without a directory')
+    expect(rule).toContain('/this/launch')
+  })
+
   it('reports the runtime connection rather than a file', async () => {
     renderAdmin()
     // The card that is about a process and not a configuration file: its
@@ -588,7 +777,9 @@ describe('the Admin page', () => {
 
   it('says None where no identity provider is configured, and its issuer where one is', () => {
     renderAdmin()
-    expect(screen.getByText('None')).toBeTruthy()
+    // Off the field row: "None" is also what the Project card says about a
+    // default nobody has set.
+    expect(screen.getByText('Provider').parentElement!.textContent).toContain('None')
     cleanup()
     renderAdmin(
       effectiveConfig(undefined, undefined, undefined, {
@@ -610,9 +801,8 @@ describe('the Admin page', () => {
         )
       })
     )
-    // Off the field row rather than by text: the Content disclosure shows the
-    // whole member too, and a text query that matched both would pass without
-    // the value line existing at all.
+    // Off the field row rather than by text: a text query that matched the
+    // Content disclosure as well would pass without the value line existing.
     const provider = screen.getByText('Provider').parentElement!
     expect(provider.textContent).toContain('https://issuer.example')
     expect(provider.textContent).toContain('Acme SSO')

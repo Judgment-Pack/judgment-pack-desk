@@ -155,6 +155,61 @@ describe('the source card', () => {
     expect(screen.getByText('{"deskConfigVersion": 1}')).toBeTruthy()
   })
 
+  it('renders no bytes of a file the decoder refused', () => {
+    // The refusal is about a member; rendering the file anyway puts that
+    // member on the page that reported it. The Status line is what a reader
+    // needs there, and it is already the refusal.
+    render(
+      <SourceCard
+        id="s"
+        title="S"
+        location="somewhere"
+        status={{
+          state: 'refused',
+          problems: [{ key: 'identity.apiKey', reason: 'a key is never stored in configuration' }]
+        }}
+        content={{
+          text: '{"deskConfigVersion":1,"identity":{"apiKey":"sk-live-secret"}}',
+          member: 'identity',
+          value: { provider: null }
+        }}
+      />
+    )
+    expect(document.body.textContent).not.toContain('sk-live-secret')
+    // Not the decoded fallback either: the whole disclosure is gone.
+    expect(document.querySelector('details')).toBeNull()
+    expect(screen.getByText(/identity.apiKey: a key is never stored/)).toBeTruthy()
+  })
+
+  it('renders no bytes of a file that could not be read', () => {
+    render(
+      <SourceCard
+        id="s"
+        title="S"
+        location="somewhere"
+        status={{
+          state: 'unread',
+          failure: { reason: 'too large', responseReceived: true, status: 413, source: 'chassis' }
+        }}
+        content={{ text: '{"a":1}', value: { a: 1 } }}
+      />
+    )
+    expect(document.querySelector('details')).toBeNull()
+  })
+
+  it('renders no disclosure where there are neither bytes nor a value', () => {
+    render(
+      <SourceCard
+        id="s"
+        title="S"
+        location="somewhere"
+        status={{ state: 'read' }}
+        content={{}}
+      />
+    )
+    expect(document.querySelector('details')).toBeNull()
+  })
+
   it('renders the fields and the save slot only where they are given', () => {
     const { container, rerender } = render(
       <SourceCard id="s" title="S" location="somewhere" status={{ state: 'read' }} />

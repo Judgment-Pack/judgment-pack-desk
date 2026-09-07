@@ -1,9 +1,11 @@
 /**
- * The Project card's Save, driven against a stub of the route it calls.
+ * The Project card's one control, driven against a stub of the route it calls.
  *
- * The assertions are about **what it sends**: `project` and nothing else, the
- * digest its read carried, and null for an empty field. A form that showed the
- * right thing and sent the wrong one is exactly what these exist for.
+ * What is asserted is **what it may ask for**: this project's own file as the
+ * chassis spells it, or null, and no third value — because a page that could
+ * name any path could hand the next launch a root outside the authority this
+ * page had. The chassis refuses anything else; the control is the shape that
+ * cannot ask for it.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -22,19 +24,18 @@ afterEach(() => {
 
 const DESK_PATH = '/home/someone/.config/jpack-desk/desk.json'
 const DIGEST = 'a'.repeat(64)
-const FILE = '/home/someone/a-project/jpack-desk.json'
+/** This project, as the chassis spells it. The only value the route accepts. */
+const HERE = '/this/launch/jpack-desk.json'
 
 /** A desk-level read that answered, with whatever the file says. */
-function read(project?: unknown): EffectiveConfig {
+function read(project?: unknown, chassis = true): EffectiveConfig {
   return effectiveConfig(undefined, undefined, undefined, {
     path: DESK_PATH,
     present: true,
     sha256: DIGEST,
-    chassis: {
-      projectDir: '/this/launch',
-      projectFile: '/this/launch/jpack-desk.json',
-      runtimeBin: 'jpack'
-    },
+    ...(chassis
+      ? { chassis: { projectDir: '/this/launch', projectFile: HERE, runtimeBin: 'jpack' } }
+      : {}),
     decoded: decodeDeskConfig(
       JSON.stringify({ deskConfigVersion: 1, ...(project ? { project } : {}) }),
       'desk'
@@ -63,7 +64,7 @@ function stubWrites(answers: { status?: number; body?: unknown }[]): {
       statusText: '',
       text: async () =>
         JSON.stringify(
-          answer.body ?? { path: DESK_PATH, sha256: 'b'.repeat(64), project: { file: FILE } }
+          answer.body ?? { path: DESK_PATH, sha256: 'b'.repeat(64), project: { file: HERE } }
         )
     }
   })
@@ -77,7 +78,7 @@ function Card() {
     <SourceCard
       id="project"
       title="Project file"
-      location={<code>/this/launch/jpack-desk.json</code>}
+      location={<code>{HERE}</code>}
       status={{ state: 'read' }}
       fields={
         <>
@@ -103,38 +104,37 @@ function renderCard(value: EffectiveConfig = read(), client = testQueryClient())
   }
 }
 
-const field = () => screen.getByLabelText('Default project') as HTMLInputElement
+const nominate = () => screen.getByRole('button', { name: 'Use this project as the default' })
+const clear = () => screen.getByRole('button', { name: 'Clear the default' })
 
 describe('the default project', () => {
-  it('seeds the field from the file, and says which project this launch is on', () => {
-    renderCard(read({ file: FILE }))
-    expect(field().value).toBe(FILE)
-    // The root is pinned per process: saving this changes the next launch and
-    // nothing about the desk in front of you, and the card says so.
-    expect(screen.getByText(/Used on the next launch without a directory/)).toBeTruthy()
-    expect(screen.getByText('/this/launch')).toBeTruthy()
+  it('offers a nomination and no path field at all', () => {
+    // **The shape is the fix.** A free-text path is a persistent expansion of
+    // authority: the value chooses the root of the next launch, and a page
+    // that could write any path could hand its successor a root it never had.
+    renderCard()
+    expect(nominate()).toBeTruthy()
+    expect(screen.queryByLabelText('Default project')).toBeNull()
+    expect(screen.queryByRole('textbox')).toBeNull()
   })
 
-  it('sends project and nothing else, with the digest its read carried', async () => {
-    // A body that also restated `assistant` would make this card an author of
-    // a member it never read, and two cards writing one file would race.
+  it('sends this project’s own file, exactly as the chassis spelled it', async () => {
     const { sent } = stubWrites([{}])
     renderCard()
-    fireEvent.change(field(), { target: { value: FILE } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(nominate())
     await waitFor(() => expect(sent.some((each) => each.method === 'PUT')).toBe(true))
     const put = sent.find((each) => each.method === 'PUT')!
     expect(put.url).toContain('/api/desk-config')
-    expect(JSON.parse(put.body!)).toEqual({ project: { file: FILE }, ifMatch: DIGEST })
+    expect(JSON.parse(put.body!)).toEqual({ project: { file: HERE }, ifMatch: DIGEST })
   })
 
-  it('sends null for an empty field, which is a desk that configures none', async () => {
+  it('offers to withdraw the default once it is this project, and sends null', async () => {
     const { sent } = stubWrites([
       { body: { path: DESK_PATH, sha256: 'c'.repeat(64), project: { file: null } } }
     ])
-    renderCard(read({ file: FILE }))
-    fireEvent.change(field(), { target: { value: '   ' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    renderCard(read({ file: HERE }))
+    expect(screen.getByText('this project')).toBeTruthy()
+    fireEvent.click(clear())
     await waitFor(() => expect(sent.some((each) => each.method === 'PUT')).toBe(true))
     expect(JSON.parse(sent.find((each) => each.method === 'PUT')!.body!).project).toEqual({
       file: null
@@ -142,19 +142,26 @@ describe('the default project', () => {
     expect(await screen.findByText(/configures no default project/)).toBeTruthy()
   })
 
-  it('reports what landed rather than what it sent', async () => {
-    // The answer is read back off the disk; a card that reported its own
-    // request would say "saved" for a value that is not in the file.
-    stubWrites([{}])
+  it('shows a default somebody else set, and still offers only this project', () => {
+    // An operator may name any project by editing the file; the page may not,
+    // so what it offers beside a foreign default is the nomination and not a
+    // way to change that value to a third one.
+    renderCard(read({ file: '/somewhere/else/jpack-desk.json' }))
+    expect(screen.getByText('/somewhere/else/jpack-desk.json')).toBeTruthy()
+    expect(nominate()).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Clear the default' })).toBeNull()
+  })
+
+  it('names the file it writes, what the value is for, and this launch', () => {
+    // The card's Location is the project's own file; this control writes the
+    // desk-level one, and the line says so from the chassis' answer.
     renderCard()
-    fireEvent.change(field(), { target: { value: FILE } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(await screen.findByText(/applies to the next launch/)).toBeTruthy()
+    const rule = screen.getByText(/used on the next launch without a directory/)
+    expect(rule.textContent).toContain(DESK_PATH)
+    expect(rule.textContent).toContain('/this/launch')
   })
 
   it('writes nothing at all where this page never learned the digest', () => {
-    // A write states the bytes it replaces. Writing with the empty string
-    // would be claiming there is no file, which is a claim.
     const { sent } = stubWrites([{}])
     render(
       <QueryClientProvider client={testQueryClient()}>
@@ -163,33 +170,49 @@ describe('the default project', () => {
         </DeskConfigFixture>
       </QueryClientProvider>
     )
-    const save = screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement
-    expect(save.disabled).toBe(true)
+    expect((nominate() as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByText(/a write states the bytes it replaces/)).toBeTruthy()
-    fireEvent.click(save)
+    fireEvent.click(nominate())
     expect(sent.filter((each) => each.method === 'PUT')).toHaveLength(0)
   })
 
-  it('renders a refusal in the decoder’s own words, against its key', async () => {
+  it('writes nothing where the chassis has not named this project', () => {
+    // The one value the route accepts is the chassis'. Without it the control
+    // could only compose a path, which is the thing it exists not to do.
+    const { sent } = stubWrites([{}])
+    renderCard(read(undefined, false))
+    expect((nominate() as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText(/has not said where its own configuration file is/)).toBeTruthy()
+    fireEvent.click(nominate())
+    expect(sent.filter((each) => each.method === 'PUT')).toHaveLength(0)
+  })
+
+  it('renders the chassis’ refusal in its own words, against its key', async () => {
+    // The route refuses any value but this project's; the page renders that
+    // sentence rather than one of its own about it.
     stubWrites([
       {
         status: 422,
         body: {
-          error: 'the configuration this would write is not one this desk reads',
+          error: 'the configuration this would write is not one this page may write',
           code: 'desk-config-refused',
-          problems: [{ key: 'project.file', reason: 'must be an absolute path' }]
+          problems: [
+            {
+              key: 'project.file',
+              reason: 'the page may nominate only the project this desk is running in'
+            }
+          ]
         }
       }
     ])
     renderCard()
-    fireEvent.change(field(), { target: { value: 'a-project/jpack-desk.json' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(await screen.findByText('project.file: must be an absolute path')).toBeTruthy()
-    // And what was typed is still there to repair.
-    expect(field().value).toBe('a-project/jpack-desk.json')
+    fireEvent.click(nominate())
+    expect(
+      await screen.findByText(/project.file: the page may nominate only the project/)
+    ).toBeTruthy()
   })
 
-  it('keeps what was typed on a 409 and offers to read the file again', async () => {
+  it('offers to read the file again on a 409, and never to write anyway', async () => {
     stubWrites([
       {
         status: 409,
@@ -206,14 +229,9 @@ describe('the default project', () => {
     const client = testQueryClient()
     const refetch = vi.spyOn(client, 'refetchQueries')
     renderCard(read(), client)
-    fireEvent.change(field(), { target: { value: FILE } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(nominate())
     expect(await screen.findByText(/changed on disk/)).toBeTruthy()
-    expect(field().value).toBe(FILE)
-    // There is no "write anyway": the repair is to read it again.
     expect(screen.queryByRole('button', { name: /anyway|Overwrite/ })).toBeNull()
-    // Reload has to *read the file again*: a button that only cleared the
-    // alert would leave the next Save stating the same stale digest.
     fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
     expect(refetch).toHaveBeenCalledWith({ queryKey: DESK_CONFIG_QUERY_KEY })
     await waitFor(() => expect(screen.queryByText(/changed on disk/)).toBeNull())
@@ -227,7 +245,7 @@ describe('the default project', () => {
       }
     ])
     renderCard()
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(nominate())
     expect(await screen.findByText(/will not keep a key here/)).toBeTruthy()
   })
 })

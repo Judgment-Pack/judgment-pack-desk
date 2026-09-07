@@ -262,7 +262,16 @@ type DeskConfigWrite struct {
 	Project json.RawMessage `json:"project"`
 	// IfMatch is the digest of the desk.json bytes the page last read, bare
 	// hex, or the empty string for "there was no file".
-	IfMatch string `json:"ifMatch"`
+	//
+	// **A pointer, so that an omitted member and the empty sentinel are two
+	// different requests.** They were one, and round 1 found what that costs:
+	// where `desk.json` is absent the actual digest is `""` too, so a body
+	// carrying no `ifMatch` at all compared equal and created the file — a
+	// write with no precondition, from a route whose own comment says the
+	// commit is "conditional, and never optional". The sentinel is a claim
+	// about the disk ("I believe there is no file") and has to be made, not
+	// arrived at by leaving a member out.
+	IfMatch *string `json:"ifMatch"`
 }
 
 // readDeskFile reads the desk-level file through the validated, pinned
@@ -594,7 +603,28 @@ func (s *Server) handleDeskConfigWrite(w http.ResponseWriter, r *http.Request) {
 			"assistant or project is required; write null for a member this desk configures none of")
 		return
 	}
+	// **The page may nominate only the project it is running in.** Checked
+	// here, on the request, rather than in the shared decoder: this is a rule
+	// about who is asking and not about what the file may say. See
+	// `projectNominationProblem`.
+	if problem := s.projectNominationProblem(req.Project); problem != nil {
+		writeJSON(w, http.StatusUnprocessableEntity, deskConfigRefusal{
+			Error: fmt.Sprintf("the configuration this would write is not one this page may "+
+				"write, so nothing was written: %s", describeProblems([]deskProblem{*problem})),
+			Code:     CodeDeskConfigRefused,
+			Problems: []deskProblem{*problem},
+		})
+		return
+	}
 
+	// **Stated, never defaulted.** See `DeskConfigWrite.IfMatch`: an absent
+	// member is not the empty sentinel, and treating it as one is a write with
+	// no precondition wherever the file happens to be absent.
+	if req.IfMatch == nil {
+		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,
+			`ifMatch is required; send "" to state that there is no file yet`)
+		return
+	}
 	// The whole compare-and-commit under the same mutex every other write on
 	// this desk takes. One mutex and not one per path, for the reason
 	// `Server.writes` gives: a per-path key is a spelling.
@@ -602,6 +632,73 @@ func (s *Server) handleDeskConfigWrite(w http.ResponseWriter, r *http.Request) {
 	status, body := s.commitDeskConfigLocked(req)
 	s.writes.Unlock()
 	writeJSON(w, status, body)
+}
+
+// pageMayNominateOnlyThisProject is the sentence a page is refused with when
+// it asks this desk to default to some other project.
+//
+// Its own constant because the page renders it and a test reads it, and a
+// refusal a reader meets in one place and not the other is two contracts.
+const pageMayNominateOnlyThisProject = "the page may nominate only the project this desk is " +
+	"running in; a different default is set by editing this file directly"
+
+// projectNominationProblem is the whole of what page code may say about
+// `project.file`, and it is one value.
+//
+// # Why this is not a decoder rule
+//
+// The shared decoder says what the *file* may contain, and the file is an
+// operator's: somebody with a shell and this machine's custody may point their
+// desk at any project they can already read, and nothing here should stop
+// them. This route is a different question — what a *page* may persist — and
+// the answer is narrower by exactly the gap between the two.
+//
+// # What the gap is
+//
+// The desk pins one project root at startup and serves the file API through
+// it. `project.file` chooses the root of the **next** launch. So a page that
+// could write any path could hand its successor a root outside the authority
+// the page itself had: round 1 found `{"project":{"file":"/jpack-desk.json"}}`
+// enough to pin `/` on the next argument-less start — the file need not exist,
+// and `..` and symlinks are followed later — and the file API would then serve
+// the host. That is the key-retarget class: a value written under one
+// authority that decides where a later, wider authority points.
+//
+// So the page may write exactly two things: **this project's own file**, which
+// nominates the project it is already serving and grants nothing it does not
+// already have, and **null**, which withdraws a default. Anything else is
+// refused by `project.file` with the sentence above, and the operator's own
+// editor remains the way to name a different one.
+//
+// Compared as the exact string this desk hands the page in
+// `GET /api/desk-config`, because that is the value the page has: a normalised
+// comparison would be a second spelling rule for a member whose whole point
+// here is that it is not the page's to choose.
+func (s *Server) projectNominationProblem(project json.RawMessage) *deskProblem {
+	if len(project) == 0 {
+		return nil
+	}
+	var named map[string]any
+	if err := json.Unmarshal(project, &named); err != nil {
+		// Not an object, or not JSON. The whole-file decode refuses it with
+		// its own sentence, which is the one that names the shape.
+		return nil
+	}
+	file, present := named["file"]
+	if !present || file == nil {
+		// Withdrawing the default. A page may always do that: it takes
+		// authority away rather than granting it.
+		return nil
+	}
+	text, ok := file.(string)
+	if !ok {
+		// A type the decoder refuses by name. One refusal, from one place.
+		return nil
+	}
+	if strings.TrimSpace(text) == s.projectPaths().File {
+		return nil
+	}
+	return &deskProblem{Key: "project.file", Reason: pageMayNominateOnlyThisProject}
 }
 
 // commitDeskConfigLocked is the whole transaction: read what is there, compare
@@ -637,13 +734,13 @@ func (s *Server) commitDeskConfigLocked(req DeskConfigWrite) (int, any) {
 	// carries both digests so the page can show what happened rather than
 	// overwrite a change nobody saw. The empty string means "I believe there
 	// is no file", which is the same sentinel `PUT /api/file` uses.
-	if !deskConfigUnmoved(req.IfMatch, actual) {
+	if !deskConfigUnmoved(*req.IfMatch, actual) {
 		return http.StatusConflict, conflict{
 			Error: "the desk-level configuration on disk is not the one this page read; " +
 				"read it again and decide about what is actually in it",
 			Code:           CodeDeskConfigChanged,
 			Path:           path,
-			ExpectedSHA256: strings.ToLower(strings.TrimSpace(req.IfMatch)),
+			ExpectedSHA256: strings.ToLower(strings.TrimSpace(*req.IfMatch)),
 			ActualSHA256:   actual,
 			Exists:         present,
 		}
@@ -708,7 +805,7 @@ func (s *Server) commitDeskConfigLocked(req DeskConfigWrite) (int, any) {
 		if nowPresent {
 			digest = digestOf(now)
 		}
-		if !deskConfigUnmoved(req.IfMatch, digest) {
+		if !deskConfigUnmoved(*req.IfMatch, digest) {
 			moved = &deskConfigMoved{actual: digest, exists: nowPresent}
 			return moved
 		}
@@ -720,7 +817,7 @@ func (s *Server) commitDeskConfigLocked(req DeskConfigWrite) (int, any) {
 					"being staged; nothing was written",
 				Code:           CodeDeskConfigChanged,
 				Path:           path,
-				ExpectedSHA256: strings.ToLower(strings.TrimSpace(req.IfMatch)),
+				ExpectedSHA256: strings.ToLower(strings.TrimSpace(*req.IfMatch)),
 				ActualSHA256:   moved.actual,
 				Exists:         moved.exists,
 			}
