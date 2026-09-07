@@ -338,6 +338,25 @@ type deskConfigWritten struct {
 	KeyRebindRequired bool `json:"keyRebindRequired"`
 }
 
+// deskConfigUnmoved reports whether the digest a page stated is the file that
+// is there now.
+//
+// **One predicate, called at both ends of the transaction.** It is compared
+// twice — once against the bytes this transaction read, and again after
+// staging and immediately before the rename — and round 2 caught the cost of
+// writing the comparison out twice: breaking either copy left the other
+// answering the same 409 with the same digests, so the mutation row for
+// "the digest is ignored" could not fail. Two spellings of one rule are
+// invisible to a harness that breaks one of them, which is the lesson
+// `ownerOnlyFile` already carries. One spelling, one row.
+//
+// The empty string is the sentinel for "I believe there is no file", and
+// `actual` is empty in exactly that state, so the two meet without a special
+// case. Case-folded because a digest is hex and a client may send either.
+func deskConfigUnmoved(ifMatch, actual string) bool {
+	return strings.EqualFold(strings.TrimSpace(ifMatch), actual)
+}
+
 // deskConfigMoved is the file changing under a write that was already staged.
 //
 // A type rather than a sentinel because the answer carries the digest that is
@@ -530,7 +549,7 @@ func (s *Server) commitDeskConfigLocked(req DeskConfigWrite) (int, any) {
 	// carries both digests so the page can show what happened rather than
 	// overwrite a change nobody saw. The empty string means "I believe there
 	// is no file", which is the same sentinel `PUT /api/file` uses.
-	if !strings.EqualFold(strings.TrimSpace(req.IfMatch), actual) {
+	if !deskConfigUnmoved(req.IfMatch, actual) {
 		return http.StatusConflict, conflict{
 			Error: "the desk-level configuration on disk is not the one this page read; " +
 				"read it again and decide about what is actually in it",
@@ -601,7 +620,7 @@ func (s *Server) commitDeskConfigLocked(req DeskConfigWrite) (int, any) {
 		if nowPresent {
 			digest = digestOf(now)
 		}
-		if !strings.EqualFold(strings.TrimSpace(req.IfMatch), digest) {
+		if !deskConfigUnmoved(req.IfMatch, digest) {
 			moved = &deskConfigMoved{actual: digest, exists: nowPresent}
 			return moved
 		}

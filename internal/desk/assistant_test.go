@@ -1003,6 +1003,63 @@ func TestDeskConfigWriteRefusesAMismatchedIfMatch(t *testing.T) {
 	_ = empty
 }
 
+// watchConfigStaging records every staging file a desk-level write creates.
+//
+// **"Nothing was written" and "nothing was staged" are different claims**, and
+// only the second rules out a refusal that happened after the bytes were
+// already on the disk. Round 2 asked for this observable, and it is what makes
+// the pre-staging comparison a safeguard a test can break rather than one the
+// later comparison quietly stands in for.
+func watchConfigStaging(t *testing.T) *[]string {
+	t.Helper()
+	staged := &[]string{}
+	restore := testHookAfterConfigStaged
+	testHookAfterConfigStaged = func(path string) { *staged = append(*staged, path) }
+	t.Cleanup(func() { testHookAfterConfigStaged = restore })
+	return staged
+}
+
+func TestDeskConfigWriteRefusesAStaleRequestBeforeStaging(t *testing.T) {
+	// **Round 2.** The digest is compared twice — once against the bytes this
+	// transaction read and again immediately before the rename — and every
+	// ordinary stale-write test was satisfied by the second one alone. So the
+	// first had no test of its own, and a mutation that removed it could not
+	// fail. What the first one is *for* is that a request already known to be
+	// stale never touches the disk: no staging file is created, nothing is
+	// written and nothing has to be cleaned up.
+	s, ts, _ := assistantServer(t)
+	const original = "{\n  \"deskConfigVersion\": 1\n}\n"
+	writeDeskConfig(t, s, original)
+
+	staged := watchConfigStaging(t)
+	status, body := putDeskConfig(t, ts, geminiAssistant, digestOf([]byte("other bytes")))
+	if status != http.StatusConflict || body["code"] != CodeDeskConfigChanged {
+		t.Fatalf("status %d, body %v; want 409 %s", status, body, CodeDeskConfigChanged)
+	}
+	if len(*staged) != 0 {
+		t.Errorf("a request that was already stale staged %v", *staged)
+	}
+	// And the positive control, without which "nothing was staged" is
+	// satisfied by a route that stages nothing ever.
+	before, _ := deskConfigDigest(t, ts)
+	if status, body := putDeskConfig(t, ts, geminiAssistant, before); status != http.StatusOK {
+		t.Fatalf("the control write was refused: %d %v", status, body)
+	}
+	if len(*staged) != 1 {
+		t.Fatalf("a write that landed staged %d file(s), want 1", len(*staged))
+	}
+	// Nothing of it is left behind.
+	entries, err := os.ReadDir(s.configDir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), configStagingPrefix) {
+			t.Errorf("a staging file survived: %s", entry.Name())
+		}
+	}
+}
+
 func TestDeskConfigWriteRefusesWhatTheDecoderWouldRefuse(t *testing.T) {
 	// **The round trip is the whole safety argument**, and every one of these
 	// is a file the browser refuses whole. Nothing the page sent is written

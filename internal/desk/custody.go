@@ -131,6 +131,20 @@ func afterConfigStat(path string) {
 	}
 }
 
+// testHookAfterConfigStaged runs the instant a desk-level staging file has
+// been created, and is nil outside tests.
+//
+// It is how a test says "nothing was staged" rather than only "nothing was
+// written": a refusal that happens before this fires never touched the disk,
+// and one that happens after it did and then cleaned up.
+var testHookAfterConfigStaged func(path string)
+
+func afterConfigStaged(path string) {
+	if testHookAfterConfigStaged != nil {
+		testHookAfterConfigStaged(path)
+	}
+}
+
 // testHookBeforeConfigRename runs after a desk-level write has been staged and
 // before the digest is compared again, and is nil outside tests.
 //
@@ -562,6 +576,12 @@ func (s *assistantStore) writeConfigFile(data []byte, stillMatches func() error)
 	if err != nil {
 		return err
 	}
+	// The instant a staging file first exists, which is what a test watches to
+	// establish that a request refused *earlier* never reached the disk at
+	// all. Round 2 asked for that observable: "nothing was written" and
+	// "nothing was staged" are different claims, and only the second one rules
+	// out a refusal that happened after the bytes had already been put down.
+	afterConfigStaged(filepath.Join(s.dir, name))
 	remove := func() { _ = s.root.Remove(name) }
 	if _, err := staged.Write(data); err != nil {
 		staged.Close()

@@ -884,9 +884,29 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if false {'
   # No override on this route: a file that moved under the writer is refused,
   # because this is the file that names where a credential goes.
+  #
+  # **Repaired after round 2 reported it NOT DISCRIMINATING, correctly.** The
+  # comparison was written out twice — once against the bytes the transaction
+  # read and again immediately before the rename — so breaking either copy left
+  # the other answering the same 409 with the same digests. Two spellings of
+  # one rule are invisible to a harness that breaks one of them. There is one
+  # predicate now, and this is it.
   mutate go "a configuration write ignores the digest it was given" "$A" \
-    '	if !strings.EqualFold(strings.TrimSpace(req.IfMatch), actual) {' \
-    '	if false {'
+    'func deskConfigUnmoved(ifMatch, actual string) bool {
+	return strings.EqualFold(strings.TrimSpace(ifMatch), actual)
+}' \
+    'func deskConfigUnmoved(ifMatch, actual string) bool {
+	_, _ = ifMatch, actual
+	return true
+}'
+  # And the half the second comparison used to stand in for: a request already
+  # known to be stale must never reach the disk at all. "Nothing was written"
+  # and "nothing was staged" are different claims.
+  mutate go "an already-stale write is staged before it is refused" "$A" \
+    '	if !deskConfigUnmoved(req.IfMatch, actual) {
+		return http.StatusConflict, conflict{' \
+    '	if false {
+		return http.StatusConflict, conflict{'
   # Through the pinned custody descriptor, staged and renamed, published at the
   # mode this desk chose — `os.WriteFile` follows a name and keeps whatever
   # mode it finds, which is the observable difference the suite measures.
