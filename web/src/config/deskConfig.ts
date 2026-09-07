@@ -811,13 +811,16 @@ function packDir(value: unknown, problems: ConfigProblem[]): string | undefined 
     return undefined
   }
   if (typeof value !== 'string') return bad(`must be a string; found ${describe(value)}`)
-  const trimmed = value.trim().replace(/\/+$/, '')
-  if (trimmed === '') return bad('must name a directory inside the project')
-  // Before every shape rule below, because a name carrying one is not a name
-  // this desk could write whatever else is true of it. See NO_CONTROL_CHARACTERS.
-  if (CONTROL_CHARACTER.test(trimmed)) {
+  // **On the bytes as written, before any trim.** Round 2 found the check
+  // behind one: `String.trim` removes U+0009 through U+000D, so a leading tab
+  // or a trailing newline was silently taken off and the name accepted — a
+  // rule that claimed every control character and covered only the ones that
+  // are not whitespace. See NO_CONTROL_CHARACTERS.
+  if (CONTROL_CHARACTER.test(value)) {
     return bad(`${NO_CONTROL_CHARACTERS}; found ${describe(value)}`)
   }
+  const trimmed = value.trim().replace(/\/+$/, '')
+  if (trimmed === '') return bad('must name a directory inside the project')
   if (trimmed.startsWith('/')) return bad('must be relative to the project, not absolute')
   if (trimmed.includes('\\') || trimmed.includes(':')) {
     return bad('must be slash-separated and carry no backslash or colon')
@@ -884,7 +887,16 @@ export const ID_BASE_NORMALISES = 'A separator is added where there is none.'
  */
 export const NO_CONTROL_CHARACTERS = 'must carry no control character'
 
-/** Every C0 control, and DEL. `\u0000` is the one that reaches the chassis. */
+/**
+ * Every C0 control, and DEL — **tested against the value as it was written**.
+ *
+ * Position matters and trimming hides it: `String.trim` removes U+0009 through
+ * U+000D, so a check behind one accepts a leading tab or a trailing newline by
+ * taking it off. The rule is every code point from U+0000 to U+001F and U+007F,
+ * anywhere in the value, and the only way to mean that is to ask before
+ * anything has been removed.
+ */
+
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/
 
 /**
@@ -897,6 +909,17 @@ const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/
  */
 function idBase(value: unknown, problems: ConfigProblem[]): string | undefined {
   if (value === undefined) return undefined
+  // **On the bytes as written, before any trim** — the rule `packDir` states in
+  // full, for the same reason and at the same position. Ahead of the non-empty
+  // check too, so a value that is nothing but a control character is refused
+  // for what it carries rather than for what trimming it leaves.
+  if (typeof value === 'string' && CONTROL_CHARACTER.test(value)) {
+    problems.push({
+      key: 'storage.packs.idBase',
+      reason: `${NO_CONTROL_CHARACTERS}; found ${describe(value)}`
+    })
+    return undefined
+  }
   if (typeof value !== 'string' || value.trim() === '') {
     problems.push({
       key: 'storage.packs.idBase',
@@ -905,15 +928,6 @@ function idBase(value: unknown, problems: ConfigProblem[]): string | undefined {
     return undefined
   }
   const trimmed = value.trim()
-  // Before the URL parse, which does not refuse one: it percent-encodes a NUL,
-  // deletes a tab outright, and takes a DEL. See NO_CONTROL_CHARACTERS.
-  if (CONTROL_CHARACTER.test(trimmed)) {
-    problems.push({
-      key: 'storage.packs.idBase',
-      reason: `${NO_CONTROL_CHARACTERS}; found ${describe(value)}`
-    })
-    return undefined
-  }
   try {
     new URL(trimmed)
   } catch {

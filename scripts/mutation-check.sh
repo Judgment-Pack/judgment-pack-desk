@@ -5940,10 +5940,24 @@ export function assistantTransport(): Transport {
   # location and makes every later create fail with a sentence about a path
   # nobody chose to look at — the same defect `dist` had.
   mutate web "a control character is accepted in a pack location" "$D" \
-    '  if (CONTROL_CHARACTER.test(trimmed)) {
+    '  if (CONTROL_CHARACTER.test(value)) {
     return bad(`${NO_CONTROL_CHARACTERS}; found ${describe(value)}`)
   }' \
     ''
+
+  # **A rule that says every control character has to be asked before anything
+  # is removed.** `String.trim` takes U+0009 through U+000D off, so a check
+  # behind one accepts a leading tab and a trailing newline by trimming them —
+  # which is the half of the rule round 2 found missing.
+  mutate web "the control-character rule is asked after the trim has hidden the edges" "$D" \
+    '  if (CONTROL_CHARACTER.test(value)) {
+    return bad(`${NO_CONTROL_CHARACTERS}; found ${describe(value)}`)
+  }
+  const trimmed = value.trim().replace(/\/+$/, '"'"''"'"')' \
+    '  const trimmed = value.trim().replace(/\/+$/, '"'"''"'"')
+  if (CONTROL_CHARACTER.test(trimmed)) {
+    return bad(`${NO_CONTROL_CHARACTERS}; found ${describe(value)}`)
+  }'
 
   # **A save that lands is over.** The decoder normalises what it accepts — an
   # `idBase` gains the separator it was missing, a `dir` loses the one it ended

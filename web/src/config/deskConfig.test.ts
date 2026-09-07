@@ -408,6 +408,41 @@ describe('the storage member', () => {
     expect(files).toContain(`const stagingPrefix = "${STAGING_PREFIX}"`)
   })
 
+  it('refuses every control character, at every position, in both strings', () => {
+    // **Exhaustive because the rule claims to be.** Round 2 found the check
+    // behind `trim()`: `String.trim` removes U+0009 through U+000D, so a
+    // leading tab or a trailing newline was taken off and the value accepted —
+    // a rule that said every control character and held only for the ones that
+    // are not whitespace. Every code point, at the beginning, the middle and
+    // the end, on both fields.
+    const controls = [...Array(0x20).keys(), 0x7f].map((code) => String.fromCharCode(code))
+    for (const control of controls) {
+      const at = (base: string, where: 'start' | 'middle' | 'end') =>
+        where === 'start'
+          ? control + base
+          : where === 'end'
+            ? base + control
+            : base.slice(0, 2) + control + base.slice(2)
+      for (const where of ['start', 'middle', 'end'] as const) {
+        const dir = at('packs', where)
+        const decoded = withStorage({ dir })
+        expect(decoded.values, `dir ${JSON.stringify(dir)} was accepted`).toBeUndefined()
+        expect(keys(decoded.problems), JSON.stringify(dir)).toEqual(['storage.packs.dir'])
+        expect(decoded.problems[0]!.reason, JSON.stringify(dir)).toContain(NO_CONTROL_CHARACTERS)
+
+        const idBase = at('https://acme.example/d/', where)
+        const prefix = withStorage({ idBase })
+        expect(prefix.values, `idBase ${JSON.stringify(idBase)} was accepted`).toBeUndefined()
+        expect(keys(prefix.problems), JSON.stringify(idBase)).toEqual(['storage.packs.idBase'])
+        expect(prefix.problems[0]!.reason, JSON.stringify(idBase)).toContain(NO_CONTROL_CHARACTERS)
+      }
+    }
+    // And a value that is nothing else: refused for what it carries rather
+    // than for what trimming it leaves behind.
+    expect(withStorage({ dir: '\t' }).problems[0]!.reason).toContain(NO_CONTROL_CHARACTERS)
+    expect(withStorage({ idBase: '\n' }).problems[0]!.reason).toContain(NO_CONTROL_CHARACTERS)
+  })
+
   it('refuses a control character in either pack-storage string', () => {
     // **`packs\u0000hidden` used to decode clean.** Admin then advertised it as
     // the pack location and *every* later create failed at the write, because
