@@ -56,7 +56,7 @@ import {
 import { GEMINI_SCHEMA_REMOVALS } from '../geminiSchema'
 import type { EndpointKind, ThinkingTier } from '../../config/deskConfig'
 import runtime from './runtime.json'
-import type { AssistantEvent, Engine } from '../engine'
+import type { AssistantEvent, Engine, McpTool } from '../engine'
 
 const FIVE = scenario.scenarioTools
 
@@ -627,15 +627,20 @@ async function runLeg(
     tier?: ThinkingTier
     mode?: ThinkingMode
     refuted?: boolean
+    /** Where this endpoint puts its signatures. Defaults to the summary. */
+    signatures?: 'thought' | 'call' | 'parallel'
     /** The tools this desk's file granted. Defaults to the five. */
     allowed?: readonly string[]
+    /** One tool set in place of the runtime's five, for a schema probe. */
+    tools?: McpTool[]
   } = {}
 ): Promise<Run> {
   const model = scriptedModel({
     api: leg.api,
     answerAs: leg.answerAs,
     thinking: how.mode ?? 'off',
-    refuted: how.refuted === true
+    refuted: how.refuted === true,
+    signatures: how.signatures ?? 'thought'
   })
   vi.stubGlobal('fetch', model.fetch)
   const runtime = await scriptedRuntime()
@@ -674,7 +679,7 @@ async function runLeg(
         // hands over a stand-in and the legs assert the stand-in travelled —
         // which measures the engine and models the runtime's text.
         testPrompt: TEST_PROMPT,
-        tools: ready.tools,
+        tools: how.tools ?? ready.tools,
         callTool: ready.callTool,
         model: { family: leg.api, model: 'scripted-model', call },
         thinking: normalize(how.tier ?? 'off', leg.api),
@@ -1408,6 +1413,52 @@ describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
       expect(passages[0]!.text).toBe(thinkText({ id: 'T1', tool: 'get_schema' }))
       expect(events.some((event) => event.type === 'error')).toBe(false)
     })
+
+    /**
+     * The three placements Gemini documents for a thought signature, and the
+     * one property that has to hold for all of them.
+     *
+     * The first version of this fixture signed a summary and left the call
+     * unsigned, and its validator called every other placement malformed — which
+     * is backwards for function calling, where the signature rides on the
+     * **first `functionCall` part** and later parallel calls are unsigned. So
+     * the leg runs all three and the endpoint refuses a continuation that lost
+     * one, whichever part it was on.
+     */
+    it.each(
+      legs.flatMap((leg) =>
+        (['thought', 'call', 'parallel'] as const).map((signatures) => ({ leg, signatures }))
+      )
+    )(
+      'replays a signature wherever the wire put it ($signatures, $leg.answerAs)',
+      async ({ leg, signatures }) => {
+        const { events, requests } = await runLeg(fromRegistry(engineId), leg, {
+          tier: 'on',
+          mode: 'on',
+          signatures
+        })
+        const afterAResult = requests.filter(
+          (request) => request.results >= 1 && !request.refutation
+        )
+        expect(afterAResult.length).toBeGreaterThan(0)
+        for (const request of afterAResult) {
+          expect(request.signaturesMissing, `${request.step} dropped a signature`).toEqual([])
+          expect(request.signaturesTruncated, `${request.step} truncated a signature`).toEqual([])
+          expect(
+            request.signaturesMalformed,
+            `${request.step} put a signature where the wire cannot carry one`
+          ).toEqual([])
+        }
+        // The signature this endpoint emitted for the first step came back,
+        // whichever part it rode on.
+        expect(afterAResult[0]!.signaturesCarried).toContain(thinkSignature({ id: 'T1' }))
+        // A parallel pair advances the script two results at a time, so its
+        // walk is shorter than the others' — the property under test is the
+        // replay, not the step sequence.
+        expect(proposals(events)).toHaveLength(1)
+        expect(events.some((event) => event.type === 'error')).toBe(false)
+      }
+    )
 
     it.each(legs)('reports "always thinks" from two turns of unasked-for reasoning ($answerAs)', async (leg) => {
       // **The `always` state's first real subject**, and the road to it by

@@ -1878,6 +1878,54 @@ describe('the same signature rules, on the Gemini wire', () => {
     expect(sent.systemInstruction).toEqual({ parts: [{ text: 'system' }] })
   })
 
+  it('compares a signature the wire put on the function call, not only on a summary', () => {
+    // **The placement that matters most in function calling**, and the one the
+    // first version of this scanner could not see: Gemini signs the first
+    // `functionCall` part of a turn, so a scanner that read only
+    // `thought === true` never compared it — and a truncated one would have
+    // gone back unnoticed.
+    const ledger = signatureLedger()
+    ledger.fragment('call-1', 'c2lnbmF0dXJlLVQx')
+    const body = JSON.stringify({
+      contents: [
+        {
+          role: 'model',
+          parts: [
+            { functionCall: { name: 'validate', args: {} }, thoughtSignature: 'dXJlLVQx' },
+            { functionCall: { name: 'validate', args: {} } }
+          ]
+        }
+      ]
+    })
+    const rebuilt = withoutTruncatedThinking('gemini', body, ledger, () => null)
+    expect(rebuilt.truncated).toContain('19663')
+    const sent = JSON.parse(rebuilt.body) as { contents: { parts: unknown[] }[] }
+    // The damaged part is removed; the unsigned parallel call beside it stays.
+    expect(sent.contents[0]!.parts).toHaveLength(1)
+    expect(sent.contents[0]!.parts[0]).toEqual({ functionCall: { name: 'validate', args: {} } })
+  })
+
+  it('leaves a whole signature on a function call exactly where it was', () => {
+    const ledger = signatureLedger()
+    ledger.fragment('call-1', 'c2lnbmF0dXJlLVQx')
+    const body = JSON.stringify({
+      contents: [
+        {
+          role: 'model',
+          parts: [
+            {
+              functionCall: { name: 'validate', args: {} },
+              thoughtSignature: 'c2lnbmF0dXJlLVQx'
+            }
+          ]
+        }
+      ]
+    })
+    const looked = withoutTruncatedThinking('gemini', body, ledger, () => null)
+    expect(looked.truncated).toBe('')
+    expect(looked.body).toBe(body)
+  })
+
   it('leaves a whole Gemini signature exactly where it was', () => {
     const ledger = signatureLedger()
     ledger.fragment('0', 'c2lnbmF0dXJlLVQx')

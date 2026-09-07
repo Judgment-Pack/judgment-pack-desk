@@ -662,6 +662,17 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
         slot.sawReasoning()
         continue
       }
+      // **A signed function call is ledgered too.** On the Gemini wire the
+      // signature that matters most rides on the first `functionCall` part of a
+      // turn rather than on a summary, and the SDK surfaces it in the same
+      // provider metadata. Read off `tool-call` and not off `tool-input-*`,
+      // which repeat the same value three times before it.
+      if (part.type === 'tool-call') {
+        const onCall = signatureOf(session.model.family, part)
+        if (onCall !== undefined) {
+          ledger.fragment(String((part as { toolCallId?: unknown }).toolCallId ?? ''), onCall)
+        }
+      }
       const unoffered = unofferedTool(part, offered)
       if (unoffered !== undefined) {
         // The SDK refused it; the desk's gate must be the one to say so.
@@ -770,6 +781,13 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
             await deliver({ type: 'reasoning', text: criticReasoning, done: true })
             criticReasoning = ''
             slot.sawReasoning()
+            continue
+          }
+          if (part.type === 'tool-call') {
+            const onCall = signatureOf(session.model.family, part)
+            if (onCall !== undefined) {
+              ledger.fragment(String((part as { toolCallId?: unknown }).toolCallId ?? ''), onCall)
+            }
             continue
           }
           if (part.type === 'text-delta') criticText += (part as { text?: string }).text ?? ''

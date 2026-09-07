@@ -428,9 +428,16 @@ function anthropicCarried(
  *
  * The same three lists the Anthropic reader computes and for the same reasons —
  * a signature the client dropped, one it truncated, and one it kept beside a
- * part whose text it lost. The wire's own rule is that thought parts are
+ * part that can no longer carry it. The wire's own rule is that signed parts are
  * resent exactly as they were received, so all three are refusals rather than
  * observations, and the endpoint below enforces that.
+ *
+ * **A signature rides on one of two kinds of part, and the first version of this
+ * knew only one of them.** Gemini signs a thought summary, and — in function
+ * calling, which is the whole of what this desk does — it signs the **first
+ * `functionCall` part** of a turn, leaving later parallel calls unsigned. A
+ * validator that called every signature outside a thought part malformed had it
+ * exactly backwards, and would have refused the shape the wire actually sends.
  */
 function geminiCarried(
   contents: unknown[],
@@ -447,11 +454,13 @@ function geminiCarried(
       if (typeof part?.thoughtSignature !== 'string' || part.thoughtSignature === '') continue
       const signature = part.thoughtSignature
       if (!carried.includes(signature)) carried.push(signature)
-      // A signature on a part that is not a thought, or on one whose text is
-      // gone, is a block this endpoint would refuse the continuation over.
-      if (part.thought !== true || typeof part.text !== 'string' || part.text === '') {
-        malformed.push(signature)
-      }
+      // The two parts a signature may ride on: a thought summary that still has
+      // its text, and a function call. Anywhere else — a bare text part, a
+      // thought part whose text the client lost — is a block this endpoint
+      // refuses the continuation over.
+      const onSummary = part.thought === true && typeof part.text === 'string' && part.text !== ''
+      const onCall = part.functionCall !== undefined
+      if (!onSummary && !onCall) malformed.push(signature)
       const whole = emitted.find(
         (expected) =>
           expected !== signature &&
@@ -578,17 +587,55 @@ function anthropicAnswer(step: ScenarioStep, reasoning: boolean) {
  * on this wire a signature is a member of the part it belongs to rather than a
  * separate event.
  */
-function geminiAnswer(step: ScenarioStep, reasoning: boolean, chatter: boolean) {
-  const parts: unknown[] = []
-  if (reasoning) {
-    parts.push({ text: thinkText(step), thought: true, thoughtSignature: thinkSignature(step) })
+/**
+ * The parts one answer carries, in the endpoint's own order, under one
+ * signature topology.
+ *
+ * Shared by the whole and the streamed builders so the two cannot disagree
+ * about where a signature sits — which is the property under test.
+ */
+function geminiParts(
+  step: ScenarioStep,
+  reasoning: boolean,
+  chatter: boolean,
+  topology: 'thought' | 'call' | 'parallel'
+): { summary: Record<string, unknown> | null; answer: Record<string, unknown>[] } {
+  const signature = thinkSignature(step)
+  const calls = step.kind === 'tool_call'
+  // A final message has no call to sign, so the summary carries the signature
+  // whatever the topology is: there is nowhere else for it to go.
+  const onSummary = reasoning && (topology === 'thought' || !calls)
+  const summary = reasoning
+    ? {
+        text: thinkText(step),
+        thought: true,
+        ...(onSummary ? { thoughtSignature: signature } : {})
+      }
+    : null
+  const answer: Record<string, unknown>[] = []
+  if (chatter && calls) answer.push({ text: chatterText(step) })
+  if (!calls) {
+    answer.push({ text: step.text ?? '' })
+    return { summary, answer }
   }
-  if (chatter && step.kind === 'tool_call') parts.push({ text: chatterText(step) })
-  parts.push(
-    step.kind === 'tool_call'
-      ? { functionCall: { name: step.tool, args: step.arguments ?? {} } }
-      : { text: step.text }
-  )
+  const call = { functionCall: { name: step.tool, args: step.arguments ?? {} } }
+  answer.push(onSummary ? call : { ...call, thoughtSignature: signature })
+  // **The second of a parallel pair is unsigned**, which is the documented
+  // shape: one signature per turn, on the first call.
+  if (topology === 'parallel') answer.push({ ...call })
+  return { summary, answer }
+}
+
+function geminiAnswer(
+  step: ScenarioStep,
+  reasoning: boolean,
+  chatter: boolean,
+  topology: 'thought' | 'call' | 'parallel'
+) {
+  const built = geminiParts(step, reasoning, chatter, topology)
+  const parts: unknown[] = []
+  if (built.summary !== null) parts.push(built.summary)
+  parts.push(...built.answer)
   return {
     candidates: [
       {
@@ -621,7 +668,12 @@ function geminiAnswer(step: ScenarioStep, reasoning: boolean, chatter: boolean) 
  * There is no terminal sentinel, because this wire has none: the stream ends
  * when the body does.
  */
-function geminiStream(step: ScenarioStep, reasoning: boolean, chatter: boolean): string {
+function geminiStream(
+  step: ScenarioStep,
+  reasoning: boolean,
+  chatter: boolean,
+  topology: 'thought' | 'call' | 'parallel'
+): string {
   const lines: string[] = []
   const frame = (parts: unknown[], last = false) =>
     lines.push(
@@ -643,27 +695,31 @@ function geminiStream(step: ScenarioStep, reasoning: boolean, chatter: boolean):
           : {})
       })}\n\n`
     )
-  if (reasoning) {
-    const pieces = chunks(thinkText(step), 48)
+  const built = geminiParts(step, reasoning, chatter, topology)
+  if (built.summary !== null) {
+    const whole = String(built.summary.text ?? '')
+    const pieces = chunks(whole, 48)
     pieces.forEach((piece, at) => {
       const last = at === pieces.length - 1
       frame([
         {
           text: piece,
           thought: true,
-          // On the final piece only: the signature belongs to the whole
-          // summary, and a client that dropped the pieces before it would send
-          // back a fragment of a thought.
-          ...(last ? { thoughtSignature: thinkSignature(step) } : {})
+          // On the final piece only, and only where this topology signs the
+          // summary at all: the signature belongs to the bytes it was computed
+          // over, and a client that joined the pieces before it would carry it
+          // back over text this endpoint never signed.
+          ...(last && built.summary!.thoughtSignature !== undefined
+            ? { thoughtSignature: built.summary!.thoughtSignature }
+            : {})
         }
       ])
     })
   }
   if (step.kind === 'tool_call') {
-    if (chatter) frame([{ text: chatterText(step) }])
-    frame([{ functionCall: { name: step.tool, args: step.arguments ?? {} } }], true)
+    built.answer.forEach((part, at) => frame([part], at === built.answer.length - 1))
   } else {
-    const pieces = chunks(step.text ?? '', 96)
+    const pieces = chunks(String(built.answer[built.answer.length - 1]!.text ?? ''), 96)
     pieces.forEach((piece, at) => frame([{ text: piece }], at === pieces.length - 1))
   }
   return lines.join('')
@@ -862,10 +918,24 @@ export function scriptedModel(options: {
    * DRAFT_V1, the runtime says `invalid`, and the desk renders a refutation.
    */
   refuted?: boolean
+  /**
+   * Where this endpoint puts its signatures, which is a different axis from
+   * whether it thinks.
+   *
+   * - `thought` — on the thought summary, the call unsigned. What a model that
+   *   streams summaries and calls one tool at a time sends.
+   * - `call` — the summary unsigned and the signature on the **functionCall**
+   *   part, which is the documented placement for function calling: one signed
+   *   call per sequential step.
+   * - `parallel` — two calls in one turn, the **first** signed and the second
+   *   not, which is the documented placement for parallel calls.
+   */
+  signatures?: 'thought' | 'call' | 'parallel'
 }): ScriptedModel {
   const requests: RecordedRequest[] = []
   const state = { lastBase: undefined as number | undefined, repeats: 0 }
   const mode: ThinkingMode = options.thinking ?? 'off'
+  const topology = options.signatures ?? 'thought'
   const critic = criticSteps(options.refuted === true)
   /**
    * The step ids this endpoint has emitted reasoning for, **per conversation**.
@@ -1121,7 +1191,7 @@ export function scriptedModel(options: {
         options.api === 'anthropic'
           ? anthropicAnswer(step, reasoning)
           : options.api === 'gemini'
-            ? geminiAnswer(step, reasoning, chatter)
+            ? geminiAnswer(step, reasoning, chatter, topology)
             : openAiAnswer(step, reasoning)
       return new Response(JSON.stringify(answer), {
         status: 200,
@@ -1132,7 +1202,7 @@ export function scriptedModel(options: {
       options.api === 'anthropic'
         ? anthropicStream(step, reasoning, mode === 'split')
         : options.api === 'gemini'
-          ? geminiStream(step, reasoning, chatter)
+          ? geminiStream(step, reasoning, chatter, topology)
           : openAiStream(step, reasoning)
     return new Response(text, {
       status: 200,

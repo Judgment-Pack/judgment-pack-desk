@@ -443,6 +443,7 @@ interface WireBlock {
   signature?: unknown
   thought?: unknown
   thoughtSignature?: unknown
+  functionCall?: unknown
 }
 
 /**
@@ -485,8 +486,15 @@ const SIGNED: Partial<Record<EndpointKind, SignedShape>> = {
       ((payload.contents ?? []) as Record<string, unknown>[])
         .filter((content) => Array.isArray(content?.parts))
         .map((content) => ({ holder: content, key: 'parts' })),
+    // **Two kinds of part carry a signature on this wire, and only one of them
+    // was read.** Gemini signs a thought summary, and — in function calling,
+    // which is the whole of what this desk does — the **first `functionCall`
+    // part** of a turn, leaving later parallel calls unsigned. A scanner that
+    // looked only at `thought === true` never compared the signature the wire
+    // actually sends, so a truncated one would have gone back unnoticed.
     signature: (block) =>
-      block?.thought === true && typeof block.thoughtSignature === 'string'
+      typeof block?.thoughtSignature === 'string' &&
+      (block.thought === true || block.functionCall !== undefined)
         ? block.thoughtSignature
         : undefined,
     retier: (payload, members) => {
