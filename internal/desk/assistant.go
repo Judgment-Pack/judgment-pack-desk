@@ -887,18 +887,47 @@ type AssistantKeyState struct {
 	// origin is already in the file the page reads.
 	Origin string `json:"origin"`
 	Kind   string `json:"kind"`
+	// ConfiguredOrigin is the origin of the endpoint this desk is configured
+	// for **right now**, computed here, and empty where none is configured or
+	// the configured URL has no origin to take.
+	//
+	// Bound is this desk's own verdict about the pair: whether the stored key
+	// would be presented to the endpoint the file names. **Both are here
+	// because the page must not compute either.** It tried, with the browser's
+	// `URL`, which drops an explicit `:443` where Go's `url.Parse` keeps it —
+	// so a key stored for a host and a configuration naming the same host with
+	// its default port written out showed as bound on the page while the relay
+	// answered `assistant-key-unbound` and sent nothing. Two implementations
+	// of one rule is one implementation too many, and the one that decides is
+	// the one that presents the credential.
+	ConfiguredOrigin string `json:"configuredOrigin"`
+	Bound            bool   `json:"bound"`
 }
 
-// keyState renders one stored key as the answer the page gets.
-func keyState(stored storedKey) AssistantKeyState {
+// keyState renders one stored key as the answer the page gets, together with
+// this desk's verdict about where it may go.
+//
+// `configured` is the endpoint the file names now, or the zero value where
+// there is none. A desk with no endpoint is never `Bound`: there is nothing to
+// present the key to, and storing one requires something to bind it to.
+func keyState(stored storedKey, configured assistantEndpoint) AssistantKeyState {
+	origin, ok := endpointOrigin(configured.url)
+	if !ok {
+		origin = ""
+	}
 	if !stored.present {
-		return AssistantKeyState{}
+		return AssistantKeyState{ConfiguredOrigin: origin}
 	}
 	return AssistantKeyState{
-		Present:     true,
-		Fingerprint: fingerprint(stored.key),
-		Origin:      stored.origin,
-		Kind:        stored.kind,
+		Present:          true,
+		Fingerprint:      fingerprint(stored.key),
+		Origin:           stored.origin,
+		Kind:             stored.kind,
+		ConfiguredOrigin: origin,
+		// **The relay's own predicate, not a second reading of it.** A verdict
+		// computed any other way here would be a third implementation of the
+		// rule two others already hold.
+		Bound: origin != "" && bindingProblem(stored, configured) == "",
 	}
 }
 
@@ -943,7 +972,12 @@ func (s *Server) handleAssistantKeyRead(w http.ResponseWriter, r *http.Request) 
 		s.refuseKeyRead(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, keyState(stored))
+	// **A configuration this desk cannot read is not an endpoint.** The zero
+	// value gives no origin and no binding, which is the honest answer: a
+	// refused file authorises no relayed request either, so a key it names
+	// nothing for is a key that goes nowhere.
+	configured, _ := s.configuredEndpoint()
+	writeJSON(w, http.StatusOK, keyState(stored, configured))
 }
 
 // refuseKeyRead answers a key read that found something and could not use it.
@@ -1047,7 +1081,7 @@ func (s *Server) handleAssistantKeyWrite(w http.ResponseWriter, r *http.Request)
 	// proves nothing about a handler that never ran. The origin is the same
 	// scheme-and-host every other line here carries.
 	s.log.Printf("desk: the assistant key was stored on this machine for %s", origin)
-	writeJSON(w, http.StatusOK, keyState(bound))
+	writeJSON(w, http.StatusOK, keyState(bound, endpoint))
 }
 
 func (s *Server) handleAssistantKeyDelete(w http.ResponseWriter, r *http.Request) {
@@ -1063,7 +1097,11 @@ func (s *Server) handleAssistantKeyDelete(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.log.Printf("desk: the assistant key was removed from this machine")
-	writeJSON(w, http.StatusOK, AssistantKeyState{})
+	// The endpoint is still configured after a removal — the two are separate,
+	// which is the sentence Admin carries — so the origin travels and the
+	// verdict is the one a desk with no key has.
+	configured, _ := s.configuredEndpoint()
+	writeJSON(w, http.StatusOK, keyState(storedKey{}, configured))
 }
 
 // isControl reports the characters a header value may not carry.

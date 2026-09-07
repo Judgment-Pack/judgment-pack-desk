@@ -1,17 +1,21 @@
 /**
- * The page's reading of the desk's binding, held to the desk's own rule.
+ * The row's five states, mapped from the desk's own answer.
  *
- * **The rule is the chassis'**, and this is a reading of it: what a row says,
- * and what a button that would fail anyway is enabled for. It is asserted
- * against `endpointOrigin` in `internal/desk/assistant.go` by reading that
- * declaration's own cases out of this file's table — a page that drew the line
- * anywhere else would tell an author a key still works where the chassis will
- * refuse it, or ask for one that is already right.
+ * **There is nothing to test about a comparison, because there is no longer
+ * one.** This module used to compute the binding with the browser's `URL`,
+ * which drops an explicit `:443` where Go's `url.Parse` keeps it — so a key
+ * stored for a host and a configuration naming the same host with its default
+ * port written out read as bound here while the relay sent nothing. The
+ * verdict is the chassis' now (`bound` on `GET /api/assistant/key`, exercised
+ * over both spellings in `TestKeyReadCarriesThisDesksOwnBindingVerdict`), and
+ * what is left here is the mapping to what a row says.
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { AssistantEndpointConfig } from '../config/deskConfig'
 import type { AssistantKeyState } from './client'
-import { endpointOrigin, keyBinding } from './keyBinding'
+import { keyBinding } from './keyBinding'
 
 const ENDPOINT: AssistantEndpointConfig = {
   url: 'https://api.example.invalid/v1',
@@ -20,43 +24,23 @@ const ENDPOINT: AssistantEndpointConfig = {
   tools: []
 }
 
-const STORED: AssistantKeyState = {
+const BOUND: AssistantKeyState = {
   present: true,
   fingerprint: 'sk-a…wxyz',
   origin: 'https://api.example.invalid',
-  kind: 'openai-compatible'
+  kind: 'openai-compatible',
+  configuredOrigin: 'https://api.example.invalid',
+  bound: true
 }
 
-const NONE: AssistantKeyState = { present: false, fingerprint: '', origin: '', kind: '' }
-
-describe('the origin a key is bound to', () => {
-  it('is the scheme and the host, and never the path or the query', () => {
-    // A path or a query is the endpoint's own routing, and an author changes
-    // one without changing who is at the other end.
-    expect(endpointOrigin('https://api.example.invalid/v1')).toBe('https://api.example.invalid')
-    expect(endpointOrigin('https://api.example.invalid/v1?route=eu')).toBe(
-      'https://api.example.invalid'
-    )
-  })
-
-  it('keeps the port, because a port is a different destination', () => {
-    expect(endpointOrigin('https://api.example.invalid:8443/v1')).toBe(
-      'https://api.example.invalid:8443'
-    )
-    expect(endpointOrigin('https://api.example.invalid:8443/v1')).not.toBe(
-      endpointOrigin('https://api.example.invalid/v1')
-    )
-  })
-
-  it('folds case, because a host is case-insensitive', () => {
-    expect(endpointOrigin('https://API.Example.Invalid/v1')).toBe('https://api.example.invalid')
-  })
-
-  it('is nothing at all for something that is not an address', () => {
-    expect(endpointOrigin('not a url')).toBeUndefined()
-    expect(endpointOrigin('mailto:someone@example.invalid')).toBeUndefined()
-  })
-})
+const NONE: AssistantKeyState = {
+  present: false,
+  fingerprint: '',
+  origin: '',
+  kind: '',
+  configuredOrigin: 'https://api.example.invalid',
+  bound: false
+}
 
 describe('what the key row is about', () => {
   it('is a page that has not been told, before the read answers', () => {
@@ -66,36 +50,58 @@ describe('what the key row is about', () => {
   it('asks for an endpoint first, with or without a key kept here', () => {
     // Storing needs one to bind to, so this is the state with no repair at
     // that row — and a key that is stored is still reported on the line above.
-    expect(keyBinding(NONE, null)).toBe('no-endpoint')
-    expect(keyBinding(STORED, null)).toBe('no-endpoint')
-  })
-
-  it('is bound where the origin and the protocol both still match', () => {
-    expect(keyBinding(STORED, ENDPOINT)).toBe('bound')
-    // A path or a query moving keeps the binding, exactly as the desk's does.
-    expect(keyBinding(STORED, { ...ENDPOINT, url: 'https://api.example.invalid/v2?a=b' })).toBe(
-      'bound'
-    )
-  })
-
-  it('asks for the key again where either half moved', () => {
-    expect(keyBinding(STORED, { ...ENDPOINT, url: 'https://other.example.invalid/v1' })).toBe(
-      'rebind'
-    )
-    expect(keyBinding(STORED, { ...ENDPOINT, kind: 'anthropic' })).toBe('rebind')
-    // A scheme change is a different destination too.
-    expect(keyBinding(STORED, { ...ENDPOINT, url: 'http://api.example.invalid/v1' })).toBe(
-      'rebind'
-    )
+    expect(keyBinding({ ...NONE, configuredOrigin: '' }, null)).toBe('no-endpoint')
+    expect(keyBinding({ ...BOUND, configuredOrigin: '', bound: false }, null)).toBe('no-endpoint')
   })
 
   it('is none where an endpoint is configured and nothing is stored', () => {
     expect(keyBinding(NONE, ENDPOINT)).toBe('none')
   })
 
-  it('asks again rather than claiming a binding it cannot compute', () => {
-    // A URL with no host has no origin, so there is nothing to compare — and
-    // the honest answer is the one that asks rather than the one that assures.
-    expect(keyBinding(STORED, { ...ENDPOINT, url: 'not a url' })).toBe('rebind')
+  it('takes the verdict from the desk and computes none of its own', () => {
+    // **Both halves, over the same page-side inputs.** The endpoint and the
+    // stored origin are identical in these two cases and only the desk's
+    // answer differs — which is the whole of what this module may read.
+    expect(keyBinding(BOUND, ENDPOINT)).toBe('bound')
+    expect(keyBinding({ ...BOUND, bound: false }, ENDPOINT)).toBe('rebind')
+  })
+
+  it('says rebind for a mismatch this page could never have seen', () => {
+    // The measured case: the browser folds an explicit default port away and
+    // Go does not. The origins here look equal to any comparison this page
+    // could write, and the desk says they are not.
+    expect(
+      keyBinding(
+        {
+          ...BOUND,
+          origin: 'https://api.example.invalid',
+          configuredOrigin: 'https://api.example.invalid:443',
+          bound: false
+        },
+        { ...ENDPOINT, url: 'https://api.example.invalid:443/v1' }
+      )
+    ).toBe('rebind')
+  })
+})
+
+describe('the module itself', () => {
+  it('computes no origin and compares no host', () => {
+    // A guard over the source, in the enforcement idiom: the defect was a
+    // second implementation of the desk's rule, and the repair is that there
+    // is no implementation here at all.
+    const text = readFileSync(join(import.meta.dirname, 'keyBinding.ts'), 'utf8')
+    // Read off the code rather than the prose: the module comment says `URL`
+    // and `url.Parse` on purpose, because the reason there is nothing here is
+    // worth writing down.
+    const code = text
+      .split('\n')
+      .filter((line) => {
+        const trimmed = line.trim()
+        return !trimmed.startsWith('*') && !trimmed.startsWith('//') && !trimmed.startsWith('/*')
+      })
+      .join('\n')
+    for (const shape of ['new URL(', '.host', '.protocol', 'toLowerCase']) {
+      expect(code, `keyBinding.ts carries ${shape}`).not.toContain(shape)
+    }
   })
 })

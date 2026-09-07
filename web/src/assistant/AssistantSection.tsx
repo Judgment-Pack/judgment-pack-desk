@@ -39,7 +39,7 @@ import type { AssistantEndpointConfig } from '../config/deskConfig'
 import { SourceBadge } from '../routes/adminBlocks'
 import { DIAGNOSTIC_SAYS, type AssistantKeyState } from './client'
 import { EndpointForm } from './EndpointForm'
-import { endpointOrigin, keyBinding, type KeyBinding } from './keyBinding'
+import { keyBinding, type KeyBinding } from './keyBinding'
 import {
   useAssistantKey,
   useProbeAssistant,
@@ -174,7 +174,7 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
       </p>
 
       <KeyControl
-        state={key.data ?? { present: false, fingerprint: '', origin: '', kind: '' }}
+        state={key.data ?? NOTHING_READ}
         answered={key.isSuccess}
         failed={key.error}
         binding={binding}
@@ -215,6 +215,16 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
       </p>
     </>
   )
+}
+
+/** What a row that has not been answered renders from. */
+const NOTHING_READ: AssistantKeyState = {
+  present: false,
+  fingerprint: '',
+  origin: '',
+  kind: '',
+  configuredOrigin: '',
+  bound: false
 }
 
 /**
@@ -266,9 +276,12 @@ function KeyControl({
   }
   const wanted = binding === 'none' || binding === 'rebind'
   const entry = wanted || (binding === 'bound' && replacing)
-  const destination = endpoint === null ? undefined : endpointOrigin(endpoint.url)
-  const label =
-    destination === undefined ? 'Key' : `Key for ${destination}`
+  // **The desk's own origin for the configured endpoint**, never one this
+  // page computed: the browser and Go disagree about an explicit default port,
+  // and a label that named a destination the chassis would not present to
+  // would be this page inventing the very fact the row exists to report.
+  const destination = state.configuredOrigin === '' ? undefined : state.configuredOrigin
+  const label = destination === undefined ? 'Key' : `Key for ${destination}`
 
   return (
     <>

@@ -537,12 +537,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the key is logged beside the event" "$A" \
     '	s.log.Printf("desk: the assistant key was stored on this machine for %s", origin)' \
     '	s.log.Printf("desk: the assistant key %s was stored on this machine for %s", key, origin)'
-  # **Repaired**: the answer is built by `keyState` now that it carries the
-  # binding too. The mutation is the same defect — the value where the
-  # fingerprint belongs.
+  # **Repaired twice**: the answer is built by `keyState`, which now carries
+  # the binding *and this desk's verdict about it* — so gofmt aligned the
+  # literal and the needle moved with it. The mutation is the same defect it
+  # always was: the value where the fingerprint belongs.
   mutate go "the key is answered to the page instead of its fingerprint" "$A" \
-    '		Fingerprint: fingerprint(stored.key),' \
-    '		Fingerprint: stored.key,'
+    'Fingerprint:      fingerprint(stored.key),' \
+    'Fingerprint:      stored.key,'
   # Four and four discloses a short key in full. Eight and not one: at one,
   # `runes[:4]` on a shorter key panics, and a mutation that crashes the suite
   # has not been survived — it has not been tested.
@@ -3804,6 +3805,16 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   ED=web/src/assistant/endpointDraft.ts
   EF=web/src/assistant/EndpointForm.tsx
   MF=web/src/assistant/ModelField.tsx
+  KB=web/src/assistant/keyBinding.ts
+
+  # **The page must not compute the binding**, and it did: with the browser's
+  # `URL`, which drops an explicit `:443` where Go's `url.Parse` keeps it. A
+  # key stored for a host and a configuration naming the same host with its
+  # default port written out showed as bound here while the relay answered
+  # `assistant-key-unbound` and sent nothing. The verdict is the desk's.
+  mutate web "the page decides the binding for itself again" "$KB"     '  return key.bound ? '"'"'bound'"'"' : '"'"'rebind'"'"''     '  return key.origin === key.configuredOrigin && key.kind === endpoint.kind
+    ? '"'"'bound'"'"'
+    : '"'"'rebind'"'"''
 
   # **A draft is page state, and a spread writes whatever it is carrying** into
   # the one file on this machine that names where a credential is presented.

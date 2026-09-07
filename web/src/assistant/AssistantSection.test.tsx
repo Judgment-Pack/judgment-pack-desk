@@ -34,15 +34,42 @@ const ENDPOINT = {
   tools: ['get_schema', 'validate']
 }
 
-/** The binding a key stored for `ENDPOINT` would carry. */
+/**
+ * The answer a desk with a key stored for `ENDPOINT` gives.
+ *
+ * **`bound` and `configuredOrigin` are the chassis' own**, so these fixtures
+ * state them rather than deriving them: the page no longer computes either,
+ * and a fixture that computed them would be testing the arithmetic this change
+ * removed. The Go side exercises both spellings of a default port in
+ * `TestKeyReadCarriesThisDesksOwnBindingVerdict`.
+ */
 const BOUND = {
   present: true,
   fingerprint: 'sk-a…wxyz',
   origin: 'https://api.example.invalid',
-  kind: 'openai-compatible'
+  kind: 'openai-compatible',
+  configuredOrigin: 'https://api.example.invalid',
+  bound: true
 }
 
-const NO_KEY = { present: false, fingerprint: '', origin: '', kind: '' }
+/** The same key, and a desk configured for somewhere it may not go. */
+const ELSEWHERE = {
+  ...BOUND,
+  origin: 'https://first.example.invalid',
+  bound: false
+}
+
+const NO_KEY = {
+  present: false,
+  fingerprint: '',
+  origin: '',
+  kind: '',
+  configuredOrigin: 'https://api.example.invalid',
+  bound: false
+}
+
+/** No endpoint configured: the desk has no origin to name. */
+const NO_ENDPOINT = { ...NO_KEY, configuredOrigin: '' }
 
 /** One effective configuration whose desk-level file carries an endpoint. */
 function configured(endpoint: unknown = ENDPOINT): EffectiveConfig {
@@ -69,7 +96,14 @@ function unconfigured(): EffectiveConfig {
 
 /** Every request the page made, and a scripted answer for each route. */
 function stubChassis(answers: {
-  key?: { present: boolean; fingerprint: string; origin: string; kind: string }
+  key?: {
+    present: boolean
+    fingerprint: string
+    origin: string
+    kind: string
+    configuredOrigin: string
+    bound: boolean
+  }
   keyStatus?: number
   keyError?: { error: string; code: string }
   probe?: unknown
@@ -485,7 +519,7 @@ describe('the key row and the endpoint it is bound to', () => {
   it('asks for an endpoint to be saved before it offers the field', async () => {
     // Storing a key requires an endpoint to bind it to. A field here would be
     // an affordance whose only outcome is a refusal.
-    stubChassis({ key: NO_KEY })
+    stubChassis({ key: NO_ENDPOINT })
     const { container } = renderSection()
     await screen.findByText('none stored on this machine')
     expect(screen.getByText(/Save an endpoint above before storing a key/)).toBeTruthy()
@@ -514,7 +548,7 @@ describe('the key row and the endpoint it is bound to', () => {
   it('names both hosts where the stored key was entered for another one', async () => {
     // Both halves, because a reader has to be able to see which of the two
     // moved — the endpoint they just saved, or a key entered for elsewhere.
-    stubChassis({ key: { ...BOUND, origin: 'https://first.example.invalid' } })
+    stubChassis({ key: ELSEWHERE })
     const { container } = renderSection(configured())
     expect(await screen.findByText(/will not be presented and nothing will be sent/)).toBeTruthy()
     expect(screen.getByText('https://first.example.invalid')).toBeTruthy()
@@ -522,8 +556,12 @@ describe('the key row and the endpoint it is bound to', () => {
     expect(keyField(container)).not.toBeNull()
   })
 
-  it('reads the binding off the kind as well as the host', async () => {
-    stubChassis({ key: { ...BOUND, kind: 'anthropic' } })
+  it('reads the binding off the desk s verdict and computes none of its own', async () => {
+    // The origin and the kind here are exactly the configured endpoint's, so
+    // any comparison this page could write would say "bound". The desk says
+    // otherwise — which is the case the browser's own URL folding could never
+    // have produced — and the row reports what it was told.
+    stubChassis({ key: { ...BOUND, bound: false } })
     renderSection(configured())
     expect(await screen.findByText(/will not be presented and nothing will be sent/)).toBeTruthy()
   })

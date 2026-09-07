@@ -2643,6 +2643,18 @@ to — and, where the two disagree, names *both* destinations so a reader can se
 which of the pair moved. Neither half is a secret: both are in the file the
 page already reads.
 
+**The verdict is this desk's, and the page computes none of its own.**
+`GET /api/assistant/key` answers `configuredOrigin` — the origin of the
+endpoint the file names now, as *this* desk computes it — and `bound`, which is
+the relay's own predicate rather than a second reading of it. The page tried to
+work it out and got it wrong in a way nothing on the page could have caught:
+the browser's `URL` drops an explicit `:443` where Go's `url.Parse` keeps it, so
+a key stored for a host and a configuration naming the same host with its
+default port written out read as *stored and bound* while the relay answered
+`assistant-key-unbound` and sent nothing. **Two implementations of one rule is
+one too many, and the one that decides has to be the one that presents the
+credential.**
+
 `XDG_CONFIG_HOME` is honoured where it is set to an absolute path; a relative
 one is ignored, as the specification says. The write is staged in the same
 directory and renamed over the target, so a reader during a replace sees the

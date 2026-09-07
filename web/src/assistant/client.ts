@@ -44,6 +44,22 @@ export interface AssistantKeyState {
    */
   origin: string
   kind: string
+  /**
+   * The origin of the endpoint this desk is configured for **now**, and this
+   * desk's own verdict about whether the stored key would be presented to it.
+   *
+   * **Computed by the chassis, never by this page**, and the reason is a
+   * measured disagreement rather than a preference: the browser's `URL` drops
+   * an explicit `:443` where Go's `url.Parse` keeps it, so a key stored for a
+   * host and a configuration naming the same host with its default port
+   * written out read as bound here while the relay answered
+   * `assistant-key-unbound` and sent nothing. Two implementations of one rule
+   * is one too many, and the one that decides has to be the one that presents
+   * the credential. `configuredOrigin` is empty where no endpoint is
+   * configured or the configured URL has no origin to take.
+   */
+  configuredOrigin: string
+  bound: boolean
 }
 
 /**
