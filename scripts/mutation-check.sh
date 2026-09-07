@@ -3880,12 +3880,13 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the listing is offered while the form says another endpoint" "$MF" \
     '        <Button onClick={ask} disabled={!bound || !matchesSaved || asking}>' \
     '        <Button onClick={ask} disabled={!bound || asking}>'
-  # And the other half of it: what is asked about is the endpoint in the file.
-  mutate web "the listing asks about the endpoint being typed" "$MF" \
-    '    const target = saved
-    if (target === null) return' \
-    '    const target = draft as unknown as AssistantEndpointConfig
-    if (target === null) return'
+  # **Retired, with its reason.** It replaced the captured `saved` endpoint
+  # with the draft, and nothing failed — because the row above makes the two
+  # *equal* whenever the button can be pressed at all. The capture is still
+  # the clearer expression of "ask the endpoint in the file", and it is the
+  # second line of the same defence; what actually holds it is the gate, which
+  # has its own row. A row that cannot discriminate is worse than no row: it
+  # reports coverage for a safeguard nothing is measuring.
   # A picker left standing after the endpoint moved is a list of models from
   # somewhere else, offered against a form that no longer says that host.
   mutate web "the rows outlive the endpoint they came from" "$MF" \
@@ -3908,8 +3909,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '    if (modelIdProblem(raw) !== undefined) continue' \
     "    if (typeof raw !== 'string' || raw === '') continue"
   mutate web "a listed Gemini id is offered without asking the decoder" "$ML" \
-    '      if (modelIdProblem(id) !== undefined) continue' \
-    "      if (id === '') continue"
+    '      if (modelIdProblem(raw) !== undefined) continue' \
+    "      if (raw === '') continue"
   # The id is what the endpoint answers to; the label is what a person reads,
   # and the two differ on two of the three protocols.
   mutate web "the model is saved from the listing label rather than its id" "$MF" \

@@ -178,8 +178,15 @@ export function modelRows(kind: EndpointKind, body: unknown): ModelRow[] {
       ) {
         continue
       }
-      const id = (name.startsWith('models/') ? name.slice('models/'.length) : name).trim()
-      if (modelIdProblem(id) !== undefined) continue
+      // **The rule decides, and the trim only normalises what it accepted.**
+      // Trimming first would have made the rule unobservable on this branch —
+      // `models/   ` reduces to the empty string, which any test for
+      // emptiness also rejects — so the check would have been carried by the
+      // trim while appearing to be carried by the shared rule. A mutation
+      // check said so before a reader could.
+      const raw = name.startsWith('models/') ? name.slice('models/'.length) : name
+      if (modelIdProblem(raw) !== undefined) continue
+      const id = raw.trim()
       rows.push({ id, label: typeof displayName === 'string' && displayName !== '' ? displayName : id })
     }
     return rows

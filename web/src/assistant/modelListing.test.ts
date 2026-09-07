@@ -164,6 +164,13 @@ describe('what the listing makes of an answer', () => {
   })
 
   it('offers the id trimmed, because that is what would be saved', () => {
+    expect(
+      modelRows('gemini', {
+        models: [
+          { name: 'models/  a-model  ', supportedGenerationMethods: ['generateContent'] }
+        ]
+      })
+    ).toEqual([{ id: 'a-model', label: 'a-model' }])
     // A picker that showed one string and wrote another is a picker whose
     //choice cannot be checked against the file afterwards.
     expect(modelRows('openai-compatible', { data: [{ id: '  a-model  ' }] })).toEqual([
