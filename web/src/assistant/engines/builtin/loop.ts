@@ -429,6 +429,13 @@ async function* refute(options: {
  * the failure it already was, reported unchanged.
  */
 function schemaRefusal(cause: ModelHttpError, session: AssistantSession): Error | null {
+  // **Only on the family whose wire takes a schema subset.** The classifier
+  // matches a substring, so on the other two families a 400 saying "unsupported
+  // response type" names `type`, which this desk certainly sent — and the real
+  // failure was being rewritten into a sentence about a Gemini removal list
+  // that has nothing to do with it. A rule about one wire's dialect belongs to
+  // that wire.
+  if (session.model.family !== 'gemini') return null
   const keyword = refusedSchemaKeyword(
     cause.status,
     cause.endpointMessage,

@@ -58,7 +58,9 @@ import {
   keywordsLost,
   keywordsNotShown,
   keywordsSent,
-  schemaShown
+  SDK_DROPS_EMPTY_SIGNED_THOUGHTS,
+  schemaShown,
+  shownWithoutParameters
 } from '../geminiSchema'
 import { servedSchemaFor } from '../engines/contract'
 import type { EndpointKind, ThinkingTier } from '../../config/deskConfig'
@@ -635,7 +637,7 @@ async function runLeg(
     mode?: ThinkingMode
     refuted?: boolean
     /** Where this endpoint puts its signatures. Defaults to the summary. */
-    signatures?: 'thought' | 'call' | 'parallel'
+    signatures?: 'thought' | 'call' | 'parallel' | 'empty'
     /** The tools this desk's file granted. Defaults to the five. */
     allowed?: readonly string[]
     /** One tool set in place of the runtime's five, for a schema probe. */
@@ -778,6 +780,86 @@ const WIRE_MEMBERS: Record<Leg['api'], string[]> = {
   // the conversation, the settings object, the system instruction and the
   // declarations.
   gemini: ['contents', 'generationConfig', 'systemInstruction', 'tools']
+}
+
+/**
+ * The one recorded tool whose schema declares an object with no properties.
+ *
+ * **Derived rather than named**, so the leg below is about the shape and not
+ * about a tool somebody remembered: it is the tool the SDK-backed engine
+ * declares with no `parameters` at all.
+ */
+const NO_PARAMETER_TOOL = RECORDED_TOOLS.find((tool) =>
+  shownWithoutParameters('vercel', 'gemini', servedSchemaFor('gemini', tool))
+)!.name
+
+/**
+ * Every schema keyword the **recorded runtime 0.19.0** emits, computed here.
+ *
+ * Two sources, both inside `runtime.json` and both recorded by the same
+ * recorder against the same binary: the `inputSchema` of each of the five tools
+ * it served, and the pack schema its own `get_schema` answered — which the
+ * fixture carries with its byte count, its sha256, its spec version and its
+ * provenance beside it.
+ *
+ * **This is the vocabulary the desk's claim about the SDK is measured over**, and
+ * it is computed rather than written down so that a runtime whose schemas grow a
+ * keyword makes the fixture below fail rather than quietly leaving the claim
+ * narrower than the truth.
+ */
+const RUNTIME_VOCABULARY: string[] = (() => {
+  const found = new Set<string>()
+  for (const tool of RECORDED_TOOLS) keywordsSent(tool.inputSchema, found)
+  const answered = runtime.calls.find((call) => call.tool === 'get_schema')!.result as {
+    content: { text: string }[]
+  }
+  keywordsSent(JSON.parse(answered.content[0]!.text), found)
+  return [...found].sort()
+})()
+
+/**
+ * One tool whose schema carries **exactly** that vocabulary and nothing else.
+ *
+ * Held to it, both ways, by the leg below. Every keyword the recorded runtime
+ * can put in front of a model appears here once, so the derivation over it is a
+ * statement about the schemas this desk actually serves rather than about a
+ * schema somebody invented — which is what the first version of it was, and why
+ * the README's claim was wider than its evidence.
+ *
+ * **Two of these are a rewrite rather than a removal**, and the derivation reads
+ * them as removals because that is what a *keyword* view sees: the provider
+ * inlines a `$ref` and drops the `$defs` it came from, so the constraint
+ * survives and the two keywords do not. Deep equality therefore runs over the
+ * runtime's own five, which carry no reference, and over this fixture only for
+ * the engine that rewrites nothing. The README says so.
+ */
+const VOCABULARY: McpTool = {
+  name: RECORDED_TOOLS[0]!.name,
+  description: 'the recorded runtime’s own schema vocabulary',
+  inputSchema: {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'urn:judgment-pack-desk:conformance:vocabulary',
+    $comment: 'every keyword the recorded runtime 0.19.0 emits',
+    title: 'Vocabulary',
+    description: 'the recorded runtime’s own schema vocabulary',
+    type: 'object',
+    additionalProperties: false,
+    required: ['a'],
+    $defs: { named: { type: 'string', minLength: 1 } },
+    properties: {
+      a: { type: 'string', pattern: '^[a-z]+$', minLength: 1, format: 'uri' },
+      b: { $ref: '#/$defs/named' },
+      c: { type: 'array', items: { type: 'string' }, minItems: 1, uniqueItems: true },
+      d: { type: 'object', propertyNames: { type: 'string' } },
+      e: { type: 'string', enum: ['x', 'y'] },
+      f: { anyOf: [{ type: 'string' }, { type: 'number' }] },
+      g: { allOf: [{ type: 'object' }] },
+      h: { oneOf: [{ type: 'string' }, { type: 'number' }] },
+      i: { not: { type: 'string' } },
+      j: { type: 'string', const: 'x' },
+      k: { if: { type: 'string' }, then: { minLength: 1 } }
+    }
+  }
 }
 
 const toolCalls = (events: AssistantEvent[]) =>
@@ -1000,15 +1082,17 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
 
     it('emits the event stream the ADR names, in order, ending once', async () => {
       const { events } = await runLeg(fromRegistry(engineId), leg)
-      // **On the one family whose schema dialect cannot carry what the runtime
-      // served, the run opens by saying so** — one line per tool that lost
-      // something, before the model is asked anything. Every one of the
-      // runtime's five declares `additionalProperties: false`, so on `gemini`
-      // that is five lines; on the other two families it is none.
+      // **A notice is a loss the README does not already declare**, so over the
+      // runtime's own five there are none on `builtin` — its removals *are* the
+      // desk's ruling — and exactly one on `vercel`, for the tool whose schema
+      // that provider drops whole. Anything else would be the desk warning
+      // about its own rule, five times a run.
       const narrowing = guardrails(events)
         .filter((event) => event.action === 'narrowed')
         .map((event) => event.tool)
-      expect(narrowing).toEqual(leg.api === 'gemini' ? [...FIVE] : [])
+      expect(narrowing).toEqual(
+        leg.api === 'gemini' && engineId === 'vercel' ? [NO_PARAMETER_TOOL] : []
+      )
       expect(events.map((event) => event.type)).toEqual([
         ...narrowing.map(() => 'guardrail' as const),
         'tool_call', // T1 get_schema
@@ -1356,61 +1440,20 @@ describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
       expect(events.some((event) => event.type === 'error')).toBe(false)
     })
 
-    /**
-     * A tool whose schema carries every keyword the runtime could realistically
-     * emit, so the derivation below has something to derive from.
-     *
-     * Deliberately without `$ref` and without a nullable type union: the SDK's
-     * converter **rewrites** those rather than removing them — it inlines a
-     * reference and turns `["string","null"]` into an `anyOf` beside
-     * `nullable` — and a probe carrying them would be measuring a rewrite with a
-     * rule about removals. What this desk states, and what this measures, is
-     * which keywords are *dropped*. That limit is in the README.
-     */
-    const PROBE: McpTool = {
-      name: RECORDED_TOOLS[0]!.name,
-      description: 'every keyword the runtime could emit',
-      inputSchema: {
-        type: 'object',
-        title: 'Probe',
-        description: 'the probe',
-        default: {},
-        required: ['a'],
-        properties: {
-          a: { type: 'string', pattern: '^[a-z]+$', minLength: 1, maxLength: 9, format: 'uri' },
-          b: { type: 'integer', minimum: 1, maximum: 9, exclusiveMinimum: 0, exclusiveMaximum: 10, multipleOf: 2 },
-          c: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 3, uniqueItems: true, prefixItems: [{ type: 'string' }], contains: { type: 'string' } },
-          d: { type: 'object', propertyNames: { type: 'string' }, dependentRequired: { a: ['b'] }, additionalProperties: false },
-          // Typed, deliberately: a bare `enum` is one of the SDK's **rewrites**
-          // — it infers and adds a `type` — and a probe carrying one would be
-          // measuring a rewrite with a rule about removals.
-          e: { type: 'string', enum: ['x', 'y'] },
-          f: { anyOf: [{ type: 'string' }, { type: 'number' }] },
-          g: { allOf: [{ type: 'object' }] },
-          h: { oneOf: [{ type: 'string' }, { type: 'number' }] },
-          i: { not: { type: 'string' } },
-          j: { type: 'string', readOnly: true, writeOnly: false, deprecated: true, nullable: true },
-          k: { if: { type: 'string' }, then: { minLength: 1 }, else: { type: 'number' } },
-          l: { type: 'string', examples: ['x'], const: 'x', $comment: 'c' }
-        },
-        additionalProperties: false,
-        $schema: 'https://json-schema.org/draft/2020-12/schema',
-        $id: 'urn:probe'
-      }
-    }
-
     it.each(legs)('has the desk’s statement about what it removes derived from the wire ($answerAs)', async (leg) => {
-      // **(a) of the ruling: the declaration is held to the installed
-      // version.** The set is not copied out of the provider's source and left
-      // to rot — it is derived from what this engine actually put on the wire
-      // for a schema carrying every keyword, and asserted equal to what the
-      // desk declares. An SDK that starts or stops dropping one is a red test.
-      const { requests } = await runLeg(fromRegistry(engineId), leg, { tools: [PROBE] })
+      // **(a) of the ruling: the declaration is held to the installed version,
+      // over a vocabulary that is the runtime's own.** The set is not copied out
+      // of the provider's source and left to rot, and it is no longer derived
+      // from a toy schema somebody made up: `VOCABULARY` carries exactly the
+      // keywords the recorded runtime 0.19.0 emits — a claim `RUNTIME_VOCABULARY`
+      // holds by computing both unions — and what this leg reads back is what
+      // the installed provider actually did with them.
+      const { requests } = await runLeg(fromRegistry(engineId), leg, { tools: [VOCABULARY] })
       expect(requests.length).toBeGreaterThan(0)
       // `desk` is the schema after the desk's own six are gone, so anything
       // still missing from the wire is the **engine's** removal and nothing
       // else. That is what is derived and what is compared.
-      const desk = servedSchemaFor(leg.api, PROBE)
+      const desk = servedSchemaFor(leg.api, VOCABULARY)
       const carried = keywordsSent(requests[0]!.schemas[0])
       const derived = [...keywordsSent(desk)].filter((keyword) => !carried.has(keyword)).sort()
       const declared = keywordsNotShown(engineId, leg.api)
@@ -1418,25 +1461,94 @@ describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
         .sort()
       expect(derived, `${engineId} removes a set this desk does not declare`).toEqual(declared)
       // The built-in engine sends the desk's own result untouched, so its
-      // derived set is empty and the row still means something: it is the
-      // control that says the probe would have caught a removal.
-      if (engineId === 'builtin') expect(derived).toEqual([])
-      else expect(derived.length).toBeGreaterThan(10)
-      // …and deep equality over the probe as well as over the runtime's five.
-      expect(requests[0]!.schemas[0]).toEqual(schemaShown(engineId, leg.api, desk))
+      // derived set is empty — which is the control that says this leg would
+      // have caught a removal rather than passing because nothing was measured.
+      if (engineId === 'builtin') {
+        expect(derived).toEqual([])
+        // …and for it alone, deep equality over the vocabulary too: it removes
+        // nothing, so the schema on the wire is the desk's own byte for byte.
+        expect(requests[0]!.schemas[0]).toEqual(desk)
+      } else {
+        expect(derived.length).toBeGreaterThan(5)
+      }
+    })
+
+    it('carries exactly the recorded runtime’s own schema vocabulary', () => {
+      // **The provenance lock.** A fixture whose vocabulary somebody chose is a
+      // fixture that measures whatever they happened to think of; this one is
+      // pinned to the union of the keywords the recorded runtime 0.19.0 emits —
+      // in the five `tools/list` schemas it served, and in the pack schema its
+      // own `get_schema` answered, which is in this fixture with its bytes,
+      // sha256 and provenance beside it. Equality both ways: a keyword the
+      // runtime gains and the fixture lacks is a red test, and so is one the
+      // fixture carries that the runtime does not emit.
+      expect([...keywordsSent(VOCABULARY.inputSchema)].sort()).toEqual(RUNTIME_VOCABULARY)
+      // And the pack schema really is the recorded runtime's, not a copy.
+      const answered = runtime.calls.find((call) => call.tool === 'get_schema')!.result as {
+        structuredContent: { sha256: string; bytes: number; specVersion: string; provenance: string }
+        content: { text: string }[]
+      }
+      expect(answered.structuredContent.sha256).toMatch(/^[0-9a-f]{64}$/)
+      expect(answered.structuredContent.bytes).toBe(answered.content[0]!.text.length)
+      expect(answered.structuredContent.specVersion).toBeTruthy()
+      expect(answered.structuredContent.provenance).toBeTruthy()
+    })
+
+    it.each(legs)('says nothing about the removals the README already declares ($answerAs)', async (leg) => {
+      // **A notice is a loss beyond the ruling, never the ruling itself.** All
+      // five recorded tools declare `additionalProperties: false`, and the desk
+      // removes it by its own documented list — so a notice about it would be
+      // the desk warning about the thing it wrote down, five times a run.
+      const { events } = await runLeg(fromRegistry(engineId), leg)
+      const narrowed = guardrails(events).filter((event) => event.action === 'narrowed')
+      for (const notice of narrowed) {
+        for (const keyword of GEMINI_SCHEMA_REMOVALS) {
+          expect(notice.detail, `${notice.tool} was warned about ${keyword}`).not.toContain(keyword)
+        }
+      }
+      if (engineId === 'builtin') {
+        // Its removals **are** the desk's ruling, so there is nothing left to
+        // report over the runtime's own five.
+        expect(narrowed).toEqual([])
+        for (const tool of RECORDED_TOOLS) {
+          expect(keywordsLost(engineId, leg.api, tool.inputSchema), tool.name).toEqual([])
+        }
+      } else {
+        // Exactly the one tool whose schema this provider drops whole. Every
+        // other recorded tool loses nothing beyond the desk's own list — and
+        // the one that does is reported by the sentence for *that* loss rather
+        // than as a list of the keywords its vanished schema happened to
+        // contain.
+        expect(narrowed.map((notice) => notice.tool)).toEqual([NO_PARAMETER_TOOL])
+        expect(narrowed[0]!.detail).toContain('no parameters at all')
+        for (const tool of RECORDED_TOOLS) {
+          if (tool.name === NO_PARAMETER_TOOL) continue
+          expect(keywordsLost(engineId, leg.api, tool.inputSchema), tool.name).toEqual([])
+        }
+      }
     })
 
     it.each(legs)('tells the author which keywords the model is not shown ($answerAs)', async (leg) => {
       // **(d) of the ruling: never silent.** One line per tool that actually
-      // lost something, before the model is asked anything, naming the tool and
-      // the keywords.
-      const { events } = await runLeg(fromRegistry(engineId), leg, { tools: [PROBE] })
+      // lost something *beyond the desk's own list*, before the model is asked
+      // anything, naming the tool and the keywords.
+      const { events } = await runLeg(fromRegistry(engineId), leg, { tools: [VOCABULARY] })
       const narrowed = guardrails(events).filter((event) => event.action === 'narrowed')
+      const lost = keywordsLost(engineId, leg.api, VOCABULARY.inputSchema)
+      if (engineId === 'builtin') {
+        // Nothing beyond the ruling, so nothing said — and the leg still means
+        // something, because it is the control for the branch below.
+        expect(lost).toEqual([])
+        expect(narrowed).toEqual([])
+        return
+      }
       expect(narrowed).toHaveLength(1)
-      expect(narrowed[0]!.tool).toBe(PROBE.name)
-      const lost = keywordsLost(engineId, leg.api, PROBE.inputSchema)
+      expect(narrowed[0]!.tool).toBe(VOCABULARY.name)
       expect(lost.length).toBeGreaterThan(0)
       for (const keyword of lost) expect(narrowed[0]!.detail).toContain(keyword)
+      for (const keyword of GEMINI_SCHEMA_REMOVALS) {
+        expect(narrowed[0]!.detail).not.toContain(keyword)
+      }
       expect(narrowed[0]!.detail).toContain('the runtime actually enforces')
       // It comes first, before anything the model was asked.
       expect(events.map((event) => event.type).indexOf('guardrail')).toBe(0)
@@ -1561,6 +1673,92 @@ describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
         expect(events.some((event) => event.type === 'error')).toBe(false)
       }
     )
+
+    it.each(legs)('replays two empty signed thought parts exactly as they arrived ($answerAs)', async (leg) => {
+      // **The shape with nothing to read in it.** The wire emits a signed
+      // thought with no summary when the summary was not streamed, and there is
+      // no passage to show and no text to compare — the signature is the whole
+      // of the evidence. So this leg compares the **complete** model turn: the
+      // parts the endpoint sent are the parts that came back, in order, with
+      // the same members, on both engines and both answer shapes.
+      const { events, requests } = await runLeg(fromRegistry(engineId), leg, {
+        tier: 'on',
+        mode: 'on',
+        signatures: 'empty'
+      })
+      const replayed = requests.filter((request) => request.modelParts.length > 0)
+      expect(replayed.length).toBeGreaterThan(0)
+      const first = replayed[0]!.modelParts[0]!
+      const signature = thinkSignature({ id: 'T1' })
+
+      if (engineId === 'vercel') {
+        // **The engines differ here, and the difference is declared rather than
+        // discovered.** `@ai-sdk/google@4.0.64` surfaces a thought part only
+        // when its text is non-empty, so an empty signed one never reaches the
+        // desk: it cannot be ledgered, cannot be replayed, and the endpoint —
+        // enforcing the wire's own rule that signed parts come back — refuses
+        // the continuation. Measured, and asserted so that the day the provider
+        // starts carrying them this leg goes red and the declaration is
+        // revisited.
+        expect(SDK_DROPS_EMPTY_SIGNED_THOUGHTS).toBe(true)
+        expect(first.some((part) => (part as { thought?: unknown }).thought === true)).toBe(false)
+        const failures = events.filter(
+          (event): event is Extract<AssistantEvent, { type: 'error' }> => event.type === 'error'
+        )
+        expect(failures).toHaveLength(1)
+        expect(failures[0]!.message).toContain('400')
+        return
+      }
+
+      // Two of them, each with its own signature, each with no text at all —
+      // not joined, not dropped, not reordered.
+      expect(first.slice(0, 2)).toEqual([
+        { text: '', thought: true, thoughtSignature: signature },
+        { text: '', thought: true, thoughtSignature: `${signature}.2` }
+      ])
+      // …and the endpoint accepted every continuation, which is the same claim
+      // read from the other side.
+      for (const request of replayed) {
+        expect(request.signaturesMissing, `${request.step} dropped a signature`).toEqual([])
+        expect(request.signaturesTruncated, `${request.step} truncated a signature`).toEqual([])
+        expect(request.signaturesMalformed, `${request.step} misplaced a signature`).toEqual([])
+      }
+      expect(proposals(events)).toHaveLength(1)
+      expect(events.some((event) => event.type === 'error')).toBe(false)
+      // Nothing was shown as a passage, because there was nothing to read.
+      expect(reasoningEvents(events).filter((event) => event.text !== '')).toEqual([])
+    })
+
+    it.each(legs)('reaches "always thinks" from empty signed thoughts alone ($answerAs)', async (leg) => {
+      // The tier asked for none; the endpoint reasoned anyway and said so with a
+      // signature rather than with a summary. Two answering turns, and only
+      // after the second.
+      const { events } = await runLeg(fromRegistry(engineId), leg, {
+        tier: 'off',
+        mode: 'always',
+        signatures: 'empty'
+      })
+      if (engineId === 'vercel') {
+        // **The other half of the declared difference.** The desk is never told
+        // an empty signed thought arrived, so it cannot infer anything from
+        // one. Asserted rather than skipped, so the day the provider starts
+        // surfacing them this row goes red with the one above it.
+        expect(SDK_DROPS_EMPTY_SIGNED_THOUGHTS).toBe(true)
+        expect(notices(events)).toEqual([])
+        expect(stateFromEvents('off', events)).toBe('off')
+        // The session still completes: nothing was asked for, so nothing was
+        // refused.
+        expect(proposals(events)).toHaveLength(1)
+        expect(events.some((event) => event.type === 'error')).toBe(false)
+        return
+      }
+      expect(notices(events)).toHaveLength(1)
+      expect(notices(events)[0]!.detail).toContain('this model always thinks')
+      expect(notices(events)[0]!.detail).toContain(ALWAYS_FROM_ABSENCE)
+      expect(stateFromEvents('off', events)).toBe('always')
+      expect(proposals(events)).toHaveLength(1)
+      expect(events.some((event) => event.type === 'error')).toBe(false)
+    })
 
     it.each(legs)('reports "always thinks" from two turns of unasked-for reasoning ($answerAs)', async (leg) => {
       // **The `always` state's first real subject**, and the road to it by

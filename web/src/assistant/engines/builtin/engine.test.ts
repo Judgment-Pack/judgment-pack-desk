@@ -1736,3 +1736,67 @@ describe('a signed Gemini part is never merged with anything', () => {
     expect(events.filter((event) => event.type === 'reasoning')).toEqual([])
   })
 })
+
+describe('a schema refusal is one wire’s business, and only that wire’s', () => {
+  /** One endpoint that answers 400 with a body naming an ordinary keyword. */
+  const refusing = (body: unknown): ModelCall => async () =>
+    new Response(JSON.stringify(body), {
+      status: 400,
+      headers: { 'content-type': 'application/json' }
+    })
+
+  /** A tool whose schema actually carries the keyword the refusals name. */
+  const DECLARED: McpTool[] = [
+    {
+      name: 'validate',
+      description: 'check a document',
+      inputSchema: { type: 'object', properties: { document: { type: 'string' } } }
+    }
+  ]
+
+  const failure = async (
+    family: 'openai-compatible' | 'anthropic' | 'gemini',
+    body: unknown
+  ): Promise<string> => {
+    const events = await drain(
+      builtin.start({
+        ...session(),
+        tools: DECLARED,
+        model: { family, model: 'a-model', call: refusing(body) },
+        thinking: normalize('off', family)
+      })
+    )
+    const errors = events.filter(
+      (event): event is Extract<AssistantEvent, { type: 'error' }> => event.type === 'error'
+    )
+    expect(errors).toHaveLength(1)
+    return errors[0]!.message
+  }
+
+  it.each([
+    ['openai-compatible' as const, 'Unsupported response type: json_object'],
+    ['openai-compatible' as const, 'Invalid properties in the request'],
+    ['anthropic' as const, 'unsupported type for the messages field'],
+    ['anthropic' as const, 'properties is not permitted here']
+  ])('leaves a %s 400 naming an ordinary keyword exactly as it was', async (family, message) => {
+    // **The classifier matches a substring, so it had to be told which wire it
+    // is for.** Installed on every family, a 400 saying "unsupported response
+    // type" names `type` — which this desk certainly sent — and the real
+    // failure was rewritten into a sentence about a Gemini removal list that
+    // has nothing to do with it, hiding what actually went wrong.
+    const said = await failure(family, { error: { message } })
+    expect(said).toContain(message)
+    expect(said).not.toContain('removal list')
+    expect(said).not.toContain('OpenAPI')
+  })
+
+  it('classifies the same refusal on the wire that has a schema subset', async () => {
+    // The control: on `gemini` the same prose is about the schema, and is
+    // reported as the desk's own sentence naming the keyword.
+    const said = await failure('gemini', {
+      error: { code: 400, message: 'Unknown name "properties" at parameters', status: 'INVALID_ARGUMENT' }
+    })
+    expect(said).toContain('"properties"')
+    expect(said).toContain('closed')
+  })
+})

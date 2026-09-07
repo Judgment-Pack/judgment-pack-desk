@@ -846,6 +846,12 @@ export function runVercel(
    * else is the failure it already was, reported unchanged.
    */
   const schemaRefusal = (cause: unknown): Error | null => {
+    // **Only on the family whose wire takes a schema subset.** See the built-in
+    // engine's own note: the classifier matches a substring, so on the other two
+    // families a 400 saying "unsupported response type" names `type` and the
+    // real failure was being rewritten into a sentence about a removal list that
+    // has nothing to do with it.
+    if (session.model.family !== 'gemini') return null
     const refusal = refusalOf(cause)
     if (refusal === null) return null
     const keyword = refusedSchemaKeyword(

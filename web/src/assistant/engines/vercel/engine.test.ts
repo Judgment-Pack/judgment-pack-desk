@@ -1958,3 +1958,54 @@ describe('the same signature rules, on the Gemini wire', () => {
     expect(sent.generationConfig).toEqual({ thinkingConfig: { thinkingBudget: 0 } })
   })
 })
+
+describe('a schema refusal is one wire’s business, on this engine too', () => {
+  const TOOLS_WITH_PROPERTIES: McpTool[] = [
+    {
+      name: 'validate',
+      description: 'check a document',
+      inputSchema: { type: 'object', properties: { document: { type: 'string' } } }
+    }
+  ]
+
+  const failure = async (
+    family: 'openai-compatible' | 'anthropic' | 'gemini',
+    message: string
+  ): Promise<string> => {
+    const call: ModelCall = async () =>
+      new Response(JSON.stringify({ error: { message, code: 400 } }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' }
+      })
+    const events = await drain(
+      vercel.start(
+        session(call, {
+          tools: TOOLS_WITH_PROPERTIES,
+          model: { family, model: 'a-model', call },
+          thinking: normalize('off', family)
+        })
+      )
+    )
+    const errors = events.filter(
+      (event): event is Extract<AssistantEvent, { type: 'error' }> => event.type === 'error'
+    )
+    expect(errors).toHaveLength(1)
+    return errors[0]!.message
+  }
+
+  it.each([
+    ['openai-compatible' as const, 'Unsupported response type: json_object'],
+    ['anthropic' as const, 'properties is not permitted here']
+  ])('leaves a %s 400 naming an ordinary keyword exactly as it was', async (family, message) => {
+    const said = await failure(family, message)
+    expect(said).toContain(message)
+    expect(said).not.toContain('removal list')
+    expect(said).not.toContain('OpenAPI')
+  })
+
+  it('classifies the same refusal on the wire that has a schema subset', async () => {
+    const said = await failure('gemini', 'Unknown name "properties" at parameters')
+    expect(said).toContain('"properties"')
+    expect(said).toContain('closed')
+  })
+})

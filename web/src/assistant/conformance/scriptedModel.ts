@@ -207,6 +207,17 @@ export interface RecordedRequest {
    * the desk says that engine shows.
    */
   schemas: unknown[]
+  /**
+   * Gemini only: every `role: "model"` turn this request carried back, whole.
+   *
+   * **What a leg needs to say "exactly as it arrived".** The signature lists
+   * answer three questions about signatures; this answers the one that
+   * subsumes them — whether the parts the endpoint sent are the parts that came
+   * back, in the same order, with the same text and the same members. A client
+   * that joined two parts, dropped an empty one or reordered a pair fails on
+   * this whatever its signatures look like.
+   */
+  modelParts: unknown[][]
 }
 
 /** One thinking parameter this endpoint recognises, with where it was found. */
@@ -466,13 +477,21 @@ function geminiCarried(
       if (typeof part?.thoughtSignature !== 'string' || part.thoughtSignature === '') continue
       const signature = part.thoughtSignature
       if (!carried.includes(signature)) carried.push(signature)
-      // The two parts a signature may ride on: a thought summary that still has
-      // its text, and a function call. Anywhere else — a bare text part, a
-      // thought part whose text the client lost — is a block this endpoint
-      // refuses the continuation over.
-      const onSummary = part.thought === true && typeof part.text === 'string' && part.text !== ''
+      // The two parts a signature may ride on: a **thought part**, whose text
+      // may legitimately be empty — the wire emits a signed thought with no
+      // summary when the summary was not streamed or there is none — and a
+      // **function call**. Anywhere else is a block this endpoint refuses the
+      // continuation over.
+      //
+      // **The `text !== ''` this used to require was wrong**, and it mattered:
+      // an endpoint that sends an empty signed thought would have had its own
+      // shape refused when the client replayed it faithfully. What catches a
+      // client that *lost* the text of a signed part is not this list — it is
+      // the legs that compare the whole of `contents[].parts[]` against what
+      // was sent, which is a stronger reading of the same rule.
+      const onThought = part.thought === true
       const onCall = part.functionCall !== undefined
-      if (!onSummary && !onCall) malformed.push(signature)
+      if (!onThought && !onCall) malformed.push(signature)
       const whole = emitted.find(
         (expected) =>
           expected !== signature &&
@@ -483,6 +502,13 @@ function geminiCarried(
     }
   }
   return { carried, truncated, malformed }
+}
+
+/** Every model turn in one `contents` list, whole and in order. */
+function geminiModelParts(contents: unknown[]): unknown[][] {
+  return (contents ?? [])
+    .filter((content) => (content as { role?: string }).role === 'model')
+    .map((content) => ((content as { parts?: unknown[] }).parts ?? []))
 }
 
 /** Each declaration's `parameters`, whole, in the order they were declared. */
@@ -615,24 +641,45 @@ function anthropicAnswer(step: ScenarioStep, reasoning: boolean) {
  * Shared by the whole and the streamed builders so the two cannot disagree
  * about where a signature sits — which is the property under test.
  */
+type SignatureTopology = 'thought' | 'call' | 'parallel' | 'empty'
+
 function geminiParts(
   step: ScenarioStep,
   reasoning: boolean,
   chatter: boolean,
-  topology: 'thought' | 'call' | 'parallel'
-): { summary: Record<string, unknown> | null; answer: Record<string, unknown>[] } {
+  topology: SignatureTopology
+): { summary: Record<string, unknown>[]; answer: Record<string, unknown>[] } {
   const signature = thinkSignature(step)
   const calls = step.kind === 'tool_call'
+  if (topology === 'empty') {
+    // Two of them, each signed, neither with a byte to read.
+    const summary = reasoning
+      ? [
+          { text: '', thought: true, thoughtSignature: signature },
+          { text: '', thought: true, thoughtSignature: `${signature}.2` }
+        ]
+      : []
+    const answer: Record<string, unknown>[] = []
+    if (chatter && calls) answer.push({ text: chatterText(step) })
+    answer.push(
+      calls
+        ? { functionCall: { name: step.tool, args: step.arguments ?? {} } }
+        : { text: step.text ?? '' }
+    )
+    return { summary, answer }
+  }
   // A final message has no call to sign, so the summary carries the signature
   // whatever the topology is: there is nowhere else for it to go.
   const onSummary = reasoning && (topology === 'thought' || !calls)
   const summary = reasoning
-    ? {
-        text: thinkText(step),
-        thought: true,
-        ...(onSummary ? { thoughtSignature: signature } : {})
-      }
-    : null
+    ? [
+        {
+          text: thinkText(step),
+          thought: true,
+          ...(onSummary ? { thoughtSignature: signature } : {})
+        }
+      ]
+    : []
   const answer: Record<string, unknown>[] = []
   if (chatter && calls) answer.push({ text: chatterText(step) })
   if (!calls) {
@@ -651,12 +698,10 @@ function geminiAnswer(
   step: ScenarioStep,
   reasoning: boolean,
   chatter: boolean,
-  topology: 'thought' | 'call' | 'parallel'
+  topology: SignatureTopology
 ) {
   const built = geminiParts(step, reasoning, chatter, topology)
-  const parts: unknown[] = []
-  if (built.summary !== null) parts.push(built.summary)
-  parts.push(...built.answer)
+  const parts: unknown[] = [...built.summary, ...built.answer]
   return {
     candidates: [
       {
@@ -693,7 +738,7 @@ function geminiStream(
   step: ScenarioStep,
   reasoning: boolean,
   chatter: boolean,
-  topology: 'thought' | 'call' | 'parallel'
+  topology: SignatureTopology
 ): string {
   const lines: string[] = []
   const frame = (parts: unknown[], last = false) =>
@@ -717,8 +762,14 @@ function geminiStream(
       })}\n\n`
     )
   const built = geminiParts(step, reasoning, chatter, topology)
-  if (built.summary !== null) {
-    const whole = String(built.summary.text ?? '')
+  for (const summary of built.summary) {
+    const whole = String(summary.text ?? '')
+    if (whole === '') {
+      // Nothing to split: an empty signed thought is one part on the wire and
+      // one part in the frame.
+      frame([summary])
+      continue
+    }
     const pieces = chunks(whole, 48)
     pieces.forEach((piece, at) => {
       const last = at === pieces.length - 1
@@ -730,8 +781,8 @@ function geminiStream(
           // summary at all: the signature belongs to the bytes it was computed
           // over, and a client that joined the pieces before it would carry it
           // back over text this endpoint never signed.
-          ...(last && built.summary!.thoughtSignature !== undefined
-            ? { thoughtSignature: built.summary!.thoughtSignature }
+          ...(last && summary.thoughtSignature !== undefined
+            ? { thoughtSignature: summary.thoughtSignature }
             : {})
         }
       ])
@@ -950,8 +1001,13 @@ export function scriptedModel(options: {
    *   call per sequential step.
    * - `parallel` — two calls in one turn, the **first** signed and the second
    *   not, which is the documented placement for parallel calls.
+   * - `empty` — two signed thought parts with **no text at all**, which the wire
+   *   emits when a summary was not streamed. There is nothing for a reader to
+   *   see and the signature is the only evidence the model reasoned, so this is
+   *   the shape the `always` inference and the exact replay are both measured
+   *   against.
    */
-  signatures?: 'thought' | 'call' | 'parallel'
+  signatures?: 'thought' | 'call' | 'parallel' | 'empty'
 }): ScriptedModel {
   const requests: RecordedRequest[] = []
   const state = { lastBase: undefined as number | undefined, repeats: 0 }
@@ -1066,7 +1122,8 @@ export function scriptedModel(options: {
       signaturesMalformed: carried.malformed,
       reasoningIn: options.api === 'openai-compatible' ? openAiCarried(messages) : [],
       schemaKeywords: options.api === 'gemini' ? geminiSchemaKeywords(body.tools ?? []) : [],
-      schemas: options.api === 'gemini' ? geminiSchemas(body.tools ?? []) : []
+      schemas: options.api === 'gemini' ? geminiSchemas(body.tools ?? []) : [],
+      modelParts: options.api === 'gemini' ? geminiModelParts(messages) : []
     })
 
     // **The schema subset, checked before anything is answered.** Gemini's

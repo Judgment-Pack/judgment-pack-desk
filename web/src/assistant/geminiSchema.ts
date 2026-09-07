@@ -73,14 +73,28 @@ export const GEMINI_SCHEMA_REMOVALS: readonly string[] = [
  * The desk cannot stop it: the conversion is inside the provider, below the one
  * seam this adapter has. What it can do is **say so** — here, in the README, and
  * to the author on the stream (`narrowingNotice`) — and hold the statement to
- * the version that is installed. This list is not written from the upstream
- * source: the conformance session **derives** it from what that engine actually
- * puts on the wire for a schema carrying every keyword the runtime can emit, and
- * fails if the two differ. An SDK that starts or stops dropping one is a red
- * test rather than a sentence that quietly stopped being true.
+ * the version that is installed.
+ *
+ * **What is held, and what is not.** The conformance session derives this set
+ * from what that engine actually puts on the wire, over a fixture whose keyword
+ * vocabulary is pinned to the **recorded runtime 0.19.0's own** — the schemas it
+ * served on `tools/list` and the pack schema its `get_schema` answered. Every
+ * keyword in that vocabulary is measured, and an SDK that starts or stops
+ * dropping one is a red test. The remaining entries below were measured the same
+ * way against a wider synthetic schema and are kept because they are true and
+ * useful, but they are **outside the provenance lock**: a runtime that never
+ * emits `maximum` gives this desk no way to notice if the provider stopped
+ * dropping it. The README states that boundary rather than leaving it implied.
  */
 export const SDK_SCHEMA_REMOVALS: readonly string[] = [
   '$comment',
+  // **A rewrite seen from a keyword's point of view.** The provider inlines a
+  // `$ref` and drops the `$defs` it resolved, so the *constraint* survives and
+  // these two keywords do not. They are declared because what this list states
+  // is which keywords reach the model, and neither of them does; the README
+  // names them as the rewrite they are.
+  '$defs',
+  '$ref',
   'contains',
   'default',
   'dependentRequired',
@@ -104,6 +118,31 @@ export const SDK_SCHEMA_REMOVALS: readonly string[] = [
   'uniqueItems',
   'writeOnly'
 ]
+
+/**
+ * **What `@ai-sdk/google@4.0.64` does with a thought part that has no text**, and
+ * it is not "carry it": it drops the part and the signature on it.
+ *
+ * Measured, not assumed: the provider turns a `text` part into a reasoning part
+ * only when the text is non-empty, and attaches the signature of an empty one to
+ * whichever text block is open — of which there is none when the summary was
+ * never streamed. So the part never reaches the desk, cannot be ledgered, cannot
+ * be replayed, and cannot be counted as reasoning.
+ *
+ * **The consequences are stated rather than left to be met.** On the SDK-backed
+ * engine, against an endpoint that emits an empty signed thought and enforces
+ * the wire's own rule that signed parts come back, the continuation is refused
+ * and the session ends with the endpoint's status — measured by a conformance
+ * leg, which is written to go red the day the provider starts carrying them.
+ * And *this model always thinks* cannot be inferred from an empty signed
+ * thought on that engine, because the desk is never told one arrived. The
+ * built-in engine has neither limit: it reads the wire itself.
+ *
+ * This is the same shelf as `SDK_SCHEMA_REMOVALS` — a thing the provider does
+ * below the one seam this adapter has, declared here so that it is a known
+ * difference between two engines rather than a surprise.
+ */
+export const SDK_DROPS_EMPTY_SIGNED_THOUGHTS = true
 
 /**
  * Whether a value is a plain object this walk should descend into.
@@ -271,17 +310,27 @@ export const NO_PARAMETERS_NOTICE =
   'the contract the runtime actually enforces, whatever the model was shown.'
 
 /**
- * The keywords one tool loses on the way to this engine's model, or none.
+ * The keywords one tool loses **beyond the desk's own declared ruling**, or none.
  *
- * Read off the **served** schema rather than off the removal list, so a tool
- * that carries none of them produces no notice at all: the author is told what
- * happened to *their* contract, not what could happen to somebody's.
+ * **The difference between two schemas and not a filter over one**, and that is
+ * the whole of the fix: the first version compared the runtime's raw schema
+ * against a removal set that *included* the desk's own six, so every tool the
+ * runtime serves produced a notice about `additionalProperties` — a warning
+ * about the ruling itself rather than about anything lost on top of it, on both
+ * engines, five times a run. A notice has to mean "your contract lost something
+ * this desk did not already tell you about in the README".
+ *
+ * So: what the **desk** shows, minus what **this engine** shows. On `builtin`
+ * those are the same schema and the answer is empty. On `vercel` it is exactly
+ * what that provider removes underneath, and nothing else.
  */
 export function keywordsLost(engine: string, family: string, served: unknown): string[] {
-  const removals = keywordsNotShown(engine, family)
-  if (removals.length === 0) return []
-  const present = keywordsSent(served)
-  return removals.filter((keyword) => present.has(keyword))
+  if (keywordsNotShown(engine, family).length === 0) return []
+  const desk = withoutUnsupportedKeywords(served)
+  const shown = schemaShown(engine, family, desk)
+  const before = keywordsSent(desk)
+  const after = keywordsSent(shown)
+  return [...before].filter((keyword) => !after.has(keyword)).sort()
 }
 
 /**

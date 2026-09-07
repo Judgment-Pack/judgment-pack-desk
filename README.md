@@ -1819,26 +1819,60 @@ rather than discovered:
 | engine | what the model is not shown, on `gemini` |
 | --- | --- |
 | `builtin` | `$schema`, `$id`, `additionalProperties`, `const`, `examples`, `patternProperties` — the desk's list, and nothing else |
-| `vercel` | all of those, **plus** `$comment`, `contains`, `default`, `dependentRequired`, `deprecated`, `else`, `exclusiveMaximum`, `exclusiveMinimum`, `if`, `maxLength`, `maximum`, `minimum`, `multipleOf`, `not`, `nullable`, `pattern`, `prefixItems`, `propertyNames`, `readOnly`, `then`, `title`, `uniqueItems`, `writeOnly` — and a tool whose schema has no properties is declared with no `parameters` at all |
+| `vercel` | all of those, **plus** `$comment`, `$defs`, `$ref`, `contains`, `default`, `dependentRequired`, `deprecated`, `else`, `exclusiveMaximum`, `exclusiveMinimum`, `if`, `maxLength`, `maximum`, `minimum`, `multipleOf`, `not`, `nullable`, `pattern`, `prefixItems`, `propertyNames`, `readOnly`, `then`, `title`, `uniqueItems`, `writeOnly` — and a tool whose schema declares an object with no properties is declared with no `parameters` at all |
 | either, on the other two families | nothing: those wires take JSON Schema as written |
 
-Three things hold that table honest. **It is derived, not copied**: a
-conformance leg sends a probe schema carrying every keyword the runtime could
-emit and reads back what actually arrived, so a version of the SDK that starts
-or stops dropping one is a red test rather than a sentence that quietly stopped
-being true. **The wire is asserted whole**: every leg requires the schema that
-arrived to be **deep-equal** to what this table says arrives — not that three
-keywords are present and six absent, which is what the first version of this
-checked and is a claim about a handful of words. And **the author is told**: a
-run opens with one line per tool that lost something, naming the tool and the
-keywords (*`get_schema` — shown to the model without: additionalProperties*), so
-nobody reads a proposal without knowing the model saw a wider contract than the
-runtime enforces.
+Three things hold that table honest, and one boundary is stated rather than
+glossed.
 
-Two things the SDK does are **rewrites** rather than removals and are outside
-this table by name: it inlines a `$ref`, and it infers a `type` for a bare
-`enum`. The probe carries neither, because a rule about removals cannot measure
-a rewrite; what the desk claims is which keywords are *dropped*.
+**It is derived, not copied — over the recorded runtime's own vocabulary.** A
+conformance leg sends a fixture whose keyword union is pinned, by a test that
+computes both unions, to **every keyword the recorded runtime 0.19.0 emits in
+its tool and pack schemas** — the five `inputSchema`s it served on `tools/list`,
+and the pack schema its own `get_schema` answered, which is in the conformance
+fixture with its bytes, its sha256 and its provenance beside it. What the leg
+reads back is what the installed provider actually did with each of them, and it
+is asserted equal to this table. An SDK that starts or stops dropping one of
+*those* keywords is a red test.
+
+**The rest of the `vercel` row is outside that lock**, and that is the boundary:
+`maximum`, `multipleOf`, `contains` and the other keywords the recorded runtime
+does not emit were measured the same way against a wider synthetic schema, and
+they are true — but a runtime that never emits them gives this desk no way to
+notice if the provider stopped dropping one. The first version of this section
+said "every keyword the runtime could emit", which was a claim about a schema
+somebody made up rather than about the runtime's own.
+
+**The wire is asserted whole**: every leg requires the schema that arrived to be
+**deep-equal** to what this table says arrives — not that three keywords are
+present and six absent, which is what the first version checked and is a claim
+about a handful of words.
+
+**And the author is told**: a run opens with one line per tool that lost
+something **beyond the desk's own list**, naming the tool and the keywords. Over
+the runtime's own five that is nothing at all on `builtin` — its removals *are*
+the ruling — and exactly one line on `vercel`, for the tool whose schema that
+provider drops whole. A notice about `additionalProperties` would be the desk
+warning about the rule it wrote down.
+
+Two things the SDK does are **rewrites** rather than removals: it inlines a
+`$ref` (dropping the `$defs` it resolved, so the constraint survives and the two
+keywords do not) and it infers a `type` for a bare `enum`. The first is declared
+above, because from a keyword's point of view those two names do not reach the
+model; the deep-equality assertion therefore runs over the runtime's own five,
+which carry no reference, and over the vocabulary fixture only for the engine
+that rewrites nothing.
+
+**One more thing that provider does, and it is not about schemas.** It surfaces
+a thought part only when its text is non-empty, so an **empty signed thought** —
+which the wire emits when a summary was not streamed — never reaches the desk:
+it cannot be ledgered, cannot be replayed, and cannot be counted as reasoning.
+Against an endpoint that emits one and enforces the wire's rule that signed
+parts come back, a `vercel` session is refused and ends with the endpoint's
+status; *this model always thinks* cannot be inferred from one there either. The
+built-in engine has neither limit, because it reads the wire itself. Both halves
+are conformance legs, written to go red the day the provider starts carrying
+them.
 
 **The Gemini API reference these rules were written against**, read on
 **2026-09-06**:
