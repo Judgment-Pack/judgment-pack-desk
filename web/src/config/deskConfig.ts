@@ -1145,7 +1145,7 @@ function endpointValue(
  * Held identical to `endpointURLProblem` in `internal/desk/deskfile.go` by the
  * shared fixtures both decoders read.
  */
-function endpointUrlProblem(raw: string): string | undefined {
+export function endpointUrlProblem(raw: string): string | undefined {
   let url: URL
   try {
     url = new URL(raw)
@@ -1350,6 +1350,18 @@ export interface DeskLevelSummary {
   path: string
   present: boolean
   problems: ConfigProblem[]
+  /**
+   * The digest of the bytes this read saw, carried through from
+   * `DeskLevelRead` so that a form on Admin can send it back as `ifMatch`.
+   *
+   * **Undefined is not the empty string here, and the difference is the whole
+   * point.** The empty string is the chassis saying "there is no file", which
+   * is a digest a write may state; undefined is a read that never produced
+   * one, and a page that wrote with a digest it invented would be asserting
+   * the state of a file it never saw. The form refuses to write on undefined
+   * rather than guessing either way.
+   */
+  sha256?: string
   note?: string
   readFailure?: ReadFailure
 }
@@ -1473,6 +1485,7 @@ export function effectiveConfig(
             path: desk.path,
             present: desk.present,
             problems: desk.decoded?.problems ?? [],
+            sha256: desk.sha256,
             note: desk.note,
             readFailure: desk.readFailure
           }

@@ -38,6 +38,7 @@ import {
   type AssistantEndpointConfig
 } from '../config/deskConfig'
 import { PROBE_DIAGNOSTICS } from './client'
+import { PREFILLED_URL } from './endpointDraft'
 import { suffixProblem } from './session'
 import type { AssistantSlot } from './useAssistantSlot'
 
@@ -456,15 +457,44 @@ describe('(5) no endpoint literal in the source — a WEAK, enumerated guard', (
       // would fail rather than arrive somewhere.
       'https://relay.invalid'
     ]
+    // **The three prefills, admitted in one module and as nothing but values
+    // of one table.** Admin's form offers the base each protocol's own
+    // reference documents, so that choosing a wire protocol does not mean
+    // retyping an address the README already names — and every one of them is
+    // replaced by typing over it. That is a *default in an editable field*,
+    // which is a different thing from a destination the desk holds: nothing
+    // reads them back, and the sharper guard above — every host comparison in
+    // these directories is a loopback name — is what says so and is untouched.
+    // Admitting them anywhere else, or under any other name, still fails.
+    const prefills = Object.values(PREFILLED_URL)
+    const PREFILL_MODULE = 'assistant/endpointDraft.ts'
     for (const source of sourcesUnder('assistant', 'config', 'routes')) {
       if (source.path.includes('.test.')) continue
       for (const literal of [...source.text.matchAll(/https:\/\/[^\s'"`)]+/g)].map((m) => m[0])) {
+        const prefill = prefills.includes(literal) && source.path === PREFILL_MODULE
         expect(
-          allowed.some((prefix) => literal.startsWith(prefix)),
+          prefill || allowed.some((prefix) => literal.startsWith(prefix)),
           `${source.path} carries the literal ${literal}`
         ).toBe(true)
       }
     }
+  })
+
+  it('keeps every prefill inside that one table, and nothing else in it', () => {
+    // The other half of the allowance: the module admitted above must carry
+    // the three literals **as the table** and carry no fourth address of its
+    // own. Read off the file rather than off the export, so a literal written
+    // beside the table — a comment's example, a second map — fails here.
+    const source = sourcesUnder('assistant').find(
+      (each) => each.path === 'assistant/endpointDraft.ts'
+    )
+    expect(source, 'the prefill table is in its own module').toBeDefined()
+    const literals = [...source!.text.matchAll(/https:\/\/[^\s'"`)]+/g)].map((m) => m[0])
+    expect(literals.sort()).toEqual(Object.values(PREFILLED_URL).sort())
+    // One per kind, and each a distinct address: a table with two kinds on one
+    // base would be a picker that changes the protocol and not the endpoint.
+    expect(Object.keys(PREFILLED_URL).sort()).toEqual([...ASSISTANT_KINDS].sort())
+    expect(new Set(Object.values(PREFILLED_URL)).size).toBe(ASSISTANT_KINDS.length)
   })
 })
 

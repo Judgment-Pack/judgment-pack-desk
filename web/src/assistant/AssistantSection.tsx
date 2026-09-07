@@ -1,22 +1,20 @@
 /**
- * Admin › Assistant: the model slot, and the one key this desk keeps.
+ * Admin › Assistant: the endpoint this desk is configured for, and the one key
+ * it keeps.
  *
- * **This section carries the only write control on Admin today**, and the
- * reason is narrow enough to state in a sentence: a key must never be pasted
- * into a project file, so it cannot go through the file API, which writes only
- * inside the project. Everything else *rendered here* is read-only — effective
- * values, their source, and the exact JSON to paste.
+ * **This section carries the desk's two writes**, and each is exactly as wide
+ * as its reason. A key must never be pasted into a project file, so it cannot
+ * go through the file API — which writes only inside the project — and gets
+ * its own endpoint. The `assistant` object of the desk-level file is the
+ * other: choosing a model and a thinking tier is something an author does
+ * while working, and the alternative is telling them to edit a file in a
+ * configuration directory by hand between attempts.
  *
- * **That is a statement about this component, and no longer about the desk.**
- * The chassis has gained `PUT /api/desk-config`, which rewrites the
- * `assistant` object of the desk-level file under a conditional commit, and
- * `updateAssistantConfig` / `useUpdateAssistantConfig` are the page's call and
- * hook for it. **Nothing here invokes them yet**: the form that lets an author
- * choose an endpoint, a model and a thinking tier — and that shows
- * `keyRebindRequired` when the destination moves — is the next chunk. Until it
- * lands, the paste block below is how the endpoint is configured, and this
- * paragraph is here so that a reader meeting a read-only section does not
- * conclude the write does not exist.
+ * **The paste block is gone, and this paragraph is why.** It existed because
+ * the page could not write the file. It can, under a conditional commit that
+ * refuses a write the shared decoder would refuse — so the block would now be
+ * a second way to do one thing, and the one where a reader hand-edits the file
+ * this desk is also rewriting.
  *
  * **The three deployment states are text, not a control.** None, an endpoint
  * you already have, and an endpoint someone operates for you are not three
@@ -31,8 +29,9 @@
 import { useRef, useState, type RefObject } from 'react'
 import { Fields } from '../components/primitives'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
-import { ASSISTANT_TOOLS } from '../config/deskConfig'
-import { PasteBlock, SourceBadge } from '../routes/adminBlocks'
+import { SourceBadge } from '../routes/adminBlocks'
+import type { AssistantKeyState } from './client'
+import { EndpointForm } from './EndpointForm'
 import {
   useAssistantKey,
   useProbeAssistant,
@@ -70,7 +69,6 @@ export const DEPLOYMENT_STATES: [string, string][] = [
 export function AssistantSection({ id, title }: { id: string; title: string }) {
   const { config, sources, desk } = useEffectiveConfig()
   const endpoint = config.assistant.endpoint
-  const { engine, thinking } = config.assistant
   const key = useAssistantKey()
   const store = useStoreAssistantKey()
   const remove = useRemoveAssistantKey()
@@ -130,96 +128,29 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
 
       <p className="quiet">
         The one member that does branch is <code>kind</code>, and it names the endpoint&apos;s{' '}
-        <strong>wire protocol</strong> rather than who runs it: the two protocols put the key in
+        <strong>wire protocol</strong> rather than who runs it: the three protocols put the key in
         different headers and the call on a different path, so no single request could satisfy
-        both. Nothing in the desk reads the host, compares it to a list, or behaves differently
+        them. Nothing in the desk reads the host, compares it to a list, or behaves differently
         for one endpoint than another.
       </p>
 
-      {endpoint !== null ? (
-        <Fields
-          items={[
-            ['Endpoint', <code key="url">{endpoint.url}</code>],
-            ['Protocol', <code key="kind">{endpoint.kind}</code>],
-            ['Model', <code key="model">{endpoint.model}</code>],
-            [
-              'Tools it may call',
-              endpoint.tools.length === 0 ? (
-                <span key="tools" className="quiet">
-                  none — the assistant may call no tool
-                </span>
-              ) : (
-                <code key="tools">{endpoint.tools.join(' · ')}</code>
-              )
-            ]
-          ]}
-        />
-      ) : (
-        <p className="quiet">
-          No endpoint is configured, so nothing here is set. Writing the block below into the
-          desk-level file configures one.
-        </p>
-      )}
-
-      <Fields
-        items={[
-          ['Engine', <code key="engine">{engine}</code>],
-          ['Thinking', <code key="thinking">{thinking}</code>]
-        ]}
-      />
-      <p className="quiet">
-        <strong>Both say how the assistant runs, not whether there is one</strong>, so they are
-        set beside the endpoint rather than inside it and apply with no endpoint configured.{' '}
-        <code>engine</code> names the loop — <code>vercel</code> by default,{' '}
-        <code>builtin</code> for a fallback that adds nothing to what this desk already ships —
-        and every one of them is held to the same promises by the desk rather than by itself.{' '}
-        <code>thinking</code> is the depth: <code>off</code> by default, then <code>on</code> and{' '}
-        <code>ultra</code>. Nothing in this release acts on either; they are read from the file
-        and shown here. A value outside those lists refuses the whole file by name.
-      </p>
+      <EndpointForm />
 
       <p className="quiet">
-        The assistant may be given only these tools:{' '}
-        <code>{ASSISTANT_TOOLS.join(', ')}</code>. Every one of them is a question put to the
-        runtime, and the last is a rehearsal — it consults no reviewed set and decides no outcome.{' '}
-        <code>list_examples</code> is on the list because the runtime&apos;s own authoring prompt
-        tells the model to call it. A name outside that list is refused when the file is read,
-        rather than accepted and ignored, because a setting that appears to grant something is a
-        grant to whoever wrote it.
-      </p>
-
-      <PasteBlock
-        label="Add to the desk-level desk.json"
-        json={{
-          deskConfigVersion: 1,
-          assistant: {
-            endpoint: {
-              url: 'https://api.example.invalid/v1',
-              kind: 'openai-compatible',
-              model: 'a-model',
-              tools: [...ASSISTANT_TOOLS]
-            },
-            engine: 'vercel',
-            thinking: 'off'
-          }
-        }}
-      />
-      <p className="quiet">
-        <strong>This page does not write that block yet.</strong> The desk can — it rewrites just
-        the assistant part of the desk-level file, leaving everything else in it exactly as you
-        wrote it, and refusing the write if the file changed since this page read it. The controls
-        that use it, for choosing a model and how deeply it thinks, arrive in the next release.
-        Until then, paste the block above into the file yourself.
+        Saving writes only the assistant part of the file on this machine and carries everything
+        else in it across exactly as you wrote it. It refuses the write outright if the file
+        changed since this page read it, and refuses it again — before anything is written — if
+        what it would write is not something this desk reads.
       </p>
       <p className="quiet">
-        <strong>The key is not in that block, and there is no member it could go in.</strong> A
-        name that looks like a key — <code>apiKey</code>, <code>secret</code>, <code>token</code> —
-        refuses the whole file where it is written, rather than being quietly carried in a file
-        that may be committed. The key is stored below instead, on this machine only.
+        <strong>There is no key on this form, and no field it could go in.</strong> A name that
+        looks like a key — <code>apiKey</code>, <code>secret</code>, <code>token</code> — refuses
+        the whole file wherever it is written, rather than being quietly carried in a file that
+        may be committed. The key is stored below instead, on this machine only.
       </p>
 
       <KeyControl
-        state={key.data ?? { present: false, fingerprint: '' }}
+        state={key.data ?? { present: false, fingerprint: '', origin: '', kind: '' }}
         answered={key.isSuccess}
         failed={key.error}
         field={field}
@@ -278,7 +209,7 @@ function KeyControl({
   onRemove,
   removeProblem
 }: {
-  state: { present: boolean; fingerprint: string }
+  state: AssistantKeyState
   answered: boolean
   failed: Error | null
   field: RefObject<HTMLInputElement | null>
@@ -333,7 +264,7 @@ function KeyControl({
       </p>
       <p className="quiet">
         <strong>The key and the endpoint are separate.</strong> Removing the endpoint from the
-        file above does not remove the key; the line above is what says whether one is still kept
+        form above does not remove the key; the line above is what says whether one is still kept
         here, and Remove key is what takes it away.
       </p>
     </>
@@ -348,7 +279,7 @@ function KeyControl({
  * which is said rather than rendered as a stored key with a blank beside it.
  */
 function keySays(
-  state: { present: boolean; fingerprint: string },
+  state: AssistantKeyState,
   answered: boolean,
   failed: Error | null
 ): string {
