@@ -225,6 +225,52 @@ function servesLandingWrites(content: string): { bodies: Record<string, unknown>
   return seen
 }
 
+/**
+ * A desk that refuses the write as stale and then cannot be read again.
+ *
+ * The first read answers; the write is a 409; every read after that is a 413,
+ * which is the chassis speaking about a file it found and could not use.
+ */
+function servesRefusedThenUnreadable(): { puts: number } {
+  const seen = { puts: 0, reads: 0 }
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url.includes('/api/desk-config')) {
+      return answered({
+        path: '/home/someone/.config/jpack-desk/desk.json',
+        present: false,
+        sha256: '',
+        project: { dir: '/p', file: '/p/jpack-desk.json' },
+        runtime: { bin: 'jpack' }
+      })
+    }
+    if (init?.method === 'PUT') {
+      seen.puts += 1
+      return answered(
+        {
+          error: 'the file on disk is not the file this edit started from',
+          code: 'stale',
+          path: 'jpack-desk.json',
+          expectedSha256: 'a'.repeat(64),
+          actualSha256: 'c'.repeat(64),
+          exists: true
+        },
+        409
+      )
+    }
+    seen.reads += 1
+    if (seen.reads > 1) {
+      return answered({ error: 'the file is too large to read', code: 'too-large' }, 413)
+    }
+    return answered({
+      path: 'jpack-desk.json',
+      bytes: ON_DISK.length,
+      sha256: 'a'.repeat(64),
+      content: ON_DISK
+    })
+  })
+  return seen
+}
+
 /** The member one card wrote, as the request carried it. */
 function memberOf(body: Record<string, unknown>, name: string): unknown {
   return (JSON.parse(String(body.content)) as Record<string, unknown>)[name]
@@ -434,6 +480,39 @@ describe('a project-file card’s form', () => {
     expect(error?.textContent).toContain(NO_CONTROL_CHARACTERS)
     // And nothing was written: the desk was never asked to.
     expect(desk.bodies).toEqual([])
+  })
+
+  /**
+   * **A reload that failed changed nothing, so nothing it was about may go.**
+   * The refusal used to be cleared on the button press: a read that then
+   * failed left the card with only the read's own error, no digests and no
+   * Reload, while the revision behind it had not moved — so the next Save was
+   * refused again for a reason nothing on screen still said.
+   */
+  it('keeps the refusal and its digests when the reload itself fails', async () => {
+    const desk = servesRefusedThenUnreadable()
+    renderForm(<OrganizationForm />)
+    fireEvent.change(await screen.findByDisplayValue('Unveil'), {
+      target: { value: 'What I typed' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await screen.findByText('The file changed on disk — nothing was written.')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
+    // The read fails, and says so — beside the refusal, which still stands.
+    expect(await screen.findByText(/the file is too large to read/)).toBeTruthy()
+    expect(screen.getByText('The file changed on disk — nothing was written.')).toBeTruthy()
+    fireEvent.click(screen.getByText('digests'))
+    // Two announcements, which is the shape: the refusal that still stands,
+    // and beside it the read that could not replace it.
+    const [panel, beside] = screen.getAllByRole('alert')
+    expect(panel!.textContent).toContain('a'.repeat(12))
+    expect(panel!.textContent).toContain('c'.repeat(12))
+    expect(beside!.textContent).toContain('the file is too large to read')
+    // Reload is still there to press, and the field still holds the draft.
+    expect(screen.getByRole('button', { name: 'Reload' })).toBeTruthy()
+    expect(screen.getByDisplayValue('What I typed')).toBeTruthy()
+    expect(desk.puts).toBe(1)
   })
 
   it('offers no Save where the value comes from the desk-level file', async () => {

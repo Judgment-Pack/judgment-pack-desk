@@ -435,7 +435,6 @@ export function useProjectFileSave(
 
   const reload = () => {
     const ticket = (reloads.current += 1)
-    write.reset()
     setProblems([])
     setSaid(undefined)
     setReadFailure(undefined)
@@ -444,6 +443,12 @@ export function useProjectFileSave(
       .then((fresh) => {
         if (ticket !== reloads.current) return
         setReloading(false)
+        // **The refusal is cleared here and nowhere earlier.** Round 1 found it
+        // cleared on the button press instead: a read that then failed left the
+        // card with only the read's own error — no digests, no Reload — while
+        // the revision behind it had not moved, so the next Save was refused
+        // again for a reason nothing on screen still said.
+        write.reset()
         setBase({ text: fresh.content, sha256: fresh.sha256 })
         client.setQueryData<EffectiveConfig>(DESK_CONFIG_QUERY_KEY, (previous) =>
           configAfterProjectFileWrite(previous, fresh)

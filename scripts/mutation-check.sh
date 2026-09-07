@@ -5922,6 +5922,18 @@ export function assistantTransport(): Transport {
     '  const draft = { ...seed, ...touched } as D' \
     '  const draft = { ...touched, ...seed } as D'
 
+  # **A reload that failed changed nothing, so nothing it was about may go.**
+  # Clearing the refusal on the button press leaves a card whose read then
+  # failed with only that read's error — no digests, no Reload — while the
+  # revision behind it has not moved, so the next Save is refused again for a
+  # reason nothing on screen still says.
+  mutate web "the refusal is cleared when Reload is pressed rather than when it lands" "$PFS" \
+    '    const ticket = (reloads.current += 1)
+    setProblems([])' \
+    '    const ticket = (reloads.current += 1)
+    write.reset()
+    setProblems([])'
+
   # **A configuration that is accepted and cannot work is worse than one
   # refused where it was written.** The chassis refuses a NUL in any path
   # outright, so a `dir` carrying one is advertised by Admin as the pack
