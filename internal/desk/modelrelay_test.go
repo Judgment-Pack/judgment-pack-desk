@@ -642,9 +642,6 @@ func TestRelayAdmitsAMethodColonOnlyAsAClosedShape(t *testing.T) {
 		"v1beta/models/gemini-2.5-pro:streamGenerateContent",
 		"v1beta/models/gemini-2.5-pro:countTokens",
 		"v1beta/models/a_model-1.5:generateContent",
-		// A colon deeper than the last segment is still the same shape, and
-		// the rule is about a segment rather than about a position.
-		"v1beta/a:countTokens/b",
 	} {
 		if problem := relaySuffixProblem(suffix); problem != "" {
 			t.Errorf("%q was refused: %s", suffix, problem)
@@ -658,6 +655,13 @@ func TestRelayAdmitsAMethodColonOnlyAsAClosedShape(t *testing.T) {
 		{"a second colon", "v1beta/models/a:b:generateContent"},
 		{"a method with a tail", "v1beta/models/m:generateContent:x"},
 		{"a case-folded method", "v1beta/models/m:GenerateContent"},
+		// **Round 1's finding.** The rule was written per segment and never
+		// asked where the segment was, so this was accepted and forwarded with
+		// the credential — a resource nobody documented, under a verb this
+		// desk agreed to. A method is a verb applied to the resource the path
+		// names, so there is nothing after it.
+		{"a method in a non-final segment", "v1beta/a:countTokens/b"},
+		{"a method followed by anything at all", "v1beta/models/m:generateContent/x"},
 		// The escaped spelling stays refused: no percent sign has ever been in
 		// the class, which is what keeps the escaped and unescaped readings of
 		// an accepted suffix the same string.
@@ -699,6 +703,9 @@ func TestRelayRefusesAMethodColonWithoutReachingTheEndpoint(t *testing.T) {
 		"v1beta/models/m:deleteModel",
 		"v1beta/models/m:generateContent:x",
 		"v1beta/models/:generateContent",
+		// Round 1's non-final segment, through the whole server, so the
+		// refusal is the route's and is counted at the transport.
+		"v1beta/a:countTokens/b",
 	} {
 		resp, body := relayGet(t, ts, suffix)
 		if resp.StatusCode != http.StatusBadRequest {

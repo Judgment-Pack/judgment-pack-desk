@@ -2504,12 +2504,15 @@ no CORS, so a page calling one directly could not read the answer.
   process. The suffix is appended to the configured URL's **escaped** path, so
   `%2F` in a configured base stays one segment.
 - **One exception to that class, and it is a shape rather than a character.**
-  A segment may be `<name>:<method>` where the method is one of
+  The **final** segment may be `<name>:<method>` where the method is one of
   `generateContent`, `streamGenerateContent` or `countTokens` — the way the
   native Gemini wire addresses a method, as in
-  `v1beta/models/gemini-2.5-pro:streamGenerateContent`. A colon anywhere else,
-  a second colon, an empty name, an escaped colon, or a method outside those
-  three is refused exactly as before. The list is closed because the part after
+  `v1beta/models/gemini-2.5-pro:streamGenerateContent`. A colon anywhere else —
+  including in a segment that is not the last, which the first version of this
+  rule accepted and forwarded — a second colon, an empty name, an escaped
+  colon, or a method outside those three is refused exactly as before. A method
+  is a verb applied to the resource the path names, so there is nothing after
+  it. The list is closed because the part after
   the colon is a **verb**: an open one would let whoever holds the session
   token ask the configured endpoint to *do* something nobody wrote down, with
   the stored credential attached, and adding a method is a reviewed change to

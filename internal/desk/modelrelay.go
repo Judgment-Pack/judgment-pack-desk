@@ -292,7 +292,8 @@ func relaySuffixProblem(suffix string) string {
 		return fmt.Sprintf("a relayed path is at most %d bytes; this one is %d",
 			maxRelaySuffix, len(suffix))
 	}
-	for _, segment := range strings.Split(suffix, "/") {
+	segments := strings.Split(suffix, "/")
+	for index, segment := range segments {
 		if segment == "" {
 			return "a relayed path may not contain an empty segment"
 		}
@@ -303,10 +304,20 @@ func relaySuffixProblem(suffix string) string {
 		// leaves `b:generateContent` as the method, which is on no list, and
 		// `a:generateContent:x` leaves `generateContent:x`. So a second colon
 		// refuses itself and there is no arithmetic to get wrong.
+		//
+		// **And only in the last segment.** Round 1 found `v1beta/a:countTokens/b`
+		// accepted and forwarded with the credential: the rule was written per
+		// segment and never asked where the segment was, which is wider than
+		// the shape the wire actually uses. A method is a verb applied to the
+		// resource the path names, so there is nothing after it — and a rule
+		// that admits one in the middle admits a resource nobody documented
+		// under a verb this desk agreed to.
 		if name, method, found := strings.Cut(segment, ":"); found {
-			if name == "" || !contains(relayPathMethods, method) {
+			if index != len(segments)-1 || name == "" ||
+				!contains(relayPathMethods, method) {
 				return "a colon in a relayed path may only introduce one of " +
-					strings.Join(relayPathMethods, ", ") + ", after a non-empty segment"
+					strings.Join(relayPathMethods, ", ") +
+					", after a non-empty final segment"
 			}
 			segment = name
 		}

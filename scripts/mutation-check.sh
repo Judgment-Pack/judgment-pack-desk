@@ -1040,8 +1040,15 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # and a mutation that does not compile has not been survived — it has not
   # been tested.
   mutate go "the method after a colon is not held to the list" "$MR" \
-    '			if name == "" || !contains(relayPathMethods, method) {' \
-    '			if name == "" || (false && !contains(relayPathMethods, method)) {'
+    '			if index != len(segments)-1 || name == "" ||
+				!contains(relayPathMethods, method) {' \
+    '			if index != len(segments)-1 || name == "" ||
+				(false && !contains(relayPathMethods, method)) {'
+  # Round 1: the rule was written per segment and never asked where the segment
+  # was, so `v1beta/a:countTokens/b` was forwarded with the credential.
+  mutate go "a colon method is accepted in a non-final segment" "$MR" \
+    '			if index != len(segments)-1 || name == "" ||' \
+    '			if (false && index != len(segments)-1) || name == "" ||'
   # The one pair the page may send is admitted for one wire and refused for the
   # other two, which carry streaming in the request body and need none.
   mutate go "the stream pair is admitted on every kind" "$MR" \
