@@ -116,6 +116,18 @@ export function ProjectFileForm<D>({
   const unplaced = save.problems.filter((problem) => !placed.includes(problem.key))
   return (
     <form
+      // **The decoder is the one thing that refuses a value here.** A number
+      // field carries the decoder's own bounds as `min` and `max`, which is
+      // what makes the spinner stop where the file does — and those attributes
+      // also make the browser refuse the submit before this form ever sees it,
+      // with a bubble in wording this desk did not write and cannot show the
+      // decoder's sentence beside. The live drive is what found it: a 20000px
+      // Inspector produced no refusal at all, because nothing had been asked.
+      //
+      // Nothing in the suite can hold this: jsdom performs no constraint
+      // validation, so a form without `noValidate` behaves there exactly as one
+      // with it. It is stated here and proved in a browser.
+      noValidate
       onSubmit={(event) => {
         event.preventDefault()
         state.submit()

@@ -5882,6 +5882,14 @@ export function assistantTransport(): Transport {
     '  return { text: next.text, problems: [] }' \
     '  return { text: JSON.stringify(JSON.parse(next.text), null, 2), problems: [] }'
 
+  # **There is no row for `noValidate`, and the reason is the row's own rule.**
+  # A number field carries the decoder's bounds as `min` and `max`, and without
+  # `noValidate` the browser refuses the submit before the form sees it — so the
+  # decoder's sentence is never shown and nothing is written. jsdom performs no
+  # constraint validation, so a mutation removing it leaves the whole suite
+  # green: a row for it would be a claim of coverage nothing holds. It is held
+  # by the live drive instead, which is where it was found.
+
   # **The chassis watches the project and invalidates every query when this
   # file changes.** A revision read off that query moves onto bytes nobody saw,
   # and the Save that follows overwrites somebody's edit with no refusal at all
