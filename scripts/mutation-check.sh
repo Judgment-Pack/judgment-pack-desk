@@ -1433,11 +1433,12 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 
   # **At most one release, however many callers ask.** Closing a descriptor
   # twice is closing whatever took its number in between.
+  # The replacement runs the same closure every time instead of once, so the
+  # call site stays well formed — a mutation that does not compile is not one
+  # the suite survived.
   mutate go "the descriptors are released once per caller" "$PJ" \
-    '	o.once.Do(func() {
-		o.closes++' \
-    '	func() {
-		o.closes++'
+    '	o.once.Do(func() {' \
+    '	(func(release func()) { release() })(func() {'
 
   # ---- Round 3: what the runtime and the watcher actually follow ---------
 
