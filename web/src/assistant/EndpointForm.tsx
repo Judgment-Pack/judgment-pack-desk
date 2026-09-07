@@ -41,6 +41,7 @@ import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
+import type { AssistantConfigWritten } from './client'
 import {
   ENGINE_OPTIONS,
   ENGINE_SAYS,
@@ -72,7 +73,12 @@ const NO_DIGEST =
 const SAVED = 'Saved. The rest of the file is exactly as it was.'
 const CREATED = 'Saved, and the file was created. Nothing else is in it.'
 
-export function EndpointForm() {
+export function EndpointForm({
+  onWritten
+}: {
+  /** Called with every answer to a write that landed. */
+  onWritten: (answer: AssistantConfigWritten) => void
+}) {
   const { config, desk } = useEffectiveConfig()
   const client = useQueryClient()
   const write = useUpdateAssistantConfig()
@@ -139,6 +145,7 @@ export function EndpointForm() {
           // would be reporting its own request as an outcome.
           setDirty(false)
           setSaved(answer.created ? CREATED : SAVED)
+          onWritten(answer)
         }
       }
     )

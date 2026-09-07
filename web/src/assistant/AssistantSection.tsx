@@ -23,15 +23,23 @@
  * would give one of the three somewhere to acquire an affordance the other two
  * lack. So they are described, and what is configurable is the endpoint.
  *
+ * **The key row says which host the key is for.** The chassis records the
+ * scheme, host and wire protocol a key was entered for and presents it only
+ * there; a configuration write that moves any of the three leaves the key in
+ * place and unusable and answers `keyRebindRequired`. So the row reads the
+ * binding rather than leaving somebody to discover it by meeting a refusal.
+ *
  * Nothing on this page says chassis, bytes or path to the reader. The words
  * are the desk, this machine, and the file.
  */
-import { useRef, useState, type RefObject } from 'react'
+import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Fields } from '../components/primitives'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
+import type { AssistantEndpointConfig } from '../config/deskConfig'
 import { SourceBadge } from '../routes/adminBlocks'
 import type { AssistantKeyState } from './client'
 import { EndpointForm } from './EndpointForm'
+import { endpointOrigin, keyBinding, type KeyBinding } from './keyBinding'
 import {
   useAssistantKey,
   useProbeAssistant,
@@ -73,6 +81,13 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
   const store = useStoreAssistantKey()
   const remove = useRemoveAssistantKey()
   const probe = useProbeAssistant()
+  // **The answer to the last write, held until the key read disagrees with
+  // it.** The chassis says `keyRebindRequired` at the instant the endpoint
+  // moves, and waiting for the key read to be re-fetched would leave the row
+  // saying the key is bound for as long as that took. The read is the
+  // authority afterwards: storing a key answers with the new binding, and the
+  // row goes back to reading it.
+  const [rebindAsked, setRebindAsked] = useState(false)
   // **The field is uncontrolled, and that is the point.** It used to be React
   // state cleared with `setTyped('')` immediately before the request — which
   // reads as synchronous and is not: React batches the update, so `fetch`
@@ -92,6 +107,9 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
   const [storeProblem, setStoreProblem] = useState<string | undefined>(undefined)
   const [removeProblem, setRemoveProblem] = useState<string | undefined>(undefined)
 
+  const read = keyBinding(key.data, endpoint)
+  const binding: KeyBinding = rebindAsked && read === 'bound' ? 'rebind' : read
+
   const submitKey = () => {
     const input = field.current
     const value = input?.value ?? ''
@@ -99,7 +117,10 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
     // taken effect by the next statement; a `setState` would not have.
     if (input) input.value = ''
     setStoreProblem(undefined)
-    store.submit(value, { onError: (error) => setStoreProblem(error.message) })
+    store.submit(value, {
+      onError: (error) => setStoreProblem(error.message),
+      onStored: () => setRebindAsked(false)
+    })
   }
 
   return (
@@ -134,7 +155,7 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
         for one endpoint than another.
       </p>
 
-      <EndpointForm />
+      <EndpointForm onWritten={(answer) => setRebindAsked(answer.keyRebindRequired)} />
 
       <p className="quiet">
         Saving writes only the assistant part of the file on this machine and carries everything
@@ -153,6 +174,8 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
         state={key.data ?? { present: false, fingerprint: '', origin: '', kind: '' }}
         answered={key.isSuccess}
         failed={key.error}
+        binding={binding}
+        endpoint={endpoint}
         field={field}
         onStore={submitKey}
         storeProblem={storeProblem}
@@ -192,17 +215,25 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
 }
 
 /**
- * The key: whether there is one, and the two things that can be done about it.
+ * The key: whether there is one, **which endpoint it is for**, and the two
+ * things that can be done about it.
  *
  * **The field is never populated from anything.** There is no value to
  * populate it with — no endpoint returns the key — and a masked field showing
  * a placeholder of the right length would be this page inventing evidence
  * about a value it has never seen.
+ *
+ * **The field is not offered where storing one cannot work.** A key is written
+ * bound to the endpoint configured at that instant, so a desk with none has
+ * nothing to bind it to and the chassis refuses. The row asks for an endpoint
+ * to be saved instead of offering a field and letting the refusal explain.
  */
 function KeyControl({
   state,
   answered,
   failed,
+  binding,
+  endpoint,
   field,
   onStore,
   storeProblem,
@@ -212,30 +243,58 @@ function KeyControl({
   state: AssistantKeyState
   answered: boolean
   failed: Error | null
+  binding: KeyBinding
+  endpoint: AssistantEndpointConfig | null
   field: RefObject<HTMLInputElement | null>
   onStore: () => void
   storeProblem: string | undefined
   onRemove: () => void
   removeProblem: string | undefined
 }) {
+  // Replace is a state of this row and not a second control: it opens the one
+  // field there is. It is cleared whenever the binding changes underneath it,
+  // because a row that has become "enter the key for another host" is already
+  // asking for exactly what Replace asked for.
+  const [replacing, setReplacing] = useState(false)
+  const [openedAt, setOpenedAt] = useState(binding)
+  if (openedAt !== binding) {
+    setOpenedAt(binding)
+    setReplacing(false)
+  }
+  const wanted = binding === 'none' || binding === 'rebind'
+  const entry = wanted || (binding === 'bound' && replacing)
+  const destination = endpoint === null ? undefined : endpointOrigin(endpoint.url)
+  const label =
+    destination === undefined ? 'Key' : `Key for ${destination}`
+
   return (
     <>
       <p>
         Key: <strong>{keySays(state, answered, failed)}</strong>
       </p>
+      <p>{bindingSays(binding, state, endpoint, destination)}</p>
+      {entry && (
+        <p>
+          <label htmlFor="assistant-key">{label}</label>{' '}
+          <input
+            id="assistant-key"
+            ref={field}
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            defaultValue=""
+          />{' '}
+          <button type="button" onClick={onStore}>
+            Store key
+          </button>
+        </p>
+      )}
       <p>
-        <label htmlFor="assistant-key">Key</label>{' '}
-        <input
-          id="assistant-key"
-          ref={field}
-          type="password"
-          autoComplete="off"
-          spellCheck={false}
-          defaultValue=""
-        />{' '}
-        <button type="button" onClick={onStore}>
-          Store key
-        </button>
+        {binding === 'bound' && !replacing && (
+          <button type="button" onClick={() => setReplacing(true)}>
+            Replace key
+          </button>
+        )}
         {state.present && (
           <>
             {' '}
@@ -265,9 +324,59 @@ function KeyControl({
       <p className="quiet">
         <strong>The key and the endpoint are separate.</strong> Removing the endpoint from the
         form above does not remove the key; the line above is what says whether one is still kept
-        here, and Remove key is what takes it away.
+        here, and Remove key is what takes it away. It travels only to the endpoint it was
+        entered for: change the host or the protocol and it stays here, unusable, until somebody
+        enters it again — which this page cannot do for you, because it has never held it.
       </p>
     </>
+  )
+}
+
+/**
+ * The one sentence the binding is worth, per state.
+ *
+ * **Both halves of a mismatch are named.** A row that said only "enter the key
+ * again" would leave a reader unable to see *which* of the two moved — the
+ * endpoint they just saved, or a key entered months ago for somewhere else —
+ * and neither half is a secret: both are in the file this page already reads.
+ */
+function bindingSays(
+  binding: KeyBinding,
+  state: AssistantKeyState,
+  endpoint: AssistantEndpointConfig | null,
+  destination: string | undefined
+): ReactNode {
+  if (binding === 'unread') return <span className="quiet">this desk has not been asked yet</span>
+  if (binding === 'no-endpoint') {
+    return (
+      <span className="quiet">
+        Save an endpoint above before storing a key: a key is kept bound to the endpoint it was
+        entered for, so there has to be one to bind it to.
+      </span>
+    )
+  }
+  if (binding === 'none') {
+    return (
+      <span className="quiet">
+        No key is stored for <code>{destination}</code>.
+      </span>
+    )
+  }
+  if (binding === 'bound') {
+    return (
+      <span className="quiet">
+        The key stored here was entered for <code>{state.origin}</code> over{' '}
+        <code>{state.kind}</code>, which is where this desk is configured.
+      </span>
+    )
+  }
+  return (
+    <span className="quiet">
+      The key stored here was entered for <code>{state.origin}</code> over{' '}
+      <code>{state.kind}</code>. This desk is configured for <code>{destination}</code> over{' '}
+      <code>{endpoint?.kind}</code>, so it will not be presented and nothing will be sent —
+      enter the key for <code>{destination}</code>.
+    </span>
   )
 }
 

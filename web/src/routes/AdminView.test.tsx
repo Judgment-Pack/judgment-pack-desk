@@ -242,14 +242,17 @@ describe('the Admin page', () => {
     const { container } = renderAdmin()
     const interactive = container.querySelectorAll('button, input, select, textarea')
     const labels = Array.from(interactive).map((element) => element.textContent?.trim())
-    const writes = ['Reset panes on this machine', 'Save', 'Store key', 'Check reachability']
+    const writes = ['Reset panes on this machine', 'Save', 'Check reachability']
     for (const label of writes) {
       expect(labels.filter((each) => each === label), label).toHaveLength(1)
     }
-    // Remove key appears only where a key is stored, which is not the case in
-    // this render — so it is asserted by its absence here and by its own test
-    // in the Assistant section's suite.
-    expect(labels).not.toContain('Remove key')
+    // Three controls appear only in a state this render is not in, and each is
+    // asserted by its absence here and by its own case in the Assistant
+    // section's suite: Store key and Remove key need a key row that offers
+    // them, and List models needs a key bound to the configured endpoint.
+    for (const conditional of ['Store key', 'Remove key', 'List models']) {
+      expect(labels, conditional).not.toContain(conditional)
+    }
     // The form's three pickers, asserted as themselves and in two shapes,
     // because a Radix Select is two elements: a trigger button showing the
     // value, and a hidden native `<select>` carrying every option for form
@@ -274,11 +277,9 @@ describe('the Admin page', () => {
       others.every((label) => label === '' || label?.includes('Copy')),
       others.join(' | ')
     ).toBe(true)
-    // One masked field, and it is the key's: never carrying a value the page
-    // was given rather than typed.
-    const masked = container.querySelectorAll('input[type="password"]')
-    expect(masked).toHaveLength(1)
-    expect((masked[0] as HTMLInputElement).value).toBe('')
+    // No password field in this render: no endpoint is configured, so there is
+    // nothing to bind a key to and the row says so instead of offering one.
+    expect(container.querySelectorAll('input[type="password"]')).toHaveLength(0)
     // **One control is disabled here, and it is not a permanent one.** This
     // fixture is the state in which nothing asked for the desk-level file at
     // all, so this page has never seen the bytes a write would replace — and

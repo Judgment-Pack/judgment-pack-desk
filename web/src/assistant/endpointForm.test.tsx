@@ -100,13 +100,15 @@ function stubWrites(
 }
 
 function renderForm(value: EffectiveConfig = configured()) {
-  return render(
+  const written: unknown[] = []
+  const rendered = render(
     <QueryClientProvider client={testQueryClient()}>
       <DeskConfigFixture value={value}>
-        <EndpointForm />
+        <EndpointForm onWritten={(answer) => written.push(answer)} />
       </DeskConfigFixture>
     </QueryClientProvider>
   )
+  return { ...rendered, written }
 }
 
 const save = () => fireEvent.click(screen.getByRole('button', { name: 'Save' }))
@@ -197,7 +199,7 @@ describe('the fields', () => {
     const { rerender } = render(
       <QueryClientProvider client={testQueryClient()}>
         <DeskConfigFixture value={effectiveConfig(undefined)}>
-          <EndpointForm />
+          <EndpointForm onWritten={() => {}} />
         </DeskConfigFixture>
       </QueryClientProvider>
     )
@@ -205,7 +207,7 @@ describe('the fields', () => {
     rerender(
       <QueryClientProvider client={testQueryClient()}>
         <DeskConfigFixture value={configured()}>
-          <EndpointForm />
+          <EndpointForm onWritten={() => {}} />
         </DeskConfigFixture>
       </QueryClientProvider>
     )

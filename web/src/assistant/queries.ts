@@ -64,8 +64,22 @@ export function useAssistantKey(): UseQueryResult<AssistantKeyState, Error> {
  * window in which it is being sent, which is the shortest one there is.
  */
 export interface StoreAssistantKey {
-  /** Send one key. It is dropped as soon as the request has been made. */
-  submit: (key: string, handlers?: { onError?: (error: Error) => void }) => void
+  /**
+   * Send one key. It is dropped as soon as the request has been made.
+   *
+   * `onStored` is handed the state the chassis answered with — `present`, the
+   * fingerprint, and the destination the key is now bound to — and never the
+   * key. It exists because a store is what *repairs* a binding the page is
+   * reporting as broken, and the row has to stop saying so at the moment the
+   * chassis says otherwise.
+   */
+  submit: (
+    key: string,
+    handlers?: {
+      onError?: (error: Error) => void
+      onStored?: (state: AssistantKeyState) => void
+    }
+  ) => void
   isPending: boolean
 }
 
@@ -91,6 +105,7 @@ export function useStoreAssistantKey(): StoreAssistantKey {
       pending.current = key
       mutation.mutate(undefined, {
         onError: handlers?.onError,
+        onSuccess: (state) => handlers?.onStored?.(state),
         onSettled: () => {
           pending.current = null
         }

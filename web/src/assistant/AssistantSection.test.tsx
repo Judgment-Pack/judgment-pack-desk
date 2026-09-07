@@ -8,7 +8,8 @@
  * subsequent request.
  *
  * The form's own cases are in `endpointForm.test.tsx`; what is here about the
- * form is that it is *on* the section.
+ * form is that it is *on* the section, and that the key row and the write
+ * answer meet: `keyRebindRequired` moves the row without waiting for a read.
  */
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -477,5 +478,96 @@ describe('the Assistant section', () => {
     for (const jargon of ['chassis', 'bytes', 'os.Root', 'endpoint handler', 'HTTP']) {
       expect(text, `the section says ${jargon} to the reader`).not.toContain(jargon)
     }
+  })
+})
+
+describe('the key row and the endpoint it is bound to', () => {
+  it('asks for an endpoint to be saved before it offers the field', async () => {
+    // Storing a key requires an endpoint to bind it to. A field here would be
+    // an affordance whose only outcome is a refusal.
+    stubChassis({ key: NO_KEY })
+    const { container } = renderSection()
+    await screen.findByText('none stored on this machine')
+    expect(screen.getByText(/Save an endpoint above before storing a key/)).toBeTruthy()
+    expect(keyField(container)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Store key' })).toBeNull()
+  })
+
+  it('labels the field with the host the key would be entered for', async () => {
+    stubChassis({ key: NO_KEY })
+    renderSection(configured())
+    expect(await screen.findByText('none stored on this machine')).toBeTruthy()
+    expect(screen.getByLabelText('Key for https://api.example.invalid')).toBeTruthy()
+  })
+
+  it('says the key is for the endpoint that is configured, and offers to replace it', async () => {
+    stubChassis({ key: BOUND })
+    const { container } = renderSection(configured())
+    expect(await screen.findByText(/which is where this desk is configured/)).toBeTruthy()
+    // No field until Replace is asked for: a masked box beside a working key
+    // invites somebody to wonder what is in it.
+    expect(keyField(container)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Replace key' }))
+    expect(keyField(container)).not.toBeNull()
+  })
+
+  it('names both hosts where the stored key was entered for another one', async () => {
+    // Both halves, because a reader has to be able to see which of the two
+    // moved — the endpoint they just saved, or a key entered for elsewhere.
+    stubChassis({ key: { ...BOUND, origin: 'https://first.example.invalid' } })
+    const { container } = renderSection(configured())
+    expect(await screen.findByText(/will not be presented and nothing will be sent/)).toBeTruthy()
+    expect(screen.getByText('https://first.example.invalid')).toBeTruthy()
+    expect(screen.getByLabelText('Key for https://api.example.invalid')).toBeTruthy()
+    expect(keyField(container)).not.toBeNull()
+  })
+
+  it('reads the binding off the kind as well as the host', async () => {
+    stubChassis({ key: { ...BOUND, kind: 'anthropic' } })
+    renderSection(configured())
+    expect(await screen.findByText(/will not be presented and nothing will be sent/)).toBeTruthy()
+  })
+
+  it('asks for the key again the moment a write says the endpoint moved', async () => {
+    // **Without waiting for a read.** The chassis says `keyRebindRequired` at
+    // the instant the endpoint moves; a row that waited for the key query to
+    // be re-fetched would go on saying the key is bound for as long as that
+    // took, which is the page reporting a state it has been told is false.
+    stubChassis({
+      key: BOUND,
+      written: {
+        path: DESK_PATH,
+        sha256: 'b'.repeat(64),
+        assistant: { endpoint: ENDPOINT, engine: 'vercel', thinking: 'off' },
+        created: false,
+        keyRebindRequired: true
+      }
+    })
+    renderSection(configured())
+    expect(await screen.findByText(/which is where this desk is configured/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText(/will not be presented and nothing will be sent/)).toBeTruthy()
+  })
+
+  it('stops asking once a key has been stored for the new endpoint', async () => {
+    stubChassis({
+      key: BOUND,
+      written: {
+        path: DESK_PATH,
+        sha256: 'b'.repeat(64),
+        assistant: { endpoint: ENDPOINT, engine: 'vercel', thinking: 'off' },
+        created: false,
+        keyRebindRequired: true
+      }
+    })
+    const { container } = renderSection(configured())
+    await screen.findByText(/which is where this desk is configured/)
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await screen.findByText(/will not be presented and nothing will be sent/)
+    fireEvent.change(keyField(container)!, { target: { value: 'sk-another-real-looking-key' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Store key' }))
+    // The store answers with the binding the chassis now holds, and the row
+    // goes back to reading it.
+    expect(await screen.findByText(/which is where this desk is configured/)).toBeTruthy()
   })
 })
