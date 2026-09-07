@@ -5636,17 +5636,25 @@ export function assistantTransport(): Transport {
   SCD=web/src/admin/SourceCard.tsx
   ADV=web/src/routes/AdminView.tsx
 
-  # **A location comes from the chassis or it is a guess.** Joining the root the
-  # chassis reported to a file name would be this page asserting a path on a
-  # filesystem it cannot see, and would be wrong the first time a project was
-  # reached through a symlink — which the chassis resolves before it reports.
-  mutate web "the project file's location is composed on the page" "$ADV" \
+  # **A location comes from the chassis or it is a guess.**
+  #
+  # **This row replaced one that did not discriminate.** The first version
+  # composed `${chassis.projectDir}/${effective.path}` — which is the same
+  # string the chassis reports in every ordinary case, because the chassis
+  # composes it the same way out of the root it resolved. A mutation whose
+  # output is byte-identical to the correct one cannot be caught by anything,
+  # and a fixture built to make it differ would be a state no chassis produces.
+  #
+  # What is actually load-bearing is that the page reads the chassis' answer
+  # at all rather than falling back to its own project-relative constant, and
+  # that is what this breaks: the name a file is read by is not a location on
+  # a filesystem, and printing it as one is how Admin would name a path on a
+  # machine whose layout it never learned.
+  mutate web "the location is taken from the page instead of the chassis" "$ADV" \
     '  const chassis = effective.desk?.chassis
   if (chassis === undefined) return <code>{effective.path}</code>
   return <code>{chassis.projectFile}</code>' \
-    '  const chassis = effective.desk?.chassis
-  if (chassis === undefined) return <code>{effective.path}</code>
-  return <code>{`${chassis.projectDir}/${effective.path}`}</code>'
+    '  return <code>{effective.path}</code>'
 
   # **The narration guard, broken by putting narration back.** A sweep that
   # only ever passed over a clean page would prove nothing about the sweep.
