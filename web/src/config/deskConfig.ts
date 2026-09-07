@@ -185,6 +185,22 @@ export interface AssistantConfig {
   thinking: ThinkingTier
 }
 
+/**
+ * Which project this machine's desk opens when it is launched without one.
+ *
+ * **One nullable member, on the identity slot's precedent.** `file` names the
+ * `jpack-desk.json` of a project and the desk opens the directory that file is
+ * in, so the thing configured is a file a person can point at and check rather
+ * than a directory chosen by a name nothing reads.
+ *
+ * It is desk-level only, and refused by name in a project file: which project
+ * a machine opens by default is not a fact about any one project, and
+ * committing one would push one operator's filesystem onto every clone.
+ */
+export interface ProjectConfig {
+  file: string | null
+}
+
 export interface AppearanceConfig {
   theme: ThemeChoice
   density: Density
@@ -248,6 +264,7 @@ export interface DeskConfig {
   user: UserConfig
   identity: IdentityConfig
   assistant: AssistantConfig
+  project: ProjectConfig
   appearance: AppearanceConfig
   panes: PanesConfig
   storage: StorageConfig
@@ -259,6 +276,7 @@ export const DESK_DEFAULTS: DeskConfig = {
   user: { displayName: 'local user' },
   identity: { provider: null },
   assistant: { endpoint: null, engine: 'vercel', thinking: 'off' },
+  project: { file: null },
   appearance: { theme: 'system', density: 'comfortable' },
   panes: {
     left: { mode: 'expanded', width: 248 },
@@ -308,7 +326,7 @@ const COMMON_KEYS = [
   'storage'
 ] as const
 const PROJECT_KEYS: readonly string[] = COMMON_KEYS
-const DESK_KEYS: readonly string[] = [...COMMON_KEYS, 'identity', 'assistant']
+const DESK_KEYS: readonly string[] = [...COMMON_KEYS, 'identity', 'assistant', 'project']
 
 const IDENTITY_AT_PROJECT =
   'identity may only be configured in the desk-level desk.json — a project is a shared ' +
@@ -317,6 +335,10 @@ const IDENTITY_AT_PROJECT =
 const ASSISTANT_AT_PROJECT =
   'assistant may only be configured in the desk-level desk.json — a project is a shared ' +
   'checkout, and committing an endpoint would push one operator’s model endpoint onto every clone'
+
+const PROJECT_AT_PROJECT =
+  'project may only be configured in the desk-level desk.json — it names which project this ' +
+  'machine’s desk opens when it is launched without one, which is not a fact about any project'
 
 /**
  * The sentence a key-shaped member is refused with, wherever it appears.
@@ -471,6 +493,10 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
       problems.push({ key: 'assistant', reason: ASSISTANT_AT_PROJECT })
       continue
     }
+    if (key === 'project' && location === 'project') {
+      problems.push({ key: 'project', reason: PROJECT_AT_PROJECT })
+      continue
+    }
     problems.push({ key, reason: 'unknown key' })
   }
 
@@ -530,6 +556,13 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
           oneOf(assistant.thinking, 'assistant.thinking', ASSISTANT_THINKING, problems) ??
           DESK_DEFAULTS.assistant.thinking
       }
+    }
+  }
+
+  if ('project' in record && location === 'desk') {
+    const project = section(record.project, 'project', ['file'], problems)
+    if (project) {
+      values.project = { file: projectFile(project.file, problems) }
     }
   }
 
@@ -628,6 +661,70 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
   }
   if (unique.length > 0) return { values: undefined, problems: unique, declaredPanes }
   return { values, problems: [], declaredPanes }
+}
+
+/**
+ * The file a `project.file` must name.
+ *
+ * The same name the project's own configuration is read from, because it is the
+ * same file: the member says "open the project this file is in".
+ */
+const PROJECT_CONFIG_NAME = 'jpack-desk.json'
+
+/**
+ * `project.file`: an absolute path to a `jpack-desk.json`, or null.
+ *
+ * **Three rules, and each is about the path being one the desk can act on
+ * before it has a server.** It is read at launch, when there is no working
+ * directory worth resolving a relative path against — the point of a default
+ * project is that the desk opens the same one from anywhere — and it names the
+ * configuration file rather than the directory so that what is configured is a
+ * file a person can point at. Whichever rule it breaks, it is refused by
+ * `project.file`, because that is the member somebody has to repair.
+ *
+ * Mirrored by `decodeProject` in `internal/desk/deskfile.go` and held to it by
+ * the shared fixtures. The absoluteness test is lexical on both sides on
+ * purpose: `filepath.IsAbs` answers differently per platform and this side has
+ * no such function at all, so a corpus walked by both would be walked under two
+ * rules.
+ */
+function projectFile(value: unknown, problems: ConfigProblem[]): string | null {
+  if (value === undefined || value === null) return null
+  const bad = (reason: string): null => {
+    problems.push({ key: 'project.file', reason })
+    return null
+  }
+  if (typeof value !== 'string') {
+    return bad(
+      `must be an absolute path to a ${PROJECT_CONFIG_NAME}, or null; found ${describe(value)}`
+    )
+  }
+  const trimmed = value.trim()
+  if (!isAbsolutePath(trimmed)) {
+    return bad(
+      'must be an absolute path, because it is read before this desk has a working directory ' +
+        `to resolve one against; found ${describe(value)}`
+    )
+  }
+  if (lastSegment(trimmed) !== PROJECT_CONFIG_NAME) {
+    return bad(
+      `must name a ${PROJECT_CONFIG_NAME} — the desk opens the directory that file is in; ` +
+        `found ${describe(value)}`
+    )
+  }
+  return trimmed
+}
+
+/** A leading separator, or a drive letter with one. See `projectFile`. */
+function isAbsolutePath(path: string): boolean {
+  if (path.startsWith('/') || path.startsWith('\\')) return true
+  return /^[A-Za-z]:[/\\]/.test(path)
+}
+
+/** The file name at the end of a path, on either separator. */
+function lastSegment(path: string): string {
+  const at = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  return at < 0 ? path : path.slice(at + 1)
 }
 
 /**
@@ -1335,6 +1432,27 @@ export interface ReadFailure {
 export type ValueSource = 'project file' | 'desk file' | 'default'
 
 /**
+ * What the chassis says about **this process**, as opposed to about a file.
+ *
+ * Three paths, and the page invents none of them. `projectDir` is the root the
+ * chassis resolved and pinned — the one every part of it operates on, symlinks
+ * already followed — `projectFile` is the project's own configuration file
+ * inside it whether or not it is there, and `runtimeBin` is the binary the desk
+ * was launched with. A page that joined a directory to a file name would be
+ * asserting a location on a filesystem it cannot see, and would be wrong the
+ * first time a project was reached through a symlink.
+ *
+ * None of the three is in the configuration schema at any depth: the chassis
+ * executes the binary it was given, so a config-supplied path would be a way to
+ * run code on that machine by editing a file.
+ */
+export interface ChassisPaths {
+  projectDir: string
+  projectFile: string
+  runtimeBin: string
+}
+
+/**
  * One read of the desk-level `desk.json`, as the chassis reported it.
  *
  * `path` is carried whether or not a file was found, because it is what Admin
@@ -1346,6 +1464,14 @@ export interface DeskLevelRead {
   /** Absolute, on this machine, and known even where nothing was read. */
   path: string
   present: boolean
+  /**
+   * The file's own bytes, where a file was read.
+   *
+   * Carried so that Admin can show a member **as it is written** rather than
+   * a re-serialisation of the decode: `1e2` is not `100`, and a member's
+   * indentation and key order are whoever wrote them. See `memberBytes`.
+   */
+  text?: string
   /**
    * The digest of the bytes the chassis read, bare hex, and the empty string
    * where there is no file.
@@ -1362,6 +1488,14 @@ export interface DeskLevelRead {
   note?: string
   /** The read did not produce a file, and it was not an absence. */
   readFailure?: ReadFailure
+  /**
+   * What the chassis said about this process, where it answered at all.
+   *
+   * Undefined is a read that never got an answer — and a page that filled it
+   * in would be naming paths it never learned, on a machine whose
+   * `XDG_CONFIG_HOME` it cannot read.
+   */
+  chassis?: ChassisPaths
 }
 
 /** What Admin renders about the desk-level file. The decode, summarised. */
@@ -1369,6 +1503,8 @@ export interface DeskLevelSummary {
   path: string
   present: boolean
   problems: ConfigProblem[]
+  /** The file's own bytes, where a file was read. See `DeskLevelRead.text`. */
+  text?: string
   /**
    * The digest of the bytes this read saw, carried through from
    * `DeskLevelRead` so that a form on Admin can send it back as `ifMatch`.
@@ -1383,6 +1519,8 @@ export interface DeskLevelSummary {
   sha256?: string
   note?: string
   readFailure?: ReadFailure
+  /** What the chassis said about this process. See `DeskLevelRead.chassis`. */
+  chassis?: ChassisPaths
 }
 
 export interface EffectiveConfig {
@@ -1392,6 +1530,14 @@ export interface EffectiveConfig {
   problems: ConfigProblem[]
   /** The project-relative path the project file is read from. */
   path: string
+  /**
+   * The project file's own bytes, where one was read.
+   *
+   * Admin quotes a member out of these rather than re-serialising the decode,
+   * for the reason `memberBytes` gives: what is shown has to be what is in the
+   * file.
+   */
+  text?: string
   /**
    * Why no file was read, where none was **absent**. Not an error the page
    * reports — an absent config is defaults with no banner — but Admin says
@@ -1449,7 +1595,8 @@ export function effectiveConfig(
   decoded: DecodedConfig | undefined,
   note?: string,
   readFailure?: ReadFailure,
-  desk?: DeskLevelRead
+  desk?: DeskLevelRead,
+  text?: string
 ): EffectiveConfig {
   const values = decoded?.values
   const deskValues = desk?.decoded?.values
@@ -1479,6 +1626,7 @@ export function effectiveConfig(
       // default, and nothing in between.
       identity: deskValues?.identity ?? DESK_DEFAULTS.identity,
       assistant: deskValues?.assistant ?? DESK_DEFAULTS.assistant,
+      project: deskValues?.project ?? DESK_DEFAULTS.project,
       appearance: pick('appearance'),
       panes: pick('panes'),
       storage: pick('storage')
@@ -1488,12 +1636,14 @@ export function effectiveConfig(
       user: from('user'),
       identity: deskValues?.identity === undefined ? 'default' : 'desk file',
       assistant: deskValues?.assistant === undefined ? 'default' : 'desk file',
+      project: deskValues?.project === undefined ? 'default' : 'desk file',
       appearance: from('appearance'),
       panes: from('panes'),
       storage: from('storage')
     },
     problems: decoded?.problems ?? [],
     path: PROJECT_CONFIG_PATH,
+    text,
     note,
     readFailure,
     declaredPanes: panesDeclaredBy ?? NOTHING_DECLARED,
@@ -1504,6 +1654,8 @@ export function effectiveConfig(
             path: desk.path,
             present: desk.present,
             problems: desk.decoded?.problems ?? [],
+            text: desk.text,
+            chassis: desk.chassis,
             sha256: desk.sha256,
             note: desk.note,
             readFailure: desk.readFailure

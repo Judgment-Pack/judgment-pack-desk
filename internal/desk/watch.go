@@ -80,13 +80,15 @@ func newWatcher(root string, logger *log.Logger, emit func(string)) (*watcher, e
 // The count is the point: zero means the tree was never reached, which is a
 // startup failure rather than a quiet degradation.
 //
-// **fsnotify is pathname-based and cannot be pinned to a descriptor.** This is
-// the one part of the chassis that watches by name, so a directory replaced
-// after startup is watched by whatever now bears that name. It is a
-// notification channel and not an authority: nothing is read, written or
-// decided here — the file API holds the descriptor, and the worst a misdirected
-// watch can do is invalidate a query that then re-reads through the root. Stated
-// in the README rather than implied.
+// **fsnotify takes a path, so the path it is given is the descriptor's own.**
+// On Linux the caller passes `/proc/self/fd/N` on the pinned project, which the
+// kernel resolves to the open file description rather than to a name — so a
+// directory replaced after startup is not what ends up watched. Off Linux there
+// is no such spelling and this does watch by name; it is a notification channel
+// and not an authority either way — nothing is read, written or decided here,
+// the file API holds the descriptor, and the worst a misdirected watch can do
+// is invalidate a query that then re-reads through the root. Stated in the
+// README rather than implied.
 func (w *watcher) addTree(dir string) (int, error) {
 	watched := 0
 	// The same budget the file listing walks under, and for the same reason: a

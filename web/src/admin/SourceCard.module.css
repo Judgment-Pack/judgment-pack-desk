@@ -1,0 +1,112 @@
+.card {
+  margin: 0 0 1.25rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.title {
+  margin: 0 0 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.head {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.key {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.value {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.reason {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.content {
+  margin-top: 0.6rem;
+  font-size: 0.78rem;
+}
+
+.summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+
+.decoded {
+  color: var(--ink-faint);
+}
+
+.json {
+  margin: 0.4rem 0 0;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  overflow-x: auto;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.fields {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 0.2rem 0.5rem;
+  align-items: baseline;
+}
+
+.rule {
+  grid-column: 2;
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--ink-faint);
+  overflow-wrap: anywhere;
+}
+
+.save {
+  margin-top: 0.75rem;
+}
+
+@media (max-width: 40rem) {
+  .row,
+  .field {
+    grid-template-columns: 1fr;
+  }
+
+  .rule {
+    grid-column: 1;
+  }
+}

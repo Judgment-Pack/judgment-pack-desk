@@ -44,14 +44,9 @@ import type { EndpointDraft } from './endpointDraft'
 import { listModels, type ModelRow } from './modelListing'
 import { bindModelCall } from './session'
 
-const NOT_BOUND =
-  'The endpoint has to be saved and its key stored before this desk can ask it what it has.'
-const NOT_SAVED =
-  'Save these changes first: this asks the endpoint that is saved, and the form says something ' +
-  'else at the moment.'
-const FIRST_PAGE =
-  'The first page of what the endpoint lists, and no more of it. A model that is not here is ' +
-  'typed into the field.'
+const NOT_BOUND = 'Save the endpoint and store its key before this desk can ask what it has.'
+const NOT_SAVED = 'Save these changes first: this asks the endpoint that is saved.'
+const FIRST_PAGE = 'The first page of what the endpoint lists. Anything else is typed in.'
 
 /**
  * Which endpoint a set of rows is about.
@@ -128,7 +123,7 @@ export function ModelField({
     <>
       <Field
         label="Model"
-        hint="The model id this endpoint knows it by, exactly as the endpoint spells it."
+        hint="The model id, exactly as the endpoint spells it."
         error={problem}
       >
         {(wiring) => (

@@ -1,51 +1,57 @@
 /**
- * Admin: seven read-only sections about this machine's desk.
+ * Admin: eight cards, one shape, and no paragraph telling anyone how to read
+ * them.
  *
- * **Nothing on this page writes configuration**, and that is the decision
- * rather than the state of the work. A real editor needs a `PUT` to a file
- * outside the chassis' pinned `os.Root` — a second containment argument, its
- * own token and origin tests, and a ruling on whether the session token alone
- * may write the identity slot. So Admin renders the effective value, the badge
- * saying where it came from, the path it would come from, and the exact JSON
- * to paste.
+ * **The narration is gone, and its removal is the change.** Every section used
+ * to carry one or two paragraphs, a standing disclaimer, warning notes and a
+ * paste block, and a reader who wanted the same four facts about two settings
+ * had to find them in two shapes. What is left is the four facts, in one order,
+ * per section: **where** the value is written, **whether** it was read, **what**
+ * is in the file, and the fields — with a Save on the one card that has a write
+ * path. A real problem is the card's Status line and nothing else.
  *
- * **Every field is text.** There is no disabled radio group and there are no
- * disabled inputs, deliberately departing from the artboard: a disabled
- * control that will never enable is an affordance that lies about what the
- * page can do. The only control that changes **persisted desk-layout state**
- * is Panes' reset, which clears one `localStorage` key. That is the exact
- * claim and not a rounding of it: the Copy buttons beside each paste block
- * change the clipboard, and their own transient "copied" state with it —
- * calling them state-free was a sentence this file's own `useState` refuted.
+ * **A location is never composed here.** The desk-level file's path, the
+ * project file's path and the runtime binary come from the chassis; a page that
+ * joined a directory to a file name would be asserting a location on a
+ * filesystem it cannot see.
  *
- * `runtime.jpackBin` and `project.dir` are **not in the schema at all** —
- * `relay.go` runs the configured binary, so a config-supplied path would be a
- * local-code-execution surface. Those two sections display what the process
- * was started with, and nothing here can change them.
+ * `runtime` and the project root are **not in the schema**, and that is the
+ * design rather than a gap: `relay.go` runs the configured binary, so a
+ * config-supplied path would be a local-code-execution surface. The Runtime
+ * card reports what the process was started with.
  */
 import { useState } from 'react'
 import { AssistantSection } from '../assistant/AssistantSection'
-import { Section } from '../components/primitives'
+import { CardField, SourceCard, type SourceStatus } from '../admin/SourceCard'
+import { useDefaultProject } from '../admin/DefaultProject'
 import { useHashTarget } from '../shell/useHashTarget'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
-import { DESK_FALLBACK_NAME, PANE_BOUNDS } from '../config/deskConfig'
+import {
+  DESK_FALLBACK_NAME,
+  PANE_BOUNDS,
+  type ConfigProblem,
+  type DeskConfig,
+  type EffectiveConfig,
+  type ValueSource
+} from '../config/deskConfig'
 import { useFileListing } from '../files/queries'
 import { useMcp } from '../mcp/McpProvider'
 import { usePacks } from '../mcp/queries'
 import { useRenderedPanes, type MeasuredBox } from '../shell/measured'
 import { useShellState } from '../shell/paneState'
 import type { ResetOutcome } from '../shell/paneState'
-import { PasteBlock, SourceBadge } from './adminBlocks'
-import { ADMIN_DISCLAIMER, ADMIN_SECTIONS } from './adminSections'
+import { ADMIN_SECTIONS } from './adminSections'
 
-const DESK_FILE_NOTE =
-  'The desk-level desk.json is the only place an identity provider or an assistant endpoint may ' +
-  'be configured. It is read through its own read-only endpoint rather than the file API, ' +
-  'because it is outside the project and the file API reaches nothing outside the project.'
+/** The sections, by id, so a card names its own rather than an index. */
+const SECTION = Object.fromEntries(
+  ADMIN_SECTIONS.map((section) => [section.id, section])
+) as Record<string, { id: string; title: string }>
 
 export function AdminView() {
-  const { config, sources, problems, path, note, readFailure, desk } = useEffectiveConfig()
-  const { server, known } = useMcp()
+  const effective = useEffectiveConfig()
+  const { config, desk } = effective
+  const mcp = useMcp()
+  const { server, known } = mcp
   const { data } = usePacks()
   const listing = useFileListing()
   const shell = useShellState()
@@ -55,6 +61,9 @@ export function AdminView() {
     `${shell.left.mode}|${shell.inspector.open}|${shell.console.open}`
   )
   const [reset, setReset] = useState<ResetOutcome | undefined>(undefined)
+  // The Project card's one field and its Save, sharing one draft across two of
+  // the card's slots.
+  const defaultProject = useDefaultProject()
   // The rail's and the user menu's section links carry a hash. Nothing in the
   // router scrolls to one, and the document is not the scroll container here —
   // `.desk-main` is — so without this they changed the URL and moved nothing.
@@ -67,369 +76,242 @@ export function AdminView() {
     <article className="detail">
       <header className="detail-head">
         <h1>Admin</h1>
-        <p className="quiet">{ADMIN_DISCLAIMER}</p>
       </header>
 
-      {problems.length > 0 && (
-        <p className="note note-warn" role="status">
-          <strong>The project configuration was refused, and the desk is on its defaults.</strong>{' '}
-          Every problem is named below; one problem refuses the whole file, because a file that
-          applied three of its four settings would look honoured while a typo did nothing.
-          <br />
-          {problems.map((problem) => (
-            <code key={`${problem.key}:${problem.reason}`} className="partial-reason">
-              {problem.key === '' ? problem.reason : `${problem.key}: ${problem.reason}`}
-            </code>
-          ))}
-        </p>
-      )}
+      <SourceCard
+        id={SECTION.project!.id}
+        title={SECTION.project!.title}
+        location={projectLocation(effective)}
+        status={projectStatus(effective)}
+        // The whole file, and only where it was accepted: the card's own
+        // Status is what gates it, and a refused document is exactly the one
+        // that must not be rendered.
+        content={{ text: effective.text }}
+        fields={defaultProject.field}
+        save={defaultProject.save}
+      />
 
-      {problems.length === 0 && readFailure !== undefined && (
-        <p className="note note-warn" role="status">
-          <strong>The project configuration could not be read, and the desk is on its
-          defaults.</strong>{' '}
-          This is not the same as having no file: the desk asked for <code>{path}</code> and the
-          read did not succeed, so whatever it says has not been applied — and nothing here
-          establishes that the file is absent either.{' '}
-          {/* Attribution off the carried provenance, never off "is there a
-              status?": a 200 whose body is not the envelope this API promises
-              is an answer whose *sentence* is the desk's own, and inferring
-              it had this page say the request never got an answer. */}
-          {!readFailure.responseReceived ? (
-            <>
-              <strong>The request never got an answer</strong>, so the reason below is the
-              browser&apos;s own. It says the read failed; it says nothing about what is on
-              disk.
-            </>
-          ) : readFailure.source === 'chassis' ? (
-            <>
-              The chassis answered <code>{readFailure.status}</code>, and the reason below is
-              its own, verbatim.
-            </>
+      <SourceCard
+        id={SECTION['identity-provider']!.id}
+        title={SECTION['identity-provider']!.title}
+        location={deskLocation(effective)}
+        status={deskStatus(effective)}
+        content={{ text: desk?.text, member: 'identity', value: config.identity }}
+        fields={
+          <CardField label="Provider">
+            {config.identity.provider === null ? (
+              'None'
+            ) : (
+              <>
+                <code>{config.identity.provider.issuer}</code>
+                {config.identity.provider.label !== null && (
+                  <> — {config.identity.provider.label}</>
+                )}
+              </>
+            )}
+          </CardField>
+        }
+      />
+
+      <AssistantSection id={SECTION.assistant!.id} title={SECTION.assistant!.title} />
+
+      <SourceCard
+        id={SECTION.runtime!.id}
+        title={SECTION.runtime!.title}
+        location={
+          desk?.chassis === undefined ? (
+            <span className="quiet">the desk has not said</span>
           ) : (
-            <>
-              The chassis answered <code>{readFailure.status}</code>, but the reason below is
-              this desk&apos;s sentence about that answer rather than the chassis&apos; own —
-              it sent nothing this desk could quote.
-            </>
-          )}
-          <br />
-          <code className="partial-reason">{readFailure.reason}</code>
-        </p>
-      )}
-
-      {desk !== undefined && desk.problems.length > 0 && (
-        <p className="note note-warn" role="status">
-          <strong>
-            The desk-level configuration was refused, and the desk is on its defaults for
-            everything that file supplies.
-          </strong>{' '}
-          It is a separate file from the one above and is refused separately: a bad key here does
-          not refuse the project&apos;s file, and neither one is repaired by the other.
-          <br />
-          <code className="partial-reason">{desk.path}</code>
-          {desk.problems.map((problem) => (
-            <code key={`${problem.key}:${problem.reason}`} className="partial-reason">
-              {problem.key === '' ? problem.reason : `${problem.key}: ${problem.reason}`}
-            </code>
-          ))}
-        </p>
-      )}
-
-      {desk !== undefined && desk.problems.length === 0 && desk.readFailure !== undefined && (
-        <p className="note note-warn" role="status">
-          <strong>The desk-level configuration could not be read.</strong> That is not the same as
-          not having one: the read did not succeed, so nothing here establishes that the file is
-          absent either.
-          <br />
-          <code className="partial-reason">{desk.readFailure.reason}</code>
-        </p>
-      )}
-
-      <h2 id={ADMIN_SECTIONS[0]!.id} className="section-title">
-        {ADMIN_SECTIONS[0]!.title}
-      </h2>
-      <p>
-        Name: <strong>{config.organization.name ?? `${DESK_FALLBACK_NAME} (no name configured)`}</strong>
-        <br />
-        Mark: {config.organization.mark ? 'configured in the project file' : 'none — a monogram'}
-        <br />
-        <SourceBadge source={sources.organization} path={path} />
-      </p>
-      <p className="quiet">
-        The organization name is local configuration. It is never taken from a token claim, never
-        sent to the runtime, and never presented as attested. Absent, the header reads{' '}
-        <code>{DESK_FALLBACK_NAME}</code> rather than an invented company.
-      </p>
-      <PasteBlock
-        label="Add to jpack-desk.json"
-        json={{ deskConfigVersion: 1, organization: { name: 'Acme Co.', mark: null } }}
-      />
-
-      <h2 id={ADMIN_SECTIONS[1]!.id} className="section-title">
-        {ADMIN_SECTIONS[1]!.title}
-      </h2>
-      <p>
-        Provider:{' '}
-        <strong>{config.identity.provider === null ? 'none — one local user' : 'configured'}</strong>
-        <br />
-        Local display name: <code>{config.user.displayName}</code>{' '}
-        <span className="quiet">used when no identity provider is configured</span>
-        <br />
-        <SourceBadge source={sources.identity} path={path} deskPath={desk?.path} />
-      </p>
-      <p className="quiet">{DESK_FILE_NOTE}</p>
-      <p className="quiet">
-        The slot is one nullable field: <code>identity.provider</code> is null or an object. There
-        is no <code>kind</code>, no vendor string and no third shape, and there is no{' '}
-        <code>clientSecret</code> key in the schema — a secret pasted into the file is refused by
-        name rather than silently persisted. An issuer someone else operates and an issuer you run
-        are the same object with a different URL in it.
-      </p>
-      <p className="quiet">
-        <strong>Configuring a provider gates nothing.</strong> Identity is display in every phase
-        of this design; access stays the loopback bind, the session token this tab holds, and the
-        origin check.
-      </p>
-
-      <AssistantSection id={ADMIN_SECTIONS[2]!.id} title={ADMIN_SECTIONS[2]!.title} />
-
-      <h2 id={ADMIN_SECTIONS[3]!.id} className="section-title">
-        {ADMIN_SECTIONS[3]!.title}
-      </h2>
-      <p>
-        Connected runtime:{' '}
-        {server ? (
-          <>
-            <code>{server.name}</code> {server.version}
-          </>
-        ) : (
-          'not connected'
-        )}
-        <br />
-        Tool listing: {known ? 'read' : 'not read on this connection'}
-      </p>
-      <p className="quiet">
-        The runtime binary and the project directory are what the process was started with. Neither
-        is in the configuration schema: the chassis executes the binary it was given, so a
-        config-supplied path would be a way to run code on this machine by editing a file.
-      </p>
-
-      <h2 id={ADMIN_SECTIONS[4]!.id} className="section-title">
-        {ADMIN_SECTIONS[4]!.title}
-      </h2>
-      <p>
-        Configuration the runtime resolved:{' '}
-        {data?.configPath ? <code>{data.configPath}</code> : <span className="quiet">not read yet</span>}
-        <br />
-        Desk configuration file: <code>{path}</code>{' '}
-        <span className="quiet">read through the chassis file API, like any project file</span>
-        <br />
-        Desk-level file on this machine:{' '}
-        {desk === undefined ? (
-          <span className="quiet">not read on this page</span>
-        ) : (
-          <>
-            <code>{desk.path}</code>{' '}
-            <span className="quiet">
-              {desk.present ? 'read' : 'no file is there — the desk is on its defaults for it'}
-            </span>
-          </>
-        )}
-      </p>
-      {note !== undefined && problems.length === 0 && readFailure === undefined && (
-        <p className="quiet">
-          {/* The ordinary case, said out loud rather than left as a silence
-              indistinguishable from a file that was read and did nothing. */}
-          <code>{note}</code>
-        </p>
-      )}
-
-      <h2 id={ADMIN_SECTIONS[5]!.id} className="section-title">
-        {ADMIN_SECTIONS[5]!.title}
-      </h2>
-      <p>
-        Kind: <strong>{config.storage.packs.kind}</strong>{' '}
-        <span className="quiet">a file in this project, written through the file API</span>
-        <br />
-        Packs are written to: <code>{config.storage.packs.dir}</code>{' '}
-        <span className="quiet">{PACK_LOCATION_SAYS[packLocation]}</span>
-        <br />
-        Pack id prefix: <code>{config.storage.packs.idBase}</code>
-        <br />
-        <SourceBadge source={sources.storage} path={path} />
-      </p>
-      <p className="quiet">
-        A new pack's name gives its id, and the id gives its file name inside the location above —
-        so Create a pack asks for a name, a description and a template, and never for a location.
-        The id prefix is normalised to end in a separator when it is read, which is why what is
-        shown here is what is written.
-      </p>
-      <p className="quiet">
-        Two other kinds are named in the schema's refusal and are <strong>not available yet</strong>:{' '}
-        <span>database — coming soon</span>, <span>cloud storage — coming soon</span>. They are not
-        selectable here or anywhere, and they change nothing about creating a pack: this desk creates
-        a pack by writing a file, always. A disabled control offering one would be an affordance
-        lying about what the page can do.
-      </p>
-      <PasteBlock
-        label="Add to jpack-desk.json"
-        json={{
-          deskConfigVersion: 1,
-          storage: {
-            packs: {
-              kind: 'filesystem',
-              dir: 'packs',
-              idBase: 'https://example.invalid/judgment-packs/'
-            }
-          }
+            <code>{desk.chassis.runtimeBin}</code>
+          )
+        }
+        status={{
+          state: 'said',
+          says: server
+            ? `connected — ${server.name} ${server.version}`
+            : 'not connected'
         }}
+        content={{ value: runtimeSummary(mcp) }}
+        fields={
+          <>
+            <CardField label="Configuration">
+              {data?.configPath ? (
+                <code>{data.configPath}</code>
+              ) : (
+                <span className="quiet">not read yet</span>
+              )}
+            </CardField>
+            <CardField label="Tool listing">
+              {known ? 'read' : 'not read on this connection'}
+            </CardField>
+          </>
+        }
       />
 
-      <h2 id={ADMIN_SECTIONS[6]!.id} className="section-title">
-        {ADMIN_SECTIONS[6]!.title}
-      </h2>
-      <p>
-        Theme: <code>{config.appearance.theme}</code>
-        <br />
-        Density: <code>{config.appearance.density}</code>
-        <br />
-        <SourceBadge source={sources.appearance} path={path} />
-      </p>
-      <p className="quiet">
-        <code>theme</code> is applied: <code>light</code> and <code>dark</code> write{' '}
-        <code>data-theme</code> on the root element and <code>system</code> takes it off, leaving{' '}
-        <code>prefers-color-scheme</code> to answer. <strong>What it selects today is a palette
-        whose values are the light ones.</strong> Phase A ships that plumbing — the two selectors
-        and the attribute — and none of the dark values: the three condition verdict colours carry
-        meaning and cannot be mechanically inverted, and a desk that re-authored its neutrals
-        around them would be half dark. So choosing dark changes the attribute and no colour, and
-        the palette is its own piece of work.
-      </p>
-      <p className="quiet">
-        <code>density</code> is recorded and validated and is read by nothing yet. It is in the
-        schema because a file that carries it should not be refused for it; it is named here
-        because a key that is accepted and does nothing should say so.
-      </p>
+      <SourceCard
+        id={SECTION.storage!.id}
+        title={SECTION.storage!.title}
+        location={sectionLocation(effective, 'storage')}
+        status={sectionStatus(effective, 'storage')}
+        content={{
+          text: textFor(effective, 'storage'),
+          member: 'storage',
+          value: config.storage
+        }}
+        fields={
+          <>
+            <CardField label="Kind">
+              <strong>{config.storage.packs.kind}</strong>
+            </CardField>
+            <CardField label="Packs go to" rule={PACK_LOCATION_SAYS[packLocation]}>
+              <code>{config.storage.packs.dir}</code>
+            </CardField>
+            <CardField label="Id prefix">
+              <code>{config.storage.packs.idBase}</code>
+            </CardField>
+            <CardField label="Not available yet">
+              <span>database — coming soon</span>
+              {', '}
+              <span>cloud storage — coming soon</span>
+            </CardField>
+          </>
+        }
+      />
 
-      <h2 id={ADMIN_SECTIONS[7]!.id} className="section-title">
-        {ADMIN_SECTIONS[7]!.title}
-      </h2>
-      <p>
-        {/* **Configured, and labelled as configured.** These are the decoded
-            numbers before the sheet's viewport caps touch them; the rendered
-            column beside them is what is on screen. Printing one and calling
-            it the other is how an accepted 720px Inspector was reported as
-            720px while rendering 440px. */}
-        Rail: <code>{config.panes.left.mode}</code>, configured{' '}
-        <strong>{config.panes.left.width}px</strong> — rendered{' '}
-        <Rendered box={rendered.rail} axis="width" />
-        <br />
-        Inspector: {config.panes.inspector.open ? 'open' : 'closed'}, configured{' '}
-        <strong>{config.panes.inspector.width}px</strong> — rendered{' '}
-        <Rendered box={rendered.inspector} axis="width" />
-        <br />
-        Console: {config.panes.console.open ? 'open' : 'closed'}, configured{' '}
-        <strong>{config.panes.console.height}px</strong> — rendered{' '}
-        <Rendered box={rendered.console} axis="height" />
-        <br />
-        <SourceBadge source={sources.panes} path={path} />
-      </p>
-      <p className="quiet">
-        <strong>Configured is not rendered</strong>, and the difference is the frame rather than
-        a rounding. The rendered figures above are measured off this page&apos;s own live panes;
-        a pane that is not on screen at this width says so rather than reporting a number nothing
-        has.
-      </p>
-      <p className="quiet">
-        Each dimension is accepted only inside its range, inclusive at both ends, and a value
-        outside it refuses the whole file by name:
-        <br />
-        {PANE_DIMENSIONS.map((dimension) => (
-          <code key={dimension.key} className="partial-reason">
-            {dimension.key}: {PANE_BOUNDS[dimension.key]!.min}–{PANE_BOUNDS[dimension.key]!.max}px
-          </code>
-        ))}
-      </p>
-      <p className="quiet">
-        A legal value is then <strong>capped against the viewport it is actually in</strong>,
-        because a size that fits a monitor can still eat a phone and this frame does not scroll.
-        The rail and the Inspector each take at most <code>40vw</code>, which leaves the routes at
-        least 20% of the width with both open. The console takes at most what leaves{' '}
-        <code>120px</code> of route under the header and above this strip — <em>except</em> that
-        an open console never falls below <code>80px</code>, the smallest height the schema
-        accepts for one. On a viewport too short for both, the routes give way rather than the
-        console silently becoming a pane of no height with a toggle still saying it is open;
-        and where there is less room between the header and this strip than <code>80px</code>,
-        the console takes all of it and no more, because the strip is the one thing that never
-        leaves the frame.
-      </p>
-      <p className="quiet">
-        Which panes are open is remembered per project on this machine only, under{' '}
-        <code>{shell.storageKey}</code>
-        {shell.keyResolved ? (
-          '. '
-        ) : (
-          <span className="quiet">
-            {' '}
-            — provisional, because the chassis has not yet reported this project&apos;s root;
-            nothing is written under it.{' '}
-          </span>
-        )}
-        It is never sent anywhere and never written to the project. Phase A stores the collapse
-        flags and the console&apos;s channel for the panes the viewer has actually moved, and no
-        sizes at all, because nothing on this desk can yet change a size.
-      </p>
-      <p>
-        <button type="button" onClick={() => setReset(shell.resetPanes())}>
-          Reset panes on this machine
-        </button>{' '}
-        {/* What happened, not what was attempted. The reset runs inside the
-            provider that owns the record — it cancels a write already on its
-            way, refuses to clear the provisional key before the chassis has
-            said which project this is, and reads the key back afterwards — and
-            each of those is a different sentence here. */}
-        {reset === 'cleared' && (
-          <span className="quiet">Cleared, and the panes are back on their configured defaults.</span>
-        )}
-        {reset === 'refused' && (
-          <span className="quiet">
-            this browser did not clear the record — the layout is unchanged
-          </span>
-        )}
-        {reset === 'unresolved' && (
-          <span className="quiet">
-            nothing was cleared: this desk has not yet been told which project it is open on, so
-            the record above is not the one this project will use
-          </span>
-        )}
-      </p>
+      <SourceCard
+        id={SECTION.organization!.id}
+        title={SECTION.organization!.title}
+        location={sectionLocation(effective, 'organization')}
+        status={sectionStatus(effective, 'organization')}
+        content={{
+          text: textFor(effective, 'organization'),
+          member: 'organization',
+          value: config.organization
+        }}
+        fields={
+          <>
+            <CardField label="Name">
+              <strong>
+                {config.organization.name ?? `${DESK_FALLBACK_NAME} (no name configured)`}
+              </strong>
+            </CardField>
+            <CardField label="Mark">
+              {config.organization.mark ? 'configured in the file' : 'none — a monogram'}
+            </CardField>
+          </>
+        }
+      />
 
-      <Section title="The whole file">
-        <PasteBlock
-          label="jpack-desk.json, every key this location accepts"
-          json={{
-            deskConfigVersion: 1,
-            organization: { name: 'Acme Co.', mark: null },
-            user: { displayName: 'local user' },
-            appearance: { theme: 'system', density: 'comfortable' },
-            panes: {
-              left: { mode: 'expanded', width: 248 },
-              inspector: { open: false, width: 360 },
-              console: { open: false, height: 240 }
-            },
-            storage: {
-              packs: {
-                kind: 'filesystem',
-                dir: 'packs',
-                idBase: 'https://example.invalid/judgment-packs/'
-              }
-            }
-          }}
-        />
-      </Section>
+      <SourceCard
+        id={SECTION.appearance!.id}
+        title={SECTION.appearance!.title}
+        location={sectionLocation(effective, 'appearance')}
+        status={sectionStatus(effective, 'appearance')}
+        content={{
+          text: textFor(effective, 'appearance'),
+          member: 'appearance',
+          value: config.appearance
+        }}
+        fields={
+          <>
+            <CardField label="Theme" rule="Applied. The palette it selects is the light one.">
+              <code>{config.appearance.theme}</code>
+            </CardField>
+            <CardField label="Density" rule="Accepted and read by nothing yet.">
+              <code>{config.appearance.density}</code>
+            </CardField>
+          </>
+        }
+      />
+
+      <SourceCard
+        id={SECTION.panes!.id}
+        title={SECTION.panes!.title}
+        location={sectionLocation(effective, 'panes')}
+        status={sectionStatus(effective, 'panes')}
+        content={{ text: textFor(effective, 'panes'), member: 'panes', value: config.panes }}
+        fields={
+          <>
+            <CardField label="Rail">
+              {/* **Configured, and labelled as configured.** These are the
+                  decoded numbers before the sheet's viewport caps touch them;
+                  the rendered figure beside them is what is on screen. Printing
+                  one and calling it the other is how an accepted 720px
+                  Inspector was reported as 720px while rendering 440px. */}
+              <code>{config.panes.left.mode}</code>, configured{' '}
+              <strong>{config.panes.left.width}px</strong> — rendered{' '}
+              <Rendered box={rendered.rail} axis="width" />
+            </CardField>
+            <CardField label="Inspector">
+              {config.panes.inspector.open ? 'open' : 'closed'}, configured{' '}
+              <strong>{config.panes.inspector.width}px</strong> — rendered{' '}
+              <Rendered box={rendered.inspector} axis="width" />
+            </CardField>
+            <CardField label="Console">
+              {config.panes.console.open ? 'open' : 'closed'}, configured{' '}
+              <strong>{config.panes.console.height}px</strong> — rendered{' '}
+              <Rendered box={rendered.console} axis="height" />
+            </CardField>
+            <CardField label="Accepted ranges">
+              {PANE_DIMENSIONS.map((dimension) => (
+                <code key={dimension.key} className="partial-reason">
+                  {dimension.key}: {PANE_BOUNDS[dimension.key]!.min}–
+                  {PANE_BOUNDS[dimension.key]!.max}px
+                </code>
+              ))}
+            </CardField>
+            <CardField label="Remembered under">
+              <code>{shell.storageKey}</code>{' '}
+              {!shell.keyResolved && (
+                <span className="quiet">provisional — this project&apos;s root is not known</span>
+              )}
+            </CardField>
+          </>
+        }
+        save={
+          <p className="actions">
+            <button type="button" onClick={() => setReset(shell.resetPanes())}>
+              Reset panes on this machine
+            </button>{' '}
+            {/* What happened, not what was attempted. The reset runs inside
+                the provider that owns the record — it cancels a write already
+                on its way, refuses to clear the provisional key before the
+                chassis has said which project this is, and reads the key back
+                afterwards — and each of those is a different sentence. */}
+            {reset === 'cleared' && (
+              <span className="quiet">Cleared — the panes are back on their defaults.</span>
+            )}
+            {reset === 'refused' && (
+              <span className="quiet">
+                this browser did not clear the record — the layout is unchanged
+              </span>
+            )}
+            {reset === 'unresolved' && (
+              <span className="quiet">
+                nothing was cleared: this desk has not been told which project it is open on
+              </span>
+            )}
+          </p>
+        }
+      />
     </article>
   )
+}
+
+/**
+ * What the page knows about the runtime it is connected to.
+ *
+ * The connection's own summary — who answered `initialize`, whether the tool
+ * listing was read, and what that listing said this runtime can do. **`known`
+ * is carried rather than folded in**: a listing that never answered leaves
+ * every flag *unknown* rather than absent, and a card that printed them as
+ * false would impersonate an older runtime.
+ */
+function runtimeSummary(mcp: ReturnType<typeof useMcp>) {
+  const { client, retryNow, error, ...summary } = mcp
+  void client
+  void retryNow
+  return { ...summary, error: error === null ? null : error.message }
 }
 
 /** The three bounded dimensions, in the order the section prints them. */
@@ -438,6 +320,89 @@ const PANE_DIMENSIONS = [
   { key: 'panes.inspector.width' },
   { key: 'panes.console.height' }
 ] as const
+
+/** The sections that come from either file, layered. */
+type LayeredSection = Exclude<
+  keyof DeskConfig,
+  'deskConfigVersion' | 'identity' | 'assistant' | 'project'
+>
+
+/**
+ * Where the project's own configuration file is, **as the chassis said it**.
+ *
+ * The absolute path the chassis resolved, and the project-relative name only
+ * where it has not answered — which is honest about being a name rather than a
+ * location. Joining the reported directory to a file name here would be this
+ * page composing a path on a filesystem it cannot see, and would be wrong the
+ * first time a project was reached through a symlink.
+ */
+function projectLocation(effective: EffectiveConfig) {
+  const chassis = effective.desk?.chassis
+  if (chassis === undefined) return <code>{effective.path}</code>
+  return <code>{chassis.projectFile}</code>
+}
+
+/** Where the desk-level file is, as the chassis said it — or that nothing asked. */
+function deskLocation(effective: EffectiveConfig) {
+  if (effective.desk === undefined) {
+    return <span className="quiet">nothing has asked for it</span>
+  }
+  return <code>{effective.desk.path}</code>
+}
+
+/** Which file supplied one layered section, and therefore where it is written. */
+function sectionLocation(effective: EffectiveConfig, section: LayeredSection) {
+  const source: ValueSource = effective.sources[section]
+  if (source === 'desk file') return deskLocation(effective)
+  return projectLocation(effective)
+}
+
+/** The bytes of whichever file supplied one layered section. */
+function textFor(effective: EffectiveConfig, section: LayeredSection): string | undefined {
+  return effective.sources[section] === 'desk file' ? effective.desk?.text : effective.text
+}
+
+/**
+ * The project file's own state.
+ *
+ * Four answers and not two. A refused file is not an absent one, and a read
+ * that never produced a file establishes only that absence was **not**
+ * established — which is weaker than either and is said as such.
+ */
+function projectStatus(effective: EffectiveConfig): SourceStatus {
+  if (effective.problems.length > 0) return refused(effective.problems)
+  if (effective.readFailure !== undefined) {
+    return { state: 'unread', failure: effective.readFailure }
+  }
+  if (effective.note !== undefined) return { state: 'absent' }
+  return { state: 'read' }
+}
+
+/** The desk-level file's own state, on the same four terms plus "nothing asked". */
+function deskStatus(effective: EffectiveConfig): SourceStatus {
+  const desk = effective.desk
+  if (desk === undefined) return { state: 'pending' }
+  if (desk.problems.length > 0) return refused(desk.problems)
+  if (desk.readFailure !== undefined) return { state: 'unread', failure: desk.readFailure }
+  if (!desk.present) return { state: 'absent' }
+  return { state: 'read' }
+}
+
+/**
+ * One layered section's state: the state of the file that supplied it, or —
+ * where neither did — what the project file has to say about not carrying it.
+ */
+function sectionStatus(effective: EffectiveConfig, section: LayeredSection): SourceStatus {
+  const source: ValueSource = effective.sources[section]
+  if (source === 'desk file') return { state: 'read' }
+  if (source === 'project file') return { state: 'read' }
+  const project = projectStatus(effective)
+  return project.state === 'read' ? { state: 'absent' } : project
+}
+
+function refused(problems: ConfigProblem[]): SourceStatus {
+  return { state: 'refused', problems }
+}
 
 /**
  * One measured dimension, or the reason there is not one.

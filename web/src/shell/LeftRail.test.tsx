@@ -205,12 +205,12 @@ describe('the left rail', () => {
     fireEvent.keyDown(screen.getByRole('button', { name: 'Admin sections' }), { key: 'Enter' })
     const items = await screen.findAllByRole('menuitem')
     expect(items.map((item) => item.textContent)).toEqual([
-      'Organization',
+      'Project file',
       'Identity provider',
       'Assistant',
       'Runtime',
-      'Project',
       'Storage',
+      'Organization',
       'Appearance',
       'Panes'
     ])

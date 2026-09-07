@@ -407,7 +407,7 @@ graphs page says the project configures none.
 **A shell around all of it.** Six regions — a header, a navigation rail, the
 routes above, an Inspector, a Console and the status strip that is its
 collapsed face — plus two pages of their own: `/admin`, which renders the desk's
-configuration read-only, and `/help`, which names what this runtime advertises
+configuration as eight cards in one shape, and `/help`, which names what this runtime advertises
 and renders its own authoring prompt as text. The shell **derives no verdict**:
 no status colour in the rail, no rollup count, no "N failing" pill anywhere. A
 red badge in a nav rail would be a gate the runtime never issued.
@@ -1172,6 +1172,16 @@ addressable there and never will be. An absent file is answered `200` with
 would be here" is an answer rather than a failure to answer, and Admin needs
 the path in order to tell you where to write one.
 
+The same answer carries **what this process was launched with**, in both
+states: `project: {dir, file}` — the project root the chassis resolved and
+pinned, symlinks already followed, and the project's own `jpack-desk.json`
+inside it whether or not one is there — and `runtime: {bin}`. Admin prints all
+three and composes none of them: a page joining a directory to a file name
+would be asserting a path on a filesystem it cannot see, and would be wrong the
+first time a project was reached through a symlink. Neither is in the
+configuration schema at any depth, for the reason neither ever was: the chassis
+executes the binary it was given.
+
 It takes every key the project file takes, plus the two that may **only**
 appear here:
 
@@ -1193,6 +1203,116 @@ appear here:
   }
 }
 ```
+
+**`project.file` says which project this machine's desk opens** when
+`jpack-desk` is launched with no directory argument. It is an absolute path
+naming a `jpack-desk.json`, and the desk opens the directory that file is in;
+`null` or absent means it names none. It is desk-level only — which project a
+machine opens by default is not a fact about any one project, and committing one
+would push one operator's filesystem onto every clone.
+
+```json
+{
+  "deskConfigVersion": 1,
+  "project": { "file": "/home/someone/a-project/jpack-desk.json" }
+}
+```
+
+**Writing it is an operator's, and Admin may only nominate the project it is
+running in.** The two are different authorities and the difference is the whole
+of this member's safety. The desk pins one project root at startup and serves
+the file API through it; `project.file` chooses the root of the **next** launch.
+So page code that could write any path could hand its successor a root outside
+the authority the page itself had: `{"project":{"file":"/jpack-desk.json"}}`
+would have pinned `/` on the next argument-less start, and the file API would
+then have served the host. That is the key-retarget class, in a member instead
+of a credential.
+
+`PUT /api/desk-config` therefore accepts exactly two values for it from the
+page: **this project's own file**, spelled as the chassis reports it in the same
+answer, which nominates the project the desk is already serving and grants
+nothing it does not already have; and **null**, which withdraws a default and so
+takes authority away. Anything else is `422 desk-config-refused` naming
+`project.file`, with nothing written. **Both are stated**: `{"project":{}}` is
+refused too, because an omission is not a withdrawal — a client that meant
+nothing by leaving the member out would otherwise clear whatever an operator
+had written. And the accepted value is compared **exactly**, with no
+normalisation: a padded or otherwise re-spelled path is a second rule about
+which spellings mean the one value a page may write, and it is the re-spelling
+that would get stored.
+
+Admin's Project card is that rule as a shape rather than as a validation on top
+of one: one button, **Use this project as the default** (or **Clear the
+default** where it already is), and no field for a path. A different default is set by editing the desk-level file yourself,
+which is custody-validated and is the operator's own authority.
+
+**A configured default is validated on the host that is about to act on it**,
+and refuses the launch where it fails. The decoder's rule is lexical, because it
+is shared with a browser that has no filesystem to ask — a leading separator, or
+a drive letter with one — and a spelling that is absolute on one platform is a
+*relative path* on another: `C:\p\jpack-desk.json` is one path component to Go
+on Unix, so `filepath.Dir` answers `.` and the desk would open whatever
+directory it happened to be launched from. So the launch checks the value again,
+against this machine. The whole refusal matrix, in the order it is applied:
+
+| the configured `project.file` | refused because |
+|---|---|
+| is not absolute on this host | a path written for another platform is a relative one here, and would open whatever directory the desk was launched from |
+| is directly in the filesystem root | this desk will not serve a project rooted there — checked before anything is asked of the filesystem, so it is refused for *where it is* rather than for not existing |
+| does not resolve | a default that is not there is not a project; `EvalSymlinks` is what says so |
+| does not resolve to a regular file | a directory, a socket or a device is not a configuration file |
+| resolves to some other name | a link cannot point the name this desk reads at something else |
+| resolves into the filesystem root | the root check again, on what the link actually reached |
+
+A default that fails any of those **refuses the launch by name** — never a
+silent fall back — because somebody who configured a default and got some other
+project would have no way to see that the member they wrote was ignored.
+
+**And what is validated is what is served.** The directory that passes is then
+**pinned as a held descriptor**, and the identities of the directory and of the
+`jpack-desk.json` that chose it are compared against that descriptor before
+anything is served: validating a pathname and then resolving it again to open
+is a window in which a rename can substitute another tree for the one that was
+checked. It is the pattern the credential directory is already held to.
+
+**Two consumers cannot go through `os.Root` at all**, and they are why that
+sentence needs a second paragraph rather than a footnote. A subprocess's working
+directory is set by the kernel with `chdir`, and an inotify watch is taken by
+path; neither accepts a `*os.Root`. Both used to be given the resolved
+*spelling*, so a rename-and-replace at that spelling left every new `jpack mcp`
+judging one tree while the file API edited another.
+
+- **On Linux, both follow the descriptor.** `/proc/self/fd/N` on this desk's own
+  pinned directory resolves to the open file description rather than to a name,
+  so it means that directory however it is called afterwards, or whether it is
+  called anything at all. The watcher is given that path directly.
+- **The runtime gets there through a shell trampoline**, so that nothing rests
+  on an `os/exec` internal. The descriptor is passed in `ExtraFiles`, which is
+  documented to make it descriptor **3** in the child, and the child runs
+  `sh -c 'cd /proc/self/fd/3/. && exec 3<&- && exec "$0" "$@"' <jpack> mcp`: the
+  `cd` resolves through the inherited open description at a number this desk
+  knows rather than one it inferred, `exec 3<&-` closes the descriptor before
+  the runtime is executed — so the runtime inherits a working directory and not
+  a capability — and the final `exec` leaves no extra process in the tree. The
+  one cost is a dependency on a POSIX `sh`, and a host without one is refused by
+  name at the spawn rather than failing somewhere a reader cannot see.
+- **On every other host it is check-then-use, and the desk says so rather than
+  implying otherwise.** There is no portable way to hand a subprocess a working
+  directory by descriptor, so the pathname is re-verified by identity
+  immediately before each spawn and a moved project **refuses the relay** rather
+  than starting a runtime somewhere else. The window between that check and the
+  child's `chdir` is not closed by it. Only Linux is race-free here, and Linux
+  is the only host on which this desk keeps a key at all.
+
+**The paths `GET /api/desk-config` reports are informational.** `project.dir`,
+`project.file` and `runtime.bin` are the spellings captured at launch and are
+never re-read, so a rename cannot make the desk report something new — and the
+nomination rule compares against that same captured spelling, so a pathname that
+has stopped naming the pinned root cannot authorise anything either. What a page
+could persist through it is at most the string this desk already told it. And a
+principal who can rename the project directory out from under a running desk
+already holds more than the page does: what this section promises is that the
+desk's own halves do not come apart, not that such a principal is harmless.
 
 **Precedence**: project file → desk-level file → built-in default, and for the
 three pane flags one layer in front of all three — this browser's record of
@@ -1243,20 +1363,60 @@ left beside the console button, and a link that neither shrinks nor wraps
 painted straight across it. The link's accessible name is the full sentence at
 every width.
 
-**Admin renders configuration; it rewrites exactly one member of it.** Every
-section shows effective values, their source, the path they came from and the
-exact JSON to paste — except **Assistant**, which is a form, and whose Save
-rewrites the `assistant` object of the desk-level file under the four bounds
-below. Everything else on the page is read-only: the one control that changes
-**persisted desk-layout state** is the pane record above, and the Copy button
-beside each paste block changes the clipboard and its own transient "copied"
-label, which is why that claim is scoped to persisted layout rather than to
-state in general.
+### Admin, as eight cards
+
+**Every section of Admin is one card, and the card is four slots.** A
+**Location** — the path, from the chassis, never composed on the page. A
+**Status** — one line from a closed set: `read`, `not present — defaults in
+use`, `refused: <key>: <the decoder's own reason>`, `not read — <who said so>:
+<their reason>`, or, for Runtime, the connection state. A **Content**
+disclosure — the member's own bytes where this page read the file, and the
+decoded value, labelled as decoded, where it did not. And the **fields**, with
+a **Save** on the cards that have a write path and nothing where they do not.
+
+The order is **Project file, Identity provider, Assistant, Runtime, Storage,
+Organization, Appearance, Panes**. The project file comes first because it is
+what an admin is here to point at, and the identity provider next because it is
+the other thing a deployment configures.
+
+There is no narration. A test sweeps every text node the page writes and fails
+on one over 140 characters, exempting quoted material — a path, a decoder's own
+refusal, a member of the file as it is written. The standing disclaimer, the
+deployment-state list, the warning notes and every paste block are gone: a real
+problem is a card's Status line, and the Copy buttons went with the blocks
+because the Location line says where the file is and Content shows what is in
+it.
+
+**A refused file's bytes are never rendered.** The decoder refuses a whole file
+for one credential-shaped member, and the point of refusing it is that the desk
+will not act on it — so a Content disclosure that quoted it anyway would put the
+member the refusal is about, and on the Project card the whole document around
+it, into the DOM of the page reporting the refusal. On a refusal, and on a read
+that produced no file, a card shows its Status line and no content at all.
+
+**Two cards write, and each writes one member of the desk-level file.** The
+Project card nominates this project as the default (or withdraws one), the
+Assistant form writes `assistant`, and neither sends the other's — a member
+absent from the request is carried across untouched. The Project card's other
+three slots are about the *project's* file, so the one line under its control
+names the file it actually writes, from the chassis' own answer. Everything else
+on the page is read-only; the one remaining control is Panes' reset, which
+clears a single `localStorage` key.
 
 **Two things are written, and each is exactly as wide as its reason.** The key
-is one, below. The other is the `assistant` object of the desk-level file, over
-`PUT /api/desk-config`, under the same token and origin guard as everything
-else. It exists because choosing a model and a thinking tier is something an
+is one, below. The other is the desk-level file, over `PUT /api/desk-config`,
+under the same token and origin guard as everything else. Its body is
+`{assistant?, project?, ifMatch}`: **a member that is present is replaced and a
+member that is absent is untouched**, which is what lets two Admin cards write
+two members of one file without either sending the other's. A body naming
+neither is a `400` — a conditional commit that would change nothing is a request
+with no meaning, and answering it `200` would report a write that did not
+happen. **`ifMatch` is required and never defaulted**: it is a pointer, so an
+omitted member and the empty sentinel are two different requests. They were one,
+and where `desk.json` is absent the actual digest is the empty string too — so a
+body carrying no `ifMatch` compared equal and created the file, which is a write
+with no precondition from the route whose whole argument is that the commit is
+conditional. `""` is a claim about the disk and has to be made. It exists because choosing a model and a thinking tier is something an
 author does while working, and the alternative is telling them to edit a file
 in `~/.config` by hand between attempts. Four things bound it:
 
@@ -1282,8 +1442,10 @@ in `~/.config` by hand between attempts. Four things bound it:
   else present are carried across **by their own bytes, in their own order** —
   copied out of the file verbatim, whitespace included, and never re-serialised
   or reflowed, so `1e2` does not silently become `100` and a member's place and
-  shape in a file somebody wrote stay theirs. Only `assistant`, the member this
-  route was asked about, is rendered. A file with a **duplicate top-level
+  shape in a file somebody wrote stay theirs. Only the members this route was
+  **asked about** — `assistant`, `project`, or both — are rendered, and each is
+  replaced where the file already has it and appended where it does not. A file
+  with a **duplicate top-level
   member** is refused rather than composed over (`422`, naming the member):
   `encoding/json` keeps the last value and a reader in another language may
   keep the first, so a rewrite would silently choose one. The file is written
@@ -2571,8 +2733,18 @@ judgment-pack desk
   open:    http://127.0.0.1:8791/?token=1f3c…
 ```
 
-`projectDir` defaults to the current directory. `--jpack` defaults to `jpack`
-on `PATH`, and `--port` defaults to `8791`.
+**The project is chosen in three steps, in this order**: the argument, then
+`project.file` in this machine's desk-level file — read through the same
+custody-validated store every other read of that file goes through, and
+validated against this host before it is honoured — then the current directory,
+exactly as it always was. A configured default this host cannot open (not
+absolute here, not resolving to a regular `jpack-desk.json`, or in the
+filesystem root) **refuses the launch and names the member**, rather than
+falling through: a person who configured one and silently got some other project
+would have no way to see that what they wrote was ignored. A desk-level file
+that is refused as a whole names no project, and the launch says which problem.
+
+`--jpack` defaults to `jpack` on `PATH`, and `--port` defaults to `8791`.
 
 ## Development mode
 
@@ -3494,11 +3666,10 @@ web/                 Vite + React + TypeScript SPA
   src/routes/        project home, the packs layout and its two children
                      (the "select a pack" page and the pack document),
                      evaluation, matrix, graphs, the authoring shell, the
-                     Admin page and Help & About — Admin being read-only
-                     everywhere but the Assistant section, which is a form over
-                     the endpoint, the model and the tier and carries the key
-                     control beside it, and the source badge and paste block
-                     every other section of it uses
+                     Admin page and Help & About — Admin being eight cards
+                     in one shape, of which two write: the Project card's
+                     default project and the Assistant form's endpoint, model
+                     and tier
   src/components/    evaluation, coverage, row and graph-walk views, plus the
                      trace and handoff-target renderers both the pack and graph
                      surfaces share
@@ -3538,6 +3709,11 @@ web/                 Vite + React + TypeScript SPA
                      text operations, the rule and exception forms with their
                      keyboard reordering, the check on idle, the what-if pane,
                      the stale-write alert and the lock line
+  src/admin/         the card every Admin section renders through, the member
+                     slicer that quotes a file rather than re-serialising it,
+                     the narration sweep both this page and the assistant form
+                     are held to, and the one control that nominates this
+                     project as the default
   src/config/        the schema both configuration files share, its strict
                      decoder, the two queries that read them, the precedence
                      between them, and the theme attribute it writes

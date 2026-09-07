@@ -19,7 +19,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -39,10 +38,28 @@ var devOrigins = []string{
 
 // Config is the chassis' whole configuration.
 type Config struct {
-	// ProjectDir is the absolute path of the Judgment Pack project. It becomes
-	// the working directory of every `jpack mcp` subprocess, which is how the
+	// ProjectDir is the path of the Judgment Pack project. It becomes the
+	// working directory of every `jpack mcp` subprocess, which is how the
 	// runtime finds jpack.json, and it is the tree the file watcher watches.
+	//
+	// Ignored where Root is given, and required where it is not.
 	ProjectDir string
+	// Root is a project directory a caller has **already validated and
+	// pinned**, and is how a launch hands one over.
+	//
+	// **The reason it exists is that a pathname cannot be handed over
+	// safely.** The launch validates a configured `jpack-desk.json` and the
+	// directory it is in; if it passed a *name* here, this constructor would
+	// resolve that name again, and a rename between the two would let another
+	// tree be pinned than the one that was validated. So what crosses the
+	// boundary is the descriptor. Where it is nil this constructor opens one
+	// itself, through the same function and with the same identity check —
+	// see `OpenProjectRoot`.
+	//
+	// **This server takes ownership of it**, on success and on failure alike:
+	// a caller that also closed it would double-close, and one that closed
+	// nothing on an error would leak a descriptor at startup.
+	Root *ProjectRoot
 	// JpackBin names the runtime binary: a path, or a name resolved on PATH.
 	JpackBin string
 	// Token must be presented as ?token= on /ws.
@@ -77,6 +94,13 @@ type Server struct {
 	// through it, so containment is a held directory descriptor rather than a
 	// pathname that was true when it was checked — see files.go.
 	root *os.Root
+	// project is the whole pinned root, and this server owns it.
+	//
+	// It is kept beside `root` because the two consumers that cannot go
+	// through `os.Root` — a subprocess's working directory and the file
+	// watcher — need the descriptor itself. See `ProjectRoot` and
+	// `runtimeWorkingDir`.
+	project *ProjectRoot
 	// projectDir is ProjectDir with its symlinks resolved, taken once at
 	// construction. It is the pathname every part of the chassis that cannot
 	// hold a descriptor uses: the runtime's working directory and the file
@@ -105,6 +129,9 @@ type Server struct {
 	// file on a case-insensitive filesystem would take different locks and both
 	// commit. Desk-scale contention is not worth a correctness argument.
 	writes sync.Mutex
+	// closeOnce makes shutdown idempotent; see Close.
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // NewToken returns a fresh random session token.
@@ -118,7 +145,17 @@ func NewToken() (string, error) {
 
 // New builds a server. The caller must Close it to release the file watcher.
 func New(cfg Config) (*Server, error) {
-	if cfg.ProjectDir == "" {
+	// **Adopted first, released on every failure.** This server owns the
+	// descriptor it was handed, so a refusal below has to close it rather than
+	// leave it open in a process that is about to exit or retry.
+	pinned := cfg.Root
+	adopted := false
+	defer func() {
+		if !adopted {
+			pinned.Close()
+		}
+	}()
+	if pinned == nil && cfg.ProjectDir == "" {
 		return nil, errors.New("desk: ProjectDir is required")
 	}
 	if cfg.Token == "" {
@@ -130,27 +167,32 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = log.New(io.Discard, "", 0)
 	}
-	// Resolved once, and everything that needs a pathname uses this one.
-	resolved, err := filepath.EvalSymlinks(cfg.ProjectDir)
-	if err != nil {
-		return nil, fmt.Errorf("desk: project directory: %w", err)
-	}
-	// Pinned once, and closed with the server. Re-opening it per request would
-	// let the authority itself be retargeted between requests.
-	root, err := os.OpenRoot(resolved)
-	if err != nil {
-		return nil, fmt.Errorf("desk: project directory: %w", err)
+	// **Validated and pinned in one operation, here or by the launch.** Two
+	// pathname resolutions — one to check and one to open — leave a window in
+	// which the directory checked is not the directory served; see
+	// `OpenProjectRoot`, which is the only place either happens.
+	if pinned == nil {
+		var err error
+		if pinned, err = OpenProjectRoot(cfg.ProjectDir); err != nil {
+			return nil, fmt.Errorf("desk: project directory: %w", err)
+		}
 	}
 	s := &Server{
 		cfg:        cfg,
 		mux:        http.NewServeMux(),
 		log:        cfg.Logger,
 		conns:      make(map[*conn]struct{}),
-		root:       root,
-		projectDir: resolved,
+		root:       pinned.own.root,
+		project:    pinned,
+		projectDir: pinned.dir,
 		configDir:  configDirFor(cfg.DeskConfigDir),
 		relaySlots: make(chan struct{}, maxRelayInFlight),
 	}
+	adopted = true
+	// **One owner from here on.** The wrapper the caller still holds stops
+	// owning anything, so a `Close` on it cannot take the descriptor out from
+	// under a running server. See `ProjectRoot.detach`.
+	pinned.detach()
 	// Validated and pinned once. Doing it per request would let the authority
 	// itself be retargeted between requests, which is the same argument the
 	// project root is pinned for.
@@ -196,7 +238,16 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc(relayPrefix+"{suffix...}", s.handleModelRelay)
 	s.mux.HandleFunc("/", s.handleStatic)
 
-	w, werr := newWatcher(resolved, s.log, s.broadcastFileChange)
+	// **Watched through the descriptor where the host has a way to name one.**
+	// The watcher takes a path because inotify does; on Linux that path
+	// resolves through this desk's own descriptor, so a rename of the project
+	// cannot move what is being watched. Off Linux it is the resolved
+	// spelling, as it always was.
+	watchRoot := pinned.dir
+	if through, ok := pinned.descriptorWorkingDir(); ok {
+		watchRoot = through
+	}
+	w, werr := newWatcher(watchRoot, s.log, s.broadcastFileChange)
 	if werr != nil {
 		// A desk without live reload is still a working desk; a desk that
 		// refuses to start because the tree is large or the inotify budget is
@@ -210,13 +261,27 @@ func New(cfg Config) (*Server, error) {
 
 // Close stops the file watcher and releases the pinned project root. Open
 // relays end with their sockets.
+//
+// **Once, however many times it is called.** Shutdown paths overlap — a
+// deferred `Close` beside an explicit one, a test's cleanup beside its own —
+// and closing a descriptor twice is closing whatever took its number in
+// between.
 func (s *Server) Close() error {
+	s.closeOnce.Do(func() { s.closeErr = s.closeAll() })
+	return s.closeErr
+}
+
+func (s *Server) closeAll() error {
 	var err error
 	if s.watcher != nil {
 		err = s.watcher.Close()
 	}
-	if s.root != nil {
-		if rerr := s.root.Close(); err == nil {
+	if s.project != nil {
+		// **Through the shared cell, which closes at most once**, and without
+		// touching the adopted flag: a wrapper that was handed over stays
+		// handed over, so a caller's deferred `Close` after this shutdown
+		// still closes nothing.
+		if rerr := s.project.own.close(); err == nil {
 			err = rerr
 		}
 	}

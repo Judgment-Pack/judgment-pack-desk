@@ -221,6 +221,8 @@ echo "| --- | --- |"
 if [ "$which" = all ] || [ "$which" = go ]; then
   F=internal/desk/files.go
   S=internal/desk/server.go
+  PJ=internal/desk/project.go
+  PL=internal/desk/project_linux.go
 
   mutate go "lexical path guard: the project itself allowed" "$F" \
     '	if clean == "." {' \
@@ -294,9 +296,18 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the watcher reports success with no watches" internal/desk/watch.go \
     '	if watched == 0 {' \
     '	if watched < 0 {'
-  mutate go "the runtime starts from the unresolved pathname" internal/desk/relay.go \
-    'func (s *Server) runtimeWorkingDir() string { return s.projectDir }' \
-    'func (s *Server) runtimeWorkingDir() string { return s.cfg.ProjectDir }'
+  # Every replacement below keeps `shell` and `dirFile` in use: a mutation that
+  # does not compile is not one the suite survived.
+  mutate go "the runtime starts from the unresolved pathname" "$PL" \
+    '	cmd := exec.CommandContext(ctx, shell, "-c", runtimeTrampoline, binary, "mcp")
+	// **The documented contract**: this becomes descriptor 3 in the child,
+	// with close-on-exec cleared for it there and nowhere else.
+	cmd.ExtraFiles = []*os.File{dirFile}
+	return cmd, nil' \
+    '	_, _ = shell, dirFile
+	cmd := exec.CommandContext(ctx, binary, "mcp")
+	cmd.Dir = s.cfg.ProjectDir
+	return cmd, nil'
   mutate go "the walk does not detect a repeated ancestor" "$F" \
     '		if os.SameFile(ancestor, info) {' \
     '		if false && os.SameFile(ancestor, info) {'
@@ -673,7 +684,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # "There is none, and it would be here" is an answer, and Admin needs the path.
   mutate go "an absent desk-level file is a refusal" "$A" \
     '	if !present {
-		writeJSON(w, http.StatusOK, DeskLevelConfig{Path: path, Present: false})
+		writeJSON(w, http.StatusOK, DeskLevelConfig{
+			Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths()})
 		return
 	}' \
     '	if !present {
@@ -907,7 +919,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # known to be stale must never reach the disk at all. "Nothing was written"
   # and "nothing was staged" are different claims.
   mutate go "an already-stale write is staged before it is refused" "$A" \
-    '	if !deskConfigUnmoved(req.IfMatch, actual) {
+    '	if !deskConfigUnmoved(*req.IfMatch, actual) {
 		return http.StatusConflict, conflict{' \
     '	if false {
 		return http.StatusConflict, conflict{'
@@ -1289,6 +1301,200 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '				if false {
 					return errListingTooLarge
 				}'
+
+  # ---- Chunk 6a: the default project, and the launch that reads it -------
+  #
+  # `project.file` is the one member of this file that decides something before
+  # there is a server: it names which project a desk launched with no directory
+  # argument opens. Each row below breaks one of the three things that makes
+  # that safe to have.
+  LA=internal/desk/launch.go
+
+  # **The whole point of the member.** A fallback that ignored it would open
+  # whatever directory the process happened to start in and report success.
+  mutate go "the launch fallback ignores the configured file" "$LA" \
+    '	chosen, err := usableProjectDir(deskFile.file)' \
+    '	chosen, err := projectChoice{dir: "."}, error(nil)'
+
+  # **Read before there is a working directory to resolve one against.** A
+  # relative path accepted here is a default project that means a different
+  # directory depending on where the desk was launched from.
+  mutate go "the default project accepts a relative path" "$DF" \
+    '	if !absolutePath(trimmed) {' \
+    '	if false {'
+
+  # **A member that is absent is untouched.** Two Admin cards write two members
+  # of one file and neither sends the other's; a compose that replaced both
+  # would have each card silently overwrite the other's slot with nothing.
+  mutate go "an unsent member is written as well as the one that was sent" "$A" \
+    '		if len(member.raw) == 0 {
+			continue
+		}' \
+    '		if len(member.raw) == 0 {
+			member.raw = json.RawMessage("null")
+		}'
+
+  # ---- Round 1: what a page may persist, and what a launch may honour ----
+
+  # **The equality check is the whole ruling.** Without it a page can name any
+  # path, and the value it writes chooses the root of the next launch — an
+  # authority the page itself never had.
+  # The replacement keeps `text` in use, because a mutation that does not
+  # compile is not one the suite survived — it is one nothing ran.
+  mutate go "the page may nominate a project it is not running in" "$A" \
+    '	if text == s.projectPaths().File {' \
+    '	if text != "" {'
+
+  # **A default that is not there is not a project.** Honouring one takes the
+  # parent of a name nobody wrote a file at — the review's `/jpack-desk.json`
+  # is exactly that shape.
+  #
+  # **Round 2 found the first spelling of this proving nothing.** It replaced
+  # the resolution with `resolved := file`, and a nonexistent path then failed
+  # at the very next `Lstat` — so the mutant refused the same paths and the
+  # test killed it on a diagnostic word. This one *honours* the missing file,
+  # returning its parent, so the test has to observe a nonexistent default
+  # being opened.
+  mutate go "the launch honours a configured file that is not there" "$LA" \
+    '	resolved, err := filepath.EvalSymlinks(file)
+	if err != nil {
+		return projectChoice{}, fmt.Errorf("it could not be resolved: %w", err)
+	}' \
+    '	resolved, err := filepath.EvalSymlinks(file)
+	if err != nil {
+		return projectChoice{dir: filepath.Dir(file)}, nil
+	}'
+
+  # **Absolute on this host, not in the shared spelling.** A drive-letter path
+  # is a relative one here, so without this the desk resolves it against
+  # whatever directory it was launched from.
+  #
+  # **Round 2 found the first spelling of this proving nothing** either: the
+  # test used a temporary directory with nothing in it, so the mutant still
+  # refused — at the basename check, for a path that does not exist. The test
+  # now builds `<cwd>/C:/p/jpack-desk.json`, so removing this check opens a
+  # real launch-directory-relative project and the row is behavioural.
+  mutate go "a foreign-platform path is honoured on this host" "$LA" \
+    '	if !filepath.IsAbs(file) {' \
+    '	if false {'
+
+  # **An omitted digest is not the empty sentinel**, and where the file is
+  # absent the actual digest is empty too — so without this a body with no
+  # `ifMatch` is a write with no precondition.
+  mutate go "an omitted digest is read as the empty sentinel" "$A" \
+    '	if req.IfMatch == nil {
+		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,
+			`ifMatch is required; send "" to state that there is no file yet`)
+		return
+	}' \
+    '	if req.IfMatch == nil {
+		empty := ""
+		req.IfMatch = &empty
+	}'
+
+  # ---- Round 2: what is validated has to be what is served ---------------
+  # **The identity check is the whole of the pinning argument.** Without it a
+  # rename between validating the configured file and opening its directory
+  # substitutes another tree, and the desk serves what it never checked.
+  mutate go "the pinned directory is not the one that was validated" "$PJ" \
+    '	if !os.SameFile(c.dirInfo, pinned.info) {
+		return errProjectMoved
+	}' \
+    '	if false {
+		return errProjectMoved
+	}'
+  # The second half: the directory may be the one validated and the file that
+  # chose it may have been replaced inside it.
+  # The replacement keeps `held` in use and drops only the identity half, so
+  # the mutation is the defect rather than a build failure.
+  mutate go "the configuration file that chose the project is not re-checked" "$PJ" \
+    '	if !held.Mode().IsRegular() || !os.SameFile(c.fileInfo, held) {' \
+    '	if !held.Mode().IsRegular() {'
+  # And the smaller window inside the open itself: a name inspected and then
+  # opened is two operations, and what is held has to be what was inspected.
+  mutate go "the descriptor is not compared to the directory that was inspected" "$PJ" \
+    '	if !os.SameFile(inspected, held) {' \
+    '	if held == nil {'
+
+  # **An omission is not a withdrawal.** Without this, `{"project":{}}` clears
+  # an operator's hand-edited default and answers 200.
+  # ---- Round 4: one owner, and a documented descriptor number ------------
+
+  # **The descriptor closed before the runtime execs**, or the runtime inherits
+  # a capability it never asked for and this desk never meant to grant.
+  mutate go "the project descriptor is left open across the exec" "$PL" \
+    'const runtimeTrampoline = `cd /proc/self/fd/3/. && exec 3<&- && exec "$0" "$@"`' \
+    'const runtimeTrampoline = `cd /proc/self/fd/3/. && exec "$0" "$@"`'
+
+  # **One cell, or a copy made before the hand-over closes a running server's
+  # descriptors.** A flag inside an exported struct copies with it.
+  mutate go "ownership is per copy rather than shared" "$PJ" \
+    '	p.own.mu.Lock()
+	adopted := p.own.adopted
+	p.own.mu.Unlock()
+	if adopted {
+		return errAdoptedByServer
+	}' \
+    '	if false {
+		return errAdoptedByServer
+	}'
+
+  # **At most one release, however many callers ask.** Closing a descriptor
+  # twice is closing whatever took its number in between.
+  # The replacement runs the same closure every time instead of once, so the
+  # call site stays well formed — a mutation that does not compile is not one
+  # the suite survived.
+  mutate go "the descriptors are released once per caller" "$PJ" \
+    '	o.once.Do(func() {' \
+    '	(func(release func()) { release() })(func() {'
+
+  # ---- Round 3: what the runtime and the watcher actually follow ---------
+
+  # **The descriptor or a name, and a name is what came apart.** Started from
+  # the pathname again, a rename-and-replace leaves the runtime judging one
+  # tree while the file API edits another.
+  # **The trampoline dropped for `cmd.Dir`**, which is the shape round 3 had
+  # and round 4 refused: it works only while an ordering inside `os/exec`
+  # happens to hold, and it is the parent's descriptor number.
+  mutate go "the child is started from the pathname again" "$PL" \
+    '	cmd := exec.CommandContext(ctx, shell, "-c", runtimeTrampoline, binary, "mcp")
+	// **The documented contract**: this becomes descriptor 3 in the child,
+	// with close-on-exec cleared for it there and nowhere else.
+	cmd.ExtraFiles = []*os.File{dirFile}' \
+    '	_, _ = shell, dirFile
+	cmd := exec.CommandContext(ctx, binary, "mcp")
+	cmd.Dir = s.projectDir'
+  # The same for the watcher, which takes a path because inotify does.
+  mutate go "the watcher is initialised from the pathname again" "$S" \
+    '	watchRoot := pinned.dir
+	if through, ok := pinned.descriptorWorkingDir(); ok {
+		watchRoot = through
+	}' \
+    '	watchRoot := pinned.dir'
+  # **The fallback every non-Linux host relies on**, broken here so a Linux run
+  # can still answer for it: the check is its own function precisely so that a
+  # row aimed at it is reachable from the suite that actually runs.
+  mutate go "the pre-spawn identity check is removed on the pathname path" internal/desk/relay.go \
+    '	if !sameDirectory(dir, pinned) {' \
+    '	if false {'
+
+  # **Adoption detaches, or two owners close one descriptor.** Without it the
+  # caller's wrapper takes the file API out from under a running server.
+  mutate go "an adopted project root is not detached from its caller" "$S" \
+    '	pinned.detach()' \
+    ''
+
+  mutate go "an unstated project file is treated as a withdrawal" "$A" \
+    '	if !present {
+		// **An omission is not a withdrawal.** `{}` replaced the member with
+		// an empty object, which the decoder reads as no default — so a
+		// request that meant nothing by leaving `file` out silently cleared an
+		// operator'"'"'s own setting.
+		return &deskProblem{Key: "project.file", Reason: projectFileMustBeStated}
+	}' \
+    '	if !present {
+		return nil
+	}'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -1307,7 +1513,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   Y=web/src/mcp/capabilities.ts
   W=web/src/config/DeskConfigProvider.tsx
   V=web/src/routes/AdminView.tsx
-  VB=web/src/routes/adminBlocks.tsx
+  SC=web/src/admin/SourceCard.tsx
   Q=web/src/shell/useHashTarget.ts
   B=web/src/shell/authorBridge.ts
   I=web/src/identity/IdentityProvider.tsx
@@ -1497,20 +1703,13 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the configured theme is decoded and never applied" "$W" \
     '  useAppliedTheme(value.config.appearance.theme)' \
     '  void value.config.appearance.theme'
-  # The paste block and the source badge moved into adminBlocks.tsx when the
-  # Assistant section came to need them too.
-  mutate web "the copy button reports a copy it did not make" "$VB" \
-    '          const written = navigator.clipboard?.writeText(text)
-          if (!written) {
-            setCopied(false)
-            return
-          }
-          written.then(
-            () => setCopied(true),
-            () => setCopied(false)
-          )' \
-    '          void navigator.clipboard?.writeText(text)
-          setCopied(true)'
+  # **Retired, with its reason: the control it broke no longer exists.** It was
+  # "the copy button reports a copy it did not make", on the paste blocks every
+  # Admin section carried. The card pattern removed them — a Location line says
+  # where the file is and a Content disclosure shows what is in it, so a paste
+  # block was a second way to do one thing — and `adminBlocks.tsx` went with
+  # them. A row whose code is deleted cannot discriminate; it is named here so
+  # that its absence is a statement rather than an oversight.
   mutate web "the section links go nowhere" "$Q" \
     '    target?.scrollIntoView()' \
     '    void target'
@@ -2047,9 +2246,9 @@ if [ "$which" = all ] || [ "$which" = web ]; then
       if (cause.status === 404) {' \
     '    if (false) {
       if (cause.status === 404) {'
-  mutate web "Admin sources every unread reason to the chassis" "$V" \
-    "          ) : readFailure.source === 'chassis' ? (" \
-    '          ) : true ? ('
+  mutate web "Admin sources every unread reason to the chassis" "$SC" \
+    "      ) : failure.source === 'chassis' ? (" \
+    '      ) : true ? ('
 
   # ---- Codex round 3 -----------------------------------------------------
 
@@ -2118,10 +2317,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
 ] as const" \
     'const PANE_DIMENSIONS = [] as const'
   mutate web "Admin calls a configured number the rendered one" "$V" \
-    '        Rail: <code>{config.panes.left.mode}</code>, configured{'"'"' '"'"'}
-        <strong>{config.panes.left.width}px</strong> — rendered{'"'"' '"'"'}
-        <Rendered box={rendered.rail} axis="width" />' \
-    '        Rail: <code>{config.panes.left.mode}</code>, {config.panes.left.width}px'
+    '              <code>{config.panes.left.mode}</code>, configured{'"'"' '"'"'}
+              <strong>{config.panes.left.width}px</strong> — rendered{'"'"' '"'"'}
+              <Rendered box={rendered.rail} axis="width" />' \
+    '              <code>{config.panes.left.mode}</code>, {config.panes.left.width}px'
   mutate web "an absent pane is reported as a pane of zero" "$V" \
     "  if (box === undefined) return <span className=\"quiet\">not mounted at this width</span>" \
     '  if (box === undefined) return <strong>0px</strong>'
@@ -2138,9 +2337,9 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "every answered reason is quoted as the chassis' own" "$C" \
     "      'chassis'," \
     "      'desk',"
-  mutate web "provenance is inferred from the status again" "$V" \
-    '          {!readFailure.responseReceived ? (' \
-    '          {false ? ('
+  mutate web "provenance is inferred from the status again" "$SC" \
+    '      {!failure.responseReceived ? (' \
+    '      {false ? ('
   # ---- Verification round ------------------------------------------------
   # One row per safeguard this round's findings put in. Named after the defect
   # each restores, not the code each edits.
@@ -3742,8 +3941,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '          type="password"' \
     '          type="text"'
   mutate web "removal is offered where there is nothing to remove" "$AS" \
-    '        {state.present && (' \
-    '        {true && ('
+    '      {state.present && (' \
+    '      {true && ('
   # A 401 is a host that is there and a credential it will not take.
   mutate web "a refused credential is painted as reachable" "$AS" \
     "      {result.reachable ? 'reachable' : 'not reachable'}" \
@@ -5140,12 +5339,12 @@ export function assistantTransport(): Transport {
   # notice saying the file could not be read.
   AS2=web/src/assistant/AssistantSection.tsx
   mutate web "Admin claims no endpoint from a file it could not read" "$AS2" \
-    "          {unavailable
-            ? 'this desk could not read its own configuration'
-            : endpoint === null" \
-    "          {false
-            ? 'this desk could not read its own configuration'
-            : endpoint === null"
+    "              {unavailable
+                ? 'this desk could not read its own configuration'
+                : endpoint === null" \
+    "              {false
+                ? 'this desk could not read its own configuration'
+                : endpoint === null"
   # And the fields with it: they are the built-in defaults there, and typing
   # into them would compose a write over a file nobody has seen.
   mutate web "the form is editable over a file this desk could not read" "$EF" \
@@ -5597,6 +5796,74 @@ export function assistantTransport(): Transport {
     '  parts.push({ ...arriving })' \
     "  if ((arriving.text ?? '') === '' && arriving.functionCall === undefined) return
   parts.push({ ...arriving })"
+
+  # ---- Chunk 6a: the card, and what it may not invent --------------------
+  SCD=web/src/admin/SourceCard.tsx
+  ADV=web/src/routes/AdminView.tsx
+  NR=web/src/admin/narration.ts
+
+  # **A location comes from the chassis or it is a guess.**
+  #
+  # **This row replaced one that did not discriminate.** The first version
+  # composed `${chassis.projectDir}/${effective.path}` — which is the same
+  # string the chassis reports in every ordinary case, because the chassis
+  # composes it the same way out of the root it resolved. A mutation whose
+  # output is byte-identical to the correct one cannot be caught by anything,
+  # and a fixture built to make it differ would be a state no chassis produces.
+  #
+  # What is actually load-bearing is that the page reads the chassis' answer
+  # at all rather than falling back to its own project-relative constant, and
+  # that is what this breaks: the name a file is read by is not a location on
+  # a filesystem, and printing it as one is how Admin would name a path on a
+  # machine whose layout it never learned.
+  mutate web "the location is taken from the page instead of the chassis" "$ADV" \
+    '  const chassis = effective.desk?.chassis
+  if (chassis === undefined) return <code>{effective.path}</code>
+  return <code>{chassis.projectFile}</code>' \
+    '  return <code>{effective.path}</code>'
+
+  # **The narration guard, broken by putting narration back.** A sweep that
+  # only ever passed over a clean page would prove nothing about the sweep.
+  mutate web "a paragraph is reintroduced above the cards" "$ADV" \
+    '      <header className="detail-head">
+        <h1>Admin</h1>
+      </header>' \
+    '      <header className="detail-head">
+        <h1>Admin</h1>
+        <p className="quiet">
+          This page shows the desk configuration for this machine and for this project, section
+          by section, with the file each value came from named beside it.
+        </p>
+      </header>'
+
+  # **What is shown has to be what is in the file.** `JSON.stringify` of the
+  # decode turns `1e2` into `100` and rounds an integer past a float64, so a
+  # disclosure that re-serialised would show a reader a file that is not on disk.
+  mutate web "the content disclosure re-serialises instead of quoting the file" "$SCD" \
+    '  const shown =
+    bytes ?? (content.value === undefined ? undefined : JSON.stringify(content.value, null, 2))' \
+    '  const shown =
+    content.value === undefined ? undefined : JSON.stringify(content.value, null, 2)'
+
+  # **A refused file's bytes are the thing the refusal is about.** Rendering
+  # them puts the credential-shaped member on the page reporting the refusal.
+  mutate web "a refused file's bytes are rendered anyway" "$SCD" \
+    "  return status.state !== 'refused' && status.state !== 'unread'" \
+    '  return true'
+  # **Retired, with its reason: NOT DISCRIMINATING, and the code went with
+  # it.** It was "the disclosure quotes a file the decoder did not accept",
+  # breaking a second gate inside `Content` that repeated what `showsContent`
+  # already decides — the card renders no disclosure at all in exactly the
+  # states that check would have caught, so removing it changed nothing any
+  # test could see. Two spellings of one rule are invisible to a harness that
+  # breaks one of them, so the rule now has one spelling and one row.
+
+  # **A paragraph split into short spans is still a paragraph.** The rule this
+  # replaces measured single text nodes, and JSX produces two of them whenever
+  # a sentence carries an inline element.
+  mutate web "the narration sweep measures only single text nodes" "$NR" \
+    '  for (const block of container.querySelectorAll(BLOCKS)) {' \
+    '  for (const block of [] as Element[]) {'
 fi
 
 restore

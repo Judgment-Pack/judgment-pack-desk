@@ -507,7 +507,7 @@ describe('a write that landed while the read after it did not', () => {
     // The chassis says there is an endpoint and the key is for it, so the row
     // says that — rather than overruling it with a file it could not read.
     expect(screen.getByText(/which is where this desk is configured/)).toBeTruthy()
-    expect(screen.queryByText(/Save an endpoint above before storing a key/)).toBeNull()
+    expect(screen.queryByText(/Save an endpoint first/)).toBeNull()
   })
 
   it('reports the state as unverified where the read after it failed', async () => {
@@ -526,7 +526,7 @@ describe('a write that landed while the read after it did not', () => {
     )
     fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'the-model-chosen' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(await screen.findByText(/has not seen them/)).toBeTruthy()
+    expect(await screen.findByText(/a write states the bytes it replaces/)).toBeTruthy()
     expect(
       (screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled
     ).toBe(true)
@@ -578,7 +578,7 @@ describe('removing the endpoint', () => {
     expect(state.writes).toBe(1)
     // The two are separate: the endpoint went and the key did not.
     expect(await screen.findByText('stored on this machine — sk-a…wxyz')).toBeTruthy()
-    expect(screen.getByText(/Save an endpoint above before storing a key/)).toBeTruthy()
+    expect(screen.getByText(/Save an endpoint first/)).toBeTruthy()
     expect(screen.getByText('none — no endpoint configured')).toBeTruthy()
   })
 })
@@ -713,7 +713,7 @@ describe('Admin, where the configuration could not be read', () => {
     ).toBeTruthy()
     // **No absence claimed anywhere on the section.**
     expect(screen.queryByText('none — no endpoint configured')).toBeNull()
-    expect(screen.getByText(/Nothing below is what this desk is configured for/)).toBeTruthy()
+    expect(screen.getAllByText(/not read — the desk answered/).length).toBeGreaterThan(0)
     // The fields are shown and not editable: they are the built-in defaults,
     // and typing into them would compose a write over a file nobody has seen.
     const fields = (screen.getByLabelText('Model') as HTMLInputElement).closest('fieldset')
@@ -721,7 +721,7 @@ describe('Admin, where the configuration could not be read', () => {
     // And the key row still follows the chassis, which said the endpoint is
     // there and the key is for it.
     expect(screen.getByText(/which is where this desk is configured/)).toBeTruthy()
-    expect(screen.queryByText(/Save an endpoint above before storing a key/)).toBeNull()
+    expect(screen.queryByText(/Save an endpoint first/)).toBeNull()
 
     // **A later read that works puts the configured form back**, which is what
     // makes this a state and not a mode: nothing latches, and the section

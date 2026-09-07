@@ -6,8 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
+	"os"
 	"os/exec"
 	"sync"
 
@@ -109,8 +112,12 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	defer s.unregister(c)
 	defer c.stop()
 
-	cmd := exec.CommandContext(ctx, s.cfg.JpackBin, "mcp")
-	cmd.Dir = s.runtimeWorkingDir()
+	cmd, err := s.runtimeCommand(ctx)
+	if err != nil {
+		s.log.Printf("desk: no runtime was started: %v", err)
+		s.closeWith(ws, websocket.StatusInternalError, err.Error())
+		return
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		s.closeWith(ws, websocket.StatusInternalError, "cannot open runtime stdin")
@@ -124,6 +131,15 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		s.closeWith(ws, websocket.StatusInternalError, "cannot open runtime stderr")
+		return
+	}
+	// **Immediately before the spawn, and nothing between.** Where the host
+	// cannot name a descriptor this is a check-then-use, so every statement
+	// between the check and the `chdir` is window: command construction and
+	// three pipe setups used to sit in it. See `aimAtTheProject`.
+	if err := s.aimAtTheProject(cmd); err != nil {
+		s.log.Printf("desk: no runtime was started: %v", err)
+		s.closeWith(ws, websocket.StatusInternalError, err.Error())
 		return
 	}
 	if err := cmd.Start(); err != nil {
@@ -223,15 +239,38 @@ func (s *Server) closeWith(ws *websocket.Conn, code websocket.StatusCode, reason
 	_ = ws.Close(code, reason)
 }
 
-// runtimeWorkingDir is the directory every `jpack mcp` subprocess starts in.
+// runtimeProject is the identity of the directory a runtime this desk starts
+// would be in.
 //
-// The *resolved* project directory, not the configured pathname. A subprocess
-// cannot portably inherit this process's directory descriptor, so the runtime
-// is necessarily addressed by name — and the name it is given has to be the one
-// the file API's root was pinned from. Otherwise repointing a symlinked
-// ProjectDir leaves the desk writing one tree while every new runtime judges
-// another, with neither half able to tell.
+// **Derived from the command that is actually built**, so it cannot drift from
+// it: on Linux that is the descriptor the trampoline changes into, and
+// elsewhere it is the pathname `aimAtTheProject` checked and set. A method that
+// answered from a field instead would be a second account of the same fact, and
+// the first thing to go stale.
+func (s *Server) runtimeProject(cmd *exec.Cmd) (os.FileInfo, error) {
+	if len(cmd.ExtraFiles) > 0 {
+		return cmd.ExtraFiles[0].Stat()
+	}
+	if cmd.Dir == "" {
+		return nil, errors.New("this command was not aimed at a project")
+	}
+	return os.Stat(cmd.Dir)
+}
+
+// `aimAtTheProject` is per platform: on Linux the command already carries the
+// descriptor and there is nothing left to do, and elsewhere it is the identity
+// check, called with nothing between it and `Start`. See `project_linux.go`
+// and `project_other.go`.
+
+// runtimeWorkingDirByPathname is the fallback, as its own function.
 //
-// A method rather than a field read at the call site, so a test can assert it
-// without starting a subprocess.
-func (s *Server) runtimeWorkingDir() string { return s.projectDir }
+// One spelling of the check, tested directly on every platform: a rule written
+// inline in the one branch that uses it would be unreachable from a Linux test
+// run and so held by nothing at all.
+func runtimeWorkingDirByPathname(dir string, pinned fs.FileInfo) (string, error) {
+	if !sameDirectory(dir, pinned) {
+		return "", fmt.Errorf(
+			"%s is no longer the project this desk pinned, so no runtime was started there", dir)
+	}
+	return dir, nil
+}
