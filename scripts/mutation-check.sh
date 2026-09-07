@@ -1914,9 +1914,14 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "Admin claims a location the listing does not show" "$V" \
     "  if (files.some((file) => file.path.startsWith(\`\${dir}/\`))) return 'holds-files'" \
     "  if (true) return 'holds-files'"
-  mutate web "a future storage kind becomes a control" "$V" \
-    '<span>database — coming soon</span>' \
-    '<input type="radio" disabled readOnly aria-label="database — coming soon" />'
+  # Retargeted, not retired: the claim is the same one and the card that makes
+  # it moved. The two kinds that are not available yet are named in the
+  # decoder's own refusal, and neither is offered — so the break is offering
+  # one, which the hidden native select behind the Radix trigger reports.
+  PFC=web/src/admin/projectFileCards.tsx
+  mutate web "a future storage kind becomes a control" "$PFC" \
+    "const KIND_OPTIONS = [{ value: 'filesystem', label: 'filesystem' }] as const" \
+    "const KIND_OPTIONS = [{ value: 'filesystem', label: 'filesystem' }, { value: 'database', label: 'database' }] as const"
   mutate web "an unknown storage key is accepted" "$D" \
     "          ? section(storage.packs, 'storage.packs', ['kind', 'dir', 'idBase'], problems)" \
     "          ? section(storage.packs, 'storage.packs', ['kind', 'dir', 'idBase', 'bucket'], problems)"
@@ -5864,6 +5869,58 @@ export function assistantTransport(): Transport {
   mutate web "the narration sweep measures only single text nodes" "$NR" \
     '  for (const block of container.querySelectorAll(BLOCKS)) {' \
     '  for (const block of [] as Element[]) {'
+
+  # ---- Chunk 6b: the Save on the project-file cards ----------------------
+  PFS=web/src/admin/useProjectFileSave.ts
+  PFF=web/src/admin/ProjectFileForm.tsx
+
+  # **A form over a parsed object re-serialises to save.** The file then arrives
+  # as a diff of every line — indentation, member order, the author's own
+  # alignment — and `1e2` quietly becomes `100`. The splice is what stops it,
+  # and this is the whole-file rewrite it replaced.
+  mutate web "a card's Save rewrites the whole file instead of one member" "$PFS" \
+    '  return { text: next.text, problems: [] }' \
+    '  return { text: JSON.stringify(JSON.parse(next.text), null, 2), problems: [] }'
+
+  # **A write states the bytes it replaces.** The empty string is not a missing
+  # digest — it is a claim that there is no file — so this is the page asserting
+  # the state of a file it never saw, and a change made between the read and the
+  # save is lost rather than refused.
+  mutate web "a card's Save is sent without the identity it read against" "$PFS" \
+    '      { path: PROJECT_CONFIG_PATH, content: composed.text, baseSha256: digest },' \
+    "      { path: PROJECT_CONFIG_PATH, content: composed.text, baseSha256: '' },"
+
+  # **The file API offers an override, and a configuration card offers none.**
+  # A client that always sent it would have no concurrency story, only an
+  # unstated one: the stale answer this whole path is built around never
+  # arrives, because nothing is ever refused.
+  mutate web "a card's Save overwrites whatever it finds" "$PFS" \
+    '      writeFile(input),' \
+    '      writeFile({ ...input, override: true }),'
+
+  # **Nothing was written, so there is nothing to take back.** A form that
+  # re-seeded from the fresh read would answer a refusal by discarding the work
+  # the refusal protected.
+  mutate web "Reload after a refused write takes the file over the unsaved values" "$PFF" \
+    '  if (identity !== seeded && (drafted === seeded || !changed)) {' \
+    '  if (identity !== seeded) {'
+
+  # **The file API forms no opinion about what a file means**, so it would write
+  # an appearance this desk then refuses to read. The opinion is this page's,
+  # and it is asked before the request rather than after it.
+  mutate web "the decoder is not asked before a card's Save is sent" "$PFS" \
+    '  if (decoded.problems.length > 0) return { problems: decoded.problems }' \
+    '  if (decoded.problems.length > 9999) return { problems: decoded.problems }'
+
+  # **The answer moves the cache and the re-read only confirms it.** Left to the
+  # invalidation alone, the header goes on showing the name that was just
+  # replaced for as long as the second read takes — and for ever where it never
+  # answers.
+  mutate web "a landed write waits for a second read before the shell reflects it" "$PFS" \
+    '          client.setQueryData<EffectiveConfig>(DESK_CONFIG_QUERY_KEY, (previous) =>
+            configAfterProjectFileWrite(previous, landed)
+          )' \
+    '          void configAfterProjectFileWrite'
 fi
 
 restore

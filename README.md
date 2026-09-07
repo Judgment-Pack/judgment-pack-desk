@@ -1394,14 +1394,26 @@ member the refusal is about, and on the Project card the whole document around
 it, into the DOM of the page reporting the refusal. On a refusal, and on a read
 that produced no file, a card shows its Status line and no content at all.
 
-**Two cards write, and each writes one member of the desk-level file.** The
+**Two cards write the desk-level file, and each writes one member of it.** The
 Project card nominates this project as the default (or withdraws one), the
 Assistant form writes `assistant`, and neither sends the other's — a member
 absent from the request is carried across untouched. The Project card's other
 three slots are about the *project's* file, so the one line under its control
-names the file it actually writes, from the chassis' own answer. Everything else
-on the page is read-only; the one remaining control is Panes' reset, which
-clears a single `localStorage` key.
+names the file it actually writes, from the chassis' own answer. The one
+control that writes no file at all is Panes' reset, which clears a single
+`localStorage` key.
+
+**Storage, Organization, Appearance and Panes each Save one member of
+`jpack-desk.json` through the file API**, by splicing that member's own bytes
+and decoding the whole file before any of it is sent — so every other member
+keeps its bytes, order and whitespace, and a value this desk would then refuse
+to read never reaches the disk. **The write states the digest its read carried
+and asks for no override**: a file that moved underneath the card is a `409`
+with nothing written, and Reload reads it again while keeping every value that
+was typed. A card writes only the fields that differ from what the file
+supplies, so a pane dimension nobody touched stays undeclared — and where a
+value comes from the desk-level file, which this page does not write, the card
+says so and offers no Save.
 
 **Two things are written, and each is exactly as wide as its reason.** The key
 is one, below. The other is the desk-level file, over `PUT /api/desk-config`,
@@ -1498,15 +1510,16 @@ rewrites in place under the four bounds listed there.
 
 That is a claim about **Admin**, and it is deliberately not the broader one it
 used to make. `jpack-desk.json` is an ordinary project file — the desk reads it
-through the same `GET /api/file` every other file goes through — so the generic
-Author editor lists it and can write it exactly like any project file. Saying
-"nothing is ever PUT to a configuration file" was a sentence this repository's
-own file API refutes; what is true is that no *configuration surface* writes
-the project's file, and the editor that can is the one that treats it as bytes
-and forms no opinion about what they mean. The desk-level write above is the
-one place a configuration surface writes a configuration member, and it is
-narrow by construction: one file, one member, a conditional commit, and a
-decode of the composed bytes before any of them land. `runtime.jpackBin` and
+through the same `GET /api/file` every other file goes through, and now writes
+one member of it through the same `PUT /api/file` — so the generic Author
+editor lists it and can write it exactly like any project file. Saying "nothing
+is ever PUT to a configuration file" was a sentence this repository's own file
+API refutes. What is true is narrower and is the whole of it: **a configuration
+surface writes one member of one file per Save, states the digest it read, and
+decodes the bytes before it sends them** — the chassis composing and decoding
+for the desk-level file, and the page splicing and decoding for the project's
+own. The editor that will write either of them whole is the one that treats a
+file as bytes and forms no opinion about what they mean. `runtime.jpackBin` and
 `project.dir` are not in the schema at all: the chassis executes the binary it
 was given, so a config-supplied path would be a way to run code on this machine
 by editing a file.

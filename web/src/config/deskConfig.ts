@@ -1,11 +1,15 @@
 /**
  * The desk's configuration: one schema, and a decoder that refuses by name.
  *
- * **Nothing here is ever written.** Admin renders effective values, their
- * source and the exact JSON to paste; there is no PUT to a config file
- * anywhere in the desk. That is what keeps `jpackBin` out of the schema (a
- * config-supplied binary path is a local-code-execution surface — `relay.go`
- * runs it), and what means there is no admin-lockout question to answer.
+ * **Nothing here writes, and every writer decodes through here.** This module
+ * reads: the chassis composes the desk-level file and decodes it with the Go
+ * half of this contract before any of it lands, and Admin's project-file cards
+ * splice one member and decode the result with this function before any of it
+ * is sent. So a value this decoder refuses cannot be stored by a surface that
+ * would then report it as refused. That is also what keeps `jpackBin` out of
+ * the schema (a config-supplied binary path is a local-code-execution surface —
+ * `relay.go` runs it), and what means there is no admin-lockout question to
+ * answer.
  *
  * **Any problem refuses the whole file.** Partial acceptance would let a
  * typo'd key silently do nothing while its siblings applied — the reader would
