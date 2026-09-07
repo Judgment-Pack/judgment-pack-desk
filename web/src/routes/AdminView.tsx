@@ -48,7 +48,7 @@ const SECTION = Object.fromEntries(
 
 export function AdminView() {
   const effective = useEffectiveConfig()
-  const { config, path, desk } = effective
+  const { config, desk } = effective
   const { server, known } = useMcp()
   const { data } = usePacks()
   const listing = useFileListing()
@@ -66,7 +66,6 @@ export function AdminView() {
 
   const packDir = config.storage.packs.dir
   const packLocation = packLocationState(packDir, listing)
-  const projectFile = <code>{path}</code>
 
   return (
     <article className="detail">
@@ -77,7 +76,7 @@ export function AdminView() {
       <SourceCard
         id={SECTION.project!.id}
         title={SECTION.project!.title}
-        location={projectFile}
+        location={projectLocation(effective)}
         status={projectStatus(effective)}
         content={{ text: effective.text, value: {} }}
       />
@@ -107,7 +106,13 @@ export function AdminView() {
       <SourceCard
         id={SECTION.runtime!.id}
         title={SECTION.runtime!.title}
-        location={<span className="quiet">the desk has not said</span>}
+        location={
+          desk?.chassis === undefined ? (
+            <span className="quiet">the desk has not said</span>
+          ) : (
+            <code>{desk.chassis.runtimeBin}</code>
+          )
+        }
         status={{
           state: 'said',
           says: server
@@ -289,7 +294,25 @@ const PANE_DIMENSIONS = [
 ] as const
 
 /** The sections that come from either file, layered. */
-type LayeredSection = Exclude<keyof DeskConfig, 'deskConfigVersion' | 'identity' | 'assistant'>
+type LayeredSection = Exclude<
+  keyof DeskConfig,
+  'deskConfigVersion' | 'identity' | 'assistant' | 'project'
+>
+
+/**
+ * Where the project's own configuration file is, **as the chassis said it**.
+ *
+ * The absolute path the chassis resolved, and the project-relative name only
+ * where it has not answered — which is honest about being a name rather than a
+ * location. Joining the reported directory to a file name here would be this
+ * page composing a path on a filesystem it cannot see, and would be wrong the
+ * first time a project was reached through a symlink.
+ */
+function projectLocation(effective: EffectiveConfig) {
+  const chassis = effective.desk?.chassis
+  if (chassis === undefined) return <code>{effective.path}</code>
+  return <code>{chassis.projectFile}</code>
+}
 
 /** Where the desk-level file is, as the chassis said it — or that nothing asked. */
 function deskLocation(effective: EffectiveConfig) {
@@ -303,7 +326,7 @@ function deskLocation(effective: EffectiveConfig) {
 function sectionLocation(effective: EffectiveConfig, section: LayeredSection) {
   const source: ValueSource = effective.sources[section]
   if (source === 'desk file') return deskLocation(effective)
-  return <code>{effective.path}</code>
+  return projectLocation(effective)
 }
 
 /** The bytes of whichever file supplied one layered section. */

@@ -41,6 +41,12 @@ type fixtureVerdict struct {
 	// means, and nothing here would say so.
 	Engine   string `json:"engine"`
 	Thinking string `json:"thinking"`
+	// ProjectFile is `project.file` as the file decodes to, empty where it
+	// names none. Compared on every accepted fixture for the same reason
+	// Engine and Thinking are: two decoders that agree a file is legal and
+	// disagree about what it decoded to would pass a corpus that only checked
+	// the verdict.
+	ProjectFile string `json:"projectFile"`
 }
 
 func fixtureVerdicts(t *testing.T) map[string]fixtureVerdict {
@@ -120,6 +126,9 @@ func TestSharedFixturesDecodeAsTheVerdictSays(t *testing.T) {
 				}
 				if decoded.Thinking != verdict.Thinking {
 					t.Errorf("thinking %q, want %q", decoded.Thinking, verdict.Thinking)
+				}
+				if decoded.ProjectFile != verdict.ProjectFile {
+					t.Errorf("project.file %q, want %q", decoded.ProjectFile, verdict.ProjectFile)
 				}
 				return
 			}

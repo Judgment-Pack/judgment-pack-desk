@@ -149,6 +149,26 @@
     "engine": "vercel",
     "thinking": "off"
   },
+  "accepted-project-file": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "projectFile": "/home/someone/a-project/jpack-desk.json"
+  },
+  "accepted-project-file-null": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
+  },
+  "accepted-project-file-windows": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "projectFile": "C:\\Users\\someone\\a-project\\jpack-desk.json"
+  },
   "accepted-storage-nested-dir": {
     "accepted": true,
     "keys": [],
@@ -524,6 +544,12 @@
       "assistant.endpoint.x-goog-api-key"
     ]
   },
+  "refused-key-in-project": {
+    "accepted": false,
+    "keys": [
+      "project.fileToken"
+    ]
+  },
   "refused-key-in-unknown-object": {
     "accepted": false,
     "keys": [
@@ -631,6 +657,54 @@
     "accepted": false,
     "keys": [
       "panes"
+    ]
+  },
+  "refused-project-file-a-directory": {
+    "accepted": false,
+    "keys": [
+      "project.file"
+    ]
+  },
+  "refused-project-file-another-name": {
+    "accepted": false,
+    "keys": [
+      "project.file"
+    ]
+  },
+  "refused-project-file-bare-name": {
+    "accepted": false,
+    "keys": [
+      "project.file"
+    ]
+  },
+  "refused-project-file-empty": {
+    "accepted": false,
+    "keys": [
+      "project.file"
+    ]
+  },
+  "refused-project-file-not-a-string": {
+    "accepted": false,
+    "keys": [
+      "project.file"
+    ]
+  },
+  "refused-project-file-relative": {
+    "accepted": false,
+    "keys": [
+      "project.file"
+    ]
+  },
+  "refused-project-not-object": {
+    "accepted": false,
+    "keys": [
+      "project"
+    ]
+  },
+  "refused-project-unknown-member": {
+    "accepted": false,
+    "keys": [
+      "project.dir"
     ]
   },
   "refused-storage-dir-absolute": {

@@ -34,6 +34,12 @@ interface Verdict {
    */
   engine?: string
   thinking?: string
+  /**
+   * `project.file` as the file decodes to, absent where it names none. On the
+   * same terms as `engine` and `thinking`: the corpus proves what a file
+   * *means* on both sides and not only whether it is legal.
+   */
+  projectFile?: string
 }
 
 const expected = JSON.parse(
@@ -73,6 +79,8 @@ describe('the shared desk-configuration fixtures', () => {
         const assistant = { ...DESK_DEFAULTS.assistant, ...(decoded.values?.assistant ?? {}) }
         expect(assistant.engine, `${name}: engine`).toBe(verdict.engine)
         expect(assistant.thinking, `${name}: thinking`).toBe(verdict.thinking)
+        const project = { ...DESK_DEFAULTS.project, ...(decoded.values?.project ?? {}) }
+        expect(project.file ?? '', `${name}: project.file`).toBe(verdict.projectFile ?? '')
         return
       }
       expect(decoded.values, `${name} was accepted`).toBeUndefined()

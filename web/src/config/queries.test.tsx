@@ -152,3 +152,69 @@ describe('the desk-config read', () => {
     expect(effective.note).toBeUndefined()
   })
 })
+
+describe('what the chassis says about this process', () => {
+  /** One `GET /api/desk-config` answer beside a 404 for the project file. */
+  function answers(desk: unknown) {
+    vi.stubGlobal('fetch', async (url: string) => {
+      if (String(url).includes('/api/desk-config')) {
+        return { ok: true, status: 200, statusText: '', text: async () => JSON.stringify(desk) }
+      }
+      return {
+        ok: false,
+        status: 404,
+        statusText: '',
+        text: async () => JSON.stringify({ error: 'no such file' })
+      }
+    })
+  }
+
+  it('carries the project root, the project file and the runtime binary', async () => {
+    // Admin prints all three and must invent none of them: a page joining a
+    // directory to a file name would be asserting a path on a filesystem it
+    // cannot see, and would be wrong the first time a project was reached
+    // through a symlink.
+    answers({
+      path: '/config/jpack-desk/desk.json',
+      present: false,
+      sha256: '',
+      project: { dir: '/home/someone/a-project', file: '/home/someone/a-project/jpack-desk.json' },
+      runtime: { bin: '/usr/local/bin/jpack' }
+    })
+    const effective = await loadDeskConfig()
+    expect(effective.desk!.chassis).toEqual({
+      projectDir: '/home/someone/a-project',
+      projectFile: '/home/someone/a-project/jpack-desk.json',
+      runtimeBin: '/usr/local/bin/jpack'
+    })
+  })
+
+  it('carries them beside a file that is there, too', async () => {
+    answers({
+      path: '/config/jpack-desk/desk.json',
+      present: true,
+      content: '{"deskConfigVersion":1}',
+      sha256: 'ab',
+      project: { dir: '/p', file: '/p/jpack-desk.json' },
+      runtime: { bin: 'jpack' }
+    })
+    const effective = await loadDeskConfig()
+    expect(effective.desk!.chassis!.projectDir).toBe('/p')
+    // And the file's own bytes, for the card that quotes a member out of them.
+    expect(effective.desk!.text).toBe('{"deskConfigVersion":1}')
+  })
+
+  it('says nothing about them where the chassis did not', async () => {
+    // Undefined rather than empty strings: a page that filled these in would
+    // be naming paths it never learned.
+    answers({ path: '/config/jpack-desk/desk.json', present: false, sha256: '' })
+    const effective = await loadDeskConfig()
+    expect(effective.desk!.chassis).toBeUndefined()
+  })
+
+  it('says nothing about them where the read never answered', async () => {
+    const effective = await loadDeskConfig()
+    expect(effective.desk!.chassis).toBeUndefined()
+    expect(effective.desk!.readFailure).toBeDefined()
+  })
+})

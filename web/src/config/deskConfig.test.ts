@@ -633,3 +633,95 @@ describe('the desk-level file, and the precedence between the two', () => {
     }
   })
 })
+
+describe('the default project', () => {
+  const at = (file: unknown) =>
+    decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1, project: { file } }), 'desk')
+
+  it('accepts an absolute path to a jpack-desk.json, and null', () => {
+    expect(at('/home/someone/a-project/jpack-desk.json').values?.project).toEqual({
+      file: '/home/someone/a-project/jpack-desk.json'
+    })
+    expect(at(null).values?.project).toEqual({ file: null })
+    // An absent member is the same answer as a null one, through the defaults.
+    expect(
+      decodeDeskConfig('{"deskConfigVersion":1}', 'desk').values?.project
+    ).toBeUndefined()
+  })
+
+  it('accepts a drive-letter path, because the rule is lexical on both sides', () => {
+    expect(at('C:\\Users\\someone\\a-project\\jpack-desk.json').values?.project).toEqual({
+      file: 'C:\\Users\\someone\\a-project\\jpack-desk.json'
+    })
+  })
+
+  it('refuses a relative path by name, because it is read before there is a cwd', () => {
+    const decoded = at('a-project/jpack-desk.json')
+    expect(keys(decoded.problems)).toEqual(['project.file'])
+    expect(decoded.problems[0]!.reason).toContain('absolute')
+  })
+
+  it('refuses a path that names anything but the file the desk reads', () => {
+    for (const file of ['/home/someone/a-project', '/home/someone/a-project/desk.json']) {
+      const decoded = at(file)
+      expect(keys(decoded.problems), file).toEqual(['project.file'])
+      expect(decoded.problems[0]!.reason).toContain('jpack-desk.json')
+    }
+  })
+
+  it('refuses anything that is not a string or null', () => {
+    for (const file of [12, true, {}, []]) {
+      expect(keys(at(file).problems), String(file)).toEqual(['project.file'])
+    }
+  })
+
+  it('refuses an unknown member beside it, and a key-shaped one by what it is', () => {
+    expect(
+      keys(
+        decodeDeskConfig(
+          JSON.stringify({ deskConfigVersion: 1, project: { file: null, dir: '/p' } }),
+          'desk'
+        ).problems
+      )
+    ).toEqual(['project.dir'])
+    const credentialed = decodeDeskConfig(
+      JSON.stringify({ deskConfigVersion: 1, project: { fileToken: 'sk-oops' } }),
+      'desk'
+    )
+    expect(keys(credentialed.problems)).toEqual(['project.fileToken'])
+    expect(credentialed.problems[0]!.reason).toContain('never stored in configuration')
+  })
+
+  it('is refused by name in a project file, and says why', () => {
+    // Which project a machine opens by default is not a fact about any one
+    // project, and committing one would push one operator's filesystem onto
+    // every clone — the same argument identity and assistant are held to.
+    const decoded = decodeDeskConfig(
+      JSON.stringify({ deskConfigVersion: 1, project: { file: null } }),
+      'project'
+    )
+    expect(keys(decoded.problems)).toEqual(['project'])
+    expect(decoded.problems[0]!.reason).toContain('desk-level')
+  })
+
+  it('never comes from a project file, so its badge never moves', () => {
+    const effective = effectiveConfig(
+      decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1 }), 'project'),
+      undefined,
+      undefined,
+      {
+        path: '/config/desk.json',
+        present: true,
+        decoded: decodeDeskConfig(
+          JSON.stringify({
+            deskConfigVersion: 1,
+            project: { file: '/p/jpack-desk.json' }
+          }),
+          'desk'
+        )
+      }
+    )
+    expect(effective.config.project.file).toBe('/p/jpack-desk.json')
+    expect(effective.sources.project).toBe('desk file')
+  })
+})

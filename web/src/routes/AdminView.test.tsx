@@ -544,6 +544,34 @@ describe('the Admin page', () => {
     expect(screen.getByText(/read by nothing yet/)).toBeTruthy()
   })
 
+  it('takes every location from the chassis, and composes none of them', () => {
+    // A page that joined the reported directory to a file name would be
+    // asserting a path on a filesystem it cannot see, and would be wrong the
+    // first time a project was reached through a symlink — which is exactly
+    // what the chassis resolves before it reports.
+    renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: DESK_PATH,
+        present: false,
+        sha256: '',
+        chassis: {
+          projectDir: '/real/a-project',
+          projectFile: '/real/a-project/jpack-desk.json',
+          runtimeBin: '/usr/local/bin/jpack'
+        }
+      })
+    )
+    expect(screen.getAllByText('/real/a-project/jpack-desk.json').length).toBeGreaterThan(0)
+    expect(screen.getByText('/usr/local/bin/jpack')).toBeTruthy()
+    // And never the project-relative name once the chassis has answered.
+    expect(screen.queryByText('jpack-desk.json')).toBeNull()
+  })
+
+  it('names the file by the name it reads where the chassis has not answered', () => {
+    renderAdmin()
+    expect(screen.getAllByText('jpack-desk.json').length).toBeGreaterThan(0)
+  })
+
   it('reports the runtime connection rather than a file', async () => {
     renderAdmin()
     // The card that is about a process and not a configuration file: its

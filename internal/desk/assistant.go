@@ -200,6 +200,39 @@ type DeskLevelConfig struct {
 	// the hash of no bytes, which is a value — so the two states are never
 	// confused.
 	SHA256 string `json:"sha256"`
+	// Project and Runtime are **facts about this process**, not members of any
+	// file, and they are here because the page must not invent either.
+	//
+	// Admin prints where the project's own configuration file is and which
+	// runtime binary the desk was launched with. A page that joined a
+	// directory to a file name would be asserting a location on a filesystem
+	// it cannot see — and would be wrong the first time somebody's project was
+	// reached through a symlink, because what the chassis pinned is the
+	// resolved path and not the one it was handed. Neither is in the
+	// configuration schema at any depth: `relay.go` runs the binary it was
+	// given, so a config-supplied path would be a way to run code on this
+	// machine by editing a file.
+	Project ProjectPaths `json:"project"`
+	Runtime RuntimePaths `json:"runtime"`
+}
+
+// ProjectPaths is the project this desk is open on, as the chassis resolved it.
+type ProjectPaths struct {
+	// Dir is the project root, absolute and with its symlinks resolved — the
+	// same path every part of the chassis operates on, pinned once at startup.
+	Dir string `json:"dir"`
+	// File is the project's own configuration file inside it, absolute and
+	// **whether or not it is there**: a page that has to say where to write one
+	// needs the path in both states.
+	File string `json:"file"`
+}
+
+// RuntimePaths is the runtime binary this desk was launched with.
+type RuntimePaths struct {
+	// Bin is the flag's value verbatim: a path, or a name resolved on PATH.
+	// It is not resolved here, because what a reader has to check against the
+	// command line is what the command line said.
+	Bin string `json:"bin"`
 }
 
 // DeskConfigWrite is the body of a desk-level write.
@@ -218,6 +251,15 @@ type DeskConfigWrite struct {
 	// large integer into a float, so the bytes examined would not be the bytes
 	// stored. These are re-indented and never re-serialised.
 	Assistant json.RawMessage `json:"assistant"`
+	// Project is the `project` object, on the same terms.
+	//
+	// **A member that is present is replaced and a member that is absent is
+	// untouched**, which is the rule that lets two Admin cards write two
+	// members of one file without either of them having to send the other's.
+	// Sending neither is a 400: a conditional commit that changes nothing is a
+	// request with no meaning, and answering it 200 would report a write that
+	// did not happen.
+	Project json.RawMessage `json:"project"`
 	// IfMatch is the digest of the desk.json bytes the page last read, bare
 	// hex, or the empty string for "there was no file".
 	IfMatch string `json:"ifMatch"`
@@ -265,7 +307,8 @@ func (s *Server) handleDeskConfig(w http.ResponseWriter, r *http.Request) {
 	// `SHA256` is left empty below, which is this route's sentinel for "there
 	// is no file" and is what a page sends back as `ifMatch` to create one.
 	if !present {
-		writeJSON(w, http.StatusOK, DeskLevelConfig{Path: path, Present: false})
+		writeJSON(w, http.StatusOK, DeskLevelConfig{
+			Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths()})
 		return
 	}
 	if !validUTF8(data) {
@@ -274,7 +317,25 @@ func (s *Server) handleDeskConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, DeskLevelConfig{
-		Path: path, Present: true, Content: string(data), SHA256: digestOf(data)})
+		Path: path, Present: true, Content: string(data), SHA256: digestOf(data),
+		Project: s.projectPaths(), Runtime: s.runtimePaths()})
+}
+
+// projectPaths is the resolved root and the project file inside it.
+//
+// Composed here, once, from the path the chassis pinned — which is why the
+// page never composes it: `projectDir` is `ProjectDir` with its symlinks
+// resolved, and a page joining the directory it was told about to a file name
+// would be naming a path this desk does not read.
+func (s *Server) projectPaths() ProjectPaths {
+	return ProjectPaths{
+		Dir:  s.projectDir,
+		File: filepath.Join(s.projectDir, projectConfigName),
+	}
+}
+
+func (s *Server) runtimePaths() RuntimePaths {
+	return RuntimePaths{Bin: s.cfg.JpackBin}
 }
 
 // refuseDeskRead answers a read that found something and could not use it.
@@ -323,6 +384,10 @@ type deskConfigWritten struct {
 	// A page that took its own request as the outcome would be reporting what
 	// it asked for, and the two differ wherever a default filled a member in.
 	Assistant AssistantSlotView `json:"assistant"`
+	// Project is the `project` slot as the shared decoder read it out of the
+	// file that landed, on the same terms as `Assistant`: the file's answer,
+	// never the request's.
+	Project ProjectSlotView `json:"project"`
 	// Created is true exactly where the write brought the file into existence.
 	Created bool `json:"created"`
 	// KeyRebindRequired is true where a key is stored on this machine and is
@@ -379,6 +444,24 @@ type AssistantSlotView struct {
 	Endpoint *AssistantEndpointView `json:"endpoint"`
 	Engine   string                 `json:"engine"`
 	Thinking string                 `json:"thinking"`
+}
+
+// ProjectSlotView is a decoded `project` object, as an answer.
+//
+// `file` is null where the file names none, which is the same value the schema
+// admits — so the page re-seeds its field from this without a second rule
+// about what an empty string would have meant.
+type ProjectSlotView struct {
+	File *string `json:"file"`
+}
+
+// projectView renders one accepted decode's project slot as an answer.
+func projectView(decoded deskDecode) ProjectSlotView {
+	if decoded.ProjectFile == "" {
+		return ProjectSlotView{}
+	}
+	file := decoded.ProjectFile
+	return ProjectSlotView{File: &file}
 }
 
 // AssistantEndpointView is the four members an endpoint has, decoded.
@@ -501,9 +584,14 @@ func (s *Server) handleDeskConfigWrite(w http.ResponseWriter, r *http.Request) {
 				"nothing was written")
 		return
 	}
-	if len(req.Assistant) == 0 {
+	// **At least one member, and a member that is absent is untouched.** Two
+	// Admin cards write two members of this file; neither sends the other's,
+	// and a request that names neither is a conditional commit that would
+	// change nothing — answering it 200 would report a write that did not
+	// happen.
+	if len(req.Assistant) == 0 && len(req.Project) == 0 {
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,
-			"assistant is required; write null for a desk that configures none")
+			"assistant or project is required; write null for a member this desk configures none of")
 		return
 	}
 
@@ -561,7 +649,7 @@ func (s *Server) commitDeskConfigLocked(req DeskConfigWrite) (int, any) {
 		}
 	}
 
-	composed, problems := composeDeskFile(current, present, req.Assistant)
+	composed, problems := composeDeskFile(current, present, req.Assistant, req.Project)
 	if len(problems) > 0 {
 		return http.StatusUnprocessableEntity, deskConfigRefusal{
 			Error: fmt.Sprintf(
@@ -683,6 +771,7 @@ func (s *Server) commitDeskConfigLocked(req DeskConfigWrite) (int, any) {
 		Path:              path,
 		SHA256:            digestOf(wrote),
 		Assistant:         slotView(landed),
+		Project:           projectView(landed),
 		Created:           !present,
 		KeyRebindRequired: rebind,
 	}
@@ -706,12 +795,27 @@ func (s *Server) commitDeskConfigLocked(req DeskConfigWrite) (int, any) {
 // own constant rather than something the page supplies, because a page that
 // could choose it could ask this desk to write a file it will not read.
 func composeDeskFile(
-	current []byte, present bool, assistant json.RawMessage,
+	current []byte, present bool, assistant, project json.RawMessage,
 ) ([]byte, []deskProblem) {
-	var indented bytes.Buffer
-	if err := json.Indent(&indented, assistant, "  ", "  "); err != nil {
-		return nil, []deskProblem{{Key: "assistant",
-			Reason: "is not JSON, so nothing was written"}}
+	// **Only the members this request named.** One that was not sent is not
+	// replaced, not removed and not re-rendered — it is copied across with
+	// every other member of the file, which is what lets the Project card save
+	// without sending the assistant slot and the Assistant form save without
+	// sending the project one.
+	written := map[string]json.RawMessage{}
+	for _, member := range []struct {
+		name string
+		raw  json.RawMessage
+	}{{"assistant", assistant}, {"project", project}} {
+		if len(member.raw) == 0 {
+			continue
+		}
+		var indented bytes.Buffer
+		if err := json.Indent(&indented, member.raw, "  ", "  "); err != nil {
+			return nil, []deskProblem{{Key: member.name,
+				Reason: "is not JSON, so nothing was written"}}
+		}
+		written[member.name] = json.RawMessage(indented.String())
 	}
 	members := []deskMember{}
 	if present {
@@ -739,18 +843,25 @@ func composeDeskFile(
 		})
 	}
 
-	replaced := false
-	for index, member := range members {
-		if member.name != "assistant" {
+	// In the file's own order, so a member this request names keeps its place
+	// and one it does not name is never moved.
+	for _, name := range []string{"assistant", "project"} {
+		raw, sent := written[name]
+		if !sent {
 			continue
 		}
-		members[index].raw = json.RawMessage(indented.String())
-		members[index].rendered = true
-		replaced = true
-	}
-	if !replaced {
-		members = append(members, deskMember{
-			name: "assistant", raw: json.RawMessage(indented.String())})
+		replaced := false
+		for index, member := range members {
+			if member.name != name {
+				continue
+			}
+			members[index].raw = raw
+			members[index].rendered = true
+			replaced = true
+		}
+		if !replaced {
+			members = append(members, deskMember{name: name, raw: raw})
+		}
 	}
 
 	var out bytes.Buffer

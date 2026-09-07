@@ -1425,7 +1425,7 @@ func TestComposeDeskFileKeepsTheBytesItWasGiven(t *testing.T) {
 	// not be what was stored.
 	current := []byte(`{"deskConfigVersion":1,"panes":{"left":{"width":2e2}},` +
 		`"organization":{"name":"acme"}}`)
-	composed, problems := composeDeskFile(current, true, json.RawMessage(`{"endpoint":null}`))
+	composed, problems := composeDeskFile(current, true, json.RawMessage(`{"endpoint":null}`), nil)
 	if len(problems) > 0 {
 		t.Fatalf("compose: %v", problems)
 	}
@@ -1472,7 +1472,7 @@ func TestComposeDeskFileRefusesAFileItCannotCarryAcross(t *testing.T) {
 		`{"deskConfigVersion":1} {"deskConfigVersion":1}`,
 	} {
 		if _, problems := composeDeskFile([]byte(current), true,
-			json.RawMessage(`{"endpoint":null}`)); len(problems) == 0 {
+			json.RawMessage(`{"endpoint":null}`), nil); len(problems) == 0 {
 			t.Errorf("%q was composed over", current)
 		}
 	}
@@ -1483,7 +1483,7 @@ func TestComposeDeskFileRefusesAFileItCannotCarryAcross(t *testing.T) {
 		`{"deskConfigVersion":1}   `,
 	} {
 		if _, problems := composeDeskFile([]byte(current), true,
-			json.RawMessage(`{"endpoint":null}`)); len(problems) != 0 {
+			json.RawMessage(`{"endpoint":null}`), nil); len(problems) != 0 {
 			t.Errorf("%q was refused: %v", current, problems)
 		}
 	}

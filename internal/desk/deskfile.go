@@ -71,7 +71,17 @@ type deskDecode struct {
 	// the verdict.
 	Engine   string
 	Thinking string
-	Problems []deskProblem
+	// ProjectFile is `project.file`: the absolute path of the `jpack-desk.json`
+	// this desk opens when it is launched with no directory argument. The
+	// empty string is "the file names none", which is also what an absent
+	// `project` member means.
+	//
+	// **Carried, and acted on at launch rather than at request time.** It is
+	// the one member of this file that decides something before there is a
+	// server: `resolveProjectDir` reads it, and everything after that is
+	// pinned to the directory it produced.
+	ProjectFile string
+	Problems    []deskProblem
 }
 
 func (d deskDecode) refused() bool { return len(d.Problems) > 0 }
@@ -141,7 +151,7 @@ func withoutRedundantReasons(problems []deskProblem) []deskProblem {
 // are the two that may appear **only** here.
 var deskTopLevelKeys = []string{
 	"deskConfigVersion", "organization", "user", "appearance", "panes", "storage",
-	"identity", "assistant",
+	"identity", "assistant", "project",
 }
 
 // The pane dimensions and their bounds, mirrored from `PANE_BOUNDS`.
@@ -217,6 +227,12 @@ func decodeDeskFile(text []byte) deskDecode {
 		problems = append(problems, assistantProblems...)
 		slot = found
 	}
+	projectFile := ""
+	if section, present := record["project"]; present {
+		found, projectProblems := decodeProject(section)
+		problems = append(problems, projectProblems...)
+		projectFile = found
+	}
 
 	// **The endpoint is carried out even when the file is refused, and the
 	// single gate is `refused()`.** Dropping it here as well looked safer and
@@ -230,10 +246,11 @@ func decodeDeskFile(text []byte) deskDecode {
 	// Nothing may read `Endpoint` without asking `refused()` first;
 	// `configuredEndpoint` is the only caller and does exactly that.
 	return deskDecode{
-		Endpoint: slot.endpoint,
-		Engine:   slot.engine,
-		Thinking: slot.thinking,
-		Problems: dedupeProblems(withoutRedundantReasons(problems)),
+		Endpoint:    slot.endpoint,
+		Engine:      slot.engine,
+		Thinking:    slot.thinking,
+		ProjectFile: projectFile,
+		Problems:    dedupeProblems(withoutRedundantReasons(problems)),
 	}
 }
 
@@ -540,6 +557,90 @@ func decodeIdentity(value any) []deskProblem {
 	problems = append(problems, oneOf(inner, "identity.provider", "signOut",
 		[]string{"local", "provider"})...)
 	return problems
+}
+
+// projectConfigName is the file a `project.file` must name.
+//
+// The same constant the page reads a project's configuration from, because it
+// is the same file: what `project.file` says is "open the project this file is
+// in", and a path to anything else would be a directory chosen by a name that
+// is not the one the desk reads.
+const projectConfigName = "jpack-desk.json"
+
+// decodeProject reads `project`, whose one member decides which project this
+// desk opens when it is launched without a directory.
+//
+// **Three rules and no more, and each of them is about the path being one this
+// desk can act on before it has a server.**
+//
+//   - **Absolute.** A relative path would be resolved against whatever
+//     directory the desk happened to be started in, which is the very thing the
+//     member exists to stop mattering: the point of a default project is that
+//     `jpack-desk` opens the same one from anywhere.
+//   - **Named `jpack-desk.json`.** The member names the configuration file and
+//     the desk opens the directory it is in, so a path to anything else would
+//     pick a project by a name this desk never reads.
+//   - **Refused by `project.file`**, whichever rule it broke, because that is
+//     the member somebody has to repair.
+//
+// A key-shaped member anywhere under `project` is refused by the credential
+// scan that runs over the whole document, so there is nothing to add here.
+//
+// Mirrored by `projectValue` in `deskConfig.ts` and held to it by the shared
+// fixtures.
+func decodeProject(value any) (string, []deskProblem) {
+	record, problems := object(value, "project", []string{"file"})
+	if record == nil {
+		return "", problems
+	}
+	file, present := record["file"]
+	if !present || file == nil {
+		return "", problems
+	}
+	text, ok := file.(string)
+	if !ok {
+		return "", append(problems, deskProblem{Key: "project.file", Reason: fmt.Sprintf(
+			"must be an absolute path to a %s, or null; found %s",
+			projectConfigName, describe(file))})
+	}
+	trimmed := strings.TrimSpace(text)
+	if !absolutePath(trimmed) {
+		return "", append(problems, deskProblem{Key: "project.file", Reason: fmt.Sprintf(
+			"must be an absolute path, because it is read before this desk has a working "+
+				"directory to resolve one against; found %s", describe(file))})
+	}
+	if lastSegment(trimmed) != projectConfigName {
+		return "", append(problems, deskProblem{Key: "project.file", Reason: fmt.Sprintf(
+			"must name a %s — the desk opens the directory that file is in; found %s",
+			projectConfigName, describe(file))})
+	}
+	return trimmed, problems
+}
+
+// absolutePath is the lexical absoluteness test **both decoders apply**.
+//
+// `filepath.IsAbs` is not it, and cannot be: it answers differently on
+// different platforms, and the browser has no such function at all — so a
+// corpus walked by both sides would be walked under two rules. A leading
+// separator, or a drive letter with one, is the whole of it.
+func absolutePath(path string) bool {
+	if strings.HasPrefix(path, "/") || strings.HasPrefix(path, `\`) {
+		return true
+	}
+	if len(path) >= 3 && path[1] == ':' && (path[2] == '/' || path[2] == '\\') {
+		letter := path[0]
+		return (letter >= 'a' && letter <= 'z') || (letter >= 'A' && letter <= 'Z')
+	}
+	return false
+}
+
+// lastSegment is the file name at the end of a path, on either separator.
+func lastSegment(path string) string {
+	at := strings.LastIndexAny(path, `/\`)
+	if at < 0 {
+		return path
+	}
+	return path[at+1:]
 }
 
 func acceptableIssuer(issuer string) bool {

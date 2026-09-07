@@ -30,6 +30,7 @@ import {
   PROJECT_CONFIG_PATH,
   decodeDeskConfig,
   effectiveConfig,
+  type ChassisPaths,
   type DeskLevelRead,
   type EffectiveConfig
 } from './deskConfig'
@@ -46,6 +47,31 @@ interface DeskLevelAnswer {
    * no file. It is what a write sends back as `ifMatch`.
    */
   sha256?: string
+  /**
+   * What the chassis says about this process rather than about the file: the
+   * project root it pinned, the project's own configuration file inside it,
+   * and the runtime binary it was launched with. Carried in both states,
+   * because a page that has to say where a file would be needs the path
+   * whether or not one is there.
+   */
+  project?: { dir: string; file: string }
+  runtime?: { bin: string }
+}
+
+/**
+ * The chassis' three paths, or undefined where it did not answer with them.
+ *
+ * Undefined rather than empty strings: a page that filled these in would be
+ * naming paths on a machine it cannot see, which is exactly what carrying them
+ * from the chassis exists to stop.
+ */
+function chassisPaths(answered: DeskLevelAnswer): ChassisPaths | undefined {
+  if (answered.project === undefined || answered.runtime === undefined) return undefined
+  return {
+    projectDir: answered.project.dir,
+    projectFile: answered.project.file,
+    runtimeBin: answered.runtime.bin
+  }
 }
 
 /**
@@ -98,6 +124,7 @@ export async function loadDeskLevelConfig(signal?: AbortSignal): Promise<DeskLev
       // it is carried rather than left undefined so a write that creates one
       // sends the same value a write that replaces one sends.
       sha256: answered.sha256 ?? '',
+      chassis: chassisPaths(answered),
       note: `no desk-level configuration file at ${answered.path}`
     }
   }
@@ -105,6 +132,7 @@ export async function loadDeskLevelConfig(signal?: AbortSignal): Promise<DeskLev
     path: answered.path,
     present: true,
     sha256: answered.sha256 ?? '',
+    chassis: chassisPaths(answered),
     // The bytes, carried alongside the decode. Admin quotes a member out of
     // them rather than re-serialising what the decode produced.
     text: answered.content,

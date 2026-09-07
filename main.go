@@ -48,14 +48,19 @@ func run() error {
 		open     = flag.Bool("print-url", true, "print the tokened URL at startup")
 	)
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "usage: jpack-desk [flags] [projectDir]\n\nprojectDir defaults to the current directory.\n\nflags:\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "usage: jpack-desk [flags] [projectDir]\n\nWithout projectDir, the desk opens the project named by project.file in this machine's\ndesk configuration file, and refuses to start where that names none.\n\nflags:\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
 
-	projectDir := "."
-	if flag.NArg() > 0 {
-		projectDir = flag.Arg(0)
+	// **Which project, decided before anything is built for it.** An argument
+	// wins; without one the desk-level file's `project.file` names it; with
+	// neither this is a usage error rather than the current directory, because
+	// a project chosen by where the process happened to start is a project
+	// nobody chose. See `desk.ResolveProjectDir`.
+	projectDir, err := desk.ResolveProjectDir(flag.Arg(0), desk.DeskConfigDirFor(""))
+	if err != nil {
+		return err
 	}
 	absProject, err := filepath.Abs(projectDir)
 	if err != nil {
