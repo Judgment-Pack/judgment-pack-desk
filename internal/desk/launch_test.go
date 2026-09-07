@@ -828,3 +828,70 @@ func TestAnEmptyProjectObjectIsRefusedRatherThanTreatedAsAWithdrawal(t *testing.
 		t.Errorf("project %v, want null", body["project"])
 	}
 }
+
+func TestOnlyTheExactSpellingThisDeskReportedIsAccepted(t *testing.T) {
+	// **One value, and it is the one this desk handed the page.** Anything
+	// that makes two spellings compare equal is a second rule about which
+	// spellings mean it — and the alternate one is what gets stored, so the
+	// file then carries a string this desk never reported. Round 2 found a
+	// `TrimSpace`; every other alternate spelling was already refused, and
+	// this holds all of them together.
+	s, ts, _ := assistantServer(t)
+	writeDeskConfig(t, s, `{"deskConfigVersion":1}`)
+	exact := s.projectPaths().File
+	digest, _ := deskConfigDigest(t, ts)
+
+	// A symlinked route to the same file, so the table is not only lexical.
+	linked := filepath.Join(t.TempDir(), "link")
+	symlinked := ""
+	if err := os.Symlink(s.projectDir, linked); err == nil {
+		symlinked = filepath.Join(linked, projectConfigName)
+	}
+
+	spellings := []string{
+		" " + exact,
+		exact + " ",
+		"\t" + exact + "\n",
+		filepath.Dir(exact) + "/./" + projectConfigName,
+		filepath.Dir(exact) + "/../" + filepath.Base(filepath.Dir(exact)) + "/" + projectConfigName,
+		filepath.Dir(exact) + "//" + projectConfigName,
+		exact + "/",
+		strings.ToUpper(exact),
+	}
+	if symlinked != "" {
+		spellings = append(spellings, symlinked)
+	}
+	for _, spelling := range spellings {
+		if spelling == exact {
+			t.Fatalf("%q is the exact spelling, so it proves nothing here", spelling)
+		}
+		status, body := putMembers(t, ts, map[string]any{
+			"project": json.RawMessage(`{"file":` + quoted(spelling) + `}`), "ifMatch": digest})
+		if status != http.StatusUnprocessableEntity {
+			t.Errorf("%q: status %d, body %v", spelling, status, body)
+			continue
+		}
+		problems, _ := body["problems"].([]any)
+		first, _ := problems[0].(map[string]any)
+		if first["key"] != "project.file" {
+			t.Errorf("%q: refused by %v", spelling, first["key"])
+		}
+	}
+	// The file is untouched by all of them, and the exact spelling still works.
+	if now, _ := deskConfigDigest(t, ts); now != digest {
+		t.Error("a refused spelling changed the file")
+	}
+	if status, body := putMembers(t, ts, map[string]any{
+		"project": json.RawMessage(`{"file":` + quoted(exact) + `}`), "ifMatch": digest,
+	}); status != http.StatusOK {
+		t.Fatalf("the exact spelling was refused: %d %v", status, body)
+	}
+	// And what landed is that spelling and not a normalisation of one.
+	_, data, err := s.readDeskFile()
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if decoded := decodeDeskFile(data); decoded.ProjectFile != exact {
+		t.Errorf("stored %q, want %q", decoded.ProjectFile, exact)
+	}
+}

@@ -681,10 +681,15 @@ const projectFileMustBeStated = "must be stated in a project object this page se
 // refused by `project.file` with the sentence above, and the operator's own
 // editor remains the way to name a different one.
 //
-// Compared as the exact string this desk hands the page in
-// `GET /api/desk-config`, because that is the value the page has: a normalised
-// comparison would be a second spelling rule for a member whose whole point
-// here is that it is not the page's to choose.
+// **Compared as the exact string this desk hands the page in
+// `GET /api/desk-config`, with no normalisation at all.** Round 2 found a
+// `TrimSpace` here, and it is the shape of the bug rather than a small
+// looseness: the value the page may write is one particular value, so anything
+// that makes two spellings compare equal is a second rule about which
+// spellings mean it — and the padded one is what gets *stored*, so the file
+// then carries a string this desk never reported. Every other alternate
+// spelling (`..`, a trailing separator, a symlinked route, a different case)
+// is already refused for the same reason; whitespace was the one that was not.
 func (s *Server) projectNominationProblem(project json.RawMessage) *deskProblem {
 	if len(project) == 0 {
 		return nil
@@ -713,7 +718,7 @@ func (s *Server) projectNominationProblem(project json.RawMessage) *deskProblem 
 		// A type the decoder refuses by name. One refusal, from one place.
 		return nil
 	}
-	if strings.TrimSpace(text) == s.projectPaths().File {
+	if text == s.projectPaths().File {
 		return nil
 	}
 	return &deskProblem{Key: "project.file", Reason: pageMayNominateOnlyThisProject}
