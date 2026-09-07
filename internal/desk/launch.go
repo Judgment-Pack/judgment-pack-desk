@@ -40,13 +40,23 @@ import (
 // a silent fall back to the current directory, because a person who configured
 // a default and got some other project would have no way to see that the
 // member they wrote was ignored.
+// **It answers a name, and a name is not a project.** `OpenProject` is what a
+// launch calls: it carries the identity of everything this decision inspected
+// through to the descriptor that is pinned, so that the directory validated
+// here is the directory served. See `ProjectRoot`.
 func ResolveProjectDir(argument, configDir string) (string, error) {
+	chosen, err := chooseProject(argument, configDir)
+	return chosen.dir, err
+}
+
+// chooseProject is the decision, with the identities it decided by.
+func chooseProject(argument, configDir string) (projectChoice, error) {
 	if argument != "" {
-		return argument, nil
+		return projectChoice{dir: argument}, nil
 	}
 	file, err := configuredProjectFile(configDir)
 	if err != nil {
-		return "", err
+		return projectChoice{}, err
 	}
 	return resolveProjectDir(argument, file)
 }
@@ -66,26 +76,27 @@ type deskLaunchFile struct {
 //
 // Split from the read so that the rule can be tested without a filesystem, and
 // so that there is exactly one place the three answers are chosen between.
-func resolveProjectDir(argument string, deskFile deskLaunchFile) (string, error) {
+func resolveProjectDir(argument string, deskFile deskLaunchFile) (projectChoice, error) {
 	if argument != "" {
-		return argument, nil
+		return projectChoice{dir: argument}, nil
 	}
 	if deskFile.file == "" {
 		// The default this desk has always had, and the state most desks are
 		// in: nobody configured one, and the current directory is what
 		// `jpack-desk` in a project means.
-		return ".", nil
+		return projectChoice{dir: "."}, nil
 	}
-	dir, err := usableProjectDir(deskFile.file)
+	chosen, err := usableProjectDir(deskFile.file)
 	if err != nil {
 		where := deskFile.path
 		if where == "" {
 			where = "this machine's desk configuration file"
 		}
-		return "", fmt.Errorf("project.file in %s names %q, which this desk cannot open: %w",
+		return projectChoice{}, fmt.Errorf(
+			"project.file in %s names %q, which this desk cannot open: %w",
 			where, deskFile.file, err)
 	}
-	return dir, nil
+	return chosen, nil
 }
 
 // usableProjectDir is the host's own verdict on a configured `project.file`.
@@ -109,9 +120,9 @@ func resolveProjectDir(argument string, deskFile deskLaunchFile) (string, error)
 //     project, and the file API would then serve the host. Nothing legitimate
 //     puts a project there, and a rule that admitted it would make every other
 //     containment argument on this desk conditional on nobody writing it.
-func usableProjectDir(file string) (string, error) {
+func usableProjectDir(file string) (projectChoice, error) {
 	if !filepath.IsAbs(file) {
-		return "", fmt.Errorf(
+		return projectChoice{}, fmt.Errorf(
 			"it is not an absolute path on this system (a path written for another platform " +
 				"is a relative one here, and would open whatever directory this desk was " +
 				"launched from)")
@@ -122,30 +133,38 @@ func usableProjectDir(file string) (string, error) {
 	// about the location, and a file that appeared there later would otherwise
 	// be admitted.
 	if isFilesystemRoot(filepath.Dir(file)) {
-		return "", errProjectInRoot
+		return projectChoice{}, errProjectInRoot
 	}
 	resolved, err := filepath.EvalSymlinks(file)
 	if err != nil {
-		return "", fmt.Errorf("it could not be resolved: %w", err)
+		return projectChoice{}, fmt.Errorf("it could not be resolved: %w", err)
 	}
 	info, err := os.Lstat(resolved)
 	if err != nil {
-		return "", fmt.Errorf("it could not be read: %w", err)
+		return projectChoice{}, fmt.Errorf("it could not be read: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("it is not a regular file")
+		return projectChoice{}, fmt.Errorf("it is not a regular file")
 	}
 	if filepath.Base(resolved) != projectConfigName {
-		return "", fmt.Errorf("it resolves to %s rather than a %s",
+		return projectChoice{}, fmt.Errorf("it resolves to %s rather than a %s",
 			filepath.Base(resolved), projectConfigName)
 	}
 	// And again on what it resolved to, because a link can point out of a
 	// directory that passed the check above and into the root.
 	dir := filepath.Dir(resolved)
 	if isFilesystemRoot(dir) {
-		return "", errProjectInRoot
+		return projectChoice{}, errProjectInRoot
 	}
-	return dir, nil
+	// **The identities travel with the decision.** They are what
+	// `stillTheOneValidated` compares the pinned descriptor against, so that a
+	// rename between here and the open cannot substitute another tree for the
+	// one whose configuration file chose it.
+	dirInfo, err := os.Lstat(dir)
+	if err != nil {
+		return projectChoice{}, fmt.Errorf("its directory could not be read: %w", err)
+	}
+	return projectChoice{dir: dir, dirInfo: dirInfo, fileInfo: info}, nil
 }
 
 // errProjectInRoot is the one refusal stated in two places, so that breaking

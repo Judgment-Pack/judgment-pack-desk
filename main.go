@@ -18,7 +18,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -53,25 +52,20 @@ func run() error {
 	}
 	flag.Parse()
 
-	// **Which project, decided before anything is built for it.** An argument
-	// wins; without one the desk-level file's `project.file` names it, and is
-	// validated against this host before it is honoured; with neither, the
-	// current directory, exactly as it always was. A configured default that
-	// this host cannot open refuses the launch rather than falling through —
-	// see `desk.ResolveProjectDir`.
-	projectDir, err := desk.ResolveProjectDir(flag.Arg(0), desk.DeskConfigDirFor(""))
+	// **Which project, decided and pinned before anything is built for it.**
+	// An argument wins; without one the desk-level file's `project.file` names
+	// it, validated against this host before it is honoured; with neither, the
+	// current directory, exactly as it always was. A configured default this
+	// host cannot open refuses the launch rather than falling through.
+	//
+	// What comes back is the **descriptor**, not a name for one: validating a
+	// pathname and then re-resolving it to open is a window in which the
+	// directory checked is not the directory served. See `desk.OpenProject`.
+	project, err := desk.OpenProject(flag.Arg(0), desk.DeskConfigDirFor(""))
 	if err != nil {
 		return err
 	}
-	absProject, err := filepath.Abs(projectDir)
-	if err != nil {
-		return fmt.Errorf("resolving project directory %q: %w", projectDir, err)
-	}
-	if info, err := os.Stat(absProject); err != nil {
-		return fmt.Errorf("project directory %q: %w", absProject, err)
-	} else if !info.IsDir() {
-		return fmt.Errorf("project directory %q is not a directory", absProject)
-	}
+	absProject := project.Dir()
 
 	static, err := fs.Sub(embeddedWeb, "web/dist")
 	if err != nil {
@@ -86,12 +80,12 @@ func run() error {
 	}
 
 	srv, err := desk.New(desk.Config{
-		ProjectDir: absProject,
-		JpackBin:   *jpackBin,
-		Token:      token,
-		Static:     static,
-		DevMode:    *devToken != "",
-		Logger:     log.New(os.Stderr, "", log.LstdFlags),
+		Root:     project,
+		JpackBin: *jpackBin,
+		Token:    token,
+		Static:   static,
+		DevMode:  *devToken != "",
+		Logger:   log.New(os.Stderr, "", log.LstdFlags),
 	})
 	if err != nil {
 		return err

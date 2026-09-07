@@ -20,39 +20,44 @@ func TestResolveProjectDirPrefersTheArgument(t *testing.T) {
 	// The command line is the more specific statement, and a configured
 	// default that could override one would be a desk nobody can point
 	// somewhere else.
-	got, err := resolveProjectDir("/on/the/command/line", deskLaunchFile{
+	chosen, err := resolveProjectDir("/on/the/command/line", deskLaunchFile{
 		path: "/config/desk.json", file: "/configured/jpack-desk.json"})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if got != "/on/the/command/line" {
-		t.Errorf("resolved %q, want the argument", got)
+	if chosen.dir != "/on/the/command/line" {
+		t.Errorf("resolved %q, want the argument", chosen.dir)
 	}
 }
 
 func TestResolveProjectDirTakesTheDirectoryOfTheConfiguredFile(t *testing.T) {
 	project, file := aProject(t)
-	got, err := resolveProjectDir("", deskLaunchFile{path: "/config/desk.json", file: file})
+	chosen, err := resolveProjectDir("", deskLaunchFile{path: "/config/desk.json", file: file})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if got != project {
-		t.Errorf("resolved %q, want %q", got, project)
+	if chosen.dir != project {
+		t.Errorf("resolved %q, want %q", chosen.dir, project)
+	}
+	// The identities travel with the decision, so the pinning can prove it is
+	// still the directory that was validated.
+	if chosen.dirInfo == nil || chosen.fileInfo == nil {
+		t.Error("a configured default carried no identity to pin against")
 	}
 }
 
 func TestResolveProjectDirIsTheCurrentDirectoryWithNeither(t *testing.T) {
 	// The default this desk has always had, and the state most desks are in.
-	got, err := resolveProjectDir("", deskLaunchFile{path: "/config/desk.json"})
+	chosen, err := resolveProjectDir("", deskLaunchFile{path: "/config/desk.json"})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if got != "." {
-		t.Errorf("resolved %q, want the current directory", got)
+	if chosen.dir != "." {
+		t.Errorf("resolved %q, want the current directory", chosen.dir)
 	}
 	// And with no configuration file at all, which is the same answer.
-	if got, err := resolveProjectDir("", deskLaunchFile{}); err != nil || got != "." {
-		t.Errorf("with nothing at all: %q %v", got, err)
+	if other, err := resolveProjectDir("", deskLaunchFile{}); err != nil || other.dir != "." {
+		t.Errorf("with nothing at all: %q %v", other.dir, err)
 	}
 }
 
@@ -559,5 +564,217 @@ func TestADeskLevelWriteStatesItsDigestOrIsRefused(t *testing.T) {
 		"assistant": json.RawMessage(`{"endpoint":null}`), "ifMatch": ""})
 	if status != http.StatusOK {
 		t.Fatalf("the stated sentinel was refused: %d %v", status, answer)
+	}
+}
+
+/* Validated and pinned, or nothing ----------------------------------------- */
+
+// swapAt installs a hook that renames `victim` away and puts a symlink to
+// `replacement` in its place, exactly once, the first time it fires.
+//
+// This is the swap round 2 described, performed at the instant it would
+// matter: after the launch has validated the configured file and the directory
+// it is in, and before the directory is opened.
+func swapAt(t *testing.T, victim, replacement string) {
+	t.Helper()
+	done := false
+	testHookBeforePinningProject = func(string) {
+		if done {
+			return
+		}
+		done = true
+		moved := victim + ".moved"
+		if err := os.Rename(victim, moved); err != nil {
+			t.Fatalf("rename: %v", err)
+		}
+		if err := os.Symlink(replacement, victim); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+	}
+	t.Cleanup(func() { testHookBeforePinningProject = nil })
+}
+
+func TestALaunchPinsTheDirectoryItValidatedOrRefuses(t *testing.T) {
+	// **The window round 2 found.** Validation returned the parent as a
+	// *pathname* and the server resolved that pathname again, so a principal
+	// who can rename inside the parent could move the validated directory away
+	// and point its name at another tree between the two. The desk must serve
+	// the directory whose `jpack-desk.json` it checked, or serve none.
+	holder := t.TempDir()
+	project := filepath.Join(holder, "a-project")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	file := filepath.Join(project, projectConfigName)
+	if err := os.WriteFile(file, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	// The tree the attacker would rather this desk served.
+	elsewhere := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(elsewhere, projectConfigName), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.Symlink(elsewhere, filepath.Join(holder, "probe")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	config := t.TempDir()
+	writeLaunchConfig(t, config, `{"deskConfigVersion":1,"project":{"file":`+quoted(file)+`}}`)
+	swapAt(t, project, elsewhere)
+
+	pinned, err := OpenProject("", config)
+	if pinned != nil {
+		defer pinned.Close()
+	}
+	// **Never the replacement**, which is the whole assertion. Either answer
+	// is safe — the descriptor may still be the original directory in its new
+	// location, or the identity check may refuse — and the tree the attacker
+	// installed must not be it.
+	resolvedElsewhere, _ := filepath.EvalSymlinks(elsewhere)
+	if err == nil && pinned.Dir() == resolvedElsewhere {
+		t.Fatalf("the desk pinned the replacement tree %q", pinned.Dir())
+	}
+	if err == nil {
+		// It pinned something: prove it is the directory that was validated,
+		// by identity rather than by name.
+		moved, statErr := os.Lstat(project + ".moved")
+		if statErr != nil {
+			t.Fatalf("lstat: %v", statErr)
+		}
+		if !os.SameFile(moved, pinned.info) {
+			t.Errorf("pinned %q, which is neither the validated directory nor a refusal",
+				pinned.Dir())
+		}
+	}
+}
+
+func TestPinningRefusesADirectoryThatChangedUnderItsName(t *testing.T) {
+	// The same window, closed at the other end: `OpenProjectRoot` inspects a
+	// name and then opens it, and what it holds afterwards has to be what it
+	// inspected. Here the validated identity is a different directory
+	// altogether, which is what a completed swap looks like to the check.
+	one := t.TempDir()
+	two := t.TempDir()
+	pinned, err := OpenProjectRoot(one)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer pinned.Close()
+	other, err := os.Lstat(two)
+	if err != nil {
+		t.Fatalf("lstat: %v", err)
+	}
+	chosen := projectChoice{dir: one, dirInfo: other, fileInfo: other}
+	if err := chosen.stillTheOneValidated(pinned); err == nil {
+		t.Fatal("a directory that is not the one validated was accepted")
+	}
+}
+
+func TestPinningRefusesAConfigurationFileReplacedInsideTheSameDirectory(t *testing.T) {
+	// The directory may be the one that was validated and the *file* that
+	// chose it may not be. Both are checked, and this is the second.
+	dir, file := aProject(t)
+	pinned, err := OpenProjectRoot(dir)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer pinned.Close()
+	was, err := os.Lstat(file)
+	if err != nil {
+		t.Fatalf("lstat: %v", err)
+	}
+	// Replaced the way an editor replaces a file: the new one is created
+	// while the old one still holds its inode, then renamed over. The name is
+	// the same afterwards and the identity is not, which is the whole point.
+	staged := file + ".new"
+	if err := os.WriteFile(staged, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.Rename(staged, file); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if now, err := os.Lstat(file); err != nil || os.SameFile(was, now) {
+		t.Skipf("this filesystem reused the identity, so there is nothing to tell apart: %v", err)
+	}
+	chosen := projectChoice{dir: dir, dirInfo: pinned.info, fileInfo: was}
+	if err := chosen.stillTheOneValidated(pinned); err == nil {
+		t.Fatal("a replaced configuration file was accepted")
+	}
+	// And the file that was validated is accepted.
+	now, err := os.Lstat(file)
+	if err != nil {
+		t.Fatalf("lstat: %v", err)
+	}
+	chosen.fileInfo = now
+	if err := chosen.stillTheOneValidated(pinned); err != nil {
+		t.Errorf("the validated pair was refused: %v", err)
+	}
+}
+
+func TestAnArgumentIsPinnedThroughTheSameCheck(t *testing.T) {
+	// Both launch shapes pin what they validated. An argument names a
+	// directory this desk was told to serve, so there is no earlier identity
+	// to compare — but the descriptor must still be the directory that was
+	// inspected, which is `OpenProjectRoot`'s own `SameFile`.
+	dir, _ := aProject(t)
+	pinned, err := OpenProject(dir, t.TempDir())
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer pinned.Close()
+	resolved, _ := filepath.EvalSymlinks(dir)
+	if pinned.Dir() != resolved {
+		t.Errorf("pinned %q, want %q", pinned.Dir(), resolved)
+	}
+	held, err := os.Lstat(resolved)
+	if err != nil {
+		t.Fatalf("lstat: %v", err)
+	}
+	if !os.SameFile(held, pinned.info) {
+		t.Error("the descriptor is not the directory that was inspected")
+	}
+	// A file is not a project directory.
+	if _, err := OpenProjectRoot(filepath.Join(dir, projectConfigName)); err == nil {
+		t.Error("a regular file was pinned as a project")
+	}
+}
+
+func TestTheServerServesTheRootItWasHanded(t *testing.T) {
+	// The descriptor crosses the boundary, not a name for one — so there is no
+	// second resolution inside `New` for anything to change under.
+	dir, _ := aProject(t)
+	pinned, err := OpenProjectRoot(dir)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken,
+		DeskConfigDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+	if s.projectDir != pinned.Dir() {
+		t.Errorf("the server serves %q, want %q", s.projectDir, pinned.Dir())
+	}
+	if s.root != pinned.root {
+		t.Error("the server opened a root of its own rather than serving the one it was handed")
+	}
+}
+
+func TestAHandedRootIsReleasedWhenTheServerRefusesToStart(t *testing.T) {
+	// This server owns the descriptor it was handed, on failure as on success:
+	// a caller that also closed it would double-close, and one that closed
+	// nothing would leak a descriptor at startup.
+	dir, _ := aProject(t)
+	pinned, err := OpenProjectRoot(dir)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err := New(Config{Root: pinned, JpackBin: "jpack"}); err == nil {
+		t.Fatal("a server with no token was built")
+	}
+	if _, err := pinned.root.Stat("."); err == nil {
+		t.Error("the descriptor was still open after the refusal")
 	}
 }
