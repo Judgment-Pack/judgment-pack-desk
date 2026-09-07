@@ -46,8 +46,27 @@ export const PLACEHOLDER_ORIGIN = 'https://relay.invalid'
 /** The base each family's provider is constructed with. */
 export function placeholderBase(family: EndpointKind): string {
   // `v1/messages` after the relay's mount point, which is where the chassis'
-  // own probe sends an Anthropic request; `chat/completions` for the other.
-  return family === 'anthropic' ? `${PLACEHOLDER_ORIGIN}/v1` : PLACEHOLDER_ORIGIN
+  // own probe sends an Anthropic request; `chat/completions` for the
+  // OpenAI-compatible one; and `v1beta/models/<model>:<method>` for the native
+  // Gemini wire, whose base is the version segment because the model and the
+  // method are both part of the address.
+  if (family === 'anthropic') return `${PLACEHOLDER_ORIGIN}/v1`
+  if (family === 'gemini') return `${PLACEHOLDER_ORIGIN}/v1beta`
+  return PLACEHOLDER_ORIGIN
+}
+
+/**
+ * The one query a provider may compose, per family — the desk's mirror of the
+ * mirror, at the layer where an SDK's URL is reduced to a suffix.
+ *
+ * The Gemini provider asks for its stream with `?alt=sse` and has nowhere else
+ * to put it. Every other query on every family is refused rather than dropped:
+ * the relay's own rule is that the desk's token is the only parameter it
+ * accepts, and a provider that appended one of its own must fail here rather
+ * than have this desk quietly decide what it meant.
+ */
+function admittedSearch(family: EndpointKind): string {
+  return family === 'gemini' ? '?alt=sse' : ''
 }
 
 /** The refusal every address this wrapper will not send carries. */
@@ -75,6 +94,35 @@ const PROTOCOL_HEADERS: readonly string[] = [
 ]
 
 /**
+ * Which provider metadata a reasoning part's signature is under, per family.
+ *
+ * Two wires sign a model's reasoning and the SDK surfaces each under its own
+ * provider key with its own member name — `anthropic.signature` and
+ * `google.thoughtSignature`. A table rather than two branches, because the
+ * ledger, the comparison and the rebuild all have to agree about where to look,
+ * and a third wire is one row.
+ */
+const SIGNATURE_AT: Partial<Record<EndpointKind, { provider: string; member: string }>> = {
+  anthropic: { provider: 'anthropic', member: 'signature' },
+  gemini: { provider: 'google', member: 'thoughtSignature' }
+}
+
+/** Whether this family signs reasoning at all, and so has a ledger to keep. */
+export function signsReasoning(family: EndpointKind): boolean {
+  return SIGNATURE_AT[family] !== undefined
+}
+
+/** The signature one stream part carried, or `undefined`. */
+export function signatureOf(family: EndpointKind, part: unknown): string | undefined {
+  const at = SIGNATURE_AT[family]
+  if (at === undefined) return undefined
+  const metadata = (part as { providerMetadata?: Record<string, Record<string, unknown>> })
+    .providerMetadata?.[at.provider]
+  const carried = metadata?.[at.member]
+  return typeof carried === 'string' ? carried : undefined
+}
+
+/**
  * The path suffix, or nothing where this is not an address this desk will send
  * to.
  *
@@ -84,21 +132,24 @@ const PROTOCOL_HEADERS: readonly string[] = [
  * provider that reached for some other path under the same origin, or for a
  * different origin altogether, is refused rather than sent.
  */
-export function suffixOf(url: string, base: string): string | undefined {
+export function suffixOf(url: string, base: string, family: EndpointKind): string | undefined {
   let parsed: URL
   try {
     parsed = new URL(url)
   } catch {
     return undefined
   }
-  // A query is refused rather than dropped: the relay's own rule is that the
-  // desk's token is the only parameter it will accept, so a provider that
-  // appended one (`queryParams`, an api-version member) must fail here rather
-  // than have this desk quietly decide what it meant.
-  if (parsed.search !== '' || parsed.hash !== '') return undefined
+  // **Byte equality against one literal**, which is the whole of the exception:
+  // `?alt=json`, `?alt=sse&x=1` and a second copy each fail this and nothing is
+  // sent. A fragment is refused on every family.
+  if (parsed.search !== admittedSearch(family) && parsed.search !== '') return undefined
+  if (parsed.hash !== '') return undefined
   if (!url.startsWith(`${base}/`)) return undefined
   const suffix = url.slice(PLACEHOLDER_ORIGIN.length + 1)
-  return suffix === '' ? undefined : suffix
+  // The query travels **inside the suffix**, because the suffix is the whole of
+  // what the desk's capability is asked for and that capability re-checks both
+  // halves against the chassis' own rule before an address is built.
+  return suffix === '' || suffix.startsWith('?') ? undefined : suffix
 }
 
 /** Header names and values as a plain record, whatever shape they arrived in. */
@@ -140,7 +191,23 @@ function headerRecord(headers: HeadersInit | undefined): Record<string, string> 
  * legs.
  */
 export function reframe(family: EndpointKind, payload: unknown): string {
-  return family === 'anthropic' ? anthropicEvents(payload) : openAiChunks(payload)
+  if (family === 'anthropic') return anthropicEvents(payload)
+  if (family === 'gemini') return geminiEvents(payload)
+  return openAiChunks(payload)
+}
+
+/**
+ * A whole Gemini answer, in the framing `?alt=sse` would have used.
+ *
+ * **One event, because that is what the wire's streaming form is**: each event
+ * carries a whole `GenerateContentResponse`, and a single-chunk stream is the
+ * shape an answer with nothing to split across chunks already has. There is no
+ * terminal sentinel to write — the stream ends when the body does — and no
+ * per-part event grammar to reproduce, so this is the smallest of the three
+ * re-framings and the only one that rewrites nothing at all.
+ */
+function geminiEvents(payload: unknown): string {
+  return `data: ${JSON.stringify(payload ?? {})}\n\n`
 }
 
 interface OpenAiWhole {
@@ -370,10 +437,68 @@ export function signatureLedger(): SignatureLedger {
   }
 }
 
-/** One Anthropic content block, as far as this file needs to know. */
+/** One signed block on either wire, as far as this file needs to know. */
 interface WireBlock {
   type?: string
   signature?: unknown
+  thought?: unknown
+  thoughtSignature?: unknown
+}
+
+/**
+ * Where a signed block lives in each wire's request body, and what one looks
+ * like — the one place this file knows either shape.
+ *
+ * `messages[].content[]` of `{type: "thinking", signature}` on Anthropic;
+ * `contents[].parts[]` of `{thought: true, thoughtSignature}` on Gemini. Two
+ * readers, one comparison: the k-th signed block back is compared with the k-th
+ * block signed and with no other, whichever wire it is.
+ */
+interface SignedShape {
+  /** The message-or-content list on the request body. */
+  turns(payload: Record<string, unknown>): { holder: Record<string, unknown>; key: string }[]
+  /** Whether one item of that list is a signed block, and its signature. */
+  signature(block: WireBlock): string | undefined
+  /** Take the tier off, wherever this wire puts it, and put back what is asked now. */
+  retier(payload: Record<string, unknown>, members: Record<string, unknown> | null): void
+}
+
+const SIGNED: Partial<Record<EndpointKind, SignedShape>> = {
+  anthropic: {
+    turns: (payload) =>
+      ((payload.messages ?? []) as Record<string, unknown>[])
+        .filter((message) => Array.isArray(message?.content))
+        .map((message) => ({ holder: message, key: 'content' })),
+    signature: (block) =>
+      block?.type === 'thinking' && typeof block.signature === 'string'
+        ? block.signature
+        : undefined,
+    retier: (payload, members) => {
+      // `max_tokens` stays as composed: the protocol requires one on every
+      // request, and one larger than a degraded session needs is legal.
+      for (const member of TIER_MEMBERS) delete payload[member]
+      Object.assign(payload, members ?? {})
+    }
+  },
+  gemini: {
+    turns: (payload) =>
+      ((payload.contents ?? []) as Record<string, unknown>[])
+        .filter((content) => Array.isArray(content?.parts))
+        .map((content) => ({ holder: content, key: 'parts' })),
+    signature: (block) =>
+      block?.thought === true && typeof block.thoughtSignature === 'string'
+        ? block.thoughtSignature
+        : undefined,
+    retier: (payload, members) => {
+      // The tier lives one level down on this wire, so the strip does too — and
+      // `generationConfig` itself stays, because it is the request's own
+      // settings object and not the tier.
+      const config = (payload.generationConfig ?? {}) as Record<string, unknown>
+      for (const member of TIER_MEMBERS) delete config[member]
+      Object.assign(config, members ?? {})
+      payload.generationConfig = config
+    }
+  }
 }
 
 /**
@@ -399,16 +524,19 @@ interface WireBlock {
  * asserting that a block it did not reassemble is intact.
  */
 export function withoutTruncatedThinking(
+  family: EndpointKind,
   body: string,
   ledger: SignatureLedger,
   /** What the slot asks for **after** the degrade. Null where it asks nothing. */
   membersAfter: () => Record<string, unknown> | null = () => null
 ): { body: string; truncated: string } {
+  const shape = SIGNED[family]
+  if (shape === undefined) return { body, truncated: '' }
   const signed = ledger.signed()
   if (signed.length === 0) return { body, truncated: '' }
-  let payload: { messages?: { content?: unknown }[] } & Record<string, unknown>
+  let payload: Record<string, unknown>
   try {
-    payload = JSON.parse(body) as { messages?: { content?: unknown }[] } & Record<string, unknown>
+    payload = JSON.parse(body) as Record<string, unknown>
   } catch {
     return { body, truncated: '' }
   }
@@ -422,28 +550,26 @@ export function withoutTruncatedThinking(
   // whose own signature was legitimately shorter; collapsing duplicates left a
   // later block compared against the wrong entry, or against none.
   let at = 0
-  for (const message of payload.messages ?? []) {
-    const content = message?.content
-    if (!Array.isArray(content)) continue
-    const kept = content.filter((item) => {
-      const block = item as WireBlock
-      if (block?.type !== 'thinking' || typeof block.signature !== 'string') return true
+  for (const turn of shape.turns(payload)) {
+    const blocks = turn.holder[turn.key] as unknown[]
+    const kept = blocks.filter((item) => {
+      const carried = shape.signature(item as WireBlock)
+      if (carried === undefined) return true
       const sent = signed[at]
       at += 1
       // A block this desk never saw signed is somebody else's business.
-      if (sent === undefined || !isTruncatedSignature(sent.signature, block.signature)) return true
+      if (sent === undefined || !isTruncatedSignature(sent.signature, carried)) return true
       found =
         'the SDK carried a thinking signature back as a fragment of the one the endpoint sent ' +
         '(vercel/ai#19663); the block was removed and the request rebuilt without the tier'
       return false
     })
-    if (kept.length !== content.length) message.content = kept
+    if (kept.length !== blocks.length) turn.holder[turn.key] = kept
   }
   if (found === '') return { body, truncated: '' }
   // The rebuild. `membersAfter` is read here, after the caller has told the
   // slot — so what goes back on is what the desk is asking for now.
-  for (const member of TIER_MEMBERS) delete payload[member]
-  Object.assign(payload, membersAfter() ?? {})
+  shape.retier(payload, membersAfter())
   return { body: JSON.stringify(payload), truncated: found }
 }
 
@@ -486,7 +612,7 @@ export function relayFetch(options: {
   const base = placeholderBase(options.family)
   const run = options.signal
   const send = async (input: unknown, init?: RequestInit): Promise<Response> => {
-    const suffix = typeof input === 'string' ? suffixOf(input, base) : undefined
+    const suffix = typeof input === 'string' ? suffixOf(input, base, options.family) : undefined
     if (suffix === undefined) throw new Error(ADDRESS_REFUSED)
     const headers: Record<string, string> = {}
     for (const [name, value] of Object.entries(headerRecord(init?.headers))) {
@@ -504,14 +630,18 @@ export function relayFetch(options: {
     // the one composed before the desk changed its mind.
     let body = composed
     let truncated = ''
-    if (options.family === 'anthropic' && options.ledger !== undefined) {
-      const looked = withoutTruncatedThinking(composed, options.ledger, () => null)
+    if (signsReasoning(options.family) && options.ledger !== undefined) {
+      const looked = withoutTruncatedThinking(options.family, composed, options.ledger, () => null)
       if (looked.truncated !== '') {
         truncated = looked.truncated
         // **Told, and heard, before the request goes.** See `onTruncated`.
         await options.onTruncated?.(truncated)
-        body = withoutTruncatedThinking(composed, options.ledger, () => options.membersNow?.() ?? null)
-          .body
+        body = withoutTruncatedThinking(
+          options.family,
+          composed,
+          options.ledger,
+          () => options.membersNow?.() ?? null
+        ).body
       }
     }
     // **Bounded by the run's own signal**, and a thunk, so a closed run makes no
@@ -528,7 +658,9 @@ export function relayFetch(options: {
       run
     )
     // The SDK asked to stream and the endpoint answered whole. See `reframe`.
-    if (!answered.ok || isEventStream(answered) || !asksToStream(body)) return answered
+    if (!answered.ok || isEventStream(answered) || !asksToStream(options.family, suffix, body)) {
+      return answered
+    }
     // Reading a body is an await on the world like any other: a stalled body
     // must not outlive the run it belongs to.
     const payload: unknown = await withAbort(() => answered.json(), run).catch(() => undefined)
@@ -542,8 +674,17 @@ export function relayFetch(options: {
   return send as unknown as typeof fetch
 }
 
-/** Whether the request the SDK composed asked the endpoint to stream. */
-function asksToStream(body: string): boolean {
+/**
+ * Whether the request the SDK composed asked the endpoint to stream.
+ *
+ * **Two wires say so in the body and one says so in the address.** The native
+ * Gemini wire has no `stream` member at all: `:streamGenerateContent` against
+ * `:generateContent` *is* the request, so reading the body there would answer
+ * "no" to every streamed call and the re-framing would never run on the one
+ * family whose SDK provider only ever streams.
+ */
+function asksToStream(family: EndpointKind, suffix: string, body: string): boolean {
+  if (family === 'gemini') return suffix.includes(':streamGenerateContent')
   try {
     return (JSON.parse(body) as { stream?: unknown }).stream === true
   } catch {

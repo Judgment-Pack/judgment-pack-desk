@@ -7,6 +7,7 @@
  * echoes the assistant turn as received.
  */
 
+import type { EndpointKind } from '../../../../config/deskConfig'
 import type { ModelCall } from '../../../engine'
 
 /** One tool call the model asked for. */
@@ -44,10 +45,13 @@ export interface ModelTurn {
   /**
    * Every thinking signature this turn carried, whole.
    *
-   * Anthropic only, and reassembled here: a signature split across two
-   * `signature_delta` events is one signature, and the desk concatenates the
-   * fragments rather than keeping the last. It is recorded so that what goes
-   * back out can be compared with what came in.
+   * Anthropic and Gemini — the two wires that sign a model's reasoning — and
+   * reassembled here on both: an Anthropic signature split across two
+   * `signature_delta` events is one signature, and a Gemini `thoughtSignature`
+   * arrives on the last chunk of the thought part it belongs to. The desk
+   * concatenates or carries whole as each wire requires rather than keeping the
+   * last fragment. It is recorded so that what goes back out can be compared
+   * with what came in.
    */
   signatures: string[]
 }
@@ -121,9 +125,20 @@ export interface SendOptions {
 }
 
 export interface Provider {
-  readonly family: 'openai-compatible' | 'anthropic'
-  /** The path this protocol appends to the relay base. */
-  readonly suffix: string
+  readonly family: EndpointKind
+  /**
+   * The path this protocol appends to the relay base, for one request.
+   *
+   * **A function and no longer a constant, because one wire's address depends
+   * on the request.** Two protocols post to a fixed path and carry the model
+   * name and the streaming choice in the body; the native Gemini wire puts both
+   * in the address — `v1beta/models/<model>:streamGenerateContent?alt=sse`
+   * against `:generateContent` — so a constant could not describe it. What is
+   * returned is a **suffix**, held to the desk's mirror of the chassis' own
+   * rule before anything is sent: a model name outside that class is refused
+   * rather than escaped.
+   */
+  path(request: { model: string; stream: boolean }): string
   tools(defs: { name: string; description?: string; inputSchema?: unknown }[]): unknown[]
   initialMessages(system: string, user: string): unknown[]
   send(options: SendOptions): Promise<ModelTurn>

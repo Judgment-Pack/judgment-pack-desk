@@ -46,12 +46,15 @@ import {
 } from './scriptedModel'
 import { RECORDED_TOOLS, scriptedRuntime, type ServerObservation } from './scriptedServer'
 import {
+  ALWAYS_FROM_ABSENCE,
   REFUTE_ON_A_DEGRADED_ENDPOINT,
   RESPONSE_TOKENS,
   normalize,
+  stateFromEvents,
   wireFor
 } from '../thinking'
-import type { ThinkingTier } from '../../config/deskConfig'
+import { GEMINI_SCHEMA_REMOVALS } from '../geminiSchema'
+import type { EndpointKind, ThinkingTier } from '../../config/deskConfig'
 import runtime from './runtime.json'
 import type { AssistantEvent, Engine } from '../engine'
 
@@ -547,7 +550,7 @@ async function drainDeferredWork(tracker: {
 }
 
 interface Leg {
-  api: 'openai-compatible' | 'anthropic'
+  api: EndpointKind
   answerAs: 'stream' | 'whole'
 }
 
@@ -555,8 +558,34 @@ const LEGS: Leg[] = [
   { api: 'openai-compatible', answerAs: 'stream' },
   { api: 'openai-compatible', answerAs: 'whole' },
   { api: 'anthropic', answerAs: 'stream' },
-  { api: 'anthropic', answerAs: 'whole' }
+  { api: 'anthropic', answerAs: 'whole' },
+  { api: 'gemini', answerAs: 'stream' },
+  { api: 'gemini', answerAs: 'whole' }
 ]
+
+/**
+ * The path each protocol's first request lands on, after the relay's mount
+ * point.
+ *
+ * Two are fixed; the third carries the model and the method, which is why the
+ * chassis has a colon exception at all. Written here so K1 asserts an address
+ * rather than a prefix.
+ */
+const FIRST_SUFFIX: Record<Leg['api'], string> = {
+  'openai-compatible': '/chat/completions',
+  anthropic: '/v1/messages',
+  gemini: '/v1beta/models/scripted-model:streamGenerateContent'
+}
+
+/**
+ * How many spellings of the tier each family has, which is how long a prefix of
+ * refused requests a degrade may take.
+ */
+const SPELLINGS: Record<Leg['api'], number> = {
+  'openai-compatible': 1,
+  anthropic: 2,
+  gemini: 2
+}
 
 interface Run {
   events: AssistantEvent[]
@@ -731,7 +760,12 @@ function requestLog(requests: RecordedRequest[]): string {
  */
 const WIRE_MEMBERS: Record<Leg['api'], string[]> = {
   'openai-compatible': ['messages', 'model', 'stream', 'tools'],
-  anthropic: ['max_tokens', 'messages', 'model', 'stream', 'system', 'tools']
+  anthropic: ['max_tokens', 'messages', 'model', 'stream', 'system', 'tools'],
+  // The Gemini wire carries the model and the streaming choice in the
+  // **address**, so neither is a body member: what the format defines here is
+  // the conversation, the settings object, the system instruction and the
+  // declarations.
+  gemini: ['contents', 'generationConfig', 'systemInstruction', 'tools']
 }
 
 const toolCalls = (events: AssistantEvent[]) =>
@@ -892,15 +926,19 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
         ]) {
           expect(request.headerNames, `a request carried ${forbidden}`).not.toContain(forbidden)
         }
-        // The relay's own base, one path suffix, and the desk's token as the
-        // only parameter — which is the only query the relay accepts at all.
+        // The relay's own base, one path suffix, and the desk's token — plus,
+        // on the one family whose wire asks for its stream in the query, the
+        // one pair the relay admits and nothing else.
         expect(request.url.startsWith('/api/assistant/relay/v1/')).toBe(true)
         const url = new URL(request.url, 'http://desk.invalid')
-        expect([...url.searchParams.keys()]).toEqual(['token'])
+        const admitted = leg.api === 'gemini' && request.streamRequested ? ['token', 'alt'] : ['token']
+        expect([...url.searchParams.keys()]).toEqual(admitted)
+        if (leg.api === 'gemini' && request.streamRequested) {
+          expect(url.searchParams.get('alt')).toBe('sse')
+        }
       }
-      const suffix = leg.api === 'anthropic' ? '/v1/messages' : '/chat/completions'
       expect(new URL(requests[0]!.url, 'http://desk.invalid').pathname).toBe(
-        `/api/assistant/relay/v1${suffix}`
+        `/api/assistant/relay/v1${FIRST_SUFFIX[leg.api]}`
       )
     })
 
@@ -1088,7 +1126,9 @@ describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
     })
 
     it('T-b — signatures carried back, verbatim and well formed', async () => {
-      if (leg.api !== 'anthropic') return
+      // Two of the three wires sign a model's reasoning; the third has no
+      // signature to carry, so there is nothing here to hold it to.
+      if (leg.api === 'openai-compatible') return
       const { requests } = await runLeg(fromRegistry(engineId), leg, { tier: 'on', mode: 'on' })
       // Every row after the first result must carry back every signature this
       // endpoint has emitted so far, byte-equal, on a block that still has its
@@ -1197,7 +1237,7 @@ describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
       const asked = requests.map((request) => request.thinkingRequested)
       const prefix = asked.indexOf(false) === -1 ? asked.length : asked.indexOf(false)
       expect(prefix, 'the tier was asked for after the endpoint refused it').toBeLessThanOrEqual(
-        leg.api === 'anthropic' ? 2 : 1
+        SPELLINGS[leg.api]
       )
       expect(asked.slice(prefix).filter(Boolean)).toEqual([])
     })
@@ -1251,6 +1291,176 @@ describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
       // The refusals are reported as what they are.
       const refused = guardrails(events).filter((event) => event.action === 'refused')
       expect(refused.map((event) => event.tool)).toContain('validate')
+    })
+  })
+
+  describe('the Gemini wire', () => {
+    const legs: Leg[] = [
+      { api: 'gemini', answerAs: 'stream' },
+      { api: 'gemini', answerAs: 'whole' }
+    ]
+
+    it.each(legs)('shows the model the runtime’s contract minus the removal list ($answerAs)', async (leg) => {
+      // **The schema-subset leg.** The endpoint refuses a declaration carrying
+      // any keyword on the removal list, so a leg that completes has shown the
+      // model a contract this wire accepts — and the row records what was
+      // actually sent, because the ruling is about the contract a model is
+      // *shown* rather than about a request being accepted.
+      const { events, requests, seen } = await runLeg(fromRegistry(engineId), leg)
+      expect(requests.length).toBeGreaterThan(0)
+      for (const request of requests) {
+        for (const keyword of GEMINI_SCHEMA_REMOVALS) {
+          expect(
+            request.schemaKeywords,
+            `${request.step} showed the model ${keyword}`
+          ).not.toContain(keyword)
+        }
+        // …and it is still a schema: the removal takes six names off and
+        // nothing else, so the members that carry the contract are all there.
+        expect(request.schemaKeywords).toContain('type')
+        expect(request.schemaKeywords).toContain('properties')
+        expect(request.schemaKeywords).toContain('description')
+      }
+      // The runtime's own schemas all declare `additionalProperties: false`, so
+      // this is a rule with a subject rather than one waiting for a
+      // hypothetical.
+      expect(
+        RECORDED_TOOLS.every((tool) =>
+          JSON.stringify(tool.inputSchema).includes('additionalProperties')
+        )
+      ).toBe(true)
+      // And the session ran to its proposal with the gate holding as ever.
+      expect(proposals(events)).toHaveLength(1)
+      expect(seen.filter((call) => call.refusal !== '')).toEqual([])
+      expect(events.some((event) => event.type === 'error')).toBe(false)
+    })
+
+    it.each(legs)('reports a keyword the removal list does not name, and strips nothing ($answerAs)', async (leg) => {
+      // **The other half of the ruling.** This endpoint refuses `properties` —
+      // a keyword the desk certainly sends and deliberately does not remove —
+      // and the desk answers with an error naming it rather than widening its
+      // idea of the runtime's contract on being refused.
+      const { events, seen } = await runLeg(fromRegistry(engineId), leg, {
+        mode: 'refuses-a-keyword'
+      })
+      const errors = events.filter(
+        (event): event is Extract<AssistantEvent, { type: 'error' }> => event.type === 'error'
+      )
+      expect(errors).toHaveLength(1)
+      expect(errors[0]!.message).toContain('"properties"')
+      expect(errors[0]!.message).toContain('closed')
+      for (const keyword of GEMINI_SCHEMA_REMOVALS) {
+        expect(errors[0]!.message).toContain(keyword)
+      }
+      // Nothing was proposed and nothing was written: a session that cannot
+      // show the model the runtime's contract does not run.
+      expect(proposals(events)).toEqual([])
+      expect(seen).toEqual([])
+    })
+
+    it.each(legs)('falls back once to the level spelling, and says nothing about it ($answerAs)', async (leg) => {
+      const { events, requests } = await runLeg(fromRegistry(engineId), leg, {
+        tier: 'on',
+        mode: 'level-only'
+      })
+      // The first request asks with a budget and is refused; every request
+      // after it asks with a level.
+      expect(requests[0]!.thinkingParam!.value).toEqual(
+        (normalize('on', 'gemini').wire!.expect.value as Record<string, unknown>)
+      )
+      const accepted = requests.filter(
+        (request) =>
+          (request.thinkingParam?.value as { thinkingLevel?: unknown } | undefined)
+            ?.thinkingLevel !== undefined
+      )
+      expect(accepted.length).toBeGreaterThan(5)
+      expect(accepted[0]!.thinkingParam!.value).toEqual({
+        includeThoughts: true,
+        thinkingLevel: 'medium'
+      })
+      // A fallback is not a degrade: nothing is said and the session thinks.
+      expect(notices(events)).toEqual([])
+      expect(reasoningEvents(events).length).toBeGreaterThan(0)
+      expect(proposals(events)[0]!.document).toEqual(DRAFT_V2)
+    })
+
+    it.each(legs)('carries every thought signature back across a tool turn, byte-equal ($answerAs)', async (leg) => {
+      // **The carry-back leg, and it gates.** The wire's own rule is that
+      // thought parts are resent exactly as they were received, so this
+      // endpoint refuses a continuation that asks for thinking and does not —
+      // and the assertion below is written to go red if the SDK ever starts
+      // dropping or truncating one in silence.
+      const { events, requests } = await runLeg(fromRegistry(engineId), leg, {
+        tier: 'on',
+        mode: 'on'
+      })
+      const afterAResult = requests.filter((request) => request.results >= 1 && !request.refutation)
+      expect(afterAResult.length).toBeGreaterThan(0)
+      for (const request of afterAResult) {
+        expect(request.signaturesMissing, `${request.step} dropped a signature`).toEqual([])
+        expect(request.signaturesTruncated, `${request.step} truncated a signature`).toEqual([])
+        expect(request.signaturesMalformed, `${request.step} signed a part with no text`).toEqual([])
+      }
+      expect(afterAResult[0]!.signaturesCarried).toContain(thinkSignature({ id: 'T1' }))
+      // …and the summary itself arrived whole, though the endpoint streamed it
+      // in pieces with the signature on the last of them.
+      const passages = reasoningEvents(events).filter((event) => event.done)
+      expect(passages[0]!.text).toBe(thinkText({ id: 'T1', tool: 'get_schema' }))
+      expect(events.some((event) => event.type === 'error')).toBe(false)
+    })
+
+    it.each(legs)('reports "always thinks" from two turns of unasked-for reasoning ($answerAs)', async (leg) => {
+      // **The `always` state's first real subject**, and the road to it by
+      // absence: the desk asks for a zero budget, the endpoint takes it and
+      // reasons anyway. One turn is a turn; two consecutive ones are a
+      // capability.
+      const { events, requests, seen } = await runLeg(fromRegistry(engineId), leg, {
+        tier: 'off',
+        mode: 'always'
+      })
+      expect(notices(events)).toHaveLength(1)
+      expect(notices(events)[0]!.detail).toContain('this model always thinks')
+      expect(notices(events)[0]!.detail).toContain(ALWAYS_FROM_ABSENCE)
+      expect(stateFromEvents('off', events)).toBe('always')
+      // Nothing was refused, so nothing is withdrawn: the file said off and
+      // every request goes on saying so.
+      for (const request of requests) {
+        expect(request.thinkingRequested, `${request.step} asked for thinking`).toBe(false)
+        expect(request.thinkingParam).toBeNull()
+      }
+      // The reasoning still reaches the tab, and none of it reaches the runtime.
+      expect(reasoningEvents(events).length).toBeGreaterThan(0)
+      expect(JSON.stringify(seen.map((call) => call.args))).not.toContain('[scripted reasoning')
+      expect(proposals(events)[0]!.document).toEqual(DRAFT_V2)
+      expect(events.some((event) => event.type === 'error')).toBe(false)
+    })
+
+    it.each(legs)('reports "always thinks" at once where the endpoint refuses to be turned off ($answerAs)', async (leg) => {
+      // The other road to the same state, and it is immediate — a refusal is
+      // the endpoint saying so. It is reached only after **both** spellings of
+      // "do not think" have been refused: one refusal alone is equally "this
+      // model spells it the other way".
+      const { events, requests } = await runLeg(fromRegistry(engineId), leg, {
+        tier: 'off',
+        mode: 'no-off'
+      })
+      expect(notices(events)).toHaveLength(1)
+      expect(notices(events)[0]!.detail).toContain('this model always thinks')
+      expect(notices(events)[0]!.detail).toContain('400')
+      expect(stateFromEvents('off', events)).toBe('always')
+      // Two spellings tried, then nothing: the refused member is never sent
+      // again, which is the same rule the degrade follows.
+      const asked = requests.filter((request) => request.thinkingParam !== null)
+      expect(asked).toEqual([])
+      const withMember = requests.filter((request) =>
+        JSON.stringify(request.bodyMembers).includes('generationConfig')
+      )
+      expect(withMember.length).toBeGreaterThan(0)
+      // And the session completes with the document.
+      expect(proposals(events)).toHaveLength(1)
+      expect(proposals(events)[0]!.document).toEqual(DRAFT_V2)
+      expect(events.some((event) => event.type === 'error')).toBe(false)
+      expect(events.filter((event) => event.type === 'end')).toHaveLength(1)
     })
   })
 

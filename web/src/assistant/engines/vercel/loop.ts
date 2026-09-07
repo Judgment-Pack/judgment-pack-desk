@@ -43,6 +43,7 @@
  * client, and its gate is on that client's transport), and any writing at all.
  */
 import { createAnthropic } from '@ai-sdk/anthropic'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { dynamicTool, jsonSchema, stepCountIs, streamText } from 'ai'
 import {
@@ -53,7 +54,8 @@ import {
   guardedCallTool,
   isCancelled,
   openRun,
-  servedSchema,
+  schemasShown,
+  servedSchemaFor,
   textOf,
   withAbort
 } from '../contract'
@@ -67,8 +69,9 @@ import {
   critiqueOnProposal,
   openCritique
 } from '../../refutation'
+import { refusedSchemaKeyword, refusedSchemaSentence } from '../../geminiSchema'
 import { eventChannel } from './channel'
-import { placeholderBase, relayFetch, signatureLedger } from './relay'
+import { placeholderBase, relayFetch, signatureLedger, signatureOf } from './relay'
 import type { LanguageModel, ToolSet } from 'ai'
 import type { EndpointKind } from '../../../config/deskConfig'
 import type { AssistantEvent, AssistantSession, McpTool, McpToolResult } from '../../engine'
@@ -115,6 +118,16 @@ export const REHEARSAL_HOOK = 'experimental_refineToolInput' satisfies keyof Par
 export const ENDPOINT_NAME = 'desk-endpoint'
 
 /**
+ * The key the Google provider reads its options from.
+ *
+ * Not the desk's to choose: the provider takes the part of its own id before
+ * the dot, and its id is `google.generative-ai` whatever base URL it is built
+ * with. Written once so that the translation below and the engine's own suite
+ * name the same string.
+ */
+export const GOOGLE_OPTIONS = 'google'
+
+/**
  * The desk's wire members, in the SDK's own vocabulary.
  *
  * **A translation, and never a second table.** `assistant/thinking.ts` decides
@@ -152,6 +165,14 @@ export function sdkThinking(
     if (effort !== undefined) anthropic.effort = effort
     return { providerOptions: { anthropic } }
   }
+  if (family === 'gemini') {
+    // **The table already named it `thinkingConfig`, which is the SDK's own
+    // spelling as well as the wire's.** So this is the shortest of the three
+    // translations: the members go under the provider key the Google provider
+    // reads its options from, and the SDK puts them in `generationConfig`
+    // exactly where the built-in provider puts them by hand.
+    return { providerOptions: { [GOOGLE_OPTIONS]: { thinkingConfig: members.thinkingConfig } } }
+  }
   return { providerOptions: { [ENDPOINT_NAME]: { reasoningEffort: members.reasoning_effort } } }
 }
 
@@ -174,6 +195,19 @@ function modelFor(
     membersNow: () => slot.members()
   })
   const baseURL = placeholderBase(session.model.family)
+  if (session.model.family === 'gemini') {
+    return createGoogleGenerativeAI({
+      baseURL,
+      // `createGoogleGenerativeAI` reaches `loadApiKey` the way
+      // `createAnthropic` does and **throws** in a browser with no key rather
+      // than omitting the header. The placeholder never leaves `relayFetch`:
+      // `x-goog-api-key` is not on its protocol allow-list, the desk's
+      // capability drops it again, and the chassis strips whatever it is sent
+      // before injecting the configured key.
+      apiKey: 'placeholder-the-desk-relay-injects-the-key',
+      fetch
+    })(session.model.model)
+  }
   if (session.model.family === 'anthropic') {
     return createAnthropic({
       baseURL,
@@ -195,6 +229,7 @@ function modelFor(
 
 /** The runtime's tools, as the SDK's, with the runtime's own schemas. */
 function toolsFor(
+  family: EndpointKind,
   tools: McpTool[],
   execute: (name: string, input: unknown) => Promise<McpToolResult>
 ): ToolSet {
@@ -202,16 +237,21 @@ function toolsFor(
   for (const tool of tools) {
     set[tool.name] = dynamicTool({
       description: tool.description ?? '',
-      // The served schema, as served. Nothing is re-typed through a schema
-      // library and nothing is written here where the runtime served none —
-      // `servedSchema` refuses that, and the session ends rather than showing
-      // the model a contract this desk invented.
-      inputSchema: jsonSchema<unknown>(servedSchema(tool) as Parameters<typeof jsonSchema>[0]),
+      // The served schema, as served — minus, on the one family whose wire
+      // takes an OpenAPI subset, the closed removal list
+      // `assistant/geminiSchema.ts` documents. Nothing is re-typed through a
+      // schema library and nothing is written here where the runtime served
+      // none — `servedSchema` refuses that, and the session ends rather than
+      // showing the model a contract this desk invented.
+      inputSchema: jsonSchema<unknown>(
+        servedSchemaFor(family, tool) as Parameters<typeof jsonSchema>[0]
+      ),
       execute: (input: unknown) => execute(tool.name, input)
     })
   }
   return set
 }
+
 
 /**
  * Whether a stream part is a call to a tool this session never offered.
@@ -463,7 +503,7 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
     let recording: CritiqueRecorder | null = null
     // A fresh attempt takes nothing from the one before it.
     asked.length = 0
-    const tools = toolsFor(session.tools, async (name, input) => {
+    const tools = toolsFor(session.model.family, session.tools, async (name, input) => {
       // **The desk's gate is handed the call the model made.** The hook below
       // has already rewritten what the SDK carries; what leaves the page is
       // rewritten by the ToolGate, which is the layer that reports it. A gate
@@ -605,10 +645,10 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
       if (part.type === 'reasoning-delta') {
         const text = (part as { text?: string }).text ?? ''
         reasoning += text
-        // Every signature fragment, as it arrives. See `signatureLedger`.
-        const carried = (part as { providerMetadata?: { anthropic?: { signature?: unknown } } })
-          .providerMetadata?.anthropic?.signature
-        if (typeof carried === 'string') {
+        // Every signature fragment, as it arrives, wherever this family's
+        // provider puts one. See `signatureLedger` and `signatureOf`.
+        const carried = signatureOf(session.model.family, part)
+        if (carried !== undefined) {
           ledger.fragment(String((part as { id?: unknown }).id ?? ''), carried)
         }
         if (text !== '') await deliver({ type: 'reasoning', text, done: false })
@@ -719,10 +759,8 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
           if (part.type === 'reasoning-delta') {
             const text = (part as { text?: string }).text ?? ''
             criticReasoning += text
-            const carried = (
-              part as { providerMetadata?: { anthropic?: { signature?: unknown } } }
-            ).providerMetadata?.anthropic?.signature
-            if (typeof carried === 'string') {
+            const carried = signatureOf(session.model.family, part)
+            if (carried !== undefined) {
               ledger.fragment(String((part as { id?: unknown }).id ?? ''), carried)
             }
             if (text !== '') await deliver({ type: 'reasoning', text, done: false })
@@ -778,6 +816,24 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
   }
 
   /**
+   * The refusal a served schema earned, or nothing.
+   *
+   * Two conditions and both required, exactly as the tier's classifier has: a
+   * 400 whose message names a keyword this desk **actually sent**. Anything
+   * else is the failure it already was, reported unchanged.
+   */
+  const schemaRefusal = (cause: unknown): Error | null => {
+    const refusal = refusalOf(cause)
+    if (refusal === null) return null
+    const keyword = refusedSchemaKeyword(
+      refusal.status,
+      refusal.message,
+      schemasShown(session.model.family, session.tools)
+    )
+    return keyword === '' ? null : new Error(refusedSchemaSentence(keyword))
+  }
+
+  /**
    * The session, with the one retry a tier refusal earns.
    *
    * **Only before anything has been delivered.** An endpoint that has no
@@ -796,9 +852,15 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
         return
       } catch (cause) {
         const refusal = refusalOf(cause)
-        if (refusal === null || produced.count > 0 || attempt >= 3) throw cause
+        if (refusal === null || produced.count > 0 || attempt >= 3) throw schemaRefusal(cause) ?? cause
         const said = slot.refused(refusal.status, refusal.message)
-        if (said.kind === 'other') throw cause
+        // **A schema keyword the removal list does not name is reported, not
+        // stripped.** `assistant/geminiSchema.ts` holds the ruling; this is the
+        // one line that carries it on this engine — a 400 naming a keyword this
+        // desk actually sent becomes an error a person can act on, rather than
+        // the desk widening its idea of the runtime's contract on being
+        // refused.
+        if (said.kind === 'other') throw schemaRefusal(cause) ?? cause
         if (said.kind === 'degrade' && said.event !== null) await channel.push(said.event)
       }
     }

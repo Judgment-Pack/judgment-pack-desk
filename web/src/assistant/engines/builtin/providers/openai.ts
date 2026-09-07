@@ -17,7 +17,7 @@
  * one: a whole answer is echoed as the object it arrived as, and a streamed one
  * is reassembled with exactly the member names the deltas used.
  */
-import { servedSchema, withAbort } from '../../contract'
+import { servedSchemaFor, withAbort } from '../../contract'
 import { isEventStream, sseEvents } from './sse'
 import { ModelHttpError, protocolHeaders } from './types'
 import type { McpTool } from '../../../engine'
@@ -81,9 +81,12 @@ function turnOf(message: OpenAiMessage): ModelTurn {
   }
 }
 
+/** The one path this protocol posts to, whatever the request asks for. */
+const SUFFIX = 'chat/completions'
+
 export const openai: Provider = {
   family: 'openai-compatible',
-  suffix: 'chat/completions',
+  path: () => SUFFIX,
 
   tools(defs: McpTool[]) {
     // The schema is the runtime's own `inputSchema`, passed through untouched.
@@ -95,7 +98,7 @@ export const openai: Provider = {
       function: {
         name: def.name,
         description: def.description ?? '',
-        parameters: servedSchema(def)
+        parameters: servedSchemaFor('openai-compatible', def)
       }
     }))
   },
@@ -123,7 +126,7 @@ export const openai: Provider = {
     // this loop open.
     const response = await withAbort(
       () =>
-        options.call(openai.suffix, {
+        options.call(SUFFIX, {
           headers: protocolHeaders(),
           body: JSON.stringify(body),
           signal: options.signal
@@ -131,7 +134,7 @@ export const openai: Provider = {
       options.signal
     )
     if (!response.ok) {
-      throw new ModelHttpError(response.status, await withAbort(() => response.text(), options.signal), openai.suffix)
+      throw new ModelHttpError(response.status, await withAbort(() => response.text(), options.signal), SUFFIX)
     }
 
     if (!isEventStream(response)) {

@@ -361,6 +361,21 @@ export function servedSchemaFor(family: EndpointKind, tool: McpTool): unknown {
   return family === 'gemini' ? withoutUnsupportedKeywords(schema) : schema
 }
 
+/**
+ * Every schema this session put in front of the model, and **only** those.
+ *
+ * Read by the refusal classifier, which asks whether a 400 names a keyword the
+ * desk actually sent. The provider's own tool payload is deliberately not what
+ * it is given: that carries `parameters`, `functionDeclarations` and the tool
+ * names around the schema, and an endpoint's own error path — `Unknown name
+ * "properties" at 'tools[0].function_declarations[0].parameters'` — contains
+ * those words, so a classifier reading the payload would report the wrapper
+ * instead of the keyword.
+ */
+export function schemasShown(family: EndpointKind, tools: McpTool[]): unknown[] {
+  return tools.map((tool) => servedSchemaFor(family, tool))
+}
+
 /** The text half of one tool answer, joined in the runtime's own order. */
 export function textOf(result: McpToolResult): string {
   return (result.content ?? [])

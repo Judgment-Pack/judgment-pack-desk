@@ -28,6 +28,8 @@
  * experiment and what K1 and K2 are read off here.
  */
 import scenario from './scenario.json'
+import { GEMINI_SCHEMA_REMOVALS } from '../geminiSchema'
+import type { EndpointKind } from '../../config/deskConfig'
 
 export interface ScenarioStep {
   id: string
@@ -55,8 +57,30 @@ const MARKER = 'REFUTATION PASS'
  *   accepts the token-budget spelling, which is the dialect fallback's leg.
  * - `nothink` — 400 `Unsupported parameter` to any request carrying a thinking
  *   parameter at all, which is the degrade's leg.
+ * - `always` — a model that reasons whatever it was asked for, which is the
+ *   `always` state's leg by **absence**: the desk asks for none, gets thought
+ *   parts anyway, and the two-consecutive-turns rule settles it.
+ * - `no-off` — a Gemini model that cannot be turned off: 400 to a request
+ *   asking for a zero budget or the minimal level, and thought parts otherwise.
+ *   That is the `always` state's leg by **refusal**, which is immediate — and
+ *   the refusal is answered at *both* spellings, so a run reaches it only after
+ *   the dialect fallback has been tried.
+ * - `level-only` — a Gemini model that takes `thinkingLevel` and answers 400
+ *   to `thinkingBudget`, which is that family's dialect fallback leg.
+ * - `refuses-a-keyword` — an endpoint that refuses a **schema** keyword the
+ *   desk's removal list does not name. The leg for the ruling that such a
+ *   keyword is reported by name and never stripped.
  */
-export type ThinkingMode = 'off' | 'on' | 'split' | 'enabled-only' | 'nothink'
+export type ThinkingMode =
+  | 'off'
+  | 'on'
+  | 'split'
+  | 'enabled-only'
+  | 'nothink'
+  | 'always'
+  | 'no-off'
+  | 'level-only'
+  | 'refuses-a-keyword'
 
 /** The reasoning one step carries, a pure function of its id. */
 export function thinkText(step: { id: string; tool?: string }): string {
@@ -76,6 +100,24 @@ export function thinkText(step: { id: string; tool?: string }): string {
  */
 export function thinkSignature(step: { id: string }): string {
   return btoa(`scripted-thinking-signature:${step.id}`)
+}
+
+/**
+ * The sentence a model that thinks aloud says **before** it calls a tool.
+ *
+ * **A turn is only evidence about an endpoint if it produced an answer of its
+ * own**, which is the desk's own rule and a deliberate one: a turn that said
+ * nothing but called a tool is no evidence that an endpoint will not reason.
+ * The scenario's first seven steps are pure tool calls, so an endpoint that
+ * reasons on every one of them would never reach the two-consecutive-turns rule
+ * at all — which is why the "always thinks" modes put a short answer beside the
+ * call, the way a model that narrates its own work actually does.
+ *
+ * A pure function of the step id, like the reasoning text and the signature, so
+ * a leg recomputes it rather than trusting what this fixture logged.
+ */
+export function chatterText(step: { id: string }): string {
+  return `[scripted answer ${step.id}] Working through it now.`
 }
 
 /** The critic's three steps: a check, a rehearsal, and a sentence about them. */
@@ -108,7 +150,7 @@ export interface RecordedRequest {
   url: string
   /** Lower-cased header names only. A value is never recorded, not even a length. */
   headerNames: string[]
-  api: 'openai-compatible' | 'anthropic'
+  api: EndpointKind
   streamRequested: boolean
   toolNames: string[]
   messageCount: number
@@ -144,6 +186,15 @@ export interface RecordedRequest {
   signaturesMalformed: string[]
   /** OpenAI only: the reasoning member names carried back, per assistant message. */
   reasoningIn: string[]
+  /**
+   * Gemini only: every schema keyword the declarations carried, at every depth.
+   *
+   * Recorded rather than only refused, so a leg can say **what the desk showed
+   * the model** — the removal list is a ruling about the contract a model is
+   * shown, and a row that only said "the request was accepted" would not
+   * establish it.
+   */
+  schemaKeywords: string[]
 }
 
 /** One thinking parameter this endpoint recognises, with where it was found. */
@@ -189,6 +240,42 @@ function anthropicThinkingParam(body: Record<string, unknown>): ThinkingParam {
   if (thinking === undefined || thinking === null || typeof thinking !== 'object') return null
   if (thinking.type !== 'enabled' && thinking.type !== 'adaptive') return null
   return { path: 'thinking', value: thinking }
+}
+
+/** The `thinkingConfig` on a Gemini request, whatever it asks for, or null. */
+function geminiThinkingConfig(body: Record<string, unknown>): Record<string, unknown> | null {
+  const config = body.generationConfig as { thinkingConfig?: unknown } | undefined
+  const thinking = config?.thinkingConfig
+  if (thinking === undefined || thinking === null || typeof thinking !== 'object') return null
+  return thinking as Record<string, unknown>
+}
+
+/**
+ * A Gemini request that asks the model **to** think, and nothing else.
+ *
+ * **A zero budget and the minimal level are not thinking requests**, and this
+ * asymmetry is the whole reason the desk sends them: on this wire omission
+ * means thinking, so "off" is a member, and an endpoint reads that member as
+ * the request not to reason. A reader that counted any `thinkingConfig` as a
+ * tier parameter would report every off-tier run as having asked for thinking.
+ */
+function geminiThinkingParam(body: Record<string, unknown>): ThinkingParam {
+  const thinking = geminiThinkingConfig(body)
+  if (thinking === null) return null
+  const budget = thinking.thinkingBudget
+  const level = thinking.thinkingLevel
+  const asks =
+    thinking.includeThoughts === true ||
+    (typeof budget === 'number' && budget !== 0) ||
+    (typeof level === 'string' && level !== 'minimal')
+  return asks ? { path: 'generationConfig.thinkingConfig', value: thinking } : null
+}
+
+/** Whether a Gemini request asked the endpoint **not** to think. */
+function geminiAsksForNone(body: Record<string, unknown>): boolean {
+  const thinking = geminiThinkingConfig(body)
+  if (thinking === null) return false
+  return thinking.thinkingBudget === 0 || thinking.thinkingLevel === 'minimal'
 }
 
 interface OpenAiMessage {
@@ -252,6 +339,37 @@ export function countAnthropic(messages: unknown[]): number {
   return n
 }
 
+/** One Gemini `Part`, as far as this endpoint reads one. */
+interface GeminiPart {
+  text?: string
+  thought?: boolean
+  thoughtSignature?: string
+  functionCall?: { name?: string }
+  functionResponse?: { name?: string }
+}
+
+/**
+ * Count `functionResponse` parts for counted tools in a Gemini `contents` list.
+ *
+ * The wire names the tool on the response itself, so there is no id to resolve
+ * — which is why this reader is the shortest of the three. A response naming a
+ * tool the scenario does not count is not a step.
+ */
+export function countGemini(contents: unknown[]): number {
+  let n = 0
+  for (const raw of contents ?? []) {
+    const parts = (raw as { parts?: unknown }).parts
+    if (!Array.isArray(parts)) continue
+    for (const item of parts) {
+      const part = item as GeminiPart
+      const name = part?.functionResponse?.name
+      if (part?.functionResponse === undefined) continue
+      if (name === undefined || COUNTED.has(name)) n += 1
+    }
+  }
+  return n
+}
+
 /**
  * The step at result-count n, with the experiment's repeat detector.
  *
@@ -303,6 +421,76 @@ function anthropicCarried(
     }
   }
   return { carried, truncated, malformed }
+}
+
+/**
+ * What a Gemini request carried back about thinking, from its own `contents`.
+ *
+ * The same three lists the Anthropic reader computes and for the same reasons —
+ * a signature the client dropped, one it truncated, and one it kept beside a
+ * part whose text it lost. The wire's own rule is that thought parts are
+ * resent exactly as they were received, so all three are refusals rather than
+ * observations, and the endpoint below enforces that.
+ */
+function geminiCarried(
+  contents: unknown[],
+  emitted: readonly string[]
+): { carried: string[]; truncated: string[]; malformed: string[] } {
+  const carried: string[] = []
+  const truncated: string[] = []
+  const malformed: string[] = []
+  for (const content of contents ?? []) {
+    const parts = (content as { parts?: unknown }).parts
+    if (!Array.isArray(parts)) continue
+    for (const item of parts) {
+      const part = item as GeminiPart
+      if (typeof part?.thoughtSignature !== 'string' || part.thoughtSignature === '') continue
+      const signature = part.thoughtSignature
+      if (!carried.includes(signature)) carried.push(signature)
+      // A signature on a part that is not a thought, or on one whose text is
+      // gone, is a block this endpoint would refuse the continuation over.
+      if (part.thought !== true || typeof part.text !== 'string' || part.text === '') {
+        malformed.push(signature)
+      }
+      const whole = emitted.find(
+        (expected) =>
+          expected !== signature &&
+          expected.length > signature.length &&
+          (expected.startsWith(signature) || expected.endsWith(signature))
+      )
+      if (whole !== undefined) truncated.push(signature)
+    }
+  }
+  return { carried, truncated, malformed }
+}
+
+/**
+ * Every schema keyword the declarations on one Gemini request carried.
+ *
+ * **Property names are excluded**, because they are the author's words: a
+ * document member called `const` is not the keyword `const`, and an endpoint
+ * that refused the request over one would be refusing a name it invented.
+ */
+function geminiSchemaKeywords(tools: unknown[]): string[] {
+  const found = new Set<string>()
+  const walk = (value: unknown, inNameMap: boolean): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, false)
+      return
+    }
+    if (value === null || typeof value !== 'object') return
+    for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
+      if (!inNameMap) found.add(key)
+      walk(inner, key === 'properties' || key === '$defs')
+    }
+  }
+  for (const tool of tools ?? []) {
+    for (const declared of (tool as { functionDeclarations?: unknown[] }).functionDeclarations ??
+      []) {
+      walk((declared as { parameters?: unknown }).parameters, false)
+    }
+  }
+  return [...found].sort()
 }
 
 /** Which reasoning member names an OpenAI-compatible request carried back. */
@@ -380,6 +568,105 @@ function anthropicAnswer(step: ScenarioStep, reasoning: boolean) {
     stop_sequence: null,
     usage: { input_tokens: 1, output_tokens: 1 }
   }
+}
+
+/**
+ * One whole Gemini answer.
+ *
+ * The thought part comes **first**, before the call and before the text, which
+ * is where the wire puts it — and it carries its signature on itself, because
+ * on this wire a signature is a member of the part it belongs to rather than a
+ * separate event.
+ */
+function geminiAnswer(step: ScenarioStep, reasoning: boolean, chatter: boolean) {
+  const parts: unknown[] = []
+  if (reasoning) {
+    parts.push({ text: thinkText(step), thought: true, thoughtSignature: thinkSignature(step) })
+  }
+  if (chatter && step.kind === 'tool_call') parts.push({ text: chatterText(step) })
+  parts.push(
+    step.kind === 'tool_call'
+      ? { functionCall: { name: step.tool, args: step.arguments ?? {} } }
+      : { text: step.text }
+  )
+  return {
+    candidates: [
+      {
+        content: { role: 'model', parts },
+        finishReason: 'STOP',
+        index: 0
+      }
+    ],
+    usageMetadata: {
+      promptTokenCount: 1,
+      candidatesTokenCount: 1,
+      ...(reasoning ? { thoughtsTokenCount: 1 } : {}),
+      totalTokenCount: 2
+    },
+    modelVersion: 'scripted-model',
+    responseId: `resp_${step.id}`
+  }
+}
+
+/**
+ * One streamed Gemini answer: several `GenerateContentResponse` events.
+ *
+ * **The thought summary arrives in pieces and its signature arrives on the
+ * last of them**, which is the shape a client has to get right: a client that
+ * kept the pieces as separate parts would send back a signature on a part with
+ * no text, and the wire's rule is that thought parts come back exactly as they
+ * were received. Every streaming leg on this family runs through that, rather
+ * than it being a mode somebody has to remember to select.
+ *
+ * There is no terminal sentinel, because this wire has none: the stream ends
+ * when the body does.
+ */
+function geminiStream(step: ScenarioStep, reasoning: boolean, chatter: boolean): string {
+  const lines: string[] = []
+  const frame = (parts: unknown[], last = false) =>
+    lines.push(
+      `data: ${JSON.stringify({
+        candidates: [
+          { content: { role: 'model', parts }, index: 0, ...(last ? { finishReason: 'STOP' } : {}) }
+        ],
+        modelVersion: 'scripted-model',
+        responseId: `resp_${step.id}`,
+        ...(last
+          ? {
+              usageMetadata: {
+                promptTokenCount: 1,
+                candidatesTokenCount: 1,
+                ...(reasoning ? { thoughtsTokenCount: 1 } : {}),
+                totalTokenCount: 2
+              }
+            }
+          : {})
+      })}\n\n`
+    )
+  if (reasoning) {
+    const pieces = chunks(thinkText(step), 48)
+    pieces.forEach((piece, at) => {
+      const last = at === pieces.length - 1
+      frame([
+        {
+          text: piece,
+          thought: true,
+          // On the final piece only: the signature belongs to the whole
+          // summary, and a client that dropped the pieces before it would send
+          // back a fragment of a thought.
+          ...(last ? { thoughtSignature: thinkSignature(step) } : {})
+        }
+      ])
+    })
+  }
+  if (step.kind === 'tool_call') {
+    if (chatter) frame([{ text: chatterText(step) }])
+    frame([{ functionCall: { name: step.tool, args: step.arguments ?? {} } }], true)
+  } else {
+    const pieces = chunks(step.text ?? '', 96)
+    pieces.forEach((piece, at) => frame([{ text: piece }], at === pieces.length - 1))
+  }
+  return lines.join('')
 }
 
 function chunks(text: string, size: number): string[] {
@@ -562,7 +849,7 @@ export interface ScriptedModel {
  * than the answer it asked for.
  */
 export function scriptedModel(options: {
-  api: 'openai-compatible' | 'anthropic'
+  api: EndpointKind
   answerAs: 'stream' | 'whole'
   /** THINKING-SPEC's mode for this endpoint. `off` is phase A, unchanged. */
   thinking?: ThinkingMode
@@ -591,15 +878,18 @@ export function scriptedModel(options: {
   const emitted: { loop: string[]; critic: string[] } = { loop: [], critic: [] }
 
   /** The 400 an endpoint with no thinking answers, in each protocol's shape. */
-  const refuse = (message: string): Response =>
-    new Response(
-      JSON.stringify(
-        options.api === 'anthropic'
-          ? { type: 'error', error: { type: 'invalid_request_error', message } }
+  const refuse = (message: string): Response => {
+    const body =
+      options.api === 'anthropic'
+        ? { type: 'error', error: { type: 'invalid_request_error', message } }
+        : options.api === 'gemini'
+          ? { error: { code: 400, message, status: 'INVALID_ARGUMENT' } }
           : { error: { message, type: 'invalid_request_error', param: null, code: null } }
-      ),
-      { status: 400, headers: { 'content-type': 'application/json' } }
-    )
+    return new Response(JSON.stringify(body), {
+      status: 400,
+      headers: { 'content-type': 'application/json' }
+    })
+  }
 
   const stub = async (input: unknown, init?: RequestInit): Promise<Response> => {
     const url = String(input)
@@ -607,19 +897,31 @@ export function scriptedModel(options: {
     const raw = String(init?.body ?? '{}')
     const body = JSON.parse(raw) as {
       messages?: unknown[]
+      contents?: unknown[]
       tools?: { name?: string; function?: { name?: string } }[]
       stream?: boolean
       max_tokens?: unknown
       [member: string]: unknown
     }
-    const messages = body.messages ?? []
+    // **`contents` on one wire and `messages` on the other two**, and the same
+    // list either way: the conversation this request carried back.
+    const messages = (options.api === 'gemini' ? body.contents : body.messages) ?? []
     const param =
-      options.api === 'anthropic' ? anthropicThinkingParam(body) : openAiThinkingParam(body)
+      options.api === 'anthropic'
+        ? anthropicThinkingParam(body)
+        : options.api === 'gemini'
+          ? geminiThinkingParam(body)
+          : openAiThinkingParam(body)
 
     // **The refutation pass is a second conversation**, and the marker is how
     // this endpoint tells the two apart. THINKING-SPEC §9.2.
     const refutation = raw.includes(MARKER)
-    const n = options.api === 'anthropic' ? countAnthropic(messages) : countOpenAi(messages)
+    const n =
+      options.api === 'anthropic'
+        ? countAnthropic(messages)
+        : options.api === 'gemini'
+          ? countGemini(messages)
+          : countOpenAi(messages)
     const step = refutation
       ? critic[Math.min(n, critic.length - 1)]!
       : chooseStep(state, n)
@@ -629,13 +931,36 @@ export function scriptedModel(options: {
     const carried =
       options.api === 'anthropic'
         ? anthropicCarried(messages, expected)
-        : { carried: [], truncated: [], malformed: [] }
+        : options.api === 'gemini'
+          ? geminiCarried(messages, expected)
+          : { carried: [], truncated: [], malformed: [] }
+    // **The Gemini wire asks to stream in the address, not in the body.** A
+    // reader that looked for a `stream` member would record every streamed call
+    // on this family as a whole one.
+    //
+    // Read off the **path** and not off the whole address, so the method this
+    // endpoint was called at is decided by the resource it names and by nothing
+    // in the query — and so that this is visibly not the thing
+    // `enforcement.test.ts` (4) forbids: no configured endpoint is compared to
+    // anything here, and this fixture *is* the endpoint.
+    const streamRequested =
+      options.api === 'gemini'
+        ? new URL(url, 'http://desk.invalid').pathname.endsWith(':streamGenerateContent')
+        : Boolean(body.stream)
+    const toolNames =
+      options.api === 'gemini'
+        ? (body.tools ?? []).flatMap((tool) =>
+            ((tool as { functionDeclarations?: { name?: string }[] }).functionDeclarations ?? []).map(
+              (declared) => String(declared.name ?? '')
+            )
+          )
+        : (body.tools ?? []).map((tool) => String(tool.function?.name ?? tool.name ?? ''))
     requests.push({
       url,
       headerNames: Object.keys(headers).map((name) => name.toLowerCase()),
       api: options.api,
-      streamRequested: Boolean(body.stream),
-      toolNames: (body.tools ?? []).map((tool) => String(tool.function?.name ?? tool.name ?? '')),
+      streamRequested,
+      toolNames,
       messageCount: messages.length,
       step: step.id,
       results: n,
@@ -648,21 +973,79 @@ export function scriptedModel(options: {
       signaturesMissing: expected.filter((signature) => !carried.carried.includes(signature)),
       signaturesTruncated: carried.truncated,
       signaturesMalformed: carried.malformed,
-      reasoningIn: options.api === 'anthropic' ? [] : openAiCarried(messages)
+      reasoningIn: options.api === 'openai-compatible' ? openAiCarried(messages) : [],
+      schemaKeywords: options.api === 'gemini' ? geminiSchemaKeywords(body.tools ?? []) : []
     })
 
-    // **The two refusals, before anything is answered.** `nothink` is the
-    // degrade's leg — an endpoint that has no thinking at all — and
-    // `enabled-only` is the dialect fallback's, an endpoint that has thinking
-    // under the other spelling.
+    // **The schema subset, checked before anything is answered.** Gemini's
+    // `parameters` is an OpenAPI subset, and this is the endpoint half of the
+    // desk's removal ruling: a declaration carrying one of the removed keywords
+    // is refused here, so a leg that passes has shown the model a contract this
+    // wire actually accepts rather than merely one the desk believes it
+    // trimmed.
+    if (options.api === 'gemini') {
+      const offending = geminiSchemaKeywords(body.tools ?? []).find((keyword) =>
+        GEMINI_SCHEMA_REMOVALS.includes(keyword)
+      )
+      if (offending !== undefined) {
+        return refuse(
+          `Invalid JSON payload received. Unknown name "${offending}" at ` +
+            `'tools[0].function_declarations[0].parameters': Cannot find field.`
+        )
+      }
+    }
+    // The other half of the same ruling: a keyword the removal list does **not**
+    // name is refused by this endpoint too, and the desk must report it rather
+    // than widen the list.
+    if (mode === 'refuses-a-keyword') {
+      const named = geminiSchemaKeywords(body.tools ?? []).includes('properties')
+      if (named) {
+        return refuse(
+          `Invalid JSON payload received. Unknown name "properties" at ` +
+            `'tools[0].function_declarations[0].parameters': Cannot find field.`
+        )
+      }
+    }
+
+    // **The refusals, before anything is answered.** `nothink` is the degrade's
+    // leg — an endpoint that has no thinking at all — `enabled-only` is the
+    // dialect fallback's, an endpoint that has thinking under the other
+    // spelling, and `no-off` is a model that cannot be turned off, which is the
+    // `always` state reached by a refusal.
+    if (mode === 'no-off' && geminiAsksForNone(body)) {
+      // **Refused at both spellings.** A model that answered only the budget
+      // spelling would be a model that takes the level one, which is the
+      // dialect fallback's case and not this one — so the leg would reach
+      // `always` for the wrong reason.
+      const config = geminiThinkingConfig(body) ?? {}
+      const named = config.thinkingBudget === 0 ? 'thinkingBudget' : 'thinkingLevel'
+      return refuse(`${named}: thinking cannot be disabled for this model`)
+    }
     if (mode === 'nothink' && param !== null) {
+      // **Each protocol names the member it was actually sent.** The desk's
+      // classifier requires that — a 400 whose prose names none of the members
+      // this desk added is an ordinary model error, deliberately — so a fixture
+      // that wrote one wire's member name on every wire would be testing the
+      // desk's tolerance rather than its rule.
       return refuse(
         options.api === 'anthropic'
           ? 'thinking: Extra inputs are not permitted'
-          : 'Unsupported parameter: reasoning_effort'
+          : options.api === 'gemini'
+            ? 'Invalid JSON payload received. Unknown name "thinkingConfig" at ' +
+              "'generation_config': Cannot find field."
+            : 'Unsupported parameter: reasoning_effort'
       )
     }
-    if (mode === 'enabled-only') {
+    if (mode === 'level-only') {
+      const config = geminiThinkingConfig(body)
+      if (config !== null && config.thinkingBudget !== undefined) {
+        return refuse(
+          'Invalid JSON payload received. Unknown name "thinkingBudget" at ' +
+            "'generation_config.thinking_config': Cannot find field."
+        )
+      }
+    }
+    if (mode === 'enabled-only' && options.api === 'anthropic') {
       const asked = param?.value as { type?: unknown; budget_tokens?: unknown } | undefined
       if (asked?.type === 'adaptive') {
         return refuse('Adaptive thinking is not supported by this model')
@@ -700,16 +1083,46 @@ export function scriptedModel(options: {
       }
     }
 
+    // **A continuation that asks for thinking must carry back what it was
+    // given, on this wire too** — Google's own rule is that thought parts are
+    // resent exactly as they were received, so the check that lives on the
+    // Anthropic split probe lives on **every** thinking leg here. An engine that
+    // dropped, truncated or emptied a signed part is refused rather than
+    // quietly answered.
+    if (options.api === 'gemini' && param !== null && n >= 1) {
+      const missing = expected.filter((signature) => !carried.carried.includes(signature))
+      if (missing.length > 0 || carried.truncated.length > 0 || carried.malformed.length > 0) {
+        return refuse(
+          'thought parts must be resent exactly as they were received: this request asks for ' +
+            'thinking and does not carry back every part this endpoint signed'
+        )
+      }
+    }
+
     // Thinking output must not change the step logic: neither a thinking block
     // nor a reasoning member is a tool result, so `chooseStep` is untouched.
-    const reasoning = mode !== 'off' && mode !== 'nothink' && param !== null
+    //
+    // **`always` is the exception, and it is the whole of that mode**: a model
+    // that reasons whatever it was asked for. The desk asked for none and gets
+    // thought parts anyway, which is what the two-consecutive-turns rule is
+    // there to settle.
+    const reasoning =
+      mode === 'always' || mode === 'no-off'
+        ? true
+        : mode !== 'off' && mode !== 'nothink' && param !== null
+    // See `chatterText`: the two modes that measure an endpoint which reasons
+    // unasked have to produce turns that carry an answer, or the desk's own
+    // "a tool-only turn is no evidence" rule means the leg never concludes.
+    const chatter = mode === 'always' || mode === 'no-off'
     if (reasoning && !lane.includes(step.id)) lane.push(step.id)
 
     if (options.answerAs === 'whole') {
       const answer =
         options.api === 'anthropic'
           ? anthropicAnswer(step, reasoning)
-          : openAiAnswer(step, reasoning)
+          : options.api === 'gemini'
+            ? geminiAnswer(step, reasoning, chatter)
+            : openAiAnswer(step, reasoning)
       return new Response(JSON.stringify(answer), {
         status: 200,
         headers: { 'content-type': 'application/json' }
@@ -718,7 +1131,9 @@ export function scriptedModel(options: {
     const text =
       options.api === 'anthropic'
         ? anthropicStream(step, reasoning, mode === 'split')
-        : openAiStream(step, reasoning)
+        : options.api === 'gemini'
+          ? geminiStream(step, reasoning, chatter)
+          : openAiStream(step, reasoning)
     return new Response(text, {
       status: 200,
       headers: { 'content-type': 'text/event-stream' }

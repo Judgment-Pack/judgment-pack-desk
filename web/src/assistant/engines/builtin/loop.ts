@@ -26,6 +26,7 @@ import {
   guardedCallTool,
   isCancelled,
   openRun,
+  schemasShown,
   textOf,
   withAbort
 } from '../contract'
@@ -39,7 +40,9 @@ import {
   critiqueOnProposal,
   openCritique
 } from '../../refutation'
+import { refusedSchemaKeyword, refusedSchemaSentence } from '../../geminiSchema'
 import { anthropic } from './providers/anthropic'
+import { gemini } from './providers/gemini'
 import { openai } from './providers/openai'
 import { ModelHttpError } from './providers/types'
 import type { Proposal } from '../contract'
@@ -113,8 +116,22 @@ async function callSafely(callTool: CallTool, call: ToolCall): Promise<ToolOutco
   }
 }
 
+/**
+ * The one provider a family gets, and no substitution.
+ *
+ * Total over the three kinds a `desk.json` may name, so a family with no
+ * provider does not compile — the same rule the engine registry keeps, and for
+ * the same reason: a desk configured for one wire quietly speaking another is
+ * a session whose transcript describes a request nobody made.
+ */
+const PROVIDERS: Record<AssistantSession['model']['family'], Provider> = {
+  'openai-compatible': openai,
+  anthropic,
+  gemini
+}
+
 function providerFor(family: AssistantSession['model']['family']): Provider {
-  return family === 'anthropic' ? anthropic : openai
+  return PROVIDERS[family]
 }
 
 /**
@@ -196,7 +213,12 @@ async function* builtinEvents(
         } catch (cause) {
           if (!(cause instanceof ModelHttpError)) throw cause
           const refusal = slot.refused(cause.status, cause.endpointMessage)
-          if (refusal.kind === 'other') throw cause
+          // **A schema keyword the removal list does not name is reported, not
+          // stripped.** `assistant/geminiSchema.ts` holds the ruling; this is
+          // the one line that carries it — a 400 naming a keyword this desk
+          // actually sent becomes an error a person can act on, rather than the
+          // desk widening its idea of the runtime's contract on being refused.
+          if (refusal.kind === 'other') throw schemaRefusal(cause, session) ?? cause
           // One line, once, whatever brought it about. A dialect fallback says
           // nothing: the desk asked in the other spelling and the session still
           // thinks.
@@ -373,6 +395,22 @@ async function* refute(options: {
   const critique = recorder.critique(modelText)
   yield critiqueEvent(critique)
   return critique
+}
+
+/**
+ * The refusal a served schema earned, or nothing.
+ *
+ * Two conditions and both required, exactly as the tier's classifier has: a 400
+ * whose message names a keyword this desk **actually sent**. Anything else is
+ * the failure it already was, reported unchanged.
+ */
+function schemaRefusal(cause: ModelHttpError, session: AssistantSession): Error | null {
+  const keyword = refusedSchemaKeyword(
+    cause.status,
+    cause.endpointMessage,
+    schemasShown(session.model.family, session.tools)
+  )
+  return keyword === '' ? null : new Error(refusedSchemaSentence(keyword))
 }
 
 /**

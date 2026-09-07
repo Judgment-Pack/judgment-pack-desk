@@ -20,7 +20,7 @@
  *
  * Ported from the bake-off's `none` prototype, thinking handling included.
  */
-import { servedSchema, withAbort } from '../../contract'
+import { servedSchemaFor, withAbort } from '../../contract'
 import { RESPONSE_TOKENS } from '../../../thinking'
 import { isEventStream, sseEvents } from './sse'
 import { ModelHttpError, protocolHeaders } from './types'
@@ -70,19 +70,25 @@ function callsOf(content: Block[]): ToolCall[] {
   return calls
 }
 
+/**
+ * The one path this protocol posts to, whatever the request asks for.
+ *
+ * The `v1` before it is the relay's mount point, not this endpoint's: one desk
+ * route serves every protocol, and each lands after the configured base exactly
+ * where the chassis' own probe sends its request.
+ */
+const SUFFIX = 'v1/messages'
+
 export const anthropic: Provider = {
   family: 'anthropic',
-  // The `v1` before it is the relay's mount point, not this endpoint's: one
-  // desk route serves both protocols, and each lands after the configured base
-  // exactly where the chassis' own probe sends its request.
-  suffix: 'v1/messages',
+  path: () => SUFFIX,
 
   tools(defs: McpTool[]) {
     return defs.map((def) => ({
       name: def.name,
       description: def.description ?? '',
       // The runtime's own, or nothing at all: see `servedSchema`.
-      input_schema: servedSchema(def)
+      input_schema: servedSchemaFor('anthropic', def)
     }))
   },
 
@@ -113,7 +119,7 @@ export const anthropic: Provider = {
     // this loop open.
     const response = await withAbort(
       () =>
-        options.call(anthropic.suffix, {
+        options.call(SUFFIX, {
           // `anthropic-version` is on the relay's outbound allow-list; nothing
           // resembling a credential is, and nothing here is one.
           headers: protocolHeaders({ 'anthropic-version': '2023-06-01' }),
@@ -123,7 +129,7 @@ export const anthropic: Provider = {
       options.signal
     )
     if (!response.ok) {
-      throw new ModelHttpError(response.status, await withAbort(() => response.text(), options.signal), anthropic.suffix)
+      throw new ModelHttpError(response.status, await withAbort(() => response.text(), options.signal), SUFFIX)
     }
 
     if (!isEventStream(response)) {

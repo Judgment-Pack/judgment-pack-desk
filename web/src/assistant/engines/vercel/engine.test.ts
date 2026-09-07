@@ -18,7 +18,7 @@ import { ASSISTANT_ENGINES, ASSISTANT_TOOLS } from '../../../config/deskConfig'
 import { CERTIFICATION_IS_TOTAL, CERTIFIED_ENGINES, loadEngine } from '../index'
 import { ChannelHasOneConsumer, eventChannel } from './channel'
 import { vercel } from './index'
-import { REHEARSAL_HOOK, claimPromises, sdkThinking } from './loop'
+import { GOOGLE_OPTIONS, REHEARSAL_HOOK, claimPromises, sdkThinking } from './loop'
 import {
   ADDRESS_REFUSED,
   PLACEHOLDER_ORIGIN,
@@ -145,6 +145,31 @@ function anthropicTurn(step: {
     usage: { output_tokens: 1 }
   })
   event('message_stop', {})
+  return lines.join('')
+}
+
+/** One Gemini SSE turn: a thought part with its signature, then the answer. */
+function geminiTurn(step: {
+  reasoning?: string
+  signature?: string
+  text?: string
+  tool?: { name: string; args: unknown }
+}): string {
+  const lines: string[] = []
+  const frame = (parts: unknown[]) =>
+    lines.push(
+      `data: ${JSON.stringify({ candidates: [{ content: { role: 'model', parts }, index: 0 }] })}\n\n`
+    )
+  if (step.reasoning !== undefined) {
+    frame([
+      { text: step.reasoning, thought: true, thoughtSignature: step.signature ?? 'c2ln' }
+    ])
+  }
+  frame([
+    step.tool !== undefined
+      ? { functionCall: { name: step.tool.name, args: step.tool.args } }
+      : { text: step.text ?? '' }
+  ])
   return lines.join('')
 }
 
@@ -371,11 +396,31 @@ describe('the registry', () => {
 
 describe('the address the SDK composes, and what this desk will send', () => {
   it('reduces the SDK’s absolute URL to the suffix the built-in engine uses', () => {
-    expect(suffixOf(`${PLACEHOLDER_ORIGIN}/chat/completions`, placeholderBase('openai-compatible')))
-      .toBe('chat/completions')
-    expect(suffixOf(`${PLACEHOLDER_ORIGIN}/v1/messages`, placeholderBase('anthropic'))).toBe(
-      'v1/messages'
-    )
+    expect(
+      suffixOf(
+        `${PLACEHOLDER_ORIGIN}/chat/completions`,
+        placeholderBase('openai-compatible'),
+        'openai-compatible'
+      )
+    ).toBe('chat/completions')
+    expect(suffixOf(`${PLACEHOLDER_ORIGIN}/v1/messages`, placeholderBase('anthropic'), 'anthropic'))
+      .toBe('v1/messages')
+    // The Gemini wire puts the model and the method in the address, and asks
+    // for its stream with the one query pair the relay admits.
+    expect(
+      suffixOf(
+        `${PLACEHOLDER_ORIGIN}/v1beta/models/m:streamGenerateContent?alt=sse`,
+        placeholderBase('gemini'),
+        'gemini'
+      )
+    ).toBe('v1beta/models/m:streamGenerateContent?alt=sse')
+    expect(
+      suffixOf(
+        `${PLACEHOLDER_ORIGIN}/v1beta/models/m:generateContent`,
+        placeholderBase('gemini'),
+        'gemini'
+      )
+    ).toBe('v1beta/models/m:generateContent')
   })
 
   it('refuses another origin, a query, a fragment and an empty path', () => {
@@ -388,12 +433,26 @@ describe('the address the SDK composes, and what this desk will send', () => {
       `${PLACEHOLDER_ORIGIN}/`,
       'not a url'
     ]) {
-      expect(suffixOf(url, base), url).toBeUndefined()
+      expect(suffixOf(url, base, 'openai-compatible'), url).toBeUndefined()
     }
     // And the Anthropic base is a real second check: a path under the same
     // origin that is not under the family's base does not travel either.
-    expect(suffixOf(`${PLACEHOLDER_ORIGIN}/chat/completions`, placeholderBase('anthropic')))
-      .toBeUndefined()
+    expect(
+      suffixOf(`${PLACEHOLDER_ORIGIN}/chat/completions`, placeholderBase('anthropic'), 'anthropic')
+    ).toBeUndefined()
+    // The one admitted pair is admitted on one family, byte for byte: every
+    // other spelling of it, and the pair on another family, is refused here as
+    // well as at the desk's own capability and at the chassis.
+    const gemini = placeholderBase('gemini')
+    expect(
+      suffixOf(`${PLACEHOLDER_ORIGIN}/v1beta/models/m:generateContent?alt=sse`, gemini, 'anthropic')
+    ).toBeUndefined()
+    for (const query of ['?alt=json', '?alt=sse&alt=sse', '?alt=sse&x=1', '?ALT=sse', '?key=k']) {
+      expect(
+        suffixOf(`${PLACEHOLDER_ORIGIN}/v1beta/models/m:generateContent${query}`, gemini, 'gemini'),
+        query
+      ).toBeUndefined()
+    }
   })
 
   it('sends nothing at all where the address is not the relay’s', async () => {
@@ -428,6 +487,31 @@ describe('the address the SDK composes, and what this desk will send', () => {
     })
     expect(seen).toEqual([['content-type', 'anthropic-version']])
   })
+
+  it('drops the Google provider’s own key header, and needs no new allow-list entry', async () => {
+    // `createGoogleGenerativeAI` sets `x-goog-api-key` from the placeholder and
+    // a `user-agent` suffix of its own; neither is on the protocol allow-list,
+    // so neither travels. **No `x-goog-api-client`** is set by this provider at
+    // the pinned version — if a future one adds a header the wire needs, it goes
+    // on this list *and* on the chassis', with the reason, and this row is where
+    // that shows up.
+    const seen: string[][] = []
+    const call: ModelCall = async (_suffix, request) => {
+      seen.push(Object.keys(request.headers ?? {}).map((name) => name.toLowerCase()))
+      return new Response('{}', { headers: { 'content-type': 'application/json' } })
+    }
+    const fetch = relayFetch({ family: 'gemini', call, signal: new AbortController().signal })
+    await fetch(`${PLACEHOLDER_ORIGIN}/v1beta/models/m:generateContent`, {
+      body: '{}',
+      headers: {
+        'content-type': 'application/json',
+        'x-goog-api-key': 'placeholder-the-desk-relay-injects-the-key',
+        'x-goog-api-client': 'ai-sdk/google/4.0.64',
+        'user-agent': 'ai-sdk/google'
+      }
+    })
+    expect(seen).toEqual([['content-type']])
+  })
 })
 
 describe('an endpoint that ignored `stream`', () => {
@@ -456,6 +540,20 @@ describe('an endpoint that ignored `stream`', () => {
     expect(framed).toContain('data: [DONE]')
     // The one member a chunk carries that a whole message does not.
     expect((events[0]!.choices[0]!.delta!.tool_calls as { index: number }[])[0]!.index).toBe(0)
+  })
+
+  it('is presented to the SDK as the one event the Gemini wire defines', () => {
+    // The smallest of the three re-framings, and the only one that rewrites
+    // nothing: this wire's stream is a sequence of whole answers, so an answer
+    // with nothing to split across chunks is already one event. There is no
+    // terminal sentinel to write — the stream ends when the body does.
+    const whole = {
+      candidates: [{ content: { role: 'model', parts: [{ text: 'hello' }] }, finishReason: 'STOP' }]
+    }
+    const framed = reframe('gemini', whole)
+    expect(framed).toBe(`data: ${JSON.stringify(whole)}\n\n`)
+    // Nothing of the answer is lost or renamed on the way through.
+    expect(JSON.parse(framed.slice('data: '.length))).toEqual(whole)
   })
 
   it('is presented to the SDK as the events the Anthropic wire defines', () => {
@@ -1059,6 +1157,40 @@ describe('the thinking tier, through the SDK’s own call settings', () => {
     expect(Object.keys(seen[0]!.body)).not.toContain('thinking')
   })
 
+  it('puts the desk’s own members on a gemini request, in the place that wire wants', async () => {
+    // **The table names the member and the engine places it.** On this wire the
+    // tier lives inside `generationConfig`, which is where the SDK's own
+    // provider option puts it — so what is asserted is the composed body, not
+    // the option object, exactly as the other two families are.
+    const { call, seen } = scriptedCall([geminiTurn({ text: PROPOSAL_TEXT })])
+    await drain(
+      vercel.start(
+        session(call, {
+          model: { family: 'gemini', model: 'a-model', call },
+          thinking: normalize('on', 'gemini')
+        })
+      )
+    )
+    const config = (seen[0]!.body.generationConfig ?? {}) as Record<string, unknown>
+    expect(config.thinkingConfig).toEqual(normalize('on', 'gemini').wire!.members.thinkingConfig)
+    // And the address is the wire's, with the one query pair the relay admits.
+    expect(seen[0]!.suffix).toBe('v1beta/models/a-model:streamGenerateContent?alt=sse')
+  })
+
+  it('translates the Gemini spelling into the SDK’s own provider option', () => {
+    expect(sdkThinking('gemini', wireFor('ultra', 'gemini-budget')!.members)).toEqual({
+      providerOptions: {
+        [GOOGLE_OPTIONS]: { thinkingConfig: { includeThoughts: true, thinkingBudget: 24576 } }
+      }
+    })
+    expect(sdkThinking('gemini', wireFor('off', 'gemini-level')!.members)).toEqual({
+      providerOptions: { [GOOGLE_OPTIONS]: { thinkingConfig: { thinkingLevel: 'minimal' } } }
+    })
+    // **Not the desk's key to choose.** The provider reads its options from the
+    // part of its own id before the dot, and that id is fixed by the SDK.
+    expect(GOOGLE_OPTIONS).toBe('google')
+  })
+
   it('translates each of the desk’s three dialects and nothing else', () => {
     expect(sdkThinking('openai-compatible', null)).toEqual({})
     expect(sdkThinking('openai-compatible', { reasoning_effort: 'xhigh' })).toEqual({
@@ -1195,7 +1327,7 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
         }
       ]
     })
-    const filtered = withoutTruncatedThinking(body, ledger)
+    const filtered = withoutTruncatedThinking('anthropic', body, ledger)
     expect(filtered.truncated).toContain('19663')
     const sent = JSON.parse(filtered.body) as { messages: { content: { type: string }[] }[] }
     expect(sent.messages[0]!.content.map((block) => block.type)).toEqual(['text'])
@@ -1220,7 +1352,7 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
       ]
     })
     // The slot has degraded by the time this is read, so it asks for nothing.
-    const rebuilt = withoutTruncatedThinking(body, ledger, () => null)
+    const rebuilt = withoutTruncatedThinking('anthropic', body, ledger, () => null)
     const sent = JSON.parse(rebuilt.body) as Record<string, unknown>
     expect(rebuilt.truncated).toContain('19663')
     expect(Object.keys(sent)).not.toContain('thinking')
@@ -1239,7 +1371,7 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
         { role: 'assistant', content: [{ type: 'thinking', thinking: 'x', signature: 'c2lnbmF0dXJlLVQx' }] }
       ]
     })
-    const filtered = withoutTruncatedThinking(body, ledger)
+    const filtered = withoutTruncatedThinking('anthropic', body, ledger)
     expect(filtered.truncated).toBe('')
     expect(filtered.body).toBe(body)
   })
@@ -1325,7 +1457,7 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
         { role: 'assistant', content: [{ type: 'thinking', thinking: 'two', signature: 'abc' }] }
       ]
     })
-    const looked = withoutTruncatedThinking(body, ledger, () => null)
+    const looked = withoutTruncatedThinking('anthropic', body, ledger, () => null)
     expect(looked.truncated).toBe('')
     expect(looked.body).toBe(body)
   })
@@ -1342,7 +1474,7 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
         { role: 'assistant', content: [{ type: 'thinking', thinking: 'two', signature: 'abc' }] }
       ]
     })
-    const looked = withoutTruncatedThinking(body, ledger, () => null)
+    const looked = withoutTruncatedThinking('anthropic', body, ledger, () => null)
     expect(looked.truncated).toContain('19663')
     const sent = JSON.parse(looked.body) as { messages: { content: { type: string }[] }[] }
     expect(sent.messages[0]!.content).toEqual([])
@@ -1368,7 +1500,7 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
         { role: 'assistant', content: [{ type: 'thinking', thinking: 'three', signature: 'uvw' }] }
       ]
     })
-    const looked = withoutTruncatedThinking(body, ledger, () => null)
+    const looked = withoutTruncatedThinking('anthropic', body, ledger, () => null)
     expect(looked.truncated).toContain('19663')
     const sent = JSON.parse(looked.body) as { messages: { content: unknown[] }[] }
     expect(sent.messages[0]!.content).toHaveLength(1)
@@ -1391,7 +1523,7 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
       ]
     })
     // Nothing signed in this conversation yet, so nothing is compared.
-    expect(withoutTruncatedThinking(body, ledger, () => null).truncated).toBe('')
+    expect(withoutTruncatedThinking('anthropic', body, ledger, () => null).truncated).toBe('')
     ledger.fragment('0', 'zzzzzz')
     expect(ledger.signed().map((one) => one.signature)).toEqual(['zzzzzz'])
     const short = JSON.stringify({
@@ -1399,7 +1531,7 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
         { role: 'assistant', content: [{ type: 'thinking', thinking: 'critic', signature: 'zzz' }] }
       ]
     })
-    expect(withoutTruncatedThinking(short, ledger, () => null).truncated).toContain('19663')
+    expect(withoutTruncatedThinking('anthropic', short, ledger, () => null).truncated).toContain('19663')
   })
 
   it('does not double a signature the SDK repeated whole', () => {
