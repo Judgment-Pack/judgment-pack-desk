@@ -1676,6 +1676,36 @@ func TestProbeKeepsAConfiguredQueryBeforeTheGeminiPageSize(t *testing.T) {
 	if got := stub.requestLine(); got != "/v1beta/models?route=eu&pageSize=1" {
 		t.Errorf("request line %q, want the configured query first", got)
 	}
+	// **And the key is not in it**, with a configured query present — which is
+	// the case the earlier version of this assertion did not cover: it tested
+	// a query-free base only, so a configured `?key=…` would have gone
+	// unnoticed. That spelling is refused at decode now, and this is the
+	// assertion that the accepted spelling still carries no credential.
+	if line := stub.requestLine(); strings.Contains(line, testKey) ||
+		strings.Contains(line, "key=") {
+		t.Errorf("the key travelled in the URL: %q", line)
+	}
+}
+
+func TestAConfiguredQueryCarryingACredentialIsNeverProbed(t *testing.T) {
+	// The other half: a configured query nobody should have written refuses
+	// the whole file, so the probe has no endpoint to reach and makes no
+	// request at all — the same gate a refused file has always had.
+	counter := countingProbes(t)
+	s, ts, _ := assistantServer(t)
+	writeDeskConfig(t, s, `{"deskConfigVersion":1,"assistant":{"endpoint":`+
+		`{"url":"https://gw.example.invalid/v1?key=sk-nope","kind":"gemini",`+
+		`"model":"m","tools":[]}}}`)
+	if status, body := storeKey(t, ts, testKey); status != http.StatusOK {
+		t.Fatalf("store: %d %v", status, body)
+	}
+	status, body := postJSON(t, ts, "/api/assistant/probe")
+	if status != http.StatusConflict || body["code"] != CodeAssistantUnconfigured {
+		t.Fatalf("status %d, body %v", status, body)
+	}
+	if calls, to := counter.seen(); calls != 0 {
+		t.Fatalf("a refused configuration made %d outbound request(s), to %v", calls, to)
+	}
 }
 
 func TestProbeReportsARefusedCredential(t *testing.T) {

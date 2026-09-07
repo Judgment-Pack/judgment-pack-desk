@@ -768,6 +768,87 @@ func TestRelayAdmitsTheStreamPairOnGeminiAndOnNoOtherKind(t *testing.T) {
 	}
 }
 
+func TestAConfiguredQueryCannotCarryWhatTheRelayReserves(t *testing.T) {
+	// **Round 1's finding, and the reason it is a decode rule.** Only the
+	// page's half of the query was checked; the configured half travelled
+	// upstream byte for byte, and `PUT /api/desk-config` had just made that
+	// half page-writable. A configured `?alt=sse` on gemini duplicated the one
+	// pair the relay admits; on anthropic it sent a pair that kind admits none
+	// of; and `?key=`, `?pageToken=` or a semicolon reached the endpoint on
+	// every later call for as long as the file said so.
+	//
+	// The rule is now in both decoders, so a file carrying one of these is
+	// refused **whole** — which means no endpoint is configured, and the relay
+	// answers that rather than sending anything.
+	for _, testCase := range []struct{ name, query string }{
+		{"the pair the relay itself may add", "alt=sse"},
+		{"the name the listing pages with", "pageToken=x"},
+		{"a credential", "key=sk-nope"},
+		{"a credential under another spelling", "access_token=nope"},
+		{"a credential spelled auth", "auth=nope"},
+		{"a semicolon", "a=1;b=2"},
+		{"an encoded alias of a reserved name", "%61lt=sse"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			counter := countingRelays(t)
+			u := newUpstream(t, nil)
+			_, ts, _ := relayDeskAt(t, "gemini", u.server.URL+"/?"+testCase.query)
+			resp, body := relayGet(t, ts, "v1beta/models")
+			if resp.StatusCode != http.StatusConflict {
+				t.Fatalf("status %d, want 409: %s", resp.StatusCode, body)
+			}
+			if got := codeOfBody(t, body); got != CodeAssistantUnconfigured {
+				t.Errorf("code %q, want %q", got, CodeAssistantUnconfigured)
+			}
+			if calls, to := counter.seen(); calls != 0 {
+				t.Fatalf("a refused configuration made %d outbound request(s), to %v", calls, to)
+			}
+			if seen := u.arrivals(); len(seen) != 0 {
+				t.Fatalf("the endpoint saw %d request(s)", len(seen))
+			}
+		})
+	}
+	// The positive control: a configured query that is none of those still
+	// travels, which is what makes this a rule rather than a ban.
+	u := newUpstream(t, nil)
+	_, ts, _ := relayDeskAt(t, "gemini", u.server.URL+"/?route=eu&api-version=2024-10-21")
+	if resp, body := relayGet(t, ts, "v1beta/models"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("an ordinary configured query was refused: %d %s", resp.StatusCode, body)
+	}
+	if seen := u.only(t); seen.rawQuery != "route=eu&api-version=2024-10-21" {
+		t.Errorf("query %q, want the configured one unchanged", seen.rawQuery)
+	}
+}
+
+func TestTheConfiguredQueryRuleNamesEachClass(t *testing.T) {
+	// The rule on its own, so it is exercised where the whole-file decode is
+	// not the only route to it — and so the sentence a reader repairs the file
+	// by is pinned.
+	for _, testCase := range []struct{ query, want string }{
+		{"key=x", "never stored in configuration"},
+		{"apiKey=x", "never stored in configuration"},
+		{"api_key=x", "never stored in configuration"},
+		{"AUTH=x", "never stored in configuration"},
+		{"secret=x", "never stored in configuration"},
+		{"alt=sse", "the relay itself may add"},
+		{"pageToken=x", "the relay itself may add"},
+		{"a=1;b=2", "semicolon"},
+		{"%zz=1", "cannot be read"},
+	} {
+		if got := endpointQueryProblem(testCase.query); !strings.Contains(got, testCase.want) {
+			t.Errorf("%q refused with %q, want it to mention %q",
+				testCase.query, got, testCase.want)
+		}
+	}
+	for _, query := range []string{
+		"", "route=eu", "api-version=2024-10-21&route=eu", "route=eu%3Bwest", "x=alt",
+	} {
+		if problem := endpointQueryProblem(query); problem != "" {
+			t.Errorf("%q was refused: %s", query, problem)
+		}
+	}
+}
+
 func TestRelayRefusesEveryOtherSpellingOfTheStreamPair(t *testing.T) {
 	// Byte equality against one fixed literal is the one comparison that has
 	// no second reading. Each of these is a spelling some parser would fold
@@ -1613,10 +1694,17 @@ func relaySlotIsReleased(t *testing.T, overall, idle time.Duration) {
 func TestRelayLogsNeitherTheKeyNorTheAddress(t *testing.T) {
 	// A configured URL carrying both a path and a query, because those are the
 	// two parts of an address a log must not carry: some gateways route on a
-	// query, and a query is a place people put credentials.
+	// query, and a routing value is somebody's deployment.
+	//
+	// **The query is a spelling this desk accepts**, and that is the point.
+	// A credential-shaped name is refused at decode now — see
+	// `TestAConfiguredQueryCannotCarryWhatTheRelayReserves` — so a test that
+	// configured one would be asserting the log rule against a file the desk
+	// never reads. What is held here is that the query it *does* read still
+	// never reaches the log.
 	u := newUpstream(t, nil)
 	_, ts, logged := relayDeskAt(t, "openai-compatible",
-		u.server.URL+"/gateway?apikey=sk-in-the-query")
+		u.server.URL+"/gateway?route=eu-west-private")
 	resp, body := relayGet(t, ts, "chat/completions")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d: %s", resp.StatusCode, body)
@@ -1629,7 +1717,7 @@ func TestRelayLogsNeitherTheKeyNorTheAddress(t *testing.T) {
 		t.Fatalf("nothing was logged about the relayed request: %q", written)
 	}
 	for _, forbidden := range []string{
-		testKey, "sk-in-the-query", "/gateway", "chat/completions", "apikey",
+		testKey, "eu-west-private", "/gateway", "chat/completions", "route",
 	} {
 		if strings.Contains(written, forbidden) {
 			t.Errorf("the log carries %q: %s", forbidden, written)

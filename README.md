@@ -1400,7 +1400,18 @@ text over a network is a credential given away, and one about transport only.
 It may **not** carry a user, a password or a fragment: a key is never written
 into configuration, and that includes into a URL. It **may** carry a query
 string, because some gateways route on one — and that query string is never
-logged. An escaped path is carried through exactly as configured: `%2F` stays
+logged. **The query is held to a rule of its own**, in both decoders, because
+`PUT /api/desk-config` makes the file page-writable and the configured query is
+the one part of a relayed request that then travels upstream byte for byte on
+every later call. Three refusals, each named against `assistant.endpoint.url`:
+a **credential-shaped name** by the same reading a member name gets (`key`,
+`apiKey`, `api_key`, `access_token`, `secret`, `password`, … and `auth`, which
+that reading does not otherwise catch); a **name the relay reserves** (`alt`,
+which the relay may add itself, and `pageToken`, which would page a listing
+this desk documents as first-page-only) — reserved on *every* kind, because a
+per-kind rule would make a URL legal until somebody changed `kind` beside it;
+and a **semicolon anywhere in it**, which is the relay's own rule verbatim. An
+ordinary `?route=eu&api-version=2024-10-21` is accepted and unchanged. An escaped path is carried through exactly as configured: `%2F` stays
 one segment, because re-encoding it into a separator would send the credential
 to a different resource than the one written down.
 It is the base the endpoint documents for its own protocol: for

@@ -1,0 +1,13 @@
+{
+  "deskConfigVersion": 1,
+  "assistant": {
+    "endpoint": {
+      "url": "https://gw.example.invalid/?route=eu&api-version=2024-10-21",
+      "kind": "gemini",
+      "model": "a-model",
+      "tools": [
+        "validate"
+      ]
+    }
+  }
+}

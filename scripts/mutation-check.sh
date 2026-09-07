@@ -779,6 +779,22 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the credential scan never runs" "$DF" \
     '	problems = append(problems, scanForKeys("", parsed)...)' \
     ''
+  # Round 1: only the page's half of the query was checked, and the configured
+  # half — which `PUT /api/desk-config` had just made page-writable — travelled
+  # upstream byte for byte on every later call.
+  mutate go "a configured query is not held to any rule" "$DF" \
+    '	if reason := endpointQueryProblem(parsed.RawQuery); reason != "" {' \
+    '	if reason := ""; reason != "" {'
+  # A configured `alt` would be a second copy of the one pair the relay admits
+  # from the page: a query two parsers count differently.
+  mutate go "a configured query may use a name the relay reserves" "$DF" \
+    '		if contains(reservedQueryNames, decoded) {' \
+    '		if false {'
+  # "A key is never written into configuration" cannot be a rule about members
+  # only while a URL sits beside them.
+  mutate go "a configured query may carry a credential" "$DF" \
+    '		if isCredentialQueryName(decoded) {' \
+    '		if false {'
   mutate go "a key smuggled into the URL is accepted" "$DF" \
     '	if parsed.User != nil {' \
     '	if false {'
@@ -3595,6 +3611,13 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     })"
 
   # The credential scan, and the two URL members a key can hide in.
+  # The browser's half of the same rule: two implementations of one contract
+  # drift, and the fixtures hold them together only if both actually check.
+  mutate web "a configured query is not held to any rule" "$D" \
+    '  const query = endpointQueryProblem(raw)
+  if (query !== undefined) return query' \
+    '  const query = undefined as string | undefined
+  if (query !== undefined) return query'
   mutate web "the credential scan never runs" "$D" \
     "  scanForKeys('', parsed, problems)" \
     ''

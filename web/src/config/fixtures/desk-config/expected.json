@@ -53,6 +53,12 @@
     "engine": "vercel",
     "thinking": "off"
   },
+  "accepted-endpoint-gemini-with-query": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
+  },
   "accepted-endpoint-kind-gemini": {
     "accepted": true,
     "keys": [],
@@ -294,6 +300,54 @@
     ]
   },
   "refused-endpoint-url-not-absolute": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-url-query-access-token": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-url-query-alt": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-url-query-api-key": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-url-query-auth": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-url-query-encoded-alias": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-url-query-key": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-url-query-page-token": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-url-query-semicolon": {
     "accepted": false,
     "keys": [
       "assistant.endpoint.url"
