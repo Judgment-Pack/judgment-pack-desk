@@ -969,3 +969,49 @@ func TestPinningRefusesATreeThatHardLinkedTheValidatedFile(t *testing.T) {
 		t.Fatal("a tree that hard-linked the validated file was served")
 	}
 }
+
+func TestPinningRefusesADirectorySwappedBetweenInspectionAndOpening(t *testing.T) {
+	// **The window inside the open itself.** `os.OpenRoot` takes a name, and a
+	// name can be pointed somewhere else between the `Lstat` that inspected it
+	// and the open that acts on it — which is the residual the kind check
+	// cannot close and the `SameFile` exists for. The hook is the swap,
+	// performed at exactly that instant.
+	holder := t.TempDir()
+	project := filepath.Join(holder, "a-project")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	elsewhere := t.TempDir()
+	if err := os.Symlink(elsewhere, filepath.Join(holder, "probe")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	done := false
+	testHookAfterInspectingProject = func(path string) {
+		if done || path != project {
+			return
+		}
+		done = true
+		if err := os.Rename(project, project+".moved"); err != nil {
+			t.Fatalf("rename: %v", err)
+		}
+		if err := os.Symlink(elsewhere, project); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+	}
+	t.Cleanup(func() { testHookAfterInspectingProject = nil })
+
+	pinned, err := OpenProjectRoot(project)
+	if pinned != nil {
+		defer pinned.Close()
+	}
+	if err == nil {
+		resolvedElsewhere, _ := filepath.EvalSymlinks(elsewhere)
+		if pinned.Dir() == resolvedElsewhere {
+			t.Fatalf("the descriptor is the replacement tree %q", pinned.Dir())
+		}
+		t.Fatalf("a swapped directory was pinned as %q", pinned.Dir())
+	}
+	if !strings.Contains(err.Error(), "changed between being inspected and being opened") {
+		t.Errorf("refusal: %v", err)
+	}
+}

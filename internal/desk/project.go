@@ -79,6 +79,11 @@ func OpenProjectRoot(dir string) (*ProjectRoot, error) {
 	if !inspected.IsDir() {
 		return nil, fmt.Errorf("%s is not a directory", resolved)
 	}
+	// The residual the kind check cannot close: a swap performed *after* it.
+	// It is what proves the comparison below is doing work rather than
+	// restating an `Lstat` that already refused the ordinary case — the same
+	// instrument, and the same argument, as `afterConfigStat`.
+	afterInspectingProject(resolved)
 	root, err := os.OpenRoot(resolved)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", resolved, err)
@@ -94,6 +99,20 @@ func OpenProjectRoot(dir string) (*ProjectRoot, error) {
 			"%s changed between being inspected and being opened, and was not served", resolved)
 	}
 	return &ProjectRoot{dir: resolved, root: root, info: held}, nil
+}
+
+// testHookAfterInspectingProject runs between establishing what a directory is
+// and opening it, and is nil outside tests.
+//
+// It exists so a test can perform exactly the swap a time-of-check /
+// time-of-use attack would, at the instant where it would matter. Without it
+// the `SameFile` below would rest on reading the code and believing it.
+var testHookAfterInspectingProject func(path string)
+
+func afterInspectingProject(path string) {
+	if testHookAfterInspectingProject != nil {
+		testHookAfterInspectingProject(path)
+	}
 }
 
 // testHookBeforePinningProject runs between the launch deciding on a directory
