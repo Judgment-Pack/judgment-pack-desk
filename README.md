@@ -1534,7 +1534,12 @@ of models from somewhere else. **The field beside it never goes away**: the list
 first-page-only, an endpoint may refuse to list at all, and a gateway may route
 on a name of its own — a picker that was the only way to choose would make
 every one of those unconfigurable. **What is saved is the id and never the
-label**, which differ on two of the three protocols. A refusal is its status
+label**, which differ on two of the three protocols — and **an id is an option
+only if the configuration decoder would take it**, asked of that decoder rather
+than re-stated here: a copy of the rule is how a whitespace-only id came to be
+offered, saved cleanly into the field, and produced a 422 on the next Save.
+Typing the same value still gets the decoder's own sentence against the field,
+because the chassis is what decides. A refusal is its status
 and one word from the probe's own closed vocabulary, and the body is not read;
 an answer that is not JSON gets a fixed sentence, because `JSON.parse` quotes
 the text it failed on and that text is the body.

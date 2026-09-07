@@ -34,7 +34,7 @@
  * the one relayed answer the desk reads, and the reason it is the one is that
  * it is the one the desk *renders*.
  */
-import type { EndpointKind } from '../config/deskConfig'
+import { modelIdProblem, type EndpointKind } from '../config/deskConfig'
 import { DIAGNOSTIC_SAYS, type ProbeDiagnostic } from './client'
 import type { ModelCall } from './engine'
 
@@ -144,8 +144,13 @@ export async function listModels(
  * The three differ and are read apart rather than guessed at: Gemini answers
  * `models[]` with a `models/<id>` name, a `displayName` and the methods each
  * model supports; the other two answer `data[]` with an `id`, and Anthropic
- * adds a `display_name`. An entry without a usable id is skipped rather than
- * shown as a blank — a row nobody can save is not a row.
+ * adds a `display_name`.
+ *
+ * **An id is a row only if the configuration decoder would take it**, and the
+ * rule is *imported* rather than restated: a copy is exactly how the picker
+ * came to offer a whitespace-only id that produced a 422 the moment it was
+ * saved — the file's reader trims and the copy did not. A row nobody can save
+ * is not a row.
  *
  * **Gemini's rows are filtered to the models that can generate content.** That
  * listing carries embedding and other models an assistant cannot run on, and
@@ -166,15 +171,15 @@ export function modelRows(kind: EndpointKind, body: unknown): ModelRow[] {
         displayName?: unknown
         supportedGenerationMethods?: unknown
       }
-      if (typeof name !== 'string' || name === '') continue
+      if (typeof name !== 'string') continue
       if (
         !Array.isArray(supportedGenerationMethods) ||
         !supportedGenerationMethods.includes('generateContent')
       ) {
         continue
       }
-      const id = name.startsWith('models/') ? name.slice('models/'.length) : name
-      if (id === '') continue
+      const id = (name.startsWith('models/') ? name.slice('models/'.length) : name).trim()
+      if (modelIdProblem(id) !== undefined) continue
       rows.push({ id, label: typeof displayName === 'string' && displayName !== '' ? displayName : id })
     }
     return rows
@@ -184,8 +189,12 @@ export function modelRows(kind: EndpointKind, body: unknown): ModelRow[] {
   const rows: ModelRow[] = []
   for (const entry of data) {
     if (entry === null || typeof entry !== 'object') continue
-    const { id, display_name: shown } = entry as { id?: unknown; display_name?: unknown }
-    if (typeof id !== 'string' || id === '') continue
+    const { id: raw, display_name: shown } = entry as { id?: unknown; display_name?: unknown }
+    if (modelIdProblem(raw) !== undefined) continue
+    // Trimmed, and saved trimmed: what the decoder accepts is the trimmed
+    // value, so an id offered untrimmed would be a picker showing one string
+    // and writing another.
+    const id = (raw as string).trim()
     rows.push({
       id,
       label: kind === 'anthropic' && typeof shown === 'string' && shown !== '' ? shown : id

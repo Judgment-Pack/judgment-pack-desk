@@ -1074,12 +1074,10 @@ function endpointValue(
     problems.push({ key: 'assistant.endpoint.kind', reason: 'required' })
   }
 
+  const modelProblem = modelIdProblem(endpoint.model)
   const model = typeof endpoint.model === 'string' ? endpoint.model.trim() : undefined
-  if (model === undefined || model === '') {
-    problems.push({
-      key: 'assistant.endpoint.model',
-      reason: `must be a non-empty string; found ${describe(endpoint.model)}`
-    })
+  if (modelProblem !== undefined) {
+    problems.push({ key: 'assistant.endpoint.model', reason: modelProblem })
   }
 
   let tools: string[] = []
@@ -1120,6 +1118,27 @@ function endpointValue(
     model: model ?? '',
     tools
   }
+}
+
+/**
+ * The rule a model id is held to, and the whole of it.
+ *
+ * **Lifted out of the decoder so that one rule can have one reader.** Admin's
+ * model picker offers what an endpoint listed, and an endpoint may list a name
+ * this schema refuses — a whitespace-only id is the case that was found — so
+ * the picker asks this function rather than carrying a copy of the reasoning.
+ * A copy is how the picker came to offer an option that produced a 422 as soon
+ * as it was saved: the file's reader trims and this did not.
+ *
+ * `undefined` where the value is acceptable; otherwise the decoder's own
+ * sentence, which is what a reader sees whether the value was typed or picked.
+ */
+export function modelIdProblem(value: unknown): string | undefined {
+  const model = typeof value === 'string' ? value.trim() : undefined
+  if (model === undefined || model === '') {
+    return `must be a non-empty string; found ${describe(value)}`
+  }
+  return undefined
 }
 
 /**

@@ -3886,6 +3886,17 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "    listModels(target.kind, async (suffix) =>
       globalThis.fetch(\`\${target.url}/\${suffix}\`, { method: 'GET' })
     ).then("
+  # **The picker offers what the file's reader would take, and asks the reader
+  # rather than carrying a copy of it.** A copy is how a whitespace-only id
+  # came to be an option: the decoder trims and the copy did not, so the choice
+  # saved cleanly into the field and produced a 422 on the next Save.
+  ML=web/src/assistant/modelListing.ts
+  mutate web "a listed id is offered without asking the decoder" "$ML" \
+    '    if (modelIdProblem(raw) !== undefined) continue' \
+    "    if (typeof raw !== 'string' || raw === '') continue"
+  mutate web "a listed Gemini id is offered without asking the decoder" "$ML" \
+    '      if (modelIdProblem(id) !== undefined) continue' \
+    "      if (id === '') continue"
   # The id is what the endpoint answers to; the label is what a person reads,
   # and the two differ on two of the three protocols.
   mutate web "the model is saved from the listing label rather than its id" "$MF" \

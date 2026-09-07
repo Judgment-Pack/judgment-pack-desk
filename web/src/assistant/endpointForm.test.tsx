@@ -554,6 +554,31 @@ describe('the model, and the list the endpoint offers', () => {
     )
   })
 
+  it('offers no option for an id the decoder refuses, and still refuses one typed', async () => {
+    // Two halves of one rule. The picker never offers a whitespace-only id —
+    // it would save cleanly into the field and produce a 422 on the next Save
+    // — and typing the same value still gets the decoder's own sentence
+    // against the field, because the chassis is what decides.
+    servesListing(
+      {
+        models: [
+          { name: 'models/   ', supportedGenerationMethods: ['generateContent'] },
+          {
+            name: 'models/gemini-2.5-pro',
+            displayName: 'Gemini 2.5 Pro (stub)',
+            supportedGenerationMethods: ['generateContent']
+          }
+        ]
+      }
+    )
+    renderForm(GEMINI, true)
+    fireEvent.click(screen.getByRole('button', { name: 'List models' }))
+    const picker = await screen.findByRole('combobox', { name: 'Models this endpoint listed' })
+    fireEvent.click(picker)
+    const offered = (await screen.findAllByRole('option')).map((option) => option.textContent)
+    expect(offered).toEqual(['Gemini 2.5 Pro (stub)'])
+  })
+
   it('reports a refused listing in the probe s words, and never the body', async () => {
     servesListing({ error: 'sk-a-real-looking-key-wxyz' }, 401)
     const { container } = renderForm(GEMINI, true)

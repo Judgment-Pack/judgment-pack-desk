@@ -143,6 +143,34 @@ describe('what the listing makes of an answer', () => {
     expect(modelRows('gemini', { models: [{ name: 'models/' }, { name: 'x' }] })).toEqual([])
   })
 
+  it('skips an id the configuration decoder would refuse, whitespace included', () => {
+    // **The rule is imported and not restated.** A copy is how the picker came
+    // to offer `"   "`: the file's reader trims and the copy did not, so the
+    // option saved cleanly into the field and produced a 422 on the next Save.
+    expect(
+      modelRows('openai-compatible', { data: [{ id: '   ' }, { id: '\t\n' }, { id: 'a' }] })
+    ).toEqual([{ id: 'a', label: 'a' }])
+    expect(
+      modelRows('anthropic', { data: [{ id: ' ', display_name: 'Looks fine' }] })
+    ).toEqual([])
+    expect(
+      modelRows('gemini', {
+        models: [
+          { name: 'models/   ', supportedGenerationMethods: ['generateContent'] },
+          { name: 'models/ok', supportedGenerationMethods: ['generateContent'] }
+        ]
+      })
+    ).toEqual([{ id: 'ok', label: 'ok' }])
+  })
+
+  it('offers the id trimmed, because that is what would be saved', () => {
+    // A picker that showed one string and wrote another is a picker whose
+    //choice cannot be checked against the file afterwards.
+    expect(modelRows('openai-compatible', { data: [{ id: '  a-model  ' }] })).toEqual([
+      { id: 'a-model', label: 'a-model' }
+    ])
+  })
+
   it('makes nothing of a body that is not a listing at all', () => {
     for (const body of [null, 3, 'text', {}, { data: 'not an array' }]) {
       expect(modelRows('openai-compatient' as never, body)).toEqual([])
