@@ -788,6 +788,21 @@ func TestAConfiguredQueryCannotCarryWhatTheRelayReserves(t *testing.T) {
 		{"a credential spelled auth", "auth=nope"},
 		{"a semicolon", "a=1;b=2"},
 		{"an encoded alias of a reserved name", "%61lt=sse"},
+		// **Round 2.** The reserved names were compared case-sensitively, so
+		// `?ALT=sse` was accepted and a streaming relay then added its own
+		// pair beside it — an upstream that folds case sees two copies of one
+		// name, which is exactly the disagreement these rules exist to keep
+		// off the wire.
+		{"a reserved name in another case", "ALT=sse"},
+		{"a reserved name encoded in another case", "%41lt=sse"},
+		{"the listing's name in another case", "PageToken=x"},
+		// **Round 2.** Go read these as bytes and answered no error while the
+		// browser's decoder throws, so the chassis accepted a file the page
+		// refused — and could send the key on the strength of it.
+		{"a name that is not UTF-8 once decoded", "%FF=x"},
+		{"a value that is not UTF-8 once decoded", "a=%FF"},
+		{"an overlong encoding", "a=%C0%AF"},
+		{"a lone surrogate", "a=%ED%A0%80"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			counter := countingRelays(t)
@@ -836,17 +851,31 @@ func TestTheConfiguredQueryRuleNamesEachClass(t *testing.T) {
 		{"AUTH=x", "never stored in configuration"},
 		{"secret=x", "never stored in configuration"},
 		{"alt=sse", "the relay itself may add"},
+		{"ALT=sse", "the relay itself may add"},
+		{"Alt=sse", "the relay itself may add"},
+		{"%41lt=sse", "the relay itself may add"},
 		{"pageToken=x", "the relay itself may add"},
+		{"PAGETOKEN=x", "the relay itself may add"},
 		{"a=1;b=2", "semicolon"},
-		{"%zz=1", "cannot be read"},
+		{"%zz=1", "cannot read the same way a browser does"},
+		// The half the rule used not to look at, and the three shapes Go read
+		// as bytes while the browser threw.
+		{"%FF=x", "cannot read the same way a browser does"},
+		{"a=%FF", "cannot read the same way a browser does"},
+		{"a=%C0%AF", "cannot read the same way a browser does"},
+		{"a=%ED%A0%80", "cannot read the same way a browser does"},
+		{"a=%zz", "cannot read the same way a browser does"},
 	} {
 		if got := endpointQueryProblem(testCase.query); !strings.Contains(got, testCase.want) {
 			t.Errorf("%q refused with %q, want it to mention %q",
 				testCase.query, got, testCase.want)
 		}
 	}
+	// And an escape both sides read identically is still an escape, so this is
+	// a rule about agreement rather than a ban on percent-encoding.
 	for _, query := range []string{
 		"", "route=eu", "api-version=2024-10-21&route=eu", "route=eu%3Bwest", "x=alt",
+		"route=eu%E2%82%AC", "team=a%20b", "alternative=1", "a=b=c",
 	} {
 		if problem := endpointQueryProblem(query); problem != "" {
 			t.Errorf("%q was refused: %s", query, problem)

@@ -77,6 +77,12 @@
     "engine": "vercel",
     "thinking": "off"
   },
+  "accepted-endpoint-query-percent-escaped": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
+  },
   "accepted-endpoint-with-query": {
     "accepted": true,
     "keys": [],
@@ -341,13 +347,61 @@
       "assistant.endpoint.url"
     ]
   },
+  "refused-endpoint-url-query-lone-surrogate": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-url-query-name-not-utf8": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-url-query-overlong-utf8": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
   "refused-endpoint-url-query-page-token": {
     "accepted": false,
     "keys": [
       "assistant.endpoint.url"
     ]
   },
+  "refused-endpoint-url-query-page-token-upper": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-url-query-reserved-encoded-upper": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-url-query-reserved-mixed": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-url-query-reserved-upper": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
   "refused-endpoint-url-query-semicolon": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-url-query-value-not-utf8": {
     "accepted": false,
     "keys": [
       "assistant.endpoint.url"

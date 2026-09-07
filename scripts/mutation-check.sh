@@ -818,14 +818,26 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if reason := ""; reason != "" {'
   # A configured `alt` would be a second copy of the one pair the relay admits
   # from the page: a query two parsers count differently.
+  # **Repaired**: the comparison folds case since round 2.
   mutate go "a configured query may use a name the relay reserves" "$DF" \
-    '		if contains(reservedQueryNames, decoded) {' \
+    '		if containsFold(reservedQueryNames, decoded) {' \
     '		if false {'
   # "A key is never written into configuration" cannot be a rule about members
   # only while a URL sits beside them.
   mutate go "a configured query may carry a credential" "$DF" \
     '		if isCredentialQueryName(decoded) {' \
     '		if false {'
+  # Round 2: `url.QueryUnescape("%FF")` answers one byte and no error while the
+  # browser's decoder throws, so the chassis accepted a file the page refused —
+  # and could send the key on the strength of it.
+  mutate go "a configured query is read as bytes the browser cannot read" "$DF" \
+    '			if err != nil || !utf8.ValidString(decoded) {' \
+    '			if err != nil {'
+  # Round 2: the reserved names were compared case-sensitively, so `?ALT=sse`
+  # was accepted and the relay added its own pair beside it.
+  mutate go "a reserved query name in another case is accepted" "$DF" \
+    '		if containsFold(reservedQueryNames, decoded) {' \
+    '		if contains(reservedQueryNames, decoded) {'
   mutate go "a key smuggled into the URL is accepted" "$DF" \
     '	if parsed.User != nil {' \
     '	if false {'
@@ -3657,6 +3669,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # The credential scan, and the two URL members a key can hide in.
   # The browser's half of the same rule: two implementations of one contract
   # drift, and the fixtures hold them together only if both actually check.
+  # The browser's half of the case rule, so the two cannot drift apart again.
+  mutate web "a reserved query name in another case is accepted" "$D" \
+    '        (reserved) => reserved.toLowerCase() === decoded.toLowerCase()' \
+    '        (reserved) => reserved === decoded'
   mutate web "a configured query is not held to any rule" "$D" \
     '  const query = endpointQueryProblem(raw)
   if (query !== undefined) return query' \

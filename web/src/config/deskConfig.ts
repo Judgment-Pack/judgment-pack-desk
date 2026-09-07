@@ -1224,20 +1224,37 @@ function endpointQueryProblem(raw: string): string | undefined {
     )
   }
   for (const parameter of query.split('&')) {
-    const name = parameter.split('=')[0] ?? ''
+    const halves = parameter.split('=')
+    const name = halves[0] ?? ''
+    // **Both halves.** The value travels upstream exactly as the name does,
+    // and the chassis reads both — a rule that looked at one of them would be
+    // two rules again. A pair spelled `a=b=c` is read as the name `a` and
+    // everything after the first `=` as its value, which is what both sides'
+    // query parsers do.
+    const value = halves.slice(1).join('=')
     let decoded: string
     try {
       decoded = decodeURIComponent(name.replace(/\+/g, ' '))
+      decodeURIComponent(value.replace(/\+/g, ' '))
     } catch {
       return (
-        `has a query parameter whose name ${JSON.stringify(name)} cannot be read, and this ` +
-        'desk forwards only a query it can read the same way twice'
+        `has a query parameter this desk cannot read the same way a browser does ` +
+        `(${JSON.stringify(parameter)}): a query it cannot read identically twice is one ` +
+        'it will not forward'
       )
     }
     // **The reserved names are read first**, because `pageToken` folds to a
     // word the credential rule also catches and the sentence a reader repairs
     // the file by should be the true one. Both refuse either way.
-    if ((RESERVED_QUERY_NAMES as readonly string[]).includes(decoded)) {
+    //
+    // **Compared without regard to case**, because that is how the servers
+    // this rule exists for read a query name: `?ALT=sse` would otherwise be
+    // accepted and the relay would add its own pair beside it.
+    if (
+      (RESERVED_QUERY_NAMES as readonly string[]).some(
+        (reserved) => reserved.toLowerCase() === decoded.toLowerCase()
+      )
+    ) {
       return (
         `must not carry ${JSON.stringify(decoded)} in its query: it is a name the relay ` +
         'itself may add, and a query with two of one name is one two parsers count differently'

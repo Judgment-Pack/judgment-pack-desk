@@ -763,18 +763,38 @@ func endpointQueryProblem(rawQuery string) string {
 			"way twice"
 	}
 	for _, parameter := range strings.Split(rawQuery, "&") {
-		name, _, _ := strings.Cut(parameter, "=")
-		decoded, err := url.QueryUnescape(name)
-		if err != nil {
-			return fmt.Sprintf(
-				"has a query parameter whose name %q cannot be read, and this desk forwards "+
-					"only a query it can read the same way twice", name)
+		name, value, _ := strings.Cut(parameter, "=")
+		// **Both halves, and both held to UTF-8.** Round 2 found the two
+		// decoders disagreeing about exactly this: `url.QueryUnescape("%FF")`
+		// answers one byte and no error, while the browser's
+		// `decodeURIComponent` throws — so `?%FF=x` was accepted here, could
+		// be written through `PUT /api/desk-config`, and could authorise an
+		// outbound request, while the page refused the same file. That is the
+		// "a configuration the browser refuses still sends the key" class,
+		// reopened by a percent escape. Requiring valid UTF-8 is what makes
+		// the two answers one answer, and the *value* is read for the same
+		// reason the name is: it travels upstream too.
+		for _, half := range [2]string{name, value} {
+			decoded, err := url.QueryUnescape(half)
+			if err != nil || !utf8.ValidString(decoded) {
+				return fmt.Sprintf(
+					"has a query parameter this desk cannot read the same way a browser "+
+						"does (%q): a query it cannot read identically twice is one it will "+
+						"not forward", half)
+			}
 		}
+		decoded, _ := url.QueryUnescape(name)
 		// **The reserved names are read first**, because `pageToken` folds to
 		// a word the credential rule also catches and the sentence a reader
 		// repairs the file by should be the true one: it is reserved, not
 		// mistaken for a secret. Both refuse either way.
-		if contains(reservedQueryNames, decoded) {
+		//
+		// **Compared without regard to case**, because that is how the servers
+		// this rule exists for read a query name: `?ALT=sse` on a gemini base
+		// was accepted, and the relay then added its own pair for an upstream
+		// that sees two copies of one name — which is precisely the
+		// disagreement the query rules were written to keep off the wire.
+		if containsFold(reservedQueryNames, decoded) {
 			return fmt.Sprintf(
 				"must not carry %q in its query: it is a name the relay itself may add, and "+
 					"a query with two of one name is one two parsers count differently",
@@ -786,6 +806,21 @@ func endpointQueryProblem(rawQuery string) string {
 		}
 	}
 	return ""
+}
+
+// containsFold is `contains` for names two readers may spell in different
+// cases.
+//
+// Its own function rather than a lower-cased comparison written inline,
+// because the browser's mirror of this rule folds the same way and one
+// spelling of "the same name" is what the shared fixtures hold.
+func containsFold(haystack []string, needle string) bool {
+	for _, candidate := range haystack {
+		if strings.EqualFold(candidate, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 // isCredentialQueryName is `isKeyLike` for a query parameter's name.
