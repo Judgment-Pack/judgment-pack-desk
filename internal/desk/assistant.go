@@ -417,14 +417,45 @@ func (s *Server) handleDeskConfigWrite(w http.ResponseWriter, r *http.Request) {
 	if s.refuseUnusableStore(w) {
 		return
 	}
+	// **Read whole and bounded first, then read three ways about it**, because
+	// each of the three is a property of the bytes rather than of the object
+	// they parse to — and round 1 found all three missing.
+	raw, err := readBounded(r.Body, maxDeskConfigBytes+1024)
+	if err != nil {
+		writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge,
+			fmt.Sprintf("a desk-level write is at most %d bytes; nothing was written",
+				maxDeskConfigBytes))
+		return
+	}
+	// **UTF-8, before anything is decoded.** Go's JSON decoder replaces an
+	// invalid byte inside a string while decoding, and `json.RawMessage` keeps
+	// the original — so a `0xff` in the model name decoded clean, validated
+	// clean, and was written verbatim into a file every later read then refused
+	// as not UTF-8. The route would have composed a file its own reader will
+	// not open, which is the pre-write decode failing at the one thing it is
+	// for.
+	if !validUTF8(raw) {
+		writeJSONCoded(w, http.StatusUnsupportedMediaType, CodeNotUTF8,
+			"a desk-level write must be UTF-8 text; nothing was written")
+		return
+	}
 	var req DeskConfigWrite
-	decoder := json.NewDecoder(io.LimitReader(r.Body, maxDeskConfigBytes+1024))
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	if err := decoder.Decode(&req); err != nil {
 		// The decoder's own sentence names where in the body it gave up, and
 		// the body is a configuration somebody is editing; the shape is what a
 		// caller can act on.
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,
 			`the request body must be JSON of the shape {"assistant": {…}, "ifMatch": "…"}`)
+		return
+	}
+	// **Exactly one JSON value, and nothing after it.** A decoder that stops at
+	// the first value accepts a second one behind it — a body two readers
+	// disagree about, which is the class this desk refuses everywhere else.
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,
+			"the request body must be exactly one JSON object, with nothing after it; "+
+				"nothing was written")
 		return
 	}
 	if len(req.Assistant) == 0 {
@@ -492,6 +523,21 @@ func (s *Server) commitDeskConfigLocked(req DeskConfigWrite) (int, any) {
 		return http.StatusUnprocessableEntity, deskConfigRefusal{
 			Error: problem, Code: CodeDeskConfigRefused, Problems: []deskProblem{}}
 	}
+	// **Bounded, and UTF-8, before a byte is staged.** Both are properties of
+	// the composed file rather than of the request, and round 1 found each of
+	// them able to put a file on disk that this desk's own reader refuses: an
+	// envelope inside the request bound can compose past it, and the read
+	// bound is what every later read applies. A file written and then
+	// unreadable is worse than a write refused.
+	if len(composed) > maxDeskConfigBytes {
+		return http.StatusRequestEntityTooLarge, codedBody(CodeTooLarge, fmt.Sprintf(
+			"the configuration this would write is %d bytes, past the %d this desk reads; "+
+				"nothing was written", len(composed), maxDeskConfigBytes))
+	}
+	if !validUTF8(composed) {
+		return http.StatusUnsupportedMediaType, codedBody(CodeNotUTF8,
+			"the configuration this would write is not UTF-8 text; nothing was written")
+	}
 	// **The round trip, and it is the whole safety argument.** What is decoded
 	// is the file this desk would store, byte for byte, under the same
 	// contract the browser applies — so a key-shaped member, an unknown kind
@@ -523,6 +569,13 @@ func (s *Server) commitDeskConfigLocked(req DeskConfigWrite) (int, any) {
 	if err != nil || !wrotePresent {
 		return http.StatusInternalServerError, errorBody(fmt.Errorf(
 			"%s was written and could not be read back: %v", path, err))
+	}
+	// The read-back is held to the read's own contract, UTF-8 included: a file
+	// this desk wrote and its own reader would refuse is a defect to report
+	// rather than a success to announce.
+	if !validUTF8(wrote) {
+		return http.StatusInternalServerError, errorBody(fmt.Errorf(
+			"%s was written and does not read back as UTF-8 text", path))
 	}
 	landed := decodeDeskFile(wrote)
 	if landed.refused() {

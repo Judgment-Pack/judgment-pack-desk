@@ -939,6 +939,120 @@ func TestDeskConfigWriteRefusesWhatTheDecoderWouldRefuse(t *testing.T) {
 	}
 }
 
+// putDeskConfigRaw sends one desk-level write as bytes, for the cases whose
+// whole point is what is in the body rather than what it parses to.
+func putDeskConfigRaw(t *testing.T, ts *httptest.Server, body []byte) (int, map[string]any) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPut,
+		ts.URL+"/api/desk-config?token="+testToken, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	defer resp.Body.Close()
+	var decoded map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&decoded)
+	return resp.StatusCode, decoded
+}
+
+func TestDeskConfigWriteRefusesABodyThatIsNotUTF8(t *testing.T) {
+	// **Round 1.** Go's JSON decoder replaces an invalid byte inside a string
+	// while decoding, and `json.RawMessage` keeps the original — so a `0xff`
+	// in the model name decoded clean, validated clean, and would have been
+	// written verbatim into a file every later read then refuses as not UTF-8.
+	// The route would have composed a file its own reader will not open.
+	s, ts, _ := assistantServer(t)
+	const original = "{\n  \"deskConfigVersion\": 1\n}\n"
+	writeDeskConfig(t, s, original)
+	before, _ := deskConfigDigest(t, ts)
+
+	// The byte is appended rather than written into a literal, so it is
+	// unambiguously one byte and not an escape somebody has to read twice.
+	body := append([]byte(`{"assistant":{"endpoint":{"url":"https://api.example.invalid/",`+
+		`"kind":"gemini","model":"a-`), 0xff)
+	body = append(body, []byte(`-model","tools":[]}},"ifMatch":"`+before+`"}`)...)
+	if validUTF8(body) {
+		t.Fatal("this case has to carry a byte that is not UTF-8")
+	}
+	status, answered := putDeskConfigRaw(t, ts, body)
+	if status != http.StatusUnsupportedMediaType || answered["code"] != CodeNotUTF8 {
+		t.Fatalf("status %d, body %v; want 415 %s", status, answered, CodeNotUTF8)
+	}
+	after, err := os.ReadFile(s.deskConfigPath())
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(after) != original {
+		t.Errorf("the file was written anyway:\n%q", after)
+	}
+	// And what is on disk still reads: the state this refusal exists to keep.
+	if _, _, rerr := s.readDeskFile(); rerr != nil {
+		t.Errorf("the file no longer reads: %v", rerr)
+	}
+}
+
+func TestDeskConfigWriteRefusesAnythingAfterTheObject(t *testing.T) {
+	// One JSON value, and nothing behind it. A decoder that stops at the first
+	// accepts a body two readers disagree about, which is the class this desk
+	// refuses everywhere else.
+	s, ts, _ := assistantServer(t)
+	const original = "{\n  \"deskConfigVersion\": 1\n}\n"
+	writeDeskConfig(t, s, original)
+	before, _ := deskConfigDigest(t, ts)
+	for _, tail := range []string{`{"assistant":null}`, `garbage`, `[]`, `"x"`} {
+		body := []byte(`{"assistant":{"endpoint":null},"ifMatch":"` + before + `"} ` + tail)
+		status, answered := putDeskConfigRaw(t, ts, body)
+		if status != http.StatusBadRequest || answered["code"] != CodeBadRequest {
+			t.Errorf("%q: status %d, body %v; want 400 %s",
+				tail, status, answered, CodeBadRequest)
+		}
+	}
+	after, err := os.ReadFile(s.deskConfigPath())
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(after) != original {
+		t.Errorf("the file was written anyway:\n%s", after)
+	}
+}
+
+func TestDeskConfigWriteRefusesAComposedFilePastTheReadBound(t *testing.T) {
+	// **Round 1.** The request bound allowed an envelope, the composed file
+	// was never bounded at all, and the read bound is what every later read
+	// applies — so a file could be renamed into place and then refused by
+	// every reader, this route's own read-back included. A file written and
+	// then unreadable is worse than a write refused.
+	s, ts, _ := assistantServer(t)
+	// A file just under the read bound, so any addition at all takes the
+	// composed one past it.
+	filler := strings.Repeat("a", maxFileBytes-200)
+	original := "{\n  \"deskConfigVersion\": 1,\n  \"organization\": {\n    \"name\": \"" +
+		filler + "\"\n  }\n}\n"
+	if len(original) > maxFileBytes {
+		t.Fatalf("the fixture is %d bytes, past the read bound", len(original))
+	}
+	writeDeskConfig(t, s, original)
+	before, present := deskConfigDigest(t, ts)
+	if !present {
+		t.Fatal("the fixture was not read back")
+	}
+	status, answered := putDeskConfig(t, ts, geminiAssistant, before)
+	if status != http.StatusRequestEntityTooLarge || answered["code"] != CodeTooLarge {
+		t.Fatalf("status %d, body %v; want 413 %s", status, answered, CodeTooLarge)
+	}
+	after, err := os.ReadFile(s.deskConfigPath())
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(after) != original {
+		t.Errorf("the file was replaced by an oversized one (%d bytes)", len(after))
+	}
+}
+
 func TestDeskConfigWriteRefusesASymlinkedFile(t *testing.T) {
 	// The custody rule, on the way in: `desk.json` names the endpoint a
 	// credential is presented to, so a name reached through a symlink is not

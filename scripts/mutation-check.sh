@@ -794,6 +794,22 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	if decoded.refused() {' \
     '	decoded := decodeDeskFile(composed)
 	if false && decoded.refused() {'
+  # Round 1: Go's decoder replaces an invalid byte inside a string while
+  # decoding and `json.RawMessage` keeps the original, so a `0xff` decoded
+  # clean and would have been written into a file every later read refuses.
+  mutate go "a configuration write accepts bytes that are not UTF-8" "$A" \
+    '	if !validUTF8(raw) {' \
+    '	if false {'
+  # Round 1: the composed file was never bounded, so an envelope inside the
+  # request bound could compose past the bound every reader applies.
+  mutate go "a composed configuration is not bounded before it is staged" "$A" \
+    '	if len(composed) > maxDeskConfigBytes {' \
+    '	if false {'
+  # One JSON value, and nothing behind it: a body two readers disagree about is
+  # the class this desk refuses everywhere else.
+  mutate go "a configuration write accepts a second value behind the first" "$A" \
+    '	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {' \
+    '	if false {'
   # No override on this route: a file that moved under the writer is refused,
   # because this is the file that names where a credential goes.
   mutate go "a configuration write ignores the digest it was given" "$A" \
