@@ -1234,15 +1234,41 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # through the route that exists so it never gets there. The page cannot help:
   # it has never held the key and could not recognise one.
   mutate go "a model listing is forwarded without being scanned" "$MR" \
-    '				if listingCarriesKey(read, key) {
-					return errListingCarriesKey
-				}' \
-    '				if false {
-					return errListingCarriesKey
-				}'
+    '		case string:
+			if carries(typed) {
+				return errListingCarriesKey
+			}' \
+    '		case string:
+			if false {
+				return errListingCarriesKey
+			}'
   # A listing this desk cannot read to the end is one it cannot say anything
   # about, and forwarding the part it did read is the truncation every other
   # bound here refuses.
+  # **A scan that cannot read a body cannot clear it.** A decode error used to
+  # fall back to the raw bytes, so plain text, an empty answer, a truncated
+  # document or malformed JSON with an escaped credential past the error was
+  # forwarded whenever the literal key bytes happened to be absent.
+  mutate go "a listing this desk cannot read is forwarded anyway" "$MR" \
+    '	if values != 1 || depth != 0 {
+		return errListingNotJSON
+	}' \
+    '	if false {
+		return errListingNotJSON
+	}'
+  mutate go "a decode failure is not a refusal" "$MR" \
+    '		if err != nil {
+			return errListingNotJSON
+		}' \
+    '		if err != nil {
+			break
+		}'
+  # The listing branch buffers rather than streams, so the wrapper that bounds
+  # every other answer never reached it: one byte and a stall held a slot until
+  # the overall deadline.
+  mutate go "a stalled listing is bounded only by the overall deadline" "$MR" \
+    '				bounded := boundedByIdle(response.Body, cancel)' \
+    '				bounded := response.Body'
   mutate go "an over-long listing is forwarded as far as it was read" "$MR" \
     '				if len(read) > maxListingBody {
 					return errListingTooLarge

@@ -128,15 +128,32 @@ var relayListingSuffix = map[string]string{
 	"gemini":            "v1beta/models",
 }
 
-// errListingCarriesKey and errListingTooLarge are the two ways a listing is
-// refused, carried out of `ModifyResponse` — which is the one place a relayed
-// answer can still be refused before a byte of it has reached the page.
+// The three ways a listing is refused, carried out of `ModifyResponse` — which
+// is the one place a relayed answer can still be refused before a byte of it
+// has reached the page.
 var (
 	errListingCarriesKey = errors.New("listing carries the key")
 	errListingTooLarge   = errors.New("listing past the bound")
+	errListingNotJSON    = errors.New("listing is not one JSON value")
 )
 
-// listingCarriesKey is the scan, and its limits are the point of it.
+// listingProblem is the scan, and what it refuses is a **class** rather than a
+// match.
+//
+// **A listing is forwarded only if it is exactly one JSON value, decoded end to
+// end, with nothing behind it, and no string in it is the key.** Anything else
+// is refused. That is the repair for a rule that read the other way round: a
+// decode error used to fall back to comparing the raw bytes, so a body that was
+// not JSON at all — `not a listing`, an empty answer, a truncated one, one with
+// a second value behind it, malformed JSON with an escaped credential in the
+// half the decoder never reached — was **forwarded** whenever the literal key
+// bytes happened to be absent. A scan that cannot read a body cannot clear it,
+// and clearing it anyway is the whole of what went wrong.
+//
+// It costs nothing real: the three protocols' listings are JSON documents, and
+// an endpoint that answers something else at its own listing path has not
+// answered a listing. The page says `NOT_A_LISTING` for the same body today,
+// so what changes is where that is decided and whether the bytes travel.
 //
 // **Every JSON string in the body**, keys and values alike, compared to the
 // configured key: equal to it, or containing it where the key is long enough
@@ -146,35 +163,56 @@ var (
 // filter that deletes an answer to protect three characters is a worse answer
 // than the three characters.
 //
-// **The token scan is the strong half and the raw scan is the fallback.** A key
-// written into JSON as `sk-…` is one string to a decoder and different
-// bytes on the wire, so a raw comparison alone would miss it; a body that is
-// not JSON at all has no strings to decode, so the raw bytes are what there is.
-// Neither catches a *derived* representation — base64, hex, half of it — and
-// the README says so rather than implying a completeness no comparison has.
-func listingCarriesKey(body []byte, key string) bool {
-	if key == "" {
-		return false
-	}
-	long := len(key) >= minFingerprintable
+// **The strings are the decoded ones**, because a key written into JSON with
+// escapes is one string to a decoder and different bytes on the wire. What no
+// comparison catches is a *derived* representation — base64, hex, half of it —
+// and the README says so rather than implying a completeness no comparison has.
+func listingProblem(body []byte, key string) error {
+	long := key != "" && len(key) >= minFingerprintable
 	carries := func(value string) bool {
-		return value == key || (long && strings.Contains(value, key))
+		return key != "" && (value == key || (long && strings.Contains(value, key)))
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))
+	// One value, and the decoder is what says where it ends. `Token` walks the
+	// whole of it; `More` afterwards is what catches a second value behind it,
+	// which is the shape every other reader on this desk refuses too.
+	depth := 0
+	values := 0
 	for {
 		token, err := decoder.Token()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return false
-			}
-			// Not JSON, or not JSON all the way through: the decoded strings
-			// are not available, so the bytes are what is compared.
-			return carries(string(body))
+		if errors.Is(err, io.EOF) {
+			break
 		}
-		if text, ok := token.(string); ok && carries(text) {
-			return true
+		if err != nil {
+			return errListingNotJSON
+		}
+		switch typed := token.(type) {
+		case json.Delim:
+			if typed == '[' || typed == '{' {
+				if depth == 0 {
+					values++
+				}
+				depth++
+			} else {
+				depth--
+			}
+		case string:
+			if carries(typed) {
+				return errListingCarriesKey
+			}
+			if depth == 0 {
+				values++
+			}
+		default:
+			if depth == 0 {
+				values++
+			}
 		}
 	}
+	if values != 1 || depth != 0 {
+		return errListingNotJSON
+	}
+	return nil
 }
 
 // The two deadlines every relayed request is held to.
@@ -812,15 +850,28 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 			// copied, so the error below reaches `ErrorHandler` with the page
 			// still holding nothing.
 			if listing {
-				read, err := io.ReadAll(io.LimitReader(response.Body, maxListingBody+1))
+				// **Read through the same idle bound everything else is**, and
+				// not with a bare `io.ReadAll`. This branch buffers rather than
+				// streams, so the wrapper that was applied *after* it never
+				// reached it: an endpoint that sent one byte at its listing
+				// path and then stalled held a relay slot until the overall
+				// ten-minute deadline, and four of them denied every slot for
+				// that long — against a README that promises two minutes
+				// between two writes, unqualified. The bound cancels the
+				// request's own context, which ends this read.
+				bounded := boundedByIdle(response.Body, cancel)
+				read, err := io.ReadAll(io.LimitReader(bounded, maxListingBody+1))
+				// Stopped whether the read ended or was cut: the timer holds a
+				// reference to the cancel function for as long as it is armed.
+				_ = bounded.Close()
 				if err != nil {
 					return err
 				}
 				if len(read) > maxListingBody {
 					return errListingTooLarge
 				}
-				if listingCarriesKey(read, key) {
-					return errListingCarriesKey
+				if problem := listingProblem(read, key); problem != nil {
+					return problem
 				}
 				// Re-declared from what was actually read: Go removes the
 				// length and the encoding when it undoes a transparent gzip,
@@ -851,6 +902,13 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 				writeJSONCoded(w, http.StatusBadGateway, CodeAssistantListingRefused,
 					fmt.Sprintf("the endpoint's model listing is past the %d bytes this desk "+
 						"reads, so none of it was listed", maxListingBody))
+				return
+			}
+			if errors.Is(err, errListingNotJSON) {
+				status = http.StatusBadGateway
+				writeJSONCoded(w, http.StatusBadGateway, CodeAssistantListingRefused,
+					"the endpoint's model listing is not one JSON document, so this desk "+
+						"could not read it and did not list it")
 				return
 			}
 			var tooLarge *http.MaxBytesError

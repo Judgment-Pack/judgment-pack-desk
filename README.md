@@ -14,7 +14,10 @@ because the runtime has no write tools; the assistant's key, because a
 credential must never be pasted into a project; and the **model relay**, a
 per-feature *route* that carries the assistant's model traffic because the key
 must never reach the page. None of them parses what it carries either: the relay
-adds one header to a request and reads no body, no model name and no answer. See
+adds one header to a request and reads no request body and no model name. It
+reads **one** kind of answer, and only to refuse it — a model listing, which is
+the one relayed answer the desk *renders*, so that an endpoint cannot hand the
+machine-held credential to the browser as a model id. See
 [Where the assistant key lives](#where-the-assistant-key-lives).
 
 ## What it shows
@@ -3073,17 +3076,33 @@ before a byte of it is forwarded**, bounded at **1 MiB**, and:
   travels**, not the id, not the endpoint's own words around it;
 - a body **past the bound** answers the same code: a listing this desk cannot
   read to the end is one it cannot say anything about, and forwarding the part
-  it did read would be the truncation every other bound here refuses;
+  it did read would be the truncation every other bound here refuses. **The
+  read is bounded in time by the same idle deadline every other answer is** —
+  it buffers rather than streams, and the wrapper that bounds the rest was once
+  applied only after it, so an endpoint that sent one byte here and stalled
+  held a relay slot until the overall deadline;
 - otherwise the bytes are forwarded verbatim, with the length re-declared from
   what was actually read.
 
+**A listing is forwarded only if it is exactly one JSON value**, decoded end to
+end, with nothing behind it. Anything else — plain text, an empty answer, a
+truncated document, a second value behind the first, a redirect, malformed JSON
+whose escaped credential sits in the half a decoder never reaches — is refused
+with the same code and none of it travels. This is the repair for a rule that
+read the other way round: a decode error used to fall back to comparing the raw
+bytes, so a body the scan *could not read* was forwarded whenever the literal
+key bytes happened to be absent, and a scan that cannot read a body cannot
+clear it. It costs nothing real — the three protocols' listings are JSON
+documents, and an endpoint answering something else at its own listing path has
+not answered a listing.
+
 The scan is **exact-and-contains**, on the same twelve-byte floor the answer
-headers use, and it decodes: a key written into JSON with escapes is one string
-to a decoder and different bytes on the wire, so the decoded strings are what is
-compared and the raw bytes are the fallback for a body that is not JSON at all.
-**A derived representation — base64, percent-encoded, hex, half of it — is not
-detectable by any comparison**, which is the ruling chunk 1 already took for the
-probe, and it is stated here rather than implied away. A listing is asked for
+headers use, and it compares the **decoded** strings — member names and values,
+at any depth — because a key written into JSON with escapes is one string to a
+decoder and different bytes on the wire. **A derived representation — base64,
+percent-encoded, hex, half of it — is not detectable by any comparison**, which
+is the ruling chunk 1 already took for the probe, and it is stated here rather
+than implied away. A listing is asked for
 uncompressed so that what is scanned is what was sent. Every status is scanned,
 not only a success: a 401's body can carry the credential it rejected as easily
 as a 200's can carry it as a model id, and a rule with a status in it is a rule

@@ -1197,7 +1197,13 @@ func TestRelayFollowsNoRedirect(t *testing.T) {
 	_, ts, _ := relayDesk(t, "openai-compatible", u)
 	// The desk's own client must not follow it either, or the assertion below
 	// would be about this test's client rather than about the relay.
-	req, err := http.NewRequest(http.MethodGet, relayURL(ts, "models"), nil)
+	//
+	// **Not the listing path**, and for the reason the stalled-reader test is
+	// not either: a listing-shaped answer is forwarded only if it is one JSON
+	// document, and a 302 with no body is not one — so it would be refused
+	// before this assertion could be made about it. What is under test here is
+	// that the redirect was not *followed*, which is ordinary model traffic.
+	req, err := http.NewRequest(http.MethodGet, relayURL(ts, "chat/completions"), nil)
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
@@ -2251,16 +2257,16 @@ func TestRelayRefusesAModelListingThatCarriesTheKey(t *testing.T) {
 	}
 }
 
-func TestRelayScansTheListingsDecodedStringsAndItsBytes(t *testing.T) {
-	// **Two scans, because one of them is not enough.** A key written into
+func TestRelayScansTheListingsDecodedStrings(t *testing.T) {
+	// The decoded strings are what is compared, because a key written into
 	// JSON with escapes is one string to a decoder and different bytes on the
-	// wire, so the decoded strings are what is compared; a body that is not
-	// JSON at all has no strings to decode, so the bytes are what there is.
+	// wire. Member names as well as values, at any depth.
 	escaped := `{"data":[{"id":"s` + testKey[1:] + `"}]}`
 	for _, testCase := range []struct{ name, body string }{
 		{"escaped into a JSON string", escaped},
 		{"in a body that is not JSON", "not json at all: " + testKey},
 		{"as a member name", `{"` + testKey + `":1}`},
+		{"deep inside a document", `{"a":{"b":[{"c":["` + testKey + `"]}]}}`},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -2406,5 +2412,140 @@ func TestRelayListingSuffixesAreTheOnesThePageAsksFor(t *testing.T) {
 		if !strings.Contains(string(source), `'`+suffix+`'`) {
 			t.Errorf("the page's table does not carry %q for %s", suffix, kind)
 		}
+	}
+}
+
+func TestRelayRefusesAListingThatIsNotOneJSONDocument(t *testing.T) {
+	// **The scan refuses a class, and a body it cannot read is in that class.**
+	// A decode error used to fall back to comparing the raw bytes, so a body
+	// that was not JSON at all — plain text, empty, truncated, one with a
+	// second value behind it, malformed JSON whose escaped credential sat in
+	// the half the decoder never reached — was *forwarded* whenever the literal
+	// key bytes happened to be absent. A scan that cannot read a body cannot
+	// clear it.
+	//
+	// **None of these carries the key literally**, which is the point: each was
+	// forwarded before, and each is refused now.
+	for _, testCase := range []struct{ name, body string }{
+		{"plain text", "not a listing"},
+		{"nothing at all", ""},
+		{"only whitespace", "   \n  "},
+		{"truncated", `{"data":[{"id":"a-model"`},
+		{"a second value behind it", `{"data":[]} {"data":[{"id":"a-model"}]}`},
+		{"a trailing fragment", `{"data":[]}garbage`},
+		{"malformed with an escaped credential past the error", `{"data":[,"\u0073k-x"]}`},
+		{"HTML from a gateway", `<html><body>login required</body></html>`},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(testCase.body))
+			})
+			_, ts, _ := relayDeskAt(t, "openai-compatible", u.server.URL+"/v1")
+			resp, body := relayGet(t, ts, "models")
+			if resp.StatusCode != http.StatusBadGateway {
+				t.Fatalf("status %d, want 502: %s", resp.StatusCode, body)
+			}
+			if got := codeOfBody(t, body); got != CodeAssistantListingRefused {
+				t.Errorf("code %q, want %q", got, CodeAssistantListingRefused)
+			}
+			// And none of what the endpoint wrote, whatever it was.
+			for _, word := range []string{"not a listing", "a-model", "login required", "garbage"} {
+				if strings.Contains(testCase.body, word) && strings.Contains(body, word) {
+					t.Errorf("the refusal repeats the endpoint's %q: %s", word, body)
+				}
+			}
+		})
+	}
+}
+
+func TestRelayCarriesEveryShapeOfOneJSONDocument(t *testing.T) {
+	// The other side of the class: a listing that *is* one JSON value is
+	// carried, whatever shape that value takes. A rule that refused a bare
+	// array or an empty object would refuse listings the protocols serve.
+	for _, body := range []string{
+		`{"data":[]}`,
+		`{"object":"list","data":[{"id":"a-model"}]}`,
+		`[]`,
+		`[{"id":"a-model"}]`,
+		`{}`,
+		"\n  {\"data\":[]}  \n",
+	} {
+		t.Run(body, func(t *testing.T) {
+			u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(body))
+			})
+			_, ts, _ := relayDeskAt(t, "openai-compatible", u.server.URL+"/v1")
+			resp, got := relayGet(t, ts, "models")
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status %d: %s", resp.StatusCode, got)
+			}
+			if got != body {
+				t.Errorf("body %q, want the endpoint's own %q", got, body)
+			}
+		})
+	}
+}
+
+func TestRelayBoundsAStalledListingByTheIdleDeadline(t *testing.T) {
+	// **The listing branch buffers rather than streams, and the wrapper that
+	// bounds every other answer was applied after it.** So an endpoint that
+	// sent headers and one byte at its listing path and then stopped held a
+	// relay slot until the *overall* ten-minute deadline — four of them denied
+	// every slot for that long, against a README promising two minutes between
+	// two writes with no qualification on it.
+	//
+	// A short idle bound and a long overall one, so that only the idle bound
+	// can end this: a test that shortened both would pass on either.
+	shortDeadlines(t, 30*time.Second, 300*time.Millisecond)
+	stop := make(chan struct{})
+	t.Cleanup(func() { close(stop) })
+	u := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":[`))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		select {
+		case <-stop:
+		case <-r.Context().Done():
+		case <-time.After(20 * time.Second):
+		}
+	})
+	_, ts, _ := relayDeskAt(t, "openai-compatible", u.server.URL+"/v1")
+
+	began := time.Now()
+	resp, body := relayGet(t, ts, "models")
+	took := time.Since(began)
+	// **A refusal, and not a partial listing.** Whatever ended the read, none
+	// of what did arrive is forwarded: half a JSON document is not a document
+	// this desk can say anything about.
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("a stalled listing answered 200: %q", body)
+	}
+	if strings.Contains(body, `"data"`) {
+		t.Errorf("part of the stalled listing was forwarded: %q", body)
+	}
+	if code := codeOfBody(t, body); code != CodeAssistantRelayUpstream &&
+		code != CodeAssistantListingRefused {
+		t.Errorf("code %q, want one of this route's own refusals", code)
+	}
+	// Well inside the overall deadline, which is what says the idle bound is
+	// the thing that ended it.
+	if took > 10*time.Second {
+		t.Errorf("the stalled listing was held for %s, past the idle bound", took)
+	}
+
+	// And the slot came back: a fifth request on a desk that carries four
+	// answers immediately if the stalled one released its own.
+	u.respond = func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}
+	after, afterBody := relayGet(t, ts, "models")
+	if after.StatusCode != http.StatusOK {
+		t.Fatalf("the slot did not come back: %d %s", after.StatusCode, afterBody)
 	}
 }
