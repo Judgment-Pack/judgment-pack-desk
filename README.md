@@ -1305,6 +1305,15 @@ The answer carries the new digest and the **decoded** slot — read back off the
 disk rather than echoed, defaults applied — so the page can verify what landed
 and has the digest its next write needs.
 
+**Nothing in the page calls it yet, and that is deliberate.** This release ships
+the route, the client call and the query hook; the Admin form that lets an
+author choose an endpoint, a model and a thinking tier — and that shows
+`keyRebindRequired` when the destination moves — is the next chunk. Until it
+lands, Admin › Assistant still renders the paste block and says so in its own
+words, so that a reader meeting a read-only section does not conclude the write
+does not exist. What is true today: the route is reachable by anything holding
+the session token, and every bound above applies to it.
+
 **The key is the other**, on Admin › Assistant, and the exception is exactly as
 wide as its reason. A key must never be pasted into a
 project file — a project is a shared checkout, and a key committed to one is a
@@ -1410,8 +1419,15 @@ that reading does not otherwise catch); a **name the relay reserves** (`alt`,
 which the relay may add itself, and `pageToken`, which would page a listing
 this desk documents as first-page-only) — reserved on *every* kind, because a
 per-kind rule would make a URL legal until somebody changed `kind` beside it;
-and a **semicolon anywhere in it**, which is the relay's own rule verbatim. An
-ordinary `?route=eu&api-version=2024-10-21` is accepted and unchanged. An escaped path is carried through exactly as configured: `%2F` stays
+and a **semicolon anywhere in it**, which is the relay's own rule verbatim. The
+reserved names are compared **without regard to case** — `?ALT=sse` would
+otherwise be accepted and the relay would add its own pair beside it, which is
+two copies of one name to an upstream that folds case — and **every pair's name
+and value must decode to valid UTF-8**, because `%FF` is one byte and no error
+to Go's decoder and an exception to the browser's, and a configuration the
+browser refuses must not be one this desk sends a key on. An ordinary
+`?route=eu&api-version=2024-10-21` is accepted and unchanged, and so is any
+percent escape both sides read the same way. An escaped path is carried through exactly as configured: `%2F` stays
 one segment, because re-encoding it into a separator would send the credential
 to a different resource than the one written down.
 It is the base the endpoint documents for its own protocol: for
@@ -2691,11 +2707,13 @@ no CORS, so a page calling one directly could not read the answer.
   credential header and none of the page's. **A page cannot ask for a second
   page**: Gemini's listing pages with `pageToken`, and nothing of the page's
   query is forwarded, so `pageToken=…` is refused with `assistant-relay-path`
-  and nothing sent. That is a stated limit rather than an oversight — an
-  endpoint with more models than one page holds shows the first page, and a
-  desk that needs more would have to put the parameter in the **configured
-  URL's own query**, which is the file on this machine and not the page's
-  choice. Nothing on the chassis is added for the listing; it is the relay.
+  and nothing sent. **Later pages are not supported at all**, and that is the
+  whole of it: `pageToken` is refused from the configured URL as well — a
+  configured page token is a fixed cursor nobody re-reads, which is not
+  pagination — so an endpoint with more models than one page holds shows the
+  first page and no more. Supporting the rest would need a mechanism that
+  passes a cursor safely, and this release does not have one. Nothing on the
+  chassis is added for the listing; it is the relay.
 - **Nothing else.** No retry (a retried model request is a second charge on
   somebody's account for an answer nobody saw), no caching, no request
   rewriting, no model-name inspection. A refusal carries `assistant-relay-*`

@@ -1,13 +1,22 @@
 /**
  * Admin › Assistant: the model slot, and the one key this desk keeps.
  *
- * **This section carries the only write controls on Admin**, and the reason is
- * narrow enough to state in a sentence: a key must never be pasted into a
- * project file, so it cannot go through the file API, which writes only inside
- * the project. Everything else here is read-only in exactly the way the rest
- * of the page is — effective values, their source, and the exact JSON to
- * paste — because the endpoint *is* ordinary configuration and belongs in a
- * file a person edits.
+ * **This section carries the only write control on Admin today**, and the
+ * reason is narrow enough to state in a sentence: a key must never be pasted
+ * into a project file, so it cannot go through the file API, which writes only
+ * inside the project. Everything else *rendered here* is read-only — effective
+ * values, their source, and the exact JSON to paste.
+ *
+ * **That is a statement about this component, and no longer about the desk.**
+ * The chassis has gained `PUT /api/desk-config`, which rewrites the
+ * `assistant` object of the desk-level file under a conditional commit, and
+ * `updateAssistantConfig` / `useUpdateAssistantConfig` are the page's call and
+ * hook for it. **Nothing here invokes them yet**: the form that lets an author
+ * choose an endpoint, a model and a thinking tier — and that shows
+ * `keyRebindRequired` when the destination moves — is the next chunk. Until it
+ * lands, the paste block below is how the endpoint is configured, and this
+ * paragraph is here so that a reader meeting a read-only section does not
+ * conclude the write does not exist.
  *
  * **The three deployment states are text, not a control.** None, an endpoint
  * you already have, and an endpoint someone operates for you are not three
@@ -195,6 +204,13 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
           }
         }}
       />
+      <p className="quiet">
+        <strong>This page does not write that block yet.</strong> The desk can — it rewrites just
+        the assistant part of the desk-level file, leaving everything else in it exactly as you
+        wrote it, and refusing the write if the file changed since this page read it. The controls
+        that use it, for choosing a model and how deeply it thinks, arrive in the next release.
+        Until then, paste the block above into the file yourself.
+      </p>
       <p className="quiet">
         <strong>The key is not in that block, and there is no member it could go in.</strong> A
         name that looks like a key — <code>apiKey</code>, <code>secret</code>, <code>token</code> —
