@@ -859,7 +859,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # the same reason, and it is the row that can actually fail.
   mutate go "bytes that are not text are treated as text" "$DF" \
     'func validUTF8(data []byte) bool { return utf8.Valid(data) }' \
-    'func validUTF8(data []byte) bool { _ = data; return true }'
+    'func validUTF8(data []byte) bool { _ = utf8.Valid(data); return true }'
   # Round 1: the composed file was never bounded, so an envelope inside the
   # request bound could compose past the bound every reader applies.
   mutate go "a composed configuration is not bounded before it is staged" "$A" \
