@@ -778,3 +778,53 @@ func TestAHandedRootIsReleasedWhenTheServerRefusesToStart(t *testing.T) {
 		t.Error("the descriptor was still open after the refusal")
 	}
 }
+
+func TestAnEmptyProjectObjectIsRefusedRatherThanTreatedAsAWithdrawal(t *testing.T) {
+	// **An omission is not a withdrawal.** The contract spells clearing as
+	// `{"file": null}`; `{}` replaced the member with an empty object, which
+	// the decoder reads as no default — so a client that meant nothing by
+	// leaving the member out silently cleared an operator's own setting.
+	s, ts, _ := assistantServer(t)
+	// A foreign default, hand-edited: exactly what the page may not touch.
+	foreign := filepath.Join(t.TempDir(), projectConfigName)
+	writeDeskConfig(t, s, `{"deskConfigVersion":1,"project":{"file":`+quoted(foreign)+`}}`)
+	_, before, err := s.readDeskFile()
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	digest, _ := deskConfigDigest(t, ts)
+
+	status, body := putMembers(t, ts, map[string]any{
+		"project": json.RawMessage(`{}`), "ifMatch": digest})
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("status %d, body %v", status, body)
+	}
+	problems, _ := body["problems"].([]any)
+	if len(problems) != 1 {
+		t.Fatalf("problems %v", body["problems"])
+	}
+	first, _ := problems[0].(map[string]any)
+	if first["key"] != "project.file" || first["reason"] != projectFileMustBeStated {
+		t.Errorf("refused by %v: %v", first["key"], first["reason"])
+	}
+	// **Byte for byte**, because the failure this replaces was a silent edit
+	// rather than a wrong answer.
+	_, after, err := s.readDeskFile()
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Errorf("the file changed:\n%s\nwas\n%s", after, before)
+	}
+
+	// And the positive it must not take with it: a stated null still withdraws.
+	status, body = putMembers(t, ts, map[string]any{
+		"project": json.RawMessage(`{"file":null}`), "ifMatch": digest})
+	if status != http.StatusOK {
+		t.Fatalf("a stated null was refused: %d %v", status, body)
+	}
+	project, _ := body["project"].(map[string]any)
+	if project["file"] != nil {
+		t.Errorf("project %v, want null", body["project"])
+	}
+}

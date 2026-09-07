@@ -642,6 +642,17 @@ func (s *Server) handleDeskConfigWrite(w http.ResponseWriter, r *http.Request) {
 const pageMayNominateOnlyThisProject = "the page may nominate only the project this desk is " +
 	"running in; a different default is set by editing this file directly"
 
+// projectFileMustBeStated is the sentence a `project` object with no `file` is
+// refused with.
+//
+// **An omission is not a withdrawal.** The contract spells clearing as
+// `{"file": null}`, and a page that sent `{}` was silently clearing whatever
+// an operator had hand-edited: the composer replaced the member with an empty
+// object and the decoder read that as no default. So the member has to be
+// there, and a client that means to withdraw one has to say so.
+const projectFileMustBeStated = "must be stated in a project object this page sends: this " +
+	"project's own file, or null to withdraw the default"
+
 // projectNominationProblem is the whole of what page code may say about
 // `project.file`, and it is one value.
 //
@@ -685,8 +696,15 @@ func (s *Server) projectNominationProblem(project json.RawMessage) *deskProblem 
 		return nil
 	}
 	file, present := named["file"]
-	if !present || file == nil {
-		// Withdrawing the default. A page may always do that: it takes
+	if !present {
+		// **An omission is not a withdrawal.** `{}` replaced the member with
+		// an empty object, which the decoder reads as no default — so a
+		// request that meant nothing by leaving `file` out silently cleared an
+		// operator's own setting.
+		return &deskProblem{Key: "project.file", Reason: projectFileMustBeStated}
+	}
+	if file == nil {
+		// Withdrawing the default, said. A page may always do that: it takes
 		// authority away rather than granting it.
 		return nil
 	}
