@@ -1718,6 +1718,14 @@ func TestRelayLogsNeitherTheKeyNorTheAddress(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d: %s", resp.StatusCode, body)
 	}
+	// **Read after the handler has finished, not after the answer has
+	// arrived.** The log line is written once `proxy.ServeHTTP` has returned,
+	// which is *after* the page can have the whole body — so reading the
+	// buffer here raced the handler, and did: the suite failed intermittently
+	// on "nothing was logged" and read a buffer another goroutine was writing.
+	// `Close` waits for every outstanding request, which is exactly the
+	// happens-before this assertion needs.
+	ts.Close()
 	written := logged.String()
 	// The event, and the origin, and nothing else. A log with nothing in it
 	// would prove nothing about a handler that never ran, so the line is
