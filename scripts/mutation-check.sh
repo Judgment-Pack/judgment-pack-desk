@@ -5289,11 +5289,14 @@ export function assistantTransport(): Transport {
   const shown = schemaShown(engine, family, desk)'
 
   # **The fixture the declaration is derived over is the runtime's vocabulary,
-  # or it is a schema somebody made up.** Losing the union check is losing the
-  # only thing that ties the claim to what the runtime actually serves.
-  mutate web "the derivation fixture is not held to the runtime's vocabulary" "$CT" \
-    '      expect([...keywordsSent(VOCABULARY.inputSchema)].sort()).toEqual(RUNTIME_VOCABULARY)' \
-    '      expect(RUNTIME_VOCABULARY.length).toBeGreaterThan(0)'
+  # or it is a schema somebody made up.** Aimed at the fixture and not at the
+  # assertion: a row that weakens a check cannot discriminate, because a
+  # weakened check is exactly one that does not fail. A fixture that has quietly
+  # stopped carrying a keyword the runtime emits is the failure this lock is
+  # for, and it is what this restores.
+  mutate web "the derivation fixture drops a keyword the runtime emits" "$CT" \
+    "      d: { type: 'object', propertyNames: { type: 'string' } }," \
+    "      d: { type: 'object' },"
   # …and the other half: a vocabulary computed from the tool schemas alone
   # leaves out the pack schema, which is where most of the keywords are.
   mutate web "the runtime vocabulary ignores the recorded pack schema" "$CT" \
