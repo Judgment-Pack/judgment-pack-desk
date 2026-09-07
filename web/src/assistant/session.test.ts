@@ -32,7 +32,7 @@ describe('the model capability the desk binds', () => {
   it('builds the address itself, with the desk’s token and no other parameter', async () => {
     window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     const { calls } = recordingFetch()
-    await bindModelCall()('chat/completions', { body: '{}' })
+    await bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
     const url = new URL(calls[0]!.url, 'http://desk.invalid')
     expect(url.pathname).toBe('/api/assistant/relay/v1/chat/completions')
     // The relay refuses a query carrying anything but `token`, outright.
@@ -43,7 +43,7 @@ describe('the model capability the desk binds', () => {
   it('puts the Anthropic suffix after the same mount point', async () => {
     window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     const { calls } = recordingFetch()
-    await bindModelCall()('v1/messages', { body: '{}' })
+    await bindModelCall('openai-compatible')('v1/messages', { body: '{}' })
     expect(new URL(calls[0]!.url, 'http://desk.invalid').pathname).toBe(
       '/api/assistant/relay/v1/v1/messages'
     )
@@ -54,7 +54,7 @@ describe('the model capability the desk binds', () => {
     // desk has never heard of does not travel, because it is not on the list.
     window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     const { calls } = recordingFetch()
-    await bindModelCall()('chat/completions', {
+    await bindModelCall('openai-compatible')('chat/completions', {
       body: '{}',
       headers: {
         'content-type': 'application/json',
@@ -75,7 +75,7 @@ describe('the model capability the desk binds', () => {
   it('refuses a suffix outside the relay’s own segment rule, before anything is sent', async () => {
     window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     const { calls } = recordingFetch()
-    const call = bindModelCall()
+    const call = bindModelCall('openai-compatible')
     for (const bad of [
       '',
       '/',
@@ -96,10 +96,72 @@ describe('the model capability the desk binds', () => {
   })
 
   it('states the rule as a function, so a refusal can be read without a socket', () => {
-    expect(suffixProblem('chat/completions')).toBe('')
-    expect(suffixProblem('v1/messages')).toBe('')
-    expect(suffixProblem('chat/completions?x=1')).not.toBe('')
-    expect(suffixProblem('%2e%2e/admin')).not.toBe('')
+    expect(suffixProblem('chat/completions', 'openai-compatible')).toBe('')
+    expect(suffixProblem('v1/messages', 'anthropic')).toBe('')
+    expect(suffixProblem('chat/completions?x=1', 'openai-compatible')).not.toBe('')
+    expect(suffixProblem('%2e%2e/admin', 'openai-compatible')).not.toBe('')
+  })
+
+  it('admits the Gemini method after a colon, in the final segment and nowhere else', () => {
+    // The chassis' one closed exception, mirrored: the part after a colon is a
+    // verb, so it is one of three names and it comes last. A mirror that
+    // admitted a fourth would be a refusal that only happened on the far side.
+    expect(suffixProblem('v1beta/models/gemini-2.5-pro:streamGenerateContent', 'gemini')).toBe('')
+    expect(suffixProblem('v1beta/models/m:generateContent', 'gemini')).toBe('')
+    expect(suffixProblem('v1beta/models/m:countTokens', 'gemini')).toBe('')
+    for (const bad of [
+      'v1beta/models/m:embedContent',
+      'v1beta/models/m:generateContent/parts',
+      'v1beta/models/m:countTokens/x',
+      'v1beta/models/:generateContent',
+      'v1beta/models/a:b:generateContent',
+      'v1beta/models/m%3AgenerateContent'
+    ]) {
+      expect(suffixProblem(bad, 'gemini'), bad).not.toBe('')
+    }
+    // And the rule is about the **path**, not the kind: the colon is admitted
+    // on every family, exactly as the chassis admits it.
+    expect(suffixProblem('v1beta/models/m:generateContent', 'anthropic')).toBe('')
+  })
+
+  it('admits alt=sse once, on a gemini endpoint and on no other', () => {
+    expect(suffixProblem('v1beta/models/m:streamGenerateContent?alt=sse', 'gemini')).toBe('')
+    for (const [bad, family] of [
+      ['v1beta/models/m:streamGenerateContent?alt=sse', 'anthropic'],
+      ['chat/completions?alt=sse', 'openai-compatible'],
+      ['v1beta/models/m:streamGenerateContent?alt=json', 'gemini'],
+      ['v1beta/models/m:streamGenerateContent?ALT=sse', 'gemini'],
+      ['v1beta/models/m:streamGenerateContent?%61lt=sse', 'gemini'],
+      ['v1beta/models/m:streamGenerateContent?alt=sse&alt=sse', 'gemini'],
+      ['v1beta/models/m:streamGenerateContent?alt=sse&x=1', 'gemini'],
+      ['v1beta/models/m:streamGenerateContent?alt=sse;x=1', 'gemini'],
+      ['v1beta/models/m:streamGenerateContent?alt=sse?alt=sse', 'gemini'],
+      ['?alt=sse', 'gemini']
+    ] as [string, 'openai-compatible' | 'anthropic' | 'gemini'][]) {
+      expect(suffixProblem(bad, family), `${family} ${bad}`).not.toBe('')
+    }
+  })
+
+  it('writes the pair into the address beside the token, and sends nothing else', async () => {
+    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
+    const { calls } = recordingFetch()
+    await bindModelCall('gemini')('v1beta/models/m:streamGenerateContent?alt=sse', { body: '{}' })
+    const url = new URL(calls[0]!.url, 'http://desk.invalid')
+    expect(url.pathname).toBe('/api/assistant/relay/v1/v1beta/models/m:streamGenerateContent')
+    // The token first, the pair after it — the order the relay reads them in.
+    expect([...url.searchParams.entries()]).toEqual([
+      ['token', 'a-token'],
+      ['alt', 'sse']
+    ])
+  })
+
+  it('sends nothing at all where the pair is asked for on another family', async () => {
+    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
+    const { calls } = recordingFetch()
+    await expect(
+      bindModelCall('anthropic')('v1beta/models/m:streamGenerateContent?alt=sse', { body: '{}' })
+    ).rejects.toThrow(/no query of its own/)
+    expect(calls).toEqual([])
   })
 
   /**
@@ -179,7 +241,7 @@ describe('the model capability the desk binds', () => {
       Object.defineProperty(real, 'url', { value: String(url), configurable: true })
       return real
     })
-    const answered = await bindModelCall()('chat/completions', { body: '{}' })
+    const answered = await bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
     const reachable = everythingReachable(answered)
     expect(answered.url).toBe('')
     expect(reachable).not.toContain('a-secret-session-token')
@@ -213,7 +275,7 @@ describe('the model capability the desk binds', () => {
       })
       return real
     })
-    const answered = await bindModelCall()('chat/completions', { body: '{}' })
+    const answered = await bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
     expect(answered.body).not.toBe(upstream)
     expect((answered.body as unknown as Record<string, unknown>).leak).toBeUndefined()
     expect(everythingReachable(answered)).not.toContain('a-secret-session-token')
@@ -239,7 +301,7 @@ describe('the model capability the desk binds', () => {
       })
       return real
     })
-    const answered = await bindModelCall()('chat/completions', { body: '{}' })
+    const answered = await bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
 
     // A clone is a second Response built from the same facade: it must be as
     // empty of an address as the one it came from.
@@ -288,7 +350,7 @@ describe('the model capability the desk binds', () => {
         headers: { 'content-type': 'text/event-stream' }
       })
     })
-    const answered = await bindModelCall()('chat/completions', { body: '{}' })
+    const answered = await bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
     const reader = answered.body!.getReader()
     write!('first')
     const first = await reader.read()
@@ -317,7 +379,7 @@ describe('the model capability the desk binds', () => {
       outer.name = 'AbortError'
       throw outer
     })
-    const failure = (await bindModelCall()('chat/completions', { body: '{}' }).catch(
+    const failure = (await bindModelCall('openai-compatible')('chat/completions', { body: '{}' }).catch(
       (error: unknown) => error
     )) as Error & { cause?: unknown }
     expect(failure.name).toBe('AbortError')
@@ -331,7 +393,7 @@ describe('the model capability the desk binds', () => {
     vi.stubGlobal('fetch', async (url: unknown) => {
       throw new TypeError(`Failed to fetch ${String(url)}`)
     })
-    const failure = await bindModelCall()('chat/completions', { body: '{}' }).catch(
+    const failure = await bindModelCall('openai-compatible')('chat/completions', { body: '{}' }).catch(
       (error: unknown) => error
     )
     const reachable = everythingReachable(failure)
@@ -347,7 +409,7 @@ describe('the model capability the desk binds', () => {
       error.name = 'AbortError'
       throw error
     })
-    const failure = await bindModelCall()('chat/completions', { body: '{}' }).catch(
+    const failure = await bindModelCall('openai-compatible')('chat/completions', { body: '{}' }).catch(
       (error: unknown) => error
     )
     expect((failure as Error).name).toBe('AbortError')
@@ -356,7 +418,7 @@ describe('the model capability the desk binds', () => {
   it('carries a body-less status without trying to give it a body', async () => {
     window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     vi.stubGlobal('fetch', async () => new Response(null, { status: 204 }))
-    const answered = await bindModelCall()('chat/completions', { body: '{}' })
+    const answered = await bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
     expect(answered.status).toBe(204)
   })
 
@@ -390,7 +452,7 @@ describe('the model capability the desk binds', () => {
     window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     const { calls } = recordingFetch()
     await expect(
-      bindModelCall()(make() as unknown as string, { body: '{}' })
+      bindModelCall('openai-compatible')(make() as unknown as string, { body: '{}' })
     ).rejects.toThrow(/must be a string/)
     expect(calls).toEqual([])
   })
@@ -401,7 +463,7 @@ describe('the model capability the desk binds', () => {
     // an engine that reaches for a global does not.
     window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     const { calls } = recordingFetch()
-    const call = bindModelCall()
+    const call = bindModelCall('openai-compatible')
     vi.stubGlobal('fetch', () => {
       throw new Error('the engine reached for globalThis.fetch')
     })

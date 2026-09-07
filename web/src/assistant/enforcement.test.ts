@@ -38,6 +38,7 @@ import {
   type AssistantEndpointConfig
 } from '../config/deskConfig'
 import { PROBE_DIAGNOSTICS } from './client'
+import { suffixProblem } from './session'
 import type { AssistantSlot } from './useAssistantSlot'
 
 const SRC = join(import.meta.dirname, '..')
@@ -695,6 +696,76 @@ describe('(9) the page sends no request header the chassis would drop', () => {
 
     for (const header of sent) {
       expect(carried, `the chassis drops ${header}, which the page may send`).toContain(header)
+    }
+  })
+})
+
+describe('(10) the page addresses nothing the chassis relay would refuse', () => {
+  /** The Go source, read once for the three declarations below. */
+  const chassis = () =>
+    readFileSync(join(SRC, '..', '..', 'internal', 'desk', 'modelrelay.go'), 'utf8')
+  const page = () => read('assistant/session.ts')
+
+  it('holds the colon method list equal to the chassis’, name for name', () => {
+    // **Two hand-mirrored closed lists, and containment is not enough here.**
+    // A method on the page's list and not the chassis' is a call the engine
+    // believes it made and the relay refused; one on the chassis' list and not
+    // the page's is a capability the desk grants and the page cannot reach. The
+    // part after a colon is a *verb*, so both directions matter: the lists are
+    // the same list, written twice because one is Go and one is TypeScript.
+    const declared = /var relayPathMethods = \[\]string\{([^}]*)\}/.exec(chassis())
+    expect(declared, 'relayPathMethods is declared in internal/desk/modelrelay.go').not.toBeNull()
+    const chassisMethods = [...declared![1]!.matchAll(/"([^"]+)"/g)].map((match) => match[1]!)
+    expect(chassisMethods.length).toBeGreaterThan(0)
+
+    const mirrored = /const RELAY_PATH_METHODS: readonly string\[\] = \[([^\]]*)\]/.exec(page())
+    expect(mirrored, 'RELAY_PATH_METHODS is declared in assistant/session.ts').not.toBeNull()
+    const pageMethods = [...mirrored![1]!.matchAll(/'([^']+)'/g)].map((match) => match[1]!)
+
+    expect([...pageMethods].sort()).toEqual([...chassisMethods].sort())
+  })
+
+  it('holds the one admitted query pair, and the kinds that admit it, equal to the chassis’', () => {
+    // The chassis says which literal and which kind in two places — the pair is
+    // a constant and the table is a switch — and the page mirrors both. A pair
+    // the page admitted on a kind the relay does not would be a request refused
+    // after it left the page; the reverse would be a stream the desk cannot ask
+    // for.
+    const go = chassis()
+    const pair = /relayStreamPair\s+= "([^"]+)"/.exec(go)
+    expect(pair, 'relayStreamPair is declared in internal/desk/modelrelay.go').not.toBeNull()
+    const mirroredPair = /const RELAY_STREAM_PAIR = '([^']+)'/.exec(page())
+    expect(mirroredPair, 'RELAY_STREAM_PAIR is declared in assistant/session.ts').not.toBeNull()
+    expect(mirroredPair![1]).toBe(pair![1])
+
+    // `relayExtraQueryPair` is a switch over kinds; every kind it names returns
+    // the pair, and every other kind returns nothing.
+    const table = /func relayExtraQueryPair\(kind string\) string \{([\s\S]*?)\n\}/.exec(go)
+    expect(table, 'relayExtraQueryPair is declared in internal/desk/modelrelay.go').not.toBeNull()
+    const admitting = [...table![1]!.matchAll(/case "([^"]+)":/g)].map((match) => match[1]!)
+    expect(admitting.length).toBeGreaterThan(0)
+
+    for (const kind of ASSISTANT_KINDS) {
+      const expected = admitting.includes(kind) ? '' : 'refused'
+      const asked = suffixProblem(`v1beta/models/m:streamGenerateContent?${pair![1]!}`, kind)
+      expect(
+        asked === '' ? '' : 'refused',
+        `the chassis ${admitting.includes(kind) ? 'admits' : 'refuses'} ${pair![1]!} on ${kind}`
+      ).toBe(expected)
+    }
+  })
+
+  it('refuses every method the chassis refuses, and admits the ones it admits', () => {
+    // The rule is about the path and is not gated on the kind, exactly as the
+    // chassis writes it: the kind decides the credential, and a mirror that read
+    // one to decide the other would be two rules where there is one.
+    const declared = /var relayPathMethods = \[\]string\{([^}]*)\}/.exec(chassis())
+    const methods = [...declared![1]!.matchAll(/"([^"]+)"/g)].map((match) => match[1]!)
+    for (const kind of ASSISTANT_KINDS) {
+      for (const method of methods) {
+        expect(suffixProblem(`v1beta/models/m:${method}`, kind), `${kind} ${method}`).toBe('')
+      }
+      expect(suffixProblem('v1beta/models/m:deleteModel', kind)).not.toBe('')
     }
   })
 })

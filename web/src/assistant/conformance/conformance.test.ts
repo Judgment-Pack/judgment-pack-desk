@@ -627,7 +627,7 @@ async function runLeg(
   let drainThrew = ''
   try {
     const ready = await connection.ready
-    const call = bindModelCall()
+    const call = bindModelCall(leg.api)
     // Sealed from here: the engine's chunk is imported under it, and every
     // handle it creates from here is tracked rather than waited on.
     seal = sealNetwork()

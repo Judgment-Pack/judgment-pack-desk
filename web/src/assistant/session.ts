@@ -23,6 +23,7 @@ import { chassisUrl } from '../files/client'
 import { DeskWebSocketTransport } from '../mcp/transport'
 import { sessionToken, socketURL } from '../mcp/McpProvider'
 import { allowedTools, gateTransport, type GuardrailNotice } from './toolGate'
+import type { EndpointKind } from '../config/deskConfig'
 import type {
   AssistantEvent,
   AssistantSession,
@@ -67,15 +68,64 @@ const MODEL_REQUEST_HEADERS: readonly string[] = [
 const MAX_SUFFIX = 256
 
 /**
- * The path suffix rule, mirrored from `relaySuffixProblem`.
+ * The methods a colon may introduce, mirrored from `relayPathMethods` in
+ * `internal/desk/modelrelay.go`.
+ *
+ * **Closed, and held equal to the chassis' own list by a test that reads the Go
+ * source** (`assistant/enforcement.test.ts`), exactly as the header lists are
+ * held. The part after a colon is a *verb*: an open list would let an engine ask
+ * the configured endpoint to do something nobody wrote down, with the stored
+ * credential attached — and a mirror that admitted one more method than the
+ * chassis would be a refusal that only ever happened on the far side.
+ */
+const RELAY_PATH_METHODS: readonly string[] = [
+  'generateContent',
+  'streamGenerateContent',
+  'countTokens'
+]
+
+/**
+ * The one query pair a relayed request may carry beside the desk's token, and
+ * the kinds that may carry it — mirrored from `relayStreamPair` and
+ * `relayExtraQueryPair`.
+ *
+ * **A literal and a table, both byte for byte.** The native Gemini wire asks for
+ * a server-sent-event stream with a query parameter and has nowhere else to put
+ * it; the other two protocols carry streaming in the request body and admit
+ * none. The chassis refuses anything else outright, for the reason it gives at
+ * length: no comparison this desk can write is the comparison every parser
+ * downstream makes, so exactly one fixed literal is admitted and everything else
+ * is refused rather than filtered.
+ */
+const RELAY_STREAM_PAIR = 'alt=sse'
+
+function relayExtraQueryPair(family: EndpointKind): string {
+  return family === 'gemini' ? RELAY_STREAM_PAIR : ''
+}
+
+/**
+ * The path suffix rule, mirrored from `relaySuffixProblem` — and the query rule
+ * beside it, mirrored from `relayQueryProblem` and `relayExtraQueryPair`.
  *
  * One or more segments of `[A-Za-z0-9._-]`: no dot segment, no empty segment,
- * no percent sign, no backslash, no query. It is checked **here** as well as on
- * the chassis because the point of the capability is that the engine cannot
- * address anything the desk did not agree to — a refusal that only happened on
- * the far side would be a refusal after the request left the page.
+ * no percent sign, no backslash. It is checked **here** as well as on the
+ * chassis because the point of the capability is that the engine cannot address
+ * anything the desk did not agree to — a refusal that only happened on the far
+ * side would be a refusal after the request left the page.
+ *
+ * **Two closed exceptions, and they are exactly the chassis'.** A colon may
+ * introduce one of `RELAY_PATH_METHODS` after a non-empty **final** segment, the
+ * way the native Gemini wire addresses a method; and the suffix may end in
+ * `?alt=sse`, once, on a `gemini` endpoint and on no other. A colon anywhere
+ * else, a second colon, a method outside the list, any other query, a second
+ * copy of the pair, or the pair on another family is refused here and nothing is
+ * sent.
+ *
+ * The family is the **desk's**, taken from the configured endpoint where the
+ * session is bound; an engine names a suffix and never a kind, so it cannot talk
+ * its way into a pair its endpoint does not admit.
  */
-export function suffixProblem(suffix: unknown): string {
+export function suffixProblem(suffix: unknown, family: EndpointKind): string {
   // **A primitive string, or nothing.** The signature said `string` and the
   // runtime did not check: a string-like object can answer an innocuous
   // `length` and `split()` while this function is looking and a different
@@ -90,10 +140,44 @@ export function suffixProblem(suffix: unknown): string {
   if (suffix.length > MAX_SUFFIX) {
     return `a model call's path is at most ${MAX_SUFFIX} bytes; this one is ${suffix.length}`
   }
-  for (const segment of suffix.split('/')) {
+  // **The query is split off first and compared as a whole**, byte for byte
+  // against one literal, because that is the one comparison with no second
+  // reading — the chassis' own argument for admitting a pair rather than
+  // filtering a query. `split` bounds it at two, so `a?b?c` keeps the second
+  // `?` inside the candidate pair and is refused for not being the literal.
+  const [path = '', ...rest] = suffix.split('?')
+  if (rest.length > 0) {
+    const admitted = relayExtraQueryPair(family)
+    if (rest.length > 1 || rest[0] !== admitted || admitted === '') {
+      return (
+        `a model call may carry no query of its own; the only pair a ${family} endpoint ` +
+        `admits is ${admitted === '' ? 'none' : admitted}, once`
+      )
+    }
+  }
+  if (path === '') return `a model call must name at least one path segment after ${RELAY_PREFIX}`
+  const segments = path.split('/')
+  for (const [index, raw] of segments.entries()) {
+    let segment = raw
     if (segment === '') return 'a model call\'s path may not carry an empty segment'
     if (segment === '.' || segment === '..') {
       return 'a model call\'s path may not carry a dot segment'
+    }
+    // The exception, taken at the **first** colon and only in the last segment,
+    // exactly as `relaySuffixProblem` takes it: `a:b:generateContent` leaves
+    // `b:generateContent` as the method, which is on no list, so a second colon
+    // refuses itself and there is no arithmetic to get wrong.
+    const colon = segment.indexOf(':')
+    if (colon !== -1) {
+      const name = segment.slice(0, colon)
+      const method = segment.slice(colon + 1)
+      if (index !== segments.length - 1 || name === '' || !RELAY_PATH_METHODS.includes(method)) {
+        return (
+          `a colon in a model call's path may only introduce one of ` +
+          `${RELAY_PATH_METHODS.join(', ')}, after a non-empty final segment`
+        )
+      }
+      segment = name
     }
     if (!/^[A-Za-z0-9._-]+$/.test(segment)) {
       return (
@@ -158,19 +242,31 @@ const CALL_FAILED =
  *   so the conformance session can replace every network global with a
  *   throwing sentinel for the whole of an engine's leg. An engine that reaches
  *   for one fails; this call still works.
+ *
+ * `family` is the configured endpoint's wire protocol, and it is a **parameter
+ * of the binding rather than of the call**: it decides whether the one query
+ * pair the relay admits may travel, and an engine that could name it would be
+ * an engine choosing what its endpoint admits. It is required rather than
+ * defaulted, because a default is a grant nobody wrote down.
  */
-export function bindModelCall(): ModelCall {
+export function bindModelCall(family: EndpointKind): ModelCall {
   const send = globalThis.fetch.bind(globalThis)
   return async (suffix: string, request: ModelRequest): Promise<Response> => {
-    const problem = suffixProblem(suffix)
+    const problem = suffixProblem(suffix, family)
     if (problem !== '') throw new Error(problem)
     const headers: Record<string, string> = {}
     for (const [name, value] of Object.entries(request.headers ?? {})) {
       if (MODEL_REQUEST_HEADERS.includes(name.toLowerCase())) headers[name] = value
     }
+    // **The desk builds the address, pair included.** The suffix has already
+    // been held to the chassis' own rule, so what is split here is a path and at
+    // most the one admitted literal; `chassisUrl` writes the token first and the
+    // pair after it, which is the order the relay reads them in.
+    const [path = '', pair] = suffix.split('?')
+    const extra = pair === undefined ? {} : Object.fromEntries([pair.split('=') as [string, string]])
     let answered: Response
     try {
-      answered = await send(chassisUrl(`${RELAY_PREFIX}/${suffix}`), {
+      answered = await send(chassisUrl(`${RELAY_PREFIX}/${path}`, extra), {
         method: 'POST',
         headers,
         body: request.body,
