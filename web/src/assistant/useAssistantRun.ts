@@ -305,7 +305,7 @@ export function useAssistantRun(options: {
               testPrompt: testPrompt ?? '',
               tools: ready.tools,
               callTool: ready.callTool,
-              model: { family: endpoint.kind, model: endpoint.model, call: bindModelCall() },
+              model: { family: endpoint.kind, model: endpoint.model, call: bindModelCall(endpoint.kind) },
               // **Normalized here, once.** The engine is handed the desk's own
               // table's result rather than a tier it would have to interpret.
               thinking: normalize(thinking, endpoint.kind),

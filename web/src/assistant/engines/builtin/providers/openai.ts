@@ -17,7 +17,7 @@
  * one: a whole answer is echoed as the object it arrived as, and a streamed one
  * is reassembled with exactly the member names the deltas used.
  */
-import { servedSchema, withAbort } from '../../contract'
+import { servedSchemaFor, withAbort } from '../../contract'
 import { isEventStream, sseEvents } from './sse'
 import { ModelHttpError, protocolHeaders } from './types'
 import type { McpTool } from '../../../engine'
@@ -70,20 +70,27 @@ function callsOf(raw: OpenAiToolCall[]): ToolCall[] {
 
 function turnOf(message: OpenAiMessage): ModelTurn {
   const text = typeof message.content === 'string' ? message.content : ''
+  const reasoning = reasoningOf(message)
   return {
     text,
     calls: callsOf(message.tool_calls ?? []),
     // As received, with whatever reasoning member the endpoint put on it.
     assistant: message,
-    reasoning: reasoningOf(message),
+    reasoning,
+    // This protocol carries reasoning as prose and nothing else, so a passage
+    // and the fact of one are the same thing here.
+    reasoned: reasoning.length > 0,
     // Signatures are Anthropic's; this protocol has none.
     signatures: []
   }
 }
 
+/** The one path this protocol posts to, whatever the request asks for. */
+const SUFFIX = 'chat/completions'
+
 export const openai: Provider = {
   family: 'openai-compatible',
-  suffix: 'chat/completions',
+  path: () => SUFFIX,
 
   tools(defs: McpTool[]) {
     // The schema is the runtime's own `inputSchema`, passed through untouched.
@@ -95,7 +102,7 @@ export const openai: Provider = {
       function: {
         name: def.name,
         description: def.description ?? '',
-        parameters: servedSchema(def)
+        parameters: servedSchemaFor('openai-compatible', def)
       }
     }))
   },
@@ -123,7 +130,7 @@ export const openai: Provider = {
     // this loop open.
     const response = await withAbort(
       () =>
-        options.call(openai.suffix, {
+        options.call(SUFFIX, {
           headers: protocolHeaders(),
           body: JSON.stringify(body),
           signal: options.signal
@@ -131,7 +138,7 @@ export const openai: Provider = {
       options.signal
     )
     if (!response.ok) {
-      throw new ModelHttpError(response.status, await withAbort(() => response.text(), options.signal), openai.suffix)
+      throw new ModelHttpError(response.status, await withAbort(() => response.text(), options.signal), SUFFIX)
     }
 
     if (!isEventStream(response)) {
@@ -200,7 +207,14 @@ export const openai: Provider = {
         break
       }
     }
-    return { text, calls, assistant, reasoning: passages, signatures: [] }
+    return {
+      text,
+      calls,
+      assistant,
+      reasoning: passages,
+      reasoned: passages.length > 0,
+      signatures: []
+    }
   },
 
   appendTurn(messages, turn, results) {

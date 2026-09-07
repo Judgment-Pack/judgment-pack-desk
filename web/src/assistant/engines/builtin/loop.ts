@@ -25,7 +25,9 @@ import {
   extractProposal,
   guardedCallTool,
   isCancelled,
+  narrowingEvents,
   openRun,
+  schemasShown,
   textOf,
   withAbort
 } from '../contract'
@@ -39,12 +41,15 @@ import {
   critiqueOnProposal,
   openCritique
 } from '../../refutation'
+import { refusedSchemaKeyword, refusedSchemaSentence } from '../../geminiSchema'
 import { anthropic } from './providers/anthropic'
+import { gemini } from './providers/gemini'
 import { openai } from './providers/openai'
 import { ModelHttpError } from './providers/types'
 import type { Proposal } from '../contract'
 import type { Critique, CritiqueRecorder } from '../../refutation'
 import type { ThinkingSlot } from '../../thinking'
+import type { AssistantEngine } from '../../../config/deskConfig'
 import type { CallTool } from '../../engine'
 import type { ModelTurn, Provider, ToolCall } from './providers/types'
 import type { AssistantEvent, AssistantSession } from '../../engine'
@@ -113,8 +118,22 @@ async function callSafely(callTool: CallTool, call: ToolCall): Promise<ToolOutco
   }
 }
 
+/**
+ * The one provider a family gets, and no substitution.
+ *
+ * Total over the three kinds a `desk.json` may name, so a family with no
+ * provider does not compile — the same rule the engine registry keeps, and for
+ * the same reason: a desk configured for one wire quietly speaking another is
+ * a session whose transcript describes a request nobody made.
+ */
+const PROVIDERS: Record<AssistantSession['model']['family'], Provider> = {
+  'openai-compatible': openai,
+  anthropic,
+  gemini
+}
+
 function providerFor(family: AssistantSession['model']['family']): Provider {
-  return family === 'anthropic' ? anthropic : openai
+  return PROVIDERS[family]
 }
 
 /**
@@ -135,18 +154,30 @@ function providerFor(family: AssistantSession['model']['family']): Provider {
  * stops listening closes this generator, and closing it is what it means for
  * that consumer to be owed no terminal event.
  */
-export function runBuiltin(session: AssistantSession): AsyncIterable<AssistantEvent> {
+export function runBuiltin(
+  session: AssistantSession,
+  /**
+   * The id the registry loaded this engine under.
+   *
+   * **Passed in rather than imported**, because what an engine removes from a
+   * schema is a property of the engine and the loop must not have a second
+   * opinion about which engine it is — and because importing the engine object
+   * here would be a cycle through the module that imports this one.
+   */
+  id: AssistantEngine
+): AsyncIterable<AssistantEvent> {
   // **One gate, reached four ways.** The consumer's `return()`, its `throw()`,
   // the session's own signal and the run's natural end all close the same gate,
   // once, synchronously — and a session already aborted when this is called
   // closes it before a provider is built or a request is made.
   const gate = openRun(session, () => {})
-  return eventIterator({ gate, open: () => builtinEvents(session, gate.signal) })
+  return eventIterator({ gate, open: () => builtinEvents(session, gate.signal, id) })
 }
 
 async function* builtinEvents(
   session: AssistantSession,
-  signal: AbortSignal
+  signal: AbortSignal,
+  id: AssistantEngine
 ): AsyncGenerator<AssistantEvent> {
   try {
     // The tier, held by the desk. This loop asks it for members and yields
@@ -160,6 +191,13 @@ async function* builtinEvents(
     const callTool = guardedCallTool(session, signal)
     const provider = providerFor(session.model.family)
     const tools = provider.tools(session.tools)
+    // **Said before the model is asked anything**, and only where a tool
+    // actually lost a keyword: on a wire whose schema dialect cannot carry one
+    // the runtime served, the author is told which, rather than left to find
+    // out from a proposal that reads as though the contract were wider.
+    for (const notice of narrowingEvents(id, session.model.family, session.tools)) {
+      yield notice
+    }
     const messages: unknown[] = provider.initialMessages(SYSTEM, session.prompt)
     let proposal: Proposal | null = null
     let turns = 0
@@ -196,7 +234,12 @@ async function* builtinEvents(
         } catch (cause) {
           if (!(cause instanceof ModelHttpError)) throw cause
           const refusal = slot.refused(cause.status, cause.endpointMessage)
-          if (refusal.kind === 'other') throw cause
+          // **A schema keyword the removal list does not name is reported, not
+          // stripped.** `assistant/geminiSchema.ts` holds the ruling; this is
+          // the one line that carries it — a 400 naming a keyword this desk
+          // actually sent becomes an error a person can act on, rather than the
+          // desk widening its idea of the runtime's contract on being refused.
+          if (refusal.kind === 'other') throw schemaRefusal(cause, session) ?? cause
           // One line, once, whatever brought it about. A dialect fallback says
           // nothing: the desk asked in the other spelling and the session still
           // thinks.
@@ -217,7 +260,10 @@ async function* builtinEvents(
       // The **turn** is the unit of evidence about an endpoint, and whether it
       // produced an answer of its own is half of it: a turn that only called a
       // tool says nothing about whether an endpoint will reason.
-      if (reply.reasoning.length > 0) slot.sawReasoning()
+      //
+      // `reasoned` and not the passage count: a signed thought part with no text
+      // is the endpoint reasoning even though there is nothing to show for it.
+      if (reply.reasoned) slot.sawReasoning()
       const noticed = slot.turnEnded(reply.text !== '')
       if (noticed !== null) yield noticed
 
@@ -341,7 +387,7 @@ async function* refute(options: {
       yield { type: 'reasoning', text: passage, done: true }
     }
     // The critic's turns are this session's turns, on this session's endpoint.
-    if (reply.reasoning.length > 0) options.slot.sawReasoning()
+    if (reply.reasoned) options.slot.sawReasoning()
     const noticed = options.slot.turnEnded(reply.text !== '')
     if (noticed !== null) yield noticed
     if (reply.calls.length === 0) {
@@ -373,6 +419,29 @@ async function* refute(options: {
   const critique = recorder.critique(modelText)
   yield critiqueEvent(critique)
   return critique
+}
+
+/**
+ * The refusal a served schema earned, or nothing.
+ *
+ * Two conditions and both required, exactly as the tier's classifier has: a 400
+ * whose message names a keyword this desk **actually sent**. Anything else is
+ * the failure it already was, reported unchanged.
+ */
+function schemaRefusal(cause: ModelHttpError, session: AssistantSession): Error | null {
+  // **Only on the family whose wire takes a schema subset.** The classifier
+  // matches a substring, so on the other two families a 400 saying "unsupported
+  // response type" names `type`, which this desk certainly sent — and the real
+  // failure was being rewritten into a sentence about a Gemini removal list
+  // that has nothing to do with it. A rule about one wire's dialect belongs to
+  // that wire.
+  if (session.model.family !== 'gemini') return null
+  const keyword = refusedSchemaKeyword(
+    cause.status,
+    cause.endpointMessage,
+    schemasShown(session.model.family, session.tools)
+  )
+  return keyword === '' ? null : new Error(refusedSchemaSentence(keyword))
 }
 
 /**

@@ -11,7 +11,9 @@ import type { AssistantEvent, AssistantSession, Engine } from '../../engine'
 export const builtin: Engine = {
   id: 'builtin',
   start(session: AssistantSession): AsyncIterable<AssistantEvent> {
-    return runBuiltin(session)
+    // The id travels with the session: what a loop removes from a schema is a
+    // property of the engine, and the loop must not decide which engine it is.
+    return runBuiltin(session, builtin.id)
   }
 }
 

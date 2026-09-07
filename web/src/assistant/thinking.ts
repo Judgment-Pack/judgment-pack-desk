@@ -13,16 +13,27 @@
  * wire; it never chooses a parameter, never decides what a 400 meant, and never
  * writes a line about the tier.
  *
- * **`off` is expressed by omission, everywhere.** Anthropic rejects
- * `{"type":"disabled"}` on the models that always think, and several
- * OpenAI-compatible endpoints answer 400 to `reasoning_effort: "none"`, so
- * *send nothing* is the only spelling of off that every endpoint accepts. That
- * is why "this model always thinks" is **detected from reasoning arriving with
- * the tier off** rather than from a refusal: with the tier off there is no
- * request for an endpoint to refuse.
+ * **`off` is expressed by omission on two families, and by a member on the
+ * third.** Anthropic rejects `{"type":"disabled"}` on the models that always
+ * think, and several OpenAI-compatible endpoints answer 400 to
+ * `reasoning_effort: "none"`, so *send nothing* is the only spelling of off
+ * those two accept. On the native Gemini wire the opposite is true: **omission
+ * means thinking**, because the models that carry a `thinkingConfig` at all
+ * reason by default, so "send nothing" would be asking for thinking by
+ * accident. Off is therefore `thinkingBudget: 0` there — the field the API
+ * reference documents for exactly this — and the difference is stated rather
+ * than smoothed over, because it is the reason the table is per family.
+ *
+ * That, in turn, is why "this model always thinks" has two ways to be reached.
+ * On the two omitting families it is **detected from reasoning arriving with
+ * the tier off**: with nothing sent there is no request for an endpoint to
+ * refuse. On the Gemini wire it may also be **the endpoint refusing to be
+ * turned off** — a 400 naming the member, at every spelling this desk knows —
+ * and that one is immediate, because a refusal is the endpoint saying so.
  *
  * Ported from the bake-off's `none` prototype (`fixture/THINKING-SPEC.md`, and
- * `none/src/thinking.ts`), reduced to the two families this desk configures.
+ * `none/src/thinking.ts`), and extended to the third family this desk
+ * configures.
  */
 import type { EndpointKind, ThinkingTier } from '../config/deskConfig'
 import type { AssistantEvent, AssistantSession } from './engine'
@@ -39,15 +50,24 @@ export type ThinkingState = 'off' | 'on' | 'ultra' | 'always' | 'unavailable'
 /**
  * The endpoint's vocabulary. One slot tier, three spellings.
  *
- * The families are the desk's two — `openai-compatible` and `anthropic` — and
- * the second has two dialects because the depth moved between model
- * generations: current models take `thinking: {type: "adaptive"}` with the
- * depth in a **sibling** `output_config`, and 4.5-era models take a token
- * budget inside the thinking member and reject the adaptive spelling. There is
- * no capability endpoint on either API, so the probe is the first real request
+ * The families are the desk's three, and two of them have two dialects each,
+ * both for the same reason: the depth moved between model generations and
+ * neither API has a capability endpoint, so the first real request is the probe
  * and the fallback is this list.
+ *
+ * On `anthropic`, current models take `thinking: {type: "adaptive"}` with the
+ * depth in a **sibling** `output_config`, and 4.5-era models take a token
+ * budget inside the thinking member and reject the adaptive spelling. On
+ * `gemini`, `generationConfig.thinkingConfig` carries either a
+ * `thinkingBudget` in tokens or a `thinkingLevel` out of a small enumeration —
+ * the newer spelling — and a model that takes one answers 400 to the other.
  */
-export type ThinkingDialect = 'openai' | 'anthropic-adaptive' | 'anthropic-enabled'
+export type ThinkingDialect =
+  | 'openai'
+  | 'anthropic-adaptive'
+  | 'anthropic-enabled'
+  | 'gemini-budget'
+  | 'gemini-level'
 
 /** What one (family, tier) pair puts on the wire, and what that is called. */
 export interface WireThinking {
@@ -69,10 +89,43 @@ export interface WireThinking {
 export const RESPONSE_TOKENS = 4096
 
 /**
+ * The two thinking budgets the Gemini dialect asks for, in tokens.
+ *
+ * **The desk's choice inside a documented field, and it is labelled as one.**
+ * `thinkingConfig.thinkingBudget` is an integer token allowance in the API
+ * reference; the *range* is per model and the reference does not state one that
+ * holds across the family, so these are numbers chosen to be an ordinary
+ * working depth and a deep one rather than numbers quoted from anywhere. A
+ * model whose range excludes one of them answers 400 naming the member, and the
+ * desk falls back to the level spelling and then degrades — which is the same
+ * path a model that has no budget field at all takes. See the README.
+ */
+export const GEMINI_BUDGET: Readonly<Record<'on' | 'ultra', number>> = {
+  on: 8192,
+  ultra: 24576
+}
+
+/**
+ * The two thinking levels the other Gemini dialect asks for.
+ *
+ * The enumeration is `minimal`, `low`, `medium`, `high` — four values, of which
+ * a given model advertises a subset — so `on` is the middle of it and `ultra`
+ * the top. `minimal` is what `off` sends on this dialect: the enumeration has
+ * no "none" in it, and the desk asks for the least this spelling can express
+ * rather than inventing a fifth value.
+ */
+export const GEMINI_LEVEL: Readonly<Record<ThinkingTier, string>> = {
+  off: 'minimal',
+  on: 'medium',
+  ultra: 'high'
+}
+
+/**
  * **The table.** One place, both engines, every family.
  *
- * `null` for `off`, because off is omission. `high` and `xhigh` are the two
- * efforts the desk's two tiers mean.
+ * `null` for `off` on the two families where off is omission; a real member on
+ * `gemini`, where omission means thinking and the only way to ask for none is
+ * to ask. `high` and `xhigh` are the two efforts the desk's two tiers mean.
  *
  * **The enabled dialect sets two numbers, and it has to.** Anthropic's
  * `budget_tokens` must fit *below* the request's `max_tokens` — the budget is
@@ -81,11 +134,45 @@ export const RESPONSE_TOKENS = 4096
  * requiring that dialect refuses. Both numbers are therefore this table's, per
  * tier: the budget, and the budget plus the desk's own response allowance. The
  * adaptive dialect needs neither, because there is no budget in it.
+ *
+ * **The Gemini members are named and not placed.** What comes back is
+ * `{thinkingConfig: …}`, and each engine puts it where its wire wants it — under
+ * `generationConfig` on the native wire, under `providerOptions.google` through
+ * the SDK. The table says *what* the tier means; an engine says *where*, which
+ * is the same division the other two families already keep.
  */
 export function wireFor(tier: ThinkingTier, dialect: ThinkingDialect): WireThinking | null {
-  if (tier === 'off') return null
+  const geminiPath = 'generationConfig.thinkingConfig'
+  if (tier === 'off') {
+    // Off is omission on the two families that accept it as one, and a member
+    // on the one that does not. See the module comment.
+    if (dialect === 'gemini-budget') {
+      return {
+        members: { thinkingConfig: { thinkingBudget: 0 } },
+        expect: { path: geminiPath, value: { thinkingBudget: 0 } }
+      }
+    }
+    if (dialect === 'gemini-level') {
+      return {
+        members: { thinkingConfig: { thinkingLevel: GEMINI_LEVEL.off } },
+        expect: { path: geminiPath, value: { thinkingLevel: GEMINI_LEVEL.off } }
+      }
+    }
+    return null
+  }
   const effort = tier === 'ultra' ? 'xhigh' : 'high'
   switch (dialect) {
+    case 'gemini-budget': {
+      // `includeThoughts` is what makes the thought summaries arrive at all;
+      // the budget is how deep they go. Both, or the tier asks for thinking
+      // nobody can read.
+      const thinkingConfig = { includeThoughts: true, thinkingBudget: GEMINI_BUDGET[tier] }
+      return { members: { thinkingConfig }, expect: { path: geminiPath, value: thinkingConfig } }
+    }
+    case 'gemini-level': {
+      const thinkingConfig = { includeThoughts: true, thinkingLevel: GEMINI_LEVEL[tier] }
+      return { members: { thinkingConfig }, expect: { path: geminiPath, value: thinkingConfig } }
+    }
     case 'openai':
       return {
         members: { reasoning_effort: effort },
@@ -121,22 +208,37 @@ export function wireFor(tier: ThinkingTier, dialect: ThinkingDialect): WireThink
  * session needs is legal and harmless, where a *missing* one is not a request
  * at all.
  */
-export const TIER_MEMBERS: readonly string[] = ['reasoning_effort', 'thinking', 'output_config']
+export const TIER_MEMBERS: readonly string[] = [
+  'reasoning_effort',
+  'thinking',
+  'output_config',
+  'thinkingConfig'
+]
 
 /** The dialect a family is tried at first. */
 export function firstDialect(family: EndpointKind): ThinkingDialect {
-  return family === 'anthropic' ? 'anthropic-adaptive' : 'openai'
+  switch (family) {
+    case 'anthropic':
+      return 'anthropic-adaptive'
+    case 'gemini':
+      return 'gemini-budget'
+    default:
+      return 'openai'
+  }
 }
 
 /**
  * The one fallback there is, or nothing.
  *
  * ADR-0001 puts "the dialect fallback between thinking spellings" in the desk
- * on every engine. It is **one** step: adaptive, then the token budget, then
- * the endpoint has no thinking this desk knows how to ask for.
+ * on every engine. It is **one** step per family: adaptive then the token
+ * budget on Anthropic, the token budget then the level on Gemini, and after
+ * that the endpoint has no thinking this desk knows how to ask for.
  */
 export function nextDialect(dialect: ThinkingDialect): ThinkingDialect | null {
-  return dialect === 'anthropic-adaptive' ? 'anthropic-enabled' : null
+  if (dialect === 'anthropic-adaptive') return 'anthropic-enabled'
+  if (dialect === 'gemini-budget') return 'gemini-level'
+  return null
 }
 
 /**
@@ -151,7 +253,11 @@ const THINKING_MEMBERS: readonly string[] = [
   'thinking',
   'reasoning_effort',
   'output_config',
-  'budget_tokens'
+  'budget_tokens',
+  'thinkingConfig',
+  'thinkingBudget',
+  'thinkingLevel',
+  'includeThoughts'
 ]
 
 /** Every name this desk actually sent, one level down as well as at the top. */
@@ -257,9 +363,24 @@ export function isTruncatedSignature(sent: string, carried: string): boolean {
  * reader below all have to agree — a second spelling of "this did not happen"
  * is how a reader learns to skip the line.
  */
-export const THINKING_ALWAYS =
-  'this model always thinks: no thinking parameter was sent at tier "off" and the endpoint ' +
-  'returned reasoning anyway'
+export const THINKING_ALWAYS = 'this model always thinks'
+
+/**
+ * The two ways the desk reaches that state, as the reasons it prints after it.
+ *
+ * **The head is the state and the reason is the evidence**, and they are two
+ * strings because there are now two kinds of evidence. It used to be one
+ * sentence with the evidence welded into it — "no thinking parameter was sent
+ * at tier off and the endpoint returned reasoning anyway" — which stopped being
+ * true the moment a family arrived where off *is* a parameter. A sentence that
+ * describes the wrong observation is worse than a shorter one.
+ */
+export const ALWAYS_FROM_ABSENCE =
+  'the tier asked for no thinking and the endpoint returned reasoning anyway'
+
+export function alwaysFromRefusal(status: number): string {
+  return `the endpoint answered ${status} to every spelling of the parameter that turns thinking off`
+}
 
 export const THINKING_UNAVAILABLE = 'thinking is unavailable for this endpoint'
 
@@ -380,6 +501,19 @@ export function openThinking(session: Pick<AssistantSession, 'thinking' | 'model
   let dialect = firstDialect(session.model.family)
   let unavailable = false
   let always = false
+  /**
+   * The endpoint refused the member that asks it **not** to think, at every
+   * spelling this desk knows.
+   *
+   * Separate from `always`, and the difference is what the next request
+   * carries. `always` reached by *absence* changes nothing about what the desk
+   * asks for: the file said off, the desk keeps asking for off, and the model
+   * keeps thinking anyway. `always` reached by a *refusal* means there is no
+   * longer anything to send, so the member comes off — which is the same rule
+   * the degrade follows, and it is what keeps "the refused member is never sent
+   * again" true on this family as well.
+   */
+  let offRefused = false
   let announced = false
   /** Reasoning seen in the turn now in progress. */
   let reasonedThisTurn = false
@@ -393,7 +527,10 @@ export function openThinking(session: Pick<AssistantSession, 'thinking' | 'model
     return { type: 'thinking_unavailable', detail: thinkingNotice(state, reason) }
   }
 
-  const wire = () => (tier === 'off' || unavailable ? null : wireFor(tier, dialect))
+  // `wireFor` already answers null at `off` on the two families where off is
+  // omission, so there is no tier test here: what this adds is the two states
+  // in which the desk has stopped asking at all.
+  const wire = () => (unavailable || offRefused ? null : wireFor(tier, dialect))
 
   return {
     tier,
@@ -411,8 +548,25 @@ export function openThinking(session: Pick<AssistantSession, 'thinking' | 'model
         // asked in one spelling and asks again in the other; the session still
         // thinks, and a line about it would be a line about this desk's
         // vocabulary rather than about the endpoint.
+        //
+        // **And it runs at `off` too, before anything is concluded.** A 400
+        // naming `thinkingBudget` may be "this model cannot be turned off" or
+        // "this model spells it `thinkingLevel`", and those are not the same
+        // endpoint. Trying the other spelling first is what tells them apart;
+        // concluding on the first refusal would label a Gemini 3 model as one
+        // that always thinks because the desk used a 2.5-era field name.
         dialect = next
         return { kind: 'retry' }
+      }
+      if (tier === 'off') {
+        // **The endpoint will not be turned off, and said so.** That is the
+        // `always` state reached by a refusal rather than by absence, and it is
+        // immediate for the reason every refusal is: the endpoint is telling
+        // the desk something rather than the desk inferring it. The member comes
+        // off with it — there is nothing left to ask.
+        always = true
+        offRefused = true
+        return { kind: 'degrade', event: notice('always', alwaysFromRefusal(status)) }
       }
       unavailable = true
       // The status, and the desk's own sentence. The endpoint's body is
@@ -442,7 +596,7 @@ export function openThinking(session: Pick<AssistantSession, 'thinking' | 'model
         reasoningRun = reasoned ? reasoningRun + 1 : 0
         if (always || reasoningRun < PERMANENCE) return null
         always = true
-        return notice('always', '')
+        return notice('always', ALWAYS_FROM_ABSENCE)
       }
       if (unavailable) return null
       if (reasoned) {

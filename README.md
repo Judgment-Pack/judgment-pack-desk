@@ -1484,8 +1484,13 @@ puts real parameters on every request and runs the refutation pass below.
 key custody; the Assistant tab, with propose and accept-into-draft; the engine
 slot itself, with `vercel` and `builtin` both certified against the conformance
 session; **Describe it** in the Create dialog, which runs the same session with
-no draft and hands what comes back to Create rather than to a diff; and the
-thinking tier with its refutation pass.
+no draft and hands what comes back to Create rather than to a diff; the thinking
+tier with its refutation pass; and the native Gemini wire on **both** engines —
+function declarations, thought summaries streamed into the tab as reasoning,
+thought signatures carried back verbatim across tool turns, and the tier mapped
+to Gemini's own thinking configuration — certified by the same session that
+certifies the other two families. What is **not** here yet is a model chooser:
+the model name is the file's, typed.
 
 **Admin › Assistant** shows the configured endpoint, its protocol, its model
 and its tools with the file each came from, the engine and the tier, the exact JSON to paste, the key
@@ -1664,17 +1669,40 @@ whole of it:
 | `anthropic` | `on` | `thinking: {"type":"adaptive"}` with `output_config: {"effort":"high"}` |
 | `anthropic` | `ultra` | the same, with `"effort":"xhigh"` |
 | `anthropic`, after a 400 | `on` / `ultra` | `thinking: {"type":"enabled","budget_tokens":8000}` / `16000` |
-| either | `off` | **nothing at all** |
+| `gemini` | `on` | `generationConfig.thinkingConfig: {"includeThoughts":true,"thinkingBudget":8192}` |
+| `gemini` | `ultra` | the same, with `"thinkingBudget":24576` |
+| `gemini`, after a 400 | `on` / `ultra` | `{"includeThoughts":true,"thinkingLevel":"medium"}` / `"high"` |
+| `gemini` | `off` | `{"thinkingBudget":0}`, or `{"thinkingLevel":"minimal"}` after a 400 |
+| the other two | `off` | **nothing at all** |
 
-`off` is expressed by **omission** everywhere, and that is not a shortcut:
+`off` is expressed by **omission on two families**, and that is not a shortcut:
 Anthropic rejects `{"type":"disabled"}` on the models that always think, and
 several OpenAI-compatible endpoints answer 400 to `reasoning_effort: "none"`, so
-*send nothing* is the only spelling of off that every endpoint accepts.
+*send nothing* is the only spelling of off those two accept.
+
+**On the native Gemini wire the opposite is true, and off is a member.** A model
+that carries a `thinkingConfig` at all reasons by default there, so sending
+nothing asks for thinking by accident — which makes `thinkingBudget: 0` the only
+honest spelling of off on that family. The asymmetry is stated rather than
+smoothed over, because it is the reason the table is per family at all, and
+because it gives *this model always thinks* its first real subject: see the
+state table below.
+
+The **budget numbers on the Gemini rows are this desk's choice inside a
+documented field, not a range quoted from anywhere.**
+`generationConfig.thinkingConfig.thinkingBudget` is an integer token allowance
+in the API reference; the allowed range is per model and the reference states no
+range that holds across the family, so 8192 and 24576 are simply an ordinary
+working depth and a deep one. A model whose range excludes one of them answers
+400 naming the member, and the desk falls back to the level spelling and then
+degrades — the same path a model with no budget field at all takes.
 
 The depth on the Anthropic family lives in a **sibling** member on current
-models and inside the thinking member on 4.5-era ones, so the desk tries the
-adaptive spelling first and, on a 400 that names a member it actually sent,
-**falls back once** to the token budget. A fallback says nothing in the tab: the
+models and inside the thinking member on 4.5-era ones, and on the Gemini family
+it is a token budget on one model generation and a `thinkingLevel` out of
+`minimal | low | medium | high` on the next. So each of those two families has
+two spellings, the desk tries one and, on a 400 that names a member it actually
+sent, **falls back once** to the other. A fallback says nothing in the tab: the
 desk asked in the other spelling and the session still thinks.
 
 **Five states, three of them selectable.** The last two are the desk's to report
@@ -1685,8 +1713,16 @@ put in a file:
 | --- | --- |
 | `off` | the file said so, or said nothing |
 | `on` / `ultra` | the file said so and the endpoint did it |
-| **this model always thinks** | the tier is `off`, **no** thinking parameter was sent, and reasoning came back anyway |
-| **unavailable for this endpoint** | a 400 or 422 naming a member the desk sent, at every spelling it knows; or the first turn carried no reasoning block at all; or a thinking signature came back truncated |
+| **this model always thinks** — from absence | the tier is `off`, the desk asked for no thinking, and reasoning came back anyway on two consecutive answering turns |
+| **this model always thinks** — from a refusal | the tier is `off` and the endpoint answered 400 to the member that turns thinking off, **at every spelling the desk knows**. Gemini only, because it is the only family where off is a member at all |
+| **unavailable for this endpoint** | a 400 naming a member the desk sent, at every spelling it knows; or two consecutive answering turns carried no reasoning at all; or a thinking signature came back truncated |
+
+The refusal road to *always thinks* runs the dialect fallback **first**, and that
+is not a formality: a 400 naming `thinkingBudget` is equally *this model cannot
+be turned off* and *this model spells it `thinkingLevel`*, and only trying the
+other spelling tells them apart. Reached that way the member comes off — there is
+nothing left to ask. Reached from absence nothing is withdrawn: the file said
+off, nothing refused it, and every later request goes on saying so.
 
 **The degrade happens once, visibly, and the session completes.** The refused
 member is never sent again — the requests carrying a tier parameter are a prefix
@@ -1704,17 +1740,160 @@ character count, and opens on a click. **Reasoning text never reaches the
 runtime** — it is for the person reading the tab, and the runtime is asked about
 documents.
 
-**Thinking blocks come back complete and unmodified**, which is Anthropic's own
-rule and the reason the built-in engine echoes the assistant turn exactly as it
-received it rather than rebuilding it: a `redacted_thinking` block survives
-because nothing filters by block type, and a signature split across two
-`signature_delta` events is concatenated rather than the last fragment kept. The
+**Thinking blocks come back complete and unmodified**, which is both signing
+wires' own rule — Anthropic's and Google's — and the reason the built-in engine
+echoes the model's turn exactly as it received it rather than rebuilding it: a
+`redacted_thinking` block survives because nothing filters by block type, a
+Gemini `thoughtSignature` survives because the part it sits on is the part that
+goes back, and an Anthropic signature split across two `signature_delta` events
+is concatenated rather than the last fragment kept.
+
+**On the Gemini wire that means a signed part is never joined to anything**, and
+that is Google's own rule rather than a precaution: a signed part is not merged
+with an unsigned one and two signed parts are not combined, because a signature
+certifies the exact bytes it came with. The pieces of an *unsigned* summary are
+still joined — that is what a streamed continuation is — and the joining a
+*reader* wants happens separately, in the passage the tab shows, so the wire
+keeps the part count, the order, the text and the signatures exactly as they
+arrived. A signature rides on one of two parts here: a thought summary that
+still has its text, or the **first `functionCall` part** of a turn, which is
+where function calling puts it and where later parallel calls do not. The
 `vercel` engine cannot make its SDK reassemble one (`vercel/ai#19663`, still
 present at `ai@7.0.93` and measured by this repository's own suite), so the desk
-**detects** the truncation instead: fragments are ledgered as they arrive, each
-outgoing body is compared with them, a block whose signature came back as a
-fragment is removed rather than sent, and the session degrades once with the
-reason. That test is written to go red if the SDK is ever fixed in silence.
+**detects** the truncation instead: fragments are ledgered as they arrive — under
+`anthropic.signature` on one wire and `google.thoughtSignature` on the other,
+from one table — each outgoing body is compared with them, a block whose
+signature came back as a fragment is removed rather than sent, and the session
+degrades once with the reason. That test is written to go red if the SDK is ever
+fixed in silence.
+
+The scripted endpoint refuses a continuation that dropped, truncated or
+misplaced a signed part, so every Gemini thinking leg **gates** on the replay
+rather than merely reporting it — at all three placements.
+
+### Gemini's schema subset, and what the model is shown
+
+`tools[].functionDeclarations[].parameters` on the native Gemini wire is an
+**OpenAPI subset**, not JSON Schema, and an endpoint answers 400 to keywords an
+ordinary schema carries. Every one of the runtime's own five declares
+`additionalProperties: false`, so on this family the choice is between removing
+something and not running at all.
+
+**The ruling: a closed, documented removal list, on this family only.** The
+keywords are `$schema`, `$id`, `additionalProperties`, `const`, `examples` and
+`patternProperties` — `web/src/assistant/geminiSchema.ts`, applied at every
+depth, and applied to nothing else. A property whose *name* happens to be one of
+them is left alone, because under `properties` the keys are the author's words
+rather than JSON Schema's. Nothing is added, nothing is re-typed, and no value
+is changed.
+
+**What that costs, and it is stated rather than glossed:** on this family the
+model is shown **the runtime's contract minus exactly those keywords**. Without
+`additionalProperties: false` a member nobody declared looks acceptable; without
+`const` a fixed value looks free. It changes nothing about what is *enforced* —
+the ToolGate rewrites and refuses on the wire, and the runtime validates every
+call it receives — so the worst case is a model proposing a call the runtime
+then refuses, which is a turn spent rather than a guarantee lost.
+
+`oneOf` is deliberately **not** on the list. Some models refuse it and some do
+not, which makes it exactly the case the list must not grow to cover: a union
+removed reads as *anything at all*, so a contract that said "one of these three"
+would be shown as unconstrained. It travels — and **a keyword the list does not
+name is reported and never stripped**: a 400 whose message names a keyword this
+desk actually sent becomes an `error` event naming it, with the closed list
+quoted, rather than the desk widening its idea of the runtime's contract on
+being refused. Both engines carry that rule and both have a conformance leg for
+it.
+
+**The two engines do not show the model the same contract, and the desk says
+which.** `@ai-sdk/google` does not send the schema it is given: it rebuilds it
+through its own converter, which copies an allow-list of keywords and drops the
+rest. So on the `vercel` engine `pattern`, `maximum`, `uniqueItems`, the
+conditionals and the annotations below never reach the model either, and a tool
+whose schema declares an object with no properties is declared with **no
+`parameters` member at all**. That is the SDK's behaviour and not this desk's,
+and it is below the one seam this adapter has — but it is exactly the
+cross-engine contradiction the closed list exists to prevent, so it is declared
+rather than discovered:
+
+| engine | what the model is not shown, on `gemini` |
+| --- | --- |
+| `builtin` | `$schema`, `$id`, `additionalProperties`, `const`, `examples`, `patternProperties` — the desk's list, and nothing else |
+| `vercel` | all of those, **plus** `$comment`, `$defs`, `$ref`, `contains`, `default`, `dependentRequired`, `deprecated`, `else`, `exclusiveMaximum`, `exclusiveMinimum`, `if`, `maxLength`, `maximum`, `minimum`, `multipleOf`, `not`, `nullable`, `pattern`, `prefixItems`, `propertyNames`, `readOnly`, `then`, `title`, `uniqueItems`, `writeOnly` — and a tool whose schema declares an object with no properties is declared with no `parameters` at all |
+| either, on the other two families | nothing: those wires take JSON Schema as written |
+
+Three things hold that table honest, and one boundary is stated rather than
+glossed.
+
+**It is derived, not copied — over the recorded runtime's own vocabulary.** A
+conformance leg sends a fixture whose keyword union is pinned, by a test that
+computes both unions, to **every keyword the recorded runtime 0.19.0 emits in
+its tool and pack schemas** — the five `inputSchema`s it served on `tools/list`,
+and the pack schema its own `get_schema` answered, which is in the conformance
+fixture with its bytes, its sha256 and its provenance beside it. What the leg
+reads back is what the installed provider actually did with each of them, and it
+is asserted equal to this table. An SDK that starts or stops dropping one of
+*those* keywords is a red test.
+
+**The rest of the `vercel` row is outside that lock**, and that is the boundary:
+`maximum`, `multipleOf`, `contains` and the other keywords the recorded runtime
+does not emit were measured the same way against a wider synthetic schema, and
+they are true — but a runtime that never emits them gives this desk no way to
+notice if the provider stopped dropping one. The first version of this section
+said "every keyword the runtime could emit", which was a claim about a schema
+somebody made up rather than about the runtime's own.
+
+**The wire is asserted whole**: every leg requires the schema that arrived to be
+**deep-equal** to what this table says arrives — not that three keywords are
+present and six absent, which is what the first version checked and is a claim
+about a handful of words.
+
+**And the author is told**: a run opens with one line per tool that lost
+something **beyond the desk's own list**, naming the tool and the keywords. Over
+the runtime's own five that is nothing at all on `builtin` — its removals *are*
+the ruling — and exactly one line on `vercel`, for the tool whose schema that
+provider drops whole. A notice about `additionalProperties` would be the desk
+warning about the rule it wrote down.
+
+Two things the SDK does are **rewrites** rather than removals: it inlines a
+`$ref` (dropping the `$defs` it resolved, so the constraint survives and the two
+keywords do not) and it infers a `type` for a bare `enum`. The first is declared
+above, because from a keyword's point of view those two names do not reach the
+model; the deep-equality assertion therefore runs over the runtime's own five,
+which carry no reference, and over the vocabulary fixture only for the engine
+that rewrites nothing.
+
+**One more thing that provider does, and it is not about schemas.** It surfaces
+a thought part only when its text is non-empty, so an **empty signed thought** —
+which the wire emits when a summary was not streamed — never reaches the desk:
+it cannot be ledgered, cannot be replayed, and cannot be counted as reasoning.
+Against an endpoint that emits one and enforces the wire's rule that signed
+parts come back, a `vercel` session is refused and ends with the endpoint's
+status; *this model always thinks* cannot be inferred from one there either. The
+built-in engine has neither limit, because it reads the wire itself. Both halves
+are conformance legs, written to go red the day the provider starts carrying
+them.
+
+**The Gemini API reference these rules were written against**, read on
+**2026-09-06**:
+[generating content](https://ai.google.dev/api/generate-content) (the
+`:generateContent` and `:streamGenerateContent?alt=sse` methods, `contents[]` of
+`{role, parts[]}`, the `text` / `functionCall` / `functionResponse` part
+variants, `thought` and `thoughtSignature` on a part, `systemInstruction`,
+`generationConfig.thinkingConfig` with `thinkingBudget`, `includeThoughts` and
+`thinkingLevel`, `candidates[].content.parts[]`, `finishReason`,
+`usageMetadata.thoughtsTokenCount`, and the `{error: {code, message, status}}`
+envelope); [thinking](https://ai.google.dev/gemini-api/docs/thinking) and its
+[signatures section](https://ai.google.dev/gemini-api/docs/thinking#signatures)
+(the `thinking_level` values `minimal`, `low`, `medium`, `high`, each model
+advertising a subset, and the rule that a client "MUST always resend all
+`thought` blocks exactly as they were received from the model");
+[function calling](https://ai.google.dev/gemini-api/docs/function-calling) ("only
+a subset of the OpenAPI schema is supported"); and
+[the models list](https://ai.google.dev/api/models#method:-models.list) for the
+probe. What that page **does not** state, and this desk therefore does not
+claim, is a `thinkingBudget` range that holds across the family — see the note
+under the tier table.
 
 ### The refutation pass
 
@@ -1777,21 +1956,27 @@ rules.
 
 ### What is measured, and what is modelled
 
-The conformance session runs both engines over both wire formats, each answered
-as a stream and as one whole object, at tier `off`, `on` and `ultra`, against an
-endpoint with thinking, one with none, one that takes only the other Anthropic
-spelling, and one that splits its signatures. What that **measures** is what
-this desk puts on the wire and what it does with what comes back: the tier
-parameter on every request including the critic's, the signatures carried back
-byte-equal and well formed, the degrade happening once, the refused member never
-re-sent, the critic's evaluate arriving at the runtime rehearsed, and the verdict
-following the runtime rather than the prose. The runtime's answers in it are a
-real `jpack mcp`'s, recorded.
+The conformance session runs both engines over all three wire formats, each
+answered as a stream and as one whole object, at tier `off`, `on` and `ultra`,
+against an endpoint with thinking, one with none, one that takes only the other
+Anthropic spelling, one that takes only the other Gemini spelling, one that
+splits its signatures, one that reasons whatever it is asked, one that refuses
+to be turned off, and one that refuses a schema keyword. What that **measures**
+is what this desk puts on the wire and what it does with what comes back: the
+tier parameter on every request including the critic's, the signatures carried
+back byte-equal and well formed, the schema the model was actually shown, the
+degrade happening once, the refused member never re-sent, the critic's evaluate
+arriving at the runtime rehearsed, and the verdict following the runtime rather
+than the prose. The runtime's answers in it are a real `jpack mcp`'s, recorded.
 
 What is **modelled** is the endpoint. The scripted model reproduces the
-documented wire shapes of both protocols; it is not evidence about how any
+documented wire shapes of all three protocols; it is not evidence about how any
 vendor's endpoint actually responds, and the reasoning text and signatures in it
-are deterministic strings rather than a model's. Two smaller things are modelled
+are deterministic strings rather than a model's. On the Gemini family that
+extends to two things worth naming: **which** models accept which thinking
+spelling, and what a real `thinkingBudget` range is, are modelled by the
+fixture's own refusals rather than measured — the desk's behaviour when it meets
+each is what the legs establish. Two smaller things are modelled
 too, and are named here rather than left to be discovered: the critic's copy of
 the runtime's `test_pack` prompt is a stand-in string in CI (the recorded
 runtime carries `tools/list` and `tools/call` and no `prompts/get`), and that
@@ -2160,7 +2345,7 @@ relay refuses one.
 `web/src/assistant/conformance/` is the bake-off's scenario carried into the
 repository and run in CI — keyless, deterministic, no network, no runtime
 binary. **It runs over the registry**, not over one engine: every id in
-`CERTIFIED_ENGINES` is put through all four legs and every check below, so
+`CERTIFIED_ENGINES` is put through all six legs and every check below, so
 certifying an adapter is adding its id to one list and a further engine is one
 PR — the adapter, its conformance run, and its row in the table above. Where the
 two engines' wire shapes differ, the scripted model is held to what each **wire
@@ -2226,8 +2411,9 @@ results its own messages carried back, the route, the body's own top-level
 members, the tools offered and the header names — as a test annotation, so a
 reviewer can read the wire rather than only the assertions about it.
 
-Four legs — OpenAI-compatible and Anthropic, each answered as a stream and as
-one whole object, because an endpoint may ignore what the request asked for —
+Six legs — OpenAI-compatible, Anthropic and Gemini, each answered as a stream
+and as one whole object, because an endpoint may ignore what the request asked
+for —
 and the checks are the experiment's own, plus one this desk added: **K1a** the
 engine touches no network global at all — at load, during its run, or from a
 timer it left behind — held by sealing `fetch`, `WebSocket`, `XMLHttpRequest`
@@ -2238,6 +2424,21 @@ tools out of `tools/list`, with no schema literal in any engine source; **K3a**
 the rewrite, measured at the scripted server rather than at the page; **K3b**
 `write_file` never arriving; **K3c** the proposal equal to DRAFT_V2; T8's
 unknowns; and the event stream's exact order with one `end`.
+
+Beside the shared matrix, the thinking half runs the tier at `on` and `ultra`,
+the degrade, the dialect fallback on each family that has one, the refutation
+pass in both verdicts, and — on the Gemini family — more: the schema the model
+was shown, asserted **deep-equal** to what the table above says it is shown, over
+the runtime's own five and over a probe carrying every keyword; that table's
+`vercel` row **derived** from the probe's own wire rather than copied from
+anywhere; the one line per tool the run opens with where something was lost; a
+keyword the removal list does **not** name, refused by the endpoint and reported
+by the desk with nothing stripped; the budget-to-level dialect fallback; the
+thought signatures replayed across every tool turn at each of Gemini's three
+documented placements — on the summary, on a single call, and on the first of a
+parallel pair — **gating**, because the endpoint refuses a continuation that
+dropped one; and *this model always thinks* by both roads, the two-turn
+inference and the immediate refusal.
 
 ## Requirements
 
@@ -2755,6 +2956,20 @@ builds each relayed address, with this chassis' session token — the one
 parameter the rule above admits — and hands the engine a capability rather than
 a URL, so no engine ever holds the token or chooses a query. See
 [Why the engine gets a capability and not a base URL](#why-the-engine-gets-a-capability-and-not-a-base-url).
+
+**The page mirrors this rule, and the mirror is held equal to it by a test that
+reads the Go source.** The desk's capability refuses a suffix the relay would
+refuse *before the request leaves the page*, because a refusal that only
+happened on the far side is a refusal after the fact. It carries the same closed
+method list, the same one query pair on the same one kind, and the same segment
+class — and three enforcement tests read `relayPathMethods`, `relayStreamPair`
+and `relayExtraQueryPair` out of `internal/desk/modelrelay.go` and require the
+two to agree in **both** directions. A method on the page's list and not the
+chassis' is a call the engine believes it made and the relay refused; one on the
+chassis' and not the page's is a capability the desk grants and the page cannot
+reach. The wire protocol the pair is admitted on comes from the configured
+endpoint where the session is bound, never from an engine: an engine names a
+suffix and nothing else.
 
 ## Authoring (issue #14, phase 1)
 

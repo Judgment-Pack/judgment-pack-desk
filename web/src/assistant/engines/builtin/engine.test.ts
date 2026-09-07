@@ -1408,3 +1408,395 @@ describe('the refutation pass, on this engine’s second loop', () => {
     expect(events.map((event) => event.type)).not.toContain('end')
   })
 })
+
+describe('the native Gemini wire, on this engine’s own provider', () => {
+  /** One whole Gemini answer, in the endpoint's own shape. */
+  const answer = (parts: unknown[]) => ({
+    candidates: [{ content: { role: 'model', parts }, finishReason: 'STOP' }]
+  })
+  const fenced = (text: string) => answer([{ text }])
+
+  /** The same, streamed: one `GenerateContentResponse` per event. */
+  function streamed(frames: unknown[][]): Response {
+    const body = frames
+      .map((parts) => `data: ${JSON.stringify(answer(parts))}\n\n`)
+      .join('')
+    return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+  }
+
+  const geminiSession = (call: ModelCall, tier: 'off' | 'on' = 'off'): AssistantSession => ({
+    ...session(),
+    model: { family: 'gemini', model: 'a-model', call },
+    thinking: normalize(tier, 'gemini')
+  })
+
+  it('addresses the method in the path, and asks for its stream in the one pair', async () => {
+    const seen: Recorded[] = []
+    const call: ModelCall = async (suffix, request) => {
+      seen.push({
+        suffix,
+        headerNames: Object.keys(request.headers ?? {}).map((name) => name.toLowerCase()),
+        body: JSON.parse(request.body) as Record<string, unknown>
+      })
+      return new Response(JSON.stringify(fenced(PROPOSAL_TEXT)), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    }
+    await drain(builtin.start(geminiSession(call)))
+    expect(seen[0]!.suffix).toBe('v1beta/models/a-model:streamGenerateContent?alt=sse')
+    // No credential of any name, and no header this wire does not need.
+    expect(seen[0]!.headerNames).toEqual(['content-type'])
+    // The system prompt is not a message on this wire.
+    expect(seen[0]!.body.systemInstruction).toEqual({ parts: [{ text: expect.any(String) }] })
+    expect(Object.keys(seen[0]!.body).sort()).toEqual([
+      'contents',
+      'generationConfig',
+      'systemInstruction',
+      'tools'
+    ])
+    // The declarations are the runtime's own, in this wire's own wrapper.
+    expect(seen[0]!.body.tools).toEqual([
+      { functionDeclarations: [{ name: 'validate', description: 'check a document', parameters: { type: 'object' } }] }
+    ])
+  })
+
+  it('reads a thought summary streamed in pieces as one passage', async () => {
+    // **The passage is joined for the reader and the parts are not joined for
+    // the wire**, which are two different questions: a signature has to stay on
+    // the exact bytes it certifies, and a summary split across three parts is
+    // still one thing to read.
+    const call: ModelCall = async () =>
+      streamed([
+        [{ text: 'I read ', thought: true }],
+        [{ text: 'the policy.', thought: true, thoughtSignature: 'c2ln' }],
+        [{ text: PROPOSAL_TEXT }]
+      ])
+    const events = await drain(builtin.start(geminiSession(call, 'on')))
+    const passages = events.filter(
+      (event): event is Extract<AssistantEvent, { type: 'reasoning' }> => event.type === 'reasoning'
+    )
+    // Every passage this session produced — the loop's and the critic's, which
+    // runs on the same endpoint — is the joined summary rather than its pieces.
+    expect(passages.length).toBeGreaterThan(0)
+    for (const passage of passages) {
+      expect(passage.text).toBe('I read the policy.')
+      expect(passage.done).toBe(true)
+    }
+    expect(events.some((event) => event.type === 'proposal')).toBe(true)
+  })
+
+  it('never joins a thought part into an answer part, or a call into either', async () => {
+    const call: ModelCall = async () =>
+      streamed([
+        [{ text: 'thinking', thought: true, thoughtSignature: 'c2ln' }],
+        [{ text: 'The runtime reports it valid.\n\n' }],
+        [{ text: '```json\n{"proposal":{"document":{"title":"A pack"},"unknowns":[]}}\n```' }]
+      ])
+    const events = await drain(builtin.start(geminiSession(call, 'on')))
+    const passages = events.filter(
+      (event): event is Extract<AssistantEvent, { type: 'reasoning' }> => event.type === 'reasoning'
+    )
+    // The thought is its own passage and never absorbs the answer beside it,
+    // whichever loop produced it; the two answer pieces are joined into the one
+    // message the proposal is read out of.
+    expect(passages.length).toBeGreaterThan(0)
+    for (const passage of passages) expect(passage.text).toBe('thinking')
+    const proposal = events.find(
+      (event): event is Extract<AssistantEvent, { type: 'proposal' }> => event.type === 'proposal'
+    )
+    expect(proposal!.document).toEqual({ title: 'A pack' })
+  })
+
+  it('sends the turn back exactly as it came, with a functionResponse beside it', async () => {
+    const seen: Record<string, unknown>[] = []
+    let turn = 0
+    const call: ModelCall = async (_suffix, request) => {
+      turn += 1
+      seen.push(JSON.parse(request.body) as Record<string, unknown>)
+      if (turn === 1) {
+        return streamed([
+          [{ text: 'checking', thought: true, thoughtSignature: 'c2ln' }],
+          [{ functionCall: { name: 'validate', args: { document: '{}' } } }]
+        ])
+      }
+      return new Response(JSON.stringify(fenced(PROPOSAL_TEXT)), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    }
+    await drain(builtin.start(geminiSession(call, 'on')))
+    const contents = seen[1]!.contents as { role: string; parts: Record<string, unknown>[] }[]
+    // user, model (as received), user (the result)
+    expect(contents.map((content) => content.role)).toEqual(['user', 'model', 'user'])
+    // **As received**: the thought part goes back with its text and its
+    // signature, on the part that carried them.
+    expect(contents[1]!.parts[0]).toEqual({
+      text: 'checking',
+      thought: true,
+      thoughtSignature: 'c2ln'
+    })
+    expect(contents[1]!.parts[1]).toEqual({
+      functionCall: { name: 'validate', args: { document: '{}' } }
+    })
+    // The result is a functionResponse naming the tool, with **no invented id**:
+    // the call carried none, so neither does the response.
+    expect(contents[2]!.parts).toEqual([
+      {
+        functionResponse: {
+          name: 'validate',
+          response: { name: 'validate', content: '{"status":"valid"}' }
+        }
+      }
+    ])
+  })
+
+  it('carries the tier into generationConfig, and nothing there at all when off', async () => {
+    const seen: Record<string, unknown>[] = []
+    const call: ModelCall = async (_suffix, request) => {
+      seen.push(JSON.parse(request.body) as Record<string, unknown>)
+      return new Response(JSON.stringify(fenced(PROPOSAL_TEXT)), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    }
+    await drain(builtin.start(geminiSession(call, 'on')))
+    expect(seen[0]!.generationConfig).toEqual({
+      thinkingConfig: normalize('on', 'gemini').wire!.members.thinkingConfig
+    })
+    seen.length = 0
+    await drain(builtin.start(geminiSession(call, 'off')))
+    // **Off is a member on this wire**, because omission means thinking here.
+    expect(seen[0]!.generationConfig).toEqual({ thinkingConfig: { thinkingBudget: 0 } })
+  })
+
+  it('reads this wire’s own error envelope, so a refusal is classified', async () => {
+    const call: ModelCall = async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 400,
+            message: 'Unknown name "thinkingConfig" at \'generation_config\'',
+            status: 'INVALID_ARGUMENT'
+          }
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } }
+      )
+    const events = await drain(builtin.start(geminiSession(call, 'on')))
+    // Two spellings tried and then the degrade, said once — this endpoint
+    // refuses both, so the session reports the endpoint has no thinking.
+    const notices = events.filter((event) => event.type === 'thinking_unavailable')
+    expect(notices).toHaveLength(1)
+  })
+})
+
+describe('a signed Gemini part is never merged with anything', () => {
+  /** One whole Gemini answer, in the endpoint's own shape. */
+  const answer = (parts: unknown[]) => ({
+    candidates: [{ content: { role: 'model', parts }, finishReason: 'STOP' }]
+  })
+  const fenced = (text: string) => answer([{ text }])
+
+  function streamed(frames: unknown[][]): Response {
+    const body = frames.map((parts) => `data: ${JSON.stringify(answer(parts))}\n\n`).join('')
+    return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+  }
+
+  /** Drive one turn of parts, then a final message, and keep what was sent. */
+  async function replay(
+    first: unknown[][],
+    tier: 'off' | 'on' = 'on'
+  ): Promise<Record<string, unknown>[]> {
+    const seen: Record<string, unknown>[] = []
+    let turn = 0
+    const call: ModelCall = async (_suffix, request) => {
+      turn += 1
+      seen.push(JSON.parse(request.body) as Record<string, unknown>)
+      if (turn === 1) return streamed(first)
+      return new Response(JSON.stringify(fenced(PROPOSAL_TEXT)), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    }
+    await drain(
+      builtin.start({
+        ...session(),
+        model: { family: 'gemini', model: 'a-model', call },
+        thinking: normalize(tier, 'gemini')
+      })
+    )
+    return seen
+  }
+
+  /** The model turn out of the request that carried the tool result back. */
+  const modelParts = (seen: Record<string, unknown>[]): Record<string, unknown>[] => {
+    const contents = seen[1]!.contents as { role: string; parts: Record<string, unknown>[] }[]
+    return contents.find((content) => content.role === 'model')!.parts
+  }
+
+  it('keeps a signed part and the unsigned one beside it as two parts', async () => {
+    // **The review's shape, exactly.** Merged, this became one part reading
+    // `AB` under `sig-A` — a signature over text the endpoint never signed.
+    const seen = await replay([
+      [{ text: 'A', thought: true, thoughtSignature: 'sig-A' }],
+      [{ text: 'B', thought: true }],
+      [{ functionCall: { name: 'validate', args: { document: '{}' } } }]
+    ])
+    expect(modelParts(seen)).toEqual([
+      { text: 'A', thought: true, thoughtSignature: 'sig-A' },
+      { text: 'B', thought: true },
+      { functionCall: { name: 'validate', args: { document: '{}' } } }
+    ])
+  })
+
+  it('keeps two distinctly signed parts, rather than losing the earlier signature', async () => {
+    const seen = await replay([
+      [{ text: 'A', thought: true, thoughtSignature: 'sig-A' }],
+      [{ text: 'B', thought: true, thoughtSignature: 'sig-B' }],
+      [{ functionCall: { name: 'validate', args: { document: '{}' } } }]
+    ])
+    expect(modelParts(seen)).toEqual([
+      { text: 'A', thought: true, thoughtSignature: 'sig-A' },
+      { text: 'B', thought: true, thoughtSignature: 'sig-B' },
+      { functionCall: { name: 'validate', args: { document: '{}' } } }
+    ])
+  })
+
+  it('keeps a signed part followed by a functionCall exactly as it arrived', async () => {
+    const seen = await replay([
+      [{ text: 'A', thought: true, thoughtSignature: 'sig-A' }],
+      [{ functionCall: { name: 'validate', args: { document: '{}' } } }]
+    ])
+    expect(modelParts(seen)).toEqual([
+      { text: 'A', thought: true, thoughtSignature: 'sig-A' },
+      { functionCall: { name: 'validate', args: { document: '{}' } } }
+    ])
+  })
+
+  it('carries a signature on the functionCall part itself, untouched', async () => {
+    // Gemini's documented placement for function calling: the signature rides
+    // on the FIRST functionCall part, and later parallel calls are unsigned.
+    const seen = await replay([
+      [
+        {
+          functionCall: { name: 'validate', args: { document: '{}' } },
+          thoughtSignature: 'sig-call'
+        }
+      ]
+    ])
+    expect(modelParts(seen)).toEqual([
+      { functionCall: { name: 'validate', args: { document: '{}' } }, thoughtSignature: 'sig-call' }
+    ])
+  })
+
+  it('still joins the unsigned pieces of one summary, which is what a stream is', async () => {
+    const seen = await replay([
+      [{ text: 'I read ', thought: true }],
+      [{ text: 'the policy.', thought: true }],
+      [{ functionCall: { name: 'validate', args: { document: '{}' } } }]
+    ])
+    expect(modelParts(seen)).toEqual([
+      { text: 'I read the policy.', thought: true },
+      { functionCall: { name: 'validate', args: { document: '{}' } } }
+    ])
+  })
+
+  it('counts a signed thought part with no text as reasoning seen', async () => {
+    // **The signature is the evidence.** Two answering turns each carrying an
+    // empty signed thought part reach `always`, and only after the second.
+    const answered = (n: number) =>
+      answer([
+        { text: '', thought: true, thoughtSignature: `sig-${n}` },
+        { text: `answer ${n}` },
+        { functionCall: { name: 'validate', args: { document: '{}' } } }
+      ])
+    let turn = 0
+    const call: ModelCall = async () => {
+      turn += 1
+      const body = turn >= 3 ? fenced(PROPOSAL_TEXT) : answered(turn)
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    }
+    const events = await drain(
+      builtin.start({
+        ...session(),
+        model: { family: 'gemini', model: 'a-model', call },
+        thinking: normalize('off', 'gemini')
+      })
+    )
+    const notices = events.filter(
+      (event): event is Extract<AssistantEvent, { type: 'thinking_unavailable' }> =>
+        event.type === 'thinking_unavailable'
+    )
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.detail).toContain('this model always thinks')
+    // …and nothing was shown as a passage, because there was nothing to read.
+    expect(events.filter((event) => event.type === 'reasoning')).toEqual([])
+  })
+})
+
+describe('a schema refusal is one wire’s business, and only that wire’s', () => {
+  /** One endpoint that answers 400 with a body naming an ordinary keyword. */
+  const refusing = (body: unknown): ModelCall => async () =>
+    new Response(JSON.stringify(body), {
+      status: 400,
+      headers: { 'content-type': 'application/json' }
+    })
+
+  /** A tool whose schema actually carries the keyword the refusals name. */
+  const DECLARED: McpTool[] = [
+    {
+      name: 'validate',
+      description: 'check a document',
+      inputSchema: { type: 'object', properties: { document: { type: 'string' } } }
+    }
+  ]
+
+  const failure = async (
+    family: 'openai-compatible' | 'anthropic' | 'gemini',
+    body: unknown
+  ): Promise<string> => {
+    const events = await drain(
+      builtin.start({
+        ...session(),
+        tools: DECLARED,
+        model: { family, model: 'a-model', call: refusing(body) },
+        thinking: normalize('off', family)
+      })
+    )
+    const errors = events.filter(
+      (event): event is Extract<AssistantEvent, { type: 'error' }> => event.type === 'error'
+    )
+    expect(errors).toHaveLength(1)
+    return errors[0]!.message
+  }
+
+  it.each([
+    ['openai-compatible' as const, 'Unsupported response type: json_object'],
+    ['openai-compatible' as const, 'Invalid properties in the request'],
+    ['anthropic' as const, 'unsupported type for the messages field'],
+    ['anthropic' as const, 'properties is not permitted here']
+  ])('leaves a %s 400 naming an ordinary keyword exactly as it was', async (family, message) => {
+    // **The classifier matches a substring, so it had to be told which wire it
+    // is for.** Installed on every family, a 400 saying "unsupported response
+    // type" names `type` — which this desk certainly sent — and the real
+    // failure was rewritten into a sentence about a Gemini removal list that
+    // has nothing to do with it, hiding what actually went wrong.
+    const said = await failure(family, { error: { message } })
+    expect(said).toContain(message)
+    expect(said).not.toContain('removal list')
+    expect(said).not.toContain('OpenAPI')
+  })
+
+  it('classifies the same refusal on the wire that has a schema subset', async () => {
+    // The control: on `gemini` the same prose is about the schema, and is
+    // reported as the desk's own sentence naming the keyword.
+    const said = await failure('gemini', {
+      error: { code: 400, message: 'Unknown name "properties" at parameters', status: 'INVALID_ARGUMENT' }
+    })
+    expect(said).toContain('"properties"')
+    expect(said).toContain('closed')
+  })
+})

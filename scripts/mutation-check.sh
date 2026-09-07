@@ -4005,7 +4005,7 @@ export function assistantTransport(): Transport {
     '      if (MODEL_REQUEST_HEADERS.includes(name.toLowerCase())) headers[name] = value' \
     '      headers[name] = value'
   mutate web "the model call accepts any suffix at all" "$ASN" \
-    '    const problem = suffixProblem(suffix)' \
+    '    const problem = suffixProblem(suffix, family)' \
     "    const problem = ''"
 
   # K1. The page holds no key; a header here is a credential it had to have got.
@@ -4017,7 +4017,7 @@ export function assistantTransport(): Transport {
   # socket to /ws with this chassis' token. Every leg seals fetch, WebSocket,
   # XMLHttpRequest and EventSource for the duration of the engine's run.
   mutate web "the engine reaches for globalThis.fetch" "$BO" \
-    '        options.call(openai.suffix, {' \
+    '        options.call(SUFFIX, {' \
     "        globalThis.fetch('/api/assistant/relay/v1/chat/completions', {
           method: 'POST',"
   # `end` twice: a pane that renders "running" until it sees one would be right
@@ -4129,8 +4129,10 @@ export function assistantTransport(): Transport {
   # and this row proves the wrapper is the layer doing the reducing.
   mutate web "the SDK's absolute URL is handed to the capability whole" "$VR" \
     "  const suffix = url.slice(PLACEHOLDER_ORIGIN.length + 1)
-  return suffix === '' ? undefined : suffix" \
-    '  return url'
+  // The query travels **inside the suffix**" \
+    '  return url
+  const suffix = url.slice(PLACEHOLDER_ORIGIN.length + 1)
+  // The query travels **inside the suffix**'
 
   # K1. `createAnthropic` throws without a key, so the provider is handed a
   # placeholder — and a wrapper that forwarded whatever the SDK set would send
@@ -4411,9 +4413,12 @@ export function assistantTransport(): Transport {
   # `reasoning_effort: "none"`, so a tier member sent at `off` is a request a
   # desk configured for no thinking never agreed to make.
   mutate web "the tier member is sent when the tier is off" "$TH" \
-    "  if (tier === 'off') return null
+    "    return null
+  }
   const effort = tier === 'ultra' ? 'xhigh' : 'high'" \
-    "  const effort = tier === 'ultra' ? 'xhigh' : 'high'"
+    "    return wireFor('on', dialect)
+  }
+  const effort = tier === 'ultra' ? 'xhigh' : 'high'"
 
   # The degrade is sticky for the session: the member the endpoint refused is
   # never sent again. Without this the retry re-sends what was just refused,
@@ -4499,7 +4504,7 @@ export function assistantTransport(): Transport {
   # rather than sent: a malformed thinking block is a request the endpoint
   # refuses, and sending one is the defect the ledger exists for.
   mutate web "a truncated thinking signature is sent back anyway" "$VR" \
-    "      if (sent === undefined || !isTruncatedSignature(sent.signature, block.signature)) return true" \
+    "      if (sent === undefined || !isTruncatedSignature(sent.signature, carried)) return true" \
     "      if (true) return true"
 
   # **Block identity, by position.** Comparing a carried signature against every
@@ -4516,10 +4521,8 @@ export function assistantTransport(): Transport {
   # still asks for thinking while no longer carrying a block the endpoint
   # signed — a continuation the split-signature endpoint refuses.
   mutate web "the degraded request is filtered rather than rebuilt" "$VR" \
-    "  for (const member of TIER_MEMBERS) delete payload[member]
-  Object.assign(payload, membersAfter() ?? {})" \
-    "  void TIER_MEMBERS
-  void membersAfter"
+    '  shape.retier(payload, membersAfter())' \
+    '  void membersAfter'
 
   # The block ids repeat every turn on the Anthropic wire, so a ledger with no
   # turn boundary concatenates one turn's signature onto the next and reports
@@ -5032,6 +5035,295 @@ export function assistantTransport(): Transport {
   return span === undefined ? undefined : raw.slice(span.valueStart, span.valueEnd)' \
     '  const parsed = JSON.parse(raw) as { diagnostics?: unknown }
   return parsed.diagnostics === undefined ? undefined : JSON.stringify(parsed.diagnostics, null, 2)'
+
+  # ---- The native Gemini wire, on both engines ------------------------------
+  #
+  # Two closed exceptions and one closed removal list. Each row below opens one
+  # of them, or breaks the property that makes it safe to have opened it at all.
+  BG=web/src/assistant/engines/builtin/providers/gemini.ts
+  GS=web/src/assistant/geminiSchema.ts
+
+  # **The page's mirror is only worth having if it is the chassis' rule.** A
+  # method the page admits and the relay does not is a refusal after the request
+  # left; the enforcement test reads the Go list and holds the two equal.
+  mutate web "the page's mirror admits a method the chassis does not" "$ASN" \
+    '      if (index !== segments.length - 1 || name === '"'"''"'"' || !RELAY_PATH_METHODS.includes(method)) {' \
+    '      if (index !== segments.length - 1 || name === '"'"''"'"') {'
+  # And only in the **final** segment: round 1 of chunk 5a found
+  # `v1beta/a:countTokens/b` forwarded with the credential, because the rule was
+  # written per segment and never asked where the segment was.
+  mutate web "the page's mirror admits a colon method in a middle segment" "$ASN" \
+    '      if (index !== segments.length - 1 || name === '"'"''"'"' || !RELAY_PATH_METHODS.includes(method)) {' \
+    '      if (name === '"'"''"'"' || !RELAY_PATH_METHODS.includes(method)) {'
+  # The one pair is admitted for one wire and refused for the other two, which
+  # carry streaming in the request body and need none.
+  mutate web "the page's mirror admits the stream pair on every kind" "$ASN" \
+    "  return family === 'gemini' ? RELAY_STREAM_PAIR : ''" \
+    '  return RELAY_STREAM_PAIR'
+  # Byte equality against one fixed literal is the whole of the exception: a
+  # comparison with a second reading is the class the refusal exists to keep out.
+  mutate web "the page's mirror compares the pair by name rather than by bytes" "$ASN" \
+    "    if (rest.length > 1 || rest[0] !== admitted || admitted === '') {" \
+    "    if (rest.length > 1 || !(rest[0] ?? '').startsWith('alt=') || admitted === '') {"
+
+  # **The model turn goes back as it came, or the signature does not.** The
+  # scripted endpoint refuses a continuation that dropped a signed part, so this
+  # fails at the wire rather than at an assertion about the page.
+  # **Retargeted twice, and both reasons are worth keeping.** It first broke the
+  # carry-over of a signature onto a *joined* part — the very thing round 1
+  # found was wrong, so there is no such carry-over to break. It then broke
+  # `signaturesOf`, which turned out to feed nothing the wire can see: reported
+  # NOT DISCRIMINATING, and correctly. What actually decides whether a signature
+  # goes back is the part this accumulator keeps, so that is what this breaks.
+  mutate web "a Gemini thought signature is dropped on the way back" "$BG" \
+    '  parts.push({ ...arriving })' \
+    '  parts.push({ ...arriving, thoughtSignature: undefined })'
+  mutate web "the Gemini turn is rebuilt rather than echoed back" "$BG" \
+    '    messages.push(
+      turn.assistant ?? {' \
+    '    messages.push(
+      undefined ?? {'
+  # **Reasoning is for the person reading the tab.** The runtime is asked about
+  # documents, and a tool call carrying the model'"'"'s own thought summary would put
+  # it in a project'"'"'s audit trail. The Anthropic row above is the same property
+  # on the other signing wire.
+  mutate web "the model's thought summary is sent to the runtime with the tool call" "$BG" \
+    '      args: args !== null && typeof args === '"'"'object'"'"' ? args : {},' \
+    '      args: {
+        ...(args !== null && typeof args === '"'"'object'"'"' ? args : {}),
+        reasoning: parts.find((held) => held.thought === true)?.text
+      } as Record<string, unknown>,'
+  # The pair is how this wire asks for a stream, and there is nowhere else to
+  # put it. Dropped, the request is a unary call the desk then reads as a
+  # stream; asked for in any other spelling, the desk'"'"'s own mirror refuses it
+  # and nothing is sent.
+  mutate web "the streaming Gemini call drops the pair the wire needs" "$BG" \
+    '      ? `${VERSION}/models/${model}:streamGenerateContent?alt=sse`' \
+    '      ? `${VERSION}/models/${model}:streamGenerateContent`'
+  mutate web "the streaming Gemini call asks for a framing the relay refuses" "$BG" \
+    '      ? `${VERSION}/models/${model}:streamGenerateContent?alt=sse`' \
+    '      ? `${VERSION}/models/${model}:streamGenerateContent?alt=json`'
+
+  # **The removal list is closed, or it is not a ruling.** Opened, the endpoint
+  # refuses the declaration; the leg fails at the wire.
+  mutate web "the removal list loses the keyword every runtime schema carries" "$GS" \
+    "  'additionalProperties',
+" \
+    ""
+  # …and applied at every depth, because a schema'"'"'s keywords live inside
+  # `properties`, `items` and `$defs` as much as at the top.
+  mutate web "the removal list is applied at the top level only" "$GS" \
+    '    const walked = withoutKeywords(value, removals, inNameMap ? false : namesUnder(key))' \
+    '    const walked = value'
+  # A keyword the list does not name is **reported**, never stripped: a desk
+  # that widened its idea of the runtime'"'"'s contract on being refused would show
+  # the model a contract nobody wrote down.
+  mutate web "the built-in engine swallows a refused schema keyword" "$BL" \
+    '          if (refusal.kind === '"'"'other'"'"') throw schemaRefusal(cause, session) ?? cause' \
+    '          if (refusal.kind === '"'"'other'"'"') throw cause'
+  mutate web "the SDK-backed engine swallows a refused schema keyword" "$VL" \
+    "        if (said.kind === 'other') throw schemaRefusal(cause) ?? cause" \
+    "        if (said.kind === 'other') throw cause"
+
+  # **Off is a member on this wire and an omission on the others**, because
+  # omission here means thinking. Take the member away and the endpoint that
+  # cannot be turned off has nothing to refuse, so the desk never learns it.
+  mutate web "off is expressed by omission on the Gemini wire too" "$TH" \
+    "    if (dialect === 'gemini-budget') {
+      return {
+        members: { thinkingConfig: { thinkingBudget: 0 } }," \
+    "    if (false) {
+      return {
+        members: { thinkingConfig: { thinkingBudget: 0 } },"
+  # The refused member is never sent again — the same rule the degrade follows,
+  # and the reason `always` reached by a refusal withdraws it while `always`
+  # reached from absence does not.
+  mutate web "the refused tier member is sent again after the endpoint refused it" "$TH" \
+    '  const wire = () => (unavailable || offRefused ? null : wireFor(tier, dialect))' \
+    '  const wire = () => wireFor(tier, dialect)'
+  # A 400 at `off` is equally "cannot be turned off" and "spells it the other
+  # way", and only trying the other spelling tells them apart.
+  mutate web "a first refusal at off is read as a model that always thinks" "$TH" \
+    '      const next = nextDialect(dialect)
+      if (next !== null) {' \
+    '      const next = nextDialect(dialect)
+      if (next !== null && tier !== '"'"'off'"'"') {'
+
+  # The SDK'"'"'s translation, and the two rows that hold it: the members the table
+  # asked for must reach the wire, and the signature this SDK surfaces under a
+  # different name must still be ledgered.
+  mutate web "the Gemini tier is not translated into the SDK's provider option" "$VL" \
+    '    return { providerOptions: { [GOOGLE_OPTIONS]: { thinkingConfig: members.thinkingConfig } } }' \
+    '    return {}'
+  mutate web "the SDK's Gemini signature is ledgered under the wrong provider" "$VR" \
+    "  gemini: { provider: 'google', member: 'thoughtSignature' }" \
+    "  gemini: { provider: 'anthropic', member: 'signature' }"
+  # The tier lives one level down on this wire, so the rebuild after a
+  # truncation has to reach it there.
+  mutate web "the Gemini rebuild strips the tier from the top level" "$VR" \
+    '      const config = (payload.generationConfig ?? {}) as Record<string, unknown>
+      for (const member of TIER_MEMBERS) delete config[member]' \
+    '      const config = (payload.generationConfig ?? {}) as Record<string, unknown>
+      for (const member of TIER_MEMBERS) delete payload[member]'
+  # This wire asks to stream in the **address**; a reader that looked in the
+  # body would answer "no" to every streamed call and never re-frame a whole
+  # answer the SDK asked to have streamed.
+  mutate web "the Gemini re-framing decides from the body rather than the address" "$VR" \
+    "  if (family === 'gemini') return suffix.includes(':streamGenerateContent')" \
+    '  if (false) return false'
+
+  # ---- Round 1's five findings, each broken again ---------------------------
+  #
+  # A row per ruling, and each one restores the exact shape the review found.
+  SM=web/src/assistant/conformance/scriptedModel.ts
+
+  # **A signature certifies the exact bytes it came with.** Merging a signed
+  # part with an unsigned one produces a signature over text the endpoint never
+  # signed; merging two signed parts throws one away.
+  mutate web "a signed Gemini part is merged with the one beside it" "$BG" \
+    '    !signed(last) &&
+    !signed(arriving) &&' \
+    ''
+  # **Retired, with its reason: NOT DISCRIMINATING, and unavoidably so.** It was
+  # "the joined part takes the later signature", the other half of Google's rule
+  # — and with the fix in place a signed part is never joined at all, so the
+  # branch the mutation adds is unreachable code that no test can provoke. The
+  # row above breaks the guard itself, and both halves of the rule fall with it:
+  # its failures name the signed-plus-unsigned case and the two-signed case by
+  # name. One row, one guard.
+
+  # **A signed thought part with no text is the endpoint reasoning.** The wire
+  # emits one when a summary is empty, and counting only readable passages let a
+  # model think through every turn at tier off without the desk noticing.
+  mutate web "an empty signed thought part is not reasoning seen" "$BG" \
+    '    (part) => part.thought === true && (signed(part) || (part.text ?? '"'"''"'"') !== '"'"''"'"')' \
+    "    (part) => part.thought === true && (part.text ?? '') !== ''"
+
+  # **A name is not a keyword.** A definition called `const` was deleted as
+  # though it were the keyword, leaving a `$ref` pointing at nothing.
+  mutate web "the walker knows only two of the schema name maps" "$GS" \
+    "  'properties',
+  '\$defs',
+  'definitions',
+  'dependentSchemas',
+  'dependentRequired',
+  'patternProperties'
+]" \
+    "  'properties',
+  '\$defs'
+]"
+  # And the second layer of the same mistake, found by writing the test: a key
+  # *inside* a name map is a name, so its value is an ordinary schema.
+  mutate web "a name inside a name map is read as a name-map keyword" "$GS" \
+    '    const walked = withoutKeywords(value, removals, inNameMap ? false : namesUnder(key))' \
+    '    const walked = withoutKeywords(value, removals, namesUnder(key))'
+
+  # **Gemini signs the first functionCall part**, and the fixture's validator
+  # called every placement outside a thought part malformed — which would have
+  # refused the shape the wire actually sends.
+  mutate web "a signature on a function call is called malformed" "$SM" \
+    '      const onCall = part.functionCall !== undefined' \
+    '      const onCall = false'
+  # The desk's own half of it: a scanner that reads only thought parts never
+  # compares the signature function calling actually carries.
+  mutate web "the Gemini scanner reads a signature only off a thought part" "$VR" \
+    '      typeof block?.thoughtSignature === '"'"'string'"'"' &&
+      (block.thought === true || block.functionCall !== undefined)' \
+    "      typeof block?.thoughtSignature === 'string' && block.thought === true"
+  # **Retired, with its reason: NOT DISCRIMINATING, and the reason is worth
+  # writing down.** It was "the SDK-backed engine ledgers no signature from a
+  # function call". The ledger's only observable consequence is the truncation
+  # comparison, and the pinned SDK carries a call signature back whole — so with
+  # the recording removed the wire is byte-identical and no leg can tell. The
+  # recording is defence for the day that provider truncates a call signature
+  # the way `vercel/ai#19663` truncates a summary one, and there is no way to
+  # provoke it while the SDK is correct. The half that *can* be observed is the
+  # scanner, and the row below breaks that.
+
+  # **The declaration is derived, or it is a sentence that rots.** Widening it by
+  # hand is the failure this leg exists for.
+  mutate web "the declared SDK removal set is widened by hand" "$GS" \
+    "  'uniqueItems',
+  'writeOnly'
+]" \
+    "  'uniqueItems',
+  'writeOnly',
+  'format'
+]"
+  # …and narrowing it is the same failure the other way.
+  mutate web "the declared SDK removal set loses a keyword" "$GS" \
+    "  'pattern',
+  'prefixItems'," \
+    "  'prefixItems',"
+  # The empty-object omission is not a keyword and is declared separately: a
+  # tool with no properties is declared to the model with no parameters at all.
+  mutate web "the empty-schema omission is not declared" "$GS" \
+    "  if (engine === 'vercel' && isEmptyObjectSchema(served)) return undefined" \
+    '  if (false) return undefined'
+  # **Deep equality, or the claim is about a handful of words.** Retargeted from
+  # the assertion onto the code it holds: a row that weakens a *test* cannot
+  # discriminate, because a weakened test is exactly a test that does not fail.
+  # What the leg has to catch is the desk saying one thing and the engine doing
+  # another, and this is that — the declared narrowing not applied at all.
+  mutate web "the declared narrowing is not applied to what the model is shown" "$GS" \
+    '  if (engine === '"'"'vercel'"'"' && isEmptyObjectSchema(served)) return undefined
+  return withoutKeywords(served, removals)' \
+    '  if (engine === '"'"'vercel'"'"' && isEmptyObjectSchema(served)) return undefined
+  return served'
+  # **Never silent.** An author reading a proposal should not have to discover
+  # that the model saw a wider contract than the runtime enforces.
+  mutate web "the narrowing is not reported to the author" "$EC" \
+    '    events.push({ type: '"'"'guardrail'"'"', tool: tool.name, action: '"'"'narrowed'"'"', detail: narrowingNotice(lost) })' \
+    '    void narrowingNotice(lost)'
+
+  # ---- Round 2's four findings, each broken again ---------------------------
+
+  # **A notice is a loss beyond the ruling, never the ruling itself.** Comparing
+  # the runtime's raw schema against a set that includes the desk's own six made
+  # every tool produce a notice about `additionalProperties` — the desk warning
+  # about the thing it wrote down, five times a run.
+  mutate web "the narrowing notice is measured against the raw schema" "$GS" \
+    '  const desk = withoutUnsupportedKeywords(served)
+  const shown = schemaShown(engine, family, desk)' \
+    '  const desk = served
+  const shown = schemaShown(engine, family, desk)'
+
+  # **The fixture the declaration is derived over is the runtime's vocabulary,
+  # or it is a schema somebody made up.** Aimed at the fixture and not at the
+  # assertion: a row that weakens a check cannot discriminate, because a
+  # weakened check is exactly one that does not fail. A fixture that has quietly
+  # stopped carrying a keyword the runtime emits is the failure this lock is
+  # for, and it is what this restores.
+  mutate web "the derivation fixture drops a keyword the runtime emits" "$CT" \
+    "      d: { type: 'object', propertyNames: { type: 'string' } }," \
+    "      d: { type: 'object' },"
+  # …and the other half: a vocabulary computed from the tool schemas alone
+  # leaves out the pack schema, which is where most of the keywords are.
+  mutate web "the runtime vocabulary ignores the recorded pack schema" "$CT" \
+    '  keywordsSent(JSON.parse(answered.content[0]!.text), found)' \
+    '  void answered'
+
+  # **A rule about one wire's schema dialect belongs to that wire.** Installed
+  # on every family, a 400 saying "unsupported response type" names `type` and
+  # the real failure was rewritten into a sentence about a removal list.
+  mutate web "the built-in engine classifies a schema refusal on every family" "$BL" \
+    "  if (session.model.family !== 'gemini') return null" \
+    '  if (false) return null'
+  mutate web "the SDK-backed engine classifies a schema refusal on every family" "$VL" \
+    "    if (session.model.family !== 'gemini') return null" \
+    '    if (false) return null'
+
+  # **An empty signed thought is a shape the wire sends**, so a validator that
+  # calls it malformed refuses a client that replayed it faithfully.
+  mutate web "an empty signed thought is called malformed" "$SM" \
+    '      const onThought = part.thought === true' \
+    "      const onThought = part.thought === true && typeof part.text === 'string' && part.text !== ''"
+  # And the desk's own half: the parts that arrived are the parts that go back,
+  # empty ones included.
+  mutate web "an empty Gemini part is dropped from the turn that goes back" "$BG" \
+    '  parts.push({ ...arriving })' \
+    "  if ((arriving.text ?? '') === '' && arriving.functionCall === undefined) return
+  parts.push({ ...arriving })"
 fi
 
 restore

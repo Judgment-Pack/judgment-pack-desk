@@ -143,7 +143,15 @@ export type AssistantEvent =
   | { type: 'reasoning'; text: string; done: boolean }
   | { type: 'tool_call'; name: string; args: unknown }
   | { type: 'tool_result'; name: string; isError: boolean; text: string; structured?: unknown }
-  | { type: 'guardrail'; tool: string; action: 'rewrote' | 'refused'; detail: string }
+  /**
+   * `rewrote` and `refused` are the ToolGate's, on the wire. `narrowed` is the
+   * desk's own report on the **contract it showed the model**: on a wire whose
+   * schema dialect cannot carry a keyword the runtime served, one line per tool
+   * that lost something, before the model is asked anything. It is not a guard
+   * that fired — nothing was stopped — but it is the same kind of sentence: the
+   * desk saying what it did rather than leaving it to be discovered.
+   */
+  | { type: 'guardrail'; tool: string; action: 'rewrote' | 'refused' | 'narrowed'; detail: string }
   | { type: 'thinking_unavailable'; detail: string }
   | { type: 'critique'; refuted: boolean; checks: { tool: string; status: string }[]; text: string }
   | { type: 'proposal'; document: unknown; unknowns: string[]; critique?: { refuted: boolean } }
