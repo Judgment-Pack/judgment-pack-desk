@@ -111,14 +111,7 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	defer s.unregister(c)
 	defer c.stop()
 
-	workingDir, err := s.runtimeWorkingDir()
-	if err != nil {
-		s.log.Printf("desk: no runtime was started: %v", err)
-		s.closeWith(ws, websocket.StatusInternalError, err.Error())
-		return
-	}
 	cmd := exec.CommandContext(ctx, s.cfg.JpackBin, "mcp")
-	cmd.Dir = workingDir
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		s.closeWith(ws, websocket.StatusInternalError, "cannot open runtime stdin")
@@ -132,6 +125,15 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		s.closeWith(ws, websocket.StatusInternalError, "cannot open runtime stderr")
+		return
+	}
+	// **Immediately before the spawn, and nothing between.** Where the host
+	// cannot name a descriptor this is a check-then-use, so every statement
+	// between the check and the `chdir` is window: command construction and
+	// three pipe setups used to sit in it. See `aimAtTheProject`.
+	if err := s.aimAtTheProject(cmd); err != nil {
+		s.log.Printf("desk: no runtime was started: %v", err)
+		s.closeWith(ws, websocket.StatusInternalError, err.Error())
 		return
 	}
 	if err := cmd.Start(); err != nil {
@@ -254,6 +256,24 @@ func (s *Server) runtimeWorkingDir() (string, error) {
 		return through, nil
 	}
 	return runtimeWorkingDirByPathname(s.projectDir, s.project.info)
+}
+
+// aimAtTheProject points one prepared command at the pinned project, and is
+// called with nothing between it and `Start`.
+//
+// It is the last statement before the spawn because on a host that cannot name
+// a descriptor it is a **check** — and everything after a check and before the
+// use is window. Round 4 found command construction and three pipe setups
+// sitting in that window. The residual it cannot close is the one the README
+// states: between this and the child's own `chdir` there is still a rename
+// nobody can see.
+func (s *Server) aimAtTheProject(cmd *exec.Cmd) error {
+	dir, err := s.runtimeWorkingDir()
+	if err != nil {
+		return err
+	}
+	cmd.Dir = dir
+	return nil
 }
 
 // runtimeWorkingDirByPathname is the fallback, as its own function.
