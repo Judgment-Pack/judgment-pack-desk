@@ -129,6 +129,9 @@ type Server struct {
 	// file on a case-insensitive filesystem would take different locks and both
 	// commit. Desk-scale contention is not worth a correctness argument.
 	writes sync.Mutex
+	// closeOnce makes shutdown idempotent; see Close.
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // NewToken returns a fresh random session token.
@@ -179,7 +182,7 @@ func New(cfg Config) (*Server, error) {
 		mux:        http.NewServeMux(),
 		log:        cfg.Logger,
 		conns:      make(map[*conn]struct{}),
-		root:       pinned.root,
+		root:       pinned.own.root,
 		project:    pinned,
 		projectDir: pinned.dir,
 		configDir:  configDirFor(cfg.DeskConfigDir),
@@ -258,16 +261,27 @@ func New(cfg Config) (*Server, error) {
 
 // Close stops the file watcher and releases the pinned project root. Open
 // relays end with their sockets.
+//
+// **Once, however many times it is called.** Shutdown paths overlap — a
+// deferred `Close` beside an explicit one, a test's cleanup beside its own —
+// and closing a descriptor twice is closing whatever took its number in
+// between.
 func (s *Server) Close() error {
+	s.closeOnce.Do(func() { s.closeErr = s.closeAll() })
+	return s.closeErr
+}
+
+func (s *Server) closeAll() error {
 	var err error
 	if s.watcher != nil {
 		err = s.watcher.Close()
 	}
 	if s.project != nil {
-		// The server is the owner, so it closes both descriptors. The wrapper
-		// was detached at adoption and closes nothing.
-		s.project.adopted = false
-		if rerr := s.project.Close(); err == nil {
+		// **Through the shared cell, which closes at most once**, and without
+		// touching the adopted flag: a wrapper that was handed over stays
+		// handed over, so a caller's deferred `Close` after this shutdown
+		// still closes nothing.
+		if rerr := s.project.own.close(); err == nil {
 			err = rerr
 		}
 	}

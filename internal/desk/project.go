@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 // ProjectRoot is a project directory that has been validated and pinned.
@@ -35,22 +36,70 @@ type ProjectRoot struct {
 	// subprocess takes a working directory and the watcher takes a tree, and
 	// neither can hold a descriptor — but nothing *decides* by it.
 	dir string
-	// root is the pinned directory. Every file-API operation goes through it.
-	root *os.Root
-	// dir file is the same directory as an ordinary descriptor, opened
-	// **through** the root rather than by name.
-	//
-	// It exists because a descriptor is the only thing that can be handed to a
-	// subprocess or an inotify watch without a pathname step: `os.Root` has no
-	// exported file descriptor, and everything that needs one needs it for a
-	// consumer this desk cannot make go through `os.Root`. See
-	// `descriptorWorkingDir`.
-	dirFile *os.File
+	// own is the descriptors and who owns them, **shared by every copy of this
+	// value**. See `ownership`.
+	own *ownership
 	// info is the identity that was validated, kept so a caller that validated
 	// something about this directory earlier can prove it is the same one.
 	info fs.FileInfo
-	// adopted marks a root a server has taken over. See `detach`.
+}
+
+// ownership is the two descriptors, and the one fact about who closes them.
+//
+// # Why it is a pointer and not two fields
+//
+// `ProjectRoot` is an exported struct, so a caller can copy one:
+// `alias := *pinned` before handing `pinned` over. Round 4 found what that
+// cost while ownership was a `bool` *inside* the struct — the copy kept the
+// same `*os.Root` and the same `*os.File` with `adopted` still false, so
+// `alias.Close()` closed the descriptors of a running server. A flag that
+// copies is not ownership; it is a note about one copy.
+//
+// So the flag and the descriptors live in one heap cell that every copy points
+// at. A copy made before the hand-over sees the detach, because there is only
+// one thing to see.
+//
+// # Why the close is a `sync.Once`
+//
+// Closing a descriptor twice is closing whatever took its number the second
+// time. The server closes on shutdown, a caller may close on the way out, and
+// `New`'s own failure path closes what it did not adopt; each of those is
+// correct on its own and the arithmetic between them is not something a reader
+// should have to do. One cell, one close, whoever asks first.
+type ownership struct {
+	root    *os.Root
+	dirFile *os.File
+
+	mu sync.Mutex
+	// adopted is set once a server has taken these descriptors over, and is
+	// never unset: a wrapper that was handed over stays handed over, before
+	// and after that server shuts down.
 	adopted bool
+
+	once sync.Once
+	// closes counts how many times the descriptors were actually released, so
+	// a test can hold "exactly once" rather than infer it.
+	closes int
+	err    error
+}
+
+// close releases the descriptors, at most once however many callers ask.
+func (o *ownership) close() error {
+	if o == nil {
+		return nil
+	}
+	o.once.Do(func() {
+		o.closes++
+		if o.dirFile != nil {
+			o.err = o.dirFile.Close()
+		}
+		if o.root != nil {
+			if err := o.root.Close(); o.err == nil {
+				o.err = err
+			}
+		}
+	})
+	return o.err
 }
 
 // Dir is the resolved pathname of the pinned directory.
@@ -65,36 +114,34 @@ func (p *ProjectRoot) Dir() string { return p.dir }
 // caller's wrapper stops owning anything and says so — rather than asking
 // every caller to remember.
 func (p *ProjectRoot) Close() error {
-	if p == nil {
+	if p == nil || p.own == nil {
 		return nil
 	}
-	if p.adopted {
+	p.own.mu.Lock()
+	adopted := p.own.adopted
+	p.own.mu.Unlock()
+	if adopted {
 		return errAdoptedByServer
 	}
-	var err error
-	if p.dirFile != nil {
-		err = p.dirFile.Close()
-	}
-	if p.root != nil {
-		if rerr := p.root.Close(); err == nil {
-			err = rerr
-		}
-	}
-	return err
+	return p.own.close()
 }
 
 // errAdoptedByServer is what a caller gets for closing a root it handed over.
 var errAdoptedByServer = errors.New(
 	"this project root was adopted by a server, which closes it; nothing was closed here")
 
-// detach marks this wrapper as no longer owning its descriptors.
+// detach marks these descriptors as a server's, for every wrapper over them.
 //
 // Called by `New` at the instant it succeeds, so there is exactly one owner
-// from then on and no window in which two things could close one descriptor.
+// from then on — and it is set on the shared cell, so a copy a caller made
+// **before** handing the original over sees it too.
 func (p *ProjectRoot) detach() {
-	if p != nil {
-		p.adopted = true
+	if p == nil || p.own == nil {
+		return
 	}
+	p.own.mu.Lock()
+	p.own.adopted = true
+	p.own.mu.Unlock()
 }
 
 // OpenProjectRoot validates a directory and pins it in one operation.
@@ -152,7 +199,11 @@ func OpenProjectRoot(dir string) (*ProjectRoot, error) {
 		root.Close()
 		return nil, fmt.Errorf("%s: %w", resolved, err)
 	}
-	return &ProjectRoot{dir: resolved, root: root, dirFile: dirFile, info: held}, nil
+	return &ProjectRoot{
+		dir:  resolved,
+		own:  &ownership{root: root, dirFile: dirFile},
+		info: held,
+	}, nil
 }
 
 // testHookAfterInspectingProject runs between establishing what a directory is
@@ -240,7 +291,7 @@ func (c projectChoice) stillTheOneValidated(pinned *ProjectRoot) error {
 	// Through the pinned descriptor, so the name cannot be redirected out from
 	// under the check: this is the file whose existence and kind chose this
 	// directory, and it has to still be that file.
-	held, err := pinned.root.Lstat(projectConfigName)
+	held, err := pinned.own.root.Lstat(projectConfigName)
 	if err != nil {
 		return fmt.Errorf("%s in the project that was validated: %w", projectConfigName, err)
 	}

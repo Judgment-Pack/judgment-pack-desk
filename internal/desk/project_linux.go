@@ -42,10 +42,10 @@ import (
 // answer the directory, at both use sites: `chdir` takes it, `Lstat` takes it,
 // and `filepath.Rel` and `filepath.Join` clean it away.
 func (p *ProjectRoot) descriptorWorkingDir() (string, bool) {
-	if p == nil || p.dirFile == nil {
+	if p == nil || p.own == nil || p.own.dirFile == nil {
 		return "", false
 	}
-	return "/proc/self/fd/" + strconv.Itoa(int(p.dirFile.Fd())) + "/.", true
+	return "/proc/self/fd/" + strconv.Itoa(int(p.own.dirFile.Fd())) + "/.", true
 }
 
 // sameDirectory reports whether a pathname still names the pinned directory.

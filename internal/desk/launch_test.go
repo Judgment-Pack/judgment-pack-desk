@@ -796,7 +796,7 @@ func TestTheServerServesTheRootItWasHanded(t *testing.T) {
 	if s.projectDir != pinned.Dir() {
 		t.Errorf("the server serves %q, want %q", s.projectDir, pinned.Dir())
 	}
-	if s.root != pinned.root {
+	if s.root != pinned.own.root {
 		t.Error("the server opened a root of its own rather than serving the one it was handed")
 	}
 }
@@ -813,7 +813,7 @@ func TestAHandedRootIsReleasedWhenTheServerRefusesToStart(t *testing.T) {
 	if _, err := New(Config{Root: pinned, JpackBin: "jpack"}); err == nil {
 		t.Fatal("a server with no token was built")
 	}
-	if _, err := pinned.root.Stat("."); err == nil {
+	if _, err := pinned.own.root.Stat("."); err == nil {
 		t.Error("the descriptor was still open after the refusal")
 	}
 }
@@ -961,7 +961,7 @@ func TestPinningRefusesATreeThatHardLinkedTheValidatedFile(t *testing.T) {
 		t.Fatalf("lstat: %v", err)
 	}
 	// The premise: the file check on its own cannot tell these apart.
-	held, err := pinned.root.Lstat(projectConfigName)
+	held, err := pinned.own.root.Lstat(projectConfigName)
 	if err != nil {
 		t.Fatalf("lstat through the root: %v", err)
 	}
@@ -1289,5 +1289,88 @@ func TestAHandedRootCannotBeClosedOutFromUnderTheServer(t *testing.T) {
 	}
 	if _, err := s.root.Stat("."); err != nil {
 		t.Errorf("the server's root was closed: %v", err)
+	}
+}
+
+func TestACopyMadeBeforeTheHandOverCannotCloseTheServersDescriptors(t *testing.T) {
+	// **A flag inside the struct is not ownership.** `ProjectRoot` is exported,
+	// so a caller can copy one before handing the original over; while the
+	// flag lived in the struct, the copy kept the same descriptors with
+	// `adopted` still false and closing it took the file API out from under a
+	// running desk. The flag lives in a cell every copy shares now.
+	dir, _ := aProject(t)
+	pinned, err := OpenProjectRoot(dir)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	alias := *pinned
+	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken,
+		DeskConfigDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	if err := alias.Close(); !errors.Is(err, errAdoptedByServer) {
+		t.Errorf("closing a copy made before the hand-over answered %v", err)
+	}
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+	if status, body := sendJSON(t, ts, http.MethodGet, "/api/files", nil); status != http.StatusOK {
+		t.Fatalf("the file API answered %d: %v", status, body)
+	}
+}
+
+func TestTheServerReleasesThePinnedRootExactlyOnce(t *testing.T) {
+	// Shutdown paths overlap — a deferred `Close` beside an explicit one, a
+	// test's cleanup beside its own — and closing a descriptor twice is
+	// closing whatever took its number in between.
+	dir, _ := aProject(t)
+	pinned, err := OpenProjectRoot(dir)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	own := pinned.own
+	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken,
+		DeskConfigDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("the second close answered %v", err)
+	}
+	if own.closes != 1 {
+		t.Errorf("the descriptors were released %d times", own.closes)
+	}
+	// And a caller's deferred `Close` afterwards still closes nothing: a
+	// wrapper that was handed over stays handed over, before and after the
+	// server it was handed to has shut down.
+	if err := pinned.Close(); !errors.Is(err, errAdoptedByServer) {
+		t.Errorf("closing after shutdown answered %v", err)
+	}
+	if own.closes != 1 {
+		t.Errorf("a caller's close after shutdown released them again (%d)", own.closes)
+	}
+}
+
+func TestAnUnadoptedRootStillClosesOnceAndOnly(t *testing.T) {
+	// The other side of the same cell: nobody adopted these, so the caller is
+	// the owner — and two of its own calls are still one release.
+	dir, _ := aProject(t)
+	pinned, err := OpenProjectRoot(dir)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if err := pinned.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if err := pinned.Close(); err != nil {
+		t.Fatalf("the second close answered %v", err)
+	}
+	if pinned.own.closes != 1 {
+		t.Errorf("the descriptors were released %d times", pinned.own.closes)
 	}
 }
