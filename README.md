@@ -1520,11 +1520,17 @@ real provider over a stubbed file rather than a fixture, because a fixture
 would hold the mechanism constant and prove nothing about it.
 
 **List models** reads the endpoint's own listing through the relay by naming a
-path suffix — `models`, `v1/models`, `v1beta/models` — and fills a picker. It
-is enabled only where the stored key is bound to the endpoint that is *saved*,
-because the relay refuses a credential entered for another destination before
-opening a socket and a button that could only produce that refusal lies about
-what the page can do. **The field beside it never goes away**: the listing is
+path suffix — `models`, `v1/models`, `v1beta/models` — and fills a picker. Two
+things gate it and one of them is new: the stored key must be bound to the
+endpoint that is *saved*, because the relay refuses a credential entered for
+another destination before opening a socket; and the form on screen must **be**
+that endpoint. The family and the suffix used to come off the editable draft
+while the gate came off the file, so choosing Gemini without saving sent
+`v1beta/models` to a still-saved OpenAI-compatible endpoint — a request the page
+composed for one destination and the desk sent to another. The endpoint it asks
+about is captured at the click, and the rows are cleared the moment the form
+says a different host or protocol: a picker left standing after that is a list
+of models from somewhere else. **The field beside it never goes away**: the listing is
 first-page-only, an endpoint may refuse to list at all, and a gateway may route
 on a name of its own — a picker that was the only way to choose would make
 every one of those unconfigurable. **What is saved is the id and never the

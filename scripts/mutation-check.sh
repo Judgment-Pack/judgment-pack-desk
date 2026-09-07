@@ -3859,21 +3859,38 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # The relay refuses a credential entered for another destination before it
   # opens a socket, so a listing offered here can only produce that refusal.
   mutate web "List models is offered with no key bound to the endpoint" "$MF" \
-    '        <Button onClick={ask} disabled={!bound || asking}>' \
-    '        <Button onClick={ask} disabled={asking}>'
+    '        <Button onClick={ask} disabled={!bound || !matchesSaved || asking}>' \
+    '        <Button onClick={ask} disabled={!matchesSaved || asking}>'
+  # **The gate came off the saved endpoint and the request came off the draft**,
+  # so choosing Gemini without saving sent `v1beta/models` to a still-saved
+  # OpenAI endpoint: a request composed for one destination and sent to another.
+  mutate web "the listing is offered while the form says another endpoint" "$MF" \
+    '        <Button onClick={ask} disabled={!bound || !matchesSaved || asking}>' \
+    '        <Button onClick={ask} disabled={!bound || asking}>'
+  # And the other half of it: what is asked about is the endpoint in the file.
+  mutate web "the listing asks about the endpoint being typed" "$MF" \
+    '    const target = saved
+    if (target === null) return' \
+    '    const target = draft as unknown as AssistantEndpointConfig
+    if (target === null) return'
+  # A picker left standing after the endpoint moved is a list of models from
+  # somewhere else, offered against a form that no longer says that host.
+  mutate web "the rows outlive the endpoint they came from" "$MF" \
+    '  const showing = rows !== undefined && askedFor === identityOf(draft)' \
+    '  const showing = rows !== undefined'
   # **The page names a suffix; the desk builds the address.** A listing that
   # built its own URL would hold the endpoint — and, on this route, this
   # chassis' session token — in page code that no gate is on.
   mutate web "the listing address is built on the page" "$MF" \
-    '    listModels(draft.kind as EndpointKind, bindModelCall(draft.kind)).then(' \
-    "    listModels(draft.kind as EndpointKind, async (suffix) =>
-      globalThis.fetch(\`\${draft.url}/\${suffix}\`, { method: 'GET' })
+    '    listModels(target.kind, bindModelCall(target.kind)).then(' \
+    "    listModels(target.kind, async (suffix) =>
+      globalThis.fetch(\`\${target.url}/\${suffix}\`, { method: 'GET' })
     ).then("
   # The id is what the endpoint answers to; the label is what a person reads,
   # and the two differ on two of the three protocols.
   mutate web "the model is saved from the listing label rather than its id" "$MF" \
-    '              options={rows.map((row) => ({ value: row.id, label: row.label }))}' \
-    '              options={rows.map((row) => ({ value: row.label, label: row.label }))}'
+    '              options={rows!.map((row) => ({ value: row.id, label: row.label }))}' \
+    '              options={rows!.map((row) => ({ value: row.label, label: row.label }))}'
   # A picker offering a fourth tier offers a configuration the decoder refuses
   # by name — and the two states it cannot express are the desk's to report.
   mutate web "the tier picker offers a value outside the union" "$EF" \

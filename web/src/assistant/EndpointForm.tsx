@@ -209,7 +209,13 @@ export function EndpointForm({
 
         <ModelField
           draft={draft}
+          saved={config.assistant.endpoint}
           bound={bound}
+          // **Compared rather than remembered.** A sticky "has been edited"
+          // flag would keep the listing disabled after an edit somebody undid;
+          // what the gate is actually about is whether the form on screen *is*
+          // the endpoint the listing would ask.
+          matchesSaved={seed === JSON.stringify(draft)}
           onChange={edit}
           problem={problemFor('assistant.endpoint.model')}
         />

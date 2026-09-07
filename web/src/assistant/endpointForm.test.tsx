@@ -476,6 +476,11 @@ describe('the model, and the list the endpoint offers', () => {
     await waitFor(() =>
       expect((screen.getByLabelText('Model') as HTMLInputElement).value).toBe('gemini-2.5-pro')
     )
+    // **And the list survives being picked from.** Choosing a model changes
+    // the model and not the endpoint, so the rows are still about the endpoint
+    // on screen — only a kind or a URL moving makes them a list from
+    // somewhere else.
+    expect(screen.getByRole('combobox', { name: 'Models this endpoint listed' })).toBeTruthy()
     save()
     await waitFor(() => expect(seen.urls.some((url) => url.includes('/api/desk-config'))).toBe(true))
     const put = seen.inits.find((init) => init.method === 'PUT')!
@@ -488,11 +493,65 @@ describe('the model, and the list the endpoint offers', () => {
     // Neither may stop an author configuring a model they know the name of.
     servesListing(LISTED)
     renderForm(GEMINI, true)
-    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'a-model-not-listed' } })
     fireEvent.click(screen.getByRole('button', { name: 'List models' }))
     await screen.findByRole('combobox', { name: 'Models this endpoint listed' })
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'a-model-not-listed' } })
     expect((screen.getByLabelText('Model') as HTMLInputElement).value).toBe('a-model-not-listed')
     expect(screen.getByText(/A model that is not here is typed into the field/)).toBeTruthy()
+  })
+
+  it('asks the endpoint that is saved, never the one being typed', async () => {
+    // **The review's exact sequence.** A saved, bound OpenAI-compatible
+    // endpoint; select Gemini without saving; press List models. It used to
+    // send `v1beta/models` to the still-saved OpenAI endpoint — a request
+    // composed for one destination and sent to another.
+    const seen = servesListing({ data: [{ id: 'a-stub-model' }] })
+    renderForm(configured(), true)
+    expect(
+      (screen.getByRole('button', { name: 'List models' }) as HTMLButtonElement).disabled
+    ).toBe(false)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Wire protocol' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Gemini' }))
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('button', { name: 'List models' }) as HTMLButtonElement).disabled
+      ).toBe(true)
+    )
+    expect(screen.getByText(/this asks the endpoint that is saved/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'List models' }))
+    await Promise.resolve()
+    expect(seen.urls.filter((url) => url.includes('/api/assistant/relay/'))).toHaveLength(0)
+  })
+
+  it('disables the listing while only the URL has been typed over', async () => {
+    const seen = servesListing({ data: [{ id: 'a-stub-model' }] })
+    renderForm(configured(), true)
+    fireEvent.change(screen.getByLabelText('Endpoint'), {
+      target: { value: 'https://elsewhere.example.invalid/v1' }
+    })
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('button', { name: 'List models' }) as HTMLButtonElement).disabled
+      ).toBe(true)
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'List models' }))
+    await Promise.resolve()
+    expect(seen.urls.filter((url) => url.includes('/api/assistant/relay/'))).toHaveLength(0)
+  })
+
+  it('clears the rows when the endpoint the form says moves', async () => {
+    // A picker left standing after a kind or a URL changed is a list of models
+    // from somewhere else, offered against a form that no longer says so.
+    servesListing(LISTED)
+    renderForm(GEMINI, true)
+    fireEvent.click(screen.getByRole('button', { name: 'List models' }))
+    await screen.findByRole('combobox', { name: 'Models this endpoint listed' })
+    fireEvent.change(screen.getByLabelText('Endpoint'), {
+      target: { value: 'https://elsewhere.example.invalid' }
+    })
+    await waitFor(() =>
+      expect(screen.queryByRole('combobox', { name: 'Models this endpoint listed' })).toBeNull()
+    )
   })
 
   it('reports a refused listing in the probe s words, and never the body', async () => {
