@@ -5275,6 +5275,52 @@ export function assistantTransport(): Transport {
   mutate web "the narrowing is not reported to the author" "$EC" \
     '    events.push({ type: '"'"'guardrail'"'"', tool: tool.name, action: '"'"'narrowed'"'"', detail: narrowingNotice(lost) })' \
     '    void narrowingNotice(lost)'
+
+  # ---- Round 2's four findings, each broken again ---------------------------
+
+  # **A notice is a loss beyond the ruling, never the ruling itself.** Comparing
+  # the runtime's raw schema against a set that includes the desk's own six made
+  # every tool produce a notice about `additionalProperties` — the desk warning
+  # about the thing it wrote down, five times a run.
+  mutate web "the narrowing notice is measured against the raw schema" "$GS" \
+    '  const desk = withoutUnsupportedKeywords(served)
+  const shown = schemaShown(engine, family, desk)' \
+    '  const desk = served
+  const shown = schemaShown(engine, family, desk)'
+
+  # **The fixture the declaration is derived over is the runtime's vocabulary,
+  # or it is a schema somebody made up.** Losing the union check is losing the
+  # only thing that ties the claim to what the runtime actually serves.
+  mutate web "the derivation fixture is not held to the runtime's vocabulary" "$CT" \
+    '      expect([...keywordsSent(VOCABULARY.inputSchema)].sort()).toEqual(RUNTIME_VOCABULARY)' \
+    '      expect(RUNTIME_VOCABULARY.length).toBeGreaterThan(0)'
+  # …and the other half: a vocabulary computed from the tool schemas alone
+  # leaves out the pack schema, which is where most of the keywords are.
+  mutate web "the runtime vocabulary ignores the recorded pack schema" "$CT" \
+    '  keywordsSent(JSON.parse(answered.content[0]!.text), found)' \
+    '  void answered'
+
+  # **A rule about one wire's schema dialect belongs to that wire.** Installed
+  # on every family, a 400 saying "unsupported response type" names `type` and
+  # the real failure was rewritten into a sentence about a removal list.
+  mutate web "the built-in engine classifies a schema refusal on every family" "$BL" \
+    "  if (session.model.family !== 'gemini') return null" \
+    '  if (false) return null'
+  mutate web "the SDK-backed engine classifies a schema refusal on every family" "$VL" \
+    "    if (session.model.family !== 'gemini') return null" \
+    '    if (false) return null'
+
+  # **An empty signed thought is a shape the wire sends**, so a validator that
+  # calls it malformed refuses a client that replayed it faithfully.
+  mutate web "an empty signed thought is called malformed" "$SM" \
+    '      const onThought = part.thought === true' \
+    "      const onThought = part.thought === true && typeof part.text === 'string' && part.text !== ''"
+  # And the desk's own half: the parts that arrived are the parts that go back,
+  # empty ones included.
+  mutate web "an empty Gemini part is dropped from the turn that goes back" "$BG" \
+    '  parts.push({ ...arriving })' \
+    "  if ((arriving.text ?? '') === '' && arriving.functionCall === undefined) return
+  parts.push({ ...arriving })"
 fi
 
 restore
