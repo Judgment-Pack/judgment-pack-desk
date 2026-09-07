@@ -930,3 +930,42 @@ func TestOnlyTheExactSpellingThisDeskReportedIsAccepted(t *testing.T) {
 		t.Errorf("stored %q, want %q", decoded.ProjectFile, exact)
 	}
 }
+
+func TestPinningRefusesATreeThatHardLinkedTheValidatedFile(t *testing.T) {
+	// **The case only the directory check catches**, and the reason there are
+	// two. A tree that hard-links the validated `jpack-desk.json` presents the
+	// *same file identity* under its own directory: the file check reads the
+	// name through the pinned root, finds the very inode that was validated,
+	// and is satisfied. What is different is the directory, and that is what
+	// says this is not the project whose configuration file chose it.
+	project, file := aProject(t)
+	elsewhere := t.TempDir()
+	if err := os.Link(file, filepath.Join(elsewhere, projectConfigName)); err != nil {
+		t.Skipf("hard links unavailable: %v", err)
+	}
+	pinned, err := OpenProjectRoot(elsewhere)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer pinned.Close()
+	dirInfo, err := os.Lstat(project)
+	if err != nil {
+		t.Fatalf("lstat: %v", err)
+	}
+	fileInfo, err := os.Lstat(file)
+	if err != nil {
+		t.Fatalf("lstat: %v", err)
+	}
+	// The premise: the file check on its own cannot tell these apart.
+	held, err := pinned.root.Lstat(projectConfigName)
+	if err != nil {
+		t.Fatalf("lstat through the root: %v", err)
+	}
+	if !os.SameFile(fileInfo, held) {
+		t.Skip("this filesystem does not give a hard link the same identity")
+	}
+	chosen := projectChoice{dir: project, dirInfo: dirInfo, fileInfo: fileInfo}
+	if err := chosen.stillTheOneValidated(pinned); err == nil {
+		t.Fatal("a tree that hard-linked the validated file was served")
+	}
+}
