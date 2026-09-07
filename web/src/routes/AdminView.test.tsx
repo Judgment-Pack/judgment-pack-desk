@@ -291,7 +291,11 @@ describe('the Admin page', () => {
     const interactive = container.querySelectorAll('button, input, select, textarea')
     const labels = Array.from(interactive).map((element) => element.textContent?.trim())
     const writes = ['Reset panes on this machine', 'Save', 'Check reachability']
-    for (const label of writes) {
+    // Two Saves, and each is one card's: the Project card writes `project` and
+    // the Assistant form writes `assistant`, through the same conditional
+    // commit and neither sending the other's member.
+    expect(labels.filter((each) => each === 'Save')).toHaveLength(2)
+    for (const label of ['Reset panes on this machine', 'Check reachability']) {
       expect(labels.filter((each) => each === label), label).toHaveLength(1)
     }
     // Three controls appear only in a state this render is not in, and each is
@@ -329,8 +333,10 @@ describe('the Admin page', () => {
     const disabled = Array.from(container.querySelectorAll('[disabled]')).map(
       (element) => element.textContent
     )
-    expect(disabled).toEqual(['List models', 'Save'])
-    expect(screen.getByText(/a write states the bytes it replaces/)).toBeTruthy()
+    // The Project card's Save first, then the Assistant form's: neither has a
+    // digest to state, and both say so in the same words.
+    expect(disabled).toEqual(['Save', 'List models', 'Save'])
+    expect(screen.getAllByText(/a write states the bytes it replaces/).length).toBe(2)
   })
 
   it('enables the one write once the desk-level file has been read', () => {

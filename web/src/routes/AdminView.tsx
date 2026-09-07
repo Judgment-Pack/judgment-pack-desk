@@ -23,6 +23,7 @@
 import { useState } from 'react'
 import { AssistantSection } from '../assistant/AssistantSection'
 import { CardField, SourceCard, type SourceStatus } from '../admin/SourceCard'
+import { useDefaultProject } from '../admin/DefaultProject'
 import { useHashTarget } from '../shell/useHashTarget'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
@@ -59,6 +60,9 @@ export function AdminView() {
     `${shell.left.mode}|${shell.inspector.open}|${shell.console.open}`
   )
   const [reset, setReset] = useState<ResetOutcome | undefined>(undefined)
+  // The Project card's one field and its Save, sharing one draft across two of
+  // the card's slots.
+  const defaultProject = useDefaultProject()
   // The rail's and the user menu's section links carry a hash. Nothing in the
   // router scrolls to one, and the document is not the scroll container here —
   // `.desk-main` is — so without this they changed the URL and moved nothing.
@@ -79,6 +83,8 @@ export function AdminView() {
         location={projectLocation(effective)}
         status={projectStatus(effective)}
         content={{ text: effective.text, value: {} }}
+        fields={defaultProject.field}
+        save={defaultProject.save}
       />
 
       <SourceCard
