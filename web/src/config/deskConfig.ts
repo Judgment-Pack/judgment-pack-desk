@@ -728,6 +728,18 @@ function lastSegment(path: string): string {
 }
 
 /**
+ * The rule the one storage kind is held to, as one sentence.
+ *
+ * **Exported because Admin's Kind field states it as its hint**, and there is
+ * one producer of it. A page that wrote its own sentence about the two kinds
+ * that are not available yet would be a second answer to the same question,
+ * free to say something the decoder does not — and the mutation table could
+ * break either one while the other went on saying it.
+ */
+export const STORAGE_KIND_SAYS =
+  'must be "filesystem"; "database" and "cloud storage" are not available yet'
+
+/**
  * The one storage kind there is.
  *
  * Its own function rather than `oneOf`, so the refusal can name the two kinds
@@ -743,9 +755,7 @@ function storageKind(
   if (value !== 'filesystem') {
     problems.push({
       key: 'storage.packs.kind',
-      reason:
-        `must be "filesystem"; "database" and "cloud storage" are not available yet, ` +
-        `found ${describe(value)}`
+      reason: `${STORAGE_KIND_SAYS}, found ${describe(value)}`
     })
     return undefined
   }
@@ -830,6 +840,27 @@ function packDir(value: unknown, problems: ConfigProblem[]): string | undefined 
 }
 
 /**
+ * The rule an `idBase` is held to, as one sentence.
+ *
+ * **It is a URI rule and not an `https:` one**, which is worth saying because
+ * the neighbouring rules on this file *are* transport rules. `idBase` is not
+ * fetched by anything: it is the prefix of a pack's `id`, and the JPS `id`
+ * member is `format: uri`. Exported so Admin's hint is this sentence rather
+ * than a second, stricter one written on the page.
+ */
+export const ID_BASE_SAYS = "must be a URI, because a pack's id member is one"
+
+/**
+ * What the decoder does to an `idBase` that is accepted, said once.
+ *
+ * **Not a refusal — a normalisation**, and the reader has to be told because
+ * what lands is not what they typed. Exported beside the rule it accompanies so
+ * Admin quotes it rather than describing it.
+ */
+export const ID_BASE_NORMALISES =
+  'A separator is added where there is none, so an id is a bare concatenation.'
+
+/**
  * The prefix a new pack's `id` is built from.
  *
  * The JPS `id` member is `format: uri`, so this must parse as one. It is
@@ -852,7 +883,7 @@ function idBase(value: unknown, problems: ConfigProblem[]): string | undefined {
   } catch {
     problems.push({
       key: 'storage.packs.idBase',
-      reason: `must be a URI, because a pack's id member is one; found ${describe(value)}`
+      reason: `${ID_BASE_SAYS}; found ${describe(value)}`
     })
     return undefined
   }
@@ -931,6 +962,13 @@ function organizationName(
   return name
 }
 
+/**
+ * The shape rule a mark is held to, as one sentence. Exported for Admin's
+ * hint, on the same terms as `STORAGE_KIND_SAYS`: one producer.
+ */
+export const ORGANIZATION_MARK_SAYS =
+  'must begin with "<svg" or "data:image/" — a file path is not accepted'
+
 function markValue(value: unknown, problems: ConfigProblem[]): string | null | undefined {
   if (value === undefined) return undefined
   if (value === null) return null
@@ -943,10 +981,7 @@ function markValue(value: unknown, problems: ConfigProblem[]): string | null | u
   }
   const trimmed = value.trim()
   if (!trimmed.startsWith('<svg') && !trimmed.startsWith('data:image/')) {
-    problems.push({
-      key: 'organization.mark',
-      reason: 'must begin with "<svg" or "data:image/" — a file path is not accepted'
-    })
+    problems.push({ key: 'organization.mark', reason: ORGANIZATION_MARK_SAYS })
     return undefined
   }
   const bytes = new TextEncoder().encode(value).length
@@ -1521,6 +1556,18 @@ export interface DeskLevelSummary {
   readFailure?: ReadFailure
   /** What the chassis said about this process. See `DeskLevelRead.chassis`. */
   chassis?: ChassisPaths
+  /**
+   * This file's own decode, carried rather than flattened away.
+   *
+   * `problems` above is one half of it. The other half is `values`, and a
+   * project-file write needs them: the answer to that write is the *project*
+   * file, and the effective configuration is the two files layered — so
+   * re-layering from the answer without this would have to guess what the
+   * desk-level file contributed, or read it again. Neither is allowed here:
+   * one is a page describing a file from memory, the other is a write
+   * reflected by a second read.
+   */
+  decoded?: DecodedConfig
 }
 
 export interface EffectiveConfig {
@@ -1538,6 +1585,17 @@ export interface EffectiveConfig {
    * file.
    */
   text?: string
+  /**
+   * The digest of those bytes, as the chassis reported them, where a file was
+   * read.
+   *
+   * **It is what a write states as the bytes it replaces.** Undefined is a
+   * read that produced no file, and a page that invented a digest there would
+   * be asserting the state of a file it never saw — so Admin's cards refuse to
+   * write on it rather than guessing either way, exactly as the desk-level
+   * form does on `DeskLevelSummary.sha256`.
+   */
+  sha256?: string
   /**
    * Why no file was read, where none was **absent**. Not an error the page
    * reports — an absent config is defaults with no banner — but Admin says
@@ -1596,7 +1654,8 @@ export function effectiveConfig(
   note?: string,
   readFailure?: ReadFailure,
   desk?: DeskLevelRead,
-  text?: string
+  text?: string,
+  sha256?: string
 ): EffectiveConfig {
   const values = decoded?.values
   const deskValues = desk?.decoded?.values
@@ -1644,6 +1703,7 @@ export function effectiveConfig(
     problems: decoded?.problems ?? [],
     path: PROJECT_CONFIG_PATH,
     text,
+    sha256,
     note,
     readFailure,
     declaredPanes: panesDeclaredBy ?? NOTHING_DECLARED,
@@ -1658,7 +1718,8 @@ export function effectiveConfig(
             chassis: desk.chassis,
             sha256: desk.sha256,
             note: desk.note,
-            readFailure: desk.readFailure
+            readFailure: desk.readFailure,
+            decoded: desk.decoded
           }
   }
 }
