@@ -70,6 +70,26 @@ function touchedIn<D>(next: D, seed: D): Record<string, unknown> {
 }
 
 /**
+ * What is left of the held fields once a fresh seed has arrived: the entries
+ * that still say something the file does not.
+ *
+ * **The same object where nothing was dropped**, so a seed that changed some
+ * other member does not schedule a state update that changes nothing.
+ */
+function agreeing<D>(touched: Record<string, unknown>, seed: D): Record<string, unknown> {
+  const kept: Record<string, unknown> = {}
+  let dropped = false
+  for (const [name, value] of Object.entries(touched)) {
+    if (Object.is(value, (seed as Record<string, unknown>)[name])) {
+      dropped = true
+      continue
+    }
+    kept[name] = value
+  }
+  return dropped ? kept : touched
+}
+
+/**
  * One card's draft: the file's own values, under the fields the reader has
  * typed into.
  *
@@ -94,8 +114,22 @@ export function useProjectFileDraft<D>(
   seed: D,
   editsOf: (draft: D, seed: D) => MemberEdit[]
 ): ProjectFileDraft<D> {
+  const identity = JSON.stringify(seed)
+  const [seen, setSeen] = useState(identity)
   const [touched, setTouched] = useState<Record<string, unknown>>({})
-  const draft = { ...seed, ...touched } as D
+  // **A fresh seed prunes what it agrees with, and the pruning is what makes
+  // the agreement last.** Round 2 found the entry surviving: hold `B`, take a
+  // 409, Reload finds `B` — the form goes clean, because `B` is what the file
+  // says — and then another writer makes it `C`. The retained entry resurfaces
+  // as dirty against the newer seed and offers to write `B` over `C`, with
+  // nobody having typed anything since `B` became the accepted value. A field
+  // that agrees with the file is not a field somebody is holding.
+  const held = identity === seen ? touched : agreeing(touched, seed)
+  if (identity !== seen) {
+    setSeen(identity)
+    if (held !== touched) setTouched(held)
+  }
+  const draft = { ...seed, ...held } as D
   // Computed from the draft above, so an untouched field contributes nothing
   // however far the file has moved since it was last looked at.
   const edits = editsOf(draft, seed)

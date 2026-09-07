@@ -271,6 +271,69 @@ function servesRefusedThenUnreadable(): { puts: number } {
   return seen
 }
 
+/**
+ * A desk with three revisions of the project file: one read, one refusal, and
+ * then whatever the caller asks for next.
+ *
+ * `next(content, digest)` moves what a later read answers, which is how a case
+ * puts a *third* revision underneath a form that has already reloaded onto the
+ * second.
+ */
+function servesThreeRevisions(first: string, second: string): {
+  bodies: Record<string, unknown>[]
+  next: (content: string, digest: string) => void
+} {
+  const seen = {
+    reads: 0,
+    bodies: [] as Record<string, unknown>[],
+    later: second,
+    digest: 'b'.repeat(64)
+  }
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url.includes('/api/desk-config')) {
+      return answered({
+        path: '/home/someone/.config/jpack-desk/desk.json',
+        present: false,
+        sha256: '',
+        project: { dir: '/p', file: '/p/jpack-desk.json' },
+        runtime: { bin: 'jpack' }
+      })
+    }
+    if (init?.method === 'PUT') {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>
+      seen.bodies.push(body)
+      return answered(
+        {
+          error: 'the file on disk is not the file this edit started from',
+          code: 'stale',
+          path: 'jpack-desk.json',
+          expectedSha256: 'a'.repeat(64),
+          actualSha256: 'b'.repeat(64),
+          exists: true
+        },
+        409
+      )
+    }
+    seen.reads += 1
+    const content = seen.reads === 1 ? first : seen.later
+    return answered({
+      path: 'jpack-desk.json',
+      bytes: content.length,
+      sha256: seen.reads === 1 ? 'a'.repeat(64) : seen.digest,
+      content
+    })
+  })
+  return {
+    get bodies() {
+      return seen.bodies
+    },
+    next: (content: string, digest: string) => {
+      seen.later = content
+      seen.digest = digest
+    }
+  }
+}
+
 /** The member one card wrote, as the request carried it. */
 function memberOf(body: Record<string, unknown>, name: string): unknown {
   return (JSON.parse(String(body.content)) as Record<string, unknown>)[name]
@@ -514,6 +577,68 @@ describe('a project-file card’s form', () => {
     expect(screen.getByDisplayValue('What I typed')).toBeTruthy()
     expect(desk.puts).toBe(1)
   })
+
+  /**
+   * **A field the file has caught up with is not a field anybody is holding.**
+   * Round 2 found the entry surviving the agreement: hold `B`, take a 409,
+   * Reload finds `B` and the form goes clean — and then another writer makes it
+   * `C`. Without pruning, the retained `B` resurfaces as dirty against the newer
+   * seed and offers to write it over `C`, with nobody having typed anything
+   * since `B` became the accepted value.
+   */
+  it.each([
+    [
+      'a top-level field',
+      <OrganizationForm key="o" />,
+      (name: string) =>
+        `{\n  "deskConfigVersion": 1,\n  "organization": { "name": ${JSON.stringify(name)}, "mark": null }\n}\n`,
+      'Name',
+      'A',
+      'B',
+      'C'
+    ],
+    [
+      'a nested leaf',
+      <PanesForm key="p" />,
+      (width: string) =>
+        `{\n  "deskConfigVersion": 1,\n  "panes": { "left": { "mode": "expanded", "width": ${width} } }\n}\n`,
+      'Rail width',
+      '248',
+      '300',
+      '360'
+    ]
+  ] as const)(
+    'follows a later revision of %s it has caught up with, and writes nothing',
+    async (_where, form, file, label, first, typed, later) => {
+      const desk = servesThreeRevisions(file(first), file(typed))
+      const { client } = renderForm(form)
+      await waitFor(() => expect(screen.getByTestId('live').textContent).toBe('a'.repeat(64)))
+
+      // Typed, refused as stale, and then the file turns out to say exactly
+      // what was typed.
+      fireEvent.change(screen.getByLabelText(label), { target: { value: typed } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      await screen.findByText('The file changed on disk — nothing was written.')
+      fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
+      await waitFor(() => expect(screen.getByTestId('live').textContent).toBe('b'.repeat(64)))
+      expect((screen.getByLabelText(label) as HTMLInputElement).value).toBe(typed)
+      expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
+      const refused = desk.bodies.length
+
+      // A third revision, from another writer, on the same field.
+      desk.next(file(later), 'c'.repeat(64))
+      await act(async () => {
+        await client.invalidateQueries()
+      })
+      await waitFor(() => expect(screen.getByTestId('live').textContent).toBe('c'.repeat(64)))
+
+      // The form follows it, stays clean, and has nothing to send.
+      expect((screen.getByLabelText(label) as HTMLInputElement).value).toBe(later)
+      expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() => expect(desk.bodies).toHaveLength(refused))
+    }
+  )
 
   it('offers no Save where the value comes from the desk-level file', async () => {
     // The card's Location names the file the value came from, and this page

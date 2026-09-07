@@ -5919,8 +5919,8 @@ export function assistantTransport(): Transport {
   # fresh seed won over the fields would answer a refusal by discarding the work
   # the refusal protected.
   mutate web "Reload after a refused write takes the file over the unsaved values" "$PFF" \
-    '  const draft = { ...seed, ...touched } as D' \
-    '  const draft = { ...touched, ...seed } as D'
+    '  const draft = { ...seed, ...held } as D' \
+    '  const draft = { ...held, ...seed } as D'
 
   # **A reload that failed changed nothing, so nothing it was about may go.**
   # Clearing the refusal on the button press leaves a card whose read then
@@ -5952,6 +5952,15 @@ export function assistantTransport(): Transport {
   mutate web "a form goes on holding what it typed after the save landed" "$PFF" \
     '    submit: () => save.save(edits, () => setTouched({})),' \
     '    submit: () => save.save(edits),'
+
+  # **A field the file has caught up with is not one anybody is holding.** Hold
+  # `B`, take a 409, Reload finds `B` and the form goes clean — and then another
+  # writer makes it `C`. Without the pruning the retained entry resurfaces as
+  # dirty against the newer seed and offers to write `B` over `C`, with nobody
+  # having typed anything since `B` became the accepted value.
+  mutate web "a held field survives the seed catching up with it" "$PFF" \
+    '  const held = identity === seen ? touched : agreeing(touched, seed)' \
+    '  const held = touched'
 
   # **A whole draft is not a record of what anybody edited**, and round 1 of the
   # review found the lost edit: edit Name while another writer adds a mark, take
