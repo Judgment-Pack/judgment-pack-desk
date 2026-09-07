@@ -5922,6 +5922,17 @@ export function assistantTransport(): Transport {
     '  const draft = { ...seed, ...touched } as D' \
     '  const draft = { ...touched, ...seed } as D'
 
+  # **A configuration that is accepted and cannot work is worse than one
+  # refused where it was written.** The chassis refuses a NUL in any path
+  # outright, so a `dir` carrying one is advertised by Admin as the pack
+  # location and makes every later create fail with a sentence about a path
+  # nobody chose to look at — the same defect `dist` had.
+  mutate web "a control character is accepted in a pack location" "$D" \
+    '  if (CONTROL_CHARACTER.test(trimmed)) {
+    return bad(`${NO_CONTROL_CHARACTERS}; found ${describe(value)}`)
+  }' \
+    ''
+
   # **A save that lands is over.** The decoder normalises what it accepts — an
   # `idBase` gains the separator it was missing, a `dir` loses the one it ended
   # with — so a form still holding the raw input stays dirty for ever over a save

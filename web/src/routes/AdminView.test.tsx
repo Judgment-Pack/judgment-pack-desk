@@ -86,6 +86,17 @@ function renderAdmin(
   )
 }
 
+/**
+ * One sentence, as a pattern that matches it inside a longer hint.
+ *
+ * The Packs-go-to hint states what the file listing established **and** the
+ * decoder's rule for the field, so an exact-text query would be asserting that
+ * the second half is absent.
+ */
+function escaped(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 /** One file listing, or a refusal, for the Storage card to describe. */
 function servesListing(options: {
   files?: { path: string; bytes: number; sha256: string }[]
@@ -321,14 +332,16 @@ describe('the Admin page', () => {
     // holds files and can never claim an empty one exists.
     servesListing({ files: [{ path: 'packs/a.pack.json', bytes: 1, sha256: 'aa' }] })
     renderAdmin()
-    expect(await screen.findByText('holds files')).toBeTruthy()
+    // A substring: the hint states what the listing established and then the
+    // decoder's own rule for the field, and both are meant to be there.
+    expect(await screen.findByText(/holds files/)).toBeTruthy()
   })
 
   it('says only that no file is under it, which is what the listing can show', async () => {
     servesListing({ files: [{ path: 'jpack.json', bytes: 1, sha256: 'aa' }] })
     renderAdmin()
     expect(
-      await screen.findByText('no file is under it — the first pack asks for it to be created')
+      await screen.findByText(/no file is under it — the first pack asks for it to be created/)
     ).toBeTruthy()
   })
 
@@ -354,7 +367,7 @@ describe('the Admin page', () => {
     for (const [listing, says] of cases) {
       servesListing(listing)
       renderAdmin()
-      expect(await screen.findByText(says), says).toBeTruthy()
+      expect(await screen.findByText(new RegExp(escaped(says))), says).toBeTruthy()
       cleanup()
     }
   })
@@ -362,7 +375,7 @@ describe('the Admin page', () => {
   it('says the listing has not answered rather than describing what it has not seen', async () => {
     vi.stubGlobal('fetch', () => new Promise(() => {}))
     renderAdmin()
-    expect(await screen.findByText('the file listing has not answered yet')).toBeTruthy()
+    expect(await screen.findByText(/the file listing has not answered yet/)).toBeTruthy()
   })
 
   it('names the two future kinds in the decoder’s own words, and offers neither', () => {

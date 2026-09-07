@@ -24,6 +24,7 @@ import {
   PanesForm,
   StorageForm
 } from './projectFileCards'
+import { NO_CONTROL_CHARACTERS } from '../config/deskConfig'
 import { FROM_THE_DESK_FILE } from './useProjectFileSave'
 
 afterEach(() => {
@@ -406,6 +407,33 @@ describe('a project-file card’s form', () => {
     await waitFor(() => expect(screen.getByDisplayValue('https://acme.example/packs/')).toBeTruthy())
     expect(screen.getByDisplayValue('decisions')).toBeTruthy()
     expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  /**
+   * **The refusal belongs at the Save, not at the create that eventually
+   * fails.** A `dir` carrying a NUL used to decode clean: Admin reported it as
+   * the pack location, and every later create failed at the chassis with a
+   * sentence about a path nobody chose to look at.
+   */
+  it('refuses a pack location the desk could never write, before it is written', async () => {
+    const before = `{\n  "deskConfigVersion": 1,\n  "storage": { "packs": { "dir": "packs", "idBase": "https://acme.example/d/" } }\n}\n`
+    const desk = servesLandingWrites(before)
+    renderForm(<StorageForm dirSays="holds files" />)
+    await waitFor(() => expect(screen.getByTestId('live').textContent).toBe('a'.repeat(64)))
+
+    fireEvent.change(screen.getByLabelText('Packs go to'), {
+      target: { value: 'packs\u0000hidden' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    // The decoder's own sentence, on the field its key path names — read
+    // through the field's own error element rather than by text, because the
+    // hint states the same rule and both are meant to.
+    const field = screen.getByLabelText('Packs go to')
+    await waitFor(() => expect(field.getAttribute('aria-invalid')).toBe('true'))
+    const error = document.getElementById(`${field.id}-error`)
+    expect(error?.textContent).toContain(NO_CONTROL_CHARACTERS)
+    // And nothing was written: the desk was never asked to.
+    expect(desk.bodies).toEqual([])
   })
 
   it('offers no Save where the value comes from the desk-level file', async () => {

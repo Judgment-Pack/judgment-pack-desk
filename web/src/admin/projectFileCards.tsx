@@ -25,6 +25,7 @@ import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
   ID_BASE_NORMALISES,
   ID_BASE_SAYS,
+  NO_CONTROL_CHARACTERS,
   ORGANIZATION_MARK_SAYS,
   PANE_BOUNDS,
   STORAGE_KIND_SAYS,
@@ -273,7 +274,11 @@ export function StorageForm({ dirSays }: { dirSays: string }) {
           it is the listing's sentence rather than a rule: the decoder's rules
           for this member are several and specific, and each names itself when
           it is the one that is broken. */}
-      <Field label="Packs go to" hint={dirSays} error={problemAt(save, 'storage.packs.dir')}>
+      <Field
+        label="Packs go to"
+        hint={`${dirSays} — ${NO_CONTROL_CHARACTERS}`}
+        error={problemAt(save, 'storage.packs.dir')}
+      >
         {(wiring) => (
           <Input
             {...wiring}
@@ -285,7 +290,7 @@ export function StorageForm({ dirSays }: { dirSays: string }) {
       </Field>
       <Field
         label="Id prefix"
-        hint={`${ID_BASE_SAYS}. ${ID_BASE_NORMALISES}`}
+        hint={`${ID_BASE_SAYS} — ${NO_CONTROL_CHARACTERS}. ${ID_BASE_NORMALISES}`}
         error={problemAt(save, 'storage.packs.idBase')}
       >
         {(wiring) => (

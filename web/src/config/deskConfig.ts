@@ -813,6 +813,11 @@ function packDir(value: unknown, problems: ConfigProblem[]): string | undefined 
   if (typeof value !== 'string') return bad(`must be a string; found ${describe(value)}`)
   const trimmed = value.trim().replace(/\/+$/, '')
   if (trimmed === '') return bad('must name a directory inside the project')
+  // Before every shape rule below, because a name carrying one is not a name
+  // this desk could write whatever else is true of it. See NO_CONTROL_CHARACTERS.
+  if (CONTROL_CHARACTER.test(trimmed)) {
+    return bad(`${NO_CONTROL_CHARACTERS}; found ${describe(value)}`)
+  }
   if (trimmed.startsWith('/')) return bad('must be relative to the project, not absolute')
   if (trimmed.includes('\\') || trimmed.includes(':')) {
     return bad('must be slash-separated and carry no backslash or colon')
@@ -861,8 +866,26 @@ export const ID_BASE_SAYS = "must be a URI, because a pack's id member is one"
  * what lands is not what they typed. Exported beside the rule it accompanies so
  * Admin quotes it rather than describing it.
  */
-export const ID_BASE_NORMALISES =
-  'A separator is added where there is none, so an id is a bare concatenation.'
+export const ID_BASE_NORMALISES = 'A separator is added where there is none.'
+
+/**
+ * The rule both pack-storage strings are held to, as one sentence.
+ *
+ * **A control character is not a name this desk could ever act on.** The
+ * chassis refuses a NUL in any path outright (`wireRelativePath` in
+ * `internal/desk/files.go`), so a `dir` carrying one decodes clean, is reported
+ * on Admin as the pack location, and makes **every** later create fail with a
+ * sentence about a path nobody chose to look at. And `new URL` does not save
+ * an `idBase` either: it percent-encodes a NUL, silently *deletes* a tab, and
+ * accepts a DEL — so what would be written is not what anybody typed.
+ *
+ * Refused where it is written, in the decoder both the page and a pasted file
+ * go through, rather than at the write that eventually fails.
+ */
+export const NO_CONTROL_CHARACTERS = 'must carry no control character'
+
+/** Every C0 control, and DEL. `\u0000` is the one that reaches the chassis. */
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/
 
 /**
  * The prefix a new pack's `id` is built from.
@@ -882,6 +905,15 @@ function idBase(value: unknown, problems: ConfigProblem[]): string | undefined {
     return undefined
   }
   const trimmed = value.trim()
+  // Before the URL parse, which does not refuse one: it percent-encodes a NUL,
+  // deletes a tab outright, and takes a DEL. See NO_CONTROL_CHARACTERS.
+  if (CONTROL_CHARACTER.test(trimmed)) {
+    problems.push({
+      key: 'storage.packs.idBase',
+      reason: `${NO_CONTROL_CHARACTERS}; found ${describe(value)}`
+    })
+    return undefined
+  }
   try {
     new URL(trimmed)
   } catch {
