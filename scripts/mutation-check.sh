@@ -1914,9 +1914,14 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "Admin claims a location the listing does not show" "$V" \
     "  if (files.some((file) => file.path.startsWith(\`\${dir}/\`))) return 'holds-files'" \
     "  if (true) return 'holds-files'"
-  mutate web "a future storage kind becomes a control" "$V" \
-    '<span>database — coming soon</span>' \
-    '<input type="radio" disabled readOnly aria-label="database — coming soon" />'
+  # Retargeted, not retired: the claim is the same one and the card that makes
+  # it moved. The two kinds that are not available yet are named in the
+  # decoder's own refusal, and neither is offered — so the break is offering
+  # one, which the hidden native select behind the Radix trigger reports.
+  PFC=web/src/admin/projectFileCards.tsx
+  mutate web "a future storage kind becomes a control" "$PFC" \
+    "const KIND_OPTIONS = [{ value: 'filesystem', label: 'filesystem' }] as const" \
+    "const KIND_OPTIONS = [{ value: 'filesystem', label: 'filesystem' }, { value: 'database', label: 'database' }] as const"
   mutate web "an unknown storage key is accepted" "$D" \
     "          ? section(storage.packs, 'storage.packs', ['kind', 'dir', 'idBase'], problems)" \
     "          ? section(storage.packs, 'storage.packs', ['kind', 'dir', 'idBase', 'bucket'], problems)"
@@ -5864,6 +5869,138 @@ export function assistantTransport(): Transport {
   mutate web "the narration sweep measures only single text nodes" "$NR" \
     '  for (const block of container.querySelectorAll(BLOCKS)) {' \
     '  for (const block of [] as Element[]) {'
+
+  # ---- Chunk 6b: the Save on the project-file cards ----------------------
+  PFS=web/src/admin/useProjectFileSave.ts
+  PFF=web/src/admin/ProjectFileForm.tsx
+
+  # **A form over a parsed object re-serialises to save.** The file then arrives
+  # as a diff of every line — indentation, member order, the author's own
+  # alignment — and `1e2` quietly becomes `100`. The splice is what stops it,
+  # and this is the whole-file rewrite it replaced.
+  mutate web "a card's Save rewrites the whole file instead of one member" "$PFS" \
+    '  return { text: next.text, problems: [] }' \
+    '  return { text: JSON.stringify(JSON.parse(next.text), null, 2), problems: [] }'
+
+  # **There is no row for `noValidate`, and the reason is the row's own rule.**
+  # A number field carries the decoder's bounds as `min` and `max`, and without
+  # `noValidate` the browser refuses the submit before the form sees it — so the
+  # decoder's sentence is never shown and nothing is written. jsdom performs no
+  # constraint validation, so a mutation removing it leaves the whole suite
+  # green: a row for it would be a claim of coverage nothing holds. It is held
+  # by the live drive instead, which is where it was found.
+
+  # **The chassis watches the project and invalidates every query when this
+  # file changes.** A revision read off that query moves onto bytes nobody saw,
+  # and the Save that follows overwrites somebody's edit with no refusal at all
+  # — the exact failure the conditional commit exists to prevent, and the rule
+  # `useFileEditing` already carries for the pack editor.
+  mutate web "the revision follows the watcher while a value is unsaved" "$PFS" \
+    '  if (live !== undefined && live.sha256 !== base?.sha256 && (base === undefined || !unsaved)) {' \
+    '  if (live !== undefined && live.sha256 !== base?.sha256) {'
+
+  # **A write states the bytes it replaces.** The empty string is not a missing
+  # digest — it is a claim that there is no file — so this is the page asserting
+  # the state of a file it never saw, and a change made between the read and the
+  # save is lost rather than refused.
+  mutate web "a card's Save is sent without the identity it read against" "$PFS" \
+    '      { path: PROJECT_CONFIG_PATH, content: composed.text, baseSha256: base.sha256 },' \
+    "      { path: PROJECT_CONFIG_PATH, content: composed.text, baseSha256: '' },"
+
+  # **The file API offers an override, and a configuration card offers none.**
+  # A client that always sent it would have no concurrency story, only an
+  # unstated one: the stale answer this whole path is built around never
+  # arrives, because nothing is ever refused.
+  mutate web "a card's Save overwrites whatever it finds" "$PFS" \
+    '      writeFile(input),' \
+    '      writeFile({ ...input, override: true }),'
+
+  # **Nothing was written, so there is nothing to take back.** A form whose
+  # fresh seed won over the fields would answer a refusal by discarding the work
+  # the refusal protected.
+  mutate web "Reload after a refused write takes the file over the unsaved values" "$PFF" \
+    '  const draft = { ...seed, ...held } as D' \
+    '  const draft = { ...held, ...seed } as D'
+
+  # **A reload that failed changed nothing, so nothing it was about may go.**
+  # Clearing the refusal on the button press leaves a card whose read then
+  # failed with only that read's error — no digests, no Reload — while the
+  # revision behind it has not moved, so the next Save is refused again for a
+  # reason nothing on screen still says.
+  mutate web "the refusal is cleared when Reload is pressed rather than when it lands" "$PFS" \
+    '    const ticket = (reloads.current += 1)
+    setProblems([])' \
+    '    const ticket = (reloads.current += 1)
+    write.reset()
+    setProblems([])'
+
+  # **A configuration that is accepted and cannot work is worse than one
+  # refused where it was written.** The chassis refuses a NUL in any path
+  # outright, so a `dir` carrying one is advertised by Admin as the pack
+  # location and makes every later create fail with a sentence about a path
+  # nobody chose to look at — the same defect `dist` had.
+  mutate web "a control character is accepted in a pack location" "$D" \
+    '  if (CONTROL_CHARACTER.test(value)) {
+    return bad(`${NO_CONTROL_CHARACTERS}; found ${describe(value)}`)
+  }' \
+    ''
+
+  # **A rule that says every control character has to be asked before anything
+  # is removed.** `String.trim` takes U+0009 through U+000D off, so a check
+  # behind one accepts a leading tab and a trailing newline by trimming them —
+  # which is the half of the rule round 2 found missing.
+  mutate web "the control-character rule is asked after the trim has hidden the edges" "$D" \
+    '  if (CONTROL_CHARACTER.test(value)) {
+    return bad(`${NO_CONTROL_CHARACTERS}; found ${describe(value)}`)
+  }
+  const trimmed = value.trim().replace(/\/+$/, '"'"''"'"')' \
+    '  const trimmed = value.trim().replace(/\/+$/, '"'"''"'"')
+  if (CONTROL_CHARACTER.test(trimmed)) {
+    return bad(`${NO_CONTROL_CHARACTERS}; found ${describe(value)}`)
+  }'
+
+  # **A save that lands is over.** The decoder normalises what it accepts — an
+  # `idBase` gains the separator it was missing, a `dir` loses the one it ended
+  # with — so a form still holding the raw input stays dirty for ever over a save
+  # that succeeded, offering to write again what the file already says.
+  mutate web "a form goes on holding what it typed after the save landed" "$PFF" \
+    '    submit: () => save.save(edits, () => setTouched({})),' \
+    '    submit: () => save.save(edits),'
+
+  # **A field the file has caught up with is not one anybody is holding.** Hold
+  # `B`, take a 409, Reload finds `B` and the form goes clean — and then another
+  # writer makes it `C`. Without the pruning the retained entry resurfaces as
+  # dirty against the newer seed and offers to write `B` over `C`, with nobody
+  # having typed anything since `B` became the accepted value.
+  mutate web "a held field survives the seed catching up with it" "$PFF" \
+    '  const held = identity === seen ? touched : agreeing(touched, seed)' \
+    '  const held = touched'
+
+  # **A whole draft is not a record of what anybody edited**, and round 1 of the
+  # review found the lost edit: edit Name while another writer adds a mark, take
+  # the 409, Reload, Save — and a form that treats every field as touched writes
+  # `mark: null` over a change nobody here ever saw, under a digest that is now
+  # perfectly true.
+  mutate web "every field is recorded as touched, not only the one that changed" "$PFF" \
+    '    if (!Object.is(value, (seed as Record<string, unknown>)[name])) held[name] = value' \
+    '    held[name] = value'
+
+  # **The file API forms no opinion about what a file means**, so it would write
+  # an appearance this desk then refuses to read. The opinion is this page's,
+  # and it is asked before the request rather than after it.
+  mutate web "the decoder is not asked before a card's Save is sent" "$PFS" \
+    '  if (decoded.problems.length > 0) return { problems: decoded.problems }' \
+    '  if (decoded.problems.length > 9999) return { problems: decoded.problems }'
+
+  # **The answer moves the cache and the re-read only confirms it.** Left to the
+  # invalidation alone, the header goes on showing the name that was just
+  # replaced for as long as the second read takes — and for ever where it never
+  # answers.
+  mutate web "a landed write waits for a second read before the shell reflects it" "$PFS" \
+    '          client.setQueryData<EffectiveConfig>(DESK_CONFIG_QUERY_KEY, (previous) =>
+            configAfterProjectFileWrite(previous, landed)
+          )' \
+    '          void configAfterProjectFileWrite'
 fi
 
 restore

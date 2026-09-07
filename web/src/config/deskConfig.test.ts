@@ -14,6 +14,7 @@ import {
   ASSISTANT_KINDS,
   DESK_DEFAULTS,
   EXCLUDED_DIRECTORIES,
+  NO_CONTROL_CHARACTERS,
   MAX_PACK_DIR_DEPTH,
   PANE_BOUNDS,
   STAGING_PREFIX,
@@ -405,6 +406,75 @@ describe('the storage member', () => {
 
     const files = readFileSync(join(import.meta.dirname, '../../../internal/desk/files.go'), 'utf8')
     expect(files).toContain(`const stagingPrefix = "${STAGING_PREFIX}"`)
+  })
+
+  it('refuses every control character, at every position, in both strings', () => {
+    // **Exhaustive because the rule claims to be.** Round 2 found the check
+    // behind `trim()`: `String.trim` removes U+0009 through U+000D, so a
+    // leading tab or a trailing newline was taken off and the value accepted —
+    // a rule that said every control character and held only for the ones that
+    // are not whitespace. Every code point, at the beginning, the middle and
+    // the end, on both fields.
+    const controls = [...Array(0x20).keys(), 0x7f].map((code) => String.fromCharCode(code))
+    for (const control of controls) {
+      const at = (base: string, where: 'start' | 'middle' | 'end') =>
+        where === 'start'
+          ? control + base
+          : where === 'end'
+            ? base + control
+            : base.slice(0, 2) + control + base.slice(2)
+      for (const where of ['start', 'middle', 'end'] as const) {
+        const dir = at('packs', where)
+        const decoded = withStorage({ dir })
+        expect(decoded.values, `dir ${JSON.stringify(dir)} was accepted`).toBeUndefined()
+        expect(keys(decoded.problems), JSON.stringify(dir)).toEqual(['storage.packs.dir'])
+        expect(decoded.problems[0]!.reason, JSON.stringify(dir)).toContain(NO_CONTROL_CHARACTERS)
+
+        const idBase = at('https://acme.example/d/', where)
+        const prefix = withStorage({ idBase })
+        expect(prefix.values, `idBase ${JSON.stringify(idBase)} was accepted`).toBeUndefined()
+        expect(keys(prefix.problems), JSON.stringify(idBase)).toEqual(['storage.packs.idBase'])
+        expect(prefix.problems[0]!.reason, JSON.stringify(idBase)).toContain(NO_CONTROL_CHARACTERS)
+      }
+    }
+    // And a value that is nothing else: refused for what it carries rather
+    // than for what trimming it leaves behind.
+    expect(withStorage({ dir: '\t' }).problems[0]!.reason).toContain(NO_CONTROL_CHARACTERS)
+    expect(withStorage({ idBase: '\n' }).problems[0]!.reason).toContain(NO_CONTROL_CHARACTERS)
+  })
+
+  it('refuses a control character in either pack-storage string', () => {
+    // **`packs\u0000hidden` used to decode clean.** Admin then advertised it as
+    // the pack location and *every* later create failed at the write, because
+    // the chassis refuses a NUL in any path outright — a configuration that is
+    // accepted and cannot work, which is the same defect `dist` had.
+    for (const bad of ['packs\u0000hidden', 'a\tb', 'packs\u007f', 'a\u001fb']) {
+      const decoded = withStorage({ dir: bad })
+      expect(decoded.values, `dir ${JSON.stringify(bad)} was accepted`).toBeUndefined()
+      expect(keys(decoded.problems)).toEqual(['storage.packs.dir'])
+      expect(decoded.problems[0]!.reason).toContain(NO_CONTROL_CHARACTERS)
+    }
+    // And on the prefix, where `new URL` is no help at all: it percent-encodes
+    // a NUL, *deletes* a tab, and takes a DEL — so what would be written is not
+    // what anybody typed.
+    for (const bad of [
+      'https://acme.example/a\u0000b/',
+      'https://acme.example/a\tb/',
+      'https://acme.example/a\u007fb/'
+    ]) {
+      const decoded = withStorage({ idBase: bad })
+      expect(decoded.values, `idBase ${JSON.stringify(bad)} was accepted`).toBeUndefined()
+      expect(keys(decoded.problems)).toEqual(['storage.packs.idBase'])
+      expect(decoded.problems[0]!.reason).toContain(NO_CONTROL_CHARACTERS)
+    }
+  })
+
+  it('refuses the NUL the chassis refuses, and cannot drift from it', () => {
+    // Mirrored rather than fetched, on the same terms as the excluded
+    // directories above: this reads the Go source that owns the other half of
+    // the rule, so the two cannot become two answers.
+    const files = readFileSync(join(import.meta.dirname, '../../../internal/desk/files.go'), 'utf8')
+    expect(files).toContain('strings.ContainsRune(rel, 0)')
   })
 
   it('trims a trailing separator rather than refusing it', () => {

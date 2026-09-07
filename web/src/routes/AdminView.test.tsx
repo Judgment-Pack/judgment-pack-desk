@@ -15,7 +15,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
-import { PANE_BOUNDS, decodeDeskConfig, effectiveConfig } from '../config/deskConfig'
+import {
+  PANE_BOUNDS,
+  STORAGE_KIND_SAYS,
+  decodeDeskConfig,
+  effectiveConfig
+} from '../config/deskConfig'
 import { McpContext } from '../mcp/McpProvider'
 import { ShellStateProvider, projectKey, shellStateKey } from '../shell/paneState'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
@@ -79,6 +84,17 @@ function renderAdmin(
       <RouterProvider router={router} />
     </QueryClientProvider>
   )
+}
+
+/**
+ * One sentence, as a pattern that matches it inside a longer hint.
+ *
+ * The Packs-go-to hint states what the file listing established **and** the
+ * decoder's rule for the field, so an exact-text query would be asserting that
+ * the second half is absent.
+ */
+function escaped(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /** One file listing, or a refusal, for the Storage card to describe. */
@@ -297,16 +313,18 @@ describe('the Admin page', () => {
       'project'
     )
     renderAdmin(effectiveConfig(decoded))
-    expect(screen.getByText('filesystem')).toBeTruthy()
-    expect(screen.getByText('decisions')).toBeTruthy()
-    // The prefix as it will actually be written — normalised at decode.
-    expect(screen.getByText('https://acme.example/d/')).toBeTruthy()
+    // The one kind, on the Select's own trigger.
+    expect(screen.getByRole('combobox', { name: 'Kind' }).textContent).toBe('filesystem')
+    expect(screen.getByDisplayValue('decisions')).toBeTruthy()
+    // The prefix as it will actually be written — normalised at decode — so a
+    // Save that does not touch it writes back what the file already means.
+    expect(screen.getByDisplayValue('https://acme.example/d/')).toBeTruthy()
   })
 
   it('shows the built-in location and prefix where the project configured none', () => {
     renderAdmin()
-    expect(screen.getByText('packs')).toBeTruthy()
-    expect(screen.getByText('https://example.invalid/judgment-packs/')).toBeTruthy()
+    expect(screen.getByDisplayValue('packs')).toBeTruthy()
+    expect(screen.getByDisplayValue('https://example.invalid/judgment-packs/')).toBeTruthy()
   })
 
   it('says a location holds files only where the listing shows one', async () => {
@@ -314,14 +332,16 @@ describe('the Admin page', () => {
     // holds files and can never claim an empty one exists.
     servesListing({ files: [{ path: 'packs/a.pack.json', bytes: 1, sha256: 'aa' }] })
     renderAdmin()
-    expect(await screen.findByText('holds files')).toBeTruthy()
+    // A substring: the hint states what the listing established and then the
+    // decoder's own rule for the field, and both are meant to be there.
+    expect(await screen.findByText(/holds files/)).toBeTruthy()
   })
 
   it('says only that no file is under it, which is what the listing can show', async () => {
     servesListing({ files: [{ path: 'jpack.json', bytes: 1, sha256: 'aa' }] })
     renderAdmin()
     expect(
-      await screen.findByText('no file is under it — the first pack asks for it to be created')
+      await screen.findByText(/no file is under it — the first pack asks for it to be created/)
     ).toBeTruthy()
   })
 
@@ -347,7 +367,7 @@ describe('the Admin page', () => {
     for (const [listing, says] of cases) {
       servesListing(listing)
       renderAdmin()
-      expect(await screen.findByText(says), says).toBeTruthy()
+      expect(await screen.findByText(new RegExp(escaped(says))), says).toBeTruthy()
       cleanup()
     }
   })
@@ -355,14 +375,26 @@ describe('the Admin page', () => {
   it('says the listing has not answered rather than describing what it has not seen', async () => {
     vi.stubGlobal('fetch', () => new Promise(() => {}))
     renderAdmin()
-    expect(await screen.findByText('the file listing has not answered yet')).toBeTruthy()
+    expect(await screen.findByText(/the file listing has not answered yet/)).toBeTruthy()
   })
 
-  it('names the two future kinds as coming soon, as text and not as controls', () => {
+  it('names the two future kinds in the decoder’s own words, and offers neither', async () => {
+    // The sentence is the one the decoder refuses `"database"` with, exported
+    // and quoted rather than written again here: two answers about what is
+    // available would be free to disagree, and the mutation table could break
+    // one of them while the other went on saying it.
     renderAdmin()
-    expect(screen.getByText('database — coming soon')).toBeTruthy()
-    expect(screen.getByText('cloud storage — coming soon')).toBeTruthy()
-    expect(screen.queryByRole('option', { name: /database/ })).toBeNull()
+    expect(screen.getByText(STORAGE_KIND_SAYS)).toBeTruthy()
+    expect(STORAGE_KIND_SAYS).toContain('database')
+    expect(STORAGE_KIND_SAYS).toContain('cloud storage')
+    // **Opened first, because a closed Radix Select has no options at all.**
+    // Round 1 caught this: asking a closed one what it offers is a query that
+    // answers "nothing" whatever is configured in it, so the absence it was
+    // asserting was the primitive's and not this page's.
+    // (`testing/radixGround.test.tsx` writes that behaviour down once.)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Kind' }))
+    const offered = (await screen.findAllByRole('option')).map((each) => each.textContent)
+    expect(offered).toEqual(['filesystem'])
     expect(screen.queryByRole('radio')).toBeNull()
   })
 
@@ -386,14 +418,16 @@ describe('the Admin page', () => {
     // The Project card's control is a nomination and not a path: the page may
     // name the project it is already running in, or withdraw a default, and
     // nothing else — so there is one button and no field for a path.
-    const writes = [
-      'Reset panes on this machine',
-      'Save',
-      'Check reachability',
-      'Use this project as the default'
-    ]
-    for (const label of writes) {
-      expect(labels.filter((each) => each === label), label).toHaveLength(1)
+    const writes: Record<string, number> = {
+      'Reset panes on this machine': 1,
+      // The assistant slot's, and one on each of the four cards that write a
+      // member of the project's own file.
+      Save: 5,
+      'Check reachability': 1,
+      'Use this project as the default': 1
+    }
+    for (const [label, count] of Object.entries(writes)) {
+      expect(labels.filter((each) => each === label), label).toHaveLength(count)
     }
     expect(labels).not.toContain('Clear the default')
     expect(screen.queryByLabelText('Default project')).toBeNull()
@@ -408,17 +442,33 @@ describe('the Admin page', () => {
     const triggers = Array.from(container.querySelectorAll('[role="combobox"]')).map(
       (element) => element.textContent
     )
-    expect(triggers).toEqual(['OpenAI-compatible', 'vercel', 'off'])
+    // The assistant's three, then Storage's kind, then Appearance's two — in
+    // the order the cards are rendered in.
+    expect(triggers).toEqual([
+      'OpenAI-compatible',
+      'vercel',
+      'off',
+      'filesystem',
+      'system',
+      'comfortable'
+    ])
     const offered = Array.from(container.querySelectorAll('select')).map(
       (element) => element.textContent
     )
-    expect(offered).toEqual(['OpenAI-compatibleAnthropicGemini', 'vercelbuiltin', 'offonultra'])
+    expect(offered).toEqual([
+      'OpenAI-compatibleAnthropicGemini',
+      'vercelbuiltin',
+      'offonultra',
+      'filesystem',
+      'systemlightdark',
+      'comfortablecompact'
+    ])
     // Every other control is a tool checkbox, which changes nothing until Save.
     const picker = [...triggers, ...offered]
     const others = labels.filter(
       (label) =>
         label !== undefined &&
-        !writes.includes(label) &&
+        !(label in writes) &&
         label !== 'List models' &&
         !picker.includes(label)
     )
@@ -429,13 +479,24 @@ describe('the Admin page', () => {
     // **One control is disabled here, and it is not a permanent one.** This
     // fixture is the state in which nothing asked for the desk-level file, so
     // this page has never seen the bytes a write would replace.
-    const disabled = Array.from(container.querySelectorAll('[disabled]')).map(
+    const disabled = Array.from(container.querySelectorAll('button[disabled]')).map(
       (element) => element.textContent
     )
-    // The Project card's nomination first, then the Assistant form's Save:
-    // neither has a digest to state, and both say so in the same words.
-    expect(disabled).toEqual(['Use this project as the default', 'List models', 'Save'])
-    expect(screen.getAllByText(/a write states the bytes it replaces/).length).toBe(2)
+    // The Project card's nomination first, then the Assistant form's Save —
+    // neither has a digest to state — and then the four project-file cards',
+    // which have no bytes to write over and nothing typed to write.
+    expect(disabled).toEqual([
+      'Use this project as the default',
+      'List models',
+      'Save',
+      'Save',
+      'Save',
+      'Save',
+      'Save'
+    ])
+    // The desk-level file, on two cards; this project's own file, on four.
+    expect(screen.getAllByText(/has not read its own configuration file/).length).toBe(2)
+    expect(screen.getAllByText(/has not read this project/).length).toBe(4)
   })
 
   it('enables the two writes once the desk-level file has been read', () => {
@@ -455,9 +516,15 @@ describe('the Admin page', () => {
       })
     )
     expect(
-      Array.from(container.querySelectorAll('[disabled]')).map((element) => element.textContent)
-    ).toEqual(['List models'])
-    expect(screen.queryByText(/a write states the bytes it replaces/)).toBeNull()
+      Array.from(container.querySelectorAll('button[disabled]')).map(
+        (element) => element.textContent
+      )
+    ).toEqual(['List models', 'Save', 'Save', 'Save', 'Save'])
+    // The desk-level file has been read, so neither card that writes it says
+    // otherwise. The project's own file has not, which is a different file and
+    // a different sentence — and the four cards that write it say so.
+    expect(screen.queryByText(/has not read its own configuration file/)).toBeNull()
+    expect(screen.getAllByText(/has not read this project/).length).toBe(4)
   })
 
   it('will not offer the nomination where the chassis has not named this project', () => {

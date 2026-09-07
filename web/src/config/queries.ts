@@ -25,7 +25,7 @@
  * rejection that has nothing to do with the case under test.
  */
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
-import { FileRequestError, answer, chassisUrl, readFile } from '../files/client'
+import { FileRequestError, answer, chassisUrl, readFile, type FileContent } from '../files/client'
 import {
   PROJECT_CONFIG_PATH,
   decodeDeskConfig,
@@ -153,9 +153,14 @@ export async function loadDeskConfig(signal?: AbortSignal): Promise<EffectiveCon
   // Both files, and neither read waits on the other: they are two independent
   // questions to the same chassis, and a slow one should not delay the other.
   const deskLevel = loadDeskLevelConfig(signal)
-  let text: string
+  // **The whole answer, digest included.** Only the bytes were kept, and the
+  // digest is what a write states as the bytes it replaces — so a card that
+  // saves one member of this file has to carry it from the read that produced
+  // those bytes. Taking it from anywhere else would be a page asserting the
+  // state of a file it never saw.
+  let read: FileContent
   try {
-    text = (await readFile(PROJECT_CONFIG_PATH, signal)).content
+    read = await readFile(PROJECT_CONFIG_PATH, signal)
   } catch (cause) {
     // **Absence and every other failure are different answers.** A 404 is a
     // project that has not written the file: defaults, no banner, no error,
@@ -199,11 +204,12 @@ export async function loadDeskConfig(signal?: AbortSignal): Promise<EffectiveCon
     )
   }
   return effectiveConfig(
-    decodeDeskConfig(text, 'project'),
+    decodeDeskConfig(read.content, 'project'),
     undefined,
     undefined,
     await deskLevel,
-    text
+    read.content,
+    read.sha256
   )
 }
 
