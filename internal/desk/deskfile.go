@@ -678,8 +678,13 @@ func decodeAssistant(value any) (assistantSlot, []deskProblem) {
 // **Userinfo and a fragment are refused by name.** A URL is written into a
 // configuration file, shown on Admin and named in a diagnostic; a credential
 // smuggled into its userinfo would be a second, unmanaged place for a secret
-// to live, in the one file this desk insists holds none. A query string is
-// *allowed* — some gateways route on one — and is never logged.
+// to live, in the one file this desk insists holds none.
+//
+// **A query string is allowed and is now held to a rule of its own**, because
+// the file is no longer only something a person types: `PUT /api/desk-config`
+// lets page code write it, and round 1 found the configured query the one part
+// of a relayed request the page could then fill with anything. It is checked
+// here, at decode, so a hand-edited file meets exactly the same rule.
 func endpointURLProblem(raw string) string {
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Host == "" {
@@ -693,6 +698,9 @@ func endpointURLProblem(raw string) string {
 		return "must not carry a fragment; an endpoint is a location a request is sent to, " +
 			"and a fragment is never sent"
 	}
+	if reason := endpointQueryProblem(parsed.RawQuery); reason != "" {
+		return reason
+	}
 	if parsed.Scheme == "https" {
 		return ""
 	}
@@ -703,6 +711,126 @@ func endpointURLProblem(raw string) string {
 	return fmt.Sprintf(
 		"must be an https: URL, or an http: URL on localhost or 127.0.0.1; found %q — "+
 			"a key sent in clear text over a network is a key given away", raw)
+}
+
+// reservedQueryNames are the query names a configured URL may not use.
+//
+// **The names the relay itself may add, plus the one the listing pages with.**
+// A configured `alt` would be a second copy of the pair the relay admits from
+// the page — a query two parsers could count differently, which is the whole
+// class `relayQueryProblem` exists to keep off the wire — and a configured
+// `pageToken` would page a listing this desk documents as first-page-only,
+// from a value nobody re-reads.
+//
+// **Reserved on every kind, not only the one that admits `alt`.** A per-kind
+// rule would make a URL legal until somebody changed `kind` beside it, and the
+// two members are edited together by the same form. One list, one answer.
+var reservedQueryNames = []string{"alt", "pageToken"}
+
+// endpointQueryProblem is the rule the configured URL's query is held to.
+//
+// # Why this exists at all
+//
+// The configured query is the one part of a relayed request that comes off
+// this machine rather than out of the page, and `relayTarget` carries it
+// upstream byte for byte. That was safe while the file was something a person
+// typed. It stopped being safe the moment `PUT /api/desk-config` let page code
+// write the file: round 1 found `?key=secret`, `?alt=sse`, `?pageToken=x`, a
+// semicolon and every encoded alias reaching the endpoint on every later call,
+// through a member the per-kind query rule never looked at.
+//
+// So three things are refused, and each one is a rule this desk already
+// applies somewhere else:
+//
+//   - **A credential-shaped name**, by the same reading `isKeyLike` gives a
+//     member name — because "a key is never written into configuration" cannot
+//     be a rule about members only while a URL sits beside them.
+//   - **A name the relay reserves**, so a configured pair can never duplicate
+//     or pre-empt one the relay adds.
+//   - **A semicolon anywhere in it**, which is `relayQueryProblem`'s rule
+//     verbatim: a separator to some servers and a value to others, and this
+//     desk will not send one it cannot read the same way twice.
+//
+// Mirrored by `endpointQueryProblem` in `deskConfig.ts` and held to it by the
+// shared fixtures.
+func endpointQueryProblem(rawQuery string) string {
+	if rawQuery == "" {
+		return ""
+	}
+	if strings.ContainsRune(rawQuery, ';') {
+		return "must not carry a semicolon in its query: it is a separator to some servers " +
+			"and a value to others, and this desk will not send one it cannot read the same " +
+			"way twice"
+	}
+	for _, parameter := range strings.Split(rawQuery, "&") {
+		name, value, _ := strings.Cut(parameter, "=")
+		// **Both halves, and both held to UTF-8.** Round 2 found the two
+		// decoders disagreeing about exactly this: `url.QueryUnescape("%FF")`
+		// answers one byte and no error, while the browser's
+		// `decodeURIComponent` throws — so `?%FF=x` was accepted here, could
+		// be written through `PUT /api/desk-config`, and could authorise an
+		// outbound request, while the page refused the same file. That is the
+		// "a configuration the browser refuses still sends the key" class,
+		// reopened by a percent escape. Requiring valid UTF-8 is what makes
+		// the two answers one answer, and the *value* is read for the same
+		// reason the name is: it travels upstream too.
+		for _, half := range [2]string{name, value} {
+			decoded, err := url.QueryUnescape(half)
+			if err != nil || !utf8.ValidString(decoded) {
+				return fmt.Sprintf(
+					"has a query parameter this desk cannot read the same way a browser "+
+						"does (%q): a query it cannot read identically twice is one it will "+
+						"not forward", half)
+			}
+		}
+		decoded, _ := url.QueryUnescape(name)
+		// **The reserved names are read first**, because `pageToken` folds to
+		// a word the credential rule also catches and the sentence a reader
+		// repairs the file by should be the true one: it is reserved, not
+		// mistaken for a secret. Both refuse either way.
+		//
+		// **Compared without regard to case**, because that is how the servers
+		// this rule exists for read a query name: `?ALT=sse` on a gemini base
+		// was accepted, and the relay then added its own pair for an upstream
+		// that sees two copies of one name — which is precisely the
+		// disagreement the query rules were written to keep off the wire.
+		if containsFold(reservedQueryNames, decoded) {
+			return fmt.Sprintf(
+				"must not carry %q in its query: it is a name the relay itself may add, and "+
+					"a query with two of one name is one two parsers count differently",
+				decoded)
+		}
+		if isCredentialQueryName(decoded) {
+			return fmt.Sprintf(
+				"must not carry %q in its query — %s", decoded, keysAreNeverInConfiguration)
+		}
+	}
+	return ""
+}
+
+// containsFold is `contains` for names two readers may spell in different
+// cases.
+//
+// Its own function rather than a lower-cased comparison written inline,
+// because the browser's mirror of this rule folds the same way and one
+// spelling of "the same name" is what the shared fixtures hold.
+func containsFold(haystack []string, needle string) bool {
+	for _, candidate := range haystack {
+		if strings.EqualFold(candidate, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// isCredentialQueryName is `isKeyLike` for a query parameter's name.
+//
+// The member rule plus `auth`, which that rule does not catch: it folds to
+// "auth", and no word on the list is a substring of it. It is a credential
+// parameter name in the wild, so it is named here rather than left to a reader
+// to notice.
+func isCredentialQueryName(name string) bool {
+	return isKeyLike(name) || strings.EqualFold(strings.TrimSpace(name), "auth")
 }
 
 // normalizedEndpointURL trims a trailing separator from the URL's **path**.

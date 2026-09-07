@@ -50,6 +50,9 @@ export const CHASSIS_CODES = [
   'assistant-relay-path',
   'assistant-relay-busy',
   'assistant-relay-upstream',
+  'assistant-key-unbound',
+  'desk-config-changed',
+  'desk-config-refused',
   'internal'
 ] as const
 
@@ -73,7 +76,8 @@ export const CONTROL_FLOW_CODES = ['not-found'] as const
  * **This is a third category, and it is here rather than absent because the
  * alternative was worse.** The code set is the *chassis'*, not the file API's,
  * and it grew members that only the assistant's own routes answer with — the
- * probe's three, and the model relay's three.
+ * probe's three, the model relay's three, the key binding's one, and the
+ * desk-level write's two.
  * Giving them a sentence about creating a pack would put text on the page
  * asserting something that cannot happen; leaving them out would let the
  * exhaustiveness test below be satisfied by an omission. So they are listed,
@@ -88,7 +92,15 @@ export const OTHER_ENDPOINT_CODES = [
   // never carries model traffic, so none of them can reach this dialog either.
   'assistant-relay-path',
   'assistant-relay-busy',
-  'assistant-relay-upstream'
+  'assistant-relay-upstream',
+  // The key binding's one: a credential entered for one endpoint and a desk
+  // now configured for another. A create carries no model traffic.
+  'assistant-key-unbound',
+  // The desk-level write's two. A create writes a project file through the
+  // file API; these belong to the one route that rewrites the `assistant`
+  // object of the file in `~/.config`, which no create touches.
+  'desk-config-changed',
+  'desk-config-refused'
 ] as const
 
 /** The chassis codes this dialog has a sentence for. */

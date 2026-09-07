@@ -21,9 +21,13 @@ import {
   readAssistantKey,
   removeAssistantKey,
   storeAssistantKey,
+  updateAssistantConfig,
+  type AssistantConfigWrite,
+  type AssistantConfigWritten,
   type AssistantKeyState,
   type ProbeResult
 } from './client'
+import { DESK_CONFIG_QUERY_KEY } from '../config/queries'
 
 export const ASSISTANT_KEY_QUERY_KEY = ['assistant-key'] as const
 
@@ -105,4 +109,38 @@ export function useRemoveAssistantKey(): UseMutationResult<AssistantKeyState, Er
 
 export function useProbeAssistant(): UseMutationResult<ProbeResult, Error, void> {
   return useMutation({ mutationFn: () => probeAssistantEndpoint() })
+}
+
+/**
+ * Write the desk-level `assistant` object, and re-read the configuration.
+ *
+ * **Invalidated rather than written into the cache**, which is the opposite of
+ * what the key mutations above do, and the difference is worth stating. The
+ * key endpoint answers with the whole of what this page may know about the key
+ * — `present` and a fingerprint — so setting the cache from its answer is
+ * setting it from the truth. This one answers with the `assistant` slot alone,
+ * while the cached value is the **effective** configuration: two files layered,
+ * every section's source badge, and the problems each file carries. Assembling
+ * that from a write's answer would be this page inventing the parts it was not
+ * told, so the file is read again instead.
+ *
+ * No retry, for the reason none of the others has one: a retried write is one
+ * conditional commit becoming two, and the second would carry an `ifMatch` the
+ * first has already made stale.
+ */
+export function useUpdateAssistantConfig(): UseMutationResult<
+  AssistantConfigWritten,
+  Error,
+  AssistantConfigWrite
+> {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (input: AssistantConfigWrite) => updateAssistantConfig(input),
+    retry: false,
+    // On success only: a refused write changed nothing, and re-reading after
+    // one would be this page telling itself that something happened.
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: DESK_CONFIG_QUERY_KEY })
+    }
+  })
 }

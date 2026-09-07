@@ -1240,21 +1240,90 @@ left beside the console button, and a link that neither shrinks nor wraps
 painted straight across it. The link's accessible name is the full sentence at
 every width.
 
-**Admin never PUTs configuration.** It renders effective values, their source,
-the path they came from and the exact JSON to paste, and its controls that
-change **persisted desk-layout state** are one: the pane record above; the Copy
-button beside each paste block changes the clipboard and its own transient
-"copied" label, which is why the claim is scoped to persisted layout rather
-than to state in general.
+**Admin renders configuration; it does not rewrite a file you edited.** It
+shows effective values, their source, the path they came from and the exact
+JSON to paste, and its controls that change **persisted desk-layout state** are
+one: the pane record above; the Copy button beside each paste block changes the
+clipboard and its own transient "copied" label, which is why the claim is
+scoped to persisted layout rather than to state in general.
 
-**The one thing Admin does write is a key**, on Admin › Assistant, and the
-exception is exactly as wide as its reason. A key must never be pasted into a
+**Two things are written, and each is exactly as wide as its reason.** The key
+is one, below. The other is the `assistant` object of the desk-level file, over
+`PUT /api/desk-config`, under the same token and origin guard as everything
+else. It exists because choosing a model and a thinking tier is something an
+author does while working, and the alternative is telling them to edit a file
+in `~/.config` by hand between attempts. Four things bound it:
+
+- **The request names no file.** There is no path in the body: the chassis
+  writes the one file on that machine, through the same pinned custody
+  directory the key is written through — validated once at startup, and every
+  operation through the descriptor rather than a pathname.
+- **It is a conditional commit.** The page sends `ifMatch`, the digest of the
+  bytes it last read — `GET /api/desk-config` now answers that digest beside
+  the content, and the empty string means "there is no file". A file that moved
+  underneath the page is `409 desk-config-changed`, with both digests, and
+  **nothing is written**. There is no `override`, unlike the file API: this file
+  names the endpoint a credential is presented to, and "write anyway" is not a
+  choice a page should be able to make about it.
+- **The chassis composes the bytes and decodes them before any of them reach
+  the disk.** Not the object the page sent — the *file* this desk would store —
+  through the whole-file decoder the browser shares. A key-shaped member, an
+  unknown kind, a missing `tools`: each is `422 desk-config-refused` carrying
+  the decoder's own problems key by key, with nothing written. So a page cannot
+  store a configuration Admin would then report as refused, and the credential
+  scan applies to a write exactly as it applies to a file somebody typed.
+- **Every other member survives.** `identity`, `deskConfigVersion` and anything
+  else present are carried across **by their own bytes, in their own order** —
+  copied out of the file verbatim, whitespace included, and never re-serialised
+  or reflowed, so `1e2` does not silently become `100` and a member's place and
+  shape in a file somebody wrote stay theirs. Only `assistant`, the member this
+  route was asked about, is rendered. A file with a **duplicate top-level
+  member** is refused rather than composed over (`422`, naming the member):
+  `encoding/json` keeps the last value and a reader in another language may
+  keep the first, so a rewrite would silently choose one. The file is written
+  owner-only (`0600`) by staging, `fsync`, and rename inside the same
+  directory; a `0644` file is still *read*, because a checkout or an editor
+  leaves one, but this desk publishes its own writes at the mode it chose.
+- **The bytes are checked as bytes.** The request body must be UTF-8 and
+  exactly one JSON object with nothing behind it, and the composed file must be
+  UTF-8 and within the same bound every read applies — each refused before
+  anything is staged. Go's JSON decoder replaces an invalid byte inside a
+  string while decoding and `json.RawMessage` keeps the original, so without
+  the first of those a `0xff` in a model name decoded clean and would have been
+  written into a file every later read then refuses. A file this route writes
+  and this desk cannot read is worse than a write refused.
+- **The digest is compared twice**: once against the bytes this transaction
+  read, and again after the new bytes are staged and immediately before the
+  rename that publishes them. The second is what covers an ordinary editor,
+  which takes none of this desk's locks — without it a write that landed
+  between the two was overwritten and the route reported success. **The
+  residual is the rename itself**: a writer whose own write lands between that
+  second check and the rename still loses, and no compare-and-swap on a POSIX
+  rename exists to close it.
+
+The answer carries the new digest and the **decoded** slot — read back off the
+disk rather than echoed, defaults applied — so the page can verify what landed
+and has the digest its next write needs.
+
+**Nothing in the page calls it yet, and that is deliberate.** This release ships
+the route, the client call and the query hook; the Admin form that lets an
+author choose an endpoint, a model and a thinking tier — and that shows
+`keyRebindRequired` when the destination moves — is the next chunk. Until it
+lands, Admin › Assistant still renders the paste block and says so in its own
+words, so that a reader meeting a read-only section does not conclude the write
+does not exist. What is true today: the route is reachable by anything holding
+the session token, and every bound above applies to it.
+
+**The key is the other**, on Admin › Assistant, and the exception is exactly as
+wide as its reason. A key must never be pasted into a
 project file — a project is a shared checkout, and a key committed to one is a
 key published to every clone — so it cannot go through the file API, which
 writes only inside the project, and it is not in the configuration schema at
-any depth. It gets its own endpoint instead. Everything else on the page,
-including the endpoint the key belongs to, stays a value you write in a file
-yourself.
+any depth. It gets its own endpoint instead. Everything else in the desk-level
+file — `identity` and every section the project file also takes — stays a value
+you write in a file yourself; the two exceptions above are a key, which cannot
+live in a file at all, and the `assistant` object, which a chassis route
+rewrites in place under the four bounds listed there.
 
 That is a claim about **Admin**, and it is deliberately not the broader one it
 used to make. `jpack-desk.json` is an ordinary project file — the desk reads it
@@ -1262,8 +1331,11 @@ through the same `GET /api/file` every other file goes through — so the generi
 Author editor lists it and can write it exactly like any project file. Saying
 "nothing is ever PUT to a configuration file" was a sentence this repository's
 own file API refutes; what is true is that no *configuration surface* writes
-it, and the editor that can is the one that treats it as bytes and forms no
-opinion about what they mean. `runtime.jpackBin` and
+the project's file, and the editor that can is the one that treats it as bytes
+and forms no opinion about what they mean. The desk-level write above is the
+one place a configuration surface writes a configuration member, and it is
+narrow by construction: one file, one member, a conditional commit, and a
+decode of the composed bytes before any of them land. `runtime.jpackBin` and
 `project.dir` are not in the schema at all: the chassis executes the binary it
 was given, so a config-supplied path would be a way to run code on this machine
 by editing a file.
@@ -1296,18 +1368,40 @@ states** and they are not three shapes:
 | | |
 | --- | --- |
 | **None** | The default. `endpoint` is null, no key is asked for, and nothing renders an assistant. The runtime's authoring prompts still run in any chat client you already use. |
-| **Bring your own** | An OpenAI-compatible or Anthropic endpoint you already have. The desk stores the endpoint, keeps the key on this machine, and has no relationship with whoever issued it. |
+| **Bring your own** | An OpenAI-compatible, Anthropic or Gemini endpoint you already have. The desk stores the endpoint, keeps the key on this machine, and has no relationship with whoever issued it. |
 | **Supplied** | An endpoint someone else operates for you. Configured in exactly the four fields above — **an ordinary endpoint, the same code path**, nothing it can do that yours cannot. |
 
 There is no `vendor`, no `operator`, no `mode` and no third shape, because the
 last two rows are the same object with a different URL in it. The one member
 that does branch is `kind`, and it names the endpoint's **wire protocol**
-rather than who runs it: the two protocols put the credential in different
-headers and the call on a different path, so no single request could satisfy
-both. Nothing in the desk reads the host, compares it to a list, or behaves
+rather than who runs it: each protocol puts the credential in a different
+header and the call on a different path, so no single request could satisfy
+them. There are three:
+
+| `kind` | credential header | what the probe asks for |
+| --- | --- | --- |
+| `openai-compatible` | `Authorization: Bearer <key>` | `GET <base>/models` |
+| `anthropic` | `x-api-key: <key>` | `POST <base>/v1/messages`, one output token |
+| `gemini` | `x-goog-api-key: <key>` | `GET <base>/v1beta/models?pageSize=1` |
+
+`gemini` is Google's **native** Gemini API and deliberately not that vendor's
+OpenAI-compatibility layer, because three things exist only on the native wire
+and the assistant needs all three: thought parts, thought signatures carried
+back across tool turns, and an explicit thinking budget. The base is whatever
+the endpoint documents — `https://generativelanguage.googleapis.com` for the
+service Google runs — and its reference is
+[the models list](https://ai.google.dev/api/models#method:-models.list) and
+[generating content](https://ai.google.dev/api/generate-content). That API also
+accepts its key as a `?key=` query parameter, and **this desk never uses it**:
+a credential in a URL is a credential in a log, a `Referer` and a proxy's
+access record, which is the same rule that refuses userinfo in a configured
+URL. Every row of that table is a header.
+
+Nothing in the desk reads the host, compares it to a list, or behaves
 differently for one endpoint than another — which an enforcement test holds in
 place by enumerating every host comparison in the source and requiring each to
-be a loopback name.
+be a loopback name. A proxy or a self-hosted endpoint speaking any of those
+three wires is that `kind`, at its own URL.
 
 `url` must be an `https:` URL, or an `http:` one on `localhost` or
 `127.0.0.1` — a rule about transport, because a bearer credential sent in clear
@@ -1315,12 +1409,31 @@ text over a network is a credential given away, and one about transport only.
 It may **not** carry a user, a password or a fragment: a key is never written
 into configuration, and that includes into a URL. It **may** carry a query
 string, because some gateways route on one — and that query string is never
-logged. An escaped path is carried through exactly as configured: `%2F` stays
+logged. **The query is held to a rule of its own**, in both decoders, because
+`PUT /api/desk-config` makes the file page-writable and the configured query is
+the one part of a relayed request that then travels upstream byte for byte on
+every later call. Three refusals, each named against `assistant.endpoint.url`:
+a **credential-shaped name** by the same reading a member name gets (`key`,
+`apiKey`, `api_key`, `access_token`, `secret`, `password`, … and `auth`, which
+that reading does not otherwise catch); a **name the relay reserves** (`alt`,
+which the relay may add itself, and `pageToken`, which would page a listing
+this desk documents as first-page-only) — reserved on *every* kind, because a
+per-kind rule would make a URL legal until somebody changed `kind` beside it;
+and a **semicolon anywhere in it**, which is the relay's own rule verbatim. The
+reserved names are compared **without regard to case** — `?ALT=sse` would
+otherwise be accepted and the relay would add its own pair beside it, which is
+two copies of one name to an upstream that folds case — and **every pair's name
+and value must decode to valid UTF-8**, because `%FF` is one byte and no error
+to Go's decoder and an exception to the browser's, and a configuration the
+browser refuses must not be one this desk sends a key on. An ordinary
+`?route=eu&api-version=2024-10-21` is accepted and unchanged, and so is any
+percent escape both sides read the same way. An escaped path is carried through exactly as configured: `%2F` stays
 one segment, because re-encoding it into a separator would send the credential
 to a different resource than the one written down.
 It is the base the endpoint documents for its own protocol: for
 `openai-compatible` the base carrying `/models` and `/chat/completions`, which
-usually ends in `/v1`; for `anthropic` the base carrying `/v1/messages`. The
+usually ends in `/v1`; for `anthropic` the base carrying `/v1/messages`; for
+`gemini` the base carrying `/v1beta/models`, which is the origin alone. The
 desk appends the path its protocol prescribes and never guesses a version
 segment.
 
@@ -2251,11 +2364,29 @@ outbound connection". It now holds exactly one credential and makes exactly one
 kind of outbound request, and this section is what that sentence was replaced
 with rather than quietly edited around.
 
-**The key is on this machine, in one file, owner-only.**
+**The key is on this machine, in one file, owner-only — and it is stored
+together with the destination it was entered for.**
 
 ```
 ~/.config/jpack-desk/secrets/assistant     mode 0600, in a directory of mode 0700
 ```
+
+```json
+{ "assistantKeyVersion": 1, "origin": "https://gw.example", "kind": "gemini", "key": "…" }
+```
+
+**The binding is the point of that record.** A key that travelled wherever the
+configuration happened to point would be a key page code could redirect by
+writing one member of a file — and this desk has a route that writes that
+member. So the probe and the relay present the key only where the configured
+endpoint's scheme, host and `kind` still equal the ones stored beside it, and
+refuse with `assistant-key-unbound` otherwise, sending nothing. Changing the
+path or the query keeps the binding; changing the host, the scheme or the wire
+protocol breaks it, and the repair is to enter the key again. Storing one
+therefore requires an endpoint to bind it to, and a key file **without
+`assistantKeyVersion`** — the format this replaces, a bare key — is refused
+rather than read: a credential with no binding is the state the record exists
+to end, and the sentence names the one action that repairs it.
 
 `XDG_CONFIG_HOME` is honoured where it is set to an absolute path; a relative
 one is ignored, as the specification says. The write is staged in the same
@@ -2426,11 +2557,34 @@ protocol, and forwards everything else verbatim. It is also what makes the
 arrangement possible in a browser: an ordinary bring-your-own endpoint answers
 no CORS, so a page calling one directly could not read the answer.
 
-- **The destination cannot come from the page.** It is `configuredEndpoint` —
-  the same whole-file decode the probe uses, so a `desk.json` the browser
-  refuses authorises no relayed request either. The page chooses a **path
-  suffix** and nothing else: not the host, not the path around it, and not one
-  parameter of the query.
+- **The page can choose a destination; the key travels only to the destination
+  it was entered for.** This sentence used to be "the destination cannot come
+  from the page", and `PUT /api/desk-config` made it false: code holding the
+  session token could write an endpoint of its own — same-origin, so the origin
+  guard never applied — and then probe or relay and receive the machine-held
+  key there.
+
+  The answer is not to withdraw the write. It is that **the key is bound**.
+  Storing one records the scheme, host and `kind` of the endpoint configured at
+  that instant, beside the key and in the same file; the probe and the relay
+  present it only where both still match, and refuse with
+  `assistant-key-unbound` (409) otherwise, with **nothing sent**. A path or a
+  query may change — that is the endpoint's own routing, and an author edits
+  one without changing who is at the other end — but a host, a scheme or a wire
+  protocol may not. A configuration write that moves any of those leaves the
+  stored key in place and unusable and says so, `keyRebindRequired: true`, so
+  the repair is a person entering the key again — which page code cannot do,
+  because no endpoint returns the key, nothing in the chassis sends it to the
+  browser, and the store endpoint takes a value the page must already hold.
+  Storing a key therefore **requires an endpoint to bind it to**, and
+  `GET /api/assistant/key` reports the binding beside the fingerprint so a form
+  can say which host the key is for.
+
+  The rest is unchanged: the destination is still `configuredEndpoint`, the
+  same whole-file decode the probe uses, so a `desk.json` the browser refuses
+  authorises no relayed request either. The page chooses a **path suffix** and
+  one query pair on one protocol, and nothing else: not the host, not the path
+  around it, and not the rest of the query.
 - **The suffix is held to a closed class**: one or more segments of
   `[A-Za-z0-9._-]`, no dot segment, no empty segment, at most 256 bytes, and
   **no percent sign** — so the escaped and unescaped readings of an accepted
@@ -2438,6 +2592,23 @@ no CORS, so a page calling one directly could not read the answer.
   Anything else is refused with `assistant-relay-path` and nothing leaves this
   process. The suffix is appended to the configured URL's **escaped** path, so
   `%2F` in a configured base stays one segment.
+- **One exception to that class, and it is a shape rather than a character.**
+  The **final** segment may be `<name>:<method>` where the method is one of
+  `generateContent`, `streamGenerateContent` or `countTokens` — the way the
+  native Gemini wire addresses a method, as in
+  `v1beta/models/gemini-2.5-pro:streamGenerateContent`. A colon anywhere else —
+  including in a segment that is not the last, which the first version of this
+  rule accepted and forwarded — a second colon, an empty name, an escaped
+  colon, or a method outside those three is refused exactly as before. A method
+  is a verb applied to the resource the path names, so there is nothing after
+  it. The list is closed because the part after
+  the colon is a **verb**: an open one would let whoever holds the session
+  token ask the configured endpoint to *do* something nobody wrote down, with
+  the stored credential attached, and adding a method is a reviewed change to
+  that list. The rule is about the **path** and is not gated on `kind` — the
+  kind decides the credential, and a relay that read one to decide the other
+  would be two rules where there is one — though in practice only the gemini
+  wire writes such a path.
 - **The `v1` in that address belongs to this route, not to any endpoint**, which
   is how one mount point serves both protocols: an OpenAI-compatible client
   appends `/chat/completions` and an Anthropic one appends `/v1/messages`, and
@@ -2474,10 +2645,25 @@ no CORS, so a page calling one directly could not read the answer.
   comparison every parser downstream makes — so it is not filtered, it is
   refused, and refusing is the one rule every parser agrees on because there is
   nothing left for them to disagree about.
-- **One query reaches the endpoint and it is the configured one** — the
+- **One pair is the exception, on one kind, byte for byte.** The native Gemini
+  wire asks for a server-sent-event stream with a query parameter and has
+  nowhere else to put it — it is not a header, and the configured URL cannot
+  carry it because the same endpoint serves the unary call too. So for a
+  configured `gemini` endpoint the page may send exactly `alt=sse` beside the
+  token: the literal nine bytes, at most once. `alt=json`, `ALT=sse`,
+  `%61lt=sse`, `alt=sse&alt=sse`, `alt=sse&x=1` and `alt=sse;x=1` are each
+  refused with `assistant-relay-path` and nothing sent, and the pair is refused
+  entirely on the other two kinds, which carry streaming in the request body
+  and need none. This is a **closed exception and not a loosening**: byte
+  equality against one fixed literal is the one comparison that has no second
+  reading, which is precisely what the refusal above exists to guarantee.
+  What the request said is settled before anything is read off this machine;
+  whether the configured kind admits it is settled as soon as the kind is
+  known, before the key is opened, and nothing outbound happens either way.
+- **One query reaches the endpoint: the configured one, then that pair** — the
   endpoint's own routing, out of the file on this machine, carried across byte
-  for byte. So **the page chooses a path suffix and nothing else**, and that
-  sentence is now literally true.
+  for byte and first, with `alt=sse` after it where the page sent one. So **the
+  page chooses a path suffix, and one pair on one protocol**, and nothing else.
 - **Method and body verbatim**, bounded at 8 MiB — a whole schema, several
   examples and a draft ride in one request — **refused with `too-large`, never
   truncated**. The whole body is read before a byte of it is dispatched, so an
@@ -2514,6 +2700,20 @@ no CORS, so a page calling one directly could not read the answer.
   through the proxy's own client trace before the answer is inspected, and a
   trailer copied after the body — and nothing either protocol needs arrives in
   either.
+- **The model listing goes over it too, and is first-page-only.** Each
+  protocol's listing is an ordinary relayed `GET` — `<relay>/models` for an
+  `openai-compatible` base ending in `/v1`, `<relay>/v1/models` for
+  `anthropic`, `<relay>/v1beta/models` for `gemini` — carrying that protocol's
+  credential header and none of the page's. **A page cannot ask for a second
+  page**: Gemini's listing pages with `pageToken`, and nothing of the page's
+  query is forwarded, so `pageToken=…` is refused with `assistant-relay-path`
+  and nothing sent. **Later pages are not supported at all**, and that is the
+  whole of it: `pageToken` is refused from the configured URL as well — a
+  configured page token is a fixed cursor nobody re-reads, which is not
+  pagination — so an endpoint with more models than one page holds shows the
+  first page and no more. Supporting the rest would need a mechanism that
+  passes a cursor safely, and this release does not have one. Nothing on the
+  chassis is added for the listing; it is the relay.
 - **Nothing else.** No retry (a retried model request is a second charge on
   somebody's account for an answer nobody saw), no caching, no request
   rewriting, no model-name inspection. A refusal carries `assistant-relay-*`

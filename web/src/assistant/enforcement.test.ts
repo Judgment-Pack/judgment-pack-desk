@@ -28,6 +28,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   ASSISTANT_ENGINES,
+  ASSISTANT_KINDS,
   ASSISTANT_THINKING,
   ASSISTANT_TOOLS,
   DESK_DEFAULTS,
@@ -246,15 +247,22 @@ describe('(1a) engine and thinking are closed lists that say how, not whether', 
     expect(decoded.values?.assistant?.thinking).toBe('off')
   })
 
-  it('is the same pair of lists the chassis refuses by', () => {
+  it('is the same three lists the chassis refuses by', () => {
     // Two implementations of one contract drift; the fixtures hold the
     // verdicts and this holds the vocabularies, read out of the Go source the
     // same way the tool list is.
+    //
+    // **The kinds are on it now**, and they were the one closed list held to
+    // the chassis by nothing at all: a protocol added on one side and not the
+    // other is a file one decoder accepts and the other refuses — and the
+    // refusing one is the one that decides whether a credential leaves this
+    // machine.
     const source = readFileSync(
       join(SRC, '..', '..', 'internal', 'desk', 'assistant.go'),
       'utf8'
     )
     for (const [declaration, list] of [
+      ['AssistantKinds', ASSISTANT_KINDS],
       ['AssistantEngines', ASSISTANT_ENGINES],
       ['AssistantThinkingTiers', ASSISTANT_THINKING]
     ] as [string, readonly string[]][]) {
@@ -651,6 +659,42 @@ describe('the proposal is canonicalized in one place, and nowhere else', () => {
     // it is written where they are rather than only here.
     for (const path of ['assistant/proposalDiff.ts', 'assistant/acceptProposal.ts']) {
       expect(read(path), `${path} names the guard`).toContain('enforcement.test.ts')
+    }
+  })
+})
+
+describe('(9) the page sends no request header the chassis would drop', () => {
+  it('holds MODEL_REQUEST_HEADERS inside the chassis outbound allow-list', () => {
+    // **Two hand-mirrored allow-lists, and nothing held them together.** The
+    // page filters a model request's headers to `MODEL_REQUEST_HEADERS` and
+    // the chassis rebuilds the outbound set from `relayedRequestHeaders`; a
+    // name on the page's list and not the chassis' is a header the engine
+    // believes it sent and the endpoint never sees, which is exactly the kind
+    // of failure a protocol change produces and no test would have named.
+    //
+    // **Containment and not equality**, because the two lists are not the same
+    // list and should not be: the chassis additionally carries what a *browser*
+    // sets on its own — `accept-encoding`, `content-length`, `user-agent` — and
+    // the `X-Stainless-*` family, none of which a page-side engine writes. What
+    // must hold is one direction: everything the page may send, the chassis
+    // carries.
+    const go = readFileSync(join(SRC, '..', '..', 'internal', 'desk', 'modelrelay.go'), 'utf8')
+    const declared = /var relayedRequestHeaders = \[\]string\{([^}]*)\}/.exec(go)
+    expect(declared, 'relayedRequestHeaders is declared in internal/desk/modelrelay.go').not.toBeNull()
+    const carried = [...declared![1]!.matchAll(/"([^"]+)"/g)].map((match) =>
+      match[1]!.toLowerCase()
+    )
+    expect(carried.length).toBeGreaterThan(5)
+
+    const page = /const MODEL_REQUEST_HEADERS: readonly string\[\] = \[([^\]]*)\]/.exec(
+      read('assistant/session.ts')
+    )
+    expect(page, 'MODEL_REQUEST_HEADERS is declared in assistant/session.ts').not.toBeNull()
+    const sent = [...page![1]!.matchAll(/'([^']+)'/g)].map((match) => match[1]!.toLowerCase())
+    expect(sent.length).toBeGreaterThan(5)
+
+    for (const header of sent) {
+      expect(carried, `the chassis drops ${header}, which the page may send`).toContain(header)
     }
   })
 })

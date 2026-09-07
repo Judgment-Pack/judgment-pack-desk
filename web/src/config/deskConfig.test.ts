@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  ASSISTANT_KINDS,
   DESK_DEFAULTS,
   EXCLUDED_DIRECTORIES,
   MAX_PACK_DIR_DEPTH,
@@ -612,18 +613,23 @@ describe('the desk-level file, and the precedence between the two', () => {
     }
   })
 
-  it('admits the two protocols and refuses any other by name', () => {
-    for (const kind of ['openai-compatible', 'anthropic']) {
+  it('admits the three protocols and refuses any other by name', () => {
+    for (const kind of ASSISTANT_KINDS) {
       const decoded = decodeDeskConfig(
         JSON.stringify({ deskConfigVersion: 1, assistant: { endpoint: { ...GOOD, kind } } }),
         'desk'
       )
       expect(decoded.problems, kind).toEqual([])
     }
-    const decoded = decodeDeskConfig(
-      JSON.stringify({ deskConfigVersion: 1, assistant: { endpoint: { ...GOOD, kind: 'gemini' } } }),
-      'desk'
-    )
-    expect(keys(decoded.problems)).toEqual(['assistant.endpoint.kind'])
+    // A name nothing defines, and the two ways a real one is got wrong: a
+    // capital, and the vendor rather than the wire. Each refuses the whole
+    // file by the same key rather than being ignored.
+    for (const kind of ['some-other-protocol', 'Gemini', 'google']) {
+      const decoded = decodeDeskConfig(
+        JSON.stringify({ deskConfigVersion: 1, assistant: { endpoint: { ...GOOD, kind } } }),
+        'desk'
+      )
+      expect(keys(decoded.problems), kind).toEqual(['assistant.endpoint.kind'])
+    }
   })
 })

@@ -529,15 +529,20 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		return err
 	}' \
     '	remove()
-	if err := s.secrets.WriteFile(assistantKeyName, []byte(key), custodyFileMode); err != nil {
+	if err := s.secrets.WriteFile(assistantKeyName, encoded, custodyFileMode); err != nil {
 		return err
 	}'
+  # **Repaired**: the line gained the destination the key is bound to, which
+  # is a scheme and a host and never a secret. The mutation is the same defect.
   mutate go "the key is logged beside the event" "$A" \
-    '	s.log.Printf("desk: the assistant key was stored on this machine")' \
-    '	s.log.Printf("desk: the assistant key %s was stored on this machine", key)'
+    '	s.log.Printf("desk: the assistant key was stored on this machine for %s", origin)' \
+    '	s.log.Printf("desk: the assistant key %s was stored on this machine for %s", key, origin)'
+  # **Repaired**: the answer is built by `keyState` now that it carries the
+  # binding too. The mutation is the same defect — the value where the
+  # fingerprint belongs.
   mutate go "the key is answered to the page instead of its fingerprint" "$A" \
-    '	writeJSON(w, http.StatusOK, AssistantKeyState{Present: key != "", Fingerprint: fingerprint(key)})' \
-    '	writeJSON(w, http.StatusOK, AssistantKeyState{Present: key != "", Fingerprint: key})'
+    '		Fingerprint: fingerprint(stored.key),' \
+    '		Fingerprint: stored.key,'
   # Four and four discloses a short key in full. Eight and not one: at one,
   # `runes[:4]` on a shorter key panics, and a mutation that crashes the suite
   # has not been survived — it has not been tested.
@@ -566,7 +571,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'func (s *Server) handleAssistantKeyWrite(w http.ResponseWriter, r *http.Request) {
 '
   mutate go "a probe runs with no key to present" "$A" \
-    '	if key == "" {
+    '	if !stored.present {
 		writeJSONCoded(w, http.StatusConflict, CodeAssistantNoKey,' \
     '	if false {
 		writeJSONCoded(w, http.StatusConflict, CodeAssistantNoKey,'
@@ -608,6 +613,32 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		return ""
 	}'
   # Go strips Authorization across hosts and knows nothing about x-api-key.
+  # **The binding, and the three ways it could stop holding.** Round 1: the
+  # page can write the desk-level file, so it can name any endpoint it likes —
+  # what keeps "the destination cannot come from the page" true is that the
+  # credential travels only to the destination it was entered for.
+  mutate go "the relay presents the key to an endpoint it was not entered for" "$MR" \
+    '	if reason := bindingProblem(stored, endpoint); reason != "" {' \
+    '	if reason := ""; reason != "" {'
+  mutate go "the probe presents the key to an endpoint it was not entered for" "$A" \
+    '	if reason := bindingProblem(stored, endpoint); reason != "" {' \
+    '	if reason := ""; reason != "" {'
+  # A write that moved the host must say a new key is needed; a page told
+  # otherwise would report a working assistant that refuses every request.
+  mutate go "a write across a host change reports no new key is needed" "$A" \
+    '		rebind = landed.Endpoint == nil || bindingProblem(stored, *landed.Endpoint) != ""' \
+    '		rebind = false'
+  # A file this build cannot read as a bound key must not be read as an
+  # unbound one: a credential with no binding is the state this ends.
+  mutate go "an unversioned key file is read as a bare key" "$CU" \
+    '	if jerr := json.Unmarshal(data, &record); jerr != nil || record.Version != storedKeyVersion {' \
+    '	if jerr := json.Unmarshal(data, &record); false && jerr != nil {'
+  # The origin is scheme and host: a binding to the whole URL would lapse on
+  # adding `?route=eu`, and a binding to the host alone would not notice a
+  # scheme change.
+  mutate go "a binding compares the whole configured URL" "$A" \
+    '	return strings.ToLower(parsed.Scheme) + "://" + strings.ToLower(parsed.Host), true' \
+    '	return strings.ToLower(parsed.String()), true'
   mutate go "the probe follows a redirect with the credential" "$A" \
     '	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },' \
     '	CheckRedirect: nil,'
@@ -692,10 +723,10 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # The key file itself, which is the name an attacker plants a link at.
   mutate go "a symlinked key file is followed" "$CU" \
     '	if info.Mode()&fs.ModeSymlink != 0 {
-		return "", fmt.Errorf(
+		return none, fmt.Errorf(
 			"%s is a symbolic link rather than a key, and was not read",' \
     '	if false {
-		return "", fmt.Errorf(
+		return none, fmt.Errorf(
 			"%s is a symbolic link rather than a key, and was not read",'
   # **One rule, one row.** It used to be written out at both the name and the
   # descriptor, which made each copy invisible: break one and the other
@@ -719,9 +750,9 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # one by identity, so that is what is broken here.
   mutate go "the opened key is not checked against the inspected one" "$CU" \
     '	if !os.SameFile(info, opened) {
-		return "", fmt.Errorf(' \
+		return none, fmt.Errorf(' \
     '	if false {
-		return "", fmt.Errorf('
+		return none, fmt.Errorf('
   # The same check on the file that names where a credential goes.
   mutate go "the opened configuration is not checked against the inspected one" "$CU" \
     '	if !os.SameFile(info, opened) {
@@ -779,16 +810,189 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the credential scan never runs" "$DF" \
     '	problems = append(problems, scanForKeys("", parsed)...)' \
     ''
+  # Round 1: only the page's half of the query was checked, and the configured
+  # half — which `PUT /api/desk-config` had just made page-writable — travelled
+  # upstream byte for byte on every later call.
+  mutate go "a configured query is not held to any rule" "$DF" \
+    '	if reason := endpointQueryProblem(parsed.RawQuery); reason != "" {' \
+    '	if reason := ""; reason != "" {'
+  # A configured `alt` would be a second copy of the one pair the relay admits
+  # from the page: a query two parsers count differently.
+  # **Repaired**: the comparison folds case since round 2.
+  mutate go "a configured query may use a name the relay reserves" "$DF" \
+    '		if containsFold(reservedQueryNames, decoded) {' \
+    '		if false {'
+  # "A key is never written into configuration" cannot be a rule about members
+  # only while a URL sits beside them.
+  mutate go "a configured query may carry a credential" "$DF" \
+    '		if isCredentialQueryName(decoded) {' \
+    '		if false {'
+  # Round 2: `url.QueryUnescape("%FF")` answers one byte and no error while the
+  # browser's decoder throws, so the chassis accepted a file the page refused —
+  # and could send the key on the strength of it.
+  # Only the UTF-8 half is broken: dropping `decoded` altogether leaves it
+  # unused and does not compile, and a mutation that does not compile has not
+  # been survived — it has not been tested.
+  mutate go "a configured query is read as bytes the browser cannot read" "$DF" \
+    '			if err != nil || !utf8.ValidString(decoded) {' \
+    '			if err != nil || (false && !utf8.ValidString(decoded)) {'
+  # Round 2: the reserved names were compared case-sensitively, so `?ALT=sse`
+  # was accepted and the relay added its own pair beside it.
+  mutate go "a reserved query name in another case is accepted" "$DF" \
+    '		if containsFold(reservedQueryNames, decoded) {' \
+    '		if contains(reservedQueryNames, decoded) {'
   mutate go "a key smuggled into the URL is accepted" "$DF" \
     '	if parsed.User != nil {' \
     '	if false {'
+  # **The desk-level write, and the four ways it could stop being narrow.**
+  # This is the one route that changes a configuration file, and the argument
+  # for having it is entirely in these four checks.
+  #
+  # The round trip is the whole safety argument: what is decoded is the file
+  # this desk would store, so a key-shaped member or an unknown kind refuses
+  # the write rather than being written and then reported as refused.
+  mutate go "a configuration write is not decoded before it lands" "$A" \
+    '	decoded := decodeDeskFile(composed)
+	if decoded.refused() {' \
+    '	decoded := decodeDeskFile(composed)
+	if false && decoded.refused() {'
+  # **The UTF-8 rule, broken where it has one spelling.**
+  #
+  # Round 1: Go's decoder replaces an invalid byte inside a string while
+  # decoding and `json.RawMessage` keeps the original, so a `0xff` decoded
+  # clean and would have been written into a file every later read refuses.
+  # The repair applies the rule three times on this route — to the request
+  # body, to the composed file before staging, and to the read-back — which is
+  # wanted (each covers bytes the others never see: a body, a current file
+  # carried across, and whatever actually landed).
+  #
+  # **A row that broke one of the three reported NOT DISCRIMINATING, and it was
+  # right to**: with the body check gone the composed check refuses the same
+  # request, with the same status and the same code. Three applications of one
+  # rule are not three safeguards. So the row is the rule itself — the
+  # predicate all three call — which is the same shape `ownerOnlyFile` took for
+  # the same reason, and it is the row that can actually fail.
+  mutate go "bytes that are not text are treated as text" "$DF" \
+    'func validUTF8(data []byte) bool { return utf8.Valid(data) }' \
+    'func validUTF8(data []byte) bool { _ = utf8.Valid(data); return true }'
+  # Round 1: the composed file was never bounded, so an envelope inside the
+  # request bound could compose past the bound every reader applies.
+  mutate go "a composed configuration is not bounded before it is staged" "$A" \
+    '	if len(composed) > maxDeskConfigBytes {' \
+    '	if false {'
+  # One JSON value, and nothing behind it: a body two readers disagree about is
+  # the class this desk refuses everywhere else.
+  mutate go "a configuration write accepts a second value behind the first" "$A" \
+    '	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {' \
+    '	if false {'
+  # No override on this route: a file that moved under the writer is refused,
+  # because this is the file that names where a credential goes.
+  #
+  # **Repaired after round 2 reported it NOT DISCRIMINATING, correctly.** The
+  # comparison was written out twice — once against the bytes the transaction
+  # read and again immediately before the rename — so breaking either copy left
+  # the other answering the same 409 with the same digests. Two spellings of
+  # one rule are invisible to a harness that breaks one of them. There is one
+  # predicate now, and this is it.
+  mutate go "a configuration write ignores the digest it was given" "$A" \
+    'func deskConfigUnmoved(ifMatch, actual string) bool {
+	return strings.EqualFold(strings.TrimSpace(ifMatch), actual)
+}' \
+    'func deskConfigUnmoved(ifMatch, actual string) bool {
+	_, _ = ifMatch, actual
+	return true
+}'
+  # And the half the second comparison used to stand in for: a request already
+  # known to be stale must never reach the disk at all. "Nothing was written"
+  # and "nothing was staged" are different claims.
+  mutate go "an already-stale write is staged before it is refused" "$A" \
+    '	if !deskConfigUnmoved(req.IfMatch, actual) {
+		return http.StatusConflict, conflict{' \
+    '	if false {
+		return http.StatusConflict, conflict{'
+  # Through the pinned custody descriptor, staged and renamed, published at the
+  # mode this desk chose — `os.WriteFile` follows a name and keeps whatever
+  # mode it finds, which is the observable difference the suite measures.
+  # **Repaired**: the call gained the pre-rename revalidation round 1 asked for.
+  # The mutation is the same defect — a write by pathname rather than through
+  # the pinned descriptor, which follows a name and keeps whatever mode it
+  # finds.
+  mutate go "a configuration write goes round the custody root" "$A" \
+    '	var moved *deskConfigMoved
+	if err := s.assistant.writeConfigFile(composed, func() error {' \
+    '	var moved *deskConfigMoved
+	if err := func(data []byte, _ func() error) error {
+		return os.WriteFile(path, data, 0o600)
+	}(composed, func() error {'
+  # Every other member is carried across by its own bytes, in its own place: a
+  # rewrite of one member must not restate the rest of a file somebody wrote.
+  #
+  # **Repaired**: the needle named the map-and-order pair that round 1 replaced
+  # with a single ordered walk. The mutation is the same defect — the other
+  # members gone — and the version is kept so the composed file still decodes
+  # and the row measures the preservation rather than the round trip.
+  mutate go "a rewrite drops the other members of the file" "$A" \
+    '		members = append(members, deskMember{name: key, raw: value})' \
+    '		if key == "deskConfigVersion" {
+			members = append(members, deskMember{name: key, raw: value})
+		}'
+  # Round 1: every retained member went through `json.Indent`, so the
+  # byte-for-byte claim held only for a file already in the shape that emits.
+  mutate go "a retained member is reflowed rather than copied" "$A" \
+    '		out.Write(member.raw)' \
+    '		var reflowed bytes.Buffer
+		if ierr := json.Indent(&reflowed, member.raw, "  ", "  "); ierr == nil {
+			member.raw = json.RawMessage(reflowed.String())
+		}
+		out.Write(member.raw)'
+  # Round 2: the walk stopped as soon as there was no next member, which is
+  # true of a truncated object as well as a closed one — so a half-written file
+  # was rewritten into well-formed JSON with its malformed bytes dropped.
+  mutate go "a file that is not one whole object is repaired on rewrite" "$A" \
+    '	closing, err := decoder.Token()
+	if err != nil {
+		return nil, "", fmt.Errorf("the object is not closed: %w", err)
+	}' \
+    '	closing, err := json.Token(json.Delim(0x7d)), error(nil)
+	if false {
+		return nil, "", err
+	}'
+  # Round 1: values came from a map and positions from the walk, so two
+  # spellings of one name became the last value at the first position.
+  mutate go "a duplicate top-level member is collapsed rather than refused" "$A" \
+    '		if seen[key] {
+			return nil, key, nil
+		}' \
+    ''
+  # Round 1: the digest was compared at the read and never again, so an
+  # ordinary editor writing between that and the rename was overwritten.
+  mutate go "a configuration write does not look again before it publishes" "$CU" \
+    '	if stillMatches != nil {
+		if err := stillMatches(); err != nil {
+			remove()
+			return err
+		}
+	}' \
+    ''
   # Caught by the live drive: the protocol path was appended to the whole URL
   # string, so a configured query put it after the query.
+  #
+  # **Repaired**: the body this named moved into `probeAddressWithQuery` when
+  # the gemini arm needed a parameter of its own, and the needle went stale
+  # silently. The mutation is the same defect — the path after the query — and
+  # it now reproduces it for both arms at once.
   mutate go "the protocol path is appended to the whole URL" "$A" \
     '	appendPath(parsed, suffix)
+	if pair != "" {
+		parsed.RawQuery = appendQueryPair(parsed.RawQuery, pair)
+		parsed.ForceQuery = false
+	}
 	return parsed.String()' \
     '	_ = parsed
-	return base + suffix'
+	if pair == "" {
+		return base + suffix
+	}
+	return base + suffix + "?" + pair'
   # `u.Path` is the decoded path; writing it alone re-encodes %2F into a
   # separator and sends the credential to a different resource.
   mutate go "an escaped path is re-encoded on the way out" "$A" \
@@ -985,6 +1189,33 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # filled it, which is not a state this route can produce. The cap above is the
   # safeguard; the constant is the size of the tail behind it, and it is asserted
   # by reading rather than by measurement.
+  # **The colon exception, and the three ways it could stop being closed.**
+  # The part after a colon is a verb: an open list would let whoever holds the
+  # session token ask the configured endpoint to *do* something nobody wrote
+  # down, with the stored credential attached.
+  # Only the method half is broken: leaving `method` unused would not compile,
+  # and a mutation that does not compile has not been survived — it has not
+  # been tested.
+  mutate go "the method after a colon is not held to the list" "$MR" \
+    '			if index != len(segments)-1 || name == "" ||
+				!contains(relayPathMethods, method) {' \
+    '			if index != len(segments)-1 || name == "" ||
+				(false && !contains(relayPathMethods, method)) {'
+  # Round 1: the rule was written per segment and never asked where the segment
+  # was, so `v1beta/a:countTokens/b` was forwarded with the credential.
+  mutate go "a colon method is accepted in a non-final segment" "$MR" \
+    '			if index != len(segments)-1 || name == "" ||' \
+    '			if (false && index != len(segments)-1) || name == "" ||'
+  # The one pair the page may send is admitted for one wire and refused for the
+  # other two, which carry streaming in the request body and need none.
+  mutate go "the stream pair is admitted on every kind" "$MR" \
+    '	if extra != "" && extra != relayExtraQueryPair(endpoint.kind) {' \
+    '	if false {'
+  # At most once: `alt=sse&alt=sse` is a query two parsers could count
+  # differently, which is the whole class this rule exists to keep out.
+  mutate go "a second copy of the stream pair is admitted" "$MR" \
+    '				parameter == relayStreamPair && extra == "" {' \
+    '				parameter == relayStreamPair {'
   mutate go "the relay's log line carries the whole address" "$MR" \
     '	s.log.Printf("desk: assistant relay %s answered %d", loggableOrigin(endpoint.url), status)' \
     '	s.log.Printf("desk: assistant relay %s %s answered %d", endpoint.url, suffix, status)'
@@ -3471,6 +3702,17 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     })"
 
   # The credential scan, and the two URL members a key can hide in.
+  # The browser's half of the same rule: two implementations of one contract
+  # drift, and the fixtures hold them together only if both actually check.
+  # The browser's half of the case rule, so the two cannot drift apart again.
+  mutate web "a reserved query name in another case is accepted" "$D" \
+    '        (reserved) => reserved.toLowerCase() === decoded.toLowerCase()' \
+    '        (reserved) => reserved === decoded'
+  mutate web "a configured query is not held to any rule" "$D" \
+    '  const query = endpointQueryProblem(raw)
+  if (query !== undefined) return query' \
+    '  const query = undefined as string | undefined
+  if (query !== undefined) return query'
   mutate web "the credential scan never runs" "$D" \
     "  scanForKeys('', parsed, problems)" \
     ''

@@ -15,6 +15,7 @@
  * and the `{error, code}` shape are the chassis' and not any one endpoint's.
  */
 import { answer, chassisUrl } from '../files/client'
+import type { AssistantConfig } from '../config/deskConfig'
 
 /**
  * What the desk will say about the key, and the whole of it.
@@ -27,6 +28,22 @@ import { answer, chassisUrl } from '../files/client'
 export interface AssistantKeyState {
   present: boolean
   fingerprint: string
+  /**
+   * The destination this key was entered for: the scheme and host of the
+   * endpoint configured when it was stored, and that endpoint's wire protocol.
+   * Empty where there is no key.
+   *
+   * **The key travels only there.** A configuration write can move the
+   * endpoint — that is what it is for — and the credential does not follow:
+   * the probe and the relay refuse with `assistant-key-unbound` rather than
+   * presenting it somewhere new, and the repair is a person entering it again,
+   * which page code cannot do because it has never held it. These two members
+   * are what lets a form say "key stored for gw.example" instead of leaving a
+   * reader to discover the binding by meeting a refusal. Neither is a secret:
+   * both are in the file this page already reads.
+   */
+  origin: string
+  kind: string
 }
 
 /**
@@ -115,5 +132,69 @@ export async function removeAssistantKey(): Promise<AssistantKeyState> {
 export async function probeAssistantEndpoint(signal?: AbortSignal): Promise<ProbeResult> {
   return answer<ProbeResult>(
     await fetch(chassisUrl('/api/assistant/probe'), { method: 'POST', signal })
+  )
+}
+
+/**
+ * What a desk-level write asks for, and what it must send to be allowed.
+ *
+ * **`ifMatch` is the digest of the `desk.json` bytes this page last read**,
+ * bare hex, and the empty string means "I believe there is no file". The
+ * chassis refuses the write where that disagrees with the disk, and there is
+ * no `override`: this is the one file that names the endpoint a credential is
+ * presented to, and "write anyway" is not a choice a page should be able to
+ * make about it. The repair is to read it again and decide about what is
+ * actually there.
+ */
+export interface AssistantConfigWrite {
+  /** The `assistant` object exactly as the decoder accepts it. */
+  assistant: unknown
+  ifMatch: string
+}
+
+/** What the chassis answers a desk-level write with. */
+export interface AssistantConfigWritten {
+  /** Absolute, on that machine. */
+  path: string
+  /** The digest of the bytes that landed, for the next write's `ifMatch`. */
+  sha256: string
+  /** The `assistant` member of the file on disk, read back after the write. */
+  assistant: AssistantConfig
+  /** True exactly where the write brought the file into existence. */
+  created: boolean
+  /**
+   * True where a key is stored on this machine and is **not** the key for the
+   * endpoint this write just configured.
+   *
+   * The write moves the endpoint and never the credential; this is how a page
+   * learns that without having to make a request that fails.
+   */
+  keyRebindRequired: boolean
+}
+
+/**
+ * Replace the `assistant` object in the desk-level file.
+ *
+ * **The one configuration write this page makes, and it names no path.** The
+ * chassis writes exactly one file — the one on that machine, through the same
+ * pinned directory the key is written through — carries every other member of
+ * it across untouched, and decodes the bytes it composed before any of them
+ * reach the disk. So a page cannot store a configuration Admin would then
+ * report as refused, and cannot store one anywhere else.
+ *
+ * A refusal arrives as a `FileRequestError` carrying the chassis' code:
+ * `desk-config-refused` (422) for an object the shared decoder will not accept,
+ * with the problems in the body, and `desk-config-changed` (409) — a
+ * `StaleWrite`, with both digests — for a file that moved underneath this page.
+ */
+export async function updateAssistantConfig(
+  input: AssistantConfigWrite
+): Promise<AssistantConfigWritten> {
+  return answer<AssistantConfigWritten>(
+    await fetch(chassisUrl('/api/desk-config'), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assistant: input.assistant, ifMatch: input.ifMatch })
+    })
   )
 }

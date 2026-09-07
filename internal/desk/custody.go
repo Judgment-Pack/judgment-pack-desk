@@ -51,6 +51,7 @@ package desk
 // start or, worse, keeping one anyway.
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -127,6 +128,34 @@ var testHookAfterConfigStat func(path string)
 func afterConfigStat(path string) {
 	if testHookAfterConfigStat != nil {
 		testHookAfterConfigStat(path)
+	}
+}
+
+// testHookAfterConfigStaged runs the instant a desk-level staging file has
+// been created, and is nil outside tests.
+//
+// It is how a test says "nothing was staged" rather than only "nothing was
+// written": a refusal that happens before this fires never touched the disk,
+// and one that happens after it did and then cleaned up.
+var testHookAfterConfigStaged func(path string)
+
+func afterConfigStaged(path string) {
+	if testHookAfterConfigStaged != nil {
+		testHookAfterConfigStaged(path)
+	}
+}
+
+// testHookBeforeConfigRename runs after a desk-level write has been staged and
+// before the digest is compared again, and is nil outside tests.
+//
+// It exists so a test can be the ordinary editor the mutex knows nothing
+// about, at the one instant where the compare-and-commit could otherwise lose
+// somebody's file.
+var testHookBeforeConfigRename func(path string)
+
+func beforeConfigRename(path string) {
+	if testHookBeforeConfigRename != nil {
+		testHookBeforeConfigRename(path)
 	}
 }
 
@@ -503,29 +532,193 @@ func ownedByUs(path string, info fs.FileInfo) error {
 	return nil
 }
 
+// writeConfigFile replaces the desk-level file, atomically, through the pinned
+// directory — the same staging-and-rename the key gets, and for the same
+// reason.
+//
+// **`desk.json` is not an ordinary file to this desk**, so it is not written
+// with `os.WriteFile` on a pathname. It names the endpoint a credential is
+// presented to, which makes writing it equivalent to choosing where the key
+// goes: the staging file is created through the *descriptor* this store
+// validated and pinned at startup, the mode is set on that descriptor rather
+// than by name (`Root.Chmod` is documented as racing a regular-file-to-symlink
+// swap on Unix), and the rename happens inside the same directory so it is
+// atomic.
+//
+// **Owner-only, 0600.** This desk writes its own configuration for itself. It
+// still *reads* a `0644` file, because a plain checkout or a text editor
+// leaves one and refusing that would refuse an ordinary machine — what is
+// refused on the way in is one anybody else could have *written*. What it will
+// not do is publish a file it wrote at a mode it did not choose.
+//
+// A store that failed validation writes nothing: `usable()` is checked first,
+// and a custody directory that was ever writable by anyone else is refused
+// rather than narrowed, which is the rule `safeDirectory` states.
+//
+// **`stillMatches` is the conditional half of the commit, and it runs here
+// rather than at the caller** — after the bytes are staged and immediately
+// before the rename that publishes them. The digest the page sent was compared
+// at the *read*, and round 1 found the window between that comparison and this
+// rename open to an ordinary editor: a write the desk's own mutex knows nothing
+// about landed in between and was overwritten, and the route reported success.
+// Running the comparison again from here closes all of that window but the
+// rename itself.
+//
+// **The residual is the rename.** A writer whose own write lands between this
+// check and `Rename` still loses, and no compare-and-swap on a POSIX rename
+// exists to close it. It is stated here and in the README rather than implied
+// away.
+func (s *assistantStore) writeConfigFile(data []byte, stillMatches func() error) error {
+	if !s.usable() {
+		return s.problem
+	}
+	staged, name, err := s.stageConfig()
+	if err != nil {
+		return err
+	}
+	// The instant a staging file first exists, which is what a test watches to
+	// establish that a request refused *earlier* never reached the disk at
+	// all. Round 2 asked for that observable: "nothing was written" and
+	// "nothing was staged" are different claims, and only the second one rules
+	// out a refusal that happened after the bytes had already been put down.
+	afterConfigStaged(filepath.Join(s.dir, name))
+	remove := func() { _ = s.root.Remove(name) }
+	if _, err := staged.Write(data); err != nil {
+		staged.Close()
+		remove()
+		return err
+	}
+	if err := staged.Chmod(custodyFileMode); err != nil {
+		staged.Close()
+		remove()
+		return err
+	}
+	if err := staged.Sync(); err != nil {
+		staged.Close()
+		remove()
+		return err
+	}
+	if err := staged.Close(); err != nil {
+		remove()
+		return err
+	}
+	// The hook a test performs the swap at: an ordinary editor replacing
+	// `desk.json` with bytes nobody here has seen, at the instant where it
+	// would matter. Without it the argument above would rest on reading the
+	// code and believing it.
+	beforeConfigRename(filepath.Join(s.dir, deskConfigName))
+	if stillMatches != nil {
+		if err := stillMatches(); err != nil {
+			remove()
+			return err
+		}
+	}
+	if err := s.root.Rename(name, deskConfigName); err != nil {
+		remove()
+		return err
+	}
+	if d, derr := s.root.Open("."); derr == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
+	return nil
+}
+
+// stageConfig makes an exclusive, randomly named staging file beside the
+// desk-level file.
+//
+// `O_EXCL` for the reason `stage` gives: it makes a name collision a retry
+// rather than a silent overwrite, and a preplanted name a refusal rather than
+// a write through somebody else's symlink. A prefix of its own, because these
+// live beside `desk.json` in the desk's own directory rather than in
+// `secrets/`, and one name read as covering both would be one exclusion list
+// doing two jobs.
+func (s *assistantStore) stageConfig() (*os.File, string, error) {
+	for attempt := 0; attempt < 10; attempt++ {
+		name, err := configStagingName()
+		if err != nil {
+			return nil, "", err
+		}
+		file, err := s.root.OpenFile(
+			name, os.O_RDWR|os.O_CREATE|os.O_EXCL|openNoFollow, custodyFileMode)
+		if err == nil {
+			return file, name, nil
+		}
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		return nil, "", err
+	}
+	return nil, "", errors.New("no unused staging name")
+}
+
 /* The key, through the pinned directory ------------------------------------ */
 
-// readKey answers the stored key, or the empty string where there is none.
+// storedKey is a key and the destination it was entered for.
+//
+// **The binding is the point, and it is why this is a record rather than a
+// string.** See `assistant.go`'s account of it: a key that travels wherever
+// the configuration happens to point is a key page code can redirect by
+// writing one member of a file, and this desk now has a route that writes that
+// member. So the key carries the origin and the wire protocol of the endpoint
+// configured at the instant it was stored, and the probe and the relay present
+// it only where both still match.
+//
+// `present` is false where there is no key at all, which is not a refusal.
+type storedKey struct {
+	present bool
+	key     string
+	// origin is scheme://host, exactly as `endpointOrigin` renders it.
+	origin string
+	kind   string
+}
+
+// storedKeyVersion is the format `secrets/assistant` is written in.
+//
+// **Versioned, and an unversioned file is refused rather than guessed at.**
+// The file used to be the key's bytes and nothing else; a build that read
+// those as a key would be a build presenting a credential with no binding at
+// all, which is the state this whole mechanism exists to end. So a file
+// without this member is refused by name, and the repair — store the key
+// again, which binds it — is in the sentence.
+const storedKeyVersion = 1
+
+// storedKeyFile is the file's shape on disk.
+//
+// The member holding the credential is called `key`, in the one file on this
+// machine whose whole purpose is to hold one. That is not the rule
+// `isKeyLike` enforces: that rule is about *configuration*, and it exists
+// precisely so a credential lives here instead.
+type storedKeyFile struct {
+	Version int    `json:"assistantKeyVersion"`
+	Origin  string `json:"origin"`
+	Kind    string `json:"kind"`
+	Key     string `json:"key"`
+}
+
+// readKey answers the stored key with its binding, or `present: false` where
+// there is none.
 //
 // **`Lstat` first, and `O_NOFOLLOW` on the open.** `os.Root` follows a symlink
 // that stays inside the root, which is exactly the case an attacker who can
 // write to the directory would arrange — so the type is checked before the
 // open and the open refuses to traverse a link regardless. The mode is checked
 // too: a key file somebody else can read is not a key this desk will present.
-func (s *assistantStore) readKey() (string, error) {
+func (s *assistantStore) readKey() (storedKey, error) {
+	var none storedKey
 	if !s.usable() {
-		return "", s.problem
+		return none, s.problem
 	}
 	keyPath := filepath.Join(s.dir, secretsDirName, assistantKeyName)
 	info, err := s.secrets.Lstat(assistantKeyName)
 	if errors.Is(err, os.ErrNotExist) {
-		return "", nil
+		return none, nil
 	}
 	if err != nil {
-		return "", err
+		return none, err
 	}
 	if info.Mode()&fs.ModeSymlink != 0 {
-		return "", fmt.Errorf(
+		return none, fmt.Errorf(
 			"%s is a symbolic link rather than a key, and was not read", keyPath)
 	}
 	// **The rule lives in one function, applied twice.** It used to be written
@@ -534,7 +727,7 @@ func (s *assistantStore) readKey() (string, error) {
 	// reported a safeguard nothing was holding when in fact two things were.
 	// Defence in depth is worth having; two spellings of one rule are not.
 	if err := ownerOnlyFile(keyPath, info.Mode()); err != nil {
-		return "", err
+		return none, err
 	}
 	// **The open is checked against the thing that was inspected, by
 	// identity.** The `Lstat` above establishes what is at that name at that
@@ -552,15 +745,15 @@ func (s *assistantStore) readKey() (string, error) {
 	afterKeyStat(filepath.Join(s.dir, secretsDirName, assistantKeyName))
 	file, err := s.secrets.OpenFile(assistantKeyName, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
 	if err != nil {
-		return "", err
+		return none, err
 	}
 	defer file.Close()
 	opened, err := file.Stat()
 	if err != nil {
-		return "", err
+		return none, err
 	}
 	if !os.SameFile(info, opened) {
-		return "", fmt.Errorf(
+		return none, fmt.Errorf(
 			"%s changed between being inspected and being opened, and was not read",
 			filepath.Join(s.dir, secretsDirName, assistantKeyName))
 	}
@@ -569,17 +762,38 @@ func (s *assistantStore) readKey() (string, error) {
 	// Re-asserted on the descriptor, because the check above was made on a
 	// name. Same function, so there is one rule to break and one row for it.
 	if err := ownerOnlyFile(keyPath, opened.Mode()); err != nil {
-		return "", err
+		return none, err
 	}
-	data, err := readBounded(file, maxKeyBytes)
+	data, err := readBounded(file, maxKeyBytes+storedKeyEnvelope)
 	if err != nil {
-		return "", err
+		return none, err
 	}
-	// Trimmed on the way out as well as in, so a file a person wrote by hand
+	var record storedKeyFile
+	if jerr := json.Unmarshal(data, &record); jerr != nil || record.Version != storedKeyVersion {
+		// **Refused, and never read as a bare key.** A file this build cannot
+		// read as a bound key is a file it will not present as an unbound one.
+		// The repair is one action and the sentence names it.
+		return none, withCode(CodeAssistantKeyUnbound, fmt.Errorf(
+			"%s is not a key this build can read: store the key again on Admin › Assistant, "+
+				"which binds it to the endpoint configured at that moment", keyPath))
+	}
+	// Trimmed on the way out as well as in, so a file a person edited by hand
 	// with a trailing newline presents the same key this desk would have
 	// stored from the same paste.
-	return strings.TrimSpace(string(data)), nil
+	return storedKey{
+		present: true,
+		key:     strings.TrimSpace(record.Key),
+		origin:  record.Origin,
+		kind:    record.Kind,
+	}, nil
 }
+
+// storedKeyEnvelope is how much of the key file is not the key.
+//
+// The four members' names, the braces and the quoting, plus room for an origin
+// and a kind. Generous on purpose: a key of exactly the maximum length must
+// not be refused for the JSON around it.
+const storedKeyEnvelope = 2048
 
 // storeKey writes the key, atomically, owner-only, through the pinned
 // directory.
@@ -587,16 +801,25 @@ func (s *assistantStore) readKey() (string, error) {
 // The mode is set on the **descriptor** rather than by name: `Root.Chmod` is
 // documented as racing a regular-file-to-symlink swap on Unix, and a chmod
 // that lands on a link is a chmod on somebody else's file.
-func (s *assistantStore) storeKey(key string) error {
+func (s *assistantStore) storeKey(bound storedKey) error {
 	if !s.usable() {
 		return s.problem
+	}
+	encoded, err := json.Marshal(storedKeyFile{
+		Version: storedKeyVersion,
+		Origin:  bound.origin,
+		Kind:    bound.kind,
+		Key:     bound.key,
+	})
+	if err != nil {
+		return err
 	}
 	staged, name, err := s.stage()
 	if err != nil {
 		return err
 	}
 	remove := func() { _ = s.secrets.Remove(name) }
-	if _, err := staged.WriteString(key); err != nil {
+	if _, err := staged.Write(encoded); err != nil {
 		staged.Close()
 		remove()
 		return err

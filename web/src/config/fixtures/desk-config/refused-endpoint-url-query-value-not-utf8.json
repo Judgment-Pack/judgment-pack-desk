@@ -2,8 +2,8 @@
   "deskConfigVersion": 1,
   "assistant": {
     "endpoint": {
-      "url": "https://api.example.invalid/v1",
-      "kind": "some-other-protocol",
+      "url": "https://gw.example.invalid/v1?a=%FF",
+      "kind": "gemini",
       "model": "a-model",
       "tools": [
         "validate"

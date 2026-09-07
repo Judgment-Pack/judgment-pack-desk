@@ -94,16 +94,27 @@ func TestCustodyRefusesASymlinkedKeyFile(t *testing.T) {
 	if err := os.Symlink(secret, filepath.Join(config, secretsDirName, assistantKeyName)); err != nil {
 		t.Fatalf("symlink: %v", err)
 	}
-	key, err := store.readKey()
+	answered, err := store.readKey()
 	if err == nil {
-		t.Fatalf("the link was followed and answered %q", key)
+		t.Fatalf("the link was followed and answered %q", answered.key)
 	}
 	if !strings.Contains(err.Error(), "symbolic link") {
 		t.Errorf("the refusal does not name the link: %v", err)
 	}
-	if key != "" {
-		t.Errorf("a refused read still produced %q", key)
+	if answered.present || answered.key != "" {
+		t.Errorf("a refused read still produced %q", answered.key)
 	}
+}
+
+// boundTestKey is the key every custody test stores, with the binding the
+// handler would have attached. These tests are about the *file* — its mode,
+// its type, the descriptor it is opened through — so the binding is a fixed
+// value here rather than something each case arranges.
+var boundTestKey = storedKey{
+	present: true,
+	key:     testKey,
+	origin:  "https://e.example",
+	kind:    "anthropic",
 }
 
 func TestCustodyRefusesAKeyFileAnybodyElseCanRead(t *testing.T) {
@@ -112,7 +123,7 @@ func TestCustodyRefusesAKeyFileAnybodyElseCanRead(t *testing.T) {
 	if !store.usable() {
 		t.Fatalf("refused a good directory: %v", store.problem)
 	}
-	if err := store.storeKey(testKey); err != nil {
+	if err := store.storeKey(boundTestKey); err != nil {
 		t.Fatalf("store: %v", err)
 	}
 	path := filepath.Join(config, secretsDirName, assistantKeyName)
@@ -259,7 +270,7 @@ func TestCustodyHoldsTheDirectoryItPinnedAcrossASwap(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	if err := store.storeKey(testKey); err != nil {
+	if err := store.storeKey(boundTestKey); err != nil {
 		t.Fatalf("store after the swap: %v", err)
 	}
 	// The key landed in the directory that was pinned, and nothing at all was
@@ -448,7 +459,7 @@ func TestCustodyRefusesALinkSwappedInAfterTheCheck(t *testing.T) {
 	if !store.usable() {
 		t.Fatalf("refused: %v", store.problem)
 	}
-	if err := store.storeKey(testKey); err != nil {
+	if err := store.storeKey(boundTestKey); err != nil {
 		t.Fatalf("store: %v", err)
 	}
 	decoy := filepath.Join(config, secretsDirName, "decoy")
@@ -477,12 +488,12 @@ func TestCustodyRefusesALinkSwappedInAfterTheCheck(t *testing.T) {
 
 	got, err := store.readKey()
 	if err == nil {
-		t.Fatalf("the swapped-in link was followed and answered %q", got)
+		t.Fatalf("the swapped-in link was followed and answered %q", got.key)
 	}
-	if got != "" {
-		t.Errorf("a refused read still produced %q", got)
+	if got.present || got.key != "" {
+		t.Errorf("a refused read still produced %q", got.key)
 	}
-	if strings.Contains(got, "not-this-desks-key") {
+	if strings.Contains(got.key, "not-this-desks-key") {
 		t.Error("the attacker's file was read as the key")
 	}
 }
@@ -504,7 +515,7 @@ func TestARefusedStoreTouchesTheFilesystemNotAtAll(t *testing.T) {
 	if store.usable() {
 		t.Fatal("the store accepted a loose parent")
 	}
-	if err := store.storeKey(testKey); err == nil {
+	if err := store.storeKey(boundTestKey); err == nil {
 		t.Error("a refused store wrote a key")
 	}
 	if _, err := store.readKey(); err == nil {

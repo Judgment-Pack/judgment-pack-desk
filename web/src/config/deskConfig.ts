@@ -62,9 +62,27 @@ export interface IdentityConfig {
   provider: IdentityProviderConfig | null
 }
 
-/** The wire protocols the desk can speak to a model endpoint. */
-export type EndpointKind = 'openai-compatible' | 'anthropic'
-export const ASSISTANT_KINDS: readonly EndpointKind[] = ['openai-compatible', 'anthropic']
+/**
+ * The wire protocols the desk can speak to a model endpoint.
+ *
+ * **`gemini` is a third protocol and not a third vendor.** It names Google's
+ * native Gemini wire — thought parts, thought signatures carried back across
+ * tool turns and an explicit thinking budget exist only there, and not on that
+ * vendor's OpenAI-compatibility layer — and an endpoint speaking it is
+ * configured in the same four fields as any other, at whatever URL its
+ * operator documents. The URL rule stays the transport rule and nothing reads
+ * the host, so a proxy or a self-hosted endpoint speaking that wire is this
+ * kind too.
+ *
+ * Mirrored from `AssistantKinds` in `internal/desk/assistant.go` and held to
+ * it by a test that reads that file, because both sides refuse by this list.
+ */
+export type EndpointKind = 'openai-compatible' | 'anthropic' | 'gemini'
+export const ASSISTANT_KINDS: readonly EndpointKind[] = [
+  'openai-compatible',
+  'anthropic',
+  'gemini'
+]
 
 /**
  * The runtime tools the assistant may be configured to call.
@@ -1116,8 +1134,13 @@ function endpointValue(
  * configuration file and shown on Admin; a credential smuggled into its
  * userinfo would be a second, unmanaged place for a secret to live, in the one
  * file this desk insists holds none — and it would make "the key is never
- * logged" false for a configuration this schema accepted. A query string is
- * *allowed*, because some gateways route on one, and is never logged.
+ * logged" false for a configuration this schema accepted.
+ *
+ * **A query string is allowed and is held to a rule of its own**, because the
+ * file is no longer only something a person types: `PUT /api/desk-config` lets
+ * page code write it, and the configured query is the one part of a relayed
+ * request the page could then fill with anything — it travels upstream byte
+ * for byte on every later call. See `endpointQueryProblem`.
  *
  * Held identical to `endpointURLProblem` in `internal/desk/deskfile.go` by the
  * shared fixtures both decoders read.
@@ -1141,6 +1164,8 @@ function endpointUrlProblem(raw: string): string | undefined {
       'and a fragment is never sent'
     )
   }
+  const query = endpointQueryProblem(raw)
+  if (query !== undefined) return query
   if (url.protocol === 'https:') return undefined
   if (url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')) {
     return undefined
@@ -1149,6 +1174,108 @@ function endpointUrlProblem(raw: string): string | undefined {
     'must be an https: URL, or an http: URL on localhost or 127.0.0.1 — a key sent in ' +
     'clear text over a network is a key given away'
   )
+}
+
+/**
+ * The query names a configured URL may not use.
+ *
+ * **The names the relay itself may add, plus the one the listing pages with.**
+ * A configured `alt` would be a second copy of the pair the relay admits from
+ * the page — a query two parsers could count differently — and a configured
+ * `pageToken` would page a listing this desk documents as first-page-only.
+ *
+ * **Reserved on every kind**, not only the one that admits `alt`: a per-kind
+ * rule would make a URL legal until somebody changed `kind` beside it, and the
+ * two members are edited together.
+ */
+export const RESERVED_QUERY_NAMES = ['alt', 'pageToken'] as const
+
+/**
+ * The rule the configured URL's query is held to.
+ *
+ * The configured query is the one part of a relayed request that comes off the
+ * desk's own machine, and the relay carries it upstream byte for byte. That
+ * was safe while the file was something a person typed; it stopped being safe
+ * when `PUT /api/desk-config` let page code write it, and `?key=secret`,
+ * `?alt=sse`, `?pageToken=x`, a semicolon and every encoded alias began
+ * reaching the endpoint on every later call through a member the per-kind
+ * query rule never looked at.
+ *
+ * Three refusals, each a rule this desk already applies somewhere else: a
+ * credential-shaped name by the same reading `isKeyLike` gives a member name;
+ * a name the relay reserves; and a semicolon anywhere in it, which is the
+ * relay's own rule verbatim.
+ *
+ * Mirrored from `endpointQueryProblem` in `internal/desk/deskfile.go` and held
+ * to it by the shared fixtures.
+ */
+function endpointQueryProblem(raw: string): string | undefined {
+  // Read off the raw text rather than through `URL.searchParams`, which
+  // decodes and normalises: what travels is the raw query, so what is judged
+  // has to be the raw query.
+  const start = raw.indexOf('?')
+  if (start < 0) return undefined
+  const query = raw.slice(start + 1)
+  if (query === '') return undefined
+  if (query.includes(';')) {
+    return (
+      'must not carry a semicolon in its query: it is a separator to some servers and a ' +
+      'value to others, and this desk will not send one it cannot read the same way twice'
+    )
+  }
+  for (const parameter of query.split('&')) {
+    const halves = parameter.split('=')
+    const name = halves[0] ?? ''
+    // **Both halves.** The value travels upstream exactly as the name does,
+    // and the chassis reads both — a rule that looked at one of them would be
+    // two rules again. A pair spelled `a=b=c` is read as the name `a` and
+    // everything after the first `=` as its value, which is what both sides'
+    // query parsers do.
+    const value = halves.slice(1).join('=')
+    let decoded: string
+    try {
+      decoded = decodeURIComponent(name.replace(/\+/g, ' '))
+      decodeURIComponent(value.replace(/\+/g, ' '))
+    } catch {
+      return (
+        `has a query parameter this desk cannot read the same way a browser does ` +
+        `(${JSON.stringify(parameter)}): a query it cannot read identically twice is one ` +
+        'it will not forward'
+      )
+    }
+    // **The reserved names are read first**, because `pageToken` folds to a
+    // word the credential rule also catches and the sentence a reader repairs
+    // the file by should be the true one. Both refuse either way.
+    //
+    // **Compared without regard to case**, because that is how the servers
+    // this rule exists for read a query name: `?ALT=sse` would otherwise be
+    // accepted and the relay would add its own pair beside it.
+    if (
+      (RESERVED_QUERY_NAMES as readonly string[]).some(
+        (reserved) => reserved.toLowerCase() === decoded.toLowerCase()
+      )
+    ) {
+      return (
+        `must not carry ${JSON.stringify(decoded)} in its query: it is a name the relay ` +
+        'itself may add, and a query with two of one name is one two parsers count differently'
+      )
+    }
+    if (isCredentialQueryName(decoded)) {
+      return `must not carry ${JSON.stringify(decoded)} in its query — ${KEYS_ARE_NEVER_IN_CONFIGURATION}`
+    }
+  }
+  return undefined
+}
+
+/**
+ * `isKeyLike` for a query parameter's name.
+ *
+ * The member rule plus `auth`, which that rule does not catch — it folds to
+ * "auth", and no word on the list is a substring of it — and which is a
+ * credential parameter name in the wild.
+ */
+function isCredentialQueryName(name: string): boolean {
+  return isKeyLike(name) || name.trim().toLowerCase() === 'auth'
 }
 
 function isAcceptableIssuer(issuer: string): boolean {
@@ -1200,6 +1327,16 @@ export interface DeskLevelRead {
   /** Absolute, on this machine, and known even where nothing was read. */
   path: string
   present: boolean
+  /**
+   * The digest of the bytes the chassis read, bare hex, and the empty string
+   * where there is no file.
+   *
+   * **It is what a write sends back**, so that a `desk.json` somebody edited
+   * between this read and that write refuses the write rather than losing
+   * their edit. Undefined where nothing answered at all: a page that invented
+   * a digest there would be asserting the state of a file it never saw.
+   */
+  sha256?: string
   /** The decode, where a file was read at all. */
   decoded?: DecodedConfig
   /** Why nothing was read, where the file is simply absent. */

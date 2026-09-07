@@ -219,6 +219,7 @@ func TestRelayInjectsTheConfiguredKeyOncePerProtocol(t *testing.T) {
 	}{
 		{"openai-compatible", "Authorization", "Bearer " + testKey},
 		{"anthropic", "x-api-key", testKey},
+		{"gemini", "x-goog-api-key", testKey},
 	} {
 		t.Run(testCase.kind, func(t *testing.T) {
 			u := newUpstream(t, nil)
@@ -629,6 +630,347 @@ func TestRelayRefusesAQueryCarryingASemicolon(t *testing.T) {
 	}
 }
 
+func TestRelayAdmitsAMethodColonOnlyAsAClosedShape(t *testing.T) {
+	// **The one exception to the segment class, tested as a shape.** The
+	// native Gemini wire addresses a method with a colon in the last segment,
+	// so `<name>:<method>` is accepted for a method on the closed list and
+	// nothing else is — a colon before a name nobody wrote down would let
+	// whoever holds the session token ask the configured endpoint to *do*
+	// something, with the stored credential attached.
+	for _, suffix := range []string{
+		"v1beta/models/gemini-2.5-pro:generateContent",
+		"v1beta/models/gemini-2.5-pro:streamGenerateContent",
+		"v1beta/models/gemini-2.5-pro:countTokens",
+		"v1beta/models/a_model-1.5:generateContent",
+	} {
+		if problem := relaySuffixProblem(suffix); problem != "" {
+			t.Errorf("%q was refused: %s", suffix, problem)
+		}
+	}
+	for _, testCase := range []struct{ name, suffix string }{
+		{"a method nobody wrote down", "v1beta/models/m:deleteModel"},
+		{"an empty method", "v1beta/models/m:"},
+		{"an empty name", "v1beta/models/:generateContent"},
+		{"a bare colon", "v1beta/models/:"},
+		{"a second colon", "v1beta/models/a:b:generateContent"},
+		{"a method with a tail", "v1beta/models/m:generateContent:x"},
+		{"a case-folded method", "v1beta/models/m:GenerateContent"},
+		// **Round 1's finding.** The rule was written per segment and never
+		// asked where the segment was, so this was accepted and forwarded with
+		// the credential — a resource nobody documented, under a verb this
+		// desk agreed to. A method is a verb applied to the resource the path
+		// names, so there is nothing after it.
+		{"a method in a non-final segment", "v1beta/a:countTokens/b"},
+		{"a method followed by anything at all", "v1beta/models/m:generateContent/x"},
+		// The escaped spelling stays refused: no percent sign has ever been in
+		// the class, which is what keeps the escaped and unescaped readings of
+		// an accepted suffix the same string.
+		{"an encoded colon", "v1beta/models/m%3AgenerateContent"},
+		{"a colon in place of a separator", "v1beta:models:generateContent"},
+	} {
+		if problem := relaySuffixProblem(testCase.suffix); problem == "" {
+			t.Errorf("%s: %q was accepted", testCase.name, testCase.suffix)
+		}
+	}
+}
+
+func TestRelayCarriesAMethodColonToTheEndpointByteForByte(t *testing.T) {
+	// Through the whole server and measured at the upstream, because the
+	// promise is about what the endpoint receives: a path this desk re-encoded
+	// on the way through would be a request to a different resource with the
+	// credential attached.
+	u := newUpstream(t, nil)
+	_, ts, _ := relayDesk(t, "gemini", u)
+	const suffix = "v1beta/models/gemini-2.5-pro:streamGenerateContent"
+	resp, body := relayGet(t, ts, suffix)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	seen := u.only(t)
+	if seen.path != "/"+suffix {
+		t.Errorf("the endpoint saw %q, want %q", seen.path, "/"+suffix)
+	}
+	if got := seen.header.Values("x-goog-api-key"); len(got) != 1 || got[0] != testKey {
+		t.Errorf("x-goog-api-key = %v, want exactly one configured key", got)
+	}
+}
+
+func TestRelayRefusesAMethodColonWithoutReachingTheEndpoint(t *testing.T) {
+	counter := countingRelays(t)
+	u := newUpstream(t, nil)
+	_, ts, _ := relayDesk(t, "gemini", u)
+	for _, suffix := range []string{
+		"v1beta/models/m:deleteModel",
+		"v1beta/models/m:generateContent:x",
+		"v1beta/models/:generateContent",
+		// Round 1's non-final segment, through the whole server, so the
+		// refusal is the route's and is counted at the transport.
+		"v1beta/a:countTokens/b",
+	} {
+		resp, body := relayGet(t, ts, suffix)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%q: status %d, want 400 (%s)", suffix, resp.StatusCode, body)
+			continue
+		}
+		if got := codeOfBody(t, body); got != CodeAssistantRelayPath {
+			t.Errorf("%q: code %q, want %q", suffix, got, CodeAssistantRelayPath)
+		}
+	}
+	if calls, to := counter.seen(); calls != 0 {
+		t.Fatalf("a refused method colon made %d outbound request(s), to %v", calls, to)
+	}
+}
+
+func TestRelayAdmitsTheStreamPairOnGeminiAndOnNoOtherKind(t *testing.T) {
+	// **The per-kind half of the query rule.** The pair is admitted for the
+	// one wire that has nowhere else to ask for a stream, and the page's query
+	// stays refused entirely for the other two — both of which carry streaming
+	// in the request body, so a pair admitted for them would be a capability
+	// nothing asked for.
+	for _, kind := range AssistantKinds {
+		t.Run(kind, func(t *testing.T) {
+			u := newUpstream(t, nil)
+			if kind != "gemini" {
+				// Counted at the transport, because "the endpoint saw
+				// nothing" is only a fact if nothing left this process.
+				counter := countingRelays(t)
+				_, ts, _ := relayDesk(t, kind, u)
+				resp, body := relayGet(t, ts, "v1beta/models?alt=sse")
+				if resp.StatusCode != http.StatusBadRequest {
+					t.Fatalf("status %d, want 400: %s", resp.StatusCode, body)
+				}
+				if got := codeOfBody(t, body); got != CodeAssistantRelayPath {
+					t.Errorf("code %q, want %q", got, CodeAssistantRelayPath)
+				}
+				if calls, to := counter.seen(); calls != 0 {
+					t.Fatalf("%d outbound request(s), to %v", calls, to)
+				}
+				return
+			}
+			// The accepted leg is measured at the endpoint itself: the
+			// counting transport answers on its own behalf and would record a
+			// request nobody could inspect the query of.
+			_, ts, _ := relayDesk(t, kind, u)
+			resp, body := relayGet(t, ts, "v1beta/models?alt=sse")
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status %d, want 200: %s", resp.StatusCode, body)
+			}
+			seen := u.only(t)
+			// Byte for byte, and the whole query: the token the page had to
+			// send is not among it.
+			if seen.rawQuery != "alt=sse" {
+				t.Errorf("query %q, want exactly %q", seen.rawQuery, "alt=sse")
+			}
+			if strings.Contains(seen.rawQuery, "token") {
+				t.Errorf("the session token reached the endpoint: %q", seen.rawQuery)
+			}
+		})
+	}
+}
+
+func TestAConfiguredQueryCannotCarryWhatTheRelayReserves(t *testing.T) {
+	// **Round 1's finding, and the reason it is a decode rule.** Only the
+	// page's half of the query was checked; the configured half travelled
+	// upstream byte for byte, and `PUT /api/desk-config` had just made that
+	// half page-writable. A configured `?alt=sse` on gemini duplicated the one
+	// pair the relay admits; on anthropic it sent a pair that kind admits none
+	// of; and `?key=`, `?pageToken=` or a semicolon reached the endpoint on
+	// every later call for as long as the file said so.
+	//
+	// The rule is now in both decoders, so a file carrying one of these is
+	// refused **whole** — which means no endpoint is configured, and the relay
+	// answers that rather than sending anything.
+	for _, testCase := range []struct{ name, query string }{
+		{"the pair the relay itself may add", "alt=sse"},
+		{"the name the listing pages with", "pageToken=x"},
+		{"a credential", "key=sk-nope"},
+		{"a credential under another spelling", "access_token=nope"},
+		{"a credential spelled auth", "auth=nope"},
+		{"a semicolon", "a=1;b=2"},
+		{"an encoded alias of a reserved name", "%61lt=sse"},
+		// **Round 2.** The reserved names were compared case-sensitively, so
+		// `?ALT=sse` was accepted and a streaming relay then added its own
+		// pair beside it — an upstream that folds case sees two copies of one
+		// name, which is exactly the disagreement these rules exist to keep
+		// off the wire.
+		{"a reserved name in another case", "ALT=sse"},
+		{"a reserved name encoded in another case", "%41lt=sse"},
+		{"the listing's name in another case", "PageToken=x"},
+		// **Round 2.** Go read these as bytes and answered no error while the
+		// browser's decoder throws, so the chassis accepted a file the page
+		// refused — and could send the key on the strength of it.
+		{"a name that is not UTF-8 once decoded", "%FF=x"},
+		{"a value that is not UTF-8 once decoded", "a=%FF"},
+		{"an overlong encoding", "a=%C0%AF"},
+		{"a lone surrogate", "a=%ED%A0%80"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			counter := countingRelays(t)
+			u := newUpstream(t, nil)
+			s, ts, _ := assistantServer(t)
+			// The key is stored against the same endpoint without the
+			// offending query, so what is refused below is the query and not
+			// the absence of a key.
+			storeKeyBoundTo(t, s, ts, "gemini", u.server.URL+"/")
+			configureEndpoint(t, s, "gemini", u.server.URL+"/?"+testCase.query)
+			resp, body := relayGet(t, ts, "v1beta/models")
+			if resp.StatusCode != http.StatusConflict {
+				t.Fatalf("status %d, want 409: %s", resp.StatusCode, body)
+			}
+			if got := codeOfBody(t, body); got != CodeAssistantUnconfigured {
+				t.Errorf("code %q, want %q", got, CodeAssistantUnconfigured)
+			}
+			if calls, to := counter.seen(); calls != 0 {
+				t.Fatalf("a refused configuration made %d outbound request(s), to %v", calls, to)
+			}
+			if seen := u.arrivals(); len(seen) != 0 {
+				t.Fatalf("the endpoint saw %d request(s)", len(seen))
+			}
+		})
+	}
+	// The positive control: a configured query that is none of those still
+	// travels, which is what makes this a rule rather than a ban.
+	u := newUpstream(t, nil)
+	_, ts, _ := relayDeskAt(t, "gemini", u.server.URL+"/?route=eu&api-version=2024-10-21")
+	if resp, body := relayGet(t, ts, "v1beta/models"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("an ordinary configured query was refused: %d %s", resp.StatusCode, body)
+	}
+	if seen := u.only(t); seen.rawQuery != "route=eu&api-version=2024-10-21" {
+		t.Errorf("query %q, want the configured one unchanged", seen.rawQuery)
+	}
+}
+
+func TestTheConfiguredQueryRuleNamesEachClass(t *testing.T) {
+	// The rule on its own, so it is exercised where the whole-file decode is
+	// not the only route to it — and so the sentence a reader repairs the file
+	// by is pinned.
+	for _, testCase := range []struct{ query, want string }{
+		{"key=x", "never stored in configuration"},
+		{"apiKey=x", "never stored in configuration"},
+		{"api_key=x", "never stored in configuration"},
+		{"AUTH=x", "never stored in configuration"},
+		{"secret=x", "never stored in configuration"},
+		{"alt=sse", "the relay itself may add"},
+		{"ALT=sse", "the relay itself may add"},
+		{"Alt=sse", "the relay itself may add"},
+		{"%41lt=sse", "the relay itself may add"},
+		{"pageToken=x", "the relay itself may add"},
+		{"PAGETOKEN=x", "the relay itself may add"},
+		{"a=1;b=2", "semicolon"},
+		{"%zz=1", "cannot read the same way a browser does"},
+		// The half the rule used not to look at, and the three shapes Go read
+		// as bytes while the browser threw.
+		{"%FF=x", "cannot read the same way a browser does"},
+		{"a=%FF", "cannot read the same way a browser does"},
+		{"a=%C0%AF", "cannot read the same way a browser does"},
+		{"a=%ED%A0%80", "cannot read the same way a browser does"},
+		{"a=%zz", "cannot read the same way a browser does"},
+	} {
+		if got := endpointQueryProblem(testCase.query); !strings.Contains(got, testCase.want) {
+			t.Errorf("%q refused with %q, want it to mention %q",
+				testCase.query, got, testCase.want)
+		}
+	}
+	// And an escape both sides read identically is still an escape, so this is
+	// a rule about agreement rather than a ban on percent-encoding.
+	for _, query := range []string{
+		"", "route=eu", "api-version=2024-10-21&route=eu", "route=eu%3Bwest", "x=alt",
+		"route=eu%E2%82%AC", "team=a%20b", "alternative=1", "a=b=c",
+	} {
+		if problem := endpointQueryProblem(query); problem != "" {
+			t.Errorf("%q was refused: %s", query, problem)
+		}
+	}
+}
+
+func TestRelayRefusesEveryOtherSpellingOfTheStreamPair(t *testing.T) {
+	// Byte equality against one fixed literal is the one comparison that has
+	// no second reading. Each of these is a spelling some parser would fold
+	// into `alt=sse`, and every one of them is refused with nothing sent.
+	// The rule itself first, over every spelling — including the ones no
+	// client can put on a request line, which the server below therefore
+	// cannot exercise. A guard reachable by one route only is a guard that
+	// stops being tested when that route changes.
+	for _, query := range []string{
+		"alt=json",
+		"ALT=sse",
+		"Alt=sse",
+		"alt=SSE",
+		"alt=sse&alt=sse",
+		"%61lt=sse",
+		"alt=sse&x=1",
+		"alt",
+		"alt=",
+		"alt=sse ",
+		"alt=sse&",
+		"=sse",
+	} {
+		extra, problem := relayQueryProblem("token=" + testToken + "&" + query)
+		if problem == "" {
+			t.Errorf("%q was accepted, carrying %q", query, extra)
+		}
+	}
+	counter := countingRelays(t)
+	u := newUpstream(t, nil)
+	_, ts, _ := relayDesk(t, "gemini", u)
+	for _, query := range []string{
+		"alt=json",
+		"ALT=sse",
+		"Alt=sse",
+		"alt=SSE",
+		"alt=sse&alt=sse",
+		"%61lt=sse",
+		"alt=sse&x=1",
+		"alt",
+		"alt=",
+	} {
+		resp, body := relayDo(t, ts, http.MethodGet, "v1beta/models?"+query, nil, nil)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%q: status %d, want 400 (%s)", query, resp.StatusCode, body)
+			continue
+		}
+		if got := codeOfBody(t, body); got != CodeAssistantRelayPath {
+			t.Errorf("%q: code %q, want %q", query, got, CodeAssistantRelayPath)
+		}
+	}
+	// The semicolon spelling is refused by the rule that came before this one,
+	// and is checked here so that the exception cannot be read as reopening it.
+	resp, body := relayDo(t, ts, http.MethodGet, "v1beta/models?alt=sse;x=1", nil, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("a semicolon: status %d, want 400 (%s)", resp.StatusCode, body)
+	}
+	if calls, to := counter.seen(); calls != 0 {
+		t.Fatalf("a refused query made %d outbound request(s), to %v", calls, to)
+	}
+	if seen := u.arrivals(); len(seen) != 0 {
+		t.Fatalf("the endpoint saw %d request(s)", len(seen))
+	}
+}
+
+func TestRelayPutsTheStreamPairAfterTheConfiguredQuery(t *testing.T) {
+	// The configured query is the endpoint's own routing and keeps its place;
+	// the one pair the page may send goes after it. The order is `relayTarget`'s
+	// and the probe's alike, which is why `appendQueryPair` is one function.
+	u := newUpstream(t, nil)
+	_, ts, _ := relayDeskAt(t, "gemini", u.server.URL+"/?route=eu%3Bwest")
+	resp, body := relayDo(t, ts, http.MethodPost,
+		"v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse",
+		strings.NewReader(`{"contents":[]}`), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	seen := u.only(t)
+	if seen.rawQuery != "route=eu%3Bwest&alt=sse" {
+		t.Errorf("query %q, want the configured one then the pair", seen.rawQuery)
+	}
+	if seen.path != "/v1beta/models/gemini-2.5-pro:streamGenerateContent" {
+		t.Errorf("path %q", seen.path)
+	}
+	if seen.method != http.MethodPost || string(seen.body) != `{"contents":[]}` {
+		t.Errorf("the endpoint saw %s with body %q", seen.method, seen.body)
+	}
+}
+
 func TestRelayRefusesEverySuffixOutsideTheClass(t *testing.T) {
 	// The rule itself, case by case. Two of these — an empty segment and a dot
 	// segment written literally — never reach the handler through a mux that
@@ -644,7 +986,10 @@ func TestRelayRefusesEverySuffixOutsideTheClass(t *testing.T) {
 		{"backslash", `chat\completions`, "only letters, digits"},
 		{"percent", "%2e%2e/secret", "only letters, digits"},
 		{"space", "chat completions", "only letters, digits"},
-		{"a whole URL", "https://elsewhere.example/v1", "only letters, digits"},
+		// The scheme's colon introduces no method, so this meets the colon
+		// rule before the character class — a different sentence, the same
+		// refusal, and worth pinning so the exception cannot quietly widen.
+		{"a whole URL", "https://elsewhere.example/v1", "a colon in a relayed path"},
 		{"too long", strings.Repeat("a", maxRelaySuffix+1), "at most"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -1035,10 +1380,13 @@ func TestRelayRefusesAForeignOrigin(t *testing.T) {
 
 func TestRelayRefusesWithNoEndpointConfigured(t *testing.T) {
 	counter := countingRelays(t)
-	_, ts, _ := assistantServer(t)
-	if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
-		t.Fatalf("store")
-	}
+	s, ts, _ := assistantServer(t)
+	// A key that was stored, and then a file that names no endpoint. Storing
+	// needs one, so the endpoint is configured, the key is bound to it, and
+	// the configuration is then taken away — which is the state this case is
+	// about and is now reachable only that way.
+	storeKeyBoundTo(t, s, ts, defaultTestKind, defaultTestEndpoint)
+	writeDeskConfig(t, s, `{"deskConfigVersion":1}`)
 	resp, body := relayGet(t, ts, "chat/completions")
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("status %d, want 409: %s", resp.StatusCode, body)
@@ -1059,11 +1407,12 @@ func TestRelayRefusesARefusedConfiguration(t *testing.T) {
 	// through here either.
 	counter := countingRelays(t)
 	s, ts, _ := assistantServer(t)
+	// The key is stored against an endpoint this desk accepts, and the file is
+	// then replaced by one it refuses — so the refusal under test is the
+	// file's and not the key's absence.
+	storeKeyBoundTo(t, s, ts, defaultTestKind, defaultTestEndpoint)
 	writeDeskConfig(t, s, `{"deskConfigVersion":1,"assistant":{"endpoint":`+
 		`{"url":"http://endpoint.example/v1","kind":"openai-compatible","model":"m","tools":[]}}}`)
-	if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
-		t.Fatalf("store")
-	}
 	resp, body := relayGet(t, ts, "chat/completions")
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("status %d, want 409: %s", resp.StatusCode, body)
@@ -1383,14 +1732,29 @@ func relaySlotIsReleased(t *testing.T, overall, idle time.Duration) {
 func TestRelayLogsNeitherTheKeyNorTheAddress(t *testing.T) {
 	// A configured URL carrying both a path and a query, because those are the
 	// two parts of an address a log must not carry: some gateways route on a
-	// query, and a query is a place people put credentials.
+	// query, and a routing value is somebody's deployment.
+	//
+	// **The query is a spelling this desk accepts**, and that is the point.
+	// A credential-shaped name is refused at decode now — see
+	// `TestAConfiguredQueryCannotCarryWhatTheRelayReserves` — so a test that
+	// configured one would be asserting the log rule against a file the desk
+	// never reads. What is held here is that the query it *does* read still
+	// never reaches the log.
 	u := newUpstream(t, nil)
 	_, ts, logged := relayDeskAt(t, "openai-compatible",
-		u.server.URL+"/gateway?apikey=sk-in-the-query")
+		u.server.URL+"/gateway?route=eu-west-private")
 	resp, body := relayGet(t, ts, "chat/completions")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d: %s", resp.StatusCode, body)
 	}
+	// **Read after the handler has finished, not after the answer has
+	// arrived.** The log line is written once `proxy.ServeHTTP` has returned,
+	// which is *after* the page can have the whole body — so reading the
+	// buffer here raced the handler, and did: the suite failed intermittently
+	// on "nothing was logged" and read a buffer another goroutine was writing.
+	// `Close` waits for every outstanding request, which is exactly the
+	// happens-before this assertion needs.
+	ts.Close()
 	written := logged.String()
 	// The event, and the origin, and nothing else. A log with nothing in it
 	// would prove nothing about a handler that never ran, so the line is
@@ -1399,7 +1763,7 @@ func TestRelayLogsNeitherTheKeyNorTheAddress(t *testing.T) {
 		t.Fatalf("nothing was logged about the relayed request: %q", written)
 	}
 	for _, forbidden := range []string{
-		testKey, "sk-in-the-query", "/gateway", "chat/completions", "apikey",
+		testKey, "eu-west-private", "/gateway", "chat/completions", "route",
 	} {
 		if strings.Contains(written, forbidden) {
 			t.Errorf("the log carries %q: %s", forbidden, written)
@@ -1463,8 +1827,11 @@ func TestRelayTakesTheKeyBackOutOfAnAnswer(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
 	})
-	_, ts, _ := relayDesk(t, "openai-compatible", u)
-	resp, body := relayGet(t, ts, "chat/completions")
+	// **On the gemini kind**, so the `X-Goog-Api-Key` row of the strip list is
+	// exercised against the endpoint whose credential header it actually is —
+	// the case in which an echo would be the desk's own key coming back.
+	_, ts, _ := relayDesk(t, "gemini", u)
+	resp, body := relayGet(t, ts, "v1beta/models")
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status %d, want the endpoint's 401", resp.StatusCode)
 	}
@@ -1697,6 +2064,98 @@ func TestRelayCannotTakeTheKeyOutOfABody(t *testing.T) {
 	_, body := relayGet(t, ts, "chat/completions")
 	if !strings.Contains(body, testKey) {
 		t.Skip("the body is filtered after all; this test records a residual that no longer exists")
+	}
+}
+
+/* Model listing ------------------------------------------------------------ */
+
+func TestRelayCarriesEachProtocolsModelListing(t *testing.T) {
+	// **The page's way of finding out what models an endpoint offers**, on all
+	// three wires, through the relay that already exists — nothing on the
+	// chassis is added for it. Each protocol's listing is a `GET` on its own
+	// path under its own configured base, and what is asserted is what the
+	// endpoint received: the desk's credential in that protocol's header
+	// exactly once, and nothing at all of the page's.
+	for _, testCase := range []struct {
+		kind, base, suffix, path, header string
+	}{
+		{"openai-compatible", "/v1", "models", "/v1/models", "Authorization"},
+		{"anthropic", "", "v1/models", "/v1/models", "x-api-key"},
+		{"gemini", "", "v1beta/models", "/v1beta/models", "x-goog-api-key"},
+	} {
+		t.Run(testCase.kind, func(t *testing.T) {
+			u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"listing":"the endpoint's own"}`))
+			})
+			_, ts, _ := relayDeskAt(t, testCase.kind, u.server.URL+testCase.base)
+			const smuggled = "sk-the-page-should-not-have-this"
+			resp, body := relayDo(t, ts, http.MethodGet, testCase.suffix, nil,
+				func(r *http.Request) {
+					for _, header := range credentialHeaderCorpus {
+						r.Header.Set(header, smuggled)
+					}
+				})
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status %d: %s", resp.StatusCode, body)
+			}
+			if body != `{"listing":"the endpoint's own"}` {
+				t.Errorf("body %q, want the endpoint's own", body)
+			}
+			seen := u.only(t)
+			if seen.method != http.MethodGet || seen.path != testCase.path {
+				t.Errorf("the endpoint saw %s %s, want GET %s",
+					seen.method, seen.path, testCase.path)
+			}
+			// The right credential, once, and the configured key rather than
+			// anything the page sent.
+			if got := seen.header.Values(testCase.header); len(got) != 1 ||
+				!strings.Contains(got[0], testKey) {
+				t.Errorf("%s = %v, want exactly one carrying the configured key",
+					testCase.header, got)
+			}
+			// And nothing of the page's, under any spelling at all.
+			if strings.Contains(fmt.Sprint(seen.header), smuggled) {
+				t.Errorf("what the page sent reached the endpoint: %v", seen.header)
+			}
+			if strings.Contains(seen.rawQuery, "token") ||
+				strings.Contains(fmt.Sprint(seen.header), testToken) {
+				t.Errorf("the session token reached the endpoint: %q %v",
+					seen.rawQuery, seen.header)
+			}
+		})
+	}
+}
+
+func TestRelayRefusesTheListingsPaginationQuery(t *testing.T) {
+	// **The listing this desk carries is first-page-only, and the reason is
+	// the query rule.** Gemini's model listing pages with `pageToken`, and a
+	// page cannot send one: nothing of the page's query is forwarded, and the
+	// one exception is the literal `alt=sse`. That is a limit rather than an
+	// oversight — see the README — and this is the assertion that it holds on
+	// every kind, with nothing sent.
+	for _, kind := range AssistantKinds {
+		t.Run(kind, func(t *testing.T) {
+			counter := countingRelays(t)
+			u := newUpstream(t, nil)
+			_, ts, _ := relayDesk(t, kind, u)
+			for _, query := range []string{"pageToken=x", "pageSize=50", "pageToken=x&alt=sse"} {
+				resp, body := relayDo(t, ts, http.MethodGet, "v1beta/models?"+query, nil, nil)
+				if resp.StatusCode != http.StatusBadRequest {
+					t.Errorf("%q: status %d, want 400 (%s)", query, resp.StatusCode, body)
+					continue
+				}
+				if got := codeOfBody(t, body); got != CodeAssistantRelayPath {
+					t.Errorf("%q: code %q, want %q", query, got, CodeAssistantRelayPath)
+				}
+			}
+			if calls, to := counter.seen(); calls != 0 {
+				t.Fatalf("a pagination query made %d outbound request(s), to %v", calls, to)
+			}
+			if seen := u.arrivals(); len(seen) != 0 {
+				t.Fatalf("the endpoint saw %d request(s)", len(seen))
+			}
+		})
 	}
 }
 
