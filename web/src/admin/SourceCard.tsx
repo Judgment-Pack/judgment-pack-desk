@@ -111,9 +111,7 @@ export function SourceCard({
           </dd>
         </div>
       </dl>
-      {content !== undefined && showsContent(status) && (
-        <Content content={content} accepted={status.state === 'read'} />
-      )}
+      {content !== undefined && showsContent(status) && <Content content={content} />}
       {fields !== undefined && <div className={styles.fields}>{fields}</div>}
       {save !== undefined && <div className={styles.save}>{save}</div>}
     </section>
@@ -184,13 +182,16 @@ function UnreadLine({ failure }: { failure: ReadFailure }) {
 }
 
 /** The file, or the one member of it this card is about. */
-function Content({ content, accepted }: { content: CardContent; accepted: boolean }) {
-  // **Only where the file was accepted.** `accepted` is the card's own Status
-  // rather than a second opinion about the file: the decode that produced the
-  // status produced the verdict, and a disclosure that quoted a file the desk
-  // refused would put the refused member on the page that refused it.
+function Content({ content }: { content: CardContent }) {
+  // **One gate, and it is `showsContent`.** A second check here — "quote the
+  // bytes only where the decode accepted" — was written first and had to be
+  // taken out: the card renders no disclosure at all in exactly the states
+  // that check would have caught, so breaking it changed nothing any test
+  // could see. Two spellings of one rule are invisible to a harness that
+  // breaks one of them; the lesson `ownerOnlyFile` and `deskConfigUnmoved`
+  // both carry.
   const bytes =
-    !accepted || content.text === undefined
+    content.text === undefined
       ? undefined
       : content.member === undefined
         ? content.text

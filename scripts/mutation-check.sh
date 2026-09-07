@@ -5719,13 +5719,13 @@ export function assistantTransport(): Transport {
   mutate web "a refused file's bytes are rendered anyway" "$SCD" \
     "  return status.state !== 'refused' && status.state !== 'unread'" \
     '  return true'
-  # The other half of the same gate: the card may hold the text and must not
-  # quote it unless the decode accepted the file.
-  mutate web "the disclosure quotes a file the decoder did not accept" "$SCD" \
-    '  const bytes =
-    !accepted || content.text === undefined' \
-    '  const bytes =
-    content.text === undefined'
+  # **Retired, with its reason: NOT DISCRIMINATING, and the code went with
+  # it.** It was "the disclosure quotes a file the decoder did not accept",
+  # breaking a second gate inside `Content` that repeated what `showsContent`
+  # already decides — the card renders no disclosure at all in exactly the
+  # states that check would have caught, so removing it changed nothing any
+  # test could see. Two spellings of one rule are invisible to a harness that
+  # breaks one of them, so the rule now has one spelling and one row.
 
   # **A paragraph split into short spans is still a paragraph.** The rule this
   # replaces measured single text nodes, and JSX produces two of them whenever
