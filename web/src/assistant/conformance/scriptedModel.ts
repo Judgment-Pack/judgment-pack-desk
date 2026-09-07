@@ -195,6 +195,18 @@ export interface RecordedRequest {
    * establish it.
    */
   schemaKeywords: string[]
+  /**
+   * Gemini only: each declaration's `parameters`, whole, in the order they were
+   * declared.
+   *
+   * **The keyword list is not enough and that was the defect.** A leg that read
+   * only which words appeared could say "none of the removal list is here" while
+   * the engine underneath had quietly dropped `pattern`, `maximum` and every
+   * conditional — the two engines showing the model two different contracts. So
+   * the schema itself is recorded and a leg asserts **deep equality** with what
+   * the desk says that engine shows.
+   */
+  schemas: unknown[]
 }
 
 /** One thinking parameter this endpoint recognises, with where it was found. */
@@ -471,6 +483,15 @@ function geminiCarried(
     }
   }
   return { carried, truncated, malformed }
+}
+
+/** Each declaration's `parameters`, whole, in the order they were declared. */
+function geminiSchemas(tools: unknown[]): unknown[] {
+  return (tools ?? []).flatMap((tool) =>
+    ((tool as { functionDeclarations?: { parameters?: unknown }[] }).functionDeclarations ?? []).map(
+      (declared) => declared.parameters
+    )
+  )
 }
 
 /**
@@ -1044,7 +1065,8 @@ export function scriptedModel(options: {
       signaturesTruncated: carried.truncated,
       signaturesMalformed: carried.malformed,
       reasoningIn: options.api === 'openai-compatible' ? openAiCarried(messages) : [],
-      schemaKeywords: options.api === 'gemini' ? geminiSchemaKeywords(body.tools ?? []) : []
+      schemaKeywords: options.api === 'gemini' ? geminiSchemaKeywords(body.tools ?? []) : [],
+      schemas: options.api === 'gemini' ? geminiSchemas(body.tools ?? []) : []
     })
 
     // **The schema subset, checked before anything is answered.** Gemini's

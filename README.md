@@ -1746,7 +1746,18 @@ echoes the model's turn exactly as it received it rather than rebuilding it: a
 `redacted_thinking` block survives because nothing filters by block type, a
 Gemini `thoughtSignature` survives because the part it sits on is the part that
 goes back, and an Anthropic signature split across two `signature_delta` events
-is concatenated rather than the last fragment kept. The
+is concatenated rather than the last fragment kept.
+
+**On the Gemini wire that means a signed part is never joined to anything**, and
+that is Google's own rule rather than a precaution: a signed part is not merged
+with an unsigned one and two signed parts are not combined, because a signature
+certifies the exact bytes it came with. The pieces of an *unsigned* summary are
+still joined — that is what a streamed continuation is — and the joining a
+*reader* wants happens separately, in the passage the tab shows, so the wire
+keeps the part count, the order, the text and the signatures exactly as they
+arrived. A signature rides on one of two parts here: a thought summary that
+still has its text, or the **first `functionCall` part** of a turn, which is
+where function calling puts it and where later parallel calls do not. The
 `vercel` engine cannot make its SDK reassemble one (`vercel/ai#19663`, still
 present at `ai@7.0.93` and measured by this repository's own suite), so the desk
 **detects** the truncation instead: fragments are ledgered as they arrive — under
@@ -1756,14 +1767,9 @@ signature came back as a fragment is removed rather than sent, and the session
 degrades once with the reason. That test is written to go red if the SDK is ever
 fixed in silence.
 
-**The Gemini wire needs one more thing, and it is the streamed summary's
-shape.** A thought summary arrives as several `text` parts with `thought: true`,
-and the signature arrives on the last of them — so a client that kept the pieces
-apart would send back a signature on a part with no text, which the endpoint
-refuses. Both engines join a run of consecutive same-kind text parts into one
-and carry the signature onto it; nothing else is joined, and the scripted
-endpoint refuses a continuation that dropped, truncated or emptied a signed
-part, so every Gemini thinking leg gates on it rather than merely reporting it.
+The scripted endpoint refuses a continuation that dropped, truncated or
+misplaced a signed part, so every Gemini thinking leg **gates** on the replay
+rather than merely reporting it — at all three placements.
 
 ### Gemini's schema subset, and what the model is shown
 
@@ -1799,11 +1805,40 @@ quoted, rather than the desk widening its idea of the runtime's contract on
 being refused. Both engines carry that rule and both have a conformance leg for
 it.
 
-**The `vercel` engine's SDK narrows the schema again**, on its own, after this:
-`@ai-sdk/google` converts a JSON Schema to Gemini's OpenAPI form and copies only
-the keywords it knows. That is the SDK's behaviour and not this desk's, it is in
-the same direction (never wider), and the conformance session measures the
-result at the wire on both engines rather than trusting either.
+**The two engines do not show the model the same contract, and the desk says
+which.** `@ai-sdk/google` does not send the schema it is given: it rebuilds it
+through its own converter, which copies an allow-list of keywords and drops the
+rest. So on the `vercel` engine `pattern`, `maximum`, `uniqueItems`, the
+conditionals and the annotations below never reach the model either, and a tool
+whose schema declares an object with no properties is declared with **no
+`parameters` member at all**. That is the SDK's behaviour and not this desk's,
+and it is below the one seam this adapter has — but it is exactly the
+cross-engine contradiction the closed list exists to prevent, so it is declared
+rather than discovered:
+
+| engine | what the model is not shown, on `gemini` |
+| --- | --- |
+| `builtin` | `$schema`, `$id`, `additionalProperties`, `const`, `examples`, `patternProperties` — the desk's list, and nothing else |
+| `vercel` | all of those, **plus** `$comment`, `contains`, `default`, `dependentRequired`, `deprecated`, `else`, `exclusiveMaximum`, `exclusiveMinimum`, `if`, `maxLength`, `maximum`, `minimum`, `multipleOf`, `not`, `nullable`, `pattern`, `prefixItems`, `propertyNames`, `readOnly`, `then`, `title`, `uniqueItems`, `writeOnly` — and a tool whose schema has no properties is declared with no `parameters` at all |
+| either, on the other two families | nothing: those wires take JSON Schema as written |
+
+Three things hold that table honest. **It is derived, not copied**: a
+conformance leg sends a probe schema carrying every keyword the runtime could
+emit and reads back what actually arrived, so a version of the SDK that starts
+or stops dropping one is a red test rather than a sentence that quietly stopped
+being true. **The wire is asserted whole**: every leg requires the schema that
+arrived to be **deep-equal** to what this table says arrives — not that three
+keywords are present and six absent, which is what the first version of this
+checked and is a claim about a handful of words. And **the author is told**: a
+run opens with one line per tool that lost something, naming the tool and the
+keywords (*`get_schema` — shown to the model without: additionalProperties*), so
+nobody reads a proposal without knowing the model saw a wider contract than the
+runtime enforces.
+
+Two things the SDK does are **rewrites** rather than removals and are outside
+this table by name: it inlines a `$ref`, and it infers a `type` for a bare
+`enum`. The probe carries neither, because a rule about removals cannot measure
+a rewrite; what the desk claims is which keywords are *dropped*.
 
 **The Gemini API reference these rules were written against**, read on
 **2026-09-06**:
@@ -2358,15 +2393,18 @@ unknowns; and the event stream's exact order with one `end`.
 
 Beside the shared matrix, the thinking half runs the tier at `on` and `ultra`,
 the degrade, the dialect fallback on each family that has one, the refutation
-pass in both verdicts, and — on the Gemini family — six more: the schema subset
-measured at the endpoint (a declaration carrying a removed keyword is refused
-there, so a leg that completes has shown the model a contract this wire
-accepts); a keyword the removal list does **not** name, refused by the endpoint
-and reported by the desk with nothing stripped; the budget-to-level dialect
-fallback; the thought signatures carried back across every tool turn, byte-equal
-and on a part that still has its text, **gating** — the endpoint refuses a
-continuation that dropped one; and *this model always thinks* by both roads, the
-two-turn inference and the immediate refusal.
+pass in both verdicts, and — on the Gemini family — more: the schema the model
+was shown, asserted **deep-equal** to what the table above says it is shown, over
+the runtime's own five and over a probe carrying every keyword; that table's
+`vercel` row **derived** from the probe's own wire rather than copied from
+anywhere; the one line per tool the run opens with where something was lost; a
+keyword the removal list does **not** name, refused by the endpoint and reported
+by the desk with nothing stripped; the budget-to-level dialect fallback; the
+thought signatures replayed across every tool turn at each of Gemini's three
+documented placements — on the summary, on a single call, and on the first of a
+parallel pair — **gating**, because the endpoint refuses a continuation that
+dropped one; and *this model always thinks* by both roads, the two-turn
+inference and the immediate refusal.
 
 ## Requirements
 

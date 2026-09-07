@@ -13,7 +13,13 @@
  * are each adapter's own, and an engine that needed a helper from another
  * engine would be an engine the slot did not really separate.
  */
-import { withoutUnsupportedKeywords } from '../geminiSchema'
+import {
+  NO_PARAMETERS_NOTICE,
+  keywordsLost,
+  narrowingNotice,
+  shownWithoutParameters,
+  withoutUnsupportedKeywords
+} from '../geminiSchema'
 import type { EndpointKind } from '../../config/deskConfig'
 import type { AssistantEvent, AssistantSession, CallTool, McpTool, McpToolResult } from '../engine'
 
@@ -359,6 +365,42 @@ export function servedSchema(tool: McpTool): unknown {
 export function servedSchemaFor(family: EndpointKind, tool: McpTool): unknown {
   const schema = servedSchema(tool)
   return family === 'gemini' ? withoutUnsupportedKeywords(schema) : schema
+}
+
+/**
+ * The narrowing notices one session owes its author, before the model is asked
+ * anything.
+ *
+ * One per tool that actually loses a keyword on this engine and this family, and
+ * none at all where nothing is lost. Both engines emit these from the same
+ * function, because two loops writing the same sentence is two sentences.
+ */
+export function narrowingEvents(
+  engine: string,
+  family: EndpointKind,
+  tools: McpTool[]
+): AssistantEvent[] {
+  const events: AssistantEvent[] = []
+  for (const tool of tools) {
+    // **A tool the runtime served without a schema is not this function's
+    // refusal to make.** `servedSchema` refuses it, and the session ends where
+    // it always did — one line above the model call rather than out of the
+    // notice pass, which runs before the loop's own error handling exists.
+    if (tool.inputSchema === undefined || tool.inputSchema === null) continue
+    if (shownWithoutParameters(engine, family, servedSchemaFor(family, tool))) {
+      events.push({
+        type: 'guardrail',
+        tool: tool.name,
+        action: 'narrowed',
+        detail: NO_PARAMETERS_NOTICE
+      })
+      continue
+    }
+    const lost = keywordsLost(engine, family, tool.inputSchema)
+    if (lost.length === 0) continue
+    events.push({ type: 'guardrail', tool: tool.name, action: 'narrowed', detail: narrowingNotice(lost) })
+  }
+  return events
 }
 
 /**

@@ -58,6 +58,54 @@ export const GEMINI_SCHEMA_REMOVALS: readonly string[] = [
 ]
 
 /**
+ * What the **SDK-backed engine** removes on top of the desk's own list, at the
+ * pinned `@ai-sdk/google@4.0.64`.
+ *
+ * **Declared, because the alternative is a silent narrowing.** That provider
+ * does not send the schema it is given: it rebuilds it through
+ * `convertJSONSchemaToOpenAPISchema`, which copies an allow-list of keywords and
+ * drops the rest. So `pattern`, `maximum`, `uniqueItems`, the conditionals and
+ * the annotations below never reach the model on that engine, and the desk's
+ * closed six-keyword ruling was true of `builtin` and false of `vercel` — two
+ * engines showing the model two different contracts, which is the exact
+ * cross-engine contradiction the ruling exists to prevent.
+ *
+ * The desk cannot stop it: the conversion is inside the provider, below the one
+ * seam this adapter has. What it can do is **say so** — here, in the README, and
+ * to the author on the stream (`narrowingNotice`) — and hold the statement to
+ * the version that is installed. This list is not written from the upstream
+ * source: the conformance session **derives** it from what that engine actually
+ * puts on the wire for a schema carrying every keyword the runtime can emit, and
+ * fails if the two differ. An SDK that starts or stops dropping one is a red
+ * test rather than a sentence that quietly stopped being true.
+ */
+export const SDK_SCHEMA_REMOVALS: readonly string[] = [
+  '$comment',
+  'contains',
+  'default',
+  'dependentRequired',
+  'deprecated',
+  'else',
+  'exclusiveMaximum',
+  'exclusiveMinimum',
+  'if',
+  'maxLength',
+  'maximum',
+  'minimum',
+  'multipleOf',
+  'not',
+  'nullable',
+  'pattern',
+  'prefixItems',
+  'propertyNames',
+  'readOnly',
+  'then',
+  'title',
+  'uniqueItems',
+  'writeOnly'
+]
+
+/**
  * Whether a value is a plain object this walk should descend into.
  *
  * Arrays are walked as arrays; everything else is a leaf and is returned by
@@ -118,16 +166,20 @@ function namesUnder(key: string): boolean {
  * is returned by identity, so the object the runtime served is the object that
  * travels wherever this changed nothing.
  */
-export function withoutUnsupportedKeywords(schema: unknown, inNameMap = false): unknown {
+export function withoutKeywords(
+  schema: unknown,
+  removals: readonly string[],
+  inNameMap = false
+): unknown {
   if (Array.isArray(schema)) {
-    const walked = schema.map((item) => withoutUnsupportedKeywords(item, false))
+    const walked = schema.map((item) => withoutKeywords(item, removals, false))
     return walked.some((item, at) => item !== schema[at]) ? walked : schema
   }
   if (!isRecord(schema)) return schema
   const out: Record<string, unknown> = {}
   let changed = false
   for (const [key, value] of Object.entries(schema)) {
-    if (!inNameMap && GEMINI_SCHEMA_REMOVALS.includes(key)) {
+    if (!inNameMap && removals.includes(key)) {
       changed = true
       continue
     }
@@ -135,11 +187,119 @@ export function withoutUnsupportedKeywords(schema: unknown, inNameMap = false): 
     // Reading `namesUnder` on it would ask whether the *author's word* is a
     // name-map keyword — and a definition called `patternProperties` would have
     // its own children read as names, so a keyword inside it would survive.
-    const walked = withoutUnsupportedKeywords(value, inNameMap ? false : namesUnder(key))
+    const walked = withoutKeywords(value, removals, inNameMap ? false : namesUnder(key))
     if (walked !== value) changed = true
     out[key] = walked
   }
   return changed ? out : schema
+}
+
+/** The desk's own removal, which is the one every engine on this family makes. */
+export function withoutUnsupportedKeywords(schema: unknown, inNameMap = false): unknown {
+  return withoutKeywords(schema, GEMINI_SCHEMA_REMOVALS, inNameMap)
+}
+
+/**
+ * The keywords one engine's model never sees, on one family.
+ *
+ * The desk's closed list on every engine, plus — on the SDK-backed one — what
+ * its provider removes underneath. Nothing at all on the two families whose
+ * wires take JSON Schema as written.
+ */
+export function keywordsNotShown(engine: string, family: string): readonly string[] {
+  if (family !== 'gemini') return []
+  return engine === 'vercel'
+    ? [...GEMINI_SCHEMA_REMOVALS, ...SDK_SCHEMA_REMOVALS]
+    : GEMINI_SCHEMA_REMOVALS
+}
+
+/**
+ * **The second thing the SDK-backed engine's provider does, and it is not a
+ * keyword.** A schema that declares an object with no properties is dropped
+ * whole: the tool is declared to the model with no `parameters` member at all.
+ *
+ * The runtime's `list_examples` is exactly that shape, so this is a rule with a
+ * subject rather than one waiting for a hypothetical — and stating it is the
+ * difference between "the model is shown the contract minus these keywords" and
+ * a sentence that is false for one tool in five. Mirrored from the provider's
+ * own `isEmptyObjectSchema` at the pinned version, and held to it by the
+ * derivation leg, which asserts deep equality against what actually arrived.
+ */
+function isEmptyObjectSchema(schema: unknown): boolean {
+  if (!isRecord(schema)) return false
+  const properties = schema.properties
+  return (
+    schema.type === 'object' &&
+    (properties === undefined ||
+      properties === null ||
+      (isRecord(properties) && Object.keys(properties).length === 0)) &&
+    !schema.additionalProperties
+  )
+}
+
+/**
+ * The schema this engine's model is actually shown, out of the one the runtime
+ * served.
+ *
+ * **This is the claim the wire test asserts deep equality against**, which is
+ * what makes "the model is shown the runtime's contract minus exactly these
+ * keywords" a measurement rather than a sentence. A narrowing outside this
+ * function is a red test.
+ */
+export function schemaShown(engine: string, family: string, served: unknown): unknown {
+  const removals = keywordsNotShown(engine, family)
+  if (removals.length === 0) return served
+  if (engine === 'vercel' && isEmptyObjectSchema(served)) return undefined
+  return withoutKeywords(served, removals)
+}
+
+/**
+ * Whether this engine declares the tool with no `parameters` at all.
+ *
+ * A different sentence from "these keywords are missing", because it is a
+ * different thing: the model is shown a tool that takes nothing, where the
+ * runtime declared one that takes an object.
+ */
+export function shownWithoutParameters(engine: string, family: string, served: unknown): boolean {
+  return keywordsNotShown(engine, family).length > 0 && engine === 'vercel' && isEmptyObjectSchema(served)
+}
+
+/** The line the author reads where a tool is declared with no parameters. */
+export const NO_PARAMETERS_NOTICE =
+  'declared to the model with no parameters at all: this wire takes an OpenAPI subset and ' +
+  'this engine omits an object schema with no properties. The ToolGate and the runtime hold ' +
+  'the contract the runtime actually enforces, whatever the model was shown.'
+
+/**
+ * The keywords one tool loses on the way to this engine's model, or none.
+ *
+ * Read off the **served** schema rather than off the removal list, so a tool
+ * that carries none of them produces no notice at all: the author is told what
+ * happened to *their* contract, not what could happen to somebody's.
+ */
+export function keywordsLost(engine: string, family: string, served: unknown): string[] {
+  const removals = keywordsNotShown(engine, family)
+  if (removals.length === 0) return []
+  const present = keywordsSent(served)
+  return removals.filter((keyword) => present.has(keyword))
+}
+
+/**
+ * The line the author reads where a tool's contract was narrowed for the model.
+ *
+ * **Never silent, and this is the whole of the (d) half of the ruling.** A desk
+ * that removed a keyword and said nothing would leave an author reading a
+ * proposal without knowing the model had been shown a wider contract than the
+ * runtime enforces — and, on the SDK-backed engine, a *different* contract from
+ * the one the other engine shows. One line per tool that actually lost
+ * something, at the start of the run, before the model is asked anything.
+ */
+export function narrowingNotice(keywords: readonly string[]): string {
+  return (
+    `shown to the model without: ${[...keywords].sort().join(', ')}. This wire takes an ` +
+    `OpenAPI subset, so those keywords cannot travel; the ToolGate and the runtime hold the ` +
+    `contract the runtime actually enforces, whatever the model was shown.`
+  )
 }
 
 /**

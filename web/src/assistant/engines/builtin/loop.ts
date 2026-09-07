@@ -25,6 +25,7 @@ import {
   extractProposal,
   guardedCallTool,
   isCancelled,
+  narrowingEvents,
   openRun,
   schemasShown,
   textOf,
@@ -48,6 +49,7 @@ import { ModelHttpError } from './providers/types'
 import type { Proposal } from '../contract'
 import type { Critique, CritiqueRecorder } from '../../refutation'
 import type { ThinkingSlot } from '../../thinking'
+import type { AssistantEngine } from '../../../config/deskConfig'
 import type { CallTool } from '../../engine'
 import type { ModelTurn, Provider, ToolCall } from './providers/types'
 import type { AssistantEvent, AssistantSession } from '../../engine'
@@ -152,18 +154,30 @@ function providerFor(family: AssistantSession['model']['family']): Provider {
  * stops listening closes this generator, and closing it is what it means for
  * that consumer to be owed no terminal event.
  */
-export function runBuiltin(session: AssistantSession): AsyncIterable<AssistantEvent> {
+export function runBuiltin(
+  session: AssistantSession,
+  /**
+   * The id the registry loaded this engine under.
+   *
+   * **Passed in rather than imported**, because what an engine removes from a
+   * schema is a property of the engine and the loop must not have a second
+   * opinion about which engine it is — and because importing the engine object
+   * here would be a cycle through the module that imports this one.
+   */
+  id: AssistantEngine
+): AsyncIterable<AssistantEvent> {
   // **One gate, reached four ways.** The consumer's `return()`, its `throw()`,
   // the session's own signal and the run's natural end all close the same gate,
   // once, synchronously — and a session already aborted when this is called
   // closes it before a provider is built or a request is made.
   const gate = openRun(session, () => {})
-  return eventIterator({ gate, open: () => builtinEvents(session, gate.signal) })
+  return eventIterator({ gate, open: () => builtinEvents(session, gate.signal, id) })
 }
 
 async function* builtinEvents(
   session: AssistantSession,
-  signal: AbortSignal
+  signal: AbortSignal,
+  id: AssistantEngine
 ): AsyncGenerator<AssistantEvent> {
   try {
     // The tier, held by the desk. This loop asks it for members and yields
@@ -177,6 +191,13 @@ async function* builtinEvents(
     const callTool = guardedCallTool(session, signal)
     const provider = providerFor(session.model.family)
     const tools = provider.tools(session.tools)
+    // **Said before the model is asked anything**, and only where a tool
+    // actually lost a keyword: on a wire whose schema dialect cannot carry one
+    // the runtime served, the author is told which, rather than left to find
+    // out from a proposal that reads as though the contract were wider.
+    for (const notice of narrowingEvents(id, session.model.family, session.tools)) {
+      yield notice
+    }
     const messages: unknown[] = provider.initialMessages(SYSTEM, session.prompt)
     let proposal: Proposal | null = null
     let turns = 0

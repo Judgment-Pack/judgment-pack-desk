@@ -53,7 +53,14 @@ import {
   stateFromEvents,
   wireFor
 } from '../thinking'
-import { GEMINI_SCHEMA_REMOVALS } from '../geminiSchema'
+import {
+  GEMINI_SCHEMA_REMOVALS,
+  keywordsLost,
+  keywordsNotShown,
+  keywordsSent,
+  schemaShown
+} from '../geminiSchema'
+import { servedSchemaFor } from '../engines/contract'
 import type { EndpointKind, ThinkingTier } from '../../config/deskConfig'
 import runtime from './runtime.json'
 import type { AssistantEvent, Engine, McpTool } from '../engine'
@@ -993,7 +1000,17 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
 
     it('emits the event stream the ADR names, in order, ending once', async () => {
       const { events } = await runLeg(fromRegistry(engineId), leg)
+      // **On the one family whose schema dialect cannot carry what the runtime
+      // served, the run opens by saying so** — one line per tool that lost
+      // something, before the model is asked anything. Every one of the
+      // runtime's five declares `additionalProperties: false`, so on `gemini`
+      // that is five lines; on the other two families it is none.
+      const narrowing = guardrails(events)
+        .filter((event) => event.action === 'narrowed')
+        .map((event) => event.tool)
+      expect(narrowing).toEqual(leg.api === 'gemini' ? [...FIVE] : [])
       expect(events.map((event) => event.type)).toEqual([
+        ...narrowing.map(() => 'guardrail' as const),
         'tool_call', // T1 get_schema
         'tool_result',
         'tool_call', // T2 list_examples
@@ -1305,26 +1322,22 @@ describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
       { api: 'gemini', answerAs: 'whole' }
     ]
 
-    it.each(legs)('shows the model the runtime’s contract minus the removal list ($answerAs)', async (leg) => {
-      // **The schema-subset leg.** The endpoint refuses a declaration carrying
-      // any keyword on the removal list, so a leg that completes has shown the
-      // model a contract this wire accepts — and the row records what was
-      // actually sent, because the ruling is about the contract a model is
-      // *shown* rather than about a request being accepted.
+    it.each(legs)('shows the model exactly what the desk says it shows ($answerAs)', async (leg) => {
+      // **Deep equality, and the reason it has to be.** The first version of
+      // this leg checked that three keywords were present and the removal list
+      // absent — which is a statement about a handful of words and says nothing
+      // about the rest. The SDK-backed engine's provider rebuilds a schema
+      // through its own converter and drops far more than the desk's six, so
+      // that leg passed while the two engines showed the model two different
+      // contracts. What is asserted now is the whole object: what arrived is
+      // what `schemaShown` says arrives, byte for byte.
       const { events, requests, seen } = await runLeg(fromRegistry(engineId), leg)
       expect(requests.length).toBeGreaterThan(0)
+      const shown = RECORDED_TOOLS.map((tool) =>
+        schemaShown(engineId, leg.api, servedSchemaFor(leg.api, tool))
+      )
       for (const request of requests) {
-        for (const keyword of GEMINI_SCHEMA_REMOVALS) {
-          expect(
-            request.schemaKeywords,
-            `${request.step} showed the model ${keyword}`
-          ).not.toContain(keyword)
-        }
-        // …and it is still a schema: the removal takes six names off and
-        // nothing else, so the members that carry the contract are all there.
-        expect(request.schemaKeywords).toContain('type')
-        expect(request.schemaKeywords).toContain('properties')
-        expect(request.schemaKeywords).toContain('description')
+        expect(request.schemas, `${request.step} sent a different schema`).toEqual(shown)
       }
       // The runtime's own schemas all declare `additionalProperties: false`, so
       // this is a rule with a subject rather than one waiting for a
@@ -1334,10 +1347,99 @@ describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
           JSON.stringify(tool.inputSchema).includes('additionalProperties')
         )
       ).toBe(true)
+      for (const keyword of GEMINI_SCHEMA_REMOVALS) {
+        expect(requests[0]!.schemaKeywords, `showed the model ${keyword}`).not.toContain(keyword)
+      }
       // And the session ran to its proposal with the gate holding as ever.
       expect(proposals(events)).toHaveLength(1)
       expect(seen.filter((call) => call.refusal !== '')).toEqual([])
       expect(events.some((event) => event.type === 'error')).toBe(false)
+    })
+
+    /**
+     * A tool whose schema carries every keyword the runtime could realistically
+     * emit, so the derivation below has something to derive from.
+     *
+     * Deliberately without `$ref` and without a nullable type union: the SDK's
+     * converter **rewrites** those rather than removing them — it inlines a
+     * reference and turns `["string","null"]` into an `anyOf` beside
+     * `nullable` — and a probe carrying them would be measuring a rewrite with a
+     * rule about removals. What this desk states, and what this measures, is
+     * which keywords are *dropped*. That limit is in the README.
+     */
+    const PROBE: McpTool = {
+      name: RECORDED_TOOLS[0]!.name,
+      description: 'every keyword the runtime could emit',
+      inputSchema: {
+        type: 'object',
+        title: 'Probe',
+        description: 'the probe',
+        default: {},
+        required: ['a'],
+        properties: {
+          a: { type: 'string', pattern: '^[a-z]+$', minLength: 1, maxLength: 9, format: 'uri' },
+          b: { type: 'integer', minimum: 1, maximum: 9, exclusiveMinimum: 0, exclusiveMaximum: 10, multipleOf: 2 },
+          c: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 3, uniqueItems: true, prefixItems: [{ type: 'string' }], contains: { type: 'string' } },
+          d: { type: 'object', propertyNames: { type: 'string' }, dependentRequired: { a: ['b'] }, additionalProperties: false },
+          // Typed, deliberately: a bare `enum` is one of the SDK's **rewrites**
+          // — it infers and adds a `type` — and a probe carrying one would be
+          // measuring a rewrite with a rule about removals.
+          e: { type: 'string', enum: ['x', 'y'] },
+          f: { anyOf: [{ type: 'string' }, { type: 'number' }] },
+          g: { allOf: [{ type: 'object' }] },
+          h: { oneOf: [{ type: 'string' }, { type: 'number' }] },
+          i: { not: { type: 'string' } },
+          j: { type: 'string', readOnly: true, writeOnly: false, deprecated: true, nullable: true },
+          k: { if: { type: 'string' }, then: { minLength: 1 }, else: { type: 'number' } },
+          l: { type: 'string', examples: ['x'], const: 'x', $comment: 'c' }
+        },
+        additionalProperties: false,
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+        $id: 'urn:probe'
+      }
+    }
+
+    it.each(legs)('has the desk’s statement about what it removes derived from the wire ($answerAs)', async (leg) => {
+      // **(a) of the ruling: the declaration is held to the installed
+      // version.** The set is not copied out of the provider's source and left
+      // to rot — it is derived from what this engine actually put on the wire
+      // for a schema carrying every keyword, and asserted equal to what the
+      // desk declares. An SDK that starts or stops dropping one is a red test.
+      const { requests } = await runLeg(fromRegistry(engineId), leg, { tools: [PROBE] })
+      expect(requests.length).toBeGreaterThan(0)
+      // `desk` is the schema after the desk's own six are gone, so anything
+      // still missing from the wire is the **engine's** removal and nothing
+      // else. That is what is derived and what is compared.
+      const desk = servedSchemaFor(leg.api, PROBE)
+      const carried = keywordsSent(requests[0]!.schemas[0])
+      const derived = [...keywordsSent(desk)].filter((keyword) => !carried.has(keyword)).sort()
+      const declared = keywordsNotShown(engineId, leg.api)
+        .filter((keyword) => keywordsSent(desk).has(keyword))
+        .sort()
+      expect(derived, `${engineId} removes a set this desk does not declare`).toEqual(declared)
+      // The built-in engine sends the desk's own result untouched, so its
+      // derived set is empty and the row still means something: it is the
+      // control that says the probe would have caught a removal.
+      if (engineId === 'builtin') expect(derived).toEqual([])
+      else expect(derived.length).toBeGreaterThan(10)
+      // …and deep equality over the probe as well as over the runtime's five.
+      expect(requests[0]!.schemas[0]).toEqual(schemaShown(engineId, leg.api, desk))
+    })
+
+    it.each(legs)('tells the author which keywords the model is not shown ($answerAs)', async (leg) => {
+      // **(d) of the ruling: never silent.** One line per tool that actually
+      // lost something, before the model is asked anything, naming the tool and
+      // the keywords.
+      const { events } = await runLeg(fromRegistry(engineId), leg, { tools: [PROBE] })
+      const narrowed = guardrails(events).filter((event) => event.action === 'narrowed')
+      expect(narrowed).toHaveLength(1)
+      expect(narrowed[0]!.tool).toBe(PROBE.name)
+      const lost = keywordsLost(engineId, leg.api, PROBE.inputSchema)
+      expect(lost.length).toBeGreaterThan(0)
+      for (const keyword of lost) expect(narrowed[0]!.detail).toContain(keyword)
+      expect(narrowed[0]!.detail).toContain('the runtime actually enforces')
+      // It comes first, before anything the model was asked.
+      expect(events.map((event) => event.type).indexOf('guardrail')).toBe(0)
     })
 
     it.each(legs)('reports a keyword the removal list does not name, and strips nothing ($answerAs)', async (leg) => {

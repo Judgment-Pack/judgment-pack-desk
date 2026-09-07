@@ -53,6 +53,7 @@ import {
   extractProposal,
   guardedCallTool,
   isCancelled,
+  narrowingEvents,
   openRun,
   schemasShown,
   servedSchemaFor,
@@ -73,7 +74,7 @@ import { refusedSchemaKeyword, refusedSchemaSentence } from '../../geminiSchema'
 import { eventChannel } from './channel'
 import { placeholderBase, relayFetch, signatureLedger, signatureOf } from './relay'
 import type { LanguageModel, ToolSet } from 'ai'
-import type { EndpointKind } from '../../../config/deskConfig'
+import type { AssistantEngine, EndpointKind } from '../../../config/deskConfig'
 import type { AssistantEvent, AssistantSession, McpTool, McpToolResult } from '../../engine'
 import type { CritiqueRecorder } from '../../refutation'
 import type { ThinkingSlot } from '../../thinking'
@@ -414,7 +415,11 @@ function endpointSentence(body: unknown): string {
  * Stop has not been told about a failure. A consumer that stops listening is
  * owed no terminal event and gets none: its `return()` closes the generator.
  */
-export function runVercel(session: AssistantSession): AsyncIterable<AssistantEvent> {
+export function runVercel(
+  session: AssistantSession,
+  /** The id the registry loaded this engine under. See `runBuiltin`. */
+  id: AssistantEngine
+): AsyncIterable<AssistantEvent> {
   // The run's own controller, chained to the session's: the SDK is given this
   // one so a consumer that walks away ends the run, and the session's abort
   // reaches it the moment the viewer presses Stop.
@@ -863,6 +868,14 @@ export function runVercel(session: AssistantSession): AsyncIterable<AssistantEve
    * slot itself says `other` once it carries no members, so this cannot spin.
    */
   const drive = async (): Promise<void> => {
+    // **Said before the model is asked anything, and pushed rather than
+    // delivered.** These are a property of the session and not of an attempt:
+    // counting them as delivered would spend the one retry a tier refusal
+    // earns, on every run that narrows a schema at all — and pushing them here
+    // rather than from `open` keeps them in order with everything after them.
+    for (const notice of narrowingEvents(id, session.model.family, session.tools)) {
+      await channel.push(notice)
+    }
     for (let attempt = 1; ; attempt += 1) {
       const produced = { count: 0 }
       try {
