@@ -296,10 +296,18 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the watcher reports success with no watches" internal/desk/watch.go \
     '	if watched == 0 {' \
     '	if watched < 0 {'
+  # Every replacement below keeps `shell` and `dirFile` in use: a mutation that
+  # does not compile is not one the suite survived.
   mutate go "the runtime starts from the unresolved pathname" "$PL" \
-    '	cmd.ExtraFiles = []*os.File{dirFile}' \
-    '	cmd = exec.CommandContext(ctx, binary, "mcp")
-	cmd.Dir = s.cfg.ProjectDir'
+    '	cmd := exec.CommandContext(ctx, shell, "-c", runtimeTrampoline, binary, "mcp")
+	// **The documented contract**: this becomes descriptor 3 in the child,
+	// with close-on-exec cleared for it there and nowhere else.
+	cmd.ExtraFiles = []*os.File{dirFile}
+	return cmd, nil' \
+    '	_, _ = shell, dirFile
+	cmd := exec.CommandContext(ctx, binary, "mcp")
+	cmd.Dir = s.cfg.ProjectDir
+	return cmd, nil'
   mutate go "the walk does not detect a repeated ancestor" "$F" \
     '		if os.SameFile(ancestor, info) {' \
     '		if false && os.SameFile(ancestor, info) {'
@@ -1449,8 +1457,12 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # and round 4 refused: it works only while an ordering inside `os/exec`
   # happens to hold, and it is the parent's descriptor number.
   mutate go "the child is started from the pathname again" "$PL" \
-    '	cmd := exec.CommandContext(ctx, shell, "-c", runtimeTrampoline, binary, "mcp")' \
-    '	cmd := exec.CommandContext(ctx, binary, "mcp")
+    '	cmd := exec.CommandContext(ctx, shell, "-c", runtimeTrampoline, binary, "mcp")
+	// **The documented contract**: this becomes descriptor 3 in the child,
+	// with close-on-exec cleared for it there and nowhere else.
+	cmd.ExtraFiles = []*os.File{dirFile}' \
+    '	_, _ = shell, dirFile
+	cmd := exec.CommandContext(ctx, binary, "mcp")
 	cmd.Dir = s.projectDir'
   # The same for the watcher, which takes a path because inotify does.
   mutate go "the watcher is initialised from the pathname again" "$S" \
