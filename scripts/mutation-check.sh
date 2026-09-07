@@ -908,7 +908,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # known to be stale must never reach the disk at all. "Nothing was written"
   # and "nothing was staged" are different claims.
   mutate go "an already-stale write is staged before it is refused" "$A" \
-    '	if !deskConfigUnmoved(req.IfMatch, actual) {
+    '	if !deskConfigUnmoved(*req.IfMatch, actual) {
 		return http.StatusConflict, conflict{' \
     '	if false {
 		return http.StatusConflict, conflict{'
@@ -1302,16 +1302,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # **The whole point of the member.** A fallback that ignored it would open
   # whatever directory the process happened to start in and report success.
   mutate go "the launch fallback ignores the configured file" "$LA" \
-    '	if deskFile.file != "" {
-		// The directory the configuration file is in. The member names the
-		// file rather than the directory because that is the thing a person
-		// can point at and check: a directory with no `jpack-desk.json` in it
-		// is a project this desk has nothing configured for.
-		return filepath.Dir(deskFile.file), nil
-	}' \
-    '	if false {
-		return filepath.Dir(deskFile.file), nil
-	}'
+    '	dir, err := usableProjectDir(deskFile.file)' \
+    '	dir, err := ".", error(nil)'
 
   # **Read before there is a working directory to resolve one against.** A
   # relative path accepted here is a default project that means a different
@@ -1330,6 +1322,50 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '		if len(member.raw) == 0 {
 			member.raw = json.RawMessage("null")
 		}'
+
+  # ---- Round 1: what a page may persist, and what a launch may honour ----
+
+  # **The equality check is the whole ruling.** Without it a page can name any
+  # path, and the value it writes chooses the root of the next launch — an
+  # authority the page itself never had.
+  mutate go "the page may nominate a project it is not running in" "$A" \
+    '	if strings.TrimSpace(text) == s.projectPaths().File {
+		return nil
+	}' \
+    '	if true {
+		return nil
+	}'
+
+  # **A default that is not there is not a project.** Honouring one takes the
+  # parent of a name nobody wrote a file at — the review's `/jpack-desk.json`
+  # is exactly that shape.
+  mutate go "the launch honours a configured file that is not there" "$LA" \
+    '	resolved, err := filepath.EvalSymlinks(file)
+	if err != nil {
+		return "", fmt.Errorf("it could not be resolved: %w", err)
+	}' \
+    '	resolved := file'
+
+  # **Absolute on this host, not in the shared spelling.** A Windows-shaped
+  # path is a relative one here, and `filepath.Dir` then answers "." — which is
+  # the launch directory, by accident.
+  mutate go "a foreign-platform path is honoured on this host" "$LA" \
+    '	if !filepath.IsAbs(file) {' \
+    '	if false {'
+
+  # **An omitted digest is not the empty sentinel**, and where the file is
+  # absent the actual digest is empty too — so without this a body with no
+  # `ifMatch` is a write with no precondition.
+  mutate go "an omitted digest is read as the empty sentinel" "$A" \
+    '	if req.IfMatch == nil {
+		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,
+			`ifMatch is required; send "" to state that there is no file yet`)
+		return
+	}' \
+    '	if req.IfMatch == nil {
+		empty := ""
+		req.IfMatch = &empty
+	}'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -5635,6 +5671,7 @@ export function assistantTransport(): Transport {
   # ---- Chunk 6a: the card, and what it may not invent --------------------
   SCD=web/src/admin/SourceCard.tsx
   ADV=web/src/routes/AdminView.tsx
+  NR=web/src/admin/narration.ts
 
   # **A location comes from the chassis or it is a guess.**
   #
@@ -5674,8 +5711,30 @@ export function assistantTransport(): Transport {
   # decode turns `1e2` into `100` and rounds an integer past a float64, so a
   # disclosure that re-serialised would show a reader a file that is not on disk.
   mutate web "the content disclosure re-serialises instead of quoting the file" "$SCD" \
-    '  const shown = bytes ?? JSON.stringify(content.value, null, 2)' \
-    '  const shown = JSON.stringify(content.value, null, 2)'
+    '  const shown =
+    bytes ?? (content.value === undefined ? undefined : JSON.stringify(content.value, null, 2))' \
+    '  const shown =
+    content.value === undefined ? undefined : JSON.stringify(content.value, null, 2)'
+
+  # **A refused file's bytes are the thing the refusal is about.** Rendering
+  # them puts the credential-shaped member on the page reporting the refusal.
+  mutate web "a refused file's bytes are rendered anyway" "$SCD" \
+    "  return status.state !== 'refused' && status.state !== 'unread'" \
+    '  return true'
+  # The other half of the same gate: the card may hold the text and must not
+  # quote it unless the decode accepted the file.
+  mutate web "the disclosure quotes a file the decoder did not accept" "$SCD" \
+    '  const bytes =
+    !accepted || content.text === undefined' \
+    '  const bytes =
+    content.text === undefined'
+
+  # **A paragraph split into short spans is still a paragraph.** The rule this
+  # replaces measured single text nodes, and JSX produces two of them whenever
+  # a sentence carries an inline element.
+  mutate web "the narration sweep measures only single text nodes" "$NR" \
+    '  for (const block of container.querySelectorAll(BLOCKS)) {' \
+    '  for (const block of [] as Element[]) {'
 fi
 
 restore
