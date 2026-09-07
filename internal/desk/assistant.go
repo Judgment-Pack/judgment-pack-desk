@@ -839,6 +839,25 @@ func topLevelMembers(data []byte) ([]deskMember, string, error) {
 		}
 		members = append(members, deskMember{name: key, raw: value})
 	}
+	// **The closing brace, and then nothing.** Round 2 found this returning as
+	// soon as `More` said there was no next member — which is true of a
+	// *truncated* object as well as a closed one, and says nothing about what
+	// follows. So `{"deskConfigVersion":1` and `{"deskConfigVersion":1} junk`
+	// were both walked happily and rewritten into well-formed JSON with the
+	// malformed or trailing bytes silently dropped. That is a repair, and this
+	// route replaces one member; it does not tidy a file up on the way past.
+	closing, err := decoder.Token()
+	if err != nil {
+		return nil, "", fmt.Errorf("the object is not closed: %w", err)
+	}
+	if delimiter, ok := closing.(json.Delim); !ok || delimiter != '}' {
+		return nil, "", errors.New("the object is not closed")
+	}
+	// `Decoder.Token` answers `io.EOF` where only whitespace is left, so a
+	// file that ends in a newline is not a file with something after it.
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		return nil, "", errors.New("there is something after the object")
+	}
 	return members, "", nil
 }
 

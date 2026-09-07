@@ -942,6 +942,18 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 			member.raw = json.RawMessage(reflowed.String())
 		}
 		out.Write(member.raw)'
+  # Round 2: the walk stopped as soon as there was no next member, which is
+  # true of a truncated object as well as a closed one — so a half-written file
+  # was rewritten into well-formed JSON with its malformed bytes dropped.
+  mutate go "a file that is not one whole object is repaired on rewrite" "$A" \
+    '	closing, err := decoder.Token()
+	if err != nil {
+		return nil, "", fmt.Errorf("the object is not closed: %w", err)
+	}' \
+    '	closing, err := json.Token(json.Delim(0x7d)), error(nil)
+	if false {
+		return nil, "", err
+	}'
   # Round 1: values came from a map and positions from the walk, so two
   # spellings of one name became the last value at the first position.
   mutate go "a duplicate top-level member is collapsed rather than refused" "$A" \

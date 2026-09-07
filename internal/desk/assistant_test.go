@@ -1455,10 +1455,65 @@ func TestComposeDeskFileKeepsTheBytesItWasGiven(t *testing.T) {
 func TestComposeDeskFileRefusesAFileItCannotCarryAcross(t *testing.T) {
 	// Not an object, so there are no other members to preserve — and this
 	// route will not silently drop what it could not read.
-	for _, current := range []string{`[1,2,3]`, `"a string"`, `not json at all`} {
+	//
+	// **Round 2 added the last two.** The walk stopped as soon as there was no
+	// next member, which is true of a truncated object as well as a closed
+	// one and says nothing about what follows — so both of these were walked
+	// happily and rewritten into well-formed JSON with their malformed or
+	// trailing bytes dropped. This route replaces one member; it does not
+	// tidy a file up on the way past.
+	for _, current := range []string{
+		`[1,2,3]`,
+		`"a string"`,
+		`not json at all`,
+		`{"deskConfigVersion":1`,
+		`{"deskConfigVersion":1,`,
+		`{"deskConfigVersion":1} trailing`,
+		`{"deskConfigVersion":1} {"deskConfigVersion":1}`,
+	} {
 		if _, problems := composeDeskFile([]byte(current), true,
 			json.RawMessage(`{"endpoint":null}`)); len(problems) == 0 {
 			t.Errorf("%q was composed over", current)
+		}
+	}
+	// And a file that ends in whitespace is not a file with something after
+	// it, which is the state every file this desk writes is in.
+	for _, current := range []string{
+		"{\n  \"deskConfigVersion\": 1\n}\n",
+		`{"deskConfigVersion":1}   `,
+	} {
+		if _, problems := composeDeskFile([]byte(current), true,
+			json.RawMessage(`{"endpoint":null}`)); len(problems) != 0 {
+			t.Errorf("%q was refused: %v", current, problems)
+		}
+	}
+}
+
+func TestDeskConfigWriteRefusesAFileThatIsNotOneWholeObject(t *testing.T) {
+	// Through the route, so the refusal is answered rather than only returned:
+	// 422 with the decoder's own whole-file key, and the bytes on disk left
+	// exactly as they were rather than repaired into valid JSON.
+	for _, current := range []string{
+		`{"deskConfigVersion":1`,
+		`{"deskConfigVersion":1} trailing`,
+	} {
+		s, ts, _ := assistantServer(t)
+		writeDeskConfig(t, s, current)
+		before, present := deskConfigDigest(t, ts)
+		if !present {
+			t.Fatalf("%q was not read at all", current)
+		}
+		status, body := putDeskConfig(t, ts, geminiAssistant, before)
+		if status != http.StatusUnprocessableEntity || body["code"] != CodeDeskConfigRefused {
+			t.Fatalf("%q: status %d, body %v; want 422 %s",
+				current, status, body, CodeDeskConfigRefused)
+		}
+		after, err := os.ReadFile(s.deskConfigPath())
+		if err != nil {
+			t.Fatalf("read back: %v", err)
+		}
+		if string(after) != current {
+			t.Errorf("%q was repaired into %q", current, after)
 		}
 	}
 }
