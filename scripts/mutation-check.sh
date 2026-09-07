@@ -1233,13 +1233,14 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # credential as a model id would hand the machine-held key to the browser
   # through the route that exists so it never gets there. The page cannot help:
   # it has never held the key and could not recognise one.
+  # `false &&` rather than `false`: the mutation has to keep `typed` used, or it
+  # does not compile — and a mutation that does not compile has not been
+  # survived, it has not been tested.
   mutate go "a model listing is forwarded without being scanned" "$MR" \
-    '		case string:
-			if carries(typed) {
+    '			if carries(typed) {
 				return errListingCarriesKey
 			}' \
-    '		case string:
-			if false {
+    '			if false && carries(typed) {
 				return errListingCarriesKey
 			}'
   # A listing this desk cannot read to the end is one it cannot say anything
@@ -5110,12 +5111,24 @@ export function assistantTransport(): Transport {
   mutate web "Describe is drawn with no key stored on this machine" "$DI" \
     "  const usable = slot.state === 'configured' && slot.endpoint !== null && slot.keyPresent" \
     "  const usable = slot.state === 'configured' && slot.endpoint !== null"
-  # A configuration this desk could not read is not one that says there is no
-  # assistant, and Describe must not offer a session against a slot nobody has
-  # been able to confirm.
-  mutate web "Describe is drawn against a configuration nobody could read" "$DI" \
-    "  const usable = slot.state === 'configured' && slot.endpoint !== null && slot.keyPresent" \
-    '  const usable = slot.endpoint !== null && slot.keyPresent'
+  # **Aimed at the sentence, which is what differs.** Breaking `usable` cannot
+  # discriminate: a configuration this desk could not read falls through to the
+  # defaults, so the endpoint is null and the control is withheld by that
+  # clause anyway. What is not the same is what a reader is told — "no
+  # assistant is configured" is an absence this page did not establish about a
+  # file it could not open, and it offers a repair that sends them to a form
+  # which will not write either.
+  # The tab's own half of the same sentence: it renders the state directly
+  # rather than through `unusableBecause`, so breaking one does not break the
+  # other and each has its own row.
+  mutate web "the tab describes an unreadable configuration as having no assistant" "$AP" \
+    "        {slot.state === 'unavailable'" \
+    '        {false'
+  mutate web "an unreadable configuration is described as having no assistant" "$DI" \
+    "      slot.state === 'unavailable'
+        ? UNREAD_CONFIGURATION" \
+    "      false
+        ? UNREAD_CONFIGURATION"
 
   # Closing the dialog ends the session, and it has to end it **through the run
   # hook**: an unmount alone aborts the iterator and closes the socket without
