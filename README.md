@@ -1224,19 +1224,26 @@ of this member's safety. The desk pins one project root at startup and serves
 the file API through it; `project.file` chooses the root of the **next** launch.
 So page code that could write any path could hand its successor a root outside
 the authority the page itself had: `{"project":{"file":"/jpack-desk.json"}}`
-would pin `/` on the next argument-less start — the file need not exist, and
-`..` and symlinks are followed later — and the file API would then serve the
-host. That is the key-retarget class, in a member instead of a credential.
+would have pinned `/` on the next argument-less start, and the file API would
+then have served the host. That is the key-retarget class, in a member instead
+of a credential.
 
 `PUT /api/desk-config` therefore accepts exactly two values for it from the
 page: **this project's own file**, spelled as the chassis reports it in the same
 answer, which nominates the project the desk is already serving and grants
 nothing it does not already have; and **null**, which withdraws a default and so
 takes authority away. Anything else is `422 desk-config-refused` naming
-`project.file`, with nothing written. Admin's Project card is that rule as a
-shape rather than as a validation on top of one: one button, **Use this project
-as the default** (or **Clear the default** where it already is), and no field for
-a path. A different default is set by editing the desk-level file yourself,
+`project.file`, with nothing written. **Both are stated**: `{"project":{}}` is
+refused too, because an omission is not a withdrawal — a client that meant
+nothing by leaving the member out would otherwise clear whatever an operator
+had written. And the accepted value is compared **exactly**, with no
+normalisation: a padded or otherwise re-spelled path is a second rule about
+which spellings mean the one value a page may write, and it is the re-spelling
+that would get stored.
+
+Admin's Project card is that rule as a shape rather than as a validation on top
+of one: one button, **Use this project as the default** (or **Clear the
+default** where it already is), and no field for a path. A different default is set by editing the desk-level file yourself,
 which is custody-validated and is the operator's own authority.
 
 **A configured default is validated on the host that is about to act on it**,
@@ -1246,11 +1253,27 @@ a drive letter with one — and a spelling that is absolute on one platform is a
 *relative path* on another: `C:\p\jpack-desk.json` is one path component to Go
 on Unix, so `filepath.Dir` answers `.` and the desk would open whatever
 directory it happened to be launched from. So the launch checks the value again,
-against this machine: absolute here, resolving through its symlinks to a regular
-file still named `jpack-desk.json`, in a directory that is not the filesystem
-root. A default that fails any of those **refuses the launch by name** — never a
+against this machine. The whole refusal matrix, in the order it is applied:
+
+| the configured `project.file` | refused because |
+|---|---|
+| is not absolute on this host | a path written for another platform is a relative one here, and would open whatever directory the desk was launched from |
+| is directly in the filesystem root | this desk will not serve a project rooted there — checked before anything is asked of the filesystem, so it is refused for *where it is* rather than for not existing |
+| does not resolve | a default that is not there is not a project; `EvalSymlinks` is what says so |
+| does not resolve to a regular file | a directory, a socket or a device is not a configuration file |
+| resolves to some other name | a link cannot point the name this desk reads at something else |
+| resolves into the filesystem root | the root check again, on what the link actually reached |
+
+A default that fails any of those **refuses the launch by name** — never a
 silent fall back — because somebody who configured a default and got some other
 project would have no way to see that the member they wrote was ignored.
+
+**And what is validated is what is served.** The directory that passes is then
+**pinned as a held descriptor**, and the identities of the directory and of the
+`jpack-desk.json` that chose it are compared against that descriptor before
+anything is served: validating a pathname and then resolving it again to open
+is a window in which a rename can substitute another tree for the one that was
+checked. It is the pattern the credential directory is already held to.
 
 **Precedence**: project file → desk-level file → built-in default, and for the
 three pane flags one layer in front of all three — this browser's record of
@@ -1380,8 +1403,10 @@ in `~/.config` by hand between attempts. Four things bound it:
   else present are carried across **by their own bytes, in their own order** —
   copied out of the file verbatim, whitespace included, and never re-serialised
   or reflowed, so `1e2` does not silently become `100` and a member's place and
-  shape in a file somebody wrote stay theirs. Only `assistant`, the member this
-  route was asked about, is rendered. A file with a **duplicate top-level
+  shape in a file somebody wrote stay theirs. Only the members this route was
+  **asked about** — `assistant`, `project`, or both — are rendered, and each is
+  replaced where the file already has it and appended where it does not. A file
+  with a **duplicate top-level
   member** is refused rather than composed over (`422`, naming the member):
   `encoding/json` keeps the last value and a reader in another language may
   keep the first, so a rewrite would silently choose one. The file is written
