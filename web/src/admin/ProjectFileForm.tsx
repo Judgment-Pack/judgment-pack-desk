@@ -40,60 +40,79 @@ export interface ProjectFileDraft<D> {
   draft: D
   /** Take an edited draft. Clears the last save's verdict and nothing else. */
   set: (next: D) => void
-  /** Whether the draft differs from the value the file supplies. */
+  /** Whether any touched field says something the file does not. */
   changed: boolean
-  /** Write the fields that differ, and nothing else. */
+  /** Write the fields the reader touched and changed, and nothing else. */
   submit: () => void
   save: ProjectFileSave
 }
 
 /**
- * One card's draft, seeded from the file and re-seeded only where nothing would
- * be lost by it.
+ * The fields the reader has typed into, by name — and only those.
  *
- * The read has usually not answered at first render, and a save answers with
- * the file the chassis read back — both have to reach the fields. An edit in
- * progress must not, which is the same rule that makes Reload after a refused
- * write keep what somebody typed. Adjusted during render rather than in an
- * effect, so the fields are never painted a frame behind the file.
+ * **A whole draft is not a record of what anybody edited**, and the difference
+ * is a lost edit. Round 1 of the review found it: with one snapshot of every
+ * field, edit Name while another writer adds a `mark` on disk, take the 409,
+ * press Reload — and the snapshot still carries the `mark` this reader last
+ * saw, which was none. The next Save then states the fresh digest and writes
+ * `mark: null`, erasing a change nobody here ever looked at, under a
+ * precondition that is now perfectly true.
  *
- * **Two comparisons and no remembered flag**, and each admits a fresh seed for
- * its own reason. `drafted === seeded` is "nothing has been typed since the
- * last seed", which is the first render, an answer that arrives before anybody
- * touches the form, and an edit somebody undid. `!changed` is "the file now
- * says exactly what these fields do", which is what a save that landed
- * produces — and without it the form would take that answer and then never take
- * another, because it would go on comparing against a seed two revisions old.
- * A draft that says something the file does not is what neither admits, and
- * that is the case Reload exists for.
+ * A value equal to the seed's is not held: an edit somebody undid is not an
+ * edit, and neither is a field a control re-emitted unchanged.
+ */
+function touchedIn<D>(next: D, seed: D): Record<string, unknown> {
+  const held: Record<string, unknown> = {}
+  for (const [name, value] of Object.entries(next as Record<string, unknown>)) {
+    if (!Object.is(value, (seed as Record<string, unknown>)[name])) held[name] = value
+  }
+  return held
+}
+
+/**
+ * One card's draft: the file's own values, under the fields the reader has
+ * typed into.
+ *
+ * **The draft is derived, not stored**, and that is the whole of the rule. A
+ * field nobody has touched *is* whatever the file says now — a save that
+ * landed, a reload, another editor's change all reach it with nothing to
+ * decide — and a field somebody has typed into is theirs until it is written or
+ * withdrawn. There is no re-seeding step, because there is nothing stale to
+ * re-seed: the only thing this hook remembers is what a person actually typed.
+ *
+ * That also makes the edit list exact. Every untouched name in `draft` is the
+ * seed's own value, so a card's `editsOf` — which compares the two field by
+ * field — can only report what the reader changed, whatever has happened to the
+ * file in between.
+ *
+ * The values are the values of form controls: strings, and the members of the
+ * decoder's closed unions. `Object.is` is the comparison because that is what
+ * they admit; nothing here holds an object.
  */
 export function useProjectFileDraft<D>(
   pointer: ProjectFilePointer,
   seed: D,
   editsOf: (draft: D, seed: D) => MemberEdit[]
 ): ProjectFileDraft<D> {
-  const identity = JSON.stringify(seed)
-  const [seeded, setSeeded] = useState(identity)
-  const [draft, setDraft] = useState<D>(seed)
-  const drafted = JSON.stringify(draft)
-  const changed = drafted !== identity
+  const [touched, setTouched] = useState<Record<string, unknown>>({})
+  const draft = { ...seed, ...touched } as D
+  // Computed from the draft above, so an untouched field contributes nothing
+  // however far the file has moved since it was last looked at.
+  const edits = editsOf(draft, seed)
+  const changed = edits.length > 0
   // **What the fields hold is what decides whether the revision may move.** A
   // card holding a value nobody has written keeps the bytes and the digest it
   // was composed against, so a change made underneath it is refused rather than
   // overwritten. See `useProjectFileSave`.
   const save = useProjectFileSave(pointer, changed)
-  if (identity !== seeded && (drafted === seeded || !changed)) {
-    setSeeded(identity)
-    setDraft(seed)
-  }
   return {
     draft,
     set: (next: D) => {
       save.forget()
-      setDraft(next)
+      setTouched(touchedIn(next, seed))
     },
     changed,
-    submit: () => save.save(editsOf(draft, seed)),
+    submit: () => save.save(edits),
     save
   }
 }

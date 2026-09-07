@@ -5915,12 +5915,21 @@ export function assistantTransport(): Transport {
     '      writeFile(input),' \
     '      writeFile({ ...input, override: true }),'
 
-  # **Nothing was written, so there is nothing to take back.** A form that
-  # re-seeded from the fresh read would answer a refusal by discarding the work
+  # **Nothing was written, so there is nothing to take back.** A form whose
+  # fresh seed won over the fields would answer a refusal by discarding the work
   # the refusal protected.
   mutate web "Reload after a refused write takes the file over the unsaved values" "$PFF" \
-    '  if (identity !== seeded && (drafted === seeded || !changed)) {' \
-    '  if (identity !== seeded) {'
+    '  const draft = { ...seed, ...touched } as D' \
+    '  const draft = { ...touched, ...seed } as D'
+
+  # **A whole draft is not a record of what anybody edited**, and round 1 of the
+  # review found the lost edit: edit Name while another writer adds a mark, take
+  # the 409, Reload, Save — and a form that treats every field as touched writes
+  # `mark: null` over a change nobody here ever saw, under a digest that is now
+  # perfectly true.
+  mutate web "every field is recorded as touched, not only the one that changed" "$PFF" \
+    '    if (!Object.is(value, (seed as Record<string, unknown>)[name])) held[name] = value' \
+    '    held[name] = value'
 
   # **The file API forms no opinion about what a file means**, so it would write
   # an appearance this desk then refuses to read. The opinion is this page's,
