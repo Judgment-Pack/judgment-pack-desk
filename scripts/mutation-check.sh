@@ -1396,18 +1396,16 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	}'
   # The second half: the directory may be the one validated and the file that
   # chose it may have been replaced inside it.
+  # The replacement keeps `held` in use and drops only the identity half, so
+  # the mutation is the defect rather than a build failure.
   mutate go "the configuration file that chose the project is not re-checked" "$PJ" \
-    '	if !held.Mode().IsRegular() || !os.SameFile(c.fileInfo, held) {
-		return errProjectMoved
-	}' \
-    '	if false {
-		return errProjectMoved
-	}'
+    '	if !held.Mode().IsRegular() || !os.SameFile(c.fileInfo, held) {' \
+    '	if !held.Mode().IsRegular() {'
   # And the smaller window inside the open itself: a name inspected and then
   # opened is two operations, and what is held has to be what was inspected.
   mutate go "the descriptor is not compared to the directory that was inspected" "$PJ" \
     '	if !os.SameFile(inspected, held) {' \
-    '	if false {'
+    '	if held == nil {'
 
   # **An omission is not a withdrawal.** Without this, `{"project":{}}` clears
   # an operator's hand-edited default and answers 200.
