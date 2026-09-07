@@ -295,8 +295,11 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if watched == 0 {' \
     '	if watched < 0 {'
   mutate go "the runtime starts from the unresolved pathname" internal/desk/relay.go \
-    'func (s *Server) runtimeWorkingDir() string { return s.projectDir }' \
-    'func (s *Server) runtimeWorkingDir() string { return s.cfg.ProjectDir }'
+    '	if through, ok := s.project.descriptorWorkingDir(); ok {
+		return through, nil
+	}
+	return runtimeWorkingDirByPathname(s.projectDir, s.project.info)' \
+    '	return s.cfg.ProjectDir, nil'
   mutate go "the walk does not detect a repeated ancestor" "$F" \
     '		if os.SameFile(ancestor, info) {' \
     '		if false && os.SameFile(ancestor, info) {'
@@ -1409,6 +1412,38 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 
   # **An omission is not a withdrawal.** Without this, `{"project":{}}` clears
   # an operator's hand-edited default and answers 200.
+  # ---- Round 3: what the runtime and the watcher actually follow ---------
+
+  # **The descriptor or a name, and a name is what came apart.** Started from
+  # the pathname again, a rename-and-replace leaves the runtime judging one
+  # tree while the file API edits another.
+  mutate go "the child is started from the pathname again" internal/desk/relay.go \
+    '	if through, ok := s.project.descriptorWorkingDir(); ok {
+		return through, nil
+	}' \
+    '	if through, ok := s.project.descriptorWorkingDir(); ok {
+		_ = through
+	}'
+  # The same for the watcher, which takes a path because inotify does.
+  mutate go "the watcher is initialised from the pathname again" "$S" \
+    '	watchRoot := pinned.dir
+	if through, ok := pinned.descriptorWorkingDir(); ok {
+		watchRoot = through
+	}' \
+    '	watchRoot := pinned.dir'
+  # **The fallback every non-Linux host relies on**, broken here so a Linux run
+  # can still answer for it: the check is its own function precisely so that a
+  # row aimed at it is reachable from the suite that actually runs.
+  mutate go "the pre-spawn identity check is removed on the pathname path" internal/desk/relay.go \
+    '	if !sameDirectory(dir, pinned) {' \
+    '	if false {'
+
+  # **Adoption detaches, or two owners close one descriptor.** Without it the
+  # caller's wrapper takes the file API out from under a running server.
+  mutate go "an adopted project root is not detached from its caller" "$S" \
+    '	pinned.detach()' \
+    ''
+
   mutate go "an unstated project file is treated as a withdrawal" "$A" \
     '	if !present {
 		// **An omission is not a withdrawal.** `{}` replaced the member with
