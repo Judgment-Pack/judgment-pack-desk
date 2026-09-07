@@ -1134,10 +1134,17 @@ company, and never a name taken from a token claim.
 Create-pack dialog has no path field: the name gives the id, and the id gives
 the file name inside `dir`. Every member is optional and takes the default
 above. `dir` is project-relative and slash-separated, and is refused here for
-the same lexical shape the file API would refuse anyway — so Admin names the
-key that is wrong rather than the dialog failing later on a path nobody chose to
-look at. That includes the directories the chassis excludes from its endpoints
-altogether (`.git`, `node_modules`, `dist`, `.venv`, `vendor`, and a staging
+the lexical shape the file API would refuse anyway — so Admin names the key that
+is wrong rather than the dialog failing later on a path nobody chose to look at.
+**`dir` and `idBase` are refused more widely than that, for a control
+character**: every code point from `U+0000` to `U+001F` and `U+007F`, at any
+position, tested against the value as it was written rather than after any
+trimming. That is the decoder's own rule, applied at Save — wider than the
+chassis, which refuses `U+0000` in a path outright — because a name carrying
+one is a name this desk could never write, and `new URL` will not catch it on
+the prefix either: it percent-encodes a `U+0000`, silently *deletes* a tab, and
+takes a `U+007F`. The refusals also cover the directories the chassis excludes
+from its endpoints altogether (`.git`, `node_modules`, `dist`, `.venv`, `vendor`, and a staging
 name): `"dir": "dist"` is a plausible thing to type, and a configuration that
 decodes clean while making every create fail is worse than one refused where it
 was written. The list is mirrored from `internal/desk/watch.go` and held to it
