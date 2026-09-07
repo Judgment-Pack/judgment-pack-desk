@@ -583,5 +583,40 @@ describe('the Admin page', () => {
     // The card that is about a process and not a configuration file: its
     // status is the connection, in the connection's own words.
     await waitFor(() => expect(screen.getByText(/^connected — /)).toBeTruthy())
+    expect(screen.getByText('Tool listing')).toBeTruthy()
+  })
+
+  it('says None where no identity provider is configured, and its issuer where one is', () => {
+    renderAdmin()
+    expect(screen.getByText('None')).toBeTruthy()
+    cleanup()
+    renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: DESK_PATH,
+        present: true,
+        sha256: '',
+        decoded: decodeDeskConfig(
+          JSON.stringify({
+            deskConfigVersion: 1,
+            identity: {
+              provider: {
+                label: 'Acme SSO',
+                issuer: 'https://issuer.example',
+                clientId: 'a-client'
+              }
+            }
+          }),
+          'desk'
+        )
+      })
+    )
+    // Off the field row rather than by text: the Content disclosure shows the
+    // whole member too, and a text query that matched both would pass without
+    // the value line existing at all.
+    const provider = screen.getByText('Provider').parentElement!
+    expect(provider.textContent).toContain('https://issuer.example')
+    expect(provider.textContent).toContain('Acme SSO')
+    // And no sentence about what a provider will do later.
+    expect(screen.queryByText(/gates nothing/)).toBeNull()
   })
 })

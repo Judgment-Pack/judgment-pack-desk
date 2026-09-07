@@ -50,7 +50,8 @@ const SECTION = Object.fromEntries(
 export function AdminView() {
   const effective = useEffectiveConfig()
   const { config, desk } = effective
-  const { server, known } = useMcp()
+  const mcp = useMcp()
+  const { server, known } = mcp
   const { data } = usePacks()
   const listing = useFileListing()
   const shell = useShellState()
@@ -99,8 +100,10 @@ export function AdminView() {
               'None'
             ) : (
               <>
-                <code>{config.identity.provider.issuer}</code>{' '}
-                {config.identity.provider.label ?? ''}
+                <code>{config.identity.provider.issuer}</code>
+                {config.identity.provider.label !== null && (
+                  <> — {config.identity.provider.label}</>
+                )}
               </>
             )}
           </CardField>
@@ -125,20 +128,20 @@ export function AdminView() {
             ? `connected — ${server.name} ${server.version}`
             : 'not connected'
         }}
-        content={{
-          value: {
-            server: server ?? null,
-            toolListing: known ? 'read' : 'not read on this connection'
-          }
-        }}
+        content={{ value: runtimeSummary(mcp) }}
         fields={
-          <CardField label="Configuration">
-            {data?.configPath ? (
-              <code>{data.configPath}</code>
-            ) : (
-              <span className="quiet">not read yet</span>
-            )}
-          </CardField>
+          <>
+            <CardField label="Configuration">
+              {data?.configPath ? (
+                <code>{data.configPath}</code>
+              ) : (
+                <span className="quiet">not read yet</span>
+              )}
+            </CardField>
+            <CardField label="Tool listing">
+              {known ? 'read' : 'not read on this connection'}
+            </CardField>
+          </>
         }
       />
 
@@ -290,6 +293,22 @@ export function AdminView() {
       />
     </article>
   )
+}
+
+/**
+ * What the page knows about the runtime it is connected to.
+ *
+ * The connection's own summary — who answered `initialize`, whether the tool
+ * listing was read, and what that listing said this runtime can do. **`known`
+ * is carried rather than folded in**: a listing that never answered leaves
+ * every flag *unknown* rather than absent, and a card that printed them as
+ * false would impersonate an older runtime.
+ */
+function runtimeSummary(mcp: ReturnType<typeof useMcp>) {
+  const { client, retryNow, error, ...summary } = mcp
+  void client
+  void retryNow
+  return { ...summary, error: error === null ? null : error.message }
 }
 
 /** The three bounded dimensions, in the order the section prints them. */

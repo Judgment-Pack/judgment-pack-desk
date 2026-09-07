@@ -673,7 +673,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # "There is none, and it would be here" is an answer, and Admin needs the path.
   mutate go "an absent desk-level file is a refusal" "$A" \
     '	if !present {
-		writeJSON(w, http.StatusOK, DeskLevelConfig{Path: path, Present: false})
+		writeJSON(w, http.StatusOK, DeskLevelConfig{
+			Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths()})
 		return
 	}' \
     '	if !present {
@@ -1289,6 +1290,46 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '				if false {
 					return errListingTooLarge
 				}'
+
+  # ---- Chunk 6a: the default project, and the launch that reads it -------
+  #
+  # `project.file` is the one member of this file that decides something before
+  # there is a server: it names which project a desk launched with no directory
+  # argument opens. Each row below breaks one of the three things that makes
+  # that safe to have.
+  LA=internal/desk/launch.go
+
+  # **The whole point of the member.** A fallback that ignored it would open
+  # whatever directory the process happened to start in and report success.
+  mutate go "the launch fallback ignores the configured file" "$LA" \
+    '	if deskFile.file != "" {
+		// The directory the configuration file is in. The member names the
+		// file rather than the directory because that is the thing a person
+		// can point at and check: a directory with no `jpack-desk.json` in it
+		// is a project this desk has nothing configured for.
+		return filepath.Dir(deskFile.file), nil
+	}' \
+    '	if false {
+		return filepath.Dir(deskFile.file), nil
+	}'
+
+  # **Read before there is a working directory to resolve one against.** A
+  # relative path accepted here is a default project that means a different
+  # directory depending on where the desk was launched from.
+  mutate go "the default project accepts a relative path" "$DF" \
+    '	if !absolutePath(trimmed) {' \
+    '	if false {'
+
+  # **A member that is absent is untouched.** Two Admin cards write two members
+  # of one file and neither sends the other's; a compose that replaced both
+  # would have each card silently overwrite the other's slot with nothing.
+  mutate go "an unsent member is written as well as the one that was sent" "$A" \
+    '		if len(member.raw) == 0 {
+			continue
+		}' \
+    '		if len(member.raw) == 0 {
+			member.raw = json.RawMessage("null")
+		}'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -1307,7 +1348,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   Y=web/src/mcp/capabilities.ts
   W=web/src/config/DeskConfigProvider.tsx
   V=web/src/routes/AdminView.tsx
-  VB=web/src/routes/adminBlocks.tsx
+  SC=web/src/admin/SourceCard.tsx
   Q=web/src/shell/useHashTarget.ts
   B=web/src/shell/authorBridge.ts
   I=web/src/identity/IdentityProvider.tsx
@@ -1497,20 +1538,13 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the configured theme is decoded and never applied" "$W" \
     '  useAppliedTheme(value.config.appearance.theme)' \
     '  void value.config.appearance.theme'
-  # The paste block and the source badge moved into adminBlocks.tsx when the
-  # Assistant section came to need them too.
-  mutate web "the copy button reports a copy it did not make" "$VB" \
-    '          const written = navigator.clipboard?.writeText(text)
-          if (!written) {
-            setCopied(false)
-            return
-          }
-          written.then(
-            () => setCopied(true),
-            () => setCopied(false)
-          )' \
-    '          void navigator.clipboard?.writeText(text)
-          setCopied(true)'
+  # **Retired, with its reason: the control it broke no longer exists.** It was
+  # "the copy button reports a copy it did not make", on the paste blocks every
+  # Admin section carried. The card pattern removed them — a Location line says
+  # where the file is and a Content disclosure shows what is in it, so a paste
+  # block was a second way to do one thing — and `adminBlocks.tsx` went with
+  # them. A row whose code is deleted cannot discriminate; it is named here so
+  # that its absence is a statement rather than an oversight.
   mutate web "the section links go nowhere" "$Q" \
     '    target?.scrollIntoView()' \
     '    void target'
@@ -2047,9 +2081,9 @@ if [ "$which" = all ] || [ "$which" = web ]; then
       if (cause.status === 404) {' \
     '    if (false) {
       if (cause.status === 404) {'
-  mutate web "Admin sources every unread reason to the chassis" "$V" \
-    "          ) : readFailure.source === 'chassis' ? (" \
-    '          ) : true ? ('
+  mutate web "Admin sources every unread reason to the chassis" "$SC" \
+    "      ) : failure.source === 'chassis' ? (" \
+    '      ) : true ? ('
 
   # ---- Codex round 3 -----------------------------------------------------
 
@@ -2118,10 +2152,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
 ] as const" \
     'const PANE_DIMENSIONS = [] as const'
   mutate web "Admin calls a configured number the rendered one" "$V" \
-    '        Rail: <code>{config.panes.left.mode}</code>, configured{'"'"' '"'"'}
-        <strong>{config.panes.left.width}px</strong> — rendered{'"'"' '"'"'}
-        <Rendered box={rendered.rail} axis="width" />' \
-    '        Rail: <code>{config.panes.left.mode}</code>, {config.panes.left.width}px'
+    '              <code>{config.panes.left.mode}</code>, configured{'"'"' '"'"'}
+              <strong>{config.panes.left.width}px</strong> — rendered{'"'"' '"'"'}
+              <Rendered box={rendered.rail} axis="width" />' \
+    '              <code>{config.panes.left.mode}</code>, {config.panes.left.width}px'
   mutate web "an absent pane is reported as a pane of zero" "$V" \
     "  if (box === undefined) return <span className=\"quiet\">not mounted at this width</span>" \
     '  if (box === undefined) return <strong>0px</strong>'
@@ -2138,9 +2172,9 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "every answered reason is quoted as the chassis' own" "$C" \
     "      'chassis'," \
     "      'desk',"
-  mutate web "provenance is inferred from the status again" "$V" \
-    '          {!readFailure.responseReceived ? (' \
-    '          {false ? ('
+  mutate web "provenance is inferred from the status again" "$SC" \
+    '      {!failure.responseReceived ? (' \
+    '      {false ? ('
   # ---- Verification round ------------------------------------------------
   # One row per safeguard this round's findings put in. Named after the defect
   # each restores, not the code each edits.
@@ -3742,8 +3776,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '          type="password"' \
     '          type="text"'
   mutate web "removal is offered where there is nothing to remove" "$AS" \
-    '        {state.present && (' \
-    '        {true && ('
+    '      {state.present && (' \
+    '      {true && ('
   # A 401 is a host that is there and a credential it will not take.
   mutate web "a refused credential is painted as reachable" "$AS" \
     "      {result.reachable ? 'reachable' : 'not reachable'}" \
@@ -5140,12 +5174,12 @@ export function assistantTransport(): Transport {
   # notice saying the file could not be read.
   AS2=web/src/assistant/AssistantSection.tsx
   mutate web "Admin claims no endpoint from a file it could not read" "$AS2" \
-    "          {unavailable
-            ? 'this desk could not read its own configuration'
-            : endpoint === null" \
-    "          {false
-            ? 'this desk could not read its own configuration'
-            : endpoint === null"
+    "              {unavailable
+                ? 'this desk could not read its own configuration'
+                : endpoint === null" \
+    "              {false
+                ? 'this desk could not read its own configuration'
+                : endpoint === null"
   # And the fields with it: they are the built-in defaults there, and typing
   # into them would compose a write over a file nobody has seen.
   mutate web "the form is editable over a file this desk could not read" "$EF" \
@@ -5597,6 +5631,43 @@ export function assistantTransport(): Transport {
     '  parts.push({ ...arriving })' \
     "  if ((arriving.text ?? '') === '' && arriving.functionCall === undefined) return
   parts.push({ ...arriving })"
+
+  # ---- Chunk 6a: the card, and what it may not invent --------------------
+  SCD=web/src/admin/SourceCard.tsx
+  ADV=web/src/routes/AdminView.tsx
+
+  # **A location comes from the chassis or it is a guess.** Joining the root the
+  # chassis reported to a file name would be this page asserting a path on a
+  # filesystem it cannot see, and would be wrong the first time a project was
+  # reached through a symlink — which the chassis resolves before it reports.
+  mutate web "the project file's location is composed on the page" "$ADV" \
+    '  const chassis = effective.desk?.chassis
+  if (chassis === undefined) return <code>{effective.path}</code>
+  return <code>{chassis.projectFile}</code>' \
+    '  const chassis = effective.desk?.chassis
+  if (chassis === undefined) return <code>{effective.path}</code>
+  return <code>{`${chassis.projectDir}/${effective.path}`}</code>'
+
+  # **The narration guard, broken by putting narration back.** A sweep that
+  # only ever passed over a clean page would prove nothing about the sweep.
+  mutate web "a paragraph is reintroduced above the cards" "$ADV" \
+    '      <header className="detail-head">
+        <h1>Admin</h1>
+      </header>' \
+    '      <header className="detail-head">
+        <h1>Admin</h1>
+        <p className="quiet">
+          This page shows the desk configuration for this machine and for this project, section
+          by section, with the file each value came from named beside it.
+        </p>
+      </header>'
+
+  # **What is shown has to be what is in the file.** `JSON.stringify` of the
+  # decode turns `1e2` into `100` and rounds an integer past a float64, so a
+  # disclosure that re-serialised would show a reader a file that is not on disk.
+  mutate web "the content disclosure re-serialises instead of quoting the file" "$SCD" \
+    '  const shown = bytes ?? JSON.stringify(content.value, null, 2)' \
+    '  const shown = JSON.stringify(content.value, null, 2)'
 fi
 
 restore

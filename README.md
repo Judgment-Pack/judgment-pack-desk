@@ -407,7 +407,7 @@ graphs page says the project configures none.
 **A shell around all of it.** Six regions — a header, a navigation rail, the
 routes above, an Inspector, a Console and the status strip that is its
 collapsed face — plus two pages of their own: `/admin`, which renders the desk's
-configuration read-only, and `/help`, which names what this runtime advertises
+configuration as eight cards in one shape, and `/help`, which names what this runtime advertises
 and renders its own authoring prompt as text. The shell **derives no verdict**:
 no status colour in the rail, no rollup count, no "N failing" pill anywhere. A
 red badge in a nav rail would be a gate the runtime never issued.
@@ -1172,6 +1172,16 @@ addressable there and never will be. An absent file is answered `200` with
 would be here" is an answer rather than a failure to answer, and Admin needs
 the path in order to tell you where to write one.
 
+The same answer carries **what this process was launched with**, in both
+states: `project: {dir, file}` — the project root the chassis resolved and
+pinned, symlinks already followed, and the project's own `jpack-desk.json`
+inside it whether or not one is there — and `runtime: {bin}`. Admin prints all
+three and composes none of them: a page joining a directory to a file name
+would be asserting a path on a filesystem it cannot see, and would be wrong the
+first time a project was reached through a symlink. Neither is in the
+configuration schema at any depth, for the reason neither ever was: the chassis
+executes the binary it was given.
+
 It takes every key the project file takes, plus the two that may **only**
 appear here:
 
@@ -1191,6 +1201,26 @@ appear here:
     "engine": "vercel",
     "thinking": "off"
   }
+}
+```
+
+**`project.file` says which project this machine's desk opens** when
+`jpack-desk` is launched with no directory argument. It is an absolute path
+naming a `jpack-desk.json`, and the desk opens the directory that file is in;
+`null` or absent means it names none. It is desk-level only — which project a
+machine opens by default is not a fact about any one project, and committing one
+would push one operator's filesystem onto every clone — and it is refused by
+`project.file` where it is relative (it is read before there is a working
+directory worth resolving one against) or where it names anything but the file
+the desk reads. The absoluteness test is **lexical on both sides on purpose**: a
+leading separator, or a drive letter with one. `filepath.IsAbs` answers
+differently per platform and the browser has no such function, so a corpus
+walked by both decoders would be walked under two rules.
+
+```json
+{
+  "deskConfigVersion": 1,
+  "project": { "file": "/home/someone/a-project/jpack-desk.json" }
 }
 ```
 
@@ -1243,20 +1273,45 @@ left beside the console button, and a link that neither shrinks nor wraps
 painted straight across it. The link's accessible name is the full sentence at
 every width.
 
-**Admin renders configuration; it rewrites exactly one member of it.** Every
-section shows effective values, their source, the path they came from and the
-exact JSON to paste — except **Assistant**, which is a form, and whose Save
-rewrites the `assistant` object of the desk-level file under the four bounds
-below. Everything else on the page is read-only: the one control that changes
-**persisted desk-layout state** is the pane record above, and the Copy button
-beside each paste block changes the clipboard and its own transient "copied"
-label, which is why that claim is scoped to persisted layout rather than to
-state in general.
+### Admin, as eight cards
+
+**Every section of Admin is one card, and the card is four slots.** A
+**Location** — the path, from the chassis, never composed on the page. A
+**Status** — one line from a closed set: `read`, `not present — defaults in
+use`, `refused: <key>: <the decoder's own reason>`, `not read — <who said so>:
+<their reason>`, or, for Runtime, the connection state. A **Content**
+disclosure — the member's own bytes where this page read the file, and the
+decoded value, labelled as decoded, where it did not. And the **fields**, with
+a **Save** on the cards that have a write path and nothing where they do not.
+
+The order is **Project file, Identity provider, Assistant, Runtime, Storage,
+Organization, Appearance, Panes**. The project file comes first because it is
+what an admin is here to point at, and the identity provider next because it is
+the other thing a deployment configures.
+
+There is no narration. A test sweeps every text node the page writes and fails
+on one over 140 characters, exempting quoted material — a path, a decoder's own
+refusal, a member of the file as it is written. The standing disclaimer, the
+deployment-state list, the warning notes and every paste block are gone: a real
+problem is a card's Status line, and the Copy buttons went with the blocks
+because the Location line says where the file is and Content shows what is in
+it.
+
+**Two cards write, and each writes one member of the desk-level file.** The
+Project card writes `project`, the Assistant form writes `assistant`, and
+neither sends the other's — a member absent from the request is carried across
+untouched. Everything else on the page is read-only; the one remaining control
+is Panes' reset, which clears a single `localStorage` key.
 
 **Two things are written, and each is exactly as wide as its reason.** The key
-is one, below. The other is the `assistant` object of the desk-level file, over
-`PUT /api/desk-config`, under the same token and origin guard as everything
-else. It exists because choosing a model and a thinking tier is something an
+is one, below. The other is the desk-level file, over `PUT /api/desk-config`,
+under the same token and origin guard as everything else. Its body is
+`{assistant?, project?, ifMatch}`: **a member that is present is replaced and a
+member that is absent is untouched**, which is what lets two Admin cards write
+two members of one file without either sending the other's. A body naming
+neither is a `400` — a conditional commit that would change nothing is a request
+with no meaning, and answering it `200` would report a write that did not
+happen. It exists because choosing a model and a thinking tier is something an
 author does while working, and the alternative is telling them to edit a file
 in `~/.config` by hand between attempts. Four things bound it:
 
@@ -2571,8 +2626,15 @@ judgment-pack desk
   open:    http://127.0.0.1:8791/?token=1f3c…
 ```
 
-`projectDir` defaults to the current directory. `--jpack` defaults to `jpack`
-on `PATH`, and `--port` defaults to `8791`.
+**Without `projectDir`, the desk opens the project named by `project.file` in
+this machine's desk-level file**, read through the same custody-validated store
+every other read of that file goes through. Where that file names none — or is
+refused, because any problem refuses the whole of it — the desk refuses to
+start and names the file and the member, rather than opening whatever directory
+the process happened to be launched in: a project chosen that way is a project
+nobody chose, and every consequence of the choice is silent.
+
+`--jpack` defaults to `jpack` on `PATH`, and `--port` defaults to `8791`.
 
 ## Development mode
 
@@ -3494,11 +3556,10 @@ web/                 Vite + React + TypeScript SPA
   src/routes/        project home, the packs layout and its two children
                      (the "select a pack" page and the pack document),
                      evaluation, matrix, graphs, the authoring shell, the
-                     Admin page and Help & About — Admin being read-only
-                     everywhere but the Assistant section, which is a form over
-                     the endpoint, the model and the tier and carries the key
-                     control beside it, and the source badge and paste block
-                     every other section of it uses
+                     Admin page and Help & About — Admin being eight cards
+                     in one shape, of which two write: the Project card's
+                     default project and the Assistant form's endpoint, model
+                     and tier
   src/components/    evaluation, coverage, row and graph-walk views, plus the
                      trace and handoff-target renderers both the pack and graph
                      surfaces share
@@ -3538,6 +3599,9 @@ web/                 Vite + React + TypeScript SPA
                      text operations, the rule and exception forms with their
                      keyboard reordering, the check on idle, the what-if pane,
                      the stale-write alert and the lock line
+  src/admin/         the card every Admin section renders through, the member
+                     slicer that quotes a file rather than re-serialising it,
+                     and the default-project field and its conditional commit
   src/config/        the schema both configuration files share, its strict
                      decoder, the two queries that read them, the precedence
                      between them, and the theme attribute it writes
