@@ -26,6 +26,8 @@ import {
   reframe,
   relayFetch,
   signatureLedger,
+  signatureOf,
+  signsReasoning,
   suffixOf,
   withoutTruncatedThinking
 } from './relay'
@@ -1813,5 +1815,98 @@ describe('the refutation pass, on this SDK’s second streamText', () => {
     expect(events.map((event) => event.type)).not.toContain('critique')
     expect(events.map((event) => event.type)).not.toContain('proposal')
     expect(events.map((event) => event.type)).not.toContain('end')
+  })
+})
+
+describe('the same signature rules, on the Gemini wire', () => {
+  it('reads a signature from the provider metadata this SDK puts it under', () => {
+    // **Two wires sign reasoning and the SDK names each one differently.** A
+    // reader that only knew the Anthropic spelling would ledger nothing here,
+    // and a truncation would then be invisible rather than detected.
+    expect(
+      signatureOf('gemini', { providerMetadata: { google: { thoughtSignature: 'c2ln' } } })
+    ).toBe('c2ln')
+    expect(
+      signatureOf('anthropic', { providerMetadata: { anthropic: { signature: 'c2ln' } } })
+    ).toBe('c2ln')
+    // Each family reads its own and no other's.
+    expect(
+      signatureOf('gemini', { providerMetadata: { anthropic: { signature: 'c2ln' } } })
+    ).toBeUndefined()
+    expect(
+      signatureOf('anthropic', { providerMetadata: { google: { thoughtSignature: 'c2ln' } } })
+    ).toBeUndefined()
+    // And the wire with no signatures has no ledger to keep.
+    expect(signsReasoning('openai-compatible')).toBe(false)
+    expect(signsReasoning('gemini')).toBe(true)
+    expect(
+      signatureOf('openai-compatible', { providerMetadata: { google: { thoughtSignature: 'x' } } })
+    ).toBeUndefined()
+  })
+
+  it('removes a thought part whose signature came back short, and rebuilds the request', () => {
+    // The same rule as the Anthropic arm, read against this wire's own shape:
+    // `contents[].parts[]` of `{thought: true, thoughtSignature}`, and the tier
+    // one level down in `generationConfig`.
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'c2lnbmF0dXJlLVQx')
+    const body = JSON.stringify({
+      contents: [
+        {
+          role: 'model',
+          parts: [
+            { text: 'I read it.', thought: true, thoughtSignature: 'dXJlLVQx' },
+            { text: 'hello' }
+          ]
+        }
+      ],
+      generationConfig: { thinkingConfig: { includeThoughts: true, thinkingBudget: 8192 } },
+      systemInstruction: { parts: [{ text: 'system' }] }
+    })
+    const rebuilt = withoutTruncatedThinking('gemini', body, ledger, () => null)
+    expect(rebuilt.truncated).toContain('19663')
+    const sent = JSON.parse(rebuilt.body) as {
+      contents: { parts: Record<string, unknown>[] }[]
+      generationConfig: Record<string, unknown>
+      systemInstruction: unknown
+    }
+    expect(sent.contents[0]!.parts).toEqual([{ text: 'hello' }])
+    // **Rebuilt and not filtered**: the tier comes off, one level down, and
+    // `generationConfig` itself stays because it is the request's own settings
+    // rather than the tier.
+    expect(sent.generationConfig).toEqual({})
+    expect(sent.systemInstruction).toEqual({ parts: [{ text: 'system' }] })
+  })
+
+  it('leaves a whole Gemini signature exactly where it was', () => {
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'c2lnbmF0dXJlLVQx')
+    const body = JSON.stringify({
+      contents: [
+        {
+          role: 'model',
+          parts: [{ text: 'x', thought: true, thoughtSignature: 'c2lnbmF0dXJlLVQx' }]
+        }
+      ]
+    })
+    const looked = withoutTruncatedThinking('gemini', body, ledger, () => null)
+    expect(looked.truncated).toBe('')
+    expect(looked.body).toBe(body)
+  })
+
+  it('puts back what the slot asks for now, one level down', () => {
+    const ledger = signatureLedger()
+    ledger.fragment('0', 'abcdef')
+    const body = JSON.stringify({
+      contents: [
+        { role: 'model', parts: [{ text: 'x', thought: true, thoughtSignature: 'abc' }] }
+      ],
+      generationConfig: { thinkingConfig: { thinkingBudget: 8192 } }
+    })
+    const rebuilt = withoutTruncatedThinking('gemini', body, ledger, () => ({
+      thinkingConfig: { thinkingBudget: 0 }
+    }))
+    const sent = JSON.parse(rebuilt.body) as { generationConfig: Record<string, unknown> }
+    expect(sent.generationConfig).toEqual({ thinkingConfig: { thinkingBudget: 0 } })
   })
 })
