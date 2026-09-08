@@ -139,18 +139,17 @@
      how a frame written to be exactly one viewport tall gave the browser its
      own scrollbar and let the whole shell be scrolled up out of the window.
 
-     Measured in headless Chrome at e2d1dee, 1400x800, with an assistant key
-     stored — every figure in this comment is that configuration, because the
-     endpoint form renders its pickers only once there is a key to bind them
-     to. `/admin` reported a `document.scrollingElement.scrollHeight` of 2439
-     against an `innerHeight` of 800, while `.desk` itself measured 800. The
-     three elements past the fold were `select[aria-hidden="true"]`, inline
-     `position: absolute` and 1px square — the form-participation select Radix
-     renders beside every Select trigger that sits inside a `<form>`, here the
-     assistant endpoint form's three pickers, at y 1808, 2341 and 2438, each
-     with `offsetParent` BODY. `/packs` and `/help` measured 800: the Sort
-     picker is in no form, so it renders no such select, and nothing else
-     there is positioned.
+     Measured by `scripts/containment-check.sh` on a build of e2d1dee, in the
+     script's own configuration: `/admin` at 1400x800 reported a
+     `document.scrollingElement.scrollHeight` of 2355 against an `innerHeight`
+     of 800, while `.desk` itself measured 800, and `scrollY` reached 1555
+     after a `scrollTo(0, 5000)`. The three elements past the fold were
+     `select[aria-hidden="true"]`, inline `position: absolute` and 1px square
+     — the form-participation select Radix renders beside every Select trigger
+     that sits inside a `<form>`, here the assistant endpoint form's three
+     pickers, at y 1725, 2257 and 2354, each with `offsetParent` BODY.
+     `/packs` and `/help` measured 800: the Sort picker is in no form, so it
+     renders no such select, and nothing else there is positioned.
 
      So the rule, and it is not a list of five names: **every rule in this
      project that authors a scrolling overflow declares a position that
@@ -166,18 +165,12 @@
      A rule that *merely clips* is not held, and that is the scope and not an
      omission: `overflow: hidden` on an ellipsis label, a segmented control, a
      popup or a code frame clips text, and text has no containing block to be
-     laid out against. Nor is a scroll container the user agent makes — a
-     `textarea`, a `select`'s listbox — which no sheet declares and no reader
-     of sheets can see. Those are a list, and the list is *found* rather than
-     inherited: grep `<textarea` and `<select` under `web/src`, take the rule
-     that styles each one, and keep the ones whose rule authors no overflow of
-     its own. Today that is two — `ui/TextArea.module.css .textarea` and
-     `styles.css .code-editor` — and both carry the declaration by hand.
+     laid out against.
 
      **Two things hold this, and they hold different halves.**
      `ui/containingBlock.test.ts` reads these sources: the pair inside each
-     rule that authors a scrolling overflow, this frame and the four panes
-     under their own exact selector, and the two on that list. It is a source
+     rule that authors a scrolling overflow, and this frame and the four panes
+     under their own exact selector. It is a source
      reader and says so — a rule that takes a pane's position back by any
      other selector, an ancestor or an id or an attribute or a nested `&` or
      an inline style, is a computed cascade and not a sentence in a sheet.
@@ -185,9 +178,13 @@
      a built chassis in Chrome and reads the computed `position` of the frame
      and each pane, `document.scrollingElement.scrollHeight` against
      `innerHeight`, and every absolutely positioned element's `offsetParent`,
-     on 49 configurations — seven routes, four pane configurations at
-     1400x800 and three at 640x800. CI runs the first and cannot run the
-     second. Measured at e2d1dee: 0 of 49 contained. Measured here: 49. */
+     on 242 configurations — every route `App.tsx` declares, at every width
+     the sheets author a breakpoint for, four pane configurations above
+     1099px and three at or below it. CI runs the first. CI supplies no
+     runtime binary and no project, so there is nothing for the chassis to
+     serve; the gate is run by hand. Run before every merge that touches a
+     stylesheet. This is a convention; nothing automated enforces it.
+     Measured at e2d1dee: 0 of 242 contained. Measured here: 242. */
   .desk {
     display: grid;
     grid-template-columns:

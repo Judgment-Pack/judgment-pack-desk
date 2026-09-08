@@ -61,17 +61,16 @@
  * the shell was `position: static`, so an absolutely positioned descendant was
  * laid out against the initial containing block instead — not scrolled with
  * its pane, not clipped by the frame, and its static position counted into the
- * *document's* scrollable overflow. On `/admin` that measured
- * `document.scrollingElement.scrollHeight` 2439 against an `innerHeight` of
+ * *document's* scrollable overflow. Measured by
+ * `scripts/containment-check.sh` on a build of e2d1dee, in the script's own
+ * configuration: `/admin` at 1400x800 measured
+ * `document.scrollingElement.scrollHeight` 2355 against an `innerHeight` of
  * 800: the browser painted its own scrollbar and the whole 100dvh shell could
- * be scrolled up out of the window. (The configuration those figures were
- * taken in — 1400x800, an assistant key stored, without which the endpoint
- * form renders no pickers and there is nothing to measure — is named once, in
- * the comment above `.desk` in `shell.css`; every number here is that one.)
+ * be scrolled up out of the window.
  * The three elements past the fold were the 1px `select[aria-hidden="true"]`
  * that Radix renders beside every Select trigger inside a `<form>` — the
  * assistant endpoint form's Wire protocol, Engine and Thinking pickers, at
- * y 1808, 2341 and 2438.
+ * y 1725, 2257 and 2354.
  *
  * **So this holds a shape and not five names.** Any rule in any of these
  * sheets that scrolls must also position itself, whoever adds it and whenever.
