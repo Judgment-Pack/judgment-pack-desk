@@ -43,7 +43,14 @@
  * into the DOM of the page that reported the refusal. What a reader needs
  * there is the refusal, which the Status line already is.
  */
-import type { ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode
+} from 'react'
 import type { ConfigProblem, ReadFailure } from '../config/deskConfig'
 import { memberBytes } from './memberBytes'
 import styles from './SourceCard.module.css'
@@ -60,10 +67,54 @@ export type SourceStatus =
   | { state: 'read' }
   | { state: 'absent' }
   | { state: 'pending' }
-  | { state: 'refused'; problems: ConfigProblem[] }
+  | { state: 'refused'; problems: readonly ConfigProblem[] }
   | { state: 'unread'; failure: ReadFailure }
-  /** The runtime card: a connection rather than a file. */
+  /** A connection rather than a file. */
   | { state: 'said'; says: string }
+  /** This card's own write is in the air. */
+  | { state: 'writing' }
+  /** The file moved underneath this card's write. Nothing was written. */
+  | { state: 'stale' }
+  /**
+   * This card's write was refused — by this page's decoder before it was sent,
+   * or by the chassis after it — and nothing was written.
+   */
+  | { state: 'not-written'; problems: readonly ConfigProblem[]; reason?: string }
+
+/**
+ * What a card's own write is doing, published upward by the form inside it.
+ *
+ * **A read status is not the whole of what a card can be.** The group header
+ * suppresses a card's Status where it says what the group already said, and the
+ * group's is the *file's* read state — so a card whose write was refused, or
+ * whose write is in the air, or under which the file moved, showed no Status at
+ * all while the group said `read`. Those are three things this card knows and
+ * the group does not.
+ *
+ * It is published upward rather than lifted, on the pattern the Inspector slot
+ * already uses: the form owns the draft and the save, and the `save` node is
+ * handed to this card as a prop, so the card cannot read the form's state and
+ * the form cannot reach the card's head. A form rendered outside a card — every
+ * case in `projectFileCards.test.tsx` — finds no sink and publishes nothing.
+ */
+const WriteStatusSink = createContext<((status: SourceStatus | undefined) => void) | undefined>(
+  undefined
+)
+
+/** Publish this form's write state to the card it is inside, where it is in one. */
+export function usePublishedWriteStatus(status: SourceStatus | undefined): void {
+  const publish = useContext(WriteStatusSink)
+  // The value is read at the moment it is published; its signature is the
+  // dependency, because a fresh object on every render is not a change.
+  const signature = JSON.stringify(status ?? null)
+  useEffect(() => {
+    publish?.(status)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publish, signature])
+  // A form that leaves takes its verdict with it: a card whose Save unmounted
+  // must not go on reporting a write nothing is doing.
+  useEffect(() => () => publish?.(undefined), [publish])
+}
 
 /** What the Content disclosure shows, and where it comes from. */
 export interface CardContent {
@@ -109,16 +160,31 @@ export function SourceCard({
   under?: SourceStatus
 }) {
   const grouped = under !== undefined
+  // What the form inside this card, if any, says its own write is doing.
+  const [write, setWrite] = useState<SourceStatus | undefined>(undefined)
+  const publish = useCallback((next: SourceStatus | undefined) => setWrite(next), [])
+  // **The write is the more recent fact about this card**, and it is never
+  // what the group said — the group's status is the file's read state — so a
+  // card writing, refused, or holding a stale write always shows its own row.
+  const says = write ?? status
   return (
     <section className={grouped ? styles.member : styles.card} aria-labelledby={`${id}-title`}>
       <Title id={id} title={title} level={grouped ? 3 : 2} className={styles.title} />
       <Head
         location={grouped ? undefined : location}
-        status={grouped && sameStatus(status, under) ? undefined : status}
+        status={grouped && sameStatus(says, under) ? undefined : says}
       />
+      {/* Gated on the **read** status and not on `says`: a card whose write was
+          refused still read its file, and the bytes it read are still the ones
+          worth showing. What a refusal must not disclose is the file it is
+          about, which is the read status' own rule. */}
       {content !== undefined && showsContent(status) && <Content content={content} />}
       {fields !== undefined && <div className={styles.fields}>{fields}</div>}
-      {save !== undefined && <div className={styles.save}>{save}</div>}
+      {save !== undefined && (
+        <div className={styles.save}>
+          <WriteStatusSink.Provider value={publish}>{save}</WriteStatusSink.Provider>
+        </div>
+      )}
     </section>
   )
 }
@@ -247,19 +313,38 @@ function StatusLine({ status }: { status: SourceStatus }) {
   if (status.state === 'absent') return <>not present — defaults in use</>
   if (status.state === 'pending') return <>not read yet</>
   if (status.state === 'said') return <>{status.says}</>
+  if (status.state === 'writing') return <>writing — nothing is written until the desk answers</>
+  if (status.state === 'stale') return <>the file changed on disk — nothing was written</>
+  if (status.state === 'not-written') {
+    return (
+      <>
+        not written:{' '}
+        {status.reason !== undefined && <code className={styles.reason}>{status.reason}</code>}
+        <Problems problems={status.problems} />
+      </>
+    )
+  }
   if (status.state === 'refused') {
     return (
       <>
-        refused:{' '}
-        {status.problems.map((problem) => (
-          <code key={`${problem.key}:${problem.reason}`} className={styles.reason}>
-            {problem.key === '' ? problem.reason : `${problem.key}: ${problem.reason}`}
-          </code>
-        ))}
+        refused: <Problems problems={status.problems} />
       </>
     )
   }
   return <UnreadLine failure={status.failure} />
+}
+
+/** The decoder's own sentences, key path and all, as quoted material. */
+function Problems({ problems }: { problems: readonly ConfigProblem[] }) {
+  return (
+    <>
+      {problems.map((problem) => (
+        <code key={`${problem.key}:${problem.reason}`} className={styles.reason}>
+          {problem.key === '' ? problem.reason : `${problem.key}: ${problem.reason}`}
+        </code>
+      ))}
+    </>
+  )
 }
 
 /**

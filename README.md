@@ -1420,10 +1420,21 @@ its read status three times, which reads as three files.
 **A card under a group is the card as it was, minus what the header has already
 said.** It keeps its title, its Content disclosure, its fields and its Save, and
 it prints no Location at all. It prints a **Status** only where its own differs
-from the group's — a member refused inside an accepted file, a save in flight, a
-write the file moved under — and the comparison is by what the status *says*
-rather than by which of the six states it is, because two refusals naming two
-keys are not one status. A member the *other* file supplied is not one the
+from the group's, and the comparison is by what the status *says* rather than by
+which of the states it is, because two refusals naming two keys are not one
+status.
+
+**A card's Status is its read state *and* its own write.** The group's status is
+the file's read state, so a card that only ever reported its read state showed
+nothing at all while it was writing, while a refusal stood against it, or while
+the file had moved underneath it — three things the card knows and the group
+does not. The form publishes what its write is doing up to the card it is
+inside, on the pattern the Inspector slot already uses: the form owns the draft
+and the save, the `save` node is handed to the card as a prop, and neither can
+reach into the other. A write in the air says so first, then a file that moved,
+then any other refusal in whoever's words refused it; a save that **landed**
+publishes nothing, because the file was read back and the read state is the
+truth again. A member the *other* file supplied is not one the
 group's header speaks for: it is given no group, and states its own Location and
 Status exactly as it did before there were groups. The heading levels follow the
 document — a group is an `h2` and its cards are `h3` — so the outline is the one

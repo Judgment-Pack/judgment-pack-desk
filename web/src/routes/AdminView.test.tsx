@@ -13,10 +13,10 @@
  * changes anything, so a control cannot be added without appearing here.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DeskConfigFixture } from '../config/DeskConfigProvider'
+import { DeskConfigFixture, DeskConfigProvider } from '../config/DeskConfigProvider'
 import { STORAGE_KIND_SAYS, decodeDeskConfig, effectiveConfig } from '../config/deskConfig'
 import { McpContext } from '../mcp/McpProvider'
 import { ShellStateProvider } from '../shell/paneState'
@@ -80,6 +80,104 @@ function renderAdmin(
       <RouterProvider router={router} />
     </QueryClientProvider>
   )
+}
+
+/**
+ * A desk serving one project file, with the write left in whatever state a
+ * case is about.
+ *
+ * `renderAdmin` above is a *fixture*: the configuration is handed in, so no
+ * card has bytes to write over and every Save is disabled. These cases are
+ * about what a card says while it is writing, so they need the real provider
+ * over a real read.
+ */
+function servesAdmin(content: string, put: 'pending' | 'stale'): { puts: number } {
+  const seen = { puts: 0 }
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (String(url).includes('/api/desk-config')) {
+      return answered({
+        path: DESK_PATH,
+        present: false,
+        sha256: '',
+        project: { dir: '/p', file: '/p/jpack-desk.json' },
+        runtime: { bin: 'jpack' }
+      })
+    }
+    if (String(url).includes('/api/files')) {
+      return answered({ root: '/p', files: [{ path: 'packs/a.pack.json', bytes: 1, sha256: 'aa' }] })
+    }
+    if (init?.method === 'PUT') {
+      seen.puts += 1
+      // A request that never answers is what "writing" is: the card must say
+      // so while it is in the air, not after it has come back.
+      if (put === 'pending') return new Promise(() => {})
+      return answered(
+        {
+          error: 'the file on disk is not the file this edit started from',
+          code: 'stale',
+          path: 'jpack-desk.json',
+          expectedSha256: 'a'.repeat(64),
+          actualSha256: 'c'.repeat(64),
+          exists: true
+        },
+        409
+      )
+    }
+    return answered({
+      path: 'jpack-desk.json',
+      bytes: content.length,
+      sha256: 'a'.repeat(64),
+      content
+    })
+  })
+  return seen
+}
+
+function answered(body: unknown, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: '',
+    text: async () => JSON.stringify(body)
+  }
+}
+
+/** The same shell as `renderAdmin`, over the real configuration provider. */
+function renderLiveAdmin() {
+  const router = createMemoryRouter(
+    [
+      {
+        path: '*',
+        element: (
+          <McpContext.Provider value={connected({ client: QUIET.client })}>
+            <DeskConfigProvider>
+              <ShellStateProvider
+                projectIdentity={ROOT}
+                viewport={{ railIsDrawer: false, inspectorIsDrawer: false }}
+              >
+                <AdminView />
+              </ShellStateProvider>
+            </DeskConfigProvider>
+          </McpContext.Provider>
+        )
+      }
+    ],
+    { initialEntries: ['/admin'] }
+  )
+  return render(
+    <QueryClientProvider client={testQueryClient()}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  )
+}
+
+/** One card's Status row, or nothing where the card states none. */
+function statusOf(id: string): string | null {
+  const card = document.getElementById(id)!.closest('section')!
+  const row = Array.from(card.querySelectorAll(':scope > dl > div')).find(
+    (each) => each.querySelector('dt')?.textContent === 'Status'
+  )
+  return row?.querySelector('dd')?.textContent ?? null
 }
 
 /**
@@ -386,6 +484,69 @@ describe('the Admin page', () => {
     ).toHaveLength(1)
     // And an absent file is absent, never "read".
     expect(screen.getAllByText('not present — defaults in use').length).toBeGreaterThan(0)
+  })
+
+  /**
+   * **A card's own write is part of what its Status says.**
+   *
+   * The group header suppresses a card's Status where it says what the group
+   * already said, and the group's is the *file's* read state — so before this,
+   * a card writing, refused, or holding a stale write showed no Status at all
+   * while the group said `read`. Driven on the whole page rather than by
+   * handing `SourceCard` two artificial statuses.
+   */
+  it('says what each card’s own write is doing, while the group says the file was read', async () => {
+    const FILE = `{\n  "deskConfigVersion": 1,\n  "organization": { "name": "Unveil", "mark": null },\n  "storage": { "packs": { "dir": "packs", "idBase": "https://acme.example/d/" } }\n}\n`
+    servesAdmin(FILE, 'pending')
+    renderLiveAdmin()
+    // The read has to land first: a Save pressed before it is refused for
+    // having no bytes to write over, which is a different state.
+    await waitFor(() => expect(screen.getByDisplayValue('Unveil')).toBeTruthy())
+
+    // The group read its file, and while nothing is happening no card repeats it.
+    expect(statusOf('this-project')).toBe('read')
+    expect(statusOf('organization')).toBeNull()
+    expect(statusOf('storage')).toBeNull()
+
+    // Storage: a value this page's own decoder refuses, so nothing is sent.
+    fireEvent.change(screen.getByLabelText('Packs go to'), { target: { value: '../escape' } })
+    fireEvent.click(
+      document.getElementById('storage')!.closest('section')!.querySelector('form button')!
+    )
+    // Organization: a write that has left and not come back.
+    fireEvent.change(screen.getByDisplayValue('Unveil'), { target: { value: 'Renamed' } })
+    fireEvent.click(
+      document.getElementById('organization')!.closest('section')!.querySelector('form button')!
+    )
+
+    await waitFor(() => expect(statusOf('organization')).toContain('writing'))
+    expect(statusOf('organization')).toBe('writing — nothing is written until the desk answers')
+    expect(statusOf('storage')).toContain('not written:')
+    expect(statusOf('storage')).toContain('storage.packs.dir')
+    // And the group still says what it read, because that is still true.
+    expect(statusOf('this-project')).toBe('read')
+    // Appearance did nothing, so what it says is still about the file: this
+    // one carries no `appearance` member, which is a read state and not a
+    // write one.
+    expect(statusOf('appearance')).toBe('not present — defaults in use')
+  })
+
+  it('says the file moved under a card, on the card the write was refused for', async () => {
+    const FILE = `{\n  "deskConfigVersion": 1,\n  "organization": { "name": "Unveil", "mark": null }\n}\n`
+    servesAdmin(FILE, 'stale')
+    renderLiveAdmin()
+    await waitFor(() => expect(screen.getByDisplayValue('Unveil')).toBeTruthy())
+    fireEvent.change(screen.getByDisplayValue('Unveil'), { target: { value: 'Renamed' } })
+    fireEvent.click(
+      document.getElementById('organization')!.closest('section')!.querySelector('form button')!
+    )
+    await waitFor(() =>
+      expect(statusOf('organization')).toBe('the file changed on disk — nothing was written')
+    )
+    expect(statusOf('this-project')).toBe('read')
+    // The card that did not write says nothing about a write, only about the
+    // member this file does not carry.
+    expect(statusOf('storage')).toBe('not present — defaults in use')
   })
 
   it('keeps a card’s own Status where it differs from its group’s, and drops it where it does not', () => {
