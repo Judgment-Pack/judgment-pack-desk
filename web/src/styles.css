@@ -86,8 +86,54 @@
      every radius from this file the way it takes every colour: a literal in a
      module is a second answer to a question the tokens already answer. */
   --radius-sm: 4px;
+
+  /* The spacing scale, which `appearance.density` chooses between.
+     ------------------------------------------------------------------------
+     Six numbers, and everything that has to tighten reads one of them: a list
+     row's height, a control's height, a table cell's two paddings, the gap
+     between items in a list, and the size of the type on the surfaces that are
+     dense to begin with. Compact is `:root[data-density="compact"]` below, and
+     a test holds every one of these to a *strictly* smaller value there — a
+     density that is offered, stored and applied to the root element while
+     changing nothing is the defect this scale exists to close.
+
+     **Tokens, not per-component overrides.** A pane that wrote its own
+     `[data-density="compact"] .row { … }` would be a seventh answer to a
+     question these six already answer, and the next surface to need one would
+     be an eighth. The prefix is what makes "every spacing token" a question
+     the sheet can answer about itself, so the test needs no list kept by
+     hand. */
+  --density-row: 40px;
+  --density-control: 32px;
+  --density-cell-y: 0.5rem;
+  --density-cell-x: 0.75rem;
+  --density-gap: 0.5rem;
+  --density-font: 0.78rem;
+
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Compact: the same six numbers, tighter.
+   ---------------------------------------------------------------------------
+   `applyDensity` writes `data-density` on the root element — `compact` sets
+   it, `comfortable` removes it — so comfortable is the scale above and needs
+   no block of its own. One block and one attribute, for the reason the theme
+   has one: a density is chosen in one place and read in one place, and a
+   surface that decided its own would be a second answer.
+
+   There is no media query here to match the theme's. The OS has a reduced-data
+   preference and a reduced-motion preference and no density preference, so
+   there is nothing for `system` to follow; the ladder is the viewer's choice
+   over the project file's, and that is the whole of it. */
+
+:root[data-density="compact"] {
+  --density-row: 32px;
+  --density-control: 26px;
+  --density-cell-y: 0.3rem;
+  --density-cell-x: 0.5rem;
+  --density-gap: 0.3rem;
+  --density-font: 0.72rem;
 }
 
 /* The dark palette, in both of the places that select it.
@@ -812,7 +858,7 @@ a {
 .diff td {
   text-align: left;
   vertical-align: top;
-  padding: 0.45rem 0.75rem;
+  padding: var(--density-cell-y) var(--density-cell-x);
   border-bottom: 1px solid var(--border);
   overflow-wrap: anywhere;
 }

@@ -1,7 +1,7 @@
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--density-gap);
 }
 
 .pointer {
@@ -32,9 +32,13 @@
   color: var(--ink-faint);
 }
 
+/* The rhythm between the rows, and not a padding on each: a `.row` is a
+   two-column grid with no height of its own, so what a compact inspector
+   tightens is the gap that stacks them. Halved from the list gap, because
+   these are the lines of one record rather than separate items. */
 .provenance {
   display: grid;
-  gap: 0.2rem;
+  gap: calc(var(--density-gap) / 2);
   margin: 0;
   font-size: 0.75rem;
 }
@@ -62,7 +66,7 @@
 
 .empty {
   margin: 0.5rem 0 0;
-  font-size: 0.78rem;
+  font-size: var(--density-font);
   color: var(--ink-faint);
 }
 
@@ -73,7 +77,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 0.78rem;
+  font-size: var(--density-font);
 }
 
 .reference {
@@ -97,7 +101,7 @@
 .diagnostics {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--density-gap);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -107,7 +111,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  padding: 0.5rem;
+  padding: var(--density-cell-y);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
@@ -133,12 +137,12 @@
 
 .message {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--density-font);
 }
 
 .stale {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--density-font);
   color: var(--warn);
 }
 

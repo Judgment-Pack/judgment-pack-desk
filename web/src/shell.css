@@ -581,7 +581,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
+    padding: var(--density-cell-y) var(--density-cell-x);
     border-bottom: 1px solid var(--border);
     font-size: 0.82rem;
     font-weight: 600;
@@ -627,7 +627,7 @@
 
   .desk-log {
     margin: 0;
-    padding: 0.5rem 0.75rem;
+    padding: var(--density-cell-y) var(--density-cell-x);
     list-style: none;
     font-family: var(--mono);
     font-size: 0.75rem;

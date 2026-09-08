@@ -25,10 +25,12 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { ROW_HEIGHT } from '../config/theme'
 import {
   blockAt,
   contrastRatio,
   isColourValue,
+  lengthOf,
   literalColoursIn,
   luminance,
   withoutBlocks,
@@ -43,10 +45,13 @@ const SHELL = readFileSync(join(SRC, 'shell.css'), 'utf8')
 const LIGHT_AT = '\n:root {'
 const MEDIA_DARK_AT = ':root:not([data-theme="light"]) {'
 const ATTRIBUTE_DARK_AT = '\n:root[data-theme="dark"] {'
+/** And the fourth, which is the density scale rather than a palette. */
+const COMPACT_AT = ':root[data-density="compact"] {'
 
 const light = blockAt(STYLES, LIGHT_AT)
 const mediaDark = blockAt(STYLES, MEDIA_DARK_AT)
 const attributeDark = blockAt(STYLES, ATTRIBUTE_DARK_AT)
+const compact = blockAt(STYLES, COMPACT_AT)
 
 /** The tokens on `:root` whose value is a colour, which is what a palette is. */
 const colourTokens = [...light].filter(([, value]) => isColourValue(value)).map(([name]) => name)
@@ -101,7 +106,7 @@ describe('every colour token has a dark value', () => {
   it('keeps the non-colour tokens out of both dark blocks', () => {
     // `--radius`, the type stacks and the density scale are tokens too, and a
     // palette block is not where any of them belongs.
-    for (const name of ['--radius', '--radius-sm', '--mono', '--sans']) {
+    for (const name of ['--radius', '--radius-sm', '--mono', '--sans', '--density-row']) {
       expect(light.has(name), `${name} is on :root`).toBe(true)
       expect(attributeDark.has(name), `${name} is not in the dark block`).toBe(false)
     }
@@ -175,6 +180,48 @@ describe.each([
   )
 })
 
+describe('the density scale tightens, and every token in it does', () => {
+  it('gives every --density- token on :root a compact value', () => {
+    // The prefix is what makes "every spacing token" a question the sheet can
+    // answer about itself: a rule that went by a list kept in the test would
+    // pass for ever the day a seventh token was added and not listed.
+    const scale = [...light.keys()].filter((name) => name.startsWith('--density-'))
+    expect(scale.length).toBeGreaterThan(0)
+    expect([...compact.keys()].sort()).toEqual([...scale].sort())
+  })
+
+  it('makes each compact value strictly smaller, in the same unit', () => {
+    // Strictly. A compact value *equal* to its comfortable one is a density
+    // that is offered, stored, applied to the root element — and changes
+    // nothing, which is the shape of the defect this scale exists to close.
+    for (const [name, tight] of compact) {
+      const roomy = lengthOf(colour(light, name))
+      const dense = lengthOf(tight)
+      expect(roomy, `${name} is a plain length`).toBeDefined()
+      expect(dense, `${name}'s compact value is a plain length`).toBeDefined()
+      expect(dense!.unit, `${name} keeps its unit`).toBe(roomy!.unit)
+      expect(dense!.amount, `${name}: ${tight} is not smaller than ${light.get(name)}`).toBeLessThan(
+        roomy!.amount
+      )
+    }
+  })
+
+  it('is the same row height the windowed list computes with', () => {
+    // The one number the sheet cannot keep to itself: the packs list reserves
+    // two spacers for the rows it is not rendering, and that arithmetic is
+    // done in JavaScript. A `--density-row` tightened here while `ROW_HEIGHT`
+    // stayed at 40 would scroll to the wrong place and focus the wrong row.
+    expect(lengthOf(colour(light, '--density-row'))).toEqual({
+      amount: ROW_HEIGHT.comfortable,
+      unit: 'px'
+    })
+    expect(lengthOf(colour(compact, '--density-row'))).toEqual({
+      amount: ROW_HEIGHT.compact,
+      unit: 'px'
+    })
+  })
+})
+
 describe('no sheet but styles.css spells a colour', () => {
   it('finds no literal in shell.css', () => {
     // It used to spell three: `#fff` on the Create button, the drawer scrim,
@@ -188,7 +235,12 @@ describe('no sheet but styles.css spells a colour', () => {
     // Inside them a literal *is* the palette. Everywhere else in this file it
     // is a fourth palette that no `data-theme` selector reaches — which is
     // what `#fbfbf9` was, in two rules, for as long as this sheet has existed.
-    const rules = withoutBlocks(STYLES, [LIGHT_AT, MEDIA_DARK_AT, ATTRIBUTE_DARK_AT])
+    const rules = withoutBlocks(STYLES, [
+      LIGHT_AT,
+      MEDIA_DARK_AT,
+      ATTRIBUTE_DARK_AT,
+      COMPACT_AT
+    ])
     const found = literalColoursIn(rules)
     expect(found.map((entry) => `${entry.where}: ${entry.problem}`)).toEqual([])
   })
@@ -252,6 +304,14 @@ describe('the instrument', () => {
     expect(caught('.a { outline: none; fill: currentColor; }')).toEqual([])
     expect(caught('.a::after { content: "red"; }')).toEqual([])
     expect(caught('.a { /* color: red; */ color: var(--ink); }')).toEqual([])
+  })
+
+  it('reads a length, and nothing that is not one', () => {
+    expect(lengthOf('40px')).toEqual({ amount: 40, unit: 'px' })
+    expect(lengthOf('0.45rem')).toEqual({ amount: 0.45, unit: 'rem' })
+    expect(lengthOf('calc(100vh - 4px)')).toBeUndefined()
+    expect(lengthOf('var(--x)')).toBeUndefined()
+    expect(lengthOf('40')).toBeUndefined()
   })
 
   it('cuts a block out of a sheet and leaves the rest whole', () => {

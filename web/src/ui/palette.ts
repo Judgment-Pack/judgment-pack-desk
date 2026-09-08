@@ -179,3 +179,23 @@ export function contrastRatio(one: string, other: string): number {
   const b = luminance(other)
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
 }
+
+/** One length token, as a number and the unit it was written in. */
+export interface Length {
+  amount: number
+  unit: string
+}
+
+/**
+ * A token's value as a length, or `undefined` where it is not one.
+ *
+ * Only a bare `<number><unit>` counts. A `calc()` or a `var()` is not a value
+ * two densities can be compared on, and treating one as zero — which is what a
+ * bare `parseFloat` would do — would report a scale as tightening when it had
+ * not.
+ */
+export function lengthOf(value: string): Length | undefined {
+  const match = /^(-?\d*\.?\d+)(px|rem|em)$/.exec(value.trim())
+  if (match === null) return undefined
+  return { amount: Number.parseFloat(match[1]!), unit: match[2]! }
+}

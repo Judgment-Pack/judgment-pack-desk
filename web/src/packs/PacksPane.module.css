@@ -1,13 +1,14 @@
 /* The pane reads `--main-room` from shell.css and computes no geometry of its
    own: the shell owns the regions' layout, which is the rule the README
-   states. The one number here is the pane's own width. */
+   states. The row's height and the list's gap come from the density scale, and
+   `PacksPane.tsx` reads the same number for the window arithmetic. */
 
 .pane {
   position: sticky;
   top: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--density-gap);
   max-height: var(--main-room);
   min-height: 0;
 }
@@ -31,7 +32,7 @@
 }
 
 .row {
-  height: 40px;
+  height: var(--density-row);
 }
 
 .link {
@@ -81,7 +82,7 @@
   background: none;
   color: var(--ink-soft);
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--density-font);
   cursor: pointer;
 }
 
@@ -92,13 +93,13 @@
 
 .failure {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--density-font);
   color: var(--danger);
 }
 
 .quiet {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--density-font);
   color: var(--ink-faint);
 }
 

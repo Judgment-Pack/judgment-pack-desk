@@ -25,7 +25,9 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
+import { ROW_HEIGHT } from '../config/theme'
 import { usePacks } from '../mcp/queries'
+import { useAppearance } from '../shell/appearanceState'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
@@ -36,9 +38,6 @@ import { moveFocus, useWindowedRows } from './useWindowedRows'
 function isSpelled(value: string | undefined): value is string {
   return typeof value === 'string' && value !== ''
 }
-
-/** One row's height, in pixels, and the number the window arithmetic uses. */
-const ROW_HEIGHT = 40
 
 /** How many rows are shown before "Show all N". */
 const FIRST_SCREENFUL = 20
@@ -54,6 +53,21 @@ export function PacksPane() {
   const [sort, setSort] = useState('name-asc')
   const [expanded, setExpanded] = useState(false)
   const list = useRef<HTMLDivElement | null>(null)
+  /**
+   * The row height this density paints, which the window arithmetic needs as a
+   * number.
+   *
+   * `.row` takes `--density-row` from the sheet, and the two spacers this list
+   * reserves for the rows it is *not* rendering are computed here — so a scale
+   * the sheet tightened while this stayed at 40 would scroll to the wrong place
+   * and focus the wrong row. `ROW_HEIGHT` is the same pair of numbers, and a
+   * test reads `--density-row` out of both blocks of `styles.css` and holds
+   * them equal to it. `undefined` is this desk not yet knowing which density
+   * is in force, and it paints the comfortable scale, which is what `:root`
+   * carries until the attribute is written.
+   */
+  const { density } = useAppearance()
+  const rowHeight = ROW_HEIGHT[density ?? 'comfortable']
 
   const packs = useMemo(() => {
     const all = data?.packs ?? []
@@ -67,7 +81,7 @@ export function PacksPane() {
   }, [data, filter, sort])
 
   const shown = expanded ? packs : packs.slice(0, FIRST_SCREENFUL)
-  const window = useWindowedRows(shown.length, ROW_HEIGHT)
+  const window = useWindowedRows(shown.length, rowHeight)
 
   /**
    * A row the keyboard asked for that was not on screen yet.

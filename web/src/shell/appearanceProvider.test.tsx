@@ -18,6 +18,7 @@ afterEach(() => {
   cleanup()
   window.localStorage.clear()
   document.documentElement.removeAttribute('data-theme')
+  document.documentElement.removeAttribute('data-density')
 })
 
 const A = '/home/someone/project-a'
@@ -40,6 +41,12 @@ function Probe() {
       </p>
       <button type="button" onClick={() => appearance.setTheme('dark')}>
         choose dark
+      </button>
+      <button type="button" onClick={() => appearance.setDensity('compact')}>
+        choose compact
+      </button>
+      <button type="button" onClick={() => appearance.setDensity('comfortable')}>
+        choose comfortable
       </button>
     </>
   )
@@ -272,5 +279,61 @@ describe('what this desk paints before it knows', () => {
     document.documentElement.setAttribute('data-theme', 'dark')
     renderProvider({ identity: undefined, projectDefaultKnown: false })
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+  })
+})
+
+/**
+ * The density's own half of the ladder, on the page rather than in the record.
+ *
+ * It was decoded, validated, stored, offered in the user menu — and read by
+ * nothing: no attribute, no selector, no pixel. These are the same rules the
+ * theme has, asserted on the attribute the sheet's compact block selects,
+ * because "the member is applied" is exactly the claim that was missing.
+ */
+const density = () => document.documentElement.getAttribute('data-density')
+const press = (name: string) => act(() => screen.getByRole('button', { name }).click())
+
+describe('the density reaches the page', () => {
+  it('writes the attribute for compact and takes it off for comfortable', () => {
+    // Comfortable is the scale on bare `:root`, so it is the *absence* of the
+    // attribute and not a second spelling of it: a `data-density="comfortable"`
+    // would be a default every future rule had to remember to match.
+    renderProvider({ identity: A, projectDefault: DESK_DEFAULTS.appearance })
+    expect(density()).toBe(null)
+    press('choose compact')
+    expect(density()).toBe('compact')
+    expect(effective()).toBe('system/compact')
+    press('choose comfortable')
+    expect(density()).toBe(null)
+  })
+
+  it('applies the project’s density to a browser that has chosen none', () => {
+    // The second rung. `appearance.density` in `jpack-desk.json` is the
+    // default for everyone who has not chosen, and a default that reaches no
+    // attribute is a member that is decoded and honoured by nothing.
+    renderProvider({ identity: A, projectDefault: LIGHT_COMPACT })
+    expect(density()).toBe('compact')
+  })
+
+  it('is the viewer’s answer over the file’s', () => {
+    window.localStorage.setItem(KEY_A, JSON.stringify({ v: 1, density: 'comfortable' }))
+    renderProvider({ identity: A, projectDefault: LIGHT_COMPACT })
+    expect(density()).toBe(null)
+  })
+
+  it('writes nothing at all while this desk does not yet know', () => {
+    // The theme's rule, and for the theme's reason: the record needs a root the
+    // chassis has not reported and the default needs a file that has not been
+    // read, so anything painted here is a value nobody chose.
+    document.documentElement.setAttribute('data-density', 'compact')
+    renderProvider({ identity: undefined, projectDefaultKnown: false })
+    expect(density()).toBe('compact')
+  })
+
+  it('takes the attribute back off when the desk leaves the page', () => {
+    const view = renderProvider({ identity: A, projectDefault: LIGHT_COMPACT })
+    expect(density()).toBe('compact')
+    view.unmount()
+    expect(density()).toBe(null)
   })
 })
