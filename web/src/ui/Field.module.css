@@ -4,9 +4,13 @@
   margin: 0 0 1rem;
 }
 
+/* **One label style, and it is the one `SourceCard`'s `.key` carries.** A
+   settings page whose `Location` and whose `Name` are two sizes and two
+   weights reads as two pages joined at a heading. The three values are picked
+   once and written in both places; a test holds them equal. */
 .label {
-  font-size: 0.82rem;
-  font-weight: 600;
+  font-size: 0.8rem;
+  font-weight: 500;
   color: var(--ink-soft);
 }
 
