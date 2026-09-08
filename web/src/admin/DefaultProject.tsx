@@ -27,6 +27,17 @@
  * the value is for, and which directory this launch is actually on, because
  * the root is pinned per process and a save moves the next launch and not this
  * one.
+ *
+ * # Why the button sits on the row and is not primary
+ *
+ * It is one action of the group's head, and the head is not where a page's
+ * primary action lives: the two Saves under it are, and a filled accent button
+ * above them made the nomination read as the thing this page is for. So it is
+ * `secondary`, on the value line of the row it is about — `Default project`,
+ * the value, and the one thing that can be done to it — which is where a
+ * reader looks for a control over a value they are reading. The rule line
+ * naming the file it writes stays under it, because that file is not the one
+ * the group's header names.
  */
 import { useQueryClient } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
@@ -106,28 +117,26 @@ export function useDefaultProject(): { field: ReactNode; save: ReactNode } {
           'this project'
         ) : (
           <code>{configured}</code>
-        )}
+        )}{' '}
+        {isThisProject ? (
+          <Button variant="secondary" disabled={blocked} onClick={() => commit(null, CLEARED)}>
+            Clear the default
+          </Button>
+        ) : (
+          <Button
+            variant="secondary"
+            disabled={blocked}
+            onClick={() => commit(chassis?.projectFile ?? null, SET)}
+          >
+            Use this project as the default
+          </Button>
+        )}{' '}
+        {write.isPending && <span className="quiet">writing…</span>}
+        {said !== undefined && !write.isPending && <span className="quiet">{said}</span>}
       </CardField>
     ),
     save: (
       <>
-        <p className="actions">
-          {isThisProject ? (
-            <Button variant="quiet" disabled={blocked} onClick={() => commit(null, CLEARED)}>
-              Clear the default
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              disabled={blocked}
-              onClick={() => commit(chassis?.projectFile ?? null, SET)}
-            >
-              Use this project as the default
-            </Button>
-          )}{' '}
-          {write.isPending && <span className="quiet">writing…</span>}
-          {said !== undefined && !write.isPending && <span className="quiet">{said}</span>}
-        </p>
         {digest === undefined && <p className="quiet">{NO_DIGEST}</p>}
         {digest !== undefined && chassis === undefined && <p className="quiet">{NOT_SAID}</p>}
         {problem !== undefined && (

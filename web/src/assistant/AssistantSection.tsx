@@ -27,6 +27,7 @@
  */
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { CardField, SourceCard, type SourceStatus } from '../admin/SourceCard'
+import { Button } from '../ui/Button'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import type { DeskLevelSummary } from '../config/deskConfig'
 import { DIAGNOSTIC_SAYS, type AssistantKeyState } from './client'
@@ -155,9 +156,11 @@ export function AssistantSection({
             removeProblem={removeProblem}
           />
           <CardField label="Reachability">
-            <button type="button" onClick={() => probe.mutate()}>
-              Check reachability
-            </button>{' '}
+            {/* **Through `Button`, like every other control on this page.**
+                These four were bare `<button>` elements and rendered as the
+                browser's own, beside a `Button` that did not — one page, two
+                kinds of control, and neither of them following the theme. */}
+            <Button onClick={() => probe.mutate()}>Check reachability</Button>{' '}
             {probe.isPending && <span className="quiet">asking the endpoint…</span>}
             {probe.data !== undefined && !probe.isPending && <ProbeReading result={probe.data} />}
             {probe.error !== null && !probe.isPending && (
@@ -272,23 +275,21 @@ function KeyControl({
             spellCheck={false}
             defaultValue=""
           />{' '}
-          <button type="button" onClick={onStore}>
-            Store key
-          </button>
+          <Button onClick={onStore}>Store key</Button>
         </CardField>
       )}
       {binding === 'bound' && !replacing && (
         <CardField label="Replace">
-          <button type="button" onClick={() => setReplacing(true)}>
+          <Button variant="quiet" onClick={() => setReplacing(true)}>
             Replace key
-          </button>
+          </Button>
         </CardField>
       )}
       {state.present && (
         <CardField label="Remove">
-          <button type="button" onClick={onRemove}>
+          <Button variant="quiet" onClick={onRemove}>
             Remove key
-          </button>
+          </Button>
         </CardField>
       )}
       {storeProblem !== undefined && (

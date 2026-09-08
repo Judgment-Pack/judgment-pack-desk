@@ -80,7 +80,11 @@
   --shadow: rgb(0 0 0 / 10%);
   --selection: #cfe3dc;
 
-  --radius: 8px;
+  /* One radius for the whole desk. 8px reads as a card even on a control, and
+     a flat page has no cards to match; 6px is the corner a control has and a
+     panel can share. `--radius-sm` below is still the small one, for a control
+     inside a control. */
+  --radius: 6px;
   /* The small radius, for a control inside a control — a menu item in a
      popup, a badge inside a panel. One definition, so that `src/ui/` takes
      every radius from this file the way it takes every colour: a literal in a
