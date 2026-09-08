@@ -452,6 +452,18 @@ one, and a test holds that with both of the route's own landmarks mounted.
 | Console | Collapsed to the 28px strip, `panes.console.height` (240px) | → the strip, never below it | `region`, named "Console" |
 | Status strip | Always visible, 28px | Never | `contentinfo` |
 
+**The document never scrolls, because every pane is a containing block.** A
+scroll container clips and scrolls only the descendants whose containing block
+lies inside it, so each of the four panes — and the frame, and every nested
+scroller under them — declares `position: relative` in the same rule as its
+`overflow`. Without it Admin measured a document 2439px tall inside an 800px
+window and the whole shell could be scrolled up out of the frame, because Radix
+renders a 1px hidden `<select>` beside every Select trigger that sits inside a
+`<form>`: three of them, absolutely positioned against the *initial* containing
+block, neither scrolled with the main pane nor clipped by the frame, and
+counted into the document's own overflow. `containingBlock.test.ts` holds the
+pair for every scroller in every sheet, so the next one added is held too.
+
 A collapsed pane is **removed from the accessibility tree**, not merely made
 invisible: closed is the `hidden` attribute plus `[hidden] { display: none
 !important }` in the shell sheet, so a viewer who has closed the Inspector
@@ -3997,7 +4009,11 @@ Four rules and one test that holds all four
 with `css: false` and a component whose stylesheet was deleted renders exactly
 like one whose stylesheet is intact). A second test —
 `web/src/ui/palette.test.ts` — reads the two *global* sheets on the same terms,
-and holds the palettes and the density scale that live in them.
+and holds the palettes and the density scale that live in them. A third —
+`web/src/ui/containingBlock.test.ts` — reads all three kinds together and holds
+one pair: a rule that scrolls or clips also positions itself, so a scroll
+container is a containing block. It is a sweep and not a list of names, so the
+scroller nobody has written yet is held by it too.
 
 **Three of them run over every `*.module.css` under `web/src`**, and one — the
 component/module pairing — stays scoped to `src/ui`. The split is the point. The
