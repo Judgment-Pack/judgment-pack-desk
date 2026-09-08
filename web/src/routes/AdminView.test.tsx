@@ -22,6 +22,8 @@ import { McpContext, type McpConnection } from '../mcp/McpProvider'
 import { ShellStateProvider } from '../shell/paneState'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { narrationIn } from '../admin/narration'
+import buttonStyles from '../ui/Button.module.css'
+import selectStyles from '../ui/Select.module.css'
 import { AdminView } from './AdminView'
 import { ADMIN_GROUPS, ADMIN_SECTIONS } from './adminSections'
 
@@ -1197,5 +1199,102 @@ describe('the Admin page', () => {
     expect(provider.textContent).toContain('Acme SSO')
     // And no sentence about what a provider will do later.
     expect(screen.queryByText(/gates nothing/)).toBeNull()
+  })
+})
+
+/**
+ * The page's controls, as rendered rather than as written.
+ *
+ * `adminSheets.test.ts` reads the stylesheets, which is the only way to hold a
+ * rule vitest never processes. These two hold what no sheet can say: which
+ * elements are actually on the page, and which class each of them came out
+ * carrying. A `<button>` with no class renders as the browser's own control,
+ * and the sheet that would have styled it is not the one that is missing —
+ * there is no sheet at all.
+ */
+describe('every control on Admin comes through the same component', () => {
+  /** Every button under the article, which is the whole page. */
+  const buttonsOf = (container: HTMLElement) =>
+    Array.from(container.querySelector('article')!.querySelectorAll('button'))
+
+  it('renders every button through Button, and every picker through Select', () => {
+    const { container } = renderAdmin()
+    const buttons = buttonsOf(container)
+    // A count, so an exemption cannot quietly become the whole list.
+    expect(buttons.length).toBeGreaterThan(4)
+    // The one shape that is a `<button>` and is not an action: a Radix Select
+    // trigger. It is named rather than skipped, so a bare button cannot hide
+    // behind the exemption — each of these has to carry the Select module's
+    // own class.
+    const triggers = buttons.filter((each) => each.getAttribute('role') === 'combobox')
+    expect(triggers.length).toBeGreaterThan(0)
+    for (const trigger of triggers) {
+      expect(trigger.classList.contains(selectStyles.trigger), trigger.textContent ?? '').toBe(true)
+    }
+    const actions = buttons.filter((each) => each.getAttribute('role') !== 'combobox')
+    expect(actions.length).toBeGreaterThan(0)
+    for (const action of actions) {
+      expect(
+        action.classList.contains(buttonStyles.button),
+        `${action.textContent?.trim()} is not a Button`
+      ).toBe(true)
+    }
+  })
+
+  it('carries at most one primary button per section, and none in a group’s head', () => {
+    const { container } = renderAdmin()
+    const sections = Array.from(container.querySelectorAll('section'))
+    expect(sections.length).toBe(ADMIN_GROUPS.length + ADMIN_SECTIONS.length)
+    for (const section of sections) {
+      // The section a button belongs to is its *closest* one: a member's Save
+      // is the member's, not also its group's.
+      const own = Array.from(section.querySelectorAll('button')).filter(
+        (button) => button.closest('section') === section
+      )
+      // A Reload in a stale panel is an alert's one action and keeps its
+      // primary, which is what makes "one per section" a rule about the page
+      // rather than about every element on it.
+      const primaries = own.filter(
+        (button) =>
+          button.classList.contains(buttonStyles.primary) &&
+          button.closest('[role="alert"]') === null
+      )
+      const title = section.querySelector('h2, h3')?.textContent ?? '(untitled)'
+      expect(primaries.length, `${title}: ${primaries.map((each) => each.textContent).join(', ')}`)
+        .toBeLessThanOrEqual(1)
+      // A group is the section that holds other sections, and its head is
+      // where the file's own facts are stated — not where this page's loudest
+      // action belongs. The nomination that used to be filled accent here now
+      // sits on its row as a secondary.
+      if (section.querySelector('section') !== null) {
+        expect(primaries.length, `${title} is a group head`).toBe(0)
+      }
+    }
+  })
+
+  it('puts the nomination on its own row, beside the value it changes', () => {
+    // Not in the head's action strip below the rows: a control over a value is
+    // read where the value is.
+    const { container } = renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: DESK_PATH,
+        present: false,
+        sha256: '',
+        chassis: {
+          projectDir: '/this/launch',
+          projectFile: '/this/launch/jpack-desk.json',
+          runtimeBin: 'jpack'
+        }
+      })
+    )
+    const nomination = screen.getByRole('button', { name: 'Use this project as the default' })
+    const row = screen.getByText('Default project').parentElement!
+    expect(row.contains(nomination)).toBe(true)
+    expect(row.textContent).toContain('None')
+    expect(nomination.classList.contains(buttonStyles.secondary)).toBe(true)
+    expect(nomination.classList.contains(buttonStyles.primary)).toBe(false)
+    // And the rule line naming the file it writes is still under it.
+    expect(row.textContent).toContain('used on the next launch without a directory')
+    expect(container.querySelector('article')).toBeTruthy()
   })
 })

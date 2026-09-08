@@ -2476,9 +2476,14 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the form-level failure is not announced" "$AL" \
     '    <p role="alert" className={styles.alert}>' \
     '    <p className={styles.alert}>'
+  # The needle names the *item*'s radius rather than the shorthand alone: the
+  # trigger's radius came down to `--radius-sm` in chunk 6f, so the bare
+  # declaration now matches twice and the row would edit whichever came first.
   mutate web "a module spells a radius of its own" "$SELCSS" \
-    '  border-radius: var(--radius-sm);' \
-    '  border-radius: 4px;'
+    '  padding: 0.35rem 0.55rem;
+  border-radius: var(--radius-sm);' \
+    '  padding: 0.35rem 0.55rem;
+  border-radius: 4px;'
 
   # ---- Codex round 1 on the Create redesign ------------------------------
 
@@ -6365,6 +6370,77 @@ export function assistantTransport(): Transport {
   mutate web "a compact spacing token equal to its comfortable value" "$CSSP" \
     '  --density-row: 32px;' \
     '  --density-row: 40px;'
+
+  # ---- Chunk 6f: Admin, flat ----------------------------------------------
+  #
+  # **Retired: none.** Nothing here replaces a row. The rows above hold what
+  # Admin *says*; these hold what it looks like, which was held by nothing —
+  # every one of them was true of the page as merged and invisible to the
+  # suite.
+
+  SC=web/src/admin/SourceCard.module.css
+  AS=web/src/assistant/AssistantSection.tsx
+  DP=web/src/admin/DefaultProject.tsx
+
+  # **A box back on a member.** The shape of the page before this chunk: a
+  # group frame around card frames, hierarchy drawn rather than typeset. It is
+  # invisible to a render — vitest runs with `css: false` — so it is held by
+  # reading the sheet, and this is the row that says the reading is real.
+  mutate web "a box back on a member (border and background)" "$SC" \
+    '.member {
+  padding-block: var(--density-block);
+  border-top: 1px solid var(--border);
+}' \
+    '.member {
+  padding-block: var(--density-block);
+  border: 1px solid var(--border);
+  background: var(--bg);
+}'
+
+  # **The fieldset reset removed.** The third frame, and the one no sheet drew:
+  # the browser's own groove around the element every form on this desk uses to
+  # group what a `disabled` applies to. Removing the `border` line alone is the
+  # exact regression — the grouping stays, the frame comes back.
+  mutate web "the fieldset reset removed, so the browser frames every form" "$CSSP" \
+    'fieldset {
+  border: 0;' \
+    'fieldset {'
+
+  # **A bare `<button>` back on Admin.** It renders as the browser's own
+  # control beside three that do not, and no stylesheet is missing — there is
+  # no stylesheet at all. The test names the class each button came out
+  # carrying, which is a fact a `css: false` run still has.
+  mutate web "a bare button back on Admin (Check reachability)" "$AS" \
+    '<Button onClick={() => probe.mutate()}>Check reachability</Button>' \
+    '<button type="button" onClick={() => probe.mutate()}>Check reachability</button>'
+
+  # **The nomination back to primary.** A filled accent button in a group's
+  # head, above the two Saves that are the writes — the loudest control on the
+  # page pointing at the thing it is least about.
+  mutate web "the default-project nomination back to primary" "$DP" \
+    '          <Button
+            variant="secondary"
+            disabled={blocked}
+            onClick={() => commit(chassis?.projectFile ?? null, SET)}
+          >' \
+    '          <Button
+            variant="primary"
+            disabled={blocked}
+            onClick={() => commit(chassis?.projectFile ?? null, SET)}
+          >'
+
+  # **Tracked capitals back on a section title.** Two label styles on one page,
+  # which is what made `Location` and `ORGANIZATION` read as two pages joined
+  # at a heading.
+  mutate web "uppercase back on an Admin section title" "$SC" \
+    '.title {
+  margin: 0 0 var(--density-gap);
+  font-size: 0.9rem;' \
+    '.title {
+  margin: 0 0 var(--density-gap);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.9rem;'
 fi
 
 restore

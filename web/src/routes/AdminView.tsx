@@ -18,6 +18,16 @@
  * an established location. Where the chassis has not answered, the row says
  * so.
  *
+ * **Nothing on this page is a box.** A group was a frame holding cards that
+ * were frames holding a `<fieldset>` that the browser framed as well, and
+ * three borders were saying one thing: that a member belongs to a file.
+ * Hierarchy is type, spacing and hairlines here — one type scale, sentence
+ * case throughout, a rule between sections and above each member, and one
+ * primary button per section, which is the Save that writes the form. A frame
+ * is drawn only around an object: the code block behind a Content disclosure,
+ * and an alert. The structure below is exactly the structure that was here
+ * before; only its dress changed.
+ *
  * `runtime` and the project root are **not in the schema**, and that is the
  * design rather than a gap: `relay.go` runs the configured binary, so a
  * config-supplied path would be a local-code-execution surface. The status
@@ -53,6 +63,7 @@ import {
 import { useFileListing } from '../files/queries'
 import { connectionSays, useMcp } from '../mcp/McpProvider'
 import { ADMIN_GROUPS, ADMIN_SECTIONS } from './adminSections'
+import styles from './AdminView.module.css'
 
 /** The sections, by id, so a card names its own rather than an index. */
 const SECTION = Object.fromEntries(
@@ -81,7 +92,7 @@ export function AdminView() {
   const packLocation = packLocationState(packDir, listing)
 
   return (
-    <article className="detail">
+    <article className={`detail ${styles.admin}`}>
       <header className="detail-head">
         <h1>Admin</h1>
       </header>

@@ -3,13 +3,17 @@
   min-height: 4.5rem;
   resize: vertical;
   padding: 0.4rem 0.55rem;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
   font-size: 0.9rem;
   line-height: 1.5;
+}
+
+.textarea:hover {
+  border-color: var(--border-strong);
 }
 
 .textarea:focus-visible {

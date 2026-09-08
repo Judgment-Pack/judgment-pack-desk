@@ -1,0 +1,22 @@
+/* Admin's own measure, and the one type value the page shares with the shell.
+   ---------------------------------------------------------------------------
+   **A settings page is read, not scanned.** `.desk-measure` gives every route
+   60rem, which is right for a pack document and wrong here: a column of
+   full-width text inputs at 60rem is a form whose labels and values are a
+   screen apart, and it is exactly what made the boxes feel necessary — a frame
+   was doing the work a measure should. 44rem is the width a label column and
+   a value column actually need, left-aligned in the wider column rather than
+   centred in it, so the page keeps the same left edge as every other route. */
+
+.admin {
+  max-width: 44rem;
+}
+
+/* `.quiet` is the desk's own muted-aside class and is global, so it is styled
+   **here, under this page's class**, rather than in `styles.css`: the other
+   routes keep theirs at body size this chunk, and Admin needs it at the one
+   size its hints and rules already read at. A settings page whose asides are
+   two sizes has two type scales, which is the thing being taken out. */
+.admin :global(.quiet) {
+  font-size: 0.78rem;
+}

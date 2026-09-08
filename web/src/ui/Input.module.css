@@ -1,13 +1,24 @@
+/* A hairline at rest, the strong border on hover, the accent ring on focus.
+   A control that is drawn as strongly when nobody is near it as when a pointer
+   is on it has spent its whole contrast budget on being present. */
+
 .input {
   width: 100%;
-  height: 32px;
+  /* From the density scale, like every other control's height. This was a
+     hard-coded 32px, so `compact` shrank the Select trigger and the buttons
+     beside it and left the text inputs where they were. */
+  height: var(--density-control);
   padding: 0 0.55rem;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
   font-size: 0.9rem;
+}
+
+.input:hover {
+  border-color: var(--border-strong);
 }
 
 .input:focus-visible {
