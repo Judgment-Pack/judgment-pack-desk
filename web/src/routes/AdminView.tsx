@@ -22,6 +22,7 @@
  */
 import { useState } from 'react'
 import { AssistantSection } from '../assistant/AssistantSection'
+import { AdminStatusLine } from '../admin/AdminStatusLine'
 import { CardField, SourceCard, type SourceStatus } from '../admin/SourceCard'
 import { useDefaultProject } from '../admin/DefaultProject'
 import {
@@ -56,7 +57,7 @@ export function AdminView() {
   const effective = useEffectiveConfig()
   const { config, desk } = effective
   const mcp = useMcp()
-  const { server, known } = mcp
+  const { known } = mcp
   const { data } = usePacks()
   const listing = useFileListing()
   const shell = useShellState()
@@ -82,6 +83,16 @@ export function AdminView() {
       <header className="detail-head">
         <h1>Admin</h1>
       </header>
+
+      {/* Not a card, because none of it is a setting: what the desk is
+          connected to and where its two files are, from the chassis' own
+          answers. */}
+      <AdminStatusLine
+        runtime={runtimeSays(mcp)}
+        binary={runtimeBinary(effective)}
+        projectFile={projectLocation(effective)}
+        deskFile={deskLocation(effective)}
+      />
 
       <SourceCard
         id={SECTION.project!.id}
@@ -123,19 +134,8 @@ export function AdminView() {
       <SourceCard
         id={SECTION.runtime!.id}
         title={SECTION.runtime!.title}
-        location={
-          desk?.chassis === undefined ? (
-            <span className="quiet">the desk has not said</span>
-          ) : (
-            <code>{desk.chassis.runtimeBin}</code>
-          )
-        }
-        status={{
-          state: 'said',
-          says: server
-            ? `connected — ${server.name} ${server.version}`
-            : 'not connected'
-        }}
+        location={runtimeBinary(effective)}
+        status={{ state: 'said', says: runtimeSays(mcp) }}
         content={{ value: runtimeSummary(mcp) }}
         fields={
           <>
@@ -314,6 +314,24 @@ function projectLocation(effective: EffectiveConfig) {
   const chassis = effective.desk?.chassis
   if (chassis === undefined) return <code>{effective.path}</code>
   return <code>{chassis.projectFile}</code>
+}
+
+/**
+ * The connection, in the connection's own words.
+ *
+ * One producer, because the status line and Help & About both say it and two
+ * sentences about one socket are free to disagree about whether it is up.
+ */
+function runtimeSays(mcp: ReturnType<typeof useMcp>): string {
+  const { server } = mcp
+  return server ? `connected — ${server.name} ${server.version}` : 'not connected'
+}
+
+/** The binary the desk was launched with, as the chassis reported it. */
+function runtimeBinary(effective: EffectiveConfig) {
+  const chassis = effective.desk?.chassis
+  if (chassis === undefined) return <span className="quiet">the desk has not said</span>
+  return <code>{chassis.runtimeBin}</code>
 }
 
 /** Where the desk-level file is, as the chassis said it — or that nothing asked. */

@@ -155,6 +155,37 @@ describe('the Admin page', () => {
   })
 
 
+  it('states what this desk is connected to on a line, not as a card', async () => {
+    // Four facts, none of them a setting: the connection, the binary the
+    // chassis was launched with, and the two files. Every one of them is the
+    // chassis' or the connection's own answer.
+    const { container } = renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: DESK_PATH,
+        present: false,
+        sha256: '',
+        chassis: {
+          projectDir: '/real/a-project',
+          projectFile: '/real/a-project/jpack-desk.json',
+          runtimeBin: '/usr/local/bin/jpack'
+        }
+      })
+    )
+    const line = container.querySelector('dl')!
+    expect(Array.from(line.querySelectorAll('dt')).map((each) => each.textContent)).toEqual([
+      'Runtime',
+      'Binary',
+      'This project',
+      'This desk'
+    ])
+    await waitFor(() => expect(line.textContent).toContain('connected — '))
+    expect(line.textContent).toContain('/usr/local/bin/jpack')
+    expect(line.textContent).toContain('/real/a-project/jpack-desk.json')
+    expect(line.textContent).toContain(DESK_PATH)
+    // And it is not a card: no heading, no Location row, no Status row.
+    expect(line.closest('section')).toBeNull()
+  })
+
   /**
    * **The narration guard, over every state this page has.**
    *
@@ -285,7 +316,11 @@ describe('the Admin page', () => {
         sha256: ''
       })
     )
-    const rows = Array.from(container.querySelectorAll('dt')).map((each) => each.textContent)
+    // Inside the cards, so the status line's own pairs — which are not a
+    // card's Location and Status — are not counted as either.
+    const rows = Array.from(container.querySelectorAll('section dt')).map(
+      (each) => each.textContent
+    )
     // Two per card, in one order, on every one of the eight.
     expect(rows.filter((label) => label === 'Location')).toHaveLength(ADMIN_SECTIONS.length)
     expect(rows.filter((label) => label === 'Status')).toHaveLength(ADMIN_SECTIONS.length)
@@ -759,7 +794,7 @@ describe('the Admin page', () => {
       })
     )
     expect(screen.getAllByText('/real/a-project/jpack-desk.json').length).toBeGreaterThan(0)
-    expect(screen.getByText('/usr/local/bin/jpack')).toBeTruthy()
+    expect(screen.getAllByText('/usr/local/bin/jpack').length).toBeGreaterThan(0)
     // And never the project-relative name once the chassis has answered.
     expect(screen.queryByText('jpack-desk.json')).toBeNull()
   })
@@ -838,7 +873,7 @@ describe('the Admin page', () => {
     renderAdmin()
     // The card that is about a process and not a configuration file: its
     // status is the connection, in the connection's own words.
-    await waitFor(() => expect(screen.getByText(/^connected — /)).toBeTruthy())
+    await waitFor(() => expect(screen.getAllByText(/^connected — /).length).toBeGreaterThan(0))
     expect(screen.getByText('Tool listing')).toBeTruthy()
   })
 

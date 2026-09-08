@@ -9,6 +9,8 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
+import { DeskConfigFixture } from '../config/DeskConfigProvider'
+import { effectiveConfig, type EffectiveConfig } from '../config/deskConfig'
 import { McpContext, type McpConnection } from '../mcp/McpProvider'
 import { SHORTCUTS } from '../shell/shortcuts'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
@@ -18,14 +20,20 @@ afterEach(cleanup)
 
 const PROMPT_TEXT = 'Encode ONE policy decision as a Judgment Pack (declare specVersion …).'
 
-function renderHelp(stub: ReturnType<typeof stubClient>, overrides: Partial<McpConnection> = {}) {
+function renderHelp(
+  stub: ReturnType<typeof stubClient>,
+  overrides: Partial<McpConnection> = {},
+  config: EffectiveConfig = effectiveConfig(undefined)
+) {
   const router = createMemoryRouter(
     [
       {
         path: '*',
         element: (
           <McpContext.Provider value={connected({ client: stub.client, ...overrides })}>
-            <HelpAbout />
+            <DeskConfigFixture value={config}>
+              <HelpAbout />
+            </DeskConfigFixture>
           </McpContext.Provider>
         )
       }
@@ -46,6 +54,35 @@ describe('Help & About', () => {
     renderHelp(stubClient(PACKS), { known: false })
     expect(screen.getAllByText('jpack').length).toBeGreaterThan(0)
     expect(screen.getByText(/not read — every capability below is unknown, not absent/)).toBeTruthy()
+  })
+
+  it('carries the runtime facts the Admin card used to hold', () => {
+    // The card is gone from Admin — none of its four slots was a setting — and
+    // its content has to have a home. The binary comes from the chassis; the
+    // summary is the connection's own, `known` carried rather than folded in.
+    renderHelp(
+      stubClient(PACKS),
+      { known: false },
+      effectiveConfig(undefined, undefined, undefined, {
+        path: '/home/someone/.config/jpack-desk/desk.json',
+        present: false,
+        sha256: '',
+        chassis: {
+          projectDir: '/real/a-project',
+          projectFile: '/real/a-project/jpack-desk.json',
+          runtimeBin: '/usr/local/bin/jpack'
+        }
+      })
+    )
+    expect(screen.getByText('/usr/local/bin/jpack')).toBeTruthy()
+    const summary = screen.getByText(/"rehearsalSupported"/)
+    expect(summary.textContent).toContain('"known": false')
+    expect(summary.textContent).toContain('"status": "ready"')
+  })
+
+  it('says the desk has not named a runtime binary rather than composing one', () => {
+    renderHelp(stubClient(PACKS))
+    expect(screen.getByText(/the desk has not said/)).toBeTruthy()
   })
 
   it('renders the shortcut list from the one typed array', () => {
