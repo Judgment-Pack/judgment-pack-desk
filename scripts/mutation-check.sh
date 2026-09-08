@@ -6170,6 +6170,18 @@ export function assistantTransport(): Transport {
     '    const chose = chosen.current
     if (!chose.theme && !chose.density) return'
 
+  # ---- Codex round 1 -------------------------------------------------------
+
+  # **A choice belongs to the project it was made in.** `chosen` was visit-wide:
+  # one tab whose chassis reconnects reports a different root, the re-seed kept
+  # the member marked chosen under root A, and the write effect then put A's
+  # value into B's record — one project's preference in another project's key,
+  # permanently, over a record B may never have had. Only the *provisional* key
+  # carries forward, because it names no project.
+  mutate web "a choice survives the chassis naming a different project" "$APS" \
+    '    const carried = previous.resolved ? { ...NOTHING_CHOSEN } : { ...chosen.current }' \
+    '    const carried = { ...chosen.current }'
+
   # **A removed control's write path is removed with it**, exactly as the Panes
   # card's was. The Appearance card is gone from Admin — a person's theme is not
   # an administrator's setting, and it is held in that person's browser now —

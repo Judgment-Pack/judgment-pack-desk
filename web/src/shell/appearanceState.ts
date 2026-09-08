@@ -284,33 +284,56 @@ export function AppearanceProvider({
   const [preference, setPreference] = useState<AppearancePreference>(() => storedForKey() ?? {})
 
   /**
-   * Which members the viewer chose **since this desk was opened**.
+   * Which members the viewer chose **for this project**.
    *
    * A ref rather than state because re-seeding must not itself be a render, and
    * because marking a choice belongs to the handler that took it.
+   *
+   * **A choice belongs to the project it was made in**, and it was visit-wide
+   * until the review found the leak. One tab whose chassis reconnects reports a
+   * different root, and a member still marked chosen from root A survived the
+   * re-seed and was then written into root B's record — one project's
+   * preference in another project's key, permanently, over a record B may never
+   * have had. What is chosen under one root is now never written under another.
    */
   const chosen = useRef<ChosenAppearance>({ ...NOTHING_CHOSEN })
 
   /**
    * The seed is re-taken when the key changes, because the key **is not known
    * at first paint**: the chassis' file listing answers afterwards, and the
-   * record is unreadable until it does. It is re-taken per member and only
-   * where that member is unchosen, so a viewer who picked dark in the moment
-   * before the listing landed keeps the dark they picked — and it is written
-   * under the real key by the effect below, rather than dropped.
+   * record is unreadable until it does.
+   *
+   * **What carries across that change is decided by what the old key was.**
+   * The provisional key is not a project — nothing can be read under it and
+   * nothing is written under it — so a viewer who picked dark in the moment
+   * before the listing landed picked it for whichever project the listing then
+   * names, and that choice is carried and written under the real key rather
+   * than dropped. A key that *was* a project is the other case entirely: the
+   * new root is a different project, so every choice is forgotten and both
+   * members are re-seeded from the new key's own record, or from that project's
+   * default where it has none.
+   *
+   * The resolution is held beside the key rather than inferred from it, so that
+   * a root which happens to encode to the provisional key's own spelling cannot
+   * be read as "no project yet".
    */
-  const seededFrom = useRef(`${storageKey}|${keyResolved}`)
+  const seededFrom = useRef({ key: storageKey, resolved: keyResolved })
   useEffect(() => {
-    const signature = `${storageKey}|${keyResolved}`
-    if (seededFrom.current === signature) return
-    seededFrom.current = signature
-    const chose = chosen.current
-    if (chose.theme && chose.density) return
+    const previous = seededFrom.current
+    if (previous.key === storageKey && previous.resolved === keyResolved) return
+    seededFrom.current = { key: storageKey, resolved: keyResolved }
+    // Carried only out of the provisional key. Assigned before the early
+    // return below, so that leaving a project always forgets its choices —
+    // including the case where the viewer had chosen both members, which is
+    // exactly the case that used to return before it cleared anything.
+    const carried = previous.resolved ? { ...NOTHING_CHOSEN } : { ...chosen.current }
+    chosen.current = { ...carried }
+    if (carried.theme && carried.density) return
     setPreference((previous) => {
       const seeded = storedForKey() ?? {}
       return {
-        theme: chose.theme ? previous.theme : seeded.theme,
-        density: chose.density ? previous.density : seeded.density
+        theme: carried.theme ? previous.theme : seeded.theme,
+        density: carried.density ? previous.density : seeded.density
       }
     })
     // `storedForKey` reads the two values in the dependency list and nothing
@@ -330,6 +353,10 @@ export function AppearanceProvider({
    * dragged, so there is no burst of intermediate values to collapse and no
    * write in flight for the reset to cancel.
    */
+  // It is the re-seed above that makes this safe across a root change: effects
+  // run in the order they are declared, so by the time this one sees a new key
+  // the choices made under the old one have already been forgotten and there is
+  // nothing for it to write.
   useEffect(() => {
     if (!keyResolved) return
     const chose = chosen.current
