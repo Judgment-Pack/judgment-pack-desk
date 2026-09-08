@@ -12,12 +12,15 @@
    still beats an unlayered `display:` — and the closed Inspector depends on
    exactly that.
 
-   No palette here at all, dark or light. The theme plumbing — the
-   `prefers-color-scheme` block, the `[data-theme]` block, and the note that
-   both carry the light values because the dark palette is its own piece of
-   work — lives beside the tokens it redefines, in `styles.css`, because a
-   layered `:root` here would lose to that unlayered one whatever its
-   specificity. */
+   No palette here at all, and no colour literal either: every colour in this
+   file comes through a token, and `ui/palette.test.ts` reads the file to hold
+   that. It used to spell three of its own — `#fff` on the Create button, the
+   drawer scrim, and the menu's shadow — and each was a colour the theme
+   attribute could not reach, which is a defect a light-only desk simply never
+   displayed. The theme plumbing itself — the `prefers-color-scheme` block, the
+   `[data-theme]` block and both palettes' values — lives beside the tokens it
+   redefines, in `styles.css`, because a layered `:root` here would lose to
+   that unlayered one whatever its specificity. */
 
 @layer shell {
   :root {
@@ -503,10 +506,20 @@
     border: 1px solid var(--accent);
     border-radius: 6px;
     background: var(--accent);
-    color: #fff;
+    color: var(--ink-inverse);
     font: inherit;
     font-size: 0.88rem;
     cursor: pointer;
+  }
+
+  .desk-create:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+
+  .desk-create:active {
+    background: var(--accent-active);
+    border-color: var(--accent-active);
   }
 
   .desk-spacer {
@@ -568,7 +581,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
+    padding: var(--density-cell-y) var(--density-cell-x);
     border-bottom: 1px solid var(--border);
     font-size: 0.82rem;
     font-weight: 600;
@@ -614,7 +627,7 @@
 
   .desk-log {
     margin: 0;
-    padding: 0.5rem 0.75rem;
+    padding: var(--density-cell-y) var(--density-cell-x);
     list-style: none;
     font-family: var(--mono);
     font-size: 0.75rem;
@@ -654,7 +667,7 @@
   .desk-overlay {
     position: fixed;
     inset: 0;
-    background: rgb(0 0 0 / 25%);
+    background: var(--overlay);
     z-index: var(--z-drawer);
   }
 
@@ -669,7 +682,7 @@
     width: min(var(--drawer-w, 320px), 85vw);
     padding: 0.75rem;
     overflow: auto;
-    background: var(--surface);
+    background: var(--surface-raised);
     z-index: var(--z-dialog);
   }
 
@@ -698,8 +711,8 @@
     padding: 0.3rem;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    background: var(--surface);
-    box-shadow: 0 6px 24px rgb(0 0 0 / 10%);
+    background: var(--surface-raised);
+    box-shadow: 0 6px 24px var(--shadow);
     z-index: var(--z-menu);
   }
 
@@ -769,7 +782,7 @@
     top: 0;
     z-index: calc(var(--z-dialog) + 1);
     padding: 0.5rem 0.75rem;
-    background: var(--surface);
+    background: var(--surface-raised);
     border: 1px solid var(--accent);
     border-radius: 0 0 var(--radius) 0;
   }

@@ -54,7 +54,7 @@ import {
   type Density,
   type ThemeChoice
 } from '../config/deskConfig'
-import { useAppliedTheme } from '../config/theme'
+import { useAppliedDensity, useAppliedTheme } from '../config/theme'
 import {
   identityIsResolved,
   projectKey,
@@ -569,11 +569,14 @@ export function AppearanceProvider({
   // actually carries.
   const { theme, density } = effectiveAppearance(preference, knownDefault)
 
-  // **The one configuration value that is applied rather than displayed**, and
-  // it is applied here because this is where the ladder is resolved. It used to
-  // be applied from the file, in `DeskConfigProvider`, which is a layer that
-  // cannot see the viewer's own choice. `undefined` writes nothing at all.
+  // **The two configuration values that are applied rather than displayed**,
+  // and they are applied here because this is where the ladder is resolved.
+  // The theme used to be applied from the file, in `DeskConfigProvider`, which
+  // is a layer that cannot see the viewer's own choice; the density was applied
+  // nowhere at all — decoded, stored, offered in the menu, and read by nothing.
+  // One ladder, one resolution, two attributes. `undefined` writes neither.
   useAppliedTheme(theme)
+  useAppliedDensity(density)
 
   // Named only once the file has answered. The flag is the *file's* alone —
   // this line is about the project and not about what is in force — so it is

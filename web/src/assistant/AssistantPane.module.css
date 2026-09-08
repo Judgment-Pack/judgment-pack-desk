@@ -1,7 +1,7 @@
 .pane {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--density-gap);
   min-width: 0;
   padding: 0.25rem 0;
 }
@@ -9,7 +9,7 @@
 .empty {
   margin: 0;
   padding: 0.75rem 0;
-  font-size: 0.78rem;
+  font-size: var(--density-font);
   color: var(--ink-soft);
 }
 
@@ -44,7 +44,7 @@
   flex-direction: column;
   gap: 0.2rem;
   margin: 0;
-  padding: 0.5rem;
+  padding: var(--density-cell-y);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);
