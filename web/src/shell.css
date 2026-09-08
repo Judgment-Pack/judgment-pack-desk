@@ -731,6 +731,35 @@
     outline: none;
   }
 
+  /* A group's name inside the menu. Quieter than an item and louder than a
+     note, because it is neither: it is what the two rows under it are. */
+  .desk-menu-heading {
+    padding: 0.45rem 0.5rem 0.15rem;
+    color: var(--ink-soft);
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  /* One appearance choice. The tick is absolutely placed and the row reserves
+     its column, so the five labels line up whether or not they are the chosen
+     one — a tick that pushed its own row across would make the checked item
+     the one that moved. */
+  .desk-menu-choice {
+    position: relative;
+    padding-left: 1.6rem;
+  }
+
+  .desk-menu-tick {
+    position: absolute;
+    left: 0.45rem;
+    top: 50%;
+    display: flex;
+    transform: translateY(-50%);
+    color: var(--accent);
+  }
+
   /* Skip link. A plain class, not `VisuallyHidden`: that primitive applies
      clip/1px/absolute as *inline* styles, which a `:focus` class rule cannot
      beat without `!important` on every property. */

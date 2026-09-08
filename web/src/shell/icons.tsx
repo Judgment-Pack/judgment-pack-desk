@@ -169,6 +169,14 @@ export function IconClose() {
   )
 }
 
+export function IconCheck() {
+  return (
+    <Glyph>
+      <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />
+    </Glyph>
+  )
+}
+
 export function IconCopy() {
   return (
     <Glyph>

@@ -43,6 +43,7 @@
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Avatar, Collapsible, Dialog, DropdownMenu, Select, Separator, Tabs, Toggle, ToggleGroup, Toolbar, Tooltip, VisuallyHidden } from 'radix-ui'
+import { useState } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 
 afterEach(cleanup)
@@ -84,6 +85,72 @@ describe('the Radix primitives this shell is built on', () => {
       'Organization',
       'Panes'
     ])
+  })
+
+  /**
+   * **A menu radio item applies its value before it consults
+   * `defaultPrevented`, and closes the menu only after.** Radix composes the
+   * group's `onValueChange` onto `onSelect` with `checkForDefaultPrevented`
+   * turned off, so `event.preventDefault()` in an item's own handler keeps the
+   * menu open *and* still changes the value. The user menu's appearance groups
+   * depend on exactly that: theme and density are two choices, and a menu that
+   * closed after the first would make the second a second trip.
+   */
+  it('keeps a DropdownMenu open on a prevented radio select, and still takes the value', async () => {
+    const chosen: string[] = []
+    function Probe() {
+      const [value, setValue] = useState('system')
+      return (
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger>Account</DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content>
+              <DropdownMenu.RadioGroup
+                value={value}
+                onValueChange={(next) => {
+                  chosen.push(next)
+                  setValue(next)
+                }}
+              >
+                {['system', 'light', 'dark'].map((each) => (
+                  <DropdownMenu.RadioItem
+                    key={each}
+                    value={each}
+                    onSelect={(event) => event.preventDefault()}
+                  >
+                    {each}
+                  </DropdownMenu.RadioItem>
+                ))}
+              </DropdownMenu.RadioGroup>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      )
+    }
+    render(<Probe />)
+    fireEvent.keyDown(screen.getByText('Account'), { key: 'Enter' })
+    const menu = await screen.findByRole('menu')
+    // The primitive carries the semantics: role, checked state, and a group.
+    expect(screen.getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual([
+      'system',
+      'light',
+      'dark'
+    ])
+    expect(
+      screen.getByRole('menuitemradio', { name: 'system' }).getAttribute('aria-checked')
+    ).toBe('true')
+
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'dark' }))
+    expect(chosen).toEqual(['dark'])
+    expect(screen.queryByRole('menu')).toBe(menu)
+    await waitFor(() =>
+      expect(screen.getByRole('menuitemradio', { name: 'dark' }).getAttribute('aria-checked')).toBe(
+        'true'
+      )
+    )
+    // And a second choice is available without reopening anything.
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'light' }))
+    expect(chosen).toEqual(['dark', 'light'])
   })
 
   it('renders a Collapsible that is open by default', () => {

@@ -21,13 +21,17 @@ import { HeaderBar, markToDataUri } from '../shell/HeaderBar'
 import { McpContext } from '../mcp/McpProvider'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
+import { AppearanceProvider, appearanceKey } from '../shell/appearanceState'
 import { ShellStateProvider, projectKey, shellStateKey, useShellState } from '../shell/paneState'
 import { NARRATION_BOUND, narrationIn } from '../admin/narration'
 import { IdentityProvider } from './IdentityProvider'
 import {
+  DENSITY_SAYS,
   NONE_MENU_SENTENCE,
   PROVIDER_PHASE_NOTE,
   RESET_SAYS,
+  RESTORED_SAYS,
+  THEME_SAYS,
   TOKEN_SENTENCE,
   monogram
 } from './UserControl'
@@ -36,11 +40,14 @@ afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
   window.localStorage.clear()
+  document.documentElement.removeAttribute('data-theme')
 })
 
 /** The chassis' project root, and the key this browser's layout lives under. */
 const ROOT = '/home/someone/a-project'
 const KEY = shellStateKey(projectKey(ROOT))
+/** And the key this browser's appearance lives under — a separate record. */
+const APPEARANCE_KEY = appearanceKey(projectKey(ROOT))
 
 /**
  * The live layout, beside the header.
@@ -94,6 +101,10 @@ function renderHeaderIn(
                 projectIdentity={projectIdentity ?? undefined}
                 viewport={{ railIsDrawer: false, inspectorIsDrawer: false }}
               >
+              <AppearanceProvider
+                projectIdentity={projectIdentity ?? undefined}
+                projectDefault={value.config.appearance}
+              >
               <IdentityProvider>
                 <HeaderBar
                   inspectorOpen={false}
@@ -107,6 +118,7 @@ function renderHeaderIn(
                 />
               </IdentityProvider>
               <ShellProbe />
+              </AppearanceProvider>
               </ShellStateProvider>
             </DeskConfigFixture>
           </McpContext.Provider>
@@ -203,8 +215,11 @@ describe('the user control, identity NONE', () => {
     const menu = await screen.findByRole('menu')
     expect(menu.textContent).not.toContain('Sign out')
     expect(menu.textContent).not.toContain('Sign in')
+    // The appearance choices are `menuitemradio`, and are asserted as such in
+    // their own suite: what is left as a plain item is the one action that
+    // clears a preference, and the four that navigate or reset.
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
-      'Appearance',
+      'Use the project’s default',
       'Reset panes',
       'Keyboard shortcuts',
       'Admin',
@@ -355,6 +370,199 @@ describe('the user menu’s reset', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Reset panes' }))
     expect(screen.getByTestId('console-open').textContent).toBe('false')
     expect(window.localStorage.getItem(KEY)).toBeNull()
+  })
+})
+
+/**
+ * Appearance, in the menu it moved to.
+ *
+ * It was a card on Admin writing `appearance` into `jpack-desk.json` — a file
+ * in the project's repository, so one person choosing dark chose it for
+ * everybody who cloned it. What a viewer picks here is theirs and this
+ * browser's; the file's value is what they get if they pick nothing.
+ */
+describe('the user menu’s appearance', () => {
+  async function openMenu() {
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Account and desk settings' }), {
+      key: 'Enter'
+    })
+    return screen.findByRole('menu')
+  }
+
+  /** The five choices, and which of them the menu says is in force. */
+  function choices() {
+    return screen
+      .getAllByRole('menuitemradio')
+      .map((item) => `${item.textContent}${item.getAttribute('aria-checked') === 'true' ? '*' : ''}`)
+  }
+
+  const LIGHT_COMPACT = { theme: 'light', density: 'compact' } as const
+
+  it('offers the decoder’s own unions, and checks the project’s value', async () => {
+    renderHeader({ appearance: LIGHT_COMPACT })
+    await openMenu()
+    expect(choices()).toEqual(['system', 'light*', 'dark', 'comfortable', 'compact*'])
+    // And it says what that value is, so "use the default" is not a leap.
+    expect(screen.getByRole('menu').textContent).toContain('Project default: light, compact')
+  })
+
+  it('applies a chosen theme at once, stores it, and stays open for the next choice', async () => {
+    renderHeader({ appearance: LIGHT_COMPACT })
+    const menu = await openMenu()
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'dark' }))
+    // No Save: a preference is not a file.
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+    await waitFor(() =>
+      expect(JSON.parse(window.localStorage.getItem(APPEARANCE_KEY)!)).toEqual({
+        v: 1,
+        theme: 'dark'
+      })
+    )
+    // The menu is still open, because theme and density are two choices.
+    expect(screen.queryByRole('menu')).toBe(menu)
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'comfortable' }))
+    await waitFor(() =>
+      expect(JSON.parse(window.localStorage.getItem(APPEARANCE_KEY)!)).toEqual({
+        v: 1,
+        theme: 'dark',
+        density: 'comfortable'
+      })
+    )
+    expect(choices()).toEqual(['system', 'light', 'dark*', 'comfortable*', 'compact'])
+  })
+
+  it('writes only the member that was chosen, never its sibling', async () => {
+    // A record is preferred over the file on the next read, so a `density`
+    // stored because the *theme* was picked would be a built-in value silently
+    // outranking `jpack-desk.json` for ever.
+    renderHeader({ appearance: LIGHT_COMPACT })
+    await openMenu()
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'dark' }))
+    await waitFor(() => expect(window.localStorage.getItem(APPEARANCE_KEY)).not.toBeNull())
+    expect(JSON.parse(window.localStorage.getItem(APPEARANCE_KEY)!).density).toBeUndefined()
+  })
+
+  it('stores nothing at all for a viewer who chooses nothing', async () => {
+    renderHeader({ appearance: LIGHT_COMPACT })
+    await openMenu()
+    expect(window.localStorage.getItem(APPEARANCE_KEY)).toBeNull()
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light')
+  })
+
+  it('shows a stored preference as the one in force, over the file’s', async () => {
+    window.localStorage.setItem(APPEARANCE_KEY, JSON.stringify({ v: 1, theme: 'dark' }))
+    renderHeader({ appearance: LIGHT_COMPACT })
+    await openMenu()
+    // The theme is this browser's; the density is still the file's.
+    expect(choices()).toEqual(['system', 'light', 'dark*', 'comfortable', 'compact*'])
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+  })
+
+  it('treats a stored value outside the union as no preference at all', async () => {
+    window.localStorage.setItem(APPEARANCE_KEY, JSON.stringify({ v: 1, theme: 'midnight' }))
+    renderHeader({ appearance: LIGHT_COMPACT })
+    await openMenu()
+    // Never applied, never shown as chosen: the project's default answers.
+    expect(choices()).toEqual(['system', 'light*', 'dark', 'comfortable', 'compact*'])
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light')
+  })
+
+  it('clears the preference, and only its own key', async () => {
+    window.localStorage.setItem(APPEARANCE_KEY, JSON.stringify({ v: 1, theme: 'dark' }))
+    window.localStorage.setItem(KEY, '{"v":1}')
+    window.localStorage.setItem('jpack-desk-token', 'a token')
+    renderHeader({ appearance: LIGHT_COMPACT })
+    const menu = await openMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Use the project’s default' }))
+    expect(window.localStorage.getItem(APPEARANCE_KEY)).toBeNull()
+    // The panes' record is a different record, and the token is nobody's.
+    expect(window.localStorage.getItem(KEY)).toBe('{"v":1}')
+    expect(window.localStorage.getItem('jpack-desk-token')).toBe('a token')
+    // The file's value is in force again, now rather than at the next reload.
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light')
+    expect(choices()).toEqual(['system', 'light*', 'dark', 'comfortable', 'compact*'])
+    expect(menu.textContent).toContain(RESTORED_SAYS.cleared)
+  })
+
+  it('reports a clearance it could not make, rather than reporting one it did', async () => {
+    const backing = new Map<string, string>([[APPEARANCE_KEY, '{"v":1,"theme":"dark"}']])
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => backing.get(key) ?? null,
+      setItem: (key: string, value: string) => void backing.set(key, value),
+      removeItem: () => {},
+      clear: () => {}
+    })
+    renderHeader({ appearance: LIGHT_COMPACT })
+    const menu = await openMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Use the project’s default' }))
+    expect(menu.textContent).toContain(RESTORED_SAYS.refused)
+    expect(menu.textContent).not.toContain(RESTORED_SAYS.cleared)
+    // Nothing moved: the record is still there to come back on the next load,
+    // so a menu showing the project's default would be showing a fiction.
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+  })
+
+  it('leaves a value this desk did not write alone, and says nothing was cleared', async () => {
+    window.localStorage.setItem(APPEARANCE_KEY, 'something else entirely')
+    renderHeader({ appearance: LIGHT_COMPACT })
+    const menu = await openMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Use the project’s default' }))
+    expect(menu.textContent).toContain(RESTORED_SAYS.foreign)
+    expect(window.localStorage.getItem(APPEARANCE_KEY)).toBe('something else entirely')
+  })
+
+  it('writes nothing under the provisional key, and says nothing was cleared', async () => {
+    // Until the chassis says which project this is, the key is the literal
+    // `default` — a record written there is one project's preference stored
+    // under a name that belongs to whichever project answers slowly next.
+    renderHeaderIn('/', { appearance: LIGHT_COMPACT }, null)
+    const menu = await openMenu()
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'dark' }))
+    // The choice is honoured on screen — it is this viewer's, and it is not
+    // dropped — and nothing at all is stored.
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+    await waitFor(() => expect(choices()).toContain('dark*'))
+    expect(
+      Object.keys(window.localStorage).filter((key) => key.startsWith('jpack-desk:appearance:'))
+    ).toEqual([])
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Use the project’s default' }))
+    expect(menu.textContent).toContain(RESTORED_SAYS.unresolved)
+  })
+
+  it('says what a theme actually does, where the choice is offered', async () => {
+    // Admin's card carried both sentences and Admin's card is gone. A control
+    // that moved somewhere its own caveat did not follow is one that has
+    // quietly started overstating itself.
+    renderHeader()
+    const menu = await openMenu()
+    expect(menu.textContent).toContain(THEME_SAYS)
+    expect(menu.textContent).toContain(DENSITY_SAYS)
+  })
+
+  /**
+   * **The narration sweep, with the appearance groups on screen.**
+   *
+   * The menu's own two sentences are over the bound on purpose — they are the
+   * security explanation it exists to carry — and everything this chunk adds is
+   * held to the page's line. A third long sentence anywhere in here fails.
+   */
+  it.each([
+    ['cleared', () => window.localStorage.setItem(APPEARANCE_KEY, '{"v":1,"theme":"dark"}')],
+    ['foreign', () => window.localStorage.setItem(APPEARANCE_KEY, 'something else entirely')]
+  ] as const)('carries no paragraph when the appearance reset answers %s', async (outcome, arrange) => {
+    arrange()
+    renderHeader()
+    const menu = await openMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Use the project’s default' }))
+    expect(menu.textContent).toContain(RESTORED_SAYS[outcome])
+    const long = narrationIn(menu)
+    expect(long.map((each) => each.says), long.map((each) => each.says).join(' | ')).toEqual([
+      NONE_MENU_SENTENCE.slice(0, 90),
+      TOKEN_SENTENCE.slice(0, 90)
+    ])
+    for (const line of [THEME_SAYS, DENSITY_SAYS, RESTORED_SAYS[outcome]]) {
+      expect(line.length, line).toBeLessThanOrEqual(NARRATION_BOUND)
+    }
   })
 })
 
