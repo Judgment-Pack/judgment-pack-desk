@@ -1397,12 +1397,16 @@ Status is not a setting and lives elsewhere. And a per-viewer preference is not
 an administrator's setting either.
 
 **Under the heading is a status line, not a card.** One line — two on a narrow
-shell — carrying the connection, the binary the chassis was launched with, and
-the two configuration files' locations, every value the chassis' or the
-connection's own answer and none of them composed on the page. It replaced a
-**Runtime** card whose four slots held nothing anybody could edit; the card's
-own content is in **Help & About**, which is where a reader goes to ask what
-they are connected to.
+shell — carrying the connection and the binary the chassis was launched with,
+both of them the connection's or the chassis' own answer and neither composed on
+the page. It replaced a **Runtime** card whose four slots held nothing anybody
+could edit; the card's own content is in **Help & About**, which is where a
+reader goes to ask what they are connected to.
+
+**Neither configuration file is on that line**, and the omission is the point:
+each group below names its own, and naming a file twice is what the grouping
+exists to stop. The line is what the desk is *running*, which is the one thing
+no card is about.
 
 **Below it are two groups, one per file, and each states its file once.** Three
 cards writing three members of one file printed that file's path three times and

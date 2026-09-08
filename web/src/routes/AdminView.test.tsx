@@ -161,10 +161,10 @@ describe('the Admin page', () => {
   })
 
 
-  it('states what this desk is connected to on a line, not as a card', async () => {
-    // Four facts, none of them a setting: the connection, the binary the
-    // chassis was launched with, and the two files. Every one of them is the
-    // chassis' or the connection's own answer.
+  it('states what this desk is running on a line, not as a card', async () => {
+    // Two facts, neither of them a setting: the connection and the binary the
+    // chassis was launched with, each one the connection's or the chassis' own
+    // answer.
     const { container } = renderAdmin(
       effectiveConfig(undefined, undefined, undefined, {
         path: DESK_PATH,
@@ -180,16 +180,52 @@ describe('the Admin page', () => {
     const line = container.querySelector('dl')!
     expect(Array.from(line.querySelectorAll('dt')).map((each) => each.textContent)).toEqual([
       'Runtime',
-      'Binary',
-      'This project',
-      'This desk'
+      'Binary'
     ])
     await waitFor(() => expect(line.textContent).toContain('connected — '))
     expect(line.textContent).toContain('/usr/local/bin/jpack')
-    expect(line.textContent).toContain('/real/a-project/jpack-desk.json')
-    expect(line.textContent).toContain(DESK_PATH)
     // And it is not a card: no heading, no Location row, no Status row.
     expect(line.closest('section')).toBeNull()
+  })
+
+  it('names neither configuration file on the line, because the groups do', () => {
+    // One path, one statement. The group header is the one that earns it: it
+    // is the file the cards under it write, and the grouping exists so that a
+    // file is named once rather than on every card that is a member of it.
+    const { container } = renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: DESK_PATH,
+        present: false,
+        sha256: '',
+        chassis: {
+          projectDir: '/real/a-project',
+          projectFile: '/real/a-project/jpack-desk.json',
+          runtimeBin: '/usr/local/bin/jpack'
+        }
+      })
+    )
+    const line = container.querySelector('dl')!
+    expect(line.textContent).not.toContain('/real/a-project/jpack-desk.json')
+    expect(line.textContent).not.toContain(DESK_PATH)
+    // Each is stated once as a location, and it is its group's own header.
+    for (const [id, path] of [
+      ['this-project', '/real/a-project/jpack-desk.json'],
+      ['this-desk', DESK_PATH]
+    ] as const) {
+      const header = document.getElementById(id)!.closest('section')!.querySelector(':scope > dl')!
+      expect(header.textContent, id).toContain(path)
+    }
+    // The desk-level path appears once more, and it is not a location: the
+    // nomination's own line names the file that **control** writes, which is
+    // not the file the group it sits in is about.
+    const quoted = Array.from(container.querySelectorAll('code')).filter(
+      (each) => each.textContent === DESK_PATH
+    )
+    expect(quoted).toHaveLength(2)
+    const rule = quoted.map((each) => each.closest('p')).find((each) => each !== null)!
+    expect(rule.textContent).toContain('used on the next launch')
+    // And that one is inside the *project* group, which is where the control is.
+    expect(rule.closest('section')!.querySelector('h2')!.id).toBe('this-project')
   })
 
   /**

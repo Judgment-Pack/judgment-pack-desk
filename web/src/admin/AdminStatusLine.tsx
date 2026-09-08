@@ -17,6 +17,13 @@
  * cards below it get them, so there is one producer of a location on this page
  * and it is the chassis.
  *
+ * **The two configuration files are not here, and the omission is the point.**
+ * The line carried them for one round and the group headers carried them too —
+ * one path, two statements, and the grouping exists precisely so that a file is
+ * named once. The header is the statement that earns its place: it is the file
+ * the cards under it write. This line is what the desk is *running*, which is
+ * the thing no card is about.
+ *
  * **One line, and two on a narrow shell**, which is what `flex-wrap` is for
  * rather than a breakpoint: the pairs are as wide as their values, and a long
  * path wraps the strip rather than being truncated into a path that is not the
@@ -27,25 +34,17 @@ import styles from './AdminStatusLine.module.css'
 
 export function AdminStatusLine({
   runtime,
-  binary,
-  projectFile,
-  deskFile
+  binary
 }: {
-  /** The connection, in the connection's own words. */
+  /** The connection, read off its status and never off retained metadata. */
   runtime: ReactNode
   /** The binary the chassis was launched with, as the chassis reports it. */
   binary: ReactNode
-  /** This project's own configuration file. */
-  projectFile: ReactNode
-  /** This desk's file, on the machine rather than in the project. */
-  deskFile: ReactNode
 }) {
   return (
     <dl className={styles.line}>
       <Pair label="Runtime">{runtime}</Pair>
       <Pair label="Binary">{binary}</Pair>
-      <Pair label="This project">{projectFile}</Pair>
-      <Pair label="This desk">{deskFile}</Pair>
     </dl>
   )
 }

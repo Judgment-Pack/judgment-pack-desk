@@ -83,15 +83,11 @@ export function AdminView() {
         <h1>Admin</h1>
       </header>
 
-      {/* Not a card, because none of it is a setting: what the desk is
-          connected to and where its two files are, from the chassis' own
-          answers. */}
-      <AdminStatusLine
-        runtime={runtimeSays(mcp)}
-        binary={runtimeBinary(effective)}
-        projectFile={projectLocation(effective)}
-        deskFile={deskLocation(effective)}
-      />
+      {/* Not a card, because none of it is a setting: what this desk is
+          running, from the connection's and the chassis' own answers. The two
+          files are **not** here — each group header names its own, and naming
+          it twice is what the grouping exists to stop. */}
+      <AdminStatusLine runtime={runtimeSays(mcp)} binary={runtimeBinary(effective)} />
 
       <SourceGroup
         id={GROUP['this-project']!.id}
