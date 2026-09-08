@@ -4048,8 +4048,7 @@ The frame is in the swept set for its deliberate clip; a rule that merely clips
 is not. It is a sweep and not a list of names, so the scroller nobody has
 written yet is held by it too. It holds the declaring rules only; whether a
 later rule takes a position back is measured by
-`scripts/containment-check.sh`. It reads source and
-says so: the computed cascade is what the live drive measures, and the two
+`scripts/containment-check.sh`. It reads source and says so, and the two
 halves are named in its docstring.
 
 **Three of them run over every `*.module.css` under `web/src`**, and one — the
