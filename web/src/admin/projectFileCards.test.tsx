@@ -20,7 +20,7 @@ import { DeskConfigProvider, useEffectiveConfig } from '../config/DeskConfigProv
 import { testQueryClient } from '../testing/harness'
 import { AppearanceForm, OrganizationForm, StorageForm } from './projectFileCards'
 import { NO_CONTROL_CHARACTERS } from '../config/deskConfig'
-import { FROM_THE_DESK_FILE } from './useProjectFileSave'
+import { CARD_POINTERS, FROM_THE_DESK_FILE } from './useProjectFileSave'
 
 afterEach(() => {
   cleanup()
@@ -469,6 +469,68 @@ describe('a project-file card’s form', () => {
       expect(memberOf(desk.bodies[1]!, member)).toEqual(expected)
     }
   )
+
+  /**
+   * **Every member a card may write has a card behind it, and no other member
+   * is written.**
+   *
+   * The closed list and the page it describes, checked against each other by
+   * driving every Save and reading what came off the wire. `/panes` used to be
+   * on that list; the Panes card is gone — the pane dimensions are the shell's
+   * and the reset moved to the shell's menu — and a Save with no control behind
+   * it is a write path nothing offers. A pointer put back with no card behind
+   * it fails here rather than quietly re-opening one.
+   */
+  it('writes exactly the members the closed list names, and no others', async () => {
+    const cards = [
+      [
+        <OrganizationForm key="o" />,
+        '"organization": { "name": "Unveil", "mark": null }',
+        async () =>
+          fireEvent.change(await screen.findByDisplayValue('Unveil'), {
+            target: { value: 'Typed' }
+          })
+      ],
+      [
+        <AppearanceForm key="a" />,
+        '"appearance": { "theme": "system", "density": "comfortable" }',
+        async () => {
+          fireEvent.click(await screen.findByRole('combobox', { name: 'Theme' }))
+          fireEvent.click(await screen.findByRole('option', { name: 'dark' }))
+        }
+      ],
+      [
+        <StorageForm key="s" dirSays="holds files" />,
+        '"storage": { "packs": { "dir": "packs", "idBase": "https://acme.example/d/" } }',
+        async () =>
+          fireEvent.change(await screen.findByLabelText('Packs go to'), {
+            target: { value: 'decisions' }
+          })
+      ]
+    ] as const
+
+    const written: string[] = []
+    for (const [form, member, touch] of cards) {
+      const file = `{\n  "deskConfigVersion": 1,\n  ${member}\n}\n`
+      const desk = servesLandingWrites(file)
+      renderForm(form)
+      await waitFor(() => expect(screen.getByTestId('live').textContent).toBe('a'.repeat(64)))
+      await touch()
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() => expect(desk.bodies).toHaveLength(1))
+      // Which top-level member of the file this Save actually changed.
+      const after = JSON.parse(String(desk.bodies[0]!.content)) as Record<string, unknown>
+      const before = JSON.parse(file) as Record<string, unknown>
+      const moved = Object.keys(after).filter(
+        (name) => JSON.stringify(after[name]) !== JSON.stringify(before[name])
+      )
+      expect(moved, member).toHaveLength(1)
+      written.push(`/${moved[0]!}`)
+      cleanup()
+      vi.unstubAllGlobals()
+    }
+    expect(written.sort()).toEqual([...CARD_POINTERS].sort())
+  })
 
   /**
    * **A save that lands is over**, and the normalisation is what makes that

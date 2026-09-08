@@ -407,8 +407,9 @@ graphs page says the project configures none.
 **A shell around all of it.** Six regions — a header, a navigation rail, the
 routes above, an Inspector, a Console and the status strip that is its
 collapsed face — plus two pages of their own: `/admin`, which renders the desk's
-configuration as eight cards in one shape, and `/help`, which names what this runtime advertises
-and renders its own authoring prompt as text. The shell **derives no verdict**:
+configuration as two groups of cards in one shape under a status line, and
+`/help`, which names what this runtime advertises and renders its own authoring
+prompt as text. The shell **derives no verdict**:
 no status colour in the rail, no rollup count, no "N failing" pill anywhere. A
 red badge in a nav rail would be a gate the runtime never issued.
 
@@ -1136,7 +1137,7 @@ Every key is optional except `deskConfigVersion`. `organization.name` is a
 non-empty string or `null`; `null` is how a file asks for the desk's own name,
 and `""` is refused by name rather than rendering a blank brand. `appearance` is
 decoded and validated; `theme` is applied as above and `density` is not read
-yet, which Admin › Appearance also says. `organization.mark` is `null`,
+yet, which the Appearance card also says. `organization.mark` is `null`,
 an inline `<svg …>` string, or a `data:` URI of at most 65,536 bytes of UTF-8
 (measured with `TextEncoder`, not in UTF-16 code units — the two disagree by up
 to **three** to one on a mark carrying non-ASCII; three and not four, because a
@@ -1388,31 +1389,68 @@ left beside the console button, and a link that neither shrinks nor wraps
 painted straight across it. The link's accessible name is the full sentence at
 every width.
 
-### Admin, as six cards and a status line
+### Admin, as two groups and a status line
 
-**Every section of Admin is one card, and the card is four slots.** A
-**Location** — the path, from the chassis, never composed on the page. A
-**Status** — one line from a closed set: `read`, `not present — defaults in
-use`, `refused: <key>: <the decoder's own reason>`, `not read — <who said so>:
-<their reason>`. A **Content**
-disclosure — the member's own bytes where this page read the file, and the
-decoded value, labelled as decoded, where it did not. And the **fields**, with
-a **Save** on the cards that have a write path and nothing where they do not.
+**A settings page carries only settings.** That sentence is the whole of this
+shape, and three things follow from it. Every setting is editable in place.
+Status is not a setting and lives elsewhere. And a per-viewer preference is not
+an administrator's setting either.
 
-The order is **Project file, Identity provider, Assistant, Storage,
-Organization, Appearance**. The project file comes first because it is
-what an admin is here to point at, and the identity provider next because it is
-the other thing a deployment configures.
+**Under the heading is a status line, not a card.** One line — two on a narrow
+shell — carrying the connection, the binary the chassis was launched with, and
+the two configuration files' locations, every value the chassis' or the
+connection's own answer and none of them composed on the page. It replaced a
+**Runtime** card whose four slots held nothing anybody could edit; the card's
+own content is in **Help & About**, which is where a reader goes to ask what
+they are connected to.
 
-**Above them is a status line, not a card.** The connection, the binary the
-chassis was launched with, and the two configuration files' locations — every
-value the chassis' or the connection's own answer. It replaced a Runtime card
-whose four slots held nothing anybody could edit; a settings page carries
-settings, and the card's own content is in Help & About, which is where a reader
-goes to ask what they are connected to. The Panes card went the same way and for
-the same reason: its three pane dimensions were a settings page editing the
-frame it is drawn in, and its reset is now in the shell's user menu, beside the
-panes it clears.
+**Below it are two groups, one per file, and each states its file once.** Three
+cards writing three members of one file printed that file's path three times and
+its read status three times, which reads as three files.
+
+| Group | Header states | Members |
+|---|---|---|
+| **This project** | `jpack-desk.json`'s path, its read status, its whole text as a disclosure, and the default-project nomination | Organization, Storage, Appearance |
+| **This desk** | the desk-level file's path and its read status | Assistant, Identity provider |
+
+**A card under a group is the card as it was, minus what the header has already
+said.** It keeps its title, its Content disclosure, its fields and its Save, and
+it prints no Location at all. It prints a **Status** only where its own differs
+from the group's — a member refused inside an accepted file, a save in flight, a
+write the file moved under — and the comparison is by what the status *says*
+rather than by which of the six states it is, because two refusals naming two
+keys are not one status. A member the *other* file supplied is not one the
+group's header speaks for: it is given no group, and states its own Location and
+Status exactly as it did before there were groups. The heading levels follow the
+document — a group is an `h2` and its cards are `h3` — so the outline is the one
+on the screen.
+
+**Each card is four slots.** A **Location** — the path, from the chassis, never
+composed on the page — where the group has not stated it. A **Status** — one
+line from a closed set: `read`, `not present — defaults in use`, `refused:
+<key>: <the decoder's own reason>`, `not read — <who said so>: <their reason>`.
+A **Content** disclosure — the member's own bytes where this page read the file,
+and the decoded value, labelled as decoded, where it did not. And the **fields**,
+with a **Save** on the cards that have a write path and nothing where they do
+not.
+
+**Panes is gone from Admin, and the reset went to the shell.** Its three pane
+dimensions were a settings page editing the frame it is drawn in; its reset
+cleared a record in this browser's own storage, which is a per-viewer
+convenience rather than a deployment's configuration. `Reset panes` is now in
+the user menu — see [Shell](#shell) — and the `panes` member is still in the
+schema, still decoded, still validated and still applied. The write path left
+with the form: `CARD_POINTERS` names the three members a card may write, and a
+test drives every Save on the page and compares what came off the wire to it, so
+a pointer put back with no card behind it fails rather than quietly re-opening a
+write.
+
+**`storage.packs.kind` is a value, not a control.** The union has one member, so
+a `Select` there would look like a choice, read like one to every enumeration of
+what a reader can change, and offer none. The card states what the file says,
+with the decoder's own sentence about the two kinds that are not available yet
+under it; the refusal of any other kind is unchanged. One code comment says what
+brings the control back, and it is a second kind existing.
 
 There is no narration. A test sweeps every text node the page writes and fails
 on one over 140 characters, exempting quoted material — a path, a decoder's own
@@ -1425,18 +1463,16 @@ it.
 **A refused file's bytes are never rendered.** The decoder refuses a whole file
 for one credential-shaped member, and the point of refusing it is that the desk
 will not act on it — so a Content disclosure that quoted it anyway would put the
-member the refusal is about, and on the Project card the whole document around
+member the refusal is about, and on the project group the whole document around
 it, into the DOM of the page reporting the refusal. On a refusal, and on a read
 that produced no file, a card shows its Status line and no content at all.
 
-**Two cards write the desk-level file, and each writes one member of it.** The
-Project card nominates this project as the default (or withdraws one), the
-Assistant form writes `assistant`, and neither sends the other's — a member
-absent from the request is carried across untouched. The Project card's other
-three slots are about the *project's* file, so the one line under its control
-names the file it actually writes, from the chassis' own answer. The one
-control that writes no file at all has left this page: the panes' reset is in
-the shell's own user menu, where the panes are.
+**Two things write the desk-level file, and each writes one member of it.** The
+project group's header nominates this project as the default (or withdraws one),
+the Assistant form writes `assistant`, and neither sends the other's — a member
+absent from the request is carried across untouched. That header's other slots
+are about the *project's* file, so the one line under its control names the file
+it actually writes, from the chassis' own answer.
 
 **Storage, Organization and Appearance each Save one member of
 `jpack-desk.json` through the file API**, by splicing that member's own bytes
@@ -3718,8 +3754,9 @@ web/                 Vite + React + TypeScript SPA
   src/routes/        project home, the packs layout and its two children
                      (the "select a pack" page and the pack document),
                      evaluation, matrix, graphs, the authoring shell, the
-                     Admin page and Help & About — Admin being eight cards
-                     in one shape, of which two write: the Project card's
+                     Admin page and Help & About — Admin being two groups of
+                     cards in one shape, one group per configuration file, of
+                     which two write the desk-level one: the project group's
                      default project and the Assistant form's endpoint, model
                      and tier
   src/components/    evaluation, coverage, row and graph-walk views, plus the

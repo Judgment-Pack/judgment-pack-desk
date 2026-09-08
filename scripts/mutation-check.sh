@@ -1914,14 +1914,25 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "Admin claims a location the listing does not show" "$V" \
     "  if (files.some((file) => file.path.startsWith(\`\${dir}/\`))) return 'holds-files'" \
     "  if (true) return 'holds-files'"
-  # Retargeted, not retired: the claim is the same one and the card that makes
-  # it moved. The two kinds that are not available yet are named in the
-  # decoder's own refusal, and neither is offered — so the break is offering
-  # one, which the hidden native select behind the Radix trigger reports.
   PFC=web/src/admin/projectFileCards.tsx
-  mutate web "a future storage kind becomes a control" "$PFC" \
-    "const KIND_OPTIONS = [{ value: 'filesystem', label: 'filesystem' }] as const" \
-    "const KIND_OPTIONS = [{ value: 'filesystem', label: 'filesystem' }, { value: 'database', label: 'database' }] as const"
+  # **Retired: `a future storage kind becomes a control`.** It added a second
+  # option to a one-option Select, and there is no Select: while the union has
+  # one member the card states the kind as the value it is, so the break the row
+  # made is not available and the claim it stood for — that no kind but
+  # `filesystem` is offered — is now the stronger one below, that nothing offers
+  # a kind at all. The decoder's refusal of any other kind is unchanged and is
+  # held by `a storage kind other than filesystem is accepted`.
+  #
+  # A Select with one option looks like a choice, reads like one to every
+  # enumeration of what a reader can change, and offers none.
+  mutate web "the kind rendered as a Select with one option" "$PFC" \
+    '      <code>{config.storage.packs.kind}</code>' \
+    '      <Select
+        id="storage-kind"
+        value={config.storage.packs.kind}
+        onValueChange={() => {}}
+        options={[{ value: '"'"'filesystem'"'"', label: '"'"'filesystem'"'"' }]}
+      />'
   mutate web "an unknown storage key is accepted" "$D" \
     "          ? section(storage.packs, 'storage.packs', ['kind', 'dir', 'idBase'], problems)" \
     "          ? section(storage.packs, 'storage.packs', ['kind', 'dir', 'idBase', 'bucket'], problems)"
@@ -2314,21 +2325,18 @@ if [ "$which" = all ] || [ "$which" = web ]; then
 
   # 4. Admin printed a decoded number with nothing said about what bounds it,
   # what the frame does to it, or what is actually on screen.
-  mutate web "Admin names no accepted range at all" "$V" \
-    "const PANE_DIMENSIONS = [
-  { key: 'panes.left.width' },
-  { key: 'panes.inspector.width' },
-  { key: 'panes.console.height' }
-] as const" \
-    'const PANE_DIMENSIONS = [] as const'
-  mutate web "Admin calls a configured number the rendered one" "$V" \
-    '              <code>{config.panes.left.mode}</code>, configured{'"'"' '"'"'}
-              <strong>{config.panes.left.width}px</strong> — rendered{'"'"' '"'"'}
-              <Rendered box={rendered.rail} axis="width" />' \
-    '              <code>{config.panes.left.mode}</code>, {config.panes.left.width}px'
-  mutate web "an absent pane is reported as a pane of zero" "$V" \
-    "  if (box === undefined) return <span className=\"quiet\">not mounted at this width</span>" \
-    '  if (box === undefined) return <strong>0px</strong>'
+  #
+  # **Retired — three rows, one reason.** "Admin names no accepted range at
+  # all", "Admin calls a configured number the rendered one" and "an absent pane
+  # is reported as a pane of zero" were all about the Panes card, which is gone:
+  # its three dimensions were a settings page editing the frame it is drawn in,
+  # and the reader that measured that frame by its ids went with it. Nothing on
+  # Admin prints a pane size any more, so there is no claim of that shape left to
+  # break. What survives of the argument is held elsewhere and still is: the
+  # decoder's bounds by `a pane dimension of zero or twenty thousand is
+  # accepted`, the sheet's caps by the `shell.css` rows, and the measured-not-
+  # configured rule by `the slot reports a configured width the pane does not
+  # have`.
 
   # 5. A 200 whose body is not the envelope this API promises is still an
   # answer — losing its status put it in the transport-failure bucket.
@@ -6001,6 +6009,51 @@ export function assistantTransport(): Transport {
             configAfterProjectFileWrite(previous, landed)
           )' \
     '          void configAfterProjectFileWrite'
+
+  # ---- Chunk 6c: two groups, a status line, and the settings that left ----
+  AS=web/src/routes/adminSections.ts
+
+  # **The location is stated once per file, not once per card.** Three cards
+  # writing three members of one file printed that file's path three times and
+  # its read status three times, which reads as three files. `under` is the
+  # group's own status: its presence says the header has already said where the
+  # file is, and its value is what a card's status is compared against.
+  mutate web "a location repeated on a card under a group header" "$SC" \
+    '        location={grouped ? undefined : location}' \
+    '        location={location}'
+
+  # **The Runtime card was status rather than settings**, and a settings page
+  # carries settings: its four slots held the binary the chassis was launched
+  # with, the connection, and what the tool listing said, and not one of them was
+  # editable. The break is the declaration, which is what the page renders from
+  # and what the rail's section menu links to — a section declared and not
+  # rendered is a menu entry pointing at a heading that is not there.
+  mutate web "the Runtime card back" "$AS" \
+    "    sections: [
+      { id: 'organization', title: 'Organization' }," \
+    "    sections: [
+      { id: 'runtime', title: 'Runtime' },
+      { id: 'organization', title: 'Organization' },"
+
+  # **A removed control's write path is removed with it.** The Panes card is
+  # gone — the dimensions are the shell's, and the reset of this browser's own
+  # record of the layout moved to the shell's menu — and a Save with no control
+  # behind it is a write path nothing offers. The composer keeps `/panes`,
+  # because it is a general splicer with its own tests; the settings page has no
+  # member to hand it. The row is held by driving every Save on Admin and
+  # comparing what came off the wire to the list.
+  mutate web "the Panes Save back (a write to /panes from Admin)" "$PFS" \
+    "export const CARD_POINTERS = ['/organization', '/appearance', '/storage'] as const" \
+    "export const CARD_POINTERS = ['/organization', '/appearance', '/storage', '/panes'] as const"
+
+  # **The reset lives where the panes are.** It was a button on Admin › Panes —
+  # a settings page reaching into a browser's own storage — and it is now an
+  # action in the shell's own user menu, which already carried the two per-viewer
+  # settings links. Removing the element is the break; what the provider does
+  # when it is pressed is held by `shellState.test.tsx` and its own rows.
+  mutate web "the reset action missing from the shell" "$U" \
+    '          <ResetPanesItem />' \
+    '          {null}'
 fi
 
 restore

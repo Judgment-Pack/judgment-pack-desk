@@ -74,8 +74,6 @@ export function monogram(name: string): string {
 
 export function UserControl() {
   const { provider, displayName } = useIdentity()
-  const shell = useShellState()
-  const [reset, setReset] = useState<ResetOutcome | undefined>(undefined)
   // Where a provider is configured and carries no label, the name falls back
   // to the issuer's host — something the desk read out of the file. It does
   // **not** fall back to "signed out": that is a verdict about a session, and
@@ -88,14 +86,7 @@ export function UserControl() {
   const name = provider === null ? displayName : (provider.label ?? provider.issuerHost)
 
   return (
-    <DropdownMenu.Root
-      // A verdict from the last time the menu was open is not a verdict about
-      // this time: it is dropped when the menu closes rather than left to
-      // greet whoever opens it next.
-      onOpenChange={(open) => {
-        if (!open) setReset(undefined)
-      }}
-    >
+    <DropdownMenu.Root>
       <DropdownMenu.Trigger className="desk-user" aria-label="Account and desk settings">
         <Avatar.Root className="desk-avatar">
           <Avatar.Fallback delayMs={0}>{monogram(name)}</Avatar.Fallback>
@@ -118,23 +109,7 @@ export function UserControl() {
           <DropdownMenu.Item asChild className="desk-menu-item">
             <Link to="/admin#appearance">Appearance</Link>
           </DropdownMenu.Item>
-          <DropdownMenu.Item
-            className="desk-menu-item"
-            onSelect={(event) => {
-              // The menu stays open so the answer below it can be read. The
-              // reset runs inside the provider that owns the record — it
-              // cancels a write already on its way, refuses to clear the
-              // provisional key before the chassis has said which project this
-              // is, and reads the key back afterwards.
-              event.preventDefault()
-              setReset(shell.resetPanes())
-            }}
-          >
-            Reset panes
-          </DropdownMenu.Item>
-          {reset !== undefined && (
-            <DropdownMenu.Label className="desk-menu-note">{RESET_SAYS[reset]}</DropdownMenu.Label>
-          )}
+          <ResetPanesItem />
           <DropdownMenu.Item asChild className="desk-menu-item">
             <Link to="/help#shortcuts">Keyboard shortcuts</Link>
           </DropdownMenu.Item>
@@ -147,5 +122,42 @@ export function UserControl() {
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
+  )
+}
+
+/**
+ * Forget this project's layout on this machine, and say what happened.
+ *
+ * Its own component so that the state it needs — the last outcome — belongs to
+ * the action rather than to the control around it, and so that removing the
+ * action is removing one element.
+ *
+ * **The menu stays open while it answers.** A `DropdownMenu.Item` closes the
+ * menu on select, and the answer is a sentence: a menu that closed would take
+ * it with it. The verdict is dropped when the menu is next opened, because a
+ * verdict from the last time is not a verdict about this one.
+ */
+function ResetPanesItem() {
+  const shell = useShellState()
+  const [reset, setReset] = useState<ResetOutcome | undefined>(undefined)
+  return (
+    <>
+      <DropdownMenu.Item
+        className="desk-menu-item"
+        onSelect={(event) => {
+          // The reset runs inside the provider that owns the record — it
+          // cancels a write already on its way, refuses to clear the
+          // provisional key before the chassis has said which project this is,
+          // and reads the key back afterwards.
+          event.preventDefault()
+          setReset(shell.resetPanes())
+        }}
+      >
+        Reset panes
+      </DropdownMenu.Item>
+      {reset !== undefined && (
+        <DropdownMenu.Label className="desk-menu-note">{RESET_SAYS[reset]}</DropdownMenu.Label>
+      )}
+    </>
   )
 }

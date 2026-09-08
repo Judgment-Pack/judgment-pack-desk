@@ -30,8 +30,8 @@ import { Alert } from '../ui/Alert'
 import { Button } from '../ui/Button'
 import {
   useProjectFileSave,
+  type CardPointer,
   type MemberEdit,
-  type ProjectFilePointer,
   type ProjectFileSave
 } from './useProjectFileSave'
 
@@ -110,7 +110,7 @@ function agreeing<D>(touched: Record<string, unknown>, seed: D): Record<string, 
  * they admit; nothing here holds an object.
  */
 export function useProjectFileDraft<D>(
-  pointer: ProjectFilePointer,
+  pointer: CardPointer,
   seed: D,
   editsOf: (draft: D, seed: D) => MemberEdit[]
 ): ProjectFileDraft<D> {

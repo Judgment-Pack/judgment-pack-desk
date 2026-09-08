@@ -73,7 +73,7 @@ import { valueAt } from '../packs/pointers'
 import { buffered, setRawJson, type Buffered } from '../packs/edit/writes'
 
 /**
- * The four members a card may write, by pointer.
+ * The members this composer will splice, by pointer.
  *
  * A closed list rather than a string, because the pointer is what decides which
  * bytes are spliced: a caller free to name any pointer could splice `identity`
@@ -87,6 +87,23 @@ export const PROJECT_FILE_POINTERS = [
   '/storage'
 ] as const
 export type ProjectFilePointer = (typeof PROJECT_FILE_POINTERS)[number]
+
+/**
+ * The members a **card** writes, which is not the same list.
+ *
+ * `/panes` is missing on purpose, and this is where that is written down. The
+ * Panes card is gone from Admin — the pane dimensions are the shell's, and the
+ * reset of this browser's own record of the layout moved to the shell's user
+ * menu — and a Save with no control behind it is a write path nothing offers.
+ * The composer above keeps `/panes` because it is a general splicer with its
+ * own tests; the settings page has no member to hand it.
+ *
+ * Held by driving every Save on Admin and comparing what came off the wire to
+ * this list, so a pointer added here with no card behind it fails rather than
+ * quietly re-opening a write path.
+ */
+export const CARD_POINTERS = ['/organization', '/appearance', '/storage'] as const
+export type CardPointer = (typeof CARD_POINTERS)[number]
 
 /**
  * One field a card actually edited, addressed inside its member.
@@ -342,7 +359,7 @@ interface Revision {
  * be this page telling itself that something happened.
  */
 export function useProjectFileSave(
-  pointer: ProjectFilePointer,
+  pointer: CardPointer,
   /**
    * Whether the card is holding a value nobody has written yet.
    *
@@ -486,8 +503,8 @@ export function useProjectFileSave(
 }
 
 /** Which top-level section a pointer names, for the source badge. */
-function sectionOf(pointer: ProjectFilePointer): 'organization' | 'appearance' | 'panes' | 'storage' {
-  return pointer.slice(1) as 'organization' | 'appearance' | 'panes' | 'storage'
+function sectionOf(pointer: CardPointer): 'organization' | 'appearance' | 'storage' {
+  return pointer.slice(1) as 'organization' | 'appearance' | 'storage'
 }
 
 /** The `{key, reason}` list a refusal carried, and an empty list for one that did not. */
