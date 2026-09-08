@@ -475,11 +475,17 @@ describe('a project-file card’s form', () => {
    * is written.**
    *
    * The closed list and the page it describes, checked against each other by
-   * driving every Save and reading what came off the wire. `/panes` used to be
-   * on that list; the Panes card is gone — the pane dimensions are the shell's
-   * and the reset moved to the shell's menu — and a Save with no control behind
-   * it is a write path nothing offers. A pointer put back with no card behind
-   * it fails here rather than quietly re-opening one.
+   * driving every Save and reading **what came off the wire**. `/panes` used to
+   * be on that list; the Panes card is gone — the pane dimensions are the
+   * shell's and the reset moved to the shell's menu — and a Save with no
+   * control behind it is a write path nothing offers.
+   *
+   * The list is a declaration and not a type constraint on purpose: narrowing
+   * the hook to it would make routing a Save through `/panes` a compile error,
+   * and the only row left would mutate this expectation — a comparison against
+   * itself, which proves nothing about the write path. So the assertion is on
+   * the request, and a card pointed at a member no card offers is caught here
+   * as a write that never left or a member the list does not name.
    */
   it('writes exactly the members the closed list names, and no others', async () => {
     const cards = [
@@ -517,19 +523,27 @@ describe('a project-file card’s form', () => {
       await waitFor(() => expect(screen.getByTestId('live').textContent).toBe('a'.repeat(64)))
       await touch()
       fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-      await waitFor(() => expect(desk.bodies).toHaveLength(1))
-      // Which top-level member of the file this Save actually changed.
-      const after = JSON.parse(String(desk.bodies[0]!.content)) as Record<string, unknown>
-      const before = JSON.parse(file) as Record<string, unknown>
-      const moved = Object.keys(after).filter(
-        (name) => JSON.stringify(after[name]) !== JSON.stringify(before[name])
-      )
-      expect(moved, member).toHaveLength(1)
-      written.push(`/${moved[0]!}`)
+      // Bounded, because a card pointed at a member this file cannot carry
+      // composes a file the decoder refuses and sends nothing at all. That is
+      // a result and not a hang, and it is recorded as one.
+      await waitFor(() => expect(desk.bodies.length).toBeGreaterThan(0), {
+        timeout: 2000
+      }).catch(() => undefined)
+      if (desk.bodies.length === 0) {
+        written.push('(nothing was written)')
+      } else {
+        // Which top-level member of the file this Save actually changed.
+        const after = JSON.parse(String(desk.bodies[0]!.content)) as Record<string, unknown>
+        const before = JSON.parse(file) as Record<string, unknown>
+        const moved = Object.keys(after).filter(
+          (name) => JSON.stringify(after[name]) !== JSON.stringify(before[name])
+        )
+        written.push(moved.length === 1 ? `/${moved[0]!}` : `(${moved.length} members moved)`)
+      }
       cleanup()
       vi.unstubAllGlobals()
     }
-    expect(written.sort()).toEqual([...CARD_POINTERS].sort())
+    expect(written.sort(), written.join(' | ')).toEqual([...CARD_POINTERS].sort())
   })
 
   /**

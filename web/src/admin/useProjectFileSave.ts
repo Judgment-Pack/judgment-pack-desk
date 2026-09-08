@@ -98,12 +98,16 @@ export type ProjectFilePointer = (typeof PROJECT_FILE_POINTERS)[number]
  * The composer above keeps `/panes` because it is a general splicer with its
  * own tests; the settings page has no member to hand it.
  *
- * Held by driving every Save on Admin and comparing what came off the wire to
- * this list, so a pointer added here with no card behind it fails rather than
- * quietly re-opening a write path.
+ * **It is a declaration and not a type constraint, deliberately.** Narrowing the
+ * hook's parameter to this list would make the guarantee unbreakable and
+ * therefore untestable: a mutation routing an Admin Save through `/panes` would
+ * not compile, and the only row left would mutate the *expected list* — which
+ * fails a comparison against itself and proves nothing about the write path.
+ * The hook takes the composer's wider pointer, and the guarantee is behavioural:
+ * every Save on Admin is driven and what came off the wire is compared to this
+ * list.
  */
 export const CARD_POINTERS = ['/organization', '/appearance', '/storage'] as const
-export type CardPointer = (typeof CARD_POINTERS)[number]
 
 /**
  * One field a card actually edited, addressed inside its member.
@@ -359,7 +363,7 @@ interface Revision {
  * be this page telling itself that something happened.
  */
 export function useProjectFileSave(
-  pointer: CardPointer,
+  pointer: ProjectFilePointer,
   /**
    * Whether the card is holding a value nobody has written yet.
    *
@@ -503,8 +507,8 @@ export function useProjectFileSave(
 }
 
 /** Which top-level section a pointer names, for the source badge. */
-function sectionOf(pointer: CardPointer): 'organization' | 'appearance' | 'storage' {
-  return pointer.slice(1) as 'organization' | 'appearance' | 'storage'
+function sectionOf(pointer: ProjectFilePointer): 'organization' | 'appearance' | 'panes' | 'storage' {
+  return pointer.slice(1) as 'organization' | 'appearance' | 'panes' | 'storage'
 }
 
 /** The `{key, reason}` list a refusal carried, and an empty list for one that did not. */

@@ -1479,9 +1479,13 @@ convenience rather than a deployment's configuration. `Reset panes` is now in
 the user menu — see [Shell](#shell) — and the `panes` member is still in the
 schema, still decoded, still validated and still applied. The write path left
 with the form: `CARD_POINTERS` names the three members a card may write, and a
-test drives every Save on the page and compares what came off the wire to it, so
-a pointer put back with no card behind it fails rather than quietly re-opening a
-write.
+test drives every Save on the page and compares what came off the wire to it.
+It is a declaration and **not a type constraint**, deliberately: narrowing the
+save hook to it would make routing a Save through `/panes` a compile error, and
+the only mutation left would break the expectation the test compares against —
+a comparison against itself, which proves nothing about the write path. The
+guarantee is behavioural, and the row that holds it points a real Admin Save at
+`/panes`.
 
 **`storage.packs.kind` is a value, not a control.** The union has one member, so
 a `Select` there would look like a choice, read like one to every enumeration of

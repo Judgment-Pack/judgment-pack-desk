@@ -6046,11 +6046,19 @@ export function assistantTransport(): Transport {
   # record of the layout moved to the shell's menu — and a Save with no control
   # behind it is a write path nothing offers. The composer keeps `/panes`,
   # because it is a general splicer with its own tests; the settings page has no
-  # member to hand it. The row is held by driving every Save on Admin and
-  # comparing what came off the wire to the list.
-  mutate web "the Panes Save back (a write to /panes from Admin)" "$PFS" \
-    "export const CARD_POINTERS = ['/organization', '/appearance', '/storage'] as const" \
-    "export const CARD_POINTERS = ['/organization', '/appearance', '/storage', '/panes'] as const"
+  # member to hand it.
+  #
+  # **The mutation routes a real Save, not the expectation.** The first version
+  # added `/panes` to the list the test compares against, which fails a
+  # comparison against itself and says nothing about the write path — the review
+  # was right about that. This points an existing Admin Save at `/panes`, which
+  # is a production write path, and the test that drives every Save and reads
+  # the wire catches it: the file that Save would compose carries an
+  # `organization` shape under `panes`, the decoder refuses it, and nothing is
+  # written where a member was promised. The expectation is never touched.
+  mutate web "the Panes Save back (a write to /panes from Admin)" "$PFC" \
+    "  const state = useProjectFileDraft('/organization', seed, (draft, from) => {" \
+    "  const state = useProjectFileDraft('/panes', seed, (draft, from) => {"
 
   # **The reset lives where the panes are.** It was a button on Admin › Panes —
   # a settings page reaching into a browser's own storage — and it is now an
