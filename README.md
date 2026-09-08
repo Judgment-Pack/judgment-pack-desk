@@ -1446,7 +1446,11 @@ document — a group is an `h2` and its cards are `h3` — so the outline is the
 on the screen.
 
 **Each card is four slots.** A **Location** — the path, from the chassis, never
-composed on the page — where the group has not stated it. A **Status** — one
+composed on the page and never stood in for — where the group has not stated it.
+Where the chassis has not answered, the row says *the desk has not said*: the
+relative name this page reads the file by is a file-API address, not an
+established location on a filesystem, and offering it as one was the page
+answering a question only the chassis can answer. A **Status** — one
 line from a closed set: `read`, `not present — defaults in use`, `refused:
 <key>: <the decoder's own reason>`, `not read — <who said so>: <their reason>`.
 A **Content** disclosure — the member's own bytes where this page read the file,

@@ -1000,9 +1000,39 @@ describe('the Admin page', () => {
     expect(screen.queryByText('jpack-desk.json')).toBeNull()
   })
 
-  it('names the file by the name it reads where the chassis has not answered', () => {
-    renderAdmin()
-    expect(screen.getAllByText('jpack-desk.json').length).toBeGreaterThan(0)
+  it('says the desk has not said, rather than offering the name it reads the file by', () => {
+    // `jpack-desk.json` is the address this page reads the file at, not an
+    // established location on a filesystem — and the row is about where the
+    // file **is**. Before `/api/desk-config` answers, and for ever where it
+    // carries no chassis facts, the row says so instead of standing in.
+    const { container } = renderAdmin()
+    const header = document
+      .getElementById('this-project')!
+      .closest('section')!
+      .querySelector(':scope > dl')!
+    expect(header.textContent).toContain('the desk has not said')
+    expect(container.textContent).not.toContain('jpack-desk.json')
+  })
+
+  it('names the file the chassis resolved the moment it answers', () => {
+    renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: DESK_PATH,
+        present: false,
+        sha256: '',
+        chassis: {
+          projectDir: '/real/a-project',
+          projectFile: '/real/a-project/jpack-desk.json',
+          runtimeBin: 'jpack'
+        }
+      })
+    )
+    const header = document
+      .getElementById('this-project')!
+      .closest('section')!
+      .querySelector(':scope > dl')!
+    expect(header.textContent).toContain('/real/a-project/jpack-desk.json')
+    expect(header.textContent).not.toContain('the desk has not said')
   })
 
   it('renders no bytes of a file the decoder refused, on either card', () => {

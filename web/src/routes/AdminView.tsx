@@ -10,10 +10,13 @@
  * is in the file, and the fields — with a Save on the one card that has a write
  * path. A real problem is the card's Status line and nothing else.
  *
- * **A location is never composed here.** The desk-level file's path, the
- * project file's path and the runtime binary come from the chassis; a page that
- * joined a directory to a file name would be asserting a location on a
- * filesystem it cannot see.
+ * **A location is never composed here, and never stood in for.** The desk-level
+ * file's path, the project file's path and the runtime binary come from the
+ * chassis; a page that joined a directory to a file name would be asserting a
+ * location on a filesystem it cannot see, and one that fell back to the
+ * relative name it reads the file by would be offering a file-API address as
+ * an established location. Where the chassis has not answered, the row says
+ * so.
  *
  * `runtime` and the project root are **not in the schema**, and that is the
  * design rather than a gap: `relay.go` runs the configured binary, so a
@@ -195,17 +198,22 @@ type LayeredSection = Exclude<
 >
 
 /**
- * Where the project's own configuration file is, **as the chassis said it**.
+ * Where the project's own configuration file is, **as the chassis said it** —
+ * or that it has not said.
  *
- * The absolute path the chassis resolved, and the project-relative name only
- * where it has not answered — which is honest about being a name rather than a
- * location. Joining the reported directory to a file name here would be this
- * page composing a path on a filesystem it cannot see, and would be wrong the
- * first time a project was reached through a symlink.
+ * The absolute path the chassis resolved, and **nothing** where it has not
+ * answered. It used to fall back to `effective.path`, the project-relative
+ * name this page reads the file by: that is a file-API address rather than an
+ * established location on a filesystem, and a Location row showing it was the
+ * page answering a question only the chassis can answer — before
+ * `/api/desk-config` has answered at all, and for ever where it never carries
+ * chassis facts. Joining the reported directory to a file name here would be
+ * the same mistake one step further on, and would be wrong the first time a
+ * project was reached through a symlink.
  */
 function projectLocation(effective: EffectiveConfig) {
   const chassis = effective.desk?.chassis
-  if (chassis === undefined) return <code>{effective.path}</code>
+  if (chassis === undefined) return <span className="quiet">the desk has not said</span>
   return <code>{chassis.projectFile}</code>
 }
 
