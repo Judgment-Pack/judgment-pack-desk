@@ -86,18 +86,22 @@ export const RESET_SAYS: Record<ResetOutcome, string> = {
 /**
  * What choosing a theme actually does, said where the choice is offered.
  *
- * Admin's Appearance card carried this sentence and Admin's card is gone; a
- * control that moved somewhere its own caveat did not follow is a control that
- * has quietly started overstating itself. Both palettes carry the light values
- * — the three condition verdict colours cannot be mechanically inverted — so
- * dark changes an attribute and no colour, and this is the third place that is
- * written down rather than inferred.
+ * It used to say that dark set an attribute and no colour, which was true and
+ * is not any more: both palettes are authored now. What still needs saying is
+ * what `system` means, because it is the one choice whose answer this desk does
+ * not hold — it follows the computer's own setting and changes with it, which
+ * a reader picking between three words has no other way to know.
  */
 export const THEME_SAYS =
-  'The palette it selects is the light one; dark sets an attribute and no colour.'
+  'Light and dark each paint their own palette. Under system the desk follows this ' +
+  'computer’s own setting and changes with it.'
 
-/** The other half of the same card, for the member nothing reads yet. */
-export const DENSITY_SAYS = 'Recorded, and read by nothing yet.'
+/**
+ * The other half of the same group, and it used to say the member was read by
+ * nothing. It is read now, so what it says is what compact actually does.
+ */
+export const DENSITY_SAYS =
+  'Compact tightens the rows, the controls, the cells and the type on the dense surfaces.'
 
 /**
  * What this menu says before the project's file has been read.

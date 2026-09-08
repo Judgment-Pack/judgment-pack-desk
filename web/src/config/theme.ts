@@ -49,7 +49,7 @@ export function applyTheme(theme: ThemeChoice): void {
  * has not reported yet, and the default needs a file that has not been read. A
  * caller that painted the schema default while it waited would apply `system`,
  * then the file's value, then the stored one — three applications for one load,
- * two of them wrong, and a visible flash the day a dark palette exists. An
+ * two of them wrong, and — now that both palettes are real — a visible flash. An
  * attribute this desk has not yet decided about is also not this desk's to
  * clear, so nothing is removed either.
  */

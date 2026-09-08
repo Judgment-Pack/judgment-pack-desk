@@ -6288,6 +6288,83 @@ export function assistantTransport(): Transport {
   mutate web "one connection word, whatever the socket is doing" "$M" \
     "  if (status === 'ready') return 'connected'" \
     "  return 'connected'"
+
+  # ---- Chunk 6e: a dark palette, and a consumer for density ----------------
+  #
+  # **Retired: none.** Nothing here replaces a row. `the configured theme is
+  # decoded and never applied` still holds the theme's own attribute, one
+  # chunk further down the same ladder, and is untouched.
+
+  CSSP=web/src/styles.css
+  CSSH=web/src/shell.css
+  THM=web/src/config/theme.ts
+
+  # **Every colour token has a dark value, in *both* blocks.** They cannot be
+  # written once — one is inside `@media (prefers-color-scheme: dark)` and the
+  # other is not, and CSS has no way to share a declaration block across that
+  # boundary — so a token dropped from one of them is a colour that follows the
+  # OS and not the toggle, or the toggle and not the OS. The needle is the
+  # media block's copy, which its four-space indent makes unique.
+  mutate web "a colour token dropped from one dark block" "$CSSP" \
+    '    --ink-soft: #c2c2b8;
+    --ink-faint: #a0a096;' \
+    '    --ink-faint: #a0a096;'
+
+  # **Contrast is measured, and the measurement is load-bearing.** A dark
+  # palette that was chosen by eye is a palette nobody checked: this pushes the
+  # muted ink onto the surface it is read against at 1.4:1, which is a value
+  # that looks plausible in a diff and is unreadable on a screen.
+  #
+  # It trips two rules and not one, and that is stated rather than tidied away:
+  # a value edited in the attribute block alone also breaks `carries the same
+  # value in both blocks`. The two cannot be separated — one `apply` edits one
+  # block — and the row's own claim is the contrast one, which is in the list.
+  mutate web "a dark text/background pair pushed under AA" "$CSSP" \
+    '  --ink: #f0f0ea;
+  --ink-soft: #c2c2b8;' \
+    '  --ink: #f0f0ea;
+  --ink-soft: #3d3d38;'
+
+  # **No sheet but `styles.css` spells a colour.** `shell.css` was spelling
+  # three, and the modules' rule never reached it: a literal here is a colour
+  # the theme attribute cannot reach, which is invisible until there is a
+  # second palette to reach it with. This puts the scrim back as a literal.
+  mutate web "a colour literal back in shell.css" "$CSSH" \
+    '    background: var(--overlay);' \
+    '    background: rgb(0 0 0 / 25%);'
+
+  # **And the same rule inside the token file, outside its token blocks.** A
+  # literal in `:root` is the palette; a literal in a *rule* is a fourth
+  # palette that no selector reaches — which is exactly what `#fbfbf9` was, in
+  # two rules, for as long as this sheet has existed.
+  mutate web "a colour literal back in a rule of styles.css" "$CSSP" \
+    '  background: var(--code-surface);
+  overflow: hidden;' \
+    '  background: #fbfbf9;
+  overflow: hidden;'
+
+  # **The density is applied, and not merely decided.** It was decoded,
+  # validated, stored per browser and offered in the menu, and read by nothing:
+  # the whole of this half of the chunk is the attribute this writes. Without
+  # it `compact` resolves through the ladder, shows as chosen in the menu, and
+  # changes no pixel — which is indistinguishable from the state it replaces.
+  mutate web "the density attribute is never written" "$THM" \
+    "  if (density === 'comfortable') {
+    root.removeAttribute(DENSITY_ATTRIBUTE)
+    return
+  }
+  root.setAttribute(DENSITY_ATTRIBUTE, density)" \
+    "  root.removeAttribute(DENSITY_ATTRIBUTE)
+  void density"
+
+  # **And compact is strictly smaller.** A compact value equal to its
+  # comfortable one is the same defect one token at a time: the attribute is
+  # written, the selector matches, the sheet resolves — and nothing moves. This
+  # one also unpins the windowed list's row height from the sheet, which is the
+  # second thing that number is held to.
+  mutate web "a compact spacing token equal to its comfortable value" "$CSSP" \
+    '  --density-row: 32px;' \
+    '  --density-row: 40px;'
 fi
 
 restore

@@ -645,16 +645,53 @@ real user yet; when it does, the record can move server-side and follow somebody
 between machines. Until then a second browser is a second preference, and the
 menu does not pretend otherwise.
 
-**What a theme actually does** is unchanged: `appearance.theme` writes
-`data-theme` on the root element — `light` and `dark` pin a palette, `system`
-removes the attribute and leaves `prefers-color-scheme` to answer — and the
-palette it selects today is the light one. This phase ships the plumbing, the
-two selectors in `styles.css` and the attribute, and none of the dark values,
-because the three condition verdict colours carry meaning, cannot be
-mechanically inverted, and a desk that re-authored its neutrals around them
-would be half dark. So choosing dark changes the attribute and no colour, and
-the menu says so where the choice is offered. `appearance.density` is recorded
-and validated and is read by nothing yet, which the menu also says.
+**What a theme does.** `appearance.theme` writes `data-theme` on the root
+element — `light` and `dark` pin a palette, `system` removes the attribute and
+leaves `prefers-color-scheme` to answer, so **under `system` the desk follows
+the operating system's own setting and changes with it**. Both palettes are
+authored: every colour token on `:root` has a dark value, in both of the blocks
+that select dark — the media block and the attribute block — and they carry the
+same value token for token, which a test holds, because they cannot be written
+once and nothing else stops one being edited and the other forgotten. The
+condition verdicts are re-authored rather than inverted: green, neutral and
+violet are what `true`, `false` and `unknown` *mean*, so the dark values keep
+the hue and change the lightness.
+
+**The contrast is measured, not chosen by eye.** `web/src/ui/palette.test.ts`
+computes the WCAG ratio for every text on every background it is painted on,
+every semantic foreground on its own background, and the focus ring against
+both grounds — 4.5:1, and 3:1 for the ring — from the token bytes themselves,
+in **both** palettes. It caught the light one first: `--ink-faint` was `#86867d`
+and reached 3.4:1 on the page, and it is darker now because of it. The borders
+are deliberately not in that set and the test says so where the pairs are
+listed: they separate regions rather than identify controls, and holding them
+to 3:1 would be a dark palette re-authoring the light desk on its way past.
+
+**One case still flashes, and it cannot be fixed with a script.** Under
+`system` nothing does: the media block paints dark on the first paint, before
+any JavaScript runs. A viewer who has explicitly chosen `dark` while their
+computer is set to light gets one light frame, because the record that holds
+that choice is keyed on the chassis' project root and the page does not know it
+until the file listing answers — a pre-paint script would have to guess the
+key, and a wrong guess applies one project's preference to another's desk.
+
+**What compact does.** `appearance.density` writes `data-density` on the same
+element — `compact` sets it, `comfortable` removes it, because comfortable is
+the scale on bare `:root`. That scale is six tokens: a list row's height, a
+control's height, a table cell's two paddings, the gap between items in a list,
+and the type size of the surfaces that are dense to begin with. Compact
+tightens all six, and everything that shrinks reads one of them — the packs
+list, the inspector's rows and its diagnostics, the assistant's event list and
+proposal, the disposition diff's cells, the Admin cards' field rows, the
+console log, the pane heads, and the `Button` and `Select` heights. Tokens
+rather than per-component rules: a pane with a `[data-density]` selector of its
+own would be a seventh answer to a question the six already answer. A test
+holds every compact value **strictly** smaller than its comfortable one, in the
+same unit — a density that is offered, stored and applied while changing
+nothing is exactly what this replaces. The one number that could not stay in
+the sheet is the packs list's row height, because that list is windowed and
+reserves its off-screen rows in JavaScript; `ROW_HEIGHT` carries it and the
+same test holds it equal to `--density-row` in both blocks.
 
 ## Pack view
 
@@ -1216,7 +1253,7 @@ and `""` is refused by name rather than rendering a blank brand. `appearance` is
 decoded and validated, and it is the **default** rather than the answer: what
 this desk paints is the viewer's own preference where they have one, set from
 the user menu and held in their browser. `theme` is applied as above and
-`density` is not read yet, which the menu also says. `organization.mark` is `null`,
+`density` is applied as above. `organization.mark` is `null`,
 an inline `<svg …>` string, or a `data:` URI of at most 65,536 bytes of UTF-8
 (measured with `TextEncoder`, not in UTF-16 code units — the two disagree by up
 to **three** to one on a mark carrying non-ASCII; three and not four, because a
@@ -3947,7 +3984,9 @@ web/                 Vite + React + TypeScript SPA
 Four rules and one test that holds all four
 (`web/src/ui/convention.test.ts`, which reads the source because vitest runs
 with `css: false` and a component whose stylesheet was deleted renders exactly
-like one whose stylesheet is intact).
+like one whose stylesheet is intact). A second test —
+`web/src/ui/palette.test.ts` — reads the two *global* sheets on the same terms,
+and holds the palettes and the density scale that live in them.
 
 **Three of them run over every `*.module.css` under `web/src`**, and one — the
 component/module pairing — stays scoped to `src/ui`. The split is the point. The
@@ -3963,6 +4002,19 @@ module written anywhere else.
   never `4px`. A second palette is one the theme attribute does not reach; a
   literal radius is a second answer to a question the tokens already answer. The
   modal scrim is `--overlay` for the same reason.
+
+  **And the rule reaches the two global sheets as well as the modules.** It did
+  not, and `shell.css` was spelling three colours of its own — `#fff` on the
+  Create button, the drawer scrim, and the menu's shadow — while `styles.css`
+  spelled `#fbfbf9` in two rules outside its own token blocks. Every one of
+  them was a colour the theme attribute could not reach, which is a defect a
+  light-only desk had no way of displaying. `web/src/ui/palette.test.ts` asks
+  the stricter question a global sheet needs: not "did this declaration take
+  its colour from a token" but "does this sheet *spell* a colour anywhere" —
+  in any property, including in a custom property of its own — with the token
+  blocks of `styles.css` cut out first, because inside them a literal is the
+  palette. `border: 1px solid transparent` is left alone, which is why it is a
+  different rule and not the modules' one widened.
 
   The colour half is checked by **parsing** each sheet's declarations rather
   than matching property names, and the difference is not academic: the rule
