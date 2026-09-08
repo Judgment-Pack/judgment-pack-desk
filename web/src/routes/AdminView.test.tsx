@@ -13,7 +13,7 @@
  * changes anything, so a control cannot be added without appearing here.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
@@ -418,8 +418,8 @@ describe('the Admin page', () => {
       'project'
     )
     renderAdmin(effectiveConfig(decoded))
-    // The one kind, on the Select's own trigger.
-    expect(screen.getByRole('combobox', { name: 'Kind' }).textContent).toBe('filesystem')
+    // The one kind, as the value it is.
+    expect(screen.getByText('Kind').parentElement!.textContent).toContain('filesystem')
     expect(screen.getByDisplayValue('decisions')).toBeTruthy()
     // The prefix as it will actually be written — normalised at decode — so a
     // Save that does not touch it writes back what the file already means.
@@ -483,7 +483,7 @@ describe('the Admin page', () => {
     expect(await screen.findByText(/the file listing has not answered yet/)).toBeTruthy()
   })
 
-  it('names the two future kinds in the decoder’s own words, and offers neither', async () => {
+  it('names the two future kinds in the decoder’s own words, and offers neither', () => {
     // The sentence is the one the decoder refuses `"database"` with, exported
     // and quoted rather than written again here: two answers about what is
     // available would be free to disagree, and the mutation table could break
@@ -492,15 +492,20 @@ describe('the Admin page', () => {
     expect(screen.getByText(STORAGE_KIND_SAYS)).toBeTruthy()
     expect(STORAGE_KIND_SAYS).toContain('database')
     expect(STORAGE_KIND_SAYS).toContain('cloud storage')
-    // **Opened first, because a closed Radix Select has no options at all.**
-    // Round 1 caught this: asking a closed one what it offers is a query that
-    // answers "nothing" whatever is configured in it, so the absence it was
-    // asserting was the primitive's and not this page's.
-    // (`testing/radixGround.test.tsx` writes that behaviour down once.)
-    fireEvent.click(screen.getByRole('combobox', { name: 'Kind' }))
-    const offered = (await screen.findAllByRole('option')).map((each) => each.textContent)
-    expect(offered).toEqual(['filesystem'])
-    expect(screen.queryByRole('radio')).toBeNull()
+  })
+
+  it('renders the one storage kind as a value, and not as a control with one option', () => {
+    // **A Select with one option is a control that cannot be operated.** It
+    // looks like a choice and offers none, and it appears in every enumeration
+    // of what on this page a reader can change. While the union has one member
+    // the card says what the file says.
+    const { container } = renderAdmin()
+    const storage = document.getElementById('storage')!.closest('section')!
+    expect(storage.querySelector('[role="combobox"]')).toBeNull()
+    expect(storage.querySelector('select')).toBeNull()
+    expect(screen.getByText('Kind').parentElement!.textContent).toContain('filesystem')
+    // And nothing anywhere on the page offers the kind as an option.
+    expect(container.textContent).toContain(STORAGE_KIND_SAYS)
   })
 
   it('names no user management, roles, invitations or assignment anywhere', () => {
@@ -546,10 +551,9 @@ describe('the Admin page', () => {
     const triggers = Array.from(container.querySelectorAll('[role="combobox"]')).map(
       (element) => element.textContent
     )
-    // This project's group first — Storage's kind, then Appearance's two — and
-    // then this desk's, which is the assistant's three.
+    // This project's group first — Appearance's two, since Storage's kind is a
+    // value and not a control — and then this desk's, the assistant's three.
     expect(triggers).toEqual([
-      'filesystem',
       'system',
       'comfortable',
       'OpenAI-compatible',
@@ -560,7 +564,6 @@ describe('the Admin page', () => {
       (element) => element.textContent
     )
     expect(offered).toEqual([
-      'filesystem',
       'systemlightdark',
       'comfortablecompact',
       'OpenAI-compatibleAnthropicGemini',

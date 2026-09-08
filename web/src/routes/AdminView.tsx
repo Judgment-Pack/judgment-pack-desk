@@ -33,7 +33,12 @@ import { AssistantSection } from '../assistant/AssistantSection'
 import { AdminStatusLine } from '../admin/AdminStatusLine'
 import { CardField, SourceCard, SourceGroup, type SourceStatus } from '../admin/SourceCard'
 import { useDefaultProject } from '../admin/DefaultProject'
-import { AppearanceForm, OrganizationForm, StorageForm } from '../admin/projectFileCards'
+import {
+  AppearanceForm,
+  OrganizationForm,
+  StorageForm,
+  StorageKind
+} from '../admin/projectFileCards'
 import { useHashTarget } from '../shell/useHashTarget'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
@@ -128,6 +133,7 @@ export function AdminView() {
             member: 'storage',
             value: config.storage
           }}
+          fields={<StorageKind />}
           save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocation]} />}
         />
 

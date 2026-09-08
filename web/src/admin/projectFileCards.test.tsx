@@ -405,8 +405,8 @@ describe('a project-file card’s form', () => {
    * they share and a card that stopped using it would be the one place it did
    * not hold.
    *
-   * Storage's first field is Kind, whose union has one member — there is no
-   * other value to type — so the field touched there is the next one.
+   * Storage's kind is not a field at all: its union has one member, so the
+   * card states it as a value and the form's first field is the location.
    */
   it.each([
     [

@@ -36,6 +36,7 @@ import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
 import { TextArea } from '../ui/TextArea'
+import { CardField } from './SourceCard'
 import { ProjectFileForm, problemAt, useProjectFileDraft } from './ProjectFileForm'
 import type { MemberEdit } from './useProjectFileSave'
 
@@ -169,10 +170,30 @@ export function AppearanceForm() {
   )
 }
 
-const KIND_OPTIONS = [{ value: 'filesystem', label: 'filesystem' }] as const
+/**
+ * The one storage kind there is, as a value rather than as a control.
+ *
+ * **A Select with one option is a control that cannot be operated.** It looks
+ * like a choice, reads like a choice to anything that enumerates the page's
+ * controls, and offers none: `storage.packs.kind` admits `"filesystem"` and
+ * refuses everything else by name. So while there is one kind this is what the
+ * file says, with the decoder's own sentence about the two that are not
+ * available yet under it — and the refusal of any other kind is unchanged and
+ * still tested.
+ *
+ * The day a second kind exists this is a `Select` again, with the same hint and
+ * the member back in the Storage form's draft.
+ */
+export function StorageKind() {
+  const { config } = useEffectiveConfig()
+  return (
+    <CardField label="Kind" rule={STORAGE_KIND_SAYS}>
+      <code>{config.storage.packs.kind}</code>
+    </CardField>
+  )
+}
 
 interface StorageDraft {
-  kind: string
   dir: string
   idBase: string
 }
@@ -180,10 +201,9 @@ interface StorageDraft {
 export function StorageForm({ dirSays }: { dirSays: string }) {
   const { config } = useEffectiveConfig()
   const packs = config.storage.packs
-  const seed: StorageDraft = { kind: packs.kind, dir: packs.dir, idBase: packs.idBase }
+  const seed: StorageDraft = { dir: packs.dir, idBase: packs.idBase }
   const state = useProjectFileDraft('/storage', seed, (draft, from) => {
     const edits: MemberEdit[] = []
-    if (draft.kind !== from.kind) edits.push({ path: ['packs', 'kind'], value: draft.kind })
     if (draft.dir !== from.dir) edits.push({ path: ['packs', 'dir'], value: draft.dir })
     if (draft.idBase !== from.idBase) {
       edits.push({ path: ['packs', 'idBase'], value: draft.idBase })
@@ -192,20 +212,11 @@ export function StorageForm({ dirSays }: { dirSays: string }) {
   })
   const { draft, set, save } = state
   return (
-    <ProjectFileForm
-      state={state}
-      placed={['storage.packs.kind', 'storage.packs.dir', 'storage.packs.idBase']}
-    >
-      <Field label="Kind" hint={STORAGE_KIND_SAYS} error={problemAt(save, 'storage.packs.kind')}>
-        {(wiring) => (
-          <Select
-            {...wiring}
-            value={draft.kind}
-            onValueChange={(value) => set({ ...draft, kind: value })}
-            options={KIND_OPTIONS}
-          />
-        )}
-      </Field>
+    // `storage.packs.kind` is deliberately not placed: this form has no field
+    // for it any more, and a problem with the file a save would have made is
+    // still a problem — placing a key beside a field that is not there would
+    // drop the sentence rather than render it whole.
+    <ProjectFileForm state={state} placed={['storage.packs.dir', 'storage.packs.idBase']}>
       {/* The hint is what the file listing established about this location, and
           it is the listing's sentence rather than a rule: the decoder's rules
           for this member are several and specific, and each names itself when
