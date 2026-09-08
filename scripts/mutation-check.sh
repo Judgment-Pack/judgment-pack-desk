@@ -6441,6 +6441,61 @@ export function assistantTransport(): Transport {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.9rem;'
+
+  # ---- Chunk 6g: every pane is a containing block --------------------------
+  #
+  # **Retired: none.** These three hold a pair — `overflow` and `position` in
+  # one rule — that no earlier row touches. `the frame has a definite height`
+  # is the neighbouring claim and is untouched: a frame of the right height
+  # whose panes are `position: static` is exactly the defect this adds.
+
+  CHK=web/src/packs/CheckStrip.module.css
+
+  # **The pane stops being a containing block.** `overflow` clips and scrolls
+  # only the descendants whose containing block is inside the scroller, so a
+  # static `.desk-main` sends every absolutely positioned descendant to the
+  # *initial* containing block: not scrolled with the pane, not clipped by the
+  # frame, and counted into the document's own scrollable overflow. Measured:
+  # `/admin` went to `scrollHeight` 2439 in an 800px window, and the shell
+  # could be scrolled up out of the frame. jsdom lays nothing out and vitest
+  # runs with `css: false`, so this is held by reading the sheet.
+  mutate web "position dropped from .desk-main, so the pane contains nothing" "$CSSH" \
+    '    overflow: auto;
+    position: relative;
+    scrollbar-gutter: stable;' \
+    '    overflow: auto;
+    scrollbar-gutter: stable;'
+
+  # **And the frame stops clipping what it does not contain.** `.desk` is
+  # `overflow: hidden` on purpose — the scrolling belongs to the panes — which
+  # is worth nothing against a descendant whose containing block is outside it.
+  # The skip link at `left: -9999px` and the three hidden selects are exactly
+  # such descendants.
+  mutate web "position dropped from .desk, so the frame clips nothing" "$CSSH" \
+    '    height: 100dvh;
+    overflow: hidden;
+    position: relative;' \
+    '    height: 100dvh;
+    overflow: hidden;'
+
+  # **A scroller written next month, in a module nobody thought about.** This
+  # is the row that says the test is a sweep and not a list of five names: the
+  # rule added here is in a module this chunk never edited, and the invariant
+  # has to reach it by shape.
+  mutate web "a new module scroller that positions nothing" "$CHK" \
+    '.check {
+  margin: 0;
+  font-size: 0.82rem;
+}' \
+    '.check {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.checkScroll {
+  max-height: 12rem;
+  overflow-y: auto;
+}'
 fi
 
 restore
