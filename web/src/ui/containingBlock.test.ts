@@ -273,7 +273,17 @@ describe('every scroll container is a containing block', () => {
     expect(sheets.length).toBeGreaterThanOrEqual(34)
     expect(sheets.map(short)).toContain('shell.css')
     expect(sheets.map(short)).toContain('styles.css')
-    expect(containers.length).toBeGreaterThanOrEqual(17)
+    expect(containers.length).toBeGreaterThanOrEqual(18)
+    // Eighteen is seventeen authored scrollers and the frame, and the frame is
+    // the one the floor alone could not notice going: it reaches this set
+    // through a clause of its own, so a floor of seventeen stayed green with
+    // that clause deleted and `.desk` — the element the whole measurement was
+    // taken on — silently unheld.
+    expect(
+      containers.some((rule) => rule.selector === '.desk'),
+      'the frame is in the swept set: it clips on purpose, and clips nothing it is not the ' +
+        'containing block of'
+    ).toBe(true)
   })
 
   it.each(containers.map((rule) => [`${rule.where}  ${rule.selector}`, rule] as const))(
