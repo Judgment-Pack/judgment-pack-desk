@@ -524,9 +524,10 @@ describe('every scroll container is a containing block', () => {
   })
 
   it.each(PANES)('%s is positioned, and no rule of that exact selector takes it back', (selector) => {
-    // The sweep reaches `.desk-console` only through the frame clause — it
-    // clips rather than scrolls — so the frame and the four panes are held by
-    // name as well. Every rule spelling that exact selector is read, not the
+    // The sweep does not reach `.desk-console` at all: it clips rather than
+    // scrolls, so no clause of the sweep holds it and it is held here, by
+    // name. (`.desk` clips too, and is in the swept set only because a clause
+    // names it.) Every rule spelling that exact selector is read, not the
     // first one found. This is a *same-selector* check and nothing wider: an
     // override written as `body .desk-main` is a different selector, is not
     // read here, and is the browser script's job.

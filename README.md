@@ -417,8 +417,8 @@ red badge in a nav rail would be a gate the runtime never issued.
 
 **Six regions**, on a CSS grid of a **definite** viewport height —
 `height: 100dvh` and not `min-height`, so the content row divides the viewport
-instead of growing to fit a long page, `.desk-main` is the one scroll container,
-and the 28px strip stays on screen. The three pane sizes in the table are the
+instead of growing to fit a long page, `.desk-main` is the route's scroll
+container, and the 28px strip stays on screen. The three pane sizes in the table are the
 configured values, written onto the grid as `--rail-w`, `--inspector-w` and
 `--console-h`; collapse writes one of two values into a second custom property
 and never a third number.
@@ -455,15 +455,18 @@ one, and a test holds that with both of the route's own landmarks mounted.
 **The document never scrolls, because every scroller is a containing block.**
 A scroll container clips and scrolls only the descendants whose containing
 block lies inside it, so **every rule that authors a scrolling overflow
-declares a position that positions in the same rule** — `relative` on every
-one of them but two, the dialog's content and the rail's drawer, which are
-`fixed` because they are out of flow anyway. So do the frame and its four
-panes, by name. And so does the one scroll container the browser makes rather
-than a sheet: a `<textarea>` computes `overflow: auto` with nothing declaring
-it, so the textarea primitive is carried on a named list instead of by the
-sweep. A rule that *merely clips* is not held — an `overflow: hidden` on an
-ellipsis label or a popup clips text, and text has no containing block to be
-laid out against.
+declares a position that positions in the same rule** — `relative` on sixteen
+of the eighteen, and `fixed` on the two that were already out of flow, the
+dialog's content and the shell's drawer, which the rail and the Inspector both
+use. So do the frame and its four panes, under their own exact selector. And
+so do the scroll containers the *browser* makes rather than a sheet: a
+`<textarea>` computes `overflow: auto` with nothing declaring it, so those are
+a named list, found by grepping `<textarea` and `<select` under `web/src` and
+keeping the ones whose rule authors no overflow of its own — today
+`ui/TextArea.module.css .textarea`, the primitive, and `styles.css
+.code-editor`, the three raw fields on `/author` and the evaluate route. A rule
+that *merely clips* is not held — an `overflow: hidden` on an ellipsis label or
+a popup clips text, and text has no containing block to be laid out against.
 
 Without it, Admin at 1400×800 with an assistant key stored measured a document
 2439px tall inside an 800px window and the whole shell could be scrolled up out
@@ -472,19 +475,25 @@ trigger that sits inside a `<form>`: three of them, absolutely positioned
 against the *initial* containing block, neither scrolled with the main pane nor
 clipped by the frame, and counted into the document's own overflow.
 
-Two things check it, and they check different things.
+Two things check it, and they check different halves.
 `web/src/ui/containingBlock.test.ts` **reads the source**. It holds the
-declaring rule, and every other rule in the same sheet family — a module class
-is hashed, so it cannot reach another module's — whose selector names a held
-class *as a whole class token* and takes the position back, by a `position`
-that does not position or by an `all` of any value. What it cannot see is an
-override that reaches the element without naming its class: an id, an attribute
-selector, an inline style. Its docstring says so, rather than leaving it to be
-found. **The live drive measures the cascade.** It loads a real build in real
-Chrome and reads `document.scrollingElement.scrollHeight` against
-`innerHeight` on 49 configurations a build — every route, both Inspector
-states, the console open, two widths. That measurement is in the pull request;
-CI does not run it.
+declaring rules — each rule that authors a scrolling overflow, the frame and
+the four panes under their own exact selector, and the two on the user-agent
+list. What it cannot hold is the cascade: a rule that takes a pane's position
+back by *any other* selector — an ancestor in front of it, an id, an attribute,
+a nested `&`, a `:global`, an inline style — is a computed result and not a
+sentence in a sheet, and three drafts that tried to emulate it were each
+defeated by a construction nobody had thought of. Its docstring says exactly
+that, rather than leaving it to be found. **`scripts/containment-check.sh`
+measures the cascade**, in Chrome, against a built chassis: the computed
+`position` of the frame and each pane, `scrollHeight` against `innerHeight`,
+`scrollY` after a `scrollTo(0, 5000)`, and whether any absolutely positioned
+element still resolves its `offsetParent` to `BODY`. Seven routes, four pane
+configurations at 1400×800 and three at 640×800 — below 1100px the Inspector is
+a modal drawer whose overlay owns the pointer, so the console cannot be toggled
+while it is open — 49 rows a build. It measured 0 of 49 contained at e2d1dee
+and 49 of 49 after. CI does not run it; every merge that touches these sheets
+does, and the Tests section says how.
 
 A collapsed pane is **removed from the accessibility tree**, not merely made
 invisible: closed is the `hidden` attribute plus `[hidden] { display: none
