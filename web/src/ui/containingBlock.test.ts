@@ -171,6 +171,42 @@ const sheets = everySheet(SRC).sort()
 const short = (path: string) => relative(SRC, path).split(sep).join('/')
 const rules = sheets.flatMap((path) => rulesIn(readFileSync(path, 'utf8'), short(path)))
 
+/**
+ * One rule's selector list, split on the commas that separate selectors.
+ *
+ * Not `split(',')`: `:is(.a, .b)` and `:not(.x, .y)` carry commas of their
+ * own, and a splitter that broke on those would compare half a selector
+ * against the container set and match nothing.
+ */
+function selectorList(selector: string): string[] {
+  const out: string[] = []
+  let buffer = ''
+  let quote: string | undefined
+  let parens = 0
+  for (const character of selector) {
+    if (quote !== undefined) {
+      buffer += character
+      if (character === quote) quote = undefined
+      continue
+    }
+    if (character === '"' || character === "'") {
+      quote = character
+      buffer += character
+      continue
+    }
+    if (character === '(') parens += 1
+    if (character === ')') parens = Math.max(0, parens - 1)
+    if (parens === 0 && character === ',') {
+      out.push(buffer.trim())
+      buffer = ''
+      continue
+    }
+    buffer += character
+  }
+  out.push(buffer.trim())
+  return out.filter((one) => one !== '')
+}
+
 /** Every declared `position` value in one rule, `!important` stripped. */
 const positions = (rule: Rule) =>
   rule.declarations
@@ -189,6 +225,44 @@ const containers = rules.filter((rule) => {
   if (overflow.some((d) => scrolls(d.value))) return true
   return rule.selector === '.desk' && overflow.length > 0
 })
+
+/** The selectors the sweep above holds, one per member of each rule's list. */
+const containerSelectors = new Set(containers.flatMap((rule) => selectorList(rule.selector)))
+
+/**
+ * Every rule that takes one of those selectors' position away again.
+ *
+ * **Why a second pass at all.** The sweep above is *per rule*, and the cascade
+ * is not. `.desk-main { overflow: auto; position: relative }` satisfies it and
+ * a single later line — `.desk-main { position: static }` at the foot of the
+ * sheet, or `@media (max-width: 900px) { .desk-main { position: static } }`
+ * three hundred lines down — undoes the whole change while every assertion
+ * stays green. Both were measured: 24 of 24 passing, and the pane no longer a
+ * containing block.
+ *
+ * A `position` on a container's selector must therefore still position.
+ * `static` is the one that was measured; `initial`, `unset`, `revert` and
+ * `revert-layer` all compute to it, and `inherit` computes to whatever the
+ * parent has, which is not a promise — so this reads the whitelist and not a
+ * blacklist: a value that is not one of the four positioning keywords fails.
+ *
+ * It is deliberately stricter than the cascade. A `.list` in one module and a
+ * `.list` in another are different classes once the module hash is on them and
+ * neither can reach the other, but this compares selector text across every
+ * sheet: the message names the sheet, so a real collision costs one rename and
+ * a missed override costs the bug this branch exists to fix.
+ */
+function unpositionedBy(all: Rule[], selectors: Set<string>) {
+  return all.flatMap((rule) =>
+    selectorList(rule.selector)
+      .filter((one) => selectors.has(one))
+      .flatMap((one) =>
+        positions(rule)
+          .filter((value) => !POSITIONED.has(value))
+          .map((value) => `${rule.where}  ${rule.selector}  ${one} → position: ${value}`)
+      )
+  )
+}
 
 describe('every scroll container is a containing block', () => {
   it('found the sheets and the scrollers, so the sweep below is not vacuous', () => {
@@ -217,6 +291,17 @@ describe('every scroll container is a containing block', () => {
       }
     }
   )
+
+  it('and no other rule anywhere unpositions one of them again', () => {
+    expect(
+      unpositionedBy(rules, containerSelectors),
+      'a scroll container is a containing block only while nothing takes its position back: ' +
+        'each line above is a rule whose selector is held by the sweep and which declares a ' +
+        'position that does not position, so the pane stops containing its absolutely ' +
+        'positioned descendants and the document grows again — at the width the media query ' +
+        'names, if it is inside one'
+    ).toEqual([])
+  })
 
   it('refuses an overflow value it cannot read', () => {
     // A sweep is only as good as its reading. `overflow: var(--x)` is a value
@@ -313,6 +398,44 @@ describe('the rule reader itself', () => {
     expect(OVERFLOW.has('overflow-block')).toBe(true)
     expect(OVERFLOW.has('overflow-inline')).toBe(true)
     expect(OVERFLOW.has('overflow-wrap')).toBe(false)
+  })
+
+  it('walks into a media block and a supports block to find the rule inside', () => {
+    // The cascade pass is worth nothing if the reader stops at an at-rule:
+    // `@media (max-width: 900px) { .desk { position: static } }` is a pane
+    // that contains nothing on a narrow viewport and a green suite on every
+    // width, which is the worst shape a guard can have.
+    const nested = rulesIn(
+      '@media (max-width: 900px) {\n' +
+        '  @supports (height: 100dvh) {\n' +
+        '    .desk-main, .desk { position: static }\n' +
+        '  }\n' +
+        '}',
+      'fixture.css'
+    )
+    expect(nested.find((r) => r.selector === '.desk-main, .desk')?.declarations).toEqual([
+      { property: 'position', value: 'static' }
+    ])
+    expect(unpositionedBy(nested, new Set(['.desk']))).toEqual([
+      'fixture.css  .desk-main, .desk  .desk → position: static'
+    ])
+    // And the four spellings of the same thing, plus a positioning one that
+    // must not be reported.
+    for (const value of ['static', 'initial', 'unset', 'revert', 'revert-layer']) {
+      expect(
+        unpositionedBy(rulesIn(`.desk { position: ${value} }`), new Set(['.desk'])).length,
+        value
+      ).toBe(1)
+    }
+    expect(unpositionedBy(rulesIn('.desk { position: sticky }'), new Set(['.desk']))).toEqual([])
+  })
+
+  it('splits a selector list on its own commas and not on a functional one', () => {
+    expect(selectorList('.desk-main, .desk')).toEqual(['.desk-main', '.desk'])
+    expect(selectorList(':is(.a, .b) .desk, .desk-rail')).toEqual([
+      ':is(.a, .b) .desk',
+      '.desk-rail'
+    ])
   })
 
   it('reads a position through !important', () => {
