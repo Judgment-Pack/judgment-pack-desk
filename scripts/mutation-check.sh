@@ -6444,10 +6444,14 @@ export function assistantTransport(): Transport {
 
   # ---- Chunk 6g: every pane is a containing block --------------------------
   #
-  # **Retired: none.** These three hold a pair — `overflow` and `position` in
-  # one rule — that no earlier row touches. `the frame has a definite height`
-  # is the neighbouring claim and is untouched: a frame of the right height
-  # whose panes are `position: static` is exactly the defect this adds.
+  # **Retired: none.** These five hold a pair — `overflow` and `position` on
+  # one element — that no earlier row touches. `the frame has a definite
+  # height` is the neighbouring claim and is untouched: a frame of the right
+  # height whose panes are `position: static` is exactly the defect this adds.
+  #
+  # Three break the pair inside the rule that declares it; two leave every rule
+  # of the change alone and take the position back from somewhere else, which
+  # is the half a per-rule sweep cannot see.
 
   CHK=web/src/packs/CheckStrip.module.css
 
@@ -6496,6 +6500,52 @@ export function assistantTransport(): Transport {
   max-height: 12rem;
   overflow-y: auto;
 }'
+
+  # **And the two the first three could not see.** Both of these leave every
+  # rule of the change exactly as written — `.desk-main` still spells
+  # `overflow: auto; position: relative`, `.desk` still spells
+  # `overflow: hidden; position: relative` — and take the position back
+  # somewhere else, which is what the cascade does and what a per-rule sweep
+  # cannot notice. Measured before the second pass existed: each left the file
+  # 24 of 24 green with the pane no longer a containing block, so each was
+  # NOT DISCRIMINATING then and is a row now.
+  mutate web "a later rule unpositions .desk-main again" "$CSSH" \
+    '  @media (prefers-reduced-motion: reduce) {
+    .desk,
+    .desk-rail,
+    .desk-inspector,
+    .desk-console {
+      transition-duration: 0s !important;
+    }
+  }
+}' \
+    '  @media (prefers-reduced-motion: reduce) {
+    .desk,
+    .desk-rail,
+    .desk-inspector,
+    .desk-console {
+      transition-duration: 0s !important;
+    }
+  }
+}
+
+.desk-main {
+  position: static;
+}'
+
+  # The same move at one width, which is worse: green everywhere the suite
+  # looks and broken on the viewport the media query names.
+  mutate web "the frame unpositioned inside a media block" "$CSSH" \
+    '  @media (prefers-reduced-motion: reduce) {
+    .desk,' \
+    '  @media (max-width: 900px) {
+    .desk {
+      position: static;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .desk,'
 fi
 
 restore
