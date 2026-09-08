@@ -1,6 +1,6 @@
 /**
- * The fields on the four cards that write the project's own configuration
- * file, and nothing else about them.
+ * The fields on the cards that write the project's own configuration file, and
+ * nothing else about them.
  *
  * Each form is the members its decoder knows, in the order the schema declares
  * them, with **a hint only where a rule exists** — and where one does, it is
@@ -15,11 +15,12 @@
  * pane dimension nobody touched stays undeclared, and the Inspector's drawer
  * keeps its own baseline.
  *
- * **The values here can be written and the ones beside them cannot.** Panes
- * keeps its configured-and-rendered rows: those report what is on screen
- * against what the file asked for, which is a different fact from the number a
- * reader is about to write, and collapsing the two is how an accepted 720px
- * Inspector was reported as 720px while rendering 440px.
+ * **There is no pane-dimension form here any more.** The Panes card offered
+ * three of them and a reset of this browser's own record of the layout, and a
+ * settings page editing the frame it is drawn in is a control looking for a
+ * pane. The `panes` member is still decoded, still applied and still validated
+ * — what left is the form, and its write path left with it, because a Save
+ * with no control behind it is a write path nothing offers.
  */
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
@@ -27,7 +28,6 @@ import {
   ID_BASE_SAYS,
   NO_CONTROL_CHARACTERS,
   ORGANIZATION_MARK_SAYS,
-  PANE_BOUNDS,
   STORAGE_KIND_SAYS,
   type Density,
   type ThemeChoice
@@ -49,21 +49,6 @@ import type { MemberEdit } from './useProjectFileSave'
  */
 function orNull(value: string): string | null {
   return value.trim() === '' ? null : value
-}
-
-/**
- * A number field's value as the file takes it.
- *
- * A number where it is one, and **the text itself where it is not** — never a
- * repaired value and never a silently skipped edit. `NaN` written as a number
- * would reach the decoder as `null` and be refused for being the wrong thing;
- * the bytes the reader typed are refused for being what they are, at the field
- * they are in.
- */
-function orText(value: string): number | string {
-  const trimmed = value.trim()
-  const number = Number(trimmed)
-  return trimmed !== '' && Number.isFinite(number) ? number : value
 }
 
 interface OrganizationDraft {
@@ -180,55 +165,6 @@ export function AppearanceForm() {
           />
         )}
       </Field>
-    </ProjectFileForm>
-  )
-}
-
-/** The three bounded dimensions, each with the label its card prints. */
-const DIMENSIONS = [
-  { key: 'panes.left.width', label: 'Rail width', path: ['left', 'width'] },
-  { key: 'panes.inspector.width', label: 'Inspector width', path: ['inspector', 'width'] },
-  { key: 'panes.console.height', label: 'Console height', path: ['console', 'height'] }
-] as const
-
-type PanesDraft = Record<string, string>
-
-export function PanesForm() {
-  const { config } = useEffectiveConfig()
-  const seed: PanesDraft = {
-    'panes.left.width': String(config.panes.left.width),
-    'panes.inspector.width': String(config.panes.inspector.width),
-    'panes.console.height': String(config.panes.console.height)
-  }
-  const state = useProjectFileDraft('/panes', seed, (draft, from) =>
-    DIMENSIONS.filter((dimension) => draft[dimension.key] !== from[dimension.key]).map(
-      (dimension) => ({ path: dimension.path, value: orText(draft[dimension.key] ?? '') })
-    )
-  )
-  const { draft, set, save } = state
-  return (
-    <ProjectFileForm state={state} placed={DIMENSIONS.map((dimension) => dimension.key)}>
-      {DIMENSIONS.map((dimension) => (
-        <Field
-          key={dimension.key}
-          label={dimension.label}
-          error={problemAt(save, dimension.key)}
-        >
-          {(wiring) => (
-            <Input
-              {...wiring}
-              type="number"
-              // The decoder's own bounds, so the control and the refusal cannot
-              // disagree about what is accepted.
-              min={PANE_BOUNDS[dimension.key]!.min}
-              max={PANE_BOUNDS[dimension.key]!.max}
-              step={1}
-              value={draft[dimension.key] ?? ''}
-              onChange={(event) => set({ ...draft, [dimension.key]: event.target.value })}
-            />
-          )}
-        </Field>
-      ))}
     </ProjectFileForm>
   )
 }

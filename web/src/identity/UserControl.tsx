@@ -15,6 +15,16 @@
  * and it is the one that falsifies the README's "opens no outbound
  * connection", which it must amend in the same commit.
  *
+ * **The panes' reset lives here**, and this is the menu it belongs in. The
+ * record it clears is per viewer and per browser — the same class of thing as
+ * the two settings links above it — and it is about all three panes, so it is
+ * not one pane's header control: the Inspector's header carries the Inspector's
+ * own close and nothing else, and the Console has no header at all. It used to
+ * be a button on Admin › Panes, which is a settings page reaching into a
+ * browser's own storage; this is the shell's own menu, beside the panes it
+ * clears. The menu **stays open** while it answers, because what happened is a
+ * sentence and a menu that closed would take it away with it.
+ *
  * The sentence about the token is checked against the code rather than
  * inherited from the spec: `McpProvider` copies `?token=` into `sessionStorage`
  * on first load, and nothing calls `history.replaceState` — so the token
@@ -22,8 +32,10 @@
  * "it leaves the URL immediately" would be a claim this desk does not keep.
  */
 import { Avatar, DropdownMenu } from 'radix-ui'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { IconChevronDown } from '../shell/icons'
+import { useShellState, type ResetOutcome } from '../shell/paneState'
 import { useIdentity } from './IdentityProvider'
 
 export const NONE_MENU_SENTENCE =
@@ -37,6 +49,21 @@ export const TOKEN_SENTENCE =
 
 export const PROVIDER_PHASE_NOTE = 'provider configured · sign-in arrives in phase B'
 
+/**
+ * What a reset did, in three sentences rather than one.
+ *
+ * They are three different facts and a menu that reported all of them as
+ * "Cleared." would be stating one it never observed: the record may be gone,
+ * this browser's storage may have refused the deletion, or the chassis may not
+ * yet have said which project this desk is open on — in which case the key is
+ * provisional and nothing is cleared under it.
+ */
+export const RESET_SAYS: Record<ResetOutcome, string> = {
+  cleared: 'Cleared — the panes are back on their defaults.',
+  refused: 'this browser did not clear the record — the layout is unchanged',
+  unresolved: 'nothing was cleared: this desk has not been told which project it is open on'
+}
+
 /** Up to two initials, from whatever the name happens to be. */
 export function monogram(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -47,6 +74,8 @@ export function monogram(name: string): string {
 
 export function UserControl() {
   const { provider, displayName } = useIdentity()
+  const shell = useShellState()
+  const [reset, setReset] = useState<ResetOutcome | undefined>(undefined)
   // Where a provider is configured and carries no label, the name falls back
   // to the issuer's host — something the desk read out of the file. It does
   // **not** fall back to "signed out": that is a verdict about a session, and
@@ -59,7 +88,14 @@ export function UserControl() {
   const name = provider === null ? displayName : (provider.label ?? provider.issuerHost)
 
   return (
-    <DropdownMenu.Root>
+    <DropdownMenu.Root
+      // A verdict from the last time the menu was open is not a verdict about
+      // this time: it is dropped when the menu closes rather than left to
+      // greet whoever opens it next.
+      onOpenChange={(open) => {
+        if (!open) setReset(undefined)
+      }}
+    >
       <DropdownMenu.Trigger className="desk-user" aria-label="Account and desk settings">
         <Avatar.Root className="desk-avatar">
           <Avatar.Fallback delayMs={0}>{monogram(name)}</Avatar.Fallback>
@@ -82,9 +118,23 @@ export function UserControl() {
           <DropdownMenu.Item asChild className="desk-menu-item">
             <Link to="/admin#appearance">Appearance</Link>
           </DropdownMenu.Item>
-          <DropdownMenu.Item asChild className="desk-menu-item">
-            <Link to="/admin#panes">Panes</Link>
+          <DropdownMenu.Item
+            className="desk-menu-item"
+            onSelect={(event) => {
+              // The menu stays open so the answer below it can be read. The
+              // reset runs inside the provider that owns the record — it
+              // cancels a write already on its way, refuses to clear the
+              // provisional key before the chassis has said which project this
+              // is, and reads the key back afterwards.
+              event.preventDefault()
+              setReset(shell.resetPanes())
+            }}
+          >
+            Reset panes
           </DropdownMenu.Item>
+          {reset !== undefined && (
+            <DropdownMenu.Label className="desk-menu-note">{RESET_SAYS[reset]}</DropdownMenu.Label>
+          )}
           <DropdownMenu.Item asChild className="desk-menu-item">
             <Link to="/help#shortcuts">Keyboard shortcuts</Link>
           </DropdownMenu.Item>

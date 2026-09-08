@@ -1,5 +1,5 @@
 /**
- * The four project-file forms, as a reader drives them.
+ * The project-file forms, as a reader drives them.
  *
  * `projectFileSave.test.ts` proves what is composed and `projectFileWrite.test.tsx`
  * proves what leaves the browser; this is the part in between — what a form
@@ -18,12 +18,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigProvider, useEffectiveConfig } from '../config/DeskConfigProvider'
 import { testQueryClient } from '../testing/harness'
-import {
-  AppearanceForm,
-  OrganizationForm,
-  PanesForm,
-  StorageForm
-} from './projectFileCards'
+import { AppearanceForm, OrganizationForm, StorageForm } from './projectFileCards'
 import { NO_CONTROL_CHARACTERS } from '../config/deskConfig'
 import { FROM_THE_DESK_FILE } from './useProjectFileSave'
 
@@ -406,9 +401,9 @@ describe('a project-file card’s form', () => {
   })
 
   /**
-   * The same claim on each of the four cards, because the rule lives in the
-   * hook they share and a card that stopped using it would be the one place it
-   * did not hold.
+   * The same claim on each of the cards, because the rule lives in the hook
+   * they share and a card that stopped using it would be the one place it did
+   * not hold.
    *
    * Storage's first field is Kind, whose union has one member — there is no
    * other value to type — so the field touched there is the next one.
@@ -437,21 +432,6 @@ describe('a project-file card’s form', () => {
       },
       'appearance',
       { theme: 'dark', density: 'compact' }
-    ],
-    [
-      'Panes',
-      <PanesForm key="p" />,
-      '"panes": { "left": { "mode": "expanded", "width": 248 }, "inspector": { "open": false, "width": 360 } }',
-      '"panes": { "left": { "mode": "expanded", "width": 248 }, "inspector": { "open": false, "width": 400 } }',
-      async () =>
-        fireEvent.change(await screen.findByLabelText('Rail width'), {
-          target: { value: '300' }
-        }),
-      'panes',
-      {
-        left: { mode: 'expanded', width: 300 },
-        inspector: { open: false, width: 400 }
-      }
     ],
     [
       'Storage',
@@ -599,13 +579,13 @@ describe('a project-file card’s form', () => {
     ],
     [
       'a nested leaf',
-      <PanesForm key="p" />,
-      (width: string) =>
-        `{\n  "deskConfigVersion": 1,\n  "panes": { "left": { "mode": "expanded", "width": ${width} } }\n}\n`,
-      'Rail width',
-      '248',
-      '300',
-      '360'
+      <StorageForm key="s" dirSays="holds files" />,
+      (dir: string) =>
+        `{\n  "deskConfigVersion": 1,\n  "storage": { "packs": { "dir": ${JSON.stringify(dir)} } }\n}\n`,
+      'Packs go to',
+      'packs',
+      'decisions',
+      'archive'
     ]
   ] as const)(
     'follows a later revision of %s it has caught up with, and writes nothing',

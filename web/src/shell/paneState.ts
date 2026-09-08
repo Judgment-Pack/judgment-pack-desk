@@ -55,7 +55,7 @@ export const BUILT_IN_SHELL_STATE: ShellState = {
 
 const RECORD_VERSION = 1
 
-/** One record's key. Exported so a test — and Admin's reset — can name it. */
+/** One record's key. Exported so a test — and the menu's reset — can name it. */
 export function shellStateKey(projectKey: string): string {
   return `jpack-desk:shell:v${RECORD_VERSION}:${projectKey}`
 }
@@ -284,7 +284,7 @@ export interface ShellStateApi extends ShellState {
   openInspector: () => void
   toggleConsole: () => void
   setConsoleTab: (tab: ConsoleTab) => void
-  /** The key this project's record lives under, for Admin › Panes. */
+  /** The key this project's record lives under, so a test can name it. */
   storageKey: string
   /** False while the chassis has not yet said which project this is. */
   keyResolved: boolean
@@ -457,19 +457,21 @@ export function ShellStateProvider({
   }, [storageKey, state, keyResolved])
 
   /**
-   * The reset, here rather than in Admin.
+   * The reset, here rather than wherever the control happens to be.
    *
    * Admin used to call `resetShellState` directly and report success without
    * asking. Three things were wrong with that and all three are fixed by the
-   * control living where the state does: a debounced write already in flight
+   * reset living where the state does: a debounced write already in flight
    * rewrote the key a moment later, an early press cleared the provisional
    * `default` key instead of this project's, and a storage that refused the
-   * deletion was reported as "Cleared."
+   * deletion was reported as "Cleared." The control itself has since moved out
+   * of Admin and into the user menu, beside the panes it clears; none of this
+   * had to change for it.
    */
   const resetPanes = useCallback((): ResetOutcome => {
     if (!keyResolved) return 'unresolved'
     // **Nothing changes unless the record actually went.** Clearing the live
-    // layout on a storage that refused the deletion left Admin saying "the
+    // layout on a storage that refused the deletion left the menu saying "the
     // layout is unchanged" while the panes had visibly moved — and the record
     // was still there to come back on the next reload. A refusal is now a
     // no-op in every respect, which is what that sentence claims.

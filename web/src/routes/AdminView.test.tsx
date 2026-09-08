@@ -15,14 +15,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
-import {
-  PANE_BOUNDS,
-  STORAGE_KIND_SAYS,
-  decodeDeskConfig,
-  effectiveConfig
-} from '../config/deskConfig'
+import { STORAGE_KIND_SAYS, decodeDeskConfig, effectiveConfig } from '../config/deskConfig'
 import { McpContext } from '../mcp/McpProvider'
-import { ShellStateProvider, projectKey, shellStateKey } from '../shell/paneState'
+import { ShellStateProvider } from '../shell/paneState'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { narrationIn } from '../admin/narration'
 import { AdminView } from './AdminView'
@@ -44,9 +39,8 @@ const CHASSIS_413 = {
   source: 'chassis'
 } as const
 
-/** The chassis' project root, and the key the record therefore lives under. */
+/** The chassis' project root this desk is open on. */
 const ROOT = '/home/someone/a-project'
-const KEY = shellStateKey(projectKey(ROOT))
 const DESK_PATH = '/home/someone/.config/jpack-desk/desk.json'
 
 /**
@@ -332,11 +326,16 @@ describe('the Admin page', () => {
   })
 
   it('shows a member of the file as it is written, not as a decode of it', () => {
-    // `1e2` is not `100`. A disclosure that re-serialised would show a reader
-    // a file that is not on disk, which is the one thing it must not do.
-    const text = '{\n  "deskConfigVersion": 1,\n  "panes": {"left": {"width": 2.48e2}}\n}'
+    // The bytes, not a re-serialisation of the decode. `idBase` is normalised
+    // at decode — it gains the separator it was missing — and the defaults are
+    // applied on top, so a disclosure that re-serialised would show a reader a
+    // member that is not the one in the file.
+    const text =
+      '{\n  "deskConfigVersion": 1,\n  "storage": {"packs": {"idBase": "https://a.example/d"}}\n}'
     renderAdmin(effectiveConfig(decodeDeskConfig(text, 'project'), undefined, undefined, undefined, text))
-    expect(screen.getByText('{"left": {"width": 2.48e2}}')).toBeTruthy()
+    expect(screen.getByText('{"packs": {"idBase": "https://a.example/d"}}')).toBeTruthy()
+    // The decode is on the field beside it, and says something else.
+    expect(screen.getByDisplayValue('https://a.example/d/')).toBeTruthy()
   })
 
   it('names the storage kind, the location and the id prefix', () => {
@@ -454,10 +453,9 @@ describe('the Admin page', () => {
     // name the project it is already running in, or withdraw a default, and
     // nothing else — so there is one button and no field for a path.
     const writes: Record<string, number> = {
-      'Reset panes on this machine': 1,
-      // The assistant slot's, and one on each of the four cards that write a
+      // The assistant slot's, and one on each of the three cards that write a
       // member of the project's own file.
-      Save: 5,
+      Save: 4,
       'Check reachability': 1,
       'Use this project as the default': 1
     }
@@ -526,12 +524,11 @@ describe('the Admin page', () => {
       'Save',
       'Save',
       'Save',
-      'Save',
       'Save'
     ])
-    // The desk-level file, on two cards; this project's own file, on four.
+    // The desk-level file, on two cards; this project's own file, on three.
     expect(screen.getAllByText(/has not read its own configuration file/).length).toBe(2)
-    expect(screen.getAllByText(/has not read this project/).length).toBe(4)
+    expect(screen.getAllByText(/has not read this project/).length).toBe(3)
   })
 
   it('enables the two writes once the desk-level file has been read', () => {
@@ -554,12 +551,12 @@ describe('the Admin page', () => {
       Array.from(container.querySelectorAll('button[disabled]')).map(
         (element) => element.textContent
       )
-    ).toEqual(['List models', 'Save', 'Save', 'Save', 'Save'])
+    ).toEqual(['List models', 'Save', 'Save', 'Save'])
     // The desk-level file has been read, so neither card that writes it says
     // otherwise. The project's own file has not, which is a different file and
     // a different sentence — and the four cards that write it say so.
     expect(screen.queryByText(/has not read its own configuration file/)).toBeNull()
-    expect(screen.getAllByText(/has not read this project/).length).toBe(4)
+    expect(screen.getAllByText(/has not read this project/).length).toBe(3)
   })
 
   it('will not offer the nomination where the chassis has not named this project', () => {
@@ -577,41 +574,6 @@ describe('the Admin page', () => {
     }) as HTMLButtonElement
     expect(nominate.disabled).toBe(true)
     expect(screen.getByText(/has not said where its own configuration file is/)).toBeTruthy()
-  })
-
-  it('clears exactly one localStorage key when the reset is pressed, and says so', () => {
-    window.localStorage.setItem(KEY, '{"v":1}')
-    window.localStorage.setItem('jpack-desk:shell:v1:another', '{"v":1}')
-    window.localStorage.setItem('jpack-desk-token', 'a token')
-    renderAdmin()
-    fireEvent.click(screen.getByRole('button', { name: 'Reset panes on this machine' }))
-    expect(window.localStorage.getItem(KEY)).toBeNull()
-    expect(window.localStorage.getItem('jpack-desk:shell:v1:another')).toBe('{"v":1}')
-    expect(window.localStorage.getItem('jpack-desk-token')).toBe('a token')
-    expect(screen.getByText(/Cleared — the panes are back/)).toBeTruthy()
-  })
-
-  it('reports a reset it could not make, rather than reporting one it did', () => {
-    const backing = new Map<string, string>([[KEY, '{"v":1}']])
-    vi.stubGlobal('localStorage', {
-      getItem: (key: string) => backing.get(key) ?? null,
-      setItem: (key: string, value: string) => void backing.set(key, value),
-      removeItem: () => {},
-      clear: () => {}
-    })
-    renderAdmin()
-    fireEvent.click(screen.getByRole('button', { name: 'Reset panes on this machine' }))
-    expect(screen.getByText(/did not clear the record/)).toBeTruthy()
-    expect(screen.queryByText(/Cleared — the panes/)).toBeNull()
-  })
-
-  it('refuses to reset a provisional key, and says which key it is', () => {
-    window.localStorage.setItem(shellStateKey('default'), '{"v":1}')
-    renderAdmin(effectiveConfig(undefined), '/admin', null)
-    expect(screen.getByText(/provisional/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Reset panes on this machine' }))
-    expect(screen.getByText(/has not been told which project/)).toBeTruthy()
-    expect(window.localStorage.getItem(shellStateKey('default'))).toBe('{"v":1}')
   })
 
   it('names a configuration that could not be read, and does not call it absent', () => {
@@ -704,69 +666,10 @@ describe('the Admin page', () => {
       scrolled.push(this.id)
     }
     try {
-      renderAdmin(effectiveConfig(undefined), '/admin#panes')
-      expect(scrolled).toContain('panes')
+      renderAdmin(effectiveConfig(undefined), '/admin#storage')
+      expect(scrolled).toContain('storage')
     } finally {
       Element.prototype.scrollIntoView = original
-    }
-  })
-
-  it('prints every accepted range, inclusive', () => {
-    renderAdmin()
-    for (const [key, bounds] of Object.entries(PANE_BOUNDS)) {
-      expect(screen.getByText(`${key}: ${bounds.min}–${bounds.max}px`)).toBeTruthy()
-    }
-  })
-
-  it('labels the configured numbers as configured, and measures the rendered ones', () => {
-    // The mismatch this fixes: an accepted 720px Inspector renders 440px at
-    // 1100px, and an undeclared drawer renders 320px while Admin said 360.
-    const { container } = renderAdmin()
-    expect(container.textContent).toContain('configured')
-    expect(container.textContent).toContain('rendered')
-    // No pane is in this document at all — Admin is rendered on its own here —
-    // so every rendered figure says so rather than reporting a zero.
-    expect(screen.getAllByText('not mounted at this width')).toHaveLength(3)
-  })
-
-  it('measures a pane that is there, and calls a mounted-but-collapsed one collapsed', () => {
-    // Three answers and not two: absent, collapsed, and a number. `hidden`
-    // plus `display: none` is a real element of zero size, and reporting that
-    // as `0px` beside a configured 360 reads as a measurement rather than a
-    // state.
-    const observed: { element: Element; notify: () => void }[] = []
-    class Stub {
-      private readonly notify: () => void
-      constructor(callback: () => void) {
-        this.notify = callback
-      }
-      observe(element: Element) {
-        observed.push({ element, notify: this.notify })
-      }
-      unobserve() {}
-      disconnect() {}
-    }
-    vi.stubGlobal('ResizeObserver', Stub)
-
-    const rail = document.createElement('nav')
-    rail.id = 'desk-rail'
-    const inspector = document.createElement('aside')
-    inspector.id = 'desk-inspector'
-    for (const element of [rail, inspector]) document.body.append(element)
-    // 251 rather than 248: the configured rail width is 248 and appears in the
-    // same row, so a matching number would not tell a measurement from the
-    // configured value it is there to be different from.
-    rail.getBoundingClientRect = () =>
-      ({ width: 251, height: 600, top: 0, left: 0, right: 251, bottom: 600, x: 0, y: 0 }) as DOMRect
-
-    try {
-      renderAdmin()
-      expect(screen.getByText('251px')).toBeTruthy()
-      expect(screen.getByText('collapsed')).toBeTruthy()
-      expect(screen.getAllByText('not mounted at this width')).toHaveLength(1)
-    } finally {
-      rail.remove()
-      inspector.remove()
     }
   })
 
@@ -867,14 +770,6 @@ describe('the Admin page', () => {
     expect(rule).toContain(DESK_PATH)
     expect(rule).toContain('used on the next launch without a directory')
     expect(rule).toContain('/this/launch')
-  })
-
-  it('reports the runtime connection rather than a file', async () => {
-    renderAdmin()
-    // The card that is about a process and not a configuration file: its
-    // status is the connection, in the connection's own words.
-    await waitFor(() => expect(screen.getAllByText(/^connected — /).length).toBeGreaterThan(0))
-    expect(screen.getByText('Tool listing')).toBeTruthy()
   })
 
   it('says None where no identity provider is configured, and its issuer where one is', () => {

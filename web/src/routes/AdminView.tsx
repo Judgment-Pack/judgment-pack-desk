@@ -1,5 +1,5 @@
 /**
- * Admin: eight cards, one shape, and no paragraph telling anyone how to read
+ * Admin: the settings, one shape, and no paragraph telling anyone how to read
  * them.
  *
  * **The narration is gone, and its removal is the change.** Every section used
@@ -17,24 +17,26 @@
  *
  * `runtime` and the project root are **not in the schema**, and that is the
  * design rather than a gap: `relay.go` runs the configured binary, so a
- * config-supplied path would be a local-code-execution surface. The Runtime
- * card reports what the process was started with.
+ * config-supplied path would be a local-code-execution surface. The status
+ * line reports what the process was started with.
+ *
+ * **Runtime and Panes are gone, and what went with each of them is the point.**
+ * The Runtime card was status rather than settings: it is the line above, and
+ * its content is in Help & About. The Panes card offered three pane dimensions
+ * and a reset of this browser's own record of the layout — the dimensions were
+ * a settings page editing the frame it is drawn in, and the reset is now in the
+ * user menu, beside the panes it clears. Nothing about the schema changed: a
+ * file with a `panes` member is still read, still applied and still validated;
+ * what left is the settings UI for it, and its write path left with it.
  */
-import { useState } from 'react'
 import { AssistantSection } from '../assistant/AssistantSection'
 import { AdminStatusLine } from '../admin/AdminStatusLine'
 import { CardField, SourceCard, type SourceStatus } from '../admin/SourceCard'
 import { useDefaultProject } from '../admin/DefaultProject'
-import {
-  AppearanceForm,
-  OrganizationForm,
-  PanesForm,
-  StorageForm
-} from '../admin/projectFileCards'
+import { AppearanceForm, OrganizationForm, StorageForm } from '../admin/projectFileCards'
 import { useHashTarget } from '../shell/useHashTarget'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
-  PANE_BOUNDS,
   type ConfigProblem,
   type DeskConfig,
   type EffectiveConfig,
@@ -42,10 +44,6 @@ import {
 } from '../config/deskConfig'
 import { useFileListing } from '../files/queries'
 import { useMcp } from '../mcp/McpProvider'
-import { usePacks } from '../mcp/queries'
-import { useRenderedPanes, type MeasuredBox } from '../shell/measured'
-import { useShellState } from '../shell/paneState'
-import type { ResetOutcome } from '../shell/paneState'
 import { ADMIN_SECTIONS } from './adminSections'
 
 /** The sections, by id, so a card names its own rather than an index. */
@@ -57,16 +55,7 @@ export function AdminView() {
   const effective = useEffectiveConfig()
   const { config, desk } = effective
   const mcp = useMcp()
-  const { known } = mcp
-  const { data } = usePacks()
   const listing = useFileListing()
-  const shell = useShellState()
-  // Re-measured when a pane is toggled: a pane arriving or leaving is not a
-  // resize of anything already observed.
-  const rendered = useRenderedPanes(
-    `${shell.left.mode}|${shell.inspector.open}|${shell.console.open}`
-  )
-  const [reset, setReset] = useState<ResetOutcome | undefined>(undefined)
   // The Project card's one field and its Save, sharing one draft across two of
   // the card's slots.
   const defaultProject = useDefaultProject()
@@ -132,28 +121,6 @@ export function AdminView() {
       <AssistantSection id={SECTION.assistant!.id} title={SECTION.assistant!.title} />
 
       <SourceCard
-        id={SECTION.runtime!.id}
-        title={SECTION.runtime!.title}
-        location={runtimeBinary(effective)}
-        status={{ state: 'said', says: runtimeSays(mcp) }}
-        content={{ value: runtimeSummary(mcp) }}
-        fields={
-          <>
-            <CardField label="Configuration">
-              {data?.configPath ? (
-                <code>{data.configPath}</code>
-              ) : (
-                <span className="quiet">not read yet</span>
-              )}
-            </CardField>
-            <CardField label="Tool listing">
-              {known ? 'read' : 'not read on this connection'}
-            </CardField>
-          </>
-        }
-      />
-
-      <SourceCard
         id={SECTION.storage!.id}
         title={SECTION.storage!.title}
         location={sectionLocation(effective, 'storage')}
@@ -192,108 +159,9 @@ export function AdminView() {
         save={<AppearanceForm />}
       />
 
-      <SourceCard
-        id={SECTION.panes!.id}
-        title={SECTION.panes!.title}
-        location={sectionLocation(effective, 'panes')}
-        status={sectionStatus(effective, 'panes')}
-        content={{ text: textFor(effective, 'panes'), member: 'panes', value: config.panes }}
-        fields={
-          <>
-            <CardField label="Rail">
-              {/* **Configured, and labelled as configured.** These are the
-                  decoded numbers before the sheet's viewport caps touch them;
-                  the rendered figure beside them is what is on screen. Printing
-                  one and calling it the other is how an accepted 720px
-                  Inspector was reported as 720px while rendering 440px. */}
-              <code>{config.panes.left.mode}</code>, configured{' '}
-              <strong>{config.panes.left.width}px</strong> — rendered{' '}
-              <Rendered box={rendered.rail} axis="width" />
-            </CardField>
-            <CardField label="Inspector">
-              {config.panes.inspector.open ? 'open' : 'closed'}, configured{' '}
-              <strong>{config.panes.inspector.width}px</strong> — rendered{' '}
-              <Rendered box={rendered.inspector} axis="width" />
-            </CardField>
-            <CardField label="Console">
-              {config.panes.console.open ? 'open' : 'closed'}, configured{' '}
-              <strong>{config.panes.console.height}px</strong> — rendered{' '}
-              <Rendered box={rendered.console} axis="height" />
-            </CardField>
-            <CardField label="Accepted ranges">
-              {PANE_DIMENSIONS.map((dimension) => (
-                <code key={dimension.key} className="partial-reason">
-                  {dimension.key}: {PANE_BOUNDS[dimension.key]!.min}–
-                  {PANE_BOUNDS[dimension.key]!.max}px
-                </code>
-              ))}
-            </CardField>
-            <CardField label="Remembered under">
-              <code>{shell.storageKey}</code>{' '}
-              {!shell.keyResolved && (
-                <span className="quiet">provisional — this project&apos;s root is not known</span>
-              )}
-            </CardField>
-          </>
-        }
-        save={
-          <>
-            {/* Two controls, and they are two different kinds of thing: the
-                form writes the file, and the reset clears this browser's own
-                record of a layout the file never saw. */}
-            <PanesForm />
-            <p className="actions">
-              <button type="button" onClick={() => setReset(shell.resetPanes())}>
-                Reset panes on this machine
-              </button>{' '}
-              {/* What happened, not what was attempted. The reset runs inside
-                  the provider that owns the record — it cancels a write already
-                  on its way, refuses to clear the provisional key before the
-                  chassis has said which project this is, and reads the key back
-                  afterwards — and each of those is a different sentence. */}
-              {reset === 'cleared' && (
-                <span className="quiet">Cleared — the panes are back on their defaults.</span>
-              )}
-              {reset === 'refused' && (
-                <span className="quiet">
-                  this browser did not clear the record — the layout is unchanged
-                </span>
-              )}
-              {reset === 'unresolved' && (
-                <span className="quiet">
-                  nothing was cleared: this desk has not been told which project it is open on
-                </span>
-              )}
-            </p>
-          </>
-        }
-      />
     </article>
   )
 }
-
-/**
- * What the page knows about the runtime it is connected to.
- *
- * The connection's own summary — who answered `initialize`, whether the tool
- * listing was read, and what that listing said this runtime can do. **`known`
- * is carried rather than folded in**: a listing that never answered leaves
- * every flag *unknown* rather than absent, and a card that printed them as
- * false would impersonate an older runtime.
- */
-function runtimeSummary(mcp: ReturnType<typeof useMcp>) {
-  const { client, retryNow, error, ...summary } = mcp
-  void client
-  void retryNow
-  return { ...summary, error: error === null ? null : error.message }
-}
-
-/** The three bounded dimensions, in the order the section prints them. */
-const PANE_DIMENSIONS = [
-  { key: 'panes.left.width' },
-  { key: 'panes.inspector.width' },
-  { key: 'panes.console.height' }
-] as const
 
 /** The sections that come from either file, layered. */
 type LayeredSection = Exclude<
@@ -394,22 +262,6 @@ function sectionStatus(effective: EffectiveConfig, section: LayeredSection): Sou
 
 function refused(problems: ConfigProblem[]): SourceStatus {
   return { state: 'refused', problems }
-}
-
-/**
- * One measured dimension, or the reason there is not one.
- *
- * Three answers and not two. **Absent** is a pane that is not in the document
- * at this width — the Inspector's drawer form while it is closed — and
- * **collapsed** is one that is mounted at zero, which is what `hidden` plus
- * `display: none` produces. Reporting either as `0px` would be a measurement
- * of something that is not there.
- */
-function Rendered({ box, axis }: { box: MeasuredBox | undefined; axis: 'width' | 'height' }) {
-  if (box === undefined) return <span className="quiet">not mounted at this width</span>
-  const value = box[axis]
-  if (value === 0) return <span className="quiet">collapsed</span>
-  return <strong>{value}px</strong>
 }
 
 /**

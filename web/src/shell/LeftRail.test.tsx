@@ -208,11 +208,9 @@ describe('the left rail', () => {
       'Project file',
       'Identity provider',
       'Assistant',
-      'Runtime',
       'Storage',
       'Organization',
-      'Appearance',
-      'Panes'
+      'Appearance'
     ])
   })
 })

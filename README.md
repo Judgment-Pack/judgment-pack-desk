@@ -542,8 +542,28 @@ panes the viewer has actually moved**, one bit each. A record that carried all
 three because one was toggled would be two built-in defaults outranking the
 configuration file for ever. Every read and write is in `try/catch`: a private
 window and a browser with site data blocked *throw* on the accessor rather than
-answering null. **Admin › Panes** clears exactly that one key, cancelling any
-write already on its way, and reports what happened rather than assuming.
+answering null.
+
+**Reset panes** is in the user menu, and it is in the shell rather than in Admin
+because the record it clears is this browser's and this viewer's — the same
+class of thing as the two settings links beside it, and about all three panes,
+so it is not one pane's own header control. It clears exactly that one key:
+`localStorage.clear()` would take the session token's neighbours and every other
+project's layout with it, and a reset that logged the viewer out of something
+would be one that lied about its scope. The reset runs inside the provider that
+owns the record, so it cancels a write already on its way, refuses to clear the
+provisional `default` key before the chassis has said which project this is, and
+reads the key back afterwards — and it reports **what happened**, in three
+sentences rather than one, because "cleared", "this browser refused" and
+"nothing was cleared, the project is not known yet" are three different facts.
+The menu stays open while it answers, since a menu that closed would take the
+answer with it.
+
+**The pane dimensions are not a setting on a settings page.** They are in the
+schema, they are decoded, validated and applied, and Admin offers no control for
+them: a page that edits the frame it is drawn in is a control looking for a
+pane, and the write path went with the form. `panes` in `jpack-desk.json` is
+read exactly as it always was.
 
 Reduced motion is respected: `prefers-reduced-motion: reduce` sets every pane
 transition to zero, and collapse is instant.
@@ -1092,13 +1112,11 @@ it is actually in — neither side column past `40vw`, so main keeps at least
 under the header and above the strip — because a size that is legal on a
 monitor is still able to eat the frame on a phone.
 
-**A cap is not the same as a configured value, and Admin says both.** An
-accepted 720px Inspector renders 440px at a 1100px window; the Inspector's
-*drawer* form is 320px unless the file states a width. Admin › Panes prints
-the configured number, the range it had to be inside, the cap that applies, and
-the **measured** width or height of each pane that is on screen — and says
-"not mounted at this width" or "collapsed" rather than reporting a number
-nothing has. `useInspectorSlot().size` is measured on the same terms, so a
+**A cap is not the same as a configured value.** An accepted 720px Inspector
+renders 440px at a 1100px window; the Inspector's *drawer* form is 320px unless
+the file states a width. Nothing on a settings page reports that any more — the
+Panes card is gone, and with it the reader that measured the frame by its ids —
+but `useInspectorSlot().size` is still **measured** rather than configured, so a
 route laying something out beside the pane is laying it out against the width
 the pane actually has, updated as the window is dragged.
 
@@ -1156,9 +1174,9 @@ where it ends in `#`), so a pack's id is a plain concatenation everywhere it is
 used and Admin shows the prefix that will actually be written.
 
 `kind` admits only `"filesystem"` today, and its refusal names the other two by
-name: `"database"` and `"cloud storage"` are **not available yet**. Admin lists
-them as coming soon, as text rather than as disabled controls, and **nothing in
-the desk branches on this member** — a pack is created by writing a file,
+name: `"database"` and `"cloud storage"` are **not available yet**. Admin names
+them in the decoder's own words, as text rather than as disabled controls, and
+**nothing in the desk branches on this member** — a pack is created by writing a file,
 always. The create UI never asks which kind is configured.
 
 ### The desk-level file
@@ -1370,21 +1388,31 @@ left beside the console button, and a link that neither shrinks nor wraps
 painted straight across it. The link's accessible name is the full sentence at
 every width.
 
-### Admin, as eight cards
+### Admin, as six cards and a status line
 
 **Every section of Admin is one card, and the card is four slots.** A
 **Location** — the path, from the chassis, never composed on the page. A
 **Status** — one line from a closed set: `read`, `not present — defaults in
 use`, `refused: <key>: <the decoder's own reason>`, `not read — <who said so>:
-<their reason>`, or, for Runtime, the connection state. A **Content**
+<their reason>`. A **Content**
 disclosure — the member's own bytes where this page read the file, and the
 decoded value, labelled as decoded, where it did not. And the **fields**, with
 a **Save** on the cards that have a write path and nothing where they do not.
 
-The order is **Project file, Identity provider, Assistant, Runtime, Storage,
-Organization, Appearance, Panes**. The project file comes first because it is
+The order is **Project file, Identity provider, Assistant, Storage,
+Organization, Appearance**. The project file comes first because it is
 what an admin is here to point at, and the identity provider next because it is
 the other thing a deployment configures.
+
+**Above them is a status line, not a card.** The connection, the binary the
+chassis was launched with, and the two configuration files' locations — every
+value the chassis' or the connection's own answer. It replaced a Runtime card
+whose four slots held nothing anybody could edit; a settings page carries
+settings, and the card's own content is in Help & About, which is where a reader
+goes to ask what they are connected to. The Panes card went the same way and for
+the same reason: its three pane dimensions were a settings page editing the
+frame it is drawn in, and its reset is now in the shell's user menu, beside the
+panes it clears.
 
 There is no narration. A test sweeps every text node the page writes and fails
 on one over 140 characters, exempting quoted material — a path, a decoder's own
@@ -1407,10 +1435,10 @@ Assistant form writes `assistant`, and neither sends the other's — a member
 absent from the request is carried across untouched. The Project card's other
 three slots are about the *project's* file, so the one line under its control
 names the file it actually writes, from the chassis' own answer. The one
-control that writes no file at all is Panes' reset, which clears a single
-`localStorage` key.
+control that writes no file at all has left this page: the panes' reset is in
+the shell's own user menu, where the panes are.
 
-**Storage, Organization, Appearance and Panes each Save one member of
+**Storage, Organization and Appearance each Save one member of
 `jpack-desk.json` through the file API**, by splicing that member's own bytes
 and decoding the whole file before any of it is sent — so every other member
 keeps its bytes, order and whitespace, and a value this desk would then refuse
@@ -1422,8 +1450,8 @@ read live — the chassis invalidates every query when it sees this file change,
 and a card that followed would rebase onto bytes nobody saw and overwrite them
 with no refusal at all — so it moves on an arrival while nothing is unsaved, on
 Reload, and on a save that landed, and nowhere else. A card writes only the
-fields that differ from what the file supplies, so a pane dimension nobody
-touched stays undeclared — and where a value comes from the desk-level file,
+fields that differ from what the file supplies, so a member nobody touched stays
+undeclared — and where a value comes from the desk-level file,
 which this page does not write, the card says so and offers no Save.
 
 **Two things are written, and each is exactly as wide as its reason.** The key

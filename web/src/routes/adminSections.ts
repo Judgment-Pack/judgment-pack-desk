@@ -8,6 +8,14 @@
  * scattered through a component, so that adding one is a reviewable line rather
  * than a paragraph someone slipped in.
  *
+ * **Runtime and Panes are not here, and their absence is the change.** Neither
+ * was a setting. The Runtime card reported the binary the chassis was launched
+ * with and whether the socket is up — status, which now has a line of its own
+ * and a home in Help & About. The Panes card offered three pane dimensions and
+ * a reset of this browser's own record of the layout: the dimensions are the
+ * shell's, and the reset moved to the shell's own menu, where the panes are.
+ * The `panes` member is still in the schema, still decoded and still applied.
+ *
  * **What is not here is still the point.** No users, no roles, no invitations,
  * no assignment, no review queues. Each of those needs an account model this
  * desk does not have and will not grow one to satisfy a menu: users, roles and
@@ -26,10 +34,8 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
   // After Identity provider, because it is the other desk-level slot and is
   // built on the same one-nullable-field pattern.
   { id: 'assistant', title: 'Assistant' },
-  { id: 'runtime', title: 'Runtime' },
-  // After Runtime, because it is about where this project's packs live.
+  // Where this project's packs live.
   { id: 'storage', title: 'Storage' },
   { id: 'organization', title: 'Organization' },
-  { id: 'appearance', title: 'Appearance' },
-  { id: 'panes', title: 'Panes' }
+  { id: 'appearance', title: 'Appearance' }
 ]

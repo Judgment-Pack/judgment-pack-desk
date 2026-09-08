@@ -9,7 +9,7 @@
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
 import {
   DESK_FALLBACK_NAME,
@@ -21,10 +21,37 @@ import { HeaderBar, markToDataUri } from '../shell/HeaderBar'
 import { McpContext } from '../mcp/McpProvider'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
+import { ShellStateProvider, projectKey, shellStateKey, useShellState } from '../shell/paneState'
 import { IdentityProvider } from './IdentityProvider'
-import { NONE_MENU_SENTENCE, PROVIDER_PHASE_NOTE, TOKEN_SENTENCE, monogram } from './UserControl'
+import {
+  NONE_MENU_SENTENCE,
+  PROVIDER_PHASE_NOTE,
+  RESET_SAYS,
+  TOKEN_SENTENCE,
+  monogram
+} from './UserControl'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+  window.localStorage.clear()
+})
+
+/** The chassis' project root, and the key this browser's layout lives under. */
+const ROOT = '/home/someone/a-project'
+const KEY = shellStateKey(projectKey(ROOT))
+
+/**
+ * The live layout, beside the header.
+ *
+ * The header's own pane toggles are handed their state by the frame, so they
+ * report the props a test passed rather than what the provider holds. This
+ * reads the provider.
+ */
+function ShellProbe() {
+  const shell = useShellState()
+  return <p data-testid="console-open">{String(shell.console.open)}</p>
+}
 
 const PROVIDER: IdentityProviderConfig = {
   label: 'Company sign-in',
@@ -43,7 +70,16 @@ function renderHeader(overrides: Partial<DeskConfig> = {}) {
   return renderHeaderIn('/', overrides)
 }
 
-function renderHeaderIn(path: string, overrides: Partial<DeskConfig> = {}) {
+/**
+ * `null` is "the chassis has not answered yet". Not `undefined`: a default
+ * parameter takes over for an explicit `undefined`, so the provisional case
+ * would silently get the resolved root and assert nothing.
+ */
+function renderHeaderIn(
+  path: string,
+  overrides: Partial<DeskConfig> = {},
+  projectIdentity: string | null = ROOT
+) {
   const base = effectiveConfig(undefined)
   const value = { ...base, config: { ...base.config, ...overrides } }
   const router = createMemoryRouter(
@@ -53,6 +89,10 @@ function renderHeaderIn(path: string, overrides: Partial<DeskConfig> = {}) {
         element: (
           <McpContext.Provider value={connected({ client: QUIET.client })}>
             <DeskConfigFixture value={value}>
+              <ShellStateProvider
+                projectIdentity={projectIdentity ?? undefined}
+                viewport={{ railIsDrawer: false, inspectorIsDrawer: false }}
+              >
               <IdentityProvider>
                 <HeaderBar
                   inspectorOpen={false}
@@ -65,6 +105,8 @@ function renderHeaderIn(path: string, overrides: Partial<DeskConfig> = {}) {
                   onOpenRail={() => {}}
                 />
               </IdentityProvider>
+              <ShellProbe />
+              </ShellStateProvider>
             </DeskConfigFixture>
           </McpContext.Provider>
         )
@@ -162,11 +204,83 @@ describe('the user control, identity NONE', () => {
     expect(menu.textContent).not.toContain('Sign in')
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
       'Appearance',
-      'Panes',
+      'Reset panes',
       'Keyboard shortcuts',
       'Admin',
       'About'
     ])
+  })
+})
+
+/**
+ * The panes' reset, in the menu it moved to.
+ *
+ * It was a button on Admin › Panes — a settings page reaching into a browser's
+ * own storage — and the card is gone. The three outcomes are three different
+ * facts and the menu says which one happened rather than assuming the first.
+ */
+describe('the user menu’s reset', () => {
+  async function openMenu() {
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Account and desk settings' }), {
+      key: 'Enter'
+    })
+    return screen.findByRole('menu')
+  }
+
+  it('clears exactly one localStorage key, and says so without closing the menu', async () => {
+    // One key: `localStorage.clear()` would take the session token's
+    // neighbours and every other project's layout with it, and a reset that
+    // logged the viewer out of something would be one that lied about scope.
+    window.localStorage.setItem(KEY, '{"v":1}')
+    window.localStorage.setItem('jpack-desk:shell:v1:another', '{"v":1}')
+    window.localStorage.setItem('jpack-desk-token', 'a token')
+    renderHeader()
+    const menu = await openMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Reset panes' }))
+    expect(window.localStorage.getItem(KEY)).toBeNull()
+    expect(window.localStorage.getItem('jpack-desk:shell:v1:another')).toBe('{"v":1}')
+    expect(window.localStorage.getItem('jpack-desk-token')).toBe('a token')
+    expect(menu.textContent).toContain(RESET_SAYS.cleared)
+  })
+
+  it('reports a reset it could not make, rather than reporting one it did', async () => {
+    const backing = new Map<string, string>([[KEY, '{"v":1}']])
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => backing.get(key) ?? null,
+      setItem: (key: string, value: string) => void backing.set(key, value),
+      removeItem: () => {},
+      clear: () => {}
+    })
+    renderHeader()
+    const menu = await openMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Reset panes' }))
+    expect(menu.textContent).toContain(RESET_SAYS.refused)
+    expect(menu.textContent).not.toContain(RESET_SAYS.cleared)
+  })
+
+  it('refuses to clear a provisional key, and says nothing was cleared', async () => {
+    window.localStorage.setItem(shellStateKey('default'), '{"v":1}')
+    renderHeaderIn('/', {}, null)
+    const menu = await openMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Reset panes' }))
+    expect(menu.textContent).toContain(RESET_SAYS.unresolved)
+    expect(window.localStorage.getItem(shellStateKey('default'))).toBe('{"v":1}')
+  })
+
+  it('puts the panes back where the layout came from, not merely the record', async () => {
+    // What the card's reset did, from where the control now is: the record is
+    // removed *and* the live layout is re-seeded, so the panes move now rather
+    // than at the next reload.
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({ v: 1, console: { open: true, tab: 'connection' } })
+    )
+    renderHeader()
+    expect(screen.getByTestId('console-open').textContent).toBe('true')
+    await openMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Reset panes' }))
+    expect(screen.getByTestId('console-open').textContent).toBe('false')
+    expect(window.localStorage.getItem(KEY)).toBeNull()
   })
 })
 
