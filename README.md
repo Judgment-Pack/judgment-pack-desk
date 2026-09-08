@@ -1496,7 +1496,13 @@ brings the control back, and it is a second kind existing.
 
 There is no narration. A test sweeps every text node the page writes and fails
 on one over 140 characters, exempting quoted material — a path, a decoder's own
-refusal, a member of the file as it is written. The standing disclaimer, the
+refusal, a member of the file as it is written. **The sweep runs over the states
+the configuration cannot express, too**: a connection opening, being retried and
+failed; a tool listing that did not answer; a save in the air with a refusal
+beside it; a stale write with its digests disclosed. And over the panes' reset
+in the user menu, which is a portal outside the page, for each of its four
+answers — the two standing sentences in that menu are over the bound on purpose
+and the sweep is asserted against exactly them, so a third one fails. The standing disclaimer, the
 deployment-state list, the warning notes and every paste block are gone: a real
 problem is a card's Status line, and the Copy buttons went with the blocks
 because the Location line says where the file is and Content shows what is in

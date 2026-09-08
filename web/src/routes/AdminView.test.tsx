@@ -446,6 +446,70 @@ describe('the Admin page', () => {
     expect(long, long.map((each) => `${each.where}: ${each.says}`).join(' | ')).toEqual([])
   })
 
+  /**
+   * **The states the configuration cannot express.**
+   *
+   * The sweep above builds an `EffectiveConfig` and renders it, so every state
+   * it can reach is a state of the two files. The connection is not one of
+   * those, and neither is anything a reader *does*: a save in the air, a file
+   * that moved under one, a refusal. Those sentences are written in the same
+   * components and were never swept.
+   */
+  it.each([
+    ['a connection that is still opening', { status: 'connecting' as const, client: null }],
+    ['a connection being retried', { status: 'reconnecting' as const, client: null, attempt: 4 }],
+    ['a connection that failed', { status: 'failed' as const, client: null, server: null }],
+    [
+      'a tool listing that did not answer',
+      { known: false, capabilitiesError: new Error('the runtime did not answer list_tools') }
+    ]
+  ])('carries no paragraph with %s', (_state, mcp) => {
+    const { container } = renderAdmin(effectiveConfig(undefined), '/admin', ROOT, mcp)
+    const long = narrationIn(container)
+    expect(long, long.map((each) => `${each.where}: ${each.says}`).join(' | ')).toEqual([])
+  })
+
+  it('carries no paragraph while a card is writing, refused, or holding a stale write', async () => {
+    const FILE = `{\n  "deskConfigVersion": 1,\n  "organization": { "name": "Unveil", "mark": null },\n  "storage": { "packs": { "dir": "packs", "idBase": "https://acme.example/d/" } }\n}\n`
+    const sweep = (container: HTMLElement, where: string) => {
+      const long = narrationIn(container)
+      expect(long, `${where}: ${long.map((each) => each.says).join(' | ')}`).toEqual([])
+    }
+
+    // A write in the air, and a local decode refusal beside it.
+    servesAdmin(FILE, 'pending')
+    const pending = renderLiveAdmin()
+    await waitFor(() => expect(screen.getByDisplayValue('Unveil')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Packs go to'), { target: { value: '../escape' } })
+    fireEvent.click(
+      document.getElementById('storage')!.closest('section')!.querySelector('form button')!
+    )
+    fireEvent.change(screen.getByDisplayValue('Unveil'), { target: { value: 'Renamed' } })
+    fireEvent.click(
+      document.getElementById('organization')!.closest('section')!.querySelector('form button')!
+    )
+    await waitFor(() => expect(statusOf('organization')).toContain('writing'))
+    sweep(pending.container, 'writing, and a refusal beside it')
+    cleanup()
+    vi.unstubAllGlobals()
+
+    // The file moved underneath the write, with the digests disclosed.
+    servesAdmin(FILE, 'stale')
+    const stale = renderLiveAdmin()
+    await waitFor(() => expect(screen.getByDisplayValue('Unveil')).toBeTruthy())
+    fireEvent.change(screen.getByDisplayValue('Unveil'), { target: { value: 'Renamed' } })
+    fireEvent.click(
+      document.getElementById('organization')!.closest('section')!.querySelector('form button')!
+    )
+    await waitFor(() => expect(statusOf('organization')).toContain('changed on disk'))
+    sweep(stale.container, 'a stale write')
+    // And with the digests open, which is a disclosure of quoted material.
+    for (const summary of stale.container.querySelectorAll('details summary')) {
+      fireEvent.click(summary)
+    }
+    sweep(stale.container, 'a stale write, disclosed')
+  })
+
   it('sweeps a paragraph split into short spans, which a node-length rule misses', () => {
     // The guard's own instrument, checked against the exact defeat the review
     // named: two eighty-character spans are a hundred and sixty characters of

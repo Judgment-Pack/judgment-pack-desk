@@ -22,6 +22,7 @@ import { McpContext } from '../mcp/McpProvider'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { ShellStateProvider, projectKey, shellStateKey, useShellState } from '../shell/paneState'
+import { NARRATION_BOUND, narrationIn } from '../admin/narration'
 import { IdentityProvider } from './IdentityProvider'
 import {
   NONE_MENU_SENTENCE,
@@ -277,6 +278,53 @@ describe('the user menu’s reset', () => {
     expect(menu.textContent).toContain(RESET_SAYS.foreign)
     expect(menu.textContent).not.toContain(RESET_SAYS.cleared)
     expect(window.localStorage.getItem(KEY)).toBe('something else entirely')
+  })
+
+  /**
+   * **The narration sweep, over the feedback Admin's own sweep cannot see.**
+   *
+   * The reset's answer is rendered in a portal — the menu's content — which is
+   * outside the Admin container that sweep walks, and it exists only while the
+   * menu is open. All four outcomes are one sentence each and are held to the
+   * same bound as the page's.
+   *
+   * **The menu's own two sentences are over the bound on purpose**, and the
+   * sweep is asserted against exactly them rather than against nothing: they
+   * are the security explanation this menu exists to carry, they predate the
+   * reset, and Admin's no-narration rule is Admin's. Everything else in the
+   * menu — the reset's answer included — is held to the page's bound, and a
+   * third long sentence appearing anywhere in here fails.
+   */
+  it.each([
+    ['cleared', () => window.localStorage.setItem(KEY, '{"v":1}')],
+    [
+      'refused',
+      () => {
+        const backing = new Map<string, string>([[KEY, '{"v":1}']])
+        vi.stubGlobal('localStorage', {
+          getItem: (key: string) => backing.get(key) ?? null,
+          setItem: (key: string, value: string) => void backing.set(key, value),
+          removeItem: () => {},
+          clear: () => {}
+        })
+      }
+    ],
+    ['foreign', () => window.localStorage.setItem(KEY, 'something else entirely')],
+    ['unresolved', () => {}]
+  ] as const)('carries no paragraph when the reset answers %s', async (outcome, arrange) => {
+    arrange()
+    if (outcome === 'unresolved') renderHeaderIn('/', {}, null)
+    else renderHeader()
+    const menu = await openMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Reset panes' }))
+    expect(menu.textContent).toContain(RESET_SAYS[outcome])
+    const long = narrationIn(menu)
+    expect(long.map((each) => each.says), long.map((each) => each.says).join(' | ')).toEqual([
+      NONE_MENU_SENTENCE.slice(0, 90),
+      TOKEN_SENTENCE.slice(0, 90)
+    ])
+    // And the answer itself is a line, whichever of the four it is.
+    expect(RESET_SAYS[outcome].length).toBeLessThanOrEqual(NARRATION_BOUND)
   })
 
   it('drops the verdict when the menu closes, rather than greeting the next reader with it', async () => {
