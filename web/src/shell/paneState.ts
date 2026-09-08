@@ -84,14 +84,26 @@ export function shellStateKey(projectKey: string): string {
  * than with probability. It is longer and readable, and `localStorage` does not
  * mind either.
  *
+ * **And the whole path means the bytes the chassis reported.** This trimmed
+ * first, which made the injectivity claim false where it matters most: POSIX
+ * filesystems permit a trailing space, so `/srv/project` and `/srv/project ` are
+ * two directories that shared one key — one project's record restored and reset
+ * for the other, which is the defect the encoding replaced, reintroduced one
+ * line above it. The chassis has already resolved the root; a page is not the
+ * place to decide that two of its bytes did not count.
+ *
+ * Whitespace is still what decides whether there is a project *at all*, and
+ * that decision is `identityIsResolved`'s alone, so the two cannot disagree
+ * about which roots reach an encoding.
+ *
  * Records under the old keys are simply never read again. That is the treatment
  * this module gives every record it cannot use: silently discarded, because a
  * layout is a per-viewer convenience and a banner about a browser's own storage
  * would be the desk reporting on the wrong thing.
  */
 export function projectKey(projectRoot: string | undefined): string {
-  const path = (projectRoot ?? '').trim()
-  if (path === '') return 'default'
+  const path = projectRoot ?? ''
+  if (!identityIsResolved(path)) return 'default'
   try {
     return encodeURIComponent(path)
   } catch {

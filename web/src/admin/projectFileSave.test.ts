@@ -11,10 +11,12 @@
  * bytes tested against bytes a serialiser happens to produce is a claim about
  * nothing.
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { KEYS_ARE_NEVER_IN_CONFIGURATION } from '../config/deskConfig'
 import { buffered, bytesAt } from '../packs/edit/writes'
-import { composeProjectFile } from './useProjectFileSave'
+import { CARD_POINTERS, composeProjectFile } from './useProjectFileSave'
 
 const FILE = `{
     "deskConfigVersion": 1,
@@ -157,5 +159,41 @@ describe('composing one member of the project file', () => {
     expect(composed.problems).toEqual([
       { key: 'organization', reason: 'the member "organization" appears more than once' }
     ])
+  })
+})
+
+/**
+ * The README's count of the members a card may write, read out of the source.
+ *
+ * **A prose number is a claim, and a claim with no holder goes stale.** The
+ * README said three long after the list held three: `panes` left with the Panes
+ * card and `appearance` left with the Appearance card, and the sentence
+ * describing the closed list went on naming a length the list no longer had.
+ * The round-1 review found it by reading, which is the expensive way.
+ *
+ * The count is spelled in the README as a numeral so this can find it without a
+ * word-to-number table nobody wants to maintain, and the assertion is against
+ * `CARD_POINTERS.length` rather than against a literal here — a test that
+ * compared the README with its own copy of the number would be a comparison
+ * against itself.
+ */
+describe('the README’s account of the closed write list', () => {
+  const README = readFileSync(join(import.meta.dirname, '..', '..', '..', 'README.md'), 'utf8')
+
+  it('states the number of members a card may write, and states this one', () => {
+    const stated = README.match(/`CARD_POINTERS` names the \*\*(\d+)\*\* members a card may write/)
+    expect(stated, 'the README no longer states a CARD_POINTERS count in the shape this reads').not
+      .toBeNull()
+    expect(Number(stated![1])).toBe(CARD_POINTERS.length)
+  })
+
+  it('names each of them, so the count is not the only thing that has to be right', () => {
+    for (const pointer of CARD_POINTERS) {
+      expect(README, pointer).toContain(`\`${pointer}\``)
+    }
+    // And names no member a card cannot write, in that same sentence.
+    const sentence = README.slice(README.indexOf('`CARD_POINTERS` names'))
+    expect(sentence.slice(0, 160)).not.toContain('/appearance')
+    expect(sentence.slice(0, 160)).not.toContain('/panes')
   })
 })

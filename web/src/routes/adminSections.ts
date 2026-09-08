@@ -15,13 +15,16 @@
  * set of headings scattered through a component, so that adding one is a
  * reviewable line rather than a paragraph someone slipped in.
  *
- * **Runtime and Panes are not here, and their absence is the change.** Neither
- * was a setting. The Runtime card reported the binary the chassis was launched
- * with and whether the socket is up — status, which now has a line of its own
- * and a home in Help & About. The Panes card offered three pane dimensions and
- * a reset of this browser's own record of the layout: the dimensions are the
- * shell's, and the reset moved to the shell's own menu, where the panes are.
- * The `panes` member is still in the schema, still decoded and still applied.
+ * **Runtime, Panes and Appearance are not here, and their absence is the
+ * change.** None was a setting. The Runtime card reported the binary the
+ * chassis was launched with and whether the socket is up — status, which now
+ * has a line of its own and a home in Help & About. The Panes card offered
+ * three pane dimensions and a reset of this browser's own record of the layout:
+ * the dimensions are the shell's, and the reset moved to the shell's own menu,
+ * where the panes are. Appearance was a *person's* theme and density written
+ * into the project's shared file, so one viewer's dark was everybody's; it is
+ * the user menu's now. Both members are still in the schema, still decoded and
+ * still applied — `appearance` as the default for whoever has not chosen.
  *
  * **What is not here is still the point.** No users, no roles, no invitations,
  * no assignment, no review queues. Each of those needs an account model this
@@ -47,8 +50,7 @@ export const ADMIN_GROUPS: readonly AdminGroup[] = [
     sections: [
       { id: 'organization', title: 'Organization' },
       // After Organization, because it is about where this project's packs live.
-      { id: 'storage', title: 'Storage' },
-      { id: 'appearance', title: 'Appearance' }
+      { id: 'storage', title: 'Storage' }
     ]
   },
   {

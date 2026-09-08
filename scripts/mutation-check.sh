@@ -1511,7 +1511,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   N=web/src/shell/AppShell.tsx
   X=web/src/shell/CreatePackDialog.tsx
   Y=web/src/mcp/capabilities.ts
-  W=web/src/config/DeskConfigProvider.tsx
+  APS=web/src/shell/appearanceState.ts
   V=web/src/routes/AdminView.tsx
   SC=web/src/admin/SourceCard.tsx
   Q=web/src/shell/useHashTarget.ts
@@ -1700,9 +1700,14 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the control states a session verdict it never checked" "$U" \
     "  const name = provider === null ? displayName : (provider.label ?? provider.issuerHost)" \
     "  const name = provider === null ? displayName : (provider.label ?? 'signed out')"
-  mutate web "the configured theme is decoded and never applied" "$W" \
-    '  useAppliedTheme(value.config.appearance.theme)' \
-    '  void value.config.appearance.theme'
+  # **The theme is applied where the ladder is resolved**, which is no longer
+  # `DeskConfigProvider`: the file's `appearance` is the default and the
+  # viewer's own preference beats it, and that layer cannot see one. The row
+  # moved with the code rather than being retired — it is the same claim, that
+  # a decoded theme reaches the root element and is not merely read.
+  mutate web "the configured theme is decoded and never applied" "$APS" \
+    '  useAppliedTheme(theme)' \
+    '  void theme'
   # **Retired, with its reason: the control it broke no longer exists.** It was
   # "the copy button reports a copy it did not make", on the paste blocks every
   # Admin section carried. The card pattern removed them — a Location line says
@@ -2018,9 +2023,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # 5. The key came from the runtime's `configPath`, which a project with no
   # `jpack.json` does not have — so every configless project on one origin
   # shared the single literal `default` record.
+  #
+  # The needle carries the opening tag because two providers are now handed the
+  # same identity — the layout's and the appearance's — and a needle matching
+  # both is one that silently mutates whichever comes first.
   mutate web "the layout key is not the project the chassis pinned" "$N" \
-    '      projectIdentity={listing.data?.root}' \
-    '      projectIdentity={undefined}'
+    '    <ShellStateProvider
+      projectIdentity={listing.data?.root}' \
+    '    <ShellStateProvider
+      projectIdentity={undefined}'
   mutate web "a layout is written under the provisional key" "$P" \
     '    if (!keyResolved) return
     const timer = setTimeout(() => {' \
@@ -6094,6 +6105,176 @@ export function assistantTransport(): Transport {
   mutate web "write state dropped from the card's status comparison" "$SCD" \
     '  const says = write ?? status' \
     '  const says = status'
+
+  # ---- Chunk 6d: appearance is a preference, and leaves Admin ----------
+  #
+  # **Retired: none, and that is worth stating rather than leaving to be
+  # noticed.** The Appearance card had no row of its own — the two Selects on
+  # it were held by the primitive's rows (`the select reports back a value
+  # nobody offered`) and by the write path's (`the decoder is not asked before
+  # a card's Save is sent`), both of which are still driven by the two cards
+  # that remain. The one appearance row there was is `the configured theme is
+  # decoded and never applied`, and it **moved** with the code rather than
+  # retiring: it is the same claim about the same attribute, now broken where
+  # the ladder is resolved.
+
+  # **The preference is what this viewer chose, and it beats the file.** Theme
+  # and density are a person's and not an organization's: `appearance` in
+  # `jpack-desk.json` is a file in the project's repository, so a desk that read
+  # the file over the preference is the defect this whole chunk is about — one
+  # person's dark, for everybody who ever cloned it.
+  mutate web "the preference does not override the project default" "$APS" \
+    '    theme: preference?.theme ?? projectDefault?.theme,
+    density: preference?.density ?? projectDefault?.density' \
+    '    theme: projectDefault?.theme,
+    density: projectDefault?.density'
+
+  # **And the file is still the default.** The other half of the same ladder:
+  # a viewer who has chosen nothing gets what the project asked for, not what
+  # the schema falls back to — otherwise `appearance` is a member that is
+  # decoded, validated, shown on no page and honoured by nothing.
+  mutate web "the project default is not applied when no preference exists" "$APS" \
+    '    theme: preference?.theme ?? projectDefault?.theme,
+    density: preference?.density ?? projectDefault?.density' \
+    "    theme: preference?.theme ?? 'system',
+    density: preference?.density ?? 'comfortable'"
+
+  # **Retargeted, not retired: `an invalid stored appearance is applied`.** The
+  # claim survived the code it was made against. It used to break the two guards
+  # that filtered an out-of-union value out of a record this desk owned; round 2
+  # made such a value a reason to disown the record entirely, so the guards and
+  # the ownership test are one pass and the claim is broken where that pass now
+  # lives — below, as `the union check removed from ownership`. Validating and
+  # extracting separately is what let the lenient half take whatever the strict
+  # half had accepted, twice.
+
+  # **A reset that reports a removal it did not make is worse than none.** The
+  # record is still there to come back on the next load, and the menu says the
+  # project's default is in force again — so `removeItem` is called, the key is
+  # read back, and only then is anything said.
+  mutate web "the appearance reset does not remove the key" "$APS" \
+    '    window.localStorage.removeItem(key)' \
+    '    void key'
+
+  # **Nothing is written under the provisional key.** Until the chassis names
+  # the project, the key is the literal `default`: a preference stored there is
+  # one project's, under a name that belongs to whichever project answers slowly
+  # next. The choice itself is still honoured on screen and is written when the
+  # key resolves — what the gate stops is the storing, not the choosing.
+  mutate web "an appearance is written under the provisional key" "$APS" \
+    '    if (!keyResolved) return
+    if (chosen.theme === undefined && chosen.density === undefined) return' \
+    '    if (chosen.theme === undefined && chosen.density === undefined) return'
+
+  # ---- Codex round 1 -------------------------------------------------------
+
+  # **A choice belongs to the project it was made in.** It was visit-wide: one
+  # tab whose chassis reconnects reports a different root, the member chosen
+  # under root A survived, and it was then written into root B's record — one
+  # project's preference in another project's key, permanently, over a record B
+  # may never have had. Only a choice made under the *provisional* key carries
+  # forward, because that key names no project.
+  mutate web "a choice survives the chassis naming a different project" "$APS" \
+    '  return choice.resolved && choice.key !== key' \
+    '  return false'
+
+  # ---- Codex round 2 -------------------------------------------------------
+
+  # **A choice left behind is discarded, not hidden.** Round 1 filtered it at
+  # the point of use, and round 2 found what that left standing: the value
+  # stayed in state, so A → B → A brought it back ahead of A's own record — and
+  # where another tab had changed A's preference meanwhile, the write effect put
+  # the resurrected value over it. This restores exactly that filter.
+  mutate web "the discard replaced by the filter (a choice hidden, not cleared)" "$APS" \
+    '  if (leftBehind(choice, storageKey)) {
+    setChoice({ key: storageKey, resolved: keyResolved, value: NOTHING_CHOSEN })
+  }
+  const chosen = choice.value' \
+    '  const chosen = leftBehind(choice, storageKey) ? NOTHING_CHOSEN : choice.value'
+
+  # **Retired, unrun-and-then-run: `a choice is re-stamped onto whatever key is
+  # current`.** It removed the condition on the re-stamp, and the suite stayed
+  # green — correctly, because that condition is not a safeguard. The write
+  # effect has already returned unless the key is resolved and something was
+  # chosen under a stamp that still applies, so an unconditional re-stamp can
+  # only ever write back the stamp that is already there. What the condition
+  # saves is a render, not a rule, and the code says so where it is. A row that
+  # cannot discriminate is named here rather than dropped, because its absence
+  # would otherwise read as an oversight.
+
+  # **The whole path means the bytes the chassis reported.** The key trimmed
+  # before it encoded, and a POSIX filesystem permits a trailing space: two
+  # directories, one key, one project's record restored and reset for the other
+  # — which is the collision percent-encoding replaced, reintroduced one line
+  # above it. This is the key both records share, so the row is in `paneState`.
+  mutate web "the trim restored (two roots that differ only in whitespace)" "$P" \
+    '  const path = projectRoot ?? '"'"''"'"'
+  if (!identityIsResolved(path)) return '"'"'default'"'"'' \
+    '  const path = (projectRoot ?? '"'"''"'"').trim()
+  if (path === '"'"''"'"') return '"'"'default'"'"''
+
+  # **Ownership is the whole member set, not the version number.**
+  # `localStorage` is one namespace shared with everything this origin has ever
+  # served, and the key is derived from a path the viewer never chose — so
+  # reading `v === 1` alone applied `{"v":1,"writer":"another-app",…}` to the
+  # page as this desk's preference and let the reset delete it.
+  mutate web "unknown members ignored again (ownership read off the version)" "$APS" \
+    '      preference.density = value
+    } else {
+      return undefined
+    }' \
+    '      preference.density = value
+    }'
+
+  # **And ownership is the members' values, not only their names.** Round 2
+  # found what the name check still admitted: `{"v":1,"theme":17}` is not
+  # something this writer can emit, and it was owned all the same — read as a
+  # record with nothing usable in it, and deleted by "Use the project's
+  # default", which is a control removing somebody else's bytes under a key this
+  # desk merely computed.
+  mutate web "the union check removed from ownership (an impossible value owned)" "$APS" \
+    '      if (!isTheme(value)) return undefined
+      preference.theme = value
+    } else if (member === '"'"'density'"'"') {
+      if (!isDensity(value)) return undefined
+      preference.density = value' \
+    '      preference.theme = value as ThemeChoice
+    } else if (member === '"'"'density'"'"') {
+      preference.density = value as Density'
+
+  # **A record exists because somebody chose something.** A bare `{"v":1}` is
+  # not one this writer produces, so treating it as owned is the reset deleting
+  # a value it cannot account for — and it is the shape a *different* writer's
+  # empty record most plausibly takes.
+  mutate web "a record with nothing chosen in it is owned again" "$APS" \
+    '  if (preference.theme === undefined && preference.density === undefined) return undefined' \
+    '  void preference'
+
+  # **Nothing this desk has not established is applied.** The record is
+  # unreadable until the chassis names the project and the default is the
+  # schema's until the file has been read, so a provider that fell back to
+  # `projectDefault` before both had answered applied `system`, then the file's
+  # value, then the stored preference — three applications for one load, two of
+  # them values nobody chose, and a visible flash the day a dark palette exists.
+  mutate web "the provisional application restored (a default nobody read)" "$APS" \
+    '  const knownDefault = keyResolved && projectDefaultKnown ? projectDefault : undefined' \
+    '  const knownDefault = projectDefault'
+
+  # **A removed control's write path is removed with it**, exactly as the Panes
+  # card's was. The Appearance card is gone from Admin — a person's theme is not
+  # an administrator's setting, and it is held in that person's browser now —
+  # and a Save with no control behind it is a write path nothing offers. The
+  # composer keeps `/appearance`, because it is a general splicer with its own
+  # tests; the settings page has no member to hand it.
+  #
+  # The mutation routes a **real** Save, not the expectation: pointing an
+  # existing Admin Save at `/appearance` composes a file carrying an
+  # `organization` shape under `appearance`, which the decoder refuses, so
+  # nothing is written where a member was promised. The test that drives every
+  # Save and reads the wire catches it, and the expected list is never touched.
+  mutate web "the Appearance Save back (a write to /appearance from Admin)" "$PFC" \
+    "  const state = useProjectFileDraft('/organization', seed, (draft, from) => {" \
+    "  const state = useProjectFileDraft('/appearance', seed, (draft, from) => {"
 
   # **The verdict is the status, and the name is the metadata.** `server` is
   # retained across a reconnect — the provider spreads the previous state — so

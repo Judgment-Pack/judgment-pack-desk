@@ -29,7 +29,7 @@ import {
   type CSSProperties,
   type ReactNode
 } from 'react'
-import { useEffectiveConfig } from '../config/DeskConfigProvider'
+import { useDeskConfigRead, useEffectiveConfig } from '../config/DeskConfigProvider'
 import { useFileListing } from '../files/queries'
 import { BottomPane } from './BottomPane'
 import { HeaderBar } from './HeaderBar'
@@ -37,6 +37,7 @@ import { InspectorSlotContext, type InspectorSlot } from './InspectorSlot'
 import { LeftRail } from './LeftRail'
 import { RightPane } from './RightPane'
 import { StatusStrip } from './StatusStrip'
+import { AppearanceProvider } from './appearanceState'
 import { useMeasuredBox } from './measured'
 import { ShellStateProvider, useShellState } from './paneState'
 import { installShortcuts } from './shortcuts'
@@ -62,17 +63,31 @@ export function AppShell({ children }: { children: ReactNode }) {
   const railIsDrawer = useMediaQuery(RAIL_DRAWER_BELOW)
   const inspectorIsDrawer = useMediaQuery(INSPECTOR_DRAWER_BELOW)
   const { config } = useEffectiveConfig()
+  // Whether `config.appearance` is the file's or the schema standing in for it.
+  // The two are indistinguishable in the value, and the appearance ladder must
+  // not apply the second as though it were the first.
+  const configRead = useDeskConfigRead()
   return (
     <ShellStateProvider
       projectIdentity={listing.data?.root}
       panes={config.panes}
       viewport={{ railIsDrawer, inspectorIsDrawer }}
     >
-      <Tooltip.Provider delayDuration={300}>
-        <ShellFrame railIsDrawer={railIsDrawer} inspectorIsDrawer={inspectorIsDrawer}>
-          {children}
-        </ShellFrame>
-      </Tooltip.Provider>
+      {/* The same identity, for the same reason: a preference belongs to a
+          viewer *on a project*, and the record is keyed on the root the
+          chassis pinned. `appearance` from the file is handed in as the
+          default this desk falls back to, never as the answer. */}
+      <AppearanceProvider
+        projectIdentity={listing.data?.root}
+        projectDefault={config.appearance}
+        projectDefaultKnown={configRead}
+      >
+        <Tooltip.Provider delayDuration={300}>
+          <ShellFrame railIsDrawer={railIsDrawer} inspectorIsDrawer={inspectorIsDrawer}>
+            {children}
+          </ShellFrame>
+        </Tooltip.Provider>
+      </AppearanceProvider>
     </ShellStateProvider>
   )
 }

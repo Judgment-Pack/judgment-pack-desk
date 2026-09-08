@@ -18,6 +18,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { IdentityProvider } from '../identity/IdentityProvider'
 import { McpContext } from '../mcp/McpProvider'
 import { AppShell } from '../shell/AppShell'
+import { appearanceKey } from '../shell/appearanceState'
+import { projectKey } from '../shell/paneState'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { DeskConfigProvider } from './DeskConfigProvider'
 
@@ -83,15 +85,17 @@ const PROJECT = stubClient({
  * has to survive in both orders. A stub that always resolves in a microtask
  * tests only the order that happens to be convenient.
  */
-function serveConfig(answer: unknown, status = 200, delayMs = 0) {
+function serveConfig(answer: unknown, status = 200, delayMs = 0, listingDelayMs = 0) {
   const asked: string[] = []
   vi.stubGlobal('fetch', async (url: string) => {
     const path = String(url)
     asked.push(path)
-    // The listing is answered separately and immediately: its `root` is the
-    // project identity the pane record is keyed on, and it is not the thing
-    // any case here is delaying or refusing.
+    // The listing is answered separately, and immediately unless a case says
+    // otherwise: its `root` is the project identity both browser records are
+    // keyed on, and which of the two answers first is a race the shell has to
+    // survive in both orders.
     if (path.includes('/api/files')) {
+      if (listingDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, listingDelayMs))
       return {
         ok: true,
         status: 200,
@@ -336,6 +340,120 @@ describe('the desk reading jpack-desk.json', () => {
     // `prefers-color-scheme` answers instead.
     await screen.findByRole('link', { name: 'Acme Co.' })
     expect(document.documentElement.hasAttribute('data-theme')).toBe(false)
+  })
+
+  /**
+   * **The file's `appearance` is the default, and this browser's preference
+   * beats it.**
+   *
+   * Theme and density are a person's, not an organization's: the card that
+   * wrote them into a file in the project's repository is gone, and one
+   * viewer's dark is no longer everybody's. This drives the ladder through the
+   * shell that resolves it — the record is keyed on the root the chassis
+   * reported, exactly as the pane record is.
+   */
+  it('lets a preference in this browser beat the theme the file asks for', async () => {
+    window.localStorage.setItem(
+      appearanceKey(projectKey(PROJECT_ROOT)),
+      JSON.stringify({ v: 1, theme: 'dark' })
+    )
+    serveConfig({
+      ...LIVE_ANSWER,
+      content: JSON.stringify({ deskConfigVersion: 1, appearance: { theme: 'light', density: 'comfortable' } })
+    })
+    renderDesk()
+    await waitFor(() => expect(document.documentElement.getAttribute('data-theme')).toBe('dark'))
+    // And the file is not rewritten to say so: a preference is not a file, and
+    // nothing here writes one.
+    expect(
+      Object.keys(window.localStorage).filter((key) => key.startsWith('jpack-desk:appearance:'))
+    ).toEqual([appearanceKey(projectKey(PROJECT_ROOT))])
+  })
+
+  it('applies the project’s default again once the preference is gone', async () => {
+    const key = appearanceKey(projectKey(PROJECT_ROOT))
+    window.localStorage.setItem(key, JSON.stringify({ v: 1, theme: 'dark' }))
+    serveConfig({
+      ...LIVE_ANSWER,
+      content: JSON.stringify({ deskConfigVersion: 1, appearance: { theme: 'light', density: 'comfortable' } })
+    })
+    const chosen = renderDesk()
+    await waitFor(() => expect(document.documentElement.getAttribute('data-theme')).toBe('dark'))
+    chosen.unmount()
+
+    window.localStorage.removeItem(key)
+    renderDesk()
+    await waitFor(() => expect(document.documentElement.getAttribute('data-theme')).toBe('light'))
+  })
+
+  it('ignores a stored value the decoder’s unions do not admit', async () => {
+    // Never applied, and the project's default answers as though nothing were
+    // stored at all.
+    window.localStorage.setItem(
+      appearanceKey(projectKey(PROJECT_ROOT)),
+      JSON.stringify({ v: 1, theme: 'midnight' })
+    )
+    serveConfig({
+      ...LIVE_ANSWER,
+      content: JSON.stringify({ deskConfigVersion: 1, appearance: { theme: 'light', density: 'comfortable' } })
+    })
+    renderDesk()
+    await waitFor(() => expect(document.documentElement.getAttribute('data-theme')).toBe('light'))
+    expect(document.documentElement.getAttribute('data-theme')).not.toBe('midnight')
+  })
+
+  /**
+   * **Every value this desk ever wrote onto the root element, over one load.**
+   *
+   * The review's own proof, and the one the assertions above could not make:
+   * waiting for the final attribute establishes where a load ends and says
+   * nothing about what it painted on the way. Both queries answer after the
+   * first paint, and in either order, so a provider that fell back to what it
+   * had applied `system`, then the file's `light`, then the stored `dark` —
+   * three applications for one load, two of them values nobody chose.
+   */
+  it.each([
+    ['the file answers last', 40, 0],
+    ['the listing answers last', 0, 40]
+  ])('applies one theme and no provisional one when %s', async (_order, configDelay, listingDelay) => {
+    window.localStorage.setItem(
+      appearanceKey(projectKey(PROJECT_ROOT)),
+      JSON.stringify({ v: 1, theme: 'dark' })
+    )
+    const root = document.documentElement
+    const applied: string[] = []
+    const set = root.setAttribute.bind(root)
+    const remove = root.removeAttribute.bind(root)
+    root.setAttribute = (name: string, value: string) => {
+      if (name === 'data-theme') applied.push(value)
+      set(name, value)
+    }
+    root.removeAttribute = (name: string) => {
+      if (name === 'data-theme') applied.push('(removed)')
+      remove(name)
+    }
+    try {
+      serveConfig(
+        {
+          ...LIVE_ANSWER,
+          content: JSON.stringify({
+            deskConfigVersion: 1,
+            appearance: { theme: 'light', density: 'comfortable' }
+          })
+        },
+        200,
+        configDelay,
+        listingDelay
+      )
+      renderDesk()
+      await waitFor(() => expect(root.getAttribute('data-theme')).toBe('dark'))
+      // A beat past both answers, so a second application would be recorded.
+      await wait(80)
+      expect(applied, applied.join(' → ')).toEqual(['dark'])
+    } finally {
+      root.setAttribute = set
+      root.removeAttribute = remove
+    }
   })
 
   it('says the file was refused somewhere other than Admin', async () => {

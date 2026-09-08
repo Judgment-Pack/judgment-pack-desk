@@ -616,10 +616,9 @@ describe('the Admin page', () => {
     expect(statusOf('storage')).toContain('storage.packs.dir')
     // And the group still says what it read, because that is still true.
     expect(statusOf('this-project')).toBe('read')
-    // Appearance did nothing, so what it says is still about the file: this
-    // one carries no `appearance` member, which is a read state and not a
-    // write one.
-    expect(statusOf('appearance')).toBe('not present — defaults in use')
+    // And no card that did nothing says anything about a write: Admin carries
+    // no Appearance card at all any more.
+    expect(document.getElementById('appearance')).toBeNull()
   })
 
   it('says the file moved under a card, on the card the write was refused for', async () => {
@@ -817,9 +816,9 @@ describe('the Admin page', () => {
     // name the project it is already running in, or withdraw a default, and
     // nothing else — so there is one button and no field for a path.
     const writes: Record<string, number> = {
-      // The assistant slot's, and one on each of the three cards that write a
+      // The assistant slot's, and one on each of the two cards that write a
       // member of the project's own file.
-      Save: 4,
+      Save: 3,
       'Check reachability': 1,
       'Use this project as the default': 1
     }
@@ -839,21 +838,14 @@ describe('the Admin page', () => {
     const triggers = Array.from(container.querySelectorAll('[role="combobox"]')).map(
       (element) => element.textContent
     )
-    // This project's group first — Appearance's two, since Storage's kind is a
-    // value and not a control — and then this desk's, the assistant's three.
-    expect(triggers).toEqual([
-      'system',
-      'comfortable',
-      'OpenAI-compatible',
-      'vercel',
-      'off'
-    ])
+    // This project's group offers no picker at all now — Storage's kind is a
+    // value and not a control, and the two appearance choices are the user
+    // menu's — so every one of these is this desk's, the assistant's three.
+    expect(triggers).toEqual(['OpenAI-compatible', 'vercel', 'off'])
     const offered = Array.from(container.querySelectorAll('select')).map(
       (element) => element.textContent
     )
     expect(offered).toEqual([
-      'systemlightdark',
-      'comfortablecompact',
       'OpenAI-compatibleAnthropicGemini',
       'vercelbuiltin',
       'offonultra'
@@ -877,20 +869,19 @@ describe('the Admin page', () => {
     const disabled = Array.from(container.querySelectorAll('button[disabled]')).map(
       (element) => element.textContent
     )
-    // The project group's nomination first, then its three cards' Saves —
-    // which have no bytes to write over and nothing typed to write — and then
-    // the Assistant's, which has no digest to state.
+    // The project group's nomination first, then its two cards' Saves — which
+    // have no bytes to write over and nothing typed to write — and then the
+    // Assistant's, which has no digest to state.
     expect(disabled).toEqual([
       'Use this project as the default',
-      'Save',
       'Save',
       'Save',
       'List models',
       'Save'
     ])
-    // The desk-level file, on two cards; this project's own file, on three.
+    // The desk-level file, on two cards; this project's own file, on two.
     expect(screen.getAllByText(/has not read its own configuration file/).length).toBe(2)
-    expect(screen.getAllByText(/has not read this project/).length).toBe(3)
+    expect(screen.getAllByText(/has not read this project/).length).toBe(2)
   })
 
   it('enables the two writes once the desk-level file has been read', () => {
@@ -913,12 +904,12 @@ describe('the Admin page', () => {
       Array.from(container.querySelectorAll('button[disabled]')).map(
         (element) => element.textContent
       )
-    ).toEqual(['Save', 'Save', 'Save', 'List models'])
+    ).toEqual(['Save', 'Save', 'List models'])
     // The desk-level file has been read, so neither card that writes it says
     // otherwise. The project's own file has not, which is a different file and
-    // a different sentence — and the four cards that write it say so.
+    // a different sentence — and the two cards that write it say so.
     expect(screen.queryByText(/has not read its own configuration file/)).toBeNull()
-    expect(screen.getAllByText(/has not read this project/).length).toBe(3)
+    expect(screen.getAllByText(/has not read this project/).length).toBe(2)
   })
 
   it('will not offer the nomination where the chassis has not named this project', () => {
@@ -1035,10 +1026,23 @@ describe('the Admin page', () => {
     }
   })
 
-  it('says the theme is applied and the density is not, rather than claiming both', () => {
-    renderAdmin()
-    expect(screen.getByText(/Applied. The palette it selects is the light one./)).toBeTruthy()
-    expect(screen.getByText(/read by nothing yet/)).toBeTruthy()
+  it('offers no appearance at all, because it is not this page’s to offer', () => {
+    // Theme and density are a person's preference and not an organization's
+    // setting: this card wrote them into the project's own file, so one viewer
+    // choosing dark chose it for everyone who ever cloned it. They are in the
+    // user menu now — and what left with the card is its Save, which is the
+    // half a deleted form leaves behind.
+    const { container } = renderAdmin()
+    expect(document.getElementById('appearance')).toBeNull()
+    expect(screen.queryByLabelText('Theme')).toBeNull()
+    expect(screen.queryByLabelText('Density')).toBeNull()
+    expect(container.textContent).not.toContain('Appearance')
+    // The member itself is untouched: still in the schema, still decoded, and
+    // still the default for everyone who has not chosen.
+    expect(effectiveConfig(undefined).config.appearance).toEqual({
+      theme: 'system',
+      density: 'comfortable'
+    })
   })
 
   it('takes every location from the chassis, and composes none of them', () => {

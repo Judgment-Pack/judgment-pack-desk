@@ -18,6 +18,7 @@ const exported = Object.entries(icons) as [string, () => ReactElement][]
 describe('the desk icons', () => {
   it('exports the glyph vocabulary the shell names', () => {
     expect(exported.map(([name]) => name).sort()).toEqual([
+      'IconCheck',
       'IconChevronDown',
       'IconChevronLeft',
       'IconChevronRight',

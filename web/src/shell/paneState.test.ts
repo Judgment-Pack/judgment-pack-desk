@@ -91,10 +91,38 @@ describe('projectKey', () => {
       `/${'a'.repeat(200)}/two`,
       '/p/a b',
       '/p/a%20b',
+      // Two directories on any filesystem that permits a trailing space, and
+      // one key until the trim went.
+      '/p/one ',
+      ' /p/one',
       '/p/项目',
       '/p/\u{1f600}'
     ]
     expect(new Set(roots.map((root) => projectKey(root))).size).toBe(roots.length)
+  })
+
+  it('does not collide for two roots that differ only in whitespace', () => {
+    // The review's assertion. A POSIX filesystem permits a trailing space, so
+    // these are two directories — and the key trimmed before it encoded, which
+    // gave them one key and gave one project's record to the other. That is the
+    // collision the encoding replaced, reintroduced one line above it.
+    expect(projectKey('/srv/project')).not.toBe(projectKey('/srv/project '))
+    expect(projectKey('/srv/project')).not.toBe(projectKey(' /srv/project'))
+    expect(projectKey('/srv/project ')).toBe(encodeURIComponent('/srv/project '))
+    expect(shellStateKey(projectKey('/srv/project'))).not.toBe(
+      shellStateKey(projectKey('/srv/project '))
+    )
+  })
+
+  it('leaves whitespace alone in the key and decisive about whether there is one', () => {
+    // The two rules must not disagree: a root of nothing but spaces is not a
+    // project the chassis reported, so it is the provisional key and nothing is
+    // written under it — while a root that merely *ends* in a space is a
+    // project, and is encoded whole.
+    expect(identityIsResolved('   ')).toBe(false)
+    expect(projectKey('   ')).toBe('default')
+    expect(identityIsResolved('/srv/project ')).toBe(true)
+    expect(projectKey('/srv/project ')).not.toBe('default')
   })
 
   it('is stable for one path', () => {
