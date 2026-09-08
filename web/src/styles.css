@@ -692,6 +692,9 @@ fieldset {
 }
 
 .code-editor {
+  /* A raw `<textarea>`: the user agent makes it a scroll container and no rule
+     here says so, so it is held by the named list in `ui/containingBlock.test.ts`. */
+  position: relative;
   display: block;
   width: 100%;
   resize: vertical;
