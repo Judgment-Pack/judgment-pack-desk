@@ -455,13 +455,15 @@ one, and a test holds that with both of the route's own landmarks mounted.
 **The document never scrolls, because every scroller is a containing block.**
 A scroll container clips and scrolls only the descendants whose containing
 block lies inside it, so **every rule that authors a scrolling overflow
-declares `position: relative` in the same rule** — the four panes and every
-nested scroller under them — and so does the frame, which clips deliberately
-and has to contain what it clips. A rule that merely clips is not held: an
-`overflow: hidden` on an ellipsis label or a popup clips text, which has no
-containing block to be laid out against. Nor is a scroll container the browser
-makes rather than a sheet — a `textarea`, a `select`'s listbox — though the
-textarea primitive carries the declaration by hand anyway.
+declares a position that positions in the same rule** — `relative` on every
+one of them but two, the dialog's content and the rail's drawer, which are
+`fixed` because they are out of flow anyway. So do the frame and its four
+panes, by name. And so does the one scroll container the browser makes rather
+than a sheet: a `<textarea>` computes `overflow: auto` with nothing declaring
+it, so the textarea primitive is carried on a named list instead of by the
+sweep. A rule that *merely clips* is not held — an `overflow: hidden` on an
+ellipsis label or a popup clips text, and text has no containing block to be
+laid out against.
 
 Without it, Admin at 1400×800 with an assistant key stored measured a document
 2439px tall inside an 800px window and the whole shell could be scrolled up out
@@ -469,9 +471,20 @@ of the frame, because Radix renders a 1px hidden `<select>` beside every Select
 trigger that sits inside a `<form>`: three of them, absolutely positioned
 against the *initial* containing block, neither scrolled with the main pane nor
 clipped by the frame, and counted into the document's own overflow.
-`containingBlock.test.ts` holds the pair in every such rule in every sheet
-under `web/src`, and holds that nothing anywhere else takes one of those
-positions back.
+
+Two things check it, and they check different things.
+`web/src/ui/containingBlock.test.ts` **reads the source**. It holds the
+declaring rule, and every other rule in the same sheet family — a module class
+is hashed, so it cannot reach another module's — whose selector names a held
+class *as a whole class token* and takes the position back, by a `position`
+that does not position or by an `all` of any value. What it cannot see is an
+override that reaches the element without naming its class: an id, an attribute
+selector, an inline style. Its docstring says so, rather than leaving it to be
+found. **The live drive measures the cascade.** It loads a real build in real
+Chrome and reads `document.scrollingElement.scrollHeight` against
+`innerHeight` on 49 configurations a build — every route, both Inspector
+states, the console open, two widths. That measurement is in the pull request;
+CI does not run it.
 
 A collapsed pane is **removed from the accessibility tree**, not merely made
 invisible: closed is the `hidden` attribute plus `[hidden] { display: none
@@ -4024,8 +4037,11 @@ extension and not by name, and holds one pair: a rule that authors a scrolling
 overflow also positions itself, so a scroll container is a containing block.
 The frame is in the swept set for its deliberate clip; a rule that merely clips
 is not. It is a sweep and not a list of names, so the scroller nobody has
-written yet is held by it too — and a second pass holds that no later rule,
-in any sheet or inside any media block, unpositions one of them again.
+written yet is held by it too — and a second pass holds that no rule of the
+same sheet family, wherever it sits and however many ancestors it names in
+front of the class, takes one of those positions back. It reads source and
+says so: the computed cascade is what the live drive measures, and the two
+halves are named in its docstring.
 
 **Three of them run over every `*.module.css` under `web/src`**, and one — the
 component/module pairing — stays scoped to `src/ui`. The split is the point. The

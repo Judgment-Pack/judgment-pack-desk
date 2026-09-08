@@ -32,8 +32,9 @@
  *    `overflow-inline` with `auto`, `scroll` or `overlay` among its tokens —
  *    declares a `position` that positions in the same rule. So do the frame
  *    `.desk` and its four panes, by name, and the one user-agent scroller the
- *    sweep is structurally blind to (below). `relative` everywhere in this
- *    project but `Dialog .content`, which is already `fixed`.
+ *    sweep is structurally blind to (below). That is `relative` on every one of
+ *    them but two — `Dialog .content` and `.desk-drawer` — which are `fixed`,
+ *    and out of flow already.
  * 2. **Every rule that takes that position back.** In the same sheet family,
  *    any rule whose effective selector *names a held class as a whole class
  *    token* — `body .desk-main`, `main.desk-main`, `.desk > .desk-main`,
