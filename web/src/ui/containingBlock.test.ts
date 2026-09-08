@@ -26,6 +26,24 @@
  * sheets that scrolls must also position itself, whoever adds it and whenever.
  * A list of the panes that were broken in September would be satisfied by the
  * sixth scroller somebody writes in October.
+ *
+ * **And exactly this much.** The swept set is every rule that *authors* a
+ * scrolling overflow — `overflow`, `overflow-x`, `overflow-y`,
+ * `overflow-block` or `overflow-inline` with `auto`, `scroll` or `overlay`
+ * among its tokens — plus the frame, which clips deliberately and has to
+ * contain what it clips. Two kinds of thing are outside it and named here
+ * rather than left to be discovered:
+ *
+ * - **A rule that merely clips is not held.** `overflow: hidden` on an
+ *   ellipsis label, a segmented control, a popup, a `.json` block or a code
+ *   frame clips text, not positioned boxes, and those rules ship without a
+ *   `position` on purpose. The frame is the exception because a positioned
+ *   descendant *is* what escaped it.
+ * - **A scroll container the user agent makes is outside it.** A `textarea`
+ *   computes `overflow: auto` with no sheet saying so, and a `select`'s
+ *   listbox is drawn by the platform; a test that reads sources can see
+ *   neither. `ui/TextArea.module.css` carries `position: relative` by hand for
+ *   that reason, with the reason written above it.
  */
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
