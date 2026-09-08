@@ -5831,9 +5831,13 @@ export function assistantTransport(): Transport {
   # that is what this breaks: the name a file is read by is not a location on
   # a filesystem, and printing it as one is how Admin would name a path on a
   # machine whose layout it never learned.
-  mutate web "the location is taken from the page instead of the chassis" "$ADV" \
+  #
+  # **Retargeted.** The fallback itself is gone — where the chassis has not
+  # answered the row says so — so the mutation is now the constant *restored*,
+  # which is the same claim over the stronger code.
+  mutate web "the constant fallback restored (a location the page composed)" "$ADV" \
     '  const chassis = effective.desk?.chassis
-  if (chassis === undefined) return <code>{effective.path}</code>
+  if (chassis === undefined) return <span className="quiet">the desk has not said</span>
   return <code>{chassis.projectFile}</code>' \
     '  return <code>{effective.path}</code>'
 
