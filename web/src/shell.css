@@ -123,6 +123,34 @@
      viewport that excludes the mobile URL bar and one that does not keeps
      `vh`. `overflow: hidden` on the frame, because the scrolling belongs to
      the panes — every one of which carries `min-height: 0`. */
+
+  /* **And a scroll container has to be a containing block, or it is not one.**
+     `overflow` scrolls and clips only the descendants whose containing block
+     lies inside it. An absolutely positioned descendant of an *unpositioned*
+     pane is laid out against the initial containing block instead: it is not
+     scrolled with the pane, it is not clipped by this frame, and its static
+     position is counted into the *document's* scrollable overflow — which is
+     how a frame written to be exactly one viewport tall gave the browser its
+     own scrollbar and let the whole shell be scrolled up out of the window.
+
+     Measured in headless Chrome at e2d1dee, 1400x800: `/admin` reported a
+     `document.scrollingElement.scrollHeight` of 2439 against an `innerHeight`
+     of 800, while `.desk` itself measured 800. The three elements past the
+     fold were `select[aria-hidden="true"]`, inline `position: absolute` and
+     1px square — the form-participation select Radix renders beside every
+     Select trigger that sits inside a `<form>`, here the assistant endpoint
+     form's three pickers, at y 1808, 2341 and 2438, each with `offsetParent`
+     BODY. `/packs` and `/help` measured 800: the Sort picker is in no form,
+     so it renders no such select, and nothing else there is positioned.
+
+     So the rule, and it is not a list of five names: every element in this
+     project that scrolls or clips its content declares `position: relative`
+     in the same rule as its `overflow` — this frame, the four panes, and
+     every nested scroller under them. Then an absolutely positioned
+     descendant is placed against its pane, scrolls with it, is clipped by it,
+     and cannot extend the document. `shellSheet.test.ts` holds the pair for
+     any scroller added after this one. After it, every route measures
+     `scrollHeight === innerHeight`. */
   .desk {
     display: grid;
     grid-template-columns:
@@ -140,6 +168,7 @@
     height: 100vh;
     height: 100dvh;
     overflow: hidden;
+    position: relative;
   }
 
   .desk-head {
@@ -165,6 +194,7 @@
     gap: 0.25rem;
     padding: 0.75rem;
     overflow: hidden auto;
+    position: relative;
     background: var(--surface);
     border-right: 1px solid var(--border);
     min-width: 0;
@@ -184,6 +214,7 @@
     grid-column: 2;
     grid-row: 2;
     overflow: auto;
+    position: relative;
     scrollbar-gutter: stable;
     min-width: 0;
     min-height: 0;
@@ -200,6 +231,7 @@
     grid-column: 3;
     grid-row: 2;
     overflow: auto;
+    position: relative;
     background: var(--surface);
     border-left: 1px solid var(--border);
     min-width: 0;
@@ -210,6 +242,7 @@
     grid-column: 2 / 4;
     grid-row: 3;
     overflow: hidden;
+    position: relative;
     display: flex;
     flex-direction: column;
     background: var(--surface);
@@ -622,6 +655,7 @@
   .desk-console-body {
     flex: 1;
     overflow: auto;
+    position: relative;
     min-height: 0;
   }
 
