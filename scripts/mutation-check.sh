@@ -6139,16 +6139,14 @@ export function assistantTransport(): Transport {
     "    theme: preference?.theme ?? 'system',
     density: preference?.density ?? 'comfortable'"
 
-  # **A value outside the decoder's unions is absent, never applied.** The
-  # record is a string in a browser's own storage, editable by hand and by
-  # anything else this origin has ever served; a `"midnight"` that reached
-  # `applyTheme` would put an attribute nothing styles onto the root element and
-  # show a choice the menu never offered as the one in force.
-  mutate web "an invalid stored appearance is applied" "$APS" \
-    '  if (isTheme(record.theme)) preference.theme = record.theme
-  if (isDensity(record.density)) preference.density = record.density' \
-    '  preference.theme = record.theme as ThemeChoice
-  preference.density = record.density as Density'
+  # **Retargeted, not retired: `an invalid stored appearance is applied`.** The
+  # claim survived the code it was made against. It used to break the two guards
+  # that filtered an out-of-union value out of a record this desk owned; round 2
+  # made such a value a reason to disown the record entirely, so the guards and
+  # the ownership test are one pass and the claim is broken where that pass now
+  # lives — below, as `the union check removed from ownership`. Validating and
+  # extracting separately is what let the lenient half take whatever the strict
+  # half had accepted, twice.
 
   # **A reset that reports a removal it did not make is worse than none.** The
   # record is still there to come back on the next load, and the menu says the
@@ -6221,11 +6219,36 @@ export function assistantTransport(): Transport {
   # reading `v === 1` alone applied `{"v":1,"writer":"another-app",…}` to the
   # page as this desk's preference and let the reset delete it.
   mutate web "unknown members ignored again (ownership read off the version)" "$APS" \
-    '  for (const member of Object.keys(record)) {
-    if (!OWN_MEMBERS.includes(member)) return false
-  }
-  return '"'"'theme'"'"' in record || '"'"'density'"'"' in record' \
-    '  return true'
+    '      preference.density = value
+    } else {
+      return undefined
+    }' \
+    '      preference.density = value
+    }'
+
+  # **And ownership is the members' values, not only their names.** Round 2
+  # found what the name check still admitted: `{"v":1,"theme":17}` is not
+  # something this writer can emit, and it was owned all the same — read as a
+  # record with nothing usable in it, and deleted by "Use the project's
+  # default", which is a control removing somebody else's bytes under a key this
+  # desk merely computed.
+  mutate web "the union check removed from ownership (an impossible value owned)" "$APS" \
+    '      if (!isTheme(value)) return undefined
+      preference.theme = value
+    } else if (member === '"'"'density'"'"') {
+      if (!isDensity(value)) return undefined
+      preference.density = value' \
+    '      preference.theme = value as ThemeChoice
+    } else if (member === '"'"'density'"'"') {
+      preference.density = value as Density'
+
+  # **A record exists because somebody chose something.** A bare `{"v":1}` is
+  # not one this writer produces, so treating it as owned is the reset deleting
+  # a value it cannot account for — and it is the shape a *different* writer's
+  # empty record most plausibly takes.
+  mutate web "a record with nothing chosen in it is owned again" "$APS" \
+    '  if (preference.theme === undefined && preference.density === undefined) return undefined' \
+    '  void preference'
 
   # **Nothing this desk has not established is applied.** The record is
   # unreadable until the chassis names the project and the default is the

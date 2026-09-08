@@ -80,18 +80,23 @@ describe('the appearance record', () => {
     expect(readAppearance(KEY)).toEqual({ theme: 'light', density: 'compact' })
   })
 
-  it('treats a value outside the decoder’s unions as no preference at all', () => {
+  it('treats a value outside the decoder’s unions as bytes it did not write', () => {
     // Strictness about a *file* belongs to the decoder, which refuses a typo'd
-    // theme by name. A value somebody put in this browser's storage by hand is
-    // not a file: it is discarded, and the project's default applies.
+    // theme by name and says which key. Here the question is narrower and
+    // harder: could this writer have produced these bytes? It could not have
+    // written `"midnight"`, so the record is not this desk's — the project's
+    // default applies, and the bytes are left alone.
     window.localStorage.setItem(KEY, JSON.stringify({ v: 1, theme: 'midnight', density: 'roomy' }))
-    expect(readAppearance(KEY)).toEqual({})
+    expect(readAppearance(KEY)).toBeUndefined()
     expect(effectiveAppearance(readAppearance(KEY), FILE)).toEqual(FILE)
   })
 
-  it('keeps the member it can read when the other is outside the union', () => {
+  it('disowns the whole record when one member is outside the union', () => {
+    // Not "keep the half I can read". A record is a set of bytes with one
+    // writer, and a member this writer could not have written says the writer
+    // was not this one — whatever the member beside it happens to say.
     window.localStorage.setItem(KEY, JSON.stringify({ v: 1, theme: 'dark', density: 'roomy' }))
-    expect(readAppearance(KEY)).toEqual({ theme: 'dark' })
+    expect(readAppearance(KEY)).toBeUndefined()
   })
 
   it('discards bytes that are not a record of this version at all', () => {
@@ -127,15 +132,30 @@ describe('the appearance record', () => {
     expect(JSON.parse(window.localStorage.getItem(KEY)!)).toEqual(record)
   })
 
-  it('still owns a record whose own members carry a value it cannot use', () => {
-    // The line between the two rules: `"midnight"` under `theme` is this
-    // desk's record with nothing usable in it — the project's default applies,
-    // and the record is still this desk's to clear. A member this writer never
-    // writes is the other case entirely.
-    window.localStorage.setItem(KEY, JSON.stringify({ v: 1, theme: 'midnight' }))
-    expect(readAppearance(KEY)).toEqual({})
-    expect(resetAppearance(KEY)).toBe('cleared')
-    expect(window.localStorage.getItem(KEY)).toBeNull()
+  /**
+   * **A right-named member with an impossible value is not this writer's.**
+   *
+   * The round after the one that narrowed ownership to the member *names*
+   * found what that still admitted: `{"v":1,"theme":17}` was owned, read as a
+   * record with nothing usable in it, and deleted by "Use the project's
+   * default" — a control deleting somebody else's bytes under a key this desk
+   * merely computed, which is the exact thing the foreign rule exists to stop.
+   */
+  it.each([
+    ['a theme that is a number', { v: 1, theme: 17 }],
+    ['a theme that is an object', { v: 1, theme: { name: 'dark' } }],
+    ['a theme that is null', { v: 1, theme: null }],
+    ['a theme outside its union', { v: 1, theme: 'midnight' }],
+    ['a density that is a number', { v: 1, density: 0 }],
+    ['a density that is a boolean', { v: 1, density: true }],
+    ['a density outside its union', { v: 1, density: 'roomy' }],
+    ['one member good and one impossible', { v: 1, theme: 'dark', density: 42 }]
+  ])('disowns %s, and leaves the bytes exactly as they are', (_what, record) => {
+    const bytes = JSON.stringify(record)
+    window.localStorage.setItem(KEY, bytes)
+    expect(readAppearance(KEY)).toBeUndefined()
+    expect(resetAppearance(KEY)).toBe('foreign')
+    expect(window.localStorage.getItem(KEY)).toBe(bytes)
   })
 
   it('never writes a record its own reader would disown', () => {

@@ -610,16 +610,18 @@ not a leap in the dark. The ladder is preference, then the project file, then
 the built-in default, computed in one place and applied in one place.
 
 Every read and write is in `try/catch`, a record this desk did not write is left
-where it is, and a stored value outside the decoder's own unions is treated as
-**absent**: never applied, never shown as chosen. A record is this desk's when it
-carries the version, no member this writer does not write, and at least one that
-it does — ownership is the whole member set and not the version number, because
-`localStorage` is one namespace shared with everything this origin has ever
-served under a key derived from a path the viewer never chose. So
-`{"v":1,"writer":"another-app","theme":"dark"}` is somebody else's value: not
-applied, not deleted, and named as such. A member this writer *does* write,
-carrying a value the unions do not admit, is the other case — this desk's record
-with nothing usable in it. The write serializes only the
+where it is, and a stored value outside the decoder's own unions is a record
+this desk did not write: never applied, never shown as chosen, and never
+deleted. A record is this desk's when it
+carries the version, no member this writer does not write, at least one that it
+does, and a value in its own union for every member present — ownership is every
+byte of the record and not the version number, because `localStorage` is one
+namespace shared with everything this origin has ever served under a key derived
+from a path the viewer never chose. So `{"v":1,"writer":"another-app",…}` and
+`{"v":1,"theme":17}` are both somebody else's value: not applied, not deleted,
+and named as such. The question is not "is this legible" but "could this desk
+have written it", and one member this writer could not have written says the
+writer was not this one, whatever the member beside it says. The write serializes only the
 member the viewer actually chose, for the reason the pane record gives — a
 `density` stored because the *theme* was picked would be a built-in value
 silently outranking `jpack-desk.json` for ever. A choice is stamped with the key

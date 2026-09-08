@@ -81,31 +81,50 @@ export function appearanceKey(project: string): string {
   return `jpack-desk:appearance:v${RECORD_VERSION}:${project}`
 }
 
-/** Every member this writer puts in a record, and there are no others. */
-const OWN_MEMBERS = ['v', 'theme', 'density']
-
 /**
- * Whether these are bytes this desk's appearance writer could have produced.
+ * The preference a record carries, where it is a record this writer could have
+ * produced — and nothing at all where it is not.
  *
- * **Ownership is the whole member set, not the version number**, and it was the
- * version number until the review pointed at what that admits. `localStorage`
- * is one namespace shared with everything this origin has ever served, and the
- * key is derived from a path the viewer never chose — so
- * `{"v":1,"writer":"another-app","theme":"dark"}` was read as *this* desk's
- * preference, applied to the page, and deleted by "Use the project's default".
- * A bare `{"v":1}` was removable on the same terms, and this writer never
- * produces one: a record exists because somebody chose something.
+ * **Ownership is every byte of the record**, and it has been narrowed twice.
+ * `localStorage` is one namespace shared with everything this origin has ever
+ * served, under a key derived from a path the viewer never chose, so this
+ * question is "did *this* desk write these bytes" and nothing weaker will do.
+ * Reading the version alone admitted
+ * `{"v":1,"writer":"another-app","theme":"dark"}` — applied to the page as this
+ * desk's preference and deleted by "Use the project's default". Adding the
+ * member *names* still admitted `{"v":1,"theme":17}`, which this writer cannot
+ * emit either: it was owned, read as a record with nothing usable in it, and
+ * deleted on the same terms.
  *
- * So: the version, no member this writer does not write, and at least one of
- * the two it does. Anything else is somebody else's value under a name this
- * desk merely computed, and is left exactly where it is.
+ * So a record is this desk's when it carries the version, no member this writer
+ * does not write, at least one that it does, and **a value in its own union for
+ * every member present**. Anything else is somebody else's value under a name
+ * this desk merely computed: not applied, not deleted, and named as such.
+ *
+ * Validating and extracting in one pass is the point rather than a convenience.
+ * Two passes are two opinions about what a member is, and the second one — the
+ * lenient one, which took whatever the first had accepted — was the defect
+ * both times.
  */
-function isOwnRecord(record: Record<string, unknown>): boolean {
-  if (record.v !== RECORD_VERSION) return false
-  for (const member of Object.keys(record)) {
-    if (!OWN_MEMBERS.includes(member)) return false
+function ownPreference(record: Record<string, unknown>): AppearancePreference | undefined {
+  if (record.v !== RECORD_VERSION) return undefined
+  const preference: AppearancePreference = {}
+  for (const [member, value] of Object.entries(record)) {
+    if (member === 'v') continue
+    if (member === 'theme') {
+      if (!isTheme(value)) return undefined
+      preference.theme = value
+    } else if (member === 'density') {
+      if (!isDensity(value)) return undefined
+      preference.density = value
+    } else {
+      return undefined
+    }
   }
-  return 'theme' in record || 'density' in record
+  // A record exists because somebody chose something, so one with nothing
+  // chosen in it is not one of this writer's either.
+  if (preference.theme === undefined && preference.density === undefined) return undefined
+  return preference
 }
 
 /**
@@ -116,13 +135,11 @@ function isOwnRecord(record: Record<string, unknown>): boolean {
  * null, and a thrown accessor must still render a working desk on the project's
  * own default.
  *
- * **A value outside the union is absent**, not a problem to report, and it is a
- * different thing from a record this desk did not write. Strictness lives in the
- * config decoder, which refuses a typo'd theme by name at the file it was
- * written in; here a `"midnight"` under a member *this* writer writes is this
- * desk's record with nothing usable in it — the project's default applies, and
- * the record is still this desk's to clear. A member this writer never writes is
- * the other case, and `isOwnRecord` is where the two part.
+ * `undefined` is the one answer for every way this can fail: unreadable
+ * storage, bytes that are not JSON, an object that is not a record of this
+ * version, and a record this writer could not have produced. They are one
+ * answer because they have one consequence — the project's default applies, and
+ * whatever is under the key is left exactly where it is.
  */
 export function readAppearance(key: string): AppearancePreference | undefined {
   let raw: string | null = null
@@ -139,12 +156,7 @@ export function readAppearance(key: string): AppearancePreference | undefined {
     return undefined
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined
-  const record = parsed as Record<string, unknown>
-  if (!isOwnRecord(record)) return undefined
-  const preference: AppearancePreference = {}
-  if (isTheme(record.theme)) preference.theme = record.theme
-  if (isDensity(record.density)) preference.density = record.density
-  return preference
+  return ownPreference(parsed as Record<string, unknown>)
 }
 
 function isTheme(value: unknown): value is ThemeChoice {
