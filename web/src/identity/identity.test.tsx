@@ -267,6 +267,20 @@ describe('the user menu’s reset', () => {
     expect(window.localStorage.getItem(shellStateKey('default'))).toBe('{"v":1}')
   })
 
+  it('drops the verdict when the menu closes, rather than greeting the next reader with it', async () => {
+    // A verdict from the last time the menu was open is not a verdict about
+    // this one. It goes with the menu's own content, which is what makes the
+    // outcome the action's state rather than the control's.
+    renderHeader()
+    const first = await openMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Reset panes' }))
+    expect(first.textContent).toContain(RESET_SAYS.cleared)
+    fireEvent.keyDown(first, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    const again = await openMenu()
+    expect(again.textContent).not.toContain(RESET_SAYS.cleared)
+  })
+
   it('puts the panes back where the layout came from, not merely the record', async () => {
     // What the card's reset did, from where the control now is: the record is
     // removed *and* the live layout is re-seeded, so the panes move now rather

@@ -134,8 +134,13 @@ export function UserControl() {
  *
  * **The menu stays open while it answers.** A `DropdownMenu.Item` closes the
  * menu on select, and the answer is a sentence: a menu that closed would take
- * it with it. The verdict is dropped when the menu is next opened, because a
- * verdict from the last time is not a verdict about this one.
+ * it with it.
+ *
+ * **And the verdict goes when the menu does**, because a verdict from the last
+ * time the menu was open is not a verdict about this one. That is the portal
+ * unmounting this component with the content it is inside, which is why the
+ * outcome is held here and not by the control around it — a verdict kept one
+ * level up would greet whoever opened the menu next.
  */
 function ResetPanesItem() {
   const shell = useShellState()
