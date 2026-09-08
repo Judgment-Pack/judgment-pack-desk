@@ -6444,17 +6444,32 @@ export function assistantTransport(): Transport {
 
   # ---- Chunk 6g: every pane is a containing block --------------------------
   #
-  # **Retired: none.** These eight hold a pair — `overflow` and `position` on
-  # one element — that no earlier row touches. `the frame has a definite
-  # height` is the neighbouring claim and is untouched: a frame of the right
-  # height whose panes are `position: static` is exactly the defect this adds.
+  # **Retired: four, one reason.** `a later rule unpositions .desk-main again`,
+  # `the frame unpositioned inside a media block`, `a descendant selector takes
+  # .desk-main's position back` and `a late rule takes .desk-console's position
+  # back` were the override rows. They existed because the guard claimed to
+  # catch a cascade override from source, and that claim is withdrawn: three
+  # review rounds each found a construction past it — selector text compared as
+  # a string, a first-match lookup, a nested `&` prelude — and a source reader
+  # that nearly emulates the cascade is worse than one that does not try,
+  # because it is believed. `scripts/containment-check.sh` holds that half now,
+  # in a browser, by reading the computed `position` of the frame and the four
+  # panes on 49 configurations a build. Three of the four constructions do still
+  # trip the same-selector clause the reader kept (each is in the PR's
+  # construction table, applied by hand and shown failing); they are retired
+  # anyway, because a row is a claim about what the suite holds, and holding
+  # them here would re-assert the one that was refuted. The fourth,
+  # `.desk > .desk-main`, is green in the suite and red in the script, which is
+  # exactly the division of labour this chunk ends with.
   #
-  # Three break the pair inside the rule that declares it. One drops the
-  # position from the scroller no sweep can find, which a named list holds
-  # instead. Four leave every rule of the change exactly as shipped and take
-  # the position back from somewhere else, which is the half a per-rule sweep
-  # cannot see — and the last two of those are the constructions that measured
-  # green against round 1's cascade pass.
+  # **Retained: five.** These hold a pair — `overflow` and `position` on one
+  # element — that no earlier row touches. `the frame has a definite height` is
+  # the neighbouring claim and is untouched: a frame of the right height whose
+  # panes are `position: static` is exactly the defect this adds.
+  #
+  # Three break the pair inside the rule that declares it. Two drop the position
+  # from a scroll container no sweep can find, because the user agent makes it
+  # and no sheet says so, which a named list holds instead.
 
   CHK=web/src/packs/CheckStrip.module.css
 
@@ -6504,59 +6519,13 @@ export function assistantTransport(): Transport {
   overflow-y: auto;
 }'
 
-  # **And the two the first three could not see.** Both of these leave every
-  # rule of the change exactly as written — `.desk-main` still spells
-  # `overflow: auto; position: relative`, `.desk` still spells
-  # `overflow: hidden; position: relative` — and take the position back
-  # somewhere else, which is what the cascade does and what a per-rule sweep
-  # cannot notice. Measured before the second pass existed: each left the file
-  # 24 of 24 green with the pane no longer a containing block, so each was
-  # NOT DISCRIMINATING then and is a row now.
-  mutate web "a later rule unpositions .desk-main again" "$CSSH" \
-    '  @media (prefers-reduced-motion: reduce) {
-    .desk,
-    .desk-rail,
-    .desk-inspector,
-    .desk-console {
-      transition-duration: 0s !important;
-    }
-  }
-}' \
-    '  @media (prefers-reduced-motion: reduce) {
-    .desk,
-    .desk-rail,
-    .desk-inspector,
-    .desk-console {
-      transition-duration: 0s !important;
-    }
-  }
-}
-
-.desk-main {
-  position: static;
-}'
-
-  # The same move at one width, which is worse: green everywhere the suite
-  # looks and broken on the viewport the media query names.
-  mutate web "the frame unpositioned inside a media block" "$CSSH" \
-    '  @media (prefers-reduced-motion: reduce) {
-    .desk,' \
-    '  @media (max-width: 900px) {
-    .desk {
-      position: static;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .desk,'
-
   TXT=web/src/ui/TextArea.module.css
 
   # **The half no sweep can reach.** A `<textarea>` computes `overflow: auto`
   # with nothing in any sheet saying so, so the sweep over authored
-  # declarations is structurally blind to twenty scroll containers on the
-  # editor route. They are held by a named list instead, and a list is only a
-  # safeguard while something fails when a member of it stops holding.
+  # declarations is structurally blind to every one the editor renders. They
+  # are held by a named list instead, and a list is only a safeguard while
+  # something fails when a member of it stops holding.
   mutate web "position dropped from the textarea primitive" "$TXT" \
     '.textarea {
   position: relative;
@@ -6564,62 +6533,21 @@ export function assistantTransport(): Transport {
     '.textarea {
   width: 100%;'
 
-  # **The two constructions round 2 measured green.** Both of these were
-  # applied by hand to head 2ee79dd's successor and left the suite passing
-  # while Chrome showed the pane no longer containing its descendants — the
-  # HIGH findings that sent the guard back. The first defeated a reader that
-  # compared selector *text*, because `.desk > .desk-main` and `.desk-main`
-  # are two different strings naming one class. The second defeated a reader
-  # that looked up the *first* rule matching a name and stopped.
-  mutate web "a descendant selector takes .desk-main's position back" "$CSSH" \
-    '  @media (prefers-reduced-motion: reduce) {
-    .desk,
-    .desk-rail,
-    .desk-inspector,
-    .desk-console {
-      transition-duration: 0s !important;
-    }
-  }
-}' \
-    '  @media (prefers-reduced-motion: reduce) {
-    .desk,
-    .desk-rail,
-    .desk-inspector,
-    .desk-console {
-      transition-duration: 0s !important;
-    }
-  }
-}
-
-.desk > .desk-main {
-  position: static;
-}'
-
-  # The console's own rule is left exactly as shipped and a later one, outside
-  # the layer, wins: an unlayered author rule beats every layered one.
-  mutate web "a late rule takes .desk-console's position back" "$CSSH" \
-    '  @media (prefers-reduced-motion: reduce) {
-    .desk,
-    .desk-rail,
-    .desk-inspector,
-    .desk-console {
-      transition-duration: 0s !important;
-    }
-  }
-}' \
-    '  @media (prefers-reduced-motion: reduce) {
-    .desk,
-    .desk-rail,
-    .desk-inspector,
-    .desk-console {
-      transition-duration: 0s !important;
-    }
-  }
-}
-
-.desk-console {
-  position: static;
-}'
+  # The second member of that list, and the one that says the list is found
+  # rather than inherited: `.code-editor` styles three raw `<textarea>` — the
+  # authoring buffer, and Facts and Evidence on the evaluate route — through a
+  # rule that authors no overflow at all, so it is invisible to the sweep for
+  # exactly the same reason and was invisible to the list until this round.
+  mutate web "position dropped from the raw code editor" "$CSSP" \
+    '.code-editor {
+  /* A raw `<textarea>`: the user agent makes it a scroll container and no rule
+     here says so, so it is held by the named list in `ui/containingBlock.test.ts`. */
+  position: relative;
+  display: block;' \
+    '.code-editor {
+  /* A raw `<textarea>`: the user agent makes it a scroll container and no rule
+     here says so, so it is held by the named list in `ui/containingBlock.test.ts`. */
+  display: block;'
 fi
 
 restore
