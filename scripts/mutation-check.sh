@@ -6086,6 +6086,27 @@ export function assistantTransport(): Transport {
   mutate web "the reset removes whatever is under the key" "$P" \
     "  if (raw !== null && readShellState(key) === undefined) return 'foreign'" \
     '  void raw'
+
+  # **A card's own write is part of what its Status says.** The group's status
+  # is the *file's* read state, and a card under it drops a status that says the
+  # same thing — so a card writing, refused, or holding a stale write showed no
+  # Status at all while the group said `read`.
+  mutate web "write state dropped from the card's status comparison" "$SCD" \
+    '  const says = write ?? status' \
+    '  const says = status'
+
+  # **The verdict is the status, and the name is the metadata.** `server` is
+  # retained across a reconnect — the provider spreads the previous state — so
+  # `server !== null` means "this page has met a runtime", which is not "this
+  # page is connected to one". Every surface that read a verdict off it said
+  # `connected` while the banner said the connection was lost.
+  mutate web "the connection verdict read from the runtime it last met" "$V" \
+    "  if (status !== 'ready' || server === null) return says" \
+    '  if (server === null) return says'
+  # The one producer, broken where it is produced: three surfaces read it.
+  mutate web "one connection word, whatever the socket is doing" "$M" \
+    "  if (status === 'ready') return 'connected'" \
+    "  return 'connected'"
 fi
 
 restore
