@@ -206,13 +206,27 @@ describe('the shell frame', () => {
     )
     expect(screen.getByRole('contentinfo').textContent).toContain('connected to jpack test')
     unmount()
+    // **The verdict is the status, not the metadata.** `server` is retained
+    // across a reconnect, so a strip that read "connected to" off its presence
+    // said so while the socket was down — and a fixture that expressed "not
+    // connected" by nulling `server` was asserting the same conflation.
+    const lost = renderShell(
+      <AppShell>
+        <h1>a route</h1>
+      </AppShell>,
+      { status: 'failed', server: null }
+    )
+    expect(screen.getByRole('contentinfo').textContent).toContain('not connected')
+    lost.unmount()
     renderShell(
       <AppShell>
         <h1>a route</h1>
       </AppShell>,
-      { server: null }
+      { status: 'reconnecting', client: null, attempt: 2 }
     )
-    expect(screen.getByRole('contentinfo').textContent).toContain('not connected')
+    const strip = screen.getByRole('contentinfo').textContent ?? ''
+    expect(strip).toContain('reconnecting')
+    expect(strip).not.toContain('connected to jpack test')
   })
 
   it('renders the strip identically whether the console is open or collapsed', () => {

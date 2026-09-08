@@ -1,5 +1,5 @@
 /**
- * Admin: eight cards, one shape, and no paragraph telling anyone how to read
+ * Admin: the settings, one shape, and no paragraph telling anyone how to read
  * them.
  *
  * **The narration is gone, and its removal is the change.** Every section used
@@ -10,64 +10,67 @@
  * is in the file, and the fields — with a Save on the one card that has a write
  * path. A real problem is the card's Status line and nothing else.
  *
- * **A location is never composed here.** The desk-level file's path, the
- * project file's path and the runtime binary come from the chassis; a page that
- * joined a directory to a file name would be asserting a location on a
- * filesystem it cannot see.
+ * **A location is never composed here, and never stood in for.** The desk-level
+ * file's path, the project file's path and the runtime binary come from the
+ * chassis; a page that joined a directory to a file name would be asserting a
+ * location on a filesystem it cannot see, and one that fell back to the
+ * relative name it reads the file by would be offering a file-API address as
+ * an established location. Where the chassis has not answered, the row says
+ * so.
  *
  * `runtime` and the project root are **not in the schema**, and that is the
  * design rather than a gap: `relay.go` runs the configured binary, so a
- * config-supplied path would be a local-code-execution surface. The Runtime
- * card reports what the process was started with.
+ * config-supplied path would be a local-code-execution surface. The status
+ * line reports what the process was started with.
+ *
+ * **Runtime and Panes are gone, and what went with each of them is the point.**
+ * The Runtime card was status rather than settings: it is the line above, and
+ * its content is in Help & About. The Panes card offered three pane dimensions
+ * and a reset of this browser's own record of the layout — the dimensions were
+ * a settings page editing the frame it is drawn in, and the reset is now in the
+ * user menu, beside the panes it clears. Nothing about the schema changed: a
+ * file with a `panes` member is still read, still applied and still validated;
+ * what left is the settings UI for it, and its write path left with it.
  */
-import { useState } from 'react'
 import { AssistantSection } from '../assistant/AssistantSection'
-import { CardField, SourceCard, type SourceStatus } from '../admin/SourceCard'
+import { AdminStatusLine } from '../admin/AdminStatusLine'
+import { CardField, SourceCard, SourceGroup, type SourceStatus } from '../admin/SourceCard'
 import { useDefaultProject } from '../admin/DefaultProject'
 import {
   AppearanceForm,
   OrganizationForm,
-  PanesForm,
-  StorageForm
+  StorageForm,
+  StorageKind
 } from '../admin/projectFileCards'
 import { useHashTarget } from '../shell/useHashTarget'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
-  PANE_BOUNDS,
   type ConfigProblem,
   type DeskConfig,
   type EffectiveConfig,
   type ValueSource
 } from '../config/deskConfig'
 import { useFileListing } from '../files/queries'
-import { useMcp } from '../mcp/McpProvider'
-import { usePacks } from '../mcp/queries'
-import { useRenderedPanes, type MeasuredBox } from '../shell/measured'
-import { useShellState } from '../shell/paneState'
-import type { ResetOutcome } from '../shell/paneState'
-import { ADMIN_SECTIONS } from './adminSections'
+import { connectionSays, useMcp } from '../mcp/McpProvider'
+import { ADMIN_GROUPS, ADMIN_SECTIONS } from './adminSections'
 
 /** The sections, by id, so a card names its own rather than an index. */
 const SECTION = Object.fromEntries(
   ADMIN_SECTIONS.map((section) => [section.id, section])
 ) as Record<string, { id: string; title: string }>
 
+/** The groups, by id, on the same terms. */
+const GROUP = Object.fromEntries(
+  ADMIN_GROUPS.map((group) => [group.id, group])
+) as Record<string, { id: string; title: string }>
+
 export function AdminView() {
   const effective = useEffectiveConfig()
   const { config, desk } = effective
   const mcp = useMcp()
-  const { server, known } = mcp
-  const { data } = usePacks()
   const listing = useFileListing()
-  const shell = useShellState()
-  // Re-measured when a pane is toggled: a pane arriving or leaving is not a
-  // resize of anything already observed.
-  const rendered = useRenderedPanes(
-    `${shell.left.mode}|${shell.inspector.open}|${shell.console.open}`
-  )
-  const [reset, setReset] = useState<ResetOutcome | undefined>(undefined)
-  // The Project card's one field and its Save, sharing one draft across two of
-  // the card's slots.
+  // The project group's one field and its Save, sharing one draft across two
+  // of the header's slots.
   const defaultProject = useDefaultProject()
   // The rail's and the user menu's section links carry a hash. Nothing in the
   // router scrolls to one, and the document is not the scroll container here —
@@ -83,217 +86,110 @@ export function AdminView() {
         <h1>Admin</h1>
       </header>
 
-      <SourceCard
-        id={SECTION.project!.id}
-        title={SECTION.project!.title}
+      {/* Not a card, because none of it is a setting: what this desk is
+          running, from the connection's and the chassis' own answers. The two
+          files are **not** here — each group header names its own, and naming
+          it twice is what the grouping exists to stop. */}
+      <AdminStatusLine runtime={runtimeSays(mcp)} binary={runtimeBinary(effective)} />
+
+      <SourceGroup
+        id={GROUP['this-project']!.id}
+        title={GROUP['this-project']!.title}
         location={projectLocation(effective)}
         status={projectStatus(effective)}
-        // The whole file, and only where it was accepted: the card's own
+        // The whole file, and only where it was accepted: the group's own
         // Status is what gates it, and a refused document is exactly the one
         // that must not be rendered.
         content={{ text: effective.text }}
+        // The one control that writes the *desk-level* file from here: it
+        // nominates this project as the default, or withdraws one. Its own
+        // line names the file it writes, which is not the file above it.
         fields={defaultProject.field}
         save={defaultProject.save}
-      />
+      >
+        <SourceCard
+          id={SECTION.organization!.id}
+          title={SECTION.organization!.title}
+          location={sectionLocation(effective, 'organization')}
+          status={sectionStatus(effective, 'organization')}
+          under={groupFor(effective, 'organization')}
+          content={{
+            text: textFor(effective, 'organization'),
+            member: 'organization',
+            value: config.organization
+          }}
+          save={<OrganizationForm />}
+        />
 
-      <SourceCard
-        id={SECTION['identity-provider']!.id}
-        title={SECTION['identity-provider']!.title}
+        <SourceCard
+          id={SECTION.storage!.id}
+          title={SECTION.storage!.title}
+          location={sectionLocation(effective, 'storage')}
+          status={sectionStatus(effective, 'storage')}
+          under={groupFor(effective, 'storage')}
+          content={{
+            text: textFor(effective, 'storage'),
+            member: 'storage',
+            value: config.storage
+          }}
+          fields={<StorageKind />}
+          save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocation]} />}
+        />
+
+        <SourceCard
+          id={SECTION.appearance!.id}
+          title={SECTION.appearance!.title}
+          location={sectionLocation(effective, 'appearance')}
+          status={sectionStatus(effective, 'appearance')}
+          under={groupFor(effective, 'appearance')}
+          content={{
+            text: textFor(effective, 'appearance'),
+            member: 'appearance',
+            value: config.appearance
+          }}
+          save={<AppearanceForm />}
+        />
+      </SourceGroup>
+
+      <SourceGroup
+        id={GROUP['this-desk']!.id}
+        title={GROUP['this-desk']!.title}
         location={deskLocation(effective)}
         status={deskStatus(effective)}
-        content={{ text: desk?.text, member: 'identity', value: config.identity }}
-        fields={
-          <CardField label="Provider">
-            {config.identity.provider === null ? (
-              'None'
-            ) : (
-              <>
-                <code>{config.identity.provider.issuer}</code>
-                {config.identity.provider.label !== null && (
-                  <> — {config.identity.provider.label}</>
-                )}
-              </>
-            )}
-          </CardField>
-        }
-      />
+      >
+        <AssistantSection
+          id={SECTION.assistant!.id}
+          title={SECTION.assistant!.title}
+          under={deskStatus(effective)}
+        />
 
-      <AssistantSection id={SECTION.assistant!.id} title={SECTION.assistant!.title} />
-
-      <SourceCard
-        id={SECTION.runtime!.id}
-        title={SECTION.runtime!.title}
-        location={
-          desk?.chassis === undefined ? (
-            <span className="quiet">the desk has not said</span>
-          ) : (
-            <code>{desk.chassis.runtimeBin}</code>
-          )
-        }
-        status={{
-          state: 'said',
-          says: server
-            ? `connected — ${server.name} ${server.version}`
-            : 'not connected'
-        }}
-        content={{ value: runtimeSummary(mcp) }}
-        fields={
-          <>
-            <CardField label="Configuration">
-              {data?.configPath ? (
-                <code>{data.configPath}</code>
+        <SourceCard
+          id={SECTION['identity-provider']!.id}
+          title={SECTION['identity-provider']!.title}
+          location={deskLocation(effective)}
+          status={deskStatus(effective)}
+          under={deskStatus(effective)}
+          content={{ text: desk?.text, member: 'identity', value: config.identity }}
+          fields={
+            <CardField label="Provider">
+              {config.identity.provider === null ? (
+                'None'
               ) : (
-                <span className="quiet">not read yet</span>
+                <>
+                  <code>{config.identity.provider.issuer}</code>
+                  {config.identity.provider.label !== null && (
+                    <> — {config.identity.provider.label}</>
+                  )}
+                </>
               )}
             </CardField>
-            <CardField label="Tool listing">
-              {known ? 'read' : 'not read on this connection'}
-            </CardField>
-          </>
-        }
-      />
+          }
+        />
+      </SourceGroup>
 
-      <SourceCard
-        id={SECTION.storage!.id}
-        title={SECTION.storage!.title}
-        location={sectionLocation(effective, 'storage')}
-        status={sectionStatus(effective, 'storage')}
-        content={{
-          text: textFor(effective, 'storage'),
-          member: 'storage',
-          value: config.storage
-        }}
-        save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocation]} />}
-      />
-
-      <SourceCard
-        id={SECTION.organization!.id}
-        title={SECTION.organization!.title}
-        location={sectionLocation(effective, 'organization')}
-        status={sectionStatus(effective, 'organization')}
-        content={{
-          text: textFor(effective, 'organization'),
-          member: 'organization',
-          value: config.organization
-        }}
-        save={<OrganizationForm />}
-      />
-
-      <SourceCard
-        id={SECTION.appearance!.id}
-        title={SECTION.appearance!.title}
-        location={sectionLocation(effective, 'appearance')}
-        status={sectionStatus(effective, 'appearance')}
-        content={{
-          text: textFor(effective, 'appearance'),
-          member: 'appearance',
-          value: config.appearance
-        }}
-        save={<AppearanceForm />}
-      />
-
-      <SourceCard
-        id={SECTION.panes!.id}
-        title={SECTION.panes!.title}
-        location={sectionLocation(effective, 'panes')}
-        status={sectionStatus(effective, 'panes')}
-        content={{ text: textFor(effective, 'panes'), member: 'panes', value: config.panes }}
-        fields={
-          <>
-            <CardField label="Rail">
-              {/* **Configured, and labelled as configured.** These are the
-                  decoded numbers before the sheet's viewport caps touch them;
-                  the rendered figure beside them is what is on screen. Printing
-                  one and calling it the other is how an accepted 720px
-                  Inspector was reported as 720px while rendering 440px. */}
-              <code>{config.panes.left.mode}</code>, configured{' '}
-              <strong>{config.panes.left.width}px</strong> — rendered{' '}
-              <Rendered box={rendered.rail} axis="width" />
-            </CardField>
-            <CardField label="Inspector">
-              {config.panes.inspector.open ? 'open' : 'closed'}, configured{' '}
-              <strong>{config.panes.inspector.width}px</strong> — rendered{' '}
-              <Rendered box={rendered.inspector} axis="width" />
-            </CardField>
-            <CardField label="Console">
-              {config.panes.console.open ? 'open' : 'closed'}, configured{' '}
-              <strong>{config.panes.console.height}px</strong> — rendered{' '}
-              <Rendered box={rendered.console} axis="height" />
-            </CardField>
-            <CardField label="Accepted ranges">
-              {PANE_DIMENSIONS.map((dimension) => (
-                <code key={dimension.key} className="partial-reason">
-                  {dimension.key}: {PANE_BOUNDS[dimension.key]!.min}–
-                  {PANE_BOUNDS[dimension.key]!.max}px
-                </code>
-              ))}
-            </CardField>
-            <CardField label="Remembered under">
-              <code>{shell.storageKey}</code>{' '}
-              {!shell.keyResolved && (
-                <span className="quiet">provisional — this project&apos;s root is not known</span>
-              )}
-            </CardField>
-          </>
-        }
-        save={
-          <>
-            {/* Two controls, and they are two different kinds of thing: the
-                form writes the file, and the reset clears this browser's own
-                record of a layout the file never saw. */}
-            <PanesForm />
-            <p className="actions">
-              <button type="button" onClick={() => setReset(shell.resetPanes())}>
-                Reset panes on this machine
-              </button>{' '}
-              {/* What happened, not what was attempted. The reset runs inside
-                  the provider that owns the record — it cancels a write already
-                  on its way, refuses to clear the provisional key before the
-                  chassis has said which project this is, and reads the key back
-                  afterwards — and each of those is a different sentence. */}
-              {reset === 'cleared' && (
-                <span className="quiet">Cleared — the panes are back on their defaults.</span>
-              )}
-              {reset === 'refused' && (
-                <span className="quiet">
-                  this browser did not clear the record — the layout is unchanged
-                </span>
-              )}
-              {reset === 'unresolved' && (
-                <span className="quiet">
-                  nothing was cleared: this desk has not been told which project it is open on
-                </span>
-              )}
-            </p>
-          </>
-        }
-      />
     </article>
   )
 }
-
-/**
- * What the page knows about the runtime it is connected to.
- *
- * The connection's own summary — who answered `initialize`, whether the tool
- * listing was read, and what that listing said this runtime can do. **`known`
- * is carried rather than folded in**: a listing that never answered leaves
- * every flag *unknown* rather than absent, and a card that printed them as
- * false would impersonate an older runtime.
- */
-function runtimeSummary(mcp: ReturnType<typeof useMcp>) {
-  const { client, retryNow, error, ...summary } = mcp
-  void client
-  void retryNow
-  return { ...summary, error: error === null ? null : error.message }
-}
-
-/** The three bounded dimensions, in the order the section prints them. */
-const PANE_DIMENSIONS = [
-  { key: 'panes.left.width' },
-  { key: 'panes.inspector.width' },
-  { key: 'panes.console.height' }
-] as const
 
 /** The sections that come from either file, layered. */
 type LayeredSection = Exclude<
@@ -302,18 +198,45 @@ type LayeredSection = Exclude<
 >
 
 /**
- * Where the project's own configuration file is, **as the chassis said it**.
+ * Where the project's own configuration file is, **as the chassis said it** —
+ * or that it has not said.
  *
- * The absolute path the chassis resolved, and the project-relative name only
- * where it has not answered — which is honest about being a name rather than a
- * location. Joining the reported directory to a file name here would be this
- * page composing a path on a filesystem it cannot see, and would be wrong the
- * first time a project was reached through a symlink.
+ * The absolute path the chassis resolved, and **nothing** where it has not
+ * answered. It used to fall back to `effective.path`, the project-relative
+ * name this page reads the file by: that is a file-API address rather than an
+ * established location on a filesystem, and a Location row showing it was the
+ * page answering a question only the chassis can answer — before
+ * `/api/desk-config` has answered at all, and for ever where it never carries
+ * chassis facts. Joining the reported directory to a file name here would be
+ * the same mistake one step further on, and would be wrong the first time a
+ * project was reached through a symlink.
  */
 function projectLocation(effective: EffectiveConfig) {
   const chassis = effective.desk?.chassis
-  if (chassis === undefined) return <code>{effective.path}</code>
+  if (chassis === undefined) return <span className="quiet">the desk has not said</span>
   return <code>{chassis.projectFile}</code>
+}
+
+/**
+ * The connection, in the connection's own words.
+ *
+ * **The verdict is the status; the name is the metadata.** `server` is retained
+ * across a reconnect, so a line that read "connected" off its presence said so
+ * while the socket was down and the banner said otherwise. The runtime is named
+ * only where the connection is actually up. See `connectionSays`.
+ */
+function runtimeSays(mcp: ReturnType<typeof useMcp>): string {
+  const { status, server } = mcp
+  const says = connectionSays(status)
+  if (status !== 'ready' || server === null) return says
+  return `${says} — ${server.name} ${server.version}`
+}
+
+/** The binary the desk was launched with, as the chassis reported it. */
+function runtimeBinary(effective: EffectiveConfig) {
+  const chassis = effective.desk?.chassis
+  if (chassis === undefined) return <span className="quiet">the desk has not said</span>
+  return <code>{chassis.runtimeBin}</code>
 }
 
 /** Where the desk-level file is, as the chassis said it — or that nothing asked. */
@@ -363,6 +286,23 @@ function deskStatus(effective: EffectiveConfig): SourceStatus {
 }
 
 /**
+ * The group header a layered section sits under, where its own file is the
+ * group's — and **nothing** where it is not.
+ *
+ * A section that came from the desk-level file is not one the project group's
+ * header speaks for: the header names this project's file, and a card that
+ * dropped its Location under it would be attributing a value to a file it did
+ * not come from. So that card is given no group at all and states its own
+ * Location and Status, exactly as it did before there were groups.
+ */
+function groupFor(
+  effective: EffectiveConfig,
+  section: LayeredSection
+): SourceStatus | undefined {
+  return effective.sources[section] === 'desk file' ? undefined : projectStatus(effective)
+}
+
+/**
  * One layered section's state: the state of the file that supplied it, or —
  * where neither did — what the project file has to say about not carrying it.
  */
@@ -376,22 +316,6 @@ function sectionStatus(effective: EffectiveConfig, section: LayeredSection): Sou
 
 function refused(problems: ConfigProblem[]): SourceStatus {
   return { state: 'refused', problems }
-}
-
-/**
- * One measured dimension, or the reason there is not one.
- *
- * Three answers and not two. **Absent** is a pane that is not in the document
- * at this width — the Inspector's drawer form while it is closed — and
- * **collapsed** is one that is mounted at zero, which is what `hidden` plus
- * `display: none` produces. Reporting either as `0px` would be a measurement
- * of something that is not there.
- */
-function Rendered({ box, axis }: { box: MeasuredBox | undefined; axis: 'width' | 'height' }) {
-  if (box === undefined) return <span className="quiet">not mounted at this width</span>
-  const value = box[axis]
-  if (value === 0) return <span className="quiet">collapsed</span>
-  return <strong>{value}px</strong>
 }
 
 /**

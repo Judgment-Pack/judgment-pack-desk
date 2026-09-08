@@ -1,32 +1,29 @@
 /**
- * Admin: eight cards, one shape, and no narration.
+ * Admin: two groups, five cards, one shape, and no narration.
  *
- * Three assertions carry this file. The **order** case fails if a section is
- * added without being declared, declared without being rendered, or rendered
- * out of order. The **narration sweep** fails on any text node over 140
- * characters that is not quoted material — a path, a decoder's own refusal, a
- * member of the file — which is what "remove the narration" means as a rule
- * rather than as a preference. And the **controls** case is the whole list of
- * what on this page changes anything, so a control cannot be added without
- * appearing here.
+ * Four assertions carry this file. The **order** case fails if a group or a
+ * section is added without being declared, declared without being rendered, or
+ * rendered out of order. The **location** case is the whole point of the
+ * grouping: each file's path is stated once, in its group's header, and a card
+ * under one states neither it nor a status the header has already given. The
+ * **narration sweep** fails on any text node over 140 characters that is not
+ * quoted material — a path, a decoder's own refusal, a member of the file —
+ * which is what "remove the narration" means as a rule rather than as a
+ * preference. And the **controls** case is the whole list of what on this page
+ * changes anything, so a control cannot be added without appearing here.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DeskConfigFixture } from '../config/DeskConfigProvider'
-import {
-  PANE_BOUNDS,
-  STORAGE_KIND_SAYS,
-  decodeDeskConfig,
-  effectiveConfig
-} from '../config/deskConfig'
-import { McpContext } from '../mcp/McpProvider'
-import { ShellStateProvider, projectKey, shellStateKey } from '../shell/paneState'
+import { DeskConfigFixture, DeskConfigProvider } from '../config/DeskConfigProvider'
+import { STORAGE_KIND_SAYS, decodeDeskConfig, effectiveConfig } from '../config/deskConfig'
+import { McpContext, type McpConnection } from '../mcp/McpProvider'
+import { ShellStateProvider } from '../shell/paneState'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { narrationIn } from '../admin/narration'
 import { AdminView } from './AdminView'
-import { ADMIN_SECTIONS } from './adminSections'
+import { ADMIN_GROUPS, ADMIN_SECTIONS } from './adminSections'
 
 afterEach(() => {
   cleanup()
@@ -44,9 +41,8 @@ const CHASSIS_413 = {
   source: 'chassis'
 } as const
 
-/** The chassis' project root, and the key the record therefore lives under. */
+/** The chassis' project root this desk is open on. */
 const ROOT = '/home/someone/a-project'
-const KEY = shellStateKey(projectKey(ROOT))
 const DESK_PATH = '/home/someone/.config/jpack-desk/desk.json'
 
 /**
@@ -57,14 +53,15 @@ const DESK_PATH = '/home/someone/.config/jpack-desk/desk.json'
 function renderAdmin(
   value = effectiveConfig(undefined),
   path = '/admin',
-  projectIdentity: string | null = ROOT
+  projectIdentity: string | null = ROOT,
+  mcp: Partial<McpConnection> = {}
 ) {
   const router = createMemoryRouter(
     [
       {
         path: '*',
         element: (
-          <McpContext.Provider value={connected({ client: QUIET.client })}>
+          <McpContext.Provider value={connected({ client: QUIET.client, ...mcp })}>
             <DeskConfigFixture value={value}>
               <ShellStateProvider
                 projectIdentity={projectIdentity ?? undefined}
@@ -84,6 +81,104 @@ function renderAdmin(
       <RouterProvider router={router} />
     </QueryClientProvider>
   )
+}
+
+/**
+ * A desk serving one project file, with the write left in whatever state a
+ * case is about.
+ *
+ * `renderAdmin` above is a *fixture*: the configuration is handed in, so no
+ * card has bytes to write over and every Save is disabled. These cases are
+ * about what a card says while it is writing, so they need the real provider
+ * over a real read.
+ */
+function servesAdmin(content: string, put: 'pending' | 'stale'): { puts: number } {
+  const seen = { puts: 0 }
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (String(url).includes('/api/desk-config')) {
+      return answered({
+        path: DESK_PATH,
+        present: false,
+        sha256: '',
+        project: { dir: '/p', file: '/p/jpack-desk.json' },
+        runtime: { bin: 'jpack' }
+      })
+    }
+    if (String(url).includes('/api/files')) {
+      return answered({ root: '/p', files: [{ path: 'packs/a.pack.json', bytes: 1, sha256: 'aa' }] })
+    }
+    if (init?.method === 'PUT') {
+      seen.puts += 1
+      // A request that never answers is what "writing" is: the card must say
+      // so while it is in the air, not after it has come back.
+      if (put === 'pending') return new Promise(() => {})
+      return answered(
+        {
+          error: 'the file on disk is not the file this edit started from',
+          code: 'stale',
+          path: 'jpack-desk.json',
+          expectedSha256: 'a'.repeat(64),
+          actualSha256: 'c'.repeat(64),
+          exists: true
+        },
+        409
+      )
+    }
+    return answered({
+      path: 'jpack-desk.json',
+      bytes: content.length,
+      sha256: 'a'.repeat(64),
+      content
+    })
+  })
+  return seen
+}
+
+function answered(body: unknown, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: '',
+    text: async () => JSON.stringify(body)
+  }
+}
+
+/** The same shell as `renderAdmin`, over the real configuration provider. */
+function renderLiveAdmin() {
+  const router = createMemoryRouter(
+    [
+      {
+        path: '*',
+        element: (
+          <McpContext.Provider value={connected({ client: QUIET.client })}>
+            <DeskConfigProvider>
+              <ShellStateProvider
+                projectIdentity={ROOT}
+                viewport={{ railIsDrawer: false, inspectorIsDrawer: false }}
+              >
+                <AdminView />
+              </ShellStateProvider>
+            </DeskConfigProvider>
+          </McpContext.Provider>
+        )
+      }
+    ],
+    { initialEntries: ['/admin'] }
+  )
+  return render(
+    <QueryClientProvider client={testQueryClient()}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  )
+}
+
+/** One card's Status row, or nothing where the card states none. */
+function statusOf(id: string): string | null {
+  const card = document.getElementById(id)!.closest('section')!
+  const row = Array.from(card.querySelectorAll(':scope > dl > div')).find(
+    (each) => each.querySelector('dt')?.textContent === 'Status'
+  )
+  return row?.querySelector('dd')?.textContent ?? null
 }
 
 /**
@@ -141,19 +236,122 @@ function deskRead(file: object) {
 }
 
 describe('the Admin page', () => {
-  it('renders every card in order, with those exact titles and no others', () => {
-    // The whole list, not a slice of it. It fails if a section is added
-    // without being declared, declared without being rendered, or rendered out
-    // of order — and there is nothing under the heading but the cards now, so
-    // no eighth heading can appear without being one.
+  it('renders every group and every card in order, with those exact titles', () => {
+    // The whole list, not a slice of it. It fails if a group or a section is
+    // added without being declared, declared without being rendered, or
+    // rendered out of order — and there is nothing under the heading but the
+    // status line and the groups, so no sixth card can appear without being
+    // declared as one.
     renderAdmin()
-    const headings = screen
+    const groups = screen
       .getAllByRole('heading', { level: 2 })
       .map((heading) => heading.textContent)
-    expect(headings).toEqual(ADMIN_SECTIONS.map((section) => section.title))
-    expect(headings[0]).toBe('Project file')
+    expect(groups).toEqual(ADMIN_GROUPS.map((group) => group.title))
+    expect(groups).toEqual(['This project', 'This desk'])
+    const cards = screen
+      .getAllByRole('heading', { level: 3 })
+      .map((heading) => heading.textContent)
+    expect(cards).toEqual(ADMIN_SECTIONS.map((section) => section.title))
+    // A card is a subsection of the file it is a member of, and the outline
+    // says so: every one of them is inside its group.
+    for (const heading of screen.getAllByRole('heading', { level: 3 })) {
+      expect(heading.closest('section')!.parentElement!.closest('section')).toBeTruthy()
+    }
   })
 
+
+  it('states what this desk is running on a line, not as a card', async () => {
+    // Two facts, neither of them a setting: the connection and the binary the
+    // chassis was launched with, each one the connection's or the chassis' own
+    // answer.
+    const { container } = renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: DESK_PATH,
+        present: false,
+        sha256: '',
+        chassis: {
+          projectDir: '/real/a-project',
+          projectFile: '/real/a-project/jpack-desk.json',
+          runtimeBin: '/usr/local/bin/jpack'
+        }
+      })
+    )
+    const line = container.querySelector('dl')!
+    expect(Array.from(line.querySelectorAll('dt')).map((each) => each.textContent)).toEqual([
+      'Runtime',
+      'Binary'
+    ])
+    await waitFor(() => expect(line.textContent).toContain('connected — '))
+    expect(line.textContent).toContain('/usr/local/bin/jpack')
+    // And it is not a card: no heading, no Location row, no Status row.
+    expect(line.closest('section')).toBeNull()
+  })
+
+  it('reads the connection off its status, not off the runtime it last met', async () => {
+    // `server` is retained across a reconnect — the provider spreads the
+    // previous state — so a line that read "connected" off its presence said
+    // so while the socket was down and the banner said the connection was
+    // lost. The name is only said where the connection is actually up.
+    const { container } = renderAdmin(effectiveConfig(undefined), '/admin', ROOT, {
+      status: 'reconnecting',
+      client: null,
+      attempt: 3
+    })
+    const line = container.querySelector('dl')!
+    await waitFor(() => expect(line.textContent).toContain('reconnecting'))
+    expect(line.textContent).not.toContain('connected —')
+    expect(line.textContent).not.toContain('jpack')
+    cleanup()
+
+    renderAdmin(effectiveConfig(undefined), '/admin', ROOT, { status: 'failed', client: null })
+    expect(document.querySelector('dl')!.textContent).toContain('not connected')
+  })
+
+  it('names the runtime it is connected to where it actually is', async () => {
+    const { container } = renderAdmin()
+    const line = container.querySelector('dl')!
+    await waitFor(() => expect(line.textContent).toContain('connected — jpack test'))
+  })
+
+  it('names neither configuration file on the line, because the groups do', () => {
+    // One path, one statement. The group header is the one that earns it: it
+    // is the file the cards under it write, and the grouping exists so that a
+    // file is named once rather than on every card that is a member of it.
+    const { container } = renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: DESK_PATH,
+        present: false,
+        sha256: '',
+        chassis: {
+          projectDir: '/real/a-project',
+          projectFile: '/real/a-project/jpack-desk.json',
+          runtimeBin: '/usr/local/bin/jpack'
+        }
+      })
+    )
+    const line = container.querySelector('dl')!
+    expect(line.textContent).not.toContain('/real/a-project/jpack-desk.json')
+    expect(line.textContent).not.toContain(DESK_PATH)
+    // Each is stated once as a location, and it is its group's own header.
+    for (const [id, path] of [
+      ['this-project', '/real/a-project/jpack-desk.json'],
+      ['this-desk', DESK_PATH]
+    ] as const) {
+      const header = document.getElementById(id)!.closest('section')!.querySelector(':scope > dl')!
+      expect(header.textContent, id).toContain(path)
+    }
+    // The desk-level path appears once more, and it is not a location: the
+    // nomination's own line names the file that **control** writes, which is
+    // not the file the group it sits in is about.
+    const quoted = Array.from(container.querySelectorAll('code')).filter(
+      (each) => each.textContent === DESK_PATH
+    )
+    expect(quoted).toHaveLength(2)
+    const rule = quoted.map((each) => each.closest('p')).find((each) => each !== null)!
+    expect(rule.textContent).toContain('used on the next launch')
+    // And that one is inside the *project* group, which is where the control is.
+    expect(rule.closest('section')!.querySelector('h2')!.id).toBe('this-project')
+  })
 
   /**
    * **The narration guard, over every state this page has.**
@@ -248,6 +446,70 @@ describe('the Admin page', () => {
     expect(long, long.map((each) => `${each.where}: ${each.says}`).join(' | ')).toEqual([])
   })
 
+  /**
+   * **The states the configuration cannot express.**
+   *
+   * The sweep above builds an `EffectiveConfig` and renders it, so every state
+   * it can reach is a state of the two files. The connection is not one of
+   * those, and neither is anything a reader *does*: a save in the air, a file
+   * that moved under one, a refusal. Those sentences are written in the same
+   * components and were never swept.
+   */
+  it.each([
+    ['a connection that is still opening', { status: 'connecting' as const, client: null }],
+    ['a connection being retried', { status: 'reconnecting' as const, client: null, attempt: 4 }],
+    ['a connection that failed', { status: 'failed' as const, client: null, server: null }],
+    [
+      'a tool listing that did not answer',
+      { known: false, capabilitiesError: new Error('the runtime did not answer list_tools') }
+    ]
+  ])('carries no paragraph with %s', (_state, mcp) => {
+    const { container } = renderAdmin(effectiveConfig(undefined), '/admin', ROOT, mcp)
+    const long = narrationIn(container)
+    expect(long, long.map((each) => `${each.where}: ${each.says}`).join(' | ')).toEqual([])
+  })
+
+  it('carries no paragraph while a card is writing, refused, or holding a stale write', async () => {
+    const FILE = `{\n  "deskConfigVersion": 1,\n  "organization": { "name": "Unveil", "mark": null },\n  "storage": { "packs": { "dir": "packs", "idBase": "https://acme.example/d/" } }\n}\n`
+    const sweep = (container: HTMLElement, where: string) => {
+      const long = narrationIn(container)
+      expect(long, `${where}: ${long.map((each) => each.says).join(' | ')}`).toEqual([])
+    }
+
+    // A write in the air, and a local decode refusal beside it.
+    servesAdmin(FILE, 'pending')
+    const pending = renderLiveAdmin()
+    await waitFor(() => expect(screen.getByDisplayValue('Unveil')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Packs go to'), { target: { value: '../escape' } })
+    fireEvent.click(
+      document.getElementById('storage')!.closest('section')!.querySelector('form button')!
+    )
+    fireEvent.change(screen.getByDisplayValue('Unveil'), { target: { value: 'Renamed' } })
+    fireEvent.click(
+      document.getElementById('organization')!.closest('section')!.querySelector('form button')!
+    )
+    await waitFor(() => expect(statusOf('organization')).toContain('writing'))
+    sweep(pending.container, 'writing, and a refusal beside it')
+    cleanup()
+    vi.unstubAllGlobals()
+
+    // The file moved underneath the write, with the digests disclosed.
+    servesAdmin(FILE, 'stale')
+    const stale = renderLiveAdmin()
+    await waitFor(() => expect(screen.getByDisplayValue('Unveil')).toBeTruthy())
+    fireEvent.change(screen.getByDisplayValue('Unveil'), { target: { value: 'Renamed' } })
+    fireEvent.click(
+      document.getElementById('organization')!.closest('section')!.querySelector('form button')!
+    )
+    await waitFor(() => expect(statusOf('organization')).toContain('changed on disk'))
+    sweep(stale.container, 'a stale write')
+    // And with the digests open, which is a disclosure of quoted material.
+    for (const summary of stale.container.querySelectorAll('details summary')) {
+      fireEvent.click(summary)
+    }
+    sweep(stale.container, 'a stale write, disclosed')
+  })
+
   it('sweeps a paragraph split into short spans, which a node-length rule misses', () => {
     // The guard's own instrument, checked against the exact defeat the review
     // named: two eighty-character spans are a hundred and sixty characters of
@@ -277,7 +539,7 @@ describe('the Admin page', () => {
   })
 
 
-  it('says where each card’s value is written, and what state that file is in', () => {
+  it('states each file’s location once, in its group, and not on the cards', () => {
     const { container } = renderAdmin(
       effectiveConfig(undefined, 'no configuration was read: no such file', undefined, {
         path: DESK_PATH,
@@ -285,23 +547,154 @@ describe('the Admin page', () => {
         sha256: ''
       })
     )
-    const rows = Array.from(container.querySelectorAll('dt')).map((each) => each.textContent)
-    // Two per card, in one order, on every one of the eight.
-    expect(rows.filter((label) => label === 'Location')).toHaveLength(ADMIN_SECTIONS.length)
-    expect(rows.filter((label) => label === 'Status')).toHaveLength(ADMIN_SECTIONS.length)
+    // Inside the cards and groups, so the status line's own pairs — which are
+    // not a Location and a Status — are not counted as either.
+    const rows = Array.from(container.querySelectorAll('section dt')).map(
+      (each) => each.textContent
+    )
+    // One Location per group, and none at all on the five cards under them.
+    expect(rows.filter((label) => label === 'Location')).toHaveLength(ADMIN_GROUPS.length)
     expect(rows.slice(0, 2)).toEqual(['Location', 'Status'])
-    // The desk-level file is named wherever a card is about it.
-    expect(screen.getAllByText(DESK_PATH).length).toBeGreaterThan(0)
+    for (const group of ADMIN_GROUPS) {
+      const header = document.getElementById(group.id)!.closest('section')!
+      const locations = Array.from(header.querySelectorAll('dt')).filter(
+        (each) => each.textContent === 'Location'
+      )
+      expect(locations, group.title).toHaveLength(1)
+      // And it is the group's own, not a member's: the one Location is above
+      // the members rather than inside one of them.
+      expect(locations[0]!.closest('section')).toBe(header)
+    }
+    // The desk-level file is named once inside the group that is about it —
+    // the header — and by neither of the two cards under it.
+    const deskGroup = document.getElementById('this-desk')!.closest('section')!
+    expect(
+      Array.from(deskGroup.querySelectorAll('code')).filter(
+        (each) => each.textContent === DESK_PATH
+      )
+    ).toHaveLength(1)
     // And an absent file is absent, never "read".
     expect(screen.getAllByText('not present — defaults in use').length).toBeGreaterThan(0)
   })
 
+  /**
+   * **A card's own write is part of what its Status says.**
+   *
+   * The group header suppresses a card's Status where it says what the group
+   * already said, and the group's is the *file's* read state — so before this,
+   * a card writing, refused, or holding a stale write showed no Status at all
+   * while the group said `read`. Driven on the whole page rather than by
+   * handing `SourceCard` two artificial statuses.
+   */
+  it('says what each card’s own write is doing, while the group says the file was read', async () => {
+    const FILE = `{\n  "deskConfigVersion": 1,\n  "organization": { "name": "Unveil", "mark": null },\n  "storage": { "packs": { "dir": "packs", "idBase": "https://acme.example/d/" } }\n}\n`
+    servesAdmin(FILE, 'pending')
+    renderLiveAdmin()
+    // The read has to land first: a Save pressed before it is refused for
+    // having no bytes to write over, which is a different state.
+    await waitFor(() => expect(screen.getByDisplayValue('Unveil')).toBeTruthy())
+
+    // The group read its file, and while nothing is happening no card repeats it.
+    expect(statusOf('this-project')).toBe('read')
+    expect(statusOf('organization')).toBeNull()
+    expect(statusOf('storage')).toBeNull()
+
+    // Storage: a value this page's own decoder refuses, so nothing is sent.
+    fireEvent.change(screen.getByLabelText('Packs go to'), { target: { value: '../escape' } })
+    fireEvent.click(
+      document.getElementById('storage')!.closest('section')!.querySelector('form button')!
+    )
+    // Organization: a write that has left and not come back.
+    fireEvent.change(screen.getByDisplayValue('Unveil'), { target: { value: 'Renamed' } })
+    fireEvent.click(
+      document.getElementById('organization')!.closest('section')!.querySelector('form button')!
+    )
+
+    await waitFor(() => expect(statusOf('organization')).toContain('writing'))
+    expect(statusOf('organization')).toBe('writing — nothing is written until the desk answers')
+    expect(statusOf('storage')).toContain('not written:')
+    expect(statusOf('storage')).toContain('storage.packs.dir')
+    // And the group still says what it read, because that is still true.
+    expect(statusOf('this-project')).toBe('read')
+    // Appearance did nothing, so what it says is still about the file: this
+    // one carries no `appearance` member, which is a read state and not a
+    // write one.
+    expect(statusOf('appearance')).toBe('not present — defaults in use')
+  })
+
+  it('says the file moved under a card, on the card the write was refused for', async () => {
+    const FILE = `{\n  "deskConfigVersion": 1,\n  "organization": { "name": "Unveil", "mark": null }\n}\n`
+    servesAdmin(FILE, 'stale')
+    renderLiveAdmin()
+    await waitFor(() => expect(screen.getByDisplayValue('Unveil')).toBeTruthy())
+    fireEvent.change(screen.getByDisplayValue('Unveil'), { target: { value: 'Renamed' } })
+    fireEvent.click(
+      document.getElementById('organization')!.closest('section')!.querySelector('form button')!
+    )
+    await waitFor(() =>
+      expect(statusOf('organization')).toBe('the file changed on disk — nothing was written')
+    )
+    expect(statusOf('this-project')).toBe('read')
+    // The card that did not write says nothing about a write, only about the
+    // member this file does not carry.
+    expect(statusOf('storage')).toBe('not present — defaults in use')
+  })
+
+  it('keeps a card’s own Status where it differs from its group’s, and drops it where it does not', () => {
+    // The whole file is absent, so every member says exactly what the group
+    // says and none of them says it twice.
+    const { container } = renderAdmin(
+      effectiveConfig(undefined, 'no configuration was read: no such file', undefined, {
+        path: DESK_PATH,
+        present: false,
+        sha256: ''
+      })
+    )
+    const statuses = Array.from(container.querySelectorAll('section dt')).filter(
+      (each) => each.textContent === 'Status'
+    )
+    expect(statuses).toHaveLength(ADMIN_GROUPS.length)
+    cleanup()
+
+    // A member the *other* file supplied is not one this group's header speaks
+    // for: it states its own Location and its own Status again.
+    renderAdmin(
+      effectiveConfig(
+        decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1 }), 'project'),
+        undefined,
+        undefined,
+        {
+          path: DESK_PATH,
+          present: true,
+          sha256: '',
+          decoded: decodeDeskConfig(
+            JSON.stringify({
+              deskConfigVersion: 1,
+              storage: { packs: { dir: 'elsewhere' } }
+            }),
+            'desk'
+          )
+        }
+      )
+    )
+    const storage = document.getElementById('storage')!.closest('section')!
+    expect(
+      Array.from(storage.querySelectorAll('dt')).map((each) => each.textContent)
+    ).toEqual(['Location', 'Status'])
+    expect(storage.textContent).toContain(DESK_PATH)
+  })
+
   it('shows a member of the file as it is written, not as a decode of it', () => {
-    // `1e2` is not `100`. A disclosure that re-serialised would show a reader
-    // a file that is not on disk, which is the one thing it must not do.
-    const text = '{\n  "deskConfigVersion": 1,\n  "panes": {"left": {"width": 2.48e2}}\n}'
+    // The bytes, not a re-serialisation of the decode. `idBase` is normalised
+    // at decode — it gains the separator it was missing — and the defaults are
+    // applied on top, so a disclosure that re-serialised would show a reader a
+    // member that is not the one in the file.
+    const text =
+      '{\n  "deskConfigVersion": 1,\n  "storage": {"packs": {"idBase": "https://a.example/d"}}\n}'
     renderAdmin(effectiveConfig(decodeDeskConfig(text, 'project'), undefined, undefined, undefined, text))
-    expect(screen.getByText('{"left": {"width": 2.48e2}}')).toBeTruthy()
+    expect(screen.getByText('{"packs": {"idBase": "https://a.example/d"}}')).toBeTruthy()
+    // The decode is on the field beside it, and says something else.
+    expect(screen.getByDisplayValue('https://a.example/d/')).toBeTruthy()
   })
 
   it('names the storage kind, the location and the id prefix', () => {
@@ -313,8 +706,8 @@ describe('the Admin page', () => {
       'project'
     )
     renderAdmin(effectiveConfig(decoded))
-    // The one kind, on the Select's own trigger.
-    expect(screen.getByRole('combobox', { name: 'Kind' }).textContent).toBe('filesystem')
+    // The one kind, as the value it is.
+    expect(screen.getByText('Kind').parentElement!.textContent).toContain('filesystem')
     expect(screen.getByDisplayValue('decisions')).toBeTruthy()
     // The prefix as it will actually be written — normalised at decode — so a
     // Save that does not touch it writes back what the file already means.
@@ -378,7 +771,7 @@ describe('the Admin page', () => {
     expect(await screen.findByText(/the file listing has not answered yet/)).toBeTruthy()
   })
 
-  it('names the two future kinds in the decoder’s own words, and offers neither', async () => {
+  it('names the two future kinds in the decoder’s own words, and offers neither', () => {
     // The sentence is the one the decoder refuses `"database"` with, exported
     // and quoted rather than written again here: two answers about what is
     // available would be free to disagree, and the mutation table could break
@@ -387,15 +780,20 @@ describe('the Admin page', () => {
     expect(screen.getByText(STORAGE_KIND_SAYS)).toBeTruthy()
     expect(STORAGE_KIND_SAYS).toContain('database')
     expect(STORAGE_KIND_SAYS).toContain('cloud storage')
-    // **Opened first, because a closed Radix Select has no options at all.**
-    // Round 1 caught this: asking a closed one what it offers is a query that
-    // answers "nothing" whatever is configured in it, so the absence it was
-    // asserting was the primitive's and not this page's.
-    // (`testing/radixGround.test.tsx` writes that behaviour down once.)
-    fireEvent.click(screen.getByRole('combobox', { name: 'Kind' }))
-    const offered = (await screen.findAllByRole('option')).map((each) => each.textContent)
-    expect(offered).toEqual(['filesystem'])
-    expect(screen.queryByRole('radio')).toBeNull()
+  })
+
+  it('renders the one storage kind as a value, and not as a control with one option', () => {
+    // **A Select with one option is a control that cannot be operated.** It
+    // looks like a choice and offers none, and it appears in every enumeration
+    // of what on this page a reader can change. While the union has one member
+    // the card says what the file says.
+    const { container } = renderAdmin()
+    const storage = document.getElementById('storage')!.closest('section')!
+    expect(storage.querySelector('[role="combobox"]')).toBeNull()
+    expect(storage.querySelector('select')).toBeNull()
+    expect(screen.getByText('Kind').parentElement!.textContent).toContain('filesystem')
+    // And nothing anywhere on the page offers the kind as an option.
+    expect(container.textContent).toContain(STORAGE_KIND_SAYS)
   })
 
   it('names no user management, roles, invitations or assignment anywhere', () => {
@@ -415,14 +813,13 @@ describe('the Admin page', () => {
     const { container } = renderAdmin()
     const interactive = container.querySelectorAll('button, input, select, textarea')
     const labels = Array.from(interactive).map((element) => element.textContent?.trim())
-    // The Project card's control is a nomination and not a path: the page may
+    // The project group's control is a nomination and not a path: the page may
     // name the project it is already running in, or withdraw a default, and
     // nothing else — so there is one button and no field for a path.
     const writes: Record<string, number> = {
-      'Reset panes on this machine': 1,
-      // The assistant slot's, and one on each of the four cards that write a
+      // The assistant slot's, and one on each of the three cards that write a
       // member of the project's own file.
-      Save: 5,
+      Save: 4,
       'Check reachability': 1,
       'Use this project as the default': 1
     }
@@ -442,26 +839,24 @@ describe('the Admin page', () => {
     const triggers = Array.from(container.querySelectorAll('[role="combobox"]')).map(
       (element) => element.textContent
     )
-    // The assistant's three, then Storage's kind, then Appearance's two — in
-    // the order the cards are rendered in.
+    // This project's group first — Appearance's two, since Storage's kind is a
+    // value and not a control — and then this desk's, the assistant's three.
     expect(triggers).toEqual([
+      'system',
+      'comfortable',
       'OpenAI-compatible',
       'vercel',
-      'off',
-      'filesystem',
-      'system',
-      'comfortable'
+      'off'
     ])
     const offered = Array.from(container.querySelectorAll('select')).map(
       (element) => element.textContent
     )
     expect(offered).toEqual([
+      'systemlightdark',
+      'comfortablecompact',
       'OpenAI-compatibleAnthropicGemini',
       'vercelbuiltin',
-      'offonultra',
-      'filesystem',
-      'systemlightdark',
-      'comfortablecompact'
+      'offonultra'
     ])
     // Every other control is a tool checkbox, which changes nothing until Save.
     const picker = [...triggers, ...offered]
@@ -482,21 +877,20 @@ describe('the Admin page', () => {
     const disabled = Array.from(container.querySelectorAll('button[disabled]')).map(
       (element) => element.textContent
     )
-    // The Project card's nomination first, then the Assistant form's Save —
-    // neither has a digest to state — and then the four project-file cards',
-    // which have no bytes to write over and nothing typed to write.
+    // The project group's nomination first, then its three cards' Saves —
+    // which have no bytes to write over and nothing typed to write — and then
+    // the Assistant's, which has no digest to state.
     expect(disabled).toEqual([
       'Use this project as the default',
+      'Save',
+      'Save',
+      'Save',
       'List models',
-      'Save',
-      'Save',
-      'Save',
-      'Save',
       'Save'
     ])
-    // The desk-level file, on two cards; this project's own file, on four.
+    // The desk-level file, on two cards; this project's own file, on three.
     expect(screen.getAllByText(/has not read its own configuration file/).length).toBe(2)
-    expect(screen.getAllByText(/has not read this project/).length).toBe(4)
+    expect(screen.getAllByText(/has not read this project/).length).toBe(3)
   })
 
   it('enables the two writes once the desk-level file has been read', () => {
@@ -519,12 +913,12 @@ describe('the Admin page', () => {
       Array.from(container.querySelectorAll('button[disabled]')).map(
         (element) => element.textContent
       )
-    ).toEqual(['List models', 'Save', 'Save', 'Save', 'Save'])
+    ).toEqual(['Save', 'Save', 'Save', 'List models'])
     // The desk-level file has been read, so neither card that writes it says
     // otherwise. The project's own file has not, which is a different file and
     // a different sentence — and the four cards that write it say so.
     expect(screen.queryByText(/has not read its own configuration file/)).toBeNull()
-    expect(screen.getAllByText(/has not read this project/).length).toBe(4)
+    expect(screen.getAllByText(/has not read this project/).length).toBe(3)
   })
 
   it('will not offer the nomination where the chassis has not named this project', () => {
@@ -542,41 +936,6 @@ describe('the Admin page', () => {
     }) as HTMLButtonElement
     expect(nominate.disabled).toBe(true)
     expect(screen.getByText(/has not said where its own configuration file is/)).toBeTruthy()
-  })
-
-  it('clears exactly one localStorage key when the reset is pressed, and says so', () => {
-    window.localStorage.setItem(KEY, '{"v":1}')
-    window.localStorage.setItem('jpack-desk:shell:v1:another', '{"v":1}')
-    window.localStorage.setItem('jpack-desk-token', 'a token')
-    renderAdmin()
-    fireEvent.click(screen.getByRole('button', { name: 'Reset panes on this machine' }))
-    expect(window.localStorage.getItem(KEY)).toBeNull()
-    expect(window.localStorage.getItem('jpack-desk:shell:v1:another')).toBe('{"v":1}')
-    expect(window.localStorage.getItem('jpack-desk-token')).toBe('a token')
-    expect(screen.getByText(/Cleared — the panes are back/)).toBeTruthy()
-  })
-
-  it('reports a reset it could not make, rather than reporting one it did', () => {
-    const backing = new Map<string, string>([[KEY, '{"v":1}']])
-    vi.stubGlobal('localStorage', {
-      getItem: (key: string) => backing.get(key) ?? null,
-      setItem: (key: string, value: string) => void backing.set(key, value),
-      removeItem: () => {},
-      clear: () => {}
-    })
-    renderAdmin()
-    fireEvent.click(screen.getByRole('button', { name: 'Reset panes on this machine' }))
-    expect(screen.getByText(/did not clear the record/)).toBeTruthy()
-    expect(screen.queryByText(/Cleared — the panes/)).toBeNull()
-  })
-
-  it('refuses to reset a provisional key, and says which key it is', () => {
-    window.localStorage.setItem(shellStateKey('default'), '{"v":1}')
-    renderAdmin(effectiveConfig(undefined), '/admin', null)
-    expect(screen.getByText(/provisional/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Reset panes on this machine' }))
-    expect(screen.getByText(/has not been told which project/)).toBeTruthy()
-    expect(window.localStorage.getItem(shellStateKey('default'))).toBe('{"v":1}')
   })
 
   it('names a configuration that could not be read, and does not call it absent', () => {
@@ -669,69 +1028,10 @@ describe('the Admin page', () => {
       scrolled.push(this.id)
     }
     try {
-      renderAdmin(effectiveConfig(undefined), '/admin#panes')
-      expect(scrolled).toContain('panes')
+      renderAdmin(effectiveConfig(undefined), '/admin#storage')
+      expect(scrolled).toContain('storage')
     } finally {
       Element.prototype.scrollIntoView = original
-    }
-  })
-
-  it('prints every accepted range, inclusive', () => {
-    renderAdmin()
-    for (const [key, bounds] of Object.entries(PANE_BOUNDS)) {
-      expect(screen.getByText(`${key}: ${bounds.min}–${bounds.max}px`)).toBeTruthy()
-    }
-  })
-
-  it('labels the configured numbers as configured, and measures the rendered ones', () => {
-    // The mismatch this fixes: an accepted 720px Inspector renders 440px at
-    // 1100px, and an undeclared drawer renders 320px while Admin said 360.
-    const { container } = renderAdmin()
-    expect(container.textContent).toContain('configured')
-    expect(container.textContent).toContain('rendered')
-    // No pane is in this document at all — Admin is rendered on its own here —
-    // so every rendered figure says so rather than reporting a zero.
-    expect(screen.getAllByText('not mounted at this width')).toHaveLength(3)
-  })
-
-  it('measures a pane that is there, and calls a mounted-but-collapsed one collapsed', () => {
-    // Three answers and not two: absent, collapsed, and a number. `hidden`
-    // plus `display: none` is a real element of zero size, and reporting that
-    // as `0px` beside a configured 360 reads as a measurement rather than a
-    // state.
-    const observed: { element: Element; notify: () => void }[] = []
-    class Stub {
-      private readonly notify: () => void
-      constructor(callback: () => void) {
-        this.notify = callback
-      }
-      observe(element: Element) {
-        observed.push({ element, notify: this.notify })
-      }
-      unobserve() {}
-      disconnect() {}
-    }
-    vi.stubGlobal('ResizeObserver', Stub)
-
-    const rail = document.createElement('nav')
-    rail.id = 'desk-rail'
-    const inspector = document.createElement('aside')
-    inspector.id = 'desk-inspector'
-    for (const element of [rail, inspector]) document.body.append(element)
-    // 251 rather than 248: the configured rail width is 248 and appears in the
-    // same row, so a matching number would not tell a measurement from the
-    // configured value it is there to be different from.
-    rail.getBoundingClientRect = () =>
-      ({ width: 251, height: 600, top: 0, left: 0, right: 251, bottom: 600, x: 0, y: 0 }) as DOMRect
-
-    try {
-      renderAdmin()
-      expect(screen.getByText('251px')).toBeTruthy()
-      expect(screen.getByText('collapsed')).toBeTruthy()
-      expect(screen.getAllByText('not mounted at this width')).toHaveLength(1)
-    } finally {
-      rail.remove()
-      inspector.remove()
     }
   })
 
@@ -759,14 +1059,44 @@ describe('the Admin page', () => {
       })
     )
     expect(screen.getAllByText('/real/a-project/jpack-desk.json').length).toBeGreaterThan(0)
-    expect(screen.getByText('/usr/local/bin/jpack')).toBeTruthy()
+    expect(screen.getAllByText('/usr/local/bin/jpack').length).toBeGreaterThan(0)
     // And never the project-relative name once the chassis has answered.
     expect(screen.queryByText('jpack-desk.json')).toBeNull()
   })
 
-  it('names the file by the name it reads where the chassis has not answered', () => {
-    renderAdmin()
-    expect(screen.getAllByText('jpack-desk.json').length).toBeGreaterThan(0)
+  it('says the desk has not said, rather than offering the name it reads the file by', () => {
+    // `jpack-desk.json` is the address this page reads the file at, not an
+    // established location on a filesystem — and the row is about where the
+    // file **is**. Before `/api/desk-config` answers, and for ever where it
+    // carries no chassis facts, the row says so instead of standing in.
+    const { container } = renderAdmin()
+    const header = document
+      .getElementById('this-project')!
+      .closest('section')!
+      .querySelector(':scope > dl')!
+    expect(header.textContent).toContain('the desk has not said')
+    expect(container.textContent).not.toContain('jpack-desk.json')
+  })
+
+  it('names the file the chassis resolved the moment it answers', () => {
+    renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: DESK_PATH,
+        present: false,
+        sha256: '',
+        chassis: {
+          projectDir: '/real/a-project',
+          projectFile: '/real/a-project/jpack-desk.json',
+          runtimeBin: 'jpack'
+        }
+      })
+    )
+    const header = document
+      .getElementById('this-project')!
+      .closest('section')!
+      .querySelector(':scope > dl')!
+    expect(header.textContent).toContain('/real/a-project/jpack-desk.json')
+    expect(header.textContent).not.toContain('the desk has not said')
   })
 
   it('renders no bytes of a file the decoder refused, on either card', () => {
@@ -799,18 +1129,16 @@ describe('the Admin page', () => {
   it('renders no bytes of a file that could not be read at all', () => {
     // There are none to render, and a card that offered a disclosure would be
     // offering the decoded defaults as though they were the file.
-    const { container } = renderAdmin(effectiveConfig(undefined, undefined, CHASSIS_413))
-    const project = [...container.querySelectorAll('section')].find(
-      (section) => section.querySelector('h2')?.textContent === 'Project file'
-    )!
+    renderAdmin(effectiveConfig(undefined, undefined, CHASSIS_413))
+    const project = document.getElementById('this-project')!.closest('section')!
     expect(project.querySelector('details')).toBeNull()
   })
 
-  it('names the file the Project card’s control writes, which is not the one it shows', () => {
-    // The card's Location, Status and Content are about the project's own
+  it('names the file the group’s control writes, which is not the one it shows', () => {
+    // The group's Location, Status and Content are about the project's own
     // file; its one control writes the desk-level one. The line under the
     // control names that file, from the chassis' answer and never composed.
-    const { container } = renderAdmin(
+    renderAdmin(
       effectiveConfig(undefined, undefined, undefined, {
         path: DESK_PATH,
         present: false,
@@ -822,9 +1150,7 @@ describe('the Admin page', () => {
         }
       })
     )
-    const project = [...container.querySelectorAll('section')].find(
-      (section) => section.querySelector('h2')?.textContent === 'Project file'
-    )!
+    const project = document.getElementById('this-project')!.closest('section')!
     // Location: the project's own file.
     expect(project.querySelector('dd')!.textContent).toBe('/this/launch/jpack-desk.json')
     // The control's own line: the desk-level file it writes, and this launch.
@@ -832,14 +1158,6 @@ describe('the Admin page', () => {
     expect(rule).toContain(DESK_PATH)
     expect(rule).toContain('used on the next launch without a directory')
     expect(rule).toContain('/this/launch')
-  })
-
-  it('reports the runtime connection rather than a file', async () => {
-    renderAdmin()
-    // The card that is about a process and not a configuration file: its
-    // status is the connection, in the connection's own words.
-    await waitFor(() => expect(screen.getByText(/^connected — /)).toBeTruthy())
-    expect(screen.getByText('Tool listing')).toBeTruthy()
   })
 
   it('says None where no identity provider is configured, and its issuer where one is', () => {

@@ -55,17 +55,46 @@ describe('projectKey', () => {
     expect(identityIsResolved('/home/someone/one')).toBe(true)
   })
 
-  it('slugs the path and appends a hash of the whole of it', () => {
+  it('encodes the whole path, and carries no character the key format claims', () => {
     const key = projectKey('/home/someone/Projects/Intake Triage/jpack.json')
-    expect(key).toMatch(/^[a-z0-9._-]+-[0-9a-f]{8}$/)
+    expect(key).toBe(encodeURIComponent('/home/someone/Projects/Intake Triage/jpack.json'))
+    // The prefix `jpack-desk:shell:v1:` is separated by colons, and an encoded
+    // path carries none — so no root can be read as part of the prefix.
+    expect(key).not.toContain(':')
   })
 
   it('does not collide for two paths that differ only past the 64th character', () => {
-    // The hash is taken over the untruncated path and appended after the
-    // truncation, so a shared prefix is not a shared record. Without that,
-    // two long sibling directories would share one layout.
     const prefix = `/${'a'.repeat(70)}/`
     expect(projectKey(`${prefix}one/jpack.json`)).not.toBe(projectKey(`${prefix}two/jpack.json`))
+  })
+
+  it('does not collide for the two roots the review found sharing one key', () => {
+    // A 64-character slug plus eight hex digits of FNV-1a: eight hex digits
+    // collide, and these two produced one key. One project's reset then
+    // removed the other's record, and one project's layout could be restored
+    // for the other. The encoding is injective, so this holds by construction.
+    const one = `/${'a'.repeat(80)}/WtlwlYxd9irW`
+    const other = `/${'a'.repeat(80)}/rIUYj9lfXxTD`
+    expect(projectKey(one)).not.toBe(projectKey(other))
+    expect(shellStateKey(projectKey(one))).not.toBe(shellStateKey(projectKey(other)))
+  })
+
+  it('is injective over a spread of roots, including ones that differ by one byte', () => {
+    const roots = [
+      '/p',
+      '/p/',
+      '/p//',
+      '/P',
+      '/p/one',
+      '/p/two',
+      `/${'a'.repeat(200)}/one`,
+      `/${'a'.repeat(200)}/two`,
+      '/p/a b',
+      '/p/a%20b',
+      '/p/项目',
+      '/p/\u{1f600}'
+    ]
+    expect(new Set(roots.map((root) => projectKey(root))).size).toBe(roots.length)
   })
 
   it('is stable for one path', () => {
@@ -213,7 +242,7 @@ describe('resetShellState', () => {
     window.localStorage.setItem(shellStateKey('one'), OPEN_EVERYTHING)
     window.localStorage.setItem(shellStateKey('two'), OPEN_EVERYTHING)
     window.localStorage.setItem('something-else', 'kept')
-    expect(resetShellState(shellStateKey('one'))).toBe(true)
+    expect(resetShellState(shellStateKey('one'))).toBe('cleared')
     expect(window.localStorage.getItem(shellStateKey('one'))).toBeNull()
     expect(window.localStorage.getItem(shellStateKey('two'))).toBe(OPEN_EVERYTHING)
     expect(window.localStorage.getItem('something-else')).toBe('kept')
@@ -227,7 +256,24 @@ describe('resetShellState', () => {
       setItem: () => {},
       removeItem: () => {}
     })
-    expect(resetShellState(shellStateKey('one'))).toBe(false)
+    expect(resetShellState(shellStateKey('one'))).toBe('refused')
+  })
+
+  it('leaves a value it did not write exactly where it is, and says so', () => {
+    // The key is derived from a path the viewer never chose, on an origin this
+    // desk shares with whatever else has been served from it. Removing
+    // whatever happens to be there would be a reset deleting somebody else's
+    // value under a name it merely computed.
+    const key = shellStateKey('one')
+    for (const foreign of ['not json', '[1,2,3]', JSON.stringify({ v: 2, left: { mode: 'icons' } })]) {
+      window.localStorage.setItem(key, foreign)
+      expect(resetShellState(key), foreign).toBe('foreign')
+      expect(window.localStorage.getItem(key), foreign).toBe(foreign)
+    }
+    // Nothing there at all is not a foreign value: an absent record is the
+    // state a reset asks for.
+    window.localStorage.removeItem(key)
+    expect(resetShellState(key)).toBe('cleared')
   })
 
   it('reports a storage that throws on the accessor as a failure, not a success', () => {
@@ -242,7 +288,7 @@ describe('resetShellState', () => {
         throw new DOMException('The operation is insecure.', 'SecurityError')
       }
     })
-    expect(resetShellState(shellStateKey('one'))).toBe(false)
+    expect(resetShellState(shellStateKey('one'))).toBe('refused')
   })
 })
 

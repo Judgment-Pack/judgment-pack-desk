@@ -30,7 +30,7 @@
  */
 import { Link } from 'react-router-dom'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
-import { useMcp } from '../mcp/McpProvider'
+import { connectionSays, useMcp } from '../mcp/McpProvider'
 import { IconPanelBottom } from './icons'
 
 export const CONFIG_REFUSED_CUE = 'configuration refused — see Admin'
@@ -66,7 +66,7 @@ export function StatusStrip({
   consoleOpen: boolean
   onToggleConsole: () => void
 }) {
-  const { server } = useMcp()
+  const { status, server } = useMcp()
   const { problems, readFailure, desk } = useEffectiveConfig()
   // **Either file, one cue.** The strip's job is to stop a mistyped key
   // looking exactly like having written no file at all, and that argument does
@@ -76,12 +76,16 @@ export function StatusStrip({
   return (
     <footer className="desk-strip">
       <span className="desk-strip-left">
-        {server ? (
+        {/* The verdict is the status, and the name is only said where the
+            connection is actually up: `server` is retained across a reconnect,
+            so naming it off its presence said "connected to" while the socket
+            was down. */}
+        {status === 'ready' && server ? (
           <span className="desk-strip-connection">
             connected to <code>{server.name}</code> {server.version}
           </span>
         ) : (
-          <span className="desk-strip-connection">not connected</span>
+          <span className="desk-strip-connection">{connectionSays(status)}</span>
         )}
         {refused && <ConfigCue full={CONFIG_REFUSED_CUE} short={CONFIG_REFUSED_SHORT} />}
         {!refused && unread && (

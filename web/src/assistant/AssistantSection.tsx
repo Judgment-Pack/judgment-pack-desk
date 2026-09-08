@@ -40,7 +40,24 @@ import {
   useStoreAssistantKey
 } from './queries'
 
-export function AssistantSection({ id, title }: { id: string; title: string }) {
+export function AssistantSection({
+  id,
+  title,
+  under
+}: {
+  id: string
+  title: string
+  /**
+   * The status of the group header this card sits under, where there is one.
+   *
+   * Passed straight through. This section is about a member of the desk-level
+   * file, so under the group that names that file it repeats neither the
+   * location nor a status the header has already given — but it still computes
+   * its own, because a member refused inside an accepted file is a sentence
+   * only this card has.
+   */
+  under?: SourceStatus
+}) {
   const { config, desk } = useEffectiveConfig()
   // **The same reading the tab and Describe it take.** A read that did not
   // produce a file establishes nothing about what is in it, and this section
@@ -99,6 +116,7 @@ export function AssistantSection({ id, title }: { id: string; title: string }) {
     <SourceCard
       id={id}
       title={title}
+      under={under}
       location={
         desk === undefined ? (
           <span className="quiet">nothing has asked for it</span>

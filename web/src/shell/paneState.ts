@@ -55,7 +55,7 @@ export const BUILT_IN_SHELL_STATE: ShellState = {
 
 const RECORD_VERSION = 1
 
-/** One record's key. Exported so a test — and Admin's reset — can name it. */
+/** One record's key. Exported so a test — and the menu's reset — can name it. */
 export function shellStateKey(projectKey: string): string {
   return `jpack-desk:shell:v${RECORD_VERSION}:${projectKey}`
 }
@@ -64,9 +64,9 @@ export function shellStateKey(projectKey: string): string {
  * The project this layout belongs to.
  *
  * **The identity is the chassis' own project root**, not the runtime's
- * `configPath`, and the difference is the whole of the fix. A project with no
- * `jpack.json` reports no config path, so every configless project on one
- * origin mapped to the literal `default` and shared a single record — two
+ * `configPath`, and the difference is the whole of the first fix. A project
+ * with no `jpack.json` reports no config path, so every configless project on
+ * one origin mapped to the literal `default` and shared a single record — two
  * different directories, one layout, and a README that claimed per-project
  * isolation while the code did not have it. The root is pinned by the chassis
  * at startup and is there whether or not a runtime configuration file exists.
@@ -74,35 +74,43 @@ export function shellStateKey(projectKey: string): string {
  * `default` remains, and now means exactly one thing: the identity has not
  * been read yet. Nothing is written under it — see `ShellStateProvider`.
  *
- * The slug is truncated for legibility and the hash is taken over the **whole**
- * untruncated path and appended after the truncation, so two long paths sharing
- * a 64-character prefix get different keys rather than one shared record.
+ * **The whole path, percent-encoded — not a slug and a short hash.** It was a
+ * 64-character slug plus eight hex digits of FNV-1a, and eight hex digits
+ * collide: the review found two roots differing only past the 81st character
+ * that produced one key, so one project's reset removed the other's record and
+ * one project's layout could be restored for the other. Percent-encoding is
+ * **injective** — `%` is itself escaped, so the encoding is prefix-free and
+ * decodable — which makes distinct roots distinct keys by construction rather
+ * than with probability. It is longer and readable, and `localStorage` does not
+ * mind either.
+ *
+ * Records under the old keys are simply never read again. That is the treatment
+ * this module gives every record it cannot use: silently discarded, because a
+ * layout is a per-viewer convenience and a banner about a browser's own storage
+ * would be the desk reporting on the wrong thing.
  */
 export function projectKey(projectRoot: string | undefined): string {
   const path = (projectRoot ?? '').trim()
   if (path === '') return 'default'
-  const slug =
-    path
-      .toLowerCase()
-      .replace(/[^a-z0-9._-]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 64) || 'project'
-  return `${slug}-${fnv1a32(path)}`
+  try {
+    return encodeURIComponent(path)
+  } catch {
+    // `encodeURIComponent` throws on a lone surrogate. The chassis cannot send
+    // one — Go replaces invalid UTF-8 before it encodes — but a throw here
+    // would take the shell down inside a lazy initializer, so the fallback is
+    // every UTF-16 code unit as four hex digits, which is injective for the
+    // same reason: fixed width, so no two strings share an encoding.
+    let units = ''
+    for (let index = 0; index < path.length; index += 1) {
+      units += path.charCodeAt(index).toString(16).padStart(4, '0')
+    }
+    return units
+  }
 }
 
 /** True where the chassis has actually told the page which project this is. */
 export function identityIsResolved(projectRoot: string | undefined): boolean {
   return typeof projectRoot === 'string' && projectRoot.trim() !== ''
-}
-
-/** FNV-1a, 32-bit, as eight lowercase hex digits. */
-function fnv1a32(text: string): string {
-  let hash = 0x811c9dc5
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index)
-    hash = Math.imul(hash, 0x01000193)
-  }
-  return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
 /**
@@ -202,6 +210,9 @@ export function writeShellState(key: string, state: ShellState, touched: Touched
   }
 }
 
+/** What became of the record itself, as opposed to of the reset. */
+export type RecordReset = 'cleared' | 'refused' | 'foreign'
+
 /**
  * Forget this project's layout on this machine.
  *
@@ -209,15 +220,31 @@ export function writeShellState(key: string, state: ShellState, touched: Touched
  * would take the session token's neighbour keys and every other project's
  * layout with it, and a "reset panes" control that logged the viewer out of
  * something would be a control that lied about its scope.
+ *
+ * **And only a record this shell wrote.** The key is derived from a path the
+ * viewer never chose, on an origin this desk shares with whatever else has ever
+ * been served from it; removing whatever happens to be sitting there would be a
+ * reset deleting somebody else's value under a name it merely computed. A value
+ * that is not JSON, is not an object, or carries another shell version is not
+ * this shell's record, and is left exactly where it is.
  */
-export function resetShellState(key: string): boolean {
+export function resetShellState(key: string): RecordReset {
+  let raw: string | null
+  try {
+    raw = window.localStorage.getItem(key)
+  } catch {
+    return 'refused'
+  }
+  // Nothing there is not a foreign value: an absent record is the state a
+  // reset asks for, and removing it again is harmless.
+  if (raw !== null && readShellState(key) === undefined) return 'foreign'
   try {
     window.localStorage.removeItem(key)
     // Read back, because `removeItem` resolves on a storage that keeps the
     // value: the page must not say "cleared" on the strength of having asked.
-    return window.localStorage.getItem(key) === null
+    return window.localStorage.getItem(key) === null ? 'cleared' : 'refused'
   } catch {
-    return false
+    return 'refused'
   }
 }
 
@@ -263,11 +290,13 @@ export function initialShellState(
 }
 
 /**
- * What a reset did. Three outcomes, because they are three different facts and
- * a page that reported all of them as "Cleared." would be stating one it never
- * observed.
+ * What a reset did. Four outcomes, because they are four different facts and a
+ * page that reported all of them as "Cleared." would be stating one it never
+ * observed: the record went, this browser's storage refused the deletion, the
+ * chassis has not said which project this is, or what is under this project's
+ * key is not a record this shell wrote and was left alone.
  */
-export type ResetOutcome = 'cleared' | 'refused' | 'unresolved'
+export type ResetOutcome = 'cleared' | 'refused' | 'unresolved' | 'foreign'
 
 export interface ShellStateApi extends ShellState {
   toggleRail: () => void
@@ -284,7 +313,7 @@ export interface ShellStateApi extends ShellState {
   openInspector: () => void
   toggleConsole: () => void
   setConsoleTab: (tab: ConsoleTab) => void
-  /** The key this project's record lives under, for Admin › Panes. */
+  /** The key this project's record lives under, so a test can name it. */
   storageKey: string
   /** False while the chassis has not yet said which project this is. */
   keyResolved: boolean
@@ -457,23 +486,27 @@ export function ShellStateProvider({
   }, [storageKey, state, keyResolved])
 
   /**
-   * The reset, here rather than in Admin.
+   * The reset, here rather than wherever the control happens to be.
    *
    * Admin used to call `resetShellState` directly and report success without
    * asking. Three things were wrong with that and all three are fixed by the
-   * control living where the state does: a debounced write already in flight
+   * reset living where the state does: a debounced write already in flight
    * rewrote the key a moment later, an early press cleared the provisional
    * `default` key instead of this project's, and a storage that refused the
-   * deletion was reported as "Cleared."
+   * deletion was reported as "Cleared." The control itself has since moved out
+   * of Admin and into the user menu, beside the panes it clears; none of this
+   * had to change for it.
    */
   const resetPanes = useCallback((): ResetOutcome => {
     if (!keyResolved) return 'unresolved'
     // **Nothing changes unless the record actually went.** Clearing the live
-    // layout on a storage that refused the deletion left Admin saying "the
+    // layout on a storage that refused the deletion left the menu saying "the
     // layout is unchanged" while the panes had visibly moved — and the record
     // was still there to come back on the next reload. A refusal is now a
-    // no-op in every respect, which is what that sentence claims.
-    if (!resetShellState(storageKey)) return 'refused'
+    // no-op in every respect, which is what that sentence claims, and so is a
+    // value under this key that this shell did not write.
+    const record = resetShellState(storageKey)
+    if (record !== 'cleared') return record
     // Belt and braces, and labelled as such: the state change below re-runs
     // the write effect, whose cleanup cancels this same timer, so breaking
     // these three lines alone leaves every test green. What makes a pending

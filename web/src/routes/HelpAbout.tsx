@@ -7,9 +7,17 @@
  * text verbatim for a person to carry to whatever agent they run —
  * `prompts.go` is explicit that the client's model executes it with the
  * client's key, and this desk is not that client. Nothing on this page runs.
+ *
+ * **This is where the Runtime card's content went.** Admin used to carry a
+ * card whose four slots reported the binary the chassis was launched with, the
+ * connection, whether the tool listing answered and what it said — none of
+ * them a setting, and all of them the answer to "what am I connected to?",
+ * which is the question this page exists for. Admin keeps a status line; the
+ * facts live here.
  */
 import { Json, Section } from '../components/primitives'
-import { useMcp } from '../mcp/McpProvider'
+import { useEffectiveConfig } from '../config/DeskConfigProvider'
+import { connectionSays, useMcp } from '../mcp/McpProvider'
 import { AUTHOR_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
 import { usePacks } from '../mcp/queries'
 import { TOKEN_SENTENCE } from '../identity/UserControl'
@@ -19,7 +27,9 @@ import { useHashTarget } from '../shell/useHashTarget'
 const REPO = 'https://github.com/Judgment-Pack/judgment-pack-desk'
 
 export function HelpAbout() {
-  const { server, known, rehearsalSupported, graphDocumentSupported, graphInventorySupported, graphTracesSupported, exampleSupported, schemaSupported } = useMcp()
+  const mcp = useMcp()
+  const { status, server, known } = mcp
+  const { desk } = useEffectiveConfig()
   const { data } = usePacks()
   const prompts = usePromptNames()
   const advertised = (prompts.data ?? []).includes(AUTHOR_PACK_PROMPT)
@@ -41,13 +51,28 @@ export function HelpAbout() {
 
       <Section title="This connection">
         <p>
+          {/* **The verdict is the status; the name is the metadata.** `server`
+              is retained across a reconnect, so naming the runtime off its
+              presence said "connected" while the socket was down. */}
           Runtime:{' '}
-          {server ? (
+          {status === 'ready' && server ? (
             <>
               <code>{server.name}</code> {server.version}
             </>
           ) : (
-            'not connected'
+            connectionSays(status)
+          )}
+          <br />
+          {/* The binary the chassis was launched with. It is **not** in the
+              configuration schema at any depth — the chassis executes what it
+              was given, so a config-supplied path would be a way to run code
+              on this machine by editing a file — and it is reported here
+              rather than composed anywhere. */}
+          Runtime binary:{' '}
+          {desk?.chassis === undefined ? (
+            'the desk has not said'
+          ) : (
+            <code>{desk.chassis.runtimeBin}</code>
           )}
           <br />
           Tool listing: {known ? 'read' : 'not read — every capability below is unknown, not absent'}
@@ -59,17 +84,7 @@ export function HelpAbout() {
             </>
           )}
         </p>
-        <Json
-          label="What this runtime advertises"
-          value={{
-            rehearsalSupported,
-            graphDocumentSupported,
-            graphInventorySupported,
-            graphTracesSupported,
-            exampleSupported,
-            schemaSupported
-          }}
-        />
+        <Json label="This connection, and what this runtime advertises" value={connectionSummary(mcp)} />
         <p className="quiet">
           Where a pack's evaluation reports a <code>conformanceClaimReference</code>, the desk
           renders it as what it is — a locator for the file that states the runtime's claim — and
@@ -164,4 +179,29 @@ export function HelpAbout() {
       </Section>
     </article>
   )
+}
+
+/**
+ * What this page knows about the runtime it is connected to.
+ *
+ * **Moved from Admin's Runtime card, not rewritten.** The connection's own
+ * summary — who answered `initialize`, whether the tool listing was read, and
+ * what that listing said this runtime can do. `known` is carried rather than
+ * folded in: a listing that never answered leaves every flag *unknown* rather
+ * than absent, and a page that printed them as false would impersonate an
+ * older runtime.
+ *
+ * The two errors are reduced to their messages, because an `Error` serialises
+ * to `{}` and a disclosure showing an empty object where a socket failed would
+ * be worse than showing nothing at all.
+ */
+function connectionSummary(mcp: ReturnType<typeof useMcp>) {
+  const { client, retryNow, error, capabilitiesError, ...summary } = mcp
+  void client
+  void retryNow
+  return {
+    ...summary,
+    error: error === null ? null : error.message,
+    capabilitiesError: capabilitiesError === null ? null : capabilitiesError.message
+  }
 }

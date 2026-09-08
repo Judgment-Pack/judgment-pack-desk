@@ -1,11 +1,11 @@
 /**
- * The provider, at the level Admin's reset actually runs.
+ * The provider, at the level the reset actually runs.
  *
- * `AdminView.test.tsx` presses the button and reads the sentence; what it
- * cannot see is the write already on its way when the button is pressed. The
- * record is written on a 250ms debounce, so a reset that only removed the key
- * was overwritten a moment later by the very state it had just cleared — and
- * the page had already said "Cleared."
+ * `identity.test.tsx` presses the user menu's action and reads the sentence;
+ * what it cannot see is the write already on its way when the action is
+ * chosen. The record is written on a 250ms debounce, so a reset that only
+ * removed the key was overwritten a moment later by the very state it had just
+ * cleared — and the page had already said "Cleared."
  */
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -143,8 +143,8 @@ describe('the provisional key is not read either', () => {
 })
 
 describe('a reset the storage refuses', () => {
-  it('changes nothing at all, which is what Admin says it did', () => {
-    // The live layout used to be cleared regardless, so Admin's "the layout is
+  it('changes nothing at all, which is what the menu says it did', () => {
+    // The live layout used to be cleared regardless, so "the layout is
     // unchanged" was false for the session and the retained record came back
     // on the next reload anyway.
     const backing = new Map<string, string>()

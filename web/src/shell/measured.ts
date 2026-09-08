@@ -9,6 +9,10 @@
  * and handed a route the same pre-cap value. A route that laid something out
  * against it would have laid it out against a width nothing on screen has.
  *
+ * Admin no longer prints any of this: the Panes card is gone, and with it the
+ * three-pane reader that measured the frame by its ids. What is left is one
+ * element's box, which is what the Inspector slot promises a route.
+ *
  * So a rendered size is measured rather than derived. `ResizeObserver` is the
  * mechanism because the caps are viewport-relative: the number changes when the
  * window is dragged, with no React state change to hang a recalculation off.
@@ -38,8 +42,8 @@ function hasResizeObserver(): boolean {
  *
  * Undefined and `{ width: 0 }` are different answers and both are used:
  * the drawer form is *absent* while closed, and the column form is *mounted
- * and zero* — `hidden` plus `display: none`. Admin says "not mounted" for one
- * and "collapsed" for the other.
+ * and zero* — `hidden` plus `display: none`, which is a real element of no
+ * size rather than an absent one.
  */
 export function useMeasuredBox(element: Element | null): MeasuredBox | undefined {
   const [box, setBox] = useState<MeasuredBox | undefined>(undefined)
@@ -56,49 +60,4 @@ export function useMeasuredBox(element: Element | null): MeasuredBox | undefined
     return () => observer.disconnect()
   }, [element])
   return box
-}
-
-/** The three panes' rendered boxes, for Admin to print beside the configured ones. */
-export interface RenderedPanes {
-  rail: MeasuredBox | undefined
-  inspector: MeasuredBox | undefined
-  console: MeasuredBox | undefined
-}
-
-/**
- * Measure the frame the page is inside, by the ids it already carries.
- *
- * A DOM query rather than a context, and the reason is that this is the one
- * page whose job is to report on the frame rather than to live in it: threading
- * three measurements through the shell for a diagnostics page would put a
- * measurement in the render path of every route that does not want one.
- *
- * `signature` is what re-runs it — the shell state a toggle changes — because
- * a pane appearing or disappearing is not a resize of anything already
- * observed.
- */
-export function useRenderedPanes(signature: string): RenderedPanes {
-  const [panes, setPanes] = useState<RenderedPanes>({
-    rail: undefined,
-    inspector: undefined,
-    console: undefined
-  })
-  useEffect(() => {
-    const read = () => {
-      const of = (id: string) => {
-        const element = document.getElementById(id)
-        return element === null ? undefined : measure(element)
-      }
-      setPanes({ rail: of('desk-rail'), inspector: of('desk-inspector'), console: of('desk-console') })
-    }
-    read()
-    if (!hasResizeObserver()) return
-    const observer = new ResizeObserver(read)
-    for (const id of ['desk-rail', 'desk-inspector', 'desk-console']) {
-      const element = document.getElementById(id)
-      if (element !== null) observer.observe(element)
-    }
-    return () => observer.disconnect()
-  }, [signature])
-  return panes
 }

@@ -1,13 +1,15 @@
 /**
- * The one card every Admin section renders through.
+ * The one card every Admin section renders through, and the group the cards
+ * that share a file sit in.
  *
  * What is asserted here is the shape: the four slots in one order, one status
  * line from a closed set, and a Content disclosure that quotes the file rather
- * than re-serialising it.
+ * than re-serialising it — and, for a card under a group, that the file's
+ * location is stated by the header and not again by the member.
  */
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { CardField, SourceCard, type SourceStatus } from './SourceCard'
+import { CardField, SourceCard, SourceGroup, type SourceStatus } from './SourceCard'
 
 afterEach(cleanup)
 
@@ -248,5 +250,154 @@ describe('the source card', () => {
     )
     expect(screen.getByText('160–640px')).toBeTruthy()
     expect(container.querySelectorAll('p')).toHaveLength(1)
+  })
+
+  it('says its location and its status where it is not under a group', () => {
+    render(
+      <SourceCard
+        id="s"
+        title="S"
+        location={<code>/a/file.json</code>}
+        status={{ state: 'read' }}
+      />
+    )
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('S')
+    expect(screen.getByText('/a/file.json')).toBeTruthy()
+    expect(screen.getByText('read')).toBeTruthy()
+  })
+
+  it('repeats neither the location nor a status its group already gave', () => {
+    // The whole point of the grouping. Three cards writing three members of
+    // one file printed that file's path three times, which reads as three
+    // files.
+    const { container } = render(
+      <SourceCard
+        id="s"
+        title="S"
+        location={<code>/a/file.json</code>}
+        status={{ state: 'read' }}
+        under={{ state: 'read' }}
+      />
+    )
+    expect(container.querySelector('dl')).toBeNull()
+    expect(screen.queryByText('/a/file.json')).toBeNull()
+    // And it is a subsection of the group, in the outline as on the screen.
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('S')
+  })
+
+  it('keeps its own status where it says something the group did not', () => {
+    // A member refused inside a file the group calls read is a sentence only
+    // this card has, and it names the key.
+    const { container } = render(
+      <SourceCard
+        id="s"
+        title="S"
+        location={<code>/a/file.json</code>}
+        status={{
+          state: 'refused',
+          problems: [{ key: 'storage.packs.kind', reason: 'must be "filesystem"' }]
+        }}
+        under={{ state: 'read' }}
+      />
+    )
+    expect(
+      Array.from(container.querySelectorAll('dt')).map((each) => each.textContent)
+    ).toEqual(['Status'])
+    expect(screen.getByText('storage.packs.kind: must be "filesystem"')).toBeTruthy()
+    // Still no second statement of where the file is.
+    expect(screen.queryByText('/a/file.json')).toBeNull()
+  })
+
+  it('compares a status by what it says, not by which of the six it is', () => {
+    // Two refusals are not one status: the group's names one key and the
+    // card's another, and only the card says the card's.
+    render(
+      <SourceCard
+        id="s"
+        title="S"
+        location="somewhere"
+        status={{ state: 'refused', problems: [{ key: 'a', reason: 'one' }] }}
+        under={{ state: 'refused', problems: [{ key: 'b', reason: 'two' }] }}
+      />
+    )
+    expect(screen.getByText('a: one')).toBeTruthy()
+  })
+})
+
+describe('the group above the cards that share a file', () => {
+  it('states the file once, and holds its members inside it', () => {
+    const { container } = render(
+      <SourceGroup
+        id="this-project"
+        title="This project"
+        location={<code>/a/file.json</code>}
+        status={{ state: 'read' }}
+        content={{ text: '{"deskConfigVersion": 1}', value: {} }}
+      >
+        <SourceCard
+          id="one"
+          title="One"
+          location={<code>/a/file.json</code>}
+          status={{ state: 'read' }}
+          under={{ state: 'read' }}
+        />
+        <SourceCard
+          id="two"
+          title="Two"
+          location={<code>/a/file.json</code>}
+          status={{ state: 'read' }}
+          under={{ state: 'read' }}
+        />
+      </SourceGroup>
+    )
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('This project')
+    expect(screen.getAllByRole('heading', { level: 3 }).map((each) => each.textContent)).toEqual([
+      'One',
+      'Two'
+    ])
+    // One Location, one Status, and both of them the group's own.
+    expect(
+      Array.from(container.querySelectorAll('dt')).map((each) => each.textContent)
+    ).toEqual(['Location', 'Status'])
+    expect(screen.getAllByText('/a/file.json')).toHaveLength(1)
+    // The file's own bytes, on the group rather than on each of its members.
+    expect(screen.getByText('{"deskConfigVersion": 1}')).toBeTruthy()
+  })
+
+  it('renders no bytes of a file the decoder refused, on the group either', () => {
+    render(
+      <SourceGroup
+        id="g"
+        title="G"
+        location="somewhere"
+        status={{
+          state: 'refused',
+          problems: [{ key: 'identity.apiKey', reason: 'a key is never stored in configuration' }]
+        }}
+        content={{ text: '{"identity":{"apiKey":"sk-live-secret"}}', value: {} }}
+      >
+        <p>a member</p>
+      </SourceGroup>
+    )
+    expect(document.body.textContent).not.toContain('sk-live-secret')
+    expect(document.querySelector('details')).toBeNull()
+    expect(screen.getByText(/identity.apiKey: a key is never stored/)).toBeTruthy()
+  })
+
+  it('carries the group’s own fields and its one write, where it has them', () => {
+    render(
+      <SourceGroup
+        id="g"
+        title="G"
+        location="somewhere"
+        status={{ state: 'read' }}
+        fields={<CardField label="Default project">None</CardField>}
+        save={<button type="button">Use this project as the default</button>}
+      >
+        <p>a member</p>
+      </SourceGroup>
+    )
+    expect(screen.getByText('Default project')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Use this project as the default' })).toBeTruthy()
   })
 })

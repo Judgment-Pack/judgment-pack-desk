@@ -28,6 +28,7 @@ import { useState, type ReactNode } from 'react'
 import { AlertPanel } from '../ui/AlertPanel'
 import { Alert } from '../ui/Alert'
 import { Button } from '../ui/Button'
+import { usePublishedWriteStatus, type SourceStatus } from './SourceCard'
 import {
   useProjectFileSave,
   type MemberEdit,
@@ -173,6 +174,11 @@ export function ProjectFileForm<D>({
 }) {
   const { save, changed } = state
   const unplaced = save.problems.filter((problem) => !placed.includes(problem.key))
+  // **What this form's write is doing, told to the card it is inside.** The
+  // card's Status is otherwise the file's read state, which the group header
+  // has already said — so a save in flight, a file that moved, and a refusal
+  // showed nothing on the card at all. See `usePublishedWriteStatus`.
+  usePublishedWriteStatus(writeStatus(save))
   return (
     <form
       // **The decoder is the one thing that refuses a value here.** A number
@@ -261,6 +267,25 @@ export function ProjectFileForm<D>({
       {save.refusal !== undefined && <Alert reason={save.refusal}>Nothing was written.</Alert>}
     </form>
   )
+}
+
+/**
+ * The one thing a card's Status should say about its own write, or nothing.
+ *
+ * In the order a reader needs them: a write in the air first, because it is the
+ * one that is still true of the future; then the file having moved, which is a
+ * refusal with a repair; then any other refusal, in whoever's words refused it.
+ * A save that **landed** publishes nothing — the file was read back, the read
+ * status is the truth again, and "Saved." is beside the button that did it.
+ */
+function writeStatus(save: ProjectFileSave): SourceStatus | undefined {
+  if (save.pending) return { state: 'writing' }
+  if (save.stale !== undefined) return { state: 'stale' }
+  if (save.problems.length > 0) return { state: 'not-written', problems: save.problems }
+  if (save.refusal !== undefined) {
+    return { state: 'not-written', problems: [], reason: save.refusal }
+  }
+  return undefined
 }
 
 /** The problem the decoder named at one key path, where it named one. */

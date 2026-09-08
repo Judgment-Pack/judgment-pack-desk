@@ -1,6 +1,6 @@
 /**
- * The fields on the four cards that write the project's own configuration
- * file, and nothing else about them.
+ * The fields on the cards that write the project's own configuration file, and
+ * nothing else about them.
  *
  * Each form is the members its decoder knows, in the order the schema declares
  * them, with **a hint only where a rule exists** — and where one does, it is
@@ -15,11 +15,12 @@
  * pane dimension nobody touched stays undeclared, and the Inspector's drawer
  * keeps its own baseline.
  *
- * **The values here can be written and the ones beside them cannot.** Panes
- * keeps its configured-and-rendered rows: those report what is on screen
- * against what the file asked for, which is a different fact from the number a
- * reader is about to write, and collapsing the two is how an accepted 720px
- * Inspector was reported as 720px while rendering 440px.
+ * **There is no pane-dimension form here any more.** The Panes card offered
+ * three of them and a reset of this browser's own record of the layout, and a
+ * settings page editing the frame it is drawn in is a control looking for a
+ * pane. The `panes` member is still decoded, still applied and still validated
+ * — what left is the form, and its write path left with it, because a Save
+ * with no control behind it is a write path nothing offers.
  */
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
@@ -27,7 +28,6 @@ import {
   ID_BASE_SAYS,
   NO_CONTROL_CHARACTERS,
   ORGANIZATION_MARK_SAYS,
-  PANE_BOUNDS,
   STORAGE_KIND_SAYS,
   type Density,
   type ThemeChoice
@@ -36,6 +36,7 @@ import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
 import { TextArea } from '../ui/TextArea'
+import { CardField } from './SourceCard'
 import { ProjectFileForm, problemAt, useProjectFileDraft } from './ProjectFileForm'
 import type { MemberEdit } from './useProjectFileSave'
 
@@ -49,21 +50,6 @@ import type { MemberEdit } from './useProjectFileSave'
  */
 function orNull(value: string): string | null {
   return value.trim() === '' ? null : value
-}
-
-/**
- * A number field's value as the file takes it.
- *
- * A number where it is one, and **the text itself where it is not** — never a
- * repaired value and never a silently skipped edit. `NaN` written as a number
- * would reach the decoder as `null` and be refused for being the wrong thing;
- * the bytes the reader typed are refused for being what they are, at the field
- * they are in.
- */
-function orText(value: string): number | string {
-  const trimmed = value.trim()
-  const number = Number(trimmed)
-  return trimmed !== '' && Number.isFinite(number) ? number : value
 }
 
 interface OrganizationDraft {
@@ -184,59 +170,30 @@ export function AppearanceForm() {
   )
 }
 
-/** The three bounded dimensions, each with the label its card prints. */
-const DIMENSIONS = [
-  { key: 'panes.left.width', label: 'Rail width', path: ['left', 'width'] },
-  { key: 'panes.inspector.width', label: 'Inspector width', path: ['inspector', 'width'] },
-  { key: 'panes.console.height', label: 'Console height', path: ['console', 'height'] }
-] as const
-
-type PanesDraft = Record<string, string>
-
-export function PanesForm() {
+/**
+ * The one storage kind there is, as a value rather than as a control.
+ *
+ * **A Select with one option is a control that cannot be operated.** It looks
+ * like a choice, reads like a choice to anything that enumerates the page's
+ * controls, and offers none: `storage.packs.kind` admits `"filesystem"` and
+ * refuses everything else by name. So while there is one kind this is what the
+ * file says, with the decoder's own sentence about the two that are not
+ * available yet under it — and the refusal of any other kind is unchanged and
+ * still tested.
+ *
+ * The day a second kind exists this is a `Select` again, with the same hint and
+ * the member back in the Storage form's draft.
+ */
+export function StorageKind() {
   const { config } = useEffectiveConfig()
-  const seed: PanesDraft = {
-    'panes.left.width': String(config.panes.left.width),
-    'panes.inspector.width': String(config.panes.inspector.width),
-    'panes.console.height': String(config.panes.console.height)
-  }
-  const state = useProjectFileDraft('/panes', seed, (draft, from) =>
-    DIMENSIONS.filter((dimension) => draft[dimension.key] !== from[dimension.key]).map(
-      (dimension) => ({ path: dimension.path, value: orText(draft[dimension.key] ?? '') })
-    )
-  )
-  const { draft, set, save } = state
   return (
-    <ProjectFileForm state={state} placed={DIMENSIONS.map((dimension) => dimension.key)}>
-      {DIMENSIONS.map((dimension) => (
-        <Field
-          key={dimension.key}
-          label={dimension.label}
-          error={problemAt(save, dimension.key)}
-        >
-          {(wiring) => (
-            <Input
-              {...wiring}
-              type="number"
-              // The decoder's own bounds, so the control and the refusal cannot
-              // disagree about what is accepted.
-              min={PANE_BOUNDS[dimension.key]!.min}
-              max={PANE_BOUNDS[dimension.key]!.max}
-              step={1}
-              value={draft[dimension.key] ?? ''}
-              onChange={(event) => set({ ...draft, [dimension.key]: event.target.value })}
-            />
-          )}
-        </Field>
-      ))}
-    </ProjectFileForm>
+    <CardField label="Kind" rule={STORAGE_KIND_SAYS}>
+      <code>{config.storage.packs.kind}</code>
+    </CardField>
   )
 }
 
-const KIND_OPTIONS = [{ value: 'filesystem', label: 'filesystem' }] as const
-
 interface StorageDraft {
-  kind: string
   dir: string
   idBase: string
 }
@@ -244,10 +201,9 @@ interface StorageDraft {
 export function StorageForm({ dirSays }: { dirSays: string }) {
   const { config } = useEffectiveConfig()
   const packs = config.storage.packs
-  const seed: StorageDraft = { kind: packs.kind, dir: packs.dir, idBase: packs.idBase }
+  const seed: StorageDraft = { dir: packs.dir, idBase: packs.idBase }
   const state = useProjectFileDraft('/storage', seed, (draft, from) => {
     const edits: MemberEdit[] = []
-    if (draft.kind !== from.kind) edits.push({ path: ['packs', 'kind'], value: draft.kind })
     if (draft.dir !== from.dir) edits.push({ path: ['packs', 'dir'], value: draft.dir })
     if (draft.idBase !== from.idBase) {
       edits.push({ path: ['packs', 'idBase'], value: draft.idBase })
@@ -256,20 +212,11 @@ export function StorageForm({ dirSays }: { dirSays: string }) {
   })
   const { draft, set, save } = state
   return (
-    <ProjectFileForm
-      state={state}
-      placed={['storage.packs.kind', 'storage.packs.dir', 'storage.packs.idBase']}
-    >
-      <Field label="Kind" hint={STORAGE_KIND_SAYS} error={problemAt(save, 'storage.packs.kind')}>
-        {(wiring) => (
-          <Select
-            {...wiring}
-            value={draft.kind}
-            onValueChange={(value) => set({ ...draft, kind: value })}
-            options={KIND_OPTIONS}
-          />
-        )}
-      </Field>
+    // `storage.packs.kind` is deliberately not placed: this form has no field
+    // for it any more, and a problem with the file a save would have made is
+    // still a problem — placing a key beside a field that is not there would
+    // drop the sentence rather than render it whole.
+    <ProjectFileForm state={state} placed={['storage.packs.dir', 'storage.packs.idBase']}>
       {/* The hint is what the file listing established about this location, and
           it is the listing's sentence rather than a rule: the decoder's rules
           for this member are several and specific, and each names itself when

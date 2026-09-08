@@ -73,7 +73,7 @@ import { valueAt } from '../packs/pointers'
 import { buffered, setRawJson, type Buffered } from '../packs/edit/writes'
 
 /**
- * The four members a card may write, by pointer.
+ * The members this composer will splice, by pointer.
  *
  * A closed list rather than a string, because the pointer is what decides which
  * bytes are spliced: a caller free to name any pointer could splice `identity`
@@ -87,6 +87,27 @@ export const PROJECT_FILE_POINTERS = [
   '/storage'
 ] as const
 export type ProjectFilePointer = (typeof PROJECT_FILE_POINTERS)[number]
+
+/**
+ * The members a **card** writes, which is not the same list.
+ *
+ * `/panes` is missing on purpose, and this is where that is written down. The
+ * Panes card is gone from Admin — the pane dimensions are the shell's, and the
+ * reset of this browser's own record of the layout moved to the shell's user
+ * menu — and a Save with no control behind it is a write path nothing offers.
+ * The composer above keeps `/panes` because it is a general splicer with its
+ * own tests; the settings page has no member to hand it.
+ *
+ * **It is a declaration and not a type constraint, deliberately.** Narrowing the
+ * hook's parameter to this list would make the guarantee unbreakable and
+ * therefore untestable: a mutation routing an Admin Save through `/panes` would
+ * not compile, and the only row left would mutate the *expected list* — which
+ * fails a comparison against itself and proves nothing about the write path.
+ * The hook takes the composer's wider pointer, and the guarantee is behavioural:
+ * every Save on Admin is driven and what came off the wire is compared to this
+ * list.
+ */
+export const CARD_POINTERS = ['/organization', '/appearance', '/storage'] as const
 
 /**
  * One field a card actually edited, addressed inside its member.

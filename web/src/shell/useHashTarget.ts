@@ -1,8 +1,9 @@
 /**
  * Scroll to the element a URL fragment names.
  *
- * The rail's Admin menu and the user menu link to `/admin#runtime`,
- * `/admin#panes`, `/help#shortcuts` and the rest. Nothing does this for them:
+ * The rail's Admin menu and the user menu link to `/admin#storage`,
+ * `/admin#appearance`, `/help#shortcuts` and the rest. Nothing does this for
+ * them:
  * `createBrowserRouter` performs no fragment scrolling, and the browser's own
  * would not help either, because the shell's scroll container is `.desk-main`
  * and not the document. Without this the menus changed the address bar and

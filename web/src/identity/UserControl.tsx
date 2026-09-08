@@ -15,6 +15,16 @@
  * and it is the one that falsifies the README's "opens no outbound
  * connection", which it must amend in the same commit.
  *
+ * **The panes' reset lives here**, and this is the menu it belongs in. The
+ * record it clears is per viewer and per browser — the same class of thing as
+ * the two settings links above it — and it is about all three panes, so it is
+ * not one pane's header control: the Inspector's header carries the Inspector's
+ * own close and nothing else, and the Console has no header at all. It used to
+ * be a button on Admin › Panes, which is a settings page reaching into a
+ * browser's own storage; this is the shell's own menu, beside the panes it
+ * clears. The menu **stays open** while it answers, because what happened is a
+ * sentence and a menu that closed would take it away with it.
+ *
  * The sentence about the token is checked against the code rather than
  * inherited from the spec: `McpProvider` copies `?token=` into `sessionStorage`
  * on first load, and nothing calls `history.replaceState` — so the token
@@ -22,8 +32,10 @@
  * "it leaves the URL immediately" would be a claim this desk does not keep.
  */
 import { Avatar, DropdownMenu } from 'radix-ui'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { IconChevronDown } from '../shell/icons'
+import { useShellState, type ResetOutcome } from '../shell/paneState'
 import { useIdentity } from './IdentityProvider'
 
 export const NONE_MENU_SENTENCE =
@@ -36,6 +48,23 @@ export const TOKEN_SENTENCE =
   'navigation.'
 
 export const PROVIDER_PHASE_NOTE = 'provider configured · sign-in arrives in phase B'
+
+/**
+ * What a reset did, in four sentences rather than one.
+ *
+ * They are four different facts and a menu that reported all of them as
+ * "Cleared." would be stating one it never observed: the record may be gone,
+ * this browser's storage may have refused the deletion, the chassis may not yet
+ * have said which project this desk is open on — in which case the key is
+ * provisional and nothing is cleared under it — or what is stored under that
+ * key may be something this shell never wrote, which it leaves alone.
+ */
+export const RESET_SAYS: Record<ResetOutcome, string> = {
+  cleared: 'Cleared — the panes are back on their defaults.',
+  refused: 'this browser did not clear the record — the layout is unchanged',
+  unresolved: 'nothing was cleared: this desk has not been told which project it is open on',
+  foreign: 'nothing was cleared: what is stored there is not a record this shell wrote'
+}
 
 /** Up to two initials, from whatever the name happens to be. */
 export function monogram(name: string): string {
@@ -82,9 +111,7 @@ export function UserControl() {
           <DropdownMenu.Item asChild className="desk-menu-item">
             <Link to="/admin#appearance">Appearance</Link>
           </DropdownMenu.Item>
-          <DropdownMenu.Item asChild className="desk-menu-item">
-            <Link to="/admin#panes">Panes</Link>
-          </DropdownMenu.Item>
+          <ResetPanesItem />
           <DropdownMenu.Item asChild className="desk-menu-item">
             <Link to="/help#shortcuts">Keyboard shortcuts</Link>
           </DropdownMenu.Item>
@@ -97,5 +124,47 @@ export function UserControl() {
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
+  )
+}
+
+/**
+ * Forget this project's layout on this machine, and say what happened.
+ *
+ * Its own component so that the state it needs — the last outcome — belongs to
+ * the action rather than to the control around it, and so that removing the
+ * action is removing one element.
+ *
+ * **The menu stays open while it answers.** A `DropdownMenu.Item` closes the
+ * menu on select, and the answer is a sentence: a menu that closed would take
+ * it with it.
+ *
+ * **And the verdict goes when the menu does**, because a verdict from the last
+ * time the menu was open is not a verdict about this one. That is the portal
+ * unmounting this component with the content it is inside, which is why the
+ * outcome is held here and not by the control around it — a verdict kept one
+ * level up would greet whoever opened the menu next.
+ */
+function ResetPanesItem() {
+  const shell = useShellState()
+  const [reset, setReset] = useState<ResetOutcome | undefined>(undefined)
+  return (
+    <>
+      <DropdownMenu.Item
+        className="desk-menu-item"
+        onSelect={(event) => {
+          // The reset runs inside the provider that owns the record — it
+          // cancels a write already on its way, refuses to clear the
+          // provisional key before the chassis has said which project this is,
+          // and reads the key back afterwards.
+          event.preventDefault()
+          setReset(shell.resetPanes())
+        }}
+      >
+        Reset panes
+      </DropdownMenu.Item>
+      {reset !== undefined && (
+        <DropdownMenu.Label className="desk-menu-note">{RESET_SAYS[reset]}</DropdownMenu.Label>
+      )}
+    </>
   )
 }
