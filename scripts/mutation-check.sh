@@ -6193,6 +6193,18 @@ export function assistantTransport(): Transport {
     '  const path = (projectRoot ?? '"'"''"'"').trim()
   if (path === '"'"''"'"') return '"'"'default'"'"''
 
+  # **Ownership is the whole member set, not the version number.**
+  # `localStorage` is one namespace shared with everything this origin has ever
+  # served, and the key is derived from a path the viewer never chose — so
+  # reading `v === 1` alone applied `{"v":1,"writer":"another-app",…}` to the
+  # page as this desk's preference and let the reset delete it.
+  mutate web "unknown members ignored again (ownership read off the version)" "$APS" \
+    '  for (const member of Object.keys(record)) {
+    if (!OWN_MEMBERS.includes(member)) return false
+  }
+  return '"'"'theme'"'"' in record || '"'"'density'"'"' in record' \
+    '  return true'
+
   # **A removed control's write path is removed with it**, exactly as the Panes
   # card's was. The Appearance card is gone from Admin — a person's theme is not
   # an administrator's setting, and it is held in that person's browser now —

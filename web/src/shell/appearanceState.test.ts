@@ -96,11 +96,57 @@ describe('the appearance record', () => {
     expect(readAppearance(KEY)).toEqual({ theme: 'dark' })
   })
 
-  it('discards a record that is not this desk’s', () => {
+  it('discards bytes that are not a record of this version at all', () => {
     for (const raw of ['not json at all', '[]', 'null', '"dark"', '{"v":2,"theme":"dark"}']) {
       window.localStorage.setItem(KEY, raw)
       expect(readAppearance(KEY), raw).toBeUndefined()
     }
+  })
+
+  /**
+   * **Ownership is the whole member set, not the version number.**
+   *
+   * `localStorage` is one namespace shared with everything this origin has ever
+   * served, and the key is derived from a path the viewer never chose. A record
+   * carrying a member this writer never writes is somebody else's value under a
+   * name this desk merely computed — and reading `v === 1` alone applied it to
+   * the page and let "Use the project's default" delete it.
+   *
+   * A bare `{"v":1}` is the same argument from the other side: this writer
+   * produces a record because somebody chose something, so a record with
+   * nothing chosen in it is not one of ours either.
+   */
+  it.each([
+    ['a member this writer never writes', { v: 1, writer: 'another-app', theme: 'dark' }],
+    ['an unknown member beside nothing else', { v: 1, mode: 'compact' }],
+    ['no chosen member at all', { v: 1 }]
+  ])('discards a v1 record carrying %s', (_what, record) => {
+    window.localStorage.setItem(KEY, JSON.stringify(record))
+    expect(readAppearance(KEY)).toBeUndefined()
+    // Not applied — and not deleted either: it is left exactly where it is,
+    // named as somebody else's.
+    expect(resetAppearance(KEY)).toBe('foreign')
+    expect(JSON.parse(window.localStorage.getItem(KEY)!)).toEqual(record)
+  })
+
+  it('still owns a record whose own members carry a value it cannot use', () => {
+    // The line between the two rules: `"midnight"` under `theme` is this
+    // desk's record with nothing usable in it — the project's default applies,
+    // and the record is still this desk's to clear. A member this writer never
+    // writes is the other case entirely.
+    window.localStorage.setItem(KEY, JSON.stringify({ v: 1, theme: 'midnight' }))
+    expect(readAppearance(KEY)).toEqual({})
+    expect(resetAppearance(KEY)).toBe('cleared')
+    expect(window.localStorage.getItem(KEY)).toBeNull()
+  })
+
+  it('never writes a record its own reader would disown', () => {
+    // A writer able to emit bytes its reader calls foreign is the shape of the
+    // defect above. Nothing reaches this with both members empty — a chosen
+    // member always carries a value — so the absence of a preference is the
+    // absence of a record.
+    writeAppearance(KEY, {}, BOTH)
+    expect(window.localStorage.getItem(KEY)).toBeNull()
   })
 
   it('survives a storage that throws on the accessor itself', () => {

@@ -83,6 +83,33 @@ export function appearanceKey(project: string): string {
   return `jpack-desk:appearance:v${RECORD_VERSION}:${project}`
 }
 
+/** Every member this writer puts in a record, and there are no others. */
+const OWN_MEMBERS = ['v', 'theme', 'density']
+
+/**
+ * Whether these are bytes this desk's appearance writer could have produced.
+ *
+ * **Ownership is the whole member set, not the version number**, and it was the
+ * version number until the review pointed at what that admits. `localStorage`
+ * is one namespace shared with everything this origin has ever served, and the
+ * key is derived from a path the viewer never chose — so
+ * `{"v":1,"writer":"another-app","theme":"dark"}` was read as *this* desk's
+ * preference, applied to the page, and deleted by "Use the project's default".
+ * A bare `{"v":1}` was removable on the same terms, and this writer never
+ * produces one: a record exists because somebody chose something.
+ *
+ * So: the version, no member this writer does not write, and at least one of
+ * the two it does. Anything else is somebody else's value under a name this
+ * desk merely computed, and is left exactly where it is.
+ */
+function isOwnRecord(record: Record<string, unknown>): boolean {
+  if (record.v !== RECORD_VERSION) return false
+  for (const member of Object.keys(record)) {
+    if (!OWN_MEMBERS.includes(member)) return false
+  }
+  return 'theme' in record || 'density' in record
+}
+
 /**
  * Read one record.
  *
@@ -91,11 +118,13 @@ export function appearanceKey(project: string): string {
  * null, and a thrown accessor must still render a working desk on the project's
  * own default.
  *
- * **A value outside the union is absent**, not a problem to report. Strictness
- * lives in the config decoder, which refuses a typo'd theme by name at the file
- * it was written in; here a `"midnight"` somebody put in `localStorage` by hand
- * is simply not a preference, and the project's default applies as though
- * nothing were stored.
+ * **A value outside the union is absent**, not a problem to report, and it is a
+ * different thing from a record this desk did not write. Strictness lives in the
+ * config decoder, which refuses a typo'd theme by name at the file it was
+ * written in; here a `"midnight"` under a member *this* writer writes is this
+ * desk's record with nothing usable in it — the project's default applies, and
+ * the record is still this desk's to clear. A member this writer never writes is
+ * the other case, and `isOwnRecord` is where the two part.
  */
 export function readAppearance(key: string): AppearancePreference | undefined {
   let raw: string | null = null
@@ -113,7 +142,7 @@ export function readAppearance(key: string): AppearancePreference | undefined {
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined
   const record = parsed as Record<string, unknown>
-  if (record.v !== RECORD_VERSION) return undefined
+  if (!isOwnRecord(record)) return undefined
   const preference: AppearancePreference = {}
   if (isTheme(record.theme)) preference.theme = record.theme
   if (isDensity(record.density)) preference.density = record.density
@@ -153,6 +182,15 @@ export function writeAppearance(
   const kept = readAppearance(key) ?? {}
   const theme = chosen.theme ? preference.theme : kept.theme
   const density = chosen.density ? preference.density : kept.density
+  // **A record with neither member is not a record this writer produces**, and
+  // its own reader would call one foreign. Nothing reaches here with both
+  // undefined — a chosen member always carries a value — but a writer able to
+  // emit bytes its reader disowns is the shape of the defect above, so the
+  // absence of a preference is the absence of a record.
+  if (theme === undefined && density === undefined) {
+    resetAppearance(key)
+    return
+  }
   const record: Record<string, unknown> = { v: RECORD_VERSION }
   if (theme !== undefined) record.theme = theme
   if (density !== undefined) record.density = density
