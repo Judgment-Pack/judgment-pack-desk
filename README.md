@@ -4217,6 +4217,38 @@ out until a review does — which is how a re-indentation in one PR left a row
 from an earlier one broken. It applies nothing and runs no suite, and it is not
 a substitute for running the rows.
 
+`scripts/containment-check.sh` measures, in a real browser, the half of "every
+scroll container is a containing block" that no reader of source can hold.
+`web/src/ui/containingBlock.test.ts` holds the *declaring rules* and says in its
+own docstring that it stops there: an override that reaches a pane by any other
+selector — an ancestor in front of it, an id, an attribute, a nested `&`, a
+`:global`, an inline style — is a computed cascade, not a sentence in a sheet.
+This loads a built chassis in Chrome and reads what the cascade produced, over
+seven routes at 1400×800 and 640×800 — four pane configurations wide and three
+narrow, because below 1100px the Inspector is a modal drawer whose overlay owns
+the pointer, so the console cannot be toggled while it is open: 49 rows a build.
+A row is contained only if `document.scrollingElement.scrollHeight` equals
+`innerHeight`, `.desk` is exactly `innerHeight` tall, `scrollY` is 0 after
+`window.scrollTo(0, 5000)`, the computed `position` of `.desk`, `.desk-rail`,
+`.desk-main`, `.desk-inspector` and `.desk-console` is `relative` wherever the
+route renders them, and no absolutely positioned element resolves its
+`offsetParent` to `BODY`. It prints a table and exits non-zero on any row that
+fails.
+
+```sh
+npm --prefix web ci && npm --prefix web run build
+go build -o /tmp/jpack-desk .
+JPACK_BIN=/path/to/jpack scripts/containment-check.sh /tmp/jpack-desk /path/to/project 8765
+```
+
+It copies the project rather than driving the one it was handed, uses a
+throwaway `XDG_CONFIG_HOME`, and kills what it starts by PID. `PLAYWRIGHT_CHROME`
+names a Chrome executable; without it, `playwright-core` — a devDependency of
+`web/`, which downloads no browser — is asked for the installed one. **CI does
+not run this**: CI has neither a Chrome nor a runtime binary. It is the gate for
+the cascade half, run before every merge that touches the shell's stylesheets,
+the way the needle check is run before every merge that touches a needle.
+
 CI runs `gofmt`, `go vet` and `go test` on one job and `npm ci`, `tsc`, the
 component tests and `vite build` on another. It supplies neither a runtime binary
 nor a project, so the end-to-end tests skip themselves there and what runs is the
