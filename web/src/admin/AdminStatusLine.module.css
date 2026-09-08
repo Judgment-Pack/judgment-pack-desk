@@ -1,12 +1,17 @@
+/* One muted line under the page title, and not a box.
+   ---------------------------------------------------------------------------
+   What this reports is two facts about the running process. It was drawn as a
+   framed strip on a surface, which is the shape a *card* has on this page — so
+   the one thing on Admin that is deliberately not a setting looked more like
+   one than the settings did. It is a line now: the `dl`/`dt`/`dd` structure is
+   unchanged, and only its dress is. */
+
 .line {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.2rem 1.25rem;
-  margin: 0 0 1.25rem;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
+  align-items: baseline;
+  gap: 0.2rem var(--density-gap);
+  margin: 0 0 var(--density-section);
 }
 
 .pair {
@@ -16,12 +21,21 @@
   min-width: 0;
 }
 
+/* A middle dot between the pairs, so they read as one line at any width — and
+   only between them, so a pair that wraps to a second line does not begin
+   with a separator hanging off nothing. */
+.pair + .pair::before {
+  content: '·';
+  margin-right: var(--density-gap);
+  color: var(--ink-faint);
+}
+
+/* A small muted label in sentence case. The tracked capitals this replaces
+   were the page's second label style, on the line above the first one. */
 .key {
   margin: 0;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 0.8rem;
+  font-weight: 500;
   color: var(--ink-faint);
   white-space: nowrap;
 }
@@ -30,6 +44,6 @@
   margin: 0;
   min-width: 0;
   font-size: 0.8rem;
-  color: var(--ink);
+  color: var(--ink-soft);
   overflow-wrap: anywhere;
 }

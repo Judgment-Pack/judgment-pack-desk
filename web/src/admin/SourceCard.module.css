@@ -1,85 +1,115 @@
+/* Admin's containers, flat.
+   ---------------------------------------------------------------------------
+   **Hierarchy comes from type, spacing and hairlines, not from boxes.** This
+   page used to draw a frame around a group, a second one around every card
+   inside it and a third — the browser's own `fieldset` — around the fields
+   inside that: three borders and two background changes to say one thing,
+   which is that a member belongs to a file. Nothing here draws a box any more.
+
+   A frame is for an **object**, not for a level of hierarchy. Two are left on
+   this page and each is one: the code block behind the Content disclosure, and
+   an alert. Everything else is separated by a hairline and by room. */
+
+/* An ungrouped card and a group are the same flat thing: a title, its rows,
+   its fields, its one action. `.card` is the state a member of the *other*
+   file renders in, and it sits in member position, so it is separated the way
+   a member is. */
 .card {
-  margin: 0 0 1.25rem;
-  padding: 0.9rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
+  margin: 0;
+  padding-block: var(--density-block);
+  border-top: 1px solid var(--border);
 }
 
 .group {
-  margin: 0 0 1.25rem;
-  padding: 0.9rem 1rem;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
+  margin: 0;
+}
+
+/* One rule between groups, and one only — the space either side of it is what
+   makes it read as a division rather than as a border. */
+.group + .group {
+  margin-top: var(--density-section);
+  padding-top: var(--density-section);
+  border-top: 1px solid var(--border);
 }
 
 .groupTitle {
-  margin: 0 0 0.6rem;
-  font-size: 0.95rem;
+  margin: 0 0 var(--density-gap);
+  font-size: 1rem;
   font-weight: 600;
   color: var(--ink);
 }
 
+/* No gap: the hairline on each member is the separator, and a gap as well
+   would be two spellings of one division. */
 .members {
   display: grid;
-  gap: 0.75rem;
-  margin-top: 0.9rem;
+  margin-top: var(--density-block);
 }
 
+/* A hairline above each member separates it from the group's head and from
+   the member before it; the last one has no rule under it, which is what
+   putting the rule on the top rather than the bottom buys. */
 .member {
-  padding: 0.7rem 0.85rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
+  padding-block: var(--density-block);
+  border-top: 1px solid var(--border);
 }
 
+/* Sentence case, one weight, one colour. The tracked capitals this replaces
+   were a second kind of label on a page that already had one. */
 .title {
-  margin: 0 0 0.6rem;
-  font-size: 0.78rem;
+  margin: 0 0 var(--density-gap);
+  font-size: 0.9rem;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
+  color: var(--ink);
 }
 
 .head {
   display: grid;
-  gap: 0.25rem;
+  gap: var(--density-gap);
   margin: 0;
 }
 
+/* The key/value grid, at a measure a label actually needs. `.field` below is
+   the same grid, because `Location` and `Name` are the same kind of label and
+   a settings page whose labels are two widths reads as two pages. */
 .row {
   display: grid;
-  grid-template-columns: 7rem 1fr;
+  grid-template-columns: 9rem 1fr;
   gap: var(--density-gap);
   align-items: baseline;
 }
 
+/* One label style for every label on this page. `Field`'s own `.label` says
+   the same thing and carries the same three values. */
 .key {
   margin: 0;
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 0.8rem;
+  font-weight: 500;
   color: var(--ink-soft);
 }
 
 .value {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: 0.875rem;
   color: var(--ink);
   overflow-wrap: anywhere;
+}
+
+/* A path is quoted material and sits a step below the sentence around it. */
+.value code {
+  font-size: 0.8rem;
 }
 
 .reason {
   display: block;
   font-family: var(--mono);
-  font-size: 0.76rem;
+  font-size: 0.8rem;
   color: var(--ink-soft);
   overflow-wrap: anywhere;
 }
 
 .content {
-  margin-top: 0.6rem;
+  margin-top: var(--density-gap);
   font-size: var(--density-font);
 }
 
@@ -92,40 +122,44 @@
   color: var(--ink-faint);
 }
 
+/* **The one frame Admin still draws.** A code block is a real object: it has
+   its own scroll, its own typeface and bytes that are not this page's prose,
+   and a reader has to be able to see where it ends. One hairline, the raised
+   surface, the small radius. */
 .json {
-  margin: 0.4rem 0 0;
-  padding: 0.6rem;
+  margin: var(--density-gap) 0 0;
+  padding: var(--density-cell-x);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background: var(--surface);
   overflow-x: auto;
-  font-size: 0.76rem;
+  font-size: 0.8rem;
   line-height: 1.5;
 }
 
 .fields {
   display: grid;
   gap: var(--density-gap);
-  margin-top: 0.75rem;
+  margin-top: var(--density-block);
 }
 
 .field {
   display: grid;
-  grid-template-columns: 7rem 1fr;
-  gap: 0.2rem var(--density-gap);
+  grid-template-columns: 9rem 1fr;
+  gap: var(--density-gap);
   align-items: baseline;
 }
 
 .rule {
   grid-column: 2;
   margin: 0;
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   color: var(--ink-faint);
   overflow-wrap: anywhere;
 }
 
 .save {
-  margin-top: 0.75rem;
+  margin-top: var(--density-gap);
 }
 
 @media (max-width: 40rem) {

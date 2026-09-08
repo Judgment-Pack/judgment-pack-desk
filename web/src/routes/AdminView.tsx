@@ -53,6 +53,7 @@ import {
 import { useFileListing } from '../files/queries'
 import { connectionSays, useMcp } from '../mcp/McpProvider'
 import { ADMIN_GROUPS, ADMIN_SECTIONS } from './adminSections'
+import styles from './AdminView.module.css'
 
 /** The sections, by id, so a card names its own rather than an index. */
 const SECTION = Object.fromEntries(
@@ -81,7 +82,7 @@ export function AdminView() {
   const packLocation = packLocationState(packDir, listing)
 
   return (
-    <article className="detail">
+    <article className={`detail ${styles.admin}`}>
       <header className="detail-head">
         <h1>Admin</h1>
       </header>
