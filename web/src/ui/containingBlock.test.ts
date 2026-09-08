@@ -14,10 +14,14 @@
  * the shell was `position: static`, so an absolutely positioned descendant was
  * laid out against the initial containing block instead — not scrolled with
  * its pane, not clipped by the frame, and its static position counted into the
- * *document's* scrollable overflow. On `/admin` at 1400x800 that measured
+ * *document's* scrollable overflow. On `/admin` that measured
  * `document.scrollingElement.scrollHeight` 2439 against an `innerHeight` of
  * 800: the browser painted its own scrollbar and the whole 100dvh shell could
- * be scrolled up out of the window. The three elements past the fold were the
+ * be scrolled up out of the window. (The configuration those figures were
+ * taken in — 1400x800, an assistant key stored, without which the endpoint
+ * form renders no pickers and there is nothing to measure — is named once, in
+ * the comment above `.desk` in `shell.css`; every number here is that one.)
+ * The three elements past the fold were the
  * 1px `select[aria-hidden="true"]` that Radix renders beside every Select
  * trigger inside a `<form>` — the assistant endpoint form's Wire protocol,
  * Engine and Thinking pickers, at y 1808, 2341 and 2438.
@@ -310,7 +314,8 @@ describe('every scroll container is a containing block', () => {
       const declared = positions(rule)
       expect(
         declared.length,
-        `${name} scrolls or clips its content but declares no position: an absolutely ` +
+        `${name} is in the swept set — it authors a scrolling overflow, or it is the ` +
+          'frame, which clips on purpose — but declares no position: an absolutely ' +
           'positioned descendant is then laid out against the initial containing block, ' +
           'is neither scrolled nor clipped by this rule, and extends the document'
       ).toBeGreaterThan(0)

@@ -133,23 +133,39 @@
      how a frame written to be exactly one viewport tall gave the browser its
      own scrollbar and let the whole shell be scrolled up out of the window.
 
-     Measured in headless Chrome at e2d1dee, 1400x800: `/admin` reported a
-     `document.scrollingElement.scrollHeight` of 2439 against an `innerHeight`
-     of 800, while `.desk` itself measured 800. The three elements past the
-     fold were `select[aria-hidden="true"]`, inline `position: absolute` and
-     1px square — the form-participation select Radix renders beside every
-     Select trigger that sits inside a `<form>`, here the assistant endpoint
-     form's three pickers, at y 1808, 2341 and 2438, each with `offsetParent`
-     BODY. `/packs` and `/help` measured 800: the Sort picker is in no form,
-     so it renders no such select, and nothing else there is positioned.
+     Measured in headless Chrome at e2d1dee, 1400x800, with an assistant key
+     stored — every figure in this comment is that configuration, because the
+     endpoint form renders its pickers only once there is a key to bind them
+     to. `/admin` reported a `document.scrollingElement.scrollHeight` of 2439
+     against an `innerHeight` of 800, while `.desk` itself measured 800. The
+     three elements past the fold were `select[aria-hidden="true"]`, inline
+     `position: absolute` and 1px square — the form-participation select Radix
+     renders beside every Select trigger that sits inside a `<form>`, here the
+     assistant endpoint form's three pickers, at y 1808, 2341 and 2438, each
+     with `offsetParent` BODY. `/packs` and `/help` measured 800: the Sort
+     picker is in no form, so it renders no such select, and nothing else
+     there is positioned.
 
-     So the rule, and it is not a list of five names: every element in this
-     project that scrolls or clips its content declares `position: relative`
-     in the same rule as its `overflow` — this frame, the four panes, and
-     every nested scroller under them. Then an absolutely positioned
-     descendant is placed against its pane, scrolls with it, is clipped by it,
-     and cannot extend the document. `shellSheet.test.ts` holds the pair for
-     any scroller added after this one. After it, every route measures
+     So the rule, and it is not a list of five names: **every rule in this
+     project that authors a scrolling overflow declares `position: relative`
+     in the same rule** — an `overflow`, `overflow-x`, `overflow-y`,
+     `overflow-block` or `overflow-inline` whose value is `auto`, `scroll` or
+     `overlay` — and so does this frame, which clips deliberately and has to
+     contain what it clips. Then an absolutely positioned descendant is placed
+     against its pane, scrolls with it, is clipped by it, and cannot extend
+     the document.
+
+     A rule that *merely clips* is not held, and that is the scope and not an
+     omission: `overflow: hidden` on an ellipsis label, a segmented control, a
+     popup or a code frame clips text, and text has no containing block to be
+     laid out against. Nor is a scroll container the user agent makes — a
+     `textarea`, a `select`'s listbox — which no sheet declares and no reader
+     of sheets can see; `ui/TextArea.module.css` carries the declaration by
+     hand for that reason.
+
+     `ui/containingBlock.test.ts` holds all of it: the pair inside each such
+     rule, and — because the cascade is not per-rule — that nothing anywhere
+     else takes one of those positions back. After it, every route measures
      `scrollHeight === innerHeight`. */
   .desk {
     display: grid;
