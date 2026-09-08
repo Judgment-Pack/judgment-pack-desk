@@ -6454,7 +6454,7 @@ export function assistantTransport(): Transport {
   # that nearly emulates the cascade is worse than one that does not try,
   # because it is believed. `scripts/containment-check.sh` holds that half now,
   # in a browser, by reading the computed `position` of the frame and the four
-  # panes on 49 configurations a build. Three of the four constructions do still
+  # panes on 242 configurations a build. Three of the four constructions do still
   # trip the same-selector clause the reader kept (each is in the PR's
   # construction table, applied by hand and shown failing); they are retired
   # anyway, because a row is a claim about what the suite holds, and holding
@@ -6462,14 +6462,16 @@ export function assistantTransport(): Transport {
   # `.desk > .desk-main`, is green in the suite and red in the script, which is
   # exactly the division of labour this chunk ends with.
   #
-  # **Retained: five.** These hold a pair — `overflow` and `position` on one
-  # element — that no earlier row touches. `the frame has a definite height` is
-  # the neighbouring claim and is untouched: a frame of the right height whose
-  # panes are `position: static` is exactly the defect this adds.
+  # **Retired: two more.** `position dropped from the textarea primitive` and
+  # `position dropped from the raw code editor` were the user-agent scroller
+  # rows. A `<textarea>` renders no element children, so no positioned
+  # descendant can exist inside it and a `position` on it holds nothing —
+  # measured in Chrome: a child with `position: absolute; top: 3000px` appended
+  # to a textarea renders nothing and extends nothing. The list and the two
+  # declarations were removed with these rows.
   #
-  # Three break the pair inside the rule that declares it. Two drop the position
-  # from a scroll container no sweep can find, because the user agent makes it
-  # and no sheet says so, which a named list holds instead.
+  # **Retained: three.** Two break the pair inside the rule that declares it;
+  # one writes a scroller that never had it.
 
   CHK=web/src/packs/CheckStrip.module.css
 
@@ -6477,10 +6479,9 @@ export function assistantTransport(): Transport {
   # only the descendants whose containing block is inside the scroller, so a
   # static `.desk-main` sends every absolutely positioned descendant to the
   # *initial* containing block: not scrolled with the pane, not clipped by the
-  # frame, and counted into the document's own scrollable overflow. Measured:
-  # `/admin` went to `scrollHeight` 2439 in an 800px window, and the shell
-  # could be scrolled up out of the frame. jsdom lays nothing out and vitest
-  # runs with `css: false`, so this is held by reading the sheet.
+  # frame, and counted into the document's own scrollable overflow. jsdom lays
+  # nothing out and vitest runs with `css: false`, so this is held by reading
+  # the sheet.
   mutate web "position dropped from .desk-main, so the pane contains nothing" "$CSSH" \
     '    overflow: auto;
     position: relative;
@@ -6518,36 +6519,6 @@ export function assistantTransport(): Transport {
   max-height: 12rem;
   overflow-y: auto;
 }'
-
-  TXT=web/src/ui/TextArea.module.css
-
-  # **The half no sweep can reach.** A `<textarea>` computes `overflow: auto`
-  # with nothing in any sheet saying so, so the sweep over authored
-  # declarations is structurally blind to every one the editor renders. They
-  # are held by a named list instead, and a list is only a safeguard while
-  # something fails when a member of it stops holding.
-  mutate web "position dropped from the textarea primitive" "$TXT" \
-    '.textarea {
-  position: relative;
-  width: 100%;' \
-    '.textarea {
-  width: 100%;'
-
-  # The second member of that list, and the one that says the list is found
-  # rather than inherited: `.code-editor` styles three raw `<textarea>` — the
-  # authoring buffer, and Facts and Evidence on the evaluate route — through a
-  # rule that authors no overflow at all, so it is invisible to the sweep for
-  # exactly the same reason and was invisible to the list until this round.
-  mutate web "position dropped from the raw code editor" "$CSSP" \
-    '.code-editor {
-  /* A raw `<textarea>`: the user agent makes it a scroll container and no rule
-     here says so, so it is held by the named list in `ui/containingBlock.test.ts`. */
-  position: relative;
-  display: block;' \
-    '.code-editor {
-  /* A raw `<textarea>`: the user agent makes it a scroll container and no rule
-     here says so, so it is held by the named list in `ui/containingBlock.test.ts`. */
-  display: block;'
 fi
 
 restore

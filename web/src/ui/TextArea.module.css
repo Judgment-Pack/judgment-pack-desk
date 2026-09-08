@@ -1,12 +1,4 @@
-/* A textarea is a scroll container the user agent makes, not one this sheet
-   authors: its computed `overflow` is `auto` with nothing here saying so, and
-   the sweep in `ui/containingBlock.test.ts` reads sources, so it cannot see
-   this one. Its sibling `CodeArea .area` is held, only because that rule
-   spells `overflow: auto` out. Same primitive, same job, so the same
-   declaration by hand — and `position: relative` with no offsets moves
-   nothing, which the drive measured on both heads. */
 .textarea {
-  position: relative;
   width: 100%;
   min-height: 4.5rem;
   resize: vertical;

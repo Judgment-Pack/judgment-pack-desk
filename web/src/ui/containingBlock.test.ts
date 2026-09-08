@@ -11,16 +11,19 @@
  *
  * **The boundary, in one paragraph.** This file holds the *declaring rules*:
  * that each rule which authors a scrolling overflow also declares a position
- * that positions, that the frame and the four panes do so under their own
- * exact selector, and that the two user-agent scrollers listed below do too. A
+ * that positions, and that the frame and the four panes do so under their own
+ * exact selector. A
  * later rule that changes a held element's *computed* position — by an
  * ancestor selector, an id, an attribute, a nested `&`, a `:global`, an inline
  * `style`, a `position` written from script, from this sheet or any other — is
  * outside a source reader and is not claimed here. That half is measured in a
  * real browser by `scripts/containment-check.sh`, which loads a built chassis
  * in Chrome and reads the computed `position` of every pane and
- * `document.scrollingElement.scrollHeight` against `innerHeight` on 49
- * configurations. CI does not run it; every merge does.
+ * `document.scrollingElement.scrollHeight` against `innerHeight` on every
+ * route at every width the sheets author. CI supplies no runtime binary and no
+ * project, so there is nothing for the chassis to serve; the gate is run by
+ * hand. Run before every merge that touches a stylesheet. This is a
+ * convention; nothing automated enforces it.
  *
  * **Why source at all, then.** vitest runs with `css: false`, so no stylesheet
  * is processed: a pane whose `position` was deleted renders here exactly like
@@ -30,7 +33,7 @@
  * this project *can* do about it — so it does that, exactly, and says where it
  * stops.
  *
- * **The three things it holds.**
+ * **The two things it holds.**
  *
  * 1. **Every rule that authors a scrolling overflow.** `overflow`,
  *    `overflow-x`, `overflow-y`, `overflow-block` or `overflow-inline` with
@@ -49,19 +52,9 @@
  *    caught, and `body .desk-main { position: static }` is not, because it is
  *    a different selector and matching it would be emulating the cascade
  *    again.
- * 3. **The user-agent scrollers, by name.** A `<textarea>` computes
- *    `overflow: auto` with nothing in any sheet saying so, so no sweep over
- *    authored declarations can reach one. `UA_SCROLLERS` lists them and holds
- *    them under the same exact-selector reading. **How the list is found:**
- *    `grep -rn '<textarea' web/src` and `grep -rn '<select' web/src` for
- *    elements rendered raw, then take the rule that styles each one and keep
- *    the ones whose rule authors no overflow of its own. Today that is
- *    `ui/TextArea.module.css .textarea` (the `TextArea` primitive) and
- *    `styles.css .code-editor` (three raw `<textarea>` — the authoring buffer
- *    on `/author`, and Facts and Evidence on the evaluate route). `CodeArea
- *    .area` is *not* on the list: its own rule spells `overflow: auto`, so the
- *    sweep already has it. A `<select>`'s listbox is drawn by the platform and
- *    is not an element any sheet can position at all.
+ *
+ * A `<textarea>` scrolls with no authored overflow and renders no element
+ * children, so it can mislay nothing; no list is kept for it.
  *
  * **The defect all of this replaces.** `overflow` scrolls and clips only the
  * descendants whose containing block lies inside the scroller. Every pane of
@@ -382,23 +375,6 @@ function isContainer(rule: Rule): boolean {
 /** The frame and its four panes, held by their own exact selector in `shell.css`. */
 const PANES = ['.desk', '.desk-rail', '.desk-main', '.desk-inspector', '.desk-console']
 
-/**
- * Scroll containers the user agent makes, which no sweep over authored
- * declarations can find — so they are a list, and the docstring above says how
- * the list is found rather than leaving the next one to be missed.
- *
- * A `<textarea>` computes `overflow: auto` with nothing in any sheet saying
- * so, and each one is a scroll container that would lay an absolutely
- * positioned descendant out against the initial containing block exactly as
- * the panes did. Two rules style raw or primitive textareas without authoring
- * an overflow of their own, so both carry the declaration by hand and are held
- * here under the same exact-selector reading as the panes.
- */
-const UA_SCROLLERS = [
-  { where: 'ui/TextArea.module.css', selector: '.textarea' },
-  { where: 'styles.css', selector: '.code-editor' }
-] as const
-
 /** A container rule that declares no position at all, or one that does not position. */
 function unpositioned(containers: Rule[]): string[] {
   return containers.flatMap((rule) => {
@@ -468,9 +444,6 @@ describe('every scroll container is a containing block', () => {
       'the frame is in the swept set: it clips on purpose, and clips nothing it is not the ' +
         'containing block of'
     ).toBe(true)
-    // And every sheet the two by-name readings depend on is one this walker
-    // actually opened.
-    for (const one of UA_SCROLLERS) expect(sheetPaths.map(short)).toContain(one.where)
   })
 
   it.each(project.containers.map((rule) => [`${rule.where}  ${describe_(rule)}`, rule] as const))(
@@ -508,7 +481,7 @@ describe('every scroll container is a containing block', () => {
   })
 
   it('refuses a selector with an escape in it, rather than decoding one', () => {
-    // The by-name readings compare selector *text*, so `.desk\-main` and
+    // The by-name reading compares selector *text*, so `.desk\-main` and
     // `.desk-main` would be two strings for one selector. No sheet here writes
     // an escape, and the cheap guarantee that none starts to is to fail on the
     // character rather than to grow an unescaper nobody would review.
@@ -517,8 +490,8 @@ describe('every scroll container is a containing block', () => {
       .map((rule) => `${rule.where}  ${rule.prelude}`)
     expect(
       escaped,
-      'a backslash in a selector is an escape this file does not decode, and the frame, ' +
-        'the panes and the user-agent scrollers are matched by exact selector text: write ' +
+      'a backslash in a selector is an escape this file does not decode, and the frame ' +
+        'and the panes are matched by exact selector text: write ' +
         'the selector without an escape, or teach this test to decode one'
     ).toEqual([])
   })
@@ -545,21 +518,6 @@ describe('every scroll container is a containing block', () => {
         'grows again'
     ).toEqual([])
   })
-
-  it.each(UA_SCROLLERS.map((one) => [`${one.where} ${one.selector}`, one] as const))(
-    '%s is positioned by hand, because no sweep can see it',
-    (_name, one) => {
-      const held = sameSelector(project.rules, one.selector, one.where)
-      expect(held.named.length, `${one.selector} is a rule of ${one.where}`).toBeGreaterThan(0)
-      expect(
-        held.positions,
-        `${one.selector} is a user-agent scroll container — a textarea computes ` +
-          '`overflow: auto` with no sheet saying so — so the sweep is structurally blind to ' +
-          'it and the declaration is held by this list instead'
-      ).toBe(true)
-      expect(held.takesBack, `a rule spelling exactly ${one.selector} un-positions it`).toEqual([])
-    }
-  )
 })
 
 /**
