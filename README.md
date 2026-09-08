@@ -1399,7 +1399,12 @@ an administrator's setting either.
 **Under the heading is a status line, not a card.** One line — two on a narrow
 shell — carrying the connection and the binary the chassis was launched with,
 both of them the connection's or the chassis' own answer and neither composed on
-the page. It replaced a **Runtime** card whose four slots held nothing anybody
+the page. **The connection's verdict is its `status`, never the runtime it last
+met**: `server` is retained across a reconnect, so every surface that read
+"connected" off its presence said so while the socket was down and the banner
+said the connection was lost. One producer — `connectionSays` — answers for the
+status line, Help & About and the status strip; the runtime is named only where
+the connection is actually up. It replaced a **Runtime** card whose four slots held nothing anybody
 could edit; the card's own content is in **Help & About**, which is where a
 reader goes to ask what they are connected to.
 

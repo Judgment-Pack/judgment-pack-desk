@@ -17,7 +17,7 @@
  */
 import { Json, Section } from '../components/primitives'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
-import { useMcp } from '../mcp/McpProvider'
+import { connectionSays, useMcp } from '../mcp/McpProvider'
 import { AUTHOR_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
 import { usePacks } from '../mcp/queries'
 import { TOKEN_SENTENCE } from '../identity/UserControl'
@@ -28,7 +28,7 @@ const REPO = 'https://github.com/Judgment-Pack/judgment-pack-desk'
 
 export function HelpAbout() {
   const mcp = useMcp()
-  const { server, known } = mcp
+  const { status, server, known } = mcp
   const { desk } = useEffectiveConfig()
   const { data } = usePacks()
   const prompts = usePromptNames()
@@ -51,13 +51,16 @@ export function HelpAbout() {
 
       <Section title="This connection">
         <p>
+          {/* **The verdict is the status; the name is the metadata.** `server`
+              is retained across a reconnect, so naming the runtime off its
+              presence said "connected" while the socket was down. */}
           Runtime:{' '}
-          {server ? (
+          {status === 'ready' && server ? (
             <>
               <code>{server.name}</code> {server.version}
             </>
           ) : (
-            'not connected'
+            connectionSays(status)
           )}
           <br />
           {/* The binary the chassis was launched with. It is **not** in the

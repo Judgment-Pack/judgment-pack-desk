@@ -18,7 +18,7 @@ import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture, DeskConfigProvider } from '../config/DeskConfigProvider'
 import { STORAGE_KIND_SAYS, decodeDeskConfig, effectiveConfig } from '../config/deskConfig'
-import { McpContext } from '../mcp/McpProvider'
+import { McpContext, type McpConnection } from '../mcp/McpProvider'
 import { ShellStateProvider } from '../shell/paneState'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { narrationIn } from '../admin/narration'
@@ -53,14 +53,15 @@ const DESK_PATH = '/home/someone/.config/jpack-desk/desk.json'
 function renderAdmin(
   value = effectiveConfig(undefined),
   path = '/admin',
-  projectIdentity: string | null = ROOT
+  projectIdentity: string | null = ROOT,
+  mcp: Partial<McpConnection> = {}
 ) {
   const router = createMemoryRouter(
     [
       {
         path: '*',
         element: (
-          <McpContext.Provider value={connected({ client: QUIET.client })}>
+          <McpContext.Provider value={connected({ client: QUIET.client, ...mcp })}>
             <DeskConfigFixture value={value}>
               <ShellStateProvider
                 projectIdentity={projectIdentity ?? undefined}
@@ -284,6 +285,32 @@ describe('the Admin page', () => {
     expect(line.textContent).toContain('/usr/local/bin/jpack')
     // And it is not a card: no heading, no Location row, no Status row.
     expect(line.closest('section')).toBeNull()
+  })
+
+  it('reads the connection off its status, not off the runtime it last met', async () => {
+    // `server` is retained across a reconnect — the provider spreads the
+    // previous state — so a line that read "connected" off its presence said
+    // so while the socket was down and the banner said the connection was
+    // lost. The name is only said where the connection is actually up.
+    const { container } = renderAdmin(effectiveConfig(undefined), '/admin', ROOT, {
+      status: 'reconnecting',
+      client: null,
+      attempt: 3
+    })
+    const line = container.querySelector('dl')!
+    await waitFor(() => expect(line.textContent).toContain('reconnecting'))
+    expect(line.textContent).not.toContain('connected —')
+    expect(line.textContent).not.toContain('jpack')
+    cleanup()
+
+    renderAdmin(effectiveConfig(undefined), '/admin', ROOT, { status: 'failed', client: null })
+    expect(document.querySelector('dl')!.textContent).toContain('not connected')
+  })
+
+  it('names the runtime it is connected to where it actually is', async () => {
+    const { container } = renderAdmin()
+    const line = container.querySelector('dl')!
+    await waitFor(() => expect(line.textContent).toContain('connected — jpack test'))
   })
 
   it('names neither configuration file on the line, because the groups do', () => {

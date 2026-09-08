@@ -56,6 +56,19 @@ describe('Help & About', () => {
     expect(screen.getByText(/not read — every capability below is unknown, not absent/)).toBeTruthy()
   })
 
+  it('reads the connection off its status, not off the runtime it last met', () => {
+    // The provider retains `server` across a reconnect, so naming the runtime
+    // off its presence said "connected" while the socket was down.
+    renderHelp(stubClient(PACKS), { status: 'reconnecting', client: null, attempt: 2 })
+    const connection = screen.getByText(/^Runtime:/).parentElement!
+    expect(connection.textContent).toContain('reconnecting')
+    expect(connection.textContent).not.toContain('jpack test')
+    cleanup()
+
+    renderHelp(stubClient(PACKS), { status: 'failed', client: null, server: null })
+    expect(screen.getByText(/^Runtime:/).parentElement!.textContent).toContain('not connected')
+  })
+
   it('carries the runtime facts the Admin card used to hold', () => {
     // The card is gone from Admin — none of its four slots was a setting — and
     // its content has to have a home. The binary comes from the chassis; the

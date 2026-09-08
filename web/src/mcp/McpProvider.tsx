@@ -8,6 +8,28 @@ import { DeskWebSocketTransport } from './transport'
 
 export type ConnectionStatus = 'connecting' | 'ready' | 'reconnecting' | 'failed'
 
+/**
+ * What a connection **is**, read off its status and never off what it left
+ * behind.
+ *
+ * `server` is the runtime that answered `initialize`, and it is *retained*
+ * across a reconnect — the provider spreads the previous state — because losing
+ * the name of the runtime you were talking to would be a worse answer than
+ * keeping it. So `server !== null` means "this page has met a runtime", which is
+ * not "this page is connected to one": after a reconnect it is true while the
+ * socket is down, and every surface that read a verdict off it said `connected`
+ * while the banner said the connection was lost.
+ *
+ * One producer, because four surfaces say this and four sentences about one
+ * socket are free to disagree about whether it is up.
+ */
+export function connectionSays(status: ConnectionStatus): string {
+  if (status === 'ready') return 'connected'
+  if (status === 'connecting') return 'connecting'
+  if (status === 'reconnecting') return 'reconnecting'
+  return 'not connected'
+}
+
 export interface McpConnection extends RuntimeCapabilities {
   client: Client | null
   status: ConnectionStatus

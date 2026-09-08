@@ -48,7 +48,7 @@ import {
   type ValueSource
 } from '../config/deskConfig'
 import { useFileListing } from '../files/queries'
-import { useMcp } from '../mcp/McpProvider'
+import { connectionSays, useMcp } from '../mcp/McpProvider'
 import { ADMIN_GROUPS, ADMIN_SECTIONS } from './adminSections'
 
 /** The sections, by id, so a card names its own rather than an index. */
@@ -212,12 +212,16 @@ function projectLocation(effective: EffectiveConfig) {
 /**
  * The connection, in the connection's own words.
  *
- * One producer, because the status line and Help & About both say it and two
- * sentences about one socket are free to disagree about whether it is up.
+ * **The verdict is the status; the name is the metadata.** `server` is retained
+ * across a reconnect, so a line that read "connected" off its presence said so
+ * while the socket was down and the banner said otherwise. The runtime is named
+ * only where the connection is actually up. See `connectionSays`.
  */
 function runtimeSays(mcp: ReturnType<typeof useMcp>): string {
-  const { server } = mcp
-  return server ? `connected — ${server.name} ${server.version}` : 'not connected'
+  const { status, server } = mcp
+  const says = connectionSays(status)
+  if (status !== 'ready' || server === null) return says
+  return `${says} — ${server.name} ${server.version}`
 }
 
 /** The binary the desk was launched with, as the chassis reported it. */
