@@ -2033,8 +2033,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "    if (!keyResolved) return 'unresolved'" \
     '    if (false) return undefined as never'
   mutate web "the reset reports a deletion it did not verify" "$P" \
-    '    return window.localStorage.getItem(key) === null' \
-    '    return true'
+    "    return window.localStorage.getItem(key) === null ? 'cleared' : 'refused'" \
+    "    return 'cleared'"
   # The claim is "a write already on its way does not undo the reset". The
   # explicit `clearTimeout` cannot be the row that holds it: the reset also
   # changes state, so React runs the write effect's cleanup and cancels the
@@ -2240,8 +2240,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # 5. The live layout was cleared even where the deletion was refused, so
   # Admin said "the layout is unchanged" over panes that had visibly moved.
   mutate web "a refused deletion still moves the panes" "$P" \
-    "    if (!resetShellState(storageKey)) return 'refused'" \
-    '    const refusedDeletion = !resetShellState(storageKey)'
+    "    const record = resetShellState(storageKey)
+    if (record !== 'cleared') return record" \
+    '    const record = resetShellState(storageKey)
+    void record'
 
   # 6. The column's default is 360px and the drawer's has always been 320px.
   mutate web "an unconfigured desk's drawer moves to the column's width" "$E" \
@@ -6054,6 +6056,24 @@ export function assistantTransport(): Transport {
   mutate web "the reset action missing from the shell" "$U" \
     '          <ResetPanesItem />' \
     '          {null}'
+
+  # **Eight hex digits collide.** The key was a 64-character slug plus an
+  # FNV-1a hash, and the review found two roots differing only past the 81st
+  # character that produced one key: one project's reset then removed the
+  # other's record. Percent-encoding the whole path is injective, so distinct
+  # roots are distinct keys by construction; truncating it is exactly the class
+  # of key this replaced.
+  mutate web "the short hash restored (a truncated project key)" "$P" \
+    '    return encodeURIComponent(path)' \
+    '    return encodeURIComponent(path).slice(0, 24)'
+
+  # **Only a record this shell wrote.** The key is derived from a path the
+  # viewer never chose, on an origin this desk shares with whatever else has
+  # been served from it, so removing whatever is there would be a reset deleting
+  # somebody else's value under a name it merely computed.
+  mutate web "the reset removes whatever is under the key" "$P" \
+    "  if (raw !== null && readShellState(key) === undefined) return 'foreign'" \
+    '  void raw'
 fi
 
 restore

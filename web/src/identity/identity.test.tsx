@@ -267,6 +267,18 @@ describe('the user menu’s reset', () => {
     expect(window.localStorage.getItem(shellStateKey('default'))).toBe('{"v":1}')
   })
 
+  it('leaves a value this shell did not write alone, and says nothing was cleared', async () => {
+    // The key is derived from a path the viewer never chose, on an origin this
+    // desk shares with whatever else has been served from it.
+    window.localStorage.setItem(KEY, 'something else entirely')
+    renderHeader()
+    const menu = await openMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Reset panes' }))
+    expect(menu.textContent).toContain(RESET_SAYS.foreign)
+    expect(menu.textContent).not.toContain(RESET_SAYS.cleared)
+    expect(window.localStorage.getItem(KEY)).toBe('something else entirely')
+  })
+
   it('drops the verdict when the menu closes, rather than greeting the next reader with it', async () => {
     // A verdict from the last time the menu was open is not a verdict about
     // this one. It goes with the menu's own content, which is what makes the

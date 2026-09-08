@@ -526,13 +526,23 @@ the file existed. The record appears the first time a pane is moved by hand.
 jpack-desk:shell:v1:<projectKey>
 ```
 
-where `projectKey` is a slug of **the project root the chassis pins at
-startup** plus an FNV-1a hash of the whole of it. It is that root and not the
-runtime's `configPath`, because a project with no `jpack.json` reports no config
-path — so every configless project on one origin used to map to the literal
-`default` and share a single record, two directories with one layout between
-them. The literal `default` remains and now means exactly one thing: the file
-listing has not answered yet, and **nothing is written under it**.
+where `projectKey` is **the project root the chassis pins at startup**,
+percent-encoded whole. It is that root and not the runtime's `configPath`,
+because a project with no `jpack.json` reports no config path — so every
+configless project on one origin used to map to the literal `default` and share
+a single record, two directories with one layout between them. The literal
+`default` remains and now means exactly one thing: the file listing has not
+answered yet, and **nothing is written under it**.
+
+**The whole path, not a slug and a short hash.** It was a 64-character slug plus
+eight hex digits of FNV-1a, and eight hex digits collide: two roots differing
+only past the 81st character produced one key, so one project's reset removed
+the other's record. Percent-encoding is injective — `%` is itself escaped, so
+the encoding is prefix-free and decodable — which makes distinct roots distinct
+keys by construction rather than with probability, and it carries no `:`, so no
+root can be read as part of the key's own prefix. Records under the old keys are
+never read again, which is what this store does with every record it cannot
+use.
 
 One desk on one origin serves whichever project it was started against, and a
 layout chosen for a three-pack project is not the one chosen for a forty-pack
@@ -551,12 +561,16 @@ class of thing as the two settings links beside it, and about all three panes,
 so it is not one pane's own header control. It clears exactly that one key:
 `localStorage.clear()` would take the session token's neighbours and every other
 project's layout with it, and a reset that logged the viewer out of something
-would be one that lied about its scope. The reset runs inside the provider that
-owns the record, so it cancels a write already on its way, refuses to clear the
-provisional `default` key before the chassis has said which project this is, and
-reads the key back afterwards — and it reports **what happened**, in three
-sentences rather than one, because "cleared", "this browser refused" and
-"nothing was cleared, the project is not known yet" are three different facts.
+would be one that lied about its scope. **And only a record this shell wrote** —
+the key is derived from a path the viewer never chose, on an origin this desk
+shares with whatever else has been served from it, so a value that is not JSON,
+is not an object, or carries another shell version is left exactly where it is.
+The reset runs inside the provider that owns the record, so it cancels a write
+already on its way, refuses to clear the provisional `default` key before the
+chassis has said which project this is, and reads the key back afterwards — and
+it reports **what happened**, in four sentences rather than one, because
+"cleared", "this browser refused", "the project is not known yet" and "what is
+there is not ours" are four different facts.
 The menu stays open while it answers, since a menu that closed would take the
 answer with it.
 

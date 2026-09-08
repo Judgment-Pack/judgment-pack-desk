@@ -50,18 +50,20 @@ export const TOKEN_SENTENCE =
 export const PROVIDER_PHASE_NOTE = 'provider configured · sign-in arrives in phase B'
 
 /**
- * What a reset did, in three sentences rather than one.
+ * What a reset did, in four sentences rather than one.
  *
- * They are three different facts and a menu that reported all of them as
+ * They are four different facts and a menu that reported all of them as
  * "Cleared." would be stating one it never observed: the record may be gone,
- * this browser's storage may have refused the deletion, or the chassis may not
- * yet have said which project this desk is open on — in which case the key is
- * provisional and nothing is cleared under it.
+ * this browser's storage may have refused the deletion, the chassis may not yet
+ * have said which project this desk is open on — in which case the key is
+ * provisional and nothing is cleared under it — or what is stored under that
+ * key may be something this shell never wrote, which it leaves alone.
  */
 export const RESET_SAYS: Record<ResetOutcome, string> = {
   cleared: 'Cleared — the panes are back on their defaults.',
   refused: 'this browser did not clear the record — the layout is unchanged',
-  unresolved: 'nothing was cleared: this desk has not been told which project it is open on'
+  unresolved: 'nothing was cleared: this desk has not been told which project it is open on',
+  foreign: 'nothing was cleared: what is stored there is not a record this shell wrote'
 }
 
 /** Up to two initials, from whatever the name happens to be. */
