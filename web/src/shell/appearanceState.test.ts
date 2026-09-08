@@ -14,8 +14,7 @@ import {
   effectiveAppearance,
   readAppearance,
   resetAppearance,
-  writeAppearance,
-  type ChosenAppearance
+  writeAppearance
 } from './appearanceState'
 import { projectKey } from './paneState'
 
@@ -26,7 +25,6 @@ afterEach(() => {
 
 const ROOT = '/home/someone/a-project'
 const KEY = appearanceKey(projectKey(ROOT))
-const BOTH: ChosenAppearance = { theme: true, density: true }
 const FILE = { theme: 'light', density: 'compact' } as const
 
 describe('the appearance ladder', () => {
@@ -65,11 +63,11 @@ describe('the appearance record', () => {
   })
 
   it('writes only the members the viewer chose, over the ones they chose before', () => {
-    writeAppearance(KEY, { theme: 'dark' }, { theme: true, density: false })
+    writeAppearance(KEY, { theme: 'dark' })
     expect(JSON.parse(window.localStorage.getItem(KEY)!)).toEqual({ v: 1, theme: 'dark' })
     // A density chosen later must not take the theme with it, and must not
     // drop it either.
-    writeAppearance(KEY, { density: 'compact' }, { theme: false, density: true })
+    writeAppearance(KEY, { density: 'compact' })
     expect(JSON.parse(window.localStorage.getItem(KEY)!)).toEqual({
       v: 1,
       theme: 'dark',
@@ -78,7 +76,7 @@ describe('the appearance record', () => {
   })
 
   it('reads back what it wrote', () => {
-    writeAppearance(KEY, { theme: 'light', density: 'compact' }, BOTH)
+    writeAppearance(KEY, { theme: 'light', density: 'compact' })
     expect(readAppearance(KEY)).toEqual({ theme: 'light', density: 'compact' })
   })
 
@@ -145,7 +143,7 @@ describe('the appearance record', () => {
     // defect above. Nothing reaches this with both members empty — a chosen
     // member always carries a value — so the absence of a preference is the
     // absence of a record.
-    writeAppearance(KEY, {}, BOTH)
+    writeAppearance(KEY, {})
     expect(window.localStorage.getItem(KEY)).toBeNull()
   })
 
@@ -165,7 +163,7 @@ describe('the appearance record', () => {
       clear: () => {}
     })
     expect(readAppearance(KEY)).toBeUndefined()
-    expect(() => writeAppearance(KEY, { theme: 'dark' }, BOTH)).not.toThrow()
+    expect(() => writeAppearance(KEY, { theme: 'dark' })).not.toThrow()
     expect(resetAppearance(KEY)).toBe('refused')
   })
 })
@@ -174,7 +172,7 @@ describe('forgetting this browser’s appearance', () => {
   it('removes exactly one key', () => {
     // `localStorage.clear()` would take the session token and every other
     // project's record with it.
-    writeAppearance(KEY, { theme: 'dark' }, BOTH)
+    writeAppearance(KEY, { theme: 'dark' })
     window.localStorage.setItem('jpack-desk:appearance:v1:another', '{"v":1}')
     window.localStorage.setItem('jpack-desk-token', 'a token')
     expect(resetAppearance(KEY)).toBe('cleared')
@@ -186,7 +184,7 @@ describe('forgetting this browser’s appearance', () => {
   it('leaves the pane record where it is', () => {
     // Two records, two keys, two controls. A reset of one that took the other
     // would be a control lying about its scope.
-    writeAppearance(KEY, { theme: 'dark' }, BOTH)
+    writeAppearance(KEY, { theme: 'dark' })
     window.localStorage.setItem('jpack-desk:shell:v1:%2Fhome%2Fsomeone%2Fa-project', '{"v":1}')
     expect(resetAppearance(KEY)).toBe('cleared')
     expect(

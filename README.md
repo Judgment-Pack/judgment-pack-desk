@@ -625,6 +625,15 @@ member the viewer actually chose, for the reason the pane record gives — a
 silently outranking `jpack-desk.json` for ever. Clearing it says which of four
 things happened, on the panes' reset's own terms.
 
+**Nothing is applied that this desk has not established.** The record is
+unreadable until the chassis names the project, and `appearance` is the schema's
+until the file has been read — so until each of those answers, the root element
+is left exactly as it was found and the menu shows nothing as chosen, with the
+project-default line saying it has not been read yet. A member the viewer has
+actually picked needs neither answer: it is the top of the ladder, so it applies
+the moment it is picked. With a stored `dark` over a file that says `light`, one
+load applies `dark`, once, and neither `system` nor `light` at any point.
+
 **The record is this browser's, not this person's.** The identity slot has no
 real user yet; when it does, the record can move server-side and follow somebody
 between machines. Until then a second browser is a second preference, and the

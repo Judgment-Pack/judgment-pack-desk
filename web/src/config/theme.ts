@@ -38,11 +38,23 @@ export function applyTheme(theme: ThemeChoice): void {
 }
 
 /**
- * Keep the attribute in step with the configuration, and take it back off on
- * unmount — a desk that is not on the page should not still be theming it.
+ * Keep the attribute in step with the theme once there **is** one, and take it
+ * back off on unmount — a desk that is not on the page should not still be
+ * theming it.
+ *
+ * `undefined` is "not known yet", and it writes nothing and removes nothing.
+ * The desk's theme is the viewer's preference over the project file's default,
+ * and neither is readable at first paint: the record needs the root the chassis
+ * has not reported yet, and the default needs a file that has not been read. A
+ * caller that painted the schema default while it waited would apply `system`,
+ * then the file's value, then the stored one — three applications for one load,
+ * two of them wrong, and a visible flash the day a dark palette exists. An
+ * attribute this desk has not yet decided about is also not this desk's to
+ * clear, so nothing is removed either.
  */
-export function useAppliedTheme(theme: ThemeChoice): void {
+export function useAppliedTheme(theme: ThemeChoice | undefined): void {
   useEffect(() => {
+    if (theme === undefined) return
     applyTheme(theme)
     return () => applyTheme('system')
   }, [theme])

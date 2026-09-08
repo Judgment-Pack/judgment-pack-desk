@@ -100,14 +100,26 @@ export const THEME_SAYS =
 export const DENSITY_SAYS = 'Recorded, and read by nothing yet.'
 
 /**
+ * What this menu says before the project's file has been read.
+ *
+ * Not the schema's values under the project's name. `appearance` is filled in
+ * from the built-in defaults until the file answers, so naming them here would
+ * be this menu attributing a value to a file it has not seen — and a reader who
+ * pressed "Use the project's default" on the strength of it would get something
+ * else.
+ */
+export const PROJECT_DEFAULT_UNKNOWN = 'The project’s default has not been read yet.'
+
+/**
  * What a viewer who clears their preference gets back.
  *
  * The project file's value, or the schema's where the file says nothing — the
  * decoder has already made those one value. It is named rather than implied
  * because "use the default" is otherwise a control whose result the reader can
- * only discover by pressing it.
+ * only discover by pressing it, and it is named only once it is known.
  */
-export function projectDefaultSays(appearance: AppearanceConfig): string {
+export function projectDefaultSays(appearance: AppearanceConfig | undefined): string {
+  if (appearance === undefined) return PROJECT_DEFAULT_UNKNOWN
   return `Project default: ${appearance.theme}, ${appearance.density}`
 }
 
@@ -237,6 +249,13 @@ function ResetPanesItem() {
  * The value each group shows is the **effective** one — the preference where
  * there is one, the project's default where there is not — so a viewer who has
  * chosen nothing still sees what is actually in force.
+ *
+ * **And nothing is shown as chosen before this desk knows what is.** The record
+ * needs a root the chassis has not reported yet and the default needs a file
+ * that has not been read, so a menu opened in that moment would tick the
+ * schema's values as though somebody had settled on them. `undefined` on the
+ * group is no item checked, which is the honest picture of a desk still
+ * reading.
  *
  * **The menu stays open on a pick.** A `RadioItem` closes it on select, and
  * theme and density are two choices: a menu that closed after the first would

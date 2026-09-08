@@ -43,14 +43,12 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode
 } from 'react'
 import { createElement } from 'react'
 import {
   DENSITIES,
-  DESK_DEFAULTS,
   THEME_CHOICES,
   type AppearanceConfig,
   type Density,
@@ -157,31 +155,29 @@ function isDensity(value: unknown): value is Density {
   return DENSITIES.includes(value as Density)
 }
 
-/** Which members the viewer chose **this visit**. One bit each, never one for both. */
-export interface ChosenAppearance {
-  theme: boolean
-  density: boolean
-}
-
-export const NOTHING_CHOSEN: ChosenAppearance = { theme: false, density: false }
+/** A preference with nothing in it: the viewer has chosen neither member. */
+export const NOTHING_CHOSEN: AppearancePreference = {}
 
 /**
  * Write the members the viewer chose this visit, over the ones they chose
  * before, and invent none.
  *
+ * **What was chosen is exactly which members are present**, which is why the
+ * choice is sparse: "this viewer wants dark" and "this viewer wants dark and
+ * whatever the density happens to be today" are different statements and only
+ * the first is one anybody made. A `density` serialized because the *theme* was
+ * chosen would be a built-in value silently outranking `jpack-desk.json` for
+ * ever, since a record is preferred over the file on the next read.
+ *
  * The base is the record already on disk, read back through the same validator
- * so nothing unreadable is carried forward, and only the currently chosen
- * members override it. Starting from `{v}` instead would erase a theme chosen
- * on an earlier visit the moment a density was picked.
+ * so nothing unreadable is carried forward, and only the chosen members
+ * override it. Starting from `{v}` instead would erase a theme chosen on an
+ * earlier visit the moment a density was picked.
  */
-export function writeAppearance(
-  key: string,
-  preference: AppearancePreference,
-  chosen: ChosenAppearance
-): void {
+export function writeAppearance(key: string, chosen: AppearancePreference): void {
   const kept = readAppearance(key) ?? {}
-  const theme = chosen.theme ? preference.theme : kept.theme
-  const density = chosen.density ? preference.density : kept.density
+  const theme = chosen.theme ?? kept.theme
+  const density = chosen.density ?? kept.density
   // **A record with neither member is not a record this writer produces**, and
   // its own reader would call one foreign. Nothing reaches here with both
   // undefined — a chosen member always carries a value — but a writer able to
@@ -239,24 +235,63 @@ export function resetAppearance(key: string): RecordReset {
  *
  * The whole rule, in one pure function, so that every consumer is reading the
  * same answer and a test can drive the ladder without a browser.
+ *
+ * **A default that is not known yet is not a rung**, and each member answers
+ * for itself. `undefined` out of here is "this desk cannot say", which is a
+ * third state and the first one every load is in: the preference is unreadable
+ * until the chassis names the project, and the default is the schema's until
+ * the file has been read. What comes back is never provisional — it is the
+ * viewer's own answer, or the file's, or nothing.
  */
 export function effectiveAppearance(
   preference: AppearancePreference | undefined,
-  projectDefault: AppearanceConfig
-): AppearanceConfig {
+  projectDefault: AppearanceConfig | undefined
+): { theme: ThemeChoice | undefined; density: Density | undefined } {
   return {
-    theme: preference?.theme ?? projectDefault.theme,
-    density: preference?.density ?? projectDefault.density
+    theme: preference?.theme ?? projectDefault?.theme,
+    density: preference?.density ?? projectDefault?.density
   }
 }
 
-export interface AppearanceApi extends AppearanceConfig {
+/**
+ * A choice, and the key it was made under.
+ *
+ * The stamp is what makes a preference belong to one project rather than to one
+ * visit. It carries the resolution as well as the key, so a root that happens
+ * to encode to the provisional key's own spelling cannot be read as "no project
+ * yet".
+ */
+interface Choice {
+  key: string
+  resolved: boolean
+  value: AppearancePreference
+}
+
+/** A stamped choice's value, where the stamp still applies, and nothing where it does not. */
+function applying(choice: Choice, key: string): AppearancePreference {
+  return choice.key === key || !choice.resolved ? choice.value : NOTHING_CHOSEN
+}
+
+export interface AppearanceApi {
   /**
-   * The project file's value — or the schema's, where the file says nothing.
-   * What "Use the project's default" returns to, and what the menu names so
-   * that clearing is not a leap in the dark.
+   * The theme and the density actually in force — or `undefined` for each while
+   * this desk does not yet know.
+   *
+   * **Not knowing is a state, and it is the first one.** The record needs the
+   * root the chassis has not reported yet and the default needs a file that has
+   * not been read, so a value here before both have answered would be the
+   * schema's, offered as the viewer's. The menu shows nothing as chosen while
+   * it is undefined, and nothing is written onto the root element.
    */
-  projectDefault: AppearanceConfig
+  theme: ThemeChoice | undefined
+  density: Density | undefined
+  /**
+   * The project file's value — or the schema's, where the file says nothing;
+   * `undefined` until the file has answered at all. What "Use the project's
+   * default" returns to, and what the menu names so that clearing is not a leap
+   * in the dark — which means naming it only once it is known.
+   */
+  projectDefault: AppearanceConfig | undefined
   /** What this browser holds. Empty where the viewer has chosen nothing. */
   preference: AppearancePreference
   setTheme: (theme: ThemeChoice) => void
@@ -275,8 +310,11 @@ export interface AppearanceApi extends AppearanceConfig {
  * reason `paneState` and `DeskConfigProvider` each carry one.
  */
 const DEFAULT_API: AppearanceApi = {
-  ...DESK_DEFAULTS.appearance,
-  projectDefault: DESK_DEFAULTS.appearance,
+  // Nothing is known outside a provider, which is the truthful default: a
+  // consumer with none is a consumer that has been told nothing.
+  theme: undefined,
+  density: undefined,
+  projectDefault: undefined,
   preference: {},
   setTheme: () => {},
   setDensity: () => {},
@@ -294,6 +332,7 @@ export function useAppearance(): AppearanceApi {
 export function AppearanceProvider({
   projectIdentity,
   projectDefault,
+  projectDefaultKnown,
   children
 }: {
   /**
@@ -305,10 +344,63 @@ export function AppearanceProvider({
   projectIdentity?: string
   /** `appearance` as the decoder produced it: the file's value, or the schema's. */
   projectDefault: AppearanceConfig
+  /**
+   * Whether the project's configuration has actually been read.
+   *
+   * `projectDefault` is filled in from the schema until it has, and the two are
+   * indistinguishable from here — which is the whole of this flag. A provider
+   * that could not tell them apart applied the schema's `system` while it
+   * waited, then the file's value, then the stored preference: three
+   * applications for one load and two of them wrong.
+   */
+  projectDefaultKnown: boolean
   children: ReactNode
 }) {
   const keyResolved = identityIsResolved(projectIdentity)
   const storageKey = appearanceKey(projectKey(projectIdentity))
+
+  /**
+   * What the viewer has chosen this visit, and the key they chose it under.
+   *
+   * **This is the only state here**, and the record is not part of it. Holding
+   * the stored record in state meant re-reading it in an effect whenever the
+   * key changed, and an effect runs after a render: the moment the chassis
+   * named the project, the provider rendered once with the *old* preference and
+   * the *new* key — long enough to apply the project's default over a viewer
+   * whose stored answer was something else, and then apply the stored one a
+   * beat later. Two applications for one load, the second undoing the first.
+   * The record is read during render instead, from whichever key is current, so
+   * there is no moment at which the two disagree.
+   *
+   * **And a choice is stamped with the key it was made under**, which is what
+   * makes it belong to one project. It was visit-wide, and the review found the
+   * leak: one tab whose chassis reconnects reports a different root, and a
+   * member chosen under root A was carried through the re-seed and written into
+   * root B's record — permanently, over a record B may never have had. A stamp
+   * that does not match simply stops applying, in the same render, with nothing
+   * to sequence and no effect to get wrong.
+   *
+   * The resolution is stamped beside the key rather than inferred from it, so a
+   * root that happens to encode to the provisional key's own spelling cannot be
+   * read as "no project yet".
+   */
+  const [choice, setChoice] = useState<Choice>(() => ({
+    key: storageKey,
+    resolved: keyResolved,
+    value: {}
+  }))
+
+  /**
+   * The choice, where it still applies.
+   *
+   * Its own key, or **any** key if it was made under the provisional one: that
+   * key names no project — nothing is read under it and nothing is written
+   * under it — so a viewer who picked dark in the moment before the listing
+   * landed picked it for whichever project the listing then names. Every other
+   * mismatch is a different project, and nothing chosen in one is offered to
+   * another.
+   */
+  const chosen = applying(choice, storageKey)
 
   /**
    * The stored record, or nothing at all while the key is provisional.
@@ -317,67 +409,18 @@ export function AppearanceProvider({
    * project, `storageKey` is the literal `default` — a key some earlier build
    * may have written to — and a preference that belongs to a project this may
    * not be is not one to apply.
+   *
+   * Read on every render rather than seeded once: it is one `getItem` and one
+   * short `JSON.parse`, and it is what makes the key and the value it names
+   * incapable of disagreeing.
    */
-  const storedForKey = () => (keyResolved ? readAppearance(storageKey) : undefined)
-  const [preference, setPreference] = useState<AppearancePreference>(() => storedForKey() ?? {})
+  const stored = keyResolved ? readAppearance(storageKey) : undefined
 
-  /**
-   * Which members the viewer chose **for this project**.
-   *
-   * A ref rather than state because re-seeding must not itself be a render, and
-   * because marking a choice belongs to the handler that took it.
-   *
-   * **A choice belongs to the project it was made in**, and it was visit-wide
-   * until the review found the leak. One tab whose chassis reconnects reports a
-   * different root, and a member still marked chosen from root A survived the
-   * re-seed and was then written into root B's record — one project's
-   * preference in another project's key, permanently, over a record B may never
-   * have had. What is chosen under one root is now never written under another.
-   */
-  const chosen = useRef<ChosenAppearance>({ ...NOTHING_CHOSEN })
-
-  /**
-   * The seed is re-taken when the key changes, because the key **is not known
-   * at first paint**: the chassis' file listing answers afterwards, and the
-   * record is unreadable until it does.
-   *
-   * **What carries across that change is decided by what the old key was.**
-   * The provisional key is not a project — nothing can be read under it and
-   * nothing is written under it — so a viewer who picked dark in the moment
-   * before the listing landed picked it for whichever project the listing then
-   * names, and that choice is carried and written under the real key rather
-   * than dropped. A key that *was* a project is the other case entirely: the
-   * new root is a different project, so every choice is forgotten and both
-   * members are re-seeded from the new key's own record, or from that project's
-   * default where it has none.
-   *
-   * The resolution is held beside the key rather than inferred from it, so that
-   * a root which happens to encode to the provisional key's own spelling cannot
-   * be read as "no project yet".
-   */
-  const seededFrom = useRef({ key: storageKey, resolved: keyResolved })
-  useEffect(() => {
-    const previous = seededFrom.current
-    if (previous.key === storageKey && previous.resolved === keyResolved) return
-    seededFrom.current = { key: storageKey, resolved: keyResolved }
-    // Carried only out of the provisional key. Assigned before the early
-    // return below, so that leaving a project always forgets its choices —
-    // including the case where the viewer had chosen both members, which is
-    // exactly the case that used to return before it cleared anything.
-    const carried = previous.resolved ? { ...NOTHING_CHOSEN } : { ...chosen.current }
-    chosen.current = { ...carried }
-    if (carried.theme && carried.density) return
-    setPreference((previous) => {
-      const seeded = storedForKey() ?? {}
-      return {
-        theme: carried.theme ? previous.theme : seeded.theme,
-        density: carried.density ? previous.density : seeded.density
-      }
-    })
-    // `storedForKey` reads the two values in the dependency list and nothing
-    // else, which is why it is not one itself.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storageKey, keyResolved])
+  /** This browser's answer: what was chosen this visit, over what was stored. */
+  const preference: AppearancePreference = {
+    theme: chosen.theme ?? stored?.theme,
+    density: chosen.density ?? stored?.density
+  }
 
   /**
    * **Only a choice is written, and never under a provisional key.**
@@ -390,26 +433,45 @@ export function AppearanceProvider({
    * There is no debounce, unlike the pane record: a theme is picked, not
    * dragged, so there is no burst of intermediate values to collapse and no
    * write in flight for the reset to cancel.
+   *
+   * The re-stamp is the second half of the carry-forward: a choice made before
+   * the listing landed has now been written to a real project's record, and it
+   * belongs to that project and to no other one this tab is later pointed at.
+   * It changes the stamp and never the value, so it costs a render and no
+   * paint.
    */
-  // It is the re-seed above that makes this safe across a root change: effects
-  // run in the order they are declared, so by the time this one sees a new key
-  // the choices made under the old one have already been forgotten and there is
-  // nothing for it to write.
   useEffect(() => {
     if (!keyResolved) return
-    const chose = chosen.current
-    if (!chose.theme && !chose.density) return
-    writeAppearance(storageKey, preference, chose)
-  }, [storageKey, keyResolved, preference])
+    if (chosen.theme === undefined && chosen.density === undefined) return
+    writeAppearance(storageKey, chosen)
+    if (choice.key !== storageKey || !choice.resolved) {
+      setChoice({ key: storageKey, resolved: true, value: chosen })
+    }
+  }, [storageKey, keyResolved, chosen, choice.key, choice.resolved])
 
-  const setTheme = useCallback((theme: ThemeChoice) => {
-    chosen.current.theme = true
-    setPreference((previous) => ({ ...previous, theme }))
-  }, [])
-  const setDensity = useCallback((density: Density) => {
-    chosen.current.density = true
-    setPreference((previous) => ({ ...previous, density }))
-  }, [])
+  // Each setter records the member and the key it was chosen under, and leaves
+  // the other member alone: a `density` stored because the *theme* was picked
+  // would be a value nobody chose, outranking the file for ever.
+  const setTheme = useCallback(
+    (theme: ThemeChoice) => {
+      setChoice((previous) => ({
+        key: storageKey,
+        resolved: keyResolved,
+        value: { ...applying(previous, storageKey), theme }
+      }))
+    },
+    [storageKey, keyResolved]
+  )
+  const setDensity = useCallback(
+    (density: Density) => {
+      setChoice((previous) => ({
+        key: storageKey,
+        resolved: keyResolved,
+        value: { ...applying(previous, storageKey), density }
+      }))
+    },
+    [storageKey, keyResolved]
+  )
 
   /**
    * **Nothing changes unless the record actually went.** Clearing the live
@@ -423,27 +485,50 @@ export function AppearanceProvider({
     if (!keyResolved) return 'unresolved'
     const record = resetAppearance(storageKey)
     if (record !== 'cleared') return record
-    chosen.current = { ...NOTHING_CHOSEN }
-    setPreference({})
+    setChoice({ key: storageKey, resolved: true, value: {} })
     return 'cleared'
   }, [keyResolved, storageKey])
 
+  /**
+   * **The default is a rung only once it is the file's, and only once this
+   * browser's own answer has been read.**
+   *
+   * Both halves are the same rule — apply nothing this desk has not
+   * established. `projectDefault` is the schema standing in until the file
+   * answers, so applying it before then is applying a value nobody wrote. And
+   * the record is unreadable until the chassis names the project, so falling
+   * back to the *file's* value before then would paint `light` over a viewer
+   * whose stored answer is `dark`. With a stored `dark` and a file that says
+   * `light`, this applies `dark` once and neither `system` nor `light` ever.
+   *
+   * A member the viewer has actually chosen needs neither: it is the top of the
+   * ladder and nothing below it can change the answer, so it applies the moment
+   * it is picked — including in the moment before the listing lands, which is
+   * the one case where the choice is honoured on screen and stored later.
+   */
+  const knownDefault = keyResolved && projectDefaultKnown ? projectDefault : undefined
   // Destructured rather than held as an object: `effectiveAppearance` returns a
   // fresh one on every render, so the memo below depends on the two values it
   // actually carries.
-  const { theme, density } = effectiveAppearance(preference, projectDefault)
+  const { theme, density } = effectiveAppearance(preference, knownDefault)
 
   // **The one configuration value that is applied rather than displayed**, and
   // it is applied here because this is where the ladder is resolved. It used to
   // be applied from the file, in `DeskConfigProvider`, which is a layer that
-  // cannot see the viewer's own choice.
+  // cannot see the viewer's own choice. `undefined` writes nothing at all.
   useAppliedTheme(theme)
+
+  // Named only once the file has answered. The flag is the *file's* alone —
+  // this line is about the project and not about what is in force — so it is
+  // shown on a desk whose root is still unknown, and the effective value above
+  // is not.
+  const namedDefault = projectDefaultKnown ? projectDefault : undefined
 
   const value = useMemo<AppearanceApi>(
     () => ({
       theme,
       density,
-      projectDefault,
+      projectDefault: namedDefault,
       preference,
       setTheme,
       setDensity,
@@ -454,7 +539,7 @@ export function AppearanceProvider({
     [
       theme,
       density,
-      projectDefault,
+      namedDefault,
       preference,
       setTheme,
       setDensity,

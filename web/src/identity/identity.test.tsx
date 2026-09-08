@@ -104,6 +104,7 @@ function renderHeaderIn(
               <AppearanceProvider
                 projectIdentity={projectIdentity ?? undefined}
                 projectDefault={value.config.appearance}
+                projectDefaultKnown
               >
               <IdentityProvider>
                 <HeaderBar

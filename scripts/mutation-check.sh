@@ -6124,20 +6124,20 @@ export function assistantTransport(): Transport {
   # the file over the preference is the defect this whole chunk is about — one
   # person's dark, for everybody who ever cloned it.
   mutate web "the preference does not override the project default" "$APS" \
-    '    theme: preference?.theme ?? projectDefault.theme,
-    density: preference?.density ?? projectDefault.density' \
-    '    theme: projectDefault.theme,
-    density: projectDefault.density'
+    '    theme: preference?.theme ?? projectDefault?.theme,
+    density: preference?.density ?? projectDefault?.density' \
+    '    theme: projectDefault?.theme,
+    density: projectDefault?.density'
 
   # **And the file is still the default.** The other half of the same ladder:
   # a viewer who has chosen nothing gets what the project asked for, not what
   # the schema falls back to — otherwise `appearance` is a member that is
   # decoded, validated, shown on no page and honoured by nothing.
   mutate web "the project default is not applied when no preference exists" "$APS" \
-    '    theme: preference?.theme ?? projectDefault.theme,
-    density: preference?.density ?? projectDefault.density' \
-    '    theme: preference?.theme ?? DESK_DEFAULTS.appearance.theme,
-    density: preference?.density ?? DESK_DEFAULTS.appearance.density'
+    '    theme: preference?.theme ?? projectDefault?.theme,
+    density: preference?.density ?? projectDefault?.density' \
+    "    theme: preference?.theme ?? 'system',
+    density: preference?.density ?? 'comfortable'"
 
   # **A value outside the decoder's unions is absent, never applied.** The
   # record is a string in a browser's own storage, editable by hand and by
@@ -6165,22 +6165,30 @@ export function assistantTransport(): Transport {
   # key resolves — what the gate stops is the storing, not the choosing.
   mutate web "an appearance is written under the provisional key" "$APS" \
     '    if (!keyResolved) return
-    const chose = chosen.current
-    if (!chose.theme && !chose.density) return' \
-    '    const chose = chosen.current
-    if (!chose.theme && !chose.density) return'
+    if (chosen.theme === undefined && chosen.density === undefined) return' \
+    '    if (chosen.theme === undefined && chosen.density === undefined) return'
 
   # ---- Codex round 1 -------------------------------------------------------
 
-  # **A choice belongs to the project it was made in.** `chosen` was visit-wide:
-  # one tab whose chassis reconnects reports a different root, the re-seed kept
-  # the member marked chosen under root A, and the write effect then put A's
-  # value into B's record — one project's preference in another project's key,
-  # permanently, over a record B may never have had. Only the *provisional* key
-  # carries forward, because it names no project.
+  # **A choice belongs to the project it was made in.** It was visit-wide: one
+  # tab whose chassis reconnects reports a different root, the member chosen
+  # under root A survived, and it was then written into root B's record — one
+  # project's preference in another project's key, permanently, over a record B
+  # may never have had. Only a choice made under the *provisional* key carries
+  # forward, because that key names no project.
   mutate web "a choice survives the chassis naming a different project" "$APS" \
-    '    const carried = previous.resolved ? { ...NOTHING_CHOSEN } : { ...chosen.current }' \
-    '    const carried = { ...chosen.current }'
+    '  return choice.key === key || !choice.resolved ? choice.value : NOTHING_CHOSEN' \
+    '  return choice.value'
+
+  # **And the write is what the stamp protects.** The other half, broken where
+  # the record is actually put down rather than where it is selected: a re-stamp
+  # that fired for a key it did not belong to would adopt one project's choice
+  # into the next project this tab is pointed at.
+  mutate web "a choice is re-stamped onto whatever key is current" "$APS" \
+    '    if (choice.key !== storageKey || !choice.resolved) {
+      setChoice({ key: storageKey, resolved: true, value: chosen })
+    }' \
+    '    setChoice({ key: storageKey, resolved: true, value: chosen })'
 
   # **The whole path means the bytes the chassis reported.** The key trimmed
   # before it encoded, and a POSIX filesystem permits a trailing space: two
@@ -6204,6 +6212,16 @@ export function assistantTransport(): Transport {
   }
   return '"'"'theme'"'"' in record || '"'"'density'"'"' in record' \
     '  return true'
+
+  # **Nothing this desk has not established is applied.** The record is
+  # unreadable until the chassis names the project and the default is the
+  # schema's until the file has been read, so a provider that fell back to
+  # `projectDefault` before both had answered applied `system`, then the file's
+  # value, then the stored preference — three applications for one load, two of
+  # them values nobody chose, and a visible flash the day a dark palette exists.
+  mutate web "the provisional application restored (a default nobody read)" "$APS" \
+    '  const knownDefault = keyResolved && projectDefaultKnown ? projectDefault : undefined' \
+    '  const knownDefault = projectDefault'
 
   # **A removed control's write path is removed with it**, exactly as the Panes
   # card's was. The Appearance card is gone from Admin — a person's theme is not

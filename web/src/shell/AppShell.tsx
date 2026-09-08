@@ -29,7 +29,7 @@ import {
   type CSSProperties,
   type ReactNode
 } from 'react'
-import { useEffectiveConfig } from '../config/DeskConfigProvider'
+import { useDeskConfigRead, useEffectiveConfig } from '../config/DeskConfigProvider'
 import { useFileListing } from '../files/queries'
 import { BottomPane } from './BottomPane'
 import { HeaderBar } from './HeaderBar'
@@ -63,6 +63,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const railIsDrawer = useMediaQuery(RAIL_DRAWER_BELOW)
   const inspectorIsDrawer = useMediaQuery(INSPECTOR_DRAWER_BELOW)
   const { config } = useEffectiveConfig()
+  // Whether `config.appearance` is the file's or the schema standing in for it.
+  // The two are indistinguishable in the value, and the appearance ladder must
+  // not apply the second as though it were the first.
+  const configRead = useDeskConfigRead()
   return (
     <ShellStateProvider
       projectIdentity={listing.data?.root}
@@ -76,6 +80,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <AppearanceProvider
         projectIdentity={listing.data?.root}
         projectDefault={config.appearance}
+        projectDefaultKnown={configRead}
       >
         <Tooltip.Provider delayDuration={300}>
           <ShellFrame railIsDrawer={railIsDrawer} inspectorIsDrawer={inspectorIsDrawer}>
