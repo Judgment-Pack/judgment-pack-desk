@@ -1574,6 +1574,17 @@ and the decoded value, labelled as decoded, where it did not. And the **fields**
 with a **Save** on the cards that have a write path and nothing where they do
 not.
 
+**Nothing on the page is a box.** Hierarchy is type, spacing and hairlines: one
+rule between groups, one above each member, one type scale, and every title in
+sentence case — a frame is drawn only around an object, which on Admin is the
+code block behind a Content disclosure and an alert. **One primary button per
+section, and it is the Save that writes the form**; the default-project
+nomination sits on the row it changes as a secondary, and a Reload inside a
+stale panel keeps its own because an alert has one action. Three tests hold it
+— the sheets carry no `background` and no four-sided `border` on a container,
+`styles.css` resets `fieldset`, and every button under the article comes out
+carrying `Button`'s class.
+
 **Panes is gone from Admin, and the reset went to the shell.** Its three pane
 dimensions were a settings page editing the frame it is drawn in; its reset
 cleared a record in this browser's own storage, which is a per-viewer
