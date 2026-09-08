@@ -1486,9 +1486,9 @@ each group below names its own, and naming a file twice is what the grouping
 exists to stop. The line is what the desk is *running*, which is the one thing
 no card is about.
 
-**Below it are two groups, one per file, and each states its file once.** Three
-cards writing three members of one file printed that file's path three times and
-its read status three times, which reads as three files.
+**Below it are two groups, one per file, and each states its file once.** The
+cards that write one file printed that file's path once each and its read status
+once each, which read as that many separate files.
 
 | Group | Header states | Members |
 |---|---|---|
@@ -1537,14 +1537,17 @@ cleared a record in this browser's own storage, which is a per-viewer
 convenience rather than a deployment's configuration. `Reset panes` is now in
 the user menu — see [Shell](#shell) — and the `panes` member is still in the
 schema, still decoded, still validated and still applied. The write path left
-with the form: `CARD_POINTERS` names the three members a card may write, and a
-test drives every Save on the page and compares what came off the wire to it.
-It is a declaration and **not a type constraint**, deliberately: narrowing the
-save hook to it would make routing a Save through `/panes` a compile error, and
-the only mutation left would break the expectation the test compares against —
-a comparison against itself, which proves nothing about the write path. The
-guarantee is behavioural, and the row that holds it points a real Admin Save at
-`/panes`.
+with the form: `CARD_POINTERS` names the **2** members a card may write —
+`/organization` and `/storage` — and a test drives every Save on the page and
+compares what came off the wire to it. Appearance left the same way and for its
+own reason; see [Shell](#shell). That count is read out of the source by a test,
+so this sentence cannot drift from the list the way it did when the list was
+three. It is a declaration and **not a type constraint**, deliberately:
+narrowing the save hook to it would make routing a Save through `/panes` a
+compile error, and the only mutation left would break the expectation the test
+compares against — a comparison against itself, which proves nothing about the
+write path. The guarantee is behavioural, and the rows that hold it point a real
+Admin Save at `/panes` and at `/appearance`.
 
 **`storage.packs.kind` is a value, not a control.** The union has one member, so
 a `Select` there would look like a choice, read like one to every enumeration of
