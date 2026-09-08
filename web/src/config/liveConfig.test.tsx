@@ -18,6 +18,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { IdentityProvider } from '../identity/IdentityProvider'
 import { McpContext } from '../mcp/McpProvider'
 import { AppShell } from '../shell/AppShell'
+import { appearanceKey } from '../shell/appearanceState'
+import { projectKey } from '../shell/paneState'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { DeskConfigProvider } from './DeskConfigProvider'
 
@@ -336,6 +338,66 @@ describe('the desk reading jpack-desk.json', () => {
     // `prefers-color-scheme` answers instead.
     await screen.findByRole('link', { name: 'Acme Co.' })
     expect(document.documentElement.hasAttribute('data-theme')).toBe(false)
+  })
+
+  /**
+   * **The file's `appearance` is the default, and this browser's preference
+   * beats it.**
+   *
+   * Theme and density are a person's, not an organization's: the card that
+   * wrote them into a file in the project's repository is gone, and one
+   * viewer's dark is no longer everybody's. This drives the ladder through the
+   * shell that resolves it — the record is keyed on the root the chassis
+   * reported, exactly as the pane record is.
+   */
+  it('lets a preference in this browser beat the theme the file asks for', async () => {
+    window.localStorage.setItem(
+      appearanceKey(projectKey(PROJECT_ROOT)),
+      JSON.stringify({ v: 1, theme: 'dark' })
+    )
+    serveConfig({
+      ...LIVE_ANSWER,
+      content: JSON.stringify({ deskConfigVersion: 1, appearance: { theme: 'light', density: 'comfortable' } })
+    })
+    renderDesk()
+    await waitFor(() => expect(document.documentElement.getAttribute('data-theme')).toBe('dark'))
+    // And the file is not rewritten to say so: a preference is not a file, and
+    // nothing here writes one.
+    expect(
+      Object.keys(window.localStorage).filter((key) => key.startsWith('jpack-desk:appearance:'))
+    ).toEqual([appearanceKey(projectKey(PROJECT_ROOT))])
+  })
+
+  it('applies the project’s default again once the preference is gone', async () => {
+    const key = appearanceKey(projectKey(PROJECT_ROOT))
+    window.localStorage.setItem(key, JSON.stringify({ v: 1, theme: 'dark' }))
+    serveConfig({
+      ...LIVE_ANSWER,
+      content: JSON.stringify({ deskConfigVersion: 1, appearance: { theme: 'light', density: 'comfortable' } })
+    })
+    const chosen = renderDesk()
+    await waitFor(() => expect(document.documentElement.getAttribute('data-theme')).toBe('dark'))
+    chosen.unmount()
+
+    window.localStorage.removeItem(key)
+    renderDesk()
+    await waitFor(() => expect(document.documentElement.getAttribute('data-theme')).toBe('light'))
+  })
+
+  it('ignores a stored value the decoder’s unions do not admit', async () => {
+    // Never applied, and the project's default answers as though nothing were
+    // stored at all.
+    window.localStorage.setItem(
+      appearanceKey(projectKey(PROJECT_ROOT)),
+      JSON.stringify({ v: 1, theme: 'midnight' })
+    )
+    serveConfig({
+      ...LIVE_ANSWER,
+      content: JSON.stringify({ deskConfigVersion: 1, appearance: { theme: 'light', density: 'comfortable' } })
+    })
+    renderDesk()
+    await waitFor(() => expect(document.documentElement.getAttribute('data-theme')).toBe('light'))
+    expect(document.documentElement.getAttribute('data-theme')).not.toBe('midnight')
   })
 
   it('says the file was refused somewhere other than Admin', async () => {

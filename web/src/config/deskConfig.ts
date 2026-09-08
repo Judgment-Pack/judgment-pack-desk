@@ -21,8 +21,19 @@
 
 export const DESK_CONFIG_VERSION = 1
 
-export type ThemeChoice = 'system' | 'light' | 'dark'
-export type Density = 'comfortable' | 'compact'
+/**
+ * The appearance unions, as arrays, because three things read them.
+ *
+ * The decoder refuses anything else by name; the user menu offers exactly
+ * these; and the per-browser preference store treats a stored value outside
+ * them as absent. Written once so those three cannot disagree — the shape
+ * `ASSISTANT_ENGINES` and `ASSISTANT_THINKING` already use one layer down.
+ */
+export const THEME_CHOICES = ['system', 'light', 'dark'] as const
+export type ThemeChoice = (typeof THEME_CHOICES)[number]
+
+export const DENSITIES = ['comfortable', 'compact'] as const
+export type Density = (typeof DENSITIES)[number]
 
 export interface OrganizationConfig {
   name: string | null
@@ -575,10 +586,10 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
     if (appearance) {
       values.appearance = {
         theme:
-          oneOf(appearance.theme, 'appearance.theme', ['system', 'light', 'dark'], problems) ??
+          oneOf(appearance.theme, 'appearance.theme', THEME_CHOICES, problems) ??
           DESK_DEFAULTS.appearance.theme,
         density:
-          oneOf(appearance.density, 'appearance.density', ['comfortable', 'compact'], problems) ??
+          oneOf(appearance.density, 'appearance.density', DENSITIES, problems) ??
           DESK_DEFAULTS.appearance.density
       }
     }

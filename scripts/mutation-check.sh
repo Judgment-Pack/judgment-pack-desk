@@ -1511,7 +1511,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   N=web/src/shell/AppShell.tsx
   X=web/src/shell/CreatePackDialog.tsx
   Y=web/src/mcp/capabilities.ts
-  W=web/src/config/DeskConfigProvider.tsx
+  APS=web/src/shell/appearanceState.ts
   V=web/src/routes/AdminView.tsx
   SC=web/src/admin/SourceCard.tsx
   Q=web/src/shell/useHashTarget.ts
@@ -1700,9 +1700,14 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the control states a session verdict it never checked" "$U" \
     "  const name = provider === null ? displayName : (provider.label ?? provider.issuerHost)" \
     "  const name = provider === null ? displayName : (provider.label ?? 'signed out')"
-  mutate web "the configured theme is decoded and never applied" "$W" \
-    '  useAppliedTheme(value.config.appearance.theme)' \
-    '  void value.config.appearance.theme'
+  # **The theme is applied where the ladder is resolved**, which is no longer
+  # `DeskConfigProvider`: the file's `appearance` is the default and the
+  # viewer's own preference beats it, and that layer cannot see one. The row
+  # moved with the code rather than being retired — it is the same claim, that
+  # a decoded theme reaches the root element and is not merely read.
+  mutate web "the configured theme is decoded and never applied" "$APS" \
+    '  useAppliedTheme(theme)' \
+    '  void theme'
   # **Retired, with its reason: the control it broke no longer exists.** It was
   # "the copy button reports a copy it did not make", on the paste blocks every
   # Admin section carried. The card pattern removed them — a Location line says
@@ -2018,9 +2023,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # 5. The key came from the runtime's `configPath`, which a project with no
   # `jpack.json` does not have — so every configless project on one origin
   # shared the single literal `default` record.
+  #
+  # The needle carries the opening tag because two providers are now handed the
+  # same identity — the layout's and the appearance's — and a needle matching
+  # both is one that silently mutates whichever comes first.
   mutate web "the layout key is not the project the chassis pinned" "$N" \
-    '      projectIdentity={listing.data?.root}' \
-    '      projectIdentity={undefined}'
+    '    <ShellStateProvider
+      projectIdentity={listing.data?.root}' \
+    '    <ShellStateProvider
+      projectIdentity={undefined}'
   mutate web "a layout is written under the provisional key" "$P" \
     '    if (!keyResolved) return
     const timer = setTimeout(() => {' \

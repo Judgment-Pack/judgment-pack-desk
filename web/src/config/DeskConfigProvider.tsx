@@ -10,7 +10,6 @@
 import { createContext, useContext, type ReactNode } from 'react'
 import { effectiveConfig, type EffectiveConfig } from './deskConfig'
 import { useDeskConfig } from './queries'
-import { useAppliedTheme } from './theme'
 
 const DEFAULTS: EffectiveConfig = effectiveConfig(undefined)
 
@@ -23,10 +22,11 @@ export function useEffectiveConfig(): EffectiveConfig {
 export function DeskConfigProvider({ children }: { children: ReactNode }) {
   const { data } = useDeskConfig()
   const value = data ?? DEFAULTS
-  // The one configuration key that is applied rather than displayed. It is
-  // applied here, where the file arrives, so there is a single place that
-  // turns a decoded value into a change on the page.
-  useAppliedTheme(value.config.appearance.theme)
+  // **The theme is no longer applied here**, and the move is the point.
+  // `appearance` in the project file is now the *default*, not the answer: what
+  // this desk paints is the viewer's own preference where they have one, and
+  // this layer cannot see that. `AppearanceProvider` resolves the ladder and
+  // applies the result, and it is still exactly one place.
   return <DeskConfigContext.Provider value={value}>{children}</DeskConfigContext.Provider>
 }
 
