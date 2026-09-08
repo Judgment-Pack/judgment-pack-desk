@@ -6180,15 +6180,15 @@ export function assistantTransport(): Transport {
     '  return choice.key === key || !choice.resolved ? choice.value : NOTHING_CHOSEN' \
     '  return choice.value'
 
-  # **And the write is what the stamp protects.** The other half, broken where
-  # the record is actually put down rather than where it is selected: a re-stamp
-  # that fired for a key it did not belong to would adopt one project's choice
-  # into the next project this tab is pointed at.
-  mutate web "a choice is re-stamped onto whatever key is current" "$APS" \
-    '    if (choice.key !== storageKey || !choice.resolved) {
-      setChoice({ key: storageKey, resolved: true, value: chosen })
-    }' \
-    '    setChoice({ key: storageKey, resolved: true, value: chosen })'
+  # **Retired, unrun-and-then-run: `a choice is re-stamped onto whatever key is
+  # current`.** It removed the condition on the re-stamp, and the suite stayed
+  # green — correctly, because that condition is not a safeguard. The write
+  # effect has already returned unless the key is resolved and something was
+  # chosen under a stamp that still applies, so an unconditional re-stamp can
+  # only ever write back the stamp that is already there. What the condition
+  # saves is a render, not a rule, and the code says so where it is. A row that
+  # cannot discriminate is named here rather than dropped, because its absence
+  # would otherwise read as an oversight.
 
   # **The whole path means the bytes the chassis reported.** The key trimmed
   # before it encoded, and a POSIX filesystem permits a trailing space: two

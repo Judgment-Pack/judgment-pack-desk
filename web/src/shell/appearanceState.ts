@@ -439,6 +439,13 @@ export function AppearanceProvider({
    * belongs to that project and to no other one this tab is later pointed at.
    * It changes the stamp and never the value, so it costs a render and no
    * paint.
+   *
+   * **Its condition is a render saved and not a rule**, and that is written
+   * down because a mutation row was written for it and could not discriminate.
+   * Everything above has already returned unless the key is resolved and
+   * something was chosen under a stamp that still applies, so an unconditional
+   * re-stamp could only ever write back the stamp already there. The rule it
+   * looks like it is holding is held by `applying`, one screen up.
    */
   useEffect(() => {
     if (!keyResolved) return
