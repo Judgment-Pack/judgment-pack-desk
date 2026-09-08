@@ -7,9 +7,10 @@
 # its own docstring, that it cannot hold the cascade: an override that reaches
 # a pane by any other selector — an ancestor, an id, an attribute, a nested
 # `&`, a `:global`, an inline style — is outside anything that parses text.
-# This is the gate for that half. CI does not run it, because CI has neither a
-# Chrome nor a runtime binary; every merge does, the way the needle check is
-# run before every merge.
+# This is the gate for that half. CI supplies no runtime binary and no project,
+# so there is nothing for the chassis to serve; the gate is run by hand. Run
+# before every merge that touches a stylesheet. This is a convention; nothing
+# automated enforces it.
 #
 # It builds nothing. Build first, from the repository root:
 #
@@ -107,10 +108,15 @@ curl -sf -X PUT -H 'Content-Type: application/json' \
   "http://127.0.0.1:$PORT/api/assistant/key?token=$TOKEN" >/dev/null 2>&1 \
   || echo "note: no assistant key stored; Admin will render no pickers" >&2
 
-node scripts/containment-check.mjs "$PORT" "$TOKEN" "$LABEL"
+# The source root is passed, so the measurement reads this repository's sheets,
+# `App.tsx` and `playwright-core` rather than whatever directory a copy of the
+# `.mjs` was run from.
+node scripts/containment-check.mjs "$PORT" "$TOKEN" "$LABEL" "$PWD"
 CODE=$?
 
-BEFORE="$(cd "$PROJECT" && find . -type f -printf '%p %s\n' | sort | sha256sum | cut -d' ' -f1)"
-AFTER="$(cd "$WORK/project" && find . -type f -printf '%p %s\n' | sort | sha256sum | cut -d' ' -f1)"
-echo "the copied project is unchanged: $([ "$BEFORE" = "$AFTER" ] && echo yes || echo NO)"
+# Contents, not names and sizes: a copy that was edited in place keeps both.
+contents() { (cd "$1" && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum); }
+BEFORE="$(contents "$PROJECT")"
+AFTER="$(contents "$WORK/project")"
+echo "the copied project is unchanged (contents): $([ "$BEFORE" = "$AFTER" ] && echo yes || echo NO)"
 exit $CODE
