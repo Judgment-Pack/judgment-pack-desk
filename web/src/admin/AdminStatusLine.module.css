@@ -10,24 +10,20 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.2rem var(--density-gap);
+  gap: 0.2rem var(--density-section);
   margin: 0 0 var(--density-section);
 }
 
+/* **Space, and not a middle dot.** A dot was written first and the live drive
+   is what took it out: a binary path is long enough that the second pair wraps
+   on a normal shell, and a separator drawn on the pair goes with it — so the
+   second line began with a dot hanging off nothing. Room between the pairs
+   separates them on one line and says nothing at all on two. */
 .pair {
   display: flex;
   align-items: baseline;
   gap: 0.4rem;
   min-width: 0;
-}
-
-/* A middle dot between the pairs, so they read as one line at any width — and
-   only between them, so a pair that wraps to a second line does not begin
-   with a separator hanging off nothing. */
-.pair + .pair::before {
-  content: '·';
-  margin-right: var(--density-gap);
-  color: var(--ink-faint);
 }
 
 /* A small muted label in sentence case. The tracked capitals this replaces
