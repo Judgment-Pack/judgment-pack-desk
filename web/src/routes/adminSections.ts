@@ -1,12 +1,19 @@
 /**
- * Admin's sections, as a typed array — and the order the page renders them in.
+ * Admin's groups and their sections, as typed arrays — and the order the page
+ * renders them in.
  *
- * **The order is the page's argument.** The project file comes first because
- * it is the one an admin is here to point at; the identity provider is next
- * because it is the other thing a deployment configures; and the rest follow in
- * the order they are asked about. It is an array rather than a set of headings
- * scattered through a component, so that adding one is a reviewable line rather
- * than a paragraph someone slipped in.
+ * **The grouping is by file, and that is the page's argument.** Every setting
+ * on Admin is a member of one of two files, and which file it is in is the
+ * thing a reader most needs to know: it is where the value is written, what the
+ * `Status` line is about, and whether this desk can write it at all. Grouping
+ * by file lets that be said **once**, in the group's header, instead of three
+ * times over three cards that turned out to be three members of one document.
+ *
+ * **The order is the page's argument too.** This project comes first because it
+ * is the one an admin is here to point at, and this desk second because it is
+ * the machine's answer for every project it opens. It is an array rather than a
+ * set of headings scattered through a component, so that adding one is a
+ * reviewable line rather than a paragraph someone slipped in.
  *
  * **Runtime and Panes are not here, and their absence is the change.** Neither
  * was a setting. The Runtime card reported the binary the chassis was launched
@@ -28,14 +35,41 @@ export interface AdminSection {
   title: string
 }
 
-export const ADMIN_SECTIONS: readonly AdminSection[] = [
-  { id: 'project', title: 'Project file' },
-  { id: 'identity-provider', title: 'Identity provider' },
-  // After Identity provider, because it is the other desk-level slot and is
-  // built on the same one-nullable-field pattern.
-  { id: 'assistant', title: 'Assistant' },
-  // Where this project's packs live.
-  { id: 'storage', title: 'Storage' },
-  { id: 'organization', title: 'Organization' },
-  { id: 'appearance', title: 'Appearance' }
+export interface AdminGroup extends AdminSection {
+  /** The members of this group's file, in the order the page renders them. */
+  sections: readonly AdminSection[]
+}
+
+export const ADMIN_GROUPS: readonly AdminGroup[] = [
+  {
+    id: 'this-project',
+    title: 'This project',
+    sections: [
+      { id: 'organization', title: 'Organization' },
+      // After Organization, because it is about where this project's packs live.
+      { id: 'storage', title: 'Storage' },
+      { id: 'appearance', title: 'Appearance' }
+    ]
+  },
+  {
+    id: 'this-desk',
+    title: 'This desk',
+    sections: [
+      { id: 'assistant', title: 'Assistant' },
+      // After Assistant, because it is the other desk-level slot and is built
+      // on the same one-nullable-field pattern.
+      { id: 'identity-provider', title: 'Identity provider' }
+    ]
+  }
 ]
+
+/**
+ * Every card, in page order, flattened out of the groups above.
+ *
+ * Derived rather than declared a second time: the rail's section menu and this
+ * page would otherwise be two lists free to disagree about what Admin has on
+ * it, which is exactly what a link to a section that is no longer there is.
+ */
+export const ADMIN_SECTIONS: readonly AdminSection[] = ADMIN_GROUPS.flatMap(
+  (group) => group.sections
+)

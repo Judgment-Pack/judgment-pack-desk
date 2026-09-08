@@ -31,7 +31,7 @@
  */
 import { AssistantSection } from '../assistant/AssistantSection'
 import { AdminStatusLine } from '../admin/AdminStatusLine'
-import { CardField, SourceCard, type SourceStatus } from '../admin/SourceCard'
+import { CardField, SourceCard, SourceGroup, type SourceStatus } from '../admin/SourceCard'
 import { useDefaultProject } from '../admin/DefaultProject'
 import { AppearanceForm, OrganizationForm, StorageForm } from '../admin/projectFileCards'
 import { useHashTarget } from '../shell/useHashTarget'
@@ -44,11 +44,16 @@ import {
 } from '../config/deskConfig'
 import { useFileListing } from '../files/queries'
 import { useMcp } from '../mcp/McpProvider'
-import { ADMIN_SECTIONS } from './adminSections'
+import { ADMIN_GROUPS, ADMIN_SECTIONS } from './adminSections'
 
 /** The sections, by id, so a card names its own rather than an index. */
 const SECTION = Object.fromEntries(
   ADMIN_SECTIONS.map((section) => [section.id, section])
+) as Record<string, { id: string; title: string }>
+
+/** The groups, by id, on the same terms. */
+const GROUP = Object.fromEntries(
+  ADMIN_GROUPS.map((group) => [group.id, group])
 ) as Record<string, { id: string; title: string }>
 
 export function AdminView() {
@@ -56,8 +61,8 @@ export function AdminView() {
   const { config, desk } = effective
   const mcp = useMcp()
   const listing = useFileListing()
-  // The Project card's one field and its Save, sharing one draft across two of
-  // the card's slots.
+  // The project group's one field and its Save, sharing one draft across two
+  // of the header's slots.
   const defaultProject = useDefaultProject()
   // The rail's and the user menu's section links carry a hash. Nothing in the
   // router scrolls to one, and the document is not the scroll container here —
@@ -83,81 +88,99 @@ export function AdminView() {
         deskFile={deskLocation(effective)}
       />
 
-      <SourceCard
-        id={SECTION.project!.id}
-        title={SECTION.project!.title}
+      <SourceGroup
+        id={GROUP['this-project']!.id}
+        title={GROUP['this-project']!.title}
         location={projectLocation(effective)}
         status={projectStatus(effective)}
-        // The whole file, and only where it was accepted: the card's own
+        // The whole file, and only where it was accepted: the group's own
         // Status is what gates it, and a refused document is exactly the one
         // that must not be rendered.
         content={{ text: effective.text }}
+        // The one control that writes the *desk-level* file from here: it
+        // nominates this project as the default, or withdraws one. Its own
+        // line names the file it writes, which is not the file above it.
         fields={defaultProject.field}
         save={defaultProject.save}
-      />
+      >
+        <SourceCard
+          id={SECTION.organization!.id}
+          title={SECTION.organization!.title}
+          location={sectionLocation(effective, 'organization')}
+          status={sectionStatus(effective, 'organization')}
+          under={groupFor(effective, 'organization')}
+          content={{
+            text: textFor(effective, 'organization'),
+            member: 'organization',
+            value: config.organization
+          }}
+          save={<OrganizationForm />}
+        />
 
-      <SourceCard
-        id={SECTION['identity-provider']!.id}
-        title={SECTION['identity-provider']!.title}
+        <SourceCard
+          id={SECTION.storage!.id}
+          title={SECTION.storage!.title}
+          location={sectionLocation(effective, 'storage')}
+          status={sectionStatus(effective, 'storage')}
+          under={groupFor(effective, 'storage')}
+          content={{
+            text: textFor(effective, 'storage'),
+            member: 'storage',
+            value: config.storage
+          }}
+          save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocation]} />}
+        />
+
+        <SourceCard
+          id={SECTION.appearance!.id}
+          title={SECTION.appearance!.title}
+          location={sectionLocation(effective, 'appearance')}
+          status={sectionStatus(effective, 'appearance')}
+          under={groupFor(effective, 'appearance')}
+          content={{
+            text: textFor(effective, 'appearance'),
+            member: 'appearance',
+            value: config.appearance
+          }}
+          save={<AppearanceForm />}
+        />
+      </SourceGroup>
+
+      <SourceGroup
+        id={GROUP['this-desk']!.id}
+        title={GROUP['this-desk']!.title}
         location={deskLocation(effective)}
         status={deskStatus(effective)}
-        content={{ text: desk?.text, member: 'identity', value: config.identity }}
-        fields={
-          <CardField label="Provider">
-            {config.identity.provider === null ? (
-              'None'
-            ) : (
-              <>
-                <code>{config.identity.provider.issuer}</code>
-                {config.identity.provider.label !== null && (
-                  <> — {config.identity.provider.label}</>
-                )}
-              </>
-            )}
-          </CardField>
-        }
-      />
+      >
+        <AssistantSection
+          id={SECTION.assistant!.id}
+          title={SECTION.assistant!.title}
+          under={deskStatus(effective)}
+        />
 
-      <AssistantSection id={SECTION.assistant!.id} title={SECTION.assistant!.title} />
-
-      <SourceCard
-        id={SECTION.storage!.id}
-        title={SECTION.storage!.title}
-        location={sectionLocation(effective, 'storage')}
-        status={sectionStatus(effective, 'storage')}
-        content={{
-          text: textFor(effective, 'storage'),
-          member: 'storage',
-          value: config.storage
-        }}
-        save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocation]} />}
-      />
-
-      <SourceCard
-        id={SECTION.organization!.id}
-        title={SECTION.organization!.title}
-        location={sectionLocation(effective, 'organization')}
-        status={sectionStatus(effective, 'organization')}
-        content={{
-          text: textFor(effective, 'organization'),
-          member: 'organization',
-          value: config.organization
-        }}
-        save={<OrganizationForm />}
-      />
-
-      <SourceCard
-        id={SECTION.appearance!.id}
-        title={SECTION.appearance!.title}
-        location={sectionLocation(effective, 'appearance')}
-        status={sectionStatus(effective, 'appearance')}
-        content={{
-          text: textFor(effective, 'appearance'),
-          member: 'appearance',
-          value: config.appearance
-        }}
-        save={<AppearanceForm />}
-      />
+        <SourceCard
+          id={SECTION['identity-provider']!.id}
+          title={SECTION['identity-provider']!.title}
+          location={deskLocation(effective)}
+          status={deskStatus(effective)}
+          under={deskStatus(effective)}
+          content={{ text: desk?.text, member: 'identity', value: config.identity }}
+          fields={
+            <CardField label="Provider">
+              {config.identity.provider === null ? (
+                'None'
+              ) : (
+                <>
+                  <code>{config.identity.provider.issuer}</code>
+                  {config.identity.provider.label !== null && (
+                    <> — {config.identity.provider.label}</>
+                  )}
+                </>
+              )}
+            </CardField>
+          }
+        />
+      </SourceGroup>
 
     </article>
   )
@@ -246,6 +269,23 @@ function deskStatus(effective: EffectiveConfig): SourceStatus {
   if (desk.readFailure !== undefined) return { state: 'unread', failure: desk.readFailure }
   if (!desk.present) return { state: 'absent' }
   return { state: 'read' }
+}
+
+/**
+ * The group header a layered section sits under, where its own file is the
+ * group's — and **nothing** where it is not.
+ *
+ * A section that came from the desk-level file is not one the project group's
+ * header speaks for: the header names this project's file, and a card that
+ * dropped its Location under it would be attributing a value to a file it did
+ * not come from. So that card is given no group at all and states its own
+ * Location and Status, exactly as it did before there were groups.
+ */
+function groupFor(
+  effective: EffectiveConfig,
+  section: LayeredSection
+): SourceStatus | undefined {
+  return effective.sources[section] === 'desk file' ? undefined : projectStatus(effective)
 }
 
 /**

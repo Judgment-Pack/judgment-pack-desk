@@ -1,6 +1,7 @@
 /**
  * One Admin section, as one card: where the value is written, whether it was
- * read, what is in the file, the fields, and the Save where there is one.
+ * read, what is in the file, the fields, and the Save where there is one — and
+ * the group of cards that share a file.
  *
  * **Every section on Admin is this card**, and the shape is the argument. The
  * page used to answer a different question per section — a paragraph here, a
@@ -15,6 +16,16 @@
  * would be asserting a location on a filesystem it cannot see, and would be
  * wrong the first time somebody's `XDG_CONFIG_HOME` was not where this page
  * guessed.
+ *
+ * **And it is stated once per file, not once per card.** Three cards writing
+ * three members of one file printed that file's path three times and its read
+ * status three times, which reads as three files. So the cards that share a
+ * file sit inside a `SourceGroup` whose header states it, and a card under one
+ * says neither — `under` is the group's own status, and a card keeps its Status
+ * only where it **differs**: a member refused inside an accepted file, a save in
+ * flight, a write the file moved under. A member that came from the *other*
+ * file is not one this group's header speaks for, and is given no `under` at
+ * all, so it states its own location as before.
  *
  * **Status is one line from a closed set**, and a refusal in it is the
  * decoder's own sentence, key path and all. The warning notes this replaced
@@ -76,7 +87,8 @@ export function SourceCard({
   status,
   content,
   fields,
-  save
+  save,
+  under
 }: {
   id: string
   title: string
@@ -85,36 +97,129 @@ export function SourceCard({
   status: SourceStatus
   content?: CardContent
   fields?: ReactNode
-  /**
-   * The one write this card offers, where it offers one.
-   *
-   * Panes' reset is here too: it is that card's only control and it changes
-   * this browser's record of the layout, which is the same kind of thing a
-   * Save is — something the reader does, reported by what happened.
-   */
+  /** The one write this card offers, where it offers one. */
   save?: ReactNode
+  /**
+   * The status of the group header above this card, where there is one.
+   *
+   * Its presence is what says "the location is stated already"; its value is
+   * what a card's own status is compared against, so a card says its status
+   * only where it has something the group has not already said.
+   */
+  under?: SourceStatus
+}) {
+  const grouped = under !== undefined
+  return (
+    <section className={grouped ? styles.member : styles.card} aria-labelledby={`${id}-title`}>
+      <Title id={id} title={title} level={grouped ? 3 : 2} className={styles.title} />
+      <Head
+        location={grouped ? undefined : location}
+        status={grouped && sameStatus(status, under) ? undefined : status}
+      />
+      {content !== undefined && showsContent(status) && <Content content={content} />}
+      {fields !== undefined && <div className={styles.fields}>{fields}</div>}
+      {save !== undefined && <div className={styles.save}>{save}</div>}
+    </section>
+  )
+}
+
+/**
+ * The cards that write one file, under one statement of where that file is.
+ *
+ * The header is a card in every respect but one — it has the same Location,
+ * Status, Content and fields, and the group's own write where it has one (the
+ * project's default-project nomination is exactly that) — and then the members
+ * under it. A group is not a heading with a border: it is the sentence "these
+ * are the members of *this* file", and the cards inside it are the members.
+ */
+export function SourceGroup({
+  id,
+  title,
+  location,
+  status,
+  content,
+  fields,
+  save,
+  children
+}: {
+  id: string
+  title: string
+  location: ReactNode
+  status: SourceStatus
+  content?: CardContent
+  fields?: ReactNode
+  save?: ReactNode
+  children: ReactNode
 }) {
   return (
-    <section className={styles.card} aria-labelledby={`${id}-title`}>
-      <h2 className={styles.title} id={id}>
-        <span id={`${id}-title`}>{title}</span>
-      </h2>
-      <dl className={styles.head}>
+    <section className={styles.group} aria-labelledby={`${id}-title`}>
+      <Title id={id} title={title} level={2} className={styles.groupTitle} />
+      <Head location={location} status={status} />
+      {content !== undefined && showsContent(status) && <Content content={content} />}
+      {fields !== undefined && <div className={styles.fields}>{fields}</div>}
+      {save !== undefined && <div className={styles.save}>{save}</div>}
+      <div className={styles.members}>{children}</div>
+    </section>
+  )
+}
+
+/**
+ * Whether two statuses say the same thing.
+ *
+ * Compared by value rather than by state alone, because two refusals are not
+ * one status: a member refused inside a file the group calls refused may name
+ * a different key, and the card is the only place that key is said.
+ */
+function sameStatus(one: SourceStatus, other: SourceStatus): boolean {
+  return JSON.stringify(one) === JSON.stringify(other)
+}
+
+/**
+ * The heading, at the level its place in the document actually is.
+ *
+ * A card inside a group is a subsection of it, and a page whose groups and
+ * members were both `h2` would offer a reader an outline that is not the one
+ * on the screen.
+ */
+function Title({
+  id,
+  title,
+  level,
+  className
+}: {
+  id: string
+  title: string
+  level: 2 | 3
+  className: string
+}) {
+  const Tag = level === 2 ? 'h2' : 'h3'
+  return (
+    <Tag className={className} id={id}>
+      <span id={`${id}-title`}>{title}</span>
+    </Tag>
+  )
+}
+
+/** The two rows, and only the ones this card or group actually states. */
+function Head({ location, status }: { location?: ReactNode; status?: SourceStatus }) {
+  if (location === undefined && status === undefined) return null
+  return (
+    <dl className={styles.head}>
+      {location !== undefined && (
         <div className={styles.row}>
           <dt className={styles.key}>Location</dt>
           <dd className={styles.value}>{location}</dd>
         </div>
+      )}
+      {status !== undefined && (
         <div className={styles.row}>
           <dt className={styles.key}>Status</dt>
           <dd className={styles.value}>
             <StatusLine status={status} />
           </dd>
         </div>
-      </dl>
-      {content !== undefined && showsContent(status) && <Content content={content} />}
-      {fields !== undefined && <div className={styles.fields}>{fields}</div>}
-      {save !== undefined && <div className={styles.save}>{save}</div>}
-    </section>
+      )}
+    </dl>
   )
 }
 

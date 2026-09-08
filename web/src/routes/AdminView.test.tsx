@@ -1,14 +1,16 @@
 /**
- * Admin: eight cards, one shape, and no narration.
+ * Admin: two groups, five cards, one shape, and no narration.
  *
- * Three assertions carry this file. The **order** case fails if a section is
- * added without being declared, declared without being rendered, or rendered
- * out of order. The **narration sweep** fails on any text node over 140
- * characters that is not quoted material — a path, a decoder's own refusal, a
- * member of the file — which is what "remove the narration" means as a rule
- * rather than as a preference. And the **controls** case is the whole list of
- * what on this page changes anything, so a control cannot be added without
- * appearing here.
+ * Four assertions carry this file. The **order** case fails if a group or a
+ * section is added without being declared, declared without being rendered, or
+ * rendered out of order. The **location** case is the whole point of the
+ * grouping: each file's path is stated once, in its group's header, and a card
+ * under one states neither it nor a status the header has already given. The
+ * **narration sweep** fails on any text node over 140 characters that is not
+ * quoted material — a path, a decoder's own refusal, a member of the file —
+ * which is what "remove the narration" means as a rule rather than as a
+ * preference. And the **controls** case is the whole list of what on this page
+ * changes anything, so a control cannot be added without appearing here.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -21,7 +23,7 @@ import { ShellStateProvider } from '../shell/paneState'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { narrationIn } from '../admin/narration'
 import { AdminView } from './AdminView'
-import { ADMIN_SECTIONS } from './adminSections'
+import { ADMIN_GROUPS, ADMIN_SECTIONS } from './adminSections'
 
 afterEach(() => {
   cleanup()
@@ -135,17 +137,27 @@ function deskRead(file: object) {
 }
 
 describe('the Admin page', () => {
-  it('renders every card in order, with those exact titles and no others', () => {
-    // The whole list, not a slice of it. It fails if a section is added
-    // without being declared, declared without being rendered, or rendered out
-    // of order — and there is nothing under the heading but the cards now, so
-    // no eighth heading can appear without being one.
+  it('renders every group and every card in order, with those exact titles', () => {
+    // The whole list, not a slice of it. It fails if a group or a section is
+    // added without being declared, declared without being rendered, or
+    // rendered out of order — and there is nothing under the heading but the
+    // status line and the groups, so no sixth card can appear without being
+    // declared as one.
     renderAdmin()
-    const headings = screen
+    const groups = screen
       .getAllByRole('heading', { level: 2 })
       .map((heading) => heading.textContent)
-    expect(headings).toEqual(ADMIN_SECTIONS.map((section) => section.title))
-    expect(headings[0]).toBe('Project file')
+    expect(groups).toEqual(ADMIN_GROUPS.map((group) => group.title))
+    expect(groups).toEqual(['This project', 'This desk'])
+    const cards = screen
+      .getAllByRole('heading', { level: 3 })
+      .map((heading) => heading.textContent)
+    expect(cards).toEqual(ADMIN_SECTIONS.map((section) => section.title))
+    // A card is a subsection of the file it is a member of, and the outline
+    // says so: every one of them is inside its group.
+    for (const heading of screen.getAllByRole('heading', { level: 3 })) {
+      expect(heading.closest('section')!.parentElement!.closest('section')).toBeTruthy()
+    }
   })
 
 
@@ -302,7 +314,7 @@ describe('the Admin page', () => {
   })
 
 
-  it('says where each card’s value is written, and what state that file is in', () => {
+  it('states each file’s location once, in its group, and not on the cards', () => {
     const { container } = renderAdmin(
       effectiveConfig(undefined, 'no configuration was read: no such file', undefined, {
         path: DESK_PATH,
@@ -310,19 +322,78 @@ describe('the Admin page', () => {
         sha256: ''
       })
     )
-    // Inside the cards, so the status line's own pairs — which are not a
-    // card's Location and Status — are not counted as either.
+    // Inside the cards and groups, so the status line's own pairs — which are
+    // not a Location and a Status — are not counted as either.
     const rows = Array.from(container.querySelectorAll('section dt')).map(
       (each) => each.textContent
     )
-    // Two per card, in one order, on every one of the eight.
-    expect(rows.filter((label) => label === 'Location')).toHaveLength(ADMIN_SECTIONS.length)
-    expect(rows.filter((label) => label === 'Status')).toHaveLength(ADMIN_SECTIONS.length)
+    // One Location per group, and none at all on the five cards under them.
+    expect(rows.filter((label) => label === 'Location')).toHaveLength(ADMIN_GROUPS.length)
     expect(rows.slice(0, 2)).toEqual(['Location', 'Status'])
-    // The desk-level file is named wherever a card is about it.
-    expect(screen.getAllByText(DESK_PATH).length).toBeGreaterThan(0)
+    for (const group of ADMIN_GROUPS) {
+      const header = document.getElementById(group.id)!.closest('section')!
+      const locations = Array.from(header.querySelectorAll('dt')).filter(
+        (each) => each.textContent === 'Location'
+      )
+      expect(locations, group.title).toHaveLength(1)
+      // And it is the group's own, not a member's: the one Location is above
+      // the members rather than inside one of them.
+      expect(locations[0]!.closest('section')).toBe(header)
+    }
+    // The desk-level file is named once inside the group that is about it —
+    // the header — and by neither of the two cards under it.
+    const deskGroup = document.getElementById('this-desk')!.closest('section')!
+    expect(
+      Array.from(deskGroup.querySelectorAll('code')).filter(
+        (each) => each.textContent === DESK_PATH
+      )
+    ).toHaveLength(1)
     // And an absent file is absent, never "read".
     expect(screen.getAllByText('not present — defaults in use').length).toBeGreaterThan(0)
+  })
+
+  it('keeps a card’s own Status where it differs from its group’s, and drops it where it does not', () => {
+    // The whole file is absent, so every member says exactly what the group
+    // says and none of them says it twice.
+    const { container } = renderAdmin(
+      effectiveConfig(undefined, 'no configuration was read: no such file', undefined, {
+        path: DESK_PATH,
+        present: false,
+        sha256: ''
+      })
+    )
+    const statuses = Array.from(container.querySelectorAll('section dt')).filter(
+      (each) => each.textContent === 'Status'
+    )
+    expect(statuses).toHaveLength(ADMIN_GROUPS.length)
+    cleanup()
+
+    // A member the *other* file supplied is not one this group's header speaks
+    // for: it states its own Location and its own Status again.
+    renderAdmin(
+      effectiveConfig(
+        decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1 }), 'project'),
+        undefined,
+        undefined,
+        {
+          path: DESK_PATH,
+          present: true,
+          sha256: '',
+          decoded: decodeDeskConfig(
+            JSON.stringify({
+              deskConfigVersion: 1,
+              storage: { packs: { dir: 'elsewhere' } }
+            }),
+            'desk'
+          )
+        }
+      )
+    )
+    const storage = document.getElementById('storage')!.closest('section')!
+    expect(
+      Array.from(storage.querySelectorAll('dt')).map((each) => each.textContent)
+    ).toEqual(['Location', 'Status'])
+    expect(storage.textContent).toContain(DESK_PATH)
   })
 
   it('shows a member of the file as it is written, not as a decode of it', () => {
@@ -449,7 +520,7 @@ describe('the Admin page', () => {
     const { container } = renderAdmin()
     const interactive = container.querySelectorAll('button, input, select, textarea')
     const labels = Array.from(interactive).map((element) => element.textContent?.trim())
-    // The Project card's control is a nomination and not a path: the page may
+    // The project group's control is a nomination and not a path: the page may
     // name the project it is already running in, or withdraw a default, and
     // nothing else — so there is one button and no field for a path.
     const writes: Record<string, number> = {
@@ -475,26 +546,26 @@ describe('the Admin page', () => {
     const triggers = Array.from(container.querySelectorAll('[role="combobox"]')).map(
       (element) => element.textContent
     )
-    // The assistant's three, then Storage's kind, then Appearance's two — in
-    // the order the cards are rendered in.
+    // This project's group first — Storage's kind, then Appearance's two — and
+    // then this desk's, which is the assistant's three.
     expect(triggers).toEqual([
-      'OpenAI-compatible',
-      'vercel',
-      'off',
       'filesystem',
       'system',
-      'comfortable'
+      'comfortable',
+      'OpenAI-compatible',
+      'vercel',
+      'off'
     ])
     const offered = Array.from(container.querySelectorAll('select')).map(
       (element) => element.textContent
     )
     expect(offered).toEqual([
-      'OpenAI-compatibleAnthropicGemini',
-      'vercelbuiltin',
-      'offonultra',
       'filesystem',
       'systemlightdark',
-      'comfortablecompact'
+      'comfortablecompact',
+      'OpenAI-compatibleAnthropicGemini',
+      'vercelbuiltin',
+      'offonultra'
     ])
     // Every other control is a tool checkbox, which changes nothing until Save.
     const picker = [...triggers, ...offered]
@@ -515,15 +586,15 @@ describe('the Admin page', () => {
     const disabled = Array.from(container.querySelectorAll('button[disabled]')).map(
       (element) => element.textContent
     )
-    // The Project card's nomination first, then the Assistant form's Save —
-    // neither has a digest to state — and then the four project-file cards',
-    // which have no bytes to write over and nothing typed to write.
+    // The project group's nomination first, then its three cards' Saves —
+    // which have no bytes to write over and nothing typed to write — and then
+    // the Assistant's, which has no digest to state.
     expect(disabled).toEqual([
       'Use this project as the default',
+      'Save',
+      'Save',
+      'Save',
       'List models',
-      'Save',
-      'Save',
-      'Save',
       'Save'
     ])
     // The desk-level file, on two cards; this project's own file, on three.
@@ -551,7 +622,7 @@ describe('the Admin page', () => {
       Array.from(container.querySelectorAll('button[disabled]')).map(
         (element) => element.textContent
       )
-    ).toEqual(['List models', 'Save', 'Save', 'Save'])
+    ).toEqual(['Save', 'Save', 'Save', 'List models'])
     // The desk-level file has been read, so neither card that writes it says
     // otherwise. The project's own file has not, which is a different file and
     // a different sentence — and the four cards that write it say so.
@@ -737,18 +808,16 @@ describe('the Admin page', () => {
   it('renders no bytes of a file that could not be read at all', () => {
     // There are none to render, and a card that offered a disclosure would be
     // offering the decoded defaults as though they were the file.
-    const { container } = renderAdmin(effectiveConfig(undefined, undefined, CHASSIS_413))
-    const project = [...container.querySelectorAll('section')].find(
-      (section) => section.querySelector('h2')?.textContent === 'Project file'
-    )!
+    renderAdmin(effectiveConfig(undefined, undefined, CHASSIS_413))
+    const project = document.getElementById('this-project')!.closest('section')!
     expect(project.querySelector('details')).toBeNull()
   })
 
-  it('names the file the Project card’s control writes, which is not the one it shows', () => {
-    // The card's Location, Status and Content are about the project's own
+  it('names the file the group’s control writes, which is not the one it shows', () => {
+    // The group's Location, Status and Content are about the project's own
     // file; its one control writes the desk-level one. The line under the
     // control names that file, from the chassis' answer and never composed.
-    const { container } = renderAdmin(
+    renderAdmin(
       effectiveConfig(undefined, undefined, undefined, {
         path: DESK_PATH,
         present: false,
@@ -760,9 +829,7 @@ describe('the Admin page', () => {
         }
       })
     )
-    const project = [...container.querySelectorAll('section')].find(
-      (section) => section.querySelector('h2')?.textContent === 'Project file'
-    )!
+    const project = document.getElementById('this-project')!.closest('section')!
     // Location: the project's own file.
     expect(project.querySelector('dd')!.textContent).toBe('/this/launch/jpack-desk.json')
     // The control's own line: the desk-level file it writes, and this launch.
