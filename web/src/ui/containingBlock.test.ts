@@ -109,33 +109,73 @@ function rulesIn(sheet: string, where = ''): Rule[] {
   return rules
 }
 
-/** A value that puts the element on a scrollbar, by token and not by substring. */
-function scrolls(value: string): boolean {
-  const tokens = value.toLowerCase().split(/\s+/)
-  return tokens.includes('auto') || tokens.includes('scroll')
+/**
+ * A declared value with `!important` taken off it.
+ *
+ * `position: relative !important` positions exactly as `position: relative`
+ * does, and a reader that compared the whole string would call the first one
+ * unpositioned — a false failure that teaches the next author to delete the
+ * test rather than the flag.
+ */
+function tokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((token) => token !== '' && token !== '!important')
 }
 
-const OVERFLOW = new Set(['overflow', 'overflow-x', 'overflow-y'])
+/** A value that puts the element on a scrollbar, by token and not by substring. */
+function scrolls(value: string): boolean {
+  const words = tokens(value)
+  // `overlay` is the legacy spelling of `auto` — removed from the standard,
+  // still parsed by the engines this desk runs in, and a scroll container
+  // wherever it is honoured.
+  return words.includes('auto') || words.includes('scroll') || words.includes('overlay')
+}
+
+/**
+ * The five properties that can author a scrolling overflow, logical spellings
+ * included. `overflow-wrap`, `text-overflow`, `overflow-anchor` and
+ * `overflow-clip-margin` share the prefix and create no scroll container, so
+ * they are deliberately not here.
+ */
+const OVERFLOW = new Set([
+  'overflow',
+  'overflow-x',
+  'overflow-y',
+  'overflow-block',
+  'overflow-inline'
+])
 const POSITIONED = new Set(['relative', 'absolute', 'fixed', 'sticky'])
 
-/** `shell.css`, `styles.css`, and every module anywhere under `web/src`. */
+/**
+ * Every stylesheet under `web/src`, by extension and not by name.
+ *
+ * The first draft of this walked `*.module.css` and joined `shell.css` and
+ * `styles.css` on by hand, which is a list of names wearing a sweep's clothes:
+ * a third plain sheet — `packs/extra.css`, say — with `overflow: auto` in it
+ * was invisible to the whole file and passed green. A sheet is a `.css` under
+ * `src`; there is no other kind.
+ */
 function everySheet(directory: string): string[] {
   const found: string[] = []
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) found.push(...everySheet(path))
-    else if (entry.name.endsWith('.module.css')) found.push(path)
+    else if (entry.name.endsWith('.css')) found.push(path)
   }
   return found
 }
 
-const sheets = [join(SRC, 'shell.css'), join(SRC, 'styles.css'), ...everySheet(SRC)].sort()
+const sheets = everySheet(SRC).sort()
 const short = (path: string) => relative(SRC, path).split(sep).join('/')
 const rules = sheets.flatMap((path) => rulesIn(readFileSync(path, 'utf8'), short(path)))
 
-/** Every declared `position` value in one rule. */
+/** Every declared `position` value in one rule, `!important` stripped. */
 const positions = (rule: Rule) =>
-  rule.declarations.filter((d) => d.property === 'position').map((d) => d.value.toLowerCase())
+  rule.declarations
+    .filter((d) => d.property === 'position')
+    .map((d) => tokens(d.value)[0] ?? '')
 
 /**
  * The rules this invariant is about: anything that scrolls, plus the frame,
@@ -156,7 +196,7 @@ describe('every scroll container is a containing block', () => {
     // numbers are the ones that make the sweep mean something; they are floors
     // and not equalities, because adding a scroller is allowed and adding one
     // that does not position itself is what fails.
-    expect(sheets.length).toBeGreaterThanOrEqual(30)
+    expect(sheets.length).toBeGreaterThanOrEqual(34)
     expect(sheets.map(short)).toContain('shell.css')
     expect(sheets.map(short)).toContain('styles.css')
     expect(containers.length).toBeGreaterThanOrEqual(17)
@@ -177,6 +217,26 @@ describe('every scroll container is a containing block', () => {
       }
     }
   )
+
+  it('refuses an overflow value it cannot read', () => {
+    // A sweep is only as good as its reading. `overflow: var(--x)` is a value
+    // this file cannot resolve — the custom property may be `auto` on one
+    // route and `hidden` on another — so a rule spelt that way would slip
+    // through the filter above and be held by nothing. It is not a lint: it is
+    // the one shape that makes the sweep quietly incomplete, so it fails here
+    // and the author either writes the keyword or comes and changes this.
+    const unreadable = rules.flatMap((rule) =>
+      rule.declarations
+        .filter((d) => OVERFLOW.has(d.property) && /var\(/i.test(d.value))
+        .map((d) => `${rule.where}  ${rule.selector}  ${d.property}: ${d.value}`)
+    )
+    expect(
+      unreadable,
+      'an overflow written as a custom property cannot be read from the source, so this ' +
+        'file cannot tell whether the rule scrolls: spell the keyword, or teach this test ' +
+        'to resolve it'
+    ).toEqual([])
+  })
 
   it('holds the frame and its four panes by name as well', () => {
     // The sweep above reaches `.desk-console` only through the frame clause, and
@@ -238,5 +298,28 @@ describe('the rule reader itself', () => {
     // `auto`: a substring test passes both.
     expect(scrolls('anywhere')).toBe(false)
     expect(scrolls('autofill')).toBe(false)
+    // The legacy spelling of `auto`, and a scroll container wherever it is
+    // still honoured.
+    expect(scrolls('overlay')).toBe(true)
+    // `!important` changes which rule wins, not what the value means.
+    expect(scrolls('auto !important')).toBe(true)
+    expect(scrolls('hidden !important')).toBe(false)
+  })
+
+  it('knows the logical spellings of overflow, and the one word that is not one', () => {
+    // `overflow-block` and `overflow-inline` are the same property in a
+    // writing-mode-relative dress; a sweep that knew only the physical pair
+    // would miss a scroller spelt either way.
+    expect(OVERFLOW.has('overflow-block')).toBe(true)
+    expect(OVERFLOW.has('overflow-inline')).toBe(true)
+    expect(OVERFLOW.has('overflow-wrap')).toBe(false)
+  })
+
+  it('reads a position through !important', () => {
+    // The false positive this replaces: `position: relative !important`
+    // positions exactly as `position: relative` does, and a reader that
+    // compared the whole string called it unpositioned.
+    const parsed = rulesIn('.a { overflow: auto; position: relative !important; }')
+    expect(positions(parsed[0]!)).toEqual(['relative'])
   })
 })
