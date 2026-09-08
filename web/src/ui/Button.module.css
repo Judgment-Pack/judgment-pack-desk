@@ -33,10 +33,14 @@
   cursor: not-allowed;
 }
 
+/* The text on the accent fill is `--ink-inverse` and not `--surface`. They
+   are the same white in the light palette, which is why the substitution went
+   unnoticed for as long as there was only one: in the dark palette `--surface`
+   is a dark grey, and a primary button would have painted dark grey on mint. */
 .primary {
   border-color: var(--accent);
   background: var(--accent);
-  color: var(--surface);
+  color: var(--ink-inverse);
 }
 
 .primary:not(:disabled):hover {

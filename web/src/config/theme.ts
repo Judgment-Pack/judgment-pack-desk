@@ -7,19 +7,20 @@
  * attribute and leaves `prefers-color-scheme` to answer. `styles.css` carries
  * the two blocks that read it.
  *
- * **What this does today is set an attribute, and that is the whole of it.**
- * Both palette blocks carry the light values, because the three condition
- * verdict colours cannot be mechanically inverted and a desk that re-authored
- * its neutrals around them would be half dark (open question 10). So choosing
- * dark changes the attribute and no colour. Admin and the README say exactly
- * that, and this comment is the third place it is written down rather than
- * inferred.
+ * **Both palettes are real.** `styles.css` carries the dark values in both of
+ * the blocks that select dark, every colour token has one, and every pair a
+ * reader has to see is measured at WCAG AA in each — so choosing dark now
+ * changes the colours and not only the attribute.
  *
- * **There is no pre-paint inline script**, deliberately. One belongs with the
- * dark palette itself — its whole purpose is to stop a light frame flashing
- * before the dark one arrives, and there is no dark frame yet to flash into.
- * Adding it now would be a script guarding against nothing, and it would have
- * to read the configuration from somewhere the page has not yet fetched.
+ * **There is still no pre-paint inline script, and one cannot be written for
+ * the preference.** Under `system` — the default — nothing flashes: the media
+ * block paints the dark palette on the first paint, before any script runs. An
+ * explicit `dark` over an OS set to light is the case a pre-paint script would
+ * be for, and the record that holds it is keyed on the chassis' project root,
+ * which the page does not know until the file listing answers. A script that
+ * guessed the key would apply one project's preference to another's desk. So
+ * that one case paints light for a frame, and the README says so rather than
+ * this file pretending otherwise.
  */
 import { useEffect } from 'react'
 import type { ThemeChoice } from './deskConfig'
