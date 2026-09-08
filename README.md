@@ -544,6 +544,14 @@ root can be read as part of the key's own prefix. Records under the old keys are
 never read again, which is what this store does with every record it cannot
 use.
 
+**The whole path means the bytes the chassis reported**, and it used to be
+trimmed first — which made the claim false exactly where it matters: a POSIX
+filesystem permits a trailing space, so `/srv/project` and `/srv/project ` are
+two directories that shared one key, and one project's record was restored and
+reset for the other. That is the collision the encoding replaced, reintroduced
+one line above it. Whitespace still decides whether there is a project at all,
+and that decision belongs to one predicate so the two cannot disagree.
+
 One desk on one origin serves whichever project it was started against, and a
 layout chosen for a three-pack project is not the one chosen for a forty-pack
 one. Only the collapse flags and the console's channel are stored — no widths,

@@ -6182,6 +6182,17 @@ export function assistantTransport(): Transport {
     '    const carried = previous.resolved ? { ...NOTHING_CHOSEN } : { ...chosen.current }' \
     '    const carried = { ...chosen.current }'
 
+  # **The whole path means the bytes the chassis reported.** The key trimmed
+  # before it encoded, and a POSIX filesystem permits a trailing space: two
+  # directories, one key, one project's record restored and reset for the other
+  # — which is the collision percent-encoding replaced, reintroduced one line
+  # above it. This is the key both records share, so the row is in `paneState`.
+  mutate web "the trim restored (two roots that differ only in whitespace)" "$P" \
+    '  const path = projectRoot ?? '"'"''"'"'
+  if (!identityIsResolved(path)) return '"'"'default'"'"'' \
+    '  const path = (projectRoot ?? '"'"''"'"').trim()
+  if (path === '"'"''"'"') return '"'"'default'"'"''
+
   # **A removed control's write path is removed with it**, exactly as the Panes
   # card's was. The Appearance card is gone from Admin — a person's theme is not
   # an administrator's setting, and it is held in that person's browser now —
