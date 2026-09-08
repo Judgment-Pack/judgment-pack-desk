@@ -18,7 +18,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigProvider, useEffectiveConfig } from '../config/DeskConfigProvider'
 import { testQueryClient } from '../testing/harness'
-import { AppearanceForm, OrganizationForm, StorageForm } from './projectFileCards'
+import { OrganizationForm, StorageForm } from './projectFileCards'
 import { NO_CONTROL_CHARACTERS } from '../config/deskConfig'
 import { CARD_POINTERS, FROM_THE_DESK_FILE } from './useProjectFileSave'
 
@@ -422,18 +422,6 @@ describe('a project-file card’s form', () => {
       { name: 'Typed', mark: '<svg/>' }
     ],
     [
-      'Appearance',
-      <AppearanceForm key="a" />,
-      '"appearance": { "theme": "system", "density": "comfortable" }',
-      '"appearance": { "theme": "system", "density": "compact" }',
-      async () => {
-        fireEvent.click(await screen.findByRole('combobox', { name: 'Theme' }))
-        fireEvent.click(await screen.findByRole('option', { name: 'dark' }))
-      },
-      'appearance',
-      { theme: 'dark', density: 'compact' }
-    ],
-    [
       'Storage',
       <StorageForm key="s" dirSays="holds files" />,
       '"storage": { "packs": { "dir": "packs", "idBase": "https://acme.example/d/" } }',
@@ -475,17 +463,18 @@ describe('a project-file card’s form', () => {
    * is written.**
    *
    * The closed list and the page it describes, checked against each other by
-   * driving every Save and reading **what came off the wire**. `/panes` used to
-   * be on that list; the Panes card is gone — the pane dimensions are the
-   * shell's and the reset moved to the shell's menu — and a Save with no
-   * control behind it is a write path nothing offers.
+   * driving every Save and reading **what came off the wire**. `/panes` and
+   * `/appearance` used to be on that list; both cards are gone — the pane
+   * dimensions are the shell's, the theme and the density are a person's and
+   * are held in that person's browser — and a Save with no control behind it is
+   * a write path nothing offers.
    *
    * The list is a declaration and not a type constraint on purpose: narrowing
-   * the hook to it would make routing a Save through `/panes` a compile error,
-   * and the only row left would mutate this expectation — a comparison against
-   * itself, which proves nothing about the write path. So the assertion is on
-   * the request, and a card pointed at a member no card offers is caught here
-   * as a write that never left or a member the list does not name.
+   * the hook to it would make routing a Save through `/appearance` a compile
+   * error, and the only row left would mutate this expectation — a comparison
+   * against itself, which proves nothing about the write path. So the assertion
+   * is on the request, and a card pointed at a member no card offers is caught
+   * here as a write that never left or a member the list does not name.
    */
   it('writes exactly the members the closed list names, and no others', async () => {
     const cards = [
@@ -496,14 +485,6 @@ describe('a project-file card’s form', () => {
           fireEvent.change(await screen.findByDisplayValue('Unveil'), {
             target: { value: 'Typed' }
           })
-      ],
-      [
-        <AppearanceForm key="a" />,
-        '"appearance": { "theme": "system", "density": "comfortable" }',
-        async () => {
-          fireEvent.click(await screen.findByRole('combobox', { name: 'Theme' }))
-          fireEvent.click(await screen.findByRole('option', { name: 'dark' }))
-        }
       ],
       [
         <StorageForm key="s" dirSays="holds files" />,

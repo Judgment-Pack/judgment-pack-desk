@@ -23,25 +23,25 @@
  * config-supplied path would be a local-code-execution surface. The status
  * line reports what the process was started with.
  *
- * **Runtime and Panes are gone, and what went with each of them is the point.**
- * The Runtime card was status rather than settings: it is the line above, and
- * its content is in Help & About. The Panes card offered three pane dimensions
- * and a reset of this browser's own record of the layout — the dimensions were
- * a settings page editing the frame it is drawn in, and the reset is now in the
- * user menu, beside the panes it clears. Nothing about the schema changed: a
- * file with a `panes` member is still read, still applied and still validated;
- * what left is the settings UI for it, and its write path left with it.
+ * **Runtime, Panes and Appearance are gone, and what went with each of them is
+ * the point.** The Runtime card was status rather than settings: it is the line
+ * above, and its content is in Help & About. The Panes card offered three pane
+ * dimensions and a reset of this browser's own record of the layout — the
+ * dimensions were a settings page editing the frame it is drawn in, and the
+ * reset is now in the user menu, beside the panes it clears. The Appearance
+ * card wrote a *person's* theme and density into the project's own file, so one
+ * viewer choosing dark chose it for everyone who ever cloned the repository;
+ * they are set in the user menu now, per viewer and per browser. Nothing about
+ * the schema changed: a file with `panes` or `appearance` is still read, still
+ * applied and still validated — `appearance` as the default for everyone who
+ * has not chosen. What left is the settings UI, and each write path left with
+ * its form.
  */
 import { AssistantSection } from '../assistant/AssistantSection'
 import { AdminStatusLine } from '../admin/AdminStatusLine'
 import { CardField, SourceCard, SourceGroup, type SourceStatus } from '../admin/SourceCard'
 import { useDefaultProject } from '../admin/DefaultProject'
-import {
-  AppearanceForm,
-  OrganizationForm,
-  StorageForm,
-  StorageKind
-} from '../admin/projectFileCards'
+import { OrganizationForm, StorageForm, StorageKind } from '../admin/projectFileCards'
 import { useHashTarget } from '../shell/useHashTarget'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
@@ -134,20 +134,6 @@ export function AdminView() {
           }}
           fields={<StorageKind />}
           save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocation]} />}
-        />
-
-        <SourceCard
-          id={SECTION.appearance!.id}
-          title={SECTION.appearance!.title}
-          location={sectionLocation(effective, 'appearance')}
-          status={sectionStatus(effective, 'appearance')}
-          under={groupFor(effective, 'appearance')}
-          content={{
-            text: textFor(effective, 'appearance'),
-            member: 'appearance',
-            value: config.appearance
-          }}
-          save={<AppearanceForm />}
         />
       </SourceGroup>
 

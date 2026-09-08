@@ -583,15 +583,47 @@ read exactly as it always was.
 Reduced motion is respected: `prefers-reduced-motion: reduce` sets every pane
 transition to zero, and collapse is instant.
 
-**Theme.** `appearance.theme` writes `data-theme` on the root element —
-`light` and `dark` pin a palette, `system` removes the attribute and leaves
-`prefers-color-scheme` to answer. What it selects today is a palette whose
-values are the light ones: this phase ships the plumbing — the two selectors in
-`styles.css` and the attribute — and none of the dark values, because the three
-condition verdict colours carry meaning, cannot be mechanically inverted, and a
-desk that re-authored its neutrals around them would be half dark. So choosing
-dark changes the attribute and no colour. `appearance.density` is recorded and
-validated and is read by nothing yet.
+**Appearance is yours.** Theme and density are set from the **user menu**, as
+two radio groups that apply the moment they are picked — there is no Save,
+because a preference is not a file — and they are stored in this browser, under
+one key per project, on exactly the grammar and discipline the pane record uses:
+
+```
+jpack-desk:appearance:v1:<projectKey>
+```
+
+The project file's `appearance` is the **default** for everyone who has not
+chosen, and that is the whole of the change. It used to be a card on Admin that
+wrote the member on a Save, so one person choosing dark chose it for everybody
+who ever cloned the repository; the member is still in the schema, still decoded
+and still applied, and it is now the value the menu names under the groups —
+`Project default: <theme>, <density>` — so that "Use the project's default" is
+not a leap in the dark. The ladder is preference, then the project file, then
+the built-in default, computed in one place and applied in one place.
+
+Every read and write is in `try/catch`, a record this desk did not write is left
+where it is, and a stored value outside the decoder's own unions is treated as
+**absent**: never applied, never shown as chosen. The write serializes only the
+member the viewer actually chose, for the reason the pane record gives — a
+`density` stored because the *theme* was picked would be a built-in value
+silently outranking `jpack-desk.json` for ever. Clearing it says which of four
+things happened, on the panes' reset's own terms.
+
+**The record is this browser's, not this person's.** The identity slot has no
+real user yet; when it does, the record can move server-side and follow somebody
+between machines. Until then a second browser is a second preference, and the
+menu does not pretend otherwise.
+
+**What a theme actually does** is unchanged: `appearance.theme` writes
+`data-theme` on the root element — `light` and `dark` pin a palette, `system`
+removes the attribute and leaves `prefers-color-scheme` to answer — and the
+palette it selects today is the light one. This phase ships the plumbing, the
+two selectors in `styles.css` and the attribute, and none of the dark values,
+because the three condition verdict colours carry meaning, cannot be
+mechanically inverted, and a desk that re-authored its neutrals around them
+would be half dark. So choosing dark changes the attribute and no colour, and
+the menu says so where the choice is offered. `appearance.density` is recorded
+and validated and is read by nothing yet, which the menu also says.
 
 ## Pack view
 
@@ -1150,8 +1182,10 @@ as always.
 Every key is optional except `deskConfigVersion`. `organization.name` is a
 non-empty string or `null`; `null` is how a file asks for the desk's own name,
 and `""` is refused by name rather than rendering a blank brand. `appearance` is
-decoded and validated; `theme` is applied as above and `density` is not read
-yet, which the Appearance card also says. `organization.mark` is `null`,
+decoded and validated, and it is the **default** rather than the answer: what
+this desk paints is the viewer's own preference where they have one, set from
+the user menu and held in their browser. `theme` is applied as above and
+`density` is not read yet, which the menu also says. `organization.mark` is `null`,
 an inline `<svg …>` string, or a `data:` URI of at most 65,536 bytes of UTF-8
 (measured with `TextEncoder`, not in UTF-16 code units — the two disagree by up
 to **three** to one on a mark carrying non-ASCII; three and not four, because a
@@ -1433,7 +1467,7 @@ its read status three times, which reads as three files.
 
 | Group | Header states | Members |
 |---|---|---|
-| **This project** | `jpack-desk.json`'s path, its read status, its whole text as a disclosure, and the default-project nomination | Organization, Storage, Appearance |
+| **This project** | `jpack-desk.json`'s path, its read status, its whole text as a disclosure, and the default-project nomination | Organization, Storage |
 | **This desk** | the desk-level file's path and its read status | Assistant, Identity provider |
 
 **A card under a group is the card as it was, minus what the header has already
@@ -1522,8 +1556,8 @@ absent from the request is carried across untouched. That header's other slots
 are about the *project's* file, so the one line under its control names the file
 it actually writes, from the chassis' own answer.
 
-**Storage, Organization and Appearance each Save one member of
-`jpack-desk.json` through the file API**, by splicing that member's own bytes
+**Storage and Organization each Save one member of `jpack-desk.json` through
+the file API**, by splicing that member's own bytes
 and decoding the whole file before any of it is sent — so every other member
 keeps its bytes, order and whitespace, and a value this desk would then refuse
 to read never reaches the disk. **The write states the digest its read carried
@@ -3811,7 +3845,8 @@ web/                 Vite + React + TypeScript SPA
                      trace and handoff-target renderers both the pack and graph
                      surfaces share
   src/shell/         the six regions, the pane state and its per-project
-                     record, the published shortcut list, the dirty guards
+                     record, this viewer's own appearance and the ladder that
+                     resolves it, the published shortcut list, the dirty guards
                      both editors use — a `beforeunload` listener and a router
                      blocker whose predicate is the pathname alone — the icon
                      set, the console's
@@ -3853,7 +3888,9 @@ web/                 Vite + React + TypeScript SPA
                      project as the default
   src/config/        the schema both configuration files share, its strict
                      decoder, the two queries that read them, the precedence
-                     between them, and the theme attribute it writes
+                     between them, and the theme attribute — written from
+                     `src/shell`, where the viewer's own preference is resolved
+                     against the file's default
     fixtures/        the desk-configuration fixtures and their one verdict
                      file, read by this decoder and by the chassis' — two
                      implementations of one contract, held together

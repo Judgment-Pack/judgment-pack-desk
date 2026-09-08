@@ -6106,6 +6106,86 @@ export function assistantTransport(): Transport {
     '  const says = write ?? status' \
     '  const says = status'
 
+  # ---- Chunk 6d: appearance is a preference, and leaves Admin ----------
+  #
+  # **Retired: none, and that is worth stating rather than leaving to be
+  # noticed.** The Appearance card had no row of its own — the two Selects on
+  # it were held by the primitive's rows (`the select reports back a value
+  # nobody offered`) and by the write path's (`the decoder is not asked before
+  # a card's Save is sent`), both of which are still driven by the two cards
+  # that remain. The one appearance row there was is `the configured theme is
+  # decoded and never applied`, and it **moved** with the code rather than
+  # retiring: it is the same claim about the same attribute, now broken where
+  # the ladder is resolved.
+
+  # **The preference is what this viewer chose, and it beats the file.** Theme
+  # and density are a person's and not an organization's: `appearance` in
+  # `jpack-desk.json` is a file in the project's repository, so a desk that read
+  # the file over the preference is the defect this whole chunk is about — one
+  # person's dark, for everybody who ever cloned it.
+  mutate web "the preference does not override the project default" "$APS" \
+    '    theme: preference?.theme ?? projectDefault.theme,
+    density: preference?.density ?? projectDefault.density' \
+    '    theme: projectDefault.theme,
+    density: projectDefault.density'
+
+  # **And the file is still the default.** The other half of the same ladder:
+  # a viewer who has chosen nothing gets what the project asked for, not what
+  # the schema falls back to — otherwise `appearance` is a member that is
+  # decoded, validated, shown on no page and honoured by nothing.
+  mutate web "the project default is not applied when no preference exists" "$APS" \
+    '    theme: preference?.theme ?? projectDefault.theme,
+    density: preference?.density ?? projectDefault.density' \
+    '    theme: preference?.theme ?? DESK_DEFAULTS.appearance.theme,
+    density: preference?.density ?? DESK_DEFAULTS.appearance.density'
+
+  # **A value outside the decoder's unions is absent, never applied.** The
+  # record is a string in a browser's own storage, editable by hand and by
+  # anything else this origin has ever served; a `"midnight"` that reached
+  # `applyTheme` would put an attribute nothing styles onto the root element and
+  # show a choice the menu never offered as the one in force.
+  mutate web "an invalid stored appearance is applied" "$APS" \
+    '  if (isTheme(record.theme)) preference.theme = record.theme
+  if (isDensity(record.density)) preference.density = record.density' \
+    '  preference.theme = record.theme as ThemeChoice
+  preference.density = record.density as Density'
+
+  # **A reset that reports a removal it did not make is worse than none.** The
+  # record is still there to come back on the next load, and the menu says the
+  # project's default is in force again — so `removeItem` is called, the key is
+  # read back, and only then is anything said.
+  mutate web "the appearance reset does not remove the key" "$APS" \
+    '    window.localStorage.removeItem(key)' \
+    '    void key'
+
+  # **Nothing is written under the provisional key.** Until the chassis names
+  # the project, the key is the literal `default`: a preference stored there is
+  # one project's, under a name that belongs to whichever project answers slowly
+  # next. The choice itself is still honoured on screen and is written when the
+  # key resolves — what the gate stops is the storing, not the choosing.
+  mutate web "an appearance is written under the provisional key" "$APS" \
+    '    if (!keyResolved) return
+    const chose = chosen.current
+    if (!chose.theme && !chose.density) return' \
+    '    const chose = chosen.current
+    if (!chose.theme && !chose.density) return'
+
+  # **A removed control's write path is removed with it**, exactly as the Panes
+  # card's was. The Appearance card is gone from Admin — a person's theme is not
+  # an administrator's setting, and it is held in that person's browser now —
+  # and a Save with no control behind it is a write path nothing offers. The
+  # composer keeps `/appearance`, because it is a general splicer with its own
+  # tests; the settings page has no member to hand it.
+  #
+  # The mutation routes a **real** Save, not the expectation: pointing an
+  # existing Admin Save at `/appearance` composes a file carrying an
+  # `organization` shape under `appearance`, which the decoder refuses, so
+  # nothing is written where a member was promised. The test that drives every
+  # Save and reads the wire catches it, and the expected list is never touched.
+  mutate web "the Appearance Save back (a write to /appearance from Admin)" "$PFC" \
+    "  const state = useProjectFileDraft('/organization', seed, (draft, from) => {" \
+    "  const state = useProjectFileDraft('/appearance', seed, (draft, from) => {"
+
   # **The verdict is the status, and the name is the metadata.** `server` is
   # retained across a reconnect — the provider spreads the previous state — so
   # `server !== null` means "this page has met a runtime", which is not "this

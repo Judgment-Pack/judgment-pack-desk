@@ -21,6 +21,14 @@
  * pane. The `panes` member is still decoded, still applied and still validated
  * — what left is the form, and its write path left with it, because a Save
  * with no control behind it is a write path nothing offers.
+ *
+ * **And there is no Appearance form either, for a different reason.** Theme and
+ * density are a person's preference and not an organization's setting: this
+ * card wrote them into a file in the project's repository, so one person
+ * choosing dark chose it for everyone who ever cloned it. They are set in the
+ * shell's user menu now, per viewer and per browser. `appearance` is still in
+ * the schema, still decoded and still applied — as the **default** for everyone
+ * who has not chosen — and, like `panes`, its write path left with its form.
  */
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
@@ -28,13 +36,10 @@ import {
   ID_BASE_SAYS,
   NO_CONTROL_CHARACTERS,
   ORGANIZATION_MARK_SAYS,
-  STORAGE_KIND_SAYS,
-  type Density,
-  type ThemeChoice
+  STORAGE_KIND_SAYS
 } from '../config/deskConfig'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
-import { Select } from '../ui/Select'
 import { TextArea } from '../ui/TextArea'
 import { CardField } from './SourceCard'
 import { ProjectFileForm, problemAt, useProjectFileDraft } from './ProjectFileForm'
@@ -94,75 +99,6 @@ export function OrganizationForm() {
             rows={3}
             spellCheck={false}
             onChange={(event) => set({ ...draft, mark: event.target.value })}
-          />
-        )}
-      </Field>
-    </ProjectFileForm>
-  )
-}
-
-/**
- * The two appearance choices, as the decoder's own unions.
- *
- * The value is the label, as it is for the engine and the tier: these are the
- * words the file carries, and a second vocabulary on the page would be a name
- * for a setting that is not the name in the file somebody has to repair.
- */
-const THEME_OPTIONS = [
-  { value: 'system', label: 'system' },
-  { value: 'light', label: 'light' },
-  { value: 'dark', label: 'dark' }
-] as const
-const DENSITY_OPTIONS = [
-  { value: 'comfortable', label: 'comfortable' },
-  { value: 'compact', label: 'compact' }
-] as const
-
-interface AppearanceDraft {
-  theme: ThemeChoice
-  density: Density
-}
-
-export function AppearanceForm() {
-  const { config } = useEffectiveConfig()
-  const seed: AppearanceDraft = {
-    theme: config.appearance.theme,
-    density: config.appearance.density
-  }
-  const state = useProjectFileDraft('/appearance', seed, (draft, from) => {
-    const edits: MemberEdit[] = []
-    if (draft.theme !== from.theme) edits.push({ path: ['theme'], value: draft.theme })
-    if (draft.density !== from.density) edits.push({ path: ['density'], value: draft.density })
-    return edits
-  })
-  const { draft, set, save } = state
-  return (
-    <ProjectFileForm state={state} placed={['appearance.theme', 'appearance.density']}>
-      <Field
-        label="Theme"
-        hint="Applied. The palette it selects is the light one."
-        error={problemAt(save, 'appearance.theme')}
-      >
-        {(wiring) => (
-          <Select
-            {...wiring}
-            value={draft.theme}
-            onValueChange={(value) => set({ ...draft, theme: value as ThemeChoice })}
-            options={THEME_OPTIONS}
-          />
-        )}
-      </Field>
-      <Field
-        label="Density"
-        hint="Accepted and read by nothing yet."
-        error={problemAt(save, 'appearance.density')}
-      >
-        {(wiring) => (
-          <Select
-            {...wiring}
-            value={draft.density}
-            onValueChange={(value) => set({ ...draft, density: value as Density })}
-            options={DENSITY_OPTIONS}
           />
         )}
       </Field>

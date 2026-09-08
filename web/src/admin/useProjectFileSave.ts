@@ -1,10 +1,11 @@
 /**
  * The one save path the project-file cards on Admin write through.
  *
- * Four cards — Storage, Organization, Appearance, Panes — write four top-level
- * members of one file, and each of them writes **its own member and nothing
- * else**. That is the whole of this module, and every rule in it exists because
- * the obvious implementation gets one of them wrong.
+ * Two cards — Storage and Organization — write two top-level members of one
+ * file, and each of them writes **its own member and nothing else**. That is
+ * the whole of this module, and every rule in it exists because the obvious
+ * implementation gets one of them wrong. (There were four: Panes and Appearance
+ * have since left Admin, and each write path left with its form.)
  *
  * **One member changes; every other byte stays.** A form over a parsed object
  * has to re-serialise the file to save it, so a one-word change to an
@@ -91,23 +92,24 @@ export type ProjectFilePointer = (typeof PROJECT_FILE_POINTERS)[number]
 /**
  * The members a **card** writes, which is not the same list.
  *
- * `/panes` is missing on purpose, and this is where that is written down. The
- * Panes card is gone from Admin — the pane dimensions are the shell's, and the
- * reset of this browser's own record of the layout moved to the shell's user
- * menu — and a Save with no control behind it is a write path nothing offers.
- * The composer above keeps `/panes` because it is a general splicer with its
- * own tests; the settings page has no member to hand it.
+ * `/panes` and `/appearance` are missing on purpose, and this is where that is
+ * written down. Both cards are gone from Admin — the pane dimensions are the
+ * shell's, and the theme and the density are a *person's* preference, held in
+ * that person's browser rather than in a file everyone who clones the project
+ * shares — and a Save with no control behind it is a write path nothing offers.
+ * The composer above keeps both, because it is a general splicer with its own
+ * tests; the settings page has no member to hand it.
  *
  * **It is a declaration and not a type constraint, deliberately.** Narrowing the
  * hook's parameter to this list would make the guarantee unbreakable and
- * therefore untestable: a mutation routing an Admin Save through `/panes` would
- * not compile, and the only row left would mutate the *expected list* — which
- * fails a comparison against itself and proves nothing about the write path.
- * The hook takes the composer's wider pointer, and the guarantee is behavioural:
- * every Save on Admin is driven and what came off the wire is compared to this
- * list.
+ * therefore untestable: a mutation routing an Admin Save through `/appearance`
+ * would not compile, and the only row left would mutate the *expected list* —
+ * which fails a comparison against itself and proves nothing about the write
+ * path. The hook takes the composer's wider pointer, and the guarantee is
+ * behavioural: every Save on Admin is driven and what came off the wire is
+ * compared to this list.
  */
-export const CARD_POINTERS = ['/organization', '/appearance', '/storage'] as const
+export const CARD_POINTERS = ['/organization', '/storage'] as const
 
 /**
  * One field a card actually edited, addressed inside its member.

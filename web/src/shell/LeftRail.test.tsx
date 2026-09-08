@@ -207,7 +207,6 @@ describe('the left rail', () => {
     expect(items.map((item) => item.textContent)).toEqual([
       'Organization',
       'Storage',
-      'Appearance',
       'Assistant',
       'Identity provider'
     ])
