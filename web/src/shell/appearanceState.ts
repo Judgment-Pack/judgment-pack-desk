@@ -267,9 +267,27 @@ interface Choice {
   value: AppearancePreference
 }
 
-/** A stamped choice's value, where the stamp still applies, and nothing where it does not. */
-function applying(choice: Choice, key: string): AppearancePreference {
-  return choice.key === key || !choice.resolved ? choice.value : NOTHING_CHOSEN
+/**
+ * Whether a stamped choice belongs to somewhere this desk has left.
+ *
+ * A choice made under the **provisional** key belongs to nowhere yet, so it
+ * belongs to wherever the listing lands; every other stamp belongs to one
+ * project, and a key that is not that project's is a project this choice has
+ * nothing to say about.
+ */
+function leftBehind(choice: Choice, key: string): boolean {
+  return choice.resolved && choice.key !== key
+}
+
+/**
+ * A stamped choice's members, and none where the stamp was left behind.
+ *
+ * Only a setter needs this, and only for one window: a pick taken in the same
+ * batch as a root change runs against the key it was drawn under, so the
+ * members it would otherwise merge in are another project's.
+ */
+function keptFrom(choice: Choice, key: string): AppearancePreference {
+  return leftBehind(choice, key) ? NOTHING_CHOSEN : choice.value
 }
 
 export interface AppearanceApi {
@@ -391,16 +409,36 @@ export function AppearanceProvider({
   }))
 
   /**
-   * The choice, where it still applies.
+   * **A choice this desk has left behind is discarded, not hidden.**
    *
-   * Its own key, or **any** key if it was made under the provisional one: that
-   * key names no project — nothing is read under it and nothing is written
-   * under it — so a viewer who picked dark in the moment before the listing
-   * landed picked it for whichever project the listing then names. Every other
-   * mismatch is a different project, and nothing chosen in one is offered to
-   * another.
+   * Filtering it at the point of use was round 1's fix and round 2 found what
+   * it left standing: the value stayed in state, so A → B → A brought it back,
+   * ahead of A's own record — and where another tab had changed A's preference
+   * meanwhile, the write effect put the resurrected value over it. A stale
+   * choice must stop existing, not stop being read.
+   *
+   * **During render, and not in an effect.** This is React's documented shape
+   * for state that has to follow a prop: the update restarts this component's
+   * render before anything is committed, so there is no pass in which the old
+   * choice reaches the page — which is the flash round 1 removed and must not
+   * come back to fix this. An effect would run after a paint, and the value
+   * that paint carried would be the previous project's.
+   *
+   * A pick taken in the same batch as a root change goes with it. It was made
+   * for the project this desk was on, that project is not this one, and the
+   * only alternatives are writing it somewhere the viewer did not choose or
+   * writing it to a project this tab has left.
+   *
+   * And then it is read with **no filter at all**: the discard has already run
+   * for this render, so the stamp either names this key or names the
+   * provisional one — and the provisional one is the carry-forward, a choice
+   * made in the moment before the listing landed, for whichever project it then
+   * named.
    */
-  const chosen = applying(choice, storageKey)
+  if (leftBehind(choice, storageKey)) {
+    setChoice({ key: storageKey, resolved: keyResolved, value: NOTHING_CHOSEN })
+  }
+  const chosen = choice.value
 
   /**
    * The stored record, or nothing at all while the key is provisional.
@@ -442,19 +480,19 @@ export function AppearanceProvider({
    *
    * **Its condition is a render saved and not a rule**, and that is written
    * down because a mutation row was written for it and could not discriminate.
-   * Everything above has already returned unless the key is resolved and
-   * something was chosen under a stamp that still applies, so an unconditional
-   * re-stamp could only ever write back the stamp already there. The rule it
-   * looks like it is holding is held by `applying`, one screen up.
+   * A stamp that named another project has already been discarded during
+   * render, so by the time this runs the only stamp that is not this key's is
+   * the provisional one — and an unconditional re-stamp would write back the
+   * stamp already there in every other case.
    */
   useEffect(() => {
     if (!keyResolved) return
     if (chosen.theme === undefined && chosen.density === undefined) return
     writeAppearance(storageKey, chosen)
-    if (choice.key !== storageKey || !choice.resolved) {
+    if (!choice.resolved) {
       setChoice({ key: storageKey, resolved: true, value: chosen })
     }
-  }, [storageKey, keyResolved, chosen, choice.key, choice.resolved])
+  }, [storageKey, keyResolved, chosen, choice.resolved])
 
   // Each setter records the member and the key it was chosen under, and leaves
   // the other member alone: a `density` stored because the *theme* was picked
@@ -464,7 +502,7 @@ export function AppearanceProvider({
       setChoice((previous) => ({
         key: storageKey,
         resolved: keyResolved,
-        value: { ...applying(previous, storageKey), theme }
+        value: { ...keptFrom(previous, storageKey), theme }
       }))
     },
     [storageKey, keyResolved]
@@ -474,7 +512,7 @@ export function AppearanceProvider({
       setChoice((previous) => ({
         key: storageKey,
         resolved: keyResolved,
-        value: { ...applying(previous, storageKey), density }
+        value: { ...keptFrom(previous, storageKey), density }
       }))
     },
     [storageKey, keyResolved]

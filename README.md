@@ -622,7 +622,11 @@ carrying a value the unions do not admit, is the other case — this desk's reco
 with nothing usable in it. The write serializes only the
 member the viewer actually chose, for the reason the pane record gives — a
 `density` stored because the *theme* was picked would be a built-in value
-silently outranking `jpack-desk.json` for ever. Clearing it says which of four
+silently outranking `jpack-desk.json` for ever. A choice is stamped with the key
+it was made under, and a chassis that names a different project **discards** it
+rather than hiding it: hidden, it came back when the tab returned to the first
+project, ahead of that project's own record and over whatever another tab had
+written there meanwhile. Clearing it says which of four
 things happened, on the panes' reset's own terms.
 
 **Nothing is applied that this desk has not established.** The record is

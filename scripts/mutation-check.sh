@@ -6177,8 +6177,22 @@ export function assistantTransport(): Transport {
   # may never have had. Only a choice made under the *provisional* key carries
   # forward, because that key names no project.
   mutate web "a choice survives the chassis naming a different project" "$APS" \
-    '  return choice.key === key || !choice.resolved ? choice.value : NOTHING_CHOSEN' \
-    '  return choice.value'
+    '  return choice.resolved && choice.key !== key' \
+    '  return false'
+
+  # ---- Codex round 2 -------------------------------------------------------
+
+  # **A choice left behind is discarded, not hidden.** Round 1 filtered it at
+  # the point of use, and round 2 found what that left standing: the value
+  # stayed in state, so A → B → A brought it back ahead of A's own record — and
+  # where another tab had changed A's preference meanwhile, the write effect put
+  # the resurrected value over it. This restores exactly that filter.
+  mutate web "the discard replaced by the filter (a choice hidden, not cleared)" "$APS" \
+    '  if (leftBehind(choice, storageKey)) {
+    setChoice({ key: storageKey, resolved: keyResolved, value: NOTHING_CHOSEN })
+  }
+  const chosen = choice.value' \
+    '  const chosen = leftBehind(choice, storageKey) ? NOTHING_CHOSEN : choice.value'
 
   # **Retired, unrun-and-then-run: `a choice is re-stamped onto whatever key is
   # current`.** It removed the condition on the re-stamp, and the suite stayed

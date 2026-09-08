@@ -112,6 +112,52 @@ describe('a choice belongs to the project it was made in', () => {
     expect(record(KEY_B)).toBeNull()
   })
 
+  it('does not bring it back when the chassis names that project again', () => {
+    // Round 2's finding. Hiding the choice while the desk was elsewhere left it
+    // in state, so A → B → A made it live again *ahead of A's own record* — and
+    // where another tab had changed A's preference meanwhile, the write put the
+    // resurrected value over it. A stale choice has to stop existing.
+    const view = renderProvider({ identity: A, projectDefault: LIGHT_COMPACT })
+    act(() => screen.getByRole('button', { name: 'choose dark' }).click())
+    expect(JSON.parse(record(KEY_A)!)).toEqual({ v: 1, theme: 'dark' })
+
+    act(() => view.move({ identity: B, projectDefault: LIGHT_COMPACT }))
+    // Another tab, on the project this one has left.
+    window.localStorage.setItem(KEY_A, JSON.stringify({ v: 1, theme: 'light' }))
+
+    act(() => view.move({ identity: A, projectDefault: LIGHT_COMPACT }))
+    // What A says now, not what this tab last said about it — and the bytes
+    // the other tab wrote are still the bytes on disk.
+    expect(effective()).toBe('light/compact')
+    expect(JSON.parse(record(KEY_A)!)).toEqual({ v: 1, theme: 'light' })
+  })
+
+  it('does not bring it back over a record another tab cleared', () => {
+    const view = renderProvider({ identity: A, projectDefault: LIGHT_COMPACT })
+    act(() => screen.getByRole('button', { name: 'choose dark' }).click())
+    act(() => view.move({ identity: B, projectDefault: LIGHT_COMPACT }))
+    window.localStorage.removeItem(KEY_A)
+
+    act(() => view.move({ identity: A, projectDefault: LIGHT_COMPACT }))
+    // The project's default, because that is what A now has — and nothing is
+    // written back to re-create a record somebody deleted.
+    expect(effective()).toBe('light/compact')
+    expect(record(KEY_A)).toBeNull()
+  })
+
+  it('writes nothing to the new root when a pick and a root change land together', () => {
+    // The pick was made for the project this desk was on; that project is not
+    // this one, and the alternatives are writing it somewhere the viewer did
+    // not choose or writing it to a project this tab has left.
+    const view = renderProvider({ identity: A, projectDefault: LIGHT_COMPACT })
+    act(() => {
+      screen.getByRole('button', { name: 'choose dark' }).click()
+      view.move({ identity: B, projectDefault: LIGHT_COMPACT })
+    })
+    expect(record(KEY_B)).toBeNull()
+    expect(effective()).toBe('light/compact')
+  })
+
   it('keeps a choice made before the chassis had named any project', () => {
     // The one carry-forward that is legitimate: the provisional key names no
     // project, so a choice made under it was made for whichever project the
