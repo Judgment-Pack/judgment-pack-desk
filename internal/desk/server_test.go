@@ -180,11 +180,15 @@ func launchHandoff(t *testing.T, ts *httptest.Server) *http.Cookie {
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("launch status = %d, want %d", resp.StatusCode, http.StatusSeeOther)
 	}
-	cookies := resp.Cookies()
-	if len(cookies) != 1 {
-		t.Fatalf("the launch set %v, want exactly one handoff cookie", cookies)
+	// Two: the `HttpOnly` handoff, and the readable marker beside it that tells
+	// a page already holding an id to spend this one. See `pendingCookiePrefix`.
+	for _, cookie := range resp.Cookies() {
+		if strings.HasPrefix(cookie.Name, launchCookiePrefix+"-") {
+			return cookie
+		}
 	}
-	return cookies[0]
+	t.Fatalf("the launch set %v, want a handoff cookie among them", resp.Cookies())
+	return nil
 }
 
 // beginSession is **the page's bootstrap, end to end**: the launch, and the one
@@ -379,17 +383,15 @@ func TestWSAcceptsTheOfferedSessionID(t *testing.T) {
 
 // TestWSRefusesAForgedSessionID: an id this desk never minted is not a session,
 // however well formed it looks — offered on the subprotocol or presented as a
-// bearer.
+// bearer. **Well formed** is the operative word: a malformed offer is a `400`
+// and has its own test, because "your credential is wrong" and "this handshake
+// is not one this desk reads" are different answers.
 func TestWSRefusesAForgedSessionID(t *testing.T) {
 	_, ts := newTestServer(t, false)
 	real := beginSession(t, ts)
-	// **Not the launch secret**: as a *bearer* it is a real credential — it is
-	// how a script authorizes — and its own leg is below. As a subprotocol
-	// offer it is not, and that is what the last row here pins.
 	for _, id := range []string{
 		strings.Repeat("a", len(real)),
 		flipLast(real),
-		"",
 	} {
 		for _, how := range []struct {
 			name     string
@@ -413,8 +415,53 @@ func TestWSRefusesAForgedSessionID(t *testing.T) {
 	offered := upgradeRequest(t, ts, "", ts.URL, func(r *http.Request) {
 		r.Header.Set(wsProtocolHeader, strings.Join(upgradeOffer(testToken), ", "))
 	})
-	if offered.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("the launch secret offered as a subprotocol: status %d, want 401", offered.StatusCode)
+	if offered.StatusCode != http.StatusBadRequest {
+		t.Fatalf("the launch secret offered as a subprotocol: status %d, want 400", offered.StatusCode)
+	}
+}
+
+// TestTheSubprotocolOfferIsReadStrictly. An offer this desk cannot read the
+// same way twice is refused with a `400` and a sentence, before any credential
+// is looked at — the same argument the relay's query rule makes, on the one
+// other channel a page can put something on.
+func TestTheSubprotocolOfferIsReadStrictly(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	id := beginSession(t, ts)
+
+	for _, refused := range []struct{ name, offer string }{
+		{"no jpack-desk at all", wsSessionPrefix + id},
+		{"two ids", "jpack-desk, " + wsSessionPrefix + id + ", " + wsSessionPrefix + id},
+		{"two different ids", "jpack-desk, " + wsSessionPrefix + id + ", " + wsSessionPrefix + flipLast(id)},
+		{"an empty id", "jpack-desk, " + wsSessionPrefix},
+		{"a non-hex id", "jpack-desk, " + wsSessionPrefix + strings.Repeat("z", 48)},
+		{"an id of the wrong length", "jpack-desk, " + wsSessionPrefix + id[:47]},
+		{"upper-case hex, which this desk does not mint", "jpack-desk, " + wsSessionPrefix + strings.ToUpper(id)},
+	} {
+		t.Run(refused.name, func(t *testing.T) {
+			resp := upgradeRequest(t, ts, "", ts.URL, func(r *http.Request) {
+				r.Header.Set(wsProtocolHeader, refused.offer)
+			})
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status %d, want 400", resp.StatusCode)
+			}
+			body, _ := io.ReadAll(resp.Body)
+			line := strings.TrimSpace(string(body))
+			if line == "" || strings.Contains(line, "\n") {
+				t.Errorf("the refusal is not one line: %q", line)
+			}
+			if strings.Contains(line, id) {
+				t.Error("the refusal repeats the offered id")
+			}
+		})
+	}
+
+	// And the offer this desk does read, all the way to a completed handshake —
+	// with the id never echoed back, which `acceptsSession` asserts.
+	acceptsSession(t, ts, id, ts.URL)
+
+	// A script offers nothing and is judged by its header, as before.
+	if resp := upgradeRequest(t, ts, "", ts.URL, bearer); resp.StatusCode == http.StatusBadRequest {
+		t.Fatal("a script with no subprotocol offer was refused as malformed")
 	}
 }
 

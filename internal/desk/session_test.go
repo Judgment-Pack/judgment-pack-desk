@@ -1,6 +1,7 @@
 package desk
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +14,8 @@ import (
 	"testing"
 	"testing/fstest"
 	"time"
+
+	"github.com/coder/websocket"
 )
 
 /* The bootstrap --------------------------------------------------------------- */
@@ -40,10 +43,33 @@ func TestLaunchSetsAHandoffAndNoSession(t *testing.T) {
 	}
 
 	cookies := resp.Cookies()
-	if len(cookies) != 1 {
-		t.Fatalf("the launch set %d cookies, want exactly 1: %v", len(cookies), cookies)
+	if len(cookies) != 2 {
+		t.Fatalf("the launch set %d cookies, want the handoff and its marker: %v", len(cookies), cookies)
 	}
-	cookie := cookies[0]
+	cookie := launchHandoff(t, ts)
+
+	// **The marker, and what it must not be.** It is readable by page code —
+	// the only cookie on this desk that is — because the handoff is `HttpOnly`
+	// and a page therefore cannot tell there is one to spend. It carries no
+	// secret and expires with the thing it marks.
+	var marker *http.Cookie
+	for _, held := range cookies {
+		if strings.HasPrefix(held.Name, "jpack-desk-handoff-pending-") {
+			marker = held
+		}
+	}
+	if marker == nil {
+		t.Fatalf("the launch set no readable marker: %v", cookies)
+	}
+	if marker.HttpOnly {
+		t.Error("the marker is HttpOnly, so the page cannot see there is a handoff to spend")
+	}
+	if marker.Value == "" || strings.Contains(marker.Value, cookie.Value) || marker.Value == testToken {
+		t.Errorf("the marker carries something it should not: %q", marker.Value)
+	}
+	if marker.MaxAge != 60 {
+		t.Errorf("the marker's Max-Age is %d, want the handoff's 60", marker.MaxAge)
+	}
 
 	// **The name carries the port**, because a cookie's origin does not: two
 	// desks on one host would otherwise hand each other's tab the wrong handoff.
@@ -191,17 +217,16 @@ func TestTheExchangeClearsTheHandoff(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	cookies := resp.Cookies()
-	if len(cookies) != 1 {
-		t.Fatalf("the exchange set %v, want exactly the cleared handoff", cookies)
+	if len(cookies) != 2 {
+		t.Fatalf("the exchange set %v, want the handoff and its marker cleared", cookies)
 	}
-	if cookies[0].Name != handoff.Name {
-		t.Errorf("cleared %q, want %q", cookies[0].Name, handoff.Name)
-	}
-	if cookies[0].MaxAge >= 0 {
-		t.Errorf("Max-Age = %d, want a negative one that clears it", cookies[0].MaxAge)
-	}
-	if cookies[0].Value != "" {
-		t.Errorf("the cleared cookie carries %q", cookies[0].Value)
+	for _, cleared := range cookies {
+		if cleared.MaxAge >= 0 {
+			t.Errorf("%s: Max-Age = %d, want a negative one that clears it", cleared.Name, cleared.MaxAge)
+		}
+		if cleared.Value != "" {
+			t.Errorf("%s: the cleared cookie carries %q", cleared.Name, cleared.Value)
+		}
 	}
 }
 
@@ -325,48 +350,90 @@ func TestTheStatedResidual(t *testing.T) {
 /* Nothing ambient authorizes anything ------------------------------------------ */
 
 // TestNoRouteEverSetsASessionCookie sweeps every route this chassis has and
-// asserts that **no answer carries a live cookie** except the launch's handoff.
+// asserts that **no answer carries a live cookie** except the launch's handoff
+// and its marker.
 //
-// One test per route would be one route away from a gap; this is the sweep, and
-// a route added without being added here is a route this suite does not speak
-// for.
+// **Each route gets its own session, and each is required to succeed.** The
+// first version shared one id across the sweep and included `DELETE
+// /api/session`, so every route after it was answering `401` — and a `401` sets
+// no cookies, so the assertion passed for the wrong reason on half the table.
+// Asserting the success status is what makes "this handler set no cookie" a
+// statement about the handler rather than about the guard in front of it.
 func TestNoRouteEverSetsASessionCookie(t *testing.T) {
 	_, ts, project := filesServer(t)
 	writeProjectFile(t, project, "jpack.json", "{}")
-	id := beginSession(t, ts)
 
-	for _, route := range []struct{ method, path string }{
-		{http.MethodGet, "/api/files"},
-		{http.MethodGet, "/api/file?path=jpack.json"},
-		{http.MethodPut, "/api/file"},
-		{http.MethodGet, "/api/session"},
-		{http.MethodPost, "/api/session"},
-		{http.MethodDelete, "/api/session"},
-		{http.MethodGet, "/api/desk-config"},
-		{http.MethodPut, "/api/desk-config"},
-		{http.MethodGet, "/api/assistant/key"},
-		{http.MethodPut, "/api/assistant/key"},
-		{http.MethodDelete, "/api/assistant/key"},
-		{http.MethodPost, "/api/assistant/probe"},
-		{http.MethodGet, relayPrefix + "models"},
-		{http.MethodGet, "/ws"},
-		{http.MethodGet, "/"},
-		{http.MethodGet, "/packs/anything"},
-	} {
-		t.Run(route.method+" "+route.path, func(t *testing.T) {
-			req, err := http.NewRequest(route.method, ts.URL+route.path, strings.NewReader("{}"))
+	type attempt struct {
+		name string
+		want int
+		do   func(t *testing.T, id string) *http.Response
+	}
+	plain := func(method, path string, want int) attempt {
+		return attempt{method + " " + path, want, func(t *testing.T, id string) *http.Response {
+			t.Helper()
+			req, err := http.NewRequest(method, ts.URL+path, strings.NewReader(`{"key":"placeholder-never-sent-000"}`))
 			if err != nil {
 				t.Fatalf("request: %v", err)
 			}
 			pageBearer(id)(req)
+			req.Header.Set("Content-Type", "application/json")
 			resp, err := ts.Client().Do(req)
 			if err != nil {
 				t.Fatalf("do: %v", err)
 			}
+			return resp
+		}}
+	}
+	for _, route := range []attempt{
+		plain(http.MethodGet, "/api/files", http.StatusOK),
+		plain(http.MethodGet, "/api/file?path=jpack.json", http.StatusOK),
+		plain(http.MethodGet, "/api/session", http.StatusOK),
+		plain(http.MethodGet, "/api/desk-config", http.StatusOK),
+		plain(http.MethodGet, "/api/assistant/key", http.StatusOK),
+		// A `409`, and it is still the handler answering: storing a key needs a
+		// configured endpoint to bind it to, and this desk has none. What this
+		// row asserts is that the *guard* was passed and the handler ran.
+		plain(http.MethodPut, "/api/assistant/key", http.StatusConflict),
+		plain(http.MethodDelete, "/api/assistant/key", http.StatusOK),
+		plain(http.MethodDelete, "/api/session", http.StatusOK),
+		plain(http.MethodGet, "/", http.StatusNotFound),
+		plain(http.MethodGet, "/packs/anything", http.StatusNotFound),
+		{"POST /api/session", http.StatusOK, func(t *testing.T, _ string) *http.Response {
+			t.Helper()
+			// The exchange has its own shape: a handoff and the same-origin
+			// claim, which is the only route on this desk that takes either.
+			handoff := launchHandoff(t, ts)
+			req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/session", nil)
+			req.AddCookie(&http.Cookie{Name: handoff.Name, Value: handoff.Value})
+			req.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+			req.Header.Set("Origin", ts.URL)
+			resp, err := ts.Client().Do(req)
+			if err != nil {
+				t.Fatalf("do: %v", err)
+			}
+			return resp
+		}},
+		{"GET /ws", http.StatusSwitchingProtocols, func(t *testing.T, id string) *http.Response {
+			t.Helper()
+			return upgradeRequest(t, ts, "", ts.URL, func(r *http.Request) {
+				r.Header.Set(wsProtocolHeader, strings.Join(upgradeOffer(id), ", "))
+			})
+		}},
+	} {
+		t.Run(route.name, func(t *testing.T) {
+			// **A session of its own**, so that one route's sign-out cannot
+			// make the next route's assertion vacuous.
+			id := beginSession(t, ts)
+			resp := route.do(t, id)
 			defer resp.Body.Close()
+			if resp.StatusCode != route.want {
+				body, _ := io.ReadAll(resp.Body)
+				t.Fatalf("status %d, want %d — the handler was not reached: %s",
+					resp.StatusCode, route.want, body)
+			}
 			for _, cookie := range resp.Cookies() {
 				if cookie.Value != "" && cookie.MaxAge >= 0 {
-					t.Fatalf("%s %s set a live cookie: %v", route.method, route.path, cookie)
+					t.Fatalf("%s set a live cookie: %v", route.name, cookie)
 				}
 			}
 		})
@@ -995,4 +1062,239 @@ func TestLaunchAcceptsOnlyGET(t *testing.T) {
 			}
 		}
 	}
+}
+
+/* The relaunch, the raw query, the sockets, and recency ------------------------ */
+
+// TestARelaunchIsAlwaysSpendable is the chassis half of the relaunch fix: a
+// launch into a tab that already has a session sets a handoff **and a readable
+// marker**, and the old session keeps working until the new one lands.
+//
+// The page's half — spending it — is `web/src/mcp/session.test.tsx`. What this
+// pins is that the chassis gives the page something to act on, and that a
+// relaunch does not disturb what is already working.
+func TestARelaunchIsAlwaysSpendable(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	first := beginSession(t, ts)
+
+	resp := launchResponse(t, ts, testToken)
+	defer resp.Body.Close()
+	var marker, handoff *http.Cookie
+	for _, cookie := range resp.Cookies() {
+		if strings.HasPrefix(cookie.Name, "jpack-desk-handoff-pending-") {
+			marker = cookie
+		}
+		if strings.HasPrefix(cookie.Name, launchCookiePrefix+"-") {
+			handoff = cookie
+		}
+	}
+	if marker == nil || handoff == nil {
+		t.Fatalf("a relaunch set %v, want a handoff and a marker", resp.Cookies())
+	}
+	if marker.HttpOnly {
+		t.Fatal("the marker is HttpOnly, so a page holding an id cannot tell there is a handoff waiting")
+	}
+
+	// The old session still works — the page has not replaced it yet, and a
+	// relaunch that broke the tab it was opened from would be a poor trade.
+	acceptsSession(t, ts, first, ts.URL)
+
+	// And the new handoff is spendable, which is what the page does next.
+	second := exchange(t, ts, handoff)
+	if second == first {
+		t.Fatal("the relaunch answered the same session id")
+	}
+	acceptsSession(t, ts, second, ts.URL)
+}
+
+// TestTheSecretRuleReadsTheRawQuery.
+//
+// `url.Query()` is a parser, and a parser has opinions: it drops a pair it
+// cannot decode and it does not split on `;`. So `?secret=<real>%ZZ` parsed to
+// nothing and `?x=1;secret=<real>` parsed to one parameter named `x`, and both
+// were answered **with the page** — the secret then sitting in
+// `window.location`, in history, and in every `Referer` that page sent.
+func TestTheSecretRuleReadsTheRawQuery(t *testing.T) {
+	_, ts := deskWithAPage(t)
+	for _, raw := range []string{
+		"secret=" + testToken,
+		"SECRET=" + testToken,
+		"Secret=" + testToken,
+		"%73ecret=" + testToken,
+		"%53ECRET=" + testToken,
+		"x=1;secret=" + testToken,
+		"secret=" + testToken + ";x=1",
+		"secret=" + testToken + "%ZZ",
+		"a=%ZZ&secret=" + testToken,
+		"a=%ZZ&%73ecret=" + testToken,
+		"secret",
+		"mysecret=1",
+		"a=secret",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			resp, err := ts.Client().Get(ts.URL + "/packs/x?" + raw)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			if strings.Contains(string(body), thePage) {
+				t.Fatalf("?%s was answered with the page", raw)
+			}
+			if resp.StatusCode != http.StatusNotFound {
+				t.Fatalf("?%s answered %d, want 404", raw, resp.StatusCode)
+			}
+		})
+	}
+
+	// **A query that mentions no secret is served**, which is the control: a
+	// rule that refused everything would pass every row above.
+	for _, raw := range []string{"", "edit=1", "path=a.json&x=2", "a=%ZZ"} {
+		t.Run("served/"+raw, func(t *testing.T) {
+			resp, err := ts.Client().Get(ts.URL + "/packs/x?" + raw)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			if !strings.Contains(string(body), thePage) {
+				t.Fatalf("?%s was refused (%d): %s", raw, resp.StatusCode, body)
+			}
+		})
+	}
+}
+
+// TestTheRuleIsAboutTheQueryAndNotTheFragment. A fragment is never sent to a
+// server, so there is nothing on the wire to refuse; what stops one reaching
+// the page's address is the launch redirect's explicit empty fragment, which
+// `TestTheRedirectDropsTheRequestsFragment` covers.
+func TestTheRuleIsAboutTheQueryAndNotTheFragment(t *testing.T) {
+	if querySmellsOfASecret("") {
+		t.Error("an empty query smells of a secret")
+	}
+	if !querySmellsOfASecret("secret=x") {
+		t.Error("a plain secret pair does not")
+	}
+	// The fragment never arrives, so this function never sees one. Written down
+	// so that a reader does not add a rule for a case that cannot occur.
+	if querySmellsOfASecret("edit=1") {
+		t.Error("an ordinary query smells of a secret")
+	}
+}
+
+// TestSignOutClosesTheSessionsSockets. A relay socket outlives the request that
+// opened it, so a sign-out that only emptied the store would end the session
+// everywhere except where it was actually being used.
+func TestSignOutClosesTheSessionsSockets(t *testing.T) {
+	if !runtimeAvailable() {
+		t.Skip("no runtime binary: this drives a real relay socket")
+	}
+	_, ts := newTestServer(t, false)
+	mine := beginSession(t, ts)
+	other := beginSession(t, ts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	open := func(id string) *websocket.Conn {
+		t.Helper()
+		c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws", &websocket.DialOptions{
+			HTTPHeader:   http.Header{"Origin": []string{ts.URL}},
+			Subprotocols: upgradeOffer(id),
+		})
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		c.SetReadLimit(readLimit)
+		(&rpcSession{t: t, ctx: ctx, ws: c}).initialize()
+		return c
+	}
+	ending := open(mine)
+	defer ending.Close(websocket.StatusNormalClosure, "")
+	surviving := open(other)
+	defer surviving.Close(websocket.StatusNormalClosure, "")
+
+	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/session", nil)
+	pageBearer(mine)(req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("sign-out status %d", resp.StatusCode)
+	}
+
+	// The signed-out socket is closed, and the next thing sent on it fails.
+	deadline, stop := context.WithTimeout(ctx, 10*time.Second)
+	defer stop()
+	for {
+		if err := ending.Write(deadline, websocket.MessageText, []byte(`{"jsonrpc":"2.0","id":9,"method":"tools/list"}`)); err != nil {
+			break
+		}
+		if _, _, err := ending.Read(deadline); err != nil {
+			break
+		}
+		if deadline.Err() != nil {
+			t.Fatal("the signed-out session's socket is still serving")
+		}
+	}
+
+	// And the other session's socket is untouched.
+	(&rpcSession{t: t, ctx: ctx, ws: surviving}).call(4, "list_packs", map[string]any{})
+}
+
+// TestTrafficRefreshesRecency. A tab that has been driving the runtime for an
+// hour has not been "looked up" since its bootstrap, so under a
+// least-recently-used bound it was the coldest thing in the store and the first
+// to go — the busiest desk being the one that stopped working.
+func TestTrafficRefreshesRecency(t *testing.T) {
+	store, err := newSessionStore()
+	if err != nil {
+		t.Fatalf("newSessionStore: %v", err)
+	}
+	busy, err := store.create("local user", nil)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	handle := store.handle(busy)
+	for range maxSessions * 2 {
+		if _, err := store.create("local user", nil); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		// One frame's worth of traffic, which is what the relay does per second
+		// on an open socket.
+		store.touch(handle)
+	}
+	if _, ok := store.lookup(busy); !ok {
+		t.Fatal("a session with traffic on it was evicted: the relay's touch is not reaching the store")
+	}
+}
+
+// TestEvictionEndsTheSessionsSockets: the same close a sign-out performs, on
+// the path nobody asked for.
+func TestEvictionEndsTheSessionsSockets(t *testing.T) {
+	store, err := newSessionStore()
+	if err != nil {
+		t.Fatalf("newSessionStore: %v", err)
+	}
+	ended := make(chan string, maxSessions*2)
+	store.whenEnded(func(handle string) { ended <- handle })
+
+	first, err := store.create("local user", nil)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	want := store.handle(first)
+	for range maxSessions {
+		if _, err := store.create("local user", nil); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+	}
+	close(ended)
+	for handle := range ended {
+		if handle == want {
+			return
+		}
+	}
+	t.Fatal("an evicted session's sockets were never ended")
 }

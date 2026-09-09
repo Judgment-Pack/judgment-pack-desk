@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 
 	"github.com/coder/websocket"
 )
@@ -37,6 +38,19 @@ type conn struct {
 	out  chan []byte
 	once sync.Once
 	done chan struct{}
+	// handle is the MAC of the session this socket was opened with, or "" for
+	// one opened with the launch secret.
+	//
+	// **A socket outlives the request that opened it**, which is the whole
+	// point of a relay — so a session that is signed out or evicted while a
+	// socket is open would otherwise leave that socket driving the runtime for
+	// as long as it stayed connected. Recording the handle is what lets
+	// `closeSession` find it. The handle rather than the id, so a live
+	// credential is not sitting in a struct the whole process can reach.
+	handle string
+	// cancel stops this connection's context, which is how a sign-out reaches
+	// the goroutines that own the socket.
+	cancel context.CancelFunc
 }
 
 func (c *conn) send(msg []byte) {
@@ -63,6 +77,43 @@ func (s *Server) unregister(c *conn) {
 	defer s.mu.Unlock()
 	delete(s.conns, c)
 }
+
+// closeSession ends every socket a session opened.
+//
+// Called by sign-out, and by the store when a session is evicted: in both cases
+// the id names nothing afterwards, and a socket that kept driving the runtime
+// would be a session that ended everywhere except where it mattered.
+//
+// The close carries a reason, so the page sees why rather than reconnecting
+// into a refusal it cannot explain.
+func (s *Server) closeSession(handle string) {
+	if handle == "" {
+		return
+	}
+	s.mu.Lock()
+	ending := make([]*conn, 0, len(s.conns))
+	for c := range s.conns {
+		if c.handle == handle {
+			ending = append(ending, c)
+		}
+	}
+	s.mu.Unlock()
+	for _, c := range ending {
+		s.closeWith(c.ws, websocket.StatusPolicyViolation, "this session has ended")
+		if c.cancel != nil {
+			c.cancel()
+		}
+		c.stop()
+	}
+}
+
+// touchedSession is how often an open socket refreshes its session's recency.
+//
+// **Once a second at most.** A busy relay sends many frames and each one taking
+// the store's mutex would be a lock convoy for a fact that changes slowly; the
+// property being kept is "a tab somebody is using is not the coldest", and a
+// second's resolution says that perfectly well.
+const touchedSession = time.Second
 
 // broadcastFileChange sends the one message this chassis originates: a
 // JSON-RPC notification telling every open page that a file under the project
@@ -120,7 +171,20 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	c := &conn{ws: ws, out: make(chan []byte, outBuffer), done: make(chan struct{})}
+	// The session this socket belongs to, recorded now: it is what sign-out and
+	// eviction find, and what each inbound frame refreshes.
+	offered, _ := offeredSessionID(r)
+	handle := ""
+	if offered != "" {
+		handle = s.sessions.handle(offered)
+	}
+	c := &conn{
+		ws:     ws,
+		out:    make(chan []byte, outBuffer),
+		done:   make(chan struct{}),
+		handle: handle,
+		cancel: cancel,
+	}
 	s.register(c)
 	defer s.unregister(c)
 	defer c.stop()
@@ -213,6 +277,7 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Socket -> runtime stdin.
+	lastTouched := time.Time{}
 	go func() {
 		defer wg.Done()
 		defer cancel()
@@ -224,6 +289,15 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 			}
 			if typ != websocket.MessageText {
 				continue
+			}
+			// **Traffic is use.** A tab that has been driving the runtime for an
+			// hour has not been "looked up" once since its bootstrap, so under a
+			// least-recently-used bound it was the coldest thing in the store
+			// and the first to be evicted — the busiest desk being the one that
+			// stopped working. Each frame refreshes it, at most once a second.
+			if handle != "" && time.Since(lastTouched) >= touchedSession {
+				lastTouched = time.Now()
+				s.sessions.touch(handle)
 			}
 			// One JSON-RPC message per frame becomes one line. A frame that
 			// carried an embedded newline would desynchronize the stdio side,

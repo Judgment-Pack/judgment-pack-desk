@@ -153,6 +153,10 @@ type Server struct {
 	// here, so that the name a launch sets and the name the exchange reads
 	// cannot drift apart. It is the **only** cookie this chassis has.
 	launchCookie string
+	// pendingCookie is the readable marker set beside the handoff, so that a
+	// page already holding a session id still knows to spend a new one. See
+	// `pendingCookiePrefix`.
+	pendingCookie string
 	// launches are the handoffs `GET /launch` has minted and `POST
 	// /api/session` has not yet spent: single use, sixty seconds.
 	launches *launchStore
@@ -225,19 +229,24 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("desk: launch store: %w", lerr)
 	}
 	s := &Server{
-		cfg:          cfg,
-		mux:          http.NewServeMux(),
-		log:          cfg.Logger,
-		conns:        make(map[*conn]struct{}),
-		root:         pinned.own.root,
-		project:      pinned,
-		projectDir:   pinned.dir,
-		configDir:    configDirFor(cfg.DeskConfigDir),
-		relaySlots:   make(chan struct{}, maxRelayInFlight),
-		sessions:     sessions,
-		launches:     launches,
-		launchCookie: launchCookieName(cfg.Port),
+		cfg:           cfg,
+		mux:           http.NewServeMux(),
+		log:           cfg.Logger,
+		conns:         make(map[*conn]struct{}),
+		root:          pinned.own.root,
+		project:       pinned,
+		projectDir:    pinned.dir,
+		configDir:     configDirFor(cfg.DeskConfigDir),
+		relaySlots:    make(chan struct{}, maxRelayInFlight),
+		sessions:      sessions,
+		launches:      launches,
+		launchCookie:  launchCookieName(cfg.Port),
+		pendingCookie: pendingCookieName(cfg.Port),
 	}
+	// A session that stops being one takes its sockets with it — sign-out, or
+	// eviction under the bound. Registered here because the store is built
+	// before the server it belongs to.
+	sessions.whenEnded(s.closeSession)
 	adopted = true
 	// **One owner from here on.** The wrapper the caller still holds stops
 	// owning anything, so a `Close` on it cannot take the descriptor out from
@@ -509,6 +518,14 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	// session first, then the origin. The page's upgrade carries its session id
 	// in the subprotocol offer, which is the only place a browser lets a page
 	// put anything on a handshake; a script's carries the Bearer header.
+	// **A malformed offer is a 400 and not a 401.** "Your credential is wrong"
+	// and "this handshake is not one this desk reads" are different answers, and
+	// a caller that could not tell them apart would be told to fetch a new
+	// session over a duplicate subprotocol.
+	if _, problem := offeredSessionID(r); problem != "" {
+		http.Error(w, problem, http.StatusBadRequest)
+		return
+	}
 	if !s.authorized(r) {
 		http.Error(w, "no session: open the URL jpack-desk printed at startup", http.StatusUnauthorized)
 		return

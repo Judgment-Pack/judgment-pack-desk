@@ -62,6 +62,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"sync"
@@ -76,6 +77,30 @@ const launchCookiePrefix = "jpack-desk-launch"
 // launchCookieName is the handoff cookie's name, port and all.
 func launchCookieName(port int) string {
 	return fmt.Sprintf("%s-%d", launchCookiePrefix, port)
+}
+
+// pendingCookiePrefix names the **marker** the launch sets beside the handoff.
+//
+// # Why a second cookie exists
+//
+// The handoff is `HttpOnly`, which is what stops page code reading it — and
+// therefore also what stops page code *knowing there is one*. A page that
+// already held a session id from an earlier tab would read that id, decide it
+// needed nothing, and leave the new handoff sitting in the cookie jar for its
+// full sixty seconds: unspent, and worth a session to anything that could
+// capture it. Reopening the printed URL made the desk **less** safe, which is
+// the opposite of what it is for.
+//
+// So the launch sets a second cookie that page code *can* read — carrying no
+// secret, only the fact that a handoff is waiting — and the page spends the
+// handoff whenever it sees one. It is deleted by the same response that spends
+// the handoff, and by the page as soon as it reads it, so it is a flag and not
+// a credential: knowing it says nothing and grants nothing.
+const pendingCookiePrefix = "jpack-desk-handoff-pending"
+
+// pendingCookieName is that marker's name, port and all.
+func pendingCookieName(port int) string {
+	return fmt.Sprintf("%s-%d", pendingCookiePrefix, port)
 }
 
 // launchWindow is how long a handoff is good for.
@@ -176,6 +201,17 @@ type sessionStore struct {
 	live map[string]session
 	// tick orders use. See `session.used`.
 	tick uint64
+	// end is called with the handle of every session that stops being one — a
+	// sign-out, or an eviction — so that the sockets it opened stop with it.
+	// Set by `New`; nil in a bare store.
+	end func(string)
+}
+
+// whenEnded registers that callback.
+func (st *sessionStore) whenEnded(end func(string)) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.end = end
 }
 
 func newSessionStore() (*sessionStore, error) {
@@ -209,20 +245,37 @@ func (st *sessionStore) create(subject string, issuer *string) (string, error) {
 		return "", err
 	}
 	st.mu.Lock()
-	defer st.mu.Unlock()
-	st.evictLocked()
+	evicted := st.evictLocked()
 	st.tick++
 	st.live[st.handle(id)] = session{
 		subject: subject, issuer: issuer, created: time.Now(), used: st.tick,
 	}
+	st.mu.Unlock()
+	// **Outside the lock**, and after the new session is in: closing a socket
+	// takes the server's own mutex, and holding two locks in two orders is how
+	// a deadlock is written.
+	for _, handle := range evicted {
+		st.ended(handle)
+	}
 	return id, nil
+}
+
+// ended tells whoever owns the sockets that a session has stopped being one.
+// nil in a bare store, which is what the store's own tests use.
+func (st *sessionStore) ended(handle string) {
+	st.mu.Lock()
+	end := st.end
+	st.mu.Unlock()
+	if end != nil {
+		end(handle)
+	}
 }
 
 // evictLocked makes room for one more session, least recently used first.
 //
 // A loop rather than a single removal, so a store that somehow arrived over the
 // bound comes back under it rather than staying one over for ever.
-func (st *sessionStore) evictLocked() {
+func (st *sessionStore) evictLocked() (evicted []string) {
 	for len(st.live) >= maxSessions {
 		coldest, found := "", false
 		var lowest uint64
@@ -232,10 +285,12 @@ func (st *sessionStore) evictLocked() {
 			}
 		}
 		if !found {
-			return
+			return evicted
 		}
 		delete(st.live, coldest)
+		evicted = append(evicted, coldest)
 	}
+	return evicted
 }
 
 // lookup answers the session an id names, and **records the use**, which is
@@ -255,6 +310,20 @@ func (st *sessionStore) lookup(id string) (session, bool) {
 	got.used = st.tick
 	st.live[key] = got
 	return got, true
+}
+
+// touch refreshes a session's recency by **handle**, for a caller that already
+// has one — the relay, on each inbound frame. See `touchedSession`.
+func (st *sessionStore) touch(handle string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	held, ok := st.live[handle]
+	if !ok {
+		return
+	}
+	st.tick++
+	held.used = st.tick
+	st.live[handle] = held
 }
 
 // forget removes one session. This is sign-out.
@@ -404,6 +473,19 @@ func newLaunchCookie(name, value string, secure bool) *http.Cookie {
 	}
 }
 
+// newPendingMarker is the readable flag beside the handoff.
+//
+// **Not `HttpOnly`, deliberately**, and it is the only cookie on this desk that
+// is not: the page has to be able to see it, and what it says — "a handoff is
+// waiting" — is neither secret nor useful to anybody who cannot also present
+// the handoff. Same `Max-Age`, so the two expire together and a marker never
+// outlives the thing it marks.
+func newPendingMarker(name string, secure bool) *http.Cookie {
+	marker := newLaunchCookie(name, "1", secure)
+	marker.HttpOnly = false
+	return marker
+}
+
 // expireLaunchCookie is the same cookie, spent.
 func expireLaunchCookie(name string, secure bool) *http.Cookie {
 	spent := newLaunchCookie(name, "", secure)
@@ -428,16 +510,60 @@ func bearerOf(r *http.Request) string {
 // The browser sends the offer as one comma-separated header (or several, which
 // `Header.Values` gives us separately), so both shapes are read. Whitespace
 // around a comma is the grammar's, not the page's.
-func offeredSessionID(r *http.Request) string {
+func offeredSessionID(r *http.Request) (string, string) {
+	id, seen, plain := "", 0, false
 	for _, header := range r.Header.Values(wsProtocolHeader) {
 		for _, offer := range strings.Split(header, ",") {
 			offer = strings.TrimSpace(offer)
-			if id, ok := strings.CutPrefix(offer, wsSessionPrefix); ok {
-				return id
+			if offer == wsProtocol {
+				plain = true
+				continue
 			}
+			candidate, ok := strings.CutPrefix(offer, wsSessionPrefix)
+			if !ok {
+				continue
+			}
+			seen++
+			id = candidate
 		}
 	}
-	return ""
+	if seen == 0 && !plain {
+		// No offer of ours at all: a script authorizing with the Bearer header,
+		// or a request that is not from this desk's page. Not this rule's
+		// business either way.
+		return "", ""
+	}
+	if !plain {
+		return "", "a desk upgrade offers the `jpack-desk` subprotocol; this one did not"
+	}
+	if seen > 1 {
+		// Two ids is a request two readers could disagree about — the same
+		// argument the relay's query rule makes — and there is no reading of it
+		// this desk is willing to pick.
+		return "", "a desk upgrade offers at most one session, and this one offered several"
+	}
+	if seen == 1 && !looksLikeASessionID(id) {
+		return "", "the offered session is not the shape this desk mints"
+	}
+	return id, ""
+}
+
+// looksLikeASessionID is the shape `NewToken` produces: 48 lower-case hex
+// characters.
+//
+// **Refused by shape before it is looked up**, so that a malformed offer is a
+// `400` a caller can act on rather than a `401` that reads like a wrong
+// credential — and so that nothing but hex is ever handed to the store.
+func looksLikeASessionID(id string) bool {
+	if len(id) != 48 {
+		return false
+	}
+	for _, r := range id {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // launchSecretPresented reports whether the request carries the launch secret.
@@ -463,7 +589,7 @@ func (s *Server) sessionOf(r *http.Request) (session, bool) {
 			return held, true
 		}
 	}
-	if id := offeredSessionID(r); id != "" {
+	if id, _ := offeredSessionID(r); id != "" {
 		return s.sessions.lookup(id)
 	}
 	return session{}, false
@@ -508,7 +634,12 @@ func (s *Server) handleLaunch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "this desk could not begin a session", http.StatusInternalServerError)
 		return
 	}
-	http.SetCookie(w, newLaunchCookie(s.launchCookie, handoff, requestScheme(r) == "https"))
+	secure := requestScheme(r) == "https"
+	http.SetCookie(w, newLaunchCookie(s.launchCookie, handoff, secure))
+	// And the readable marker beside it, so a page that already holds a session
+	// id still knows to spend this handoff rather than leaving it live. See
+	// `pendingCookiePrefix`.
+	http.SetCookie(w, newPendingMarker(s.pendingCookie, secure))
 	http.Redirect(w, r, "/#", http.StatusSeeOther)
 }
 
@@ -549,14 +680,51 @@ func looksLikeALaunch(r *http.Request) bool {
 	if clean == "launch" || strings.HasPrefix(clean, "launch/") {
 		return true
 	}
-	// **Case-folded on the name.** `?SECRET=` is a different parameter to
-	// `url.Query`, and nothing on this desk reads either — but "the page is
-	// harmless so the spelling does not matter" is exactly the reasoning that
-	// put a secret in an address bar twice. What matters is that a URL carrying
-	// something called a secret is never answered with a page, whoever typed it.
-	for name := range r.URL.Query() {
-		if strings.EqualFold(name, "secret") {
-			return true
+	return querySmellsOfASecret(r.URL.RawQuery)
+}
+
+// querySmellsOfASecret reports whether a raw query mentions a secret at all.
+//
+// **Read raw, and read as a substring, before anything parses it.** The first
+// version of this asked `url.Query()`, which is a *parser* — and a parser has
+// opinions. It drops a pair it cannot decode, so `?secret=<real>%ZZ` parsed to
+// nothing and the page was served with the secret still on the URL; it splits
+// on `&` and not `;`, so `?x=1;secret=<real>` was one parameter named `x` and
+// went the same way. Every rule this desk has written against a query parser has
+// lost to the next one — the relay's three leaks are the same story — and the
+// lesson is to stop parsing.
+//
+// So: the raw bytes, case-folded, plus what percent-decoding produces where it
+// produces anything, and the question is whether the substring `secret` appears.
+// That is deliberately blunt. It refuses `?mysecretpref=1`, and refusing a
+// harmless page load is the cheap side of this trade; the expensive side is a
+// secret in `window.location`, in history, and in every `Referer` the page then
+// sends.
+//
+// **A fragment is not part of the query and is not seen here.** `#secret=…` is
+// never sent to a server at all — the browser keeps it — so there is nothing on
+// the wire to refuse, and the launch redirect's explicit empty fragment is what
+// stops one being inherited into the page's address in the first place.
+func querySmellsOfASecret(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	if strings.Contains(strings.ToLower(raw), "secret") {
+		return true
+	}
+	// `%73ecret=` and friends: decode where it decodes, and look again. A query
+	// that will not decode has already been answered by the raw check above.
+	if decoded, err := url.QueryUnescape(raw); err == nil {
+		return strings.Contains(strings.ToLower(decoded), "secret")
+	}
+	// It did not decode as a whole, so decode what can be decoded pair by pair
+	// rather than giving up: `?a=%ZZ&%73ecret=x` is one bad pair beside one that
+	// matters.
+	for _, piece := range strings.FieldsFunc(raw, func(r rune) bool { return r == '&' || r == ';' }) {
+		if decoded, err := url.QueryUnescape(piece); err == nil {
+			if strings.Contains(strings.ToLower(decoded), "secret") {
+				return true
+			}
 		}
 	}
 	return false
@@ -626,7 +794,10 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 	}
 	// Spent, and said so on the wire: the browser drops it here rather than
 	// carrying a value that is already worthless for another fifty seconds.
-	http.SetCookie(w, expireLaunchCookie(s.launchCookie, requestScheme(r) == "https"))
+	// The marker goes with it, so the page has nothing left to act on.
+	secure := requestScheme(r) == "https"
+	http.SetCookie(w, expireLaunchCookie(s.launchCookie, secure))
+	http.SetCookie(w, expireLaunchCookie(s.pendingCookie, secure))
 	s.mintSession(w)
 }
 
@@ -667,5 +838,11 @@ func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
 	}
 	id := bearerOf(r)
 	forgotten := s.sessions.forget(id)
+	if forgotten {
+		// **And the sockets it opened.** A relay socket outlives the request
+		// that opened it, so a sign-out that only emptied the store would end
+		// the session everywhere except where it was being used.
+		s.closeSession(s.sessions.handle(id))
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"forgotten": forgotten})
 }
