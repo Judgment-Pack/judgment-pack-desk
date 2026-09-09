@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 /* The exchange -------------------------------------------------------------- */
@@ -720,7 +722,22 @@ func TestTheRedirectDropsTheRequestsFragment(t *testing.T) {
 // path, so `/launch/anything?secret=…` used to reach the SPA fallback and be
 // answered with the page — with the secret still on the URL.
 func TestNothingUnderLaunchFallsThroughToThePage(t *testing.T) {
-	_, ts := newTestServer(t, false)
+	_, ts := deskWithAPage(t)
+
+	// **The positive control, first.** Every other server in this package has
+	// no assets and answers 404 for a missing file and for a client-side route
+	// alike, which cannot tell "refused" from "there is no page to serve" — a
+	// test on one of those passes whether or not `/launch/` is routed at all.
+	served, err := ts.Client().Get(ts.URL + "/packs/anything")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer served.Body.Close()
+	shell, _ := io.ReadAll(served.Body)
+	if served.StatusCode != http.StatusOK || !strings.Contains(string(shell), thePage) {
+		t.Fatalf("the single-page fallback is not live: %d %q", served.StatusCode, shell)
+	}
+
 	for _, path := range []string{
 		"/launch/",
 		"/launch/anything",
@@ -743,11 +760,38 @@ func TestNothingUnderLaunchFallsThroughToThePage(t *testing.T) {
 			// 404 from the mux, and never a 200 carrying the page. `/launch/..`
 			// is normalised by the mux to `/launch` and answered by the
 			// exchange, which is a 303 and not the page either.
+			body, _ := io.ReadAll(resp.Body)
 			if resp.StatusCode == http.StatusOK {
 				t.Fatalf("%s answered 200 — the page, with the secret still on the URL", path)
 			}
+			if strings.Contains(string(body), thePage) {
+				t.Fatalf("%s was answered with the page (%d)", path, resp.StatusCode)
+			}
 		})
 	}
+}
+
+// thePage is the marker the stand-in single-page shell carries, so a test can
+// tell "the fallback served the page" from "there was nothing to serve".
+const thePage = "THE SINGLE-PAGE SHELL"
+
+// deskWithAPage is a chassis that actually serves one, because
+// `newTestServer` has no assets and answers 404 for a client-side route and a
+// missing file alike.
+func deskWithAPage(t *testing.T) (*Server, *httptest.Server) {
+	t.Helper()
+	s, ts := startDesk(t, Config{
+		ProjectDir: t.TempDir(),
+		JpackBin:   "jpack",
+		Token:      testToken,
+		Static:     fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte(thePage)}},
+		Logger:     log.New(io.Discard, "", 0),
+	})
+	t.Cleanup(func() {
+		ts.Close()
+		_ = s.Close()
+	})
+	return s, ts
 }
 
 /* The store is bounded --------------------------------------------------------- */

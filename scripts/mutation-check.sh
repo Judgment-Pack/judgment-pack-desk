@@ -1551,7 +1551,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # desks on one host would share, and overwrite, one session.
   mutate go "the session cookie is named without its port" "$SN" \
     '	return fmt.Sprintf("%s-%d", sessionCookiePrefix, port)' \
-    '	_ = port
+    '	_ = fmt.Sprintf("%d", port)
 	return sessionCookiePrefix'
   # **The half that closes the replay.** A cookie reaches this desk on requests
   # it must not authorize — every sibling port receives it — and only the
@@ -1624,12 +1624,18 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # shortcut would take: "it has a real session, so it is a real request". It is
   # not — the browser attaches the cookie to a request another site made, and
   # the guard is the only thing that tells the two apart.
-  mutate go "the Origin guard is skipped for a request carrying a cookie" "$S" \
-    '	u, err := url.Parse(origin)' \
-    '	if _, live := s.sessionOf(r); live {
-		return true
-	}
-	u, err := url.Parse(origin)'
+  # **Not in `originAllowed`.** `sameOriginClaim` calls it, so a session lookup
+  # injected there recurses until the stack goes and the row reports a suite
+  # that never ran. The shortcut a developer would actually take is in the
+  # shared guard — "it has a real session, so it is a real request" — and that
+  # is what this breaks. On `/ws` the same skip is not discriminating, and for a
+  # good reason: a cookie's claim on that surface *is* its `Origin`, so the
+  # guard is enforced twice there and once here.
+  mutate go "the Origin guard is skipped for a request carrying a cookie" "$F" \
+    '	if !s.originAllowed(r) {
+		writeJSONCoded(w, http.StatusForbidden, CodeForbidden,' \
+    '	if _, none := r.Cookie(s.cookieName); none != nil && !s.originAllowed(r) {
+		writeJSONCoded(w, http.StatusForbidden, CodeForbidden,'
   # "Never a map lookup on the raw value": the store is keyed by a MAC so that
   # "is this id live" is not a hash-table probe over attacker-supplied bytes.
   mutate go "the session store is keyed by the id itself" "$SN" \
