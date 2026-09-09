@@ -67,7 +67,15 @@ report() { # report <name> <result-line>
 # would be the most dangerous thing this script could do, so each is named.
 run_go() {
   local out code named
-  out="$(go test ./internal/desk -count=1 -timeout 45s 2>&1)"
+  # **120s, and the number is not arbitrary.** The bound exists to turn a
+  # mutation that hangs a handler into a reported hang rather than a stalled
+  # table. It was 45s, which was already marginal: two relay rows remove an
+  # *idle* deadline and their tests then wait out a deliberate twenty-second
+  # stall, so the mutated suite runs about fifty seconds — and this branch's
+  # forty new session tests pushed both rows over the line and reported
+  # INCONCLUSIVE for a suite that was working. A deliberate wait inside a test
+  # is not a hang; a real one is minutes, and 120s still catches it.
+  out="$(go test ./internal/desk -count=1 -timeout 120s 2>&1)"
   code=$?
   if grep -q 'build failed\|cannot use\|undefined:\|declared and not used\|syntax error' <<<"$out"; then
     echo "INCONCLUSIVE — did not compile"
