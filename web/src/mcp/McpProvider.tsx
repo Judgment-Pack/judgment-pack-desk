@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { recordFileChange } from '../shell/consoleLog'
 import { deskFetch } from '../files/client'
-import { NoSession, bootstrap } from './session'
+import { NoSession, sessionBearer } from './session'
 import { UNKNOWN_CAPABILITIES, type RuntimeCapabilities, listAllTools, readCapabilities } from './capabilities'
 import { DeskWebSocketTransport } from './transport'
 
@@ -294,17 +294,22 @@ export function McpProvider({ children }: { children: ReactNode }) {
       // **The bootstrap first, and the socket after it.** The upgrade has to
       // carry the id, and the id comes from the one `POST /api/session` this
       // page makes — memoised, so a reconnect within one page's life resolves
-      // from memory without a request. A page with no session never opens a
-      // socket at all.
+      // from memory without a request.
+      //
+      // **`sessionBearer()` rather than `bootstrap()`**, and the difference is
+      // the terminal state: the bootstrap's promise keeps answering the id it
+      // minted, because that is what it minted, while `sessionBearer()` is the
+      // one entry point that also refuses once a `401` has forgotten it. A page
+      // in the no-session state opens no socket at all, and a provider that
+      // read the promise directly would reconnect for ever with a dead id.
       //
       // **Disposal is re-checked after the await.** The effect can be torn down
       // while this promise is pending — StrictMode mounts twice, and a route
       // change unmounts — and connecting afterwards would open a socket with
       // nothing left to close it.
-      bootstrap()
+      sessionBearer()
         .then((id) => {
           if (disposed || live !== client) throw new Disposed()
-          if (id === null) throw new NoSession()
           return client.connect(new DeskWebSocketTransport(socketURL(), socketProtocols(id)))
         })
         .then(async () => {

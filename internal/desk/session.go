@@ -226,25 +226,19 @@ func (st *sessionStore) handle(id string) string {
 // from: a session id is a bearer credential for the whole of this desk's
 // surface, so it is exactly as unguessable as the secret that bought it.
 //
-// **A full store refuses**, and it refuses before it mints: a random id
-// generated and then thrown away is a random id that was in this process's
-// memory for no reason.
+// **A full store refuses, and the check is under the lock that writes** — one
+// check and not two. An earlier draft tested the bound before minting as well,
+// to avoid generating an id it would throw away; two readings of one fact is
+// exactly the shape this package spends its comments arguing against, and a
+// mutation row proved the redundant one was holding nothing. Twenty-four bytes
+// of entropy discarded on the one path that reaches the bound is not a cost.
 func (st *sessionStore) create(subject string, issuer *string) (string, error) {
-	st.mu.Lock()
-	full := len(st.live) >= maxSessions
-	st.mu.Unlock()
-	if full {
-		return "", errTooManySessions
-	}
 	id, err := NewToken()
 	if err != nil {
 		return "", err
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	// **Checked again under the lock that writes.** The check above is outside
-	// it so that nothing is minted needlessly; this one is what actually holds
-	// the bound, because two concurrent exchanges could both pass the first.
 	if len(st.live) >= maxSessions {
 		return "", errTooManySessions
 	}

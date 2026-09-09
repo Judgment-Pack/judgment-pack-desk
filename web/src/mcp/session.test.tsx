@@ -17,7 +17,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { McpProvider, removeTheLaunchHash, socketProtocols, socketURL } from './McpProvider'
-import { NoSession, bootstrap, forgetSession, resetSessionForTesting, sessionStorageKey } from './session'
+import {
+  NO_SESSION_MESSAGE,
+  NoSession,
+  bootstrap,
+  forgetSession,
+  resetSessionForTesting,
+  sessionStorageKey
+} from './session'
 import { deskFetch, listFiles } from '../files/client'
 import { bindModelCall } from '../assistant/session'
 
@@ -337,6 +344,26 @@ describe('the desk’s own MCP connection', () => {
     expect(dialled[0]!.protocols).toEqual(['jpack-desk', `jpack-desk-session.${MINTED}`])
   })
 
+  it('opens no socket once a refusal has ended this page’s session', async () => {
+    // **The terminal state reaches the socket too.** The bootstrap's promise
+    // goes on answering the id it minted, because that is what it minted; a
+    // provider that read it directly would reconnect for ever with an id the
+    // chassis has already rejected.
+    record(mints)
+    await bootstrap()
+    forgetSession()
+    const dialled = recordingSockets()
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <McpProvider>
+          <div />
+        </McpProvider>
+      </QueryClientProvider>
+    )
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(dialled).toEqual([])
+  })
+
   it('opens no socket at all for a page with no session', async () => {
     record((call) => (call.url === '/api/session' ? json({ code: 'unauthorized' }, 401) : json({})))
     const dialled = recordingSockets()
@@ -350,6 +377,17 @@ describe('the desk’s own MCP connection', () => {
     // Given time to do the wrong thing, and it does not.
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(dialled).toEqual([])
+  })
+})
+
+describe('what the page says when it has none', () => {
+  it('is one sentence, and it names the way back', () => {
+    // The README quotes this and `ConnectionNotices` renders it: the page's
+    // whole recovery flow is a person reopening the printed URL, so the
+    // sentence has to say that rather than "not connected".
+    expect(new NoSession().message).toBe(NO_SESSION_MESSAGE)
+    expect(NO_SESSION_MESSAGE).toContain('open the URL that jpack-desk printed at startup')
+    expect(NO_SESSION_MESSAGE.split('\n')).toHaveLength(1)
   })
 })
 

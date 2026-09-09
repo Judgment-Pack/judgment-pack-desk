@@ -1161,13 +1161,19 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		until:          deadline,
 	}, r)' \
     '	proxy.ServeHTTP(w, r)'
-  # Two parsers disagreed about `;` and the desk's own session token went to the
-  # endpoint: Go reads `x=1;token=T&token=T` as one `token` parameter and
-  # accepts it, while a strip that removed the pair it could see preserved the
-  # first one for a server that does split on `;`.
-  mutate go "a query two parsers read differently is forwarded" "$MR" \
-    "$(printf '\tif strings.ContainsRune(raw, %s) {' "';'")" \
-    '	if false {'
+  # **Retired, with its reason, rather than dropped.** Two parsers disagreed
+  # about `;` and the desk's own session token went to the endpoint: Go read
+  # `x=1;token=T&token=T` as one `token` parameter and accepted it, while a
+  # strip that removed the pair it could see preserved the first one for a
+  # server that does split on `;`. That row broke the `;` check and watched the
+  # suite fail.
+  #
+  # It measures nothing now, and this run proved it: since the launch exchange
+  # **no pair of the page's own is forwarded at all**, so a query containing a
+  # semicolon is refused by the general rule whether or not the `;` check is
+  # there. The check is kept because its sentence is the specific one, and the
+  # row is named here so that its absence from the table is a statement rather
+  # than an oversight.
   # The proxy copies the endpoint's trailers to the page after the body, past
   # every filter on this route.
   mutate go "the endpoint's trailers are forwarded to the page" "$MR" \
@@ -1532,11 +1538,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # end a live session from outside the page holding it, which is the second
   # actor this whole design exists without.
   mutate go "the 65th session is accepted" "$SE" \
-    '	if len(st.live) >= maxSessions {
+    '	st.mu.Lock()
+	defer st.mu.Unlock()
+	if len(st.live) >= maxSessions {
 		return "", errTooManySessions
-	}
-	st.live[st.handle(id)] = session{subject: subject, issuer: issuer, created: time.Now()}' \
-    '	st.live[st.handle(id)] = session{subject: subject, issuer: issuer, created: time.Now()}'
+	}' \
+    '	st.mu.Lock()
+	defer st.mu.Unlock()'
   # **One credential each way on the upgrade.** A session id on the handshake's
   # `Authorization` header is a second path for the page's credential, and a
   # path the browser cannot even use — a `WebSocket` constructor has no header

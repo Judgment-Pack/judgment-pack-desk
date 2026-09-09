@@ -349,13 +349,42 @@ export function bindModelCall(family: EndpointKind): ModelCall {
  */
 async function thisDeskRefusedIt(answered: Response): Promise<boolean> {
   try {
-    const body = (await answered.clone().json()) as { code?: unknown }
-    return body.code === 'unauthorized'
+    const head = await firstBytesOf(answered.clone())
+    if (head === '') return false
+    return (JSON.parse(head) as { code?: unknown }).code === 'unauthorized'
   } catch {
     // Not the chassis' envelope at all — an endpoint's own 401 page, or a body
     // already read. Not this desk's refusal.
     return false
   }
+}
+
+/**
+ * The head of a response body, and no more than that.
+ *
+ * **Bounded, because this body may not be this desk's.** The relay forwards the
+ * configured endpoint's answer, and an endpoint that never ends one would hang
+ * the call that is trying to classify it. The chassis' refusal envelope is one
+ * small JSON object; four kilobytes is far past it and short enough that a body
+ * which is something else is simply not parsed.
+ */
+async function firstBytesOf(copy: Response): Promise<string> {
+  const reader = copy.body?.getReader()
+  if (reader === undefined) return ''
+  const decoder = new TextDecoder()
+  let text = ''
+  let read = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    read += value.byteLength
+    text += decoder.decode(value, { stream: true })
+    if (read > 4096) {
+      await reader.cancel()
+      return ''
+    }
+  }
+  return text + decoder.decode()
 }
 
 /**

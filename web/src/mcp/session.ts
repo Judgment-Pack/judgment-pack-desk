@@ -120,11 +120,6 @@ export async function sessionBearer(): Promise<string> {
   return id
 }
 
-/** Whether this page still holds a session. Synchronous, for a renderer. */
-export function hasSession(): boolean {
-  return !forgotten
-}
-
 /**
  * Forget the id this page holds, because the chassis refused it.
  *
