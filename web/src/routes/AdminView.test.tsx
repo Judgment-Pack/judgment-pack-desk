@@ -1161,13 +1161,33 @@ describe('one section at a time', () => {
     expect(screen.queryByText(/has not read its own configuration file/)).toBeNull()
   })
 
-  it('scrolls to the section a fragment names', () => {
+  it('scrolls to the section only where the section is below the list', () => {
+    // **The fragment selects here rather than addresses.** On a wide shell the
+    // open section is *beside* the list, so there is nothing to scroll to —
+    // and scrolling its heading to the top of `.desk-main` took the page's own
+    // heading, its status line and the top of the list with it, because all
+    // three are in that one scroll container. Below the Inspector's breakpoint
+    // the section is under the list, and then the scroll is the whole point.
     const scrolled: string[] = []
     const original = Element.prototype.scrollIntoView
     Element.prototype.scrollIntoView = function scrollIntoView(this: Element) {
       scrolled.push(this.id)
     }
     try {
+      renderAdmin(effectiveConfig(undefined), '/admin#storage')
+      expect(scrolled).toEqual([])
+      cleanup()
+
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        media: query,
+        matches: query === INSPECTOR_DRAWER_BELOW,
+        onchange: null,
+        addListener() {},
+        removeListener() {},
+        addEventListener() {},
+        removeEventListener() {},
+        dispatchEvent: () => false
+      }))
       renderAdmin(effectiveConfig(undefined), '/admin#storage')
       expect(scrolled).toContain('storage')
     } finally {

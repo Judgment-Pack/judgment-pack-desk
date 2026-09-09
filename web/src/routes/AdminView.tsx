@@ -115,15 +115,19 @@ export function AdminView() {
   const defaultProject = useDefaultProject()
   const { hash } = useLocation()
   const navigate = useNavigate()
-  // The rail's and the user menu's section links carry a hash. Nothing in the
-  // router scrolls to one, and the document is not the scroll container here —
-  // `.desk-main` is — so without this they changed the URL and moved nothing.
-  useHashTarget()
   // Below 1100px the Inspector is a drawer and the shell is one column: the
   // list stacks above the open section, and the rows that are not open say
   // their titles and nothing else, because a summary each is a second page of
   // list above the thing the reader opened.
   const stacked = useMediaQuery(INSPECTOR_DRAWER_BELOW)
+  // **And that is the one shell where the fragment scrolls.** The rail's and
+  // the user menu's section links carry a hash, and the router scrolls to
+  // none — but here the hash *opens* the section, and where the section is
+  // beside the list rather than below it there is nothing to scroll to.
+  // Scrolling anyway took the page's heading, its status line and the top of
+  // the list off the screen, because `.desk-main` is the one scroll container
+  // both columns are in.
+  useHashTarget(stacked)
 
   const open = sectionFromHash(hash)
   const packDir = config.storage.packs.dir

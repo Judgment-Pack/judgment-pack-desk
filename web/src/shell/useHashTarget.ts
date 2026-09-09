@@ -13,13 +13,24 @@
  * not drag the reader back to a heading they have scrolled away from. An
  * unknown fragment is left alone: the page it names is already open, and
  * jumping somewhere else would be worse than staying put.
+ *
+ * **`when` exists because a fragment can select rather than address.** Admin's
+ * fragment opens a section, and on a wide shell that section is rendered
+ * *beside* the list rather than below it — so scrolling its heading to the top
+ * of `.desk-main` took the page's own heading, its status line and the top of
+ * the list with it, because all three share one scroll container. Where the
+ * thing a fragment names is already at the top of its column there is nothing
+ * to scroll to, and the page says so rather than scrolling anyway. Below that
+ * shell's breakpoint the section is under the list and the scroll is exactly
+ * what a reader needs, so the answer is a condition and not a deletion.
  */
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 
-export function useHashTarget(): void {
+export function useHashTarget(when = true): void {
   const { hash } = useLocation()
   useEffect(() => {
+    if (!when) return
     if (hash.length < 2) return
     let id: string
     try {
@@ -30,5 +41,5 @@ export function useHashTarget(): void {
     }
     const target = document.getElementById(id)
     target?.scrollIntoView()
-  }, [hash])
+  }, [hash, when])
 }
