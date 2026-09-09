@@ -58,8 +58,13 @@ jobs:
       - name: tsc
         run: npm run typecheck
 
-      - name: component tests
-        run: npm test
-
+      # **Built before the tests, not after.** One test greps the emitted
+      # bundle for a credential on a URL — `?token=`, `secret=`, `/ws?` — which
+      # is the only place that claim can be checked over the code that actually
+      # ships rather than over the sources it was compiled from. With the build
+      # after, that test had no bundle to read.
       - name: vite build
         run: npx vite build
+
+      - name: component tests
+        run: npm test

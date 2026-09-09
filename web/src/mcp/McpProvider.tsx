@@ -3,6 +3,7 @@ import type { Notification } from '@modelcontextprotocol/sdk/types.js'
 import { useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { recordFileChange } from '../shell/consoleLog'
+import { NoSession, sessionID } from './session'
 import { UNKNOWN_CAPABILITIES, type RuntimeCapabilities, listAllTools, readCapabilities } from './capabilities'
 import { DeskWebSocketTransport } from './transport'
 
@@ -85,36 +86,9 @@ export function useMcp(): McpConnection {
 }
 
 /**
- * The key this page used to keep the desk's credential under, and does not any
- * more.
+ * Take the bare `#` the launch redirect leaves off the address bar.
  *
- * **This page holds no credential at all now.** The chassis prints
- * `/launch?secret=…`, trades the secret once for the `jpack-desk-session`
- * cookie and redirects to `/`; the cookie is `HttpOnly`, so page code cannot
- * read it, cannot put it on a query and cannot copy it anywhere. What is left
- * of the old arrangement is whatever a browser that ran the previous build is
- * still holding, and it is removed rather than left to sit — a stale secret in
- * storage is a secret that can leak, and it authorizes nothing.
- */
-const STALE_TOKEN_KEY = 'jpack-desk-token'
-
-/**
- * Remove that key, once. Exported so a test can name it; called at module load
- * so that opening the desk is enough.
- */
-export function forgetStaleSessionToken(): void {
-  try {
-    window.sessionStorage.removeItem(STALE_TOKEN_KEY)
-  } catch {
-    // A browser with storage disabled has nothing to forget, and a desk that
-    // refused to load over it would be a worse desk than one that skips this.
-  }
-}
-
-/**
- * Take the bare `#` the launch exchange redirects to off the address bar.
- *
- * **Why the exchange redirects to `/#` at all.** A redirect whose `Location`
+ * **Why the launch redirects to `/#` at all.** A redirect whose `Location`
  * carries no fragment inherits the *request's* one (RFC 9110 §10.2.2), so
  * `/launch?secret=S#S` would land on `/#S` — the secret still in
  * `location.hash`, readable by every script on the page and kept in history. An
@@ -138,25 +112,12 @@ export function removeTheLaunchHash(): void {
   }
 }
 
-if (typeof window !== 'undefined') {
-  forgetStaleSessionToken()
-  removeTheLaunchHash()
-}
-
-/**
- * What the page says when the chassis has no session for it.
- *
- * Exported because it is asserted by name: a sentence that told a person to
- * "check the token" would be telling them to do something this desk no longer
- * has.
- */
-export const NO_SESSION_MESSAGE =
-  'No session — open the URL that jpack-desk printed at startup.'
+if (typeof window !== 'undefined') removeTheLaunchHash()
 
 /**
  * The one address a desk MCP connection is opened at, and it carries **no
- * credential**: the browser attaches the session cookie to a same-origin
- * upgrade by itself.
+ * credential**: the session id travels in the subprotocol offer instead, which
+ * is the only place a browser lets a page put anything on a handshake.
  *
  * Exported because the assistant opens a **second** connection over the same
  * relay with its own client and its own gate (`assistant/session.ts`), and two
@@ -168,24 +129,14 @@ export function socketURL(): string {
 }
 
 /**
- * Whether the chassis says this page has no session.
+ * The subprotocols a desk upgrade offers: the plain one, and the session id.
  *
- * **A failed WebSocket handshake tells the page nothing.** The browser
- * withholds the status of a rejected upgrade, so "the chassis is not running"
- * and "this browser has no session" arrive as the same empty error — and they
- * need opposite answers: one is worth retrying forever and the other never
- * resolves on its own. So the page asks over a channel that does report a
- * status. Only the status is read; the answer's body is not, and the identity
- * the desk displays still comes from the configuration and not from here.
+ * Exported for the same reason `socketURL` is — the assistant's connection
+ * offers the same pair — and because a test can then assert the id is in the
+ * offer and nowhere else.
  */
-async function noSession(): Promise<boolean> {
-  try {
-    const response = await fetch('/api/session', { credentials: 'same-origin' })
-    return response.status === 401
-  } catch {
-    // The chassis could not be reached at all, which is the retryable case.
-    return false
-  }
+export function socketProtocols(id: string): string[] {
+  return ['jpack-desk', `jpack-desk-session.${id}`]
 }
 
 /** The backoff schedule: doubling from the base, never longer than the cap. */
@@ -239,10 +190,10 @@ export function McpProvider({ children }: { children: ReactNode }) {
 
     const retryNow = () => setRetryTick((tick) => tick + 1)
 
-    // **Nothing to check before connecting.** The page holds no credential to
-    // be missing: the browser either has the cookie or it does not, and the
-    // only thing that can answer that is the chassis. So the connection is
-    // attempted and a failure is *classified* — see `reportFailure`.
+    // **The bootstrap comes first**, because the upgrade has to carry the id.
+    // `sessionID()` returns the one this tab already holds, or makes the single
+    // `POST /api/session` that spends the launch handoff for one. A refusal
+    // there is not retryable — no handoff appears on its own — and says so.
     const scheduleRetry = (cause: Error) => {
       if (disposed) return
       attempt += 1
@@ -259,24 +210,19 @@ export function McpProvider({ children }: { children: ReactNode }) {
     }
 
     // A connection that failed, told apart from one that will never succeed.
-    // No session is not a retryable state: no cookie appears on its own, and a
-    // page that reconnected forever would hide the one instruction that fixes
-    // it.
-    const reportFailure = async (cause: Error) => {
+    // No session is not a retryable state: the launch handoff is spent or was
+    // never set, and a page that reconnected for ever would hide the one
+    // instruction that fixes it.
+    const failed = (cause: Error) => {
       if (disposed) return
-      if (await noSession()) {
-        if (disposed) return
-        setConnection({
-          ...DISCONNECTED,
-          status: 'failed',
-          error: new Error(NO_SESSION_MESSAGE),
-          connectionEpoch: epoch.current,
-          everConnected: everConnected.current,
-          retryNow
-        })
-        return
-      }
-      scheduleRetry(cause)
+      setConnection({
+        ...DISCONNECTED,
+        status: 'failed',
+        error: cause,
+        connectionEpoch: epoch.current,
+        everConnected: everConnected.current,
+        retryNow
+      })
     }
 
     function connect() {
@@ -315,8 +261,11 @@ export function McpProvider({ children }: { children: ReactNode }) {
       }
 
       const reconnecting = attempt > 0
-      client
-        .connect(new DeskWebSocketTransport(socketURL()))
+      // **The id is fetched per attempt, not once.** A reconnect after the
+      // chassis restarted needs a new one, and `renewSession` is what a `401`
+      // on any other request has already been doing.
+      sessionID()
+        .then((id) => client.connect(new DeskWebSocketTransport(socketURL(), socketProtocols(id))))
         .then(async () => {
           if (disposed || live !== client) return
           attempt = 0
@@ -361,7 +310,13 @@ export function McpProvider({ children }: { children: ReactNode }) {
           // second retry beside this one.
           live = null
           void client.close()
-          void reportFailure(cause instanceof Error ? cause : new Error(String(cause)))
+          const error = cause instanceof Error ? cause : new Error(String(cause))
+          // The one failure that never resolves on its own.
+          if (error instanceof NoSession) {
+            failed(error)
+            return
+          }
+          scheduleRetry(error)
         })
     }
 

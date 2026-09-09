@@ -1,3 +1,5 @@
+import { renewSession, sessionID } from '../mcp/session'
+
 /**
  * The chassis file API, as this client calls it (issue #14, phase 1).
  *
@@ -180,21 +182,40 @@ export function chassisUrl(path: string, params: Record<string, string> = {}): s
 const endpoint = chassisUrl
 
 /**
- * Every request this page makes to the chassis.
+ * Every request this page makes to the chassis, **carrying the session id and
+ * no cookie**.
  *
- * **`credentials: 'same-origin'` is stated rather than relied on.** It is the
- * `fetch` default for a same-origin request, so the cookie would travel
- * without it — and a reader checking whether this page still authorizes at all
- * would find nothing saying so. One function says it once, which is the same
- * argument `chassisUrl` is one function for.
+ * Two halves, and each is a decision:
+ *
+ * - **`Authorization: Bearer <id>`**, from `mcp/session.ts`. The id is a
+ *   credential this page holds deliberately, so it goes on requests this page
+ *   means to make and on nothing else. A `401` is retried **once**, after
+ *   renewing: a restarted chassis has forgotten every id, and a desk that made
+ *   the person reload rather than re-bootstrapping would be a desk that lies
+ *   about being live.
+ * - **`credentials: 'omit'`**, stated rather than defaulted. `same-origin` is
+ *   `fetch`'s default and would send the launch handoff on every request; that
+ *   cookie is worth one call to `POST /api/session` and belongs on no other.
+ *   Omitting says so, and means a reader can see that nothing ambient is in
+ *   play here.
  *
  * `fetch` is read at call time rather than captured, because the desk's own
  * calls are supposed to work in whatever environment the page is running in —
  * unlike the assistant's model capability, which captures it deliberately so
  * that an engine's sealed globals cannot reach it (`assistant/session.ts`).
  */
-export function deskFetch(input: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(input, { ...init, credentials: 'same-origin' })
+export async function deskFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const send = async (id: string) =>
+    fetch(input, {
+      ...init,
+      credentials: 'omit',
+      headers: { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${id}` }
+    })
+  const answered = await send(await sessionID())
+  if (answered.status !== 401) return answered
+  // The id names nothing any more — a restarted chassis, a sign-out, an
+  // eviction. One renewal, and then the refusal is the person's to act on.
+  return send(await renewSession())
 }
 
 /**

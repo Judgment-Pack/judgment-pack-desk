@@ -39,7 +39,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { loadEngine } from './engines'
-import { bindModelCall, openAssistantConnection, runAssistantSession } from './session'
+import { bindModelCall, openAssistantConnection, prepareAssistantSession, runAssistantSession } from './session'
 import { normalize } from './thinking'
 import type { AssistantEvent } from './engine'
 import type { AssistantConnection } from './session'
@@ -288,8 +288,13 @@ export function useAssistantRun(options: {
 
       void (async () => {
         try {
-          // Recorded before anything is awaited: the handle exists now, and
-          // `close()` on it is valid whatever stage the setup has reached.
+          // **The session id first.** The assistant opens its own socket, and
+          // the id travels in the subprotocol offer — so it has to be in hand
+          // before the transport is built. Nothing is open yet at this await,
+          // so there is nothing an abort here could leak.
+          await prepareAssistantSession()
+          // Recorded before anything else is awaited: the handle exists now,
+          // and `close()` on it is valid whatever stage the setup has reached.
           const opened = openAssistantConnection({
             allowed: endpoint.tools,
             onEvent: (event) => push(run, event),

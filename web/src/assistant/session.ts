@@ -21,7 +21,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { chassisUrl } from '../files/client'
 import { DeskWebSocketTransport } from '../mcp/transport'
-import { socketURL } from '../mcp/McpProvider'
+import { socketProtocols, socketURL } from '../mcp/McpProvider'
+import { heldSessionID, sessionID } from '../mcp/session'
 import { allowedTools, gateTransport, type GuardrailNotice } from './toolGate'
 import type { EndpointKind } from '../config/deskConfig'
 import type {
@@ -343,7 +344,25 @@ function facade(answered: Response): Response {
  * function returning a fresh object.
  */
 export function assistantTransport(): Transport {
-  return new DeskWebSocketTransport(socketURL())
+  // **Read synchronously, from the id this tab already holds.**
+  // `openAssistantConnection` returns its handle immediately and settles later,
+  // which is what lets a caller close a run that is still setting up; making
+  // this async would change that shape for every caller. `prepareAssistantSession`
+  // is awaited by the one caller just before, so the id is there.
+  return new DeskWebSocketTransport(socketURL(), socketProtocols(heldSessionID()))
+}
+
+/**
+ * Make sure this tab holds a session id before the assistant opens its own
+ * connection with it.
+ *
+ * By the time an assistant run can start, the desk's own provider has
+ * bootstrapped and this resolves off `sessionStorage` without a request. It is
+ * awaited anyway, because "it will already be there" is the kind of ordering
+ * assumption that is true until a pane is mounted somewhere else.
+ */
+export async function prepareAssistantSession(): Promise<void> {
+  await sessionID()
 }
 
 /** What a connection is once it has finished setting itself up. */
