@@ -40,6 +40,7 @@ export const CHASSIS_CODES = [
   'not-utf8',
   'not-a-file',
   'unauthorized',
+  'sessions-full',
   'forbidden',
   'bad-request',
   'staging-file',
@@ -104,7 +105,11 @@ export const OTHER_ENDPOINT_CODES = [
   // file API; these belong to the one route that rewrites the `assistant`
   // object of the file in `~/.config`, which no create touches.
   'desk-config-changed',
-  'desk-config-refused'
+  'desk-config-refused',
+  // The exchange's one: this desk already holds as many sessions as it will,
+  // and refuses a new one. It is answered by `POST /api/session`, which the
+  // page calls once at load and no create ever calls.
+  'sessions-full'
 ] as const
 
 /** The chassis codes this dialog has a sentence for. */

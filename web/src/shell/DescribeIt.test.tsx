@@ -436,9 +436,7 @@ const ends = () =>
     (line) => line.textContent === 'the session ended'
   )
 
-beforeEach(() => {
-  window.sessionStorage.setItem('jpack-desk-token', 'a-token')
-})
+beforeEach(() => {})
 
 afterEach(() => {
   cleanup()

@@ -3,6 +3,8 @@ import type { Notification } from '@modelcontextprotocol/sdk/types.js'
 import { useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { recordFileChange } from '../shell/consoleLog'
+import { deskFetch } from '../files/client'
+import { NoSession, bootstrap } from './session'
 import { UNKNOWN_CAPABILITIES, type RuntimeCapabilities, listAllTools, readCapabilities } from './capabilities'
 import { DeskWebSocketTransport } from './transport'
 
@@ -85,31 +87,57 @@ export function useMcp(): McpConnection {
 }
 
 /**
- * The session token arrives in the URL the chassis prints. Keeping it in
- * sessionStorage lets client-side navigation drop it from the address bar
- * without losing the connection, and scopes it to this tab.
+ * Take the bare `#` the launch redirect leaves off the address bar.
+ *
+ * **Why the launch redirects to `/#` at all.** A redirect whose `Location`
+ * carries no fragment inherits the *request's* one (RFC 9110 §10.2.2), so
+ * `/launch?secret=S#S` would land on `/#S` — the secret still in
+ * `location.hash`, readable by every script on the page and kept in history. An
+ * explicit empty fragment overrides it, and this removes what that leaves.
+ *
+ * **`href`, not `hash`.** `location.hash` is the empty string for a URL ending
+ * in a bare `#`, so reading it cannot tell that URL from a clean one; the `#` is
+ * only visible in `href`.
+ *
+ * `replaceState` rather than `pushState`: the desk is where the person already
+ * is, and a history entry they never asked for is a Back button that does
+ * nothing visible.
  */
-const TOKEN_KEY = 'jpack-desk-token'
-
-export function sessionToken(): string {
-  const fromUrl = new URLSearchParams(window.location.search).get('token')
-  if (fromUrl) {
-    window.sessionStorage.setItem(TOKEN_KEY, fromUrl)
-    return fromUrl
+export function removeTheLaunchHash(): void {
+  try {
+    if (!window.location.href.endsWith('#')) return
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+  } catch {
+    // A browser that refuses history manipulation keeps a bare `#`, which is
+    // untidy and carries nothing.
   }
-  return window.sessionStorage.getItem(TOKEN_KEY) ?? ''
 }
 
+if (typeof window !== 'undefined') removeTheLaunchHash()
+
 /**
- * The one address a desk MCP connection is opened at.
+ * The one address a desk MCP connection is opened at, and it carries **no
+ * credential**: the session id travels in the subprotocol offer instead, which
+ * is the only place a browser lets a page put anything on a handshake.
  *
  * Exported because the assistant opens a **second** connection over the same
  * relay with its own client and its own gate (`assistant/session.ts`), and two
  * spellings of this address would be two answers about where the chassis is.
  */
-export function socketURL(token: string): string {
+export function socketURL(): string {
   const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${scheme}//${window.location.host}/ws?token=${encodeURIComponent(token)}`
+  return `${scheme}//${window.location.host}/ws`
+}
+
+/**
+ * The subprotocols a desk upgrade offers: the plain one, and the session id.
+ *
+ * Exported for the same reason `socketURL` is — the assistant's connection
+ * offers the same pair — and because a test can then assert the id is in the
+ * offer and nowhere else.
+ */
+export function socketProtocols(id: string): string[] {
+  return ['jpack-desk', `jpack-desk-session.${id}`]
 }
 
 /** The backoff schedule: doubling from the base, never longer than the cap. */
@@ -139,6 +167,12 @@ function backoffDelay(attempt: number): number {
  * re-reads the project on every call, and whatever the project did while the
  * socket was down arrived as `desk/fileChanged` notifications nobody heard.
  */
+/**
+ * Thrown to abandon an attempt whose effect was torn down while it awaited.
+ * Its own type so the catch can tell it from a real failure and stay silent.
+ */
+class Disposed extends Error {}
+
 export function McpProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   const [connection, setConnection] = useState<McpConnection>(DISCONNECTED)
@@ -163,22 +197,6 @@ export function McpProvider({ children }: { children: ReactNode }) {
 
     const retryNow = () => setRetryTick((tick) => tick + 1)
 
-    const token = sessionToken()
-    if (!token) {
-      // Nothing to retry: no token will appear on its own.
-      setConnection({
-        ...DISCONNECTED,
-        status: 'failed',
-        error: new Error(
-          'No session token. Open the URL that jpack-desk printed at startup — it carries ?token=…'
-        ),
-        connectionEpoch: epoch.current,
-        everConnected: everConnected.current,
-        retryNow
-      })
-      return
-    }
-
     const scheduleRetry = (cause: Error) => {
       if (disposed) return
       attempt += 1
@@ -192,6 +210,49 @@ export function McpProvider({ children }: { children: ReactNode }) {
         retryNow
       })
       timer = setTimeout(connect, backoffDelay(attempt))
+    }
+
+    // A connection that failed, told apart from one that will never succeed.
+    // No session is not a retryable state: only the printed URL mints one, and
+    // a page that reconnected for ever would hide the one instruction that
+    // fixes it.
+    const failed = (cause: Error) => {
+      if (disposed) return
+      setConnection({
+        ...DISCONNECTED,
+        status: 'failed',
+        error: cause,
+        connectionEpoch: epoch.current,
+        everConnected: everConnected.current,
+        retryNow
+      })
+    }
+
+    /**
+     * Why an upgrade was refused, and what to do about it.
+     *
+     * **The browser withholds the status of a failed handshake**, so a page
+     * cannot tell "this desk is down" from "this desk does not know my id". So
+     * the id is put to a channel that does answer: `GET /api/session`, through
+     * `deskFetch`, which is the same gate every other chassis call goes through.
+     * A `401` there forgets the id and ends the connection — that is the
+     * terminal no-session state, and only the next page load leaves it.
+     * Anything else is a chassis that is simply not answering, which is what
+     * the backoff is for.
+     */
+    const classify = async (cause: Error) => {
+      if (disposed) return
+      try {
+        await deskFetch('/api/session')
+      } catch (refusal) {
+        if (disposed) return
+        if (refusal instanceof NoSession) {
+          failed(refusal)
+          return
+        }
+      }
+      if (disposed) return
+      scheduleRetry(cause)
     }
 
     function connect() {
@@ -230,8 +291,22 @@ export function McpProvider({ children }: { children: ReactNode }) {
       }
 
       const reconnecting = attempt > 0
-      client
-        .connect(new DeskWebSocketTransport(socketURL(token)))
+      // **The bootstrap first, and the socket after it.** The upgrade has to
+      // carry the id, and the id comes from the one `POST /api/session` this
+      // page makes — memoised, so a reconnect within one page's life resolves
+      // from memory without a request. A page with no session never opens a
+      // socket at all.
+      //
+      // **Disposal is re-checked after the await.** The effect can be torn down
+      // while this promise is pending — StrictMode mounts twice, and a route
+      // change unmounts — and connecting afterwards would open a socket with
+      // nothing left to close it.
+      bootstrap()
+        .then((id) => {
+          if (disposed || live !== client) throw new Disposed()
+          if (id === null) throw new NoSession()
+          return client.connect(new DeskWebSocketTransport(socketURL(), socketProtocols(id)))
+        })
         .then(async () => {
           if (disposed || live !== client) return
           attempt = 0
@@ -270,13 +345,23 @@ export function McpProvider({ children }: { children: ReactNode }) {
           if (reconnecting) await queryClient.invalidateQueries()
         })
         .catch((cause: unknown) => {
+          if (cause instanceof Disposed) {
+            void client.close()
+            return
+          }
           if (disposed || live !== client) return
           // A rejected connect leaves the Client holding a transport it will
           // never use; dropping it here stops its onclose from scheduling a
           // second retry beside this one.
           live = null
           void client.close()
-          scheduleRetry(cause instanceof Error ? cause : new Error(String(cause)))
+          const error = cause instanceof Error ? cause : new Error(String(cause))
+          // The one failure that never resolves on its own.
+          if (error instanceof NoSession) {
+            failed(error)
+            return
+          }
+          void classify(error)
         })
     }
 

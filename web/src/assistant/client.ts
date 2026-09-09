@@ -14,7 +14,7 @@
  * sharing that module's URL builder and refusal envelope, because the token
  * and the `{error, code}` shape are the chassis' and not any one endpoint's.
  */
-import { answer, chassisUrl } from '../files/client'
+import { answer, chassisUrl, deskFetch } from '../files/client'
 import type { AssistantConfig } from '../config/deskConfig'
 
 /**
@@ -134,7 +134,7 @@ export interface ProbeResult {
 }
 
 export async function readAssistantKey(signal?: AbortSignal): Promise<AssistantKeyState> {
-  return answer<AssistantKeyState>(await fetch(chassisUrl('/api/assistant/key'), { signal }))
+  return answer<AssistantKeyState>(await deskFetch(chassisUrl('/api/assistant/key'), { signal }))
 }
 
 /**
@@ -147,7 +147,7 @@ export async function readAssistantKey(signal?: AbortSignal): Promise<AssistantK
  */
 export async function storeAssistantKey(key: string): Promise<AssistantKeyState> {
   return answer<AssistantKeyState>(
-    await fetch(chassisUrl('/api/assistant/key'), {
+    await deskFetch(chassisUrl('/api/assistant/key'), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key })
@@ -157,7 +157,7 @@ export async function storeAssistantKey(key: string): Promise<AssistantKeyState>
 
 export async function removeAssistantKey(): Promise<AssistantKeyState> {
   return answer<AssistantKeyState>(
-    await fetch(chassisUrl('/api/assistant/key'), { method: 'DELETE' })
+    await deskFetch(chassisUrl('/api/assistant/key'), { method: 'DELETE' })
   )
 }
 
@@ -172,7 +172,7 @@ export async function removeAssistantKey(): Promise<AssistantKeyState> {
  */
 export async function probeAssistantEndpoint(signal?: AbortSignal): Promise<ProbeResult> {
   return answer<ProbeResult>(
-    await fetch(chassisUrl('/api/assistant/probe'), { method: 'POST', signal })
+    await deskFetch(chassisUrl('/api/assistant/probe'), { method: 'POST', signal })
   )
 }
 
@@ -232,7 +232,7 @@ export async function updateAssistantConfig(
   input: AssistantConfigWrite
 ): Promise<AssistantConfigWritten> {
   return answer<AssistantConfigWritten>(
-    await fetch(chassisUrl('/api/desk-config'), {
+    await deskFetch(chassisUrl('/api/desk-config'), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ assistant: input.assistant, ifMatch: input.ifMatch })

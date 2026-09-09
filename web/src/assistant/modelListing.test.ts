@@ -65,10 +65,10 @@ describe('where the listing request goes', () => {
     const seen = serves(GEMINI_BODY)
     await listModels('gemini', bindModelCall('gemini'))
     expect(seen.urls).toHaveLength(1)
-    // The desk's own route, with this chassis' session token on it — and no
-    // trace of the configured endpoint, which the page does not hold.
+    // The desk's own route, carrying nothing of its own — and no trace of the
+    // configured endpoint, which the page does not hold.
     expect(seen.urls[0]).toContain('/api/assistant/relay/v1/v1beta/models')
-    expect(seen.urls[0]).toContain('token=')
+    expect(seen.urls[0]).not.toContain('token=')
     expect(seen.urls[0]).not.toContain('googleapis')
     expect(seen.urls[0]).not.toContain('https://')
   })
@@ -78,24 +78,28 @@ describe('where the listing request goes', () => {
     // and by the configured URL alike: later pages are not supported at all.
     const seen = serves(GEMINI_BODY)
     await listModels('gemini', bindModelCall('gemini'))
-    const query = seen.urls[0]!.slice(seen.urls[0]!.indexOf('?') + 1)
-    expect([...new URLSearchParams(query).keys()]).toEqual(['token'])
+    const url = new URL(seen.urls[0]!, 'http://desk.invalid')
+    expect([...url.searchParams.keys()]).toEqual([])
   })
 
-  it('asks with a GET and no body, and no credential of its own', async () => {
+  it('asks with a GET and no body, and no credential but this desk’s own', async () => {
     const seen = serves({ data: [] })
     await listModels('openai-compatible', bindModelCall('openai-compatible'))
     expect(seen.inits[0]!.method).toBe('GET')
     expect(seen.inits[0]!.body).toBeUndefined()
     const headers = seen.inits[0]!.headers as Record<string, string>
-    expect(Object.keys(headers)).toEqual([])
+    // **One header, and it is the session this page holds** — the relay is a
+    // gated chassis route. What must not be here is a credential for the
+    // *endpoint*: that one is on this machine and is attached by the chassis.
+    expect(Object.keys(headers)).toEqual(['Authorization'])
+    expect(headers.Authorization).toMatch(/^Bearer /)
   })
 
   it('uses each protocol s own listing path', async () => {
     for (const [kind, suffix] of Object.entries(LISTING_SUFFIX)) {
       const seen = serves({ data: [], models: [] })
       await listModels(kind as keyof typeof LISTING_SUFFIX, bindModelCall(kind as never))
-      expect(seen.urls[0], kind).toContain(`/api/assistant/relay/v1/${suffix}?`)
+      expect(seen.urls[0], kind).toBe(`/api/assistant/relay/v1/${suffix}`)
     }
   })
 })

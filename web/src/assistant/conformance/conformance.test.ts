@@ -76,12 +76,17 @@ const DRAFT_V2 = scenario.documents.DRAFT_V2 as unknown
 /**
  * The network globals an engine must never touch, and what happens if it does.
  *
- * ADR-0001's contract sketch handed the engine a `baseUrl`, and a `baseUrl` for
- * this relay carries **this chassis' session token**: an adapter could read it
- * and open `/ws?token=…` itself with `globalThis.WebSocket`, driving a third
- * MCP connection the ToolGate is not on. The contract changed to a capability
- * (`assistant/engine.ts`), and this is what holds the change — structurally,
- * rather than by scanning the source for spellings somebody thought of.
+ * ADR-0001's contract sketch handed the engine a `baseUrl`. That was refused
+ * for a reason that has since changed shape: the relay used to authenticate
+ * with this chassis' session token in the query, so a `baseUrl` carried a
+ * credential. The session is a bearer id the page holds now, so no address is a
+ * credential — and page code that spelled `/ws` could read that id out of
+ * `sessionStorage` exactly as it could once read the token there. **Which is
+ * why this seal matters more than the URL ever did, and what it is:**
+ * regression coverage, not runtime isolation. The production desk runs engines
+ * with the real globals; an engine that opened its own ungated MCP connection
+ * would not be stopped there — it would fail here, in this suite, before it
+ * shipped.
  *
  * For the duration of the engine's run every one of these is a sentinel that
  * throws. The desk's own capability captured `fetch` when the session was
@@ -1010,8 +1015,14 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
       const { requests } = await runLeg(fromRegistry(engineId), leg)
       expect(requests.length).toBeGreaterThan(0)
       for (const request of requests) {
+        // **`authorization` is the desk's own session and is expected**: the
+        // relay is a gated chassis route. What K1 is about is that no
+        // credential *the engine* could name reaches it — and the engine
+        // cannot write `authorization` either, because it is off
+        // `MODEL_REQUEST_HEADERS`. So the header is required to be there
+        // exactly once and to be a bearer, and every other credential name is
+        // required to be absent.
         for (const forbidden of [
-          'authorization',
           'x-api-key',
           'api-key',
           'cookie',
@@ -1020,12 +1031,17 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
         ]) {
           expect(request.headerNames, `a request carried ${forbidden}`).not.toContain(forbidden)
         }
-        // The relay's own base, one path suffix, and the desk's token — plus,
-        // on the one family whose wire asks for its stream in the query, the
-        // one pair the relay admits and nothing else.
+        expect(
+          request.headerNames.filter((name) => name === 'authorization'),
+          'the relayed request carries this desk’s session exactly once'
+        ).toHaveLength(1)
+        // The relay's own base and one path suffix — plus, on the one family
+        // whose wire asks for its stream in the query, the one pair the relay
+        // admits and nothing else. No credential: the session is a bearer on a
+        // header, and it is never on an address.
         expect(request.url.startsWith('/api/assistant/relay/v1/')).toBe(true)
         const url = new URL(request.url, 'http://desk.invalid')
-        const admitted = leg.api === 'gemini' && request.streamRequested ? ['token', 'alt'] : ['token']
+        const admitted = leg.api === 'gemini' && request.streamRequested ? ['alt'] : []
         expect([...url.searchParams.keys()]).toEqual(admitted)
         if (leg.api === 'gemini' && request.streamRequested) {
           expect(url.searchParams.get('alt')).toBe('sse')
