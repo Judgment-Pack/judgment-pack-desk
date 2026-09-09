@@ -4641,6 +4641,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   #
   # A browser Response carries the requested URL on `.url`, and that URL is the
   # relay address with this chassis' session token in it.
+  # **The assistant's own relay calls, which round 3 found unauthenticated and
+  # round 4 found unheld.** Every model listing and every generation turn goes
+  # through this desk's gated relay route, so it carries the same bearer every
+  # other request does — and when the session stopped being a cookie, this was
+  # the one caller that kept assuming something ambient. The fix had no row
+  # until now, which is the same defect one level up.
+  mutate web "the assistant's relay calls carry no session" "$ASN" \
+    '        headers: { ...headers, Authorization: `Bearer ${id}` },' \
+    '        headers: { ...headers },'
   mutate web "the model answer is handed back as fetch produced it" "$ASN" \
     '    return facade(answered)' \
     '    return answered'
