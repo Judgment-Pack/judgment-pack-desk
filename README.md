@@ -417,8 +417,8 @@ red badge in a nav rail would be a gate the runtime never issued.
 
 **Six regions**, on a CSS grid of a **definite** viewport height —
 `height: 100dvh` and not `min-height`, so the content row divides the viewport
-instead of growing to fit a long page, `.desk-main` is the one scroll container,
-and the 28px strip stays on screen. The three pane sizes in the table are the
+instead of growing to fit a long page, `.desk-main` is the route's scroll
+container, and the 28px strip stays on screen. The three pane sizes in the table are the
 configured values, written onto the grid as `--rail-w`, `--inspector-w` and
 `--console-h`; collapse writes one of two values into a second custom property
 and never a third number.
@@ -451,6 +451,49 @@ one, and a test holds that with both of the route's own landmarks mounted.
 | Inspector | Closed, `panes.inspector.width` (360px) | → 0px; a drawer below 1100px | `complementary`, named "Inspector" |
 | Console | Collapsed to the 28px strip, `panes.console.height` (240px) | → the strip, never below it | `region`, named "Console" |
 | Status strip | Always visible, 28px | Never | `contentinfo` |
+
+**The document never scrolls, because every scroller is a containing block.**
+A scroll container clips and scrolls only the descendants whose containing
+block lies inside it, so **every rule that authors a scrolling overflow
+declares a position that positions in the same rule** — `relative` on sixteen
+of the eighteen, and `fixed` on the two that were already out of flow, the
+dialog's content and the shell's drawer, which the rail and the Inspector both
+use. So do the frame and its four panes, under their own exact selector. A
+rule that *merely clips* is not held — an `overflow: hidden` on an ellipsis
+label or a popup clips text, and text has no containing block to be laid out
+against.
+
+Measured by `scripts/containment-check.sh` on a build of e2d1dee, in the
+script's own configuration: Admin at 1400×800 measured a document 2355px tall
+inside an 800px window, `scrollY` reached 1555 after a `scrollTo(0, 5000)`, and
+the whole shell could be scrolled up out of the frame, because Radix renders a
+1px hidden `<select>` beside every Select trigger that sits inside a `<form>`:
+three of them, at y 1725, 2257 and 2354, absolutely positioned against the
+*initial* containing block, neither scrolled with the main pane nor clipped by
+the frame, and counted into the document's own overflow.
+
+Two things check it, and they check different halves.
+`web/src/ui/containingBlock.test.ts` **reads the source**. It holds the
+declaring rules — each rule that authors a scrolling overflow, and the frame
+and the four panes under their own exact selector. What it cannot hold is the
+cascade: a rule that takes a pane's position
+back by *any other* selector — an ancestor in front of it, an id, an attribute,
+a nested `&`, a `:global`, an inline style — is a computed result and not a
+sentence in a sheet, and three drafts that tried to emulate it were each
+defeated by a construction nobody had thought of. Its docstring says exactly
+that, rather than leaving it to be found. **`scripts/containment-check.sh`
+measures the cascade**, in Chrome, against a built chassis: the computed
+`position` of the frame and each pane, `scrollHeight` against `innerHeight`,
+`scrollY` after a `scrollTo(0, 5000)`, and whether any absolutely positioned
+element still resolves its `offsetParent` to `BODY`. Every route `App.tsx`
+declares, at every width the sheets author a breakpoint for, four pane
+configurations above 1099px and three at or below it — below that the Inspector
+is a modal drawer whose overlay owns the pointer, so the console cannot be
+toggled while it is open — 242 rows a build. It measured 0 of 242 contained at
+e2d1dee and 242 of 242 after. CI supplies no runtime binary and no project, so
+there is nothing for the chassis to serve; the gate is run by hand. Run before
+every merge that touches a stylesheet. This is a convention; nothing automated
+enforces it.
 
 A collapsed pane is **removed from the accessibility tree**, not merely made
 invisible: closed is the `hidden` attribute plus `[hidden] { display: none
@@ -3997,7 +4040,16 @@ Four rules and one test that holds all four
 with `css: false` and a component whose stylesheet was deleted renders exactly
 like one whose stylesheet is intact). A second test —
 `web/src/ui/palette.test.ts` — reads the two *global* sheets on the same terms,
-and holds the palettes and the density scale that live in them.
+and holds the palettes and the density scale that live in them. A third —
+`web/src/ui/containingBlock.test.ts` — reads every `.css` under `web/src`, by
+extension and not by name, and holds one pair: a rule that authors a scrolling
+overflow also positions itself, so a scroll container is a containing block.
+The frame is in the swept set for its deliberate clip; a rule that merely clips
+is not. It is a sweep and not a list of names, so the scroller nobody has
+written yet is held by it too. It holds the declaring rules only; whether a
+later rule takes a position back is measured by
+`scripts/containment-check.sh`. It reads source and says so, and the two
+halves are named in its docstring.
 
 **Three of them run over every `*.module.css` under `web/src`**, and one — the
 component/module pairing — stays scoped to `src/ui`. The split is the point. The
@@ -4172,6 +4224,54 @@ APPLY` and is silently dead, and a full pass takes long enough that nobody finds
 out until a review does — which is how a re-indentation in one PR left a row
 from an earlier one broken. It applies nothing and runs no suite, and it is not
 a substitute for running the rows.
+
+`scripts/containment-check.sh` measures, in a real browser, the half of "every
+scroll container is a containing block" that no reader of source can hold.
+`web/src/ui/containingBlock.test.ts` holds the *declaring rules* and says in its
+own docstring that it stops there: an override that reaches a pane by any other
+selector — an ancestor in front of it, an id, an attribute, a nested `&`, a
+`:global`, an inline style — is a computed cascade, not a sentence in a sheet.
+This loads a built chassis in Chrome and reads what the cascade produced, over
+every route `App.tsx` declares — the list is asserted against that file at run
+time, so a route added later fails the gate until it is sampled — at every
+width the sheets author a breakpoint for: `{1400, 640}`, plus `N − 1` for each
+`max-width: N` and `N` for each `min-width: N` read out of an `@media` prelude
+under `web/src`, each at height 800. Four pane configurations above 1099px and
+three at or below it, because below that the Inspector is a modal drawer whose
+overlay owns the pointer, so the console cannot be toggled while it is open:
+242 rows a build. The intended row count is computed before any sampling and
+checked against the rows afterwards, and each configuration is observed on the
+page it claims to configure.
+A row is contained only if `document.scrollingElement.scrollHeight` equals
+`innerHeight`, `.desk` is exactly `innerHeight` tall, `scrollY` is 0 after
+`window.scrollTo(0, 5000)`, the computed `position` of `.desk`, `.desk-rail`,
+`.desk-main`, `.desk-inspector` and `.desk-console` is `relative` wherever the
+route renders them, no absolutely positioned element resolves its
+`offsetParent` to `BODY`, and no page or console error was raised while it was
+sampled. It prints a table and exits non-zero on any row that fails.
+
+```sh
+npm --prefix web ci && npm --prefix web run build
+go build -o /tmp/jpack-desk .
+JPACK_BIN=/path/to/jpack scripts/containment-check.sh /tmp/jpack-desk /path/to/project 8765
+```
+
+The project must list at least one pack and one graph: four of the eleven routes
+are a pack's and one is a graph's, and the gate exits 2 rather than sample fewer.
+`judgment-pack-demo/projects/enterprise-demo` is one it runs on; a project with
+packs and no graphs is not. `node scripts/containment-check.mjs --plan` prints what
+a run would sample — the preludes read and the preludes refused, the widths, the
+routes, the intended row count — without a browser.
+
+It copies the project rather than driving the one it was handed, uses a
+throwaway `XDG_CONFIG_HOME`, and kills what it starts by PID. A project that
+lists no pack, or no graph, exits 2 saying so: four of the routes are a pack
+and one is a graph, and neither id can be spelt without the project. `PLAYWRIGHT_CHROME`
+names a Chrome executable; without it, `playwright-core` — a devDependency of
+`web/`, which downloads no browser — is asked for the installed one. CI supplies
+no runtime binary and no project, so there is nothing for the chassis to serve;
+the gate is run by hand. Run before every merge that touches a stylesheet. This
+is a convention; nothing automated enforces it.
 
 CI runs `gofmt`, `go vet` and `go test` on one job and `npm ci`, `tsc`, the
 component tests and `vite build` on another. It supplies neither a runtime binary

@@ -6441,6 +6441,84 @@ export function assistantTransport(): Transport {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.9rem;'
+
+  # ---- Chunk 6g: every pane is a containing block --------------------------
+  #
+  # **Retired: four, one reason.** `a later rule unpositions .desk-main again`,
+  # `the frame unpositioned inside a media block`, `a descendant selector takes
+  # .desk-main's position back` and `a late rule takes .desk-console's position
+  # back` were the override rows. They existed because the guard claimed to
+  # catch a cascade override from source, and that claim is withdrawn: three
+  # review rounds each found a construction past it — selector text compared as
+  # a string, a first-match lookup, a nested `&` prelude — and a source reader
+  # that nearly emulates the cascade is worse than one that does not try,
+  # because it is believed. `scripts/containment-check.sh` holds that half now,
+  # in a browser, by reading the computed `position` of the frame and the four
+  # panes on 242 configurations a build. Three of the four constructions do still
+  # trip the same-selector clause the reader kept (each is in the PR's
+  # construction table, applied by hand and shown failing); they are retired
+  # anyway, because a row is a claim about what the suite holds, and holding
+  # them here would re-assert the one that was refuted. The fourth,
+  # `.desk > .desk-main`, is green in the suite and red in the script, which is
+  # exactly the division of labour this chunk ends with.
+  #
+  # **Retired: two more.** `position dropped from the textarea primitive` and
+  # `position dropped from the raw code editor` were the user-agent scroller
+  # rows. A `<textarea>` renders no element children, so no positioned
+  # descendant can exist inside it and a `position` on it holds nothing —
+  # measured in Chrome: a child with `position: absolute; top: 3000px` appended
+  # to a textarea renders nothing and extends nothing. The list and the two
+  # declarations were removed with these rows.
+  #
+  # **Retained: three.** Two break the pair inside the rule that declares it;
+  # one writes a scroller that never had it.
+
+  CHK=web/src/packs/CheckStrip.module.css
+
+  # **The pane stops being a containing block.** `overflow` clips and scrolls
+  # only the descendants whose containing block is inside the scroller, so a
+  # static `.desk-main` sends every absolutely positioned descendant to the
+  # *initial* containing block: not scrolled with the pane, not clipped by the
+  # frame, and counted into the document's own scrollable overflow. jsdom lays
+  # nothing out and vitest runs with `css: false`, so this is held by reading
+  # the sheet.
+  mutate web "position dropped from .desk-main, so the pane contains nothing" "$CSSH" \
+    '    overflow: auto;
+    position: relative;
+    scrollbar-gutter: stable;' \
+    '    overflow: auto;
+    scrollbar-gutter: stable;'
+
+  # **And the frame stops clipping what it does not contain.** `.desk` is
+  # `overflow: hidden` on purpose — the scrolling belongs to the panes — which
+  # is worth nothing against a descendant whose containing block is outside it.
+  # The skip link at `left: -9999px` and the three hidden selects are exactly
+  # such descendants.
+  mutate web "position dropped from .desk, so the frame clips nothing" "$CSSH" \
+    '    height: 100dvh;
+    overflow: hidden;
+    position: relative;' \
+    '    height: 100dvh;
+    overflow: hidden;'
+
+  # **A scroller written next month, in a module nobody thought about.** This
+  # is the row that says the test is a sweep and not a list of five names: the
+  # rule added here is in a module this chunk never edited, and the invariant
+  # has to reach it by shape.
+  mutate web "a new module scroller that positions nothing" "$CHK" \
+    '.check {
+  margin: 0;
+  font-size: 0.82rem;
+}' \
+    '.check {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.checkScroll {
+  max-height: 12rem;
+  overflow-y: auto;
+}'
 fi
 
 restore

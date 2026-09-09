@@ -133,6 +133,7 @@
   border-radius: var(--radius-sm);
   background: var(--surface);
   overflow-x: auto;
+  position: relative;
   font-size: 0.8rem;
   line-height: 1.5;
 }

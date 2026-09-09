@@ -54,6 +54,7 @@
   line-height: 1.45;
   max-height: 18rem;
   overflow: auto;
+  position: relative;
 }
 
 /* The dialog has less room than the tab, and the same list. */

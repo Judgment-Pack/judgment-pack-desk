@@ -14,6 +14,7 @@
 
 .json {
   overflow-x: auto;
+  position: relative;
   max-height: 18rem;
   margin: 0;
   padding: 0.5rem;
