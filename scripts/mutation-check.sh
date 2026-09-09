@@ -1532,7 +1532,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # A wrong secret that mints a session is no gate at all.
   mutate go "a wrong launch secret still mints a session" "$SN" \
     '	if subtle.ConstantTimeCompare([]byte(secret), []byte(s.cfg.Token)) != 1 {' \
-    '	if false {'
+    '	if len(secret) < 0 {'
   # **The removed door, put back.** This is the row the whole chunk is about: a
   # chassis that authenticates `?token=` again is the chassis this replaced, and
   # the sweep over every gated route is what notices.
