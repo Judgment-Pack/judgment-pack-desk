@@ -452,6 +452,20 @@ one, and a test holds that with both of the route's own landmarks mounted.
 | Console | Collapsed to the 28px strip, `panes.console.height` (240px) | → the strip, never below it | `region`, named "Console" |
 | Status strip | Always visible, 28px | Never | `contentinfo` |
 
+**The measure is left-aligned at one gutter.** A route's content is not centred
+in the main pane — `.desk-measure` is `margin: 0` with `padding:
+var(--density-section) var(--density-gutter) 4rem` — so the content's left edge
+is the rail's right border plus one gutter (2rem, 1.25rem compact, 1rem below
+600px) and is the same on every route at every width, which is what a
+persistent rail is for; a centred column beside a rail is aligned to neither.
+**Each route names its width kind**, with `data-measure="form" | "wide" |
+"full"` on its top-level element: `form` is `--measure-form` (44rem: Admin,
+Help & About), `wide` is `--measure-wide` (72rem: the packs layout, a pack's
+evaluate route, project home, author) and is the declared default, `full` is
+`max-width: none` (matrix and coverage, graphs) — and a route that names none
+fails `web/src/routes/measure.test.ts`, which derives the set of routes from
+`App.tsx`, rather than quietly rendering at the default.
+
 **The document never scrolls, because every scroller is a containing block.**
 A scroll container clips and scrolls only the descendants whose containing
 block lies inside it, so **every rule that authors a scrolling overflow
@@ -720,15 +734,18 @@ key, and a wrong guess applies one project's preference to another's desk.
 
 **What compact does.** `appearance.density` writes `data-density` on the same
 element — `compact` sets it, `comfortable` removes it, because comfortable is
-the scale on bare `:root`. That scale is six tokens: a list row's height, a
-control's height, a table cell's two paddings, the gap between items in a list,
-and the type size of the surfaces that are dense to begin with. Compact
-tightens all six, and everything that shrinks reads one of them — the packs
-list, the inspector's rows and its diagnostics, the assistant's event list and
-proposal, the disposition diff's cells, the Admin cards' field rows, the
-console log, the pane heads, and the `Button` and `Select` heights. Tokens
-rather than per-component rules: a pane with a `[data-density]` selector of its
-own would be a seventh answer to a question the six already answer. A test
+the scale on bare `:root`. That scale is a list row's height, a control's
+height, a table cell's two paddings, the gap between items in a list, the type
+size of the surfaces that are dense to begin with, the two vertical rhythms a
+flat page keeps, and the page measure's own gutter — the count is deliberately
+not written here or in the sheet, because it said "six" through two chunks that
+added three. Compact tightens every one of them, and everything that shrinks
+reads one — the packs list, the inspector's rows and its diagnostics, the
+assistant's event list and proposal, the disposition diff's cells, the Admin
+cards' field rows, the console log, the pane heads, the `Button` and `Select`
+heights, and the gutter the content starts at. Tokens rather than
+per-component rules: a pane with a `[data-density]` selector of its own would
+be one more answer to a question the scale already answers. A test
 holds every compact value **strictly** smaller than its comfortable one, in the
 same unit — a density that is offered, stored and applied while changing
 nothing is exactly what this replaces. The one number that could not stay in

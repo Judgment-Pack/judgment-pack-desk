@@ -6519,6 +6519,58 @@ export function assistantTransport(): Transport {
   max-height: 12rem;
   overflow-y: auto;
 }'
+
+  # ---- Chunk 6h: the page measure -----------------------------------------
+  #
+  # **Retired: none.** Nothing here replaces a row. The containing-block rows
+  # above hold where a pane's content is clipped; these hold where a page's
+  # content starts and stops, which was held by nothing — `.desk-measure` was
+  # `margin: 0 auto` for as long as it has existed and no test looked at it.
+
+  GRV=web/src/routes/GraphView.tsx
+
+  # **The measure centred again.** The whole visible claim of this chunk is one
+  # declaration: content beside a persistent rail starts at a fixed gutter, and
+  # `auto` puts it wherever the window happens to be wide. On a 1893px Admin
+  # that is dead space on both sides and a left edge that agrees with nothing —
+  # and it is invisible to a render, because vitest runs with `css: false` and
+  # jsdom lays nothing out, so it is held by reading the sheet.
+  mutate web "the page measure centred again (margin: 0 auto)" "$CSSH" \
+    '    max-width: var(--measure-wide);
+    margin: 0;' \
+    '    max-width: var(--measure-wide);
+    margin: 0 auto;'
+
+  # **The gutter that is not a density.** The gutter is on the `--density-`
+  # scale so that a compact desk tightens the edge of the page as it tightens
+  # everything inside it. A compact value equal to its comfortable one is the
+  # scale's own defect one token at a time: the attribute is written, the
+  # selector matches, the sheet resolves, and the left edge does not move.
+  mutate web "the page measure's gutter: compact equal to comfortable" "$CSSP" \
+    '  --density-gutter: 1.25rem;' \
+    '  --density-gutter: 2rem;'
+
+  # **A route that states no kind.** The measure declares `wide` as its default,
+  # so a route with no attribute renders at 72rem and looks entirely correct —
+  # which is why "every route states its kind" has to be a test and not a
+  # convention. This takes the attribute off the graphs page, whose kind is
+  # `full`: the page that most wants every pixel silently becomes a column.
+  mutate web "the page measure unstated by a route (graphs takes the default)" "$GRV" \
+    '    <article className="detail" data-measure="full">' \
+    '    <article className="detail">'
+
+  # **And the rule that reads the attribute.** The other half: a route may
+  # state `form` and be given the wide measure anyway, because the `:has` rule
+  # it is read by is gone. Admin then renders its label-and-value columns at
+  # 72rem, which is the form whose labels and values are a screen apart that
+  # this chunk exists to stop.
+  mutate web "the page measure's form cap removed from its :has rule" "$CSSH" \
+    '  .desk-measure:has([data-measure="form"]) {
+    max-width: var(--measure-form);
+  }
+
+' \
+    ''
 fi
 
 restore
