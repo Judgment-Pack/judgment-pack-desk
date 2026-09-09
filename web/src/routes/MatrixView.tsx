@@ -31,7 +31,7 @@ export function MatrixView() {
   const packs = data.packs ?? []
 
   return (
-    <article className="detail">
+    <article className="detail" data-measure="full">
       <nav className="crumbs">
         <Link to="/">Project</Link>
         <span aria-hidden="true">/</span>

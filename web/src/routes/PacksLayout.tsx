@@ -17,7 +17,7 @@ import styles from './PacksLayout.module.css'
 
 export function PacksLayout() {
   return (
-    <div className={styles.layout}>
+    <div className={styles.layout} data-measure="wide">
       <PacksPane />
       <div className={styles.main}>
         <Outlet />

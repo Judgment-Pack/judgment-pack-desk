@@ -92,7 +92,7 @@ export function AdminView() {
   const packLocation = packLocationState(packDir, listing)
 
   return (
-    <article className={`detail ${styles.admin}`}>
+    <article className={`detail ${styles.admin}`} data-measure="form">
       <header className="detail-head">
         <h1>Admin</h1>
       </header>

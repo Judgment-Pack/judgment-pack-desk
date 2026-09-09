@@ -78,7 +78,7 @@ export function PackEvaluate() {
   }
 
   return (
-    <article className="detail">
+    <article className="detail" data-measure="wide">
       <nav className="crumbs">
         <Link to="/">Project</Link>
         <span aria-hidden="true">/</span>
