@@ -1619,9 +1619,14 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	}'
   # And the answer selects the plain protocol, so the id is never echoed into a
   # response header a proxy or a log would keep.
+  # **Only the session protocol, not beside the plain one.** `websocket.Accept`
+  # walks the *client's* offers in order and selects the first the server
+  # admits, so adding the session protocol to the list changes nothing: the page
+  # offers `jpack-desk` first and gets it. Admitting only the session protocol
+  # is what actually puts the id in the response header.
   mutate go "the upgrade echoes the session offer back" internal/desk/relay.go \
     '		Subprotocols:       []string{wsProtocol},' \
-    '		Subprotocols:       []string{wsProtocol, wsSessionPrefix + offeredSessionID(r)},'
+    '		Subprotocols:       []string{wsSessionPrefix + offeredSessionID(r)},'
   # Two credentials with two lifetimes: a session id accepted as a launch secret
   # would mean a leaked id is a launch secret, which is the stronger of the two.
   mutate go "the Bearer header accepts a session id in place of the secret" "$SN" \
@@ -1656,10 +1661,26 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	return fmt.Sprintf("%s-%d", launchCookiePrefix, port)' \
     '	_ = fmt.Sprintf("%d", port)
 	return launchCookiePrefix'
-  # Nothing that looks like a launch is answered with the page.
-  mutate go "a path under /launch/ falls through to the page" "$S" \
-    '	s.mux.HandleFunc("/launch/{rest...}", s.handleLaunchSubpath)' \
-    ''
+  # **Nothing that looks like a launch is answered with the page, and it is
+  # refused twice.** The router owns `/launch/…` and the static handler owns the
+  # spellings the router does not see — another case, an encoded separator, a
+  # `secret` on some other path's query. Either layer alone refuses every shape
+  # this suite sends, so a row that removed only the route reported NOT
+  # DISCRIMINATING for a guard that is real and doubled. This row removes both,
+  # which is the property: *something* refuses them.
+  mutate go "nothing refuses a launch-shaped URL, so the page is served" "$S" \
+    '	if looksLikeALaunch(r) {
+		refuseLaunchShape(w)
+		return
+	}' \
+    '	if false {
+		refuseLaunchShape(w)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/launch") {
+		r = r.Clone(r.Context())
+		r.URL.Path = "/somewhere-else"
+	}'
   mutate go "the static handler answers a launch-shaped URL with the page" "$S" \
     '	if looksLikeALaunch(r) {
 		refuseLaunchShape(w)
