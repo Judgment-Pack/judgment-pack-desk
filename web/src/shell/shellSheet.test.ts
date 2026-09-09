@@ -17,6 +17,8 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const SHEET = readFileSync(join(import.meta.dirname, '..', 'shell.css'), 'utf8')
+/** The token file, for the half of the measure that is a number rather than a rule. */
+const TOKENS = readFileSync(join(import.meta.dirname, '..', 'styles.css'), 'utf8')
 
 /** One rule's declarations, by selector, at any indentation. */
 function declarations(selector: string): string {
@@ -183,6 +185,83 @@ describe('the strip’s cue fits the strip', () => {
     const narrow = SHEET.slice(SHEET.indexOf('@media (max-width: 599px)'))
     expect(narrow.slice(0, 260)).toMatch(/\.desk-strip-warn-full\s*\{\s*display:\s*none;/)
     expect(narrow.slice(0, 260)).toMatch(/\.desk-strip-warn-short\s*\{\s*display:\s*inline;/)
+  })
+})
+
+describe('the measure is left-aligned, at one gutter, capped by kind', () => {
+  it('never centres the column, and starts it at the gutter token', () => {
+    // The defect: `max-width: 60rem; margin: 0 auto` centred the content in
+    // the main pane, so on a 1893px Admin there was dead space on both sides
+    // and the content was aligned to nothing — not to the rail, and not to the
+    // middle either, because Admin's own 44rem sat left-aligned inside it. An
+    // app with a persistent left rail does not centre.
+    const margin = values('.desk-measure', 'margin')
+    expect(margin).toEqual(['0'])
+    expect(margin.join(' '), 'a centred measure has no left edge to hold').not.toContain('auto')
+    expect(values('.desk-measure', 'max-width')).toEqual(['var(--measure-wide)'])
+    // Both numbers come from the scale, so a compact desk tightens the gutter
+    // as it tightens everything else — and the left edge is the gutter.
+    expect(values('.desk-measure', 'padding')).toEqual([
+      'var(--density-section) var(--density-gutter) 4rem'
+    ])
+  })
+
+  it('reads the three kinds a route can state, each from its own token', () => {
+    // `wide` is the default and is still declared. Without the rule the page
+    // would still be 72rem, so a route that stated nothing would look right
+    // and be held by nothing — which is why `routes/measure.test.ts` requires
+    // the attribute and this requires the rule that reads it.
+    expect(values('.desk-measure:has([data-measure="form"])', 'max-width')).toEqual([
+      'var(--measure-form)'
+    ])
+    expect(values('.desk-measure:has([data-measure="wide"])', 'max-width')).toEqual([
+      'var(--measure-wide)'
+    ])
+    // `full` is the one kind with no token, because there is no number in it.
+    expect(values('.desk-measure:has([data-measure="full"])', 'max-width')).toEqual(['none'])
+  })
+
+  it('defines both caps and the gutter on :root, and tightens the gutter', () => {
+    // The caps are not on the density scale: a measure is a reading width and
+    // not a rhythm, and `--measure-form` at a compact density would be a form
+    // whose columns move when somebody tightens the row height.
+    expect(TOKENS).toMatch(/\n {2}--measure-form: 44rem;/)
+    expect(TOKENS).toMatch(/\n {2}--measure-wide: 72rem;/)
+    expect(TOKENS).toMatch(/\n {2}--density-gutter: 2rem;/)
+    // The compact value is held strictly smaller by `ui/palette.test.ts`,
+    // which sweeps the whole `--density-` prefix; what is held here is that
+    // the gutter is on that scale at all, which is what puts it in the sweep.
+    expect(TOKENS).toMatch(/\n {2}--density-gutter: 1\.25rem;/)
+  })
+
+  it('takes the gutter narrower by viewport, and not by density', () => {
+    // 2rem each side of a 320px screen is a third of the screen spent on
+    // nothing, whichever density is chosen — so it is keyed on the width, at
+    // the shell's own narrow breakpoint, and deliberately not in the compact
+    // block, where it would tighten a 1900px desk and leave a comfortable
+    // phone at 2rem.
+    const narrow = TOKENS.slice(TOKENS.indexOf('@media (max-width: 599px)'))
+    expect(narrow.slice(0, 120)).toMatch(/:root \{\s*--density-gutter: 1rem;/)
+    const compact = TOKENS.slice(
+      TOKENS.indexOf(':root[data-density="compact"] {'),
+      TOKENS.indexOf('@media (max-width: 599px)')
+    )
+    expect(compact).not.toContain('--density-gutter: 1rem;')
+  })
+
+  it('leaves no page holding a measure of its own', () => {
+    // `.admin { max-width: 44rem }` was the width a label column and a value
+    // column need, measured on that page and living in that page's module —
+    // so the next form-shaped page had nowhere to read it from and would have
+    // spelt 44rem again. The page states `data-measure="form"` now.
+    const admin = readFileSync(
+      join(import.meta.dirname, '..', 'routes', 'AdminView.module.css'),
+      'utf8'
+    )
+    // Comments out: the module still *says* what the number was and where it
+    // went, and a check that could not tell a sentence from a declaration
+    // would be asking the file to forget its own history.
+    expect(admin.replaceAll(/\/\*[\s\S]*?\*\//g, '')).not.toContain('max-width')
   })
 })
 
