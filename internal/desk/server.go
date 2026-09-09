@@ -551,7 +551,7 @@ func (s *Server) upgradeAuthorized(r *http.Request) bool {
 		_, live := s.sessions.lookup(id)
 		return live
 	}
-	// No offer. A script'"'"'s socket, and only the launch secret opens one: a
+	// No offer. A script's socket, and only the launch secret opens one: a
 	// session id on this header authorizes nothing here.
 	return s.launchSecretPresented(r)
 }

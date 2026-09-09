@@ -360,10 +360,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the missing directory is a containment failure" "$F" \
     '	if parent := path.Dir(clean); parent != "." {' \
     '	if parent := path.Dir(clean); false && parent != "." {'
-  mutate go "the guard drops the token check" "$F" \
+  # Renamed and repaired: the guard reads a bearer session now, not a `?token=`
+  # query, so the needle and the name both said something this file stopped
+  # saying.
+  mutate go "the guard drops the session check" "$F" \
     '	if !s.authorized(r) {
 		writeJSONCoded(w, http.StatusUnauthorized, CodeUnauthorized,
-			"missing or invalid session token")
+			"no session: open the URL jpack-desk printed at startup, or present the launch secret as `Authorization: Bearer`")
 		return false
 	}' \
     ''
@@ -508,11 +511,12 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	}
 	afterResolve(clean)'
   # One code answering both 401 and 403 is not a matrix.
-  mutate go "the token and the origin share one code again" "$F" \
+  # Renamed and repaired: the guard's sentence changed with the credential.
+  mutate go "the session and the origin share one code again" "$F" \
     '		writeJSONCoded(w, http.StatusUnauthorized, CodeUnauthorized,
-			"missing or invalid session token")' \
+			"no session: open the URL jpack-desk printed at startup, or present the launch secret as `Authorization: Bearer`")' \
     '		writeJSONCoded(w, http.StatusUnauthorized, CodeForbidden,
-			"missing or invalid session token")'
+			"no session: open the URL jpack-desk printed at startup, or present the launch secret as `Authorization: Bearer`")'
 
   # ---- The assistant slot: key custody, and the one outbound request -------
   #
@@ -1046,7 +1050,6 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the configured key is never attached" "$MR" \
     '			carried.Set(name, value)' \
     '			_, _ = name, value'
-  # This desk's own credential, in the place it is easiest to forget.
   # **Two rows are gone and this one replaced them.** They broke a *strip* —
   # the page's query forwarded with this chassis' token taken out of it — and
   # that arrangement leaked the token three times, three ways, to three
@@ -1054,12 +1057,16 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # `;` (Go rejects such a pair and some servers split on it), and `Token`
   # (this desk compared case-sensitively and ASP.NET Core folds case). Each fix
   # was a better comparison and the next parser disagreed somewhere else, so
-  # there is no strip any more: a relayed request carries the session token and
-  # nothing else, and nothing of the page's query is forwarded. One rule, one
-  # row.
+  # there is no strip any more.
+  #
+  # Repaired: the needle named `sessionTokenParameter`, the query this chassis
+  # used to authenticate with, which no longer exists — nothing of the page's
+  # query is forwarded now, and the one closed literal `alt=sse` is the whole of
+  # the exception. This breaks the refusal itself.
   mutate go "a page query parameter is forwarded" "$MR" \
-    '		if err != nil || decoded != sessionTokenParameter {' \
-    '		if false && (err != nil || decoded != sessionTokenParameter) {'
+    '		return "", "a relayed request carries no query of the page'"'"'s own: nothing of it is " +' \
+    '		continue
+		_ = "a relayed request carries no query of the page'"'"'s own: nothing of it is " +'
   mutate go "the relayed path is never validated" "$MR" \
     '	if reason := relaySuffixProblem(suffix); reason != "" {' \
     '	if reason := ""; reason != "" {'
@@ -1226,9 +1233,11 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if false {'
   # At most once: `alt=sse&alt=sse` is a query two parsers could count
   # differently, which is the whole class this rule exists to keep out.
+  # Repaired: the condition lost an indentation level when the `token` branch
+  # around it went, so the needle no longer matched. The property is unchanged.
   mutate go "a second copy of the stream pair is admitted" "$MR" \
-    '				parameter == relayStreamPair && extra == "" {' \
-    '				parameter == relayStreamPair {'
+    '			parameter == relayStreamPair && extra == "" {' \
+    '			parameter == relayStreamPair {'
   mutate go "the relay's log line carries the whole address" "$MR" \
     '	s.log.Printf("desk: assistant relay %s answered %d", loggableOrigin(endpoint.url), status)' \
     '	s.log.Printf("desk: assistant relay %s %s answered %d", endpoint.url, suffix, status)'
@@ -1495,6 +1504,95 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if !present {
 		return nil
 	}'
+
+  # ---- The bootstrap: the handoff, the exchange, and what a bearer is ------
+  #
+  # The six rows below break the chassis half of the shape this desk's session
+  # is. Each one is a property the README states in a sentence, and each one
+  # was a review finding on the branch this design replaced.
+  SE=internal/desk/session.go
+  # **Single use is what bounds the residual.** A script that captures the
+  # handoff inside its sixty seconds and forges the fetch-metadata header takes
+  # the session — and the whole of what makes that *visible* rather than quiet
+  # is that the page's own exchange then fails. A reusable handoff is a desk
+  # with two users and nobody told.
+  mutate go "the handoff is reusable" "$SE" \
+    '	key := ls.handle(value)
+	until, ok := ls.given[key]
+	if !ok {
+		return false
+	}
+	delete(ls.given, key)' \
+    '	key := ls.handle(value)
+	until, ok := ls.given[key]
+	if !ok {
+		return false
+	}'
+  # **The bound is a refusal, and refusing is the property.** Making room would
+  # end a live session from outside the page holding it, which is the second
+  # actor this whole design exists without.
+  mutate go "the 65th session is accepted" "$SE" \
+    '	if len(st.live) >= maxSessions {
+		return "", errTooManySessions
+	}
+	st.live[st.handle(id)] = session{subject: subject, issuer: issuer, created: time.Now()}' \
+    '	st.live[st.handle(id)] = session{subject: subject, issuer: issuer, created: time.Now()}'
+  # **One credential each way on the upgrade.** A session id on the handshake's
+  # `Authorization` header is a second path for the page's credential, and a
+  # path the browser cannot even use — a `WebSocket` constructor has no header
+  # parameter.
+  mutate go "a session id is accepted on the upgrade's header" "$S" \
+    '	// No offer. A script'"'"'s socket, and only the launch secret opens one: a
+	// session id on this header authorizes nothing here.
+	return s.launchSecretPresented(r)' \
+    '	if _, live := s.sessions.lookup(bearerOf(r)); live {
+		return true
+	}
+	return s.launchSecretPresented(r)'
+  # **Nothing on a query authorizes anything.** A credential on a query is a
+  # credential in an address bar, a `Referer`, a proxy log and `Response.url`.
+  mutate go "a session id on the query authorizes a request" "$SE" \
+    '	if id := bearerOf(r); id != "" {
+		if held, ok := s.sessions.lookup(id); ok {
+			return held, true
+		}
+	}
+	return session{}, false' \
+    '	for _, id := range []string{bearerOf(r), r.URL.Query().Get("token")} {
+		if held, ok := s.sessions.lookup(id); ok {
+			return held, true
+		}
+	}
+	return session{}, false'
+  # **No cookie authorizes anything but the exchange.** A cookie has no port, so
+  # one accepted anywhere else is one every sibling service on this host holds —
+  # which is the finding that set the previous branch aside.
+  mutate go "a cookie authorizes a gated route" "$SE" \
+    '	if id := bearerOf(r); id != "" {
+		if held, ok := s.sessions.lookup(id); ok {
+			return held, true
+		}
+	}
+	return session{}, false
+}' \
+    '	if id := bearerOf(r); id != "" {
+		if held, ok := s.sessions.lookup(id); ok {
+			return held, true
+		}
+	}
+	if cookie, err := r.Cookie("jpack-desk-session"); err == nil {
+		if held, ok := s.sessions.lookup(cookie.Value); ok {
+			return held, true
+		}
+	}
+	return session{}, false
+}'
+  # **The exchange spends what it mints against.** Minting without consuming is
+  # a handoff left live in a cookie jar for the rest of its minute, worth a
+  # session to anything that can read it.
+  mutate go "the exchange mints without spending the handoff" "$SE" \
+    '	if err != nil || !s.launches.consume(cookie.Value) {' \
+    '	if err != nil || (!s.launches.consume(cookie.Value) && false) {'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -3989,8 +4087,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # If the probe named a URL, anything holding the token could point the desk
   # — and the key it holds — at a host of its choosing.
   mutate web "the probe names its own destination" "$AC" \
-    "    await fetch(chassisUrl('/api/assistant/probe'), { method: 'POST', signal })" \
-    "    await fetch(chassisUrl('/api/assistant/probe'), {
+    "    await deskFetch(chassisUrl('/api/assistant/probe'), { method: 'POST', signal })" \
+    "    await deskFetch(chassisUrl('/api/assistant/probe'), {
       method: 'POST',
       signal,
       body: JSON.stringify({ url: 'http://127.0.0.1:1/v1' })
@@ -4452,13 +4550,17 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   const gated = raw'
   # One shared transport instead of one per session: two sessions would share a
   # jpack mcp and a gate, and closing either would take the other's connection.
+  # Repaired: the transport now takes the session id its caller awaited, so the
+  # needle names the new signature. The property is unchanged.
   mutate web "the assistant reuses one shared transport" "$ASN" \
-    'export function assistantTransport(): Transport {
-  return new DeskWebSocketTransport(socketURL(sessionToken()))
+    'export function assistantTransport(id: string): Transport {
+  if (id === '"'"''"'"') throw new NoSession()
+  return new DeskWebSocketTransport(socketURL(), socketProtocols(id))
 }' \
     'let sharedTransport: Transport | undefined
-export function assistantTransport(): Transport {
-  sharedTransport ??= new DeskWebSocketTransport(socketURL(sessionToken()))
+export function assistantTransport(id: string): Transport {
+  if (id === '"'"''"'"') throw new NoSession()
+  sharedTransport ??= new DeskWebSocketTransport(socketURL(), socketProtocols(id))
   return sharedTransport
 }'
   # A setup that fails leaves a socket and a jpack mcp with nothing holding a
@@ -4539,12 +4641,14 @@ export function assistantTransport(): Transport {
     '          const opened = openAssistantConnection({
             allowed: endpoint.tools,
             onEvent: (event) => push(run, event),
+            sessionId,
             signal: run.controller.signal
           })
           run.connection = opened' \
     '          const opened = openAssistantConnection({
             allowed: endpoint.tools,
-            onEvent: (event) => push(run, event)
+            onEvent: (event) => push(run, event),
+            sessionId
           })'
   # An identical policy run twice: the run id is what makes the second press a
   # second submission rather than the same state value.
@@ -6636,6 +6740,49 @@ export function assistantTransport(): Transport {
     return claim()' \
     '    if (!publishing) return
     claim()'
+
+  # ---- The page's one actor -----------------------------------------------
+  #
+  # The four rows below break the property this whole design is: **one**
+  # bootstrap, awaited by everything, and a refusal that is terminal. The
+  # branch this replaced had several actors that could each read or replace the
+  # id, and five review rounds closed the races between them one pair at a
+  # time.
+  MS=web/src/mcp/session.ts
+  ASN2=web/src/assistant/session.ts
+  FC=web/src/files/client.ts
+  # **Memoised, and never reset.** Ten components mounting at once must spend
+  # one handoff; the handoff is single use, so a second exchange is a `401` and
+  # a page that half works.
+  mutate web "the bootstrap is no longer memoised" "$MS" \
+    '  bootstrapping ??= beginSession()
+  return bootstrapping' \
+    '  return beginSession()'
+  # **Awaiting it is what makes "one credential, one holder" true of the code.**
+  # A transport that reads ahead of the exchange sends an unauthorized request
+  # and gets a 401 for a session that was about to exist.
+  #
+  # The edit necessarily drops the bearer too, because the bearer *is* what the
+  # await produces — there is no synchronous source for it, which is the point.
+  # The discriminating test is the ordering one: "sends nothing until the
+  # exchange has answered".
+  mutate web "a chassis call does not await the bootstrap" "$FC" \
+    '  const id = await sessionBearer()' \
+    '  const id = '"'"''"'"'
+  # **The relay is a gated chassis route like any other.** It carried no bearer
+  # on the branch this replaces, so every model listing and every generation
+  # turn answered 401 the moment the session stopped being a cookie — and the
+  # builder's own drive never reached either path.
+  mutate web "the assistant's relay sends no bearer" "$ASN2" \
+    '        headers: { ...headers, Authorization: `Bearer ${id}` },' \
+    '        headers,'
+  # **A refusal is the end of the road.** An id the chassis has rejected that
+  # stays in storage is an id every later call re-sends, and a page that never
+  # says the one sentence a person can act on.
+  mutate web "a 401 does not forget the id" "$FC" \
+    '  forgetSession()
+  throw new NoSession()' \
+    '  throw new NoSession()'
 fi
 
 restore
