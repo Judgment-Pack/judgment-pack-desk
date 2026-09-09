@@ -235,9 +235,10 @@ const CALL_FAILED =
  *   `HttpOnly` cookie the browser attaches by itself, there is no credential in
  *   any address for an engine to read, and page code that constructed `/ws`
  *   would be admitted on the cookie alone. So the facade is defence in depth
- *   and is stated as that: what actually holds the ToolGate's guarantee is the
- *   member set an engine is handed (`enforcement.test.ts`) and the sealed
- *   network globals the conformance session runs every engine under. The same
+ *   and is stated as that: what an engine is *handed* is held by the member set
+ *   in `enforcement.test.ts`, and what an engine *reaches for* is caught by the
+ *   conformance suite, whose sealed globals make that a failing test rather
+ *   than something the running desk prevents. The same
  *   reasoning covers the failure path: the error is replaced, because a fetch
  *   `TypeError` quotes the URL and an engine is handed no address;
  * - **the headers are an allow-list**, in both directions, so nothing

@@ -81,9 +81,11 @@ const DRAFT_V2 = scenario.documents.DRAFT_V2 as unknown
  * with this chassis' session token in the query, so a `baseUrl` carried a
  * credential. The session is an `HttpOnly` cookie now, so no address is a
  * credential — and page code that spelled `/ws` would be admitted on the cookie
- * alone. **Which is exactly why this seal is the guarantee and the URL never
- * was**: what stops an engine opening a second, ungated MCP connection is that
- * it cannot reach a `WebSocket` at all, not that it cannot guess an address.
+ * alone. **Which is why this seal matters more than the URL ever did, and what
+ * it is:** regression coverage, not runtime isolation. The production desk runs
+ * engines with the real globals; an engine that opened its own ungated MCP
+ * connection would not be stopped there — it would fail here, in this suite,
+ * before it shipped.
  *
  * For the duration of the engine's run every one of these is a sentinel that
  * throws. The desk's own capability captured `fetch` when the session was

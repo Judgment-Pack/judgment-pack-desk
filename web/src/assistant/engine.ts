@@ -48,9 +48,16 @@
  * `model.call(suffix, init)` is a capability the desk binds, and it is the only
  * way an engine reaches a model at all.
  *
- * The guarantee that an engine does not open a second MCP connection is held
- * where it can be: by the member set below, asserted whole, and by the sealed
- * network globals every engine's leg runs under.
+ * **What holds that, and what does not.** The member set below is asserted
+ * whole, so an engine is *handed* nothing but the capability. It is not
+ * prevented from reaching a global: in production an engine runs with the real
+ * `fetch` and the real `WebSocket`, and one that spelled `/ws` itself would be
+ * admitted on the ambient session cookie. The sealed globals belong to the
+ * conformance suite, which runs every engine's leg with `fetch`, `WebSocket`,
+ * `XMLHttpRequest` and `EventSource` replaced by throwing sentinels — so an
+ * engine that reaches for one **fails the suite**. That is regression coverage,
+ * not runtime isolation: an engine opening its own connection is a bug this
+ * repository catches before it ships, not one the running desk prevents.
  *
  * The conformance session holds that structurally rather than by inspection:
  * every leg runs with `fetch`, `WebSocket`, `XMLHttpRequest` and `EventSource`

@@ -46,18 +46,14 @@ func assistantServer(t *testing.T) (*Server, *httptest.Server, *bytes.Buffer) {
 func assistantServerIn(t *testing.T, config string) (*Server, *httptest.Server, *bytes.Buffer) {
 	t.Helper()
 	logged := &bytes.Buffer{}
-	s, err := New(Config{
+	s, ts := startDesk(t, Config{
 		ProjectDir:    t.TempDir(),
 		JpackBin:      "jpack",
 		Token:         testToken,
 		Logger:        log.New(logged, "", 0),
 		DeskConfigDir: config,
 	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
 	t.Cleanup(func() { s.Close() })
-	ts := httptest.NewServer(s)
 	t.Cleanup(ts.Close)
 	return s, ts, logged
 }

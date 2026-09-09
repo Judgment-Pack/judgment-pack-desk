@@ -62,6 +62,20 @@ type Config struct {
 	Root *ProjectRoot
 	// JpackBin names the runtime binary: a path, or a name resolved on PATH.
 	JpackBin string
+	// Port is the TCP port the listener this server is served behind is bound
+	// to, and it is **required**.
+	//
+	// It exists because the session cookie's name carries it. A cookie's origin
+	// does not include the port — it never has — so a cookie set for
+	// `127.0.0.1` is sent to every port on that host, and two desks on one
+	// machine would share, and overwrite, one session. Naming the cookie for
+	// the port they were bound to keeps them apart. See session.go.
+	//
+	// It is required rather than defaulted because a default would be a port
+	// some other desk is on: a zero here would name every desk's cookie
+	// `jpack-desk-session-0`, which is the shared-cookie flaw with a longer
+	// name.
+	Port int
 	// Token is the **launch secret**: the one credential that is not minted
 	// by this desk, and the only thing `GET /launch` trades for a session.
 	//
@@ -135,6 +149,10 @@ type Server struct {
 	// file on a case-insensitive filesystem would take different locks and both
 	// commit. Desk-scale contention is not worth a correctness argument.
 	writes sync.Mutex
+	// cookieName is this desk's session cookie, port and all. Computed once,
+	// here, so that the name a launch sets and the name a guard reads cannot
+	// drift apart.
+	cookieName string
 	// sessions is the set of live browser sessions, minted by `GET /launch`
 	// and presented as the `jpack-desk-session` cookie. See session.go for why
 	// a cookie replaced the `?token=` query, and why the store is keyed by a
@@ -177,6 +195,9 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Token == "" {
 		return nil, errors.New("desk: Token is required")
 	}
+	if cfg.Port <= 0 {
+		return nil, errors.New("desk: Port is required: the session cookie's name carries it")
+	}
 	if cfg.JpackBin == "" {
 		cfg.JpackBin = "jpack"
 	}
@@ -208,6 +229,7 @@ func New(cfg Config) (*Server, error) {
 		configDir:  configDirFor(cfg.DeskConfigDir),
 		relaySlots: make(chan struct{}, maxRelayInFlight),
 		sessions:   sessions,
+		cookieName: sessionCookieName(cfg.Port),
 	}
 	adopted = true
 	// **One owner from here on.** The wrapper the caller still holds stops
@@ -232,6 +254,9 @@ func New(cfg Config) (*Server, error) {
 	// only route on this chassis that is not gated — it is where authorization
 	// is acquired rather than spent. See `handleLaunch`.
 	s.mux.HandleFunc("GET /launch", s.handleLaunch)
+	// And nothing under it: a near miss must not fall through to the SPA
+	// fallback carrying the secret it was sent with.
+	s.mux.HandleFunc("/launch/{rest...}", s.handleLaunchSubpath)
 	s.mux.HandleFunc("/ws", s.handleWS)
 	// What this desk knows about the session the request carries. It exists so
 	// that the session record is a thing a provider can fill (7b) rather than
@@ -327,9 +352,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.Serve
 // authorized reports whether the request may reach a gated capability, and
 // there are exactly two ways to be — in this order.
 //
-//  1. **The `jpack-desk-session` cookie**, naming a session this process
-//     minted. That is every request a browser makes: the launch exchange set
-//     the cookie and the browser has attached it ever since.
+//  1. **The `jpack-desk-session-<port>` cookie**, naming a session this process
+//     minted, on a request the browser itself reports as same-origin. That is
+//     every request this desk's page makes: the launch exchange set the cookie
+//     and the browser has attached it ever since. A cookie on any other kind of
+//     request authorizes nothing — cookies have no port isolation, so the
+//     browser hands this one to every local service and to every page on a
+//     sibling port, and `Sec-Fetch-Site` is what tells those apart. See
+//     session.go.
 //  2. **`Authorization: Bearer <launch secret>`**, which is how a script, a
 //     test or the containment gate authorizes — none of them has a cookie jar,
 //     and all of them can read the secret the desk was started with.

@@ -3161,7 +3161,13 @@ not; they are the page, and the page can do nothing without one of the two.
 - **A launch secret, exchanged once, at one path.** A random 192-bit secret is
   generated at startup and printed as `http://127.0.0.1:<port>/launch?secret=…`.
   `GET /launch` compares it in constant time, mints a 192-bit session id, sets
-  the session cookie and answers `303 See Other` to `/`. (The secret's length is
+  the session cookie and answers `303 See Other` to `/#`. The empty fragment is
+  written out on purpose: a `Location` carrying none inherits the *request's*
+  (RFC 9110 §10.2.2), so `/launch?secret=S#S` would land on `/#S` with the
+  secret sitting in `location.hash`. The page takes the bare `#` off the address
+  bar once, on load. Nothing is under `/launch/`, and a request for anything
+  there is a `404` from the router rather than the single-page fallback — which
+  would have answered with the page, secret still on the URL. (The secret's length is
   still observable, which does not matter: the format is fixed and public, and
   the value is the secret.) A wrong or absent secret answers `403` with one line
   and **sets nothing**; the two are not distinguished, because a caller that
@@ -3170,13 +3176,37 @@ not; they are the page, and the page can do nothing without one of the two.
   closed tab a restart of the desk, and the property this buys is not that the
   secret is spent but that it never enters the page and never rides on a request
   query.
-- **The session is a cookie.** `jpack-desk-session=<id>; Path=/; HttpOnly;
-  SameSite=Strict`, plus `Secure` where the request arrived over https — the
-  chassis serves plain http on loopback, and a browser discards a `Secure`
-  cookie that arrives over http. `HttpOnly` is why the page cannot read the id,
-  so page code cannot put it on a query, in a log line, or in `sessionStorage`.
-  The store is keyed by an HMAC of each id under a key minted in this process,
-  so "is this id live" is not a hash-table probe over bytes a caller chose.
+- **The session is a cookie.** `jpack-desk-session-<port>=<id>; Path=/;
+  HttpOnly; SameSite=Strict`, plus `Secure` where the request arrived over
+  https — the chassis serves plain http on loopback, and a browser discards a
+  `Secure` cookie that arrives over http. `HttpOnly` is why the page cannot read
+  the id, so page code cannot put it on a query, in a log line, or in
+  `sessionStorage`. The store is keyed by an HMAC of each id under a key minted
+  in this process, so "is this id live" is not a hash-table probe over bytes a
+  caller chose. It holds at most 64 sessions, evicted oldest first.
+- **Cookies have no port isolation, and two things are done about it.** A cookie
+  set for `127.0.0.1` is sent to *every* port on that host — the port is not
+  part of a cookie's origin and never has been — so any other local service
+  receives this desk's session, and two desks would otherwise overwrite each
+  other's. So: the cookie's **name carries the port** it was minted on, and a
+  cookie authorizes a request only where the browser itself reports
+  `Sec-Fetch-Site: same-origin`. A page on another loopback port is *same-site*
+  and not same-origin, and cannot forge that header — it is a forbidden header
+  name — so its request is refused even though the browser attached the cookie
+  to it. A script replaying a stolen cookie by hand sends no such header at all
+  and is refused for the same reason; scripts present the launch secret instead.
+  This is what closes a credentialled `no-cors` `GET` from a sibling port, which
+  carries the cookie and **no `Origin` header**, and would otherwise be judged
+  by the Origin guard alone.
+
+  The cost is stated rather than hidden: **a browser that sends no
+  `Sec-Fetch-Site` cannot hold a session on this desk** — Safari before 16.4.
+  Refusing is the right direction for a header whose absence must never read as
+  permission.
+- **No session expiry and no sign-out exist yet.** A session lives until the
+  process exits or it is evicted by the bound above; there is no way to end one
+  deliberately, and closing the browser leaves the record behind until then.
+  Both arrive with the identity provider.
 - **Or the launch secret as a header, for a script.** `Authorization: Bearer
   <launch secret>`, compared in constant time. That is how the smoke client, the
   acceptance run, the containment gate and every test in `internal/desk`

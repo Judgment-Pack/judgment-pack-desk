@@ -29,7 +29,7 @@ import (
 func filesServer(t *testing.T) (*Server, *httptest.Server, string) {
 	t.Helper()
 	project := t.TempDir()
-	s, err := New(Config{
+	s, ts := startDesk(t, Config{
 		ProjectDir: project,
 		JpackBin:   "jpack",
 		Token:      testToken,
@@ -40,11 +40,7 @@ func filesServer(t *testing.T) (*Server, *httptest.Server, string) {
 		// somebody's real key file.
 		DeskConfigDir: t.TempDir(),
 	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
 	t.Cleanup(func() { s.Close() })
-	ts := httptest.NewServer(s)
 	t.Cleanup(ts.Close)
 	return s, ts, project
 }
@@ -363,12 +359,8 @@ func TestRetargetedProjectRootIsNotAdopted(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	s, err := New(Config{ProjectDir: link, JpackBin: "jpack", Token: testToken, Logger: log.New(io.Discard, "", 0)})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	s, ts := startDesk(t, Config{ProjectDir: link, JpackBin: "jpack", Token: testToken, Logger: log.New(io.Discard, "", 0)})
 	defer s.Close()
-	ts := httptest.NewServer(s)
 	defer ts.Close()
 
 	// Repoint the root after the server was built.
@@ -959,7 +951,9 @@ func TestStaleStagingFilesAreClearedAtStartup(t *testing.T) {
 	// Not ours, and not touched.
 	writeProjectFile(t, project, "keep.tmp", "somebody else's")
 
-	s, err := New(Config{ProjectDir: project, JpackBin: "jpack", Token: testToken, Logger: log.New(io.Discard, "", 0)})
+	// This one never starts a server, so the port is only the field's
+	// requirement being met. See `startDesk` for the ones where it matters.
+	s, err := New(Config{ProjectDir: project, JpackBin: "jpack", Token: testToken, Port: testPort, Logger: log.New(io.Discard, "", 0)})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -987,18 +981,14 @@ func TestReadRefusesWhatIsNotARegularFile(t *testing.T) {
 	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
 		t.Skipf("mkfifo: %v", err)
 	}
-	srv, err := New(Config{ProjectDir: project, JpackBin: "jpack", Token: testToken, Logger: log.New(io.Discard, "", 0)})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	t.Cleanup(func() { srv.Close() })
-
 	// This server is deliberately not closed through t.Cleanup. A handler that
 	// blocks on the FIFO — exactly what this test exists to catch — would keep
 	// httptest.Server.Close waiting forever, and the failure would arrive as a
 	// whole-suite timeout naming no test at all. A named failure is worth a
-	// leaked listener in a build that is already broken.
-	ts := httptest.NewServer(srv)
+	// leaked listener in a build that is already broken. `startDesk` registers
+	// no cleanup of its own, which is what makes that possible.
+	srv, ts := startDesk(t, Config{ProjectDir: project, JpackBin: "jpack", Token: testToken, Logger: log.New(io.Discard, "", 0)})
+	t.Cleanup(func() { srv.Close() })
 
 	// A client deadline, so the request gives up rather than the test.
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -1220,15 +1210,11 @@ func TestViteProxyShapeNeedsDevMode(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(project, "jpack.json"), []byte("{}"), 0o644); err != nil {
 				t.Fatalf("write: %v", err)
 			}
-			s, err := New(Config{
+			s, ts := startDesk(t, Config{
 				ProjectDir: project, JpackBin: "jpack", Token: testToken,
 				DevMode: dev, Logger: log.New(io.Discard, "", 0),
 			})
-			if err != nil {
-				t.Fatalf("New: %v", err)
-			}
 			defer s.Close()
-			ts := httptest.NewServer(s)
 			defer ts.Close()
 
 			r, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files", nil)
@@ -1537,7 +1523,7 @@ func TestRuntimeAndFileAPIShareOneProject(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	s, err := New(Config{ProjectDir: link, JpackBin: "jpack", Token: testToken, Logger: log.New(io.Discard, "", 0)})
+	s, err := New(Config{ProjectDir: link, JpackBin: "jpack", Token: testToken, Port: testPort, Logger: log.New(io.Discard, "", 0)})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

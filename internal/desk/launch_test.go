@@ -302,13 +302,9 @@ func TestTheReportedProjectDirIsTheResolvedOne(t *testing.T) {
 	if err := os.Symlink(real, link); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	s, err := New(Config{
+	s, ts := startDesk(t, Config{
 		ProjectDir: link, JpackBin: "jpack", Token: testToken, DeskConfigDir: t.TempDir()})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
 	defer s.Close()
-	ts := httptest.NewServer(s)
 	defer ts.Close()
 	_, body := sendJSON(t, ts, http.MethodGet, "/api/desk-config", nil)
 	project, _ := body["project"].(map[string]any)
@@ -787,7 +783,7 @@ func TestTheServerServesTheRootItWasHanded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken,
+	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken, Port: testPort,
 		DeskConfigDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -1047,7 +1043,7 @@ func swappedServer(t *testing.T) (*Server, os.FileInfo, string) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken,
+	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken, Port: testPort,
 		DeskConfigDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -1208,7 +1204,7 @@ func TestTheRuntimeInheritsNoDescriptorForTheProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken,
+	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken, Port: testPort,
 		DeskConfigDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -1254,7 +1250,7 @@ func TestAMissingShellIsRefusedByNameAtTheSpawn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken,
+	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken, Port: testPort,
 		DeskConfigDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -1360,7 +1356,7 @@ func TestAHandedRootCannotBeClosedOutFromUnderTheServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken,
+	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken, Port: testPort,
 		DeskConfigDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -1395,7 +1391,7 @@ func TestACopyMadeBeforeTheHandOverCannotCloseTheServersDescriptors(t *testing.T
 		t.Fatalf("open: %v", err)
 	}
 	alias := *pinned
-	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken,
+	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken, Port: testPort,
 		DeskConfigDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -1422,7 +1418,7 @@ func TestTheServerReleasesThePinnedRootExactlyOnce(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	own := pinned.own
-	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken,
+	s, err := New(Config{Root: pinned, JpackBin: "jpack", Token: testToken, Port: testPort,
 		DeskConfigDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("New: %v", err)

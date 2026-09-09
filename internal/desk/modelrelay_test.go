@@ -156,7 +156,11 @@ func relayBare(t *testing.T, ts *httptest.Server, method, suffix string, body io
 func authorizeAsPage(t *testing.T, ts *httptest.Server, req *http.Request) {
 	t.Helper()
 	cookie := launchSession(t, ts)
-	req.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
+	// `Sec-Fetch-Site` last, and deliberately after the decorator: it is a
+	// forbidden header name, so page code cannot write or unset it, and a test
+	// that let a decorator forge it would be modelling a browser that does not
+	// exist.
+	withSession(cookie)(req)
 }
 
 // relayRequest is one relayed request authorized the way the page is.
@@ -305,7 +309,7 @@ func TestTheSessionCookieNeverReachesTheEndpoint(t *testing.T) {
 
 	cookie := launchSession(t, ts)
 	req := relayBare(t, ts, http.MethodGet, "v1/messages", nil)
-	req.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
+	withSession(cookie)(req)
 	resp, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatalf("get: %v", err)

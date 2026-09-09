@@ -111,7 +111,37 @@ export function forgetStaleSessionToken(): void {
   }
 }
 
-if (typeof window !== 'undefined') forgetStaleSessionToken()
+/**
+ * Take the bare `#` the launch exchange redirects to off the address bar.
+ *
+ * **Why the exchange redirects to `/#` at all.** A redirect whose `Location`
+ * carries no fragment inherits the *request's* one (RFC 9110 §10.2.2), so
+ * `/launch?secret=S#S` would land on `/#S` — the secret still in
+ * `location.hash`, readable by every script on the page and kept in history. An
+ * explicit empty fragment overrides it, and this removes what that leaves.
+ *
+ * **`href`, not `hash`.** `location.hash` is the empty string for a URL ending
+ * in a bare `#`, so reading it cannot tell that URL from a clean one; the `#` is
+ * only visible in `href`.
+ *
+ * `replaceState` rather than `pushState`: the desk is where the person already
+ * is, and a history entry they never asked for is a Back button that does
+ * nothing visible.
+ */
+export function removeTheLaunchHash(): void {
+  try {
+    if (!window.location.href.endsWith('#')) return
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+  } catch {
+    // A browser that refuses history manipulation keeps a bare `#`, which is
+    // untidy and carries nothing.
+  }
+}
+
+if (typeof window !== 'undefined') {
+  forgetStaleSessionToken()
+  removeTheLaunchHash()
+}
 
 /**
  * What the page says when the chassis has no session for it.

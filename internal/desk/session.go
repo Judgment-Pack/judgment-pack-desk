@@ -38,20 +38,44 @@ package desk
 //
 // # Why a cookie is safe here, and what carries that
 //
-// A cookie is *ambient*: the browser attaches it to requests this desk's page
-// did not make. Two things bound that, and both are load-bearing:
+// A cookie is *ambient*, and worse than ambient: **cookies have no port
+// isolation.** A cookie set for host `127.0.0.1` is sent to *every* port on
+// that host, because the port is not part of a cookie's origin — it never has
+// been. The `?token=` query this replaced had no such flaw, and two things are
+// done about it here rather than left to the Origin guard alone:
 //
-//   - `SameSite=Strict` — a request initiated by any other site does not carry
-//     this cookie at all, so a foreign page cannot drive the runtime through
-//     the browser that holds one;
-//   - the Origin guard (`Server.originAllowed`), which is now this desk's CSRF
-//     defence and applies to every gated request, cookie or header alike.
+//  1. **The cookie's name carries the port.** `jpack-desk-session-<port>`, from
+//     the port the listener was bound to (`Config.Port`). Two desks on one
+//     machine no longer overwrite each other's session, and a request that
+//     reaches port 8791 is asked for *that* desk's cookie by name.
+//  2. **A cookie authorizes only a same-origin request**, decided by
+//     `Sec-Fetch-Site: same-origin`. Every modern browser sets that header on
+//     same-origin `fetch`, form submissions and WebSocket upgrades; a page on
+//     another port of the same host is *same-site* and not same-origin, so its
+//     request carries `same-site` and is refused — even though the browser
+//     attached the cookie to it. This is the half that closes the replay:
+//     another local service that received the cookie cannot use it, because it
+//     cannot make the browser claim same-origin for an origin it is not, and a
+//     script replaying it by hand sends no such header at all.
+//
+// Beside those:
+//
+//   - `SameSite=Strict` — a request initiated by any other **site** does not
+//     carry this cookie at all. Loopback ports are the same site, which is why
+//     it is not sufficient on its own and why (2) exists.
+//   - the Origin guard (`Server.originAllowed`), unchanged and kept on top:
+//     it applies to every gated request, cookie or header alike.
 //
 // `HttpOnly` keeps the id out of `document.cookie`, so page code cannot read
 // the session id and put it somewhere a URL goes — which is the mistake this
 // whole change is undoing. `Secure` is set only where the request arrived over
 // https: the chassis binds loopback and serves plain http, and a `Secure`
 // cookie on an http response is a cookie the browser drops.
+//
+// **The compatibility cost is stated rather than hidden**: a browser that sends
+// no `Sec-Fetch-Site` at all — Safari before 16.4 — cannot hold a session on
+// this desk. Refusing is the right direction for a header whose absence must
+// never be read as permission, and the README says so.
 
 import (
 	"crypto/hmac"
@@ -59,15 +83,46 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 )
 
-// sessionCookieName is the one cookie this chassis sets, and the only place a
-// browser's authorization to this desk lives.
-const sessionCookieName = "jpack-desk-session"
+// sessionCookiePrefix names the one cookie this chassis sets. The port is
+// appended, because cookies are not isolated by port and two desks on one host
+// would otherwise be one session — see the comment above.
+const sessionCookiePrefix = "jpack-desk-session"
+
+// sessionCookieName is the cookie this desk sets and reads, port and all.
+func sessionCookieName(port int) string {
+	return fmt.Sprintf("%s-%d", sessionCookiePrefix, port)
+}
+
+// fetchSiteHeader and fetchSiteSameOrigin are the browser's own account of
+// where a request came from.
+//
+// **Its absence is never permission.** A request with no `Sec-Fetch-Site` is
+// not a browser making a same-origin call, so a cookie on it authorizes
+// nothing; a script that has no cookie jar presents the launch secret instead
+// and never reaches this test.
+const (
+	fetchSiteHeader     = "Sec-Fetch-Site"
+	fetchSiteSameOrigin = "same-origin"
+)
+
+// maxSessions bounds the store.
+//
+// The launch secret is valid for the life of the process and every exchange
+// mints a session, so a person who reopens the printed URL all day would
+// otherwise grow this map without bound. Sixty-four is far more open tabs than
+// a local desk has and small enough that the whole store is trivial; eviction
+// is oldest-first, so the tab someone is actually using is the last to go.
+//
+// **This is a bound, not an expiry.** Nothing here ends a session on time or on
+// request; that arrives with sign-out.
+const maxSessions = 64
 
 // bearerScheme is the credential scheme a script presents the launch secret
 // under. One space, exactly: this is the whole grammar this desk reads.
@@ -90,10 +145,15 @@ type session struct {
 	// rather than `""`, which is the difference between "no provider" and "a
 	// provider that named itself nothing".
 	issuer *string
-	// created is when the exchange happened. Nothing expires on it in this
-	// chunk; it is recorded because a session with no age is a session no
-	// later expiry rule can be written against.
+	// created is when the exchange happened. Nothing expires on it; it is
+	// recorded because a session with no age is a session no later expiry rule
+	// can be written against.
 	created time.Time
+	// seq is the order this session was minted in, and it is what eviction
+	// reads. `created` would do on a clock with enough resolution, and two
+	// sessions minted inside one tick would then be ties an eviction rule has
+	// to break arbitrarily — a counter has no ties.
+	seq uint64
 }
 
 // sessionStore is the set of live sessions, keyed by a **MAC of the id rather
@@ -127,6 +187,8 @@ type sessionStore struct {
 	mu sync.Mutex
 	// live maps a session's MAC to the session. Nothing here is the id.
 	live map[string]session
+	// next is the sequence the next session takes. See `session.seq`.
+	next uint64
 }
 
 func newSessionStore() (*sessionStore, error) {
@@ -162,8 +224,32 @@ func (st *sessionStore) create(subject string, issuer *string) (string, error) {
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	st.live[st.handle(id)] = session{subject: subject, issuer: issuer, created: time.Now()}
+	st.evictLocked()
+	st.next++
+	st.live[st.handle(id)] = session{
+		subject: subject, issuer: issuer, created: time.Now(), seq: st.next,
+	}
 	return id, nil
+}
+
+// evictLocked makes room for one more session, oldest first.
+//
+// A loop rather than a single removal, so a store that somehow arrived over the
+// bound comes back under it rather than staying one over for ever.
+func (st *sessionStore) evictLocked() {
+	for len(st.live) >= maxSessions {
+		oldest, found := "", false
+		var lowest uint64
+		for key, held := range st.live {
+			if !found || held.seq < lowest {
+				oldest, lowest, found = key, held.seq, true
+			}
+		}
+		if !found {
+			return
+		}
+		delete(st.live, oldest)
+	}
 }
 
 // lookup answers the session an id names, and whether there is one.
@@ -189,6 +275,8 @@ func (st *sessionStore) count() int {
 //
 // Every attribute is a decision:
 //
+//   - the **name carries the port**, because a cookie's origin does not — see
+//     the comment at the top of this file.
 //   - `Path=/` — the page, the file API, the relay and `/ws` are all under this
 //     origin's root, and a narrower path would simply mean a second cookie.
 //   - `HttpOnly` — page code cannot read the id, so it cannot put it back on a
@@ -204,9 +292,9 @@ func (st *sessionStore) count() int {
 //
 // No `Expires` and no `Max-Age`: a session cookie dies with the browser
 // session, which is the lifetime this desk actually has.
-func newSessionCookie(id string, secure bool) *http.Cookie {
+func newSessionCookie(name, id string, secure bool) *http.Cookie {
 	return &http.Cookie{
-		Name:     sessionCookieName,
+		Name:     name,
 		Value:    id,
 		Path:     "/",
 		HttpOnly: true,
@@ -219,7 +307,17 @@ func newSessionCookie(id string, secure bool) *http.Cookie {
 
 // sessionOf is the session this request's cookie names, where it names one.
 func (s *Server) sessionOf(r *http.Request) (session, bool) {
-	cookie, err := r.Cookie(sessionCookieName)
+	// **The browser's own account of where this came from, first.** A cookie
+	// reaches this desk on requests it should not authorize — another page on
+	// another port of this same host receives it, because cookies have no port
+	// isolation, and a script can replay a stolen one by hand. Neither can
+	// produce `Sec-Fetch-Site: same-origin`: the browser writes that header
+	// itself, and it writes `same-site` for a sibling port. A request that does
+	// not claim same-origin carries no session here, whatever cookie is on it.
+	if r.Header.Get(fetchSiteHeader) != fetchSiteSameOrigin {
+		return session{}, false
+	}
+	cookie, err := r.Cookie(s.cookieName)
 	if err != nil || cookie.Value == "" {
 		return session{}, false
 	}
@@ -280,8 +378,27 @@ func (s *Server) handleLaunch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "this desk could not mint a session", http.StatusInternalServerError)
 		return
 	}
-	http.SetCookie(w, newSessionCookie(id, requestScheme(r) == "https"))
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.SetCookie(w, newSessionCookie(s.cookieName, id, requestScheme(r) == "https"))
+	// **`/#`, with the empty fragment written out.** A redirect whose Location
+	// carries no fragment inherits the *request's* — RFC 9110 §10.2.2 — so
+	// `/launch?secret=S#S` would land on `/#S` and leave the secret sitting in
+	// `location.hash`, which is exactly the leak this whole exchange exists to
+	// close. An explicit empty fragment overrides it. The page then removes the
+	// bare `#` from the address bar once, on load; see `main.tsx`.
+	http.Redirect(w, r, "/#", http.StatusSeeOther)
+}
+
+// handleLaunchSubpath answers everything under `/launch/`.
+//
+// **404 from the mux, never the SPA fallback.** `GET /launch` matches one exact
+// path, so `/launch/anything?secret=…` fell through to `handleStatic`, which
+// treats an unknown extensionless path as a client-side route and serves the
+// page — with the secret still on the URL, in the history and in every
+// `Referer` that page goes on to send. Nothing is under `/launch/`, and this
+// says so.
+func (s *Server) handleLaunchSubpath(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	http.Error(w, "there is nothing under /launch/", http.StatusNotFound)
 }
 
 // handleSession answers what this desk knows about the session the request

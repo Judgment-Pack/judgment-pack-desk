@@ -399,19 +399,46 @@ const page = await context.newPage()
 await page.goto(LAUNCH, { waitUntil: 'networkidle', timeout: 45000 })
 {
   const landed = new URL(page.url())
-  if (landed.pathname !== '/' || landed.search !== '') {
+  if (landed.pathname !== '/' || landed.search !== '' || landed.hash !== '') {
     console.error(`the launch exchange did not land on / — the address is ${page.url()}`)
     process.exit(2)
   }
+  // **`href`, not `hash`.** The exchange redirects to `/#` so that the
+  // request's own fragment cannot be inherited (RFC 9110 §10.2.2), and the page
+  // removes the bare `#` on load — which `location.hash` cannot see, because it
+  // is the empty string either way.
+  if (page.url().endsWith('#')) {
+    console.error(`the page did not remove the launch redirect's bare # — ${page.url()}`)
+    process.exit(2)
+  }
+  if (page.url().includes(SECRET)) {
+    console.error('the launch secret is still in the address bar')
+    process.exit(2)
+  }
   const cookies = await context.cookies(ORIGIN)
-  const session = cookies.find((cookie) => cookie.name === 'jpack-desk-session')
+  const session = cookies.find((cookie) => cookie.name === `jpack-desk-session-${PORT}`)
+  // **Asserted, not logged.** A gate that printed these and carried on would
+  // report every row contained over a desk whose session was readable by page
+  // code, or shared with every other service on this host.
+  const wrong = []
   if (session === undefined) {
-    console.error('the launch exchange set no jpack-desk-session cookie')
+    wrong.push(`no jpack-desk-session-${PORT} cookie; got ${cookies.map((c) => c.name).join(', ') || 'none'}`)
+  } else {
+    if (session.httpOnly !== true) wrong.push(`httpOnly=${session.httpOnly}`)
+    if (session.sameSite !== 'Strict') wrong.push(`sameSite=${session.sameSite}`)
+    if (session.path !== '/') wrong.push(`path=${session.path}`)
+    if (session.value === SECRET) wrong.push('the cookie carries the launch secret itself')
+    if (cookies.length !== 1) wrong.push(`${cookies.length} cookies on this origin, want 1`)
+  }
+  if (wrong.length > 0) {
+    console.error(`the session cookie is wrong: ${wrong.join('; ')}`)
+    await browser.close()
     process.exit(2)
   }
   console.log(
-    `launch        ok  cookie set: httpOnly=${session.httpOnly} sameSite=${session.sameSite} ` +
-      `secure=${session.secure} path=${session.path}`
+    `launch        ok  ${session.name} httpOnly=${session.httpOnly} ` +
+      `sameSite=${session.sameSite} secure=${session.secure} path=${session.path}; ` +
+      `address ${page.url()}`
   )
 }
 // Short enough that a locator which no longer matches ends the route it was

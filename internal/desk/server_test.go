@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -23,6 +24,106 @@ import (
 // `Authorization: Bearer` (`bearer`), and a browser trades it once at
 // `GET /launch` for the `jpack-desk-session` cookie (`launchSession`).
 const testToken = "0123456789abcdef0123456789abcdef"
+
+// testPort is the port a `Config` carries where the test never starts a server,
+// or never exercises the cookie. It is a real requirement — the session
+// cookie's name carries the port — and where the cookie *is* exercised the port
+// comes from the listener instead; see `startDesk`.
+const testPort = 8799
+
+// startDesk builds one chassis and serves it, **listener first**.
+//
+// `Config.Port` is required, because the session cookie's name carries it, and
+// `httptest.NewServer` does not allocate a port until it starts. An unstarted
+// server allocates one immediately, so the chassis can be told the port it will
+// actually be reached on — which is what `main` does, and what makes two test
+// desks in one process name their cookies differently.
+//
+// It registers no cleanup: each caller already has the shape it wants, and one
+// of them (the FIFO test) deliberately leaks a listener rather than hang.
+func startDesk(t *testing.T, cfg Config) (*Server, *httptest.Server) {
+	t.Helper()
+	ts := httptest.NewUnstartedServer(nil)
+	cfg.Port = ts.Listener.Addr().(*net.TCPAddr).Port
+	s, err := New(cfg)
+	if err != nil {
+		ts.Close()
+		t.Fatalf("New: %v", err)
+	}
+	ts.Config.Handler = s
+	ts.Start()
+	return s, ts
+}
+
+// browserHeader is what a browser puts on a same-origin WebSocket upgrade.
+func browserHeader(cookie *http.Cookie, origin string) http.Header {
+	header := http.Header{}
+	header.Set("Cookie", cookie.Name+"="+cookie.Value)
+	header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+	if origin != "" {
+		header.Set("Origin", origin)
+	}
+	return header
+}
+
+// runtimeAvailable reports whether there is a `jpack` on this machine to drive.
+//
+// Not `requireBinary`, which skips the whole test: the **upgrade** half of the
+// positive controls below needs no runtime and must run everywhere, and only
+// the handshake half needs one.
+func runtimeAvailable() bool {
+	bin := jpackBinary()
+	if !filepath.IsAbs(bin) {
+		return false
+	}
+	_, err := os.Stat(bin)
+	return err == nil
+}
+
+// acceptsSession is the positive control for a session, and it asserts **101
+// and, where there is a runtime, a completed MCP handshake**.
+//
+// It used to be `upgradeRequest` plus "the status is not 401 and not 403",
+// which a `500` satisfies: a chassis that authorized the request and then fell
+// over passed every one of these. `websocket.Dial` returns an error unless the
+// handshake completed with `101 Switching Protocols`, so the status is checked
+// by the dial itself and again by name; and where a binary is available the
+// socket is driven through `initialize`, which is the difference between "the
+// upgrade was accepted" and "the relay behind it works".
+func acceptsSession(t *testing.T, ts *httptest.Server, header http.Header) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	c, resp, err := websocket.Dial(ctx, wsURL(ts)+"/ws", &websocket.DialOptions{HTTPHeader: header})
+	if err != nil {
+		status := 0
+		if resp != nil {
+			status = resp.StatusCode
+		}
+		t.Fatalf("the upgrade did not complete: %v (status %d)", err, status)
+	}
+	defer c.Close(websocket.StatusNormalClosure, "")
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusSwitchingProtocols)
+	}
+	if !runtimeAvailable() {
+		t.Log("no runtime binary: the upgrade was asserted, the MCP handshake was not")
+		return
+	}
+	c.SetReadLimit(readLimit)
+	(&rpcSession{t: t, ctx: ctx, ws: c}).initialize()
+}
+
+// sameOrigin marks a request the way a browser marks one it made to its own
+// origin.
+//
+// **Every cookie-carrying request in this package goes through it**, because a
+// cookie without it authorizes nothing — cookies have no port isolation, so the
+// browser hands this desk's cookie to every page on every sibling port, and
+// `Sec-Fetch-Site` is the only thing that tells those apart.
+func sameOrigin(r *http.Request) {
+	r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+}
 
 // bearer presents the launch secret the way every script, test and gate does.
 func bearer(r *http.Request) {
@@ -42,12 +143,12 @@ func launchSession(t *testing.T, ts *httptest.Server) *http.Cookie {
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("launch status = %d, want %d", resp.StatusCode, http.StatusSeeOther)
 	}
-	for _, cookie := range resp.Cookies() {
-		if cookie.Name == sessionCookieName {
-			return cookie
-		}
+	// Whatever the exchange named it. The name carries the port, so a test that
+	// spelled it out would be a test that knows which port `httptest` picked.
+	if cookies := resp.Cookies(); len(cookies) == 1 {
+		return cookies[0]
 	}
-	t.Fatalf("the launch exchange set no %s cookie: %v", sessionCookieName, resp.Cookies())
+	t.Fatalf("the launch exchange set %v, want exactly one session cookie", resp.Cookies())
 	return nil
 }
 
@@ -64,8 +165,18 @@ func launchResponse(t *testing.T, ts *httptest.Server, secret string) *http.Resp
 	return resp
 }
 
-// withSession attaches a session cookie the way a browser does.
+// withSession attaches a session cookie the way a browser does: the cookie, and
+// the browser's own account of where the request came from.
 func withSession(cookie *http.Cookie) func(*http.Request) {
+	return func(r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
+		sameOrigin(r)
+	}
+}
+
+// withCookieOnly attaches the cookie and **nothing else** — the shape of a
+// replay by a script, or of a request from a page on a sibling port.
+func withCookieOnly(cookie *http.Cookie) func(*http.Request) {
 	return func(r *http.Request) {
 		r.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
 	}
@@ -74,17 +185,13 @@ func withSession(cookie *http.Cookie) func(*http.Request) {
 func newTestServer(t *testing.T, dev bool) (*Server, *httptest.Server) {
 	t.Helper()
 	dir := t.TempDir()
-	s, err := New(Config{
+	s, ts := startDesk(t, Config{
 		ProjectDir: dir,
 		JpackBin:   jpackBinary(),
 		Token:      testToken,
 		DevMode:    dev,
 		Logger:     log.New(io.Discard, "", 0),
 	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	ts := httptest.NewServer(s)
 	t.Cleanup(func() {
 		ts.Close()
 		_ = s.Close()
@@ -175,17 +282,13 @@ func TestWSRefusesAWrongBearerSecret(t *testing.T) {
 // then an upgrade that carries nothing but the cookie.
 func TestWSAcceptsTheSessionCookie(t *testing.T) {
 	_, ts := newTestServer(t, false)
-	cookie := launchSession(t, ts)
-	resp := upgradeRequest(t, ts, "", ts.URL, withSession(cookie))
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		t.Fatalf("status = %d, want an upgrade rather than a refusal", resp.StatusCode)
-	}
+	acceptsSession(t, ts, browserHeader(launchSession(t, ts), ts.URL))
 }
 
 // TestWSRefusesAForgedSessionCookie: an id this desk never minted is not a
 // session, however well formed it looks.
 func TestWSRefusesAForgedSessionCookie(t *testing.T) {
-	_, ts := newTestServer(t, false)
+	s, ts := newTestServer(t, false)
 	real := launchSession(t, ts)
 	for _, id := range []string{
 		strings.Repeat("a", len(real.Value)),
@@ -194,7 +297,8 @@ func TestWSRefusesAForgedSessionCookie(t *testing.T) {
 		"",
 	} {
 		resp := upgradeRequest(t, ts, "", ts.URL, func(r *http.Request) {
-			r.AddCookie(&http.Cookie{Name: sessionCookieName, Value: id})
+			r.AddCookie(&http.Cookie{Name: s.cookieName, Value: id})
+			sameOrigin(r)
 		})
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Fatalf("a forged id %q: status = %d, want %d", id, resp.StatusCode, http.StatusUnauthorized)
@@ -217,11 +321,7 @@ func TestWSRefusesACookieFromAForeignOrigin(t *testing.T) {
 // Origin, and `SameSite=Strict` is why no foreign site can produce one.
 func TestWSAcceptsACookieWithNoOrigin(t *testing.T) {
 	_, ts := newTestServer(t, false)
-	cookie := launchSession(t, ts)
-	resp := upgradeRequest(t, ts, "", "", withSession(cookie))
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		t.Fatalf("status = %d, want an upgrade rather than a refusal", resp.StatusCode)
-	}
+	acceptsSession(t, ts, browserHeader(launchSession(t, ts), ""))
 }
 
 func TestWSRejectsForeignOrigin(t *testing.T) {
@@ -309,17 +409,13 @@ func TestWSAllowsAbsentOrigin(t *testing.T) {
 func TestRelayEndToEnd(t *testing.T) {
 	bin, project := e2eFixtures(t)
 
-	s, err := New(Config{
+	s, ts := startDesk(t, Config{
 		ProjectDir: project,
 		JpackBin:   bin,
 		Token:      testToken,
 		Logger:     log.New(io.Discard, "", 0),
 	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
 	defer s.Close()
-	ts := httptest.NewServer(s)
 	defer ts.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -383,17 +479,13 @@ func TestRelayCarriesEvaluation(t *testing.T) {
 		t.Fatalf("copying %s: %v", project, err)
 	}
 
-	s, err := New(Config{
+	s, ts := startDesk(t, Config{
 		ProjectDir: copied,
 		JpackBin:   bin,
 		Token:      testToken,
 		Logger:     log.New(io.Discard, "", 0),
 	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
 	defer s.Close()
-	ts := httptest.NewServer(s)
 	defer ts.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -624,17 +716,13 @@ func TestFileChangeNotification(t *testing.T) {
 	bin := requireBinary(t)
 	project := t.TempDir()
 
-	s, err := New(Config{
+	s, ts := startDesk(t, Config{
 		ProjectDir: project,
 		JpackBin:   bin,
 		Token:      testToken,
 		Logger:     log.New(io.Discard, "", 0),
 	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
 	defer s.Close()
-	ts := httptest.NewServer(s)
 	defer ts.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

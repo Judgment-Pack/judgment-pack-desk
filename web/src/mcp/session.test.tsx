@@ -21,6 +21,7 @@ import {
   McpProvider,
   NO_SESSION_MESSAGE,
   forgetStaleSessionToken,
+  removeTheLaunchHash,
   socketURL,
   useMcp
 } from './McpProvider'
@@ -93,6 +94,54 @@ describe('the credential this page used to keep', () => {
       }
     })
     expect(() => forgetStaleSessionToken()).not.toThrow()
+  })
+})
+
+describe('the bare # the launch exchange redirects to', () => {
+  /** jsdom's history is real; this is the address bar the page woke up on. */
+  function at(href: string) {
+    window.history.replaceState(null, '', href)
+  }
+
+  it('is taken off the address bar, once, on load', () => {
+    at('/#')
+    expect(window.location.href.endsWith('#')).toBe(true)
+    removeTheLaunchHash()
+    expect(window.location.href.endsWith('#')).toBe(false)
+    expect(window.location.pathname).toBe('/')
+    expect(window.location.search).toBe('')
+  })
+
+  it('keeps the query, which is the route’s and not the launch’s', () => {
+    at('/packs?edit=1#')
+    removeTheLaunchHash()
+    expect(window.location.href.endsWith('#')).toBe(false)
+    expect(window.location.pathname).toBe('/packs')
+    expect(window.location.search).toBe('?edit=1')
+  })
+
+  it('leaves a fragment that names something alone', () => {
+    // An in-page anchor is somebody's link, not the exchange's leftovers.
+    at('/help#security')
+    removeTheLaunchHash()
+    expect(window.location.hash).toBe('#security')
+  })
+
+  it('does nothing where there is no fragment at all', () => {
+    at('/packs')
+    removeTheLaunchHash()
+    expect(window.location.href.endsWith('#')).toBe(false)
+    expect(window.location.pathname).toBe('/packs')
+  })
+
+  it('does not throw where the browser refuses history manipulation', () => {
+    at('/#')
+    vi.stubGlobal('history', {
+      replaceState() {
+        throw new Error('history is not available here')
+      }
+    })
+    expect(() => removeTheLaunchHash()).not.toThrow()
   })
 })
 

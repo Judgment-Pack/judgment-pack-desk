@@ -1057,7 +1057,15 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # there is no strip any more, and since the launch exchange there is no secret
   # on any query either: a relayed request carries nothing of the page's, save
   # the one closed `alt=sse` literal. One rule, one row.
-  mutate go "a page query parameter is forwarded" "$MR" \
+  # **Named for what the mutation does, which is not "forwarded".** Replacing
+  # the refusal with `continue` accepts the pair and discards it — `extra` is
+  # never set, so nothing of it reaches the endpoint either way. Making it
+  # actually forward would need this *and* the per-kind check in
+  # `handleModelRelay` broken, which is two mutations and would measure neither.
+  # What this breaks is the refusal itself, and the refusal is the rule: a desk
+  # that quietly accepts a query it will not send is a desk whose rule is "we
+  # ignore it", which is precisely the filter this whole class came from.
+  mutate go "the page's query is accepted rather than refused" "$MR" \
     '		return "", "a relayed request carries no query of the page' \
     '		continue
 		_ = "a relayed request carries no query of the page'
@@ -1155,13 +1163,16 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		until:          deadline,
 	}, r)' \
     '	proxy.ServeHTTP(w, r)'
-  # Two parsers disagreed about `;` and the desk's own session token went to the
-  # endpoint: Go reads `x=1;token=T&token=T` as one `token` parameter and
-  # accepts it, while a strip that removed the pair it could see preserved the
-  # first one for a server that does split on `;`.
-  mutate go "a query two parsers read differently is forwarded" "$MR" \
-    "$(printf '\tif strings.ContainsRune(raw, %s) {' "';'")" \
-    '	if false {'
+  # **Retired, and named here rather than deleted silently.** The row broke the
+  # explicit semicolon refusal in `relayQueryProblem` — which mattered when a
+  # `token` pair was admitted and `x=1;token=T&token=T` read as one parameter to
+  # Go and two to a server that splits on `;`. No page query is admitted at all
+  # now save the literal `alt=sse`, compared byte for byte, so every semicolon
+  # pair is already refused by that comparison and removing the explicit check
+  # changes nothing the suite can see. It would report NOT DISCRIMINATING for a
+  # guard that is real and held one layer up, which is a worse statement than
+  # this note. `TestRelayRefusesAQueryCarryingASemicolon` still pins the
+  # behaviour, over four spellings.
   # The proxy copies the endpoint's trailers to the page after the body, past
   # every filter on this route.
   mutate go "the endpoint's trailers are forwarded to the page" "$MR" \
@@ -1521,14 +1532,53 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # sets one and nobody holds one. The row is here because "only over https" is
   # a decision and not an omission.
   mutate go "Secure is set on a plain-http launch" "$SN" \
-    '	http.SetCookie(w, newSessionCookie(id, requestScheme(r) == "https"))' \
-    '	http.SetCookie(w, newSessionCookie(id, true))'
+    '	http.SetCookie(w, newSessionCookie(s.cookieName, id, requestScheme(r) == "https"))' \
+    '	http.SetCookie(w, newSessionCookie(s.cookieName, id, true))'
   # The redirect is the point of the exchange: a 200 here renders the desk with
   # the secret still in the address bar, in the history, and in every `Referer`
   # the page goes on to send.
   mutate go "the exchange answers the page instead of redirecting" "$SN" \
-    '	http.Redirect(w, r, "/", http.StatusSeeOther)' \
+    '	http.Redirect(w, r, "/#", http.StatusSeeOther)' \
     '	w.WriteHeader(http.StatusOK)'
+  # **The empty fragment, written out.** A Location with none inherits the
+  # request's (RFC 9110 §10.2.2), so `/launch?secret=S#S` lands on `/#S` and the
+  # secret sits in `location.hash` — readable by every script on the page and
+  # kept in history. This is the one-character version of that.
+  mutate go "the redirect inherits the request's fragment" "$SN" \
+    '	http.Redirect(w, r, "/#", http.StatusSeeOther)' \
+    '	http.Redirect(w, r, "/", http.StatusSeeOther)'
+  # The cookie's name carries the port because a cookie's origin does not: two
+  # desks on one host would share, and overwrite, one session.
+  mutate go "the session cookie is named without its port" "$SN" \
+    '	return fmt.Sprintf("%s-%d", sessionCookiePrefix, port)' \
+    '	_ = port
+	return sessionCookiePrefix'
+  # **The half that closes the replay.** A cookie reaches this desk on requests
+  # it must not authorize — every sibling port receives it — and only the
+  # browser's own `Sec-Fetch-Site` tells those apart.
+  mutate go "a cookie authorizes without claiming same-origin" "$SN" \
+    '	if r.Header.Get(fetchSiteHeader) != fetchSiteSameOrigin {
+		return session{}, false
+	}' \
+    ''
+  # An absent header must never read as permission.
+  mutate go "an absent Sec-Fetch-Site is treated as same-origin" "$SN" \
+    '	if r.Header.Get(fetchSiteHeader) != fetchSiteSameOrigin {' \
+    '	if site := r.Header.Get(fetchSiteHeader); site != "" && site != fetchSiteSameOrigin {'
+  # Nothing is under /launch/, and a near miss must not reach the SPA fallback
+  # carrying the secret it was sent with.
+  mutate go "a path under /launch/ falls through to the page" "$S" \
+    '	s.mux.HandleFunc("/launch/{rest...}", s.handleLaunchSubpath)' \
+    ''
+  # The store is bounded, so a desk left open all day does not grow one map
+  # entry per reopened tab for ever.
+  mutate go "the session store grows without bound" "$SN" \
+    '	st.evictLocked()' \
+    ''
+  # Oldest first: the tab someone is actually using must be the last to go.
+  mutate go "eviction takes the newest session rather than the oldest" "$SN" \
+    '			if !found || held.seq < lowest {' \
+    '			if !found || held.seq > lowest {'
   # A wrong secret that mints a session is no gate at all.
   mutate go "a wrong launch secret still mints a session" "$SN" \
     '	if subtle.ConstantTimeCompare([]byte(secret), []byte(s.cfg.Token)) != 1 {' \

@@ -86,10 +86,14 @@ func run() error {
 	srv, err := desk.New(desk.Config{
 		Root:     project,
 		JpackBin: *jpackBin,
-		Token:    token,
-		Static:   static,
-		DevMode:  *devToken != "",
-		Logger:   log.New(os.Stderr, "", log.LstdFlags),
+		// The port this listener binds, handed over because the session
+		// cookie's name carries it: a cookie's origin has no port, so two
+		// desks on one host would otherwise share one session.
+		Port:    *port,
+		Token:   token,
+		Static:  static,
+		DevMode: *devToken != "",
+		Logger:  log.New(os.Stderr, "", log.LstdFlags),
 	})
 	if err != nil {
 		return err

@@ -632,8 +632,10 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
     // session is an `HttpOnly` cookie now, so no address is a credential —
     // and the deviation stands on what it always really bought, which is that
     // the desk decides *what* an engine may reach rather than handing it an
-    // address. The seal on `WebSocket` in the conformance session is what
-    // stops a second, ungated connection.
+    // address. Nothing at **run time** stops an engine reaching for a global:
+    // the seal on `WebSocket` lives in the conformance session, so an engine
+    // that opened its own connection would fail this repository's suite rather
+    // than be prevented by the running desk.
     const source = read('assistant/engine.ts')
     expect(membersOf(interfaceBody(source, 'ModelRequest'))).toEqual([
       'headers',
