@@ -3,7 +3,7 @@ import type { Notification } from '@modelcontextprotocol/sdk/types.js'
 import { useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { recordFileChange } from '../shell/consoleLog'
-import { NoSession, renewSession, sessionID } from './session'
+import { NoSession, forgetSession, sessionID } from './session'
 import { UNKNOWN_CAPABILITIES, type RuntimeCapabilities, listAllTools, readCapabilities } from './capabilities'
 import { DeskWebSocketTransport } from './transport'
 
@@ -218,10 +218,13 @@ export function McpProvider({ children }: { children: ReactNode }) {
     /**
      * Whether the id this attempt offered is still a session, and what to do.
      *
-     * One `GET /api/session`. A `401` renews through the exchange — which needs
-     * a handoff, so it usually ends in the terminal state with the sentence a
-     * person can act on; anything else is a chassis that is simply not
-     * answering, and that is what the backoff is for.
+     * **One `GET /api/session`, and two answers.** A refused upgrade tells the
+     * page nothing — the browser withholds the status — so the id is put to a
+     * channel that does report one. A `401` means the id names nothing: the
+     * chassis restarted, or the session was signed out or evicted, and only the
+     * printed URL mints another. The page drops what it holds and stops.
+     * Anything else is a chassis that is simply not answering, which is what
+     * the backoff is for.
      */
     const classify = async (id: string, cause: Error) => {
       if (disposed) return
@@ -240,16 +243,8 @@ export function McpProvider({ children }: { children: ReactNode }) {
         scheduleRetry(cause)
         return
       }
-      try {
-        await renewSession(id)
-      } catch (renewal) {
-        if (disposed) return
-        failed(renewal instanceof NoSession ? renewal : new NoSession())
-        return
-      }
-      if (disposed) return
-      // Renewed, so the next attempt has a live id to offer.
-      scheduleRetry(cause)
+      forgetSession()
+      failed(new NoSession())
     }
 
     // A connection that failed, told apart from one that will never succeed.
@@ -304,9 +299,10 @@ export function McpProvider({ children }: { children: ReactNode }) {
       }
 
       const reconnecting = attempt > 0
-      // **The id is fetched per attempt, not once.** A reconnect after the
-      // chassis restarted needs a new one, and `renewSession` is what a `401`
-      // on any other request has already been doing.
+      // **The id is fetched per attempt, not once.** A reconnect within one
+      // page's life reuses the id this tab holds; a chassis that has forgotten
+      // it answers `401` and `classify` ends the connection rather than
+      // reconnecting into a refusal for ever.
       //
       // **And disposal is re-checked after the await.** The effect can be torn
       // down while this promise is pending — StrictMode mounts twice, and a
@@ -378,7 +374,8 @@ export function McpProvider({ children }: { children: ReactNode }) {
           // id is put to a channel that does answer: a `401` from
           // `GET /api/session` means this id names nothing — the desk was
           // restarted, or the session was signed out or evicted — and the page
-          // renews once rather than reconnecting for ever with a dead id.
+          // stops there and says so, rather than reconnecting for ever with a
+          // dead id. Only the printed URL mints another.
           void classify(offered, error)
         })
     }

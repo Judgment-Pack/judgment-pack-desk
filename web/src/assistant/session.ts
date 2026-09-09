@@ -233,9 +233,9 @@ const CALL_FAILED =
  *   carries the requested URL on `.url`, no `redirected` history is kept, and
  *   only the headers this desk copied onto it travel. What that withholds is
  *   *this desk's routing* rather than a secret — since the session became an
- *   `HttpOnly` cookie the browser attaches by itself, there is no credential in
- *   any address for an engine to read, and page code that constructed `/ws`
- *   would be admitted on the cookie alone. So the facade is defence in depth
+ *   id the page holds and sends on a header, there is no credential in any
+ *   address for an engine to read, and an engine that constructed `/ws` would
+ *   still have to present that id. So the facade is defence in depth
  *   and is stated as that: what an engine is *handed* is held by the member set
  *   in `enforcement.test.ts`, and what an engine *reaches for* is caught by the
  *   conformance suite, whose sealed globals make that a failing test rather
@@ -265,8 +265,9 @@ export function bindModelCall(family: EndpointKind): ModelCall {
     // chassis endpoint like any other, so it carries the bearer the page holds
     // — and it did not, which meant every model listing and every generation
     // turn answered 401 the moment the session stopped being a cookie. It is
-    // fetched here rather than captured at bind time so that a renewal is
-    // picked up; `sessionID()` answers from memory once the tab has one.
+    // fetched per call rather than captured at bind time, so a transport bound
+    // before the tab finished its exchange waits for the id instead of binding
+    // an empty one; `sessionID()` answers from memory once the tab has one.
     const id = await sessionID()
     const headers: Record<string, string> = {}
     for (const [name, value] of Object.entries(request.headers ?? {})) {

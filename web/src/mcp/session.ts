@@ -25,6 +25,12 @@
  * `sessionStorage` rather than `localStorage`: per tab, and cleared when the
  * tab is. The key names `host:port`, so two desks on two ports never read each
  * other's — and unlike a cookie, nothing on any other port ever receives this.
+ *
+ * **There is no renewal.** A chassis that refuses an id has restarted, or the
+ * session was signed out or evicted; the only thing that mints another is the
+ * printed URL, so the page clears what it holds and says so. Trying again
+ * automatically would be a page pretending it can recover from something only a
+ * person can.
  */
 
 /** What the page says when the chassis has no session for it. */
@@ -55,7 +61,52 @@ export function sessionStorageKey(): string {
 }
 
 /**
- * The key the page used to keep the desk's credential under, and does not any
+ * The marker the launch sets beside its `HttpOnly` handoff, carrying no secret
+ * and saying only that one is waiting.
+ *
+ * It exists because the handoff is `HttpOnly` — which is what stops page code
+ * reading it, and therefore also what stops page code knowing there is one. See
+ * `pendingCookiePrefix` in `internal/desk/session.go`.
+ */
+const MARKER_PREFIX = 'jpack-desk-handoff-pending'
+
+/** Every marker in this browser's jar for this host, by name. */
+function markersHere(): string[] {
+  try {
+    return document.cookie
+      .split(';')
+      .map((pair) => pair.trim().split('=')[0] ?? '')
+      .filter((name) => name.startsWith(`${MARKER_PREFIX}-`))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * The marker this page may act on, or `''`.
+ *
+ * **Exact, by port, because a cookie has no port and two desks share a jar.**
+ * A page on `127.0.0.1:8791` sees the marker of a desk on `127.0.0.1:8899` as
+ * well as its own; acting on the wrong one spends nothing and — worse — used to
+ * *clear* the other desk's marker, so that desk's page never spent its handoff.
+ * So the name must be this page's own port.
+ *
+ * **The one exception is a proxy**, and it is stated rather than inferred: under
+ * `npm run dev` the page is on 5173 and the chassis on 8791, so no marker can
+ * match the page's port. Where there is exactly one marker and none matches,
+ * it is unambiguous and it is taken. Where there are several and none matches,
+ * nothing is done — a dev server proxying two desks is not a thing this desk
+ * supports, and guessing would be worse than waiting.
+ */
+export function markerForThisPage(): string {
+  const markers = markersHere()
+  const mine = `${MARKER_PREFIX}-${window.location.port}`
+  if (markers.includes(mine)) return mine
+  return markers.length === 1 ? (markers[0] as string) : ''
+}
+
+/**
+ * The key this page used to keep the desk's credential under, and does not any
  * more. A stale one left by an older build is removed rather than left to sit.
  */
 const STALE_TOKEN_KEY = 'jpack-desk-token'
@@ -71,6 +122,7 @@ export function forgetStaleSessionToken(): void {
 
 /** The id this tab is holding, or the empty string. */
 export function heldSessionID(): string {
+  if (inMemory !== '') return inMemory
   try {
     return window.sessionStorage.getItem(sessionStorageKey()) ?? ''
   } catch {
@@ -78,59 +130,39 @@ export function heldSessionID(): string {
   }
 }
 
+/**
+ * The id this tab holds when storage will not keep one.
+ *
+ * A browser with storage disabled still gets a working desk for the life of the
+ * page; what it loses is the id surviving a reload. Both connections read
+ * through `sessionID()`, so both see this.
+ */
+let inMemory = ''
+
 function hold(id: string): void {
+  inMemory = id
   try {
     window.sessionStorage.setItem(sessionStorageKey(), id)
   } catch {
-    // Storage refused. The session still works for this page's lifetime — the
-    // id is in the promise below — it simply will not survive a reload.
+    // Storage refused. The id is in memory above, which is what this page
+    // needs; it simply will not survive a reload.
   }
 }
 
-function drop(): void {
+/**
+ * Forget the id this tab holds.
+ *
+ * **This is the end of the road, not a step towards a new one.** A chassis that
+ * refuses an id has restarted, or the session was signed out or evicted, and
+ * the only thing that mints another is the printed URL. The page says so; it
+ * does not try again.
+ */
+export function forgetSession(): void {
+  inMemory = ''
   try {
     window.sessionStorage.removeItem(sessionStorageKey())
   } catch {
     // Nothing to drop.
-  }
-}
-
-/**
- * The marker the launch sets beside its `HttpOnly` handoff, carrying no secret
- * and saying only that one is waiting.
- *
- * It exists because the handoff is `HttpOnly` — which is what stops page code
- * reading it, and therefore also what stops page code knowing there is one.
- * See `pendingCookiePrefix` in `internal/desk/session.go`.
- */
-export function pendingMarkerName(): string {
-  // **The chassis' port, not the browser's.** The chassis names both cookies
-  // for the port it was bound to, and under the Vite dev server those differ —
-  // the browser is on 5173 and the desk is on 8791. So the name is read off the
-  // cookie rather than composed: there is exactly one, and its prefix is fixed.
-  return 'jpack-desk-handoff-pending'
-}
-
-/**
- * Whether a handoff is waiting to be spent.
- *
- * **Read off the marker, and cleared as soon as it is read.** The page spends
- * the handoff on the way past; leaving the marker would mean a later reload
- * tried to spend one that is already gone, which is a `401` and a discarded
- * session for no reason.
- */
-function handoffIsWaiting(): boolean {
-  try {
-    const prefix = pendingMarkerName()
-    const found = document.cookie
-      .split(';')
-      .map((pair) => pair.trim().split('=')[0] ?? '')
-      .find((name) => name.startsWith(`${prefix}-`))
-    if (found === undefined) return false
-    document.cookie = `${found}=; Max-Age=0; Path=/`
-    return true
-  } catch {
-    return false
   }
 }
 
@@ -140,7 +172,9 @@ function handoffIsWaiting(): boolean {
  *
  * The handoff is single use: the first `POST` wins and the other seven would be
  * `401`. Memoising the promise is what makes "the page calls this once" true of
- * the code rather than of a comment.
+ * the code rather than of a comment — and it is cleared when the promise
+ * settles either way, so a *later* marker (a relaunch after this one finished)
+ * starts a new exchange rather than being answered from a stale promise.
  */
 let inFlight: Promise<string> | null = null
 
@@ -151,27 +185,28 @@ let inFlight: Promise<string> | null = null
  * Reopening the printed URL in a tab that had one used to leave the new handoff
  * sitting in the jar for its full sixty seconds — unspent, and worth a session
  * to anything that could capture it. So a relaunch replaces the stored id, and
- * the old id keeps working until the new one lands, which is what makes the
- * replacement invisible to whatever is mid-request.
+ * every caller that arrives while that exchange is in flight receives the same
+ * new id rather than starting one of its own.
  *
  * A `401` here is the end of the road and says so: the handoff has been spent,
  * has expired, or was never set because the printed URL was not opened.
  */
 export async function sessionID(): Promise<string> {
   const held = heldSessionID()
-  if (held && !handoffIsWaiting()) return held
-  inFlight ??= beginSession()
+  if (held && markerForThisPage() === '') return held
+  if (inFlight === null) {
+    inFlight = beginSession().finally(() => {
+      inFlight = null
+    })
+  }
   try {
     return await inFlight
   } catch (cause) {
-    inFlight = null
     // **A relaunch that failed keeps what the tab had.** The handoff may have
-    // been spent by something else — that is the stated residual — and a page
-    // that threw away a working session over it would turn a theft into an
-    // outage for the person who is legitimately here.
+    // been spent by something else, and a page that threw away a working
+    // session over it would turn that into an outage for the person who is
+    // legitimately here.
     if (held) return held
-    // A failed first bootstrap is not cached: the chassis may simply have been
-    // down, and a page that never retried would need a reload nothing asked for.
     throw cause
   }
 }
@@ -187,7 +222,7 @@ async function beginSession(): Promise<string> {
     })
   } catch {
     // The chassis is not answering at all, which is a different thing from
-    // refusing — the caller retries this one.
+    // refusing — the caller may try again.
     throw new Error('the desk chassis is not answering')
   }
   if (!answered.ok) throw new NoSession()
@@ -197,49 +232,10 @@ async function beginSession(): Promise<string> {
   return body.id
 }
 
-/**
- * The one renewal in flight, for the same reason `inFlight` exists: several
- * requests can meet a `401` in the same tick, and each one starting its own
- * exchange would spend a handoff that is not there and discard a session that
- * is.
- */
-let renewing: Promise<string> | null = null
-
-/**
- * Forget the id that failed and begin again.
- *
- * Called where the chassis answers `401` to a request carrying an id: the desk
- * was restarted, or the session was signed out or evicted, and the id names
- * nothing. One renewal, shared by every caller that meets the same refusal, and
- * then the failure is the person's to act on.
- *
- * **`stale` is what makes a late refusal harmless.** Two requests can be in
- * flight with an old id; the first renews, and the second's `401` arrives after
- * the fresh id is already stored. Clearing unconditionally would delete the new
- * session on the strength of an answer about the old one, so storage is cleared
- * only where what is stored is still the id that failed.
- */
-export async function renewSession(stale?: string): Promise<string> {
-  const held = heldSessionID()
-  if (stale !== undefined && held !== '' && held !== stale) {
-    // Somebody already renewed. The caller's id is old news, not a problem.
-    return held
-  }
-  if (renewing === null) {
-    drop()
-    inFlight = null
-    renewing = sessionID().finally(() => {
-      renewing = null
-    })
-  }
-  return renewing
-}
-
 /** For a test that wants a clean module between cases. */
 export function forgetSessionForTesting(): void {
-  drop()
+  forgetSession()
   inFlight = null
-  renewing = null
 }
 
 if (typeof window !== 'undefined') forgetStaleSessionToken()

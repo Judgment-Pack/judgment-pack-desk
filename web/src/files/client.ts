@@ -1,4 +1,4 @@
-import { renewSession, sessionID } from '../mcp/session'
+import { NoSession, forgetSession, sessionID } from '../mcp/session'
 
 /**
  * The chassis file API, as this client calls it (issue #14, phase 1).
@@ -165,8 +165,8 @@ export class StaleWrite extends Error {
  *
  * It used to write this desk's session token in front of every caller's
  * parameters, because that was how a request authorized. Nothing authorizes on
- * a query now: the browser holds an `HttpOnly` session cookie and attaches it
- * itself, so this builds an address and no more. A query is emitted only where
+ * a query now: the tab holds a session id and `deskFetch` sends it as a bearer,
+ * so this builds an address and no more. A query is emitted only where
  * there is something to put in it, so `/api/files` is `/api/files` — a
  * dangling `?` was a leftover of the token always being there.
  *
@@ -189,10 +189,9 @@ const endpoint = chassisUrl
  *
  * - **`Authorization: Bearer <id>`**, from `mcp/session.ts`. The id is a
  *   credential this page holds deliberately, so it goes on requests this page
- *   means to make and on nothing else. A `401` is retried **once**, after
- *   renewing: a restarted chassis has forgotten every id, and a desk that made
- *   the person reload rather than re-bootstrapping would be a desk that lies
- *   about being live.
+ *   means to make and on nothing else. A `401` is the **end**: the id names
+ *   nothing, only the printed URL mints another, and the page says so rather
+ *   than retrying something no retry can fix.
  * - **`credentials: 'omit'`**, stated rather than defaulted. `same-origin` is
  *   `fetch`'s default and would send the launch handoff on every request; that
  *   cookie is worth one call to `POST /api/session` and belongs on no other.
@@ -211,14 +210,14 @@ export async function deskFetch(input: string, init: RequestInit = {}): Promise<
       credentials: 'omit',
       headers: { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${id}` }
     })
-  const id = await sessionID()
-  const answered = await send(id)
+  const answered = await send(await sessionID())
   if (answered.status !== 401) return answered
-  // The id names nothing any more — a restarted chassis, a sign-out, an
-  // eviction. One renewal, shared with every other request that met the same
-  // refusal, and **named**: a `401` about an id that has already been replaced
-  // must not delete the replacement. Then the refusal is the person's to act on.
-  return send(await renewSession(id))
+  // **The end of the road, and nothing is retried.** The id names nothing: the
+  // chassis restarted, or the session was signed out or evicted. Only the
+  // printed URL mints another, so what this page can usefully do is stop
+  // holding a dead id and say what a person can do about it.
+  forgetSession()
+  throw new NoSession()
 }
 
 /**
