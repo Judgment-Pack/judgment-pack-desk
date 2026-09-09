@@ -143,24 +143,23 @@ func relayBare(t *testing.T, ts *httptest.Server, method, suffix string, body io
 	return req
 }
 
-// authorizeAsPage puts a live session cookie on a request, **appending** to any
-// `Cookie` header already on it rather than replacing one.
+// authorizeAsPage puts a live session id on a request the way the page does.
 //
-// Appending is what makes the smuggling tests faithful. A page can put a
-// credential in nearly any header, and this suite sends a corpus of them
-// through the relay to prove none reaches the endpoint. Two of those names —
-// `Authorization` and `Cookie` — are also the two doors into this desk, so a
-// request that *replaced* them would be refused by the gate and would never
-// reach the outbound allow-list the test is about. A browser cannot unset its
-// own cookie by writing a header either, so this is also what actually happens.
+// **It goes on last, and it wins.** This suite sends a corpus of credential
+// header names through the relay to prove none reaches the endpoint, and
+// `Authorization` is among them — which is now this desk's *own* door. A
+// request whose own authorization the corpus overwrote would be refused by the
+// gate and never reach the outbound allow-list the test is about, so the desk's
+// header is written after the decorator. What the corpus cannot measure for
+// that one name is covered by a stronger assertion instead:
+// `TestTheSessionIDNeverReachesTheEndpoint`.
+//
+// It is faithful, too. The page's relay client holds `Authorization` off its
+// allow-list (`MODEL_REQUEST_HEADERS` in `assistant/session.ts`), so an engine
+// cannot put one on a relayed request at all.
 func authorizeAsPage(t *testing.T, ts *httptest.Server, req *http.Request) {
 	t.Helper()
-	cookie := launchSession(t, ts)
-	// `Sec-Fetch-Site` last, and deliberately after the decorator: it is a
-	// forbidden header name, so page code cannot write or unset it, and a test
-	// that let a decorator forge it would be modelling a browser that does not
-	// exist.
-	withSession(cookie)(req)
+	pageBearer(beginSession(t, ts))(req)
 }
 
 // relayRequest is one relayed request authorized the way the page is.
@@ -294,22 +293,22 @@ var credentialHeaderCorpus = []string{
 	"Ocp-Apim-Subscription-Key", "X-Functions-Key", "Api-Secret", "X-Csrf-Token",
 }
 
-// TestTheSessionCookieNeverReachesTheEndpoint is the new seam's own version of
-// the header rule: this desk's own credential is now an ambient cookie the
-// browser attaches to every same-origin request, the relay included, and a
-// relay that forwarded `Cookie` would hand the configured endpoint a working
-// session on this machine's desk.
+// TestTheSessionIDNeverReachesTheEndpoint is the seam's own version of the
+// header rule: this desk's own credential travels on `Authorization`, the very
+// header the endpoint's credential is injected into, and a relay that forwarded
+// the page's would hand the configured endpoint a working session on this
+// machine's desk.
 //
 // It falls out of the outbound allow-list rather than being deleted by name —
 // which is the whole argument for an allow-list — and this is the assertion
 // that it actually falls out.
-func TestTheSessionCookieNeverReachesTheEndpoint(t *testing.T) {
+func TestTheSessionIDNeverReachesTheEndpoint(t *testing.T) {
 	u := newUpstream(t, nil)
 	_, ts, _ := relayDesk(t, "anthropic", u)
 
-	cookie := launchSession(t, ts)
+	id := beginSession(t, ts)
 	req := relayBare(t, ts, http.MethodGet, "v1/messages", nil)
-	withSession(cookie)(req)
+	pageBearer(id)(req)
 	resp, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatalf("get: %v", err)
@@ -323,8 +322,14 @@ func TestTheSessionCookieNeverReachesTheEndpoint(t *testing.T) {
 		t.Fatalf("the endpoint received a Cookie header: %v", got)
 	}
 	whole := fmt.Sprint(seen.header) + seen.rawQuery + seen.path
-	if strings.Contains(whole, cookie.Value) {
+	if strings.Contains(whole, id) {
 		t.Fatalf("the session id reached the endpoint: %q", whole)
+	}
+	// The desk's own `Authorization` is replaced by the endpoint's credential
+	// rather than forwarded — the assertion the corpus cannot make for that one
+	// name, because the name is the door.
+	if got := seen.header.Get("Authorization"); strings.Contains(got, id) {
+		t.Fatalf("this desk's own bearer reached the endpoint: %q", got)
 	}
 }
 

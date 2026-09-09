@@ -1341,11 +1341,13 @@ func (s *Server) removeStaleStaging() {
 // the same order: **the session first, then the origin**. Sharing the function
 // is what keeps a new endpoint from being a new place to forget one of them.
 //
-// The session is the `jpack-desk-session` cookie a browser holds or the launch
-// secret a script presents as `Authorization: Bearer` — see `Server.authorized`
-// — and the origin check is what makes an ambient cookie safe to accept, so
-// neither half is optional and neither can be reordered without changing what a
-// cross-site page can do.
+// The session is a bearer id the caller put on the request itself — the page's
+// own, held in `sessionStorage` and sent as `Authorization: Bearer`, or the
+// launch secret a script presents the same way; see `Server.authorized`.
+// **No cookie authorizes anything here.** Since nothing ambient does, the
+// origin check is defence in depth over writes and upgrades rather than the
+// thing standing between a foreign page and the project — and it is still not
+// optional, because defence in depth that is removed is not defence.
 func (s *Server) guard(w http.ResponseWriter, r *http.Request) bool {
 	if !s.authorized(r) {
 		writeJSONCoded(w, http.StatusUnauthorized, CodeUnauthorized,

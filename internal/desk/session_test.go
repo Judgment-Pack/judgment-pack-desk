@@ -12,14 +12,15 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
-/* The exchange -------------------------------------------------------------- */
+/* The bootstrap --------------------------------------------------------------- */
 
-// TestLaunchExchangeSetsTheSessionCookie is the whole of the browser's entry:
-// the printed URL in, a `303` to `/` and one cookie out, and **no secret in
-// anything the browser keeps afterwards**.
-func TestLaunchExchangeSetsTheSessionCookie(t *testing.T) {
+// TestLaunchSetsAHandoffAndNoSession is the whole of the browser's entry: the
+// printed URL in, a `303` to `/#` and **one short-lived, single-use cookie**
+// out — and no session at all.
+func TestLaunchSetsAHandoffAndNoSession(t *testing.T) {
 	s, ts := newTestServer(t, false)
 	resp := launchResponse(t, ts, testToken)
 	defer resp.Body.Close()
@@ -40,57 +41,52 @@ func TestLaunchExchangeSetsTheSessionCookie(t *testing.T) {
 
 	cookies := resp.Cookies()
 	if len(cookies) != 1 {
-		t.Fatalf("the exchange set %d cookies, want exactly 1: %v", len(cookies), cookies)
+		t.Fatalf("the launch set %d cookies, want exactly 1: %v", len(cookies), cookies)
 	}
 	cookie := cookies[0]
+
 	// **The name carries the port**, because a cookie's origin does not: two
-	// desks on one host would otherwise share, and overwrite, one session.
-	want := fmt.Sprintf("jpack-desk-session-%d", s.cfg.Port)
+	// desks on one host would otherwise hand each other's tab the wrong handoff.
+	want := fmt.Sprintf("jpack-desk-launch-%d", s.cfg.Port)
 	if cookie.Name != want {
 		t.Errorf("cookie name = %q, want %q", cookie.Name, want)
 	}
-	if !strings.HasPrefix(cookie.Name, "jpack-desk-session-") {
-		t.Errorf("cookie name %q does not carry a port", cookie.Name)
-	}
-	if cookie.Value == "" {
-		t.Fatal("the cookie carries no session id")
-	}
-	// The id is minted here and is not the secret that bought it. A desk that
-	// set the launch secret as the cookie would have moved the secret into the
-	// browser rather than out of the URL.
-	if cookie.Value == testToken {
-		t.Error("the cookie carries the launch secret itself")
+	if cookie.Value == "" || cookie.Value == testToken {
+		t.Fatalf("the handoff is %q — empty, or the launch secret itself", cookie.Value)
 	}
 	if len(cookie.Value) != 48 {
-		t.Errorf("session id is %d hex characters, want 48 (192 bits)", len(cookie.Value))
+		t.Errorf("handoff is %d hex characters, want 48 (192 bits)", len(cookie.Value))
 	}
 	if cookie.Path != "/" {
 		t.Errorf("Path = %q, want /", cookie.Path)
 	}
 	if !cookie.HttpOnly {
-		t.Error("the session cookie is not HttpOnly: page code can read the id")
+		t.Error("the handoff is not HttpOnly: page code can read it")
 	}
 	if cookie.SameSite != http.SameSiteStrictMode {
 		t.Errorf("SameSite = %v, want Strict", cookie.SameSite)
 	}
+	// **Max-Age, and it is the difference between a window and a key.** A
+	// handoff that outlived the page load it exists for would be a standing
+	// credential in a cookie jar, which is the arrangement this replaced.
+	if cookie.MaxAge != 60 {
+		t.Errorf("Max-Age = %d, want 60", cookie.MaxAge)
+	}
 	// Not `Secure` on http: a browser discards a Secure cookie that arrives
-	// over plain http, and this chassis serves plain http on loopback — so
-	// setting it here would mean setting no cookie at all.
+	// over plain http, and this chassis serves plain http on loopback.
 	if cookie.Secure {
 		t.Error("Secure is set on an http response, so the browser would drop the cookie")
 	}
-	if cookie.MaxAge != 0 || !cookie.Expires.IsZero() {
-		t.Errorf("the session cookie is not a session cookie: MaxAge=%d Expires=%v",
-			cookie.MaxAge, cookie.Expires)
+	// And **no session was minted**. A launch that minted one would answer with
+	// a standing credential the browser then attaches to everything.
+	if n := s.sessions.count(); n != 0 {
+		t.Fatalf("the launch minted %d session(s); it must mint none", n)
 	}
-	// And nothing in the response repeats the secret.
 	if strings.Contains(resp.Header.Get("Location"), testToken) {
 		t.Error("the redirect carries the launch secret")
 	}
 }
 
-// TestLaunchRefusesAWrongSecretAndSetsNothing: the refusal is a refusal, not a
-// weaker grant.
 func TestLaunchRefusesAWrongSecretAndSetsNothing(t *testing.T) {
 	s, ts := newTestServer(t, false)
 	for _, secret := range []string{
@@ -108,17 +104,15 @@ func TestLaunchRefusesAWrongSecretAndSetsNothing(t *testing.T) {
 				t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
 			}
 			if cookies := resp.Cookies(); len(cookies) != 0 {
-				t.Fatalf("a refused exchange set %d cookie(s): %v", len(cookies), cookies)
+				t.Fatalf("a refused launch set %d cookie(s): %v", len(cookies), cookies)
 			}
 		})
 	}
-	if n := s.sessions.count(); n != 0 {
-		t.Fatalf("%d session(s) were minted by refused exchanges", n)
+	if n := s.launches.count(); n != 0 {
+		t.Fatalf("%d handoff(s) were minted by refused launches", n)
 	}
 }
 
-// TestLaunchRefusalIsOneLine pins the body's shape, because a 403 that rendered
-// the page would be a 403 that told a person nothing.
 func TestLaunchRefusalIsOneLine(t *testing.T) {
 	_, ts := newTestServer(t, false)
 	resp := launchResponse(t, ts, "wrong")
@@ -138,39 +132,556 @@ func TestLaunchRefusalIsOneLine(t *testing.T) {
 }
 
 // TestLaunchSecretStaysValidForTheProcess: reopening the printed URL is a
-// second cookie and not a restart. Single-use would make every closed tab a
-// restart of the desk, for a property this chunk does not claim.
+// second handoff and not a restart. Single-use *there* would make every closed
+// tab a restart of the desk, for a property this design does not claim — what
+// is single use is the handoff, which is the thing that is ambient.
 func TestLaunchSecretStaysValidForTheProcess(t *testing.T) {
-	s, ts := newTestServer(t, false)
-	first := launchSession(t, ts)
-	second := launchSession(t, ts)
-	if first.Value == second.Value {
-		t.Error("two exchanges produced one session id")
-	}
-	if n := s.sessions.count(); n != 2 {
-		t.Errorf("%d live sessions, want 2", n)
-	}
-	// Both still open the relay, all the way to a completed handshake.
-	for _, cookie := range []*http.Cookie{first, second} {
-		acceptsSession(t, ts, browserHeader(cookie, ts.URL))
-	}
-}
-
-// TestLaunchIsNotGatedByTheSessionItMints — the route where authorization is
-// acquired cannot require the authorization it hands out.
-func TestLaunchIsNotGatedByTheSessionItMints(t *testing.T) {
 	_, ts := newTestServer(t, false)
-	// No cookie, no header, and it still works: that is the point.
-	cookie := launchSession(t, ts)
-	if cookie.Value == "" {
-		t.Fatal("the launch exchange minted nothing")
+	first := launchHandoff(t, ts)
+	second := launchHandoff(t, ts)
+	if first.Value == second.Value {
+		t.Error("two launches produced one handoff")
+	}
+	for _, handoff := range []*http.Cookie{first, second} {
+		acceptsSession(t, ts, exchange(t, ts, handoff), ts.URL)
 	}
 }
 
-/* The store ------------------------------------------------------------------ */
+/* The exchange ---------------------------------------------------------------- */
 
-// TestSessionStoreHoldsNoSessionID is the "never a map lookup on the raw value"
-// rule, held over the store itself rather than over the function that reads it.
+// TestTheHandoffIsSingleUse — the property the residual rests on. A second
+// `POST` with the same cookie is a `401`, so a stolen handoff makes the page
+// fail visibly rather than letting two callers share one desk quietly.
+func TestTheHandoffIsSingleUse(t *testing.T) {
+	s, ts := newTestServer(t, false)
+	handoff := launchHandoff(t, ts)
+
+	id := exchange(t, ts, handoff)
+	if id == "" {
+		t.Fatal("the first exchange answered no id")
+	}
+	status, body := exchangeAttempt(t, ts, func(r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: handoff.Name, Value: handoff.Value})
+		r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+		r.Header.Set("Origin", ts.URL)
+	})
+	if status != http.StatusUnauthorized {
+		t.Fatalf("the second exchange answered %d, want 401: %v", status, body)
+	}
+	if body["code"] != CodeUnauthorized {
+		t.Errorf("code %v, want %s", body["code"], CodeUnauthorized)
+	}
+	if n := s.sessions.count(); n != 1 {
+		t.Fatalf("%d sessions after one spent handoff, want 1", n)
+	}
+}
+
+// TestTheExchangeClearsTheHandoff: spent, and said so on the wire, so the
+// browser drops a value that is already worthless.
+func TestTheExchangeClearsTheHandoff(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	handoff := launchHandoff(t, ts)
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/session", nil)
+	req.AddCookie(&http.Cookie{Name: handoff.Name, Value: handoff.Value})
+	req.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+	req.Header.Set("Origin", ts.URL)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+	defer resp.Body.Close()
+	cookies := resp.Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("the exchange set %v, want exactly the cleared handoff", cookies)
+	}
+	if cookies[0].Name != handoff.Name {
+		t.Errorf("cleared %q, want %q", cookies[0].Name, handoff.Name)
+	}
+	if cookies[0].MaxAge >= 0 {
+		t.Errorf("Max-Age = %d, want a negative one that clears it", cookies[0].MaxAge)
+	}
+	if cookies[0].Value != "" {
+		t.Errorf("the cleared cookie carries %q", cookies[0].Value)
+	}
+}
+
+// TestTheHandoffExpires, with the clock injected rather than waited on.
+func TestTheHandoffExpires(t *testing.T) {
+	s, ts := newTestServer(t, false)
+	handoff := launchHandoff(t, ts)
+
+	now := time.Now()
+	s.launches.mu.Lock()
+	s.launches.now = func() time.Time { return now.Add(launchWindow + time.Second) }
+	s.launches.mu.Unlock()
+
+	status, body := exchangeAttempt(t, ts, func(r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: handoff.Name, Value: handoff.Value})
+		r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+		r.Header.Set("Origin", ts.URL)
+	})
+	if status != http.StatusUnauthorized {
+		t.Fatalf("an expired handoff answered %d, want 401: %v", status, body)
+	}
+	if n := s.sessions.count(); n != 0 {
+		t.Fatalf("an expired handoff minted %d session(s)", n)
+	}
+}
+
+// TestTheExchangeRefusesWithoutASameOriginClaim. The handoff is ambient for its
+// sixty seconds, and this is the only route it opens, so this is the one place
+// a page that is not ours could drive somebody's cookie. `Sec-Fetch-Site` is
+// belt-and-braces beside `SameSite=Strict`, and a browser cannot forge it.
+func TestTheExchangeRefusesWithoutASameOriginClaim(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	for _, claim := range []string{"", "same-site", "cross-site", "none", "Same-Origin"} {
+		t.Run("Sec-Fetch-Site: "+claim, func(t *testing.T) {
+			handoff := launchHandoff(t, ts)
+			status, _ := exchangeAttempt(t, ts, func(r *http.Request) {
+				r.AddCookie(&http.Cookie{Name: handoff.Name, Value: handoff.Value})
+				if claim != "" {
+					r.Header.Set(fetchSiteHeader, claim)
+				}
+				r.Header.Set("Origin", ts.URL)
+			})
+			if status != http.StatusUnauthorized {
+				t.Fatalf("status %d, want 401", status)
+			}
+			// And the handoff is **not** spent by a refused attempt, so the
+			// page that follows still works.
+			if id := exchange(t, ts, handoff); id == "" {
+				t.Fatal("a refused attempt spent the handoff")
+			}
+		})
+	}
+}
+
+func TestTheExchangeRefusesAForeignOrigin(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	handoff := launchHandoff(t, ts)
+	status, body := exchangeAttempt(t, ts, func(r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: handoff.Name, Value: handoff.Value})
+		r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+		r.Header.Set("Origin", "http://evil.example")
+	})
+	if status != http.StatusForbidden {
+		t.Fatalf("status %d, want 403: %v", status, body)
+	}
+}
+
+// TestAScriptMintsASessionWithTheLaunchSecret: no cookie, no fetch metadata,
+// no browser.
+func TestAScriptMintsASessionWithTheLaunchSecret(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	status, body := exchangeAttempt(t, ts, bearer)
+	if status != http.StatusOK {
+		t.Fatalf("status %d, want 200: %v", status, body)
+	}
+	id, _ := body["id"].(string)
+	if id == "" {
+		t.Fatalf("no id: %v", body)
+	}
+	acceptsSession(t, ts, id, "")
+}
+
+// TestTheStatedResidual is the one this design does **not** claim to prevent,
+// written down as a test so that it is a known property rather than a surprise.
+//
+// A script that captures the handoff inside its window and forges
+// `Sec-Fetch-Site: same-origin` takes the session first. Forbidden-header rules
+// bind browsers, not scripts. What the shape buys is that the theft is
+// **visible**: the handoff is single use, so the page's own exchange then fails
+// and the desk says it has no session rather than working while somebody else
+// is also inside.
+func TestTheStatedResidual(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	handoff := launchHandoff(t, ts)
+
+	// The thief, inside the window, forging the one header a browser would not
+	// let a page write.
+	stolen, body := exchangeAttempt(t, ts, func(r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: handoff.Name, Value: handoff.Value})
+		r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+		r.Header.Set("Origin", ts.URL)
+	})
+	if stolen != http.StatusOK {
+		t.Fatalf("the residual is not what this test says it is: status %d", stolen)
+	}
+	if id, _ := body["id"].(string); id == "" {
+		t.Fatal("the thief got no id")
+	}
+
+	// And the page then fails, which is the whole of the mitigation.
+	after, _ := exchangeAttempt(t, ts, func(r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: handoff.Name, Value: handoff.Value})
+		r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+		r.Header.Set("Origin", ts.URL)
+	})
+	if after != http.StatusUnauthorized {
+		t.Fatalf("the page's own exchange answered %d after a theft, want 401", after)
+	}
+}
+
+/* Nothing ambient authorizes anything ------------------------------------------ */
+
+// TestNoRouteEverSetsASessionCookie sweeps every route this chassis has and
+// asserts that **no answer carries a live cookie** except the launch's handoff.
+//
+// One test per route would be one route away from a gap; this is the sweep, and
+// a route added without being added here is a route this suite does not speak
+// for.
+func TestNoRouteEverSetsASessionCookie(t *testing.T) {
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", "{}")
+	id := beginSession(t, ts)
+
+	for _, route := range []struct{ method, path string }{
+		{http.MethodGet, "/api/files"},
+		{http.MethodGet, "/api/file?path=jpack.json"},
+		{http.MethodPut, "/api/file"},
+		{http.MethodGet, "/api/session"},
+		{http.MethodPost, "/api/session"},
+		{http.MethodDelete, "/api/session"},
+		{http.MethodGet, "/api/desk-config"},
+		{http.MethodPut, "/api/desk-config"},
+		{http.MethodGet, "/api/assistant/key"},
+		{http.MethodPut, "/api/assistant/key"},
+		{http.MethodDelete, "/api/assistant/key"},
+		{http.MethodPost, "/api/assistant/probe"},
+		{http.MethodGet, relayPrefix + "models"},
+		{http.MethodGet, "/ws"},
+		{http.MethodGet, "/"},
+		{http.MethodGet, "/packs/anything"},
+	} {
+		t.Run(route.method+" "+route.path, func(t *testing.T) {
+			req, err := http.NewRequest(route.method, ts.URL+route.path, strings.NewReader("{}"))
+			if err != nil {
+				t.Fatalf("request: %v", err)
+			}
+			pageBearer(id)(req)
+			resp, err := ts.Client().Do(req)
+			if err != nil {
+				t.Fatalf("do: %v", err)
+			}
+			defer resp.Body.Close()
+			for _, cookie := range resp.Cookies() {
+				if cookie.Value != "" && cookie.MaxAge >= 0 {
+					t.Fatalf("%s %s set a live cookie: %v", route.method, route.path, cookie)
+				}
+			}
+		})
+	}
+}
+
+// TestNoCookieAuthorizesAnyGatedRoute. Every cookie shape, on every gated
+// route: none of them is an authorization, whatever else is on the request.
+//
+// **This is the round-2 finding, held.** A cookie replayed by a script with a
+// forged `Sec-Fetch-Site` used to read this desk; there is nothing to replay
+// now, because no cookie is consulted anywhere but the exchange.
+func TestNoCookieAuthorizesAnyGatedRoute(t *testing.T) {
+	s, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", "{}")
+	handoff := launchHandoff(t, ts)
+	id := beginSession(t, ts)
+
+	cookies := []*http.Cookie{
+		{Name: handoff.Name, Value: handoff.Value},
+		{Name: s.launchCookie, Value: id},
+		{Name: fmt.Sprintf("jpack-desk-session-%d", s.cfg.Port), Value: id},
+		{Name: "jpack-desk-session", Value: id},
+	}
+	routes := []string{"/api/files", "/api/file?path=jpack.json", "/api/session", "/api/desk-config"}
+	for _, route := range routes {
+		for _, cookie := range cookies {
+			for _, claim := range []string{"", fetchSiteSameOrigin, "same-site"} {
+				name := route + " " + cookie.Name + " " + claim
+				t.Run(name, func(t *testing.T) {
+					req, _ := http.NewRequest(http.MethodGet, ts.URL+route, nil)
+					req.AddCookie(cookie)
+					if claim != "" {
+						req.Header.Set(fetchSiteHeader, claim)
+					}
+					req.Header.Set("Origin", ts.URL)
+					resp, err := http.DefaultClient.Do(req)
+					if err != nil {
+						t.Fatalf("get: %v", err)
+					}
+					defer resp.Body.Close()
+					if resp.StatusCode != http.StatusUnauthorized {
+						t.Fatalf("status %d, want 401", resp.StatusCode)
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestTheBearerAuthorizesEveryGatedRoute is the positive control for the sweep
+// above: the same routes, the same origin, the id on the header instead.
+func TestTheBearerAuthorizesEveryGatedRoute(t *testing.T) {
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", "{}")
+	id := beginSession(t, ts)
+
+	for _, route := range []string{"/api/files", "/api/file?path=jpack.json", "/api/session", "/api/desk-config"} {
+		t.Run(route, func(t *testing.T) {
+			req, _ := http.NewRequest(http.MethodGet, ts.URL+route, nil)
+			pageBearer(id)(req)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status %d, want 200", resp.StatusCode)
+			}
+		})
+	}
+}
+
+// TestTheQueryAuthorizesNothingAnywhere sweeps every gated route with the
+// genuine launch secret **and** a live session id on the query, under every
+// spelling either has ever had.
+func TestTheQueryAuthorizesNothingAnywhere(t *testing.T) {
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", "{}")
+	id := beginSession(t, ts)
+
+	routes := []struct{ method, path string }{
+		{http.MethodGet, "/api/files"},
+		{http.MethodGet, "/api/file?path=jpack.json"},
+		{http.MethodPut, "/api/file"},
+		{http.MethodGet, "/api/session"},
+		{http.MethodGet, "/api/desk-config"},
+		{http.MethodPut, "/api/desk-config"},
+		{http.MethodGet, "/api/assistant/key"},
+		{http.MethodPut, "/api/assistant/key"},
+		{http.MethodDelete, "/api/assistant/key"},
+		{http.MethodPost, "/api/assistant/probe"},
+		{http.MethodGet, relayPrefix + "models"},
+		{http.MethodGet, "/ws"},
+	}
+	for _, route := range routes {
+		for _, pair := range []struct{ name, value string }{
+			{"token", testToken}, {"secret", testToken},
+			{"token", id}, {"session", id},
+		} {
+			separator := "?"
+			if strings.Contains(route.path, "?") {
+				separator = "&"
+			}
+			address := ts.URL + route.path + separator + pair.name + "=" + pair.value
+			t.Run(route.method+" "+route.path+" ?"+pair.name, func(t *testing.T) {
+				req, err := http.NewRequest(route.method, address, strings.NewReader("{}"))
+				if err != nil {
+					t.Fatalf("request: %v", err)
+				}
+				resp, err := ts.Client().Do(req)
+				if err != nil {
+					t.Fatalf("do: %v", err)
+				}
+				defer resp.Body.Close()
+				if resp.StatusCode != http.StatusUnauthorized {
+					t.Fatalf("status %d, want 401", resp.StatusCode)
+				}
+			})
+		}
+	}
+}
+
+// TestBearerTakesTheSecretOrASessionAndNothingElse.
+func TestBearerTakesTheSecretOrASessionAndNothingElse(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	id := beginSession(t, ts)
+	handoff := launchHandoff(t, ts)
+
+	// The two that work.
+	acceptsSession(t, ts, id, ts.URL)
+	if resp := upgradeRequest(t, ts, "", ts.URL, bearer); resp.StatusCode == http.StatusUnauthorized {
+		t.Fatal("the launch secret does not authorize")
+	}
+	// And a handoff is not one of them: it opens the exchange and nothing else.
+	refused := upgradeRequest(t, ts, "", ts.URL, pageBearer(handoff.Value))
+	if refused.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("a handoff opened the relay: status %d", refused.StatusCode)
+	}
+}
+
+/* Two desks, one browser -------------------------------------------------------- */
+
+// TestTwoDesksDoNotShareASession. Cookies are keyed by host, so a browser that
+// has met both desks sends both handoffs to both; the names keep them apart,
+// and the sessions they buy are bearers the page keys by port and never sends
+// anywhere but the desk it came from.
+func TestTwoDesksDoNotShareASession(t *testing.T) {
+	_, first := newTestServer(t, false)
+	_, second := newTestServer(t, false)
+	if first.URL == second.URL {
+		t.Fatal("the two desks are on one port")
+	}
+
+	oneHandoff := launchHandoff(t, first)
+	twoHandoff := launchHandoff(t, second)
+	if oneHandoff.Name == twoHandoff.Name {
+		t.Fatalf("both desks named their handoff %q", oneHandoff.Name)
+	}
+
+	// The jar, holding both, exactly as a browser that has opened both would.
+	// Each desk must read its own by name, and spend only that one.
+	jar := []*http.Cookie{
+		{Name: oneHandoff.Name, Value: oneHandoff.Value},
+		{Name: twoHandoff.Name, Value: twoHandoff.Value},
+	}
+	oneID := exchangeWithJar(t, first, jar)
+	twoID := exchangeWithJar(t, second, jar)
+	if oneID == twoID {
+		t.Fatal("both desks answered the same session id")
+	}
+
+	// And neither desk's id is a session on the other: the store's MAC key is
+	// per process, and the page keys its storage by port so it never offers
+	// one to the other in the first place.
+	acceptsSession(t, first, oneID, first.URL)
+	acceptsSession(t, second, twoID, second.URL)
+	if resp := upgradeRequest(t, first, "", first.URL, pageBearer(twoID)); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("the second desk's id opened the first: status %d", resp.StatusCode)
+	}
+	if resp := upgradeRequest(t, second, "", second.URL, pageBearer(oneID)); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("the first desk's id opened the second: status %d", resp.StatusCode)
+	}
+}
+
+func exchangeWithJar(t *testing.T, ts *httptest.Server, jar []*http.Cookie) string {
+	t.Helper()
+	status, body := exchangeAttempt(t, ts, func(r *http.Request) {
+		for _, cookie := range jar {
+			r.AddCookie(cookie)
+		}
+		r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+		r.Header.Set("Origin", ts.URL)
+	})
+	if status != http.StatusOK {
+		t.Fatalf("exchange status %d: %v", status, body)
+	}
+	id, _ := body["id"].(string)
+	return id
+}
+
+/* The redirect, and what is under /launch --------------------------------------- */
+
+func TestTheRedirectDropsTheRequestsFragment(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	resp, err := client.Get(ts.URL + "/launch?secret=" + testToken)
+	if err != nil {
+		t.Fatalf("launch: %v", err)
+	}
+	defer resp.Body.Close()
+	location := resp.Header.Get("Location")
+	if location != "/#" {
+		t.Fatalf("Location = %q, want %q — a bare `/` inherits the request's fragment", location, "/#")
+	}
+	if strings.Contains(location, testToken) {
+		t.Error("the redirect carries the launch secret")
+	}
+}
+
+// thePage is the marker the stand-in single-page shell carries, so a test can
+// tell "the fallback served the page" from "there was nothing to serve".
+const thePage = "THE SINGLE-PAGE SHELL"
+
+// deskWithAPage is a chassis that actually serves one, because `newTestServer`
+// has no assets and answers 404 for a client-side route and a missing file
+// alike.
+func deskWithAPage(t *testing.T) (*Server, *httptest.Server) {
+	t.Helper()
+	s, ts := startDesk(t, Config{
+		ProjectDir: t.TempDir(),
+		JpackBin:   "jpack",
+		Token:      testToken,
+		Static:     fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte(thePage)}},
+		Logger:     log.New(io.Discard, "", 0),
+	})
+	t.Cleanup(func() {
+		ts.Close()
+		_ = s.Close()
+	})
+	return s, ts
+}
+
+// TestNothingThatLooksLikeALaunchIsAnsweredWithThePage.
+//
+// `GET /launch` matches one exact path, so `/launch/anything?secret=…` used to
+// reach the SPA fallback and be answered with the page — the secret then sitting
+// in `window.location`, in history, and in every `Referer` that page sends. The
+// router owns `/launch` and `/launch/…`; the static handler owns the spellings
+// it does not see, which is why another case and a stray `?secret=` are here.
+func TestNothingThatLooksLikeALaunchIsAnsweredWithThePage(t *testing.T) {
+	_, ts := deskWithAPage(t)
+
+	// **The positive control, first.** Without it this test passes on a desk
+	// that serves no page at all, which is every other server in this package.
+	served, err := ts.Client().Get(ts.URL + "/packs/anything")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer served.Body.Close()
+	shell, _ := io.ReadAll(served.Body)
+	if served.StatusCode != http.StatusOK || !strings.Contains(string(shell), thePage) {
+		t.Fatalf("the single-page fallback is not live: %d %q", served.StatusCode, shell)
+	}
+
+	for _, path := range []string{
+		"/launch/",
+		"/launch/anything",
+		"/launch/anything?secret=" + testToken,
+		"/launch/a/b/c",
+		"/Launch",
+		"/LAUNCH/anything",
+		"/Launch/anything?secret=" + testToken,
+		"/launch%2Fanything",
+		"/packs/x?secret=" + testToken,
+		"/?secret=" + testToken,
+		"/anything?a=1&secret=" + testToken,
+		// Case-folded on the name: `?SECRET=` is a different parameter to
+		// `url.Query`, and "the page is harmless so the spelling does not
+		// matter" is the reasoning that put a secret in an address bar twice.
+		"/anything?SECRET=" + testToken,
+		"/anything?Secret=" + testToken,
+	} {
+		t.Run(path, func(t *testing.T) {
+			client := &http.Client{
+				CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+			}
+			resp, err := client.Get(ts.URL + path)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			for _, cookie := range resp.Cookies() {
+				if cookie.Value != "" {
+					t.Fatalf("%s set %v", path, cookie)
+				}
+			}
+			if strings.Contains(string(body), thePage) {
+				t.Fatalf("%s was answered with the page (%d)", path, resp.StatusCode)
+			}
+			if resp.StatusCode != http.StatusNotFound {
+				t.Fatalf("%s answered %d, want 404", path, resp.StatusCode)
+			}
+			if !strings.Contains(string(body), "nothing under /launch") {
+				t.Fatalf("%s answered %q, want the launch refusal", path, body)
+			}
+		})
+	}
+}
+
+/* The stores -------------------------------------------------------------------- */
+
 func TestSessionStoreHoldsNoSessionID(t *testing.T) {
 	store, err := newSessionStore()
 	if err != nil {
@@ -193,16 +704,12 @@ func TestSessionStoreHoldsNoSessionID(t *testing.T) {
 		if minted[key] {
 			t.Fatalf("the store is keyed by a session id: %q", key)
 		}
-		// A hex SHA-256, which is what the MAC of an id looks like and what a
-		// 192-bit id does not.
 		if len(key) != 64 {
 			t.Fatalf("key %q is %d characters, want a 64-character MAC", key, len(key))
 		}
 	}
 }
 
-// TestSessionHandleIsNotTheID is the helper's own test: it derives, it is
-// stable, and it does not reproduce its input.
 func TestSessionHandleIsNotTheID(t *testing.T) {
 	store, err := newSessionStore()
 	if err != nil {
@@ -210,22 +717,15 @@ func TestSessionHandleIsNotTheID(t *testing.T) {
 	}
 	const id = "0123456789abcdef0123456789abcdef0123456789abcdef"
 	handle := store.handle(id)
-	if handle == id {
-		t.Fatal("the handle is the id")
-	}
-	if strings.Contains(handle, id) {
-		t.Fatal("the handle contains the id")
+	if handle == id || strings.Contains(handle, id) {
+		t.Fatal("the handle reproduces the id")
 	}
 	if store.handle(id) != handle {
 		t.Fatal("the handle is not stable for one id")
 	}
-	// One bit of difference is a whole different handle, which is what stops a
-	// near-miss landing in the same bucket as a live session.
-	if store.handle(id[:len(id)-1]+"0") == handle {
+	if store.handle(flipLast(id)) == handle {
 		t.Fatal("two different ids share a handle")
 	}
-	// And the key is this process's: two stores disagree about the same id, so
-	// a handle observed anywhere is not a handle anywhere else.
 	other, err := newSessionStore()
 	if err != nil {
 		t.Fatalf("newSessionStore: %v", err)
@@ -235,7 +735,6 @@ func TestSessionHandleIsNotTheID(t *testing.T) {
 	}
 }
 
-// TestSessionStoreLookupRefusesWhatItNeverMinted.
 func TestSessionStoreLookupRefusesWhatItNeverMinted(t *testing.T) {
 	store, err := newSessionStore()
 	if err != nil {
@@ -266,89 +765,102 @@ func flipLast(id string) string {
 	return id[:len(id)-1] + last
 }
 
-/* The two doors -------------------------------------------------------------- */
+// TestTheSessionStoreIsBoundedAndLRU. The bound stops a desk left open all day
+// growing a map entry per reopened tab; **least recently used** rather than
+// oldest is what keeps the tab somebody is actually looking at.
+func TestTheSessionStoreIsBoundedAndLRU(t *testing.T) {
+	store, err := newSessionStore()
+	if err != nil {
+		t.Fatalf("newSessionStore: %v", err)
+	}
+	first, err := store.create("local user", nil)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	ids := []string{first}
+	for range maxSessions - 1 {
+		id, err := store.create("local user", nil)
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		ids = append(ids, id)
+		if n := store.count(); n > maxSessions {
+			t.Fatalf("the store holds %d sessions, past the bound of %d", n, maxSessions)
+		}
+	}
+	if n := store.count(); n != maxSessions {
+		t.Fatalf("the store holds %d, want it full at %d", n, maxSessions)
+	}
 
-// TestBearerHeaderTakesTheSecretAndNotASessionID: the two credentials are
-// different things with different lifetimes, and one door does not open on the
-// other's key.
-func TestBearerHeaderTakesTheSecretAndNotASessionID(t *testing.T) {
+	// **The oldest session, used.** Under oldest-first it would be the next to
+	// go; under LRU it is now the newest thing in the store.
+	if _, ok := store.lookup(first); !ok {
+		t.Fatal("the first session is gone before anything was evicted")
+	}
+	for range 8 {
+		if _, err := store.create("local user", nil); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		if n := store.count(); n > maxSessions {
+			t.Fatalf("the store holds %d, past the bound", n)
+		}
+	}
+	if _, ok := store.lookup(first); !ok {
+		t.Fatal("a session that was used most recently was evicted: the bound is not LRU")
+	}
+	// And the ones nobody touched went, oldest of those first.
+	if _, ok := store.lookup(ids[1]); ok {
+		t.Error("an untouched session survived eight evictions")
+	}
+}
+
+func TestTheBoundIsEnforcedThroughTheExchange(t *testing.T) {
 	s, ts := newTestServer(t, false)
-	cookie := launchSession(t, ts)
-
-	resp := upgradeRequest(t, ts, "", ts.URL, func(r *http.Request) {
-		r.Header.Set("Authorization", "Bearer "+cookie.Value)
-	})
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("a session id in the Bearer header: status %d, want 401", resp.StatusCode)
+	newest := ""
+	for range maxSessions + 8 {
+		newest = beginSession(t, ts)
 	}
-
-	// And the reverse: the launch secret in the cookie is not a session.
-	refused := upgradeRequest(t, ts, "", ts.URL, func(r *http.Request) {
-		r.AddCookie(&http.Cookie{Name: s.cookieName, Value: testToken})
-		sameOrigin(r)
-	})
-	if refused.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("the launch secret in the cookie: status %d, want 401", refused.StatusCode)
+	if n := s.sessions.count(); n != maxSessions {
+		t.Fatalf("%d live sessions after %d exchanges, want the bound of %d",
+			n, maxSessions+8, maxSessions)
 	}
+	acceptsSession(t, ts, newest, ts.URL)
 }
 
-// TestFileAPITakesTheCookieAndTheHeader covers the gated file API with each of
-// the two doors, and with the query that is no longer one.
-func TestFileAPITakesTheCookieAndTheHeader(t *testing.T) {
-	_, ts, project := filesServer(t)
-	writeProjectFile(t, project, "jpack.json", "{}")
-	cookie := launchSession(t, ts)
-
-	withCookie, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files", nil)
-	withSession(cookie)(withCookie)
-	resp, err := http.DefaultClient.Do(withCookie)
+func TestTheLaunchStoreIsBoundedAndSwept(t *testing.T) {
+	store, err := newLaunchStore()
 	if err != nil {
-		t.Fatalf("get: %v", err)
+		t.Fatalf("newLaunchStore: %v", err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("the cookie did not authorize the file API: status %d", resp.StatusCode)
+	for range maxLaunches * 2 {
+		if _, err := store.issue(); err != nil {
+			t.Fatalf("issue: %v", err)
+		}
+		if n := store.count(); n > maxLaunches {
+			t.Fatalf("%d handoffs, past the bound of %d", n, maxLaunches)
+		}
 	}
-
-	if status, _ := getJSON(t, ts, "/api/files"); status != http.StatusOK {
-		t.Fatalf("the Bearer header did not authorize the file API: status %d", status)
+	// And expiry sweeps rather than accumulating.
+	now := time.Now()
+	store.mu.Lock()
+	store.now = func() time.Time { return now.Add(launchWindow + time.Second) }
+	store.mu.Unlock()
+	if _, err := store.issue(); err != nil {
+		t.Fatalf("issue: %v", err)
 	}
-}
-
-// TestACookieFromAForeignOriginIsRefusedOnAWrite is the CSRF case on the one
-// route that changes the project.
-func TestACookieFromAForeignOriginIsRefusedOnAWrite(t *testing.T) {
-	_, ts, project := filesServer(t)
-	writeProjectFile(t, project, "jpack.json", `{"id":"a"}`)
-	cookie := launchSession(t, ts)
-
-	payload, _ := json.Marshal(WriteRequest{Path: "jpack.json", Content: "{}", Override: true})
-	put, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/file", strings.NewReader(string(payload)))
-	withSession(cookie)(put)
-	put.Header.Set("Origin", "http://evil.example")
-	put.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(put)
-	if err != nil {
-		t.Fatalf("put: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("status %d, want 403", resp.StatusCode)
-	}
-	data, _ := os.ReadFile(filepath.Join(project, "jpack.json"))
-	if string(data) != `{"id":"a"}` {
-		t.Fatalf("a cross-origin write with a real cookie reached the disk: %q", data)
+	if n := store.count(); n != 1 {
+		t.Fatalf("%d handoffs after a sweep, want only the new one", n)
 	}
 }
 
-/* GET /api/session ------------------------------------------------------------ */
+/* GET and DELETE /api/session ---------------------------------------------------- */
 
-func TestSessionEndpointAnswersTheCookiesSubject(t *testing.T) {
+func TestSessionEndpointAnswersTheBearersSubject(t *testing.T) {
 	_, ts := newTestServer(t, false)
-	cookie := launchSession(t, ts)
+	id := beginSession(t, ts)
 
 	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/session", nil)
-	withSession(cookie)(req)
+	pageBearer(id)(req)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("get: %v", err)
@@ -364,8 +876,6 @@ func TestSessionEndpointAnswersTheCookiesSubject(t *testing.T) {
 	if body["subject"] != "local user" {
 		t.Errorf("subject = %v, want %q", body["subject"], "local user")
 	}
-	// Null rather than absent and rather than empty: no provider authenticated
-	// this session, and 7b is what fills it in.
 	issuer, present := body["issuer"]
 	if !present {
 		t.Error("the answer carries no issuer member at all")
@@ -374,14 +884,12 @@ func TestSessionEndpointAnswersTheCookiesSubject(t *testing.T) {
 		t.Errorf("issuer = %v, want null", issuer)
 	}
 	if len(body) != 2 {
-		t.Errorf("the answer carries %d members, want exactly subject and issuer: %v", len(body), body)
+		t.Errorf("the answer carries %d members, want subject and issuer: %v", len(body), body)
 	}
 }
 
-func TestSessionEndpointRefusesWithoutACookie(t *testing.T) {
+func TestSessionEndpointRefusesWithoutABearer(t *testing.T) {
 	_, ts := newTestServer(t, false)
-
-	// Nothing at all.
 	anon, err := http.Get(ts.URL + "/api/session")
 	if err != nil {
 		t.Fatalf("get: %v", err)
@@ -390,21 +898,8 @@ func TestSessionEndpointRefusesWithoutACookie(t *testing.T) {
 	if anon.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status %d, want 401", anon.StatusCode)
 	}
-
-	// The launch secret gets past the guard and finds no session to describe:
-	// a script presenting a secret is not a browser holding a session.
-	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/session", nil)
-	bearer(req)
-	scripted, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	defer scripted.Body.Close()
-	if scripted.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("a Bearer request: status %d, want 401", scripted.StatusCode)
-	}
 	var body map[string]any
-	_ = json.NewDecoder(scripted.Body).Decode(&body)
+	_ = json.NewDecoder(anon.Body).Decode(&body)
 	if body["code"] != CodeUnauthorized {
 		t.Errorf("code %v, want %s", body["code"], CodeUnauthorized)
 	}
@@ -412,9 +907,9 @@ func TestSessionEndpointRefusesWithoutACookie(t *testing.T) {
 
 func TestSessionEndpointRefusesAForeignOrigin(t *testing.T) {
 	_, ts := newTestServer(t, false)
-	cookie := launchSession(t, ts)
+	id := beginSession(t, ts)
 	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/session", nil)
-	withSession(cookie)(req)
+	pageBearer(id)(req)
 	req.Header.Set("Origin", "http://evil.example")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -426,75 +921,65 @@ func TestSessionEndpointRefusesAForeignOrigin(t *testing.T) {
 	}
 }
 
-/* The removed door ------------------------------------------------------------ */
-
-// TestTheQueryAuthorizesNothingAnywhere sweeps **every gated route** with the
-// genuine launch secret on the query, under both spellings it ever had.
-//
-// One test per route would be one route away from a gap; this is the sweep, and
-// a route added to the chassis without being added here is a route this suite
-// does not speak for.
-func TestTheQueryAuthorizesNothingAnywhere(t *testing.T) {
-	_, ts, project := filesServer(t)
-	writeProjectFile(t, project, "jpack.json", "{}")
-
-	routes := []struct{ method, path string }{
-		{http.MethodGet, "/api/files"},
-		{http.MethodGet, "/api/file?path=jpack.json"},
-		{http.MethodPut, "/api/file"},
-		{http.MethodGet, "/api/session"},
-		{http.MethodGet, "/api/desk-config"},
-		{http.MethodPut, "/api/desk-config"},
-		{http.MethodGet, "/api/assistant/key"},
-		{http.MethodPut, "/api/assistant/key"},
-		{http.MethodDelete, "/api/assistant/key"},
-		{http.MethodPost, "/api/assistant/probe"},
-		{http.MethodGet, relayPrefix + "models"},
-		{http.MethodGet, "/ws"},
+// TestSignOutForgetsTheSession. Sign-out exists; expiry still does not, and the
+// README says so rather than letting this route imply otherwise.
+func TestSignOutForgetsTheSession(t *testing.T) {
+	s, ts := newTestServer(t, false)
+	id := beginSession(t, ts)
+	if n := s.sessions.count(); n != 1 {
+		t.Fatalf("%d sessions before sign-out", n)
 	}
-	for _, route := range routes {
-		for _, name := range []string{"token", "secret"} {
-			separator := "?"
-			if strings.Contains(route.path, "?") {
-				separator = "&"
-			}
-			address := ts.URL + route.path + separator + name + "=" + testToken
-			t.Run(route.method+" "+route.path+" ?"+name+"=", func(t *testing.T) {
-				req, err := http.NewRequest(route.method, address, strings.NewReader("{}"))
-				if err != nil {
-					t.Fatalf("request: %v", err)
-				}
-				resp, err := ts.Client().Do(req)
-				if err != nil {
-					t.Fatalf("do: %v", err)
-				}
-				defer resp.Body.Close()
-				if resp.StatusCode != http.StatusUnauthorized {
-					t.Fatalf("status %d, want 401", resp.StatusCode)
-				}
-			})
-		}
-	}
-}
 
-// TestTheLaunchPathIsTheOnlyPlaceASecretIsRead: `?secret=` is read at `/launch`
-// and nowhere else, which is the other half of the sweep above.
-func TestTheLaunchPathIsTheOnlyPlaceASecretIsRead(t *testing.T) {
-	_, ts := newTestServer(t, false)
-	// The static handler serves the SPA fallback, and a build without assets
-	// answers 404 — either way, it does not mint a session.
-	resp, err := ts.Client().Get(ts.URL + "/?secret=" + testToken)
+	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/session", nil)
+	pageBearer(id)(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("get: %v", err)
+		t.Fatalf("delete: %v", err)
 	}
 	defer resp.Body.Close()
-	if cookies := resp.Cookies(); len(cookies) != 0 {
-		t.Fatalf("a secret on the page's own URL set %v", cookies)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d, want 200", resp.StatusCode)
+	}
+	var body map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	if body["forgotten"] != true {
+		t.Errorf("forgotten = %v, want true", body["forgotten"])
+	}
+	if n := s.sessions.count(); n != 0 {
+		t.Fatalf("%d sessions after sign-out", n)
+	}
+	// And the id names nothing now.
+	if resp := upgradeRequest(t, ts, "", ts.URL, pageBearer(id)); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("a signed-out id still opens the relay: status %d", resp.StatusCode)
 	}
 }
 
-// TestLaunchAcceptsOnlyGET: an exchange is a read, and a `POST /launch` that
-// minted a session would be one a form on another site could submit.
+/* The file API, and the write nobody may make ------------------------------------ */
+
+func TestABearerFromAForeignOriginIsRefusedOnAWrite(t *testing.T) {
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", `{"id":"a"}`)
+	id := beginSession(t, ts)
+
+	payload, _ := json.Marshal(WriteRequest{Path: "jpack.json", Content: "{}", Override: true})
+	put, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/file", strings.NewReader(string(payload)))
+	pageBearer(id)(put)
+	put.Header.Set("Origin", "http://evil.example")
+	put.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(put)
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status %d, want 403", resp.StatusCode)
+	}
+	data, _ := os.ReadFile(filepath.Join(project, "jpack.json"))
+	if string(data) != `{"id":"a"}` {
+		t.Fatalf("a cross-origin write with a real bearer reached the disk: %q", data)
+	}
+}
+
 func TestLaunchAcceptsOnlyGET(t *testing.T) {
 	_, ts := newTestServer(t, false)
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
@@ -504,408 +989,10 @@ func TestLaunchAcceptsOnlyGET(t *testing.T) {
 			t.Fatalf("%s: %v", method, err)
 		}
 		defer resp.Body.Close()
-		if cookies := resp.Cookies(); len(cookies) != 0 {
-			t.Fatalf("%s /launch set %v", method, cookies)
+		for _, cookie := range resp.Cookies() {
+			if cookie.Value != "" {
+				t.Fatalf("%s /launch set %v", method, cookie)
+			}
 		}
-	}
-}
-
-/* Cookies have no port isolation ---------------------------------------------- */
-
-// TestACookieAuthorizesOnlyASameOriginRequest is the whole of the fix for the
-// replay: the cookie is real, the id is live, and every claim about where the
-// request came from except `same-origin` is refused.
-//
-// **This is not belt-and-braces on the Origin guard.** A `no-cors` `GET` from a
-// page on another loopback port carries the cookie (cookies are not isolated by
-// port), carries **no** `Origin` at all, and would therefore pass a guard that
-// reads only `Origin`. What it does carry is `Sec-Fetch-Site: same-site`, which
-// the browser writes and the page cannot forge.
-func TestACookieAuthorizesOnlyASameOriginRequest(t *testing.T) {
-	_, ts, project := filesServer(t)
-	writeProjectFile(t, project, "jpack.json", "{}")
-	cookie := launchSession(t, ts)
-
-	for _, route := range []string{"/api/files", "/api/file?path=jpack.json", "/api/session", "/api/desk-config"} {
-		for _, claim := range []struct{ name, value string }{
-			{"no Sec-Fetch-Site at all — a script replaying a stolen cookie", ""},
-			{"same-site — a page on another port of this host", "same-site"},
-			{"cross-site", "cross-site"},
-			{"none — a typed navigation", "none"},
-			{"a spelling this desk does not know", "Same-Origin"},
-		} {
-			t.Run(route+" / "+claim.name, func(t *testing.T) {
-				req, err := http.NewRequest(http.MethodGet, ts.URL+route, nil)
-				if err != nil {
-					t.Fatalf("request: %v", err)
-				}
-				req.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
-				if claim.value != "" {
-					req.Header.Set(fetchSiteHeader, claim.value)
-				}
-				resp, err := http.DefaultClient.Do(req)
-				if err != nil {
-					t.Fatalf("get: %v", err)
-				}
-				defer resp.Body.Close()
-				if resp.StatusCode != http.StatusUnauthorized {
-					t.Fatalf("status %d, want 401", resp.StatusCode)
-				}
-			})
-		}
-		// The positive control, on the same route: the same cookie, with the
-		// browser's own claim on it.
-		t.Run(route+" / same-origin is accepted", func(t *testing.T) {
-			req, _ := http.NewRequest(http.MethodGet, ts.URL+route, nil)
-			withSession(cookie)(req)
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				t.Fatalf("get: %v", err)
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				t.Fatalf("status %d, want 200", resp.StatusCode)
-			}
-		})
-	}
-}
-
-// TestWSRefusesACookieThatDoesNotClaimSameOrigin — the same rule on the upgrade,
-// which is the connection that drives the runtime.
-func TestWSRefusesACookieThatDoesNotClaimSameOrigin(t *testing.T) {
-	_, ts := newTestServer(t, false)
-	cookie := launchSession(t, ts)
-	for _, claim := range []string{"", "same-site", "cross-site", "none"} {
-		t.Run("Sec-Fetch-Site: "+claim, func(t *testing.T) {
-			resp := upgradeRequest(t, ts, "", "", func(r *http.Request) {
-				r.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
-				if claim != "" {
-					r.Header.Set(fetchSiteHeader, claim)
-				}
-			})
-			if resp.StatusCode != http.StatusUnauthorized {
-				t.Fatalf("status %d, want 401", resp.StatusCode)
-			}
-		})
-	}
-}
-
-// TestTheRelayRefusesACredentialledNoCorsGET is the concrete attack, written as
-// the browser would actually send it: a page on `http://127.0.0.1:<other>`
-// issuing `fetch(url, {mode: 'no-cors', credentials: 'include'})`. The cookie
-// travels, **no `Origin` header is sent**, and nothing must reach the endpoint.
-func TestTheRelayRefusesACredentialledNoCorsGET(t *testing.T) {
-	counter := countingRelays(t)
-	u := newUpstream(t, nil)
-	_, ts, _ := relayDesk(t, "openai-compatible", u)
-	cookie := launchSession(t, ts)
-
-	req := relayBare(t, ts, http.MethodGet, "models", nil)
-	req.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
-	req.Header.Set(fetchSiteHeader, "same-site")
-	// And no Origin, which is what a `no-cors` GET actually looks like.
-	resp, err := ts.Client().Do(req)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status %d, want 401: %s", resp.StatusCode, body)
-	}
-	if got := codeOfBody(t, string(body)); got != CodeUnauthorized {
-		t.Errorf("code %q, want %q", got, CodeUnauthorized)
-	}
-	if calls, to := counter.seen(); calls != 0 {
-		t.Fatalf("%d outbound request(s), to %v", calls, to)
-	}
-	if seen := u.arrivals(); len(seen) != 0 {
-		t.Fatalf("the endpoint saw %d request(s)", len(seen))
-	}
-}
-
-// TestTwoDesksDoNotShareOneSession is the other half of the port problem, and
-// it uses **one cookie jar for both**, which is what a browser has: cookies are
-// keyed by host, so a jar that has met both desks sends both cookies to both.
-// Each desk must take only the one bearing its own port.
-func TestTwoDesksDoNotShareOneSession(t *testing.T) {
-	_, first := newTestServer(t, false)
-	_, second := newTestServer(t, false)
-	if first.URL == second.URL {
-		t.Fatal("the two desks are on one port")
-	}
-
-	one := launchSession(t, first)
-	two := launchSession(t, second)
-	if one.Name == two.Name {
-		t.Fatalf("both desks named their cookie %q", one.Name)
-	}
-
-	// The jar, holding both, exactly as a browser that has opened both would.
-	jar := []*http.Cookie{
-		{Name: one.Name, Value: one.Value},
-		{Name: two.Name, Value: two.Value},
-	}
-	for _, desk := range []struct {
-		name string
-		ts   *httptest.Server
-		own  string
-	}{{"first", first, one.Name}, {"second", second, two.Name}} {
-		t.Run(desk.name+" accepts only its own", func(t *testing.T) {
-			// The whole jar: both cookies on one request, which is what the
-			// browser sends. The desk must read its own by name.
-			header := http.Header{}
-			pairs := make([]string, 0, len(jar))
-			for _, cookie := range jar {
-				pairs = append(pairs, cookie.Name+"="+cookie.Value)
-			}
-			header.Set("Cookie", strings.Join(pairs, "; "))
-			header.Set(fetchSiteHeader, fetchSiteSameOrigin)
-			header.Set("Origin", desk.ts.URL)
-			acceptsSession(t, desk.ts, header)
-			// And the other desk's alone is not a session here. It is a live
-			// id — on the other desk — presented under the other desk's name.
-			other := jar[0]
-			if desk.own == other.Name {
-				other = jar[1]
-			}
-			alone := upgradeRequest(t, desk.ts, "", desk.ts.URL, func(r *http.Request) {
-				r.AddCookie(other)
-				sameOrigin(r)
-			})
-			if alone.StatusCode != http.StatusUnauthorized {
-				t.Fatalf("the other desk's cookie authorized: status %d", alone.StatusCode)
-			}
-			// Even under this desk's name, the other desk's id is not one this
-			// process minted — the store's MAC key is per process.
-			renamed := upgradeRequest(t, desk.ts, "", desk.ts.URL, func(r *http.Request) {
-				r.AddCookie(&http.Cookie{Name: desk.own, Value: other.Value})
-				sameOrigin(r)
-			})
-			if renamed.StatusCode != http.StatusUnauthorized {
-				t.Fatalf("another desk's id under this desk's name authorized: status %d",
-					renamed.StatusCode)
-			}
-		})
-	}
-}
-
-/* The redirect, and what is under /launch/ ------------------------------------ */
-
-// TestTheRedirectDropsTheRequestsFragment. A `Location` with no fragment
-// inherits the request's, per RFC 9110 §10.2.2, so `/launch?secret=S#S` would
-// land on `/#S` and leave the secret in `location.hash` — where it is read by
-// `window.location`, kept in history, and put in every screenshot.
-func TestTheRedirectDropsTheRequestsFragment(t *testing.T) {
-	_, ts := newTestServer(t, false)
-	client := &http.Client{
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}
-	// A fragment is not sent on the wire by a browser, so this is the header a
-	// proxy or a non-browser client would produce; what is under test is that
-	// the answer carries an explicit empty fragment either way.
-	resp, err := client.Get(ts.URL + "/launch?secret=" + testToken)
-	if err != nil {
-		t.Fatalf("launch: %v", err)
-	}
-	defer resp.Body.Close()
-	location := resp.Header.Get("Location")
-	if location != "/#" {
-		t.Fatalf("Location = %q, want %q — a bare `/` inherits the request's fragment", location, "/#")
-	}
-	if strings.Contains(location, testToken) {
-		t.Error("the redirect carries the launch secret")
-	}
-}
-
-// TestNothingUnderLaunchFallsThroughToThePage. `GET /launch` matches one exact
-// path, so `/launch/anything?secret=…` used to reach the SPA fallback and be
-// answered with the page — with the secret still on the URL.
-func TestNothingUnderLaunchFallsThroughToThePage(t *testing.T) {
-	_, ts := deskWithAPage(t)
-
-	// **The positive control, first.** Every other server in this package has
-	// no assets and answers 404 for a missing file and for a client-side route
-	// alike, which cannot tell "refused" from "there is no page to serve" — a
-	// test on one of those passes whether or not `/launch/` is routed at all.
-	served, err := ts.Client().Get(ts.URL + "/packs/anything")
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	defer served.Body.Close()
-	shell, _ := io.ReadAll(served.Body)
-	if served.StatusCode != http.StatusOK || !strings.Contains(string(shell), thePage) {
-		t.Fatalf("the single-page fallback is not live: %d %q", served.StatusCode, shell)
-	}
-
-	for _, path := range []string{
-		"/launch/",
-		"/launch/anything",
-		"/launch/anything?secret=" + testToken,
-		"/launch/../launch",
-		"/launch/a/b/c",
-	} {
-		t.Run(path, func(t *testing.T) {
-			client := &http.Client{
-				CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-			}
-			resp, err := client.Get(ts.URL + path)
-			if err != nil {
-				t.Fatalf("get: %v", err)
-			}
-			defer resp.Body.Close()
-			if cookies := resp.Cookies(); len(cookies) != 0 {
-				t.Fatalf("%s set %v", path, cookies)
-			}
-			// 404 from the mux, and never a 200 carrying the page. `/launch/..`
-			// is normalised by the mux to `/launch` and answered by the
-			// exchange, which is a 303 and not the page either.
-			body, _ := io.ReadAll(resp.Body)
-			if resp.StatusCode == http.StatusOK {
-				t.Fatalf("%s answered 200 — the page, with the secret still on the URL", path)
-			}
-			if strings.Contains(string(body), thePage) {
-				t.Fatalf("%s was answered with the page (%d)", path, resp.StatusCode)
-			}
-		})
-	}
-}
-
-// thePage is the marker the stand-in single-page shell carries, so a test can
-// tell "the fallback served the page" from "there was nothing to serve".
-const thePage = "THE SINGLE-PAGE SHELL"
-
-// deskWithAPage is a chassis that actually serves one, because
-// `newTestServer` has no assets and answers 404 for a client-side route and a
-// missing file alike.
-func deskWithAPage(t *testing.T) (*Server, *httptest.Server) {
-	t.Helper()
-	s, ts := startDesk(t, Config{
-		ProjectDir: t.TempDir(),
-		JpackBin:   "jpack",
-		Token:      testToken,
-		Static:     fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte(thePage)}},
-		Logger:     log.New(io.Discard, "", 0),
-	})
-	t.Cleanup(func() {
-		ts.Close()
-		_ = s.Close()
-	})
-	return s, ts
-}
-
-/* The store is bounded --------------------------------------------------------- */
-
-// TestTheSessionStoreIsBounded. The launch secret is good for the life of the
-// process and every exchange mints a session, so nothing else would stop this
-// map growing all day.
-func TestTheSessionStoreIsBounded(t *testing.T) {
-	store, err := newSessionStore()
-	if err != nil {
-		t.Fatalf("newSessionStore: %v", err)
-	}
-	ids := make([]string, 0, maxSessions*2)
-	for range maxSessions * 2 {
-		id, err := store.create("local user", nil)
-		if err != nil {
-			t.Fatalf("create: %v", err)
-		}
-		ids = append(ids, id)
-		if n := store.count(); n > maxSessions {
-			t.Fatalf("the store holds %d sessions, past the bound of %d", n, maxSessions)
-		}
-	}
-	if n := store.count(); n != maxSessions {
-		t.Fatalf("the store holds %d, want it full at %d", n, maxSessions)
-	}
-	// **Oldest first**: the tab someone is using is the last to go.
-	if _, ok := store.lookup(ids[len(ids)-1]); !ok {
-		t.Error("the newest session was evicted")
-	}
-	if _, ok := store.lookup(ids[0]); ok {
-		t.Error("the oldest session survived a full store")
-	}
-	// The most recent `maxSessions` are exactly what is held.
-	for _, id := range ids[len(ids)-maxSessions:] {
-		if _, ok := store.lookup(id); !ok {
-			t.Fatalf("a session inside the bound was evicted")
-		}
-	}
-}
-
-// TestTheBoundIsEnforcedThroughTheExchange, so it is a property of the desk and
-// not only of the store.
-func TestTheBoundIsEnforcedThroughTheExchange(t *testing.T) {
-	s, ts := newTestServer(t, false)
-	newest := ""
-	for range maxSessions + 8 {
-		newest = launchSession(t, ts).Value
-	}
-	if n := s.sessions.count(); n != maxSessions {
-		t.Fatalf("%d live sessions after %d exchanges, want the bound of %d",
-			n, maxSessions+8, maxSessions)
-	}
-	acceptsSession(t, ts, browserHeader(&http.Cookie{Name: s.cookieName, Value: newest}, ts.URL))
-}
-
-// TestWSRefusesACookieFromASiblingPort is the attack the upgrade actually
-// faces, in the shape a browser actually sends it: no fetch metadata — a
-// handshake carries none — a real cookie, because cookies reach every port on
-// this host, and the attacking page's own `Origin`.
-func TestWSRefusesACookieFromASiblingPort(t *testing.T) {
-	_, ts := newTestServer(t, false)
-	cookie := launchSession(t, ts)
-	for _, origin := range []string{
-		"http://127.0.0.1:9999",
-		"http://localhost:5173", // permitted only under --dev-token
-		"http://127.0.0.1",
-		"https://127.0.0.1:8791",
-		"http://evil.example",
-	} {
-		t.Run(origin, func(t *testing.T) {
-			resp := upgradeRequest(t, ts, "", origin, withCookieOnly(cookie))
-			if resp.StatusCode != http.StatusUnauthorized {
-				t.Fatalf("status %d, want 401 — a sibling port must not open the relay", resp.StatusCode)
-			}
-		})
-	}
-}
-
-// TestTheDevOriginOpensTheUpgradeOnlyUnderDevToken. The Vite dev server proxies
-// the upgrade, so the browser's `Origin` is the dev server's — which is the one
-// foreign origin `--dev-token` admits, and the reason the development path
-// works at all now that a cookie needs an `Origin` on this surface.
-func TestTheDevOriginOpensTheUpgradeOnlyUnderDevToken(t *testing.T) {
-	_, prod := newTestServer(t, false)
-	refused := upgradeRequest(t, prod, "", "http://localhost:5173", withCookieOnly(launchSession(t, prod)))
-	if refused.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("production status %d, want 401", refused.StatusCode)
-	}
-
-	_, dev := newTestServer(t, true)
-	acceptsSession(t, dev, browserHeader(launchSession(t, dev), "http://localhost:5173"))
-}
-
-// TestAFetchShapedRequestIsJudgedByFetchMetadata pins which signal is read on
-// which surface, so that a change to one cannot silently become a change to the
-// other.
-func TestAFetchShapedRequestIsJudgedByFetchMetadata(t *testing.T) {
-	_, ts, project := filesServer(t)
-	writeProjectFile(t, project, "jpack.json", "{}")
-	cookie := launchSession(t, ts)
-
-	// Fetch metadata wins where it is present, whatever `Origin` says: a
-	// sibling page that sends a matching-looking Origin still says `same-site`.
-	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files", nil)
-	req.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
-	req.Header.Set(fetchSiteHeader, "same-site")
-	req.Header.Set("Origin", ts.URL)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status %d, want 401 — Sec-Fetch-Site is the claim on this surface", resp.StatusCode)
 	}
 }

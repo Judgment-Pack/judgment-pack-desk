@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -41,7 +42,7 @@ func main() {
 
 func run() error {
 	var (
-		port     = flag.Int("port", 8791, "loopback TCP port to listen on")
+		port     = flag.Int("port", 8791, "loopback TCP port to listen on; 0 lets the kernel choose one, and the printed URL names it")
 		jpackBin = flag.String("jpack", "jpack", "path to the judgment-pack runtime binary")
 		devToken = flag.String("dev-token", "", "fixed launch secret for local development; also permits the Vite dev-server origin. Leave empty in normal use so a random secret is generated.")
 		open     = flag.Bool("print-url", true, "print the launch URL at startup")
@@ -67,6 +68,19 @@ func run() error {
 	}
 	absProject := project.Dir()
 
+	// **The listener first, and the port read off it.** The handoff cookie's
+	// name carries the port, so the chassis has to be told which port it is
+	// actually on — and with `--port 0` the flag does not know: the kernel
+	// picks one when the socket binds. Binding here and serving this listener
+	// is what makes `--port 0` a working desk rather than one whose cookie is
+	// named for a port nothing is on.
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *port))
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+	bound := listener.Addr().(*net.TCPAddr).Port
+
 	static, err := fs.Sub(embeddedWeb, "web/dist")
 	if err != nil {
 		return fmt.Errorf("locating embedded assets: %w", err)
@@ -89,7 +103,7 @@ func run() error {
 		// The port this listener binds, handed over because the session
 		// cookie's name carries it: a cookie's origin has no port, so two
 		// desks on one host would otherwise share one session.
-		Port:    *port,
+		Port:    bound,
 		Token:   token,
 		Static:  static,
 		DevMode: *devToken != "",
@@ -103,7 +117,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	addr := fmt.Sprintf("127.0.0.1:%d", *port)
+	addr := fmt.Sprintf("127.0.0.1:%d", bound)
 	httpSrv := &http.Server{
 		Addr:    addr,
 		Handler: srv,
@@ -128,13 +142,14 @@ func run() error {
 	}()
 
 	if *open {
-		// **The launch path, not the page.** Opening this URL exchanges the
-		// secret for the `jpack-desk-session` cookie and redirects to `/`, so
-		// what ends up in the address bar is `/` and the secret is in no
-		// history entry, no `Referer` and no later request.
+		// **The launch path, not the page.** Opening this URL trades the secret
+		// for a sixty-second, single-use handoff cookie and redirects to `/`,
+		// so what ends up in the address bar is `/` and the secret is in no
+		// later request. The page then exchanges that handoff for a session id
+		// it holds itself. See `internal/desk/session.go`.
 		fmt.Printf("judgment-pack desk\n  project: %s\n  runtime: %s\n  open:    http://%s/launch?secret=%s\n", absProject, *jpackBin, addr, token)
 	}
-	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := httpSrv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil

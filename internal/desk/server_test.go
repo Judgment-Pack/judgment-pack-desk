@@ -3,6 +3,7 @@ package desk
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -22,7 +24,8 @@ import (
 // testToken is the **launch secret** every server in this package is built
 // with. It is never on a request query: a script presents it as
 // `Authorization: Bearer` (`bearer`), and a browser trades it once at
-// `GET /launch` for the `jpack-desk-session` cookie (`launchSession`).
+// `GET /launch` for a one-shot handoff, which the page spends at
+// `POST /api/session` for a bearer id (`beginSession`).
 const testToken = "0123456789abcdef0123456789abcdef"
 
 // testPort is the port a `Config` carries where the test never starts a server,
@@ -56,18 +59,25 @@ func startDesk(t *testing.T, cfg Config) (*Server, *httptest.Server) {
 }
 
 // browserHeader is what a browser puts on a same-origin WebSocket upgrade.
-// browserHeader is what a browser puts on a same-origin WebSocket upgrade —
-// **the cookie and `Origin`, and no fetch metadata at all**.
+// upgradeOffer is the subprotocol list a page's WebSocket offers: the plain
+// protocol, and the session id beside it. A browser's `WebSocket` constructor
+// has no header parameter and the id must not go on the URL, so this is the one
+// place the page can put it.
+func upgradeOffer(id string) []string {
+	return []string{wsProtocol, wsSessionPrefix + id}
+}
+
+// browserUpgrade is what a page's handshake carries: that offer, and `Origin`.
 //
-// That is measured rather than assumed: Chrome 130 sends no `Sec-Fetch-*`
-// header of any kind on a handshake, which is why `sameOriginClaim` reads
-// `Origin` on this surface. A helper that added `Sec-Fetch-Site` here would be
-// modelling a browser that does not exist and would have hidden the fact that
-// the upgrade was refused.
-func browserHeader(cookie *http.Cookie, origin string) http.Header {
+// No fetch metadata, which is measured rather than assumed — Chrome 130 sends
+// no `Sec-Fetch-*` header of any kind on a handshake. Nothing in the gate reads
+// one, so this models the wire rather than something the gate depends on.
+func browserUpgrade(id, origin string) http.Header {
 	header := http.Header{}
-	header.Set("Cookie", cookie.Name+"="+cookie.Value)
-	header.Set("Origin", origin)
+	header.Set(wsProtocolHeader, strings.Join(upgradeOffer(id), ", "))
+	if origin != "" {
+		header.Set("Origin", origin)
+	}
 	return header
 }
 
@@ -79,7 +89,12 @@ func browserHeader(cookie *http.Cookie, origin string) http.Header {
 func runtimeAvailable() bool {
 	bin := jpackBinary()
 	if !filepath.IsAbs(bin) {
-		return false
+		// A bare name is resolved on PATH, exactly as the chassis resolves it.
+		resolved, err := exec.LookPath(bin)
+		if err != nil {
+			return false
+		}
+		bin = resolved
 	}
 	_, err := os.Stat(bin)
 	return err == nil
@@ -95,11 +110,18 @@ func runtimeAvailable() bool {
 // by the dial itself and again by name; and where a binary is available the
 // socket is driven through `initialize`, which is the difference between "the
 // upgrade was accepted" and "the relay behind it works".
-func acceptsSession(t *testing.T, ts *httptest.Server, header http.Header) {
+func acceptsSession(t *testing.T, ts *httptest.Server, id, origin string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	c, resp, err := websocket.Dial(ctx, wsURL(ts)+"/ws", &websocket.DialOptions{HTTPHeader: header})
+	header := http.Header{}
+	if origin != "" {
+		header.Set("Origin", origin)
+	}
+	c, resp, err := websocket.Dial(ctx, wsURL(ts)+"/ws", &websocket.DialOptions{
+		HTTPHeader:   header,
+		Subprotocols: upgradeOffer(id),
+	})
 	if err != nil {
 		status := 0
 		if resp != nil {
@@ -110,6 +132,15 @@ func acceptsSession(t *testing.T, ts *httptest.Server, header http.Header) {
 	defer c.Close(websocket.StatusNormalClosure, "")
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusSwitchingProtocols)
+	}
+	// **`jpack-desk` is selected and the id is not echoed.** A server answering
+	// with the session offer would put the credential in a response header,
+	// which is a header proxies and logs keep.
+	if got := c.Subprotocol(); got != wsProtocol {
+		t.Fatalf("selected subprotocol %q, want %q", got, wsProtocol)
+	}
+	if got := resp.Header.Get(wsProtocolHeader); strings.Contains(got, wsSessionPrefix) {
+		t.Fatalf("the answer echoed the session offer: %q", got)
 	}
 	if !runtimeAvailable() {
 		t.Log("no runtime binary: the upgrade was asserted, the MCP handshake was not")
@@ -135,26 +166,91 @@ func bearer(r *http.Request) {
 	r.Header.Set("Authorization", "Bearer "+testToken)
 }
 
-// launchSession performs the launch exchange against a running test server and
-// returns the session cookie it set.
+// launchHandoff performs the launch and hands back the **one-shot handoff
+// cookie** it set. That cookie is not a session: it is worth exactly one call
+// to `POST /api/session`, for sixty seconds.
 //
 // **The redirect is not followed.** `http.Client` follows a 303 by default, and
 // following it here would hit the static handler and tell us nothing about the
-// exchange; what this wants is the `Set-Cookie` on the exchange's own response.
-func launchSession(t *testing.T, ts *httptest.Server) *http.Cookie {
+// launch; what this wants is the `Set-Cookie` on the launch's own response.
+func launchHandoff(t *testing.T, ts *httptest.Server) *http.Cookie {
 	t.Helper()
 	resp := launchResponse(t, ts, testToken)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("launch status = %d, want %d", resp.StatusCode, http.StatusSeeOther)
 	}
-	// Whatever the exchange named it. The name carries the port, so a test that
-	// spelled it out would be a test that knows which port `httptest` picked.
-	if cookies := resp.Cookies(); len(cookies) == 1 {
-		return cookies[0]
+	cookies := resp.Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("the launch set %v, want exactly one handoff cookie", cookies)
 	}
-	t.Fatalf("the launch exchange set %v, want exactly one session cookie", resp.Cookies())
-	return nil
+	return cookies[0]
+}
+
+// beginSession is **the page's bootstrap, end to end**: the launch, and the one
+// exchange the page makes on load. What comes back is the session id the page
+// would hold in `sessionStorage` and put on every later request itself.
+//
+// Every authorized test in this package goes through it, which is what makes
+// "nothing ambient authorizes anything" a property of the suite rather than of
+// one test: no cookie is left over for a test to lean on.
+func beginSession(t *testing.T, ts *httptest.Server) string {
+	t.Helper()
+	return exchange(t, ts, launchHandoff(t, ts))
+}
+
+// exchange is the one `POST /api/session` a page makes, with a handoff it holds.
+func exchange(t *testing.T, ts *httptest.Server, handoff *http.Cookie) string {
+	t.Helper()
+	status, body := exchangeAttempt(t, ts, func(r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: handoff.Name, Value: handoff.Value})
+		r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+		r.Header.Set("Origin", ts.URL)
+	})
+	if status != http.StatusOK {
+		t.Fatalf("exchange status %d: %v", status, body)
+	}
+	id, _ := body["id"].(string)
+	if id == "" {
+		t.Fatalf("the exchange answered no session id: %v", body)
+	}
+	return id
+}
+
+// exchangeAttempt is one `POST /api/session`, however the caller shapes it.
+func exchangeAttempt(
+	t *testing.T, ts *httptest.Server, decorate func(*http.Request),
+) (int, map[string]any) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/session", nil)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	if decorate != nil {
+		decorate(req)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+	defer resp.Body.Close()
+	var body map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	// **No live cookie, ever, on any answer.** The session is a bearer the page
+	// holds; a `Set-Cookie` here would be the ambient credential coming back.
+	for _, cookie := range resp.Cookies() {
+		if cookie.Value != "" && cookie.MaxAge >= 0 {
+			t.Fatalf("the exchange set a live cookie: %v", cookie)
+		}
+	}
+	return resp.StatusCode, body
+}
+
+// pageBearer puts a session id on a request the way the page does.
+func pageBearer(id string) func(*http.Request) {
+	return func(r *http.Request) {
+		r.Header.Set("Authorization", "Bearer "+id)
+	}
 }
 
 // launchResponse is one launch exchange, with redirects left unfollowed.
@@ -168,16 +264,6 @@ func launchResponse(t *testing.T, ts *httptest.Server, secret string) *http.Resp
 		t.Fatalf("launch: %v", err)
 	}
 	return resp
-}
-
-// withSession attaches a session cookie the way a browser does **on a `fetch`**:
-// the cookie, and the fetch metadata the browser writes beside it. A WebSocket
-// upgrade carries `Origin` and no fetch metadata instead — see `browserHeader`.
-func withSession(cookie *http.Cookie) func(*http.Request) {
-	return func(r *http.Request) {
-		r.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
-		sameOrigin(r)
-	}
 }
 
 // withCookieOnly attaches the cookie and **nothing else** — the shape of a
@@ -284,72 +370,100 @@ func TestWSRefusesAWrongBearerSecret(t *testing.T) {
 	}
 }
 
-// TestWSAcceptsTheSessionCookie is the browser's path: the launch exchange, and
-// then an upgrade that carries nothing but the cookie.
-func TestWSAcceptsTheSessionCookie(t *testing.T) {
+// TestWSAcceptsTheOfferedSessionID is the page's path: bootstrap, then an
+// upgrade whose subprotocol offer carries the id.
+func TestWSAcceptsTheOfferedSessionID(t *testing.T) {
 	_, ts := newTestServer(t, false)
-	acceptsSession(t, ts, browserHeader(launchSession(t, ts), ts.URL))
+	acceptsSession(t, ts, beginSession(t, ts), ts.URL)
 }
 
-// TestWSRefusesAForgedSessionCookie: an id this desk never minted is not a
-// session, however well formed it looks.
-func TestWSRefusesAForgedSessionCookie(t *testing.T) {
-	s, ts := newTestServer(t, false)
-	real := launchSession(t, ts)
+// TestWSRefusesAForgedSessionID: an id this desk never minted is not a session,
+// however well formed it looks — offered on the subprotocol or presented as a
+// bearer.
+func TestWSRefusesAForgedSessionID(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	real := beginSession(t, ts)
+	// **Not the launch secret**: as a *bearer* it is a real credential — it is
+	// how a script authorizes — and its own leg is below. As a subprotocol
+	// offer it is not, and that is what the last row here pins.
 	for _, id := range []string{
-		strings.Repeat("a", len(real.Value)),
-		flipLast(real.Value),
-		testToken,
+		strings.Repeat("a", len(real)),
+		flipLast(real),
 		"",
 	} {
-		resp := upgradeRequest(t, ts, "", ts.URL, func(r *http.Request) {
-			r.AddCookie(&http.Cookie{Name: s.cookieName, Value: id})
-			sameOrigin(r)
-		})
-		if resp.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("a forged id %q: status = %d, want %d", id, resp.StatusCode, http.StatusUnauthorized)
+		for _, how := range []struct {
+			name     string
+			decorate func(*http.Request)
+		}{
+			{"offered", func(r *http.Request) {
+				r.Header.Set(wsProtocolHeader, strings.Join(upgradeOffer(id), ", "))
+			}},
+			{"as a bearer", pageBearer(id)},
+		} {
+			resp := upgradeRequest(t, ts, "", ts.URL, how.decorate)
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("a forged id %q %s: status = %d, want %d",
+					id, how.name, resp.StatusCode, http.StatusUnauthorized)
+			}
 		}
+	}
+
+	// The launch secret is a bearer and **not** a session offer: the
+	// subprotocol carries ids the store minted, and nothing else.
+	offered := upgradeRequest(t, ts, "", ts.URL, func(r *http.Request) {
+		r.Header.Set(wsProtocolHeader, strings.Join(upgradeOffer(testToken), ", "))
+	})
+	if offered.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("the launch secret offered as a subprotocol: status %d, want 401", offered.StatusCode)
 	}
 }
 
-// TestWSRefusesACookieFromAForeignOrigin is the CSRF case the Origin guard now
-// carries alone: the cookie is real, and the page sending it is not this desk's.
-func TestWSRefusesACookieFromAForeignOrigin(t *testing.T) {
+// TestWSRefusesASessionFromAForeignOrigin: the id is real, and the page sending
+// it is not this desk's. The Origin guard is what refuses it, and it is defence
+// in depth — a foreign page has no way to obtain the id in the first place,
+// because nothing hands it out ambiently.
+func TestWSRefusesASessionFromAForeignOrigin(t *testing.T) {
 	_, ts := newTestServer(t, false)
-	cookie := launchSession(t, ts)
-	resp := upgradeRequest(t, ts, "", "http://evil.example", withSession(cookie))
+	id := beginSession(t, ts)
+	resp := upgradeRequest(t, ts, "", "http://evil.example", func(r *http.Request) {
+		r.Header.Set(wsProtocolHeader, strings.Join(upgradeOffer(id), ", "))
+	})
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
 	}
 }
 
-// TestWSRefusesACookieWithNoOriginAtAll.
-//
-// **This is a refusal now, and it used to be an acceptance.** A browser always
-// sends `Origin` on a WebSocket upgrade — the protocol requires it — so a
-// cookie arriving without one is not a browser: it is a replay by something
-// that obtained the cookie, and cookies reach every port on this host. A script
-// that is entitled to open the relay presents the launch secret instead, which
-// `TestWSAllowsAbsentOrigin` covers.
-func TestWSRefusesACookieWithNoOriginAtAll(t *testing.T) {
-	_, ts := newTestServer(t, false)
-	cookie := launchSession(t, ts)
-	resp := upgradeRequest(t, ts, "", "", withCookieOnly(cookie))
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
-	}
-	// And with fetch metadata that a real upgrade never carries: still no
-	// Origin, so still nothing that says which page this is.
-	claimed := upgradeRequest(t, ts, "", "", func(r *http.Request) {
-		r.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
-		r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
-	})
-	if claimed.StatusCode == http.StatusUnauthorized {
-		// A forged `Sec-Fetch-Site` is accepted at this layer by design: it is
-		// a forbidden header name, so only a non-browser can send it, and a
-		// non-browser is judged by the Bearer header. What must not happen is
-		// that this desk depends on a header a real upgrade never carries.
-		t.Log("a forged Sec-Fetch-Site on an upgrade: refused")
+// TestNoCookieOpensTheRelay. **Every cookie this desk has ever set**, on an
+// upgrade, with and without an Origin and with and without fetch metadata: none
+// of them is an authorization. The handoff cookie opens `POST /api/session` and
+// nothing else.
+func TestNoCookieOpensTheRelay(t *testing.T) {
+	s, ts := newTestServer(t, false)
+	handoff := launchHandoff(t, ts)
+	id := beginSession(t, ts)
+
+	for _, cookie := range []*http.Cookie{
+		{Name: handoff.Name, Value: handoff.Value},
+		// The shape the previous design used, in case anything ever sets one
+		// again: an id that really is live, in a cookie.
+		{Name: "jpack-desk-session-" + fmt.Sprint(s.cfg.Port), Value: id},
+		{Name: s.launchCookie, Value: id},
+	} {
+		for _, extra := range []func(*http.Request){
+			nil,
+			sameOrigin,
+			func(r *http.Request) { r.Header.Set(fetchSiteHeader, "same-site") },
+		} {
+			resp := upgradeRequest(t, ts, "", ts.URL, func(r *http.Request) {
+				r.AddCookie(cookie)
+				if extra != nil {
+					extra(r)
+				}
+			})
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("cookie %s opened the relay: status %d", cookie.Name, resp.StatusCode)
+			}
+		}
 	}
 }
 

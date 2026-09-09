@@ -97,7 +97,20 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	// Origin was already checked against the served origin (and, in dev mode,
 	// the Vite origin) in handleWS; the library's own check would reject the
 	// dev proxy and cannot see that decision.
-	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	// **`jpack-desk` is selected, and the session offer never is.** The page
+	// offers two subprotocols — `jpack-desk`, and `jpack-desk-session.<id>`
+	// carrying the credential — because a browser's `WebSocket` constructor has
+	// no header parameter and the id must not go on the URL. Naming only the
+	// plain one here means the id is read off the offer and **not echoed** in
+	// the response, so it never appears in a header a proxy or a log would keep.
+	//
+	// `InsecureSkipVerify` stays: this desk does its own Origin check, in
+	// `handleWS`, which is stricter than the library's and knows about
+	// `--dev-token`.
+	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		InsecureSkipVerify: true,
+		Subprotocols:       []string{wsProtocol},
+	})
 	if err != nil {
 		s.log.Printf("desk: websocket upgrade failed: %v", err)
 		return
