@@ -1224,19 +1224,18 @@ func TestSignOutClosesTheSessionsSockets(t *testing.T) {
 		t.Fatalf("sign-out status %d", resp.StatusCode)
 	}
 
-	// The signed-out socket is closed, and the next thing sent on it fails.
+	// **The close status, not merely an error.** The first version of this
+	// looped until any read failed, and a healthy socket fails a read the
+	// moment its deadline expires — so it passed whether or not the socket had
+	// been closed. What discriminates is *why* it ended: sign-out closes with
+	// `StatusPolicyViolation` and a reason, and a socket nobody closed produces
+	// a context error with no close status at all.
 	deadline, stop := context.WithTimeout(ctx, 10*time.Second)
 	defer stop()
-	for {
-		if err := ending.Write(deadline, websocket.MessageText, []byte(`{"jsonrpc":"2.0","id":9,"method":"tools/list"}`)); err != nil {
-			break
-		}
-		if _, _, err := ending.Read(deadline); err != nil {
-			break
-		}
-		if deadline.Err() != nil {
-			t.Fatal("the signed-out session's socket is still serving")
-		}
+	_, _, err = ending.Read(deadline)
+	if got := websocket.CloseStatus(err); got != websocket.StatusPolicyViolation {
+		t.Fatalf("the signed-out socket ended with close status %v (%v), want %v",
+			got, err, websocket.StatusPolicyViolation)
 	}
 
 	// And the other session's socket is untouched.
@@ -1267,6 +1266,64 @@ func TestTrafficRefreshesRecency(t *testing.T) {
 	}
 	if _, ok := store.lookup(busy); !ok {
 		t.Fatal("a session with traffic on it was evicted: the relay's touch is not reaching the store")
+	}
+}
+
+// TestAnOpenSocketKeepsItsSessionAlive is the relay's *call site*, which the
+// store-level test cannot reach: `TestTrafficRefreshesRecency` calls `touch`
+// directly, so a relay that stopped calling it would leave that test green.
+//
+// Here a socket is opened, sixty-five sessions are minted underneath it, and
+// frames keep arriving on it throughout. Under a least-recently-used bound the
+// busiest tab would otherwise be the coldest thing in the store and the first
+// to go — the desk somebody is using being the one that stops working.
+func TestAnOpenSocketKeepsItsSessionAlive(t *testing.T) {
+	if !runtimeAvailable() {
+		t.Skip("no runtime binary: this drives a real relay socket")
+	}
+	s, ts := newTestServer(t, false)
+	busy := beginSession(t, ts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws", &websocket.DialOptions{
+		HTTPHeader:   http.Header{"Origin": []string{ts.URL}},
+		Subprotocols: upgradeOffer(busy),
+	})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close(websocket.StatusNormalClosure, "")
+	c.SetReadLimit(readLimit)
+	driven := &rpcSession{t: t, ctx: ctx, ws: c}
+	driven.initialize()
+
+	// **The store filled to just under the bound**, so that the next creates are
+	// the ones that evict. `busy` was minted first and is the coldest thing in
+	// it — under oldest-first it goes now, and under LRU it goes unless
+	// something says it is in use.
+	for range maxSessions - 4 {
+		if _, err := s.sessions.create("local user", nil); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+	}
+
+	// **One second, and one call.** The relay refreshes at most once a second,
+	// so a call inside the same second as `initialize` would touch nothing and
+	// this test would pass on the initialize alone. The sleep is what makes the
+	// call below the thing under test.
+	time.Sleep(1100 * time.Millisecond)
+	driven.call(100, "list_packs", map[string]any{})
+
+	// And now past the bound, several times over.
+	for range 8 {
+		if _, err := s.sessions.create("local user", nil); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+	}
+
+	if _, ok := s.sessions.lookup(busy); !ok {
+		t.Fatal("a session with a socket driving traffic on it was evicted")
 	}
 }
 

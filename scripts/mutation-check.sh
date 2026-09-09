@@ -1741,7 +1741,9 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		}
 	}
 	return false
-	if false {'
+	if strings.Contains(strings.ToLower(raw), "secret") {
+		return true
+	}'
   # The stores.
   mutate go "the session store is keyed by the id itself" "$SN" \
     '	mac := hmac.New(sha256.New, st.key)
