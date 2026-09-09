@@ -5871,17 +5871,20 @@ export function assistantTransport(): Transport {
         </p>
       </header>'
 
-  # **What is shown has to be what is in the file.** `JSON.stringify` of the
-  # decode turns `1e2` into `100` and rounds an integer past a float64, so a
-  # disclosure that re-serialised would show a reader a file that is not on disk.
-  mutate web "the content disclosure re-serialises instead of quoting the file" "$SCD" \
-    '  const shown =
-    bytes ?? (content.value === undefined ? undefined : JSON.stringify(content.value, null, 2))' \
-    '  const shown =
-    content.value === undefined ? undefined : JSON.stringify(content.value, null, 2)'
+  # **Retired, with its reason: the code it broke left the card.** It was "the
+  # content disclosure re-serialises instead of quoting the file", against
+  # `Content` in `SourceCard.tsx`. The disclosure is gone from the main column
+  # — the bytes are in the right pane — and the claim it held is the same one
+  # word for word, so it is one row further down against `ConfigPane`: "the
+  # pane shows a re-serialisation instead of the member's bytes". Retired here
+  # rather than deleted, because a row that vanishes reads as a claim somebody
+  # decided to stop making.
 
   # **A refused file's bytes are the thing the refusal is about.** Rendering
-  # them puts the credential-shaped member on the page reporting the refusal.
+  # them puts the credential-shaped member into the DOM of the surface that
+  # reported the refusal. The rule has **one** spelling — `showsContent` is
+  # exported from the card and imported by the pane — so this one mutation is
+  # felt everywhere the bytes can be shown.
   mutate web "a refused file's bytes are rendered anyway" "$SCD" \
     "  return status.state !== 'refused' && status.state !== 'unread'" \
     '  return true'
@@ -6571,6 +6574,66 @@ export function assistantTransport(): Transport {
 
 ' \
     ''
+
+  # ---- Chunk 6i: Admin as an overview, and the file in the right pane -----
+
+  ADMV=web/src/routes/AdminView.tsx
+  CFP=web/src/admin/ConfigPane.tsx
+  SSUM=web/src/admin/sectionSummary.ts
+  ISLOT=web/src/shell/InspectorSlot.tsx
+
+  # **The disclosure back in the main column.** The whole of this chunk is that
+  # the bytes are context and belong beside the form rather than under it: a
+  # `details` on the page is the stack it took apart, one section at a time,
+  # and it is invisible to every other test because the pane goes on being
+  # published correctly beside it.
+  mutate web "a Content disclosure back in Admin's main column" "$ADMV" \
+    '      {pane}
+      <header className="detail-head">' \
+    '      {pane}
+      <details>
+        <summary>Content</summary>
+        <ConfigPane {...paneFor(effective, open)} />
+      </details>
+      <header className="detail-head">'
+
+  # **The pane re-serialising the decode.** `idBase` gains its separator at
+  # decode, `1e2` is not `100`, and an integer past a float64 is not what it
+  # round-trips to — so a pane that stringified the value would be showing a
+  # reader a file that is not on disk, beside a Location row saying where that
+  # file is.
+  mutate web "the pane shows a re-serialisation instead of the member's bytes" "$CFP" \
+    '      ? text
+      : memberBytes(text, member)' \
+    '      ? text
+      : JSON.stringify((JSON.parse(text) as Record<string, unknown>)[member], null, 2)'
+
+  # **The safety rule, one pane over.** The decoder refuses a whole file for one
+  # credential-shaped member, and the point of refusing it is that the desk will
+  # not act on it; quoting it in the Inspector puts the member the refusal is
+  # about into the DOM of the surface that reported it. This is why
+  # `showsContent` is exported rather than spelled again here.
+  mutate web "the pane quotes a file the decoder refused" "$CFP" \
+    '  const quotable = showsContent(status) && text !== undefined' \
+    '  const quotable = text !== undefined'
+
+  # **A summary the decoder did not say.** The overview is a list of what each
+  # setting currently is, and a row that fell back to a name this page composed
+  # — the project it happens to be open on — is a value nobody wrote that a
+  # reader cannot tell from one that is in the file.
+  mutate web "an Admin row composes a summary the decoder did not say" "$SSUM" \
+    "  organization: (config) => config.organization.name ?? 'none'," \
+    "  organization: (config) => config.organization.name ?? 'this project',"
+
+  # **The claim outliving the route.** Admin publishes the file into the
+  # Inspector for as long as it is mounted; a claim that is never released
+  # leaves the pane suppressing its own empty state for every route after it,
+  # and the panel Admin published standing over a page it is not about.
+  mutate web "the Inspector claim is never released, so Admin's pane outlives it" "$ISLOT" \
+    '    if (!publishing) return
+    return claim()' \
+    '    if (!publishing) return
+    claim()'
 fi
 
 restore
