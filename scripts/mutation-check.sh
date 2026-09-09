@@ -895,9 +895,14 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if false {'
   # One JSON value, and nothing behind it: a body two readers disagree about is
   # the class this desk refuses everywhere else.
+  # The needle carries the line above it: the same check guards the *read* path
+  # further down the file, and a needle matching both mutates whichever comes
+  # first rather than the one this row names.
   mutate go "a configuration write accepts a second value behind the first" "$A" \
-    '	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {' \
-    '	if false {'
+    '	// disagree about, which is the class this desk refuses everywhere else.
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {' \
+    '	// disagree about, which is the class this desk refuses everywhere else.
+	if false {'
   # No override on this route: a file that moved under the writer is refused,
   # because this is the file that names where a credential goes.
   #
@@ -1536,9 +1541,22 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "SameSite is weakened from Strict to Lax on the handoff" "$SN" \
     '		SameSite: http.SameSiteStrictMode,' \
     '		SameSite: http.SameSiteLaxMode,'
+  # Again the needle names its site: the exchange computes the same value when
+  # it expires the pair, and a needle matching both mutates the wrong one.
   mutate go "Secure is set on a plain-http launch" "$SN" \
-    '	secure := requestScheme(r) == "https"' \
-    '	secure := true'
+    '	secure := requestScheme(r) == "https"
+	http.SetCookie(w, newLaunchCookie(' \
+    '	secure := true
+	http.SetCookie(w, newLaunchCookie('
+  # And the sibling: a browser refuses a `Secure` cookie from a plain-http
+  # origin, so expiring the pair with `Secure` set over http clears nothing —
+  # the marker stays, and the page tries to spend a handoff that is gone on
+  # every load.
+  mutate go "the spent handoff is expired with Secure over plain http" "$SN" \
+    '	secure := requestScheme(r) == "https"
+	http.SetCookie(w, expireLaunchCookie(' \
+    '	secure := true
+	http.SetCookie(w, expireLaunchCookie('
   # The readable marker is what tells a page already holding an id that there is
   # a handoff to spend. Without it a relaunch leaves one live for sixty seconds.
   mutate go "a relaunch sets no marker, so a page holding an id leaves the handoff live" "$SN" \
@@ -1698,52 +1716,61 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # this suite sends, so a row that removed only the route reported NOT
   # DISCRIMINATING for a guard that is real and doubled. This row removes both,
   # which is the property: *something* refuses them.
-  # **Both layers, which is what the name says.** The router owns `/launch/…`
-  # and the static handler owns the spellings it does not see; either alone
-  # refuses every shape the suite sends, so a row that removed one measured a
-  # guard that is real and doubled. This removes the static check *and* rewrites
-  # the path so the router's route cannot match either.
-  mutate go "nothing refuses a launch-shaped URL, so the page is served" "$S" \
-    '	if looksLikeALaunch(r) {
-		refuseLaunchShape(w)
-		return
-	}' \
-    '	_ = looksLikeALaunch
-	_ = refuseLaunchShape'
-  # **Retired, and named here rather than deleted silently.** A row that broke
-  # only the router half reported NOT DISCRIMINATING every time, because the
-  # static handler refuses every shape this suite sends on its own — the two
-  # layers overlap completely for these inputs. A row that can never fail is not
-  # evidence, and the row above already asserts the property: *something*
-  # refuses them. `TestNothingThatLooksLikeALaunchIsAnsweredWithThePage` pins
-  # the behaviour over twelve spellings either way.
-
-  mutate go "the static handler answers a launch-shaped URL with the page" "$S" \
+  # **One row per property, because there were two rows for one.** Round 4:
+  # this was a pair whose replacements did the same thing — one wrote
+  # `_ = looksLikeALaunch`, the other wrote nothing, and both simply removed the
+  # static handler's call. Two rows measuring one property read as two guards
+  # held. There are three properties here and they are now three rows:
+  #
+  #   * the static handler consults the guard at all (this row). The router owns
+  #     `/launch` and `/launch/…` exactly, so what this exposes is every
+  #     spelling the router does not see: `/LAUNCH/anything`, `/launch%2Fx`, and
+  #     a `secret` on any other path's query.
+  #   * the path arm of the guard, below.
+  #   * the query arm of the guard, below that.
+  mutate go "the static handler never consults the launch guard" "$S" \
     '	if looksLikeALaunch(r) {
 		refuseLaunchShape(w)
 		return
 	}' \
     ''
+  # Caught by the spellings that carry no query at all — `/Launch`,
+  # `/LAUNCH/anything`, `/launch%2Fanything` — which the query arm below cannot
+  # see and the router's exact routes do not match.
+  mutate go "the guard's path arm is gone, so /LAUNCH/x is served" "$SN" \
+    '	if clean == "launch" || strings.HasPrefix(clean, "launch/") {
+		return true
+	}' \
+    '	_ = clean'
   mutate go "a secret on any query is answered with the page" "$SN" \
     '	return querySmellsOfASecret(r.URL.RawQuery)' \
     '	return false'
-  # **Read raw, not parsed.** `url.Query()` drops a pair it cannot decode and
-  # does not split on `;`, so `?secret=<real>%ZZ` and `?x=1;secret=<real>` were
-  # answered with the page.
-  mutate go "the secret rule parses the query instead of reading it raw" "$SN" \
-    '	if strings.Contains(strings.ToLower(raw), "secret") {
-		return true
-	}' \
-    '	parsed, _ := url.ParseQuery(raw)
-	for name := range parsed {
-		if strings.EqualFold(name, "secret") {
-			return true
-		}
-	}
-	return false
-	if strings.Contains(strings.ToLower(raw), "secret") {
-		return true
-	}'
+  # **All-or-nothing decoding was the hole**, and it is two properties, so it is
+  # two rows. `url.QueryUnescape` returns nothing at all when one escape
+  # anywhere is invalid, so `?%73ecret=<real>%ZZ` decoded to nothing and was
+  # answered with the page. The first row restores that shape — give up on the
+  # whole string at the first bad escape — and is caught only by the combined
+  # cases. The second stops decoding altogether and is caught by the plain
+  # encoded name.
+  mutate go "one bad escape makes the secret rule give up on the whole query" "$SN" \
+    '			if hi, ok := hexDigit(s[i+1]); ok {
+				if lo, ok := hexDigit(s[i+2]); ok {
+					out.WriteByte(hi<<4 | lo)
+					i += 2
+					continue
+				}
+			}' \
+    '			hi, hiOK := hexDigit(s[i+1])
+			lo, loOK := hexDigit(s[i+2])
+			if !hiOK || !loOK {
+				return ""
+			}
+			out.WriteByte(hi<<4 | lo)
+			i += 2
+			continue'
+  mutate go "the query is never decoded, so an encoded name is not seen" "$SN" \
+    '					out.WriteByte(hi<<4 | lo)' \
+    '					out.WriteByte(s[i])'
   # The stores.
   mutate go "the session store is keyed by the id itself" "$SN" \
     '	mac := hmac.New(sha256.New, st.key)
@@ -1765,10 +1792,18 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   #   JPACK_BIN=/path/to/jpack scripts/mutation-check.sh go "an open socket"
   #
   # Traffic is use: without the touch, the busiest tab is the coldest thing in
-  # the store and the first to be evicted.
-  mutate go "an open socket does not refresh its session" internal/desk/relay.go \
-    '				s.sessions.touch(handle)' \
-    ''
+  # the store and the first to be evicted. **Both directions, and a row each.**
+  # Round 4: only the inbound half was touched, so a tab watching one long
+  # streamed answer — which sends nothing for a minute at a time — was still the
+  # coldest thing in the store while its socket was the busiest.
+  mutate go "inbound frames do not refresh the session" internal/desk/relay.go \
+    '			// stopped working. Each frame refreshes it, at most once a second.
+			c.touch(s)' \
+    '			// stopped working. Each frame refreshes it, at most once a second.'
+  mutate go "outbound frames do not refresh the session" internal/desk/relay.go \
+    '				// conversation.
+				c.touch(s)' \
+    '				// conversation.'
   # A session that ends must take its sockets with it, or it has ended
   # everywhere except where it was being used.
   mutate go "sign-out leaves the sockets of that session open" "$SN" \
@@ -6996,8 +7031,14 @@ export function assistantTransport(): Transport {
   # One handoff, one exchange: the handoff is single use, so a page that asked
   # twice would make one request work and every other fail.
   mutate web "the bootstrap is not memoised, so each caller spends a handoff" "$SS" \
-    '  inFlight ??= beginSession()' \
-    '  inFlight = beginSession()'
+    '  if (inFlight === null) {
+    inFlight = beginSession().finally(() => {
+      inFlight = null
+    })
+  }' \
+    '  inFlight = beginSession().finally(() => {
+    inFlight = null
+  })'
 
   mutate web "the Inspector claim is never released, so Admin's pane outlives it" "$ISLOT" \
     '    if (!publishing) return
