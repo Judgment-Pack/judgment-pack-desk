@@ -1,4 +1,4 @@
-import { NoSession, forgetSession, sessionBearer } from '../mcp/session'
+import { NoSession, discardBody, forgetSession, sessionBearer } from '../mcp/session'
 
 /**
  * The chassis file API, as this client calls it (issue #14, phase 1).
@@ -222,6 +222,10 @@ export async function deskFetch(input: string, init: RequestInit = {}): Promise<
   // chassis restarted, or something else spent the handoff this page's exchange
   // was for. Only the printed URL mints another, so what this page can usefully
   // do is stop holding a dead id and say what a person can do about it.
+  //
+  // The body is let go of first: this path reads a status and nothing else, and
+  // a stream nobody consumes leaves the request in flight. See `discardBody`.
+  await discardBody(answered)
   forgetSession()
   throw new NoSession()
 }

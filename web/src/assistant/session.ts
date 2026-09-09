@@ -22,7 +22,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { chassisUrl } from '../files/client'
 import { DeskWebSocketTransport } from '../mcp/transport'
 import { socketProtocols, socketURL } from '../mcp/McpProvider'
-import { NoSession, forgetSession, sessionBearer } from '../mcp/session'
+import { NoSession, discardBody, forgetSession, sessionBearer } from '../mcp/session'
 import { allowedTools, gateTransport, type GuardrailNotice } from './toolGate'
 import type { EndpointKind } from '../config/deskConfig'
 import type {
@@ -321,6 +321,9 @@ export function bindModelCall(family: EndpointKind): ModelCall {
     // that is what ends the session. Anything else with a 401 is the endpoint's
     // answer and travels to the engine as one.
     if (answered.status === 401 && (await thisDeskRefusedIt(answered))) {
+      // Nothing reads this answer now, so the request is let go of rather than
+      // left in flight behind an unconsumed stream. See `discardBody`.
+      await discardBody(answered)
       forgetSession()
       throw new NoSession()
     }

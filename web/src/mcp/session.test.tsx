@@ -145,6 +145,26 @@ describe('the one exchange', () => {
     expect(exchanges(seen)).toHaveLength(1)
   })
 
+  it('lets go of a refused answer’s body, so no request stays in flight', async () => {
+    // **A browser keeps a request in flight until its body stream is consumed
+    // or cancelled.** A refusal this page reads the status of and nothing else
+    // therefore sits there for ever — which is not visible in using the desk,
+    // and is exactly what the containment gate caught: a page that never
+    // reaches `networkidle` because one `POST /api/session` that answered 401
+    // was still open.
+    window.sessionStorage.setItem(sessionStorageKey(), STORED)
+    let refusal: Response | undefined
+    vi.stubGlobal('fetch', async (input: unknown) => {
+      if (String(input) === '/api/session') {
+        refusal = json({ code: 'unauthorized' }, 401)
+        return refusal
+      }
+      return json({})
+    })
+    expect(await bootstrap()).toBe(STORED)
+    expect(refusal?.bodyUsed).toBe(true)
+  })
+
   it('answers null when the exchange is refused and this tab holds nothing', async () => {
     record((call) => (call.url === '/api/session' ? json({ code: 'unauthorized' }, 401) : json({})))
     expect(await bootstrap()).toBeNull()
@@ -230,6 +250,19 @@ describe('a refusal after the bootstrap is terminal', () => {
     await expect(listFiles()).rejects.toThrow(NoSession)
     expect(seen).toHaveLength(after)
     expect(exchanges(seen)).toHaveLength(1)
+  })
+
+  it('lets go of the 401 it refused on, on a chassis call too', async () => {
+    const refusals: Response[] = []
+    vi.stubGlobal('fetch', async (input: unknown) => {
+      if (String(input) === '/api/session') return json({ id: MINTED })
+      const refusal = json({ error: 'no session', code: 'unauthorized' }, 401)
+      refusals.push(refusal)
+      return refusal
+    })
+    await expect(listFiles()).rejects.toThrow(NoSession)
+    expect(refusals).toHaveLength(1)
+    expect(refusals[0]!.bodyUsed).toBe(true)
   })
 
   it('ends the assistant’s relay too, and it re-sends nothing', async () => {

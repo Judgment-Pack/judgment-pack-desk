@@ -163,7 +163,10 @@ async function beginSession(): Promise<string | null> {
   } catch {
     return stored
   }
-  if (!answered.ok) return stored
+  if (!answered.ok) {
+    await discardBody(answered)
+    return stored
+  }
   let id: unknown
   try {
     id = ((await answered.json()) as { id?: unknown }).id
@@ -173,6 +176,28 @@ async function beginSession(): Promise<string | null> {
   if (typeof id !== 'string' || id === '') return stored
   hold(id)
   return id
+}
+
+/**
+ * Read nothing from a response, and **let go of it**.
+ *
+ * A `Response` body is a stream, and a browser keeps the request in flight
+ * until that stream is consumed or cancelled. So a refusal this page reads the
+ * status of and nothing else leaves a request open **for ever** — which is not
+ * a leak anybody would notice by using the desk, and is exactly what the
+ * containment gate noticed: `page.goto(…, {waitUntil: 'networkidle'})` never
+ * settled, because one `POST /api/session` that answered `401` was still there.
+ *
+ * Every path in this desk that decides on a status alone goes through this, and
+ * the reason is written once here rather than three times at those sites.
+ */
+export async function discardBody(answered: Response): Promise<void> {
+  try {
+    await answered.body?.cancel()
+  } catch {
+    // Already read, already cancelled, or a runtime with no stream on a
+    // response. There is nothing left to let go of either way.
+  }
 }
 
 /** The id in this tab's storage, or `null`. */

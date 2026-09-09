@@ -6792,6 +6792,18 @@ export function assistantTransport(id: string): Transport {
   mutate web "the assistant's relay sends no bearer" "$ASN2" \
     '        headers: { ...headers, Authorization: `Bearer ${id}` },' \
     '        headers,'
+  # **A response nobody reads is a request nobody closes.** A body stream that
+  # is neither consumed nor cancelled leaves the request in flight for the life
+  # of the page: invisible in using the desk, and caught by the containment
+  # gate as a page that never reaches `networkidle`.
+  mutate web "a refused answer's body is left in flight" "$MS" \
+    '  if (!answered.ok) {
+    await discardBody(answered)
+    return stored
+  }' \
+    '  if (!answered.ok) {
+    return stored
+  }'
   # **A refusal is the end of the road.** An id the chassis has rejected that
   # stays in storage is an id every later call re-sends, and a page that never
   # says the one sentence a person can act on.
