@@ -613,14 +613,19 @@ func (s *Server) launchSecretPresented(r *http.Request) bool {
 // desk — `POST /api/session`, which spends it — and nothing else, ever. That is
 // the whole point of the shape: a credential the browser attaches by itself is
 // a credential every local service and every replaying script gets to use.
+//
+// **And no subprotocol offer, either.** This used to read one, from when the
+// gate was the only place a session was looked up. Since the upgrade took over
+// its own authorization — one credential each way, and the offer is the page's
+// — that branch was reachable only by a caller putting `Sec-WebSocket-Protocol`
+// on a request that is not an upgrade. A second path that authorizes the same
+// credential is a second path to keep in step, and a mutation row proved this
+// one was already unheld: nothing failed when it stopped verifying the id.
 func (s *Server) sessionOf(r *http.Request) (session, bool) {
 	if id := bearerOf(r); id != "" {
 		if held, ok := s.sessions.lookup(id); ok {
 			return held, true
 		}
-	}
-	if id, _ := offeredSessionID(r); id != "" {
-		return s.sessions.lookup(id)
 	}
 	return session{}, false
 }

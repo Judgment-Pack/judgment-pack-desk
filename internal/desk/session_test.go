@@ -227,6 +227,14 @@ func TestTheExchangeClearsTheHandoff(t *testing.T) {
 		if cleared.Value != "" {
 			t.Errorf("%s: the cleared cookie carries %q", cleared.Name, cleared.Value)
 		}
+		// **And it must not be `Secure` over plain http**, or it clears
+		// nothing: a browser refuses a `Secure` cookie from a non-secure
+		// origin, so the handoff and its marker would survive the request that
+		// spent them and the page would try to spend a handoff that is gone on
+		// every load. This desk is served over http on loopback.
+		if cleared.Secure {
+			t.Errorf("%s: Secure on a plain-http expiry, which a browser refuses", cleared.Name)
+		}
 	}
 }
 
@@ -1534,10 +1542,110 @@ func TestASignOutBetweenAuthorizationAndRegistration(t *testing.T) {
 	}
 }
 
-// TestOutboundTrafficRefreshesRecency is item 7. A tab watching a long streamed
-// answer sends nothing for a minute at a time; a desk that counted only inbound
-// frames would evict the session whose socket is busiest.
-func TestOutboundTrafficRefreshesRecency(t *testing.T) {
+// recencyOf reads the store's own ordering number for a session, which is what
+// eviction sorts on. A test that asserts "this was touched" against the number
+// eviction actually reads cannot pass on a touch that went somewhere else.
+func recencyOf(t *testing.T, store *sessionStore, id string) uint64 {
+	t.Helper()
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	held, ok := store.live[store.handle(id)]
+	if !ok {
+		t.Fatalf("the session is not in the store")
+	}
+	return held.used
+}
+
+// waitForATouch waits for the relay to refresh a session, and says so when it
+// does not. **This is the assertion**: the touch has to arrive through the call
+// site under test, so a row that deletes that call site fails here rather than
+// somewhere a second call site would cover.
+func waitForATouch(t *testing.T, store *sessionStore, id string, was uint64, what string) {
+	t.Helper()
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		if recencyOf(t, store, id) != was {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("%s did not refresh the session's recency", what)
+}
+
+// TestInboundFramesRefreshTheSession and TestOutboundFramesRefreshTheSession are
+// item 7, **one direction each**.
+//
+// The first version of this pair could not tell them apart. Every JSON-RPC call
+// is a frame each way, so a socket driven by `call` touches through whichever
+// site is left and both rows reported NOT DISCRIMINATING — the same "one path,
+// not its siblings" mistake the round was about, made in the test rather than
+// the code. So each test now drives **one** direction: a notification, which the
+// runtime answers with nothing, and a desk-side broadcast, which the page never
+// asked for.
+func TestInboundFramesRefreshTheSession(t *testing.T) {
+	if !runtimeAvailable() {
+		t.Skip("no runtime binary: this drives a real relay socket")
+	}
+	s, ts := newTestServer(t, false)
+	id := beginSession(t, ts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws", &websocket.DialOptions{
+		HTTPHeader:   http.Header{"Origin": []string{ts.URL}},
+		Subprotocols: upgradeOffer(id),
+	})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close(websocket.StatusNormalClosure, "")
+	c.SetReadLimit(readLimit)
+	driven := &rpcSession{t: t, ctx: ctx, ws: c}
+	driven.initialize()
+
+	// Past the rate limit, so the frame below is the thing being measured and
+	// not the initialize a second ago.
+	time.Sleep(1100 * time.Millisecond)
+	was := recencyOf(t, s.sessions, id)
+	// **A notification, so nothing comes back.** The outbound site cannot be
+	// what refreshes this.
+	driven.send(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
+	waitForATouch(t, s.sessions, id, was, "an inbound frame")
+}
+
+func TestOutboundFramesRefreshTheSession(t *testing.T) {
+	if !runtimeAvailable() {
+		t.Skip("no runtime binary: this drives a real relay socket")
+	}
+	s, ts := newTestServer(t, false)
+	id := beginSession(t, ts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws", &websocket.DialOptions{
+		HTTPHeader:   http.Header{"Origin": []string{ts.URL}},
+		Subprotocols: upgradeOffer(id),
+	})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close(websocket.StatusNormalClosure, "")
+	c.SetReadLimit(readLimit)
+	driven := &rpcSession{t: t, ctx: ctx, ws: c}
+	driven.initialize()
+
+	time.Sleep(1100 * time.Millisecond)
+	was := recencyOf(t, s.sessions, id)
+	// **A frame the page never asked for**, which is the shape of a streamed
+	// answer as far as this socket is concerned: the desk writes, the page
+	// reads, and the page sends nothing at all.
+	s.broadcastFileChange("packs/anything.pack.json")
+	waitForATouch(t, s.sessions, id, was, "an outbound frame")
+}
+
+// TestARefreshedSessionSurvivesTheBound is the property those two directions
+// exist for: recency is what eviction reads.
+func TestARefreshedSessionSurvivesTheBound(t *testing.T) {
 	store, err := newSessionStore()
 	if err != nil {
 		t.Fatalf("newSessionStore: %v", err)
@@ -1546,19 +1654,57 @@ func TestOutboundTrafficRefreshesRecency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	held := &conn{handle: store.handle(watching)}
-	desk := &Server{sessions: store}
-
-	for i := range maxSessions * 2 {
+	for range maxSessions * 2 {
 		if _, err := store.create("local user", nil); err != nil {
 			t.Fatalf("create: %v", err)
 		}
-		// One answer's worth of outbound traffic, with the rate limit defeated
-		// the way time would defeat it.
-		held.touched.Store(int64(i) * int64(touchedSession) * 2)
-		held.touch(desk)
+		store.touch(store.handle(watching))
 	}
 	if _, ok := store.lookup(watching); !ok {
-		t.Fatal("a session whose socket was streaming answers was evicted")
+		t.Fatal("a session refreshed past the bound was evicted anyway")
+	}
+}
+
+// TestASubprotocolOfferAuthorizesNothingOffTheUpgrade. The offer is the page's
+// credential channel **on the handshake**, and the shared gate used to read one
+// too. Two paths for one credential is one to keep in step, and a row proved the
+// second was already unheld.
+func TestASubprotocolOfferAuthorizesNothingOffTheUpgrade(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	id := beginSession(t, ts)
+
+	for _, route := range []string{"/api/files", "/api/session", "/api/desk-config"} {
+		t.Run(route, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodGet, ts.URL+route, nil)
+			if err != nil {
+				t.Fatalf("NewRequest: %v", err)
+			}
+			req.Header.Set("Sec-WebSocket-Protocol", strings.Join(upgradeOffer(id), ", "))
+			req.Header.Set("Origin", ts.URL)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("%s answered %d to a live id offered as a subprotocol, want 401",
+					route, resp.StatusCode)
+			}
+			// The positive control: the same id, on the header this desk reads.
+			held, err := http.NewRequest(http.MethodGet, ts.URL+route, nil)
+			if err != nil {
+				t.Fatalf("NewRequest: %v", err)
+			}
+			pageBearer(id)(held)
+			held.Header.Set("Origin", ts.URL)
+			ok, err := http.DefaultClient.Do(held)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			defer ok.Body.Close()
+			if ok.StatusCode == http.StatusUnauthorized {
+				t.Fatalf("%s refuses the id on Authorization too: this test proves nothing", route)
+			}
+		})
 	}
 }

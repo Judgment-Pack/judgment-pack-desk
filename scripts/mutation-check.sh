@@ -67,7 +67,12 @@ report() { # report <name> <result-line>
 # would be the most dangerous thing this script could do, so each is named.
 run_go() {
   local out code named
-  out="$(go test ./internal/desk -count=1 -timeout 45s 2>&1)"
+  # **Clear of a clean run, which 45s was not.** With `JPACK_BIN` set this suite
+  # drives real relay sockets and takes about fifty seconds, so the old cap
+  # reported eight rows as "the mutation hangs a handler" when what it had timed
+  # was the suite itself. A bound that fires on a healthy run is not a hang
+  # detector; it is a way to mark rows unmeasured and call it a result.
+  out="$(go test ./internal/desk -count=1 -timeout 240s 2>&1)"
   code=$?
   if grep -q 'build failed\|cannot use\|undefined:\|declared and not used\|syntax error' <<<"$out"; then
     echo "INCONCLUSIVE — did not compile"
@@ -1636,14 +1641,17 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		return true
 	}
 	return s.launchSecretPresented(r)'
-  # The subprotocol offer is a credential and is verified like one.
-  mutate go "the offered subprotocol id is not verified" "$SN" \
-    '	if id, _ := offeredSessionID(r); id != "" {
-		return s.sessions.lookup(id)
-	}' \
-    '	if id, _ := offeredSessionID(r); id != "" {
-		return session{subject: "local user"}, true
-	}'
+  # The subprotocol offer is a credential and is verified like one — **on the
+  # upgrade**, which is the only route that reads one. This row used to break the
+  # shared gate's copy of the check and reported NOT DISCRIMINATING, because
+  # nothing reaches that copy: `handleWS` does its own lookup, and no other route
+  # reads an offer. The gate's branch is deleted and this row now breaks the
+  # lookup that is actually consulted.
+  mutate go "the offered subprotocol id is not verified" "$S" \
+    '		if _, live := s.sessions.lookup(id); !live {
+			return "", false
+		}' \
+    ''
   # A malformed offer must be a 400 before any credential is looked at: two ids,
   # a non-hex id, an offer list without `jpack-desk`.
   mutate go "a malformed subprotocol offer is not refused" "$S" \
@@ -1770,7 +1778,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 			continue'
   mutate go "the query is never decoded, so an encoded name is not seen" "$SN" \
     '					out.WriteByte(hi<<4 | lo)' \
-    '					out.WriteByte(s[i])'
+    '					_, _ = hi, lo
+					out.WriteByte(s[i])'
   # The stores.
   mutate go "the session store is keyed by the id itself" "$SN" \
     '	mac := hmac.New(sha256.New, st.key)
