@@ -24,8 +24,10 @@
  *    was about: the whole shell could be scrolled up out of the window.
  * 4. The computed `position` of `.desk`, `.desk-rail`, `.desk-main`,
  *    `.desk-inspector` and `.desk-console`, wherever the route renders them,
- *    is `relative`. This is the one that discriminates without a long page to
- *    grow: a pane un-positioned from any selector fails here immediately.
+ *    is `relative`, and the drawer's (`.desk-drawer` — the rail or the
+ *    Inspector below their breakpoints) is `fixed`. This is the one that
+ *    discriminates without a long page to grow: a pane un-positioned from any
+ *    selector fails here immediately.
  * 5. No absolutely positioned element resolves its `offsetParent` to `BODY`.
  *    That is the shape of the defect exactly — nothing between the element and
  *    the root is positioned, so no pane scrolls it and no frame clips it — and
@@ -36,8 +38,13 @@
  *
  * **The widths.** The widths are derived from every breakpoint the sheets
  * author, so an override scoped to a width this gate never enters cannot exist
- * by construction; a breakpoint written in a form this parser does not read is
- * the one gap, and the parser prints what it found. Every `@media` prelude
+ * by construction. A prelude this parser cannot read — a `not`, a range
+ * written with `<` or `>`, a `@container`, a height, a width in a unit outside
+ * `px`, `em` and `rem` — is printed under "preludes not read" and the run exits
+ * 2, so the printed list is complete or the run says why it is not; a prelude
+ * that names no dimension at all (a colour scheme, a motion preference) is
+ * printed as such and sampled by nothing. Every row is 800 tall. Every
+ * `@media` prelude
  * under `web/src` is read for `max-width` and `min-width` in `px`, `em` or
  * `rem` (converted at 16px); the sample is `{1400, 640}`, plus `N − 1` for
  * each `max-width: N` and `N` for each `min-width: N`, deduplicated and
@@ -74,9 +81,18 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const [, , PORT, TOKEN, LABEL = 'build', ROOT_ARG] = process.argv
+// `--plan [source-root]` prints what a run would sample — the preludes read
+// and refused, the widths, the routes, the intended row count — and exits
+// without a browser, so the parsers can be checked on their own.
+const PLAN = process.argv[2] === '--plan'
+const [PORT, TOKEN, LABEL = 'build', ROOT_ARG] = PLAN
+  ? ['0', 'plan', 'plan', process.argv[3]]
+  : process.argv.slice(2)
 if (PORT === undefined || TOKEN === undefined) {
-  console.error('usage: node scripts/containment-check.mjs <port> <token> [label] [source-root]')
+  console.error(
+    'usage: node scripts/containment-check.mjs <port> <token> [label] [source-root]\n' +
+      '       node scripts/containment-check.mjs --plan [source-root]'
+  )
   process.exit(2)
 }
 // The source root is passed rather than derived from this file's own path, so
@@ -89,7 +105,14 @@ const SRC = join(ROOT, 'web', 'src')
 const { chromium } = createRequire(join(ROOT, 'web', 'package.json'))('playwright-core')
 
 const at = (path) => `http://127.0.0.1:${PORT}${path}${path.includes('?') ? '&' : '?'}token=${TOKEN}`
-const PANES = ['.desk', '.desk-rail', '.desk-main', '.desk-inspector', '.desk-console']
+const PANES = {
+  '.desk': 'relative',
+  '.desk-rail': 'relative',
+  '.desk-main': 'relative',
+  '.desk-inspector': 'relative',
+  '.desk-console': 'relative',
+  '.desk-drawer': 'fixed'
+}
 let problems = []
 const rows = []
 
@@ -104,36 +127,69 @@ function sheets(directory = SRC, found = []) {
 }
 
 /**
- * Every width breakpoint the sheets author, as `{ kind, px, where, prelude }`.
+ * Every `@media` and `@container` prelude the sheets author, in three bins.
  *
- * `em` and `rem` are converted at 16px, which is the initial font size and the
- * one a media query resolves against whatever the page's own font size is. A
- * breakpoint written in any other form — a custom property, a container query,
- * a `width` range with `<=` — is not read, which is why the list is printed.
+ * `found`: the width breakpoints this parser reads — `max-width` or
+ * `min-width` in `px`, `em` or `rem`, converted at 16px, the initial font size
+ * a media query resolves against whatever the page's own font size is.
+ * `unread`: a prelude that names a dimension but that this parser cannot turn
+ * into a width to enter — a `not`, a range written with `<` or `>`, a
+ * `@container`, a height, a width in any other unit or form. Those refuse the
+ * run: a breakpoint the gate cannot enter is a width an override can hide at.
+ * `nonDimensional`: a prelude naming no dimension at all — a colour scheme, a
+ * motion preference, `print` — printed so the list is whole, sampled by nothing.
+ * Comments are stripped first, so a prelude quoted in prose is not a prelude.
  */
-function breakpoints() {
+function preludes() {
   const found = []
+  const unread = []
+  const nonDimensional = []
   for (const path of sheets()) {
     const where = path.slice(SRC.length + 1)
-    const text = readFileSync(path, 'utf8')
-    for (const rule of text.matchAll(/@media([^{]*)\{/g)) {
-      const prelude = rule[1].replace(/\s+/g, ' ').trim()
-      for (const one of prelude.matchAll(/(max|min)-width\s*:\s*([\d.]+)\s*(px|r?em)/gi)) {
+    const text = readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+    for (const rule of text.matchAll(/@(media|container)([^{;]*)\{/g)) {
+      const query = rule[2]
+      const entry = { where, prelude: `@${rule[1]} ${query.replace(/\s+/g, ' ').trim()}` }
+      const dimensional = /\b(width|height|aspect-ratio|resolution)\b/i.test(query)
+      if (!dimensional) {
+        nonDimensional.push(entry)
+        continue
+      }
+      const readable =
+        rule[1] === 'media' &&
+        !/\bnot\b/i.test(query) &&
+        !/[<>]/.test(query) &&
+        !/\bheight\b/i.test(query)
+      const widths = [...query.matchAll(/(max|min)-width\s*:\s*([\d.]+)\s*(px|r?em)\b/gi)]
+      const others = query.replace(/(max|min)-width\s*:\s*[\d.]+\s*(px|r?em)\b/gi, '')
+      if (!readable || widths.length === 0 || /\bwidth\b/i.test(others)) {
+        unread.push(entry)
+        continue
+      }
+      for (const one of widths) {
         const value = Number(one[2])
         const unit = one[3].toLowerCase()
         found.push({
+          ...entry,
           kind: one[1].toLowerCase(),
-          px: unit === 'px' ? Math.round(value) : Math.round(value * 16),
-          where,
-          prelude: `@media ${prelude}`
+          px: unit === 'px' ? Math.round(value) : Math.round(value * 16)
         })
       }
     }
   }
-  return found
+  return { found, unread, nonDimensional }
 }
 
-const BREAKPOINTS = breakpoints()
+const PRELUDES = preludes()
+const BREAKPOINTS = PRELUDES.found
+if (PRELUDES.unread.length > 0) {
+  console.error('preludes not read — this parser cannot derive a width to enter from them:')
+  for (const one of PRELUDES.unread) console.error(`  ${one.where}  ${one.prelude}`)
+  console.error(
+    'teach the parser, or spell the breakpoint as a max-width or min-width in px, em or rem'
+  )
+  process.exit(2)
+}
 if (BREAKPOINTS.length === 0) {
   console.error(
     'no width breakpoint was found under web/src: this parser reads `max-width` and ' +
@@ -150,6 +206,19 @@ const WIDTHS = [
     ...BREAKPOINTS.map((one) => (one.kind === 'max' ? one.px - 1 : one.px))
   ])
 ].sort((a, b) => b - a)
+
+/** The preludes, printed the same way by a plan and by a run. */
+function printPreludes() {
+  console.log('breakpoints read from the sheets:')
+  for (const one of BREAKPOINTS) {
+    console.log(`  ${one.where}  ${one.prelude}  →  ${one.kind}-width ${one.px}px`)
+  }
+  if (PRELUDES.nonDimensional.length > 0) {
+    console.log('preludes naming no dimension, sampled by nothing:')
+    for (const one of PRELUDES.nonDimensional) console.log(`  ${one.where}  ${one.prelude}`)
+  }
+  console.log(`\nwidths derived from them, each at height 800: ${WIDTHS.join(', ')}`)
+}
 
 /**
  * The width below which the Inspector is a drawer, read from the constant the
@@ -190,38 +259,105 @@ const named = (config) =>
 /**
  * Every route pattern `App.tsx` declares, with a child's relative path
  * resolved against the route it is nested in.
+ *
+ * A `<Route …>` is read as a **tag**, from `<Route` to the `>` that closes it,
+ * with any `>` inside a `{…}` expression skipped — so a Route written across
+ * lines, or with its `element` in front of its `path`, is read like any other.
+ * An `index` route is its parent's path; a Route with children and no path is
+ * a layout its children resolve against; a Route this reader cannot place at
+ * all — no path, no index, no children — exits 2 naming it, so no Route is
+ * ever passed over in silence.
  */
 function declaredRoutes() {
   const text = readFileSync(join(SRC, 'App.tsx'), 'utf8')
   const patterns = []
   const stack = []
-  for (const raw of text.split('\n')) {
-    const line = raw.trim()
-    if (line.startsWith('</Route>')) {
+  const tag = /<\/?Route\b/g
+  let match
+  while ((match = tag.exec(text)) !== null) {
+    if (match[0] === '</Route') {
       stack.pop()
       continue
     }
-    const match = /<Route\b[^>]*\bpath="([^"]*)"/.exec(line)
-    if (match === null) continue
-    const path = match[1]
-    let full = path
-    if (!path.startsWith('/') && path !== '*') {
-      if (stack.length === 0) {
-        console.error(`App.tsx declares a relative route path with no parent route: ${path}`)
+    let depth = 0
+    let end = match.index
+    for (; end < text.length; end += 1) {
+      const character = text[end]
+      if (character === '{') depth += 1
+      else if (character === '}') depth -= 1
+      else if (character === '>' && depth === 0) break
+    }
+    if (end >= text.length) {
+      console.error('App.tsx: a <Route tag never closes')
+      process.exit(2)
+    }
+    const span = text.slice(match.index, end + 1)
+    tag.lastIndex = end + 1
+    const selfClosing = /\/>$/.test(span)
+    const path = /\bpath\s*=\s*"([^"]*)"/.exec(span)
+    const index = /\bindex\b/.test(span)
+    const parent = stack.length === 0 ? undefined : stack[stack.length - 1]
+    const shown = span.replace(/\s+/g, ' ')
+    let full
+    if (path !== null) {
+      if (path[1].startsWith('/') || path[1] === '*') {
+        full = path[1]
+      } else if (parent === undefined) {
+        console.error(`App.tsx declares a relative route path with no parent route: ${path[1]}`)
+        process.exit(2)
+      } else {
+        full = `${parent.replace(/\/$/, '')}/${path[1]}`
+      }
+      patterns.push(full)
+    } else if (index) {
+      if (parent === undefined) {
+        console.error(`App.tsx declares an index route with no parent route: ${shown}`)
         process.exit(2)
       }
-      full = `${stack[stack.length - 1].replace(/\/$/, '')}/${path}`
+      full = parent
+      patterns.push(full)
+    } else if (!selfClosing) {
+      full = parent ?? ''
+    } else {
+      console.error(`App.tsx declares a <Route> this reader cannot place — no path, no index, no children: ${shown}`)
+      process.exit(2)
     }
-    patterns.push(full)
-    // A tag that does not close itself opens a nesting its children resolve
-    // against.
-    if (!/\/>$/.test(line)) stack.push(full)
+    if (!selfClosing) stack.push(full)
   }
   if (patterns.length === 0) {
     console.error('no <Route path="…"> was read out of web/src/App.tsx')
     process.exit(2)
   }
   return patterns
+}
+
+/** The routes a run visits, given the pack and the graph the project lists. */
+const routesFor = (pack, graph) => [
+  '/',
+  '/packs',
+  `${pack}?edit=1`,
+  `${pack}/evaluate`,
+  `${pack}/matrix`,
+  '/admin',
+  '/graphs',
+  graph,
+  '/matrix',
+  '/author',
+  '/help'
+]
+const ROUTE_COUNT = routesFor('/packs/x', '/graphs/y').length
+
+if (PLAN) {
+  console.log('containment check — plan\n')
+  printPreludes()
+  console.log(`\nroutes App.tsx declares: ${declaredRoutes().join(', ')}`)
+  console.log(
+    `configurations: 4 above ${INSPECTOR_DRAWER_AT_OR_BELOW}px, 3 at or below it\n` +
+      `intended rows for ${ROUTE_COUNT} routes: ${
+        ROUTE_COUNT * WIDTHS.reduce((total, width) => total + CONFIGS(width).length, 0)
+      }`
+  )
+  process.exit(0)
 }
 
 const browser = await chromium.launch({
@@ -317,14 +453,14 @@ async function sample(route, config) {
   // measuring some other configuration under this one's name, so it fails
   // here rather than being skipped or counted as contained.
   const seenConfig = { inspector: await inspectorOpen(), console: await consoleOpen() }
-  const seen = await page.evaluate(MEASURE, PANES)
+  const seen = await page.evaluate(MEASURE, Object.keys(PANES))
   const scrolled = await page.evaluate(() => {
     window.scrollTo(0, 5000)
     return Math.round(window.scrollY)
   })
   await page.evaluate(() => window.scrollTo(0, 0))
-  const notRelative = Object.entries(seen.positions)
-    .filter(([, value]) => value !== 'relative' && value !== 'absent')
+  const unpositioned = Object.entries(seen.positions)
+    .filter(([selector, value]) => value !== 'absent' && value !== PANES[selector])
     .map(([selector, value]) => `${selector}: ${value}`)
   const failures = []
   for (const which of ['inspector', 'console']) {
@@ -336,7 +472,7 @@ async function sample(route, config) {
     failures.push(`document ${seen.scrollHeight} > window ${seen.innerHeight}`)
   if (seen.deskHeight !== seen.innerHeight) failures.push(`.desk ${seen.deskHeight}`)
   if (scrolled !== 0) failures.push(`scrollY ${scrolled}`)
-  if (notRelative.length > 0) failures.push(notRelative.join(', '))
+  if (unpositioned.length > 0) failures.push(unpositioned.join(', '))
   if (seen.hung.length > 0) failures.push(`${seen.hung.length} from BODY (${seen.hung.join('; ')})`)
   if (problems.length > 0) failures.push(problems.join('; '))
   rows.push({
@@ -347,7 +483,7 @@ async function sample(route, config) {
     window: seen.innerHeight,
     desk: seen.deskHeight,
     scrollY: scrolled,
-    panes: notRelative.length === 0 ? 'all relative' : notRelative.join(', '),
+    panes: unpositioned.length === 0 ? 'all positioned' : unpositioned.join(', '),
     body: seen.hung.length,
     failures
   })
@@ -384,19 +520,7 @@ if (graph === undefined) {
   process.exit(2)
 }
 
-const ROUTES = [
-  '/',
-  '/packs',
-  `${pack}?edit=1`,
-  `${pack}/evaluate`,
-  `${pack}/matrix`,
-  '/admin',
-  '/graphs',
-  graph,
-  '/matrix',
-  '/author',
-  '/help'
-]
+const ROUTES = routesFor(pack, graph)
 
 // Every pattern the router declares is visited, so a route added later fails
 // this gate until somebody samples it. `*` is the only exception and is not a
@@ -422,9 +546,7 @@ if (unvisited.length > 0) {
 const INTENDED = ROUTES.length * WIDTHS.reduce((total, width) => total + CONFIGS(width).length, 0)
 
 console.log(`\ncontainment check — ${LABEL}\n`)
-console.log('breakpoints read from the sheets:')
-for (const one of BREAKPOINTS) console.log(`  ${one.where}  ${one.prelude}  →  ${one.kind}-width ${one.px}px`)
-console.log(`\nwidths derived from them, each at height 800: ${WIDTHS.join(', ')}`)
+printPreludes()
 console.log(
   `routes: ${ROUTES.length} — ${ROUTES.join(', ')}\n` +
     `configurations: 4 above ${INSPECTOR_DRAWER_AT_OR_BELOW}px, 3 at or below it\n` +

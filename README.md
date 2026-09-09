@@ -4256,6 +4256,13 @@ go build -o /tmp/jpack-desk .
 JPACK_BIN=/path/to/jpack scripts/containment-check.sh /tmp/jpack-desk /path/to/project 8765
 ```
 
+The project must list at least one pack and one graph: four of the eleven routes
+are a pack's and one is a graph's, and the gate exits 2 rather than sample fewer.
+`judgment-pack-demo/projects/enterprise-demo` is one it runs on; a project with
+packs and no graphs is not. `node scripts/containment-check.mjs --plan` prints what
+a run would sample — the preludes read and the preludes refused, the widths, the
+routes, the intended row count — without a browser.
+
 It copies the project rather than driving the one it was handed, uses a
 throwaway `XDG_CONFIG_HOME`, and kills what it starts by PID. A project that
 lists no pack, or no graph, exits 2 saying so: four of the routes are a pack
