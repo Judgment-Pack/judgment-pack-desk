@@ -1646,7 +1646,10 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # is what actually puts the id in the response header.
   mutate go "the upgrade echoes the session offer back" internal/desk/relay.go \
     '		Subprotocols:       []string{wsProtocol},' \
-    '		Subprotocols:       []string{wsSessionPrefix + offeredSessionID(r)},'
+    '		Subprotocols: func() []string {
+			id, _ := offeredSessionID(r)
+			return []string{wsSessionPrefix + id}
+		}(),'
   # Two credentials with two lifetimes: a session id accepted as a launch secret
   # would mean a leaked id is a launch secret, which is the stronger of the two.
   # Named for what it admits: a **handoff**, which opens the exchange and must
@@ -1707,10 +1710,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	}' \
     '	_ = looksLikeALaunch
 	_ = refuseLaunchShape'
-  # And the router half on its own, named for what it is: one of two layers.
-  mutate go "the router half of the launch refusal is gone (the static half remains)" "$S" \
-    '	s.mux.HandleFunc("/launch/{rest...}", s.handleLaunchSubpath)' \
-    ''
+  # **Retired, and named here rather than deleted silently.** A row that broke
+  # only the router half reported NOT DISCRIMINATING every time, because the
+  # static handler refuses every shape this suite sends on its own — the two
+  # layers overlap completely for these inputs. A row that can never fail is not
+  # evidence, and the row above already asserts the property: *something*
+  # refuses them. `TestNothingThatLooksLikeALaunchIsAnsweredWithThePage` pins
+  # the behaviour over twelve spellings either way.
 
   mutate go "the static handler answers a launch-shaped URL with the page" "$S" \
     '	if looksLikeALaunch(r) {
@@ -1728,7 +1734,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if strings.Contains(strings.ToLower(raw), "secret") {
 		return true
 	}' \
-    '	for name := range mustParse(raw) {
+    '	parsed, _ := url.ParseQuery(raw)
+	for name := range parsed {
 		if strings.EqualFold(name, "secret") {
 			return true
 		}
@@ -1748,6 +1755,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	evicted := st.evictLocked()' \
     '	evicted := []string(nil)
 	_ = st.evictLocked'
+  # **These two need a runtime binary, and say so.** The tests that catch them
+  # drive a real relay socket, which needs a `jpack` to spawn — without one they
+  # skip, and the row reports NOT DISCRIMINATING for a guard that is real. Run
+  # this half with `JPACK_BIN` set:
+  #
+  #   JPACK_BIN=/path/to/jpack scripts/mutation-check.sh go "an open socket"
+  #
   # Traffic is use: without the touch, the busiest tab is the coldest thing in
   # the store and the first to be evicted.
   mutate go "an open socket does not refresh its session" internal/desk/relay.go \
@@ -1762,7 +1776,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	for _, handle := range evicted {
 		st.ended(handle)
 	}' \
-    ''
+    '	_ = evicted'
   # LRU rather than oldest-first: a session's age says nothing about whether the
   # tab is still on screen, and evicting the one in use is the visible failure.
   mutate go "eviction ignores recency, so the tab in use is evicted" "$SN" \
