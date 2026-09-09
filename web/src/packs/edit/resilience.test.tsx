@@ -355,9 +355,13 @@ describe('where Try it opens, measured', () => {
 
   it('fits at the shell’s own maximum, and not one pixel below it', async () => {
     // **The number in the predicate and the width the pane takes were eight
-    // pixels apart.** The shell's `60rem` box less its `1.5rem` padding either
-    // side is exactly 912, which fits 384 + 16 + 512 — and the page said it did
-    // not, so the side-by-side branch was unreachable on every ordinary screen.
+    // pixels apart.** 912 was the shell's whole box at the time — a `60rem`
+    // measure less its `1.5rem` padding either side — which fits
+    // 384 + 16 + 512, and the page said it did not, so the side-by-side branch
+    // was unreachable on every ordinary screen. The measure is wider now
+    // (`--measure-wide` less two gutters); 912 is kept as the case because it
+    // is the boundary the predicate is about, and this test hands the box in
+    // rather than reading it off a sheet.
     measured(912, 512)
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT })

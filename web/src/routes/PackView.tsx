@@ -93,10 +93,15 @@ import styles from './PackView.module.css'
  *
  * **One number, and the stylesheet reads it from here.** The predicate said 392
  * and `.pane` was `24rem`, which is 384: the arithmetic asked for eight pixels
- * that were never taken, so at the shell's own maximum — a 60rem box less its
- * padding is exactly 912 — the pane fitted and the page said it did not. The
- * width is set as a custom property on the workspace and `.pane` is `width:
- * var(--tryit-pane-width)`, so the two cannot drift again.
+ * that were never taken, so at what was then the shell's whole box — a 60rem
+ * measure less its `1.5rem` padding either side is exactly 912 — the pane
+ * fitted and the page said it did not. The width is set as a custom property
+ * on the workspace and `.pane` is `width: var(--tryit-pane-width)`, so the two
+ * cannot drift again.
+ *
+ * 912 is no longer the maximum: the measure is `--measure-wide` less two
+ * `--density-gutter`, and this route is the `wide` kind. It is still the
+ * boundary the predicate is about, which is why the case is written at it.
  */
 const PANE_WIDTH = 384
 const EDITOR_FLOOR = 512
