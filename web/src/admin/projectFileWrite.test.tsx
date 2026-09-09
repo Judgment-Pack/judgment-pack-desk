@@ -153,8 +153,9 @@ describe('a project-file card’s save', () => {
     expect(String(body.content)).toContain('"organization": {"name":"Renamed","mark":null}')
     // And every other member, byte for byte, in the request itself.
     expect(String(body.content)).toContain('"panes": { "left": { "mode": "expanded", "width": 248 } }')
-    expect(desk.puts[0]!.url).toContain('/api/file?')
-    expect(desk.puts[0]!.url).toContain('token=')
+    // The address and nothing else: this page holds no credential to put on
+    // it, and the session cookie the browser attaches is not the page's.
+    expect(desk.puts[0]!.url).toBe('/api/file')
   })
 
   it('never asks the desk to overwrite what it did not read', async () => {

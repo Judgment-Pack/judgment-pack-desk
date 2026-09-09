@@ -627,9 +627,13 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
 
   it('hands the model a capability and never an address', () => {
     // The reason the contract deviates from ADR-0001's sketch, held as a
-    // member set rather than as prose: a `baseUrl` for this relay is this
-    // chassis' session token, and an engine holding it can open `/ws?token=…`
-    // itself over a connection no gate is on.
+    // member set rather than as prose. The original reason was that a
+    // `baseUrl` for this relay carried this chassis' session token; the
+    // session is an `HttpOnly` cookie now, so no address is a credential —
+    // and the deviation stands on what it always really bought, which is that
+    // the desk decides *what* an engine may reach rather than handing it an
+    // address. The seal on `WebSocket` in the conformance session is what
+    // stops a second, ungated connection.
     const source = read('assistant/engine.ts')
     expect(membersOf(interfaceBody(source, 'ModelRequest'))).toEqual([
       'headers',

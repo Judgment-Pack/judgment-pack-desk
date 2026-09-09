@@ -20,19 +20,24 @@ describe('the dev server proxy', () => {
   const proxy =
     (config as unknown as { server?: { proxy?: Record<string, unknown> } }).server?.proxy ?? {}
 
-  it('proxies the relay and the file API, and no less', () => {
+  it('proxies the launch exchange, the relay and the file API, and no less', () => {
     // `/api` is the authoring surface. Without it those calls hit the Vite dev
     // server, which knows nothing about them, and authoring simply does not
     // work under `npm run dev`.
-    expect(Object.keys(proxy).sort()).toEqual(['/api', '/ws'])
+    //
+    // `/launch` is how a session is acquired at all. Without it the dev origin
+    // has no cookie, and every one of the other two answers 401 — which is the
+    // whole of `npm run dev` not working.
+    expect(Object.keys(proxy).sort()).toEqual(['/api', '/launch', '/ws'])
   })
 
-  for (const route of ['/ws', '/api']) {
+  for (const route of ['/launch', '/ws', '/api']) {
     it(`rewrites Host on ${route} so the chassis' origin check can decide`, () => {
       // With Host left as the dev server's, Origin and Host both name the dev
       // server, they match, and the request is accepted whether or not
       // --dev-token was given — which would make the documented requirement a
-      // fiction the check could never enforce.
+      // fiction the check could never enforce. `/launch` is proxied the same
+      // way for consistency of shape, though it is not itself gated.
       expect((proxy[route] as { changeOrigin?: boolean }).changeOrigin).toBe(true)
     })
   }

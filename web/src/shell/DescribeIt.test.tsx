@@ -437,7 +437,6 @@ const ends = () =>
   )
 
 beforeEach(() => {
-  window.sessionStorage.setItem('jpack-desk-token', 'a-token')
 })
 
 afterEach(() => {

@@ -127,10 +127,12 @@ describe('Help & About', () => {
     expect(screen.queryByText(PROMPT_TEXT)).toBeNull()
   })
 
-  it('carries the true sentence about where the session token lives', () => {
+  it('carries the true sentence about how this desk is authorized', () => {
     renderHelp(stubClient(PACKS))
-    // Not "it leaves the URL immediately": nothing calls history.replaceState,
-    // so it leaves at the first in-app navigation and the page says that.
-    expect(screen.getByText(/leaves the address bar at the first in-app navigation/)).toBeTruthy()
+    // The launch exchange redirects, so the secret leaves the address bar at
+    // load — a stronger claim than the sentence this replaced could make, and
+    // one `TestLaunchExchangeSetsTheSessionCookie` holds on the other side.
+    expect(screen.getByText(/HttpOnly session cookie and redirects to the desk/)).toBeTruthy()
+    expect(screen.queryByText(/sessionStorage/)).toBeNull()
   })
 })

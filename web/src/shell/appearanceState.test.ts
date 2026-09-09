@@ -194,11 +194,11 @@ describe('forgetting this browser’s appearance', () => {
     // project's record with it.
     writeAppearance(KEY, { theme: 'dark' })
     window.localStorage.setItem('jpack-desk:appearance:v1:another', '{"v":1}')
-    window.localStorage.setItem('jpack-desk-token', 'a token')
+    window.localStorage.setItem('jpack-desk-unrelated', 'a value')
     expect(resetAppearance(KEY)).toBe('cleared')
     expect(window.localStorage.getItem(KEY)).toBeNull()
     expect(window.localStorage.getItem('jpack-desk:appearance:v1:another')).toBe('{"v":1}')
-    expect(window.localStorage.getItem('jpack-desk-token')).toBe('a token')
+    expect(window.localStorage.getItem('jpack-desk-unrelated')).toBe('a value')
   })
 
   it('leaves the pane record where it is', () => {

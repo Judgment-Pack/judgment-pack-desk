@@ -25,7 +25,14 @@
  * rejection that has nothing to do with the case under test.
  */
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
-import { FileRequestError, answer, chassisUrl, readFile, type FileContent } from '../files/client'
+import {
+  FileRequestError,
+  answer,
+  chassisUrl,
+  deskFetch,
+  readFile,
+  type FileContent
+} from '../files/client'
 import {
   PROJECT_CONFIG_PATH,
   decodeDeskConfig,
@@ -95,7 +102,7 @@ export async function loadDeskLevelConfig(signal?: AbortSignal): Promise<DeskLev
   let answered: DeskLevelAnswer
   try {
     answered = await answer<DeskLevelAnswer>(
-      await fetch(chassisUrl('/api/desk-config'), { signal })
+      await deskFetch(chassisUrl('/api/desk-config'), { signal })
     )
   } catch (cause) {
     if (cause instanceof FileRequestError) {

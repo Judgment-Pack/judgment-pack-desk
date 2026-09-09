@@ -76,12 +76,14 @@ const DRAFT_V2 = scenario.documents.DRAFT_V2 as unknown
 /**
  * The network globals an engine must never touch, and what happens if it does.
  *
- * ADR-0001's contract sketch handed the engine a `baseUrl`, and a `baseUrl` for
- * this relay carries **this chassis' session token**: an adapter could read it
- * and open `/ws?token=…` itself with `globalThis.WebSocket`, driving a third
- * MCP connection the ToolGate is not on. The contract changed to a capability
- * (`assistant/engine.ts`), and this is what holds the change — structurally,
- * rather than by scanning the source for spellings somebody thought of.
+ * ADR-0001's contract sketch handed the engine a `baseUrl`. That was refused
+ * for a reason that has since changed shape: the relay used to authenticate
+ * with this chassis' session token in the query, so a `baseUrl` carried a
+ * credential. The session is an `HttpOnly` cookie now, so no address is a
+ * credential — and page code that spelled `/ws` would be admitted on the cookie
+ * alone. **Which is exactly why this seal is the guarantee and the URL never
+ * was**: what stops an engine opening a second, ungated MCP connection is that
+ * it cannot reach a `WebSocket` at all, not that it cannot guess an address.
  *
  * For the duration of the engine's run every one of these is a sentinel that
  * throws. The desk's own capability captured `fetch` when the session was
@@ -1020,12 +1022,13 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
         ]) {
           expect(request.headerNames, `a request carried ${forbidden}`).not.toContain(forbidden)
         }
-        // The relay's own base, one path suffix, and the desk's token — plus,
-        // on the one family whose wire asks for its stream in the query, the
-        // one pair the relay admits and nothing else.
+        // The relay's own base and one path suffix — plus, on the one family
+        // whose wire asks for its stream in the query, the one pair the relay
+        // admits and nothing else. No credential: the session is a cookie the
+        // browser attaches, and it is never on an address.
         expect(request.url.startsWith('/api/assistant/relay/v1/')).toBe(true)
         const url = new URL(request.url, 'http://desk.invalid')
-        const admitted = leg.api === 'gemini' && request.streamRequested ? ['token', 'alt'] : ['token']
+        const admitted = leg.api === 'gemini' && request.streamRequested ? ['alt'] : []
         expect([...url.searchParams.keys()]).toEqual(admitted)
         if (leg.api === 'gemini' && request.streamRequested) {
           expect(url.searchParams.get('alt')).toBe('sse')

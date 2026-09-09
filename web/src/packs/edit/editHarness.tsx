@@ -165,7 +165,9 @@ export function chassis(options: {
     }))
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const address = String(url)
-    if (address.includes('/api/files?')) {
+    // `/api/files` and not `/api/files?`: this desk's addresses carry no query
+    // unless the caller had one, and the listing has none.
+    if (address.includes('/api/files')) {
       return ok({ root: '/project', files })
     }
     if (address.includes('/api/file?') && init?.method === undefined) {

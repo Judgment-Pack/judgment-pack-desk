@@ -30,15 +30,27 @@
  * **`model` is a capability, not a base URL — a deliberate deviation from
  * ADR-0001's contract sketch**, which wrote
  * `model: { family, baseUrl, model }` with `baseUrl` "the chassis relay". The
- * relay authenticates with this chassis' session token in the query, so a
- * `baseUrl` an engine can read is **this desk's credential in the engine's
- * hands** — and an adapter holding it can open `/ws?token=…` itself with
- * `globalThis.WebSocket` and drive a third, ungated MCP connection. Nothing in
- * the contract would have been violated; the guarantee would simply have been
- * gone. So the engine is handed no URL and no token: `model.call(suffix, init)`
- * is a capability the desk binds, which builds the address itself, admits only
- * a validated path suffix, carries no header outside the relay's own
- * allow-list, and is the only way an engine reaches a model at all.
+ * relay used to authenticate with this chassis' session token in the query, so
+ * a `baseUrl` an engine could read was **this desk's credential in the engine's
+ * hands** — an adapter holding it could open `/ws?token=…` itself with
+ * `globalThis.WebSocket` and drive a third, ungated MCP connection.
+ *
+ * **That reading of the deviation is now out of date, and the deviation
+ * stands.** The session is an `HttpOnly` cookie the browser attaches to every
+ * same-origin request by itself, so no address is a credential and page code
+ * that spelled `/ws` would be admitted on the cookie alone. Withholding the URL
+ * was never the load-bearing part in any case: the token lived in
+ * `sessionStorage`, which is same-origin readable, so an adapter that wanted it
+ * could always have read it. What the capability actually buys is that the
+ * desk decides **what** an engine can reach — one mount point, a validated path
+ * suffix, no header outside the relay's own allow-list — rather than handing
+ * over an address and hoping. So the engine is still handed no URL:
+ * `model.call(suffix, init)` is a capability the desk binds, and it is the only
+ * way an engine reaches a model at all.
+ *
+ * The guarantee that an engine does not open a second MCP connection is held
+ * where it can be: by the member set below, asserted whole, and by the sealed
+ * network globals every engine's leg runs under.
  *
  * The conformance session holds that structurally rather than by inspection:
  * every leg runs with `fetch`, `WebSocket`, `XMLHttpRequest` and `EventSource`
@@ -109,9 +121,9 @@ export interface ModelRequest {
  * The only way an engine reaches a model.
  *
  * `suffix` is a path suffix — `chat/completions`, `v1/messages` — held to the
- * relay's own segment rule. It is not a URL and it may not carry a query: the
- * desk builds the address, attaches this chassis' session token, and the relay
- * attaches the model credential on the far side.
+ * relay's own segment rule. It is not a URL and it may not carry a query of its
+ * own: the desk builds the address, and the relay attaches the model credential
+ * on the far side.
  */
 export type ModelCall = (suffix: string, request: ModelRequest) => Promise<Response>
 

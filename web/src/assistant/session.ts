@@ -21,7 +21,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { chassisUrl } from '../files/client'
 import { DeskWebSocketTransport } from '../mcp/transport'
-import { sessionToken, socketURL } from '../mcp/McpProvider'
+import { socketURL } from '../mcp/McpProvider'
 import { allowedTools, gateTransport, type GuardrailNotice } from './toolGate'
 import type { EndpointKind } from '../config/deskConfig'
 import type {
@@ -227,14 +227,19 @@ const CALL_FAILED =
  * Four things happen here that an engine must not be trusted to do:
  *
  * - **the address is built here**, out of the mount point and a suffix this
- *   function validated, with the session token attached by `chassisUrl`;
+ *   function validated;
  * - **the answer is a facade**, constructed by this desk. A browser `Response`
- *   carries the requested URL on `.url`, so returning the one `fetch` produced
- *   handed the engine the token-bearing relay address and, from it, everything
- *   needed to open `/ws?token=…` on a connection no gate is on. A constructed
- *   `Response` has an empty `url`, no `redirected` history and only the headers
- *   this desk copied onto it. The same reasoning covers the failure path: the
- *   error is replaced, because a fetch `TypeError` quotes the URL;
+ *   carries the requested URL on `.url`, no `redirected` history is kept, and
+ *   only the headers this desk copied onto it travel. What that withholds is
+ *   *this desk's routing* rather than a secret — since the session became an
+ *   `HttpOnly` cookie the browser attaches by itself, there is no credential in
+ *   any address for an engine to read, and page code that constructed `/ws`
+ *   would be admitted on the cookie alone. So the facade is defence in depth
+ *   and is stated as that: what actually holds the ToolGate's guarantee is the
+ *   member set an engine is handed (`enforcement.test.ts`) and the sealed
+ *   network globals the conformance session runs every engine under. The same
+ *   reasoning covers the failure path: the error is replaced, because a fetch
+ *   `TypeError` quotes the URL and an engine is handed no address;
  * - **the headers are an allow-list**, in both directions, so nothing
  *   resembling a credential travels even as far as this desk's own route and
  *   nothing but the protocol's own comes back;
@@ -260,13 +265,17 @@ export function bindModelCall(family: EndpointKind): ModelCall {
     }
     // **The desk builds the address, pair included.** The suffix has already
     // been held to the chassis' own rule, so what is split here is a path and at
-    // most the one admitted literal; `chassisUrl` writes the token first and the
-    // pair after it, which is the order the relay reads them in.
+    // most the one admitted literal — which is now the *whole* of what a relayed
+    // query may be, since nothing authenticates on a query any more.
     const [path = '', pair] = suffix.split('?')
     const extra = pair === undefined ? {} : Object.fromEntries([pair.split('=') as [string, string]])
     let answered: Response
     try {
       answered = await send(chassisUrl(`${RELAY_PREFIX}/${path}`, extra), {
+        // Stated rather than relied on, exactly as `deskFetch` states it: the
+        // browser holds this desk's session in an `HttpOnly` cookie and
+        // attaches it to a same-origin request by itself.
+        credentials: 'same-origin',
         // `POST` unless the caller named the one other method this capability
         // admits. A `GET` carries no body: `fetch` refuses one that does, and
         // the model listing is the only caller that asks for either.
@@ -333,7 +342,7 @@ function facade(answered: Response): Response {
  * function returning a fresh object.
  */
 export function assistantTransport(): Transport {
-  return new DeskWebSocketTransport(socketURL(sessionToken()))
+  return new DeskWebSocketTransport(socketURL())
 }
 
 /** What a connection is once it has finished setting itself up. */

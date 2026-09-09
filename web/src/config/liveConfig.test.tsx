@@ -164,8 +164,8 @@ describe('the desk reading jpack-desk.json', () => {
       asked.every(
         (url) =>
           url.includes('/api/file?') ||
-          url.includes('/api/files?') ||
-          url.includes('/api/desk-config?')
+          url.includes('/api/files') ||
+          url.includes('/api/desk-config')
       )
     ).toBe(true)
   })

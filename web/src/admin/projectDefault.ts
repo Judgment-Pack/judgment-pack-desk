@@ -13,7 +13,7 @@
  * anyway" is not a choice a page should be able to make about either.
  */
 import { useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query'
-import { answer, chassisUrl } from '../files/client'
+import { answer, chassisUrl, deskFetch } from '../files/client'
 import { DESK_CONFIG_QUERY_KEY } from '../config/queries'
 import type { EffectiveConfig } from '../config/deskConfig'
 
@@ -37,7 +37,7 @@ export async function updateProjectDefault(
   input: ProjectDefaultWrite
 ): Promise<ProjectDefaultWritten> {
   return answer<ProjectDefaultWritten>(
-    await fetch(chassisUrl('/api/desk-config'), {
+    await deskFetch(chassisUrl('/api/desk-config'), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       // **`project` and nothing else.** A body that also restated `assistant`

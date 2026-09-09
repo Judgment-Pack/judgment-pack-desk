@@ -32,7 +32,7 @@ export class DeskWebSocketTransport implements Transport {
         // The browser withholds the reason for a failed handshake, so say what
         // the causes actually are rather than reporting an empty Event.
         const error = new Error(
-          `cannot reach the desk chassis at ${this.url} — it may not be running, or the session token may be missing or stale`
+          `cannot reach the desk chassis at ${this.url} — it may not be running, or this browser may have no session for it`
         )
         this.onerror?.(error)
         reject(error)

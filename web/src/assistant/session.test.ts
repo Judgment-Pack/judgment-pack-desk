@@ -4,8 +4,7 @@
  * The conformance suite drives this module end to end; what is here is the
  * three properties that suite cannot see because it injects a transport: that
  * the session opens **its own**, that closing the session closes it, and that
- * the relay base the engine is handed carries the desk's token and nothing
- * else.
+ * the address the desk builds for the engine carries nothing of the page's.
  */
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -15,7 +14,6 @@ import type { AssistantEvent } from './engine'
 
 afterEach(() => {
   vi.unstubAllGlobals()
-  window.sessionStorage.clear()
 })
 
 describe('the model capability the desk binds', () => {
@@ -29,19 +27,20 @@ describe('the model capability the desk binds', () => {
     return { calls }
   }
 
-  it('builds the address itself, with the desk’s token and no other parameter', async () => {
-    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
+  it('builds the address itself, and puts no parameter on it at all', async () => {
     const { calls } = recordingFetch()
     await bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
     const url = new URL(calls[0]!.url, 'http://desk.invalid')
     expect(url.pathname).toBe('/api/assistant/relay/v1/chat/completions')
-    // The relay refuses a query carrying anything but `token`, outright.
-    expect([...url.searchParams.entries()]).toEqual([['token', 'a-token']])
+    // The relay refuses every pair but the one closed `alt=sse` literal, and
+    // there is no credential left for one to hide beside.
+    expect([...url.searchParams.entries()]).toEqual([])
     expect(calls[0]!.init.method).toBe('POST')
+    // Stated on the request, not left to the `fetch` default.
+    expect(calls[0]!.init.credentials).toBe('same-origin')
   })
 
   it('puts the Anthropic suffix after the same mount point', async () => {
-    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     const { calls } = recordingFetch()
     await bindModelCall('openai-compatible')('v1/messages', { body: '{}' })
     expect(new URL(calls[0]!.url, 'http://desk.invalid').pathname).toBe(
@@ -52,7 +51,6 @@ describe('the model capability the desk binds', () => {
   it('carries the protocol headers and drops everything else', async () => {
     // An allow-list, mirrored from the chassis' own. A credential header this
     // desk has never heard of does not travel, because it is not on the list.
-    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     const { calls } = recordingFetch()
     await bindModelCall('openai-compatible')('chat/completions', {
       body: '{}',
@@ -73,7 +71,6 @@ describe('the model capability the desk binds', () => {
   })
 
   it('refuses a suffix outside the relay’s own segment rule, before anything is sent', async () => {
-    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     const { calls } = recordingFetch()
     const call = bindModelCall('openai-compatible')
     for (const bad of [
@@ -142,21 +139,17 @@ describe('the model capability the desk binds', () => {
     }
   })
 
-  it('writes the pair into the address beside the token, and sends nothing else', async () => {
-    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
+  it('writes the one admitted pair into the address, and sends nothing else', async () => {
     const { calls } = recordingFetch()
     await bindModelCall('gemini')('v1beta/models/m:streamGenerateContent?alt=sse', { body: '{}' })
     const url = new URL(calls[0]!.url, 'http://desk.invalid')
     expect(url.pathname).toBe('/api/assistant/relay/v1/v1beta/models/m:streamGenerateContent')
-    // The token first, the pair after it — the order the relay reads them in.
-    expect([...url.searchParams.entries()]).toEqual([
-      ['token', 'a-token'],
-      ['alt', 'sse']
-    ])
+    // The whole query, and it is the one closed literal the gemini wire has
+    // nowhere else to put.
+    expect([...url.searchParams.entries()]).toEqual([['alt', 'sse']])
   })
 
   it('sends nothing at all where the pair is asked for on another family', async () => {
-    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     const { calls } = recordingFetch()
     await expect(
       bindModelCall('anthropic')('v1beta/models/m:streamGenerateContent?alt=sse', { body: '{}' })
@@ -227,11 +220,12 @@ describe('the model capability the desk binds', () => {
   }
 
   it('returns a facade an engine cannot read the relay address off', async () => {
-    // A browser Response carries the requested URL on `.url`, and that URL is
-    // the relay address with this chassis' session token in it. Returning the
-    // one fetch produced handed the engine everything it needed to open
-    // /ws?token=… on a connection no gate is on.
-    window.sessionStorage.setItem('jpack-desk-token', 'a-secret-session-token')
+    // A browser Response carries the requested URL on `.url`. That URL used to
+    // be the relay address with this chassis' session token in it; it is now
+    // an address and no more, and this facade is defence in depth rather than
+    // the thing holding the gate — see `engine.ts`. What is asserted is still
+    // worth asserting: an engine is handed a capability, so it is handed no
+    // address, and this walks every door out of the answer to check.
     vi.stubGlobal('fetch', async (url: unknown) => {
       // A response that knows where it came from, exactly as a browser's does.
       const real = new Response('{"ok":true}', {
@@ -244,7 +238,6 @@ describe('the model capability the desk binds', () => {
     const answered = await bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
     const reachable = everythingReachable(answered)
     expect(answered.url).toBe('')
-    expect(reachable).not.toContain('a-secret-session-token')
     expect(reachable).not.toContain('/api/assistant/relay')
     expect(reachable).not.toContain('token=')
     // What a loop does need is still there.
@@ -259,7 +252,6 @@ describe('the model capability the desk binds', () => {
     // A Response built from a ReadableStream keeps that very object as its
     // body, so a stream somebody decorated — a captured fetch, a patched
     // prototype — was reachable through the facade as `facade.body.leak`.
-    window.sessionStorage.setItem('jpack-desk-token', 'a-secret-session-token')
     let upstream: ReadableStream<Uint8Array> | null = null
     vi.stubGlobal('fetch', async (url: unknown) => {
       const real = new Response('{"ok":true}', {
@@ -278,7 +270,6 @@ describe('the model capability the desk binds', () => {
     const answered = await bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
     expect(answered.body).not.toBe(upstream)
     expect((answered.body as unknown as Record<string, unknown>).leak).toBeUndefined()
-    expect(everythingReachable(answered)).not.toContain('a-secret-session-token')
     // And it is still the answer: the bytes come through the fresh stream.
     expect(await answered.text()).toBe('{"ok":true}')
   })
@@ -287,7 +278,6 @@ describe('the model capability the desk binds', () => {
     // The walk reads `clone` as a function and never called it, so a clone's
     // own `url` and its own body were never looked at. Every door out of the
     // facade is opened here.
-    window.sessionStorage.setItem('jpack-desk-token', 'a-secret-session-token')
     vi.stubGlobal('fetch', async (url: unknown) => {
       const real = new Response('{"ok":true}', {
         status: 200,
@@ -307,19 +297,17 @@ describe('the model capability the desk binds', () => {
     // empty of an address as the one it came from.
     const copy = answered.clone()
     expect(copy.url).toBe('')
-    expect(everythingReachable(copy)).not.toContain('a-secret-session-token')
     expect(everythingReachable(copy)).not.toContain('/api/assistant/relay')
 
     // The reader, and the locked-state transition around it.
     expect(answered.body!.locked).toBe(false)
     const reader = answered.body!.getReader()
     expect(answered.body!.locked).toBe(true)
-    expect(everythingReachable(reader)).not.toContain('a-secret-session-token')
     expect(everythingReachable(reader)).not.toContain('/api/assistant/relay')
     // A stream has no async iterator in this runtime unless one is defined;
     // whatever is there is walked rather than assumed absent.
     const iterator = (answered.body as unknown as Record<symbol, unknown>)[Symbol.asyncIterator]
-    expect(everythingReachable(iterator)).not.toContain('a-secret-session-token')
+    expect(everythingReachable(iterator)).not.toContain('/api/assistant/relay')
     reader.releaseLock()
 
     // And the clone's own body, which is a different stream again.
@@ -332,7 +320,6 @@ describe('the model capability the desk binds', () => {
     // A facade that buffered would still pass every identity check and would
     // break streaming for every engine. And a facade that dropped the link
     // upstream would leave a relayed request running after the engine gave up.
-    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     let write: ((chunk: string) => void) | null = null
     let cancelled: unknown = 'not cancelled'
     vi.stubGlobal('fetch', async () => {
@@ -371,7 +358,6 @@ describe('the model capability the desk binds', () => {
     // A rejection named AbortError can carry the request URL in its message and
     // again in its cause. Rethrowing it whole handed the engine the address by
     // another door; the classification is all that travels.
-    window.sessionStorage.setItem('jpack-desk-token', 'a-secret-session-token')
     vi.stubGlobal('fetch', async (url: unknown) => {
       const inner = new Error(`aborted while fetching ${String(url)}`)
       inner.name = 'AbortError'
@@ -384,12 +370,10 @@ describe('the model capability the desk binds', () => {
     )) as Error & { cause?: unknown }
     expect(failure.name).toBe('AbortError')
     expect(failure.cause).toBeUndefined()
-    expect(everythingReachable(failure)).not.toContain('a-secret-session-token')
     expect(everythingReachable(failure)).not.toContain('/api/assistant/relay')
   })
 
   it('replaces the error a failed call throws, because a TypeError quotes the URL', async () => {
-    window.sessionStorage.setItem('jpack-desk-token', 'a-secret-session-token')
     vi.stubGlobal('fetch', async (url: unknown) => {
       throw new TypeError(`Failed to fetch ${String(url)}`)
     })
@@ -397,13 +381,11 @@ describe('the model capability the desk binds', () => {
       (error: unknown) => error
     )
     const reachable = everythingReachable(failure)
-    expect(reachable).not.toContain('a-secret-session-token')
     expect(reachable).not.toContain('/api/assistant/relay')
     expect((failure as Error).message).toContain('could not be made')
   })
 
   it('reports an abort as itself, so a loop can tell stopped from failed', async () => {
-    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     vi.stubGlobal('fetch', async () => {
       const error = new Error('aborted')
       error.name = 'AbortError'
@@ -416,7 +398,6 @@ describe('the model capability the desk binds', () => {
   })
 
   it('carries a body-less status without trying to give it a body', async () => {
-    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     vi.stubGlobal('fetch', async () => new Response(null, { status: 204 }))
     const answered = await bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
     expect(answered.status).toBe(204)
@@ -449,7 +430,6 @@ describe('the model capability the desk binds', () => {
     // The TypeScript signature says `string`; the type is not what runs. A
     // string-like object answers an innocuous `split()` while the validator is
     // looking and a different `toString()` when the URL is built.
-    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     const { calls } = recordingFetch()
     await expect(
       bindModelCall('openai-compatible')(make() as unknown as string, { body: '{}' })
@@ -461,7 +441,6 @@ describe('the model capability the desk binds', () => {
     // This is what lets the conformance session seal every network global for
     // the duration of an engine's run: the desk's capability still works, and
     // an engine that reaches for a global does not.
-    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     const { calls } = recordingFetch()
     const call = bindModelCall('openai-compatible')
     vi.stubGlobal('fetch', () => {
@@ -477,7 +456,6 @@ describe('the assistant’s own connection', () => {
     // A memoised transport would be one `jpack mcp` and one gate shared between
     // sessions, and closing either would take the other's connection with it.
     // Sharing the *desk's* would put the gate in front of the page's own calls.
-    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     const first = assistantTransport()
     const second = assistantTransport()
     expect(first).not.toBe(second)
@@ -487,7 +465,6 @@ describe('the assistant’s own connection', () => {
     // The transport opens on `start()`, which `connect` calls. A constructor
     // that dialled would mean a tab that has never run a session still holds a
     // runtime subprocess.
-    window.sessionStorage.setItem('jpack-desk-token', 'a-token')
     const opened: string[] = []
     class Spy {
       constructor(url: string) {

@@ -17,8 +17,6 @@
  *   the graph binding uses, for the same reason: two answers about one file,
  *   and only equality proves they are about one revision.
  */
-import { sessionToken } from '../mcp/McpProvider'
-
 /** One file the project contains, as the listing reports it. */
 export interface FileEntry {
   /** Project-relative and slash-separated, on every platform. */
@@ -160,18 +158,44 @@ export class StaleWrite extends Error {
 }
 
 /**
- * One chassis URL, with the session token on it.
+ * One chassis URL, carrying **whatever the caller's own parameters are and
+ * nothing else**.
  *
- * Exported because every chassis endpoint takes the token the same way, and a
- * second copy of this line elsewhere is a second place for the token to be
- * forgotten. The assistant slot's calls use it.
+ * It used to write this desk's session token in front of every caller's
+ * parameters, because that was how a request authorized. Nothing authorizes on
+ * a query now: the browser holds an `HttpOnly` session cookie and attaches it
+ * itself, so this builds an address and no more. A query is emitted only where
+ * there is something to put in it, so `/api/files` is `/api/files` — a
+ * dangling `?` was a leftover of the token always being there.
+ *
+ * Still exported, and still the one place an address is spelled: the assistant
+ * slot's calls and the relay's use it, and two spellings would be two answers
+ * about where the chassis is.
  */
 export function chassisUrl(path: string, params: Record<string, string> = {}): string {
-  const query = new URLSearchParams({ token: sessionToken(), ...params })
-  return `${path}?${query.toString()}`
+  const query = new URLSearchParams(params).toString()
+  return query === '' ? path : `${path}?${query}`
 }
 
 const endpoint = chassisUrl
+
+/**
+ * Every request this page makes to the chassis.
+ *
+ * **`credentials: 'same-origin'` is stated rather than relied on.** It is the
+ * `fetch` default for a same-origin request, so the cookie would travel
+ * without it — and a reader checking whether this page still authorizes at all
+ * would find nothing saying so. One function says it once, which is the same
+ * argument `chassisUrl` is one function for.
+ *
+ * `fetch` is read at call time rather than captured, because the desk's own
+ * calls are supposed to work in whatever environment the page is running in —
+ * unlike the assistant's model capability, which captures it deliberately so
+ * that an engine's sealed globals cannot reach it (`assistant/session.ts`).
+ */
+export function deskFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, { ...init, credentials: 'same-origin' })
+}
 
 /**
  * Read one answer, with the chassis' own message kept as the reason.
@@ -253,12 +277,12 @@ function problemsIn(value: unknown): { key: string; reason: string }[] {
 
 /** Every regular file in the project tree. */
 export async function listFiles(signal?: AbortSignal): Promise<FileListing> {
-  return answer<FileListing>(await fetch(endpoint('/api/files'), { signal }))
+  return answer<FileListing>(await deskFetch(endpoint('/api/files'), { signal }))
 }
 
 /** One file's current bytes. */
 export async function readFile(path: string, signal?: AbortSignal): Promise<FileContent> {
-  return answer<FileContent>(await fetch(endpoint('/api/file', { path }), { signal }))
+  return answer<FileContent>(await deskFetch(endpoint('/api/file', { path }), { signal }))
 }
 
 /**
@@ -283,7 +307,7 @@ export async function writeFile(input: {
   override?: boolean
   createParents?: boolean
 }): Promise<FileContent> {
-  const response = await fetch(endpoint('/api/file'), {
+  const response = await deskFetch(endpoint('/api/file'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

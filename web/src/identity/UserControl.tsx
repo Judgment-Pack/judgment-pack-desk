@@ -34,11 +34,12 @@
  * chosen nothing gets, and the menu names it so that clearing is not a leap in
  * the dark.
  *
- * The sentence about the token is checked against the code rather than
- * inherited from the spec: `McpProvider` copies `?token=` into `sessionStorage`
- * on first load, and nothing calls `history.replaceState` — so the token
- * leaves the address bar at the first in-app navigation, not at load. Saying
- * "it leaves the URL immediately" would be a claim this desk does not keep.
+ * The sentence about the session is checked against the code rather than
+ * inherited from the spec. `GET /launch?secret=…` answers `303 See Other` to
+ * `/` with `Set-Cookie: jpack-desk-session`, so the secret leaves the address
+ * bar **at the redirect** — at load, and not at some later navigation. That is
+ * a stronger claim than the sentence this replaced could make, and it is the
+ * chassis' own test that holds it (`TestLaunchExchangeSetsTheSessionCookie`).
  */
 import { Avatar, DropdownMenu } from 'radix-ui'
 import { useState } from 'react'
@@ -56,13 +57,13 @@ import { useShellState, type ResetOutcome } from '../shell/paneState'
 import { useIdentity } from './IdentityProvider'
 
 export const NONE_MENU_SENTENCE =
-  'No identity provider is configured. This desk is authorized by the session token this ' +
-  'browser tab holds, the loopback bind, and the origin check.'
+  'No identity provider is configured. This desk is authorized by the session cookie this ' +
+  'browser holds, the loopback bind, and the origin check.'
 
-export const TOKEN_SENTENCE =
-  'The token arrives in the URL the chassis prints; the page copies it into sessionStorage ' +
-  'under jpack-desk-token on first load, and it leaves the address bar at the first in-app ' +
-  'navigation.'
+export const SESSION_SENTENCE =
+  'The desk prints a launch URL at startup. Opening it once trades the secret for an ' +
+  'HttpOnly session cookie and redirects to the desk, so nothing of it stays in the address ' +
+  'bar and the page never holds it.'
 
 export const PROVIDER_PHASE_NOTE = 'provider configured · sign-in arrives in phase B'
 
@@ -154,9 +155,10 @@ export function UserControl() {
   const { provider, displayName } = useIdentity()
   // Where a provider is configured and carries no label, the name falls back
   // to the issuer's host — something the desk read out of the file. It does
-  // **not** fall back to "signed out": that is a verdict about a session, and
-  // phase A performs no discovery, holds no token and computes no expiry, so
-  // it is a state this desk has not established and must not assert.
+  // **not** fall back to "signed out": that is a verdict about a provider
+  // session, and phase A performs no discovery, holds no provider token and
+  // computes no expiry, so it is a state this desk has not established and must
+  // not assert.
   //
   // Branched on nullness, not on a tag. There is no `mode` to read here
   // because there is no `mode` in the state, which is the same absence the
@@ -182,7 +184,7 @@ export function UserControl() {
           <DropdownMenu.Label className="desk-menu-note">
             {provider === null ? NONE_MENU_SENTENCE : PROVIDER_PHASE_NOTE}
           </DropdownMenu.Label>
-          <DropdownMenu.Label className="desk-menu-note">{TOKEN_SENTENCE}</DropdownMenu.Label>
+          <DropdownMenu.Label className="desk-menu-note">{SESSION_SENTENCE}</DropdownMenu.Label>
           <DropdownMenu.Separator className="desk-rule-h" />
           <AppearanceItems />
           <DropdownMenu.Separator className="desk-rule-h" />

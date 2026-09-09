@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { Route, Routes } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { connected, renderConnected } from '../testing/harness'
 import { forgetAuthorBridge, requestOpen } from '../shell/authorBridge'
 import { AuthorView } from './AuthorView'
@@ -98,9 +98,6 @@ async function openTheFile() {
   return (await screen.findByLabelText('File contents')) as HTMLTextAreaElement
 }
 
-beforeEach(() => {
-  window.sessionStorage.setItem('jpack-desk-token', 'test-token')
-})
 afterEach(() => {
   cleanup()
   forgetAuthorBridge()
@@ -108,14 +105,16 @@ afterEach(() => {
 })
 
 describe('the authoring shell', () => {
-  it('lists the project files and carries the session token on every call', async () => {
+  it('lists the project files, and carries no credential on any call', async () => {
     const calls = chassis({ files: () => ({ status: 200, body: LISTING }) })
     const { container } = render()
     await screen.findByText('jpack.json')
     expect(container.textContent).toContain('packs/vendor-onboarding.pack.json')
-    // The chassis refuses an untokened request, so a client that forgot the
-    // token would show an empty desk against a working project.
-    expect(calls[0]!.url).toContain('token=test-token')
+    // The chassis authorizes this page by the `jpack-desk-session` cookie the
+    // browser attaches by itself. Nothing of a credential is on the address,
+    // and a page that put one there would be putting it in every log a URL
+    // reaches.
+    expect(calls[0]!.url).toBe('/api/files')
   })
 
   it('says nothing is modified until the buffer differs from what was loaded', async () => {

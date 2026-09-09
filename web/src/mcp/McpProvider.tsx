@@ -85,31 +85,77 @@ export function useMcp(): McpConnection {
 }
 
 /**
- * The session token arrives in the URL the chassis prints. Keeping it in
- * sessionStorage lets client-side navigation drop it from the address bar
- * without losing the connection, and scopes it to this tab.
+ * The key this page used to keep the desk's credential under, and does not any
+ * more.
+ *
+ * **This page holds no credential at all now.** The chassis prints
+ * `/launch?secret=…`, trades the secret once for the `jpack-desk-session`
+ * cookie and redirects to `/`; the cookie is `HttpOnly`, so page code cannot
+ * read it, cannot put it on a query and cannot copy it anywhere. What is left
+ * of the old arrangement is whatever a browser that ran the previous build is
+ * still holding, and it is removed rather than left to sit — a stale secret in
+ * storage is a secret that can leak, and it authorizes nothing.
  */
-const TOKEN_KEY = 'jpack-desk-token'
-
-export function sessionToken(): string {
-  const fromUrl = new URLSearchParams(window.location.search).get('token')
-  if (fromUrl) {
-    window.sessionStorage.setItem(TOKEN_KEY, fromUrl)
-    return fromUrl
-  }
-  return window.sessionStorage.getItem(TOKEN_KEY) ?? ''
-}
+const STALE_TOKEN_KEY = 'jpack-desk-token'
 
 /**
- * The one address a desk MCP connection is opened at.
+ * Remove that key, once. Exported so a test can name it; called at module load
+ * so that opening the desk is enough.
+ */
+export function forgetStaleSessionToken(): void {
+  try {
+    window.sessionStorage.removeItem(STALE_TOKEN_KEY)
+  } catch {
+    // A browser with storage disabled has nothing to forget, and a desk that
+    // refused to load over it would be a worse desk than one that skips this.
+  }
+}
+
+if (typeof window !== 'undefined') forgetStaleSessionToken()
+
+/**
+ * What the page says when the chassis has no session for it.
+ *
+ * Exported because it is asserted by name: a sentence that told a person to
+ * "check the token" would be telling them to do something this desk no longer
+ * has.
+ */
+export const NO_SESSION_MESSAGE =
+  'No session — open the URL that jpack-desk printed at startup.'
+
+/**
+ * The one address a desk MCP connection is opened at, and it carries **no
+ * credential**: the browser attaches the session cookie to a same-origin
+ * upgrade by itself.
  *
  * Exported because the assistant opens a **second** connection over the same
  * relay with its own client and its own gate (`assistant/session.ts`), and two
  * spellings of this address would be two answers about where the chassis is.
  */
-export function socketURL(token: string): string {
+export function socketURL(): string {
   const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${scheme}//${window.location.host}/ws?token=${encodeURIComponent(token)}`
+  return `${scheme}//${window.location.host}/ws`
+}
+
+/**
+ * Whether the chassis says this page has no session.
+ *
+ * **A failed WebSocket handshake tells the page nothing.** The browser
+ * withholds the status of a rejected upgrade, so "the chassis is not running"
+ * and "this browser has no session" arrive as the same empty error — and they
+ * need opposite answers: one is worth retrying forever and the other never
+ * resolves on its own. So the page asks over a channel that does report a
+ * status. Only the status is read; the answer's body is not, and the identity
+ * the desk displays still comes from the configuration and not from here.
+ */
+async function noSession(): Promise<boolean> {
+  try {
+    const response = await fetch('/api/session', { credentials: 'same-origin' })
+    return response.status === 401
+  } catch {
+    // The chassis could not be reached at all, which is the retryable case.
+    return false
+  }
 }
 
 /** The backoff schedule: doubling from the base, never longer than the cap. */
@@ -163,22 +209,10 @@ export function McpProvider({ children }: { children: ReactNode }) {
 
     const retryNow = () => setRetryTick((tick) => tick + 1)
 
-    const token = sessionToken()
-    if (!token) {
-      // Nothing to retry: no token will appear on its own.
-      setConnection({
-        ...DISCONNECTED,
-        status: 'failed',
-        error: new Error(
-          'No session token. Open the URL that jpack-desk printed at startup — it carries ?token=…'
-        ),
-        connectionEpoch: epoch.current,
-        everConnected: everConnected.current,
-        retryNow
-      })
-      return
-    }
-
+    // **Nothing to check before connecting.** The page holds no credential to
+    // be missing: the browser either has the cookie or it does not, and the
+    // only thing that can answer that is the chassis. So the connection is
+    // attempted and a failure is *classified* — see `reportFailure`.
     const scheduleRetry = (cause: Error) => {
       if (disposed) return
       attempt += 1
@@ -192,6 +226,27 @@ export function McpProvider({ children }: { children: ReactNode }) {
         retryNow
       })
       timer = setTimeout(connect, backoffDelay(attempt))
+    }
+
+    // A connection that failed, told apart from one that will never succeed.
+    // No session is not a retryable state: no cookie appears on its own, and a
+    // page that reconnected forever would hide the one instruction that fixes
+    // it.
+    const reportFailure = async (cause: Error) => {
+      if (disposed) return
+      if (await noSession()) {
+        if (disposed) return
+        setConnection({
+          ...DISCONNECTED,
+          status: 'failed',
+          error: new Error(NO_SESSION_MESSAGE),
+          connectionEpoch: epoch.current,
+          everConnected: everConnected.current,
+          retryNow
+        })
+        return
+      }
+      scheduleRetry(cause)
     }
 
     function connect() {
@@ -231,7 +286,7 @@ export function McpProvider({ children }: { children: ReactNode }) {
 
       const reconnecting = attempt > 0
       client
-        .connect(new DeskWebSocketTransport(socketURL(token)))
+        .connect(new DeskWebSocketTransport(socketURL()))
         .then(async () => {
           if (disposed || live !== client) return
           attempt = 0
@@ -276,7 +331,7 @@ export function McpProvider({ children }: { children: ReactNode }) {
           // second retry beside this one.
           live = null
           void client.close()
-          scheduleRetry(cause instanceof Error ? cause : new Error(String(cause)))
+          void reportFailure(cause instanceof Error ? cause : new Error(String(cause)))
         })
     }
 

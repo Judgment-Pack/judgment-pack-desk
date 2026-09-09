@@ -235,7 +235,6 @@ async function draw(options: {
 }
 
 beforeEach(() => {
-  window.sessionStorage.setItem('jpack-desk-token', 'a-token')
 })
 
 afterEach(() => {
@@ -326,10 +325,12 @@ describe('one whole run', () => {
 
   it('opens one connection of its own, and calls the relay with no credential', async () => {
     const { relayed } = await runIt()
-    // The assistant's socket, not the desk's: one, and it carries the session
-    // token the chassis authenticates every request with.
+    // The assistant's socket, not the desk's: one, and it carries **no
+    // credential of its own** — the browser attaches the session cookie to a
+    // same-origin upgrade, and the page has nothing to add.
     expect(runtime!.opened).toHaveLength(1)
-    expect(runtime!.opened[0]).toContain('/ws?token=a-token')
+    expect(runtime!.opened[0]).toContain('/ws')
+    expect(runtime!.opened[0]).not.toContain('token=')
     expect(relayed.length).toBeGreaterThan(0)
     for (const request of relayed) {
       expect(request.url.startsWith('/api/assistant/relay/v1/chat/completions')).toBe(true)
