@@ -419,10 +419,21 @@ await page.waitForSelector('.desk', { timeout: 30000 })
   if (page.url().includes(SECRET)) wrong.push('the launch secret is in the address bar')
 
   // The page holds a session id, keyed by this origin — per tab, and per port.
+  //
+  // **Awaited, not read once.** The exchange is one request the page makes on
+  // load, and reading storage the instant the DOM is ready is reading before it
+  // has answered — a race this gate would report as a missing session on a
+  // slow machine and pass on a fast one. Ten seconds is far past any real
+  // answer and short enough to fail rather than hang.
   const key = `jpack-desk-session:127.0.0.1:${PORT}`
-  const held = await page.evaluate((k) => window.sessionStorage.getItem(k), key)
+  let held = null
+  for (const _ of Array.from({ length: 100 })) {
+    held = await page.evaluate((k) => window.sessionStorage.getItem(k), key)
+    if (typeof held === 'string' && held.length === 48) break
+    await page.waitForTimeout(100)
+  }
   if (typeof held !== 'string' || held.length !== 48) {
-    wrong.push(`sessionStorage[${key}] is ${JSON.stringify(held)}, want a 48-character id`)
+    wrong.push(`sessionStorage[${key}] is ${JSON.stringify(held)} after 10s, want a 48-character id`)
   }
   if (held === SECRET) wrong.push('the page is holding the launch secret itself')
 
