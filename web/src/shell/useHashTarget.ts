@@ -2,12 +2,17 @@
  * Scroll to the element a URL fragment names.
  *
  * The rail's Admin menu and the user menu link to `/admin#storage`,
- * `/admin#organization`, `/help#shortcuts` and the rest. Nothing does this for
- * them:
- * `createBrowserRouter` performs no fragment scrolling, and the browser's own
- * would not help either, because the shell's scroll container is `.desk-main`
- * and not the document. Without this the menus changed the address bar and
- * moved nothing, which reads as a broken menu rather than as a missing feature.
+ * `/admin#organization`, `/help#shortcuts` and the rest, and
+ * `createBrowserRouter` performs no fragment scrolling at all — so without this
+ * the menus changed the address bar and moved nothing, which reads as a broken
+ * menu rather than as a missing feature.
+ *
+ * The browser's own fragment scrolling is not a substitute, and the reason is
+ * narrower than it was once written here: it happens on a **full load** and not
+ * on the client-side navigation a menu performs. It does reach `.desk-main` —
+ * the browser scrolls the nearest scrollable ancestor, not only the document —
+ * which is measurable in the drive on a hard load of `/admin#assistant`, so a
+ * page that wants the top of itself after such a load has to ask for it.
  *
  * It runs on the fragment and on nothing else, so a route that re-renders does
  * not drag the reader back to a heading they have scrolled away from. An

@@ -53,7 +53,7 @@
  * config-supplied path would be a local-code-execution surface. The status
  * line reports what the process was started with.
  */
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { AssistantSection } from '../assistant/AssistantSection'
 import { AdminStatusLine } from '../admin/AdminStatusLine'
@@ -128,10 +128,24 @@ export function AdminView() {
   // the list off the screen, because `.desk-main` is the one scroll container
   // both columns are in.
   useHashTarget(stacked)
-
   const open = sectionFromHash(hash)
   const packDir = config.storage.packs.dir
   const packLocation = packLocationState(packDir, listing)
+
+  // **And where it does not scroll, it starts at the top.** A full load of
+  // `/admin#assistant` is scrolled by the browser itself — the shell's scroll
+  // container is `.desk-main` and the browser scrolls the nearest one, which
+  // the hook's own comment used to say it would not — and a click on a row
+  // while a tall section is scrolled would otherwise open the next one halfway
+  // down. Stated on this page's own element rather than on the shell's, so a
+  // route is not selecting the frame it is rendered in.
+  const top = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    // Only on *opening* one: arriving at the overview is arriving at the top
+    // already, and scrolling there would take the gutter above the heading.
+    if (stacked || open === undefined) return
+    top.current?.scrollIntoView()
+  }, [open?.id, stacked, open])
 
   // **Escape leaves the section, and only the section.** The Inspector's
   // drawer form is a `Dialog`, and Escape closes it there — the one place the
@@ -178,7 +192,7 @@ export function AdminView() {
   )
 
   return (
-    <article className={`detail ${styles.admin}`} data-measure="form">
+    <article className={`detail ${styles.admin}`} data-measure="form" ref={top}>
       {pane}
       <header className="detail-head">
         <h1>Admin</h1>

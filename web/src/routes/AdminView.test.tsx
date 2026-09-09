@@ -1171,12 +1171,22 @@ describe('one section at a time', () => {
     const scrolled: string[] = []
     const original = Element.prototype.scrollIntoView
     Element.prototype.scrollIntoView = function scrollIntoView(this: Element) {
-      scrolled.push(this.id)
+      scrolled.push(this.id === '' ? this.tagName.toLowerCase() : this.id)
     }
     try {
-      renderAdmin(effectiveConfig(undefined), '/admin#storage')
+      // The overview is the top already, and scrolling there would take the
+      // gutter above the heading with it.
+      renderAdmin(effectiveConfig(undefined))
       expect(scrolled).toEqual([])
       cleanup()
+
+      renderAdmin(effectiveConfig(undefined), '/admin#storage')
+      // The page's own top, and never the section: a full load of a fragment is
+      // scrolled by the browser itself, and a click on a row while a tall
+      // section is scrolled would otherwise open the next one halfway down.
+      expect(scrolled).toEqual(['article'])
+      cleanup()
+      scrolled.length = 0
 
       vi.stubGlobal('matchMedia', (query: string) => ({
         media: query,
