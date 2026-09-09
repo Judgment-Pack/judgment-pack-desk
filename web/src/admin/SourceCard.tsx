@@ -31,17 +31,18 @@
  * decoder's own sentence, key path and all. The warning notes this replaced
  * were prose about a problem; a status line is the problem.
  *
- * **Content is the member's own bytes** where the file was *accepted*, and the
- * decoded value — labelled as decoded — where there are no bytes to show. See
- * `memberBytes`.
+ * **The Content disclosure is gone from this card**, and the two things it
+ * carried went to two different places. The bytes are context rather than a
+ * setting — nobody edits them here — so they are in the right pane now, through
+ * `ConfigPane`, which is the same claim the pack routes make on that slot. What
+ * stayed is the *rule*: `showsContent` is exported from here and the pane
+ * imports it, because a refused file's bytes are the thing the refusal is about
+ * and two spellings of that rule would be invisible to a harness that broke one
+ * of them.
  *
- * **A refused file shows no content at all**, and that is a safety rule rather
- * than a tidiness one. The decoder refuses a whole file for one credential-
- * shaped member, and the point of refusing it is that the desk will not act on
- * it; rendering its bytes anyway put the very member the refusal is about —
- * `identity.apiKey`, and on the Project card the whole document around it —
- * into the DOM of the page that reported the refusal. What a reader needs
- * there is the refusal, which the Status line already is.
+ * `StatusLine` is exported for the same reason. The pane says what state the
+ * file is in, and a second vocabulary for six states is a second set of
+ * sentences to keep in step.
  */
 import {
   createContext,
@@ -52,7 +53,6 @@ import {
   type ReactNode
 } from 'react'
 import type { ConfigProblem, ReadFailure } from '../config/deskConfig'
-import { memberBytes } from './memberBytes'
 import styles from './SourceCard.module.css'
 
 /**
@@ -116,37 +116,21 @@ export function usePublishedWriteStatus(status: SourceStatus | undefined): void 
   useEffect(() => () => publish?.(undefined), [publish])
 }
 
-/** What the Content disclosure shows, and where it comes from. */
-export interface CardContent {
-  /** The file's text, where this page read it. */
-  text?: string
-  /** The top-level member to quote, or the whole file where absent. */
-  member?: string
-  /**
-   * What is shown where the bytes cannot be established.
-   *
-   * Optional: a card whose file has no bytes to quote and no decoded value
-   * worth showing renders no disclosure rather than an empty one.
-   */
-  value?: unknown
-}
-
 export function SourceCard({
   id,
   title,
   location,
   status,
-  content,
   fields,
   save,
-  under
+  under,
+  level
 }: {
   id: string
   title: string
   /** The path, from the chassis. A card with nowhere to point says so. */
   location: ReactNode
   status: SourceStatus
-  content?: CardContent
   fields?: ReactNode
   /** The one write this card offers, where it offers one. */
   save?: ReactNode
@@ -158,6 +142,16 @@ export function SourceCard({
    * only where it has something the group has not already said.
    */
   under?: SourceStatus
+  /**
+   * The heading level, where the document's outline is not the nesting.
+   *
+   * It follows `under` by default — a card inside a group is a subsection of
+   * it — and Admin's open section is the exception the prop exists for: it
+   * states no location, because the list beside it and the pane already do,
+   * and it is nonetheless a top-level section of the page rather than a
+   * member of a group that is not rendered around it.
+   */
+  level?: 2 | 3
 }) {
   const grouped = under !== undefined
   // What the form inside this card, if any, says its own write is doing.
@@ -169,16 +163,16 @@ export function SourceCard({
   const says = write ?? status
   return (
     <section className={grouped ? styles.member : styles.card} aria-labelledby={`${id}-title`}>
-      <Title id={id} title={title} level={grouped ? 3 : 2} className={styles.title} />
+      <Title
+        id={id}
+        title={title}
+        level={level ?? (grouped ? 3 : 2)}
+        className={styles.title}
+      />
       <Head
         location={grouped ? undefined : location}
         status={grouped && sameStatus(says, under) ? undefined : says}
       />
-      {/* Gated on the **read** status and not on `says`: a card whose write was
-          refused still read its file, and the bytes it read are still the ones
-          worth showing. What a refusal must not disclose is the file it is
-          about, which is the read status' own rule. */}
-      {content !== undefined && showsContent(status) && <Content content={content} />}
       {fields !== undefined && <div className={styles.fields}>{fields}</div>}
       {save !== undefined && (
         <div className={styles.save}>
@@ -193,17 +187,17 @@ export function SourceCard({
  * The cards that write one file, under one statement of where that file is.
  *
  * The header is a card in every respect but one — it has the same Location,
- * Status, Content and fields, and the group's own write where it has one (the
- * project's default-project nomination is exactly that) — and then the members
- * under it. A group is not a heading with a border: it is the sentence "these
- * are the members of *this* file", and the cards inside it are the members.
+ * Status and fields, and the group's own write where it has one (the project's
+ * default-project nomination is exactly that) — and then the members under it.
+ * A group is not a heading with a border: it is the sentence "these are the
+ * members of *this* file", and what sits inside it is those members: the four
+ * cards this page had, and the rows of the overview that replaced them.
  */
 export function SourceGroup({
   id,
   title,
   location,
   status,
-  content,
   fields,
   save,
   children
@@ -212,7 +206,6 @@ export function SourceGroup({
   title: string
   location: ReactNode
   status: SourceStatus
-  content?: CardContent
   fields?: ReactNode
   save?: ReactNode
   children: ReactNode
@@ -221,7 +214,6 @@ export function SourceGroup({
     <section className={styles.group} aria-labelledby={`${id}-title`}>
       <Title id={id} title={title} level={2} className={styles.groupTitle} />
       <Head location={location} status={status} />
-      {content !== undefined && showsContent(status) && <Content content={content} />}
       {fields !== undefined && <div className={styles.fields}>{fields}</div>}
       {save !== undefined && <div className={styles.save}>{save}</div>}
       <div className={styles.members}>{children}</div>
@@ -290,14 +282,18 @@ function Head({ location, status }: { location?: ReactNode; status?: SourceStatu
 }
 
 /**
- * Whether a card may show what is in its file at all.
+ * Whether anything on Admin may show what is in a file at all.
  *
  * **Not on a refusal, and not on a read that did not produce one.** A refused
  * file's bytes are the thing the refusal is about; an unread file's are bytes
- * this page never had. Every other state either has bytes it may quote or a
- * decoded value that is the desk's own answer.
+ * this page never had.
+ *
+ * Exported, and there is exactly one of it. The bytes are rendered in the right
+ * pane now, and a second copy of this rule living beside them is the shape the
+ * `Content` disclosure already had to have taken out once: two spellings, one
+ * of which a mutation can break while the other goes on saying it.
  */
-function showsContent(status: SourceStatus): boolean {
+export function showsContent(status: SourceStatus): boolean {
   return status.state !== 'refused' && status.state !== 'unread'
 }
 
@@ -308,7 +304,7 @@ function showsContent(status: SourceStatus): boolean {
  * because it is quoted material rather than a sentence this page wrote — and
  * the narration sweep exempts quoted material for exactly that reason.
  */
-function StatusLine({ status }: { status: SourceStatus }) {
+export function StatusLine({ status }: { status: SourceStatus }) {
   if (status.state === 'read') return <>read</>
   if (status.state === 'absent') return <>not present — defaults in use</>
   if (status.state === 'pending') return <>not read yet</>
@@ -368,39 +364,6 @@ function UnreadLine({ failure }: { failure: ReadFailure }) {
       )}
       <code className={styles.reason}>{failure.reason}</code>
     </>
-  )
-}
-
-/** The file, or the one member of it this card is about. */
-function Content({ content }: { content: CardContent }) {
-  // **One gate, and it is `showsContent`.** A second check here — "quote the
-  // bytes only where the decode accepted" — was written first and had to be
-  // taken out: the card renders no disclosure at all in exactly the states
-  // that check would have caught, so breaking it changed nothing any test
-  // could see. Two spellings of one rule are invisible to a harness that
-  // breaks one of them; the lesson `ownerOnlyFile` and `deskConfigUnmoved`
-  // both carry.
-  const bytes =
-    content.text === undefined
-      ? undefined
-      : content.member === undefined
-        ? content.text
-        : memberBytes(content.text, content.member)
-  // The bytes where this page has them; the decoded value, said to be decoded,
-  // where it does not. Showing a re-serialisation and calling it the file is
-  // the one thing this disclosure must not do.
-  const shown =
-    bytes ?? (content.value === undefined ? undefined : JSON.stringify(content.value, null, 2))
-  if (shown === undefined) return null
-  return (
-    <details className={styles.content}>
-      <summary className={styles.summary}>
-        Content {bytes === undefined && <span className={styles.decoded}>(decoded)</span>}
-      </summary>
-      <pre className={styles.json}>
-        <code>{shown}</code>
-      </pre>
-    </details>
   )
 }
 

@@ -30,10 +30,11 @@ import { declarationsIn } from '../ui/declarations'
 const SRC = join(import.meta.dirname, '..')
 const read = (name: string) => readFileSync(join(SRC, name), 'utf8')
 
-/** The three sheets that dress Admin, and the only ones this file speaks for. */
+/** The four sheets that dress Admin, and the only ones this file speaks for. */
 const ADMIN_SHEETS = [
   'admin/SourceCard.module.css',
   'admin/AdminStatusLine.module.css',
+  'admin/ConfigPane.module.css',
   'routes/AdminView.module.css'
 ] as const
 
@@ -93,14 +94,34 @@ describe('no container on Admin draws a box', () => {
     }
   })
 
-  it('leaves one frame standing, and it is the code block', () => {
+  it('leaves one frame standing, and it is the code block in the pane', () => {
     // The rule the shape is *for*: a frame is drawn around an object, and a
     // `pre` full of somebody's file is one. A test that only ever said "no
     // borders" would be satisfied by a page that had lost this one too.
-    const body = ruleBody(read('admin/SourceCard.module.css'), '.json')
+    //
+    // **It moved with the bytes.** The block was `.json` in `SourceCard`'s
+    // sheet, behind a Content disclosure in the main column; the disclosure is
+    // gone and the bytes are in the right pane, so the one frame Admin draws
+    // is `.bytes` in the pane's own sheet. Its absence from the card's sheet
+    // is asserted too, so the rule cannot end up written in both.
+    const body = ruleBody(read('admin/ConfigPane.module.css'), '.bytes')
     expect(body).toBeDefined()
     expect(body).toContain('border: 1px solid var(--border)')
     expect(body).toContain('border-radius: var(--radius-sm)')
+    expect(ruleBody(read('admin/SourceCard.module.css'), '.json')).toBeUndefined()
+  })
+
+  it('draws no box around the pane’s own containers', () => {
+    // The pane is the same flat shape the page is: a hairline under the title,
+    // and the frame around the object below it.
+    for (const selector of ['.pane', '.head', '.row']) {
+      const body = ruleBody(read('admin/ConfigPane.module.css'), selector)
+      expect(body, `ConfigPane.module.css has no ${selector} rule`).toBeDefined()
+      for (const declaration of declarationsIn(`${selector} {${body}}`)) {
+        expect(declaration.property, `${selector}: ${declaration.value}`).not.toBe('border')
+        expect(declaration.property, `${selector}: ${declaration.value}`).not.toBe('background')
+      }
+    }
   })
 
   it('reads a rule by brace matching, and tells .member from .members', () => {

@@ -6,9 +6,11 @@
    inside that: three borders and two background changes to say one thing,
    which is that a member belongs to a file. Nothing here draws a box any more.
 
-   A frame is for an **object**, not for a level of hierarchy. Two are left on
-   this page and each is one: the code block behind the Content disclosure, and
-   an alert. Everything else is separated by a hairline and by room. */
+   A frame is for an **object**, not for a level of hierarchy. One is left in
+   this file and it is an alert's; the code block that was the other went to
+   the right pane with the bytes it holds, and its rule went with it, into
+   `ConfigPane.module.css`. Everything else is separated by a hairline and by
+   room. */
 
 /* An ungrouped card and a group are the same flat thing: a title, its rows,
    its fields, its one action. `.card` is the state a member of the *other*
@@ -106,36 +108,6 @@
   font-size: 0.8rem;
   color: var(--ink-soft);
   overflow-wrap: anywhere;
-}
-
-.content {
-  margin-top: var(--density-gap);
-  font-size: var(--density-font);
-}
-
-.summary {
-  cursor: pointer;
-  color: var(--ink-soft);
-}
-
-.decoded {
-  color: var(--ink-faint);
-}
-
-/* **The one frame Admin still draws.** A code block is a real object: it has
-   its own scroll, its own typeface and bytes that are not this page's prose,
-   and a reader has to be able to see where it ends. One hairline, the raised
-   surface, the small radius. */
-.json {
-  margin: var(--density-gap) 0 0;
-  padding: var(--density-cell-x);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  overflow-x: auto;
-  position: relative;
-  font-size: 0.8rem;
-  line-height: 1.5;
 }
 
 .fields {
