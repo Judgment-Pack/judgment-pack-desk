@@ -387,8 +387,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.Serve
 // of reason: a credential on a query is a credential in an address bar, a
 // `Referer`, a proxy log and `Response.url`.
 //
-// Both comparisons are constant-time, so neither a wrong secret nor a wrong
-// session id leaks a prefix. See session.go.
+// **The launch secret is compared in constant time**, so a wrong one leaks no
+// prefix. A session id is not compared at all: it is looked up by its MAC under
+// a per-process key — a *keyed* lookup, not a constant-time comparison — which
+// removes the signal rather than timing it away, because no id a caller can
+// choose puts them nearer a live one. See `sessionStore`.
 func (s *Server) authorized(r *http.Request) bool {
 	if _, ok := s.sessionOf(r); ok {
 		return true

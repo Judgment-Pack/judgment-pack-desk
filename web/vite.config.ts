@@ -7,8 +7,9 @@ import { defineConfig, type Plugin } from 'vite'
 // to a real `jpack mcp` — and to the real file API — while Vite handles hot
 // reload. Start the chassis first:
 //   go run . --dev-token dev --port 8791 <projectDir>
-// then open http://localhost:5173/launch?secret=dev once: the chassis sets the
-// session cookie for the dev origin and redirects to Vite's own `/`.
+// then open http://localhost:5173/launch?secret=dev once: the chassis sets a
+// sixty-second, single-use handoff for the dev origin and redirects to Vite's
+// own `/`, where the page spends it for a session id it holds itself.
 const CHASSIS = process.env.JPACK_DESK_CHASSIS ?? 'http://127.0.0.1:8791'
 
 /**

@@ -153,10 +153,10 @@ export function HelpAbout() {
       <Section title="Security">
         <p className="quiet">{SESSION_SENTENCE}</p>
         <p className="quiet">
-          The desk is authorized by three things and not by who you are: the loopback bind, that
-          session cookie, and an origin check on every relay and file-API request. A configured
-          identity provider changes what the header displays and nothing about who may reach the
-          desk.
+          The desk is authorized by three things and not by who you are: the loopback bind, the
+          session this tab holds and sends itself, and an origin check on every relay and
+          file-API request. A configured identity provider changes what the header displays and
+          nothing about who may reach the desk.
         </p>
       </Section>
 

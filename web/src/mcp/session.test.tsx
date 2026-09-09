@@ -22,6 +22,7 @@ import { McpProvider, removeTheLaunchHash, socketProtocols, socketURL, useMcp } 
 import {
   NO_SESSION_MESSAGE,
   forgetSessionForTesting,
+  renewSession,
   forgetStaleSessionToken,
   heldSessionID,
   sessionID,
@@ -38,6 +39,10 @@ afterEach(() => {
   vi.unstubAllGlobals()
   window.sessionStorage.clear()
   forgetSessionForTesting()
+  for (const pair of document.cookie.split(';')) {
+    const name = pair.trim().split('=')[0]
+    if (name) document.cookie = `${name}=; Max-Age=0; Path=/`
+  }
 })
 
 /** A `fetch` that answers the bootstrap and records everything it was asked. */
@@ -181,6 +186,91 @@ describe('every chassis request', () => {
     expect(answered.status).toBe(401)
     // One renewal, and then the refusal is the person's to act on.
     expect(exchanges).toBe(2)
+  })
+})
+
+describe('a relaunch', () => {
+  /** The readable marker the launch sets beside its HttpOnly handoff. */
+  function markerIsSet(port = '8791') {
+    document.cookie = `jpack-desk-handoff-pending-${port}=1; Path=/`
+  }
+
+  it('is spent even by a tab that already holds an id, and replaces it', async () => {
+    // **The bug this closes.** The handoff is `HttpOnly`, so page code cannot
+    // read it and therefore could not tell there was one — and a tab that
+    // already had an id left the new handoff sitting in the jar for its full
+    // sixty seconds, unspent and worth a session to anything that captured it.
+    window.sessionStorage.setItem(sessionStorageKey(), 'the-old-id')
+    markerIsSet()
+    const calls = servesTheExchange('the-new-id')
+
+    expect(await sessionID()).toBe('the-new-id')
+    expect(calls.filter((c) => c.url === '/api/session')).toHaveLength(1)
+    expect(window.sessionStorage.getItem(sessionStorageKey())).toBe('the-new-id')
+    // And the marker is gone, so a reload does not try to spend a handoff that
+    // is already spent.
+    expect(document.cookie).not.toContain('jpack-desk-handoff-pending')
+  })
+
+  it('keeps the old id where the exchange is refused', async () => {
+    // The handoff may have been spent by something else — that is the stated
+    // residual — and a page that threw away a working session over it would
+    // turn a theft into an outage for the person who is legitimately here.
+    window.sessionStorage.setItem(sessionStorageKey(), 'the-old-id')
+    markerIsSet()
+    servesTheExchange('unused', 401)
+    expect(await sessionID()).toBe('the-old-id')
+  })
+
+  it('asks for nothing where no handoff is waiting', async () => {
+    window.sessionStorage.setItem(sessionStorageKey(), 'the-old-id')
+    const calls = servesTheExchange('a-fresh-one')
+    expect(await sessionID()).toBe('the-old-id')
+    expect(calls.filter((c) => c.url === '/api/session')).toHaveLength(0)
+  })
+})
+
+describe('renewal', () => {
+  it('is shared, and a late refusal does not delete the fresh id', async () => {
+    // Two requests in flight with an old id: the first renews, and the second's
+    // `401` arrives after the fresh id is already stored. Clearing
+    // unconditionally would delete the new session on the strength of an answer
+    // about the old one.
+    window.sessionStorage.setItem(sessionStorageKey(), 'stale')
+    let exchanges = 0
+    vi.stubGlobal('fetch', async (url: unknown) => {
+      if (String(url) === '/api/session') {
+        exchanges += 1
+        return new Response(JSON.stringify({ id: 'fresh' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      }
+      return new Response('{}', { status: 200 })
+    })
+    const [first, second] = await Promise.all([renewSession('stale'), renewSession('stale')])
+    expect(first).toBe('fresh')
+    expect(second).toBe('fresh')
+    expect(exchanges, 'one renewal, shared').toBe(1)
+
+    // And a third, late refusal about the id that has already been replaced.
+    expect(await renewSession('stale')).toBe('fresh')
+    expect(exchanges, 'a late 401 about an old id starts nothing').toBe(1)
+    expect(window.sessionStorage.getItem(sessionStorageKey())).toBe('fresh')
+  })
+
+  it('renews where the id that failed is the one still stored', async () => {
+    window.sessionStorage.setItem(sessionStorageKey(), 'stale')
+    let exchanges = 0
+    vi.stubGlobal('fetch', async (url: unknown) => {
+      if (String(url) === '/api/session') {
+        exchanges += 1
+        return new Response(JSON.stringify({ id: 'fresh' }), { status: 200 })
+      }
+      return new Response('{}', { status: 200 })
+    })
+    expect(await renewSession('stale')).toBe('fresh')
+    expect(exchanges).toBe(1)
   })
 })
 
@@ -346,6 +436,52 @@ describe('what the page does on load', () => {
     await waitFor(() => expect(screen.getByText(`failed: ${NO_SESSION_MESSAGE}`)).toBeTruthy())
     // `failed` and not `reconnecting`: no handoff appears on its own, and a
     // page that retried for ever would bury the instruction that fixes it.
+    expect(screen.queryByText(/^reconnecting/)).toBeNull()
+  })
+
+  it('opens no socket after the effect was torn down', async () => {
+    // **StrictMode mounts twice**, and a route change unmounts. The bootstrap
+    // is awaited before the socket is built, so an effect can be disposed while
+    // that promise is pending — and connecting afterwards opens a socket with
+    // nothing left to close it.
+    const opened: string[][] = []
+    vi.stubGlobal('WebSocket', refusingSocket(opened))
+    let release: (() => void) | undefined
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.stubGlobal('fetch', async (url: unknown) => {
+      if (String(url) === '/api/session') {
+        await held
+        return new Response(JSON.stringify({ id: 'the-id' }), { status: 200 })
+      }
+      return new Response('{}', { status: 200 })
+    })
+    const drawn = draw()
+    // Torn down while the bootstrap is still in flight.
+    drawn.unmount()
+    release?.()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(opened, 'a socket was opened after the effect was disposed').toEqual([])
+  })
+
+  it('validates a stale id once, renews once, and then stops', async () => {
+    // A restarted chassis has forgotten every id. The browser gives the page no
+    // status for a refused upgrade, so the id is put to a channel that answers:
+    // a `401` from `GET /api/session` means this id names nothing.
+    window.sessionStorage.setItem(sessionStorageKey(), 'an-id-from-an-older-desk')
+    vi.stubGlobal('WebSocket', refusingSocket())
+    const asked: { url: string; method: string }[] = []
+    vi.stubGlobal('fetch', async (url: unknown, init: RequestInit = {}) => {
+      asked.push({ url: String(url), method: init.method ?? 'GET' })
+      // The store is new: the old id is refused, and there is no handoff to
+      // exchange for a fresh one.
+      return new Response('{}', { status: 401 })
+    })
+    draw()
+    await waitFor(() => expect(screen.getByText(`failed: ${NO_SESSION_MESSAGE}`)).toBeTruthy())
+    expect(asked.some((a) => a.url === '/api/session' && a.method === 'GET')).toBe(true)
+    expect(asked.some((a) => a.url === '/api/session' && a.method === 'POST')).toBe(true)
     expect(screen.queryByText(/^reconnecting/)).toBeNull()
   })
 

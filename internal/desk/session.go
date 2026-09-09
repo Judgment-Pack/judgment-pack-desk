@@ -133,7 +133,14 @@ const (
 // subprotocols. It has no header parameter. A credential on the URL is the
 // arrangement this desk spent two rounds removing, so the id goes in the one
 // remaining place the page can put it deliberately — and the server answers
-// with the plain `jpack-desk` protocol, so the id is offered and never echoed.
+// with the plain `jpack-desk` protocol, so the id is never echoed *back*.
+//
+// **It is still on the request.** `Sec-WebSocket-Protocol` is a request header,
+// so anything that logs request headers between the page and this process would
+// see it — which on this desk is nothing, because the listener binds loopback
+// and there is nothing in between. What answering with the plain protocol
+// avoids is the id appearing in a *response* header as well, which is one more
+// place for it to be kept.
 const (
 	wsProtocol       = "jpack-desk"
 	wsSessionPrefix  = "jpack-desk-session."

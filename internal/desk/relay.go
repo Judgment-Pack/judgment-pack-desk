@@ -152,8 +152,11 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	// offers two subprotocols — `jpack-desk`, and `jpack-desk-session.<id>`
 	// carrying the credential — because a browser's `WebSocket` constructor has
 	// no header parameter and the id must not go on the URL. Naming only the
-	// plain one here means the id is read off the offer and **not echoed** in
-	// the response, so it never appears in a header a proxy or a log would keep.
+	// plain one here means the id is read off the offer and **not echoed back**.
+	//
+	// The offer itself is a request header, so a proxy that logged request
+	// headers would see it; this desk binds loopback and has nothing in between,
+	// and what this avoids is the id being in the response as well.
 	//
 	// `InsecureSkipVerify` stays: this desk does its own Origin check, in
 	// `handleWS`, which is stricter than the library's and knows about

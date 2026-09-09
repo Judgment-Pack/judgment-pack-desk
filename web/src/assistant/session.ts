@@ -22,7 +22,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { chassisUrl } from '../files/client'
 import { DeskWebSocketTransport } from '../mcp/transport'
 import { socketProtocols, socketURL } from '../mcp/McpProvider'
-import { heldSessionID, sessionID } from '../mcp/session'
+import { sessionID } from '../mcp/session'
 import { allowedTools, gateTransport, type GuardrailNotice } from './toolGate'
 import type { EndpointKind } from '../config/deskConfig'
 import type {
@@ -261,6 +261,13 @@ export function bindModelCall(family: EndpointKind): ModelCall {
   return async (suffix: string, request: ModelRequest): Promise<Response> => {
     const problem = suffixProblem(suffix, family)
     if (problem !== '') throw new Error(problem)
+    // **The desk's own session, on the desk's own route.** This is a gated
+    // chassis endpoint like any other, so it carries the bearer the page holds
+    // — and it did not, which meant every model listing and every generation
+    // turn answered 401 the moment the session stopped being a cookie. It is
+    // fetched here rather than captured at bind time so that a renewal is
+    // picked up; `sessionID()` answers from memory once the tab has one.
+    const id = await sessionID()
     const headers: Record<string, string> = {}
     for (const [name, value] of Object.entries(request.headers ?? {})) {
       if (MODEL_REQUEST_HEADERS.includes(name.toLowerCase())) headers[name] = value
@@ -274,15 +281,16 @@ export function bindModelCall(family: EndpointKind): ModelCall {
     let answered: Response
     try {
       answered = await send(chassisUrl(`${RELAY_PREFIX}/${path}`, extra), {
-        // Stated rather than relied on, exactly as `deskFetch` states it: the
-        // browser holds this desk's session in an `HttpOnly` cookie and
-        // attaches it to a same-origin request by itself.
-        credentials: 'same-origin',
+        // **`omit`, and the bearer written on**, exactly as `deskFetch` does.
+        // Nothing ambient authorizes anything on this desk, and the launch
+        // handoff — the one cookie there is — belongs on the exchange and on no
+        // other request.
+        credentials: 'omit',
         // `POST` unless the caller named the one other method this capability
         // admits. A `GET` carries no body: `fetch` refuses one that does, and
         // the model listing is the only caller that asks for either.
         method: request.method ?? 'POST',
-        headers,
+        headers: { ...headers, Authorization: `Bearer ${id}` },
         body: request.method === 'GET' ? undefined : request.body,
         signal: request.signal
       })
@@ -344,25 +352,39 @@ function facade(answered: Response): Response {
  * function returning a fresh object.
  */
 export function assistantTransport(): Transport {
-  // **Read synchronously, from the id this tab already holds.**
+  // **Read synchronously, from the id `prepareAssistantSession` just settled.**
   // `openAssistantConnection` returns its handle immediately and settles later,
   // which is what lets a caller close a run that is still setting up; making
-  // this async would change that shape for every caller. `prepareAssistantSession`
-  // is awaited by the one caller just before, so the id is there.
-  return new DeskWebSocketTransport(socketURL(), socketProtocols(heldSessionID()))
+  // this async would change that shape for every caller.
+  //
+  // `prepared` rather than `heldSessionID()`: a browser that refused storage
+  // holds the id only in this module's memory, and reading storage alone would
+  // hand the assistant an empty offer on a desk whose own connection works.
+  return new DeskWebSocketTransport(socketURL(), socketProtocols(prepared))
 }
 
 /**
- * Make sure this tab holds a session id before the assistant opens its own
+ * The id `prepareAssistantSession` settled, so that `assistantTransport` can
+ * stay synchronous without reading storage that may be refusing.
+ */
+let prepared = ''
+
+/**
+ * Make sure this tab has a session id before the assistant opens its own
  * connection with it.
  *
  * By the time an assistant run can start, the desk's own provider has
- * bootstrapped and this resolves off `sessionStorage` without a request. It is
- * awaited anyway, because "it will already be there" is the kind of ordering
- * assumption that is true until a pane is mounted somewhere else.
+ * bootstrapped and this resolves from memory without a request. It is awaited
+ * anyway, because "it will already be there" is the kind of ordering assumption
+ * that is true until a pane is mounted somewhere else.
  */
 export async function prepareAssistantSession(): Promise<void> {
-  await sessionID()
+  prepared = await sessionID()
+}
+
+/** For a test that wants the module's memory cleared between cases. */
+export function forgetPreparedSession(): void {
+  prepared = ''
 }
 
 /** What a connection is once it has finished setting itself up. */

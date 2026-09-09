@@ -3,7 +3,7 @@ import type { Notification } from '@modelcontextprotocol/sdk/types.js'
 import { useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { recordFileChange } from '../shell/consoleLog'
-import { NoSession, sessionID } from './session'
+import { NoSession, renewSession, sessionID } from './session'
 import { UNKNOWN_CAPABILITIES, type RuntimeCapabilities, listAllTools, readCapabilities } from './capabilities'
 import { DeskWebSocketTransport } from './transport'
 
@@ -166,6 +166,12 @@ function backoffDelay(attempt: number): number {
  * re-reads the project on every call, and whatever the project did while the
  * socket was down arrived as `desk/fileChanged` notifications nobody heard.
  */
+/**
+ * Thrown to abandon an attempt whose effect was torn down while it awaited.
+ * Its own type so the catch can tell it from a real failure and stay silent.
+ */
+class Disposed extends Error {}
+
 export function McpProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   const [connection, setConnection] = useState<McpConnection>(DISCONNECTED)
@@ -207,6 +213,43 @@ export function McpProvider({ children }: { children: ReactNode }) {
         retryNow
       })
       timer = setTimeout(connect, backoffDelay(attempt))
+    }
+
+    /**
+     * Whether the id this attempt offered is still a session, and what to do.
+     *
+     * One `GET /api/session`. A `401` renews through the exchange — which needs
+     * a handoff, so it usually ends in the terminal state with the sentence a
+     * person can act on; anything else is a chassis that is simply not
+     * answering, and that is what the backoff is for.
+     */
+    const classify = async (id: string, cause: Error) => {
+      if (disposed) return
+      let refused = false
+      try {
+        const answer = await fetch('/api/session', {
+          credentials: 'omit',
+          headers: id === '' ? {} : { Authorization: `Bearer ${id}` }
+        })
+        refused = answer.status === 401
+      } catch {
+        // Not answering at all: retryable, and the backoff handles it.
+      }
+      if (disposed) return
+      if (!refused) {
+        scheduleRetry(cause)
+        return
+      }
+      try {
+        await renewSession(id)
+      } catch (renewal) {
+        if (disposed) return
+        failed(renewal instanceof NoSession ? renewal : new NoSession())
+        return
+      }
+      if (disposed) return
+      // Renewed, so the next attempt has a live id to offer.
+      scheduleRetry(cause)
     }
 
     // A connection that failed, told apart from one that will never succeed.
@@ -264,8 +307,18 @@ export function McpProvider({ children }: { children: ReactNode }) {
       // **The id is fetched per attempt, not once.** A reconnect after the
       // chassis restarted needs a new one, and `renewSession` is what a `401`
       // on any other request has already been doing.
+      //
+      // **And disposal is re-checked after the await.** The effect can be torn
+      // down while this promise is pending — StrictMode mounts twice, and a
+      // route change unmounts — and connecting afterwards would open a socket
+      // with nothing left to close it.
+      let offered = ''
       sessionID()
-        .then((id) => client.connect(new DeskWebSocketTransport(socketURL(), socketProtocols(id))))
+        .then((id) => {
+          if (disposed || live !== client) throw new Disposed()
+          offered = id
+          return client.connect(new DeskWebSocketTransport(socketURL(), socketProtocols(id)))
+        })
         .then(async () => {
           if (disposed || live !== client) return
           attempt = 0
@@ -304,6 +357,10 @@ export function McpProvider({ children }: { children: ReactNode }) {
           if (reconnecting) await queryClient.invalidateQueries()
         })
         .catch((cause: unknown) => {
+          if (cause instanceof Disposed) {
+            void client.close()
+            return
+          }
           if (disposed || live !== client) return
           // A rejected connect leaves the Client holding a transport it will
           // never use; dropping it here stops its onclose from scheduling a
@@ -316,7 +373,13 @@ export function McpProvider({ children }: { children: ReactNode }) {
             failed(error)
             return
           }
-          scheduleRetry(error)
+          // **A refused upgrade is not the same as a chassis that is down**,
+          // and the browser gives the page no status to tell them apart. So the
+          // id is put to a channel that does answer: a `401` from
+          // `GET /api/session` means this id names nothing — the desk was
+          // restarted, or the session was signed out or evicted — and the page
+          // renews once rather than reconnecting for ever with a dead id.
+          void classify(offered, error)
         })
     }
 

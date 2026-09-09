@@ -36,10 +36,12 @@
  *
  * The sentence about the session is checked against the code rather than
  * inherited from the spec. `GET /launch?secret=…` answers `303 See Other` to
- * `/` with `Set-Cookie: jpack-desk-session`, so the secret leaves the address
- * bar **at the redirect** — at load, and not at some later navigation. That is
- * a stronger claim than the sentence this replaced could make, and it is the
- * chassis' own test that holds it (`TestLaunchExchangeSetsTheSessionCookie`).
+ * `/#` and sets a **sixty-second, single-use handoff**; the page spends that at
+ * `POST /api/session` for a session id it keeps in `sessionStorage` and puts on
+ * each request itself. So the secret leaves the address bar at the redirect —
+ * at load, not at some later navigation — and nothing ambient authorizes
+ * anything after the first request. `TestLaunchSetsAHandoffAndNoSession` and
+ * `TestNoCookieAuthorizesAnyGatedRoute` hold the two halves.
  */
 import { Avatar, DropdownMenu } from 'radix-ui'
 import { useState } from 'react'
@@ -57,13 +59,14 @@ import { useShellState, type ResetOutcome } from '../shell/paneState'
 import { useIdentity } from './IdentityProvider'
 
 export const NONE_MENU_SENTENCE =
-  'No identity provider is configured. This desk is authorized by the session cookie this ' +
-  'browser holds, the loopback bind, and the origin check.'
+  'No identity provider is configured. This desk is authorized by the session this tab holds, ' +
+  'the loopback bind, and the origin check.'
 
 export const SESSION_SENTENCE =
-  'The desk prints a launch URL at startup. Opening it once trades the secret for an ' +
-  'HttpOnly session cookie and redirects to the desk, so nothing of it stays in the address ' +
-  'bar and the page never holds it.'
+  'The desk prints a launch URL at startup. Opening it once trades the secret for a ' +
+  'single-use, 60-second handoff and redirects to the desk; this tab exchanges that for a ' +
+  'session it keeps for itself and puts on each request. Nothing of the secret stays in the ' +
+  'address bar, and no cookie authorizes anything afterwards.'
 
 export const PROVIDER_PHASE_NOTE = 'provider configured · sign-in arrives in phase B'
 

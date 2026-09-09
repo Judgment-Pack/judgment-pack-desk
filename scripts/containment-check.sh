@@ -35,8 +35,9 @@
 #
 # - The desk is started with a fixed `--dev-token`, which is the **launch
 #   secret**: `curl` presents it as `Authorization: Bearer` and the browser
-#   trades it once at `GET /launch?secret=…` for the session cookie, which the
-#   Playwright context then carries on every navigation and every upgrade.
+#   trades it once at `GET /launch?secret=…` for a sixty-second, single-use
+#   handoff; the page spends that for a session id it holds in `sessionStorage`
+#   and puts on every later request itself.
 #
 # `JPACK_BIN` names the runtime binary to hand the chassis, if the project
 # needs one. `PLAYWRIGHT_CHROME` names a Chrome executable; without it,
@@ -69,7 +70,7 @@ trap cleanup EXIT INT TERM
 
 # The **launch secret**, fixed here so this script can present it. It is never
 # on a request query: curl sends `Authorization: Bearer`, and the browser is
-# handed one `GET /launch?secret=…` that trades it for the session cookie.
+# handed one `GET /launch?secret=…` that trades it for a one-shot handoff.
 SECRET="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 export XDG_CONFIG_HOME="$WORK/config"
 mkdir -p "$XDG_CONFIG_HOME/jpack-desk"

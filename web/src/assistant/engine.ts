@@ -52,7 +52,9 @@
  * whole, so an engine is *handed* nothing but the capability. It is not
  * prevented from reaching a global: in production an engine runs with the real
  * `fetch` and the real `WebSocket`, and one that spelled `/ws` itself would be
- * admitted on the ambient session cookie. The sealed globals belong to the
+ * admitted on the session this page holds, which page code can read out of
+ * `sessionStorage` exactly as it could once read the token there. The sealed
+ * globals belong to the
  * conformance suite, which runs every engine's leg with `fetch`, `WebSocket`,
  * `XMLHttpRequest` and `EventSource` replaced by throwing sentinels — so an
  * engine that reaches for one **fails the suite**. That is regression coverage,

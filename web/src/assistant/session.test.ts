@@ -36,8 +36,13 @@ describe('the model capability the desk binds', () => {
     // there is no credential left for one to hide beside.
     expect([...url.searchParams.entries()]).toEqual([])
     expect(calls[0]!.init.method).toBe('POST')
-    // Stated on the request, not left to the `fetch` default.
-    expect(calls[0]!.init.credentials).toBe('same-origin')
+    // **This is a gated chassis route like any other**, so it carries the
+    // bearer the page holds and no cookie. It carried neither for one round,
+    // and every model listing and every generation turn answered 401.
+    expect(calls[0]!.init.credentials).toBe('omit')
+    expect((calls[0]!.init.headers as Record<string, string>).Authorization).toBe(
+      `Bearer ${window.sessionStorage.getItem(`jpack-desk-session:${window.location.host}`)}`
+    )
   })
 
   it('puts the Anthropic suffix after the same mount point', async () => {
@@ -64,10 +69,20 @@ describe('the model capability the desk binds', () => {
         'ocp-apim-subscription-key': 'smuggled'
       }
     })
-    expect(calls[0]!.init.headers).toEqual({
-      'content-type': 'application/json',
-      'anthropic-version': '2023-06-01'
-    })
+    // **The engine's `authorization` is dropped and the desk's is written**,
+    // which is the same header name doing two different jobs. An engine cannot
+    // put one on a relayed request — `authorization` is off
+    // `MODEL_REQUEST_HEADERS` — and what travels is this page's session.
+    const sent = calls[0]!.init.headers as Record<string, string>
+    expect(sent['content-type']).toBe('application/json')
+    expect(sent['anthropic-version']).toBe('2023-06-01')
+    expect(Object.keys(sent).sort()).toEqual([
+      'Authorization',
+      'anthropic-version',
+      'content-type'
+    ])
+    expect(sent.Authorization).not.toContain('smuggled')
+    expect(sent.Authorization).toMatch(/^Bearer /)
   })
 
   it('refuses a suffix outside the relay’s own segment rule, before anything is sent', async () => {

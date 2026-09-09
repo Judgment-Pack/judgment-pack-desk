@@ -1537,8 +1537,17 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '		SameSite: http.SameSiteStrictMode,' \
     '		SameSite: http.SameSiteLaxMode,'
   mutate go "Secure is set on a plain-http launch" "$SN" \
-    '	http.SetCookie(w, newLaunchCookie(s.launchCookie, handoff, requestScheme(r) == "https"))' \
-    '	http.SetCookie(w, newLaunchCookie(s.launchCookie, handoff, true))'
+    '	secure := requestScheme(r) == "https"' \
+    '	secure := true'
+  # The readable marker is what tells a page already holding an id that there is
+  # a handoff to spend. Without it a relaunch leaves one live for sixty seconds.
+  mutate go "a relaunch sets no marker, so a page holding an id leaves the handoff live" "$SN" \
+    '	http.SetCookie(w, newPendingMarker(s.pendingCookie, secure))' \
+    ''
+  # And the marker must not be HttpOnly, or the page cannot read it either.
+  mutate go "the marker is HttpOnly, so the page cannot see it" "$SN" \
+    '	marker.HttpOnly = false' \
+    '	marker.HttpOnly = true'
   # **The single use is what the residual rests on.** A reusable handoff is a
   # standing credential in a cookie jar, and a theft that nobody notices.
   mutate go "the launch handoff is reusable" "$SN" \
@@ -1611,12 +1620,23 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	return s.launchSecretPresented(r)'
   # The subprotocol offer is a credential and is verified like one.
   mutate go "the offered subprotocol id is not verified" "$SN" \
-    '	if id := offeredSessionID(r); id != "" {
+    '	if id, _ := offeredSessionID(r); id != "" {
 		return s.sessions.lookup(id)
 	}' \
-    '	if id := offeredSessionID(r); id != "" {
+    '	if id, _ := offeredSessionID(r); id != "" {
 		return session{subject: "local user"}, true
 	}'
+  # A malformed offer must be a 400 before any credential is looked at: two ids,
+  # a non-hex id, an offer list without `jpack-desk`.
+  mutate go "a malformed subprotocol offer is not refused" "$S" \
+    '	if _, problem := offeredSessionID(r); problem != "" {
+		http.Error(w, problem, http.StatusBadRequest)
+		return
+	}' \
+    ''
+  mutate go "two offered session ids are read as one" "$SN" \
+    '	if seen > 1 {' \
+    '	if false {'
   # And the answer selects the plain protocol, so the id is never echoed into a
   # response header a proxy or a log would keep.
   # **Only the session protocol, not beside the plain one.** `websocket.Accept`
@@ -1629,15 +1649,22 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '		Subprotocols:       []string{wsSessionPrefix + offeredSessionID(r)},'
   # Two credentials with two lifetimes: a session id accepted as a launch secret
   # would mean a leaked id is a launch secret, which is the stronger of the two.
-  mutate go "the Bearer header accepts a session id in place of the secret" "$SN" \
+  # Named for what it admits: a **handoff**, which opens the exchange and must
+  # open nothing else. A session id in this position is admitted one line up in
+  # `sessionOf` by design, so a row claiming to break that would be claiming to
+  # break the arrangement rather than a rule.
+  mutate go "the Bearer header accepts a launch handoff as the secret" "$SN" \
     '	return subtle.ConstantTimeCompare([]byte(bearerOf(r)), []byte(s.cfg.Token)) == 1' \
     '	if _, ok := s.launches.given[s.launches.handle(bearerOf(r))]; ok {
 		return true
 	}
 	return subtle.ConstantTimeCompare([]byte(bearerOf(r)), []byte(s.cfg.Token)) == 1'
-  # `sameOriginClaim` back: fetch metadata on the gate is a defence against a
-  # page and not against a script, and round 2 found a script walking past it.
-  mutate go "fetch metadata gates the whole desk again, not just the exchange" "$SN" \
+  # **Round 2's defect, put back exactly.** A cookie accepted at the gate as
+  # long as fetch metadata says same-origin — which stops a page and does
+  # nothing about a script, because forbidden-header rules bind browsers. The
+  # row is named for the cookie it admits rather than for the header, because
+  # the header is the part that looks like a defence.
+  mutate go "a cookie authorizes the gate whenever fetch metadata says same-origin" "$SN" \
     'func (s *Server) sessionOf(r *http.Request) (session, bool) {' \
     'func (s *Server) sessionOf(r *http.Request) (session, bool) {
 	if r.Header.Get(fetchSiteHeader) == fetchSiteSameOrigin {
@@ -1668,19 +1695,23 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # this suite sends, so a row that removed only the route reported NOT
   # DISCRIMINATING for a guard that is real and doubled. This row removes both,
   # which is the property: *something* refuses them.
+  # **Both layers, which is what the name says.** The router owns `/launch/…`
+  # and the static handler owns the spellings it does not see; either alone
+  # refuses every shape the suite sends, so a row that removed one measured a
+  # guard that is real and doubled. This removes the static check *and* rewrites
+  # the path so the router's route cannot match either.
   mutate go "nothing refuses a launch-shaped URL, so the page is served" "$S" \
     '	if looksLikeALaunch(r) {
 		refuseLaunchShape(w)
 		return
 	}' \
-    '	if false {
-		refuseLaunchShape(w)
-		return
-	}
-	if strings.HasPrefix(r.URL.Path, "/launch") {
-		r = r.Clone(r.Context())
-		r.URL.Path = "/somewhere-else"
-	}'
+    '	_ = looksLikeALaunch
+	_ = refuseLaunchShape'
+  # And the router half on its own, named for what it is: one of two layers.
+  mutate go "the router half of the launch refusal is gone (the static half remains)" "$S" \
+    '	s.mux.HandleFunc("/launch/{rest...}", s.handleLaunchSubpath)' \
+    ''
+
   mutate go "the static handler answers a launch-shaped URL with the page" "$S" \
     '	if looksLikeALaunch(r) {
 		refuseLaunchShape(w)
@@ -1688,12 +1719,22 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	}' \
     ''
   mutate go "a secret on any query is answered with the page" "$SN" \
-    '	for name := range r.URL.Query() {
+    '	return querySmellsOfASecret(r.URL.RawQuery)' \
+    '	return false'
+  # **Read raw, not parsed.** `url.Query()` drops a pair it cannot decode and
+  # does not split on `;`, so `?secret=<real>%ZZ` and `?x=1;secret=<real>` were
+  # answered with the page.
+  mutate go "the secret rule parses the query instead of reading it raw" "$SN" \
+    '	if strings.Contains(strings.ToLower(raw), "secret") {
+		return true
+	}' \
+    '	for name := range mustParse(raw) {
 		if strings.EqualFold(name, "secret") {
 			return true
 		}
-	}' \
-    ''
+	}
+	return false
+	if false {'
   # The stores.
   mutate go "the session store is keyed by the id itself" "$SN" \
     '	mac := hmac.New(sha256.New, st.key)
@@ -1704,7 +1745,23 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	_ = hex.EncodeToString(nil)
 	return id'
   mutate go "the session store grows without bound" "$SN" \
-    '	st.evictLocked()' \
+    '	evicted := st.evictLocked()' \
+    '	evicted := []string(nil)
+	_ = st.evictLocked'
+  # Traffic is use: without the touch, the busiest tab is the coldest thing in
+  # the store and the first to be evicted.
+  mutate go "an open socket does not refresh its session" internal/desk/relay.go \
+    '				s.sessions.touch(handle)' \
+    ''
+  # A session that ends must take its sockets with it, or it has ended
+  # everywhere except where it was being used.
+  mutate go "sign-out leaves the sockets of that session open" "$SN" \
+    '		s.closeSession(s.sessions.handle(id))' \
+    ''
+  mutate go "eviction leaves the sockets of the evicted session open" "$SN" \
+    '	for _, handle := range evicted {
+		st.ended(handle)
+	}' \
     ''
   # LRU rather than oldest-first: a session's age says nothing about whether the
   # tab is still on screen, and evicting the one in use is the visible failure.
@@ -6905,9 +6962,15 @@ export function assistantTransport(): Transport {
     ''
   # **The credential the page holds, and where it must not go.** These are the
   # web half of "nothing ambient authorizes anything".
-  mutate web "the page sends no bearer, and leans on the cookie again" "$C" \
+  # Two rows, because they are two rules. Sending the cookie is one defect;
+  # dropping the bearer is the other, and the first row's name used to claim
+  # both while changing only `credentials`.
+  mutate web "every chassis request sends the launch handoff again" "$C" \
     '      credentials: '"'"'omit'"'"',' \
     '      credentials: '"'"'same-origin'"'"','
+  mutate web "the page sends no bearer at all" "$C" \
+    '      headers: { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${id}` }' \
+    '      headers: { ...(init.headers as Record<string, string> | undefined) }'
   mutate web "the session id is keyed without the port" "$SS" \
     '  return `jpack-desk-session:${window.location.host}`' \
     '  return `jpack-desk-session`'

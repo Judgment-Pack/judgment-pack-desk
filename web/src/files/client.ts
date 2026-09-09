@@ -211,11 +211,14 @@ export async function deskFetch(input: string, init: RequestInit = {}): Promise<
       credentials: 'omit',
       headers: { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${id}` }
     })
-  const answered = await send(await sessionID())
+  const id = await sessionID()
+  const answered = await send(id)
   if (answered.status !== 401) return answered
   // The id names nothing any more — a restarted chassis, a sign-out, an
-  // eviction. One renewal, and then the refusal is the person's to act on.
-  return send(await renewSession())
+  // eviction. One renewal, shared with every other request that met the same
+  // refusal, and **named**: a `401` about an id that has already been replaced
+  // must not delete the replacement. Then the refusal is the person's to act on.
+  return send(await renewSession(id))
 }
 
 /**

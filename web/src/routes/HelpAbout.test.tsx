@@ -129,10 +129,12 @@ describe('Help & About', () => {
 
   it('carries the true sentence about how this desk is authorized', () => {
     renderHelp(stubClient(PACKS))
-    // The launch exchange redirects, so the secret leaves the address bar at
-    // load — a stronger claim than the sentence this replaced could make, and
-    // one `TestLaunchExchangeSetsTheSessionCookie` holds on the other side.
-    expect(screen.getByText(/HttpOnly session cookie and redirects to the desk/)).toBeTruthy()
-    expect(screen.queryByText(/sessionStorage/)).toBeNull()
+    // The launch redirects and the handoff is spent on load, so the secret
+    // leaves the address bar at load and no cookie authorizes anything after
+    // the first request. `TestLaunchSetsAHandoffAndNoSession` and
+    // `TestNoCookieAuthorizesAnyGatedRoute` hold the two halves.
+    expect(screen.getByText(/single-use, 60-second handoff/)).toBeTruthy()
+    expect(screen.getByText(/no cookie authorizes anything afterwards/)).toBeTruthy()
+    expect(screen.queryByText(/HttpOnly session cookie/)).toBeNull()
   })
 })

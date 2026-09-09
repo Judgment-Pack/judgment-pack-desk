@@ -96,6 +96,45 @@ function drop(): void {
 }
 
 /**
+ * The marker the launch sets beside its `HttpOnly` handoff, carrying no secret
+ * and saying only that one is waiting.
+ *
+ * It exists because the handoff is `HttpOnly` — which is what stops page code
+ * reading it, and therefore also what stops page code knowing there is one.
+ * See `pendingCookiePrefix` in `internal/desk/session.go`.
+ */
+export function pendingMarkerName(): string {
+  // **The chassis' port, not the browser's.** The chassis names both cookies
+  // for the port it was bound to, and under the Vite dev server those differ —
+  // the browser is on 5173 and the desk is on 8791. So the name is read off the
+  // cookie rather than composed: there is exactly one, and its prefix is fixed.
+  return 'jpack-desk-handoff-pending'
+}
+
+/**
+ * Whether a handoff is waiting to be spent.
+ *
+ * **Read off the marker, and cleared as soon as it is read.** The page spends
+ * the handoff on the way past; leaving the marker would mean a later reload
+ * tried to spend one that is already gone, which is a `401` and a discarded
+ * session for no reason.
+ */
+function handoffIsWaiting(): boolean {
+  try {
+    const prefix = pendingMarkerName()
+    const found = document.cookie
+      .split(';')
+      .map((pair) => pair.trim().split('=')[0] ?? '')
+      .find((name) => name.startsWith(`${prefix}-`))
+    if (found === undefined) return false
+    document.cookie = `${found}=; Max-Age=0; Path=/`
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * The one exchange in flight, so that a page which mounts eight queries at once
  * spends **one** handoff rather than eight.
  *
@@ -108,20 +147,31 @@ let inFlight: Promise<string> | null = null
 /**
  * Begin a session, or return the one this tab already has.
  *
+ * **A waiting handoff is always spent, even by a tab that already has an id.**
+ * Reopening the printed URL in a tab that had one used to leave the new handoff
+ * sitting in the jar for its full sixty seconds — unspent, and worth a session
+ * to anything that could capture it. So a relaunch replaces the stored id, and
+ * the old id keeps working until the new one lands, which is what makes the
+ * replacement invisible to whatever is mid-request.
+ *
  * A `401` here is the end of the road and says so: the handoff has been spent,
  * has expired, or was never set because the printed URL was not opened.
  */
 export async function sessionID(): Promise<string> {
   const held = heldSessionID()
-  if (held) return held
+  if (held && !handoffIsWaiting()) return held
   inFlight ??= beginSession()
   try {
     return await inFlight
   } catch (cause) {
-    // A failed bootstrap is not cached: the chassis may simply have been down,
-    // and a page that never retried would need a reload it does not tell the
-    // person to make.
     inFlight = null
+    // **A relaunch that failed keeps what the tab had.** The handoff may have
+    // been spent by something else — that is the stated residual — and a page
+    // that threw away a working session over it would turn a theft into an
+    // outage for the person who is legitimately here.
+    if (held) return held
+    // A failed first bootstrap is not cached: the chassis may simply have been
+    // down, and a page that never retried would need a reload nothing asked for.
     throw cause
   }
 }
@@ -148,22 +198,48 @@ async function beginSession(): Promise<string> {
 }
 
 /**
- * Forget the id this tab holds and begin again.
+ * The one renewal in flight, for the same reason `inFlight` exists: several
+ * requests can meet a `401` in the same tick, and each one starting its own
+ * exchange would spend a handoff that is not there and discard a session that
+ * is.
+ */
+let renewing: Promise<string> | null = null
+
+/**
+ * Forget the id that failed and begin again.
  *
  * Called where the chassis answers `401` to a request carrying an id: the desk
  * was restarted, or the session was signed out or evicted, and the id names
- * nothing. One retry, and then the failure is the person's to act on.
+ * nothing. One renewal, shared by every caller that meets the same refusal, and
+ * then the failure is the person's to act on.
+ *
+ * **`stale` is what makes a late refusal harmless.** Two requests can be in
+ * flight with an old id; the first renews, and the second's `401` arrives after
+ * the fresh id is already stored. Clearing unconditionally would delete the new
+ * session on the strength of an answer about the old one, so storage is cleared
+ * only where what is stored is still the id that failed.
  */
-export async function renewSession(): Promise<string> {
-  drop()
-  inFlight = null
-  return sessionID()
+export async function renewSession(stale?: string): Promise<string> {
+  const held = heldSessionID()
+  if (stale !== undefined && held !== '' && held !== stale) {
+    // Somebody already renewed. The caller's id is old news, not a problem.
+    return held
+  }
+  if (renewing === null) {
+    drop()
+    inFlight = null
+    renewing = sessionID().finally(() => {
+      renewing = null
+    })
+  }
+  return renewing
 }
 
 /** For a test that wants a clean module between cases. */
 export function forgetSessionForTesting(): void {
   drop()
   inFlight = null
+  renewing = null
 }
 
 if (typeof window !== 'undefined') forgetStaleSessionToken()

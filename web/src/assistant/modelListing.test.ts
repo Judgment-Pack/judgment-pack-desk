@@ -82,13 +82,17 @@ describe('where the listing request goes', () => {
     expect([...url.searchParams.keys()]).toEqual([])
   })
 
-  it('asks with a GET and no body, and no credential of its own', async () => {
+  it('asks with a GET and no body, and no credential but this desk’s own', async () => {
     const seen = serves({ data: [] })
     await listModels('openai-compatible', bindModelCall('openai-compatible'))
     expect(seen.inits[0]!.method).toBe('GET')
     expect(seen.inits[0]!.body).toBeUndefined()
     const headers = seen.inits[0]!.headers as Record<string, string>
-    expect(Object.keys(headers)).toEqual([])
+    // **One header, and it is the session this page holds** — the relay is a
+    // gated chassis route. What must not be here is a credential for the
+    // *endpoint*: that one is on this machine and is attached by the chassis.
+    expect(Object.keys(headers)).toEqual(['Authorization'])
+    expect(headers.Authorization).toMatch(/^Bearer /)
   })
 
   it('uses each protocol s own listing path', async () => {

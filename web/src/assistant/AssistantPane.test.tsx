@@ -334,9 +334,15 @@ describe('one whole run', () => {
     expect(relayed.length).toBeGreaterThan(0)
     for (const request of relayed) {
       expect(request.url.startsWith('/api/assistant/relay/v1/chat/completions')).toBe(true)
-      for (const forbidden of ['authorization', 'x-api-key', 'cookie']) {
-        expect(request.headerNames.map((name) => name.toLowerCase())).not.toContain(forbidden)
+      // **`authorization` is this desk's own, and nothing else is.** The relay
+      // is a gated route, so the page's session travels on it; what must never
+      // be here is a credential for the configured *endpoint*, which lives on
+      // this machine and is attached by the chassis.
+      const names = request.headerNames.map((name) => name.toLowerCase())
+      for (const forbidden of ['x-api-key', 'cookie', 'x-goog-api-key', 'proxy-authorization']) {
+        expect(names).not.toContain(forbidden)
       }
+      expect(names.filter((name) => name === 'authorization')).toHaveLength(1)
     }
   })
 

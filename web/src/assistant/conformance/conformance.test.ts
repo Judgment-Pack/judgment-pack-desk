@@ -1014,8 +1014,14 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
       const { requests } = await runLeg(fromRegistry(engineId), leg)
       expect(requests.length).toBeGreaterThan(0)
       for (const request of requests) {
+        // **`authorization` is the desk's own session and is expected**: the
+        // relay is a gated chassis route. What K1 is about is that no
+        // credential *the engine* could name reaches it — and the engine
+        // cannot write `authorization` either, because it is off
+        // `MODEL_REQUEST_HEADERS`. So the header is required to be there
+        // exactly once and to be a bearer, and every other credential name is
+        // required to be absent.
         for (const forbidden of [
-          'authorization',
           'x-api-key',
           'api-key',
           'cookie',
@@ -1024,6 +1030,10 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
         ]) {
           expect(request.headerNames, `a request carried ${forbidden}`).not.toContain(forbidden)
         }
+        expect(
+          request.headerNames.filter((name) => name === 'authorization'),
+          'the relayed request carries this desk’s session exactly once'
+        ).toHaveLength(1)
         // The relay's own base and one path suffix — plus, on the one family
         // whose wire asks for its stream in the query, the one pair the relay
         // admits and nothing else. No credential: the session is a cookie the
