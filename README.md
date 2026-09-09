@@ -3245,10 +3245,12 @@ not; they are the page, and the page can do nothing without one of the two.
   survives a stop — every id from before names nothing, and the page holding one
   is told so rather than retried. There is no renewal anywhere in this design:
   the only thing that mints a session is a handoff, and the only thing that
-  issues a handoff is `/launch?secret=…`. **Reopen the URL jpack-desk printed at
-  startup.** An open tab does not recover by itself, and is not meant to: a page
-  that could re-authorize without a person would be a page holding something
-  that outlives the desk.
+  issues a handoff is `/launch?secret=…`. **Open the URL the new process
+  printed** — the launch secret is generated per process too, unless
+  `--dev-token` fixed it, so the previous run's URL is not the one to reopen. An
+  open tab does not recover by itself, and is not meant to: a page that could
+  re-authorize without a person would be a page holding something that outlives
+  the desk.
 - **Or the launch secret as a header, for a script.** `Authorization: Bearer
   <launch secret>`, compared in constant time, on `POST /api/session` to mint a
   session or on any gated route directly. That is how the smoke client, the
