@@ -835,10 +835,15 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 // script that captures the launch cookie inside its sixty-second window and
 // forges `Sec-Fetch-Site: same-origin` can call this route and take the session
 // before the page does. Nothing written here changes that; what the shape does
-// is make it visible and bounded. The handoff is single use, so the page's own
-// `POST` then fails and the desk says "No session — open the URL that jpack-desk
-// printed at startup" rather than working while somebody else is also inside.
-// A theft is a desk that stops working, not a desk that quietly has two users.
+// is bound it — the handoff is single use, so the page's own `POST` then fails
+// rather than the desk quietly having two users.
+//
+// **What the person sees is narrower than "a failure", and this is the honest
+// version of it.** A tab that had no session shows "No session — open the URL
+// that jpack-desk printed at startup" and stops. A tab that already had one
+// keeps it and shows nothing, because throwing a working session away over a
+// lost relaunch would turn somebody else's theft into this person's outage.
+// The launch URL is reusable, so reopening it is the way back either way.
 //
 // A script that is *entitled* to a session does not need any of this: it
 // presents the launch secret as `Authorization: Bearer` on this same route.

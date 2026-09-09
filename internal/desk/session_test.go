@@ -336,7 +336,11 @@ func TestTheStatedResidual(t *testing.T) {
 		t.Fatal("the thief got no id")
 	}
 
-	// And the page then fails, which is the whole of the mitigation.
+	// And the page's own exchange then fails, which is the bound. What the
+	// person sees depends on whether that tab already held a session — see
+	// `createSession`'s comment and the web suite's "keeps the old id where the
+	// exchange is refused"; this asserts the wire, which is the half that lives
+	// here.
 	after, _ := exchangeAttempt(t, ts, func(r *http.Request) {
 		r.AddCookie(&http.Cookie{Name: handoff.Name, Value: handoff.Value})
 		r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
