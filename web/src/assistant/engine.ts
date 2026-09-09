@@ -36,10 +36,9 @@
  * `globalThis.WebSocket` and drive a third, ungated MCP connection.
  *
  * **That reading of the deviation is now out of date, and the deviation
- * stands.** The session is an `HttpOnly` cookie the browser attaches to every
- * same-origin request by itself, so no address is a credential and page code
- * that spelled `/ws` would be admitted on the cookie alone. Withholding the URL
- * was never the load-bearing part in any case: the token lived in
+ * stands.** No address is a credential any more: the session id is held by the
+ * page and sent on a header, so `/ws` spelled by page code is just a URL.
+ * Withholding it was never the load-bearing part in any case — the id lives in
  * `sessionStorage`, which is same-origin readable, so an adapter that wanted it
  * could always have read it. What the capability actually buys is that the
  * desk decides **what** an engine can reach — one mount point, a validated path

@@ -110,8 +110,8 @@ describe('the authoring shell', () => {
     const { container } = render()
     await screen.findByText('jpack.json')
     expect(container.textContent).toContain('packs/vendor-onboarding.pack.json')
-    // The chassis authorizes this page by the `jpack-desk-session` cookie the
-    // browser attaches by itself. Nothing of a credential is on the address,
+    // The chassis authorizes this page by the session id `deskFetch` sends on
+    // the `Authorization` header. Nothing of a credential is on the address,
     // and a page that put one there would be putting it in every log a URL
     // reaches.
     expect(calls[0]!.url).toBe('/api/files')

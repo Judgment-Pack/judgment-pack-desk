@@ -325,9 +325,9 @@ describe('one whole run', () => {
 
   it('opens one connection of its own, and calls the relay with no credential', async () => {
     const { relayed } = await runIt()
-    // The assistant's socket, not the desk's: one, and it carries **no
-    // credential of its own** — the browser attaches the session cookie to a
-    // same-origin upgrade, and the page has nothing to add.
+    // The assistant's socket, not the desk's: one, and **nothing of a
+    // credential is on its address** — the session id travels in the
+    // subprotocol offer, which is a header, not a URL that reaches a log.
     expect(runtime!.opened).toHaveLength(1)
     expect(runtime!.opened[0]).toContain('/ws')
     expect(runtime!.opened[0]).not.toContain('token=')

@@ -3226,14 +3226,29 @@ not; they are the page, and the page can do nothing without one of the two.
   A script that captures it inside that window and forges `Sec-Fetch-Site:
   same-origin` **can take the session before the page does**. Nothing written
   here changes that: forbidden-header rules bind browsers, not scripts. What the
-  shape does is make the theft visible and bounded — the handoff is single use,
-  so the page's own `POST` then fails and the desk says "No session — open the
-  URL that jpack-desk printed at startup" rather than working while somebody
-  else is also inside. Sixty seconds, one use, and a failure the person sees.
+  shape does is bound it — sixty seconds, and one use.
+
+  **What the person sees is narrower than "a failure", and is stated as what it
+  is.** If another party spent the handoff first, the page's own exchange fails.
+  A tab that had no session shows "No session — open the URL that jpack-desk
+  printed at startup" and stops. A tab that already had one **carries on with
+  its previous session**, because throwing a working session away over a lost
+  relaunch would turn somebody else's theft into this person's outage — so on
+  that path nothing is shown. The launch URL is reusable for the life of the
+  process: reopen it.
 - **Sign-out exists; expiry does not.** `DELETE /api/session` forgets a session
   and the id then names nothing. A session nobody ends lives until the desk stops
   or the bound above evicts it: there is no timeout, and closing a tab leaves the
   record behind until then.
+- **A restart ends every session, and the printed URL is how you come back.**
+  The store is in memory and its HMAC key is minted per process, so nothing
+  survives a stop — every id from before names nothing, and the page holding one
+  is told so rather than retried. There is no renewal anywhere in this design:
+  the only thing that mints a session is a handoff, and the only thing that
+  issues a handoff is `/launch?secret=…`. **Reopen the URL jpack-desk printed at
+  startup.** An open tab does not recover by itself, and is not meant to: a page
+  that could re-authorize without a person would be a page holding something
+  that outlives the desk.
 - **Or the launch secret as a header, for a script.** `Authorization: Bearer
   <launch secret>`, compared in constant time, on `POST /api/session` to mint a
   session or on any gated route directly. That is how the smoke client, the
@@ -4510,7 +4525,8 @@ The origin and the launch secret are separate arguments: the secret is a
 credential, and a credential does not ride on a URL. `--secret <secret>` or
 `JPACK_DESK_SECRET` supplies it, and the client sends it as
 `Authorization: Bearer` — on the `/ws` upgrade too, which is how a script
-authorizes where a browser would have a cookie.
+authorizes where the page offers its session id as a subprotocol. Nothing on
+this desk authorizes with a cookie.
 
 ```sh
 export JPACK_DESK_SECRET='the value after ?secret= on the printed URL'

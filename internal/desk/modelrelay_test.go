@@ -571,8 +571,9 @@ func TestRelayForwardsNothingOfThePagesQuery(t *testing.T) {
 	// parser downstream makes.
 	//
 	// **The class is gone at its root now, and this is what keeps it gone.** No
-	// secret rides on any query: a browser presents the session cookie and a
-	// script the `Authorization: Bearer` header, so `token=…` on a relayed
+	// secret rides on any query: a browser presents the session id it holds and
+	// a script the launch secret, both on `Authorization: Bearer`, so `token=…`
+	// on a relayed
 	// request is not a credential being handled carefully — it is a page
 	// sending something nothing asks for, and it is refused like any other
 	// pair. The rule this holds is the strongest one available: not "the token

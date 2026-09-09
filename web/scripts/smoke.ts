@@ -191,11 +191,11 @@ const wsURL = `ws://${url.host}/ws`
  *
  * `DeskWebSocketTransport` is the page's own and takes a URL and nothing else —
  * which is the point of this script, since a transport written for the test
- * would prove nothing about the one the desk ships. In a browser the session is
- * an `HttpOnly` cookie the browser attaches by itself; here there is no cookie
- * jar, so the header is attached by the `WebSocket` this script installs. Node
- * accepts `headers` in the constructor's options; a browser would not, and does
- * not need to.
+ * would prove nothing about the one the desk ships. In a browser the page
+ * offers its session id as a subprotocol, which the transport already takes;
+ * this script has no session and presents the launch secret instead, on a
+ * header the `WebSocket` it installs attaches. Node accepts `headers` in the
+ * constructor's options; a browser would not, and does not need to.
  */
 const NodeWebSocket = globalThis.WebSocket
 class AuthorizedWebSocket extends NodeWebSocket {

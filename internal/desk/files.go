@@ -138,8 +138,8 @@ const (
 	CodeNotUTF8 = "not-utf8"
 	// CodeNotAFile is a directory, FIFO, device or socket asked for as a file.
 	CodeNotAFile = "not-a-file"
-	// CodeUnauthorized is a request carrying neither a live session cookie nor
-	// the launch secret as a Bearer header.
+	// CodeUnauthorized is a request carrying neither a live session id nor the
+	// launch secret, either of them as a Bearer header.
 	//
 	// Split from CodeForbidden because a code that maps to two statuses is not
 	// a matrix: the session check answers 401 and the origin check answers 403,

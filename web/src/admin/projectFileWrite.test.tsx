@@ -153,8 +153,8 @@ describe('a project-file card’s save', () => {
     expect(String(body.content)).toContain('"organization": {"name":"Renamed","mark":null}')
     // And every other member, byte for byte, in the request itself.
     expect(String(body.content)).toContain('"panes": { "left": { "mode": "expanded", "width": 248 } }')
-    // The address and nothing else: this page holds no credential to put on
-    // it, and the session cookie the browser attaches is not the page's.
+    // The address and nothing else: the session id travels on the
+    // `Authorization` header `deskFetch` sets, never on the URL.
     expect(desk.puts[0]!.url).toBe('/api/file')
   })
 

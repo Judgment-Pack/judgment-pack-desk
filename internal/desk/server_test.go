@@ -36,11 +36,11 @@ const testPort = 8799
 
 // startDesk builds one chassis and serves it, **listener first**.
 //
-// `Config.Port` is required, because the session cookie's name carries it, and
-// `httptest.NewServer` does not allocate a port until it starts. An unstarted
-// server allocates one immediately, so the chassis can be told the port it will
-// actually be reached on — which is what `main` does, and what makes two test
-// desks in one process name their cookies differently.
+// `Config.Port` is required, because the launch handoff's cookie name carries
+// it, and `httptest.NewServer` does not allocate a port until it starts. An
+// unstarted server allocates one immediately, so the chassis can be told the
+// port it will actually be reached on — which is what `main` does, and what
+// makes two test desks in one process name their handoffs differently.
 //
 // It registers no cleanup: each caller already has the shape it wants, and one
 // of them (the FIFO test) deliberately leaks a listener rather than hang.

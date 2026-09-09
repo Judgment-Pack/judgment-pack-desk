@@ -545,8 +545,9 @@ func relayPathRune(r rune) bool {
 //
 // **That class is now gone at its root, and this refusal is what keeps it
 // gone.** Since the launch exchange, no secret rides on any query anywhere in
-// this chassis: a browser presents the `jpack-desk-session` cookie and a script
-// presents `Authorization: Bearer`, so there is no `token` parameter for a
+// this chassis: a browser presents the session id it holds and a script the
+// launch secret, both on `Authorization: Bearer`, so there is no `token`
+// parameter for a
 // downstream parser to read differently. A `token=…` pair on a relayed request
 // is therefore not a credential being carefully handled — it is a page sending
 // something no part of this desk asks for, and it is refused by the same rule
