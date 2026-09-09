@@ -1,0 +1,76 @@
+/* The file in the right pane.
+   ---------------------------------------------------------------------------
+   The same flat shape the rest of Admin is: type, spacing and one hairline. The
+   pane is 360px at its widest, so the key/value grid Admin uses at 9rem is a
+   stack here — a label column that wide leaves nothing for a path — and every
+   value wraps rather than being truncated into a path that is not the one on
+   disk. */
+
+.pane {
+  display: grid;
+  gap: var(--density-gap);
+  padding: var(--density-cell-x);
+}
+
+.title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.head {
+  display: grid;
+  gap: var(--density-gap);
+  margin: 0;
+  padding-top: var(--density-gap);
+  border-top: 1px solid var(--border);
+}
+
+.row {
+  display: grid;
+  gap: 0;
+}
+
+.key {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.value {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.value code {
+  font-size: 0.8rem;
+}
+
+/* **The one frame this page draws.** A code block is a real object: its own
+   scroll, its own typeface, and bytes that are not this page's prose. It moved
+   here with the disclosure it used to sit inside. */
+.bytes {
+  margin: 0;
+  padding: var(--density-cell-x);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--code-surface);
+  overflow-x: auto;
+  /* A scroll container has to be a containing block, or an absolutely
+     positioned descendant lays out against the initial one and extends the
+     document past the pane. `containingBlock.test.ts` holds it. */
+  position: relative;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.none {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+}

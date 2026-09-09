@@ -2,10 +2,16 @@
  * The one card every Admin section renders through, and the group the cards
  * that share a file sit in.
  *
- * What is asserted here is the shape: the four slots in one order, one status
- * line from a closed set, and a Content disclosure that quotes the file rather
- * than re-serialising it — and, for a card under a group, that the file's
- * location is stated by the header and not again by the member.
+ * What is asserted here is the shape: the slots in one order, one status line
+ * from a closed set, and — for a card under a group — that the file's location
+ * is stated by the header and not again by the member.
+ *
+ * **The Content cases left this file with the disclosure.** The bytes are in
+ * the right pane now, and every case about what may be quoted, and about what
+ * a refused file must never show, is in `ConfigPane.test.tsx` against the
+ * component that renders them. What stayed here is the rule the pane imports:
+ * `showsContent`, which is exported from this module precisely so that there
+ * is one of it.
  */
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -106,110 +112,6 @@ describe('the source card', () => {
       />
     )
     expect(screen.getByText(/this page’s reason/)).toBeTruthy()
-  })
-
-  it('shows the member’s own bytes rather than a re-serialisation', () => {
-    // `1e2` is not `100` and `9007199254740993` is not what a round trip
-    // through a double answers. A disclosure that re-serialised would show the
-    // reader a file that is not on disk.
-    render(
-      <SourceCard
-        id="s"
-        title="S"
-        location="somewhere"
-        status={{ state: 'read' }}
-        content={{
-          text: '{"panes": {"n": 1e2, "big": 9007199254740993}}',
-          member: 'panes',
-          value: { n: 100, big: 9007199254740992 }
-        }}
-      />
-    )
-    expect(screen.getByText('{"n": 1e2, "big": 9007199254740993}')).toBeTruthy()
-    // And it does not claim to be showing a decode.
-    expect(screen.queryByText('(decoded)')).toBeNull()
-  })
-
-  it('shows the decoded value, said to be decoded, where it has no bytes', () => {
-    render(
-      <SourceCard
-        id="s"
-        title="S"
-        location="somewhere"
-        status={{ state: 'absent' }}
-        content={{ value: { theme: 'system' } }}
-      />
-    )
-    expect(screen.getByText('(decoded)')).toBeTruthy()
-    expect(screen.getByText(/"theme": "system"/)).toBeTruthy()
-  })
-
-  it('shows the whole file where the card names no member', () => {
-    render(
-      <SourceCard
-        id="s"
-        title="S"
-        location="somewhere"
-        status={{ state: 'read' }}
-        content={{ text: '{"deskConfigVersion": 1}', value: {} }}
-      />
-    )
-    expect(screen.getByText('{"deskConfigVersion": 1}')).toBeTruthy()
-  })
-
-  it('renders no bytes of a file the decoder refused', () => {
-    // The refusal is about a member; rendering the file anyway puts that
-    // member on the page that reported it. The Status line is what a reader
-    // needs there, and it is already the refusal.
-    render(
-      <SourceCard
-        id="s"
-        title="S"
-        location="somewhere"
-        status={{
-          state: 'refused',
-          problems: [{ key: 'identity.apiKey', reason: 'a key is never stored in configuration' }]
-        }}
-        content={{
-          text: '{"deskConfigVersion":1,"identity":{"apiKey":"sk-live-secret"}}',
-          member: 'identity',
-          value: { provider: null }
-        }}
-      />
-    )
-    expect(document.body.textContent).not.toContain('sk-live-secret')
-    // Not the decoded fallback either: the whole disclosure is gone.
-    expect(document.querySelector('details')).toBeNull()
-    expect(screen.getByText(/identity.apiKey: a key is never stored/)).toBeTruthy()
-  })
-
-  it('renders no bytes of a file that could not be read', () => {
-    render(
-      <SourceCard
-        id="s"
-        title="S"
-        location="somewhere"
-        status={{
-          state: 'unread',
-          failure: { reason: 'too large', responseReceived: true, status: 413, source: 'chassis' }
-        }}
-        content={{ text: '{"a":1}', value: { a: 1 } }}
-      />
-    )
-    expect(document.querySelector('details')).toBeNull()
-  })
-
-  it('renders no disclosure where there are neither bytes nor a value', () => {
-    render(
-      <SourceCard
-        id="s"
-        title="S"
-        location="somewhere"
-        status={{ state: 'read' }}
-        content={{}}
-      />
-    )
-    expect(document.querySelector('details')).toBeNull()
   })
 
   it('renders the fields and the save slot only where they are given', () => {
@@ -322,6 +224,28 @@ describe('the source card', () => {
     )
     expect(screen.getByText('a: one')).toBeTruthy()
   })
+
+  it('takes a heading level where the outline is not the nesting', () => {
+    // Admin's open section states no Location — the list beside it and the
+    // pane already do — and is nonetheless a top-level section of the page
+    // rather than a member of a group that is not rendered around it. Without
+    // this the page went h1 → h3 and offered an outline nothing on screen has.
+    const { container } = render(
+      <SourceCard
+        id="s"
+        title="S"
+        location={<code>/a/file.json</code>}
+        status={{ state: 'read' }}
+        under={{ state: 'read' }}
+        level={2}
+      />
+    )
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('S')
+    expect(screen.queryByRole('heading', { level: 3 })).toBeNull()
+    // And the level is the only thing it changed: still no second statement of
+    // where the file is.
+    expect(container.querySelector('dl')).toBeNull()
+  })
 })
 
 describe('the group above the cards that share a file', () => {
@@ -332,7 +256,6 @@ describe('the group above the cards that share a file', () => {
         title="This project"
         location={<code>/a/file.json</code>}
         status={{ state: 'read' }}
-        content={{ text: '{"deskConfigVersion": 1}', value: {} }}
       >
         <SourceCard
           id="one"
@@ -360,28 +283,9 @@ describe('the group above the cards that share a file', () => {
       Array.from(container.querySelectorAll('dt')).map((each) => each.textContent)
     ).toEqual(['Location', 'Status'])
     expect(screen.getAllByText('/a/file.json')).toHaveLength(1)
-    // The file's own bytes, on the group rather than on each of its members.
-    expect(screen.getByText('{"deskConfigVersion": 1}')).toBeTruthy()
-  })
-
-  it('renders no bytes of a file the decoder refused, on the group either', () => {
-    render(
-      <SourceGroup
-        id="g"
-        title="G"
-        location="somewhere"
-        status={{
-          state: 'refused',
-          problems: [{ key: 'identity.apiKey', reason: 'a key is never stored in configuration' }]
-        }}
-        content={{ text: '{"identity":{"apiKey":"sk-live-secret"}}', value: {} }}
-      >
-        <p>a member</p>
-      </SourceGroup>
-    )
-    expect(document.body.textContent).not.toContain('sk-live-secret')
+    // And no bytes anywhere: the group states the file, the pane shows it.
     expect(document.querySelector('details')).toBeNull()
-    expect(screen.getByText(/identity.apiKey: a key is never stored/)).toBeTruthy()
+    expect(container.querySelector('pre')).toBeNull()
   })
 
   it('carries the group’s own fields and its one write, where it has them', () => {

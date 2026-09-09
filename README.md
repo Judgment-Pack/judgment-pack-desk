@@ -1565,7 +1565,7 @@ left beside the console button, and a link that neither shrinks nor wraps
 painted straight across it. The link's accessible name is the full sentence at
 every width.
 
-### Admin, as two groups and a status line
+### Admin, as an overview and one open section
 
 **A settings page carries only settings.** That sentence is the whole of this
 shape, and three things follow from it. Every setting is editable in place.
@@ -1589,27 +1589,46 @@ each group below names its own, and naming a file twice is what the grouping
 exists to stop. The line is what the desk is *running*, which is the one thing
 no card is about.
 
-**Below it are two groups, one per file, and each states its file once.** The
-cards that write one file printed that file's path once each and its read status
-once each, which read as that many separate files.
+**`/admin` is an overview**: two groups, one per file, each stating its file's
+path and read status once, and under each a row per section carrying that
+section's title, a one-line summary drawn from the decoded configuration, and
+its own status only where it differs from its group's — the comparison being by
+what the status *says* rather than by which state it is, because two refusals
+naming two keys are not one status.
 
-| Group | Header states | Members |
+| Group | Header states | Rows |
 |---|---|---|
-| **This project** | `jpack-desk.json`'s path, its read status, its whole text as a disclosure, and the default-project nomination | Organization, Storage |
+| **This project** | `jpack-desk.json`'s path, its read status, and the default-project nomination | Organization, Storage |
 | **This desk** | the desk-level file's path and its read status | Assistant, Identity provider |
 
-**A card under a group is the card as it was, minus what the header has already
-said.** It keeps its title, its Content disclosure, its fields and its Save, and
-it prints no Location at all. It prints a **Status** only where its own differs
-from the group's, and the comparison is by what the status *says* rather than by
-which of the states it is, because two refusals naming two keys are not one
-status.
+**A row is a link to `/admin#<id>` and the fragment is the state**: the section
+it names opens beside the list — a 14rem column of rows on a wide shell, the
+list stacked above the section below the Inspector's own breakpoint with every
+row the reader is not in collapsed to its title — `aria-current` marks the open
+row, Escape or the **All settings** link at the top of the open section clears
+the fragment, and a fragment naming no section is the overview. Those addresses
+are the ones the rail's menu and the user menu have linked to since these were
+headings; nothing else changed about them, and they scroll as they did.
 
-**A card's Status is its read state *and* its own write.** The group's status is
-the file's read state, so a card that only ever reported its read state showed
-nothing at all while it was writing, while a refusal stood against it, or while
-the file had moved underneath it — three things the card knows and the group
-does not. The form publishes what its write is doing up to the card it is
+**The summaries come from the decoded configuration and are composed nowhere
+else**: the organization's name or `none`, `filesystem · <dir>`, `none` or
+`<kind> · <model> · thinking <tier>`, `None` or the issuer. A row that fell back
+to a name this page made up — the project it happens to be open on, the desk's
+own brand — would be a value nobody wrote that a reader cannot tell from one
+that is in the file.
+
+**The page was a stack and is now a list, and that is the whole of the change.**
+Four sections each with a heading, a status, a disclosure and a form, one under
+another, meant a reader who came to change one thing scrolled past three they
+did not — and the page grew by a screen with every setting the desk gains. What
+a settings page is instead is an overview of what each setting currently *is*,
+and the one section that was asked for.
+
+**A section's Status is its read state *and* its own write.** The group's status
+is the file's read state, so a section that only ever reported its read state
+showed nothing at all while it was writing, while a refusal stood against it, or
+while the file had moved underneath it — three things the section knows and the
+group does not. The form publishes what its write is doing up to the card it is
 inside, on the pattern the Inspector slot already uses: the form owns the draft
 and the save, the `save` node is handed to the card as a prop, and neither can
 reach into the other. A write in the air says so first, then a file that moved,
@@ -1621,23 +1640,36 @@ Status exactly as it did before there were groups. The heading levels follow the
 document — a group is an `h2` and its cards are `h3` — so the outline is the one
 on the screen.
 
-**Each card is four slots.** A **Location** — the path, from the chassis, never
-composed on the page and never stood in for — where the group has not stated it.
-Where the chassis has not answered, the row says *the desk has not said*: the
-relative name this page reads the file by is a file-API address, not an
-established location on a filesystem, and offering it as one was the page
-answering a question only the chassis can answer. A **Status** — one
-line from a closed set: `read`, `not present — defaults in use`, `refused:
-<key>: <the decoder's own reason>`, `not read — <who said so>: <their reason>`.
-A **Content** disclosure — the member's own bytes where this page read the file,
-and the decoded value, labelled as decoded, where it did not. And the **fields**,
-with a **Save** on the cards that have a write path and nothing where they do
-not.
+**The file itself is in the right pane.** The bytes are context rather than a
+setting — nobody edits a file's text here — so Admin claims the Inspector slot
+the way the pack routes do, through `useInspectorPortal`, and releases it when
+the route leaves, which is what puts the next route's panel back. The panel names
+the file and the member (`jpack-desk.json › storage`, `desk.json › identity`, or
+the project file alone on the overview), states the **Location** the chassis
+reported and the **Digest** the read carried, says the file's **Status** in the
+same closed vocabulary the sections use, and quotes the member's **own bytes** —
+never a re-serialisation of the decode, and where those bytes cannot be
+established, one line saying so rather than the decoded value in their place.
+Below 1100px the pane is the existing drawer, opened from the existing control;
+nothing here opens it on the reader's behalf, because a restored layout is not a
+page's to override.
+
+**The forms stay in the main column**, and that is a measurement rather than a
+preference: the pane is 360px, a label column alone is 9rem, and below 1100px
+the pane is a drawer over the very page it would be editing. Each open section
+is what it was — its **fields**, and a **Save** where it has a write path and
+nothing where it does not. A **Location** is still the path from the chassis,
+never composed on the page and never stood in for; where the chassis has not
+answered it says *the desk has not said*, because the relative name this page
+reads the file by is a file-API address rather than an established location on a
+filesystem. A **Status** is still one line from a closed set: `read`, `not
+present — defaults in use`, `refused: <key>: <the decoder's own reason>`, `not
+read — <who said so>: <their reason>`.
 
 **Nothing on the page is a box.** Hierarchy is type, spacing and hairlines: one
-rule between groups, one above each member, one type scale, and every title in
+rule between groups, one above each row, one type scale, and every title in
 sentence case — a frame is drawn only around an object, which on Admin is the
-code block behind a Content disclosure and an alert. **One primary button per
+code block in the right pane and an alert. **One primary button per
 section, and it is the Save that writes the form**; the default-project
 nomination sits on the row it changes as a secondary, and a Reload inside a
 stale panel keeps its own because an alert has one action. Three tests hold it
@@ -1680,16 +1712,20 @@ in the user menu, which is a portal outside the page, for each of its four
 answers — the two standing sentences in that menu are over the bound on purpose
 and the sweep is asserted against exactly them, so a third one fails. The standing disclaimer, the
 deployment-state list, the warning notes and every paste block are gone: a real
-problem is a card's Status line, and the Copy buttons went with the blocks
-because the Location line says where the file is and Content shows what is in
+problem is a section's Status line, and the Copy buttons went with the blocks
+because the Location line says where the file is and the pane shows what is in
 it.
 
 **A refused file's bytes are never rendered.** The decoder refuses a whole file
 for one credential-shaped member, and the point of refusing it is that the desk
-will not act on it — so a Content disclosure that quoted it anyway would put the
-member the refusal is about, and on the project group the whole document around
-it, into the DOM of the page reporting the refusal. On a refusal, and on a read
-that produced no file, a card shows its Status line and no content at all.
+will not act on it — so a pane that quoted it anyway would put the member the
+refusal is about, and on the overview the whole document around it, into the DOM
+of the surface reporting the refusal. On a refusal, and on a read that produced
+no file, the pane shows its Status line and no bytes at all. **The rule has one
+spelling**: `showsContent` is exported from the card and imported by the pane,
+because two spellings of one rule are invisible to a harness that breaks one of
+them — which is exactly how a second, redundant gate inside the old disclosure
+survived as a mutation nothing could catch.
 
 **Two things write the desk-level file, and each writes one member of it.** The
 project group's header nominates this project as the default (or withdraws one),

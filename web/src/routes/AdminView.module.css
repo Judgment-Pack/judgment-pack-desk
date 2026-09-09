@@ -1,12 +1,14 @@
-/* The one type value this page shares with the shell.
+/* Admin: an overview, and one open section beside the list.
    ---------------------------------------------------------------------------
-   **Admin's measure is no longer here.** `.admin { max-width: 44rem }` was the
-   width a label column and a value column need, measured on this page and
-   living in this page's module — so the next form-shaped page had nowhere to
-   read it from. It is `--measure-form` in `styles.css` now, and this page asks
-   for it the way every route asks for its width: `data-measure="form"` on its
-   top-level element, read by `.desk-measure` in `shell.css`. The reasoning
-   moved with the number.
+   **Admin's measure is not here.** `.admin { max-width: 44rem }` was the width
+   a label column and a value column need, measured on this page and living in
+   this page's module — so the next form-shaped page had nowhere to read it
+   from. It is `--measure-form` in `styles.css` now, and this page asks for it
+   the way every route asks for its width: `data-measure="form"` on its
+   top-level element, read by `.desk-measure` in `shell.css`. Nothing in this
+   file states a width in absolute terms again; the one column that has a size
+   is the list beside an open section, and it is a grid track rather than a cap
+   on anything.
 
    `.quiet` is the desk's own muted-aside class and is global, so it is styled
    **here, under this page's class**, rather than in `styles.css`: the other
@@ -16,4 +18,127 @@
 
 .admin :global(.quiet) {
   font-size: 0.78rem;
+}
+
+/* The list, in both of its states. A row is a link with two or three lines in
+   it and nothing else: no box, no chevron, no second control. */
+
+.rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rowItem {
+  margin: 0;
+}
+
+/* A hairline above each row, on the top rather than the bottom, so the last
+   row of a group carries no rule under it — the same rule the members it
+   replaced were separated by. */
+.row {
+  display: grid;
+  gap: 0.15rem;
+  padding-block: var(--density-gap);
+  border-top: 1px solid var(--border);
+  color: inherit;
+  text-decoration: none;
+}
+
+.row:hover {
+  background: var(--false-soft);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The open row. A settings list marks where the reader is with weight and a
+   marker on the leading edge, not with a filled bar: the row is still a row. */
+.row[aria-current] {
+  box-shadow: inset 2px 0 0 0 var(--accent);
+}
+
+.row[aria-current] .rowTitle {
+  color: var(--ink);
+}
+
+.rowTitle {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* What the setting currently is, from the decoded configuration. It is the
+   reason the overview is an overview rather than a menu. */
+.rowSays {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.rowStatus {
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  overflow-wrap: anywhere;
+}
+
+/* Open: the list on the left, the section on the right.
+   ---------------------------------------------------------------------------
+   14rem is a column of titles and short summaries, which is what the list is
+   once the file's own head has left it. Below the Inspector's breakpoint the
+   two stack — the shell is one column there, and a 14rem rail beside a form
+   leaves neither of them room. */
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--density-block);
+  align-items: start;
+}
+
+/* Stated as the *wide* case rather than as a narrow exception, so that the
+   stacked form is what a shell gets by default — and so that this file spells
+   no `max-width` at all, which is the rule `shellSheet.test.ts` holds it to:
+   a page that states a width of its own is a measure living somewhere the next
+   page cannot read it from. The breakpoint is the Inspector's own, because
+   what it is about is the shell being one column below it. */
+@media (min-width: 1100px) {
+  .split {
+    grid-template-columns: 14rem minmax(0, 1fr);
+    gap: var(--density-section);
+  }
+}
+
+.rail {
+  display: grid;
+  gap: var(--density-block);
+}
+
+.railGroup {
+  display: grid;
+}
+
+/* The group's name in the list, as a label rather than a heading: the outline
+   of this page is its heading and the section that is open, and a navigation
+   column that added two more headings to it would be offering a reader an
+   outline that is not the one on the screen. */
+.railTitle {
+  margin: 0 0 var(--density-gap);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.open {
+  display: grid;
+}
+
+.back {
+  justify-self: start;
+  margin-bottom: var(--density-gap);
+  font-size: 0.8rem;
+  color: var(--ink-soft);
 }

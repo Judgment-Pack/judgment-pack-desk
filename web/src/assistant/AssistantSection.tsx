@@ -44,7 +44,8 @@ import {
 export function AssistantSection({
   id,
   title,
-  under
+  under,
+  level
 }: {
   id: string
   title: string
@@ -58,6 +59,8 @@ export function AssistantSection({
    * only this card has.
    */
   under?: SourceStatus
+  /** The heading level, where the page's outline is not the card's nesting. */
+  level?: 2 | 3
 }) {
   const { config, desk } = useEffectiveConfig()
   // **The same reading the tab and Describe it take.** A read that did not
@@ -118,6 +121,7 @@ export function AssistantSection({
       id={id}
       title={title}
       under={under}
+      level={level}
       location={
         desk === undefined ? (
           <span className="quiet">nothing has asked for it</span>
@@ -126,7 +130,6 @@ export function AssistantSection({
         )
       }
       status={assistantStatus(desk)}
-      content={{ text: desk?.text, member: 'assistant', value: config.assistant }}
       fields={
         <>
           <CardField label="Assistant">
