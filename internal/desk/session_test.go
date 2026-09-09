@@ -1127,6 +1127,14 @@ func TestTheSecretRuleReadsTheRawQuery(t *testing.T) {
 		"secret=" + testToken + "%ZZ",
 		"a=%ZZ&secret=" + testToken,
 		"a=%ZZ&%73ecret=" + testToken,
+		// **The combined case**, which is the one that got through: an encoded
+		// name *and* an invalid escape in the same query. `url.QueryUnescape`
+		// is all-or-nothing, so the bad byte bought silence about the whole
+		// string and the page was served.
+		"%73ecret=" + testToken + "%ZZ",
+		"%53ECRET=" + testToken + "%ZZ",
+		"%53ECRET%ZZ=" + testToken,
+		"a=1;%73ecret=" + testToken + "%ZZ",
 		"secret",
 		"mysecret=1",
 		"a=secret",
@@ -1354,4 +1362,199 @@ func TestEvictionEndsTheSessionsSockets(t *testing.T) {
 		}
 	}
 	t.Fatal("an evicted session's sockets were never ended")
+}
+
+/* Round 4: the siblings each fix missed --------------------------------------- */
+
+// TestALenientDecodeSeesPastOneBadEscape is item 1 as a unit, beside the
+// end-to-end rows above: `url.QueryUnescape` returns nothing at all when one
+// escape anywhere is invalid, and that silence was the hole.
+func TestALenientDecodeSeesPastOneBadEscape(t *testing.T) {
+	for _, raw := range []string{
+		"%73ecret=x%ZZ",
+		"%53ECRET%ZZ=x",
+		"a=%ZZ&%73ecret=x",
+		"%73%65%63%72%65%74=x",
+		"x=%ZZ%73ecret",
+	} {
+		if !querySmellsOfASecret(raw) {
+			t.Errorf("%q was not seen as mentioning a secret", raw)
+		}
+	}
+	// One decode pass, because that is how many the server does. A parameter
+	// literally named `%73ecret` is not a secret arriving, and reading it as one
+	// would be this rule disagreeing with the router about what the URL says.
+	for _, raw := range []string{
+		"%25%37%33ecret=x",
+	} {
+		if querySmellsOfASecret(raw) {
+			t.Errorf("%q was read through a second decode pass", raw)
+		}
+	}
+	// And `+` is left alone rather than read as a space: this is not a form
+	// decoder, and a rule that invented characters would be one more reader to
+	// disagree with.
+	for _, raw := range []string{"", "edit=1", "a=%ZZ", "a=b+c", "%41=1"} {
+		if querySmellsOfASecret(raw) {
+			t.Errorf("%q was seen as mentioning a secret", raw)
+		}
+	}
+}
+
+// TestOnlyTheOfferCarriesASessionOntoTheUpgrade is item 2. A socket authorized
+// by `Authorization: Bearer <session id>` carried no session **handle**, so
+// sign-out and eviction could not find it: it kept driving the runtime for a
+// session that had ended. There is one credential each way on this route now.
+func TestOnlyTheOfferCarriesASessionOntoTheUpgrade(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	id := beginSession(t, ts)
+
+	// The header path takes the launch secret and nothing else.
+	refused := upgradeRequest(t, ts, "", ts.URL, pageBearer(id))
+	if refused.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("a session id on the upgrade's Authorization header: status %d, want 401",
+			refused.StatusCode)
+	}
+	if resp := upgradeRequest(t, ts, "", ts.URL, bearer); resp.StatusCode == http.StatusUnauthorized {
+		t.Fatal("the launch secret does not open the relay")
+	}
+	// And the offer does.
+	acceptsSession(t, ts, id, ts.URL)
+}
+
+// TestSignOutClosesOnlyTheSessionsOwnSockets. One socket per credential path:
+// the page's, bound to the session, and a script's, bound to none.
+func TestSignOutClosesOnlyTheSessionsOwnSockets(t *testing.T) {
+	if !runtimeAvailable() {
+		t.Skip("no runtime binary: this drives real relay sockets")
+	}
+	_, ts := newTestServer(t, false)
+	id := beginSession(t, ts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	dial := func(options *websocket.DialOptions) *websocket.Conn {
+		t.Helper()
+		c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws", options)
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		c.SetReadLimit(readLimit)
+		(&rpcSession{t: t, ctx: ctx, ws: c}).initialize()
+		return c
+	}
+	page := dial(&websocket.DialOptions{
+		HTTPHeader:   http.Header{"Origin": []string{ts.URL}},
+		Subprotocols: upgradeOffer(id),
+	})
+	defer page.Close(websocket.StatusNormalClosure, "")
+	script := dial(&websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + testToken}},
+	})
+	defer script.Close(websocket.StatusNormalClosure, "")
+
+	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/session", nil)
+	pageBearer(id)(req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("sign-out status %d", resp.StatusCode)
+	}
+
+	deadline, stop := context.WithTimeout(ctx, 10*time.Second)
+	defer stop()
+	_, _, readErr := page.Read(deadline)
+	if got := websocket.CloseStatus(readErr); got != websocket.StatusPolicyViolation {
+		t.Fatalf("the page's socket ended with %v (%v), want %v",
+			got, readErr, websocket.StatusPolicyViolation)
+	}
+	// **A script's socket is bound to no session and is untouched.** It never
+	// was one, so signing one out cannot end it.
+	(&rpcSession{t: t, ctx: ctx, ws: script}).call(7, "list_packs", map[string]any{})
+}
+
+// TestASignOutBetweenAuthorizationAndRegistration is item 3: the window between
+// the gate saying yes and the connection being registered. A sign-out in it used
+// to walk the connections, find nothing, and leave a socket driving the runtime
+// for a session that had ended.
+func TestASignOutBetweenAuthorizationAndRegistration(t *testing.T) {
+	if !runtimeAvailable() {
+		t.Skip("no runtime binary: this drives a real relay socket")
+	}
+	s, ts := newTestServer(t, false)
+	id := beginSession(t, ts)
+
+	// The seam: the upgrade pauses here, the session is signed out, and the
+	// upgrade then continues into a store that no longer has it.
+	signedOut := make(chan struct{})
+	s.beforeRegister = func() {
+		s.beforeRegister = nil
+		req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/session", nil)
+		pageBearer(id)(req)
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+		close(signedOut)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws", &websocket.DialOptions{
+		HTTPHeader:   http.Header{"Origin": []string{ts.URL}},
+		Subprotocols: upgradeOffer(id),
+	})
+	if err != nil {
+		// The handshake itself may lose the race; either way nothing is serving.
+		<-signedOut
+		return
+	}
+	defer c.Close(websocket.StatusNormalClosure, "")
+	<-signedOut
+
+	deadline, stop := context.WithTimeout(ctx, 10*time.Second)
+	defer stop()
+	_, _, readErr := c.Read(deadline)
+	if readErr == nil {
+		t.Fatal("a socket registered after its session was signed out is serving")
+	}
+	if got := websocket.CloseStatus(readErr); got != websocket.StatusPolicyViolation &&
+		got != websocket.StatusInternalError && got != -1 {
+		t.Logf("the socket ended with close status %v (%v)", got, readErr)
+	}
+	if n := s.sessions.count(); n != 0 {
+		t.Fatalf("%d sessions after the sign-out", n)
+	}
+}
+
+// TestOutboundTrafficRefreshesRecency is item 7. A tab watching a long streamed
+// answer sends nothing for a minute at a time; a desk that counted only inbound
+// frames would evict the session whose socket is busiest.
+func TestOutboundTrafficRefreshesRecency(t *testing.T) {
+	store, err := newSessionStore()
+	if err != nil {
+		t.Fatalf("newSessionStore: %v", err)
+	}
+	watching, err := store.create("local user", nil)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	held := &conn{handle: store.handle(watching)}
+	desk := &Server{sessions: store}
+
+	for i := range maxSessions * 2 {
+		if _, err := store.create("local user", nil); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		// One answer's worth of outbound traffic, with the rate limit defeated
+		// the way time would defeat it.
+		held.touched.Store(int64(i) * int64(touchedSession) * 2)
+		held.touch(desk)
+	}
+	if _, ok := store.lookup(watching); !ok {
+		t.Fatal("a session whose socket was streaming answers was evicted")
+	}
 }

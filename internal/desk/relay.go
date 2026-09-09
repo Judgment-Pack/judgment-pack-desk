@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -51,6 +52,31 @@ type conn struct {
 	// cancel stops this connection's context, which is how a sign-out reaches
 	// the goroutines that own the socket.
 	cancel context.CancelFunc
+	// touched is when this connection last refreshed its session's recency, in
+	// Unix nanoseconds. Atomic because both pumps write it: frames arrive and
+	// answers leave on two different goroutines.
+	touched atomic.Int64
+}
+
+// touch refreshes this connection's session, at most once a second.
+//
+// **Once a second at most**, because a busy relay moves many frames and each
+// one taking the store's mutex would be a lock convoy for a fact that changes
+// slowly. What is being kept is "a tab somebody is using is not the coldest",
+// and a second's resolution says that perfectly well.
+func (c *conn) touch(s *Server) {
+	if c.handle == "" {
+		return
+	}
+	now := time.Now().UnixNano()
+	last := c.touched.Load()
+	if now-last < int64(touchedSession) {
+		return
+	}
+	if !c.touched.CompareAndSwap(last, now) {
+		return
+	}
+	s.sessions.touch(c.handle)
 }
 
 func (c *conn) send(msg []byte) {
@@ -144,7 +170,7 @@ func (s *Server) broadcastFileChange(relPath string) {
 // browser side, newline-delimited JSON on the stdio side. The chassis parses
 // nothing and rewrites nothing, which is what keeps it generic — a tool added
 // to the runtime tomorrow reaches the page with no change here.
-func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
+func (s *Server) relay(w http.ResponseWriter, r *http.Request, handle string) {
 	// Origin was already checked against the served origin (and, in dev mode,
 	// the Vite origin) in handleWS; the library's own check would reject the
 	// dev proxy and cannot see that decision.
@@ -174,13 +200,8 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	// The session this socket belongs to, recorded now: it is what sign-out and
-	// eviction find, and what each inbound frame refreshes.
-	offered, _ := offeredSessionID(r)
-	handle := ""
-	if offered != "" {
-		handle = s.sessions.handle(offered)
-	}
+	// The session this socket belongs to was decided by the gate, and is what
+	// sign-out and eviction find and what traffic refreshes.
 	c := &conn{
 		ws:     ws,
 		out:    make(chan []byte, outBuffer),
@@ -188,7 +209,23 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 		handle: handle,
 		cancel: cancel,
 	}
-	s.register(c)
+	// **Registered under the store's lock, and only if the session is still
+	// there.** Between the gate saying yes and this line, a sign-out can empty
+	// the store and walk the connections — finding nothing, because this one is
+	// not registered yet — and the socket would then be driving the runtime for
+	// a session that has ended, with nothing able to close it. Checking and
+	// registering under one lock closes the window rather than narrowing it.
+	if handle != "" {
+		if s.beforeRegister != nil {
+			s.beforeRegister()
+		}
+		if !s.sessions.stillLive(handle, func() { s.register(c) }) {
+			s.closeWith(ws, websocket.StatusPolicyViolation, "this session has ended")
+			return
+		}
+	} else {
+		s.register(c)
+	}
 	defer s.unregister(c)
 	defer c.stop()
 
@@ -254,6 +291,12 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 					cancel()
 					return
 				}
+				// **Outbound traffic is use too.** A tab watching a long
+				// streamed answer sends nothing for a minute at a time, and a
+				// desk that counted only inbound frames would evict the session
+				// whose socket is busiest — the reading half of the same
+				// conversation.
+				c.touch(s)
 			}
 		}
 	}()
@@ -280,7 +323,6 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Socket -> runtime stdin.
-	lastTouched := time.Time{}
 	go func() {
 		defer wg.Done()
 		defer cancel()
@@ -298,10 +340,7 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 			// least-recently-used bound it was the coldest thing in the store
 			// and the first to be evicted — the busiest desk being the one that
 			// stopped working. Each frame refreshes it, at most once a second.
-			if handle != "" && time.Since(lastTouched) >= touchedSession {
-				lastTouched = time.Now()
-				s.sessions.touch(handle)
-			}
+			c.touch(s)
 			// One JSON-RPC message per frame becomes one line. A frame that
 			// carried an embedded newline would desynchronize the stdio side,
 			// so it is refused rather than forwarded.

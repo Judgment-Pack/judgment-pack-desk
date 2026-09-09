@@ -62,7 +62,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"net/url"
 	"path"
 	"strings"
 	"sync"
@@ -331,6 +330,30 @@ func (st *sessionStore) touch(handle string) {
 	st.tick++
 	held.used = st.tick
 	st.live[handle] = held
+}
+
+// stillLive runs `add` **while holding this store's lock**, and only if the
+// handle is still a live session.
+//
+// It exists for one race. A socket is authorized, and then — before it is
+// registered — the session is signed out: `closeSession` walks the connections
+// and finds nothing, the registration lands a moment later, and a socket that
+// nobody can now close is driving the runtime for a session that has ended.
+// Doing the check and the registration under one lock closes the window rather
+// than narrowing it.
+//
+// `add` is called with the store's mutex held, so it must not call back into
+// the store. The one caller registers a connection, which takes the server's
+// own mutex; that is the only nesting in this package and it is always in this
+// order.
+func (st *sessionStore) stillLive(handle string, add func()) bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if _, ok := st.live[handle]; !ok {
+		return false
+	}
+	add()
+	return true
 }
 
 // forget removes one session. This is sign-out.
@@ -701,8 +724,11 @@ func looksLikeALaunch(r *http.Request) bool {
 // lost to the next one — the relay's three leaks are the same story — and the
 // lesson is to stop parsing.
 //
-// So: the raw bytes, case-folded, plus what percent-decoding produces where it
-// produces anything, and the question is whether the substring `secret` appears.
+// So: the raw bytes, case-folded, plus a **lenient** decode of them — every
+// valid `%XX` resolved and every invalid one left alone — and the question is
+// whether the substring `secret` appears. Lenient because `url.QueryUnescape`
+// is all-or-nothing: one bad escape made it return nothing at all, so
+// `?%73ecret=<secret>%ZZ` decoded to nothing and was answered with the page.
 // That is deliberately blunt. It refuses `?mysecretpref=1`, and refusing a
 // harmless page load is the cheap side of this trade; the expensive side is a
 // secret in `window.location`, in history, and in every `Referer` the page then
@@ -716,25 +742,64 @@ func querySmellsOfASecret(raw string) bool {
 	if raw == "" {
 		return false
 	}
-	if strings.Contains(strings.ToLower(raw), "secret") {
+	if mentionsASecret(raw) || mentionsASecret(leniently(raw)) {
 		return true
 	}
-	// `%73ecret=` and friends: decode where it decodes, and look again. A query
-	// that will not decode has already been answered by the raw check above.
-	if decoded, err := url.QueryUnescape(raw); err == nil {
-		return strings.Contains(strings.ToLower(decoded), "secret")
-	}
-	// It did not decode as a whole, so decode what can be decoded pair by pair
-	// rather than giving up: `?a=%ZZ&%73ecret=x` is one bad pair beside one that
-	// matters.
+	// Pair by pair as well as whole, because a separator can sit inside an
+	// escape that only one of the two readings resolves.
 	for _, piece := range strings.FieldsFunc(raw, func(r rune) bool { return r == '&' || r == ';' }) {
-		if decoded, err := url.QueryUnescape(piece); err == nil {
-			if strings.Contains(strings.ToLower(decoded), "secret") {
-				return true
-			}
+		if mentionsASecret(piece) || mentionsASecret(leniently(piece)) {
+			return true
 		}
 	}
 	return false
+}
+
+func mentionsASecret(s string) bool {
+	return strings.Contains(strings.ToLower(s), "secret")
+}
+
+// leniently decodes every valid `%XX` in a string and leaves everything else
+// exactly as it was.
+//
+// **`url.QueryUnescape` is all-or-nothing, and that was the hole.** One invalid
+// escape anywhere makes it return an error and nothing else, so
+// `?%73ecret=<secret>%ZZ` decoded to nothing, matched nothing, and was answered
+// with the page — the secret then in `window.location`, in history and in every
+// `Referer` that page sent. A single bad byte must not buy silence about the
+// rest of the string.
+//
+// `+` is left as `+` rather than read as a space: this is not a form decoder,
+// and turning `+` into a space could only ever create a match that the raw pass
+// would have found anyway.
+func leniently(s string) string {
+	var out strings.Builder
+	out.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '%' && i+2 < len(s) {
+			if hi, ok := hexDigit(s[i+1]); ok {
+				if lo, ok := hexDigit(s[i+2]); ok {
+					out.WriteByte(hi<<4 | lo)
+					i += 2
+					continue
+				}
+			}
+		}
+		out.WriteByte(s[i])
+	}
+	return out.String()
+}
+
+func hexDigit(b byte) (byte, bool) {
+	switch {
+	case b >= '0' && b <= '9':
+		return b - '0', true
+	case b >= 'a' && b <= 'f':
+		return b - 'a' + 10, true
+	case b >= 'A' && b <= 'F':
+		return b - 'A' + 10, true
+	}
+	return 0, false
 }
 
 /* The exchange ---------------------------------------------------------------- */

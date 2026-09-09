@@ -65,15 +65,18 @@ type Config struct {
 	// Port is the TCP port the listener this server is served behind is bound
 	// to, and it is **required**.
 	//
-	// It exists because the session cookie's name carries it. A cookie's origin
-	// does not include the port — it never has — so a cookie set for
-	// `127.0.0.1` is sent to every port on that host, and two desks on one
-	// machine would share, and overwrite, one session. Naming the cookie for
-	// the port they were bound to keeps them apart. See session.go.
+	// It exists because the **launch handoff's** cookie name carries it. A
+	// cookie's origin does not include the port — it never has — so a cookie
+	// set for `127.0.0.1` is sent to every port on that host, and two desks on
+	// one machine would share, and overwrite, one handoff. Naming it for the
+	// port they were bound to keeps them apart. Nothing else on this desk is a
+	// cookie: the session itself is a bearer the page holds, precisely because
+	// naming a cookie for a port is a convention and not a boundary. See
+	// session.go.
 	//
 	// It is required rather than defaulted because a default would be a port
-	// some other desk is on: a zero here would name every desk's cookie
-	// `jpack-desk-session-0`, which is the shared-cookie flaw with a longer
+	// some other desk is on: a zero here would name every desk's handoff
+	// `jpack-desk-launch-0`, which is the shared-cookie flaw with a longer
 	// name.
 	Port int
 	// Token is the **launch secret**: the one credential that is not minted
@@ -164,6 +167,13 @@ type Server struct {
 	// presented as a bearer id the page puts on each request itself. See
 	// session.go for why nothing ambient authorizes anything.
 	sessions *sessionStore
+	// beforeRegister is a test seam, and nothing sets it in a running desk.
+	//
+	// It exists for one race that is otherwise unobservable: a sign-out landing
+	// between an upgrade's authorization and its registration. A test pauses
+	// here, signs out, and lets the upgrade continue — see
+	// `TestASignOutBetweenAuthorizationAndRegistration`.
+	beforeRegister func()
 	// closeOnce makes shutdown idempotent; see Close.
 	closeOnce sync.Once
 	closeErr  error
@@ -202,7 +212,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, errors.New("desk: Token is required")
 	}
 	if cfg.Port <= 0 {
-		return nil, errors.New("desk: Port is required: the session cookie's name carries it")
+		return nil, errors.New("desk: Port is required: the launch handoff's cookie name carries it")
 	}
 	if cfg.JpackBin == "" {
 		cfg.JpackBin = "jpack"
@@ -529,7 +539,16 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, problem, http.StatusBadRequest)
 		return
 	}
-	if !s.authorized(r) {
+	// **On this route a session id is accepted only through the offer.** The
+	// shared gate takes one on `Authorization` too, and that was a hole with a
+	// quiet shape: a socket authorized by the header carried no session *handle*,
+	// so sign-out and eviction could not find it and it kept driving the runtime
+	// for a session that had ended. Rather than teach the header path to bind a
+	// handle, this route takes one credential each way — the offer for a page,
+	// the launch secret for a script — so there is no second path to keep in
+	// step.
+	handle, ok := s.upgradeAuthorized(r)
+	if !ok {
 		http.Error(w, "no session: open the URL jpack-desk printed at startup", http.StatusUnauthorized)
 		return
 	}
@@ -537,5 +556,23 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("origin %q is not permitted", r.Header.Get("Origin")), http.StatusForbidden)
 		return
 	}
-	s.relay(w, r)
+	s.relay(w, r, handle)
+}
+
+// upgradeAuthorized is `/ws`'s own gate, and it is narrower than the shared one
+// on purpose — see `handleWS`.
+//
+// It answers the **handle** of the session this socket belongs to, or `""` for
+// a socket a script opened with the launch secret, which belongs to none and
+// never has.
+func (s *Server) upgradeAuthorized(r *http.Request) (string, bool) {
+	if id, _ := offeredSessionID(r); id != "" {
+		if _, live := s.sessions.lookup(id); !live {
+			return "", false
+		}
+		return s.sessions.handle(id), true
+	}
+	// No offer. A script's socket, and only the launch secret opens one: a
+	// session id on this header authorizes nothing here.
+	return "", s.launchSecretPresented(r)
 }
