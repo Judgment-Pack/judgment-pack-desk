@@ -6593,7 +6593,9 @@ export function assistantTransport(): Transport {
     '      {pane}
       <details>
         <summary>Content</summary>
-        <ConfigPane {...paneFor(effective, open)} />
+        <pre>
+          <code>{effective.text}</code>
+        </pre>
       </details>
       <header className="detail-head">'
 
