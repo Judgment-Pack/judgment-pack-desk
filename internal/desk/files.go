@@ -138,13 +138,22 @@ const (
 	CodeNotUTF8 = "not-utf8"
 	// CodeNotAFile is a directory, FIFO, device or socket asked for as a file.
 	CodeNotAFile = "not-a-file"
-	// CodeUnauthorized is a request with no session token, or the wrong one.
+	// CodeUnauthorized is a request carrying neither a live session id nor the
+	// launch secret, either of them as a Bearer header.
 	//
 	// Split from CodeForbidden because a code that maps to two statuses is not
-	// a matrix: the token check answers 401 and the origin check answers 403,
-	// and they were one code. A client retrying with a token and a client that
-	// must change its origin are given different answers now.
+	// a matrix: the session check answers 401 and the origin check answers 403,
+	// and they were one code. A client that must acquire a session and a client
+	// that must change its origin are given different answers now.
 	CodeUnauthorized = "unauthorized"
+	// CodeSessionsFull is `POST /api/session` at the store's bound: this desk
+	// holds as many sessions as it will hold, and refuses rather than dropping
+	// one somebody is using.
+	//
+	// **A 503 and not a 500.** Nothing is broken and nothing needs repairing;
+	// the desk is temporarily unable to take another session, and the sentence
+	// beside this code says what to do about it. See `maxSessions`.
+	CodeSessionsFull = "sessions-full"
 	// CodeForbidden is a request from an origin this desk does not accept, or
 	// a path inside the project this process may not open.
 	CodeForbidden = "forbidden"
@@ -1337,12 +1346,20 @@ func (s *Server) removeStaleStaging() {
 /* Plumbing ---------------------------------------------------------------- */
 
 // guard applies the same two checks every other chassis endpoint applies, in
-// the same order: the token first, then the origin. Sharing the function is
-// what keeps a new endpoint from being a new place to forget one of them.
+// the same order: **the session first, then the origin**. Sharing the function
+// is what keeps a new endpoint from being a new place to forget one of them.
+//
+// The session is a bearer id the caller put on the request itself — the page's
+// own, held in `sessionStorage` and sent as `Authorization: Bearer`, or the
+// launch secret a script presents the same way; see `Server.authorized`.
+// **No cookie authorizes anything here.** Since nothing ambient does, the
+// origin check is defence in depth over writes and upgrades rather than the
+// thing standing between a foreign page and the project — and it is still not
+// optional, because defence in depth that is removed is not defence.
 func (s *Server) guard(w http.ResponseWriter, r *http.Request) bool {
 	if !s.authorized(r) {
 		writeJSONCoded(w, http.StatusUnauthorized, CodeUnauthorized,
-			"missing or invalid session token")
+			"no session: open the URL jpack-desk printed at startup, or present the launch secret as `Authorization: Bearer`")
 		return false
 	}
 	if !s.originAllowed(r) {

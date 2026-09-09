@@ -3,13 +3,16 @@ package desk
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,22 +21,269 @@ import (
 	"github.com/coder/websocket"
 )
 
+// testToken is the **launch secret** every server in this package is built
+// with. It is never on a request query: a script presents it as
+// `Authorization: Bearer` (`bearer`), and a browser trades it once at
+// `GET /launch` for a one-shot handoff, which the page spends at
+// `POST /api/session` for a bearer id (`beginSession`).
 const testToken = "0123456789abcdef0123456789abcdef"
+
+// testPort is the port a `Config` carries where the test never starts a server,
+// or never exercises the cookie. It is a real requirement — the session
+// cookie's name carries the port — and where the cookie *is* exercised the port
+// comes from the listener instead; see `startDesk`.
+const testPort = 8799
+
+// startDesk builds one chassis and serves it, **listener first**.
+//
+// `Config.Port` is required, because the launch handoff's cookie name carries
+// it, and `httptest.NewServer` does not allocate a port until it starts. An
+// unstarted server allocates one immediately, so the chassis can be told the
+// port it will actually be reached on — which is what `main` does, and what
+// makes two test desks in one process name their handoffs differently.
+//
+// It registers no cleanup: each caller already has the shape it wants, and one
+// of them (the FIFO test) deliberately leaks a listener rather than hang.
+func startDesk(t *testing.T, cfg Config) (*Server, *httptest.Server) {
+	t.Helper()
+	ts := httptest.NewUnstartedServer(nil)
+	cfg.Port = ts.Listener.Addr().(*net.TCPAddr).Port
+	s, err := New(cfg)
+	if err != nil {
+		ts.Close()
+		t.Fatalf("New: %v", err)
+	}
+	ts.Config.Handler = s
+	ts.Start()
+	return s, ts
+}
+
+// upgradeOffer is the subprotocol list a page's WebSocket offers: the plain
+// protocol, and the session id beside it. A browser's `WebSocket` constructor
+// has no header parameter and the id must not go on the URL, so this is the one
+// place the page can put it.
+//
+// No fetch metadata goes with it, which is measured rather than assumed —
+// Chrome 130 sends no `Sec-Fetch-*` header of any kind on a handshake. Nothing
+// in this desk's upgrade gate reads one.
+func upgradeOffer(id string) []string {
+	return []string{wsProtocol, wsSessionPrefix + id}
+}
+
+// withOffer puts that offer on a request, which is how the page authorizes an
+// upgrade and the only way `/ws` reads a session id.
+func withOffer(id string) func(*http.Request) {
+	return func(r *http.Request) {
+		r.Header.Set(wsProtocolHeader, strings.Join(upgradeOffer(id), ", "))
+	}
+}
+
+// runtimeAvailable reports whether there is a `jpack` on this machine to drive.
+//
+// Not `requireBinary`, which skips the whole test: the **upgrade** half of the
+// positive controls below needs no runtime and must run everywhere, and only
+// the handshake half needs one.
+func runtimeAvailable() bool {
+	bin := jpackBinary()
+	if !filepath.IsAbs(bin) {
+		// A bare name is resolved on PATH, exactly as the chassis resolves it.
+		resolved, err := exec.LookPath(bin)
+		if err != nil {
+			return false
+		}
+		bin = resolved
+	}
+	_, err := os.Stat(bin)
+	return err == nil
+}
+
+// acceptsSession is the positive control for a session, and it asserts **101
+// and, where there is a runtime, a completed MCP handshake**.
+//
+// It used to be `upgradeRequest` plus "the status is not 401 and not 403",
+// which a `500` satisfies: a chassis that authorized the request and then fell
+// over passed every one of these. `websocket.Dial` returns an error unless the
+// handshake completed with `101 Switching Protocols`, so the status is checked
+// by the dial itself and again by name; and where a binary is available the
+// socket is driven through `initialize`, which is the difference between "the
+// upgrade was accepted" and "the relay behind it works".
+func acceptsSession(t *testing.T, ts *httptest.Server, id, origin string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	header := http.Header{}
+	if origin != "" {
+		header.Set("Origin", origin)
+	}
+	c, resp, err := websocket.Dial(ctx, wsURL(ts)+"/ws", &websocket.DialOptions{
+		HTTPHeader:   header,
+		Subprotocols: upgradeOffer(id),
+	})
+	if err != nil {
+		status := 0
+		if resp != nil {
+			status = resp.StatusCode
+		}
+		t.Fatalf("the upgrade did not complete: %v (status %d)", err, status)
+	}
+	defer c.Close(websocket.StatusNormalClosure, "")
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusSwitchingProtocols)
+	}
+	// **`jpack-desk` is selected and the id is not echoed.** A server answering
+	// with the session offer would put the credential in a response header,
+	// which is a header proxies and logs keep.
+	if got := c.Subprotocol(); got != wsProtocol {
+		t.Fatalf("selected subprotocol %q, want %q", got, wsProtocol)
+	}
+	if got := resp.Header.Get(wsProtocolHeader); strings.Contains(got, wsSessionPrefix) {
+		t.Fatalf("the answer echoed the session offer: %q", got)
+	}
+	if !runtimeAvailable() {
+		t.Log("no runtime binary: the upgrade was asserted, the MCP handshake was not")
+		return
+	}
+	c.SetReadLimit(readLimit)
+	(&rpcSession{t: t, ctx: ctx, ws: c}).initialize()
+}
+
+// sameOrigin marks a request the way a browser marks one it made to its own
+// origin.
+//
+// **Every cookie-carrying request in this package goes through it**, because a
+// cookie without it authorizes nothing — cookies have no port isolation, so the
+// browser hands this desk's cookie to every page on every sibling port, and
+// `Sec-Fetch-Site` is the only thing that tells those apart.
+func sameOrigin(r *http.Request) {
+	r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+}
+
+// bearer presents the launch secret the way every script, test and gate does.
+func bearer(r *http.Request) {
+	r.Header.Set("Authorization", "Bearer "+testToken)
+}
+
+// launchHandoff performs the launch and hands back the **one-shot handoff
+// cookie** it set. That cookie is not a session: it is worth exactly one call
+// to `POST /api/session`, for sixty seconds.
+//
+// **The redirect is not followed.** `http.Client` follows a 303 by default, and
+// following it here would hit the static handler and tell us nothing about the
+// launch; what this wants is the `Set-Cookie` on the launch's own response.
+func launchHandoff(t *testing.T, ts *httptest.Server) *http.Cookie {
+	t.Helper()
+	resp := launchResponse(t, ts, testToken)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("launch status = %d, want %d", resp.StatusCode, http.StatusSeeOther)
+	}
+	// One: the `HttpOnly` handoff, and nothing beside it.
+	for _, cookie := range resp.Cookies() {
+		if strings.HasPrefix(cookie.Name, launchCookiePrefix+"-") {
+			return cookie
+		}
+	}
+	t.Fatalf("the launch set %v, want a handoff cookie among them", resp.Cookies())
+	return nil
+}
+
+// beginSession is **the page's bootstrap, end to end**: the launch, and the one
+// exchange the page makes on load. What comes back is the session id the page
+// would hold in `sessionStorage` and put on every later request itself.
+//
+// Every authorized test in this package goes through it, which is what makes
+// "nothing ambient authorizes anything" a property of the suite rather than of
+// one test: no cookie is left over for a test to lean on.
+func beginSession(t *testing.T, ts *httptest.Server) string {
+	t.Helper()
+	return exchange(t, ts, launchHandoff(t, ts))
+}
+
+// withHandoff shapes a request the way the page's own bootstrap does: the
+// handoff cookie, the same-origin claim the exchange requires, and this desk's
+// own Origin. Written once so that every exchange in this package is the
+// request a browser actually sends.
+func withHandoff(ts *httptest.Server, handoff *http.Cookie) func(*http.Request) {
+	return func(r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: handoff.Name, Value: handoff.Value})
+		r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+		r.Header.Set("Origin", ts.URL)
+	}
+}
+
+// exchange is the one `POST /api/session` a page makes, with a handoff it holds.
+func exchange(t *testing.T, ts *httptest.Server, handoff *http.Cookie) string {
+	t.Helper()
+	status, body := exchangeAttempt(t, ts, withHandoff(ts, handoff))
+	if status != http.StatusOK {
+		t.Fatalf("exchange status %d: %v", status, body)
+	}
+	id, _ := body["id"].(string)
+	if id == "" {
+		t.Fatalf("the exchange answered no session id: %v", body)
+	}
+	return id
+}
+
+// exchangeAttempt is one `POST /api/session`, however the caller shapes it.
+func exchangeAttempt(
+	t *testing.T, ts *httptest.Server, decorate func(*http.Request),
+) (int, map[string]any) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/session", nil)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	if decorate != nil {
+		decorate(req)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+	defer resp.Body.Close()
+	var body map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	// **No live cookie, ever, on any answer.** The session is a bearer the page
+	// holds; a `Set-Cookie` here would be the ambient credential coming back.
+	for _, cookie := range resp.Cookies() {
+		if cookie.Value != "" && cookie.MaxAge >= 0 {
+			t.Fatalf("the exchange set a live cookie: %v", cookie)
+		}
+	}
+	return resp.StatusCode, body
+}
+
+// pageBearer puts a session id on a request the way the page does.
+func pageBearer(id string) func(*http.Request) {
+	return func(r *http.Request) {
+		r.Header.Set("Authorization", "Bearer "+id)
+	}
+}
+
+// launchResponse is one launch exchange, with redirects left unfollowed.
+func launchResponse(t *testing.T, ts *httptest.Server, secret string) *http.Response {
+	t.Helper()
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	resp, err := client.Get(ts.URL + "/launch?secret=" + url.QueryEscape(secret))
+	if err != nil {
+		t.Fatalf("launch: %v", err)
+	}
+	return resp
+}
 
 func newTestServer(t *testing.T, dev bool) (*Server, *httptest.Server) {
 	t.Helper()
 	dir := t.TempDir()
-	s, err := New(Config{
+	s, ts := startDesk(t, Config{
 		ProjectDir: dir,
 		JpackBin:   jpackBinary(),
 		Token:      testToken,
 		DevMode:    dev,
 		Logger:     log.New(io.Discard, "", 0),
 	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	ts := httptest.NewServer(s)
 	t.Cleanup(func() {
 		ts.Close()
 		_ = s.Close()
@@ -43,7 +293,12 @@ func newTestServer(t *testing.T, dev bool) (*Server, *httptest.Server) {
 
 // upgradeRequest issues a genuine WebSocket handshake so that a rejection is a
 // rejection of an upgrade and not of a malformed request.
-func upgradeRequest(t *testing.T, ts *httptest.Server, query, origin string) *http.Response {
+//
+// `decorate` is how the request is authorized — `bearer` for a script,
+// `withSession(cookie)` for a browser, and nothing at all for the requests that
+// must be refused. It is variadic rather than a mode, because "no credential"
+// is then written as passing none rather than as a name for absence.
+func upgradeRequest(t *testing.T, ts *httptest.Server, query, origin string, decorate ...func(*http.Request)) *http.Response {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, ts.URL+"/ws"+query, nil)
 	if err != nil {
@@ -56,6 +311,9 @@ func upgradeRequest(t *testing.T, ts *httptest.Server, query, origin string) *ht
 	if origin != "" {
 		req.Header.Set("Origin", origin)
 	}
+	for _, apply := range decorate {
+		apply(req)
+	}
 	resp, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatalf("upgrade request: %v", err)
@@ -64,17 +322,22 @@ func upgradeRequest(t *testing.T, ts *httptest.Server, query, origin string) *ht
 	return resp
 }
 
-func TestWSRequiresToken(t *testing.T) {
+// TestWSRequiresASession pins what does **not** open the relay, and the row
+// that matters is the third: the launch secret on the query, which is exactly
+// what authorized every request before this change and authorizes nothing now.
+func TestWSRequiresASession(t *testing.T) {
 	_, ts := newTestServer(t, false)
 
 	for _, tc := range []struct {
 		name  string
 		query string
 	}{
-		{"no token at all", ""},
-		{"empty token", "?token="},
-		{"wrong token", "?token=deadbeefdeadbeefdeadbeefdeadbeef"},
-		{"token of the right length but wrong bytes", "?token=" + strings.Repeat("f", len(testToken))},
+		{"no credential at all", ""},
+		{"an empty token parameter", "?token="},
+		{"the launch secret on the query", "?token=" + testToken},
+		{"the launch secret as ?secret=", "?secret=" + testToken},
+		{"a wrong token parameter", "?token=deadbeefdeadbeefdeadbeefdeadbeef"},
+		{"a token of the right length but wrong bytes", "?token=" + strings.Repeat("f", len(testToken))},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			resp := upgradeRequest(t, ts, tc.query, ts.URL)
@@ -82,6 +345,166 @@ func TestWSRequiresToken(t *testing.T) {
 				t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
 			}
 		})
+	}
+}
+
+// TestWSRefusesAWrongBearerSecret: the header is the script's door, and it is
+// only a door with the right secret behind it.
+func TestWSRefusesAWrongBearerSecret(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	for _, header := range []string{
+		"Bearer " + strings.Repeat("f", len(testToken)),
+		"Bearer ",
+		"Bearer",
+		testToken,
+		"Basic " + testToken,
+	} {
+		t.Run(header, func(t *testing.T) {
+			resp := upgradeRequest(t, ts, "", ts.URL, func(r *http.Request) {
+				r.Header.Set("Authorization", header)
+			})
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+			}
+		})
+	}
+}
+
+// TestWSAcceptsTheOfferedSessionID is the page's path: bootstrap, then an
+// upgrade whose subprotocol offer carries the id.
+func TestWSAcceptsTheOfferedSessionID(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	acceptsSession(t, ts, beginSession(t, ts), ts.URL)
+}
+
+// TestWSRefusesAForgedSessionID: an id this desk never minted is not a session,
+// however well formed it looks — offered on the subprotocol or presented as a
+// bearer. **Well formed** is the operative word: a malformed offer is a `400`
+// and has its own test, because "your credential is wrong" and "this handshake
+// is not one this desk reads" are different answers.
+func TestWSRefusesAForgedSessionID(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	real := beginSession(t, ts)
+	for _, id := range []string{
+		strings.Repeat("a", len(real)),
+		flipLast(real),
+	} {
+		for _, how := range []struct {
+			name     string
+			decorate func(*http.Request)
+		}{
+			{"offered", withOffer(id)},
+			{"as a bearer", pageBearer(id)},
+		} {
+			resp := upgradeRequest(t, ts, "", ts.URL, how.decorate)
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("a forged id %q %s: status = %d, want %d",
+					id, how.name, resp.StatusCode, http.StatusUnauthorized)
+			}
+		}
+	}
+
+	// The launch secret is a bearer and **not** a session offer: the
+	// subprotocol carries ids the store minted, and nothing else.
+	offered := upgradeRequest(t, ts, "", ts.URL, func(r *http.Request) {
+		r.Header.Set(wsProtocolHeader, strings.Join(upgradeOffer(testToken), ", "))
+	})
+	if offered.StatusCode != http.StatusBadRequest {
+		t.Fatalf("the launch secret offered as a subprotocol: status %d, want 400", offered.StatusCode)
+	}
+}
+
+// TestTheSubprotocolOfferIsReadStrictly. An offer this desk cannot read the
+// same way twice is refused with a `400` and a sentence, before any credential
+// is looked at — the same argument the relay's query rule makes, on the one
+// other channel a page can put something on.
+func TestTheSubprotocolOfferIsReadStrictly(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	id := beginSession(t, ts)
+
+	for _, refused := range []struct{ name, offer string }{
+		{"no jpack-desk at all", wsSessionPrefix + id},
+		{"two ids", "jpack-desk, " + wsSessionPrefix + id + ", " + wsSessionPrefix + id},
+		{"two different ids", "jpack-desk, " + wsSessionPrefix + id + ", " + wsSessionPrefix + flipLast(id)},
+		{"an empty id", "jpack-desk, " + wsSessionPrefix},
+		{"a non-hex id", "jpack-desk, " + wsSessionPrefix + strings.Repeat("z", 48)},
+		{"an id of the wrong length", "jpack-desk, " + wsSessionPrefix + id[:47]},
+		{"upper-case hex, which this desk does not mint", "jpack-desk, " + wsSessionPrefix + strings.ToUpper(id)},
+	} {
+		t.Run(refused.name, func(t *testing.T) {
+			resp := upgradeRequest(t, ts, "", ts.URL, func(r *http.Request) {
+				r.Header.Set(wsProtocolHeader, refused.offer)
+			})
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status %d, want 400", resp.StatusCode)
+			}
+			body, _ := io.ReadAll(resp.Body)
+			line := strings.TrimSpace(string(body))
+			if line == "" || strings.Contains(line, "\n") {
+				t.Errorf("the refusal is not one line: %q", line)
+			}
+			if strings.Contains(line, id) {
+				t.Error("the refusal repeats the offered id")
+			}
+		})
+	}
+
+	// And the offer this desk does read, all the way to a completed handshake —
+	// with the id never echoed back, which `acceptsSession` asserts.
+	acceptsSession(t, ts, id, ts.URL)
+
+	// A script offers nothing and is judged by its header, as before.
+	if resp := upgradeRequest(t, ts, "", ts.URL, bearer); resp.StatusCode == http.StatusBadRequest {
+		t.Fatal("a script with no subprotocol offer was refused as malformed")
+	}
+}
+
+// TestWSRefusesASessionFromAForeignOrigin: the id is real, and the page sending
+// it is not this desk's. The Origin guard is what refuses it, and it is defence
+// in depth — a foreign page has no way to obtain the id in the first place,
+// because nothing hands it out ambiently.
+func TestWSRefusesASessionFromAForeignOrigin(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	id := beginSession(t, ts)
+	resp := upgradeRequest(t, ts, "", "http://evil.example", func(r *http.Request) {
+		r.Header.Set(wsProtocolHeader, strings.Join(upgradeOffer(id), ", "))
+	})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+}
+
+// TestNoCookieOpensTheRelay. **Every cookie this desk has ever set**, on an
+// upgrade, with and without an Origin and with and without fetch metadata: none
+// of them is an authorization. The handoff cookie opens `POST /api/session` and
+// nothing else.
+func TestNoCookieOpensTheRelay(t *testing.T) {
+	s, ts := newTestServer(t, false)
+	handoff := launchHandoff(t, ts)
+	id := beginSession(t, ts)
+
+	for _, cookie := range []*http.Cookie{
+		{Name: handoff.Name, Value: handoff.Value},
+		// The shape the previous design used, in case anything ever sets one
+		// again: an id that really is live, in a cookie.
+		{Name: "jpack-desk-session-" + fmt.Sprint(s.cfg.Port), Value: id},
+		{Name: s.launchCookie, Value: id},
+	} {
+		for _, extra := range []func(*http.Request){
+			nil,
+			sameOrigin,
+			func(r *http.Request) { r.Header.Set(fetchSiteHeader, "same-site") },
+		} {
+			resp := upgradeRequest(t, ts, "", ts.URL, func(r *http.Request) {
+				r.AddCookie(cookie)
+				if extra != nil {
+					extra(r)
+				}
+			})
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("cookie %s opened the relay: status %d", cookie.Name, resp.StatusCode)
+			}
+		}
 	}
 }
 
@@ -97,7 +520,7 @@ func TestWSRejectsForeignOrigin(t *testing.T) {
 		"null",
 	} {
 		t.Run(origin, func(t *testing.T) {
-			resp := upgradeRequest(t, ts, "?token="+testToken, origin)
+			resp := upgradeRequest(t, ts, "", origin, bearer)
 			if resp.StatusCode != http.StatusForbidden {
 				t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
 			}
@@ -105,9 +528,9 @@ func TestWSRejectsForeignOrigin(t *testing.T) {
 	}
 }
 
-// The token is checked before the origin, so a cross-origin page without the
-// token learns nothing about which of the two it failed.
-func TestWSTokenCheckedBeforeOrigin(t *testing.T) {
+// The session is checked before the origin, so a cross-origin page with no
+// session learns nothing about which of the two it failed.
+func TestWSSessionCheckedBeforeOrigin(t *testing.T) {
 	_, ts := newTestServer(t, false)
 	resp := upgradeRequest(t, ts, "", "http://evil.example")
 	if resp.StatusCode != http.StatusUnauthorized {
@@ -120,8 +543,11 @@ func TestWSAcceptsServedOrigin(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws?token="+testToken, &websocket.DialOptions{
-		HTTPHeader: http.Header{"Origin": []string{ts.URL}},
+	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws", &websocket.DialOptions{
+		HTTPHeader: http.Header{
+			"Origin":        []string{ts.URL},
+			"Authorization": []string{"Bearer " + testToken},
+		},
 	})
 	if err != nil {
 		t.Fatalf("dial with the served origin should succeed: %v", err)
@@ -133,15 +559,18 @@ func TestWSAcceptsServedOrigin(t *testing.T) {
 // dev server's and never matches the Host. Only --dev-token opens that door.
 func TestDevOriginOnlyInDevMode(t *testing.T) {
 	_, prod := newTestServer(t, false)
-	if resp := upgradeRequest(t, prod, "?token="+testToken, "http://localhost:5173"); resp.StatusCode != http.StatusForbidden {
+	if resp := upgradeRequest(t, prod, "", "http://localhost:5173", bearer); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("production status = %d, want %d", resp.StatusCode, http.StatusForbidden)
 	}
 
 	_, dev := newTestServer(t, true)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	c, _, err := websocket.Dial(ctx, wsURL(dev)+"/ws?token="+testToken, &websocket.DialOptions{
-		HTTPHeader: http.Header{"Origin": []string{"http://localhost:5173"}},
+	c, _, err := websocket.Dial(ctx, wsURL(dev)+"/ws", &websocket.DialOptions{
+		HTTPHeader: http.Header{
+			"Origin":        []string{"http://localhost:5173"},
+			"Authorization": []string{"Bearer " + testToken},
+		},
 	})
 	if err != nil {
 		t.Fatalf("dev mode should accept the Vite origin: %v", err)
@@ -149,10 +578,10 @@ func TestDevOriginOnlyInDevMode(t *testing.T) {
 	_ = c.Close(websocket.StatusNormalClosure, "")
 }
 
-// A non-browser client sends no Origin; the token is its authorization.
+// A non-browser client sends no Origin; the launch secret is its authorization.
 func TestWSAllowsAbsentOrigin(t *testing.T) {
 	_, ts := newTestServer(t, false)
-	resp := upgradeRequest(t, ts, "?token="+testToken, "")
+	resp := upgradeRequest(t, ts, "", "", bearer)
 	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 		t.Fatalf("status = %d, want an upgrade rather than a refusal", resp.StatusCode)
 	}
@@ -164,24 +593,23 @@ func TestWSAllowsAbsentOrigin(t *testing.T) {
 func TestRelayEndToEnd(t *testing.T) {
 	bin, project := e2eFixtures(t)
 
-	s, err := New(Config{
+	s, ts := startDesk(t, Config{
 		ProjectDir: project,
 		JpackBin:   bin,
 		Token:      testToken,
 		Logger:     log.New(io.Discard, "", 0),
 	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
 	defer s.Close()
-	ts := httptest.NewServer(s)
 	defer ts.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws?token="+testToken, &websocket.DialOptions{
-		HTTPHeader: http.Header{"Origin": []string{ts.URL}},
+	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws", &websocket.DialOptions{
+		HTTPHeader: http.Header{
+			"Origin":        []string{ts.URL},
+			"Authorization": []string{"Bearer " + testToken},
+		},
 	})
 	if err != nil {
 		t.Fatalf("dial: %v", err)
@@ -235,23 +663,22 @@ func TestRelayCarriesEvaluation(t *testing.T) {
 		t.Fatalf("copying %s: %v", project, err)
 	}
 
-	s, err := New(Config{
+	s, ts := startDesk(t, Config{
 		ProjectDir: copied,
 		JpackBin:   bin,
 		Token:      testToken,
 		Logger:     log.New(io.Discard, "", 0),
 	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
 	defer s.Close()
-	ts := httptest.NewServer(s)
 	defer ts.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws?token="+testToken, &websocket.DialOptions{
-		HTTPHeader: http.Header{"Origin": []string{ts.URL}},
+	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws", &websocket.DialOptions{
+		HTTPHeader: http.Header{
+			"Origin":        []string{ts.URL},
+			"Authorization": []string{"Bearer " + testToken},
+		},
 	})
 	if err != nil {
 		t.Fatalf("dial: %v", err)
@@ -473,23 +900,22 @@ func TestFileChangeNotification(t *testing.T) {
 	bin := requireBinary(t)
 	project := t.TempDir()
 
-	s, err := New(Config{
+	s, ts := startDesk(t, Config{
 		ProjectDir: project,
 		JpackBin:   bin,
 		Token:      testToken,
 		Logger:     log.New(io.Discard, "", 0),
 	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
 	defer s.Close()
-	ts := httptest.NewServer(s)
 	defer ts.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws?token="+testToken, &websocket.DialOptions{
-		HTTPHeader: http.Header{"Origin": []string{ts.URL}},
+	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws", &websocket.DialOptions{
+		HTTPHeader: http.Header{
+			"Origin":        []string{ts.URL},
+			"Authorization": []string{"Bearer " + testToken},
+		},
 	})
 	if err != nil {
 		t.Fatalf("dial: %v", err)
