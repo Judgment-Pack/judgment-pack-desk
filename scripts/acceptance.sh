@@ -100,8 +100,11 @@ echo "== starting the chassis on 127.0.0.1:$port =="
 "$work/jpack-desk" --port "$port" --jpack "$jpack" "$work/project" >"$work/chassis.log" 2>&1 &
 chassis=$!
 
-# The tokened URL is the chassis' own first line of output; waiting for it is
-# how this script learns the session token without fixing one.
+# The launch URL is on the chassis' own `open:` line; waiting for it is how this
+# script learns the launch secret without fixing one. The origin and the secret
+# are then handed to the smoke client separately: the secret is a credential,
+# and a credential does not ride on a URL — the client presents it as
+# `Authorization: Bearer`.
 url=""
 for _ in $(seq 1 100); do
   if ! kill -0 "$chassis" 2>/dev/null; then
@@ -114,6 +117,10 @@ for _ in $(seq 1 100); do
 done
 [ -n "$url" ] || { cat "$work/chassis.log" >&2; die "the chassis never printed a URL"; }
 echo "   $url"
+origin="${url%%/launch*}"
+secret="${url##*secret=}"
+[ "$origin" != "$url" ] && [ -n "$secret" ] || die "the printed URL is not a launch URL: $url"
+export JPACK_DESK_SECRET="$secret"
 
 evidence_args=()
 [ -f "$work/project/$evidence" ] && evidence_args=(--evidence "$work/project/$evidence")
@@ -122,13 +129,13 @@ pack_args=()
 
 echo
 echo "== 1/3  full facts =="
-npm --prefix "$root/web" --silent run smoke -- "$url" \
+npm --prefix "$root/web" --silent run smoke -- "$origin" \
   --facts "$work/project/$facts" "${evidence_args[@]}" "${pack_args[@]}" \
   --expect-kind "$expect_kind"
 
 echo
 echo "== 2/3  the same pack with one load-bearing fact removed: $mutate =="
-npm --prefix "$root/web" --silent run smoke -- "$url" \
+npm --prefix "$root/web" --silent run smoke -- "$origin" \
   --facts "$work/project/degraded-facts.json" "${evidence_args[@]}" "${pack_args[@]}" \
   --expect-kind "$expect_degraded_kind" --expect-handoff requested
 
@@ -140,7 +147,7 @@ graph_args=(--graphs)
 # the smoke script refuses the step rather than passing it quietly.
 [ -n "$graph_document" ] && graph_args+=(--graph-document "$graph_document")
 [ -n "$graph_file" ] && graph_args+=(--graph-file "$work/project/$graph_file")
-npm --prefix "$root/web" --silent run smoke -- "$url" \
+npm --prefix "$root/web" --silent run smoke -- "$origin" \
   --expect-matrix-status "$expect_matrix_status" "${graph_args[@]}"
 
 echo

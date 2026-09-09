@@ -67,7 +67,13 @@
  * reporting the rows it managed. Each toggle is then *observed* on the page it
  * claims to configure, and a row whose configuration did not take effect fails.
  *
- *   node scripts/containment-check.mjs <port> <token> [label] [source-root]
+ *   node scripts/containment-check.mjs <port> <launch secret> [label] [source-root]
+ *
+ * The secret is the desk's **launch secret** — the `--dev-token` the wrapper
+ * started the chassis with. It is sent exactly once, to `GET /launch?secret=…`,
+ * which trades it for the `jpack-desk-session` cookie; every path sampled after
+ * that carries no credential of its own, which is why the address bar can be
+ * asserted to be the path a person would be looking at.
  *
  * Normally run through `scripts/containment-check.sh`, which builds the
  * throwaway configuration and the copied project this needs, and passes the
@@ -85,12 +91,12 @@ import { fileURLToPath } from 'node:url'
 // and refused, the widths, the routes, the intended row count — and exits
 // without a browser, so the parsers can be checked on their own.
 const PLAN = process.argv[2] === '--plan'
-const [PORT, TOKEN, LABEL = 'build', ROOT_ARG] = PLAN
+const [PORT, SECRET, LABEL = 'build', ROOT_ARG] = PLAN
   ? ['0', 'plan', 'plan', process.argv[3]]
   : process.argv.slice(2)
-if (PORT === undefined || TOKEN === undefined) {
+if (PORT === undefined || SECRET === undefined) {
   console.error(
-    'usage: node scripts/containment-check.mjs <port> <token> [label] [source-root]\n' +
+    'usage: node scripts/containment-check.mjs <port> <launch secret> [label] [source-root]\n' +
       '       node scripts/containment-check.mjs --plan [source-root]'
   )
   process.exit(2)
@@ -104,7 +110,19 @@ const SRC = join(ROOT, 'web', 'src')
 // necessarily under it, so the resolution is anchored at that package.
 const { chromium } = createRequire(join(ROOT, 'web', 'package.json'))('playwright-core')
 
-const at = (path) => `http://127.0.0.1:${PORT}${path}${path.includes('?') ? '&' : '?'}token=${TOKEN}`
+const ORIGIN = `http://127.0.0.1:${PORT}`
+/**
+ * One address on this desk, **with nothing added to it**.
+ *
+ * It used to append `?token=` to every path, because that was how the chassis
+ * authenticated a request. The session is a cookie now: `exchange()` below is
+ * navigated once, the Playwright context keeps what it sets, and every path
+ * after that is the path a person would actually be looking at — which is also
+ * what makes the address-bar assertion below mean anything.
+ */
+const at = (path) => `${ORIGIN}${path}`
+/** The launch exchange, and the only place the secret is ever sent. */
+const LAUNCH = `${ORIGIN}/launch?secret=${encodeURIComponent(SECRET)}`
 const PANES = {
   '.desk': 'relative',
   '.desk-rail': 'relative',
@@ -372,6 +390,30 @@ const context = await browser.newContext({
   colorScheme: 'light'
 })
 const page = await context.newPage()
+// **The exchange, once, before anything is measured.** `GET /launch?secret=…`
+// answers 303 to `/` with `Set-Cookie: jpack-desk-session`, so this lands on
+// the desk holding a cookie the context carries from here on — every later
+// navigation, every `fetch` the page makes, and the WebSocket upgrade. A run
+// that skipped it would measure a page with no data in it and report the
+// containment of an error state.
+await page.goto(LAUNCH, { waitUntil: 'networkidle', timeout: 45000 })
+{
+  const landed = new URL(page.url())
+  if (landed.pathname !== '/' || landed.search !== '') {
+    console.error(`the launch exchange did not land on / — the address is ${page.url()}`)
+    process.exit(2)
+  }
+  const cookies = await context.cookies(ORIGIN)
+  const session = cookies.find((cookie) => cookie.name === 'jpack-desk-session')
+  if (session === undefined) {
+    console.error('the launch exchange set no jpack-desk-session cookie')
+    process.exit(2)
+  }
+  console.log(
+    `launch        ok  cookie set: httpOnly=${session.httpOnly} sameSite=${session.sameSite} ` +
+      `secure=${session.secure} path=${session.path}`
+  )
+}
 // Short enough that a locator which no longer matches ends the route it was
 // sampling rather than the run's patience.
 page.setDefaultTimeout(8000)

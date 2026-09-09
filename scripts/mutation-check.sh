@@ -360,10 +360,10 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the missing directory is a containment failure" "$F" \
     '	if parent := path.Dir(clean); parent != "." {' \
     '	if parent := path.Dir(clean); false && parent != "." {'
-  mutate go "the guard drops the token check" "$F" \
+  mutate go "the guard drops the session check" "$F" \
     '	if !s.authorized(r) {
 		writeJSONCoded(w, http.StatusUnauthorized, CodeUnauthorized,
-			"missing or invalid session token")
+			"no session: open the URL jpack-desk printed at startup, or present the launch secret as `Authorization: Bearer`")
 		return false
 	}' \
     ''
@@ -508,11 +508,11 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	}
 	afterResolve(clean)'
   # One code answering both 401 and 403 is not a matrix.
-  mutate go "the token and the origin share one code again" "$F" \
+  mutate go "the session and the origin share one code again" "$F" \
     '		writeJSONCoded(w, http.StatusUnauthorized, CodeUnauthorized,
-			"missing or invalid session token")' \
+			"no session: open the URL jpack-desk printed at startup, or present the launch secret as `Authorization: Bearer`")' \
     '		writeJSONCoded(w, http.StatusUnauthorized, CodeForbidden,
-			"missing or invalid session token")'
+			"no session: open the URL jpack-desk printed at startup, or present the launch secret as `Authorization: Bearer`")'
 
   # ---- The assistant slot: key custody, and the one outbound request -------
   #
@@ -1054,12 +1054,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # `;` (Go rejects such a pair and some servers split on it), and `Token`
   # (this desk compared case-sensitively and ASP.NET Core folds case). Each fix
   # was a better comparison and the next parser disagreed somewhere else, so
-  # there is no strip any more: a relayed request carries the session token and
-  # nothing else, and nothing of the page's query is forwarded. One rule, one
-  # row.
+  # there is no strip any more, and since the launch exchange there is no secret
+  # on any query either: a relayed request carries nothing of the page's, save
+  # the one closed `alt=sse` literal. One rule, one row.
   mutate go "a page query parameter is forwarded" "$MR" \
-    '		if err != nil || decoded != sessionTokenParameter {' \
-    '		if false && (err != nil || decoded != sessionTokenParameter) {'
+    '		return "", "a relayed request carries no query of the page' \
+    '		continue
+		_ = "a relayed request carries no query of the page'
   mutate go "the relayed path is never validated" "$MR" \
     '	if reason := relaySuffixProblem(suffix); reason != "" {' \
     '	if reason := ""; reason != "" {'
@@ -1227,8 +1228,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # At most once: `alt=sse&alt=sse` is a query two parsers could count
   # differently, which is the whole class this rule exists to keep out.
   mutate go "a second copy of the stream pair is admitted" "$MR" \
-    '				parameter == relayStreamPair && extra == "" {' \
-    '				parameter == relayStreamPair {'
+    '			parameter == relayStreamPair && extra == "" {' \
+    '			parameter == relayStreamPair {'
   mutate go "the relay's log line carries the whole address" "$MR" \
     '	s.log.Printf("desk: assistant relay %s answered %d", loggableOrigin(endpoint.url), status)' \
     '	s.log.Printf("desk: assistant relay %s %s answered %d", endpoint.url, suffix, status)'
@@ -1495,6 +1496,102 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if !present {
 		return nil
 	}'
+
+  # ---- The launch exchange and the session cookie (chunk 7a) ---------------
+  #
+  # The seam this chunk moved: the secret is exchanged once at `/launch`, the
+  # session is an `HttpOnly` cookie, and `?token=` authorizes nothing. Every row
+  # here breaks one sentence of that, and each one has a test that is about
+  # exactly that sentence rather than about the desk still working.
+  SN=internal/desk/session.go
+
+  # A session id page code can read is a session id page code can put on a
+  # query, in a log line, or in `sessionStorage` — which is the arrangement
+  # this whole change undoes.
+  mutate go "the session cookie is readable by page code (HttpOnly dropped)" "$SN" \
+    '		HttpOnly: true,' \
+    '		HttpOnly: false,'
+  # `Strict` is what makes an ambient credential safe to hold: under `Lax` the
+  # browser sends this cookie on a top-level navigation another site caused, so
+  # a link on a hostile page reaches this desk carrying it.
+  mutate go "SameSite is weakened from Strict to Lax" "$SN" \
+    '		SameSite: http.SameSiteStrictMode,' \
+    '		SameSite: http.SameSiteLaxMode,'
+  # `Secure` over plain http means the browser discards the cookie, so the desk
+  # sets one and nobody holds one. The row is here because "only over https" is
+  # a decision and not an omission.
+  mutate go "Secure is set on a plain-http launch" "$SN" \
+    '	http.SetCookie(w, newSessionCookie(id, requestScheme(r) == "https"))' \
+    '	http.SetCookie(w, newSessionCookie(id, true))'
+  # The redirect is the point of the exchange: a 200 here renders the desk with
+  # the secret still in the address bar, in the history, and in every `Referer`
+  # the page goes on to send.
+  mutate go "the exchange answers the page instead of redirecting" "$SN" \
+    '	http.Redirect(w, r, "/", http.StatusSeeOther)' \
+    '	w.WriteHeader(http.StatusOK)'
+  # A wrong secret that mints a session is no gate at all.
+  mutate go "a wrong launch secret still mints a session" "$SN" \
+    '	if subtle.ConstantTimeCompare([]byte(secret), []byte(s.cfg.Token)) != 1 {' \
+    '	if false {'
+  # **The removed door, put back.** This is the row the whole chunk is about: a
+  # chassis that authenticates `?token=` again is the chassis this replaced, and
+  # the sweep over every gated route is what notices.
+  mutate go "the ?token= query authorizes again" "$S" \
+    '	if _, ok := s.sessionOf(r); ok {
+		return true
+	}
+	return s.launchSecretPresented(r)' \
+    '	if _, ok := s.sessionOf(r); ok {
+		return true
+	}
+	if r.URL.Query().Get("token") == s.cfg.Token {
+		return true
+	}
+	return s.launchSecretPresented(r)'
+  # Two credentials with two lifetimes. A session id accepted as a launch secret
+  # would mean a leaked id is a launch secret, which is the stronger of the two.
+  mutate go "the Bearer header accepts a session id in place of the secret" "$SN" \
+    '	return subtle.ConstantTimeCompare([]byte(header[len(bearerScheme):]), []byte(s.cfg.Token)) == 1' \
+    '	presented := header[len(bearerScheme):]
+	if _, ok := s.sessions.lookup(presented); ok {
+		return true
+	}
+	return subtle.ConstantTimeCompare([]byte(presented), []byte(s.cfg.Token)) == 1'
+  # **The Origin guard is not optional for a cookie**, and this is the shape the
+  # shortcut would take: "it has a real session, so it is a real request". It is
+  # not — the browser attaches the cookie to a request another site made, and
+  # the guard is the only thing that tells the two apart.
+  mutate go "the Origin guard is skipped for a request carrying a cookie" "$S" \
+    '	u, err := url.Parse(origin)' \
+    '	if _, live := s.sessionOf(r); live {
+		return true
+	}
+	u, err := url.Parse(origin)'
+  # "Never a map lookup on the raw value": the store is keyed by a MAC so that
+  # "is this id live" is not a hash-table probe over attacker-supplied bytes.
+  mutate go "the session store is keyed by the id itself" "$SN" \
+    '	mac := hmac.New(sha256.New, st.key)
+	// hash.Hash never returns an error, by contract.
+	_, _ = mac.Write([]byte(id))
+	return hex.EncodeToString(mac.Sum(nil))' \
+    '	_ = hmac.New(sha256.New, st.key)
+	_ = hex.EncodeToString(nil)
+	return id'
+  # `GET /api/session` describes a browser session. Answering one for a request
+  # that carries none would be inventing a subject nothing authenticated.
+  mutate go "the session endpoint answers without a cookie" "$SN" \
+    '	got, ok := s.sessionOf(r)
+	if !ok {' \
+    '	got, ok := s.sessionOf(r)
+	if false && !ok {'
+  # The relay's query rule, at the one pair that used to be allowed through it.
+  mutate go "the relay accepts a token query pair again" "$MR" \
+    '		if err == nil && decoded == relayStreamParameter &&' \
+    '		if err == nil && decoded == "token" {
+			continue
+		}
+		if err == nil && decoded == relayStreamParameter &&'
+
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -3989,8 +4086,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # If the probe named a URL, anything holding the token could point the desk
   # — and the key it holds — at a host of its choosing.
   mutate web "the probe names its own destination" "$AC" \
-    "    await fetch(chassisUrl('/api/assistant/probe'), { method: 'POST', signal })" \
-    "    await fetch(chassisUrl('/api/assistant/probe'), {
+    "    await deskFetch(chassisUrl('/api/assistant/probe'), { method: 'POST', signal })" \
+    "    await deskFetch(chassisUrl('/api/assistant/probe'), {
       method: 'POST',
       signal,
       body: JSON.stringify({ url: 'http://127.0.0.1:1/v1' })
@@ -4454,11 +4551,11 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # jpack mcp and a gate, and closing either would take the other's connection.
   mutate web "the assistant reuses one shared transport" "$ASN" \
     'export function assistantTransport(): Transport {
-  return new DeskWebSocketTransport(socketURL(sessionToken()))
+  return new DeskWebSocketTransport(socketURL())
 }' \
     'let sharedTransport: Transport | undefined
 export function assistantTransport(): Transport {
-  sharedTransport ??= new DeskWebSocketTransport(socketURL(sessionToken()))
+  sharedTransport ??= new DeskWebSocketTransport(socketURL())
   return sharedTransport
 }'
   # A setup that fails leaves a socket and a jpack mcp with nothing holding a
@@ -6631,6 +6728,32 @@ export function assistantTransport(): Transport {
   # Inspector for as long as it is mounted; a claim that is never released
   # leaves the pane suppressing its own empty state for every route after it,
   # and the panel Admin published standing over a page it is not about.
+  # ---- The page holds no credential (chunk 7a) -----------------------------
+  #
+  # `chassisUrl` used to write this desk's session token in front of every
+  # caller's parameters. Putting one back is the page re-acquiring a credential
+  # — and putting it somewhere every log line a URL reaches can see it.
+  # Single-quoted, every one of them: these needles carry `${…}` and a backtick,
+  # and a double-quoted argument would hand bash the template to expand.
+  mutate web "chassisUrl puts a token back on every address" "$C" \
+    '  const query = new URLSearchParams(params).toString()' \
+    '  const query = new URLSearchParams({ token: "a-token", ...params }).toString()'
+  # The upgrade, the same way. A page that spells a credential onto `/ws` is a
+  # page that has one to spell.
+  mutate web "socketURL puts a token back on the upgrade" "$M" \
+    '  return `${scheme}//${window.location.host}/ws`' \
+    '  return `${scheme}//${window.location.host}/ws?token=a-token`'
+  # A stale secret in storage is a secret that can leak, and it authorizes
+  # nothing — so it is removed rather than left to sit.
+  mutate web "the stale sessionStorage key is left in place" "$M" \
+    '    window.sessionStorage.removeItem(STALE_TOKEN_KEY)' \
+    '    void STALE_TOKEN_KEY'
+  # No session is not a retryable state: no cookie appears on its own, and a
+  # page that reconnected forever would bury the one instruction that fixes it.
+  mutate web "a missing session is reported as a retryable failure" "$M" \
+    '      if (await noSession()) {' \
+    '      if (false) {'
+
   mutate web "the Inspector claim is never released, so Admin's pane outlives it" "$ISLOT" \
     '    if (!publishing) return
     return claim()' \
