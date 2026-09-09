@@ -1556,15 +1556,28 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # **The half that closes the replay.** A cookie reaches this desk on requests
   # it must not authorize — every sibling port receives it — and only the
   # browser's own `Sec-Fetch-Site` tells those apart.
-  mutate go "a cookie authorizes without claiming same-origin" "$SN" \
-    '	if r.Header.Get(fetchSiteHeader) != fetchSiteSameOrigin {
+  mutate go "a cookie authorizes without any same-origin claim" "$SN" \
+    '	if !s.sameOriginClaim(r) {
 		return session{}, false
 	}' \
     ''
-  # An absent header must never read as permission.
-  mutate go "an absent Sec-Fetch-Site is treated as same-origin" "$SN" \
-    '	if r.Header.Get(fetchSiteHeader) != fetchSiteSameOrigin {' \
-    '	if site := r.Header.Get(fetchSiteHeader); site != "" && site != fetchSiteSameOrigin {'
+  # An absent claim must never read as permission. This is the shape the
+  # loosening would take: "no header, so nothing to object to".
+  mutate go "a request making no claim at all is treated as same-origin" "$SN" \
+    '	return r.Header.Get("Origin") != "" && s.originAllowed(r)' \
+    '	return s.originAllowed(r)'
+  # The surface with no fetch metadata — the WebSocket upgrade — must still be
+  # judged by something. Dropping the Origin comparison admits every sibling
+  # port's handshake, which is the attack this half exists for.
+  mutate go "the upgrade's Origin is not compared, only required" "$SN" \
+    '	if site := r.Header.Get(fetchSiteHeader); site != "" {
+		return site == fetchSiteSameOrigin
+	}
+	return r.Header.Get("Origin") != "" && s.originAllowed(r)' \
+    '	if site := r.Header.Get(fetchSiteHeader); site != "" {
+		return site == fetchSiteSameOrigin
+	}
+	return r.Header.Get("Origin") != ""'
   # Nothing is under /launch/, and a near miss must not reach the SPA fallback
   # carrying the secret it was sent with.
   mutate go "a path under /launch/ falls through to the page" "$S" \

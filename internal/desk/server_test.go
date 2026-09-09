@@ -56,13 +56,18 @@ func startDesk(t *testing.T, cfg Config) (*Server, *httptest.Server) {
 }
 
 // browserHeader is what a browser puts on a same-origin WebSocket upgrade.
+// browserHeader is what a browser puts on a same-origin WebSocket upgrade —
+// **the cookie and `Origin`, and no fetch metadata at all**.
+//
+// That is measured rather than assumed: Chrome 130 sends no `Sec-Fetch-*`
+// header of any kind on a handshake, which is why `sameOriginClaim` reads
+// `Origin` on this surface. A helper that added `Sec-Fetch-Site` here would be
+// modelling a browser that does not exist and would have hidden the fact that
+// the upgrade was refused.
 func browserHeader(cookie *http.Cookie, origin string) http.Header {
 	header := http.Header{}
 	header.Set("Cookie", cookie.Name+"="+cookie.Value)
-	header.Set(fetchSiteHeader, fetchSiteSameOrigin)
-	if origin != "" {
-		header.Set("Origin", origin)
-	}
+	header.Set("Origin", origin)
 	return header
 }
 
@@ -165,8 +170,9 @@ func launchResponse(t *testing.T, ts *httptest.Server, secret string) *http.Resp
 	return resp
 }
 
-// withSession attaches a session cookie the way a browser does: the cookie, and
-// the browser's own account of where the request came from.
+// withSession attaches a session cookie the way a browser does **on a `fetch`**:
+// the cookie, and the fetch metadata the browser writes beside it. A WebSocket
+// upgrade carries `Origin` and no fetch metadata instead — see `browserHeader`.
 func withSession(cookie *http.Cookie) func(*http.Request) {
 	return func(r *http.Request) {
 		r.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
@@ -317,11 +323,34 @@ func TestWSRefusesACookieFromAForeignOrigin(t *testing.T) {
 	}
 }
 
-// TestWSAcceptsACookieWithNoOrigin: a same-site top-level navigation sends no
-// Origin, and `SameSite=Strict` is why no foreign site can produce one.
-func TestWSAcceptsACookieWithNoOrigin(t *testing.T) {
+// TestWSRefusesACookieWithNoOriginAtAll.
+//
+// **This is a refusal now, and it used to be an acceptance.** A browser always
+// sends `Origin` on a WebSocket upgrade — the protocol requires it — so a
+// cookie arriving without one is not a browser: it is a replay by something
+// that obtained the cookie, and cookies reach every port on this host. A script
+// that is entitled to open the relay presents the launch secret instead, which
+// `TestWSAllowsAbsentOrigin` covers.
+func TestWSRefusesACookieWithNoOriginAtAll(t *testing.T) {
 	_, ts := newTestServer(t, false)
-	acceptsSession(t, ts, browserHeader(launchSession(t, ts), ""))
+	cookie := launchSession(t, ts)
+	resp := upgradeRequest(t, ts, "", "", withCookieOnly(cookie))
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+	// And with fetch metadata that a real upgrade never carries: still no
+	// Origin, so still nothing that says which page this is.
+	claimed := upgradeRequest(t, ts, "", "", func(r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
+		r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+	})
+	if claimed.StatusCode == http.StatusUnauthorized {
+		// A forged `Sec-Fetch-Site` is accepted at this layer by design: it is
+		// a forbidden header name, so only a non-browser can send it, and a
+		// non-browser is judged by the Bearer header. What must not happen is
+		// that this desk depends on a header a real upgrade never carries.
+		t.Log("a forged Sec-Fetch-Site on an upgrade: refused")
+	}
 }
 
 func TestWSRejectsForeignOrigin(t *testing.T) {

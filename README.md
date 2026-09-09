@@ -3189,18 +3189,27 @@ not; they are the page, and the page can do nothing without one of the two.
   part of a cookie's origin and never has been — so any other local service
   receives this desk's session, and two desks would otherwise overwrite each
   other's. So: the cookie's **name carries the port** it was minted on, and a
-  cookie authorizes a request only where the browser itself reports
-  `Sec-Fetch-Site: same-origin`. A page on another loopback port is *same-site*
-  and not same-origin, and cannot forge that header — it is a forbidden header
-  name — so its request is refused even though the browser attached the cookie
-  to it. A script replaying a stolen cookie by hand sends no such header at all
-  and is refused for the same reason; scripts present the launch secret instead.
-  This is what closes a credentialled `no-cors` `GET` from a sibling port, which
-  carries the cookie and **no `Origin` header**, and would otherwise be judged
-  by the Origin guard alone.
+  cookie authorizes a request only where the browser itself says the request is
+  this desk's own. Two headers carry that claim, and **which one is available
+  depends on the surface** — measured, not assumed:
+
+  | surface | the claim it carries | what a sibling port sends |
+  | --- | --- | --- |
+  | `fetch` — every `/api/*` call | `Sec-Fetch-Site: same-origin` | `same-site` |
+  | the `/ws` upgrade | `Origin` | its own `http://127.0.0.1:<its port>` |
+
+  A WebSocket handshake carries **no fetch metadata at all** — Chrome 130 sends
+  `Origin` and no `Sec-Fetch-*` header of any kind — and a same-origin `GET`
+  carries no `Origin`, so neither header covers both surfaces and each request
+  is judged by the signal it actually has. Neither can be written by page code:
+  both are forbidden header names. A request carrying **neither** makes no claim
+  and its cookie authorizes nothing, which is what closes an originless replay —
+  including a credentialled `no-cors` `GET` from a sibling port, which carries
+  the cookie and no `Origin` and would otherwise meet only the Origin guard.
+  Scripts are unaffected: they present the launch secret.
 
   The cost is stated rather than hidden: **a browser that sends no
-  `Sec-Fetch-Site` cannot hold a session on this desk** — Safari before 16.4.
+  `Sec-Fetch-Site` cannot reach `/api/*` on this desk** — Safari before 16.4.
   Refusing is the right direction for a header whose absence must never read as
   permission.
 - **No session expiry and no sign-out exist yet.** A session lives until the

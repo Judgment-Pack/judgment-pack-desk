@@ -391,14 +391,14 @@ func (s *Server) authorized(r *http.Request) bool {
 // what stops a page on another site from driving the runtime, or writing to the
 // project, through the visitor's own loopback and the visitor's own cookie.
 //
-// **A request with no Origin at all is accepted, and that is safe for both
-// kinds of caller.** A script or a test sends none and presents the launch
-// secret as a Bearer header, exactly as before — the secret is its
-// authorization. A browser sends none on a same-site top-level navigation, and
-// such a request carries the cookie; a *foreign* site cannot produce one,
-// because `SameSite=Strict` means the browser withholds this cookie from every
-// request another site initiated. So "no Origin and only a cookie" describes a
-// navigation within this desk and nothing else.
+// **A request with no Origin at all reaches this check and is accepted**,
+// because a script legitimately sends none and the launch secret is its
+// authorization. That is not a hole for a *cookie*, and the reason is that a
+// cookie never gets this far on its own: `sessionOf` refuses one unless the
+// browser has claimed the request as same-origin — by `Sec-Fetch-Site` where
+// there is one, and by `Origin` on the WebSocket upgrade, which carries no
+// fetch metadata. So "no Origin and no fetch metadata" is a script, and a
+// script authorizes with the header.
 func (s *Server) originAllowed(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {

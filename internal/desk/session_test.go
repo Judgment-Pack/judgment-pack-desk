@@ -803,3 +803,65 @@ func TestTheBoundIsEnforcedThroughTheExchange(t *testing.T) {
 	}
 	acceptsSession(t, ts, browserHeader(&http.Cookie{Name: s.cookieName, Value: newest}, ts.URL))
 }
+
+// TestWSRefusesACookieFromASiblingPort is the attack the upgrade actually
+// faces, in the shape a browser actually sends it: no fetch metadata — a
+// handshake carries none — a real cookie, because cookies reach every port on
+// this host, and the attacking page's own `Origin`.
+func TestWSRefusesACookieFromASiblingPort(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	cookie := launchSession(t, ts)
+	for _, origin := range []string{
+		"http://127.0.0.1:9999",
+		"http://localhost:5173", // permitted only under --dev-token
+		"http://127.0.0.1",
+		"https://127.0.0.1:8791",
+		"http://evil.example",
+	} {
+		t.Run(origin, func(t *testing.T) {
+			resp := upgradeRequest(t, ts, "", origin, withCookieOnly(cookie))
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("status %d, want 401 — a sibling port must not open the relay", resp.StatusCode)
+			}
+		})
+	}
+}
+
+// TestTheDevOriginOpensTheUpgradeOnlyUnderDevToken. The Vite dev server proxies
+// the upgrade, so the browser's `Origin` is the dev server's — which is the one
+// foreign origin `--dev-token` admits, and the reason the development path
+// works at all now that a cookie needs an `Origin` on this surface.
+func TestTheDevOriginOpensTheUpgradeOnlyUnderDevToken(t *testing.T) {
+	_, prod := newTestServer(t, false)
+	refused := upgradeRequest(t, prod, "", "http://localhost:5173", withCookieOnly(launchSession(t, prod)))
+	if refused.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("production status %d, want 401", refused.StatusCode)
+	}
+
+	_, dev := newTestServer(t, true)
+	acceptsSession(t, dev, browserHeader(launchSession(t, dev), "http://localhost:5173"))
+}
+
+// TestAFetchShapedRequestIsJudgedByFetchMetadata pins which signal is read on
+// which surface, so that a change to one cannot silently become a change to the
+// other.
+func TestAFetchShapedRequestIsJudgedByFetchMetadata(t *testing.T) {
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", "{}")
+	cookie := launchSession(t, ts)
+
+	// Fetch metadata wins where it is present, whatever `Origin` says: a
+	// sibling page that sends a matching-looking Origin still says `same-site`.
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files", nil)
+	req.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
+	req.Header.Set(fetchSiteHeader, "same-site")
+	req.Header.Set("Origin", ts.URL)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status %d, want 401 — Sec-Fetch-Site is the claim on this surface", resp.StatusCode)
+	}
+}

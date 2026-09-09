@@ -48,15 +48,25 @@ package desk
 //     the port the listener was bound to (`Config.Port`). Two desks on one
 //     machine no longer overwrite each other's session, and a request that
 //     reaches port 8791 is asked for *that* desk's cookie by name.
-//  2. **A cookie authorizes only a same-origin request**, decided by
-//     `Sec-Fetch-Site: same-origin`. Every modern browser sets that header on
-//     same-origin `fetch`, form submissions and WebSocket upgrades; a page on
-//     another port of the same host is *same-site* and not same-origin, so its
-//     request carries `same-site` and is refused — even though the browser
-//     attached the cookie to it. This is the half that closes the replay:
-//     another local service that received the cookie cannot use it, because it
-//     cannot make the browser claim same-origin for an origin it is not, and a
-//     script replaying it by hand sends no such header at all.
+//  2. **A cookie authorizes only a request the browser itself calls
+//     same-origin.** Two headers carry that claim, and which one is available
+//     depends on the surface — see `Server.sameOriginClaim`:
+//
+//       - `Sec-Fetch-Site: same-origin` on everything `fetch` shaped. A page on
+//         another port of the same host is *same-site*, not same-origin, so its
+//         request says `same-site` and is refused even though the browser
+//         attached the cookie to it.
+//       - `Origin`, on the **WebSocket upgrade**, which carries no fetch
+//         metadata at all. That is measured rather than assumed: Chrome 130
+//         sends `Origin` and no `Sec-Fetch-*` on a handshake. `Origin` includes
+//         the port, so a page on a sibling port names itself and is refused by
+//         the same guard every other request meets.
+//
+//     Neither can be written by page code — both are forbidden header names —
+//     and a request carrying **neither** is refused, which is what closes the
+//     originless replay: a script that has somehow obtained the cookie cannot
+//     produce a browser's account of itself, and a script that is entitled to
+//     be here presents the launch secret instead.
 //
 // Beside those:
 //
@@ -101,12 +111,11 @@ func sessionCookieName(port int) string {
 }
 
 // fetchSiteHeader and fetchSiteSameOrigin are the browser's own account of
-// where a request came from.
+// where a request came from, on the surfaces that carry one.
 //
-// **Its absence is never permission.** A request with no `Sec-Fetch-Site` is
-// not a browser making a same-origin call, so a cookie on it authorizes
-// nothing; a script that has no cookie jar presents the launch secret instead
-// and never reaches this test.
+// **Its absence is never permission by itself.** Where it is absent the claim
+// has to come from `Origin` instead, and where both are absent there is no
+// claim and a cookie authorizes nothing. See `Server.sameOriginClaim`.
 const (
 	fetchSiteHeader     = "Sec-Fetch-Site"
 	fetchSiteSameOrigin = "same-origin"
@@ -306,15 +315,43 @@ func newSessionCookie(name, id string, secure bool) *http.Cookie {
 /* The two ways in ------------------------------------------------------------ */
 
 // sessionOf is the session this request's cookie names, where it names one.
+// sameOriginClaim reports whether the browser has told us this request is this
+// desk's own page talking to itself.
+//
+// **Two headers, because the two gated surfaces carry different ones.** This is
+// measured rather than assumed:
+//
+//   - A `fetch` — every `/api/*` call the page makes — carries
+//     `Sec-Fetch-Site`, and carries no `Origin` at all on a same-origin `GET`.
+//   - A **WebSocket upgrade carries no `Sec-Fetch-*` header whatsoever** and
+//     always carries `Origin`. Chrome 130 was measured doing exactly that; the
+//     WebSocket protocol requires `Origin` of a browser client and says nothing
+//     about fetch metadata.
+//
+// So each surface is judged by the signal it actually has, and neither signal
+// is one page code can write — both are forbidden header names. A request with
+// neither makes no claim, and a cookie on it authorizes nothing: that is the
+// originless replay, and it is refused here rather than at the Origin guard,
+// which accepts an absent `Origin` because a *script* legitimately sends none.
+//
+// The `Origin` branch is the ordinary guard, unchanged, so a page on a sibling
+// port — which names its own port in `Origin` — is refused by the same
+// comparison as any other foreign origin, and `--dev-token`'s allowance for the
+// Vite dev server applies here too.
+func (s *Server) sameOriginClaim(r *http.Request) bool {
+	if site := r.Header.Get(fetchSiteHeader); site != "" {
+		return site == fetchSiteSameOrigin
+	}
+	return r.Header.Get("Origin") != "" && s.originAllowed(r)
+}
+
 func (s *Server) sessionOf(r *http.Request) (session, bool) {
 	// **The browser's own account of where this came from, first.** A cookie
-	// reaches this desk on requests it should not authorize — another page on
-	// another port of this same host receives it, because cookies have no port
-	// isolation, and a script can replay a stolen one by hand. Neither can
-	// produce `Sec-Fetch-Site: same-origin`: the browser writes that header
-	// itself, and it writes `same-site` for a sibling port. A request that does
-	// not claim same-origin carries no session here, whatever cookie is on it.
-	if r.Header.Get(fetchSiteHeader) != fetchSiteSameOrigin {
+	// reaches this desk on requests it must not authorize — every page on every
+	// sibling port receives it, because cookies have no port isolation, and a
+	// script can replay a stolen one by hand. Neither can produce the claim
+	// above.
+	if !s.sameOriginClaim(r) {
 		return session{}, false
 	}
 	cookie, err := r.Cookie(s.cookieName)
