@@ -61,7 +61,33 @@ func writeProjectFile(t *testing.T, project, rel, content string) string {
 	return abs
 }
 
+// getJSON reads one gated endpoint **the way a script does**: the launch secret
+// as `Authorization: Bearer`, and nothing on the query.
+//
+// Every authorized read in this file goes through it, which is what makes the
+// removal of `?token=` a property of the suite rather than of one test: a
+// chassis that still authenticated a query would be exercised by nothing here.
+// See `getAnon` for the requests that carry no credential at all.
 func getJSON(t *testing.T, ts *httptest.Server, path string) (int, map[string]any) {
+	t.Helper()
+	r, err := http.NewRequest(http.MethodGet, ts.URL+path, nil)
+	if err != nil {
+		t.Fatalf("request %s: %v", path, err)
+	}
+	bearer(r)
+	resp, err := http.DefaultClient.Do(r)
+	if err != nil {
+		t.Fatalf("get %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+	var body map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	return resp.StatusCode, body
+}
+
+// getAnon reads with **no credential of any kind**: no cookie, no header. It is
+// what a request that has not been through the launch exchange looks like.
+func getAnon(t *testing.T, ts *httptest.Server, path string) (int, map[string]any) {
 	t.Helper()
 	resp, err := http.Get(ts.URL + path)
 	if err != nil {
@@ -82,10 +108,11 @@ func putJSONNoFatal(ts *httptest.Server, req WriteRequest) (int, map[string]any)
 	if err != nil {
 		return 0, nil
 	}
-	r, err := http.NewRequest(http.MethodPut, ts.URL+"/api/file?token="+testToken, bytes.NewReader(payload))
+	r, err := http.NewRequest(http.MethodPut, ts.URL+"/api/file", bytes.NewReader(payload))
 	if err != nil {
 		return 0, nil
 	}
+	bearer(r)
 	resp, err := http.DefaultClient.Do(r)
 	if err != nil {
 		return 0, nil
@@ -102,10 +129,11 @@ func putJSON(t *testing.T, ts *httptest.Server, req WriteRequest) (int, map[stri
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	r, err := http.NewRequest(http.MethodPut, ts.URL+"/api/file?token="+testToken, bytes.NewReader(payload))
+	r, err := http.NewRequest(http.MethodPut, ts.URL+"/api/file", bytes.NewReader(payload))
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
+	bearer(r)
 	resp, err := http.DefaultClient.Do(r)
 	if err != nil {
 		t.Fatalf("put: %v", err)
@@ -189,7 +217,7 @@ func TestSymlinkEscapeRefusedOverTheWire(t *testing.T) {
 	}
 
 	for _, rel := range []string{"escape.json", "elsewhere/secret.json", "elsewhere/new.json"} {
-		status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path="+rel)
+		status, body := getJSON(t, ts, "/api/file?path="+rel)
 		if status != http.StatusForbidden && status != http.StatusNotFound {
 			t.Fatalf("read %s: status %d, body %v", rel, status, body)
 		}
@@ -210,7 +238,7 @@ func TestSymlinkEscapeRefusedOverTheWire(t *testing.T) {
 		t.Fatalf("the file outside the project changed: %q, %v", string(after), err)
 	}
 	// And it is not listed, with no target or size disclosed.
-	_, listing := getJSON(t, ts, "/api/files?token="+testToken)
+	_, listing := getJSON(t, ts, "/api/files")
 	for _, raw := range listing["files"].([]any) {
 		if p := raw.(map[string]any)["path"].(string); p == "escape.json" || strings.HasPrefix(p, "elsewhere/") {
 			t.Fatalf("a symlink was listed: %s", p)
@@ -258,7 +286,7 @@ func TestSymlinkSwapBetweenCheckAndUse(t *testing.T) {
 		testHookAfterResolve = swapDirForSymlinkOut(t, project, outside)
 		t.Cleanup(func() { testHookAfterResolve = nil })
 
-		status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path=packs/a.pack.json")
+		status, body := getJSON(t, ts, "/api/file?path=packs/a.pack.json")
 		if status == http.StatusOK {
 			t.Fatalf("read followed the swapped directory: %v", body)
 		}
@@ -297,7 +325,7 @@ func TestSymlinkSwapBetweenCheckAndUse(t *testing.T) {
 		testHookAfterResolve = swapDirForSymlinkOut(t, project, outside)
 		t.Cleanup(func() { testHookAfterResolve = nil })
 
-		_, body := getJSON(t, ts, "/api/files?token="+testToken)
+		_, body := getJSON(t, ts, "/api/files")
 		for _, raw := range body["files"].([]any) {
 			if p := raw.(map[string]any)["path"].(string); strings.Contains(p, "secret") {
 				t.Fatalf("the listing walked outside the project: %s", p)
@@ -351,7 +379,7 @@ func TestRetargetedProjectRootIsNotAdopted(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	_, body := getJSON(t, ts, "/api/files?token="+testToken)
+	_, body := getJSON(t, ts, "/api/files")
 	listed := map[string]bool{}
 	for _, raw := range body["files"].([]any) {
 		listed[raw.(map[string]any)["path"].(string)] = true
@@ -365,11 +393,11 @@ func TestRetargetedProjectRootIsNotAdopted(t *testing.T) {
 
 	// Reading, not only listing: the read path opens through the root too, and
 	// a read that rejoined the configured pathname would find the other tree.
-	status, read := getJSON(t, ts, "/api/file?token="+testToken+"&path=mine.json")
+	status, read := getJSON(t, ts, "/api/file?path=mine.json")
 	if status != http.StatusOK || read["content"] != `{"mine":true}` {
 		t.Fatalf("reading through the pinned root: status %d, %v", status, read)
 	}
-	if status, _ := getJSON(t, ts, "/api/file?token="+testToken+"&path=theirs.json"); status == http.StatusOK {
+	if status, _ := getJSON(t, ts, "/api/file?path=theirs.json"); status == http.StatusOK {
 		t.Fatal("a file from the retargeted tree was readable")
 	}
 
@@ -394,17 +422,43 @@ func TestRetargetedProjectRootIsNotAdopted(t *testing.T) {
 
 /* Authorization ----------------------------------------------------------- */
 
-func TestFileAPIRequiresToken(t *testing.T) {
+// TestFileAPIRequiresASession covers the three ways in that are not ways in:
+// nothing at all, the removed `?token=` query — **with the real launch secret
+// in it**, which is the whole point — and a Bearer header carrying the wrong
+// secret.
+func TestFileAPIRequiresASession(t *testing.T) {
 	_, ts, project := filesServer(t)
 	writeProjectFile(t, project, "jpack.json", "{}")
 
 	for _, path := range []string{"/api/files", "/api/file?path=jpack.json"} {
-		if status, _ := getJSON(t, ts, path); status != http.StatusUnauthorized {
-			t.Fatalf("%s without a token: status %d", path, status)
+		if status, _ := getAnon(t, ts, path); status != http.StatusUnauthorized {
+			t.Fatalf("%s with no credential: status %d", path, status)
 		}
-		if status, _ := getJSON(t, ts, path+"?token=wrong"); status != http.StatusUnauthorized {
-			t.Fatalf("%s with a wrong token: status %d", path, status)
+		// The removed form, carrying the genuine secret. It authorizes
+		// nothing: this is the one assertion that would pass again if the
+		// query path were restored.
+		separator := "?"
+		if strings.Contains(path, "?") {
+			separator = "&"
 		}
+		if status, _ := getAnon(t, ts, path+separator+"token="+testToken); status != http.StatusUnauthorized {
+			t.Fatalf("%s with the launch secret on the query: status %d", path, status)
+		}
+		if status, _ := getAnon(t, ts, path+separator+"secret="+testToken); status != http.StatusUnauthorized {
+			t.Fatalf("%s with the launch secret as ?secret=: status %d", path, status)
+		}
+	}
+
+	// A Bearer header with the wrong secret is no better than none.
+	wrong, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files", nil)
+	wrong.Header.Set("Authorization", "Bearer "+strings.Repeat("f", len(testToken)))
+	refused, err := http.DefaultClient.Do(wrong)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer refused.Body.Close()
+	if refused.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("a wrong Bearer secret: status %d", refused.StatusCode)
 	}
 
 	payload, _ := json.Marshal(WriteRequest{Path: "jpack.json", Content: "{}", Override: true})
@@ -415,7 +469,7 @@ func TestFileAPIRequiresToken(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("write without a token: status %d", resp.StatusCode)
+		t.Fatalf("write with no session: status %d", resp.StatusCode)
 	}
 	if data, _ := os.ReadFile(filepath.Join(project, "jpack.json")); string(data) != "{}" {
 		t.Fatalf("an unauthorized write reached the disk")
@@ -426,7 +480,8 @@ func TestFileAPIRejectsForeignOrigin(t *testing.T) {
 	_, ts, project := filesServer(t)
 	writeProjectFile(t, project, "jpack.json", "{}")
 
-	r, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files?token="+testToken, nil)
+	r, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files", nil)
+	bearer(r)
 	r.Header.Set("Origin", "http://evil.example")
 	resp, err := http.DefaultClient.Do(r)
 	if err != nil {
@@ -447,7 +502,7 @@ func TestListSkipsWhatIsNotAProjectDocument(t *testing.T) {
 	writeProjectFile(t, project, "node_modules/big/index.js", "// no")
 	writeProjectFile(t, project, ".git/config", "[core]")
 
-	status, body := getJSON(t, ts, "/api/files?token="+testToken)
+	status, body := getJSON(t, ts, "/api/files")
 	if status != http.StatusOK {
 		t.Fatalf("list: status %d", status)
 	}
@@ -476,7 +531,7 @@ func TestReadReturnsBytesAndTheirDigest(t *testing.T) {
 	const content = `{"id":"a","nested":{"unicode":"café →"}}`
 	writeProjectFile(t, project, "packs/a.pack.json", content)
 
-	status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path=packs/a.pack.json")
+	status, body := getJSON(t, ts, "/api/file?path=packs/a.pack.json")
 	if status != http.StatusOK {
 		t.Fatalf("read: status %d, %v", status, body)
 	}
@@ -497,7 +552,7 @@ func TestReadRefusesBytesThatAreNotText(t *testing.T) {
 	if err := os.WriteFile(abs, []byte{0xff, 0xfe, 0x00, 0x01}, 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path=binary.bin")
+	status, body := getJSON(t, ts, "/api/file?path=binary.bin")
 	if status != http.StatusUnsupportedMediaType {
 		t.Fatalf("read of non-text: status %d, %v", status, body)
 	}
@@ -878,14 +933,14 @@ func TestStagingFilesAreNeitherListedNorWatched(t *testing.T) {
 	writeProjectFile(t, project, ".jpack-desk-deadbeef.tmp", "half a document")
 	writeProjectFile(t, project, "packs/.jpack-desk-cafe.tmp", "half a document")
 
-	_, body := getJSON(t, ts, "/api/files?token="+testToken)
+	_, body := getJSON(t, ts, "/api/files")
 	for _, raw := range body["files"].([]any) {
 		if p := raw.(map[string]any)["path"].(string); strings.Contains(p, ".jpack-desk-") {
 			t.Fatalf("a staging file was listed: %s", p)
 		}
 	}
 	// And neither can be read or written through the API by name.
-	if status, _ := getJSON(t, ts, "/api/file?token="+testToken+"&path=.jpack-desk-deadbeef.tmp"); status != http.StatusForbidden {
+	if status, _ := getJSON(t, ts, "/api/file?path=.jpack-desk-deadbeef.tmp"); status != http.StatusForbidden {
 		t.Fatalf("reading a staging file: status %d", status)
 	}
 	if status, _ := putJSON(t, ts, WriteRequest{Path: ".jpack-desk-new.tmp", Content: "{}", Override: true}); status != http.StatusForbidden {
@@ -947,7 +1002,9 @@ func TestReadRefusesWhatIsNotARegularFile(t *testing.T) {
 
 	// A client deadline, so the request gives up rather than the test.
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(ts.URL + "/api/file?token=" + testToken + "&path=pipe")
+	pipeRequest, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/file?path=pipe", nil)
+	bearer(pipeRequest)
+	resp, err := client.Do(pipeRequest)
 	if err != nil {
 		ts.CloseClientConnections()
 		t.Fatalf("reading a FIFO did not answer within the deadline — the open blocked: %v", err)
@@ -958,7 +1015,7 @@ func TestReadRefusesWhatIsNotARegularFile(t *testing.T) {
 	}
 
 	// And it is not listed as a document either.
-	_, body := getJSON(t, ts, "/api/files?token="+testToken)
+	_, body := getJSON(t, ts, "/api/files")
 	for _, raw := range body["files"].([]any) {
 		if raw.(map[string]any)["path"] == "pipe" {
 			t.Fatal("a FIFO was listed as a document")
@@ -1018,13 +1075,13 @@ func TestReadIsBoundedByTheReaderNotTheStat(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(project, "big.json"), big, 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path=big.json")
+	status, body := getJSON(t, ts, "/api/file?path=big.json")
 	if status != http.StatusRequestEntityTooLarge {
 		t.Fatalf("oversized read: status %d, %v", status, body)
 	}
 	// It is still listed — it is really there — with no digest, because it was
 	// not read.
-	_, listing := getJSON(t, ts, "/api/files?token="+testToken)
+	_, listing := getJSON(t, ts, "/api/files")
 	found := false
 	for _, raw := range listing["files"].([]any) {
 		entry := raw.(map[string]any)
@@ -1063,7 +1120,8 @@ func TestOriginMatchIsStrict(t *testing.T) {
 	}
 	for name, origin := range refused {
 		t.Run("refused/"+name, func(t *testing.T) {
-			r, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files?token="+testToken, nil)
+			r, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files", nil)
+			bearer(r)
 			r.Header.Set("Origin", origin)
 			resp, err := http.DefaultClient.Do(r)
 			if err != nil {
@@ -1077,7 +1135,8 @@ func TestOriginMatchIsStrict(t *testing.T) {
 	}
 
 	t.Run("allowed/the origin we were served under", func(t *testing.T) {
-		r, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files?token="+testToken, nil)
+		r, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files", nil)
+		bearer(r)
 		r.Header.Set("Origin", ts.URL)
 		resp, err := http.DefaultClient.Do(r)
 		if err != nil {
@@ -1108,7 +1167,8 @@ func TestCrossOriginWriteIsRefusedAtBothLayers(t *testing.T) {
 	writeProjectFile(t, project, "jpack.json", `{"id":"a"}`)
 
 	// The browser's layer: nothing grants permission to preflight.
-	preflight, _ := http.NewRequest(http.MethodOptions, ts.URL+"/api/file?token="+testToken, nil)
+	preflight, _ := http.NewRequest(http.MethodOptions, ts.URL+"/api/file", nil)
+	bearer(preflight)
 	preflight.Header.Set("Origin", "http://evil.example")
 	preflight.Header.Set("Access-Control-Request-Method", "PUT")
 	preflight.Header.Set("Access-Control-Request-Headers", "content-type")
@@ -1126,7 +1186,8 @@ func TestCrossOriginWriteIsRefusedAtBothLayers(t *testing.T) {
 
 	// Our layer: the request itself, sent anyway.
 	payload, _ := json.Marshal(WriteRequest{Path: "jpack.json", Content: "{}", Override: true})
-	put, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/file?token="+testToken, bytes.NewReader(payload))
+	put, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/file", bytes.NewReader(payload))
+	bearer(put)
 	put.Header.Set("Origin", "http://evil.example")
 	put.Header.Set("Content-Type", "application/json")
 	written, err := http.DefaultClient.Do(put)
@@ -1170,7 +1231,8 @@ func TestViteProxyShapeNeedsDevMode(t *testing.T) {
 			ts := httptest.NewServer(s)
 			defer ts.Close()
 
-			r, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files?token="+testToken, nil)
+			r, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files", nil)
+			bearer(r)
 			// The shape `changeOrigin: true` produces: Host rewritten to the
 			// chassis' own, the browser's Origin forwarded unchanged. The two
 			// differ, so the check actually decides.
@@ -1215,7 +1277,7 @@ func TestHandlersRefuseTraversalOverTheWire(t *testing.T) {
 		".jpack-desk-x.tmp",
 	} {
 		t.Run("read/"+rel, func(t *testing.T) {
-			status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path="+urlEscape(rel))
+			status, body := getJSON(t, ts, "/api/file?path="+urlEscape(rel))
 			if status == http.StatusOK {
 				t.Fatalf("read %q succeeded: %v", rel, body)
 			}
@@ -1254,7 +1316,7 @@ func TestExcludedDirectoriesAreEndpointExclusions(t *testing.T) {
 		".venv/pyvenv.cfg", "vendor/x/y.go", "packs/.git/config",
 	} {
 		t.Run(rel, func(t *testing.T) {
-			if status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path="+urlEscape(rel)); status != http.StatusForbidden {
+			if status, body := getJSON(t, ts, "/api/file?path="+urlEscape(rel)); status != http.StatusForbidden {
 				t.Fatalf("read: status %d, %v", status, body)
 			}
 			if status, _ := putJSON(t, ts, WriteRequest{Path: rel, Content: "{}", Override: true}); status != http.StatusForbidden {
@@ -1289,7 +1351,7 @@ func TestSymlinkedPathsAreRefusedByBothVerbs(t *testing.T) {
 
 	for _, rel := range []string{"packs/alias.pack.json", "linkdir/real.pack.json"} {
 		t.Run(rel, func(t *testing.T) {
-			status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path="+urlEscape(rel))
+			status, body := getJSON(t, ts, "/api/file?path="+urlEscape(rel))
 			if status != http.StatusForbidden {
 				t.Fatalf("read: status %d, %v", status, body)
 			}
@@ -1299,11 +1361,11 @@ func TestSymlinkedPathsAreRefusedByBothVerbs(t *testing.T) {
 		})
 	}
 	// The real file is untouched and still reachable by its own name.
-	if status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path=packs/real.pack.json"); status != http.StatusOK {
+	if status, body := getJSON(t, ts, "/api/file?path=packs/real.pack.json"); status != http.StatusOK {
 		t.Fatalf("the real file became unreadable: %d %v", status, body)
 	}
 	// And neither link is listed.
-	_, listing := getJSON(t, ts, "/api/files?token="+testToken)
+	_, listing := getJSON(t, ts, "/api/files")
 	for _, raw := range listing["files"].([]any) {
 		if p := raw.(map[string]any)["path"].(string); strings.Contains(p, "alias") || strings.HasPrefix(p, "linkdir/") {
 			t.Fatalf("a symlink was listed: %s", p)
@@ -1329,7 +1391,7 @@ func TestListingSaysWhenItIsPartial(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(locked, 0o755) })
 
-	status, body := getJSON(t, ts, "/api/files?token="+testToken)
+	status, body := getJSON(t, ts, "/api/files")
 	if status != http.StatusOK {
 		t.Fatalf("list: status %d", status)
 	}
@@ -1437,7 +1499,8 @@ func TestOriginRefusesEmptyDelimiters(t *testing.T) {
 
 	for _, origin := range []string{ts.URL + "?", ts.URL + "#", ts.URL + "?#"} {
 		t.Run(origin, func(t *testing.T) {
-			r, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files?token="+testToken, nil)
+			r, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files", nil)
+			bearer(r)
 			r.Header.Set("Origin", origin)
 			resp, err := http.DefaultClient.Do(r)
 			if err != nil {
@@ -1572,7 +1635,7 @@ func TestWalkStopsAtARepeatedAncestor(t *testing.T) {
 
 	done := make(chan map[string]any, 1)
 	go func() {
-		_, body := getJSON(t, ts, "/api/files?token="+testToken)
+		_, body := getJSON(t, ts, "/api/files")
 		done <- body
 	}()
 	select {
@@ -1613,7 +1676,7 @@ func TestWalkIsBoundedInAWideDirectory(t *testing.T) {
 		}
 	}
 
-	status, body := getJSON(t, ts, "/api/files?token="+testToken)
+	status, body := getJSON(t, ts, "/api/files")
 	if status != http.StatusOK {
 		t.Fatalf("list: status %d", status)
 	}
@@ -1645,7 +1708,7 @@ func TestExcludedNamesMatchWholeComponentsCaseInsensitively(t *testing.T) {
 
 	for _, rel := range []string{"node_modules.json", "packs/vendor.pack.json"} {
 		t.Run("allowed/"+rel, func(t *testing.T) {
-			if status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path="+urlEscape(rel)); status != http.StatusOK {
+			if status, body := getJSON(t, ts, "/api/file?path="+urlEscape(rel)); status != http.StatusOK {
 				t.Fatalf("read: status %d, %v", status, body)
 			}
 		})
@@ -1655,7 +1718,7 @@ func TestExcludedNamesMatchWholeComponentsCaseInsensitively(t *testing.T) {
 		"Dist/app.js", "VENDOR/x.go", "packs/.Git/config",
 	} {
 		t.Run("refused/"+rel, func(t *testing.T) {
-			if status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path="+urlEscape(rel)); status != http.StatusForbidden {
+			if status, body := getJSON(t, ts, "/api/file?path="+urlEscape(rel)); status != http.StatusForbidden {
 				t.Fatalf("read: status %d, %v", status, body)
 			}
 			if status, _ := putJSON(t, ts, WriteRequest{Path: rel, Content: "{}", Override: true}); status != http.StatusForbidden {
@@ -1669,7 +1732,7 @@ func TestExcludedNamesMatchWholeComponentsCaseInsensitively(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(project, "vendor"), []byte("not a directory"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	_, listing := getJSON(t, ts, "/api/files?token="+testToken)
+	_, listing := getJSON(t, ts, "/api/files")
 	listed := map[string]bool{}
 	for _, raw := range listing["files"].([]any) {
 		listed[raw.(map[string]any)["path"].(string)] = true
@@ -1699,7 +1762,7 @@ func TestUnreadableFileGoesToPartialRatherThanTheOversizedShape(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(locked, 0o644) })
 
-	_, body := getJSON(t, ts, "/api/files?token="+testToken)
+	_, body := getJSON(t, ts, "/api/files")
 	partial, _ := body["partial"].([]any)
 	found := false
 	for _, p := range partial {
@@ -1740,8 +1803,8 @@ func TestWriteReleasesTheLockBeforeEncoding(t *testing.T) {
 	}
 	defer conn.Close()
 	request := fmt.Sprintf(
-		"PUT /api/file?token=%s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n",
-		testToken, host, len(payload))
+		"PUT /api/file HTTP/1.1\r\nHost: %s\r\nAuthorization: Bearer %s\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n",
+		host, testToken, len(payload))
 	if _, err := conn.Write(append([]byte(request), payload...)); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -1826,7 +1889,7 @@ func TestUnreadableFileIsNotCalledAContainmentFailure(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(locked, 0o644) })
 
-	status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path=unreadable.json")
+	status, body := getJSON(t, ts, "/api/file?path=unreadable.json")
 	if status != http.StatusForbidden {
 		t.Fatalf("read: status %d, %v", status, body)
 	}
@@ -1839,7 +1902,7 @@ func TestUnreadableFileIsNotCalledAContainmentFailure(t *testing.T) {
 	}
 
 	// And the listing says the same thing in its partial channel.
-	_, listing := getJSON(t, ts, "/api/files?token="+testToken)
+	_, listing := getJSON(t, ts, "/api/files")
 	partial, _ := listing["partial"].([]any)
 	found := false
 	for _, p := range partial {
@@ -1865,10 +1928,11 @@ func TestUnreadableFileIsNotCalledAContainmentFailure(t *testing.T) {
 // the claim under test, so the absent case is sent literally absent.
 func putRaw(t *testing.T, ts *httptest.Server, body string) (int, map[string]any) {
 	t.Helper()
-	r, err := http.NewRequest(http.MethodPut, ts.URL+"/api/file?token="+testToken, strings.NewReader(body))
+	r, err := http.NewRequest(http.MethodPut, ts.URL+"/api/file", strings.NewReader(body))
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
+	bearer(r)
 	resp, err := http.DefaultClient.Do(r)
 	if err != nil {
 		t.Fatalf("put: %v", err)
@@ -2281,7 +2345,7 @@ func TestCreateParentsIsBoundedByTheWalk(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("a create the listing could report was refused: status %d, %v", status, body)
 	}
-	_, listing := getJSON(t, ts, "/api/files?token="+testToken)
+	_, listing := getJSON(t, ts, "/api/files")
 	if partial, ok := listing["partial"].([]any); ok && len(partial) > 0 {
 		t.Fatalf("the listing this create allowed is partial: %v", partial)
 	}
@@ -2498,7 +2562,7 @@ func TestRefusalsCarryAStableCode(t *testing.T) {
 
 	t.Run("not utf-8 on read", func(t *testing.T) {
 		writeProjectFile(t, project, "binary.json", "\xff\xfe not text")
-		status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path=binary.json")
+		status, body := getJSON(t, ts, "/api/file?path=binary.json")
 		if status != http.StatusUnsupportedMediaType {
 			t.Fatalf("status %d, %v", status, body)
 		}
@@ -2508,7 +2572,7 @@ func TestRefusalsCarryAStableCode(t *testing.T) {
 	})
 
 	t.Run("not found on read", func(t *testing.T) {
-		status, body := getJSON(t, ts, "/api/file?token="+testToken+"&path=absent.json")
+		status, body := getJSON(t, ts, "/api/file?path=absent.json")
 		if status != http.StatusNotFound {
 			t.Fatalf("status %d, %v", status, body)
 		}
@@ -2579,7 +2643,7 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 			return putJSON(t, ts, WriteRequest{Path: "link.json", Content: "{}", Override: true})
 		},
 		CodeNotFound: func(t *testing.T) (int, map[string]any) {
-			return getJSON(t, ts, "/api/file?token="+testToken+"&path=absent.json")
+			return getJSON(t, ts, "/api/file?path=absent.json")
 		},
 		CodeDirectoryMissing: func(t *testing.T) (int, map[string]any) {
 			return putJSON(t, ts, WriteRequest{Path: "nope/x.json", Content: "{}"})
@@ -2608,25 +2672,28 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 			})
 		},
 		CodeNotUTF8: func(t *testing.T) (int, map[string]any) {
-			return getJSON(t, ts, "/api/file?token="+testToken+"&path=binary.json")
+			return getJSON(t, ts, "/api/file?path=binary.json")
 		},
 		CodeNotAFile: func(t *testing.T) (int, map[string]any) {
 			// An ordinary directory asked for as a file. Not `node_modules`:
 			// that is refused earlier, by name, as an excluded directory.
-			return getJSON(t, ts, "/api/file?token="+testToken+"&path=packs")
+			return getJSON(t, ts, "/api/file?path=packs")
 		},
 		CodeUnauthorized: func(t *testing.T) (int, map[string]any) {
-			return getJSON(t, ts, "/api/file?path=plain.json")
+			// No cookie and no Bearer header: the shape of a request that
+			// never went through the launch exchange.
+			return getAnon(t, ts, "/api/file?path=plain.json")
 		},
 		CodeForbidden: func(t *testing.T) (int, map[string]any) {
-			// An origin the desk does not accept. The token case is its own
-			// code now, because one code answering both 401 and 403 is not a
-			// matrix.
+			// An origin the desk does not accept. The missing-session case is
+			// its own code now, because one code answering both 401 and 403 is
+			// not a matrix.
 			req, err := http.NewRequest(http.MethodGet,
-				ts.URL+"/api/file?token="+testToken+"&path=plain.json", nil)
+				ts.URL+"/api/file?path=plain.json", nil)
 			if err != nil {
 				t.Fatalf("request: %v", err)
 			}
+			bearer(req)
 			req.Header.Set("Origin", "https://elsewhere.example")
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
@@ -2640,7 +2707,7 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 		CodeBadRequest: func(t *testing.T) (int, map[string]any) {
 			// A missing path. It used to answer 403 with this code, which is
 			// the status and the code disagreeing about one refusal.
-			return getJSON(t, ts, "/api/file?token="+testToken)
+			return getJSON(t, ts, "/api/file")
 		},
 		CodeStagingFile: func(t *testing.T) (int, map[string]any) {
 			return putJSON(t, ts, WriteRequest{
@@ -2681,7 +2748,7 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 			// configuration and no key: the suffix is a property of the
 			// request alone and is decided before anything is read off this
 			// machine.
-			return getJSON(t, ts, relayPrefix+"?token="+testToken)
+			return getJSON(t, ts, relayPrefix)
 		},
 		CodeAssistantRelayBusy: func(t *testing.T) (int, map[string]any) {
 			// Every slot taken, held for the length of one request. Filling
@@ -2708,7 +2775,9 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 			// would turn that into a suite that hangs rather than a witness
 			// that fails.
 			client := &http.Client{Timeout: 5 * time.Second}
-			resp, err := client.Get(ts.URL + relayPrefix + "models?token=" + testToken)
+			busy, _ := http.NewRequest(http.MethodGet, ts.URL+relayPrefix+"models", nil)
+			bearer(busy)
+			resp, err := client.Do(busy)
 			if err != nil {
 				t.Fatalf("the relay never answered past its bound: %v", err)
 			}
@@ -2727,7 +2796,7 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 			if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
 				t.Fatalf("store")
 			}
-			return getJSON(t, ts, relayPrefix+"models?token="+testToken)
+			return getJSON(t, ts, relayPrefix+"models")
 		},
 		CodeAssistantListingRefused: func(t *testing.T) (int, map[string]any) {
 			// An endpoint that reflects the credential it was presented as a
@@ -2745,7 +2814,7 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 			if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
 				t.Fatalf("store")
 			}
-			return getJSON(t, ts, relayPrefix+"models?token="+testToken)
+			return getJSON(t, ts, relayPrefix+"models")
 		},
 		CodeAssistantNoKey: func(t *testing.T) (int, map[string]any) {
 			writeDeskConfig(t, server, `{"deskConfigVersion":1,"assistant":{"endpoint":`+

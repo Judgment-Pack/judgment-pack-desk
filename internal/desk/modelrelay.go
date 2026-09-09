@@ -48,8 +48,8 @@ package desk
 // shares with the browser, exactly as the probe's destination does. The page
 // chooses a **path suffix** and nothing else, that suffix is held to a
 // character class with no dot segments and no percent-encoding in it, and it is
-// appended to the configured URL's escaped path. Anything holding the session
-// token can therefore ask this desk to call one endpoint — the one on this
+// appended to the configured URL's escaped path. Anything holding a session on
+// this desk can therefore ask this desk to call one endpoint — the one on this
 // machine's `desk.json` — and can neither name a host nor walk out of the path
 // space that endpoint documents.
 
@@ -431,8 +431,8 @@ func appendQueryPair(raw, pair string) string {
 //     disagree about. `%2e%2e%2f` is a dot segment written in a costume.
 //   - **No dot segment**, so the page cannot climb out of the path space the
 //     configured endpoint documents. A relay that forwarded `../../admin`
-//     would be a relay that lets whoever holds the session token point the
-//     stored credential at a resource nobody configured.
+//     would be a relay that lets whoever holds a session point the stored
+//     credential at a resource nobody configured.
 //   - **No empty segment**, because `//` means different things to different
 //     servers and the desk should not be the one choosing.
 //   - **No backslash**, which some servers read as a separator and this one
@@ -503,8 +503,8 @@ func relaySuffixProblem(suffix string) string {
 // The three the native Gemini wire documents on a model resource, and no more.
 // **Closed rather than "anything after a colon"**, because the segment before
 // the colon is a resource and the part after it is a *verb*: an open list would
-// let whoever holds the session token ask the configured endpoint to do
-// something nobody wrote down, with the stored credential attached. Adding one
+// let whoever holds a session ask the configured endpoint to do something
+// nobody wrote down, with the stored credential attached. Adding one
 // is a change to this list, reviewed, exactly as adding a request header is.
 var relayPathMethods = []string{"generateContent", "streamGenerateContent", "countTokens"}
 
@@ -520,7 +520,7 @@ func relayPathRune(r rune) bool {
 }
 
 // relayQueryProblem is the whole of what a page may put in a relayed request's
-// query, and the answer is **nothing**.
+// query, and the answer is **nothing of its own**.
 //
 // # Why this is a refusal and not a filter
 //
@@ -528,53 +528,59 @@ func relayPathRune(r rune) bool {
 // taken out of it, and that arrangement leaked the token three times, three
 // different ways, to three reviewers:
 //
-//   - `?%74oken=…` — the guard reads names with `url.Query`, which
+//   - `?%74oken=…` — the guard read names with `url.Query`, which
 //     percent-decodes; a strip comparing raw text did not.
 //   - `?x=1;token=…&token=…` — Go rejects a pair containing `;`, so the guard
-//     sees one `token` parameter; a server that still treats `;` as a separator
+//     saw one `token` parameter; a server that still treats `;` as a separator
 //     sees two.
-//   - `?Token=…&token=…` — the guard's comparison is case-sensitive, and
-//     ASP.NET Core's query parser folds case, so an upstream reads `Token` as
+//   - `?Token=…&token=…` — the guard's comparison was case-sensitive, and
+//     ASP.NET Core's query parser folds case, so an upstream read `Token` as
 //     `token`.
 //
 // Each fix was a better comparison, and each time the next parser disagreed
-// somewhere else. **The class exists because the query was forwarded at all**:
-// no comparison this desk can write is the comparison every parser downstream
-// makes, and a rule that has to be right about all of them is a rule that will
-// be wrong again.
+// somewhere else. **The class existed because the query carried a secret at
+// all**: no comparison this desk can write is the comparison every parser
+// downstream makes, and a rule that has to be right about all of them is a rule
+// that will be wrong again.
 //
-// So the query is not filtered. A relayed request may carry the session token
-// and **nothing else**: every raw pair's decoded name must be exactly `token`,
-// the spelling the guard reads, and anything else — any name, any case, any
-// encoding, an empty name included — is refused. Refusing is the one rule every
-// parser agrees on, because nothing is sent for them to disagree about.
+// **That class is now gone at its root, and this refusal is what keeps it
+// gone.** Since the launch exchange, no secret rides on any query anywhere in
+// this chassis: a browser presents the `jpack-desk-session` cookie and a script
+// presents `Authorization: Bearer`, so there is no `token` parameter for a
+// downstream parser to read differently. A `token=…` pair on a relayed request
+// is therefore not a credential being carefully handled — it is a page sending
+// something no part of this desk asks for, and it is refused by the same rule
+// as any other pair.
+//
+// So the query is not filtered and nothing of the page's own travels: every
+// raw pair is refused — any name, any case, any encoding, an empty name
+// included. Refusing is the one rule every parser agrees on, because nothing is
+// sent for them to disagree about.
 //
 // What reaches the endpoint is the configured URL's own query, which
 // `appendPath` carries: the endpoint's routing, out of the file on this
 // machine, exactly as before. The page chooses a **path suffix** and nothing
 // else, and that sentence is now literally true.
 //
-// A literal `;` is refused by name as well, because a pair spelled
-// `token=<the token>;x=1` has the name `token` and would otherwise be accepted
-// — and while nothing of it would be forwarded, a desk that accepted a request
-// two parsers read differently would be a desk with an argument to make about
-// why that is safe. It has none to make now.
+// A literal `;` is refused by name as well, because a query two parsers read
+// differently is one this desk would have an argument to make about. It has
+// none to make now.
 //
 // # The one closed exception, and why it is a pair and not a filter
 //
 // The native Gemini wire asks for a server-sent-event stream with a **query**
 // parameter — `?alt=sse` — and there is nowhere else to put it: it is not a
 // header, and the configured URL cannot carry it because the same endpoint
-// serves the unary call too. So exactly one pair is admitted beside the token,
-// **byte for byte and at most once**: the literal nine bytes `alt=sse`.
-// `alt=json`, `ALT=sse`, `%61lt=sse`, a second copy, anything with a value of
-// its own — each is refused with `assistant-relay-path` and nothing is sent.
+// serves the unary call too. So exactly one pair is admitted, **byte for byte
+// and at most once**: the literal seven bytes `alt=sse`. `alt=json`, `ALT=sse`,
+// `%61lt=sse`, a second copy, anything with a value of its own — each is
+// refused with `assistant-relay-path` and nothing is sent.
 //
-// That is a closed exception rather than a loosening, and the difference is
-// the reason the refusal above exists: the class was created because *any*
-// comparison this desk writes is a comparison some parser downstream makes
-// differently. Byte equality against one fixed literal is the one comparison
-// that has no second reading — there is nothing to decode, fold or split.
+// That is a closed exception rather than a loosening, and it is the *only*
+// thing this function admits. Byte equality against one fixed literal is the
+// one comparison that has no second reading — there is nothing to decode, fold
+// or split — and the pair carries no secret, so the three leaks above have no
+// analogue here.
 //
 // **Whether the configured endpoint may carry it is decided elsewhere**, once
 // the kind is known and before the key is opened: see `relayExtraQueryPair`
@@ -593,22 +599,19 @@ func relayQueryProblem(raw string) (extra, problem string) {
 	for _, parameter := range strings.Split(raw, "&") {
 		name, _, _ := strings.Cut(parameter, "=")
 		decoded, err := url.QueryUnescape(name)
-		if err != nil || decoded != sessionTokenParameter {
-			// The exception, and every word of this condition is load-bearing:
-			// the name must *decode* to the one this desk knows (the same
-			// comparison the token gets), the raw pair must be that literal
-			// byte for byte (so an encoded spelling is not a second reading of
-			// it), and there must not already be one (so `alt=sse&alt=sse` is
-			// a query two parsers could count differently).
-			if err == nil && decoded == relayStreamParameter &&
-				parameter == relayStreamPair && extra == "" {
-				extra = parameter
-				continue
-			}
-			return "", "a relayed request carries this desk's session token and no other query " +
-				"parameter: nothing of the page's query is forwarded, because no comparison " +
-				"this desk can write is the one every server downstream makes"
+		// The one exception, and every word of this condition is load-bearing:
+		// the name must *decode* to the one this desk knows, the raw pair must
+		// be that literal byte for byte (so an encoded spelling is not a second
+		// reading of it), and there must not already be one (so `alt=sse&alt=sse`
+		// is a query two parsers could count differently).
+		if err == nil && decoded == relayStreamParameter &&
+			parameter == relayStreamPair && extra == "" {
+			extra = parameter
+			continue
 		}
+		return "", "a relayed request carries no query of the page's own: nothing of it is " +
+			"forwarded, because no comparison this desk can write is the one every server " +
+			"downstream makes"
 	}
 	return extra, ""
 }
@@ -627,10 +630,10 @@ const (
 // page, or the empty string for one that admits none.
 //
 // **A table beside `credentialHeader`, and closed the same way.** The page's
-// query is refused for `openai-compatible` and `anthropic` exactly as it was
-// before this existed: both protocols carry streaming in the request body, so
-// a pair admitted for them would be a capability nothing asked for. Only the
-// gemini wire needs one, and it needs precisely one.
+// query is refused entirely for `openai-compatible` and `anthropic`: both
+// protocols carry streaming in the request body, so a pair admitted for them
+// would be a capability nothing asked for. Only the gemini wire needs one, and
+// it needs precisely one.
 func relayExtraQueryPair(kind string) string {
 	switch kind {
 	case "gemini":
@@ -727,8 +730,8 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 	// not cause a credential to be read. Nothing outbound happens either way.
 	if extra != "" && extra != relayExtraQueryPair(endpoint.kind) {
 		writeJSONCoded(w, http.StatusBadRequest, CodeAssistantRelayPath,
-			fmt.Sprintf("a relayed request to a %q endpoint carries this desk's session token "+
-				"and no other query parameter; nothing was sent", endpoint.kind))
+			fmt.Sprintf("a relayed request to a %q endpoint carries no query parameter at "+
+				"all; nothing was sent", endpoint.kind))
 		return
 	}
 	stored, err := s.assistant.readKey()

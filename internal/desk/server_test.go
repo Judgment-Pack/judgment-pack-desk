@@ -18,7 +18,58 @@ import (
 	"github.com/coder/websocket"
 )
 
+// testToken is the **launch secret** every server in this package is built
+// with. It is never on a request query: a script presents it as
+// `Authorization: Bearer` (`bearer`), and a browser trades it once at
+// `GET /launch` for the `jpack-desk-session` cookie (`launchSession`).
 const testToken = "0123456789abcdef0123456789abcdef"
+
+// bearer presents the launch secret the way every script, test and gate does.
+func bearer(r *http.Request) {
+	r.Header.Set("Authorization", "Bearer "+testToken)
+}
+
+// launchSession performs the launch exchange against a running test server and
+// returns the session cookie it set.
+//
+// **The redirect is not followed.** `http.Client` follows a 303 by default, and
+// following it here would hit the static handler and tell us nothing about the
+// exchange; what this wants is the `Set-Cookie` on the exchange's own response.
+func launchSession(t *testing.T, ts *httptest.Server) *http.Cookie {
+	t.Helper()
+	resp := launchResponse(t, ts, testToken)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("launch status = %d, want %d", resp.StatusCode, http.StatusSeeOther)
+	}
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == sessionCookieName {
+			return cookie
+		}
+	}
+	t.Fatalf("the launch exchange set no %s cookie: %v", sessionCookieName, resp.Cookies())
+	return nil
+}
+
+// launchResponse is one launch exchange, with redirects left unfollowed.
+func launchResponse(t *testing.T, ts *httptest.Server, secret string) *http.Response {
+	t.Helper()
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	resp, err := client.Get(ts.URL + "/launch?secret=" + url.QueryEscape(secret))
+	if err != nil {
+		t.Fatalf("launch: %v", err)
+	}
+	return resp
+}
+
+// withSession attaches a session cookie the way a browser does.
+func withSession(cookie *http.Cookie) func(*http.Request) {
+	return func(r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
+	}
+}
 
 func newTestServer(t *testing.T, dev bool) (*Server, *httptest.Server) {
 	t.Helper()
@@ -43,7 +94,12 @@ func newTestServer(t *testing.T, dev bool) (*Server, *httptest.Server) {
 
 // upgradeRequest issues a genuine WebSocket handshake so that a rejection is a
 // rejection of an upgrade and not of a malformed request.
-func upgradeRequest(t *testing.T, ts *httptest.Server, query, origin string) *http.Response {
+//
+// `decorate` is how the request is authorized — `bearer` for a script,
+// `withSession(cookie)` for a browser, and nothing at all for the requests that
+// must be refused. It is variadic rather than a mode, because "no credential"
+// is then written as passing none rather than as a name for absence.
+func upgradeRequest(t *testing.T, ts *httptest.Server, query, origin string, decorate ...func(*http.Request)) *http.Response {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, ts.URL+"/ws"+query, nil)
 	if err != nil {
@@ -56,6 +112,9 @@ func upgradeRequest(t *testing.T, ts *httptest.Server, query, origin string) *ht
 	if origin != "" {
 		req.Header.Set("Origin", origin)
 	}
+	for _, apply := range decorate {
+		apply(req)
+	}
 	resp, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatalf("upgrade request: %v", err)
@@ -64,17 +123,22 @@ func upgradeRequest(t *testing.T, ts *httptest.Server, query, origin string) *ht
 	return resp
 }
 
-func TestWSRequiresToken(t *testing.T) {
+// TestWSRequiresASession pins what does **not** open the relay, and the row
+// that matters is the third: the launch secret on the query, which is exactly
+// what authorized every request before this change and authorizes nothing now.
+func TestWSRequiresASession(t *testing.T) {
 	_, ts := newTestServer(t, false)
 
 	for _, tc := range []struct {
 		name  string
 		query string
 	}{
-		{"no token at all", ""},
-		{"empty token", "?token="},
-		{"wrong token", "?token=deadbeefdeadbeefdeadbeefdeadbeef"},
-		{"token of the right length but wrong bytes", "?token=" + strings.Repeat("f", len(testToken))},
+		{"no credential at all", ""},
+		{"an empty token parameter", "?token="},
+		{"the launch secret on the query", "?token=" + testToken},
+		{"the launch secret as ?secret=", "?secret=" + testToken},
+		{"a wrong token parameter", "?token=deadbeefdeadbeefdeadbeefdeadbeef"},
+		{"a token of the right length but wrong bytes", "?token=" + strings.Repeat("f", len(testToken))},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			resp := upgradeRequest(t, ts, tc.query, ts.URL)
@@ -82,6 +146,81 @@ func TestWSRequiresToken(t *testing.T) {
 				t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
 			}
 		})
+	}
+}
+
+// TestWSRefusesAWrongBearerSecret: the header is the script's door, and it is
+// only a door with the right secret behind it.
+func TestWSRefusesAWrongBearerSecret(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	for _, header := range []string{
+		"Bearer " + strings.Repeat("f", len(testToken)),
+		"Bearer ",
+		"Bearer",
+		testToken,
+		"Basic " + testToken,
+	} {
+		t.Run(header, func(t *testing.T) {
+			resp := upgradeRequest(t, ts, "", ts.URL, func(r *http.Request) {
+				r.Header.Set("Authorization", header)
+			})
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+			}
+		})
+	}
+}
+
+// TestWSAcceptsTheSessionCookie is the browser's path: the launch exchange, and
+// then an upgrade that carries nothing but the cookie.
+func TestWSAcceptsTheSessionCookie(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	cookie := launchSession(t, ts)
+	resp := upgradeRequest(t, ts, "", ts.URL, withSession(cookie))
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		t.Fatalf("status = %d, want an upgrade rather than a refusal", resp.StatusCode)
+	}
+}
+
+// TestWSRefusesAForgedSessionCookie: an id this desk never minted is not a
+// session, however well formed it looks.
+func TestWSRefusesAForgedSessionCookie(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	real := launchSession(t, ts)
+	for _, id := range []string{
+		strings.Repeat("a", len(real.Value)),
+		flipLast(real.Value),
+		testToken,
+		"",
+	} {
+		resp := upgradeRequest(t, ts, "", ts.URL, func(r *http.Request) {
+			r.AddCookie(&http.Cookie{Name: sessionCookieName, Value: id})
+		})
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("a forged id %q: status = %d, want %d", id, resp.StatusCode, http.StatusUnauthorized)
+		}
+	}
+}
+
+// TestWSRefusesACookieFromAForeignOrigin is the CSRF case the Origin guard now
+// carries alone: the cookie is real, and the page sending it is not this desk's.
+func TestWSRefusesACookieFromAForeignOrigin(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	cookie := launchSession(t, ts)
+	resp := upgradeRequest(t, ts, "", "http://evil.example", withSession(cookie))
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+}
+
+// TestWSAcceptsACookieWithNoOrigin: a same-site top-level navigation sends no
+// Origin, and `SameSite=Strict` is why no foreign site can produce one.
+func TestWSAcceptsACookieWithNoOrigin(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	cookie := launchSession(t, ts)
+	resp := upgradeRequest(t, ts, "", "", withSession(cookie))
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		t.Fatalf("status = %d, want an upgrade rather than a refusal", resp.StatusCode)
 	}
 }
 
@@ -97,7 +236,7 @@ func TestWSRejectsForeignOrigin(t *testing.T) {
 		"null",
 	} {
 		t.Run(origin, func(t *testing.T) {
-			resp := upgradeRequest(t, ts, "?token="+testToken, origin)
+			resp := upgradeRequest(t, ts, "", origin, bearer)
 			if resp.StatusCode != http.StatusForbidden {
 				t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
 			}
@@ -105,9 +244,9 @@ func TestWSRejectsForeignOrigin(t *testing.T) {
 	}
 }
 
-// The token is checked before the origin, so a cross-origin page without the
-// token learns nothing about which of the two it failed.
-func TestWSTokenCheckedBeforeOrigin(t *testing.T) {
+// The session is checked before the origin, so a cross-origin page with no
+// session learns nothing about which of the two it failed.
+func TestWSSessionCheckedBeforeOrigin(t *testing.T) {
 	_, ts := newTestServer(t, false)
 	resp := upgradeRequest(t, ts, "", "http://evil.example")
 	if resp.StatusCode != http.StatusUnauthorized {
@@ -120,8 +259,11 @@ func TestWSAcceptsServedOrigin(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws?token="+testToken, &websocket.DialOptions{
-		HTTPHeader: http.Header{"Origin": []string{ts.URL}},
+	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws", &websocket.DialOptions{
+		HTTPHeader: http.Header{
+			"Origin":        []string{ts.URL},
+			"Authorization": []string{"Bearer " + testToken},
+		},
 	})
 	if err != nil {
 		t.Fatalf("dial with the served origin should succeed: %v", err)
@@ -133,15 +275,18 @@ func TestWSAcceptsServedOrigin(t *testing.T) {
 // dev server's and never matches the Host. Only --dev-token opens that door.
 func TestDevOriginOnlyInDevMode(t *testing.T) {
 	_, prod := newTestServer(t, false)
-	if resp := upgradeRequest(t, prod, "?token="+testToken, "http://localhost:5173"); resp.StatusCode != http.StatusForbidden {
+	if resp := upgradeRequest(t, prod, "", "http://localhost:5173", bearer); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("production status = %d, want %d", resp.StatusCode, http.StatusForbidden)
 	}
 
 	_, dev := newTestServer(t, true)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	c, _, err := websocket.Dial(ctx, wsURL(dev)+"/ws?token="+testToken, &websocket.DialOptions{
-		HTTPHeader: http.Header{"Origin": []string{"http://localhost:5173"}},
+	c, _, err := websocket.Dial(ctx, wsURL(dev)+"/ws", &websocket.DialOptions{
+		HTTPHeader: http.Header{
+			"Origin":        []string{"http://localhost:5173"},
+			"Authorization": []string{"Bearer " + testToken},
+		},
 	})
 	if err != nil {
 		t.Fatalf("dev mode should accept the Vite origin: %v", err)
@@ -149,10 +294,10 @@ func TestDevOriginOnlyInDevMode(t *testing.T) {
 	_ = c.Close(websocket.StatusNormalClosure, "")
 }
 
-// A non-browser client sends no Origin; the token is its authorization.
+// A non-browser client sends no Origin; the launch secret is its authorization.
 func TestWSAllowsAbsentOrigin(t *testing.T) {
 	_, ts := newTestServer(t, false)
-	resp := upgradeRequest(t, ts, "?token="+testToken, "")
+	resp := upgradeRequest(t, ts, "", "", bearer)
 	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 		t.Fatalf("status = %d, want an upgrade rather than a refusal", resp.StatusCode)
 	}
@@ -180,8 +325,11 @@ func TestRelayEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws?token="+testToken, &websocket.DialOptions{
-		HTTPHeader: http.Header{"Origin": []string{ts.URL}},
+	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws", &websocket.DialOptions{
+		HTTPHeader: http.Header{
+			"Origin":        []string{ts.URL},
+			"Authorization": []string{"Bearer " + testToken},
+		},
 	})
 	if err != nil {
 		t.Fatalf("dial: %v", err)
@@ -250,8 +398,11 @@ func TestRelayCarriesEvaluation(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws?token="+testToken, &websocket.DialOptions{
-		HTTPHeader: http.Header{"Origin": []string{ts.URL}},
+	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws", &websocket.DialOptions{
+		HTTPHeader: http.Header{
+			"Origin":        []string{ts.URL},
+			"Authorization": []string{"Bearer " + testToken},
+		},
 	})
 	if err != nil {
 		t.Fatalf("dial: %v", err)
@@ -488,8 +639,11 @@ func TestFileChangeNotification(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws?token="+testToken, &websocket.DialOptions{
-		HTTPHeader: http.Header{"Origin": []string{ts.URL}},
+	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws", &websocket.DialOptions{
+		HTTPHeader: http.Header{
+			"Origin":        []string{ts.URL},
+			"Authorization": []string{"Bearer " + testToken},
+		},
 	})
 	if err != nil {
 		t.Fatalf("dial: %v", err)

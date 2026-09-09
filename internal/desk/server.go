@@ -8,7 +8,6 @@ package desk
 
 import (
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -29,8 +28,9 @@ import (
 const ShutdownGrace = 3 * time.Second
 
 // devOrigins are additionally accepted when a --dev-token was supplied. The
-// Vite dev server proxies /ws to this chassis, so the browser's Origin is the
-// dev server's and never matches the Host it reaches us under.
+// Vite dev server proxies /launch, /ws and /api to this chassis, so the
+// browser's Origin is the dev server's and never matches the Host it reaches us
+// under.
 var devOrigins = []string{
 	"http://localhost:5173",
 	"http://127.0.0.1:5173",
@@ -62,7 +62,13 @@ type Config struct {
 	Root *ProjectRoot
 	// JpackBin names the runtime binary: a path, or a name resolved on PATH.
 	JpackBin string
-	// Token must be presented as ?token= on /ws.
+	// Token is the **launch secret**: the one credential that is not minted
+	// by this desk, and the only thing `GET /launch` trades for a session.
+	//
+	// It is presented exactly twice — once on the launch query by whoever
+	// opens the printed URL, and as `Authorization: Bearer <secret>` by a
+	// script that has no cookie jar. It is never on a request query otherwise,
+	// and the page never holds it at all. See session.go.
 	Token string
 	// Static is the built SPA, rooted at its index.html.
 	Static fs.FS
@@ -129,12 +135,22 @@ type Server struct {
 	// file on a case-insensitive filesystem would take different locks and both
 	// commit. Desk-scale contention is not worth a correctness argument.
 	writes sync.Mutex
+	// sessions is the set of live browser sessions, minted by `GET /launch`
+	// and presented as the `jpack-desk-session` cookie. See session.go for why
+	// a cookie replaced the `?token=` query, and why the store is keyed by a
+	// MAC of each id rather than by the id.
+	sessions *sessionStore
 	// closeOnce makes shutdown idempotent; see Close.
 	closeOnce sync.Once
 	closeErr  error
 }
 
-// NewToken returns a fresh random session token.
+// NewToken returns a fresh 192-bit random secret, hex encoded.
+//
+// It mints two different things, and they are deliberately the same strength:
+// the **launch secret** a desk prints at startup, and each **session id** the
+// launch exchange trades it for. Both are bearer credentials for this desk's
+// whole surface, so neither may be the weaker of the two.
 func NewToken() (string, error) {
 	buf := make([]byte, 24)
 	if _, err := rand.Read(buf); err != nil {
@@ -177,6 +193,10 @@ func New(cfg Config) (*Server, error) {
 			return nil, fmt.Errorf("desk: project directory: %w", err)
 		}
 	}
+	sessions, serr := newSessionStore()
+	if serr != nil {
+		return nil, fmt.Errorf("desk: session store: %w", serr)
+	}
 	s := &Server{
 		cfg:        cfg,
 		mux:        http.NewServeMux(),
@@ -187,6 +207,7 @@ func New(cfg Config) (*Server, error) {
 		projectDir: pinned.dir,
 		configDir:  configDirFor(cfg.DeskConfigDir),
 		relaySlots: make(chan struct{}, maxRelayInFlight),
+		sessions:   sessions,
 	}
 	adopted = true
 	// **One owner from here on.** The wrapper the caller still holds stops
@@ -207,7 +228,15 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Static != nil {
 		s.static = http.FileServer(http.FS(cfg.Static))
 	}
+	// The launch exchange: the one path the launch secret is sent to, and the
+	// only route on this chassis that is not gated — it is where authorization
+	// is acquired rather than spent. See `handleLaunch`.
+	s.mux.HandleFunc("GET /launch", s.handleLaunch)
 	s.mux.HandleFunc("/ws", s.handleWS)
+	// What this desk knows about the session the request carries. It exists so
+	// that the session record is a thing a provider can fill (7b) rather than
+	// an internal detail; nothing in the page renders it.
+	s.mux.HandleFunc("GET /api/session", s.handleSession)
 	// The file API (issue #14, phase 1). Everything else the desk shows comes
 	// over the relay; writes cannot, because the runtime has no write tools by
 	// design. See files.go for what this does and does not decide.
@@ -295,29 +324,51 @@ func (s *Server) closeAll() error {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
 
-// sessionTokenParameter is the name this chassis authenticates every request
-// with, and therefore the only query parameter name a relayed request may
-// carry. Declared once, here, beside the guard that reads it, so the guard's
-// spelling and the relay's rule cannot drift apart.
-const sessionTokenParameter = "token"
-
-// authorized reports whether the request carries the session token. The
-// comparison is constant-time so that a wrong token leaks no prefix.
+// authorized reports whether the request may reach a gated capability, and
+// there are exactly two ways to be — in this order.
+//
+//  1. **The `jpack-desk-session` cookie**, naming a session this process
+//     minted. That is every request a browser makes: the launch exchange set
+//     the cookie and the browser has attached it ever since.
+//  2. **`Authorization: Bearer <launch secret>`**, which is how a script, a
+//     test or the containment gate authorizes — none of them has a cookie jar,
+//     and all of them can read the secret the desk was started with.
+//
+// And **nothing else**. The `?token=` query this chassis authenticated with
+// until this change is gone, not deprecated: it authorizes no route, on any
+// method, and the printed URL, every in-repo client and every script moved to
+// the two doors above in the same change. A credential on a query is a
+// credential in an address bar, a `Referer`, a proxy log and `Response.url`,
+// and no amount of care at the places a URL is forwarded to fixes that — see
+// `relayQueryProblem` for the three ways it leaked out of one of them.
+//
+// Both comparisons are constant-time, so neither a wrong secret nor a wrong
+// session id leaks a prefix. See session.go.
 func (s *Server) authorized(r *http.Request) bool {
-	got := r.URL.Query().Get(sessionTokenParameter)
-	if got == "" {
-		return false
+	if _, ok := s.sessionOf(r); ok {
+		return true
 	}
-	return subtle.ConstantTimeCompare([]byte(got), []byte(s.cfg.Token)) == 1
+	return s.launchSecretPresented(r)
 }
 
-// originAllowed reports whether a WebSocket upgrade may proceed.
+// originAllowed reports whether a gated request may proceed, and it is **this
+// desk's CSRF defence** now that the credential a browser presents is an
+// ambient cookie rather than a value the page had to put on each request.
 //
-// A browser always sends Origin, so an Origin that is not the origin we were
-// served under is a cross-site attempt and is refused: this is what stops a
-// page on another site from driving the runtime through the visitor's own
-// loopback. A request with no Origin at all is not from a browser — it is a
-// script or a test holding the token — and the token is its authorization.
+// A browser always sends Origin on the requests that matter here — every
+// `fetch`, every `PUT`, every WebSocket upgrade — so an Origin that is not the
+// origin we were served under is a cross-site attempt and is refused: this is
+// what stops a page on another site from driving the runtime, or writing to the
+// project, through the visitor's own loopback and the visitor's own cookie.
+//
+// **A request with no Origin at all is accepted, and that is safe for both
+// kinds of caller.** A script or a test sends none and presents the launch
+// secret as a Bearer header, exactly as before — the secret is its
+// authorization. A browser sends none on a same-site top-level navigation, and
+// such a request carries the cookie; a *foreign* site cannot produce one,
+// because `SameSite=Strict` means the browser withholds this cookie from every
+// request another site initiated. So "no Origin and only a cookie" describes a
+// navigation within this desk and nothing else.
 func (s *Server) originAllowed(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
@@ -399,8 +450,11 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 // handleWS is the whole relay surface: one WebSocket, one `jpack mcp`
 // subprocess, JSON-RPC bytes passed through untouched in both directions.
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
+	// The same two checks, in the same order, as every other gated route: the
+	// session first, then the origin. A browser's upgrade carries the cookie;
+	// a script's carries the Bearer header.
 	if !s.authorized(r) {
-		http.Error(w, "missing or invalid session token", http.StatusUnauthorized)
+		http.Error(w, "no session: open the URL jpack-desk printed at startup", http.StatusUnauthorized)
 		return
 	}
 	if !s.originAllowed(r) {

@@ -138,12 +138,13 @@ const (
 	CodeNotUTF8 = "not-utf8"
 	// CodeNotAFile is a directory, FIFO, device or socket asked for as a file.
 	CodeNotAFile = "not-a-file"
-	// CodeUnauthorized is a request with no session token, or the wrong one.
+	// CodeUnauthorized is a request carrying neither a live session cookie nor
+	// the launch secret as a Bearer header.
 	//
 	// Split from CodeForbidden because a code that maps to two statuses is not
-	// a matrix: the token check answers 401 and the origin check answers 403,
-	// and they were one code. A client retrying with a token and a client that
-	// must change its origin are given different answers now.
+	// a matrix: the session check answers 401 and the origin check answers 403,
+	// and they were one code. A client that must acquire a session and a client
+	// that must change its origin are given different answers now.
 	CodeUnauthorized = "unauthorized"
 	// CodeForbidden is a request from an origin this desk does not accept, or
 	// a path inside the project this process may not open.
@@ -1337,12 +1338,18 @@ func (s *Server) removeStaleStaging() {
 /* Plumbing ---------------------------------------------------------------- */
 
 // guard applies the same two checks every other chassis endpoint applies, in
-// the same order: the token first, then the origin. Sharing the function is
-// what keeps a new endpoint from being a new place to forget one of them.
+// the same order: **the session first, then the origin**. Sharing the function
+// is what keeps a new endpoint from being a new place to forget one of them.
+//
+// The session is the `jpack-desk-session` cookie a browser holds or the launch
+// secret a script presents as `Authorization: Bearer` — see `Server.authorized`
+// — and the origin check is what makes an ambient cookie safe to accept, so
+// neither half is optional and neither can be reordered without changing what a
+// cross-site page can do.
 func (s *Server) guard(w http.ResponseWriter, r *http.Request) bool {
 	if !s.authorized(r) {
 		writeJSONCoded(w, http.StatusUnauthorized, CodeUnauthorized,
-			"missing or invalid session token")
+			"no session: open the URL jpack-desk printed at startup, or present the launch secret as `Authorization: Bearer`")
 		return false
 	}
 	if !s.originAllowed(r) {

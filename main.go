@@ -43,8 +43,8 @@ func run() error {
 	var (
 		port     = flag.Int("port", 8791, "loopback TCP port to listen on")
 		jpackBin = flag.String("jpack", "jpack", "path to the judgment-pack runtime binary")
-		devToken = flag.String("dev-token", "", "fixed session token for local development; also permits the Vite dev-server origin. Leave empty in normal use so a random token is generated.")
-		open     = flag.Bool("print-url", true, "print the tokened URL at startup")
+		devToken = flag.String("dev-token", "", "fixed launch secret for local development; also permits the Vite dev-server origin. Leave empty in normal use so a random secret is generated.")
+		open     = flag.Bool("print-url", true, "print the launch URL at startup")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "usage: jpack-desk [flags] [projectDir]\n\nWithout projectDir, the desk opens the project named by project.file in this machine's\ndesk configuration file, and the current directory where that names none.\n\nflags:\n")
@@ -72,10 +72,14 @@ func run() error {
 		return fmt.Errorf("locating embedded assets: %w", err)
 	}
 
+	// The **launch secret**: what `GET /launch` trades once for a session
+	// cookie, and what a script presents as `Authorization: Bearer`. It is not
+	// the session, and it never rides on a request query — see
+	// `internal/desk/session.go`.
 	token := *devToken
 	if token == "" {
 		if token, err = desk.NewToken(); err != nil {
-			return fmt.Errorf("generating session token: %w", err)
+			return fmt.Errorf("generating the launch secret: %w", err)
 		}
 	}
 
@@ -120,7 +124,11 @@ func run() error {
 	}()
 
 	if *open {
-		fmt.Printf("judgment-pack desk\n  project: %s\n  runtime: %s\n  open:    http://%s/?token=%s\n", absProject, *jpackBin, addr, token)
+		// **The launch path, not the page.** Opening this URL exchanges the
+		// secret for the `jpack-desk-session` cookie and redirects to `/`, so
+		// what ends up in the address bar is `/` and the secret is in no
+		// history entry, no `Referer` and no later request.
+		fmt.Printf("judgment-pack desk\n  project: %s\n  runtime: %s\n  open:    http://%s/launch?secret=%s\n", absProject, *jpackBin, addr, token)
 	}
 	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err

@@ -73,7 +73,7 @@ func writeDeskConfig(t *testing.T, s *Server, content string) {
 	}
 }
 
-// postJSON sends a bodiless POST carrying the token.
+// postJSON sends a bodiless POST carrying the launch secret.
 func postJSON(t *testing.T, ts *httptest.Server, path string) (int, map[string]any) {
 	t.Helper()
 	return sendJSON(t, ts, http.MethodPost, path, nil)
@@ -91,14 +91,11 @@ func sendJSON(
 		}
 		reader = bytes.NewReader(encoded)
 	}
-	separator := "?"
-	if strings.Contains(path, "?") {
-		separator = "&"
-	}
-	req, err := http.NewRequest(method, ts.URL+path+separator+"token="+testToken, reader)
+	req, err := http.NewRequest(method, ts.URL+path, reader)
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
+	bearer(req)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -123,10 +120,11 @@ func rawBody(t *testing.T, ts *httptest.Server, method, path string, body any) (
 		}
 		reader = bytes.NewReader(encoded)
 	}
-	req, err := http.NewRequest(method, ts.URL+path+"?token="+testToken, reader)
+	req, err := http.NewRequest(method, ts.URL+path, reader)
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
+	bearer(req)
 	resp, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
@@ -573,7 +571,7 @@ func TestAssistantEndpointsAreGuarded(t *testing.T) {
 	}
 
 	for _, call := range calls {
-		t.Run(call.method+" "+call.path+" without a token", func(t *testing.T) {
+		t.Run(call.method+" "+call.path+" with no session", func(t *testing.T) {
 			req, err := http.NewRequest(call.method, ts.URL+call.path, strings.NewReader("{}"))
 			if err != nil {
 				t.Fatalf("request: %v", err)
@@ -595,10 +593,11 @@ func TestAssistantEndpointsAreGuarded(t *testing.T) {
 
 		t.Run(call.method+" "+call.path+" from another origin", func(t *testing.T) {
 			req, err := http.NewRequest(
-				call.method, ts.URL+call.path+"?token="+testToken, strings.NewReader("{}"))
+				call.method, ts.URL+call.path, strings.NewReader("{}"))
 			if err != nil {
 				t.Fatalf("request: %v", err)
 			}
+			bearer(req)
 			req.Header.Set("Origin", "https://elsewhere.example")
 			resp, err := ts.Client().Do(req)
 			if err != nil {
@@ -1153,10 +1152,11 @@ func TestDeskConfigWriteRefusesWhatTheDecoderWouldRefuse(t *testing.T) {
 func putDeskConfigRaw(t *testing.T, ts *httptest.Server, body []byte) (int, map[string]any) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPut,
-		ts.URL+"/api/desk-config?token="+testToken, bytes.NewReader(body))
+		ts.URL+"/api/desk-config", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
+	bearer(req)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := ts.Client().Do(req)
 	if err != nil {
@@ -1402,11 +1402,12 @@ func TestDeskConfigWriteRefusesAForeignOrigin(t *testing.T) {
 	s, ts, _ := assistantServer(t)
 	writeDeskConfig(t, s, "{\n  \"deskConfigVersion\": 1\n}\n")
 	req, err := http.NewRequest(http.MethodPut,
-		ts.URL+"/api/desk-config?token="+testToken,
+		ts.URL+"/api/desk-config",
 		strings.NewReader(`{"assistant":{"endpoint":null},"ifMatch":""}`))
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
+	bearer(req)
 	req.Header.Set("Origin", "http://evil.example.invalid")
 	resp, err := ts.Client().Do(req)
 	if err != nil {
@@ -2635,7 +2636,7 @@ func TestKeyReadCarriesThisDesksOwnBindingVerdict(t *testing.T) {
 				`{"deskConfigVersion":1,"assistant":{"endpoint":`+
 					`{"url":%q,"kind":"openai-compatible","model":"m","tools":[]}}}`,
 				testCase.configured))
-			status, body := getJSON(t, ts, "/api/assistant/key?token="+testToken)
+			status, body := getJSON(t, ts, "/api/assistant/key")
 			if status != http.StatusOK {
 				t.Fatalf("status %d: %v", status, body)
 			}
@@ -2677,7 +2678,7 @@ func TestKeyReadIsNotBoundWithNoEndpointToBindTo(t *testing.T) {
 	s, ts, _ := assistantServer(t)
 	storeKeyBoundTo(t, s, ts, "gemini", "https://gw.example.invalid")
 	writeDeskConfig(t, s, `{"deskConfigVersion":1,"assistant":{"endpoint":null}}`)
-	status, body := getJSON(t, ts, "/api/assistant/key?token="+testToken)
+	status, body := getJSON(t, ts, "/api/assistant/key")
 	if status != http.StatusOK {
 		t.Fatalf("status %d: %v", status, body)
 	}
@@ -2713,10 +2714,11 @@ func TestKeyWriteAndRemovalCarryTheSameVerdict(t *testing.T) {
 		t.Errorf("configuredOrigin %q", got)
 	}
 	req, err := http.NewRequest(http.MethodDelete,
-		ts.URL+"/api/assistant/key?token="+testToken, nil)
+		ts.URL+"/api/assistant/key", nil)
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
+	bearer(req)
 	resp, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatalf("delete: %v", err)
