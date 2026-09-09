@@ -71,9 +71,11 @@
  *
  * The secret is the desk's **launch secret** — the `--dev-token` the wrapper
  * started the chassis with. It is sent exactly once, to `GET /launch?secret=…`,
- * which trades it for the `jpack-desk-session` cookie; every path sampled after
- * that carries no credential of its own, which is why the address bar can be
- * asserted to be the path a person would be looking at.
+ * which trades it for a sixty-second single-use handoff cookie; the page then
+ * spends that at `POST /api/session` for a session id it holds itself. Every
+ * path sampled after that carries no credential on its URL and no cookie at
+ * all, which is why the address bar can be asserted to be the path a person
+ * would be looking at.
  *
  * Normally run through `scripts/containment-check.sh`, which builds the
  * throwaway configuration and the copied project this needs, and passes the
@@ -396,60 +398,54 @@ const page = await context.newPage()
 // navigation, every `fetch` the page makes, and the WebSocket upgrade. A run
 // that skipped it would measure a page with no data in it and report the
 // containment of an error state.
-await page.goto(LAUNCH, { waitUntil: 'networkidle', timeout: 45000 })
+// **The exchange, once, before anything is measured**, and the page does it —
+// which is the point. `GET /launch?secret=…` sets a one-shot handoff cookie and
+// redirects to `/`; the page then spends that handoff at `POST /api/session`
+// for a session id it keeps in `sessionStorage` and puts on every later request
+// itself. A run that skipped it would measure a page with no data in it and
+// report the containment of an error state.
+await page.goto(LAUNCH, { waitUntil: 'domcontentloaded', timeout: 45000 })
+await page.waitForSelector('.desk', { timeout: 30000 })
 {
+  const wrong = []
   const landed = new URL(page.url())
   if (landed.pathname !== '/' || landed.search !== '' || landed.hash !== '') {
-    console.error(`the launch exchange did not land on / — the address is ${page.url()}`)
-    process.exit(2)
+    wrong.push(`the address is ${page.url()}`)
   }
-  // **`href`, not `hash`.** The exchange redirects to `/#` so that the
-  // request's own fragment cannot be inherited (RFC 9110 §10.2.2), and the page
-  // removes the bare `#` on load — which `location.hash` cannot see, because it
-  // is the empty string either way.
-  if (page.url().endsWith('#')) {
-    console.error(`the page did not remove the launch redirect's bare # — ${page.url()}`)
-    process.exit(2)
+  // **`href`, not `hash`.** The launch redirects to `/#` so the request's own
+  // fragment cannot be inherited (RFC 9110 §10.2.2), and the page removes the
+  // bare `#` on load — which `location.hash` cannot see, being empty either way.
+  if (page.url().endsWith('#')) wrong.push(`the bare # is still there: ${page.url()}`)
+  if (page.url().includes(SECRET)) wrong.push('the launch secret is in the address bar')
+
+  // The page holds a session id, keyed by this origin — per tab, and per port.
+  const key = `jpack-desk-session:127.0.0.1:${PORT}`
+  const held = await page.evaluate((k) => window.sessionStorage.getItem(k), key)
+  if (typeof held !== 'string' || held.length !== 48) {
+    wrong.push(`sessionStorage[${key}] is ${JSON.stringify(held)}, want a 48-character id`)
   }
-  if (page.url().includes(SECRET)) {
-    console.error('the launch secret is still in the address bar')
-    process.exit(2)
-  }
+  if (held === SECRET) wrong.push('the page is holding the launch secret itself')
+
+  // And **nothing ambient is left**: the handoff was spent and cleared, and no
+  // session cookie exists on this origin at all.
   const cookies = await context.cookies(ORIGIN)
-  const session = cookies.find((cookie) => cookie.name === `jpack-desk-session-${PORT}`)
-  // **Asserted, not logged.** A gate that printed these and carried on would
-  // report every row contained over a desk whose session was readable by page
-  // code, or shared with every other service on this host.
-  const wrong = []
-  if (session === undefined) {
-    wrong.push(`no jpack-desk-session-${PORT} cookie; got ${cookies.map((c) => c.name).join(', ') || 'none'}`)
-  } else {
-    if (session.httpOnly !== true) wrong.push(`httpOnly=${session.httpOnly}`)
-    if (session.sameSite !== 'Strict') wrong.push(`sameSite=${session.sameSite}`)
-    if (session.path !== '/') wrong.push(`path=${session.path}`)
-    if (session.value === SECRET) wrong.push('the cookie carries the launch secret itself')
-    if (cookies.length !== 1) wrong.push(`${cookies.length} cookies on this origin, want 1`)
+  const session = cookies.find((cookie) => cookie.name.startsWith('jpack-desk-session'))
+  if (session !== undefined) wrong.push(`a session cookie exists: ${session.name}`)
+  const handoff = cookies.find((cookie) => cookie.name === `jpack-desk-launch-${PORT}`)
+  if (handoff !== undefined && handoff.value !== '') {
+    wrong.push(`the launch handoff was not spent: ${handoff.name}=${handoff.value.slice(0, 8)}…`)
   }
+
   if (wrong.length > 0) {
-    console.error(`the session cookie is wrong: ${wrong.join('; ')}`)
+    console.error(`the bootstrap is wrong: ${wrong.join('; ')}`)
     await browser.close()
     process.exit(2)
   }
   console.log(
-    `launch        ok  ${session.name} httpOnly=${session.httpOnly} ` +
-      `sameSite=${session.sameSite} secure=${session.secure} path=${session.path}; ` +
-      `address ${page.url()}`
+    `launch        ok  bootstrapped: sessionStorage holds a 48-character id, ` +
+      `${cookies.length} cookie(s) left on this origin; address ${page.url()}`
   )
 }
-// Short enough that a locator which no longer matches ends the route it was
-// sampling rather than the run's patience.
-page.setDefaultTimeout(8000)
-page.on('pageerror', (error) => problems.push(`pageerror: ${error.message}`))
-page.on('console', (message) => {
-  if (message.type() === 'error' && !/Failed to load resource/.test(message.text())) {
-    problems.push(`console: ${message.text()}`)
-  }
-})
 
 /** Everything read off one rendered page, in one round trip. */
 const MEASURE = (panes) => {

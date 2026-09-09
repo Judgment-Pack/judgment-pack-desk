@@ -1508,98 +1508,96 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		return nil
 	}'
 
-  # ---- The launch exchange and the session cookie (chunk 7a) ---------------
+  # ---- The bootstrap, the exchange, and the bearer session (chunk 7a) ------
   #
-  # The seam this chunk moved: the secret is exchanged once at `/launch`, the
-  # session is an `HttpOnly` cookie, and `?token=` authorizes nothing. Every row
-  # here breaks one sentence of that, and each one has a test that is about
-  # exactly that sentence rather than about the desk still working.
+  # The seam this chunk moved, twice. The secret is exchanged once for a
+  # sixty-second single-use handoff, the handoff is exchanged once for a session
+  # id, and the page puts that id on every request itself. **Nothing ambient
+  # authorizes anything**, which is the property round 2 found missing and these
+  # rows are here to keep.
+  #
+  # Retired with the reason, rather than deleted: every row that broke *the
+  # cookie gate* is gone, because the gate takes no cookie. "SameSite weakened
+  # to Lax", "HttpOnly dropped from the session cookie", "the Origin guard
+  # skipped for a cookie request", "a cookie authorizes without a same-origin
+  # claim", "an absent Sec-Fetch-Site is treated as same-origin", "the upgrade's
+  # Origin is not compared" — each broke a rule that only had force while a
+  # cookie was an authorization. The equivalents that still have force are
+  # below, and they are about the handoff and the bearer.
   SN=internal/desk/session.go
 
-  # A session id page code can read is a session id page code can put on a
-  # query, in a log line, or in `sessionStorage` — which is the arrangement
-  # this whole change undoes.
-  mutate go "the session cookie is readable by page code (HttpOnly dropped)" "$SN" \
+  # The handoff is what is ambient, so every attribute that bounds it is a rule.
+  mutate go "the launch handoff is readable by page code (HttpOnly dropped)" "$SN" \
     '		HttpOnly: true,' \
     '		HttpOnly: false,'
-  # `Strict` is what makes an ambient credential safe to hold: under `Lax` the
-  # browser sends this cookie on a top-level navigation another site caused, so
-  # a link on a hostile page reaches this desk carrying it.
-  mutate go "SameSite is weakened from Strict to Lax" "$SN" \
+  mutate go "the launch handoff has no Max-Age, so it is not a window" "$SN" \
+    '		MaxAge:   int(launchWindow / time.Second),' \
+    '		MaxAge:   0,'
+  mutate go "SameSite is weakened from Strict to Lax on the handoff" "$SN" \
     '		SameSite: http.SameSiteStrictMode,' \
     '		SameSite: http.SameSiteLaxMode,'
-  # `Secure` over plain http means the browser discards the cookie, so the desk
-  # sets one and nobody holds one. The row is here because "only over https" is
-  # a decision and not an omission.
   mutate go "Secure is set on a plain-http launch" "$SN" \
-    '	http.SetCookie(w, newSessionCookie(s.cookieName, id, requestScheme(r) == "https"))' \
-    '	http.SetCookie(w, newSessionCookie(s.cookieName, id, true))'
-  # The redirect is the point of the exchange: a 200 here renders the desk with
-  # the secret still in the address bar, in the history, and in every `Referer`
-  # the page goes on to send.
-  mutate go "the exchange answers the page instead of redirecting" "$SN" \
-    '	http.Redirect(w, r, "/#", http.StatusSeeOther)' \
-    '	w.WriteHeader(http.StatusOK)'
-  # **The empty fragment, written out.** A Location with none inherits the
-  # request's (RFC 9110 §10.2.2), so `/launch?secret=S#S` lands on `/#S` and the
-  # secret sits in `location.hash` — readable by every script on the page and
-  # kept in history. This is the one-character version of that.
-  mutate go "the redirect inherits the request's fragment" "$SN" \
-    '	http.Redirect(w, r, "/#", http.StatusSeeOther)' \
-    '	http.Redirect(w, r, "/", http.StatusSeeOther)'
-  # The cookie's name carries the port because a cookie's origin does not: two
-  # desks on one host would share, and overwrite, one session.
-  mutate go "the session cookie is named without its port" "$SN" \
-    '	return fmt.Sprintf("%s-%d", sessionCookiePrefix, port)' \
-    '	_ = fmt.Sprintf("%d", port)
-	return sessionCookiePrefix'
-  # **The half that closes the replay.** A cookie reaches this desk on requests
-  # it must not authorize — every sibling port receives it — and only the
-  # browser's own `Sec-Fetch-Site` tells those apart.
-  mutate go "a cookie authorizes without any same-origin claim" "$SN" \
-    '	if !s.sameOriginClaim(r) {
-		return session{}, false
+    '	http.SetCookie(w, newLaunchCookie(s.launchCookie, handoff, requestScheme(r) == "https"))' \
+    '	http.SetCookie(w, newLaunchCookie(s.launchCookie, handoff, true))'
+  # **The single use is what the residual rests on.** A reusable handoff is a
+  # standing credential in a cookie jar, and a theft that nobody notices.
+  mutate go "the launch handoff is reusable" "$SN" \
+    '	until, ok := ls.given[key]
+	if !ok {
+		return false
+	}
+	delete(ls.given, key)' \
+    '	until, ok := ls.given[key]
+	if !ok {
+		return false
+	}'
+  mutate go "the launch handoff never expires" "$SN" \
+    '	return !ls.now().After(until)' \
+    '	_ = until
+	return true'
+  # The exchange minting without spending is the same defect by the other door.
+  mutate go "the exchange mints without consuming the handoff" "$SN" \
+    '	cookie, err := r.Cookie(s.launchCookie)
+	if err != nil || !s.launches.consume(cookie.Value) {' \
+    '	cookie, err := r.Cookie(s.launchCookie)
+	if _, _ = cookie, err; false {'
+  # The one route an ambient credential opens is the one route fetch metadata
+  # gates. A browser cannot forge it, so this is what stops a page driving
+  # somebody else's handoff.
+  mutate go "the exchange takes a handoff from any page" "$SN" \
+    '	if r.Header.Get(fetchSiteHeader) != fetchSiteSameOrigin {' \
+    '	if false {'
+  mutate go "the exchange takes a handoff from any origin" "$SN" \
+    '	if !s.originAllowed(r) {
+		writeJSONCoded(w, http.StatusForbidden, CodeForbidden,
+			fmt.Sprintf("origin %q is not permitted", r.Header.Get("Origin")))
+		return
 	}' \
     ''
-  # An absent claim must never read as permission. This is the shape the
-  # loosening would take: "no header, so nothing to object to".
-  mutate go "a request making no claim at all is treated as same-origin" "$SN" \
-    '	return r.Header.Get("Origin") != "" && s.originAllowed(r)' \
-    '	return s.originAllowed(r)'
-  # The surface with no fetch metadata — the WebSocket upgrade — must still be
-  # judged by something. Dropping the Origin comparison admits every sibling
-  # port's handshake, which is the attack this half exists for.
-  mutate go "the upgrade's Origin is not compared, only required" "$SN" \
-    '	if site := r.Header.Get(fetchSiteHeader); site != "" {
-		return site == fetchSiteSameOrigin
+  # **A session cookie set again** is the whole class coming back.
+  mutate go "the exchange sets the session as a cookie" "$SN" \
+    '	writeJSON(w, http.StatusOK, map[string]any{"id": id, "subject": "local user", "issuer": nil})' \
+    '	http.SetCookie(w, newLaunchCookie("jpack-desk-session", id, false))
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "subject": "local user", "issuer": nil})'
+  # And a cookie accepted as an authorization is the same thing at the gate.
+  mutate go "a cookie authorizes a gated route again" "$SN" \
+    '	if id := bearerOf(r); id != "" {
+		if held, ok := s.sessions.lookup(id); ok {
+			return held, true
+		}
+	}' \
+    '	if cookie, err := r.Cookie(s.launchCookie); err == nil {
+		if held, ok := s.sessions.lookup(cookie.Value); ok {
+			return held, true
+		}
 	}
-	return r.Header.Get("Origin") != "" && s.originAllowed(r)' \
-    '	if site := r.Header.Get(fetchSiteHeader); site != "" {
-		return site == fetchSiteSameOrigin
-	}
-	return r.Header.Get("Origin") != ""'
-  # Nothing is under /launch/, and a near miss must not reach the SPA fallback
-  # carrying the secret it was sent with.
-  mutate go "a path under /launch/ falls through to the page" "$S" \
-    '	s.mux.HandleFunc("/launch/{rest...}", s.handleLaunchSubpath)' \
-    ''
-  # The store is bounded, so a desk left open all day does not grow one map
-  # entry per reopened tab for ever.
-  mutate go "the session store grows without bound" "$SN" \
-    '	st.evictLocked()' \
-    ''
-  # Oldest first: the tab someone is actually using must be the last to go.
-  mutate go "eviction takes the newest session rather than the oldest" "$SN" \
-    '			if !found || held.seq < lowest {' \
-    '			if !found || held.seq > lowest {'
-  # A wrong secret that mints a session is no gate at all.
-  mutate go "a wrong launch secret still mints a session" "$SN" \
-    '	if subtle.ConstantTimeCompare([]byte(secret), []byte(s.cfg.Token)) != 1 {' \
-    '	if len(secret) < 0 {'
-  # **The removed door, put back.** This is the row the whole chunk is about: a
-  # chassis that authenticates `?token=` again is the chassis this replaced, and
-  # the sweep over every gated route is what notices.
-  mutate go "the ?token= query authorizes again" "$S" \
+	if id := bearerOf(r); id != "" {
+		if held, ok := s.sessions.lookup(id); ok {
+			return held, true
+		}
+	}'
+  # The id on the query is the arrangement two rounds removed.
+  mutate go "a session id on the query authorizes again" "$S" \
     '	if _, ok := s.sessionOf(r); ok {
 		return true
 	}
@@ -1607,37 +1605,75 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if _, ok := s.sessionOf(r); ok {
 		return true
 	}
-	if r.URL.Query().Get("token") == s.cfg.Token {
+	if _, ok := s.sessions.lookup(r.URL.Query().Get("token")); ok {
 		return true
 	}
 	return s.launchSecretPresented(r)'
-  # Two credentials with two lifetimes. A session id accepted as a launch secret
+  # The subprotocol offer is a credential and is verified like one.
+  mutate go "the offered subprotocol id is not verified" "$SN" \
+    '	if id := offeredSessionID(r); id != "" {
+		return s.sessions.lookup(id)
+	}' \
+    '	if id := offeredSessionID(r); id != "" {
+		return session{subject: "local user"}, true
+	}'
+  # And the answer selects the plain protocol, so the id is never echoed into a
+  # response header a proxy or a log would keep.
+  mutate go "the upgrade echoes the session offer back" internal/desk/relay.go \
+    '		Subprotocols:       []string{wsProtocol},' \
+    '		Subprotocols:       []string{wsProtocol, wsSessionPrefix + offeredSessionID(r)},'
+  # Two credentials with two lifetimes: a session id accepted as a launch secret
   # would mean a leaked id is a launch secret, which is the stronger of the two.
   mutate go "the Bearer header accepts a session id in place of the secret" "$SN" \
-    '	return subtle.ConstantTimeCompare([]byte(header[len(bearerScheme):]), []byte(s.cfg.Token)) == 1' \
-    '	presented := header[len(bearerScheme):]
-	if _, ok := s.sessions.lookup(presented); ok {
+    '	return subtle.ConstantTimeCompare([]byte(bearerOf(r)), []byte(s.cfg.Token)) == 1' \
+    '	if _, ok := s.launches.given[s.launches.handle(bearerOf(r))]; ok {
 		return true
 	}
-	return subtle.ConstantTimeCompare([]byte(presented), []byte(s.cfg.Token)) == 1'
-  # **The Origin guard is not optional for a cookie**, and this is the shape the
-  # shortcut would take: "it has a real session, so it is a real request". It is
-  # not — the browser attaches the cookie to a request another site made, and
-  # the guard is the only thing that tells the two apart.
-  # **Not in `originAllowed`.** `sameOriginClaim` calls it, so a session lookup
-  # injected there recurses until the stack goes and the row reports a suite
-  # that never ran. The shortcut a developer would actually take is in the
-  # shared guard — "it has a real session, so it is a real request" — and that
-  # is what this breaks. On `/ws` the same skip is not discriminating, and for a
-  # good reason: a cookie's claim on that surface *is* its `Origin`, so the
-  # guard is enforced twice there and once here.
-  mutate go "the Origin guard is skipped for a request carrying a cookie" "$F" \
-    '	if !s.originAllowed(r) {
-		writeJSONCoded(w, http.StatusForbidden, CodeForbidden,' \
-    '	if _, none := r.Cookie(s.cookieName); none != nil && !s.originAllowed(r) {
-		writeJSONCoded(w, http.StatusForbidden, CodeForbidden,'
-  # "Never a map lookup on the raw value": the store is keyed by a MAC so that
-  # "is this id live" is not a hash-table probe over attacker-supplied bytes.
+	return subtle.ConstantTimeCompare([]byte(bearerOf(r)), []byte(s.cfg.Token)) == 1'
+  # `sameOriginClaim` back: fetch metadata on the gate is a defence against a
+  # page and not against a script, and round 2 found a script walking past it.
+  mutate go "fetch metadata gates the whole desk again, not just the exchange" "$SN" \
+    'func (s *Server) sessionOf(r *http.Request) (session, bool) {' \
+    'func (s *Server) sessionOf(r *http.Request) (session, bool) {
+	if r.Header.Get(fetchSiteHeader) == fetchSiteSameOrigin {
+		if cookie, err := r.Cookie(s.launchCookie); err == nil {
+			if held, ok := s.sessions.lookup(cookie.Value); ok {
+				return held, true
+			}
+		}
+	}'
+  # The launch redirect, and the two ways a secret ends up in a page's URL.
+  mutate go "the exchange answers the page instead of redirecting" "$SN" \
+    '	http.Redirect(w, r, "/#", http.StatusSeeOther)' \
+    '	w.WriteHeader(http.StatusOK)'
+  mutate go "the redirect inherits the fragment of the request" "$SN" \
+    '	http.Redirect(w, r, "/#", http.StatusSeeOther)' \
+    '	http.Redirect(w, r, "/", http.StatusSeeOther)'
+  mutate go "a wrong launch secret still mints a handoff" "$SN" \
+    '	if subtle.ConstantTimeCompare([]byte(secret), []byte(s.cfg.Token)) != 1 {' \
+    '	if len(secret) < 0 {'
+  mutate go "the handoff cookie is named without its port" "$SN" \
+    '	return fmt.Sprintf("%s-%d", launchCookiePrefix, port)' \
+    '	_ = fmt.Sprintf("%d", port)
+	return launchCookiePrefix'
+  # Nothing that looks like a launch is answered with the page.
+  mutate go "a path under /launch/ falls through to the page" "$S" \
+    '	s.mux.HandleFunc("/launch/{rest...}", s.handleLaunchSubpath)' \
+    ''
+  mutate go "the static handler answers a launch-shaped URL with the page" "$S" \
+    '	if looksLikeALaunch(r) {
+		refuseLaunchShape(w)
+		return
+	}' \
+    ''
+  mutate go "a secret on any query is answered with the page" "$SN" \
+    '	for name := range r.URL.Query() {
+		if strings.EqualFold(name, "secret") {
+			return true
+		}
+	}' \
+    ''
+  # The stores.
   mutate go "the session store is keyed by the id itself" "$SN" \
     '	mac := hmac.New(sha256.New, st.key)
 	// hash.Hash never returns an error, by contract.
@@ -1646,13 +1682,33 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	_ = hmac.New(sha256.New, st.key)
 	_ = hex.EncodeToString(nil)
 	return id'
-  # `GET /api/session` describes a browser session. Answering one for a request
-  # that carries none would be inventing a subject nothing authenticated.
-  mutate go "the session endpoint answers without a cookie" "$SN" \
-    '	got, ok := s.sessionOf(r)
-	if !ok {' \
-    '	got, ok := s.sessionOf(r)
-	if false && !ok {'
+  mutate go "the session store grows without bound" "$SN" \
+    '	st.evictLocked()' \
+    ''
+  # LRU rather than oldest-first: a session's age says nothing about whether the
+  # tab is still on screen, and evicting the one in use is the visible failure.
+  mutate go "eviction ignores recency, so the tab in use is evicted" "$SN" \
+    '	st.tick++
+	got.used = st.tick
+	st.live[key] = got
+	return got, true' \
+    '	return got, true'
+  mutate go "eviction takes the most recently used rather than the least" "$SN" \
+    '			if !found || held.used < lowest {' \
+    '			if !found || held.used > lowest {'
+  mutate go "the launch store grows without bound" "$SN" \
+    '	ls.sweepLocked()' \
+    ''
+  # The session endpoints.
+  mutate go "the session endpoint answers without a bearer" "$SN" \
+    '	if !s.guard(w, r) {
+		return
+	}
+	got, _ := s.sessionOf(r)' \
+    '	got, _ := s.sessionOf(r)'
+  mutate go "sign-out forgets nothing" "$SN" \
+    '	forgotten := s.sessions.forget(id)' \
+    '	forgotten := id != ""'
   # The relay's query rule, at the one pair that used to be allowed through it.
   mutate go "the relay accepts a token query pair again" "$MR" \
     '		if err == nil && decoded == relayStreamParameter &&' \
@@ -4620,13 +4676,13 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # jpack mcp and a gate, and closing either would take the other's connection.
   mutate web "the assistant reuses one shared transport" "$ASN" \
     'export function assistantTransport(): Transport {
-  return new DeskWebSocketTransport(socketURL())
-}' \
+  // **Read synchronously' \
     'let sharedTransport: Transport | undefined
 export function assistantTransport(): Transport {
-  sharedTransport ??= new DeskWebSocketTransport(socketURL())
+  if (sharedTransport) return sharedTransport
+  sharedTransport = new DeskWebSocketTransport(socketURL(), socketProtocols(heldSessionID()))
   return sharedTransport
-}'
+  // **Read synchronously'
   # A setup that fails leaves a socket and a jpack mcp with nothing holding a
   # reference to either.
   mutate web "a failed setup leaves the connection open" "$ASN" \
@@ -6814,14 +6870,34 @@ export function assistantTransport(): Transport {
     '  return `${scheme}//${window.location.host}/ws?token=a-token`'
   # A stale secret in storage is a secret that can leak, and it authorizes
   # nothing — so it is removed rather than left to sit.
-  mutate web "the stale sessionStorage key is left in place" "$M" \
+  SS=web/src/mcp/session.ts
+  mutate web "the stale sessionStorage key is left in place" "$SS" \
     '    window.sessionStorage.removeItem(STALE_TOKEN_KEY)' \
     '    void STALE_TOKEN_KEY'
-  # No session is not a retryable state: no cookie appears on its own, and a
-  # page that reconnected forever would bury the one instruction that fixes it.
+  # No session is not a retryable state: no handoff appears on its own, and a
+  # page that reconnected for ever would bury the instruction that fixes it.
   mutate web "a missing session is reported as a retryable failure" "$M" \
-    '      if (await noSession()) {' \
-    '      if (false) {'
+    '          if (error instanceof NoSession) {
+            failed(error)
+            return
+          }' \
+    ''
+  # **The credential the page holds, and where it must not go.** These are the
+  # web half of "nothing ambient authorizes anything".
+  mutate web "the page sends no bearer, and leans on the cookie again" "$C" \
+    '      credentials: '"'"'omit'"'"',' \
+    '      credentials: '"'"'same-origin'"'"','
+  mutate web "the session id is keyed without the port" "$SS" \
+    '  return `jpack-desk-session:${window.location.host}`' \
+    '  return `jpack-desk-session`'
+  mutate web "the upgrade offers no session id" "$M" \
+    "  return ['jpack-desk', \`jpack-desk-session.\${id}\`]" \
+    "  return ['jpack-desk']"
+  # One handoff, one exchange: the handoff is single use, so a page that asked
+  # twice would make one request work and every other fail.
+  mutate web "the bootstrap is not memoised, so each caller spends a handoff" "$SS" \
+    '  inFlight ??= beginSession()' \
+    '  inFlight = beginSession()'
 
   mutate web "the Inspector claim is never released, so Admin's pane outlives it" "$ISLOT" \
     '    if (!publishing) return

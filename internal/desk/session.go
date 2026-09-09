@@ -382,7 +382,11 @@ func (ls *launchStore) count() int {
 //   - `HttpOnly` — page code cannot read it, so it cannot put it somewhere a
 //     URL goes. The page does not need to: it sends the cookie by making one
 //     same-origin request, and gets a bearer id back.
-//   - `SameSite=Strict` — no request another site initiated carries it.
+//   - `SameSite=Strict` — no request another **site** initiated carries it.
+//     Site is not origin: every port on `127.0.0.1` is the same site, so this
+//     says nothing about a page on a sibling port. What bounds that is the
+//     sixty seconds, the single use, and `Sec-Fetch-Site` on the one route this
+//     cookie opens.
 //   - `Path=/` — the exchange is under `/api`, the launch is at `/`, and a
 //     narrower path would simply mean a second cookie.
 //   - `Secure` only over https — this chassis binds loopback and serves plain

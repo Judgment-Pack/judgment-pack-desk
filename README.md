@@ -2684,9 +2684,11 @@ credential in the engine's hands, and an adapter holding it could open
 connection the ToolGate is not on.
 
 **That reading is out of date since the launch exchange, and the deviation
-stands on better ground.** The session is an `HttpOnly` cookie the browser
-attaches to every same-origin request by itself, so no address is a credential:
-page code that simply spelled `/ws` would be admitted on the cookie alone.
+stands on better ground.** No address is a credential any more: the session is a
+bearer id this page holds and puts on each request itself, and the relay URL
+carries nothing. Page code that spelled `/ws` would still have to find the id to
+open it — which it can, from `sessionStorage`, exactly as it could once read the
+token there.
 Withholding the URL was never the load-bearing part in any case — the token
 lived in `sessionStorage`, which is same-origin readable, so an adapter that
 wanted it could always have read it. What the capability actually buys is that
@@ -3095,9 +3097,16 @@ judgment-pack desk
   open:    http://127.0.0.1:8791/launch?secret=1f3c…
 ```
 
-Opening it once trades the secret for a session cookie and redirects to `/`, so
-what ends up in the address bar is `/` and the secret is in no history entry, no
-`Referer` and no later request. See [Security model](#security-model).
+Opening it once trades the secret for a **sixty-second, single-use handoff**
+cookie and redirects to `/`, so what ends up in the address bar is `/` and the
+secret is on no later request. The page then exchanges that handoff for a session
+id it holds itself.
+
+**The launch URL stays in browser history**, like any URL that was visited, and
+the secret in it stays valid for the life of the process — reusable by design, so
+that reopening the desk is not restarting it. What that history entry is worth is
+one more launch, to somebody already at this machine's browser. See
+[Security model](#security-model).
 
 **The project is chosen in three steps, in this order**: the argument, then
 `project.file` in this machine's desk-level file — read through the same
@@ -3127,18 +3136,21 @@ npm --prefix web run dev
 ```
 
 Then open <http://localhost:5173/launch?secret=dev> **once**. The chassis answers
-`303` to `/`, the browser lands on Vite's own `/` holding a `jpack-desk-session`
-cookie scoped to `localhost:5173`, and every later request carries it. Reload and
-navigate freely from there; open the launch URL again only if the chassis has
-been restarted, because a restarted chassis has forgotten the sessions it minted.
+`303` to `/`; the browser lands on Vite's own `/` holding the handoff cookie —
+set for the dev origin, and **named for the chassis' port**, which is the port
+the desk was told it is on rather than the one the browser is talking to — and
+the page immediately spends it at `POST /api/session` for a session id it keeps
+in `sessionStorage`. Reload and navigate freely from there: the id is per tab and
+survives a reload. Open the launch URL again after restarting the chassis, which
+forgets every id it minted.
 
 `--dev-token` names a **fixed launch secret**, and passing it is what
 additionally permits the Vite dev server's origin — without it the chassis
 refuses the proxied upgrade, because the browser's `Origin` is the dev server's
 and never matches the host it reaches the chassis under. Vite proxies `/launch`,
 `/ws` and `/api` to `127.0.0.1:8791` (override with `JPACK_DESK_CHASSIS`); without
-the `/launch` entry the dev origin acquires no cookie and the other two answer
-`401`.
+the `/launch` entry the dev origin acquires no handoff, the page has nothing to
+exchange, and the other two answer `401`.
 
 To check a running chassis end to end with the desk's own client code. The
 origin and the secret are separate arguments, because a credential does not ride
@@ -3158,96 +3170,111 @@ not; they are the page, and the page can do nothing without one of the two.
 
 - **Loopback only.** The listener binds `127.0.0.1`. Nothing off the machine
   can reach it.
-- **A launch secret, exchanged once, at one path.** A random 192-bit secret is
-  generated at startup and printed as `http://127.0.0.1:<port>/launch?secret=…`.
-  `GET /launch` compares it in constant time, mints a 192-bit session id, sets
-  the session cookie and answers `303 See Other` to `/#`. The empty fragment is
-  written out on purpose: a `Location` carrying none inherits the *request's*
-  (RFC 9110 §10.2.2), so `/launch?secret=S#S` would land on `/#S` with the
-  secret sitting in `location.hash`. The page takes the bare `#` off the address
-  bar once, on load. Nothing is under `/launch/`, and a request for anything
-  there is a `404` from the router rather than the single-page fallback — which
-  would have answered with the page, secret still on the URL. (The secret's length is
-  still observable, which does not matter: the format is fixed and public, and
-  the value is the secret.) A wrong or absent secret answers `403` with one line
-  and **sets nothing**; the two are not distinguished, because a caller that
-  could tell them apart would have an oracle for the shape of the secret. The
-  secret stays valid for the life of the process — single-use would make every
-  closed tab a restart of the desk, and the property this buys is not that the
-  secret is spent but that it never enters the page and never rides on a request
-  query.
-- **The session is a cookie.** `jpack-desk-session-<port>=<id>; Path=/;
-  HttpOnly; SameSite=Strict`, plus `Secure` where the request arrived over
-  https — the chassis serves plain http on loopback, and a browser discards a
-  `Secure` cookie that arrives over http. `HttpOnly` is why the page cannot read
-  the id, so page code cannot put it on a query, in a log line, or in
-  `sessionStorage`. The store is keyed by an HMAC of each id under a key minted
-  in this process, so "is this id live" is not a hash-table probe over bytes a
-  caller chose. It holds at most 64 sessions, evicted oldest first.
-- **Cookies have no port isolation, and two things are done about it.** A cookie
-  set for `127.0.0.1` is sent to *every* port on that host — the port is not
-  part of a cookie's origin and never has been — so any other local service
-  receives this desk's session, and two desks would otherwise overwrite each
-  other's. So: the cookie's **name carries the port** it was minted on, and a
-  cookie authorizes a request only where the browser itself says the request is
-  this desk's own. Two headers carry that claim, and **which one is available
-  depends on the surface** — measured, not assumed:
+- **A launch secret, traded once for a one-shot handoff.** A random 192-bit
+  secret is generated at startup and printed as
+  `http://127.0.0.1:<port>/launch?secret=…`. `GET /launch` compares it in
+  constant time and sets **`jpack-desk-launch-<port>`**: a fresh 192-bit value,
+  `HttpOnly; SameSite=Strict; Path=/; Max-Age=60`, single use, and worth exactly
+  one call to `POST /api/session`. It mints **no session** — a launch that did
+  would answer with a standing credential in a cookie jar, which is the
+  arrangement this replaces. (The secret's length is observable, which does not
+  matter: the format is fixed and public, and the value is the secret.)
 
-  | surface | the claim it carries | what a sibling port sends |
-  | --- | --- | --- |
-  | `fetch` — every `/api/*` call | `Sec-Fetch-Site: same-origin` | `same-site` |
-  | the `/ws` upgrade | `Origin` | its own `http://127.0.0.1:<its port>` |
+  Then `303 See Other` to `/#`. The empty fragment is written out on purpose: a
+  `Location` carrying none inherits the *request's* (RFC 9110 §10.2.2), so
+  `/launch?secret=S#S` would land on `/#S` with the secret sitting in
+  `location.hash`; the page takes the bare `#` off the address bar once, on
+  load. **Nothing that looks like a launch is ever answered with the page**:
+  every path at or under `launch` in any case, and every request whose query
+  carries a `secret` pair under any case, is a `404` rather than the single-page
+  fallback — which would have handed back the page with the secret still on the
+  URL.
 
-  A WebSocket handshake carries **no fetch metadata at all** — Chrome 130 sends
-  `Origin` and no `Sec-Fetch-*` header of any kind — and a same-origin `GET`
-  carries no `Origin`, so neither header covers both surfaces and each request
-  is judged by the signal it actually has. Neither can be written by page code:
-  both are forbidden header names. A request carrying **neither** makes no claim
-  and its cookie authorizes nothing, which is what closes an originless replay —
-  including a credentialled `no-cors` `GET` from a sibling port, which carries
-  the cookie and no `Origin` and would otherwise meet only the Origin guard.
-  Scripts are unaffected: they present the launch secret.
+  A wrong or absent secret answers `403` with one line and **sets nothing**; the
+  two are not distinguished, because a caller that could tell them apart would
+  have an oracle for the shape of the secret. The secret stays valid for the
+  life of the process: single-use *there* would make every closed tab a restart
+  of the desk, and what is single use is the handoff, which is the thing that is
+  ambient.
+- **The session is a bearer the page holds, and nothing ambient authorizes
+  anything.** `POST /api/session` spends the handoff and answers a 192-bit
+  session id. The page keeps it in `sessionStorage` under
+  `jpack-desk-session:<host:port>` — per tab, per origin **including the port** —
+  and puts it on every request itself: `Authorization: Bearer <id>` on a
+  `fetch`, and the `jpack-desk-session.<id>` subprotocol offer on the WebSocket
+  upgrade, which is the only place a browser lets a page put anything on a
+  handshake. It is never on a URL. The chassis answers the upgrade by selecting
+  the plain `jpack-desk`, so the id is offered and never echoed back.
 
-  The cost is stated rather than hidden: **a browser that sends no
-  `Sec-Fetch-Site` cannot reach `/api/*` on this desk** — Safari before 16.4.
-  Refusing is the right direction for a header whose absence must never read as
-  permission.
-- **No session expiry and no sign-out exist yet.** A session lives until the
-  process exits or it is evicted by the bound above; there is no way to end one
-  deliberately, and closing the browser leaves the record behind until then.
-  Both arrive with the identity provider.
+  **Why not a cookie.** A cookie is ambient by construction, and it has no port:
+  one set for `127.0.0.1` is sent to every port on that host, so every other
+  local service receives it — and a script that captures one replays it, because
+  the rules that stop a *page* forging `Sec-Fetch-Site` or `Origin` are
+  forbidden-header rules, and they bind browsers and nothing else. That was
+  measured on this desk rather than reasoned about: a cookie captured at the
+  exchange and replayed from `curl` with a forged header read the desk. Nothing
+  is guarded here now — the ambient credential is gone.
+
+  The store is keyed by an HMAC of each id under a key minted in this process,
+  so "is this id live" is not a hash-table probe over bytes a caller chose. It
+  holds at most 64 sessions, evicted **least recently used**: a lookup refreshes
+  recency, so the tab somebody is actually looking at is the last to go.
+- **The one thing that is still ambient, and the residual it leaves.** The
+  handoff is a cookie, for the sixty seconds between the launch and the page's
+  first request. It opens exactly one route and is spent by it.
+
+  A script that captures it inside that window and forges `Sec-Fetch-Site:
+  same-origin` **can take the session before the page does**. Nothing written
+  here changes that: forbidden-header rules bind browsers, not scripts. What the
+  shape does is make the theft visible and bounded — the handoff is single use,
+  so the page's own `POST` then fails and the desk says "No session — open the
+  URL that jpack-desk printed at startup" rather than working while somebody
+  else is also inside. Sixty seconds, one use, and a failure the person sees.
+- **Sign-out exists; expiry does not.** `DELETE /api/session` forgets a session
+  and the id then names nothing. A session nobody ends lives until the desk stops
+  or the bound above evicts it: there is no timeout, and closing a tab leaves the
+  record behind until then.
 - **Or the launch secret as a header, for a script.** `Authorization: Bearer
-  <launch secret>`, compared in constant time. That is how the smoke client, the
+  <launch secret>`, compared in constant time, on `POST /api/session` to mint a
+  session or on any gated route directly. That is how the smoke client, the
   acceptance run, the containment gate and every test in `internal/desk`
   authorize — none of them has a cookie jar. A session id presented there is
-  **not** accepted: the two are different credentials with different lifetimes.
+  looked up in the store instead, so the two never stand in for each other.
 - **No session material on any query, anywhere.** The `?token=` parameter this
-  chassis authenticated with until the launch exchange is **removed**, not
-  deprecated: it authorizes nothing, on any route, on any method. A credential
-  on a query is a credential in an address bar, a `Referer`, a proxy log, a
-  browser's history and `Response.url` inside the page — and no amount of care
-  at the places a URL is forwarded to fixes that; see the model relay's query
-  rule below for three ways it leaked out of one of them.
-- **An origin check, and it is the CSRF defence.** A request whose `Origin` is
-  not the origin the page was served from is refused — **scheme and host both**,
-  and an `Origin` carrying a path, query, fragment or userinfo is refused
-  outright rather than matched on its host. This is what stops a page on another
-  site from driving your runtime, or writing to your project, through your own
-  browser and your own cookie; it applies to every gated request, cookie or
-  header alike, and it is not optional now that the browser's credential is
-  ambient. A request with **no** `Origin` is accepted, and that is safe for both
-  kinds of caller: a script sends none and presents the launch secret, and a
-  browser sends none on a same-site top-level navigation — which a foreign site
-  cannot cause, because `SameSite=Strict` means the browser withholds this
-  cookie from every request another site initiated.
-- **`GET /api/session`** answers `{subject, issuer}` for the cookie the request
-  carries, and `401` for a request that carries none. Today the launch exchange
-  is the only thing that mints a session and it writes `local user` and a null
-  issuer. Nothing in the page renders it: it is asked one question, on a failed
-  connection, and only its *status* is read — a `401` is what turns a retry loop
-  into the sentence "No session — open the URL that jpack-desk printed at
-  startup." The record exists so that an identity provider has somewhere to
-  write a subject it authenticated.
+  chassis authenticated with is **removed**, not deprecated: it authorizes
+  nothing, on any route, on any method, and neither does a session id put there.
+  A credential on a query is a credential in an address bar, a `Referer`, a
+  proxy log, a browser's history and `Response.url` inside the page — and no
+  amount of care at the places a URL is forwarded to fixes that; see the model
+  relay's query rule below for three ways it leaked out of one of them. One test
+  greps the **built bundle** for `?token=`, `secret=` and `/ws?`.
+- **An origin check, and it is the CSRF defence — where there is one to make.**
+  A request whose `Origin` is not the origin the page was served from is refused
+  — **scheme and host both**, and an `Origin` carrying a path, query, fragment
+  or userinfo is refused outright rather than matched on its host. It applies to
+  every gated request.
+
+  On those routes it is now **defence in depth**: the session is a bearer this
+  page holds, so a cross-site page has nothing to send in the first place. A
+  request with no `Origin` is accepted there, because a script legitimately
+  sends none and a same-origin `GET` sends none either, and neither is
+  authorized by anything ambient.
+
+  On the **exchange** it is not defence in depth. That is the one route an
+  ambient credential opens, so it carries the Origin guard *and* requires
+  `Sec-Fetch-Site: same-origin`, which a browser will not let a page forge.
+- **`GET /api/session`** answers `{subject, issuer}` for the bearer the request
+  carries, and `401` for a request that carries none. Today the exchange is the
+  only thing that mints a session and it writes `local user` and a null issuer.
+  Nothing in the page renders it; the record exists so that an identity provider
+  has somewhere to write a subject it authenticated.
+- **Browser support.** Fetch metadata is required on **one** route, the
+  exchange, so what a browser must do is send `Sec-Fetch-Site` on a same-origin
+  `POST` — Chrome, Firefox and Safari 16.4+ all do, and nothing else on this
+  desk reads it. The WebSocket handshake carries no fetch metadata in Chrome and
+  does carry it in Firefox; that was worth measuring and is worth recording, and
+  the gate depends on neither, because the upgrade is authorized by the
+  subprotocol offer the page makes.
 
 **A cross-origin write is refused twice, and neither layer is load-bearing
 alone.** A page on another site cannot send the file API's `PUT` from a browser
@@ -4102,7 +4129,7 @@ Two consequences worth stating plainly rather than implying otherwise:
 main.go              flags, embedded assets, HTTP server
 internal/desk/
   server.go          routing, SPA fallback, session and origin checks
-  session.go         the launch exchange, the session store, the cookie
+  session.go         the launch handoff, the exchange, the session store
   files.go           the file API: containment, atomic save, stale-write refusal
   assistant.go       the desk-level file, the key this machine keeps, the probe
   custody.go         the credential directory: validated once, then pinned

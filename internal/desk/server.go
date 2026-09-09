@@ -387,9 +387,15 @@ func (s *Server) authorized(r *http.Request) bool {
 	return s.launchSecretPresented(r)
 }
 
-// originAllowed reports whether a gated request may proceed, and it is **this
-// desk's CSRF defence** now that the credential a browser presents is an
-// ambient cookie rather than a value the page had to put on each request.
+// originAllowed reports whether a request may proceed, and what it is worth
+// depends on which route asked.
+//
+//   - On a **gated route** it is defence in depth. The session is a bearer this
+//     page holds and puts on each request itself, so a cross-site page has
+//     nothing to send and this guard refuses nothing it could otherwise do.
+//   - On the **exchange** it is load-bearing, beside `Sec-Fetch-Site`: that is
+//     the one route an ambient credential opens, and the only place a foreign
+//     page could drive somebody's cookie.
 //
 // **What Origin is, and what it is not.** A browser sends it on every request
 // that could change something — every `PUT`, every non-simple `fetch`, every
