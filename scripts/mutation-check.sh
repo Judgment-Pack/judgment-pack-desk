@@ -6776,7 +6776,7 @@ export function assistantTransport(id: string): Transport {
   # exchange has answered".
   mutate web "a chassis call does not await the bootstrap" "$FC" \
     '  const id = await sessionBearer()' \
-    '  const id = '"'"''"'"'
+    "  const id = ''"
   # **The relay is a gated chassis route like any other.** It carried no bearer
   # on the branch this replaces, so every model listing and every generation
   # turn answered 401 the moment the session stopped being a cookie — and the
