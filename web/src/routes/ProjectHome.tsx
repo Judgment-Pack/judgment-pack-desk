@@ -30,7 +30,12 @@ export function ProjectHome() {
   const withMatrix = packs.filter((pack) => pack.matrix)
 
   return (
-    <>
+    // The element this route's width is stated on. It was a fragment, which is
+    // no element at all: `.desk-measure` reads `data-measure` off a descendant
+    // and a route with nowhere to write it could only ever take the default.
+    // `.detail` is what every other route's root already carries and no sheet
+    // declares anything for it, so this adds a node and moves nothing.
+    <article className="detail" data-measure="wide">
       <header className="detail-head">
         <h1>This project</h1>
         <p className="meta">
@@ -132,7 +137,7 @@ export function ProjectHome() {
           ))}
         </ul>
       )}
-    </>
+    </article>
   )
 }
 

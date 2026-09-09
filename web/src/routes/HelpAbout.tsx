@@ -39,7 +39,7 @@ export function HelpAbout() {
   useHashTarget()
 
   return (
-    <article className="detail">
+    <article className="detail" data-measure="form">
       <header className="detail-head">
         <h1>Help &amp; About</h1>
         <p className="quiet">

@@ -76,7 +76,7 @@ export function AuthorView() {
   useOpenRequests(choose)
 
   return (
-    <article className="detail authoring">
+    <article className="detail authoring" data-measure="wide">
       <header className="detail-head">
         <h1>Author</h1>
         <p className="ids">

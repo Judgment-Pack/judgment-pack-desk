@@ -239,11 +239,9 @@
      it: the right 360px of every route was occluded the moment the Inspector
      was opened. Measured in Chrome before and after; the check is in the PR.
 
-     `.desk-measure` reproduces `.app-body` exactly — `max-width: 60rem` and
-     the same `2rem 1.5rem 4rem`, under `box-sizing: border-box` — so the
-     rendered content column is 57rem on every route, as it was at main. The
-     padding is on the measure and not on the scroll container so that the two
-     together are one element's worth of geometry rather than two. */
+     The padding is on `.desk-measure` below and not on this scroll container,
+     so that the two together are one element's worth of geometry rather than
+     two. */
   .desk-main {
     grid-column: 2;
     grid-row: 2;
@@ -255,10 +253,49 @@
     width: 100%;
   }
 
+  /* The page measure: **left-aligned**, at one gutter, capped by kind.
+     ----------------------------------------------------------------------
+     `margin: 0` and never `auto`. This column used to be centred in the main
+     pane — `max-width: 60rem; margin: 0 auto` — which on a 1893px Admin put
+     dead space on both sides and left the content aligned to nothing: not to
+     the rail, and not to the middle either, because Admin's own 44rem sat
+     left-aligned inside the centred 60rem. An app with a persistent left rail
+     does not centre. Content starts at a fixed gutter beside the rail, is
+     capped for readability, and the space to the right stays free — which is
+     where the Inspector opens. Centring is for a page that has no rail.
+
+     So the **left edge is the same on every route at every width**: the rail's
+     right border plus `--density-gutter`, and nothing a route can change. What
+     a route chooses is the cap, which takes space off the right only.
+
+     A route states its kind with one attribute on its top-level element,
+     `data-measure="form" | "wide" | "full"`, and the three rules below read
+     it. `wide` is the default and is **still declared**, so a route that says
+     nothing is a test failure rather than a page that quietly got the default:
+     `routes/measure.test.ts` requires the attribute of every route `App.tsx`
+     mounts, and requires that nothing else under `web/src` carries one —
+     `:has()` matches any descendant, so a stray `data-measure="form"` deep
+     inside a component would cap a whole page and nothing would say why.
+
+     The two caps are tokens in `styles.css` beside the density scale; `full`
+     is `max-width: none` and is the one kind with no token, because there is
+     no number in it. */
   .desk-measure {
-    max-width: 60rem;
-    margin: 0 auto;
-    padding: 2rem 1.5rem 4rem;
+    max-width: var(--measure-wide);
+    margin: 0;
+    padding: var(--density-section) var(--density-gutter) 4rem;
+  }
+
+  .desk-measure:has([data-measure="form"]) {
+    max-width: var(--measure-form);
+  }
+
+  .desk-measure:has([data-measure="wide"]) {
+    max-width: var(--measure-wide);
+  }
+
+  .desk-measure:has([data-measure="full"]) {
+    max-width: none;
   }
 
   .desk-inspector {

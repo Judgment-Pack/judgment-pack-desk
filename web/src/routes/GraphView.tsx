@@ -161,7 +161,7 @@ export function GraphView() {
   const graphs = data?.graphs ?? []
 
   return (
-    <article className="detail">
+    <article className="detail" data-measure="full">
       <nav className="crumbs">
         <Link to="/">Project</Link>
         <span aria-hidden="true">/</span>
