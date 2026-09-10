@@ -1589,12 +1589,14 @@ each group below names its own, and naming a file twice is what the grouping
 exists to stop. The line is what the desk is *running*, which is the one thing
 no card is about.
 
-**`/admin` is an overview**: two groups, one per file, each stating its file's
-path and read status once, and under each a row per section carrying that
-section's title, a one-line summary drawn from the decoded configuration, and
-its own status only where it differs from its group's — the comparison being by
-what the status *says* rather than by which state it is, because two refusals
-naming two keys are not one status.
+**`/admin` opens on its first section**, Organization, with the list beside it —
+the way a settings page opens on its first pane rather than on a menu.
+**All settings** (`/admin#all`) is the overview: two groups, one per file, each
+stating its file's path and read status once, and under each a row per section
+carrying that section's title, a one-line summary drawn from the decoded
+configuration, and its own status only where it differs from its group's — the
+comparison being by what the status *says* rather than by which state it is,
+because two refusals naming two keys are not one status.
 
 | Group | Header states | Rows |
 |---|---|---|
@@ -1606,8 +1608,8 @@ it names opens beside the list — a 13rem column of rows on a wide shell. The
 list stacks above the section below the Inspector's breakpoint or when the
 main pane has less than 40rem available, with every
 row the reader is not in collapsed to its title — `aria-current` marks the open
-row, Escape or the **All settings** link at the top of the open section clears
-the fragment, and a fragment naming no section is the overview. Those addresses
+row, Escape or the **All settings** link at the top of the open section goes to
+the overview, and a fragment naming no section lands there too. Those addresses
 are the ones the rail's menu and the user menu have linked to since these were
 headings; nothing else changed about them, and they scroll as they did.
 

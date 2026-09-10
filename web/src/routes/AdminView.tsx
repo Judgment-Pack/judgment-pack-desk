@@ -15,9 +15,12 @@
  * **A row is a link and the hash is the state.** `/admin#assistant` opens the
  * assistant section, and it did nothing but scroll before; the rail's menu and
  * the user menu have linked to these fragments since they were headings, so the
- * addresses are the ones already in circulation. An unknown fragment is the
- * overview — the page a link that named nothing should land on, rather than an
- * error about a section that does not exist.
+ * addresses are the ones already in circulation. **`/admin` with no fragment
+ * opens the first section**, the way a settings page opens on its first pane
+ * rather than on a menu; the overview — the two groups with their files' heads
+ * and the default-project control — is **All settings**, at `/admin#all`, and
+ * an unknown fragment lands there too rather than on an error about a section
+ * that does not exist.
  *
  * **The bytes went to the right pane.** They are context and not a setting:
  * nobody edits a file's text here, and the disclosure that held it was one more
@@ -156,7 +159,7 @@ export function AdminView() {
       if (event.key !== 'Escape' || event.defaultPrevented) return
       const target = event.target as Element | null
       if (target?.closest?.('[role="dialog"]') != null) return
-      navigate('/admin')
+      navigate(OVERVIEW)
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
@@ -211,7 +214,7 @@ export function AdminView() {
             {list}
           </nav>
           <div className={styles.open}>
-            <Link className={styles.back} to="/admin">
+            <Link className={styles.back} to={OVERVIEW}>
               <IconChevronLeft />
               All settings
             </Link>
@@ -396,9 +399,15 @@ function SectionRow({
   )
 }
 
-/** The section a fragment names, or nothing — which is the overview. */
+/** Where the overview is: All settings. A fragment naming no section is one too. */
+const OVERVIEW = '/admin#all'
+
+/**
+ * The section a fragment names; the first section where there is no fragment;
+ * nothing — the overview — for a fragment that names no section.
+ */
 function sectionFromHash(hash: string): AdminSection | undefined {
-  if (hash.length < 2) return undefined
+  if (hash.length < 2) return ADMIN_SECTIONS[0]
   let id: string
   try {
     id = decodeURIComponent(hash.slice(1))
