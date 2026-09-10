@@ -3230,8 +3230,17 @@ not; they are the page, and the page can do nothing without one of the two.
   reload at a full desk — which presents no handoff and would have been told
   `no-handoff` — was answered `503` instead, and a page that acts on a capacity
   refusal deletes an id that was perfectly good. A live handoff refused this way
-  is **not spent** and its cookie is left where it is, so the link still works
-  after a restart: the secret and the store are both per process.
+  is **not spent** and its cookie is left where it is, so the refusal itself
+  destroys nothing.
+
+  **It does not survive a restart, and nothing does.** A restart regenerates the
+  launch secret and empties both stores, so the URL the old process printed and
+  the handoff cookie in the browser are equally dead — the cookie names a value
+  the new process never minted, which is ignored and reads as `no-handoff`. The
+  way back is the URL the **new** process prints, which is exactly what the
+  capacity refusal's own sentence tells a person to go and get. The one
+  exception is a desk started with a fixed `--dev-token`: it prints the same
+  secret again, so the old URL still opens it.
 
   **Sixty-four is cumulative for the life of the process, not open tabs — and
   an ordinary reload does not spend one.** A session is never removed, so every

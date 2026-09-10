@@ -1889,8 +1889,10 @@ func TestTheBoundIsAskedAfterTheCookieIsClassified(t *testing.T) {
 		if got := resp.Header.Get(RefusalHeader); got != CodeSessionsFull {
 			t.Fatalf("%s = %q, want %q", RefusalHeader, got, CodeSessionsFull)
 		}
-		// **The cookie is left where it is**, so the link is still usable after
-		// a restart: the secret and the store are both per process.
+		// **The cookie is left where it is**, so the refusal destroys nothing.
+		// It does not outlive a restart — the secret and both stores are per
+		// process — which is why the sentence sends a person to the URL the
+		// new process prints.
 		if cookies := resp.Cookies(); len(cookies) != 0 {
 			t.Fatalf("a capacity refusal set %v", cookies)
 		}

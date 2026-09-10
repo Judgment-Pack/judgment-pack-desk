@@ -949,10 +949,12 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 	// handoff can be refused for want of room.
 	verdict := s.handoffPresented(r)
 	if verdict == handoffAccepted && s.sessions.full() {
-		// Nothing is spent and the cookie is left where it is. **The launch
-		// link is still usable after a restart**, because the secret and the
-		// store are both per process: a new process holds no sessions at all,
-		// and reads the same `--dev-token` or prints a new secret.
+		// Nothing is spent and the cookie is left where it is, so the refusal
+		// destroys nothing. **It does not survive a restart**: the secret and
+		// both stores are per process, so a restarted desk has never minted
+		// this handoff — the cookie reads as unknown, which is `no-handoff` —
+		// and the way back is the URL the new process prints. Only a fixed
+		// `--dev-token` prints the same one twice.
 		writeJSONCoded(w, http.StatusServiceUnavailable, CodeSessionsFull, errTooManySessions.Error())
 		return
 	}

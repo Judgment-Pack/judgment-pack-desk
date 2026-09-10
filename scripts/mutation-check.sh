@@ -1728,7 +1728,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		return "", errTooManySessions
 	}'
   # **And the classification spends nothing**, so a live handoff refused for
-  # want of room is still there after a restart.
+  # want of room is left where it is rather than eaten by the refusal.
   mutate go "classifying a handoff spends it" "$SE" \
     '		switch how := s.launches.classify(cookie.Value); how {' \
     '		switch how := s.launches.spend(cookie.Value); how {'
