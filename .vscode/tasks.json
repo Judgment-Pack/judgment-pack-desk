@@ -27,7 +27,7 @@
       "label": "desk: vite (hot reload)",
       "detail": "npm --prefix web run dev — picks Node 22 through nvm and .nvmrc where nvm exists; proxies /launch, /ws and /api to the dev chassis on 8790",
       "type": "shell",
-      "command": "if [ -s \"$HOME/.nvm/nvm.sh\" ]; then . \"$HOME/.nvm/nvm.sh\" && nvm use >/dev/null; fi; npm --prefix web run dev",
+      "command": "if [ -s \"$HOME/.nvm/nvm.sh\" ]; then . \"$HOME/.nvm/nvm.sh\" >/dev/null 2>&1; { nvm use >/dev/null 2>&1 || nvm use 22 >/dev/null; }; fi; npm --prefix web run dev",
       "options": { "env": { "JPACK_DESK_CHASSIS": "http://127.0.0.1:8790" } },
       "isBackground": true,
       "problemMatcher": {
