@@ -67,6 +67,13 @@ func run() error {
 		return err
 	}
 	absProject := project.Dir()
+	// **The runtime is resolved here, once, or the desk does not start.** A
+	// name is looked up on PATH; a path must exist and be executable. Failing
+	// per relay connection instead was a retry loop the page could not explain.
+	runtimeBin, err := desk.ResolveRuntime(*jpackBin)
+	if err != nil {
+		return err
+	}
 
 	// **The listener first, and the port read off it.** The handoff cookie's
 	// name carries the port, so the chassis has to be told which port it is
@@ -99,7 +106,7 @@ func run() error {
 
 	srv, err := desk.New(desk.Config{
 		Root:     project,
-		JpackBin: *jpackBin,
+		JpackBin: runtimeBin,
 		// The port this listener binds, handed over because the handoff
 		// cookie's name carries it: a cookie's origin has no port, so two
 		// desks on one host would otherwise share one handoff.
@@ -147,7 +154,7 @@ func run() error {
 		// so what ends up in the address bar is `/` and the secret is in no
 		// later request. The page then exchanges that handoff for a session id
 		// it holds itself. See `internal/desk/session.go`.
-		fmt.Printf("judgment-pack desk\n  project: %s\n  runtime: %s\n  open:    http://%s/launch?secret=%s\n", absProject, *jpackBin, addr, token)
+		fmt.Printf("judgment-pack desk\n  project: %s\n  runtime: %s\n  open:    http://%s/launch?secret=%s\n", absProject, runtimeBin, addr, token)
 		if *devToken != "" {
 			// **In dev mode the page to open is Vite's, not this one.** This
 			// process serves whatever `web/dist` held when it was built, which
