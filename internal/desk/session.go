@@ -172,6 +172,14 @@ type session struct {
 	subject string
 	issuer  *string
 	created time.Time
+	// seq is this session's place in the order this process minted them: the
+	// first is 1, the second 2, and no two share one. It is **not** a
+	// credential and not an index — nothing is looked up by it — and what it is
+	// for is one comparison the page makes: a handoff this desk finished with
+	// carries the sequence of the session it bought, and a page whose own
+	// sequence matches is looking at the echo of its own spent link rather than
+	// at somebody else's theft.
+	seq uint64
 }
 
 // sessionStore is the set of live sessions, keyed by a **MAC of the id rather
@@ -246,19 +254,32 @@ func (st *sessionStore) handle(id string) string {
 // exactly the shape this package spends its comments arguing against, and a
 // mutation row proved the redundant one was holding nothing. Twenty-four bytes
 // of entropy discarded on the one path that reaches the bound is not a cost.
-func (st *sessionStore) create(subject string, issuer *string) (string, error) {
+func (st *sessionStore) create(subject string, issuer *string) (string, uint64, error) {
 	id, err := NewToken()
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if len(st.live) >= maxSessions {
-		return "", errTooManySessions
+		return "", 0, errTooManySessions
 	}
-	st.live[st.handle(id)] = session{subject: subject, issuer: issuer, created: time.Now()}
 	st.minted++
-	return id, nil
+	st.live[st.handle(id)] = session{
+		subject: subject, issuer: issuer, created: time.Now(), seq: st.minted,
+	}
+	return id, st.minted, nil
+}
+
+// full reports whether this store will refuse the next session.
+//
+// **Asked before a handoff is spent**, so that a desk at its bound refuses
+// without consuming the launch link: a person who restarts and reopens the URL
+// gets a working desk, rather than a link this process has already eaten.
+func (st *sessionStore) full() bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return len(st.live) >= maxSessions
 }
 
 // lookup answers the session an id names.
@@ -288,6 +309,18 @@ func (st *sessionStore) mintedSoFar() uint64 {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	return st.minted
+}
+
+// sessionsBody is the pair every answer about a session carries.
+//
+// **`minted` and `yours`, and the page subtracts.** What a person needs to know
+// is whether this desk is serving anybody but them, and the honest way to say
+// it is the total and this tab's own place in it: the page computes
+// `minted - 1` at every bootstrap and shows a line when that is not zero.
+// Nothing about it is stored and nothing about it is remembered — a reload
+// recomputes it, and it dies with the process exactly as the ids do.
+func (s *Server) sessionsBody(yours uint64) map[string]any {
+	return map[string]any{"minted": s.sessions.mintedSoFar(), "yours": yours}
 }
 
 // handoffVerdict is what this desk knows about a handoff a request presented.
@@ -330,6 +363,17 @@ const (
 // `readSession` — which is why that count exists.
 const maxTombstones = 64
 
+// handoffEnding is how this store finished with a handoff, and what it bought.
+type handoffEnding struct {
+	how handoffVerdict
+	// produced is the sequence of the session this handoff bought, or 0 where
+	// it bought none — expired, or spent by an exchange that then could not
+	// mint. **Zero is not evidence of anything**, and the page treats it that
+	// way: what a produced sequence is for is telling a page's own spent link
+	// from somebody else's.
+	produced uint64
+}
+
 // launchStore holds the handoffs a launch has minted and not yet spent, and a
 // bounded record of the ones it has finished with.
 //
@@ -343,7 +387,7 @@ type launchStore struct {
 	mu    sync.Mutex
 	given map[string]time.Time
 	// finished maps a handle to how this store finished with it.
-	finished map[string]handoffVerdict
+	finished map[string]handoffEnding
 	// order is `finished`'s insertion order, so the ring evicts the oldest.
 	order []string
 }
@@ -357,7 +401,7 @@ func newLaunchStore() (*launchStore, error) {
 		key:      key,
 		now:      time.Now,
 		given:    make(map[string]time.Time),
-		finished: make(map[string]handoffVerdict),
+		finished: make(map[string]handoffEnding),
 	}, nil
 }
 
@@ -367,10 +411,29 @@ func (ls *launchStore) finishLocked(key string, how handoffVerdict) {
 	if _, already := ls.finished[key]; !already {
 		ls.order = append(ls.order, key)
 	}
-	ls.finished[key] = how
+	ls.finished[key] = handoffEnding{how: how}
 	for len(ls.order) > maxTombstones {
 		delete(ls.finished, ls.order[0])
 		ls.order = ls.order[1:]
+	}
+}
+
+// attribute records which session a spent handoff bought.
+//
+// **After the mint, because that is when the sequence exists.** The handoff is
+// spent first — one caller, one handoff, decided under the store's own lock —
+// and the session it bought is numbered a moment later; this is what joins the
+// two, and it is what lets a page tell the echo of its own link from a theft.
+func (ls *launchStore) attribute(value string, seq uint64) {
+	if value == "" {
+		return
+	}
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	key := ls.handle(value)
+	if ending, ok := ls.finished[key]; ok && ending.how == handoffSpent {
+		ending.produced = seq
+		ls.finished[key] = ending
 	}
 }
 
@@ -401,9 +464,9 @@ func (ls *launchStore) issue() (string, error) {
 // including one written later. What replaces the flag is a **tombstone**: the
 // handle moves into `finished`, so a later presentation of the same value is
 // `handoffSpent` rather than indistinguishable from a stranger's cookie.
-func (ls *launchStore) spend(value string) handoffVerdict {
+func (ls *launchStore) spend(value string) (handoffVerdict, uint64) {
 	if value == "" {
-		return handoffUnknown
+		return handoffUnknown, 0
 	}
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
@@ -412,15 +475,15 @@ func (ls *launchStore) spend(value string) handoffVerdict {
 		delete(ls.given, key)
 		if ls.now().After(until) {
 			ls.finishLocked(key, handoffExpired)
-			return handoffExpired
+			return handoffExpired, 0
 		}
 		ls.finishLocked(key, handoffSpent)
-		return handoffAccepted
+		return handoffAccepted, 0
 	}
-	if how, ok := ls.finished[key]; ok {
-		return how
+	if ending, ok := ls.finished[key]; ok {
+		return ending.how, ending.produced
 	}
-	return handoffUnknown
+	return handoffUnknown, 0
 }
 
 // sweepLocked moves handoffs nobody spent into the ring, and bounds the map.
@@ -850,8 +913,16 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The script's door, first: it needs no cookie and no fetch metadata.
+	// **The bound is asked before a handoff is spent.** A desk at its capacity
+	// refuses without consuming the launch link, so a person who restarts and
+	// reopens the printed URL gets a working desk rather than a link this
+	// process already ate. See `mintSession` for the race that remains.
+	if s.sessions.full() {
+		writeJSONCoded(w, http.StatusServiceUnavailable, CodeSessionsFull, errTooManySessions.Error())
+		return
+	}
 	if s.launchSecretPresented(r) {
-		s.mintSession(w)
+		s.mintSession(w, nil, nil)
 		return
 	}
 	if r.Header.Get(fetchSiteHeader) != fetchSiteSameOrigin {
@@ -861,19 +932,22 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 	}
 	// **Four answers, because a page acts differently on each**, and one of
 	// them is silence. See `handoffVerdict` and `handoffPresented`.
-	switch s.handoffPresented(r) {
+	verdict, produced, claimed := s.handoffPresented(r)
+	switch verdict {
 	case handoffAccepted:
-		// **Cleared here and nowhere else.** A refusal used to clear it too,
-		// and that concealed a theft: a tab that reloaded after the browser
-		// stored the clearing header but before the page had handled the
-		// refusal presented nothing, read `no-handoff`, and kept its old
-		// session. Only success clears; a stale one is bounded by its own
-		// sixty-second `Max-Age` and reads as spent or expired until then.
-		http.SetCookie(w, expireLaunchCookie(s.launchCookie, requestScheme(r) == "https"))
-		s.mintSession(w)
+		s.mintSession(w, r, claimed)
 	case handoffSpent:
-		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,
-			"this launch link was already used: restart jpack-desk and open the new URL it prints")
+		// **And which session it bought**, so that a page can tell the echo of
+		// its own spent link from somebody else's theft. A copy of a genuine
+		// handoff planted at a longer path survives the clear — which only
+		// reaches `Path=/` — so the victim's own next reload presents it and
+		// would otherwise read a theft it committed against itself.
+		writeJSON(w, http.StatusUnauthorized, map[string]any{
+			"error": "this launch link was already used: restart jpack-desk and open the " +
+				"new URL it prints",
+			"code":        CodeHandoffSpent,
+			"producedSeq": produced,
+		})
 	case handoffExpired:
 		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffExpired,
 			"this launch link expired: open the URL jpack-desk printed at startup")
@@ -902,27 +976,44 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 //
 // An empty value is ignored for the same reason — `spend` answers unknown for
 // it — and that also covers the desk's own cleared cookie arriving late.
-func (s *Server) handoffPresented(r *http.Request) handoffVerdict {
-	best := handoffUnknown
+// It answers the verdict, the sequence a spent handoff produced, and **every
+// value it spent** — which is more than one where a request presented more than
+// one live handoff.
+//
+// # The rule for two live handoffs, stated
+//
+// A request can only carry two live values of this name if something planted
+// one at a different path: a second `Set-Cookie` at `Path=/` replaces the
+// first. Where it happens, **every live one is spent and all of them are
+// attributed to the one session that was minted.** The alternative — spend the
+// first and leave the rest live — makes the *next* reload mint a second session
+// from a cookie nobody deliberately used, which is a worse answer than
+// tombstoning links a person never got to spend. Only one session is minted
+// either way.
+func (s *Server) handoffPresented(r *http.Request) (handoffVerdict, uint64, []string) {
+	best, produced := handoffUnknown, uint64(0)
+	var claimed []string
 	for _, cookie := range r.Cookies() {
 		if cookie.Name != s.launchCookie {
 			continue
 		}
-		switch how := s.launches.spend(cookie.Value); how {
+		// **Spent under the store's own lock, and the answer is that call's**,
+		// so two requests carrying one handoff cannot both be told yes.
+		switch how, was := s.launches.spend(cookie.Value); how {
 		case handoffAccepted:
-			// **Spent under the store's own lock, and the answer is that
-			// call's**, so two requests carrying one handoff cannot both be
-			// told yes.
-			return handoffAccepted
+			claimed = append(claimed, cookie.Value)
+			if best != handoffAccepted {
+				best, produced = handoffAccepted, 0
+			}
 		case handoffSpent, handoffExpired:
-			// The first classified answer stands. A second cookie may still be
-			// live, which is why this does not return.
+			// The first classified answer stands, and a later live one still
+			// wins — which is why this does not return.
 			if best == handoffUnknown {
-				best = how
+				best, produced = how, was
 			}
 		}
 	}
-	return best
+	return best, produced, claimed
 }
 
 // mintSession records a session and answers with its id.
@@ -930,8 +1021,19 @@ func (s *Server) handoffPresented(r *http.Request) handoffVerdict {
 // A store at its bound answers `503` and the sentence that says what to do
 // about it, rather than `500`: nothing is broken, and a desk that said
 // "internal error" would send a reader looking for one.
-func (s *Server) mintSession(w http.ResponseWriter) {
-	id, err := s.sessions.create("local user", nil)
+// mintSession records a session and answers with its id.
+//
+// `claimed` is every handoff this exchange spent, and `r` is non-nil only where
+// a cookie was one of them.
+//
+// **Nothing is cleared and nothing is attributed until the mint succeeds.** The
+// bound is checked before a handoff is spent, so a `503` here is only the race
+// between two exchanges at sixty-three — and on that path the handoff is spent
+// with no session to attribute it to, which the page reads as "produced
+// nothing" and therefore as no evidence of anybody. A refusal leaves the cookie
+// where it is either way.
+func (s *Server) mintSession(w http.ResponseWriter, r *http.Request, claimed []string) {
+	id, seq, err := s.sessions.create("local user", nil)
 	if errors.Is(err, errTooManySessions) {
 		writeJSONCoded(w, http.StatusServiceUnavailable, CodeSessionsFull, errTooManySessions.Error())
 		return
@@ -941,14 +1043,27 @@ func (s *Server) mintSession(w http.ResponseWriter) {
 			"this desk could not mint a session")
 		return
 	}
-	// **The count travels with the id**, so a fresh tab stores what it needs
-	// without a second request. A tab that kept an old id asks `GET
-	// /api/session` for the same number instead. See `readSession`.
+	for _, value := range claimed {
+		s.launches.attribute(value, seq)
+	}
+	// **Cleared after the mint, and only after it.** A refusal used to clear it
+	// too, and that concealed a theft: a tab that reloaded after the browser
+	// stored the clearing header but before the page had handled the refusal
+	// presented nothing and kept its old session. A stale cookie is bounded by
+	// its own sixty-second `Max-Age` instead. The clear reaches `Path=/` and
+	// nothing else, which is why a copy planted at a longer path survives it —
+	// and why `handoff-spent` carries the sequence it produced.
+	if r != nil {
+		http.SetCookie(w, expireLaunchCookie(s.launchCookie, requestScheme(r) == "https"))
+	}
+	// **The numbers travel with the id**, so a fresh tab needs no second
+	// request. A tab that kept an old id asks `GET /api/session` for the same
+	// pair instead. See `sessionsBody`.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":       id,
 		"subject":  "local user",
 		"issuer":   nil,
-		"sessions": map[string]any{"minted": s.sessions.mintedSoFar()},
+		"sessions": s.sessionsBody(seq),
 	})
 }
 
@@ -985,6 +1100,6 @@ func (s *Server) readSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"subject":  got.subject,
 		"issuer":   got.issuer,
-		"sessions": map[string]any{"minted": s.sessions.mintedSoFar()},
+		"sessions": s.sessionsBody(got.seq),
 	})
 }

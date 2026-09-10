@@ -515,7 +515,11 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 		r = r.Clone(r.Context())
 		r.URL.Path = "/"
 	}
-	s.static.ServeHTTP(w, r)
+	// **Wrapped for the same reason the upgrade is.** `http.FileServer` writes
+	// its own `416` for a byte range nothing satisfies, and its own `404` and
+	// `304`; the refusals among those are this chassis' answers and carry the
+	// mark like every other.
+	s.static.ServeHTTP(&marking{ResponseWriter: w, code: CodeBadRequest}, r)
 }
 
 // handleWS is the whole relay surface: one WebSocket, one `jpack mcp`
@@ -544,7 +548,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("origin %q is not permitted", r.Header.Get("Origin")))
 		return
 	}
-	s.relay(w, r)
+	// **Wrapped, because the library writes its own refusals.** A handshake
+	// this desk authorized and `websocket.Accept` then refused — a missing key,
+	// a version it does not speak — is a `400` no `writeJSON` ever sees, and it
+	// is still a refusal this chassis authored.
+	s.relay(&marking{ResponseWriter: w, code: CodeBadRequest}, r)
 }
 
 // upgradeAuthorized is `/ws`'s own gate, and it is narrower than the shared one

@@ -2889,11 +2889,11 @@ func TestNothingOfThePagesQueryReachesTheEndpoint(t *testing.T) {
 		t.Fatalf("the endpoint saw the raw query %q, want only its own %q", got, "deployment=blue")
 	}
 
-	// And a pair of the page's own. **Measured at the endpoint's arrival
-	// count**, not by the status and not by its `RawQuery`: the page's query is
-	// never copied outbound in any case, so a dropped refusal produces a
-	// request that reaches the endpoint carrying only the configured query.
-	// What is wrong in that world is that it arrived at all.
+	// And a pair of the page's own. **Measured by whether a request arrived at
+	// all**, not by the status and not by the endpoint's `RawQuery`: the page's
+	// query is never copied outbound in any case, so a dropped refusal does not
+	// *forward the pair* — it lets a request through that should have been
+	// refused, carrying only the configured query. Arrival is the defect.
 	refused, said := relayDo(t, ts, http.MethodPost, "chat/completions?x=1",
 		strings.NewReader(`{}`), nil)
 	if refused.StatusCode != http.StatusBadRequest {

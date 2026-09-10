@@ -146,23 +146,33 @@ const (
 	// and they were one code. A client that must acquire a session and a client
 	// that must change its origin are given different answers now.
 	CodeUnauthorized = "unauthorized"
-	// CodeNoHandoff is `POST /api/session` with **no handoff cookie presented
-	// at all**: nobody opened the printed URL for this browser, or a page is
-	// simply reloading after its handoff was already spent and cleared.
+	// CodeNoHandoff is `POST /api/session` with **nothing this desk recognises
+	// presented**: no cookie of the name at all, or only values it never minted
+	// and does not remember finishing with, which are ignored. Overwhelmingly a
+	// page reloading — the exchange clears the handoff it spends — or a browser
+	// nobody opened the printed URL for.
 	//
-	// **Split from CodeHandoffSpent because the two mean opposite things to a
-	// page.** A tab reloading holds a session id that is very likely still
-	// live, and must keep it; a tab whose handoff was taken by something else
-	// is a tab whose launch link was used by somebody, and must stop. One code
-	// for both left the page unable to tell a reload from a theft — which is
-	// the whole of what the launch handoff's residual costs.
+	// **Split from the two below because they mean opposite things to a page.**
+	// A tab reloading holds a session id that is very likely still live and
+	// must keep it; a tab whose handoff was used by something else must stop.
+	// One code for all of it left the page unable to tell a reload from a
+	// theft, which is the whole of what the handoff's residual costs.
 	CodeNoHandoff = "no-handoff"
-	// CodeHandoffSpent is `POST /api/session` with a handoff cookie this desk
-	// no longer holds: spent by another caller inside its sixty seconds, or
-	// expired. See CodeNoHandoff for why it is its own code.
+	// CodeHandoffSpent is `POST /api/session` with a handoff this desk **spent**
+	// — by this same tab on an earlier load, or by another caller inside its
+	// sixty seconds.
+	//
+	// **It carries `producedSeq`**, the sequence of the session that handoff
+	// bought, because the two cases are told apart by nothing else: a copy of a
+	// genuine handoff planted at a longer path survives the clear, which reaches
+	// only `Path=/`, so a page's own next load presents it. A page whose own
+	// sequence matches is looking at the echo of its own link and treats it
+	// exactly as `no-handoff`; a different sequence is somebody else's session,
+	// and the page stops. Zero means the exchange spent it and then minted
+	// nothing, which is evidence of nobody.
 	CodeHandoffSpent = "handoff-spent"
 	// CodeHandoffExpired is `POST /api/session` with a handoff this desk minted
-	// and then let lapse: sixty seconds went by before the page loaded.
+	// and then let **lapse**: sixty seconds went by before the page loaded.
 	//
 	// **Its own code, beside CodeHandoffSpent**, because what a person should
 	// do differs. An expiry is nobody's fault and the launch secret still
@@ -1450,33 +1460,69 @@ func refuseText(w http.ResponseWriter, status int, code, message string) {
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	if status >= 400 {
-		w.Header().Set(RefusalHeader, codeIn(body))
+	if status < 400 {
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(body)
+		return
 	}
+	// **Encoded once, and the code read out of the bytes that ship.** A refusal
+	// body on this desk is a map in some places and a struct in others — a
+	// stale write, a refused configuration — and a type switch over the shapes
+	// somebody remembered is exactly the rule that goes stale: it marked those
+	// as a generic `refused` while their bodies named a code the page branches
+	// on. Marshalling first and reading `code` back off the JSON is the same
+	// answer for every shape there is or ever will be.
+	data, err := json.Marshal(body)
+	if err != nil {
+		// Nothing to encode is still a refusal, and it is still ours.
+		w.Header().Set(RefusalHeader, "refused")
+		w.WriteHeader(status)
+		return
+	}
+	w.Header().Set(RefusalHeader, codeIn(data))
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	_, _ = w.Write(append(data, '\n'))
 }
 
-// codeIn is the `code` member of a refusal body, or a generic mark.
+// codeIn is the `code` member of an encoded refusal body, or a generic mark.
 //
-// Both refusal bodies this package builds are `map[string]string` with a
-// `code`; a stale-write answer is a struct with one too, and anything else
-// falls back rather than going unmarked. `refused` is not a code any client
-// branches on — `CHASSIS_CODES` in the page does not carry it — and that is the
-// point: a body that named no code names none here either.
-func codeIn(body any) string {
-	switch shaped := body.(type) {
-	case map[string]string:
-		if code, ok := shaped["code"]; ok && code != "" {
-			return code
-		}
-	case map[string]any:
-		if code, ok := shaped["code"].(string); ok && code != "" {
-			return code
-		}
+// `refused` is not a code any client branches on — `CHASSIS_CODES` in the page
+// does not carry it — and that is the point: a body that named no code names
+// none here either. What the header carries where there *is* a code is the same
+// string the body carries, which a test asserts of every writer.
+func codeIn(data []byte) string {
+	var named struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(data, &named); err == nil && named.Code != "" {
+		return named.Code
 	}
 	return "refused"
 }
+
+// marking is a ResponseWriter that marks any refusal written through it.
+//
+// **For the handlers that do not write their own answers.** The WebSocket
+// library writes its own `400` when a handshake is malformed, and
+// `http.FileServer` writes a `416` for a range nothing satisfies — both
+// chassis-authored refusals with no `writeJSON` anywhere near them, and both
+// unmarked until this. It marks nothing a handler already marked, and nothing
+// below `400`.
+type marking struct {
+	http.ResponseWriter
+	code string
+}
+
+func (m *marking) WriteHeader(status int) {
+	if status >= 400 && m.Header().Get(RefusalHeader) == "" {
+		m.Header().Set(RefusalHeader, m.code)
+	}
+	m.ResponseWriter.WriteHeader(status)
+}
+
+// Unwrap lets `http.ResponseController` reach the real writer, which the relay
+// needs for its deadlines and the upgrade needs for its hijack.
+func (m *marking) Unwrap() http.ResponseWriter { return m.ResponseWriter }
 
 // writeJSONError sends one refusal, code and all. The code is taken from the
 // error itself where the caller has one; callers with only a sentence use
