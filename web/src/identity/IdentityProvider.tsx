@@ -3,11 +3,17 @@
  *
  * **Identity is display, never a gate.** It gates no route, no pane and no
  * chassis endpoint. Authorization is, and stays, the loopback bind, the
- * session token this tab holds, and the origin check — a signed-in viewer and
- * a not-signed-in viewer holding the token have identical reach. The header
- * menu and the Admin page say this outright, because an organization that
- * configures SSO and believes it has gated the desk has been misled by the
- * shell.
+ * session id this tab holds and sends as a bearer, and the origin check — a
+ * signed-in viewer and a not-signed-in viewer holding that id have identical
+ * reach. The header menu and the Admin page say this outright, because an
+ * organization that configures SSO and believes it has gated the desk has been
+ * misled by the shell.
+ *
+ * The chassis now records a **session** — `{subject, issuer}`, reported by
+ * `GET /api/session` — and that is what the identity provider's own PR fills
+ * in. Nothing here reads it: the state below is still decoded from the
+ * configuration, and a provider that signed somebody in would still gate
+ * nothing until the PR that wires it says otherwise in this comment.
  *
  * **The exposed state is a nullable provider, and there is no discriminator.**
  * This used to be a `mode`-tagged union — `{ mode: 'local' }` or

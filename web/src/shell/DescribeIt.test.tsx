@@ -42,7 +42,9 @@ import { ASSISTANT_KEY_QUERY_KEY } from '../assistant/queries'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { AppShell } from './AppShell'
 import { CreatePackDialog } from './CreatePackDialog'
+import { SLOT_LOST } from './DescribeIt'
 import { forgetAuthorBridge } from './authorBridge'
+import { forgetSession, giveThisPageASessionForTesting } from '../mcp/session'
 import { forgetConsole } from './consoleLog'
 
 const ENDPOINT = {
@@ -437,7 +439,11 @@ const ends = () =>
   )
 
 beforeEach(() => {
-  window.sessionStorage.setItem('jpack-desk-token', 'a-token')
+  // This file ends the desk's session on purpose, and the module state that
+  // records the ending outlives a test. `testing/setup.ts` hands every test a
+  // session; this hands it back after one has been ended, rather than clearing
+  // it — clearing would leave every test here with no session at all.
+  giveThisPageASessionForTesting('a-session-this-test-was-given')
 })
 
 afterEach(() => {
@@ -569,6 +575,26 @@ describe('one whole run, in the dialog', () => {
     draw()
     await runIt()
     expect(sent).toEqual([])
+  })
+
+  it('discards a proposal that had already arrived when the session ends', async () => {
+    // **Stopping the run is not enough.** A proposal that arrived before the
+    // refusal is state this dialog holds: without a discard, `offered` stays
+    // true, the document stays selected, and Create stays willing to write a
+    // document the assistant produced over a session the chassis has since
+    // refused.
+    serve()
+    draw()
+    await runIt()
+    expect(screen.getByLabelText('The proposed document')).toBeTruthy()
+
+    act(() => {
+      forgetSession()
+    })
+
+    await waitFor(() => expect(screen.queryByLabelText('The proposed document')).toBeNull())
+    expect(screen.queryByRole('button', { name: 'Create' })).toBeNull()
+    expect(document.body.textContent).toContain(SLOT_LOST)
   })
 
   it('never lets write_file reach the runtime, and rehearses every evaluate', async () => {

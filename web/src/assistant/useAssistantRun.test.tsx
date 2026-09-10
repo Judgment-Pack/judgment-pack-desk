@@ -70,7 +70,6 @@ const ends = (events: AssistantEvent[]) => events.filter((event) => event.type =
 
 beforeEach(() => {
   engine = deaf
-  window.sessionStorage.setItem('jpack-desk-token', 'a-token')
 })
 
 afterEach(() => {

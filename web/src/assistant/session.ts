@@ -21,7 +21,17 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { chassisUrl } from '../files/client'
 import { DeskWebSocketTransport } from '../mcp/transport'
-import { sessionToken, socketURL } from '../mcp/McpProvider'
+import { socketProtocols, socketURL } from '../mcp/McpProvider'
+import {
+  NO_SESSION_MESSAGE,
+  NoSession,
+  discardBody,
+  forgetSession,
+  refusalCode,
+  sessionBearer,
+  sessionEnded,
+  whenSessionEnds
+} from '../mcp/session'
 import { allowedTools, gateTransport, type GuardrailNotice } from './toolGate'
 import type { EndpointKind } from '../config/deskConfig'
 import type {
@@ -85,9 +95,12 @@ const RELAY_PATH_METHODS: readonly string[] = [
 ]
 
 /**
- * The one query pair a relayed request may carry beside the desk's token, and
- * the kinds that may carry it — mirrored from `relayStreamPair` and
- * `relayExtraQueryPair`.
+ * The one query pair a relayed request may carry **at all**, and the kinds that
+ * may carry it — mirrored from `relayStreamPair` and `relayExtraQueryPair`.
+ *
+ * It used to be "beside the desk's token", when a relayed request carried this
+ * chassis' `?token=`. Nothing authenticates on a query now, so this literal is
+ * the whole of what a relayed query may be.
  *
  * **A literal and a table, both byte for byte.** The native Gemini wire asks for
  * a server-sent-event stream with a query parameter and has nowhere else to put
@@ -205,8 +218,10 @@ const MODEL_ANSWER_HEADERS: readonly string[] = ['content-type', 'content-length
  * The sentence every failed model call carries, whatever went wrong.
  *
  * Fixed text, because a browser's own `TypeError` for a failed fetch **quotes
- * the URL** — which is the relay address with this chassis' session token in
- * it. An engine that caught the error and read `.message` would have the token.
+ * the URL**. No credential is in that URL any more — the session is a bearer on
+ * a header — so what the fixed text withholds is this desk's own routing, which
+ * an engine that is handed a capability rather than an address should not get
+ * by the back door.
  */
 /**
  * The sentence an aborted model call carries.
@@ -227,14 +242,20 @@ const CALL_FAILED =
  * Four things happen here that an engine must not be trusted to do:
  *
  * - **the address is built here**, out of the mount point and a suffix this
- *   function validated, with the session token attached by `chassisUrl`;
+ *   function validated;
  * - **the answer is a facade**, constructed by this desk. A browser `Response`
- *   carries the requested URL on `.url`, so returning the one `fetch` produced
- *   handed the engine the token-bearing relay address and, from it, everything
- *   needed to open `/ws?token=…` on a connection no gate is on. A constructed
- *   `Response` has an empty `url`, no `redirected` history and only the headers
- *   this desk copied onto it. The same reasoning covers the failure path: the
- *   error is replaced, because a fetch `TypeError` quotes the URL;
+ *   carries the requested URL on `.url`, no `redirected` history is kept, and
+ *   only the headers this desk copied onto it travel. What that withholds is
+ *   *this desk's routing* rather than a secret — since the session became an id
+ *   the page holds and sends on a header, there is no credential in any address
+ *   for an engine to read, and an engine that constructed `/ws` would still have
+ *   to present that id. So the facade is defence in depth and is stated as
+ *   that: what an engine is *handed* is held by the member set in
+ *   `enforcement.test.ts`, and what an engine *reaches for* is caught by the
+ *   conformance suite, whose sealed globals make that a failing test rather than
+ *   something the running desk prevents. The same reasoning covers the failure
+ *   path: the error is replaced, because a fetch `TypeError` quotes the URL and
+ *   an engine is handed no address;
  * - **the headers are an allow-list**, in both directions, so nothing
  *   resembling a credential travels even as far as this desk's own route and
  *   nothing but the protocol's own comes back;
@@ -254,24 +275,47 @@ export function bindModelCall(family: EndpointKind): ModelCall {
   return async (suffix: string, request: ModelRequest): Promise<Response> => {
     const problem = suffixProblem(suffix, family)
     if (problem !== '') throw new Error(problem)
+    // **The desk's own session, on the desk's own route.** This is a gated
+    // chassis endpoint like any other, so it carries the bearer the page holds
+    // — and it did not, which meant every model listing and every generation
+    // turn answered 401 the moment the session stopped being a cookie. It is
+    // awaited per call rather than captured at bind time, so a capability bound
+    // before the page finished its exchange waits for the id instead of binding
+    // an empty one; after the exchange it resolves from memory. A page with no
+    // session throws here and **sends nothing**, which is what makes the
+    // no-session state terminal for the assistant too.
+    const id = await sessionBearer()
     const headers: Record<string, string> = {}
     for (const [name, value] of Object.entries(request.headers ?? {})) {
       if (MODEL_REQUEST_HEADERS.includes(name.toLowerCase())) headers[name] = value
     }
     // **The desk builds the address, pair included.** The suffix has already
     // been held to the chassis' own rule, so what is split here is a path and at
-    // most the one admitted literal; `chassisUrl` writes the token first and the
-    // pair after it, which is the order the relay reads them in.
+    // most the one admitted literal — which is now the *whole* of what a relayed
+    // query may be, since nothing authenticates on a query any more.
     const [path = '', pair] = suffix.split('?')
     const extra = pair === undefined ? {} : Object.fromEntries([pair.split('=') as [string, string]])
     let answered: Response
     try {
       answered = await send(chassisUrl(`${RELAY_PREFIX}/${path}`, extra), {
+        // **`omit`, and the bearer written on**, exactly as `deskFetch` does.
+        // Nothing ambient authorizes anything on this desk, and the launch
+        // handoff — the one cookie there is — belongs on the exchange and on no
+        // other request.
+        credentials: 'omit',
+        // **A model API never redirects the browser relaying to it.** An
+        // endpoint answering `307 Location: /api/session` made this very fetch
+        // repeat the request — method, body and this desk's bearer included —
+        // against the exchange, whose marked refusal the classifier below then
+        // read as "this desk refused my session". The chassis strips `Location`
+        // now; this is the second layer, and it is the one that holds if a
+        // redirect ever reaches here by another route.
+        redirect: 'manual',
         // `POST` unless the caller named the one other method this capability
         // admits. A `GET` carries no body: `fetch` refuses one that does, and
         // the model listing is the only caller that asks for either.
         method: request.method ?? 'POST',
-        headers,
+        headers: { ...headers, Authorization: `Bearer ${id}` },
         body: request.method === 'GET' ? undefined : request.body,
         signal: request.signal
       })
@@ -286,6 +330,39 @@ export function bindModelCall(family: EndpointKind): ModelCall {
         throw new DOMException(CALL_ABORTED, 'AbortError')
       }
       throw new Error(CALL_FAILED)
+    }
+    // **An opaque redirect is not an answer.** `redirect: 'manual'` gives a
+    // `Response` of type `opaqueredirect` with status 0 and no body, and an
+    // engine handed that would be handed nothing it could read — so it is
+    // reported as what it is, an upstream that did not answer.
+    if (answered.type === 'opaqueredirect' || (answered.status === 0 && answered.redirected)) {
+      throw new Error(CALL_FAILED)
+    }
+    // **A 401 is two different things on this one route, and one header tells
+    // them apart.** Every other chassis call has a single meaning for a 401 —
+    // this desk refused the session — but the relay forwards the *endpoint's*
+    // status verbatim, and an endpoint that does not accept the stored key
+    // answers 401 too. Ending the page's session over that would log somebody
+    // out of their desk because their model key expired.
+    //
+    // The chassis marks every refusal it authors with `X-Jpack-Desk-Refusal`
+    // and **strips that header from every upstream answer**, so its presence is
+    // the discriminator and nothing an endpoint sends can wear it. What this
+    // replaces read a *cloned body* to decide, which was wrong twice over: a
+    // clone has tee semantics, so an oversized chunked refusal deadlocked the
+    // reader classifying it, and an endpoint could write the envelope itself.
+    //
+    // **And the code, not just the mark.** The exchange's own codes —
+    // `no-handoff`, `handoff-spent`, `handoff-expired` — are answers to a
+    // question this route never asks, and a classifier that ended the session
+    // on any marked 401 turned an upstream redirect into a forgotten valid
+    // session.
+    if (answered.status === 401 && refusalCode(answered) === 'unauthorized') {
+      // Nothing reads this answer now, so the request is let go of rather than
+      // left in flight behind an unconsumed stream. See `discardBody`.
+      await discardBody(answered)
+      forgetSession()
+      throw new NoSession()
     }
     return facade(answered)
   }
@@ -324,16 +401,23 @@ function facade(answered: Response): Response {
 }
 
 /**
- * The transport this session runs on: **a new one, every time**.
+ * The transport this session runs on: **a new one, every time**, carrying the
+ * session id in its subprotocol offer.
  *
- * Not a shared or memoised one. Two sessions sharing a transport would share a
+ * `id` is a parameter rather than something read here, and that is the whole of
+ * why: the page has **one** actor that holds the credential, and a second
+ * reader of it is a second thing that can be wrong about which id is current.
+ * The caller awaits `bootstrap()` and passes what it resolved.
+ *
+ * Not a shared or memoised transport. Two sessions sharing a transport would share a
  * `jpack mcp` and a gate, and closing either would take the other's connection
  * with it; sharing the *desk's* would put the gate in front of the page's own
  * calls. The guarantee is one connection per session, and it is held by this
  * function returning a fresh object.
  */
-export function assistantTransport(): Transport {
-  return new DeskWebSocketTransport(socketURL(sessionToken()))
+export function assistantTransport(id: string): Transport {
+  if (id === '') throw new NoSession()
+  return new DeskWebSocketTransport(socketURL(), socketProtocols(id))
 }
 
 /** What a connection is once it has finished setting itself up. */
@@ -365,7 +449,9 @@ export interface AssistantConnection {
  *
  * `transport` is injectable so a test — the conformance session included — can
  * drive the whole path, gate and client and all, without a socket. Nothing in
- * the page passes it. `signal` is the run's; an abort closes whatever exists
+ * the page passes it; the page passes `sessionId` instead, and a caller that
+ * passes neither is refused with `NoSession` rather than opening a socket that
+ * offers nothing. `signal` is the run's; an abort closes whatever exists
  * and rejects `ready`, rather than leaving a setup running against a session
  * nobody is watching any more.
  */
@@ -373,10 +459,16 @@ export function openAssistantConnection(options: {
   allowed: readonly string[]
   onEvent: (event: AssistantEvent) => void
   transport?: Transport
+  /**
+   * The session id this connection's upgrade offers, from the caller's own
+   * `await bootstrap()`. Ignored where `transport` is given, which is how the
+   * conformance suite drives this path without a socket.
+   */
+  sessionId?: string
   signal?: AbortSignal
 }): AssistantConnection {
   const allowed = allowedTools(options.allowed)
-  const raw = options.transport ?? assistantTransport()
+  const raw = options.transport ?? assistantTransport(options.sessionId ?? '')
   const notify = (notice: GuardrailNotice) =>
     options.onEvent({
       type: 'guardrail',
@@ -389,6 +481,20 @@ export function openAssistantConnection(options: {
 
   let connected = false
   let shutting: Promise<void> | null = null
+  /**
+   * The session's end, once, and it closes this connection.
+   *
+   * **A socket that is already open notices nothing.** A `401` is met by the
+   * caller that made the request; a connection established before the refusal
+   * went on carrying frames for a session the chassis had refused — and this
+   * one is the *gated* connection an engine drives, so it went on calling
+   * tools. The one subscription in `mcp/session.ts` is what reaches it.
+   */
+  let ended = sessionEnded()
+  const stopWatching = whenSessionEnds(() => {
+    ended = sessionEnded() ?? NO_SESSION_MESSAGE
+    void close()
+  })
   /**
    * Close once, and never reject.
    *
@@ -404,6 +510,7 @@ export function openAssistantConnection(options: {
    */
   const close = (): Promise<void> => {
     shutting ??= (async () => {
+      stopWatching()
       try {
         await (connected ? client.close() : raw.close())
       } catch {
@@ -420,6 +527,11 @@ export function openAssistantConnection(options: {
   }
 
   const ready = (async (): Promise<AssistantConnectionReady> => {
+    // A run started after the session ended opens nothing at all.
+    if (ended !== null) {
+      await close()
+      throw new NoSession(ended)
+    }
     // An abort at any point closes what exists **and settles this promise**.
     // Closing alone is not enough: a transport that answers nothing answers a
     // close with nothing either, and `ready` would hang for the life of the
@@ -451,8 +563,24 @@ export function openAssistantConnection(options: {
         // The SDK's own result type is wider than the contract's — it carries
         // the task and meta members this desk never reads — so it is narrowed
         // here, once, rather than at each engine.
-        callTool: async (name, args) =>
-          (await client.callTool({ name, arguments: args })) as McpToolResult
+        //
+        // **And it delivers nothing once the session has ended.** Closing the
+        // socket is not on its own enough: a call already queued would reach a
+        // closed transport and fail with whatever the SDK says about that,
+        // which tells an engine nothing about why. This is the gate saying so.
+        callTool: async (name, args) => {
+          // **Checked twice, and the second one is the point.** A call that
+          // was already in flight when the session ended resolves afterwards,
+          // and delivering that result would be this desk handing an engine
+          // the answer to a question it asked on a session the chassis had
+          // refused. Nothing is delivered after the end — not a result that
+          // arrived a moment too late, and not one that was queued a moment
+          // too early.
+          if (ended !== null) throw new NoSession(ended)
+          const answered = (await client.callTool({ name, arguments: args })) as McpToolResult
+          if (ended !== null) throw new NoSession(ended)
+          return answered
+        }
       }
     } catch (cause) {
       // **Nothing is left open on a failure.** A `tools/list` that answered

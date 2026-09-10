@@ -624,7 +624,7 @@ answering null.
 because the record it clears is this browser's and this viewer's — the same
 class of thing as the two settings links beside it, and about all three panes,
 so it is not one pane's own header control. It clears exactly that one key:
-`localStorage.clear()` would take the session token's neighbours and every other
+`localStorage.clear()` would take every other key on this origin and every other
 project's layout with it, and a reset that logged the viewer out of something
 would be one that lied about its scope. **And only a record this shell wrote** —
 the key is derived from a path the viewer never chose, on an origin this desk
@@ -1365,7 +1365,7 @@ A second optional file, this one on the machine rather than in the project:
 ```
 
 It is read through its own read-only endpoint, `GET /api/desk-config`, under
-the same token and origin guard as everything else — **not** through the file
+the same session and origin guard as everything else — **not** through the file
 API, and that is not an inconsistency. The chassis resolves every file-API path
 through the project's pinned `os.Root`, which is exactly what stops it reading
 anything outside the project; a file in `~/.config` is therefore not
@@ -1752,7 +1752,7 @@ which this page does not write, the card says so and offers no Save.
 
 **Two things are written, and each is exactly as wide as its reason.** The key
 is one, below. The other is the desk-level file, over `PUT /api/desk-config`,
-under the same token and origin guard as everything else. Its body is
+under the same session and origin guard as everything else. Its body is
 `{assistant?, project?, ifMatch}`: **a member that is present is replaced and a
 member that is absent is untouched**, which is what lets two Admin cards write
 two members of one file without either sending the other's. A body naming
@@ -2676,13 +2676,26 @@ is that there is nothing else there.
 ### Why the engine gets a capability and not a base URL
 
 ADR-0001's contract sketch writes `model: { family, baseUrl, model }`, with
-`baseUrl` "the chassis relay". This desk deviates, and the reason is that the
-relay authenticates with **this chassis' session token in the query**: a
-`baseUrl` an engine can read is this desk's own credential in the engine's
-hands, and an adapter holding it can open `/ws?token=…` itself with
-`globalThis.WebSocket` and drive a third MCP connection the ToolGate is not on.
-Nothing in the contract would have been violated. The guarantee would simply
-have been gone.
+`baseUrl` "the chassis relay". This desk deviates. The reason it was first
+written down was that the relay authenticated with **this chassis' session token
+in the query**, so a `baseUrl` an engine could read was this desk's own
+credential in the engine's hands, and an adapter holding it could open
+`/ws?token=…` itself with `globalThis.WebSocket` and drive a third MCP
+connection the ToolGate is not on.
+
+**That reading is out of date since the launch exchange, and the deviation
+stands on better ground.** No address is a credential any more: the session is a
+bearer id this page holds and puts on each request itself, and the relay URL
+carries nothing. Page code that spelled `/ws` would still have to find the id to
+open it — which it can, from `sessionStorage`, exactly as it could once read the
+token there. Withholding the URL was never the load-bearing part in any case.
+What the capability actually buys is that **the desk decides what an engine may
+reach**: one mount point, a validated path suffix, no header outside the relay's
+own allow-list. What stops an engine opening a second, ungated connection is
+that every conformance leg runs with `fetch`, `WebSocket`, `XMLHttpRequest` and
+`EventSource` replaced by throwing sentinels — regression coverage, which is
+where that guarantee has always really been, and not something the running desk
+prevents.
 
 So `model` is `{ family, model, call }`. `call(suffix, request)` is bound by the
 desk: it builds the address itself, admits only a path suffix that passes the
@@ -2692,9 +2705,11 @@ it at call time. The engine chooses a suffix — `chat/completions`,
 `v1/messages` — and nothing else.
 
 **The answer is a facade this desk builds**, not the one `fetch` produced: a
-browser `Response` carries the requested URL on `.url`, which is the relay
-address with the token in it, so returning it handed the engine everything it
-needed to derive `/ws?token=…`. What comes back is a constructed `Response` —
+browser `Response` carries the requested URL on `.url`, and returning it handed
+the engine this desk's own routing — and, before the launch exchange, the token
+in it. It is defence in depth rather than the thing holding the gate, and it is
+kept because an engine that is handed a capability should not be handed an
+address by the back door. What comes back is a constructed `Response` —
 empty `url`, the status and reason phrase, a filtered header copy, and **a body
 stream of this desk's own**, piped through an identity transform: a `Response`
 built from a `ReadableStream` keeps that very object, so a stream somebody
@@ -2940,7 +2955,8 @@ for, and a model that always thinks reasons anyway. The tab renders one line per
 passage rather than one per delta.
 
 Either engine reaches a model only through `session.model.call`, naming a path
-suffix; the address, the token and the header allow-list are the desk's. The
+suffix; the address, this desk's own session and the header allow-list are the
+desk's. The
 SDK's providers are built against `https://relay.invalid`, a placeholder origin
 nothing ever resolves, and the `fetch` they are given reduces the absolute URL
 the SDK composed to that suffix — refusing any other address, any query and any
@@ -3072,14 +3088,21 @@ go build -o bin/jpack-desk .
 ./bin/jpack-desk --jpack /path/to/jpack /path/to/project
 ```
 
-It prints the URL to open, including the session token:
+It prints the URL to open. That URL is the **launch exchange**, not the desk:
 
 ```
 judgment-pack desk
   project: /path/to/project
   runtime: /path/to/jpack
-  open:    http://127.0.0.1:8791/?token=1f3c…
+  open:    http://127.0.0.1:8791/launch?secret=1f3c…
 ```
+
+Opening it once trades the secret for a **sixty-second, single-use handoff**
+cookie and redirects to `/`, so what ends up in the address bar is `/` and the
+secret is on no later request. The page then exchanges that handoff for a
+session id it holds itself and puts on each request as a bearer. See
+[Security model](#security-model) — including what the reusable secret and the
+history entry are worth.
 
 **The project is chosen in three steps, in this order**: the argument, then
 `project.file` in this machine's desk-level file — read through the same
@@ -3099,27 +3122,39 @@ that is refused as a whole names no project, and the launch says which problem.
 Two processes: the chassis for the relay, Vite for hot reload.
 
 ```sh
-# terminal 1 — chassis with a fixed token so the URL is stable across restarts
-# (flags come before the project directory: Go stops parsing flags at the
-# first positional argument)
+# terminal 1 — chassis with a fixed launch secret so the URL is stable across
+# restarts (flags come before the project directory: Go stops parsing flags at
+# the first positional argument)
 go run . --dev-token dev --port 8791 --jpack /path/to/jpack /path/to/project
 
-# terminal 2 — Vite dev server, proxying /ws and /api to the chassis
+# terminal 2 — Vite dev server, proxying /launch, /ws and /api to the chassis
 npm --prefix web run dev
 ```
 
-Then open <http://localhost:5173/?token=dev>.
+Then open <http://localhost:5173/launch?secret=dev> **once**. The chassis answers
+`303` to `/#`; the browser lands on Vite's own `/` holding the handoff cookie —
+set for the dev origin, and **named for the chassis' port**, which is the port
+the desk was told it is on rather than the one the browser is talking to — and
+the page immediately spends it at `POST /api/session` for a session id it keeps
+in `sessionStorage`. Reload and navigate freely from there: the id is per tab and
+survives a reload. Open the launch URL again after restarting the chassis, which
+forgets every id it minted.
 
-Vite proxies `/ws` to `127.0.0.1:8791` (override with `JPACK_DESK_CHASSIS`).
-Passing `--dev-token` is what additionally permits the Vite dev server's origin
-— without it the chassis refuses the proxied upgrade, because the browser's
-`Origin` is the dev server's and never matches the host it reaches the chassis
-under.
+`--dev-token` names a **fixed launch secret**, and passing it is what
+additionally permits the Vite dev server's origin — without it the chassis
+refuses the proxied upgrade, because the browser's `Origin` is the dev server's
+and never matches the host it reaches the chassis under. Vite proxies `/launch`,
+`/ws` and `/api` to `127.0.0.1:8791` (override with `JPACK_DESK_CHASSIS`);
+without the `/launch` entry the dev origin acquires no handoff, the page has
+nothing to exchange, and the other two answer `401`.
 
-To check a running chassis end to end with the desk's own client code:
+To check a running chassis end to end with the desk's own client code. The
+origin and the secret are separate arguments, because a credential does not ride
+on a URL — the client presents it as `Authorization: Bearer`:
 
 ```sh
-npm --prefix web run smoke -- 'http://127.0.0.1:8791/?token=dev'
+npm --prefix web run smoke -- http://127.0.0.1:8791 --secret dev
+JPACK_DESK_SECRET=dev npm --prefix web run smoke -- http://127.0.0.1:8791
 ```
 
 ## Security model
@@ -3131,21 +3166,259 @@ not; they are the page, and the page can do nothing without one of the two.
 
 - **Loopback only.** The listener binds `127.0.0.1`. Nothing off the machine
   can reach it.
-- **A session token.** A random 192-bit token is generated at startup and
-  printed in the URL. Both capabilities require it as `?token=`, compared in
-  constant time. (Length is still observable, which does not matter: the format
-  is fixed and public, and the value is the secret.) The page copies it into
-  `sessionStorage` under `jpack-desk-token` on first load, and it leaves the
-  address bar at the first in-app navigation — nothing rewrites the URL on load,
-  so a sentence claiming it disappears immediately would be false.
-- **An origin check.** A request whose `Origin` is not the origin the page was
-  served from is refused — **scheme and host both**, and an `Origin` carrying a
-  path, query, fragment or userinfo is refused outright rather than matched on
-  its host. This is what stops a page on another site from driving your runtime,
-  or writing to your project, through your own browser: a token in a URL you
-  have visited is not by itself protection against that. A request with no
-  `Origin` at all is not from a browser — it is a script or a test holding the
-  token — and the token is its authorization.
+- **A launch secret, traded once for a one-shot handoff.** A random 192-bit
+  secret is generated at startup and printed as
+  `http://127.0.0.1:<port>/launch?secret=…`. `GET /launch` compares it in
+  constant time and sets **`jpack-desk-launch-<port>`**: a fresh 192-bit value,
+  `HttpOnly; SameSite=Strict; Path=/; Max-Age=60`, single use, and worth exactly
+  one call to `POST /api/session`. It mints **no session** — a launch that did
+  would answer with a standing credential in a cookie jar, which is the
+  arrangement this replaces. (The secret's length is observable, which does not
+  matter: the format is fixed and public, and the value is the secret.)
+
+  Then `303 See Other` to `/#`. The empty fragment is written out on purpose: a
+  `Location` carrying none inherits the *request's* (RFC 9110 §10.2.2), so
+  `/launch?secret=S#S` would land on `/#S` with the secret sitting in
+  `location.hash`; the page takes the bare `#` off the address bar once, on
+  load. **Nothing that looks like a launch is ever answered with the page**:
+  every path at or under `launch` in any case, and every request whose raw query
+  mentions `secret` under any case — before or after a lenient percent-decode —
+  is a `404` rather than the single-page fallback, which would have handed back
+  the page with the secret still on the URL.
+
+  A wrong or absent secret answers `403` with one line and **sets nothing**; the
+  two are not distinguished, because a caller that could tell them apart would
+  have an oracle for the shape of the secret.
+
+  **The secret stays valid for the life of the process, and the launch URL may
+  stay in browser history** like any URL that was visited. Both are deliberate,
+  and stated rather than hidden: single use *there* would make every closed tab
+  a restart of the desk, and what is single use is the handoff, which is the
+  thing that is ambient. What that history entry is worth is one more launch, to
+  somebody already at this machine's browser.
+- **The session is a bearer the page holds, and nothing ambient authorizes
+  anything.** `POST /api/session` spends the handoff and answers a 192-bit
+  session id. The page keeps it in `sessionStorage` under
+  `jpack-desk-session:<host:port>` — per tab, per origin **including the port** —
+  and puts it on every request itself: `Authorization: Bearer <id>` on a
+  `fetch`, and the `jpack-desk-session.<id>` subprotocol offer on the WebSocket
+  upgrade, which is the only place a browser lets a page put anything on a
+  handshake. It is never on a URL. The chassis answers the upgrade by selecting
+  the plain `jpack-desk`, so the id is offered and never echoed back. On `/ws` a
+  session id is read **only** off that offer: one on the upgrade's
+  `Authorization` header authorizes nothing there.
+
+  **Why not a cookie.** A cookie is ambient by construction, and it has no port:
+  one set for `127.0.0.1` is sent to every port on that host, so every other
+  local service receives it — and a script that captures one replays it, because
+  the rules that stop a *page* forging `Sec-Fetch-Site` or `Origin` are
+  forbidden-header rules, and they bind browsers and nothing else. That was
+  measured on this desk rather than reasoned about: a cookie captured at the
+  exchange and replayed from `curl` with a forged header read the desk. Nothing
+  is guarded here now — the ambient credential is gone.
+
+  The store is keyed by an HMAC of each id under a key minted in this process,
+  so "is this id live" is not a hash-table probe over bytes a caller chose.
+- **The store holds 64 sessions and refuses a 65th.** `POST /api/session`
+  answers `503` and `this desk holds its maximum of sessions; restart it`, and
+  **every session already minted goes on working** — nothing is dropped. The
+  page shows that sentence verbatim rather than "open the printed URL", because
+  reopening it gets a fresh tab the same 503.
+
+  **Only a live handoff is refused for want of room**, and the order matters:
+  the cookie is classified first. Asking the bound first meant an ordinary
+  reload at a full desk — which presents no handoff and would have been told
+  `no-handoff` — was answered `503` instead, and a page that acts on a capacity
+  refusal deletes an id that was perfectly good. A live handoff refused this way
+  is **not spent** and its cookie is left where it is, so the refusal itself
+  destroys nothing.
+
+  **It does not survive a restart, and nothing does.** A restart regenerates the
+  launch secret and empties both stores, so the URL the old process printed and
+  the handoff cookie in the browser are equally dead — the cookie names a value
+  the new process never minted, which is ignored and reads as `no-handoff`. The
+  way back is the URL the **new** process prints, which is exactly what the
+  capacity refusal's own sentence tells a person to go and get. The one
+  exception is a desk started with a fixed `--dev-token`: it prints the same
+  secret again, so the old URL still opens it.
+
+  **Sixty-four is cumulative for the life of the process, not open tabs — and
+  an ordinary reload does not spend one.** A session is never removed, so every
+  session this process has minted counts. But a reload presents no handoff, is
+  answered `no-handoff`, and **mints nothing**: it keeps the id the tab already
+  holds. What spends capacity is a *launch* — opening the printed URL, which
+  buys a handoff, which buys one session — so sixty-four is sixty-four openings
+  of that URL, not sixty-four page loads. Reaching it means somebody has
+  reopened the launch link sixty-four times, and the answer is to restart the
+  desk. **Anyone holding the launch secret can force it deliberately** —
+  sixty-four `POST /api/session` with the secret as a bearer — which is a
+  self-inflicted denial of service by whoever already has the desk's own
+  credential, and is written down here rather than guarded against.
+
+  **There is no eviction**, and that is a decision rather than an omission:
+  eviction ends a live session from outside the page that holds it, so the page
+  needs a second actor to notice — and this desk's page has exactly one, the
+  bootstrap, because every pair of actors that could read or replace the id was
+  a race.
+- **The one thing that is still ambient, and the residual it leaves.** The
+  handoff is a cookie, for the sixty seconds between the launch and the page's
+  first request. It opens exactly one route and is spent by it.
+
+  A script that captures it inside that window and forges `Sec-Fetch-Site:
+  same-origin` **can take a session, and this desk cannot tell that session from
+  the person's own**. Forbidden-header rules bind browsers, not scripts, and
+  nothing written here changes it.
+
+  **The desk does not detect it and does not announce it.** Four review rounds
+  went into making a theft visible on the page, and every attempt was a defect
+  on the same seam: a signal the page *held* was state a reload could lose, and
+  a signal it *derived* said exactly the same thing about the person's own
+  second tab, a script authorized with the launch secret, and a thief — which
+  this desk cannot tell apart. The line of work is **withdrawn** rather than
+  repaired, and this paragraph is what stands in its place.
+
+  **What the shape does is bound it**: sixty seconds, and one use. **The remedy
+  is a restart**, which regenerates the launch secret and empties the session
+  store, so every id and every handoff from before names nothing.
+
+  **The exchange's three refusals, and what the page does with each.**
+
+  | code | what happened | what the page does |
+  | --- | --- | --- |
+  | `no-handoff` | nothing this desk recognises was presented | keeps the id it holds |
+  | `handoff-spent` | a handoff this desk finished with | keeps the id it holds |
+  | `handoff-expired` | a handoff this desk minted and let lapse | keeps the id it holds; a tab with none is told the link expired |
+
+  `handoff-spent` is read **exactly as** `no-handoff`, and that is the point: a
+  cookie this desk no longer holds tells the page nothing it may act on. The
+  desk cannot distinguish a page's own earlier spend — the exchange clears only
+  `Path=/`, so a copy planted at a longer path by anything on a sibling loopback
+  port outlives it — from anybody else's. The two codes exist because the store
+  remembers which of its own handoffs it *spent* and which it let *lapse*, and
+  only the second says something a person can act on: nobody used the link,
+  sixty seconds went by, and the launch secret still works, so a tab **with no
+  session** is told *The launch link expired before this page loaded. Open the
+  URL jpack-desk printed at startup.* A tab that already holds an id is told
+  nothing and keeps it: the lapsed link says nothing about that id, which an
+  earlier launch bought and which is very likely still live. If it is not, the
+  first chassis call answers a marked `401` and ends the session then — the one
+  path that knows.
+
+  **A refusal clears nothing**, and that is a fix rather than an omission: the
+  clearing header and the refusal used to travel in one response, so a tab that
+  reloaded between the two got a different answer to the same question, decided
+  by a race. Only success clears.
+
+  **A value this desk does not recognise is ignored**, for the reason above: a
+  page on any sibling loopback port can set a cookie of this name at a longer
+  path, and a rule that refused what it did not recognise would refuse every
+  load, for ever, to a tab whose session is fine.
+
+- **A refusal after the bootstrap is terminal until the page is loaded again.**
+  A `401` from any chassis call, or a refused upgrade the page puts to
+  `GET /api/session` and sees refused, makes the page forget the id and say the
+  sentence above. It does not renew and it does not retry: the only thing that
+  mints a session is a handoff, and the only thing that issues a handoff is
+  `/launch?secret=…`. Reloading the page runs the bootstrap again, and a handoff
+  present then is spent — **that is the whole recovery flow**.
+
+  **And terminal reaches the sockets, not only the requests.** A `401` is met by
+  the caller that made the request; a WebSocket that was already open notices
+  nothing at all, and went on carrying frames for a session the chassis had
+  refused. So `forgetSession` publishes on one subscription: the desk's own MCP
+  connection and the assistant's each close their transport, the gated
+  connection an engine drives delivers nothing further and says why, and the
+  page renders the notice **once** — a StrictMode double-mount included, because
+  each subscription is torn down with the effect that made it.
+- **No sign-out, no expiry, no eviction.** A session lives until the process
+  stops. There is no `DELETE /api/session`; a `DELETE` to that path is read as
+  the reader and the session is still live afterwards. Sign-out and eviction
+  arrive with the identity provider, whose sign-out they will be, each as its
+  own PR.
+- **A restart ends every session, and the printed URL is how you come back.**
+  The store is in memory and its HMAC key is minted per process, so nothing
+  survives a stop — every id from before names nothing. **Open the URL the new
+  process printed**: the launch secret is generated per process too, unless
+  `--dev-token` fixed it, so the previous run's URL is not the one to reopen.
+
+  **What a tab open across the restart actually does, in two steps.** Its
+  bootstrap presents no handoff — the one it had was spent and cleared long ago
+  — so the exchange answers `no-handoff` and the page keeps the id it holds. The
+  chassis cannot say more than that: it has never seen this id and has nothing
+  to compare it to. The **first chassis call** then meets a marked `401`, and
+  that is where the session ends, with the sentence that names the way back.
+- **Or the launch secret as a header, for a script.** `Authorization: Bearer
+  <launch secret>`, compared in constant time, on `POST /api/session` to mint a
+  session or on any gated route directly. That is how the smoke client, the
+  acceptance run, the containment gate and every test in `internal/desk`
+  authorize — none of them has a cookie jar. A session id presented there is
+  looked up in the store instead, so the two never stand in for each other. A
+  script holding the secret has no session *record*, and `GET /api/session`
+  tells it so with an empty subject rather than inventing one.
+- **No session material on any query, anywhere.** The `?token=` parameter this
+  chassis authenticated with is **removed**, not deprecated: it authorizes
+  nothing, on any route, on any method, and neither does a session id put there.
+  A credential on a query is a credential in an address bar, a `Referer`, a
+  proxy log, a browser's history and `Response.url` inside the page — and no
+  amount of care at the places a URL is forwarded to fixes that; see the model
+  relay's query rule below for three ways it leaked out of one of them. One test
+  greps the **built bundle** for `?token=`, `secret=` and `/ws?`.
+- **An origin check, and it is the CSRF defence — where there is one to make.**
+  A request whose `Origin` is not the origin the page was served from is refused
+  — **scheme and host both**, and an `Origin` carrying a path, query, fragment
+  or userinfo is refused outright rather than matched on its host. It applies to
+  every gated request and to the upgrade.
+
+  On those routes it is now **defence in depth**: the session is a bearer this
+  page holds, so a cross-site page has nothing to send in the first place. A
+  request with no `Origin` is accepted there, because a script legitimately
+  sends none and a same-origin `GET` sends none either, and neither is
+  authorized by anything ambient.
+
+  On the **exchange** it is not defence in depth. That is the one route an
+  ambient credential opens, so it carries the Origin guard *and* requires
+  `Sec-Fetch-Site: same-origin`, which a browser will not let a page forge.
+- **`GET /api/session`** answers `{subject, issuer}` for the bearer the request
+  carries, and `401` for a request that carries none. Today the exchange is the
+  only thing that mints a session and it writes `local user` and a null issuer.
+  Nothing in the page renders it; the record exists so that an identity provider
+  has somewhere to write a subject it authenticated — and so that a page whose
+  upgrade was refused has a channel that reports a status, which a failed
+  WebSocket handshake does not.
+- **Fetch metadata is required on exactly one route**, the exchange, so what a
+  browser must do is send `Sec-Fetch-Site` on a same-origin `POST` — Chrome,
+  Firefox and Safari 16.4+ all do, and nothing else on this desk reads it. The
+  WebSocket handshake is authorized by the subprotocol offer the page makes, so
+  it depends on no fetch metadata at all.
+- **Under `npm run dev` the Vite dev server sees the session.** In production
+  nothing sits between the page and the chassis: the listener binds loopback.
+  The development configuration this repository documents puts Vite in between
+  and proxies `/ws` through it — and the session id travels in the
+  `Sec-WebSocket-Protocol` **request** header, so the dev server handles it, and
+  would log it if it logged request headers. It is a development arrangement on
+  the developer's own machine, and it is written down rather than left as an
+  assumption that there is nothing in between.
+- **Only `GET /launch` mints a handoff.** Every other method, `HEAD` included,
+  answers `405` and sets nothing. `HEAD` is named because Go's router matches it
+  on a `GET` pattern, so it reached the handler with a valid secret and was
+  handed a credential no page would ever spend.
+- **One 401 does not end the session, and one header is how the page knows.**
+  The assistant's relay forwards the configured endpoint's status verbatim, so a
+  `401` there usually means the stored key was not accepted; ending a person's
+  desk session over that would be reading one refusal as another.
+
+  Every refusal **this chassis authors** carries `X-Jpack-Desk-Refusal: <code>`
+  — set in one place, so a refusal written tomorrow carries it without anybody
+  remembering to — and the relay **strips that header from every upstream
+  answer**, in every casing (`Header.Del` canonicalises) and from trailers,
+  which it forwards none of anyway. So the header's presence is the
+  discriminator, and there is nothing an endpoint can send that wears it.
+
+  **This replaces reading the body, which was wrong twice.** A body has to be
+  consumed to be read and a *clone* has tee semantics, so an oversized chunked
+  refusal deadlocked the reader trying to classify it; and an endpoint can write
+  any body it likes, so a body-borne discriminator was **forgeable** — a
+  residual this desk no longer has.
 
 **A cross-origin write is refused twice, and neither layer is load-bearing
 alone.** A page on another site cannot send the file API's `PUT` from a browser
@@ -3170,7 +3443,7 @@ someone else's problem. That boundary is stated here rather than implied by the
 absence of a caveat.
 
 It writes to the project only through the file API, only inside the project
-root, and only where a request carried the token and an acceptable origin. The
+root, and only where a request carried a session and an acceptable origin. The
 runtime subprocess inherits the project directory as its working directory and
 is killed when the socket that started it closes. Identity is display only; the
 change that would falsify that is wiring an identity provider — discovery,
@@ -3329,8 +3602,8 @@ by its own test, because a handler that stored and then refused would pass
 every status assertion.
 
 **The probe request carries no destination.** If it took a URL from its body,
-anything holding the session token could point the desk — and the key it holds
-— at a host of its choosing; the destination comes from the file on this
+anything holding a session on this desk could point it — and the key it holds —
+at a host of its choosing; the destination comes from the file on this
 machine instead, so a request body cannot move it. It sends the smallest
 request the configured protocol defines — a model listing for
 `openai-compatible`, a messages call bounded to one output token for
@@ -3398,8 +3671,8 @@ no CORS, so a page calling one directly could not read the answer.
 
 - **The page can choose a destination; the key travels only to the destination
   it was entered for.** This sentence used to be "the destination cannot come
-  from the page", and `PUT /api/desk-config` made it false: code holding the
-  session token could write an endpoint of its own — same-origin, so the origin
+  from the page", and `PUT /api/desk-config` made it false: code holding a
+  session could write an endpoint of its own — same-origin, so the origin
   guard never applied — and then probe or relay and receive the machine-held
   key there.
 
@@ -3441,8 +3714,8 @@ no CORS, so a page calling one directly could not read the answer.
   colon, or a method outside those three is refused exactly as before. A method
   is a verb applied to the resource the path names, so there is nothing after
   it. The list is closed because the part after
-  the colon is a **verb**: an open one would let whoever holds the session
-  token ask the configured endpoint to *do* something nobody wrote down, with
+  the colon is a **verb**: an open one would let whoever holds a session ask
+  the configured endpoint to *do* something nobody wrote down, with
   the stored credential attached, and adding a method is a reviewed change to
   that list. The rule is about the **path** and is not gated on `kind` — the
   kind decides the credential, and a relay that read one to decide the other
@@ -3465,31 +3738,46 @@ no CORS, so a page calling one directly could not read the answer.
   through it. With an allow-list the claim is structural, and `Cookie`,
   `Origin` and `Referer` fall out without being named. A page that needs a
   header this list does not carry is a reviewed change to the list.
-- **Nothing of the page's query is forwarded, ever.** A relayed request may
-  carry this chassis' `?token=` and **no other parameter**: every raw pair's
-  decoded name must be exactly `token`, the spelling the guard reads, and
-  anything else — any name, any case, any encoding, an empty name included — is
-  refused with `assistant-relay-path` and nothing sent. A literal `;` is refused
-  with it.
+- **And what the answer may not carry back.** The endpoint's own credential
+  names go, by name and by value. **`X-Jpack-Desk-Refusal` goes too**, so an
+  endpoint cannot wear the mark this chassis puts on its own refusals and end
+  somebody's desk session from the far side. **`Location` and `Refresh` go**,
+  for a different reason: a model API never legitimately redirects the browser
+  relaying to it, and a `307 Location: /api/session` made the page's own `fetch`
+  repeat the request — this desk's bearer included — against the exchange.
+  **And no trailer is forwarded at all**, because the proxy copies trailers to
+  the page after the body, past every filter on the answer.
+- **Nothing of the page's query is forwarded, ever.** A relayed request carries
+  **no parameter of its own**: every raw pair — any name, any case, any
+  encoding, an empty name included, `token` included — is refused with
+  `assistant-relay-path` and nothing sent. A literal `;` is refused with it.
 
   This was a *filter* first, and the filter leaked this desk's session token
   three times, three different ways, to three reviewers: `?%74oken=…` (the
-  guard reads names with `url.Query`, which percent-decodes, and a raw compare
+  guard read names with `url.Query`, which percent-decodes, and a raw compare
   did not); `?x=1;token=…&token=…` (Go rejects a pair containing `;`, so the
-  guard sees one parameter where a server that still splits on `;` sees two);
+  guard saw one parameter where a server that still splits on `;` sees two);
   and `?Token=…&token=…` (this desk compared case-sensitively, and ASP.NET
   Core's query parser folds case). Each fix was a better comparison, and each
   time the next parser disagreed somewhere else. **The class existed because
-  the query was forwarded at all** — no comparison this desk can write is the
+  the query carried a secret at all** — no comparison this desk can write is the
   comparison every parser downstream makes — so it is not filtered, it is
   refused, and refusing is the one rule every parser agrees on because there is
   nothing left for them to disagree about.
+
+  **The class is now gone at its root, and this refusal is what keeps it gone.**
+  Since the launch exchange no secret rides on any query anywhere in this
+  chassis, so a `token=…` pair on a relayed request is not a credential being
+  handled carefully — it is a page sending something nothing asks for, and it is
+  refused like any other pair. It was the one exception this rule used to carry,
+  and it is not one any more.
 - **One pair is the exception, on one kind, byte for byte.** The native Gemini
   wire asks for a server-sent-event stream with a query parameter and has
   nowhere else to put it — it is not a header, and the configured URL cannot
   carry it because the same endpoint serves the unary call too. So for a
-  configured `gemini` endpoint the page may send exactly `alt=sse` beside the
-  token: the literal nine bytes, at most once. `alt=json`, `ALT=sse`,
+  configured `gemini` endpoint the page may send exactly `alt=sse`, and it is
+  now the **whole** of what a relayed query may be: the literal seven bytes, at
+  most once. `alt=json`, `ALT=sse`,
   `%61lt=sse`, `alt=sse&alt=sse`, `alt=sse&x=1` and `alt=sse;x=1` are each
   refused with `assistant-relay-path` and nothing sent, and the pair is refused
   entirely on the other two kinds, which carry streaming in the request body
@@ -3562,8 +3850,8 @@ no CORS, so a page calling one directly could not read the answer.
 
   **The page's half is Admin's List models**, and it goes over the same
   capability an engine gets rather than round it: it names the suffix, and
-  `bindModelCall` builds the address, attaches this chassis' token and holds
-  the suffix to the rule above. `ModelRequest` carries a `method` for it — a
+  `bindModelCall` builds the address and holds the suffix to the rule above.
+  `ModelRequest` carries a `method` for it — a
   closed `'GET' | 'POST'` pair, because the relay forwards the method verbatim
   and an open member would let whoever holds a capability ask the endpoint to
   *do* something nobody wrote down with the machine-held credential attached.
@@ -3680,9 +3968,9 @@ the one exception above, and it is an exception because the desk renders it.
 
 The assistant calls it, and nothing else does
 ([ADR-0001](docs/adr/0001-make-the-assistant-engine-a-slot.md)). The **desk**
-builds each relayed address, with this chassis' session token — the one
-parameter the rule above admits — and hands the engine a capability rather than
-a URL, so no engine ever holds the token or chooses a query. See
+builds each relayed address — carrying no parameter but the one closed literal
+the rule above admits — and hands the engine a capability rather than a URL, so
+no engine chooses a query or an address. See
 [Why the engine gets a capability and not a base URL](#why-the-engine-gets-a-capability-and-not-a-base-url).
 
 **The page mirrors this rule, and the mirror is held equal to it by a test that
@@ -3729,10 +4017,9 @@ around one. See "The lock, and what phase 1 does not do" below.
 
 ### The file API
 
-Three endpoints, proxied alongside `/ws` by the dev server, under the same two
-checks as `/ws` — the session token first,
-then the Origin — through one shared guard, because a new endpoint is a new
-place to forget one:
+Three endpoints, proxied alongside `/launch` and `/ws` by the dev server, under
+the same two checks as `/ws` — the session first, then the Origin — through one
+shared guard, because a new endpoint is a new place to forget one:
 
 | | |
 | --- | --- |
@@ -3993,7 +4280,8 @@ Two consequences worth stating plainly rather than implying otherwise:
 ```
 main.go              flags, embedded assets, HTTP server
 internal/desk/
-  server.go          routing, SPA fallback, token and origin checks
+  server.go          routing, SPA fallback, session and origin checks
+  session.go         the launch handoff, the exchange, the session store
   files.go           the file API: containment, atomic save, stale-write refusal
   assistant.go       the desk-level file, the key this machine keeps, the probe
   custody.go         the credential directory: validated once, then pinned
@@ -4346,8 +4634,11 @@ JPACK_PROJECT=/path/to/judgment-pack-quickstart scripts/acceptance.sh
 It builds the chassis, copies the project to a temporary directory — a completed
 evaluation appends a record in a project that declares an audit directory, and
 an acceptance run must not write into the tree it was pointed at — reads the
-tokened URL off the `open:` line of the chassis' startup output, and drives the
-desk's client three times. `MUTATE` is the jq expression that removes the fact,
+launch URL off the `open:` line of the chassis' startup output, splits it into an
+origin and a launch secret, and drives the desk's client three times. The secret
+travels to the client as `JPACK_DESK_SECRET` rather than on a URL, and the client
+presents it as `Authorization: Bearer`. `MUTATE` is the jq expression that
+removes the fact,
 and defaults to the quickstart pack's `/request/completeness`. `PACK` selects
 the decision id where the project's first is not the one `FACTS` suits.
 
@@ -4366,19 +4657,27 @@ before anything runs, because it names the half of a check that only happens
 when `GRAPH_DOCUMENT` says which graph to fetch — and an acceptance run must not
 report green for a check that never ran.
 
-The same client runs on its own against a chassis you already have open:
+The same client runs on its own against a chassis you already have open. The
+origin and the launch secret are separate arguments: the secret is a credential,
+and a credential does not ride on a URL. `--secret <secret>` or
+`JPACK_DESK_SECRET` supplies it, and the client sends it as
+`Authorization: Bearer` — on the `/ws` upgrade too, which is how a script
+authorizes where the page offers its session id as a subprotocol. Nothing on
+this desk authorizes with a cookie.
 
 ```sh
-npm --prefix web run smoke -- 'http://127.0.0.1:8791/?token=…' \
+export JPACK_DESK_SECRET='the value after ?secret= on the printed URL'
+
+npm --prefix web run smoke -- http://127.0.0.1:8791 \
   --facts /path/to/full-facts.json --evidence /path/to/evidence.json
 
 # the two calls the matrix and graph views make
-npm --prefix web run smoke -- 'http://127.0.0.1:8791/?token=…' --matrix --graphs
+npm --prefix web run smoke -- http://127.0.0.1:8791 --matrix --graphs
 
 # the graph-serving pair the walk diagram draws its edges from (ADR-0029):
 # the inventory, then one document by its configured id, checked byte for byte
 # against its own metadata and against the file on disk
-npm --prefix web run smoke -- 'http://127.0.0.1:8791/?token=…' \
+npm --prefix web run smoke -- http://127.0.0.1:8791 \
   --graph-document vendor-onboarding-flow \
   --graph-file /path/to/project/graphs/vendor-onboarding.graph.json
 ```

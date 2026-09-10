@@ -32,7 +32,7 @@ import {
   RESET_SAYS,
   RESTORED_SAYS,
   THEME_SAYS,
-  TOKEN_SENTENCE,
+  SESSION_SENTENCE,
   monogram
 } from './UserControl'
 
@@ -205,7 +205,7 @@ describe('the user control, identity NONE', () => {
     })
     const menu = await screen.findByRole('menu')
     expect(menu.textContent).toContain(NONE_MENU_SENTENCE)
-    expect(menu.textContent).toContain(TOKEN_SENTENCE)
+    expect(menu.textContent).toContain(SESSION_SENTENCE)
   })
 
   it('offers no Sign out — not even a disabled one — and no Sign in', async () => {
@@ -236,6 +236,16 @@ describe('the user control, identity NONE', () => {
  * own storage — and the card is gone. The three outcomes are three different
  * facts and the menu says which one happened rather than assuming the first.
  */
+/**
+ * The menu's own two sentences, in order, and only those that pass the prose
+ * bound — which is what `narrationIn` reports.
+ */
+function knownLongSentences(): string[] {
+  return [NONE_MENU_SENTENCE, SESSION_SENTENCE]
+    .filter((sentence) => sentence.length > NARRATION_BOUND)
+    .map((sentence) => sentence.slice(0, 90))
+}
+
 describe('the user menu’s reset', () => {
   async function openMenu() {
     fireEvent.keyDown(screen.getByRole('button', { name: 'Account and desk settings' }), {
@@ -245,18 +255,18 @@ describe('the user menu’s reset', () => {
   }
 
   it('clears exactly one localStorage key, and says so without closing the menu', async () => {
-    // One key: `localStorage.clear()` would take the session token's
-    // neighbours and every other project's layout with it, and a reset that
-    // logged the viewer out of something would be one that lied about scope.
+    // One key: `localStorage.clear()` would take this record's neighbours and
+    // every other project's layout with it, and a reset that logged the viewer
+    // out of something would be one that lied about scope.
     window.localStorage.setItem(KEY, '{"v":1}')
     window.localStorage.setItem('jpack-desk:shell:v1:another', '{"v":1}')
-    window.localStorage.setItem('jpack-desk-token', 'a token')
+    window.localStorage.setItem('jpack-desk-unrelated', 'a value')
     renderHeader()
     const menu = await openMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Reset panes' }))
     expect(window.localStorage.getItem(KEY)).toBeNull()
     expect(window.localStorage.getItem('jpack-desk:shell:v1:another')).toBe('{"v":1}')
-    expect(window.localStorage.getItem('jpack-desk-token')).toBe('a token')
+    expect(window.localStorage.getItem('jpack-desk-unrelated')).toBe('a value')
     expect(menu.textContent).toContain(RESET_SAYS.cleared)
   })
 
@@ -335,10 +345,15 @@ describe('the user menu’s reset', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Reset panes' }))
     expect(menu.textContent).toContain(RESET_SAYS[outcome])
     const long = narrationIn(menu)
-    expect(long.map((each) => each.says), long.map((each) => each.says).join(' | ')).toEqual([
-      NONE_MENU_SENTENCE.slice(0, 90),
-      TOKEN_SENTENCE.slice(0, 90)
-    ])
+    // **The two sentences this menu carries, and no third.** Which of them is
+    // long enough to count is derived rather than written down: the menu's
+    // wording changes when what authorizes this desk changes, and a hard-coded
+    // list would fail on an improvement rather than on a new paragraph.
+    expect(long.map((each) => each.says), long.map((each) => each.says).join(' | ')).toEqual(
+      knownLongSentences()
+    )
+    expect(menu.textContent).toContain(NONE_MENU_SENTENCE)
+    expect(menu.textContent).toContain(SESSION_SENTENCE)
     // And the answer itself is a line, whichever of the four it is.
     expect(RESET_SAYS[outcome].length).toBeLessThanOrEqual(NARRATION_BOUND)
   })
@@ -471,14 +486,14 @@ describe('the user menu’s appearance', () => {
   it('clears the preference, and only its own key', async () => {
     window.localStorage.setItem(APPEARANCE_KEY, JSON.stringify({ v: 1, theme: 'dark' }))
     window.localStorage.setItem(KEY, '{"v":1}')
-    window.localStorage.setItem('jpack-desk-token', 'a token')
+    window.localStorage.setItem('jpack-desk-unrelated', 'a value')
     renderHeader({ appearance: LIGHT_COMPACT })
     const menu = await openMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Use the project’s default' }))
     expect(window.localStorage.getItem(APPEARANCE_KEY)).toBeNull()
-    // The panes' record is a different record, and the token is nobody's.
+    // The panes' record is a different record, and the other key is nobody's.
     expect(window.localStorage.getItem(KEY)).toBe('{"v":1}')
-    expect(window.localStorage.getItem('jpack-desk-token')).toBe('a token')
+    expect(window.localStorage.getItem('jpack-desk-unrelated')).toBe('a value')
     // The file's value is in force again, now rather than at the next reload.
     expect(document.documentElement.getAttribute('data-theme')).toBe('light')
     expect(choices()).toEqual(['system', 'light*', 'dark', 'comfortable', 'compact*'])
@@ -557,10 +572,15 @@ describe('the user menu’s appearance', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Use the project’s default' }))
     expect(menu.textContent).toContain(RESTORED_SAYS[outcome])
     const long = narrationIn(menu)
-    expect(long.map((each) => each.says), long.map((each) => each.says).join(' | ')).toEqual([
-      NONE_MENU_SENTENCE.slice(0, 90),
-      TOKEN_SENTENCE.slice(0, 90)
-    ])
+    // **The two sentences this menu carries, and no third.** Which of them is
+    // long enough to count is derived rather than written down: the menu's
+    // wording changes when what authorizes this desk changes, and a hard-coded
+    // list would fail on an improvement rather than on a new paragraph.
+    expect(long.map((each) => each.says), long.map((each) => each.says).join(' | ')).toEqual(
+      knownLongSentences()
+    )
+    expect(menu.textContent).toContain(NONE_MENU_SENTENCE)
+    expect(menu.textContent).toContain(SESSION_SENTENCE)
     for (const line of [THEME_SAYS, DENSITY_SAYS, RESTORED_SAYS[outcome]]) {
       expect(line.length, line).toBeLessThanOrEqual(NARRATION_BOUND)
     }

@@ -1,3 +1,5 @@
+import { NoSession, discardBody, forgetSession, refusalCode, sessionBearer } from '../mcp/session'
+
 /**
  * The chassis file API, as this client calls it (issue #14, phase 1).
  *
@@ -17,8 +19,6 @@
  *   the graph binding uses, for the same reason: two answers about one file,
  *   and only equality proves they are about one revision.
  */
-import { sessionToken } from '../mcp/McpProvider'
-
 /** One file the project contains, as the listing reports it. */
 export interface FileEntry {
   /** Project-relative and slash-separated, on every platform. */
@@ -160,18 +160,88 @@ export class StaleWrite extends Error {
 }
 
 /**
- * One chassis URL, with the session token on it.
+ * One chassis URL, carrying **whatever the caller's own parameters are and
+ * nothing else**.
  *
- * Exported because every chassis endpoint takes the token the same way, and a
- * second copy of this line elsewhere is a second place for the token to be
- * forgotten. The assistant slot's calls use it.
+ * It used to write this desk's session token in front of every caller's
+ * parameters, because that was how a request authorized. Nothing authorizes on
+ * a query now: the page holds a session id and `deskFetch` sends it as a bearer,
+ * so this builds an address and no more. A query is emitted only where there is
+ * something to put in it, so `/api/files` is `/api/files` — a dangling `?` was a
+ * leftover of the token always being there.
+ *
+ * Still exported, and still the one place an address is spelled: the assistant
+ * slot's calls and the relay's use it, and two spellings would be two answers
+ * about where the chassis is.
  */
 export function chassisUrl(path: string, params: Record<string, string> = {}): string {
-  const query = new URLSearchParams({ token: sessionToken(), ...params })
-  return `${path}?${query.toString()}`
+  const query = new URLSearchParams(params).toString()
+  return query === '' ? path : `${path}?${query}`
 }
 
 const endpoint = chassisUrl
+
+/**
+ * Every request this page makes to the chassis, **carrying the session id and
+ * no cookie**.
+ *
+ * Three halves, and each is a decision:
+ *
+ * - **It awaits the bootstrap.** `sessionBearer()` resolves the id the one
+ *   exchange minted, so a call issued while that exchange is still in flight
+ *   waits rather than sending an unauthorized request — and a call issued when
+ *   this page has no session throws `NoSession` without sending anything.
+ * - **`Authorization: Bearer <id>`**, from `mcp/session.ts`. The id is a
+ *   credential this page holds deliberately, so it goes on requests this page
+ *   means to make and on nothing else. A `401` **this desk authored and marked
+ *   `unauthorized`** is the end: the id names nothing, only the printed URL
+ *   mints another, and the page says so rather than retrying something no
+ *   retry can fix. Any other `401` is somebody else's answer and is returned
+ *   like any other failed status.
+ * - **`credentials: 'omit'`**, stated rather than defaulted. `same-origin` is
+ *   `fetch`'s default and would send the launch handoff on every request; that
+ *   cookie is worth one call to `POST /api/session` and belongs on no other.
+ *   Omitting says so, and means a reader can see that nothing ambient is in
+ *   play here.
+ *
+ * `fetch` is read at call time rather than captured, because the desk's own
+ * calls are supposed to work in whatever environment the page is running in —
+ * unlike the assistant's model capability, which captures it deliberately so
+ * that an engine's sealed globals cannot reach it (`assistant/session.ts`).
+ */
+export async function deskFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const id = await sessionBearer()
+  const answered = await fetch(input, {
+    ...init,
+    credentials: 'omit',
+    headers: {
+      ...(init.headers as Record<string, string> | undefined),
+      Authorization: `Bearer ${id}`
+    }
+  })
+  if (answered.status !== 401) return answered
+  // **A 401 is not on its own evidence that this page's session is over**, and
+  // this rule is the same one the assistant's relay transport applies: the
+  // chassis marks every refusal it authors with `X-Jpack-Desk-Refusal` and
+  // strips that header from every answer it relays, so the mark plus the code
+  // `unauthorized` is what says "this desk does not know your id". A 401
+  // carrying any other code, or none at all — a proxy in front of the desk, an
+  // upstream answer that reached a route through some other path — is returned
+  // like any other failed status, and `answer<T>()` turns it into an ordinary
+  // request error. Ending the session on it would delete a working id over
+  // somebody else's refusal.
+  if (refusalCode(answered) !== 'unauthorized') return answered
+  // **The end of the road, and nothing is retried.** The id names nothing: the
+  // chassis restarted, or something else spent the handoff this page's exchange
+  // was for. Only the printed URL mints another, so what this page can usefully
+  // do is stop holding a dead id and say what a person can do about it.
+  //
+  // The body is let go of first: this path reads a status and nothing else, and
+  // a stream nobody consumes leaves the request in flight. See `discardBody`.
+  await discardBody(answered)
+  forgetSession()
+  throw new NoSession()
+}
 
 /**
  * Read one answer, with the chassis' own message kept as the reason.
@@ -253,12 +323,12 @@ function problemsIn(value: unknown): { key: string; reason: string }[] {
 
 /** Every regular file in the project tree. */
 export async function listFiles(signal?: AbortSignal): Promise<FileListing> {
-  return answer<FileListing>(await fetch(endpoint('/api/files'), { signal }))
+  return answer<FileListing>(await deskFetch(endpoint('/api/files'), { signal }))
 }
 
 /** One file's current bytes. */
 export async function readFile(path: string, signal?: AbortSignal): Promise<FileContent> {
-  return answer<FileContent>(await fetch(endpoint('/api/file', { path }), { signal }))
+  return answer<FileContent>(await deskFetch(endpoint('/api/file', { path }), { signal }))
 }
 
 /**
@@ -283,7 +353,7 @@ export async function writeFile(input: {
   override?: boolean
   createParents?: boolean
 }): Promise<FileContent> {
-  const response = await fetch(endpoint('/api/file'), {
+  const response = await deskFetch(endpoint('/api/file'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

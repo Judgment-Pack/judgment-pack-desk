@@ -127,10 +127,14 @@ describe('Help & About', () => {
     expect(screen.queryByText(PROMPT_TEXT)).toBeNull()
   })
 
-  it('carries the true sentence about where the session token lives', () => {
+  it('carries the true sentence about how this desk is authorized', () => {
     renderHelp(stubClient(PACKS))
-    // Not "it leaves the URL immediately": nothing calls history.replaceState,
-    // so it leaves at the first in-app navigation and the page says that.
-    expect(screen.getByText(/leaves the address bar at the first in-app navigation/)).toBeTruthy()
+    // The launch redirects and the handoff is spent on load, so the secret
+    // leaves the address bar at load and no cookie authorizes anything after
+    // the first request. `TestLaunchSetsAHandoffAndNoSession` and
+    // `TestNoCookieAuthorizesAnyGatedRoute` hold the two halves.
+    expect(screen.getByText(/single-use, 60-second handoff/)).toBeTruthy()
+    expect(screen.getByText(/no cookie authorizes anything afterwards/)).toBeTruthy()
+    expect(screen.queryByText(/session token/)).toBeNull()
   })
 })

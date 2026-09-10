@@ -67,7 +67,15 @@
  * reporting the rows it managed. Each toggle is then *observed* on the page it
  * claims to configure, and a row whose configuration did not take effect fails.
  *
- *   node scripts/containment-check.mjs <port> <token> [label] [source-root]
+ *   node scripts/containment-check.mjs <port> <launch secret> [label] [source-root]
+ *
+ * The secret is the desk's **launch secret** — the `--dev-token` the wrapper
+ * started the chassis with. It is sent exactly once, to `GET /launch?secret=…`,
+ * which trades it for a sixty-second single-use handoff cookie; the page then
+ * spends that at `POST /api/session` for a session id it holds itself. Every
+ * path sampled after that carries no credential on its URL and no cookie at
+ * all, which is why the address bar can be asserted to be the path a person
+ * would be looking at.
  *
  * Normally run through `scripts/containment-check.sh`, which builds the
  * throwaway configuration and the copied project this needs, and passes the
@@ -85,12 +93,12 @@ import { fileURLToPath } from 'node:url'
 // and refused, the widths, the routes, the intended row count — and exits
 // without a browser, so the parsers can be checked on their own.
 const PLAN = process.argv[2] === '--plan'
-const [PORT, TOKEN, LABEL = 'build', ROOT_ARG] = PLAN
+const [PORT, SECRET, LABEL = 'build', ROOT_ARG] = PLAN
   ? ['0', 'plan', 'plan', process.argv[3]]
   : process.argv.slice(2)
-if (PORT === undefined || TOKEN === undefined) {
+if (PORT === undefined || SECRET === undefined) {
   console.error(
-    'usage: node scripts/containment-check.mjs <port> <token> [label] [source-root]\n' +
+    'usage: node scripts/containment-check.mjs <port> <launch secret> [label] [source-root]\n' +
       '       node scripts/containment-check.mjs --plan [source-root]'
   )
   process.exit(2)
@@ -104,7 +112,20 @@ const SRC = join(ROOT, 'web', 'src')
 // necessarily under it, so the resolution is anchored at that package.
 const { chromium } = createRequire(join(ROOT, 'web', 'package.json'))('playwright-core')
 
-const at = (path) => `http://127.0.0.1:${PORT}${path}${path.includes('?') ? '&' : '?'}token=${TOKEN}`
+const ORIGIN = `http://127.0.0.1:${PORT}`
+/**
+ * One address on this desk, **with nothing added to it**.
+ *
+ * It used to append `?token=` to every path, because that was how the chassis
+ * authenticated a request. Nothing authenticates on a query now: the page
+ * bootstraps once at `LAUNCH` below and holds a session id it puts on each
+ * request itself, so every path after that is the path a person would actually
+ * be looking at — which is also what makes the address-bar assertion below mean
+ * anything.
+ */
+const at = (path) => `${ORIGIN}${path}`
+/** The launch exchange, and the only place the secret is ever sent. */
+const LAUNCH = `${ORIGIN}/launch?secret=${encodeURIComponent(SECRET)}`
 const PANES = {
   '.desk': 'relative',
   '.desk-rail': 'relative',
@@ -381,6 +402,64 @@ page.on('console', (message) => {
     problems.push(`console: ${message.text()}`)
   }
 })
+
+// **The bootstrap, once, before anything is measured — and the page does it**,
+// which is the point. `GET /launch?secret=…` sets a one-shot handoff cookie and
+// redirects to `/#`; the page spends that handoff at `POST /api/session` for a
+// session id it keeps in `sessionStorage` and puts on every later request
+// itself. A run that skipped it would measure a page with no data in it and
+// report the containment of an error state.
+await page.goto(LAUNCH, { waitUntil: 'domcontentloaded', timeout: 45000 })
+await page.waitForSelector('.desk', { timeout: 30000 })
+{
+  const wrong = []
+  const landed = new URL(page.url())
+  if (landed.pathname !== '/' || landed.search !== '') {
+    wrong.push(`the address is ${page.url()}`)
+  }
+  // **`href`, not `hash`.** The launch redirects to `/#` so the request's own
+  // fragment cannot be inherited (RFC 9110 §10.2.2), and the page removes the
+  // bare `#` on load — which `location.hash` cannot see, being empty either way.
+  if (page.url().endsWith('#')) wrong.push(`the bare # is still there: ${page.url()}`)
+  if (page.url().includes(SECRET)) wrong.push('the launch secret is in the address bar')
+
+  // The page holds a session id, keyed by this origin — per tab, and per port.
+  //
+  // **Awaited, not read once.** The exchange is one request the page makes on
+  // load, and reading storage the instant the DOM is ready is reading before it
+  // has answered — a race this gate would report as a missing session on a slow
+  // machine and pass on a fast one. Ten seconds is far past any real answer and
+  // short enough to fail rather than hang.
+  const key = `jpack-desk-session:127.0.0.1:${PORT}`
+  let held = null
+  for (const _ of Array.from({ length: 100 })) {
+    held = await page.evaluate((k) => window.sessionStorage.getItem(k), key)
+    if (typeof held === 'string' && held.length === 48) break
+    await page.waitForTimeout(100)
+  }
+  if (typeof held !== 'string' || held.length !== 48) {
+    wrong.push(`sessionStorage[${key}] is ${JSON.stringify(held)} after 10s, want a 48-character id`)
+  }
+  if (held === SECRET) wrong.push('the page is holding the launch secret itself')
+
+  // And **nothing ambient is left**: the handoff was spent and cleared, and no
+  // cookie of any kind remains on this origin.
+  const cookies = await context.cookies(ORIGIN)
+  const live = cookies.filter((cookie) => cookie.value !== '')
+  if (live.length > 0) {
+    wrong.push(`a live cookie remains: ${live.map((cookie) => cookie.name).join(', ')}`)
+  }
+
+  if (wrong.length > 0) {
+    console.error(`the bootstrap is wrong: ${wrong.join('; ')}`)
+    await browser.close()
+    process.exit(2)
+  }
+  console.log(
+    `launch        ok  bootstrapped: sessionStorage holds a 48-character id, ` +
+      `${cookies.length} cookie(s) left on this origin; address ${page.url()}`
+  )
+}
 
 /** Everything read off one rendered page, in one round trip. */
 const MEASURE = (panes) => {

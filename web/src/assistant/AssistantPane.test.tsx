@@ -234,9 +234,7 @@ async function draw(options: {
   return { model, relayed, prompted }
 }
 
-beforeEach(() => {
-  window.sessionStorage.setItem('jpack-desk-token', 'a-token')
-})
+beforeEach(() => {})
 
 afterEach(() => {
   cleanup()
@@ -326,16 +324,25 @@ describe('one whole run', () => {
 
   it('opens one connection of its own, and calls the relay with no credential', async () => {
     const { relayed } = await runIt()
-    // The assistant's socket, not the desk's: one, and it carries the session
-    // token the chassis authenticates every request with.
+    // The assistant's socket, not the desk's: one, and **nothing of a
+    // credential is on its address** — the session id travels in the
+    // subprotocol offer, which is a header, not a URL that reaches a log.
     expect(runtime!.opened).toHaveLength(1)
-    expect(runtime!.opened[0]).toContain('/ws?token=a-token')
+    expect(runtime!.opened[0]).toContain('/ws')
+    expect(runtime!.opened[0]).not.toContain('token=')
+    expect(runtime!.opened[0]).not.toContain('?')
     expect(relayed.length).toBeGreaterThan(0)
     for (const request of relayed) {
       expect(request.url.startsWith('/api/assistant/relay/v1/chat/completions')).toBe(true)
-      for (const forbidden of ['authorization', 'x-api-key', 'cookie']) {
-        expect(request.headerNames.map((name) => name.toLowerCase())).not.toContain(forbidden)
+      // **`authorization` is this desk's own, and nothing else is.** The relay
+      // is a gated route, so the page's session travels on it; what must never
+      // be here is a credential for the configured *endpoint*, which lives on
+      // this machine and is attached by the chassis.
+      const names = request.headerNames.map((name) => name.toLowerCase())
+      for (const forbidden of ['x-api-key', 'cookie', 'x-goog-api-key', 'proxy-authorization']) {
+        expect(names).not.toContain(forbidden)
       }
+      expect(names.filter((name) => name === 'authorization')).toHaveLength(1)
     }
   })
 

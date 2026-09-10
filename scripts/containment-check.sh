@@ -33,6 +33,12 @@
 #   so the configuration that renders it is part of the measurement.
 # - Every process it starts is killed **by PID**.
 #
+# - The desk is started with a fixed `--dev-token`, which is the **launch
+#   secret**: `curl` presents it as `Authorization: Bearer` and the browser
+#   trades it once at `GET /launch?secret=…` for a sixty-second, single-use
+#   handoff; the page spends that for a session id it holds in `sessionStorage`
+#   and puts on every later request itself.
+#
 # `JPACK_BIN` names the runtime binary to hand the chassis, if the project
 # needs one. `PLAYWRIGHT_CHROME` names a Chrome executable; without it,
 # playwright-core is asked for the installed one (`channel: 'chrome'`).
@@ -62,7 +68,10 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-TOKEN="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+# The **launch secret**, fixed here so this script can present it. It is never
+# on a request query: curl sends `Authorization: Bearer`, and the browser is
+# handed one `GET /launch?secret=…` that trades it for a one-shot handoff.
+SECRET="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 export XDG_CONFIG_HOME="$WORK/config"
 mkdir -p "$XDG_CONFIG_HOME/jpack-desk"
 cp -a "$PROJECT" "$WORK/project"
@@ -84,18 +93,19 @@ cat > "$XDG_CONFIG_HOME/jpack-desk/desk.json" <<JSON
 JSON
 
 if [ -n "${JPACK_BIN:-}" ]; then
-  "$BIN" --dev-token "$TOKEN" --port "$PORT" --jpack "$JPACK_BIN" "$WORK/project" \
+  "$BIN" --dev-token "$SECRET" --port "$PORT" --jpack "$JPACK_BIN" "$WORK/project" \
     > "$WORK/chassis.log" 2>&1 &
 else
-  "$BIN" --dev-token "$TOKEN" --port "$PORT" "$WORK/project" > "$WORK/chassis.log" 2>&1 &
+  "$BIN" --dev-token "$SECRET" --port "$PORT" "$WORK/project" > "$WORK/chassis.log" 2>&1 &
 fi
 DESK_PID=$!
 
+AUTH="Authorization: Bearer $SECRET"
 for _ in $(seq 1 150); do
-  curl -sf "http://127.0.0.1:$PORT/api/desk-config?token=$TOKEN" >/dev/null 2>&1 && break
+  curl -sf -H "$AUTH" "http://127.0.0.1:$PORT/api/desk-config" >/dev/null 2>&1 && break
   sleep 0.2
 done
-if ! curl -sf "http://127.0.0.1:$PORT/api/desk-config?token=$TOKEN" >/dev/null 2>&1; then
+if ! curl -sf -H "$AUTH" "http://127.0.0.1:$PORT/api/desk-config" >/dev/null 2>&1; then
   echo "the chassis did not come up on $PORT" >&2
   cat "$WORK/chassis.log" >&2
   exit 2
@@ -103,15 +113,15 @@ fi
 
 # The key is stored, never sent: Admin renders no picker without one, and a
 # picker is what renders the `<select>` this invariant exists for.
-curl -sf -X PUT -H 'Content-Type: application/json' \
+curl -sf -X PUT -H "$AUTH" -H 'Content-Type: application/json' \
   -d '{"key":"placeholder-never-sent-0000000000"}' \
-  "http://127.0.0.1:$PORT/api/assistant/key?token=$TOKEN" >/dev/null 2>&1 \
+  "http://127.0.0.1:$PORT/api/assistant/key" >/dev/null 2>&1 \
   || echo "note: no assistant key stored; Admin will render no pickers" >&2
 
 # The source root is passed, so the measurement reads this repository's sheets,
 # `App.tsx` and `playwright-core` rather than whatever directory a copy of the
 # `.mjs` was run from.
-node scripts/containment-check.mjs "$PORT" "$TOKEN" "$LABEL" "$PWD"
+node scripts/containment-check.mjs "$PORT" "$SECRET" "$LABEL" "$PWD"
 CODE=$?
 
 # Contents, not names and sizes: a copy that was edited in place keeps both.

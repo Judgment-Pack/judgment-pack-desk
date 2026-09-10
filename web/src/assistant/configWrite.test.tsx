@@ -75,8 +75,7 @@ describe('the desk-level assistant write', () => {
     expect(answered).toEqual(WRITTEN)
 
     expect(seen.urls).toHaveLength(1)
-    expect(seen.urls[0]).toContain('/api/desk-config?')
-    expect(seen.urls[0]).toContain('token=')
+    expect(seen.urls[0]).toBe('/api/desk-config')
     expect(seen.calls[0]!.method).toBe('PUT')
 
     const sent = JSON.parse(String(seen.calls[0]!.body)) as Record<string, unknown>

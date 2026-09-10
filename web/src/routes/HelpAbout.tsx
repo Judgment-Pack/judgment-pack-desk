@@ -20,7 +20,7 @@ import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { connectionSays, useMcp } from '../mcp/McpProvider'
 import { AUTHOR_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
 import { usePacks } from '../mcp/queries'
-import { TOKEN_SENTENCE } from '../identity/UserControl'
+import { SESSION_SENTENCE } from '../identity/UserControl'
 import { SHORTCUTS } from '../shell/shortcuts'
 import { useHashTarget } from '../shell/useHashTarget'
 
@@ -151,12 +151,11 @@ export function HelpAbout() {
       </Section>
 
       <Section title="Security">
-        <p className="quiet">{TOKEN_SENTENCE}</p>
+        <p className="quiet">{SESSION_SENTENCE}</p>
         <p className="quiet">
           The desk is authorized by three things and not by who you are: the loopback bind, that
-          session token, and an origin check on every relay and file-API request. A configured
-          identity provider changes what the header displays and nothing about who may reach the
-          desk.
+          session, and an origin check on every relay and file-API request. A configured identity
+          provider changes what the header displays and nothing about who may reach the desk.
         </p>
       </Section>
 

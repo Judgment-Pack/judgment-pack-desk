@@ -40,6 +40,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { loadEngine } from './engines'
 import { bindModelCall, openAssistantConnection, runAssistantSession } from './session'
+import { sessionBearer, whenSessionEnds } from '../mcp/session'
 import { normalize } from './thinking'
 import type { AssistantEvent } from './engine'
 import type { AssistantConnection } from './session'
@@ -276,6 +277,22 @@ export function useAssistantRun(options: {
     }
   }, [finish, release])
 
+  /**
+   * The session ending stops the run, and **stopping it is an abort**.
+   *
+   * Closing the connection is not enough on its own. The engine's loop is
+   * driving a model over the relay and a tool over the socket; a close ends the
+   * socket, and the engine goes on awaiting a model answer that will arrive,
+   * with nothing to deliver it to but the pane. So the run's own controller is
+   * aborted — the same abort Stop performs — which is what every await in the
+   * loop is already written against, and `finish` accounts for the one terminal
+   * event as it does for every other ending.
+   *
+   * `stop()` rather than `release()` for that reason: a run that ended with no
+   * terminal event is a pane that says it is still running for ever.
+   */
+  useEffect(() => whenSessionEnds(() => stop()), [stop])
+
   const start = useCallback(
     (prompt: string) => {
       if (active.current !== null && !active.current.ended) return
@@ -288,11 +305,21 @@ export function useAssistantRun(options: {
 
       void (async () => {
         try {
-          // Recorded before anything is awaited: the handle exists now, and
-          // `close()` on it is valid whatever stage the setup has reached.
+          // **The session id first.** The assistant opens its own socket and
+          // the id travels in the subprotocol offer, so it has to be in hand
+          // before the transport is built. `sessionBearer()` awaits the page's
+          // one exchange, memoised — by the time a run can start the desk's own
+          // provider has already awaited it, so this resolves from memory — and
+          // it refuses where a `401` has already ended this page's session, so
+          // a run in that state opens no socket and says why. Nothing is open
+          // yet at this await, so there is nothing an abort here could leak.
+          const sessionId = await sessionBearer()
+          // Recorded before anything else is awaited: the handle exists now,
+          // and `close()` on it is valid whatever stage the setup has reached.
           const opened = openAssistantConnection({
             allowed: endpoint.tools,
             onEvent: (event) => push(run, event),
+            sessionId,
             signal: run.controller.signal
           })
           run.connection = opened

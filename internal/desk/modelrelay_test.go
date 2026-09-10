@@ -121,18 +121,53 @@ func relayDeskAt(t *testing.T, kind, endpointURL string) (*Server, *httptest.Ser
 	return s, ts, logged
 }
 
-// relayURL is one address on the relay, token and all.
+// relayURL is one address on the relay: the mount point, the suffix, and
+// whatever query the suffix itself carried — **and nothing this desk added**.
 //
-// The token goes **first**, because the guard reads the first `token`
-// parameter: a page that put one of its own before the desk's would be refused,
-// which is the guard working and not the relay being tested.
+// It used to write `?token=<secret>` in front of the page's own query, because
+// that was how every request was authenticated. Nothing authenticates on a
+// query now, so a relayed address is exactly what the page asked for and the
+// query rule sees only the page's half. See `relayDo`, which authorizes with
+// the launch secret in a header.
 func relayURL(ts *httptest.Server, suffix string) string {
-	path, query, _ := strings.Cut(suffix, "?")
-	address := ts.URL + relayPrefix + path + "?token=" + testToken
-	if query != "" {
-		address += "&" + query
+	return ts.URL + relayPrefix + suffix
+}
+
+// relayBare is one relayed request with **no credential of any kind**.
+func relayBare(t *testing.T, ts *httptest.Server, method, suffix string, body io.Reader) *http.Request {
+	t.Helper()
+	req, err := http.NewRequest(method, relayURL(ts, suffix), body)
+	if err != nil {
+		t.Fatalf("request: %v", err)
 	}
-	return address
+	return req
+}
+
+// authorizeAsPage puts a live session id on a request the way the page does.
+//
+// **It goes on last, and it wins.** This suite sends a corpus of credential
+// header names through the relay to prove none reaches the endpoint, and
+// `Authorization` is among them — which is now this desk's *own* door. A
+// request whose own authorization the corpus overwrote would be refused by the
+// gate and never reach the outbound allow-list the test is about, so the desk's
+// header is written after the decorator. What the corpus cannot measure for
+// that one name is covered by a stronger assertion instead:
+// `TestTheSessionIDNeverReachesTheEndpoint`.
+//
+// It is faithful, too. The page's relay client holds `Authorization` off its
+// allow-list (`MODEL_REQUEST_HEADERS` in `assistant/session.ts`), so an engine
+// cannot put one on a relayed request at all.
+func authorizeAsPage(t *testing.T, ts *httptest.Server, req *http.Request) {
+	t.Helper()
+	pageBearer(beginSession(t, ts))(req)
+}
+
+// relayRequest is one relayed request authorized the way the page is.
+func relayRequest(t *testing.T, ts *httptest.Server, method, suffix string, body io.Reader) *http.Request {
+	t.Helper()
+	req := relayBare(t, ts, method, suffix, body)
+	authorizeAsPage(t, ts, req)
+	return req
 }
 
 // relayGet sends one relayed request and reads the whole answer.
@@ -146,13 +181,15 @@ func relayDo(
 	decorate func(*http.Request),
 ) (*http.Response, string) {
 	t.Helper()
-	req, err := http.NewRequest(method, relayURL(ts, suffix), body)
-	if err != nil {
-		t.Fatalf("request: %v", err)
-	}
+	// **The credential goes on last.** A decorator that writes `Authorization`
+	// or `Cookie` is a page smuggling a header, and the property under test is
+	// that the *relay* drops it — not that this desk's gate refuses a request
+	// whose own authorization the test overwrote.
+	req := relayBare(t, ts, method, suffix, body)
 	if decorate != nil {
 		decorate(req)
 	}
+	authorizeAsPage(t, ts, req)
 	resp, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, suffix, err)
@@ -254,6 +291,46 @@ var credentialHeaderCorpus = []string{
 	"X-Api-Key", "Api-Key", "X-Goog-Api-Key",
 	"X-Auth-Token", "X-Access-Token", "X-Amz-Security-Token", "X-Session-Token",
 	"Ocp-Apim-Subscription-Key", "X-Functions-Key", "Api-Secret", "X-Csrf-Token",
+}
+
+// TestTheSessionIDNeverReachesTheEndpoint is the seam's own version of the
+// header rule: this desk's own credential travels on `Authorization`, the very
+// header the endpoint's credential is injected into, and a relay that forwarded
+// the page's would hand the configured endpoint a working session on this
+// machine's desk.
+//
+// It falls out of the outbound allow-list rather than being deleted by name —
+// which is the whole argument for an allow-list — and this is the assertion
+// that it actually falls out.
+func TestTheSessionIDNeverReachesTheEndpoint(t *testing.T) {
+	u := newUpstream(t, nil)
+	_, ts, _ := relayDesk(t, "anthropic", u)
+
+	id := beginSession(t, ts)
+	req := relayBare(t, ts, http.MethodGet, "v1/messages", nil)
+	pageBearer(id)(req)
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	seen := u.only(t)
+	if got := seen.header.Values("Cookie"); len(got) != 0 {
+		t.Fatalf("the endpoint received a Cookie header: %v", got)
+	}
+	whole := fmt.Sprint(seen.header) + seen.rawQuery + seen.path
+	if strings.Contains(whole, id) {
+		t.Fatalf("the session id reached the endpoint: %q", whole)
+	}
+	// The desk's own `Authorization` is replaced by the endpoint's credential
+	// rather than forwarded — the assertion the corpus cannot make for that one
+	// name, because the name is the door.
+	if got := seen.header.Get("Authorization"); strings.Contains(got, id) {
+		t.Fatalf("this desk's own bearer reached the endpoint: %q", got)
+	}
 }
 
 func TestRelayCarriesNoCredentialHeaderToTheEndpoint(t *testing.T) {
@@ -477,8 +554,7 @@ func TestRelayAppendsTheSuffixToTheConfiguredPath(t *testing.T) {
 	if seen.path != "/tenant%2Fone/v1/chat/completions" {
 		t.Errorf("path %q — the configured escaping did not survive", seen.path)
 	}
-	// The configured query, and only that: nothing of the page's is forwarded,
-	// the session token it necessarily sent included.
+	// The configured query, and only that: nothing of the page's is forwarded.
 	if seen.rawQuery != "route=eu" {
 		t.Errorf("query %q, want the configured one alone", seen.rawQuery)
 	}
@@ -486,52 +562,76 @@ func TestRelayAppendsTheSuffixToTheConfiguredPath(t *testing.T) {
 
 func TestRelayForwardsNothingOfThePagesQuery(t *testing.T) {
 	// **Three reviewers leaked this desk's session token three different ways,
-	// and each fix was a better comparison.** `?%74oken=` (the guard decodes
+	// and each fix was a better comparison.** `?%74oken=` (the guard decoded
 	// names and a raw compare did not), `?x=1;token=…&token=…` (Go rejects a
 	// pair containing `;`; a server that still splits on one does not), and
 	// `?Token=…&token=…` (this desk compared case-sensitively; ASP.NET Core's
-	// query parser folds case). The class exists because the query was
-	// forwarded at all: no comparison this desk can write is the comparison
-	// every parser downstream makes.
+	// query parser folds case). The class existed because the query carried a
+	// secret at all: no comparison this desk can write is the comparison every
+	// parser downstream makes.
 	//
-	// So a relayed request carries the session token and **nothing else**, and
-	// every one of those spellings is now a 400 with nothing sent. The rule
-	// this holds is the strongest one available: not "the token is removed"
-	// but "there is nothing of the page's to remove".
+	// **The class is gone at its root now, and this is what keeps it gone.** No
+	// secret rides on any query: a browser presents the session id it holds and
+	// a script the launch secret, both on `Authorization: Bearer`, so `token=…`
+	// on a relayed
+	// request is not a credential being handled carefully — it is a page
+	// sending something nothing asks for, and it is refused like any other
+	// pair. The rule this holds is the strongest one available: not "the token
+	// is removed" but "there is nothing of the page's to send".
 	for _, testCase := range []struct {
-		name     string
-		query    string
-		accepted bool
-		status   int
-		code     string
+		name       string
+		query      string
+		authorized bool
+		accepted   bool
+		status     int
+		code       string
 	}{
-		{"the token alone", "token=" + testToken, true, http.StatusOK, ""},
-		// Two of the same name: the guard reads the first, and the only name
-		// present is still `token`.
-		{"the token twice", "token=" + testToken + "&token=" + testToken, true, http.StatusOK, ""},
-		// The case-folding leak, which is the finding this rule closes.
-		{"a capitalised second name", "Token=" + testToken + "&token=" + testToken,
-			false, http.StatusBadRequest, CodeAssistantRelayPath},
-		{"an encoded capital", "%54oken=" + testToken + "&token=" + testToken,
-			false, http.StatusBadRequest, CodeAssistantRelayPath},
+		{"no query at all", "", true, true, http.StatusOK, ""},
+		// The spelling that authenticated every request before this change,
+		// carrying the genuine launch secret. It authorizes nothing and
+		// forwards nothing.
+		{"the launch secret on the query", "token=" + testToken,
+			true, false, http.StatusBadRequest, CodeAssistantRelayPath},
+		{"the launch secret twice", "token=" + testToken + "&token=" + testToken,
+			true, false, http.StatusBadRequest, CodeAssistantRelayPath},
+		// The case-folding leak, which is the finding that class closed.
+		{"a capitalised token name", "Token=" + testToken,
+			true, false, http.StatusBadRequest, CodeAssistantRelayPath},
+		{"an encoded capital", "%54oken=" + testToken,
+			true, false, http.StatusBadRequest, CodeAssistantRelayPath},
 		// And every ordinary parameter a page might reach for.
-		{"a page parameter of its own", "token=" + testToken + "&x=1",
-			false, http.StatusBadRequest, CodeAssistantRelayPath},
-		// No token at all: refused by the guard, which comes first — a request
-		// nothing authenticated never reaches the query rule.
-		{"a page parameter alone", "x=1", false, http.StatusUnauthorized, CodeUnauthorized},
-		{"an empty name", "token=" + testToken + "&=1",
-			false, http.StatusBadRequest, CodeAssistantRelayPath},
-		{"a name that will not decode", "token=" + testToken + "&%zz=2",
-			false, http.StatusBadRequest, CodeAssistantRelayPath},
-		{"a bare flag", "token=" + testToken + "&stream",
-			false, http.StatusBadRequest, CodeAssistantRelayPath},
+		{"a page parameter of its own", "x=1",
+			true, false, http.StatusBadRequest, CodeAssistantRelayPath},
+		// Nothing authorizing it at all: refused by the guard, which comes
+		// first — a request with no session never reaches the query rule, and
+		// the launch secret on the query is not a session.
+		{"a page parameter and no session", "x=1",
+			false, false, http.StatusUnauthorized, CodeUnauthorized},
+		{"the launch secret on the query and nothing else", "token=" + testToken,
+			false, false, http.StatusUnauthorized, CodeUnauthorized},
+		{"an empty name", "=1",
+			true, false, http.StatusBadRequest, CodeAssistantRelayPath},
+		{"a name that will not decode", "%zz=2",
+			true, false, http.StatusBadRequest, CodeAssistantRelayPath},
+		{"a bare flag", "stream",
+			true, false, http.StatusBadRequest, CodeAssistantRelayPath},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			counter := countingRelays(t)
 			u := newUpstream(t, nil)
 			_, ts, _ := relayDesk(t, "openai-compatible", u)
-			resp, err := ts.Client().Get(ts.URL + relayPrefix + "models?" + testCase.query)
+			address := ts.URL + relayPrefix + "models"
+			if testCase.query != "" {
+				address += "?" + testCase.query
+			}
+			req, err := http.NewRequest(http.MethodGet, address, nil)
+			if err != nil {
+				t.Fatalf("request: %v", err)
+			}
+			if testCase.authorized {
+				bearer(req)
+			}
+			resp, err := ts.Client().Do(req)
 			if err != nil {
 				t.Fatalf("get: %v", err)
 			}
@@ -553,15 +653,13 @@ func TestRelayForwardsNothingOfThePagesQuery(t *testing.T) {
 			if resp.StatusCode != http.StatusOK {
 				t.Fatalf("status %d, want 200: %s", resp.StatusCode, body)
 			}
-			// Accepted, and still nothing of the page's reaches the endpoint:
-			// the token is not forwarded either.
 			if calls, _ := counter.seen(); calls != 1 {
 				t.Fatalf("%d outbound request(s), want 1", calls)
 			}
 			_, addresses := counter.seen()
-			for _, address := range addresses {
-				if strings.Contains(address, testToken) || strings.Contains(address, "token") {
-					t.Errorf("the session token reached the endpoint: %q", address)
+			for _, reached := range addresses {
+				if strings.Contains(reached, testToken) || strings.Contains(reached, "token") {
+					t.Errorf("a credential reached the endpoint: %q", reached)
 				}
 			}
 		})
@@ -572,7 +670,7 @@ func TestRelayCarriesTheConfiguredQueryAndOnlyThat(t *testing.T) {
 	// The positive control for the refusal above, and the half that has to keep
 	// working: an endpoint's own routing is out of the file on this machine and
 	// still travels — `?api-version=…` is how a whole vendor addresses its
-	// models — while the token the page necessarily sent does not.
+	// models — while nothing the page sends does.
 	u := newUpstream(t, nil)
 	_, ts, _ := relayDeskAt(t, "openai-compatible",
 		u.server.URL+"/v1?api-version=2024-10-21&route=eu%3Bwest")
@@ -588,10 +686,10 @@ func TestRelayCarriesTheConfiguredQueryAndOnlyThat(t *testing.T) {
 		t.Errorf("query %q, want the configured one unchanged", seen.rawQuery)
 	}
 	if strings.Contains(seen.rawQuery, testToken) || strings.Contains(seen.rawQuery, "token") {
-		t.Errorf("the page's token reached the endpoint: %q", seen.rawQuery)
+		t.Errorf("a credential reached the endpoint on the query: %q", seen.rawQuery)
 	}
 	if strings.Contains(fmt.Sprint(seen.header), testToken) {
-		t.Errorf("the session token reached the endpoint in a header: %v", seen.header)
+		t.Errorf("the launch secret reached the endpoint in a header: %v", seen.header)
 	}
 }
 
@@ -599,20 +697,24 @@ func TestRelayRefusesAQueryCarryingASemicolon(t *testing.T) {
 	// **Two parsers disagreed about one character and the desk's own session
 	// token went to the endpoint.** `;` was a query separator once and some
 	// servers still read it as one; Go does not, so
-	// `x=1;token=<the token>&token=<the token>` reads to the guard as a single
+	// `x=1;token=<the token>&token=<the token>` read to the guard as a single
 	// `token` parameter — accepted — while the strip removed the pair it could
 	// see and preserved `x=1;token=<the token>` byte for byte, for an endpoint
 	// that does split on `;`.
 	//
 	// The answer is not a third parser: two readers can only be held to one
 	// answer over the inputs they read the same way, so this query is refused.
+	// It stays refused now that no secret rides on any query: a desk that
+	// forwarded a query two parsers read differently would still have an
+	// argument to make about why that is safe, and it has none.
 	counter := countingRelays(t)
 	u := newUpstream(t, nil)
 	_, ts, _ := relayDesk(t, "openai-compatible", u)
 	for _, query := range []string{
-		"x=1;token=" + testToken + "&token=" + testToken,
-		"token=" + testToken + "&a=1;b=2",
-		"token=" + testToken + ";",
+		"x=1;y=2",
+		"a=1;b=2",
+		"alt=sse;x=1",
+		";",
 	} {
 		resp, body := relayDo(t, ts, http.MethodGet, "models?"+query, nil, nil)
 		if resp.StatusCode != http.StatusBadRequest {
@@ -636,7 +738,7 @@ func TestRelayAdmitsAMethodColonOnlyAsAClosedShape(t *testing.T) {
 	// native Gemini wire addresses a method with a colon in the last segment,
 	// so `<name>:<method>` is accepted for a method on the closed list and
 	// nothing else is — a colon before a name nobody wrote down would let
-	// whoever holds the session token ask the configured endpoint to *do*
+	// whoever holds a session ask the configured endpoint to *do*
 	// something, with the stored credential attached.
 	for _, suffix := range []string{
 		"v1beta/models/gemini-2.5-pro:generateContent",
@@ -757,13 +859,13 @@ func TestRelayAdmitsTheStreamPairOnGeminiAndOnNoOtherKind(t *testing.T) {
 				t.Fatalf("status %d, want 200: %s", resp.StatusCode, body)
 			}
 			seen := u.only(t)
-			// Byte for byte, and the whole query: the token the page had to
-			// send is not among it.
+			// Byte for byte, and the whole query: the one admitted literal
+			// and nothing beside it.
 			if seen.rawQuery != "alt=sse" {
 				t.Errorf("query %q, want exactly %q", seen.rawQuery, "alt=sse")
 			}
 			if strings.Contains(seen.rawQuery, "token") {
-				t.Errorf("the session token reached the endpoint: %q", seen.rawQuery)
+				t.Errorf("a credential reached the endpoint: %q", seen.rawQuery)
 			}
 		})
 	}
@@ -906,7 +1008,7 @@ func TestRelayRefusesEveryOtherSpellingOfTheStreamPair(t *testing.T) {
 		"alt=sse&",
 		"=sse",
 	} {
-		extra, problem := relayQueryProblem("token=" + testToken + "&" + query)
+		extra, problem := relayQueryProblem(query)
 		if problem == "" {
 			t.Errorf("%q was accepted, carrying %q", query, extra)
 		}
@@ -1203,10 +1305,7 @@ func TestRelayFollowsNoRedirect(t *testing.T) {
 	// document, and a 302 with no body is not one — so it would be refused
 	// before this assertion could be made about it. What is under test here is
 	// that the redirect was not *followed*, which is ordinary model traffic.
-	req, err := http.NewRequest(http.MethodGet, relayURL(ts, "chat/completions"), nil)
-	if err != nil {
-		t.Fatalf("request: %v", err)
-	}
+	req := relayRequest(t, ts, http.MethodGet, "chat/completions", nil)
 	client := *ts.Client()
 	client.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
@@ -1247,10 +1346,7 @@ func TestRelayDeliversAStreamIncrementally(t *testing.T) {
 	})
 	_, ts, _ := relayDesk(t, "anthropic", u)
 
-	req, err := http.NewRequest(http.MethodGet, relayURL(ts, "v1/messages"), nil)
-	if err != nil {
-		t.Fatalf("request: %v", err)
-	}
+	req := relayRequest(t, ts, http.MethodGet, "v1/messages", nil)
 	resp, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatalf("get: %v", err)
@@ -1314,7 +1410,7 @@ func TestRelayDeliversADeclaredLengthStreamIncrementally(t *testing.T) {
 	// test would experience as a suite that hangs.
 	impatient := *ts.Client()
 	impatient.Timeout = 5 * time.Second
-	resp, err := impatient.Get(relayURL(ts, "chat/completions"))
+	resp, err := impatient.Do(relayRequest(t, ts, http.MethodGet, "chat/completions", nil))
 	if err != nil {
 		close(released)
 		t.Fatalf("no answer arrived while the endpoint was still writing: %v", err)
@@ -1345,7 +1441,7 @@ func TestRelayDeliversADeclaredLengthStreamIncrementally(t *testing.T) {
 
 /* The refusals ------------------------------------------------------------- */
 
-func TestRelayRefusesWithoutTheSessionToken(t *testing.T) {
+func TestRelayRefusesWithoutASession(t *testing.T) {
 	counter := countingRelays(t)
 	u := newUpstream(t, nil)
 	_, ts, _ := relayDesk(t, "openai-compatible", u)
@@ -1482,7 +1578,7 @@ func TestRelayRefusesPastTheConcurrencyBound(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			resp, err := ts.Client().Get(relayURL(ts, "chat/completions"))
+			resp, err := ts.Client().Do(relayRequest(t, ts, http.MethodGet, "chat/completions", nil))
 			if err == nil {
 				_, _ = io.Copy(io.Discard, resp.Body)
 				resp.Body.Close()
@@ -1505,7 +1601,7 @@ func TestRelayRefusesPastTheConcurrencyBound(t *testing.T) {
 	// safeguard that is checked and one that is only believed.
 	impatient := *ts.Client()
 	impatient.Timeout = 5 * time.Second
-	resp, err := impatient.Get(relayURL(ts, "chat/completions"))
+	resp, err := impatient.Do(relayRequest(t, ts, http.MethodGet, "chat/completions", nil))
 	if err != nil {
 		close(released)
 		wg.Wait()
@@ -1603,7 +1699,7 @@ func TestRelayBoundsTheGapBetweenWrites(t *testing.T) {
 		}
 	})
 	_, ts, _ := relayDesk(t, "anthropic", u)
-	resp, err := ts.Client().Get(relayURL(ts, "v1/messages"))
+	resp, err := ts.Client().Do(relayRequest(t, ts, http.MethodGet, "v1/messages", nil))
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -1696,8 +1792,9 @@ func relaySlotIsReleased(t *testing.T, overall, idle time.Duration) {
 		// forwarded and there is no stalled write left to bound. What is under
 		// test here is the write to a client that stopped reading, which is
 		// ordinary model traffic.
-		if _, err := fmt.Fprintf(conn, "GET %schat/completions?token=%s HTTP/1.1\r\nHost: %s\r\n"+
-			"Connection: close\r\n\r\n", relayPrefix, testToken, address); err != nil {
+		if _, err := fmt.Fprintf(conn, "GET %schat/completions HTTP/1.1\r\nHost: %s\r\n"+
+			"Authorization: Bearer %s\r\nConnection: close\r\n\r\n",
+			relayPrefix, address, testToken); err != nil {
 			t.Fatalf("write: %v", err)
 		}
 	}
@@ -1725,7 +1822,7 @@ func relaySlotIsReleased(t *testing.T, overall, idle time.Duration) {
 	deadline := time.Now().Add(overall + relayFinalWrite + time.Second)
 	var last int
 	for time.Now().Before(deadline) {
-		resp, err := impatient.Get(relayURL(ts, "chat/completions"))
+		resp, err := impatient.Do(relayRequest(t, ts, http.MethodGet, "chat/completions", nil))
 		if err != nil {
 			time.Sleep(100 * time.Millisecond)
 			continue
@@ -1914,7 +2011,7 @@ func TestRelayForwardsNoTrailer(t *testing.T) {
 
 	// And through a real client, whose trailer map is the other place a
 	// trailer would show up.
-	resp, err := ts.Client().Get(relayURL(ts, "chat/completions"))
+	resp, err := ts.Client().Do(relayRequest(t, ts, http.MethodGet, "chat/completions", nil))
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -1992,8 +2089,9 @@ func rawRelayExchange(t *testing.T, ts *httptest.Server, suffix string) string {
 		t.Fatalf("dial: %v", err)
 	}
 	defer conn.Close()
-	if _, err := fmt.Fprintf(conn, "GET %s%s?token=%s HTTP/1.1\r\nHost: %s\r\n"+
-		"Connection: close\r\n\r\n", relayPrefix, suffix, testToken, address); err != nil {
+	if _, err := fmt.Fprintf(conn, "GET %s%s HTTP/1.1\r\nHost: %s\r\n"+
+		"Authorization: Bearer %s\r\nConnection: close\r\n\r\n",
+		relayPrefix, suffix, address, testToken); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
@@ -2640,4 +2738,216 @@ func TestRelayBoundsTheWaitForTheFirstByte(t *testing.T) {
 	if after.StatusCode != http.StatusOK {
 		t.Fatalf("the slot did not come back: %d %s", after.StatusCode, afterBody)
 	}
+}
+
+/* The refusal mark, and what an endpoint may not wear ------------------------- */
+
+// TestAnUpstreamCannotWearThisDesksRefusalMark.
+//
+// The page tells a `401` this desk wrote from a `401` the *endpoint* wrote by
+// one header, so an endpoint that could set that header could end somebody's
+// desk session. Three casings, because `Header.Del` canonicalises and a rule
+// that compared bytes would not; and a trailer, because the proxy copies
+// trailers to the page after the body, past every filter on the answer.
+func TestAnUpstreamCannotWearThisDesksRefusalMark(t *testing.T) {
+	for _, spelling := range []string{
+		"X-Jpack-Desk-Refusal",
+		"x-jpack-desk-refusal",
+		"X-JPACK-DESK-REFUSAL",
+	} {
+		t.Run(spelling, func(t *testing.T) {
+			u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header()[spelling] = []string{"unauthorized"}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"error":{"message":"invalid api key"}}`))
+			})
+			_, ts, _ := relayDesk(t, "openai-compatible", u)
+			resp, body := relayDo(t, ts, http.MethodPost, "chat/completions",
+				strings.NewReader(`{}`), nil)
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("status %d, want the endpoint's 401: %s", resp.StatusCode, body)
+			}
+			if got := resp.Header.Get(RefusalHeader); got != "" {
+				t.Fatalf("an endpoint's %s reached the page as %q", spelling, got)
+			}
+			// The endpoint's own answer still travels: what is refused is the
+			// *mark*, not the refusal.
+			if !strings.Contains(body, "invalid api key") {
+				t.Fatalf("the endpoint's answer did not reach the page: %s", body)
+			}
+		})
+	}
+
+	t.Run("in a trailer", func(t *testing.T) {
+		u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Trailer", RefusalHeader)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":{"message":"invalid api key"}}`))
+			w.Header().Set(http.TrailerPrefix+RefusalHeader, "unauthorized")
+		})
+		_, ts, _ := relayDesk(t, "openai-compatible", u)
+		resp, body := relayDo(t, ts, http.MethodPost, "chat/completions",
+			strings.NewReader(`{}`), nil)
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("status %d, want the endpoint's 401: %s", resp.StatusCode, body)
+		}
+		if got := resp.Header.Get(RefusalHeader); got != "" {
+			t.Fatalf("a trailer carried the mark to the page as %q", got)
+		}
+		if got := resp.Trailer.Get(RefusalHeader); got != "" {
+			t.Fatalf("the trailer map carried the mark as %q", got)
+		}
+	})
+
+	// **The positive control.** A `401` this chassis authored on the same route
+	// *does* carry the mark — otherwise every row above passes on a desk that
+	// never sets the header at all.
+	t.Run("the chassis' own 401 on this route", func(t *testing.T) {
+		u := newUpstream(t, nil)
+		_, ts, _ := relayDesk(t, "openai-compatible", u)
+		req := relayBare(t, ts, http.MethodPost, "chat/completions", strings.NewReader(`{}`))
+		resp, err := ts.Client().Do(req)
+		if err != nil {
+			t.Fatalf("do: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("status %d, want 401", resp.StatusCode)
+		}
+		if got := resp.Header.Get(RefusalHeader); got != CodeUnauthorized {
+			t.Fatalf("%s = %q, want %q", RefusalHeader, got, CodeUnauthorized)
+		}
+		if len(u.arrivals()) != 0 {
+			t.Fatal("an unauthorized relay request reached the endpoint")
+		}
+	})
+}
+
+// TestAChunkedOversizedRefusalStreamsThrough is the other half of item 3: the
+// classifier this replaced read a cloned body, and a clone has tee semantics —
+// an answer larger than the reader's bound, arriving in chunks, deadlocks the
+// reader trying to classify it. Nothing reads a relayed body on this path now,
+// so a large chunked refusal simply travels.
+func TestAChunkedOversizedRefusalStreamsThrough(t *testing.T) {
+	const chunk = 2 << 10
+	const chunks = 16 // 32 KiB
+	u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		flusher, _ := w.(http.Flusher)
+		for range chunks {
+			_, _ = w.Write(bytes.Repeat([]byte("x"), chunk))
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	})
+	_, ts, _ := relayDesk(t, "openai-compatible", u)
+
+	began := time.Now()
+	resp, body := relayDo(t, ts, http.MethodPost, "chat/completions", strings.NewReader(`{}`), nil)
+	took := time.Since(began)
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status %d, want the endpoint's 401", resp.StatusCode)
+	}
+	if len(body) != chunk*chunks {
+		t.Fatalf("the page received %d bytes, want %d", len(body), chunk*chunks)
+	}
+	if got := resp.Header.Get(RefusalHeader); got != "" {
+		t.Fatalf("the endpoint's 401 arrived marked as this desk's: %q", got)
+	}
+	// **Promptly**, which is the property: a bound that read this body would
+	// have taken the idle deadline or hung. Five seconds is far past a
+	// loopback copy of 32 KiB and far short of any deadline on this route.
+	if took > 5*time.Second {
+		t.Fatalf("a 32 KiB chunked refusal took %s to reach the page", took)
+	}
+}
+
+// TestNothingOfThePagesQueryReachesTheEndpoint inspects **the endpoint's own
+// raw query**, which is the only place the claim can be checked.
+//
+// The row that names this used to break only the *refusal*, so the request was
+// refused a moment later by the same rule and nothing was ever forwarded — the
+// row measured a message. It now makes the relay forward the pair, and this is
+// what notices.
+func TestNothingOfThePagesQueryReachesTheEndpoint(t *testing.T) {
+	u := newUpstream(t, nil)
+	// A configured endpoint with a query of its own, so that "the endpoint's
+	// routing travels and the page's does not" is two assertions and not one.
+	_, ts, _ := relayDeskAt(t, "openai-compatible", u.server.URL+"/v1?deployment=blue")
+
+	// The legitimate call: the endpoint's own routing is what reaches it.
+	resp, body := relayDo(t, ts, http.MethodPost, "chat/completions", strings.NewReader(`{}`), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	if got := u.only(t).rawQuery; got != "deployment=blue" {
+		t.Fatalf("the endpoint saw the raw query %q, want only its own %q", got, "deployment=blue")
+	}
+
+	// And a pair of the page's own. **Measured by whether a request arrived at
+	// all**, not by the status and not by the endpoint's `RawQuery`: the page's
+	// query is never copied outbound in any case, so a dropped refusal does not
+	// *forward the pair* — it lets a request through that should have been
+	// refused, carrying only the configured query. Arrival is the defect.
+	refused, said := relayDo(t, ts, http.MethodPost, "chat/completions?x=1",
+		strings.NewReader(`{}`), nil)
+	if refused.StatusCode != http.StatusBadRequest {
+		t.Fatalf("a page's own query parameter answered %d, want 400: %s", refused.StatusCode, said)
+	}
+	if n := len(u.arrivals()); n != 1 {
+		t.Fatalf("the endpoint saw %d requests, want only the legitimate one: a page's "+
+			"query parameter carried a request to it", n)
+	}
+}
+
+// TestAnUpstreamMayNotRedirectThePage.
+//
+// An endpoint answering `307 Location: /api/session` made the page's own
+// `fetch` **repeat the request** — method, body and this desk's bearer included
+// — against the exchange, which answered a marked refusal; the relay classifier
+// then read that as "this desk refused my session" and forgot a perfectly valid
+// one. A model API never legitimately redirects the browser relaying to it: the
+// desk chose the address, and the page follows nobody's routing.
+func TestAnUpstreamMayNotRedirectThePage(t *testing.T) {
+	for _, header := range []string{"Location", "Refresh"} {
+		t.Run(header, func(t *testing.T) {
+			u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set(header, "/api/session")
+				w.WriteHeader(http.StatusTemporaryRedirect)
+			})
+			_, ts, _ := relayDesk(t, "openai-compatible", u)
+			resp, _ := relayDo(t, ts, http.MethodPost, "chat/completions",
+				strings.NewReader(`{}`), nil)
+			if got := resp.Header.Get(header); got != "" {
+				t.Fatalf("%s reached the page as %q", header, got)
+			}
+			// The status still travels: what is refused is the *instruction*,
+			// not the endpoint's answer.
+			if resp.StatusCode != http.StatusTemporaryRedirect {
+				t.Fatalf("status %d, want the endpoint's 307", resp.StatusCode)
+			}
+		})
+	}
+
+	// **The positive control**: without the strip this is what the page would
+	// have been told to do. A relayed answer that carried a `Location` at all
+	// is the whole defect, so the test that proves it is gone has to show that
+	// the header is one this stack would otherwise copy.
+	t.Run("an ordinary header still travels", func(t *testing.T) {
+		u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Request-Id", "abc123")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		})
+		_, ts, _ := relayDesk(t, "openai-compatible", u)
+		resp, _ := relayDo(t, ts, http.MethodPost, "chat/completions", strings.NewReader(`{}`), nil)
+		if got := resp.Header.Get("X-Request-Id"); got != "abc123" {
+			t.Fatalf("an ordinary answer header was dropped too: %q", got)
+		}
+	})
 }

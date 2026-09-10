@@ -38,6 +38,7 @@ import {
   RuntimeChecks
 } from '../assistant/ProposalReport'
 import { useAssistantRun } from '../assistant/useAssistantRun'
+import { whenSessionEnds } from '../mcp/session'
 import { outcomeOf, type ProposalEvent } from '../assistant/runOutcome'
 import { useAssistantSlot } from '../assistant/useAssistantSlot'
 import { AUTHOR_PACK_PROMPT, TEST_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
@@ -319,6 +320,26 @@ export function useDescribeIt(): DescribeItState {
     discardNow.current()
     setLost(SLOT_LOST)
   }, [usable])
+
+  /**
+   * **The desk's session ending discards this one too**, proposal and all.
+   *
+   * Stopping the run is not enough on its own. A proposal that had already
+   * arrived is state this component is holding: `offered` stays true, the
+   * document stays selected, and Create stays willing to write a document the
+   * assistant produced over a session the chassis has since refused. The same
+   * `discard` a lost slot performs is the honest answer — one terminal event
+   * through the run hook, and nothing left offered.
+   */
+  useEffect(
+    () =>
+      whenSessionEnds(() => {
+        if (!hadSession.current) return
+        discardNow.current()
+        setLost(SLOT_LOST)
+      }),
+    []
+  )
 
   /**
    * A new submission, and the previous proposal gone **at the press**.

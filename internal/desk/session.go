@@ -1,0 +1,1119 @@
+package desk
+
+// The bootstrap, the exchange, and the bearer session it produces.
+//
+// # The rule this file exists to keep
+//
+// **After the bootstrap, this desk holds no ambient credential.** Nothing the
+// browser attaches by itself authorizes anything: every gated request carries a
+// session id the page put on it deliberately, and a request that carries none
+// is refused however it arrives.
+//
+// That rule is the answer to a class of defect this desk went through twice.
+//
+//   - The secret rode on `?token=`, so it was in the address bar, in `Referer`,
+//     in proxy logs, in history, and in `Response.url` inside the page. The
+//     relay's query rule (`relayQueryProblem`) exists only because of it.
+//   - Then the session was a cookie. A cookie is ambient by construction, and —
+//     this is the part that is easy to get wrong — **a cookie has no port**. A
+//     cookie set for `127.0.0.1` is sent to every port on that host, so every
+//     other local service received this desk's session. Naming the cookie for
+//     the port stopped two desks colliding; it did not stop the browser sending
+//     it. Requiring `Sec-Fetch-Site: same-origin` stopped a *page* on a sibling
+//     port; it did nothing about a *script*, because forbidden-header rules bind
+//     browsers and nothing else. A captured cookie replayed by `curl` with a
+//     forged header read the desk.
+//
+// So the cookie is not the session. It is a **one-shot handoff**, and the shape
+// is:
+//
+//  1. `GET /launch?secret=…` matches the launch secret in constant time and
+//     sets `jpack-desk-launch-<port>`: a fresh 192-bit value, single use, good
+//     for sixty seconds, `HttpOnly; SameSite=Strict; Path=/; Max-Age=60`. It
+//     mints no session. Then `303` to `/#`.
+//  2. The page loads and calls `POST /api/session` **once**. That request
+//     consumes the handoff — it is removed from the store and cleared with
+//     `Max-Age=-1` — and answers a 192-bit **session id** in the body.
+//  3. The page keeps that id in `sessionStorage`, under a key that includes the
+//     origin's port, and puts it on every request itself: `Authorization:
+//     Bearer <id>` on `fetch`, and the WebSocket subprotocol offer on the
+//     upgrade. It is never on a URL and never in a cookie.
+//
+// The window in which anything ambient exists is therefore one request wide and
+// sixty seconds long, and what is ambient in it is not the session.
+//
+// # The residual, stated
+//
+// A script that captures the handoff **inside that window** and forges
+// `Sec-Fetch-Site: same-origin` can take a session, and this desk **cannot tell
+// that session from the person's own**. Forbidden-header rules stop browsers,
+// not scripts, and nothing written here changes it.
+//
+// **What the design does is bound it, and nothing more.** Sixty seconds, and
+// one use. It does not detect the theft and it does not announce it: four
+// attempts at making one visible on the page were tried and withdrawn, because
+// every signal the page could hold was state a reload could lose, and every
+// signal it could derive said the same thing about a second tab, a script and a
+// thief. The remedy is a **restart**, which regenerates the secret and empties
+// the store.
+//
+// # What is deliberately absent
+//
+// There is **no renewal, no sign-out, no expiry, no eviction and no socket
+// registry**. A session lives for the life of the process; the store refuses a
+// 65th rather than making room by dropping one. Every one of those is a second
+// actor that can end or replace a session while another is using it, and each
+// pair of actors is a race. They arrive with the identity provider, each as its
+// own PR, when there is a reason for them beyond symmetry.
+
+import (
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"net/http"
+	"path"
+	"strings"
+	"sync"
+	"time"
+)
+
+// launchCookiePrefix names the one cookie this chassis sets, and the port is
+// appended: a cookie's origin has no port, so two desks on one host would
+// otherwise hand each other's browser tab the wrong handoff.
+const launchCookiePrefix = "jpack-desk-launch"
+
+// launchCookieName is the handoff cookie's name, port and all.
+func launchCookieName(port int) string {
+	return fmt.Sprintf("%s-%d", launchCookiePrefix, port)
+}
+
+// launchWindow is how long a handoff is good for.
+//
+// Long enough for a page to load and make one request on any machine anybody
+// runs this on; short enough that a cookie sitting in a browser is not a
+// standing key. It is not a session lifetime — the session it buys has none.
+const launchWindow = 60 * time.Second
+
+// bearerScheme is the credential scheme every authorization is presented under.
+// One space, exactly: this is the whole grammar this desk reads.
+const bearerScheme = "Bearer "
+
+// fetchSiteHeader and fetchSiteSameOrigin are the browser's own account of
+// where a request came from.
+//
+// **They gate exactly one route** — the exchange, which is the only one an
+// ambient credential opens. The rest of this desk does not consult them, and
+// must not: a script forges them freely, so they are a defence against a
+// *page*, and only where a page could otherwise drive somebody's cookie.
+const (
+	fetchSiteHeader     = "Sec-Fetch-Site"
+	fetchSiteSameOrigin = "same-origin"
+)
+
+// The WebSocket subprotocol offer that carries a session id on an upgrade.
+//
+// **A subprotocol rather than a query or a header**, and the reason is that the
+// browser `WebSocket` constructor takes exactly two things: a URL and a list of
+// subprotocols. It has no header parameter. A credential on the URL is the
+// arrangement this desk spent two rounds removing, so the id goes in the one
+// remaining place the page can put it deliberately — and the server answers
+// with the plain `jpack-desk` protocol, so the id is never echoed *back*.
+//
+// **It is still on the request, and something supported does sit in between.**
+// `Sec-WebSocket-Protocol` is a request header, so anything between the page
+// and this process sees the id. In production that is nothing: the listener
+// binds loopback. Under `npm run dev` it is **the Vite dev server**, which this
+// repository documents and proxies `/ws` through — so in that configuration the
+// dev server handles the session id, and it is written down here and in the
+// README rather than left as an assumption about there being nothing in
+// between. What answering with the plain protocol avoids is the id appearing in
+// a *response* header as well, which is one more place for it to be kept.
+const (
+	wsProtocol       = "jpack-desk"
+	wsSessionPrefix  = "jpack-desk-session."
+	wsProtocolHeader = "Sec-WebSocket-Protocol"
+)
+
+// maxSessions bounds the session store, and the bound is a **refusal**.
+//
+// Sixty-four is far more open tabs than a local desk has, so reaching it is not
+// an ordinary state — it is a page bootstrapping in a loop, or a script minting
+// sessions it never uses. The two answers to that are to drop an old session or
+// to refuse a new one, and this desk refuses.
+//
+// **Eviction was the other answer, and it was the wrong one here.** Whatever
+// order it picks — oldest first, least recently used — it ends somebody's live
+// session from the outside, so the page holding it has to notice, and noticing
+// means a second actor in the page reading and replacing the credential the
+// bootstrap owns. That is a race with every other actor, and this desk went
+// through five review rounds finding those pairs one at a time. Refusing has
+// one consequence, it is visible, and the sentence says what to do about it.
+const maxSessions = 64
+
+// errTooManySessions is that refusal, reported as a 503 rather than a 500: the
+// desk is working and is temporarily unable to take another session.
+var errTooManySessions = errors.New("this desk holds its maximum of sessions; restart it")
+
+// errHandoffTaken is the commitment failing: the handoff was live when this
+// request classified it and gone by the time the mint asked for it. It is the
+// same answer to the page as any other spent handoff, because it is one.
+var errHandoffTaken = errors.New("this launch link was already used")
+
+// maxLaunches bounds the handoff store. It is small because a handoff lives
+// sixty seconds and is spent by the first page that loads.
+const maxLaunches = 32
+
+/* The two stores ------------------------------------------------------------- */
+
+// session is one live session.
+//
+// `subject` and `issuer` are what `GET /api/session` answers with, and they are
+// why this is a record rather than a set of ids: a session is the thing an
+// identity provider fills in, and a bare set has nowhere to put the subject it
+// authenticated. Today the exchange is the only thing that mints one, and what
+// it writes is the local user and no issuer.
+type session struct {
+	subject string
+	issuer  *string
+	created time.Time
+}
+
+// sessionStore is the set of live sessions, keyed by a **MAC of the id rather
+// than the id itself**.
+//
+// # Why the key is a MAC
+//
+// A `map[string]session` keyed on the raw id would answer "is this id live?"
+// with a hash-table probe over attacker-supplied bytes, and the whole reason
+// the secret comparison in this package is `subtle.ConstantTimeCompare` is that
+// a comparison whose cost depends on how much of a secret is right is a
+// comparison that leaks the secret a byte at a time. A map lookup is exactly
+// that shape: bucket selection and then key equality, short-circuiting.
+//
+// Keying on `HMAC-SHA256(processKey, id)` removes the signal rather than
+// timing it away. The caller supplies the id; what is probed is its MAC under a
+// key minted in this process and never disclosed, so no id an attacker can
+// choose puts them nearer a live one, and the bucket a guess lands in tells
+// them nothing about the bucket a real session is in. The MAC is computed over
+// the whole id every time, at a cost that does not depend on the id's content.
+type sessionStore struct {
+	// key is this process's MAC key. Random, never written down, and gone when
+	// the process is: sessions do not outlive the desk that minted them, so a
+	// key that outlived it would only be a key to steal.
+	key []byte
+
+	mu sync.Mutex
+	// live maps a session's MAC to the session. Nothing here is the id.
+	live map[string]session
+}
+
+func newSessionStore() (*sessionStore, error) {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, err
+	}
+	return &sessionStore{key: key, live: make(map[string]session)}, nil
+}
+
+// handle is the map key for a session id: its MAC under this process's key.
+//
+// A method rather than an inlined expression at the call sites, so that the
+// property is one function a reviewer can read and a test can name — see
+// `TestTheStoreHoldsNoSessionID`.
+func (st *sessionStore) handle(id string) string {
+	mac := hmac.New(sha256.New, st.key)
+	// hash.Hash never returns an error, by contract.
+	_, _ = mac.Write([]byte(id))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// create mints a session id and records the session behind it.
+//
+// The id is `NewToken`'s 192 bits, the same generator the launch secret comes
+// from: a session id is a bearer credential for the whole of this desk's
+// surface, so it is exactly as unguessable as the secret that bought it.
+//
+// **A full store refuses, and the check is under the lock that writes.** The
+// caller may read `full` first to answer early; this is the reading that
+// decides, because it is the one the write cannot be separated from.
+func (st *sessionStore) create(subject string, issuer *string) (string, error) {
+	return st.createCommitting(subject, issuer, func() bool { return true })
+}
+
+// createCommitting mints a session, and **the bound, the commit and the write
+// are one critical section**.
+//
+// `commit` is the irreversible thing a caller must do to earn the session — for
+// the exchange, spending the launch handoff. It runs under this store's lock,
+// after the bound has been re-read and before anything is written, so those
+// three cannot interleave.
+//
+// **The interleaving this exists for.** At sixty-three sessions, two requests
+// each carrying a live handoff both pass any bound read outside this lock.
+// Spending before minting, each would eat its handoff and one would then be
+// refused for want of room — a `503` that also ate a launch link the person
+// could otherwise still use. Here the second request reads sixty-four, refuses,
+// and **never calls `commit`**: its handoff is untouched and its link still
+// works. The same holds for a slot taken between a caller's early read and this
+// one, which is the other order: refused, and nothing spent.
+//
+// A `commit` that answers false has changed nothing, and says somebody else
+// took what this request was going to spend.
+//
+// **Lock order: this store's lock, then the launch store's.** `commit` reaches
+// `launchStore.spend`, and nothing in this package takes the launch store's
+// lock and then this one, so the pair cannot deadlock.
+func (st *sessionStore) createCommitting(subject string, issuer *string, commit func() bool) (string, error) {
+	id, err := NewToken()
+	if err != nil {
+		return "", err
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if len(st.live) >= maxSessions {
+		return "", errTooManySessions
+	}
+	if !commit() {
+		return "", errHandoffTaken
+	}
+	st.live[st.handle(id)] = session{subject: subject, issuer: issuer, created: time.Now()}
+	return id, nil
+}
+
+// full reports whether this store will refuse the next session.
+//
+// **Asked before a handoff is spent**, so that a desk at its bound refuses
+// without consuming the launch link: a person who restarts and reopens the URL
+// gets a working desk, rather than a link this process has already eaten.
+//
+// **It is an early answer and not the decision.** The reading that decides is
+// inside `createCommitting`, under the lock that writes; this one only spares a
+// request that is certainly refused the rest of the work.
+func (st *sessionStore) full() bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return len(st.live) >= maxSessions
+}
+
+// lookup answers the session an id names.
+//
+// **It records nothing.** There is no recency here, because there is no
+// eviction to order: a lookup is a read, and a read that wrote would be a
+// second thing to get right about a store whose only rule is "64, then no".
+func (st *sessionStore) lookup(id string) (session, bool) {
+	if id == "" {
+		return session{}, false
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	got, ok := st.live[st.handle(id)]
+	return got, ok
+}
+
+// count is the number of live sessions, for a test.
+func (st *sessionStore) count() int {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return len(st.live)
+}
+
+// handoffVerdict is what this desk knows about a handoff a request presented.
+//
+// **Four answers and not two**, because the page acts differently on one of
+// them and because a value nobody recognises must be ignored rather than
+// refused: a page on any sibling loopback port can plant a cookie of this name
+// at a longer path, and a rule that refused what it did not recognise would
+// answer a refusal on every load, for ever, to a tab whose session is fine.
+//
+// **Spent and expired are different only in what the page is told to do.** An
+// expiry says to reopen the printed URL, because nobody used the link and the
+// secret still works. A spend says nothing the page may act on — this desk
+// cannot tell a page's own earlier spend from anybody else's — so the page
+// treats it exactly as `no-handoff`.
+type handoffVerdict int
+
+const (
+	// handoffUnknown is a value this desk never minted, or minted so long ago
+	// that its record has gone. **It is ignored**: a page on a sibling loopback
+	// port can set a cookie of this name at a longer path and the browser will
+	// send it first, so a value nobody recognises must not be evidence of
+	// anything. See `handoffPresented`.
+	handoffUnknown handoffVerdict = iota
+	// handoffAccepted is live, and spending it is what this verdict means.
+	handoffAccepted
+	// handoffSpent is one this desk finished with: spent by this same tab on an
+	// earlier load, or by another caller. **The two are not distinguished**,
+	// and the page acts on neither.
+	handoffSpent
+	// handoffExpired is one this desk minted and let lapse.
+	handoffExpired
+)
+
+// maxTombstones bounds how many finished handoffs this store remembers.
+//
+// **A ring, and the bound is the honest part.** What the record buys is one
+// distinction — a handoff this desk *spent* from one it let *lapse* — because
+// those two send a person to do different things. Remembering for ever would be
+// a map that grows for the life of the process; sixty-four is far more launches
+// than a desk sees in a browser's lifetime for this cookie, and past it the
+// oldest record goes and a value it named reads as unknown from then on.
+//
+// **What that costs is nothing a page acts on.** An expiry whose record has
+// been cycled out reads as `no-handoff` instead, which is the same instruction
+// the page follows for a spend: keep the id you hold, or say you have none.
+const maxTombstones = 64
+
+// launchStore holds the handoffs a launch has minted and not yet spent, and a
+// bounded record of the ones it has finished with.
+//
+// Keyed by MAC for the same reason the session store is, and holding an expiry
+// rather than a value: what a handoff is worth is "unspent, and recent".
+type launchStore struct {
+	key []byte
+	// now is the clock, injectable so that expiry is a test rather than a wait.
+	now func() time.Time
+
+	mu    sync.Mutex
+	given map[string]time.Time
+	// finished maps a handle to how this store finished with it.
+	finished map[string]handoffVerdict
+	// order is `finished`'s insertion order, so the ring evicts the oldest.
+	order []string
+}
+
+func newLaunchStore() (*launchStore, error) {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, err
+	}
+	return &launchStore{
+		key:      key,
+		now:      time.Now,
+		given:    make(map[string]time.Time),
+		finished: make(map[string]handoffVerdict),
+	}, nil
+}
+
+// finishLocked records how this store finished with a handle, and keeps the
+// record within the ring's bound.
+func (ls *launchStore) finishLocked(key string, how handoffVerdict) {
+	if _, already := ls.finished[key]; !already {
+		ls.order = append(ls.order, key)
+	}
+	ls.finished[key] = how
+	for len(ls.order) > maxTombstones {
+		delete(ls.finished, ls.order[0])
+		ls.order = ls.order[1:]
+	}
+}
+
+func (ls *launchStore) handle(value string) string {
+	mac := hmac.New(sha256.New, ls.key)
+	_, _ = mac.Write([]byte(value))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// issue mints one handoff and records when it stops being good for anything.
+func (ls *launchStore) issue() (string, error) {
+	value, err := NewToken()
+	if err != nil {
+		return "", err
+	}
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	ls.sweepLocked()
+	ls.given[ls.handle(value)] = ls.now().Add(launchWindow)
+	return value, nil
+}
+
+// spend answers what this desk knows about one presented value, and spends it
+// where it is live.
+//
+// **Removed from `given` rather than flagged.** A "used" flag is a second state
+// to get wrong; a handoff that is gone cannot be spent twice by any code path,
+// including one written later. What replaces the flag is a **tombstone**: the
+// handle moves into `finished`, so a later presentation of the same value is
+// `handoffSpent` rather than indistinguishable from a stranger's cookie.
+func (ls *launchStore) spend(value string) handoffVerdict {
+	if value == "" {
+		return handoffUnknown
+	}
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	key := ls.handle(value)
+	if until, ok := ls.given[key]; ok {
+		delete(ls.given, key)
+		if ls.now().After(until) {
+			ls.finishLocked(key, handoffExpired)
+			return handoffExpired
+		}
+		ls.finishLocked(key, handoffSpent)
+		return handoffAccepted
+	}
+	if how, ok := ls.finished[key]; ok {
+		return how
+	}
+	return handoffUnknown
+}
+
+// classify is `spend` without the spending: what this store *would* say about a
+// value, leaving it exactly as it was.
+//
+// **It exists so the capacity bound can be asked about a real handoff without
+// eating it.** A desk at its bound refuses a live handoff with `503`, and a
+// refusal that had already consumed the link would leave a person restarting
+// into a link that is gone. An expiry is reported here without being recorded,
+// because recording is a write and this is the read.
+func (ls *launchStore) classify(value string) handoffVerdict {
+	if value == "" {
+		return handoffUnknown
+	}
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	key := ls.handle(value)
+	if until, ok := ls.given[key]; ok {
+		if ls.now().After(until) {
+			return handoffExpired
+		}
+		return handoffAccepted
+	}
+	if how, ok := ls.finished[key]; ok {
+		return how
+	}
+	return handoffUnknown
+}
+
+// sweepLocked moves handoffs nobody spent into the ring, and bounds the map.
+func (ls *launchStore) sweepLocked() {
+	now := ls.now()
+	for key, until := range ls.given {
+		if now.After(until) {
+			delete(ls.given, key)
+			// **Tombstoned rather than forgotten**, so that a page loading
+			// after its window says the link expired rather than saying
+			// nothing at all.
+			ls.finishLocked(key, handoffExpired)
+		}
+	}
+	for len(ls.given) >= maxLaunches {
+		oldest, found := "", false
+		var earliest time.Time
+		for key, until := range ls.given {
+			if !found || until.Before(earliest) {
+				oldest, earliest, found = key, until, true
+			}
+		}
+		if !found {
+			return
+		}
+		delete(ls.given, oldest)
+		ls.finishLocked(oldest, handoffExpired)
+	}
+}
+
+func (ls *launchStore) count() int {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	return len(ls.given)
+}
+
+// remembered is the size of the ring, for a test.
+func (ls *launchStore) remembered() int {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	return len(ls.finished)
+}
+
+/* The handoff cookie ---------------------------------------------------------- */
+
+// newLaunchCookie is the one cookie this chassis sets, and the one place its
+// attributes are written.
+//
+// Every attribute is a decision:
+//
+//   - the **name carries the port**, because a cookie's origin does not.
+//   - `Max-Age=60` — a handoff is not a session and must not outlive the page
+//     load it exists for. It is the difference between a cookie that is a
+//     window and a cookie that is a key.
+//   - `HttpOnly` — page code cannot read it, so it cannot put it somewhere a
+//     URL goes. The page does not need to: it sends the cookie by making one
+//     same-origin request, and gets a bearer id back.
+//   - `SameSite=Strict` — no request another **site** initiated carries it.
+//     Site is not origin: every port on `127.0.0.1` is the same site, so this
+//     says nothing about a page on a sibling port. What bounds that is the
+//     sixty seconds, the single use, and `Sec-Fetch-Site` on the one route this
+//     cookie opens.
+//   - `Path=/` — the exchange is under `/api`, the launch is at `/`, and a
+//     narrower path would simply mean a second cookie.
+//   - `Secure` only over https — this chassis binds loopback and serves plain
+//     http, and a browser discards a `Secure` cookie that arrives over http, so
+//     setting it unconditionally would mean setting no cookie at all.
+func newLaunchCookie(name, value string, secure bool) *http.Cookie {
+	return &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   int(launchWindow / time.Second),
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   secure,
+	}
+}
+
+// expireLaunchCookie is the same cookie, spent.
+func expireLaunchCookie(name string, secure bool) *http.Cookie {
+	spent := newLaunchCookie(name, "", secure)
+	spent.MaxAge = -1
+	return spent
+}
+
+/* The ways in ----------------------------------------------------------------- */
+
+// bearerOf is the credential presented as `Authorization: Bearer …`, or "".
+func bearerOf(r *http.Request) string {
+	header := r.Header.Get("Authorization")
+	if len(header) <= len(bearerScheme) || !strings.EqualFold(header[:len(bearerScheme)], bearerScheme) {
+		return ""
+	}
+	return header[len(bearerScheme):]
+}
+
+// offeredSessionID is the session id a WebSocket upgrade offered as a
+// subprotocol, or "" — and, where the offer is one this desk will not read, the
+// sentence that says why.
+//
+// The browser sends the offer as one comma-separated header (or several, which
+// `Header.Values` gives us separately), so both shapes are read. Whitespace
+// around a comma is the grammar's, not the page's.
+func offeredSessionID(r *http.Request) (string, string) {
+	id, seen, plain := "", 0, false
+	for _, header := range r.Header.Values(wsProtocolHeader) {
+		for _, offer := range strings.Split(header, ",") {
+			offer = strings.TrimSpace(offer)
+			if offer == wsProtocol {
+				plain = true
+				continue
+			}
+			candidate, ok := strings.CutPrefix(offer, wsSessionPrefix)
+			if !ok {
+				continue
+			}
+			seen++
+			id = candidate
+		}
+	}
+	if seen == 0 && !plain {
+		// No offer of ours at all: a script authorizing with the Bearer header,
+		// or a request that is not from this desk's page. Not this rule's
+		// business either way.
+		return "", ""
+	}
+	if !plain {
+		return "", "a desk upgrade offers the `jpack-desk` subprotocol; this one did not"
+	}
+	if seen > 1 {
+		// Two ids is a request two readers could disagree about — the same
+		// argument the relay's query rule makes — and there is no reading of it
+		// this desk is willing to pick.
+		return "", "a desk upgrade offers at most one session, and this one offered several"
+	}
+	if seen == 1 && !looksLikeASessionID(id) {
+		return "", "the offered session is not the shape this desk mints"
+	}
+	return id, ""
+}
+
+// looksLikeASessionID is the shape `NewToken` produces: 48 lower-case hex
+// characters.
+//
+// **Refused by shape before it is looked up**, so that a malformed offer is a
+// `400` a caller can act on rather than a `401` that reads like a wrong
+// credential — and so that nothing but hex is ever handed to the store.
+func looksLikeASessionID(id string) bool {
+	if len(id) != 48 {
+		return false
+	}
+	for _, r := range id {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// launchSecretPresented reports whether the request carries the launch secret.
+//
+// This is the script's door — `scripts/containment-check.sh`, the smoke client,
+// the acceptance run, and every test in this package. It is compared in
+// constant time, and it is compared against the **launch secret only**: a
+// session id presented here is looked up in the store instead, one line up in
+// `authorized`, so the two credentials never stand in for each other.
+func (s *Server) launchSecretPresented(r *http.Request) bool {
+	return subtle.ConstantTimeCompare([]byte(bearerOf(r)), []byte(s.cfg.Token)) == 1
+}
+
+// sessionOf is the session this request presents, where it presents one.
+//
+// **No cookie is consulted.** A cookie authorizes exactly one route on this
+// desk — `POST /api/session`, which spends it — and nothing else, ever. That is
+// the whole point of the shape: a credential the browser attaches by itself is
+// a credential every local service and every replaying script gets to use.
+//
+// **And no subprotocol offer, either.** `/ws` reads its own, in
+// `upgradeAuthorized`; a second path that authorized the same credential would
+// be a second path to keep in step, and this one would be reachable only by a
+// caller putting `Sec-WebSocket-Protocol` on a request that is not an upgrade.
+func (s *Server) sessionOf(r *http.Request) (session, bool) {
+	if id := bearerOf(r); id != "" {
+		if held, ok := s.sessions.lookup(id); ok {
+			return held, true
+		}
+	}
+	return session{}, false
+}
+
+/* The bootstrap --------------------------------------------------------------- */
+
+// handleLaunch is the one path the launch secret is ever sent to, and all it
+// does is trade it for a sixty-second, single-use handoff.
+//
+// **It mints no session.** A launch that minted one would be a launch whose
+// answer is a standing credential in a cookie jar, which is the arrangement
+// this replaces. What it sets is a cookie that is worth exactly one call to
+// `POST /api/session` and nothing else.
+//
+// **The redirect is the point.** Answering `303 See Other` to `/#` means the
+// browser's address bar holds `/` and not the secret. The explicit empty
+// fragment is load-bearing: a `Location` carrying none inherits the *request's*
+// (RFC 9110 §10.2.2), so `/launch?secret=S#S` would land on `/#S` and leave the
+// secret in `location.hash`.
+//
+// **A wrong secret sets nothing**, and says so in one line. There is nothing to
+// distinguish "absent" from "wrong" — both are `403`, because a caller that
+// could tell them apart would have an oracle for the shape of the secret.
+//
+// **No Origin guard stands here, deliberately.** Every gated route has one, and
+// this route is not gated: it is where authorization is *acquired*. A
+// cross-site request to it can only succeed by already holding the secret, and
+// the cookie it sets is `SameSite=Strict` and spent by one request. What the
+// guard *would* refuse is the ordinary case: a person pasting the printed URL
+// into a fresh tab sends no `Origin` at all.
+func (s *Server) handleLaunch(w http.ResponseWriter, r *http.Request) {
+	// A response that hands out a credential is never a cached response.
+	w.Header().Set("Cache-Control", "no-store")
+	// **`GET` and nothing else, checked here rather than by the router.**
+	// Registering `GET /launch` looks like it says this and does not: Go's mux
+	// treats a `GET` pattern as matching `HEAD` too, so `HEAD /launch?secret=…`
+	// minted a handoff and set the cookie — a credential handed out to a
+	// request whose whole contract is that it has no body. Every other method
+	// is a `405` that sets nothing.
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		refuseText(w, http.StatusMethodNotAllowed, CodeBadRequest,
+			"the launch exchange answers GET, and only GET mints a handoff")
+		return
+	}
+	secret := r.URL.Query().Get("secret")
+	if subtle.ConstantTimeCompare([]byte(secret), []byte(s.cfg.Token)) != 1 {
+		refuseText(w, http.StatusForbidden, CodeForbidden,
+			"the launch secret is missing or wrong: open the URL jpack-desk printed at startup")
+		return
+	}
+	handoff, err := s.launches.issue()
+	if err != nil {
+		refuseText(w, http.StatusInternalServerError, CodeInternal,
+			"this desk could not begin a session")
+		return
+	}
+	http.SetCookie(w, newLaunchCookie(s.launchCookie, handoff, requestScheme(r) == "https"))
+	http.Redirect(w, r, "/#", http.StatusSeeOther)
+}
+
+// handleLaunchSubpath answers everything under `/launch/`.
+//
+// **404 from the mux, never the SPA fallback.** `GET /launch` matches one exact
+// path, so `/launch/anything?secret=…` fell through to `handleStatic`, which
+// treats an unknown extensionless path as a client-side route and serves the
+// page — with the secret still on the URL, in the history and in every
+// `Referer` that page goes on to send. Nothing is under `/launch/`, and this
+// says so. `handleStatic` refuses the same shapes again, for the spellings the
+// router does not see as this route: another case, or a secret on some other
+// path's query.
+func (s *Server) handleLaunchSubpath(w http.ResponseWriter, _ *http.Request) {
+	refuseLaunchShape(w)
+}
+
+// refuseLaunchShape is the one answer for every near miss at the launch path.
+func refuseLaunchShape(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store")
+	refuseText(w, http.StatusNotFound, CodeNotFound, "there is nothing under /launch")
+}
+
+// looksLikeALaunch reports whether a request must not be answered with the
+// page, whatever else it looks like.
+//
+// Two shapes, and both are about **a secret ending up in the page's URL**:
+//
+//   - any path at or under `launch`, in any case. The router already owns
+//     `/launch` and `/launch/…` exactly; this catches `/Launch/x` and the
+//     spellings a percent-encoded separator produces once `net/http` has
+//     normalised them, which reach the static handler instead.
+//   - any request whose query carries a `secret` pair at all. If a URL like
+//     that is ever loaded as a page, the secret is in `window.location`, in
+//     history and in `Referer` — and no page on this desk has ever needed one.
+func looksLikeALaunch(r *http.Request) bool {
+	clean := strings.ToLower(strings.Trim(path.Clean(r.URL.Path), "/"))
+	if clean == "launch" || strings.HasPrefix(clean, "launch/") {
+		return true
+	}
+	return querySmellsOfASecret(r.URL.RawQuery)
+}
+
+// querySmellsOfASecret reports whether a raw query mentions a secret at all.
+//
+// **Read raw, and read as a substring, before anything parses it.** The first
+// version of this asked `url.Query()`, which is a *parser* — and a parser has
+// opinions. It drops a pair it cannot decode, so `?secret=<real>%ZZ` parsed to
+// nothing and the page was served with the secret still on the URL; it splits
+// on `&` and not `;`, so `?x=1;secret=<real>` was one parameter named `x` and
+// went the same way. Every rule this desk has written against a query parser has
+// lost to the next one — the relay's three leaks are the same story — and the
+// lesson is to stop parsing.
+//
+// So: the raw bytes, case-folded, plus a **lenient** decode of them — every
+// valid `%XX` resolved and every invalid one left alone — and the question is
+// whether the substring `secret` appears. Lenient because `url.QueryUnescape`
+// is all-or-nothing: one bad escape made it return nothing at all, so
+// `?%73ecret=<secret>%ZZ` decoded to nothing and was answered with the page.
+// That is deliberately blunt. It refuses `?mysecretpref=1`, and refusing a
+// harmless page load is the cheap side of this trade; the expensive side is a
+// secret in `window.location`, in history, and in every `Referer` the page then
+// sends.
+//
+// **A fragment is not part of the query and is not seen here.** `#secret=…` is
+// never sent to a server at all — the browser keeps it — so there is nothing on
+// the wire to refuse, and the launch redirect's explicit empty fragment is what
+// stops one being inherited into the page's address in the first place.
+func querySmellsOfASecret(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	if mentionsASecret(raw) || mentionsASecret(leniently(raw)) {
+		return true
+	}
+	// Pair by pair as well as whole, because a separator can sit inside an
+	// escape that only one of the two readings resolves.
+	for _, piece := range strings.FieldsFunc(raw, func(r rune) bool { return r == '&' || r == ';' }) {
+		if mentionsASecret(piece) || mentionsASecret(leniently(piece)) {
+			return true
+		}
+	}
+	return false
+}
+
+func mentionsASecret(s string) bool {
+	return strings.Contains(strings.ToLower(s), "secret")
+}
+
+// leniently decodes every valid `%XX` in a string and leaves everything else
+// exactly as it was.
+//
+// **`url.QueryUnescape` is all-or-nothing, and that was the hole.** One invalid
+// escape anywhere makes it return an error and nothing else, so
+// `?%73ecret=<secret>%ZZ` decoded to nothing, matched nothing, and was answered
+// with the page — the secret then in `window.location`, in history and in every
+// `Referer` that page sent. A single bad byte must not buy silence about the
+// rest of the string.
+//
+// `+` is left as `+` rather than read as a space: this is not a form decoder,
+// and turning `+` into a space could only ever create a match that the raw pass
+// would have found anyway.
+func leniently(s string) string {
+	var out strings.Builder
+	out.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '%' && i+2 < len(s) {
+			if hi, ok := hexDigit(s[i+1]); ok {
+				if lo, ok := hexDigit(s[i+2]); ok {
+					out.WriteByte(hi<<4 | lo)
+					i += 2
+					continue
+				}
+			}
+		}
+		out.WriteByte(s[i])
+	}
+	return out.String()
+}
+
+func hexDigit(b byte) (byte, bool) {
+	switch {
+	case b >= '0' && b <= '9':
+		return b - '0', true
+	case b >= 'a' && b <= 'f':
+		return b - 'a' + 10, true
+	case b >= 'A' && b <= 'F':
+		return b - 'A' + 10, true
+	}
+	return 0, false
+}
+
+/* The exchange ---------------------------------------------------------------- */
+
+// handleSession is `GET` and `POST` on one path.
+//
+// **There is no `DELETE`.** Sign-out ends a session from outside the page that
+// holds it, which means the page needs a second actor to notice — and this desk
+// has exactly one, the bootstrap. It arrives with the identity provider, whose
+// sign-out it will actually be, as its own PR.
+func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		s.createSession(w, r)
+		return
+	}
+	s.readSession(w, r)
+}
+
+// testHookBeforeCommit runs between classifying a handoff and committing to a
+// session, and is nil outside tests.
+//
+// It exists so a test can hold two exchanges at exactly the instant where both
+// have decided they may mint and neither has. Inside the commitment's lock a
+// barrier could never see the second request; here it can.
+var testHookBeforeCommit func()
+
+func beforeCommit() {
+	if testHookBeforeCommit != nil {
+		testHookBeforeCommit()
+	}
+}
+
+// createSession spends a handoff and answers with a session id.
+//
+// # What it accepts, and why each check is here
+//
+//   - **The Origin guard**, as every gated route has it.
+//   - **`Sec-Fetch-Site: same-origin`**, on this one request. It is CSRF
+//     belt-and-braces beside `SameSite=Strict`: the handoff is ambient for its
+//     sixty seconds, and this is the only route it opens, so this is the only
+//     route where an ambient credential could be driven by a page that is not
+//     ours. A browser cannot forge the header — it is a forbidden header name —
+//     so no page can.
+//   - **The handoff cookie**, which is then gone.
+//
+// # The residual, stated here because this is where it lives
+//
+// **A script is not a browser, and forbidden-header rules bind browsers.** A
+// script that captures the handoff inside its sixty-second window and forges
+// `Sec-Fetch-Site: same-origin` can call this route and take a session this
+// desk cannot distinguish from the person's own. Nothing written here changes
+// that, and **nothing here announces it**: the page's own `POST` then reads
+// `handoff-spent`, which is exactly what its own earlier spend reads as, so it
+// is not evidence of anybody. What ends it is a restart — the secret is
+// regenerated and the store is empty.
+//
+// A script that is *entitled* to a session does not need any of this: it
+// presents the launch secret as `Authorization: Bearer` on this same route.
+func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
+	if !s.originAllowed(r) {
+		writeJSONCoded(w, http.StatusForbidden, CodeForbidden,
+			fmt.Sprintf("origin %q is not permitted", r.Header.Get("Origin")))
+		return
+	}
+	// The script's door, first: it needs no cookie and no fetch metadata, and a
+	// desk at its bound refuses it with the same `503` as anything else that
+	// would mint. It has no launch link to preserve.
+	if s.launchSecretPresented(r) {
+		if s.sessions.full() {
+			writeJSONCoded(w, http.StatusServiceUnavailable, CodeSessionsFull,
+				errTooManySessions.Error())
+			return
+		}
+		s.mintSession(w, nil, nil)
+		return
+	}
+	if r.Header.Get(fetchSiteHeader) != fetchSiteSameOrigin {
+		writeJSONCoded(w, http.StatusUnauthorized, CodeUnauthorized,
+			"a session is begun by this desk's own page, or by a script presenting the launch secret")
+		return
+	}
+	// **Classified before the bound is asked**, and that order is the whole of
+	// one defect: asking first meant an ordinary reload at a full desk — which
+	// presents no handoff and would have been told `no-handoff` — was answered
+	// `503` instead, and a page that acts on a capacity refusal deletes an id
+	// that was perfectly good. Only a **live** handoff can mint, so only a live
+	// handoff can be refused for want of room.
+	verdict := s.handoffPresented(r)
+	if verdict == handoffAccepted && s.sessions.full() {
+		// Nothing is spent and the cookie is left where it is, so the refusal
+		// destroys nothing. **It does not survive a restart**: the secret and
+		// both stores are per process, so a restarted desk has never minted
+		// this handoff — the cookie reads as unknown, which is `no-handoff` —
+		// and the way back is the URL the new process prints. Only a fixed
+		// `--dev-token` prints the same one twice.
+		writeJSONCoded(w, http.StatusServiceUnavailable, CodeSessionsFull, errTooManySessions.Error())
+		return
+	}
+	switch verdict {
+	case handoffAccepted:
+		// The barrier a test holds two exchanges at: both past the
+		// classification and the early bound, neither yet committed.
+		beforeCommit()
+		// **Spent at the point of commitment, and nowhere else.** The spend
+		// runs under the session store's lock, after the bound has been read
+		// there, so a request refused for want of room has not eaten its
+		// handoff and a handoff another request took in the meantime refuses
+		// this one instead of minting a second session from it.
+		s.mintSession(w, r, func() bool { return s.spendPresented(r) })
+	case handoffSpent:
+		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,
+			"this launch link was already used: open the URL jpack-desk printed at startup")
+	case handoffExpired:
+		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffExpired,
+			"this launch link expired: open the URL jpack-desk printed at startup")
+	default:
+		writeJSONCoded(w, http.StatusUnauthorized, CodeNoHandoff,
+			"no launch is in progress: open the URL jpack-desk printed at startup")
+	}
+}
+
+// handoffPresented is what this request's cookies amount to.
+//
+// # Every cookie of the name, and unknown values ignored
+//
+// `r.Cookie` answers the **first** cookie of a name, and a cookie's identity
+// includes a path this desk never sees. So a page on any other loopback port
+// can set `jpack-desk-launch-<port>=bogus; Path=/api` — the browser sends the
+// longer path first — and a rule that read one cookie and refused what it did
+// not recognise would answer a refusal on every load, for ever, to a tab whose
+// session is perfectly good. Restarting the desk on the same port would not
+// repair it, because the planted cookie is still there.
+//
+// So: **every** cookie of the name is examined; a value that is live wins; a
+// value this desk finished with classifies the request where nothing better
+// does; and a value nobody recognises is **ignored**, which reads as
+// `no-handoff` and leaves the page's own id alone. An empty value is ignored
+// for the same reason, which also covers this desk's own cleared cookie
+// arriving late.
+//
+// **It spends nothing.** The capacity bound is asked between this and the
+// spending, so a desk with no room refuses a live handoff without eating it.
+func (s *Server) handoffPresented(r *http.Request) handoffVerdict {
+	best := handoffUnknown
+	for _, cookie := range r.Cookies() {
+		if cookie.Name != s.launchCookie {
+			continue
+		}
+		switch how := s.launches.classify(cookie.Value); how {
+		case handoffAccepted:
+			return handoffAccepted
+		case handoffSpent, handoffExpired:
+			// The first classified answer stands, and a later live one still
+			// wins — which is why this does not return.
+			if best == handoffUnknown {
+				best = how
+			}
+		}
+	}
+	return best
+}
+
+// spendPresented spends the handoffs this request carries, and reports whether
+// one of them was live.
+//
+// # The rule for two live handoffs, stated
+//
+// A request can only carry two live values of this name if something planted
+// one at a different path: a second `Set-Cookie` at `Path=/` replaces the
+// first. Where it happens, **every live one is spent** and one session is
+// minted. The alternative — spend the first and leave the rest live — makes the
+// *next* reload mint a second session from a cookie nobody deliberately used,
+// which is a worse answer than finishing with links a person never got to
+// spend.
+//
+// **Spent under the store's own lock, and the answer is that call's**, so two
+// requests carrying one handoff cannot both be told yes.
+func (s *Server) spendPresented(r *http.Request) bool {
+	accepted := false
+	for _, cookie := range r.Cookies() {
+		if cookie.Name != s.launchCookie {
+			continue
+		}
+		if s.launches.spend(cookie.Value) == handoffAccepted {
+			accepted = true
+		}
+	}
+	return accepted
+}
+
+// mintSession records a session and answers with its id.
+//
+// `r` is non-nil only where a cookie bought the session, which is the one case
+// with a cookie to clear.
+//
+// **Nothing is cleared until the mint succeeds.** The bound is asked before a
+// handoff is spent, so a `503` here is only the race between two exchanges at
+// sixty-three, and the refusal leaves the cookie where it is.
+func (s *Server) mintSession(w http.ResponseWriter, r *http.Request, commit func() bool) {
+	if commit == nil {
+		commit = func() bool { return true }
+	}
+	id, err := s.sessions.createCommitting("local user", nil, commit)
+	if errors.Is(err, errTooManySessions) {
+		writeJSONCoded(w, http.StatusServiceUnavailable, CodeSessionsFull, errTooManySessions.Error())
+		return
+	}
+	if errors.Is(err, errHandoffTaken) {
+		// Somebody else spent it between the classification and the commitment.
+		// The page is told what any spent handoff tells it, because that is
+		// what this is.
+		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,
+			"this launch link was already used: open the URL jpack-desk printed at startup")
+		return
+	}
+	if err != nil {
+		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal,
+			"this desk could not mint a session")
+		return
+	}
+	// **Cleared after the mint, and only after it.** A refusal used to clear it
+	// too, and a refusal that cleared the cookie meant the next load presented
+	// nothing and read `no-handoff` — a different answer to the same question,
+	// decided by a race. A stale cookie is bounded by its own sixty-second
+	// `Max-Age` instead. The clear reaches `Path=/` and nothing else, so a copy
+	// planted at a longer path survives it and reads as any other spent handoff
+	// on the next load, which is to say as nothing the page may act on.
+	if r != nil {
+		http.SetCookie(w, expireLaunchCookie(s.launchCookie, requestScheme(r) == "https"))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id": id, "subject": "local user", "issuer": nil,
+	})
+}
+
+// readSession answers what this desk knows about the session the request
+// presents: the subject, and the issuer that authenticated it.
+//
+// **Why it exists before anything renders it.** The session record is what an
+// identity provider fills in — a sign-in writes a subject and an issuer here
+// instead of the exchange's `local user` and `nil` — and an endpoint that
+// reports the record is what makes it a thing rather than an internal detail.
+//
+// It is also the one channel that tells a page whether the id it holds is still
+// a session: a refused WebSocket upgrade reports no status to page code, so the
+// page asks here instead. See `McpProvider`.
+//
+// **A script authorizing with the launch secret holds no session record**, and
+// what it gets back says so: an empty subject and a null issuer, rather than an
+// invented one. The secret is a way in, not somebody this desk authenticated.
+func (s *Server) readSession(w http.ResponseWriter, r *http.Request) {
+	if !s.guard(w, r) {
+		return
+	}
+	got, _ := s.sessionOf(r)
+	writeJSON(w, http.StatusOK, map[string]any{"subject": got.subject, "issuer": got.issuer})
+}

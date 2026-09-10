@@ -1,3 +1,7 @@
+import { beforeEach } from 'vitest'
+
+import { giveThisPageASessionForTesting } from '../mcp/session'
+
 /**
  * The ground every test runs on, registered as vitest's one `setupFiles`.
  *
@@ -88,3 +92,27 @@ if (!('__jpackDeskDefaultFetch' in globalThis)) {
       new Error('no fetch stub in this test — see src/testing/setup.ts')
     )) as unknown as typeof fetch
 }
+
+/**
+ * **A session already in hand, before every test.**
+ *
+ * The page bootstraps once on load: `POST /api/session` spends the launch
+ * handoff and answers a session id, which every later request then carries as
+ * `Authorization: Bearer`. That is one request, and it is the subject of
+ * `mcp/session.test.ts`.
+ *
+ * It is *not* the subject of the twenty-seven suites that stub `fetch` to
+ * answer the file API or the relay. Without this, each of those would have to
+ * answer the bootstrap as well or watch every call fail with "No session" — so
+ * each would be asserting the bootstrap by accident, and a change to it would
+ * break them all for a reason none of them is about.
+ *
+ * So the ground state is the one a page is in just after its first load: the
+ * module's memoised exchange already settled on an id, and no `POST` to make.
+ * A test that is about the bootstrap clears it with `resetSessionForTesting`,
+ * which `mcp/session.test.ts` does in its own `beforeEach` — this hook runs
+ * first, so that clearing wins.
+ */
+beforeEach(() => {
+  giveThisPageASessionForTesting('a-session-this-test-was-given')
+})

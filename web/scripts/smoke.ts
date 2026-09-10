@@ -6,16 +6,23 @@
  * on the other end of it speaks to the runtime — the seam between them is
  * where a framing mistake would hide.
  *
- *   node --experimental-strip-types --no-warnings scripts/smoke.ts <url>
- *   npm run smoke -- http://127.0.0.1:8799/?token=…
+ *   node --experimental-strip-types --no-warnings scripts/smoke.ts <origin> --secret <secret>
+ *   npm run smoke -- http://127.0.0.1:8799 --secret "$JPACK_DESK_SECRET"
+ *
+ * **The origin and the secret are separate arguments, and the secret is not on
+ * a URL.** A browser trades the launch secret once, at `GET /launch`, for a
+ * one-shot handoff, and spends that for a session id it puts on each request
+ * itself. A script needs none of that: it presents the secret as
+ * `Authorization: Bearer <secret>` on every request — the upgrade included.
+ * `JPACK_DESK_SECRET` supplies it where a command line would be seen by `ps`.
  *
  * With --facts it additionally runs one real evaluation over the relay and
  * prints the disposition and the head of the trace. That is the pair the
  * acceptance script exercises: the same pack, one run with a load-bearing fact
  * and one without it.
  *
- *   npm run smoke -- <url> --facts full-facts.json --evidence evidence.json
- *   npm run smoke -- <url> --facts partial-facts.json --expect-kind unresolved
+ *   npm run smoke -- <origin> --secret … --facts full-facts.json --evidence evidence.json
+ *   npm run smoke -- <origin> --secret … --facts partial-facts.json --expect-kind unresolved
  *
  * With --matrix it runs the project's declared pack matrices through
  * experimental_test_packs, and with --graphs the configured graph matrices
@@ -23,8 +30,8 @@
  * make. Both write nothing: a matrix row is a rehearsal, not a decision, so
  * unlike an evaluation these are safe to run against a project in place.
  *
- *   npm run smoke -- <url> --matrix --graphs
- *   npm run smoke -- <url> --matrix --expect-matrix-status passed
+ *   npm run smoke -- <origin> --secret … --matrix --graphs
+ *   npm run smoke -- <origin> --secret … --matrix --expect-matrix-status passed
  *
  * With --graph-document it exercises the graph-serving pair the walk diagram
  * draws from (ADR-0029): the inventory, then one document fetched by its
@@ -35,7 +42,7 @@
  * runtime does not advertise them: asking for the step is asking for the
  * check.
  *
- *   npm run smoke -- <url> --graph-document onboarding \
+ *   npm run smoke -- <origin> --secret … --graph-document onboarding \
  *     --graph-file /path/to/project/graphs/onboarding.graph.json
  *
  * Without that flag the graph leg still runs, capability-gated rather than
@@ -82,6 +89,7 @@ interface Options {
   expectHandoff?: string
   matrix: boolean
   graphs: boolean
+  secret?: string
   expectMatrixStatus?: string
   expectGraphStatus?: string
   graphDocument?: string
@@ -91,7 +99,8 @@ interface Options {
 function usage(message: string): never {
   console.error(message)
   console.error(
-    'usage: smoke.ts <desk url with ?token=…> [--facts <path>] [--evidence <path>]\n' +
+    'usage: smoke.ts <desk origin> [--secret <launch secret>] [--facts <path>]\n' +
+      '                [--evidence <path>]\n' +
       '                [--pack <decision id>] [--trace <n>] [--expect-kind <kind>]\n' +
       '                [--expect-handoff <state>] [--matrix] [--graphs]\n' +
       '                [--expect-matrix-status <status>] [--expect-graph-status <status>]\n' +
@@ -118,6 +127,9 @@ function parseArgs(argv: string[]): Options {
     if (value === undefined) usage(`${flag} needs a value`)
     i += 1
     switch (flag) {
+      case '--secret':
+        options.secret = value
+        break
       case '--facts':
         options.facts = value
         break
@@ -160,12 +172,39 @@ function parseArgs(argv: string[]): Options {
 const options = parseArgs(process.argv.slice(2))
 
 const url = new URL(options.target)
-const token = url.searchParams.get('token')
-if (!token) {
-  console.error('the URL must carry the session token the chassis printed (?token=…)')
+// **Only the origin is taken from the target.** Whatever else was on it — the
+// `/launch?secret=…` path the chassis prints, say — is not this script's
+// address: it opens `/ws`, and the credential is a header.
+const secret = options.secret ?? process.env.JPACK_DESK_SECRET ?? ''
+if (!secret) {
+  console.error(
+    'the launch secret is required: pass --secret <secret> or set JPACK_DESK_SECRET.\n' +
+      'It is the value after `?secret=` on the URL the chassis printed at startup.'
+  )
   process.exit(2)
 }
-const wsURL = `ws://${url.host}/ws?token=${encodeURIComponent(token)}`
+const wsURL = `ws://${url.host}/ws`
+
+/**
+ * The launch secret, on the upgrade, without changing the transport.
+ *
+ * `DeskWebSocketTransport` is the page's own and takes a URL and nothing else —
+ * which is the point of this script, since a transport written for the test
+ * would prove nothing about the one the desk ships. In a browser the page
+ * offers its session id as a subprotocol, which the transport already takes;
+ * this script has no session and presents the launch secret instead, on a
+ * header the `WebSocket` it installs attaches. Node accepts `headers` in the
+ * constructor's options; a browser would not, and does not need to.
+ */
+const NodeWebSocket = globalThis.WebSocket
+class AuthorizedWebSocket extends NodeWebSocket {
+  constructor(address: string | URL) {
+    super(address, {
+      headers: { Authorization: `Bearer ${secret}` }
+    } as unknown as string[])
+  }
+}
+globalThis.WebSocket = AuthorizedWebSocket as unknown as typeof WebSocket
 
 // The SDK's tool-result type is a union that includes a shape carrying no
 // content at all, so the narrowing happens here rather than in the signature.

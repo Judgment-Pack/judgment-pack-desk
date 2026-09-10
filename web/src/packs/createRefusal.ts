@@ -40,6 +40,10 @@ export const CHASSIS_CODES = [
   'not-utf8',
   'not-a-file',
   'unauthorized',
+  'no-handoff',
+  'handoff-spent',
+  'handoff-expired',
+  'sessions-full',
   'forbidden',
   'bad-request',
   'staging-file',
@@ -104,7 +108,15 @@ export const OTHER_ENDPOINT_CODES = [
   // file API; these belong to the one route that rewrites the `assistant`
   // object of the file in `~/.config`, which no create touches.
   'desk-config-changed',
-  'desk-config-refused'
+  'desk-config-refused',
+  // The exchange's four. `POST /api/session` is what the page calls once at
+  // load — nothing this desk recognises was presented, a handoff it had
+  // finished with was, one it had let lapse was, or it holds as many sessions
+  // as it will — and no create ever calls that route.
+  'no-handoff',
+  'handoff-spent',
+  'handoff-expired',
+  'sessions-full'
 ] as const
 
 /** The chassis codes this dialog has a sentence for. */

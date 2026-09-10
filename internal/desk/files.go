@@ -138,13 +138,45 @@ const (
 	CodeNotUTF8 = "not-utf8"
 	// CodeNotAFile is a directory, FIFO, device or socket asked for as a file.
 	CodeNotAFile = "not-a-file"
-	// CodeUnauthorized is a request with no session token, or the wrong one.
+	// CodeUnauthorized is a request carrying neither a live session id nor the
+	// launch secret, either of them as a Bearer header.
 	//
 	// Split from CodeForbidden because a code that maps to two statuses is not
-	// a matrix: the token check answers 401 and the origin check answers 403,
-	// and they were one code. A client retrying with a token and a client that
-	// must change its origin are given different answers now.
+	// a matrix: the session check answers 401 and the origin check answers 403,
+	// and they were one code. A client that must acquire a session and a client
+	// that must change its origin are given different answers now.
 	CodeUnauthorized = "unauthorized"
+	// CodeNoHandoff is `POST /api/session` with **nothing this desk recognises
+	// presented**: no cookie of the name at all, or only values it never minted
+	// and does not remember finishing with, which are ignored. Overwhelmingly a
+	// page reloading — the exchange clears the handoff it spends — or a browser
+	// nobody opened the printed URL for.
+	CodeNoHandoff = "no-handoff"
+	// CodeHandoffSpent is `POST /api/session` with a handoff this desk **spent**
+	// — by this same tab on an earlier load, or by another caller.
+	//
+	// **The two are not distinguished, and the page acts on neither.** It reads
+	// this exactly as `no-handoff`: a tab holding an id keeps it, and a tab
+	// holding none has no session. This desk cannot tell a page's own earlier
+	// spend from anybody else's, so a code that invited the page to guess would
+	// be a code inviting it to be wrong — which it was, four times.
+	CodeHandoffSpent = "handoff-spent"
+	// CodeHandoffExpired is `POST /api/session` with a handoff this desk minted
+	// and then let **lapse**: sixty seconds went by before the page loaded.
+	//
+	// **Its own code, because the instruction differs.** Nobody used the link
+	// and the launch secret still works, so the answer is to reopen the printed
+	// URL — which is not what a page that met a spend is told, because there
+	// nothing about the link can be concluded at all.
+	CodeHandoffExpired = "handoff-expired"
+	// CodeSessionsFull is `POST /api/session` at the store's bound: this desk
+	// holds as many sessions as it will hold, and refuses rather than dropping
+	// one somebody is using.
+	//
+	// **A 503 and not a 500.** Nothing is broken and nothing needs repairing;
+	// the desk is temporarily unable to take another session, and the sentence
+	// beside this code says what to do about it. See `maxSessions`.
+	CodeSessionsFull = "sessions-full"
 	// CodeForbidden is a request from an origin this desk does not accept, or
 	// a path inside the project this process may not open.
 	CodeForbidden = "forbidden"
@@ -1337,12 +1369,20 @@ func (s *Server) removeStaleStaging() {
 /* Plumbing ---------------------------------------------------------------- */
 
 // guard applies the same two checks every other chassis endpoint applies, in
-// the same order: the token first, then the origin. Sharing the function is
-// what keeps a new endpoint from being a new place to forget one of them.
+// the same order: **the session first, then the origin**. Sharing the function
+// is what keeps a new endpoint from being a new place to forget one of them.
+//
+// The session is a bearer id the caller put on the request itself — the page's
+// own, held in `sessionStorage` and sent as `Authorization: Bearer`, or the
+// launch secret a script presents the same way; see `Server.authorized`.
+// **No cookie authorizes anything here.** Since nothing ambient does, the
+// origin check is defence in depth over writes and upgrades rather than the
+// thing standing between a foreign page and the project — and it is still not
+// optional, because defence in depth that is removed is not defence.
 func (s *Server) guard(w http.ResponseWriter, r *http.Request) bool {
 	if !s.authorized(r) {
 		writeJSONCoded(w, http.StatusUnauthorized, CodeUnauthorized,
-			"missing or invalid session token")
+			"no session: open the URL jpack-desk printed at startup, or present the launch secret as `Authorization: Bearer`")
 		return false
 	}
 	if !s.originAllowed(r) {
@@ -1353,12 +1393,125 @@ func (s *Server) guard(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// RefusalHeader marks an answer **this chassis wrote itself**, and carries the
+// code it wrote.
+//
+// # Why a header and not the body
+//
+// One route on this desk forwards somebody else's answer: the model relay. A
+// `401` there is either this chassis refusing the page's session or the
+// configured endpoint refusing the stored key, and the page has to tell them
+// apart — ending a person's desk session because their model key expired is a
+// desk reading one refusal as another.
+//
+// Reading the body to tell them apart was the first answer and it was wrong
+// twice over: a cloned body has tee semantics, so an oversized chunked answer
+// deadlocks the reader that is trying to classify it, and an endpoint can write
+// whatever body it likes, so the discriminator was **forgeable**. A header this
+// desk sets and **strips from every upstream answer** is neither: there is no
+// body to read and nothing an endpoint can say that survives the strip.
+//
+// It is set on every refusal this chassis authors — the shared guard, the
+// exchange, the relay's own refusals, the launch path — and deleted from every
+// upstream answer the relay copies, in `withoutReflectedCredentials`, where
+// `http.Header.Del` is case-insensitive by canonicalisation. No trailer carries
+// it either, because the relay forwards no trailer at all.
+const RefusalHeader = "X-Jpack-Desk-Refusal"
+
+// **Set in `writeJSON` and nowhere else**, so that every JSON refusal this
+// chassis writes carries it by construction rather than by a call site
+// remembering to. `writeJSONError` went through `writeJSON` and round the back
+// of the marking when it lived one level up, which is exactly the hole "one
+// place" exists to prevent. `refuseText` does the same for the routes that
+// answer in plain text — the launch path, the WebSocket upgrade and the static
+// handler, none of which has a JSON client.
+
+// refuseText writes one plain-text refusal this chassis authored, marked as
+// ours.
+func refuseText(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set(RefusalHeader, code)
+	http.Error(w, message, status)
+}
+
+// writeJSON sends one JSON answer, and **marks every refusal as this chassis'
+// own**.
+//
+// The mark is set here — the one function every JSON answer goes through —
+// rather than at the call sites, so a refusal written tomorrow carries it
+// without anybody remembering to. It lived one level up, in `writeJSONCoded`,
+// and `writeJSONError` went round the back of it: a `GET /api/file` with no
+// `path` answered a `400` the page could not tell from an endpoint's.
+//
+// Guarded on the status, so a `200` is never marked. The code is read out of
+// the body being written where there is one; a refusal with no code is still
+// **marked**, because the property the page reads is the header's presence and
+// not its value.
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
+	if status < 400 {
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(body)
+		return
+	}
+	// **Encoded once, and the code read out of the bytes that ship.** A refusal
+	// body on this desk is a map in some places and a struct in others — a
+	// stale write, a refused configuration — and a type switch over the shapes
+	// somebody remembered is exactly the rule that goes stale: it marked those
+	// as a generic `refused` while their bodies named a code the page branches
+	// on. Marshalling first and reading `code` back off the JSON is the same
+	// answer for every shape there is or ever will be.
+	data, err := json.Marshal(body)
+	if err != nil {
+		// Nothing to encode is still a refusal, and it is still ours.
+		w.Header().Set(RefusalHeader, "refused")
+		w.WriteHeader(status)
+		return
+	}
+	w.Header().Set(RefusalHeader, codeIn(data))
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	_, _ = w.Write(append(data, '\n'))
 }
+
+// codeIn is the `code` member of an encoded refusal body, or a generic mark.
+//
+// `refused` is not a code any client branches on — `CHASSIS_CODES` in the page
+// does not carry it — and that is the point: a body that named no code names
+// none here either. What the header carries where there *is* a code is the same
+// string the body carries, which a test asserts of every writer.
+func codeIn(data []byte) string {
+	var named struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(data, &named); err == nil && named.Code != "" {
+		return named.Code
+	}
+	return "refused"
+}
+
+// marking is a ResponseWriter that marks any refusal written through it.
+//
+// **For the handlers that do not write their own answers.** The WebSocket
+// library writes its own `400` when a handshake is malformed, and
+// `http.FileServer` writes a `416` for a range nothing satisfies — both
+// chassis-authored refusals with no `writeJSON` anywhere near them, and both
+// unmarked until this. It marks nothing a handler already marked, and nothing
+// below `400`.
+type marking struct {
+	http.ResponseWriter
+	code string
+}
+
+func (m *marking) WriteHeader(status int) {
+	if status >= 400 && m.Header().Get(RefusalHeader) == "" {
+		m.Header().Set(RefusalHeader, m.code)
+	}
+	m.ResponseWriter.WriteHeader(status)
+}
+
+// Unwrap lets `http.ResponseController` reach the real writer, which the relay
+// needs for its deadlines and the upgrade needs for its hijack.
+func (m *marking) Unwrap() http.ResponseWriter { return m.ResponseWriter }
 
 // writeJSONError sends one refusal, code and all. The code is taken from the
 // error itself where the caller has one; callers with only a sentence use

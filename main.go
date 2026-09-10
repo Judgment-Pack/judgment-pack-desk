@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -41,10 +42,10 @@ func main() {
 
 func run() error {
 	var (
-		port     = flag.Int("port", 8791, "loopback TCP port to listen on")
+		port     = flag.Int("port", 8791, "loopback TCP port to listen on; 0 lets the kernel choose one, and the printed URL names it")
 		jpackBin = flag.String("jpack", "jpack", "path to the judgment-pack runtime binary")
-		devToken = flag.String("dev-token", "", "fixed session token for local development; also permits the Vite dev-server origin. Leave empty in normal use so a random token is generated.")
-		open     = flag.Bool("print-url", true, "print the tokened URL at startup")
+		devToken = flag.String("dev-token", "", "fixed launch secret for local development; also permits the Vite dev-server origin. Leave empty in normal use so a random secret is generated.")
+		open     = flag.Bool("print-url", true, "print the launch URL at startup")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "usage: jpack-desk [flags] [projectDir]\n\nWithout projectDir, the desk opens the project named by project.file in this machine's\ndesk configuration file, and the current directory where that names none.\n\nflags:\n")
@@ -67,25 +68,46 @@ func run() error {
 	}
 	absProject := project.Dir()
 
+	// **The listener first, and the port read off it.** The handoff cookie's
+	// name carries the port, so the chassis has to be told which port it is
+	// actually on — and with `--port 0` the flag does not know: the kernel
+	// picks one when the socket binds. Binding here and serving this listener
+	// is what makes `--port 0` a working desk rather than one whose cookie is
+	// named for a port nothing is on.
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *port))
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+	bound := listener.Addr().(*net.TCPAddr).Port
+
 	static, err := fs.Sub(embeddedWeb, "web/dist")
 	if err != nil {
 		return fmt.Errorf("locating embedded assets: %w", err)
 	}
 
+	// The **launch secret**: what `GET /launch` trades once for a single-use
+	// handoff cookie, and what a script presents as `Authorization: Bearer`. It
+	// is not the session, and it never rides on a request query — see
+	// `internal/desk/session.go`.
 	token := *devToken
 	if token == "" {
 		if token, err = desk.NewToken(); err != nil {
-			return fmt.Errorf("generating session token: %w", err)
+			return fmt.Errorf("generating the launch secret: %w", err)
 		}
 	}
 
 	srv, err := desk.New(desk.Config{
 		Root:     project,
 		JpackBin: *jpackBin,
-		Token:    token,
-		Static:   static,
-		DevMode:  *devToken != "",
-		Logger:   log.New(os.Stderr, "", log.LstdFlags),
+		// The port this listener binds, handed over because the handoff
+		// cookie's name carries it: a cookie's origin has no port, so two
+		// desks on one host would otherwise share one handoff.
+		Port:    bound,
+		Token:   token,
+		Static:  static,
+		DevMode: *devToken != "",
+		Logger:  log.New(os.Stderr, "", log.LstdFlags),
 	})
 	if err != nil {
 		return err
@@ -95,7 +117,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	addr := fmt.Sprintf("127.0.0.1:%d", *port)
+	addr := fmt.Sprintf("127.0.0.1:%d", bound)
 	httpSrv := &http.Server{
 		Addr:    addr,
 		Handler: srv,
@@ -120,9 +142,14 @@ func run() error {
 	}()
 
 	if *open {
-		fmt.Printf("judgment-pack desk\n  project: %s\n  runtime: %s\n  open:    http://%s/?token=%s\n", absProject, *jpackBin, addr, token)
+		// **The launch path, not the page.** Opening this URL trades the secret
+		// for a sixty-second, single-use handoff cookie and redirects to `/`,
+		// so what ends up in the address bar is `/` and the secret is in no
+		// later request. The page then exchanges that handoff for a session id
+		// it holds itself. See `internal/desk/session.go`.
+		fmt.Printf("judgment-pack desk\n  project: %s\n  runtime: %s\n  open:    http://%s/launch?secret=%s\n", absProject, *jpackBin, addr, token)
 	}
-	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := httpSrv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil
