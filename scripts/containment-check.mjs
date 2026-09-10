@@ -39,7 +39,9 @@
  * **The widths.** The widths are derived from every breakpoint the sheets
  * author, so an override scoped to a width this gate never enters cannot exist
  * by construction. A prelude this parser cannot read — a `not`, a range
- * written with `<` or `>`, a `@container`, a height, a width in a unit outside
+ * written with `<` or `>`, a `@container` that positions or scrolls anything
+ * (a layout-only container query is printed and let through: it is entered
+ * only as far as the pane configurations reach), a height, a width in a unit outside
  * `px`, `em` and `rem` — is printed under "preludes not read" and the run exits
  * 2, so the printed list is complete or the run says why it is not; a prelude
  * that names no dimension at all (a colour scheme, a motion preference) is
@@ -165,6 +167,7 @@ function preludes() {
   const found = []
   const unread = []
   const nonDimensional = []
+  const containers = []
   for (const path of sheets()) {
     const where = path.slice(SRC.length + 1)
     const text = readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
@@ -174,6 +177,21 @@ function preludes() {
       const dimensional = /\b(width|height|aspect-ratio|resolution)\b/i.test(query)
       if (!dimensional) {
         nonDimensional.push(entry)
+        continue
+      }
+      // **A container query is not a viewport breakpoint.** It scopes rules to
+      // an element's own inline size, which this gate enters only as far as
+      // its pane configurations happen to reach — so it cannot derive a width
+      // to sample from one. What it CAN hold is the invariant: a container
+      // block that positions or scrolls anything is refused outright, and a
+      // layout-only one is printed and let through.
+      if (rule[1] === 'container') {
+        const block = blockAfter(text, rule.index + rule[0].length)
+        if (/\b(position|overflow(?:-[xy])?)\s*:/i.test(block)) {
+          unread.push({ ...entry, prelude: `${entry.prelude}  (positions or scrolls inside a container query)` })
+        } else {
+          containers.push(entry)
+        }
         continue
       }
       const readable =
@@ -198,7 +216,18 @@ function preludes() {
       }
     }
   }
-  return { found, unread, nonDimensional }
+  return { found, unread, nonDimensional, containers }
+}
+
+/** The text of the block that opens at `from`, braces balanced. */
+function blockAfter(text, from) {
+  let depth = 1
+  let end = from
+  for (; end < text.length && depth > 0; end += 1) {
+    if (text[end] === '{') depth += 1
+    else if (text[end] === '}') depth -= 1
+  }
+  return text.slice(from, end)
 }
 
 const PRELUDES = preludes()
@@ -237,6 +266,10 @@ function printPreludes() {
   if (PRELUDES.nonDimensional.length > 0) {
     console.log('preludes naming no dimension, sampled by nothing:')
     for (const one of PRELUDES.nonDimensional) console.log(`  ${one.where}  ${one.prelude}`)
+  }
+  if (PRELUDES.containers.length > 0) {
+    console.log('container queries, layout only (entered only as far as the pane configurations reach):')
+    for (const one of PRELUDES.containers) console.log(`  ${one.where}  ${one.prelude}`)
   }
   console.log(`\nwidths derived from them, each at height 800: ${WIDTHS.join(', ')}`)
 }
