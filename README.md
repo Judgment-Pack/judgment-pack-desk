@@ -3172,6 +3172,14 @@ and never matches the host it reaches the chassis under. Vite proxies `/launch`,
 without the `/launch` entry the dev origin acquires no handoff, the page has
 nothing to exchange, and the other two answer `401`.
 
+**In VS Code**, `.vscode/tasks.json` carries this as tasks. Set `jpackDesk.jpack`
+(the runtime binary) and `jpackDesk.project` (a directory with `jpack.json`) in
+your settings, then run **desk: open (hot reload)**: it starts the chassis on
+port 8790 with the fixed secret `dev`, starts Vite with its proxy pointed at
+that port, and opens `http://localhost:5173/launch?secret=dev`. Page edits
+reload in place; a Go change means restarting the **desk: chassis (dev)** task,
+and the URL is the same afterwards.
+
 To check a running chassis end to end with the desk's own client code. The
 origin and the secret are separate arguments, because a credential does not ride
 on a URL — the client presents it as `Authorization: Bearer`:
