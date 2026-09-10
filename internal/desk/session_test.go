@@ -2007,3 +2007,46 @@ func TestTheHandlersThatWriteTheirOwnRefusalsAreMarkedToo(t *testing.T) {
 		}
 	})
 }
+
+// TestEveryLiveHandoffInOneRequestIsSpent.
+//
+// A request can only carry two live values of this name if something planted
+// one at a different path: a second `Set-Cookie` at `Path=/` replaces the
+// first. Where it happens, **every live one is spent** and one session is
+// minted. The alternative — spend the first and leave the rest live — makes the
+// *next* reload mint a second session from a cookie nobody deliberately used,
+// which is what this test drives.
+func TestEveryLiveHandoffInOneRequestIsSpent(t *testing.T) {
+	s, ts := newTestServer(t, false)
+	first := launchHandoff(t, ts)
+	second := launchHandoff(t, ts)
+
+	status, body := exchangeAttempt(t, ts, func(r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: first.Name, Value: first.Value})
+		r.AddCookie(&http.Cookie{Name: second.Name, Value: second.Value})
+		r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+		r.Header.Set("Origin", ts.URL)
+	})
+	if status != http.StatusOK {
+		t.Fatalf("two live handoffs answered %d: %v", status, body)
+	}
+	if n := s.sessions.count(); n != 1 {
+		t.Fatalf("%d sessions minted from one exchange, want 1", n)
+	}
+
+	// **Neither is live afterwards.** A reload presenting either mints nothing
+	// and reads as any other spent handoff, which the page treats as a reload.
+	for name, handoff := range map[string]*http.Cookie{"the first": first, "the second": second} {
+		after, refusal := exchangeAttempt(t, ts, withHandoff(ts, handoff))
+		if after != http.StatusUnauthorized || refusal["code"] != CodeHandoffSpent {
+			t.Fatalf("%s handoff answered %d %v on a later load, want 401 %s",
+				name, after, refusal["code"], CodeHandoffSpent)
+		}
+	}
+	if n := s.sessions.count(); n != 1 {
+		t.Fatalf("%d sessions after the later loads, want still 1", n)
+	}
+	if n := s.launches.count(); n != 0 {
+		t.Fatalf("%d handoff(s) are still live, want none", n)
+	}
+}
