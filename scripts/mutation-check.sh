@@ -1067,20 +1067,22 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # was a better comparison and the next parser disagreed somewhere else, so
   # there is no strip any more.
   #
-  # Repaired twice. The needle first named `sessionTokenParameter`, the query
-  # this chassis used to authenticate with, which no longer exists. Then the
-  # edit only skipped the *refusal*, so the pair was refused a moment later by
-  # the same rule and nothing was ever forwarded — the row measured a message.
-  # This one makes the function **admit the whole raw query**, so the pair does
-  # travel, and `TestNothingOfThePagesQueryReachesTheEndpoint` inspects the
-  # endpoint's own `RawQuery`.
-  mutate go "a page query parameter is forwarded" "$MR" \
-    '	if raw == "" {
-		return "", ""
-	}' \
-    '	if true {
-		return raw, ""
-	}'
+  # **Renamed, because "forwarded" is not what the code can do.** The page's
+  # query is never *copied* outbound at all: `appendPath` builds the address
+  # from the configured URL and a validated path suffix, and the only thing that
+  # can join it is the one closed literal. What `relayQueryProblem` does is
+  # **refuse the request**, so what a skipped refusal produces is a request that
+  # reaches the endpoint when it should have reached nothing — which is the
+  # property, and which `TestNothingOfThePagesQueryReachesTheEndpoint` measures
+  # at the endpoint's own arrivals rather than by reading a status.
+  #
+  # The needle first named `sessionTokenParameter`, a query this chassis no
+  # longer has; a second draft admitted the raw query as the stream pair, which
+  # the kind check then refused a line later, so nothing travelled either way.
+  mutate go "a page query parameter reaches the endpoint" "$MR" \
+    '		return "", "a relayed request carries no query of the page'"'"'s own: nothing of it is " +' \
+    '		continue
+		_ = "a relayed request carries no query of the page'"'"'s own: nothing of it is " +'
   mutate go "the relayed path is never validated" "$MR" \
     '	if reason := relaySuffixProblem(suffix); reason != "" {' \
     '	if reason := ""; reason != "" {'
@@ -1646,9 +1648,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # already had a row for. This one skips the spend, so the handoff survives,
   # and `TestTheHandoffIsSingleUse` inspects the store's own count after a
   # successful exchange.
+  # `cookie == nil` rather than `false`, because `cookie` would otherwise be
+  # declared and not used and the row would report a compile failure instead of
+  # a verdict. `r.Cookie` never answers a nil cookie with a nil error, so the
+  # branch is dead and the handoff is never spent — which is the property.
   mutate go "the exchange mints without spending the handoff" "$SE" \
     '	if !s.launches.consume(cookie.Value) {' \
-    '	if false {'
+    '	if cookie == nil {'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx

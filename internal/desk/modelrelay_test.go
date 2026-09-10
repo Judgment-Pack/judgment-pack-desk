@@ -2877,13 +2877,30 @@ func TestAChunkedOversizedRefusalStreamsThrough(t *testing.T) {
 func TestNothingOfThePagesQueryReachesTheEndpoint(t *testing.T) {
 	u := newUpstream(t, nil)
 	// A configured endpoint with a query of its own, so that "the endpoint's
-	// routing travels and the page's does not" is two different assertions.
+	// routing travels and the page's does not" is two assertions and not one.
 	_, ts, _ := relayDeskAt(t, "openai-compatible", u.server.URL+"/v1?deployment=blue")
+
+	// The legitimate call: the endpoint's own routing is what reaches it.
 	resp, body := relayDo(t, ts, http.MethodPost, "chat/completions", strings.NewReader(`{}`), nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d: %s", resp.StatusCode, body)
 	}
 	if got := u.only(t).rawQuery; got != "deployment=blue" {
 		t.Fatalf("the endpoint saw the raw query %q, want only its own %q", got, "deployment=blue")
+	}
+
+	// And a pair of the page's own. **Measured at the endpoint**, not by the
+	// status: the page's query is never copied outbound in any case, so what a
+	// dropped refusal actually produces is a request that reaches the endpoint
+	// when nothing should have. A row that read the status alone would pass on
+	// a desk that refused for the wrong reason.
+	refused, said := relayDo(t, ts, http.MethodPost, "chat/completions?x=1",
+		strings.NewReader(`{}`), nil)
+	if refused.StatusCode != http.StatusBadRequest {
+		t.Fatalf("a page's own query parameter answered %d, want 400: %s", refused.StatusCode, said)
+	}
+	if n := len(u.arrivals()); n != 1 {
+		t.Fatalf("the endpoint saw %d requests, want only the legitimate one: a page's "+
+			"query parameter carried a request to it", n)
 	}
 }
