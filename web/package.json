@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "description": "Single-page application served by the jpack-desk chassis.",
   "scripts": {
+    "predev": "node scripts/require-node.cjs",
     "dev": "vite",
+    "prebuild": "node scripts/require-node.cjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
