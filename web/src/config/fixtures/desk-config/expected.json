@@ -3,13 +3,21 @@
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-assistant-engine-absent": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-assistant-engine-builtin": {
     "accepted": true,
@@ -21,13 +29,21 @@
         "key": "assistant.engine",
         "says": "engine: \"builtin\" was withdrawn; the Vercel engine runs"
       }
-    ]
+    ],
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-assistant-engine-vercel": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-assistant-slot-without-an-endpoint": {
     "accepted": true,
@@ -39,49 +55,81 @@
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-assistant-thinking-on": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "on"
+    "thinking": "on",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-assistant-thinking-ultra": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "ultra"
+    "thinking": "ultra",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-endpoint": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-endpoint-every-tool": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-endpoint-gemini-with-query": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-endpoint-kind-gemini": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-endpoint-loopback-http": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-endpoint-model-null": {
     "accepted": true,
@@ -94,6 +142,39 @@
         "says": "no model chosen yet — pick one below"
       }
     ]
+  },
+  "accepted-endpoint-models-empty-set": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "notices": [
+      {
+        "key": "assistant.endpoint.model",
+        "says": "no model chosen yet — pick one below"
+      }
+    ]
+  },
+  "accepted-endpoint-models-migrated-from-the-model": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "models": [
+      "a-model-written-before-the-set"
+    ],
+    "model": "a-model-written-before-the-set"
+  },
+  "accepted-endpoint-models-set": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "models": [
+      "a-model",
+      "a-second-model"
+    ],
+    "model": "a-second-model"
   },
   "accepted-endpoint-no-model-yet": {
     "accepted": true,
@@ -111,43 +192,71 @@
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-endpoint-query-percent-escaped": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-endpoint-with-query": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-every-section": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-identity-issuer-loopback": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-identity-provider-in-full": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-identity-provider-nulls": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-minimal": {
     "accepted": true,
@@ -165,25 +274,41 @@
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-organization-mark-svg": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-panes-at-the-bounds": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-panes-partial": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "accepted-project-file": {
     "accepted": true,
@@ -216,7 +341,11 @@
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
   },
   "refused-appearance-density-unknown": {
     "accepted": false,
@@ -324,6 +453,36 @@
     "accepted": false,
     "keys": [
       "assistant.endpoint.model"
+    ]
+  },
+  "refused-endpoint-models-default-outside-the-set": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.model"
+    ]
+  },
+  "refused-endpoint-models-default-with-an-empty-set": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.model"
+    ]
+  },
+  "refused-endpoint-models-duplicate": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.models"
+    ]
+  },
+  "refused-endpoint-models-empty-id": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.models"
+    ]
+  },
+  "refused-endpoint-models-not-an-array": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.models"
     ]
   },
   "refused-endpoint-not-object": {

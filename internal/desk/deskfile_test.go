@@ -53,6 +53,15 @@ type fixtureVerdict struct {
 	// absent value is the empty list, so a fixture that starts producing a
 	// notice and does not declare one fails.
 	Notices []deskNotice `json:"notices"`
+	// Models and Model are the endpoint's enabled set and its default, as the
+	// file decodes to them. Compared-if-present on the same terms as Notices,
+	// and the omission still checks: the absent values are the empty set and no
+	// default, so a fixture that starts decoding to a set and does not declare
+	// one fails. This is where the migration is stated — a file naming a model
+	// and no set decodes to the set of that one id, on both sides — and where a
+	// default is proved to be held to the set beside it.
+	Models []string `json:"models"`
+	Model  string   `json:"model"`
 }
 
 func fixtureVerdicts(t *testing.T) map[string]fixtureVerdict {
@@ -141,6 +150,20 @@ func TestSharedFixturesDecodeAsTheVerdictSays(t *testing.T) {
 				// fails on both.
 				if !sameNotices(decoded.Notices, verdict.Notices) {
 					t.Errorf("notices %v, want %v", decoded.Notices, verdict.Notices)
+				}
+				// The set and its default, which is where the migration is
+				// stated.
+				var models []string
+				model := ""
+				if decoded.Endpoint != nil {
+					models = decoded.Endpoint.models
+					model = decoded.Endpoint.model
+				}
+				if strings.Join(models, ",") != strings.Join(verdict.Models, ",") {
+					t.Errorf("models %v, want %v", models, verdict.Models)
+				}
+				if model != verdict.Model {
+					t.Errorf("model %q, want %q", model, verdict.Model)
 				}
 				return
 			}

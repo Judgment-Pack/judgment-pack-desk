@@ -221,7 +221,8 @@ export interface AssistantEndpointConfig {
   url: string
   kind: EndpointKind
   /**
-   * The model id, or **null where none has been chosen yet**.
+   * The **default** of `models`: the id preselected on a run, or **null where
+   * no model is enabled yet**.
    *
    * Nullable on the identity slot's precedent, and for a reason about the order
    * a person does things in: a model is picked from the list the endpoint
@@ -231,12 +232,30 @@ export interface AssistantEndpointConfig {
    * valid configuration whose assistant is not ready, and the decoder says so
    * rather than refusing the file.
    *
+   * **It is held to the set beside it**: one of `models` where that set has
+   * members, and null where it is empty. A default nothing enabled is a value
+   * no picker would offer and no run could take.
+   *
    * `""` is still refused, here and on the chassis. Absent, null and "no model"
    * are one state; the empty string is a value somebody wrote, and a member
    * whose two spellings mean different things is a member two readers disagree
    * about.
    */
   model: string | null
+  /**
+   * The models enabled for this endpoint: **the set a person picks from on a
+   * run**, each id exactly as the provider spells it.
+   *
+   * A set and not a single choice, because one endpoint answers to several
+   * models and which one a piece of work wants is a decision made at the run
+   * and not at the configuration. `model` above is this set's **default** — the
+   * one preselected — and the two are held to each other: a default outside the
+   * set is refused by name, and the empty set has no default at all.
+   *
+   * Order is the file's, and duplicates are refused rather than folded: a set
+   * written twice is a file two readers could count differently.
+   */
+  models: string[]
   tools: string[]
 }
 
@@ -1362,7 +1381,7 @@ function endpointValue(
   const endpoint = section(
     value,
     'assistant.endpoint',
-    ['url', 'kind', 'model', 'tools'],
+    ['url', 'kind', 'model', 'models', 'tools'],
     problems
   )
   if (!endpoint) return null
@@ -1396,7 +1415,33 @@ function endpointValue(
       model = (endpoint.model as string).trim()
     }
   }
-  if (model === null) notices.push({ key: 'assistant.endpoint.model', says: NO_MODEL_CHOSEN })
+
+  // **The set, and the migration that gives a file written before it one.** A
+  // file naming only a model has always meant one enabled model; deriving the
+  // set from it states that rather than leaving an endpoint whose picker would
+  // be empty. Nothing is substituted and nothing is renamed, so there is no
+  // notice: the set the file decodes to is the id the file already carried.
+  const setProblems: ConfigProblem[] = []
+  const models =
+    endpoint.models === undefined
+      ? model === null
+        ? []
+        : [model]
+      : modelSet(endpoint.models, setProblems)
+  problems.push(...setProblems)
+  // **The default is held to the set, and only where the set itself decoded
+  // cleanly.** Naming a default outside a set that was refused member by member
+  // would be a second sentence about one mistake, against the wrong key.
+  if (model !== null && setProblems.length === 0) {
+    const defaultProblem = modelDefaultProblem(model, models)
+    if (defaultProblem !== undefined) {
+      problems.push({ key: 'assistant.endpoint.model', reason: defaultProblem })
+    }
+  }
+  // **The empty set is what "no model chosen yet" now means**, and the sentence
+  // is the one it always was: an endpoint with nothing enabled is saved, valid,
+  // and not ready to run.
+  if (models.length === 0) notices.push({ key: 'assistant.endpoint.model', says: NO_MODEL_CHOSEN })
 
   let tools: string[] = []
   if (endpoint.tools === undefined) {
@@ -1434,8 +1479,75 @@ function endpointValue(
     url: url ?? '',
     kind: kind ?? 'openai-compatible',
     model,
+    models,
     tools
   }
+}
+
+/**
+ * The enabled set, decoded — **each id held to the rule one model is held to**,
+ * and no id twice.
+ *
+ * The rule is `modelIdProblem`'s rather than a second copy of it, for the
+ * reason that function exists at all: the picker, the field and the file's
+ * reader have to agree about what an id is, and a copy is how they came to
+ * disagree once already.
+ *
+ * **A duplicate is refused rather than folded.** Folding would make a file
+ * whose set is written twice decode to a set of a different length than it
+ * says, which is a file two readers count differently — and the page writes
+ * this member, so the refusal is also what stops a checkbox list composing one.
+ */
+function modelSet(value: unknown, problems: ConfigProblem[]): string[] {
+  if (!Array.isArray(value)) {
+    problems.push({
+      key: 'assistant.endpoint.models',
+      reason: `must be an array of strings; found ${describe(value)}`
+    })
+    return []
+  }
+  const enabled: string[] = []
+  for (const entry of value) {
+    const problem = modelIdProblem(entry)
+    if (problem !== undefined) {
+      problems.push({ key: 'assistant.endpoint.models', reason: problem })
+      continue
+    }
+    const id = (entry as string).trim()
+    if (enabled.includes(id)) {
+      problems.push({
+        key: 'assistant.endpoint.models',
+        reason: `${JSON.stringify(id)} is listed twice; each model appears once`
+      })
+      continue
+    }
+    enabled.push(id)
+  }
+  return enabled
+}
+
+/**
+ * The rule the default is held to, and the whole of it.
+ *
+ * **Lifted out for the same reason `modelIdProblem` was**: Admin's Models list
+ * decides which rows may carry the Default radio, and a copy of this reasoning
+ * is how a form comes to offer a default that produces a 422 on the next Save.
+ *
+ * `undefined` where the pair is acceptable; otherwise the decoder's own
+ * sentence, which is what a reader sees whether the default was typed or
+ * clicked.
+ */
+export function modelDefaultProblem(model: string, models: string[]): string | undefined {
+  if (models.length === 0) {
+    return 'must be null where no model is enabled; there is nothing for a default to be'
+  }
+  if (!models.includes(model)) {
+    return (
+      `must be one of the models enabled for this endpoint; ` +
+      `${JSON.stringify(model)} is not one of them`
+    )
+  }
+  return undefined
 }
 
 /**
