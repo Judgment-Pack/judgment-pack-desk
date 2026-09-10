@@ -6373,11 +6373,9 @@ export function assistantTransport(id: string): Transport {
   # and what the rail's section menu links to — a section declared and not
   # rendered is a menu entry pointing at a heading that is not there.
   mutate web "the Runtime card back" "$AS" \
-    "    sections: [
-      { id: 'organization', title: 'Organization' }," \
-    "    sections: [
-      { id: 'runtime', title: 'Runtime' },
-      { id: 'organization', title: 'Organization' },"
+    "      { id: 'project', title: 'Project' }," \
+    "      { id: 'project', title: 'Project' },
+      { id: 'runtime', title: 'Runtime' },"
 
   # **A removed control's write path is removed with it.** The Panes card is
   # gone — the dimensions are the shell's, and the reset of this browser's own
@@ -6943,20 +6941,74 @@ export function assistantTransport(id: string): Transport {
   # — the project it happens to be open on — is a value nobody wrote that a
   # reader cannot tell from one that is in the file.
   mutate web "an Admin row composes a summary the decoder did not say" "$SSUM" \
-    "  organization: (config) => config.organization.name ?? 'none'," \
-    "  organization: (config) => config.organization.name ?? 'this project',"
+    "  organization: ({ config }) => config.organization.name ?? 'none'," \
+    "  organization: ({ config }) => config.organization.name ?? 'this project',"
 
   # **The claim outliving the route.** Admin publishes the file into the
   # Inspector for as long as it is mounted; a claim that is never released
   # leaves the pane suppressing its own empty state for every route after it,
   # and the panel Admin published standing over a page it is not about.
-  # **Admin opens on its first section, not on a menu.** `/admin` with no
-  # fragment opens Organization with the list beside it; the overview is All
-  # settings. This puts the menu back as the landing page.
+  # **Retired, with its reason: the state it restored no longer exists.** It
+  # was "Admin lands on the overview again", replacing
+  # `if (hash.length < 2) return ADMIN_SECTIONS[0]` with `return undefined` so
+  # that `/admin` rendered the overview. There is no overview and no `#all`:
+  # `sectionFromHash` returns an `AdminSection` and has no arm that can answer
+  # nothing, so the mutation has nothing to restore and could only be made to
+  # apply by breaking the type. What the row stood for — the landing state is a
+  # section — is held one row further down as "an unknown fragment opens no
+  # section", over the stronger code. Retired here rather than deleted, because
+  # a row that vanishes reads as a claim somebody decided to stop making.
+
+  # ---- Chunk 6j: no overview, and Project is a section --------------------
+
   ADVL=web/src/routes/AdminView.tsx
-  mutate web "Admin lands on the overview again" "$ADVL" \
-    '  if (hash.length < 2) return ADMIN_SECTIONS[0]' \
-    '  if (hash.length < 2) return undefined'
+
+  # **Every fragment names a section, including the ones that name none.** An
+  # unknown fragment, a group id and a link somebody typed all open the first
+  # section, because the alternative is a page with nothing open on it — which
+  # is the overview this chunk removed, arrived at by mistake instead of by a
+  # link. This drops the fallback, and the page has no state for the answer to
+  # land in.
+  mutate web "an unknown fragment opens no section" "$ADVL" \
+    '  return SECTION[id] ?? first' \
+    '  return SECTION[id]!'
+
+  # **The one control the Project section is for.** It is the section the group
+  # header became: the file's Location and Status, and whether this desk opens
+  # this project when it is launched without a directory. A section that showed
+  # the two rows and dropped the control is a header with its write taken off
+  # it, which is what the overview's removal would have done by accident.
+  mutate web "the Project section drops the default-project control" "$ADVL" \
+    '              fields={defaultProject.field}
+              save={defaultProject.save}' \
+    '              save={defaultProject.save}'
+
+  # **A path in a 13rem column is a line of prose.** The head above the rows —
+  # where the file is, what reading it produced — is the Project section's now
+  # and the pane's; putting it back in the navigation column is the overview
+  # returning one group at a time, beside the section it was meant to replace.
+  mutate web "the rail renders the file's head again" "$ADVL" \
+    '      <p className={styles.railTitle} id={`rail-${group.id}`}>
+        {group.title}
+      </p>' \
+    '      <p className={styles.railTitle} id={`rail-${group.id}`}>
+        {group.title}
+      </p>
+      <dl>
+        <dt>Location</dt>
+        <dd>
+          {group.id === '\''this-project'\'' ? projectLocation(effective) : deskLocation(effective)}
+        </dd>
+      </dl>'
+
+  # **The row that is about the file says one of three things, and the third is
+  # not a spelling of the second.** Whether the configured default is *this*
+  # project is a comparison against the path the chassis resolved; before it has
+  # answered, a row that picked one of the other two would be answering for the
+  # desk. This makes it claim the default where nothing has said so.
+  mutate web "the Project row's summary composed from something the decoder did not say" "$SSUM" \
+    '    if (chassis === undefined) return NOT_SAID' \
+    '    if (chassis === undefined) return IS_DEFAULT'
   mutate web "the Inspector claim is never released, so Admin's pane outlives it" "$ISLOT" \
     '    if (!publishing) return
     return claim()' \
