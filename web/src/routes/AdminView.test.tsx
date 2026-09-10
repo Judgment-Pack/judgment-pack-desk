@@ -80,7 +80,8 @@ const DESK_PATH = '/home/someone/.config/jpack-desk/desk.json'
  */
 function renderAdmin(
   value = effectiveConfig(undefined),
-  path = '/admin',
+  // The overview: `/admin` itself opens the first section.
+  path = '/admin#all',
   projectIdentity: string | null = ROOT,
   mcp: Partial<McpConnection> = {}
 ) {
@@ -122,7 +123,7 @@ function renderAdmin(
  * harness is a router whose element switches on the address and whose
  * `AppShell` does not remount when it does.
  */
-function renderInShell(value = effectiveConfig(undefined), path = '/admin') {
+function renderInShell(value = effectiveConfig(undefined), path = '/admin#all') {
   vi.stubGlobal('fetch', async () => ({
     ok: false,
     status: 404,
@@ -170,7 +171,8 @@ function page(container: HTMLElement): HTMLElement {
 
 /** The overview's rows, in the order they are rendered. */
 function rowsIn(container: HTMLElement): HTMLAnchorElement[] {
-  return Array.from(page(container).querySelectorAll<HTMLAnchorElement>('a[href^="/admin#"]'))
+  // Rows are list items; the All settings link above an open section is not one.
+  return Array.from(page(container).querySelectorAll<HTMLAnchorElement>('li a[href^="/admin#"]'))
 }
 
 /** Every row's title, which is its first line and never its summary. */
@@ -245,7 +247,7 @@ function answered(body: unknown, status = 200) {
 }
 
 /** The same shell as `renderAdmin`, over the real configuration provider. */
-function renderLiveAdmin(path = '/admin') {
+function renderLiveAdmin(path = '/admin#all') {
   const router = createMemoryRouter(
     [
       {
@@ -853,6 +855,18 @@ describe('the Admin overview', () => {
 })
 
 describe('one section at a time', () => {
+  it('lands on the first section when there is no fragment, with the list beside it', () => {
+    const { container } = renderAdmin(everythingConfigured(), '/admin')
+    expect(screen.getByRole('heading', { level: 2, name: 'Organization' })).toBeTruthy()
+    const current = rowsIn(container).filter(
+      (row) => row.getAttribute('aria-current') !== null
+    )
+    expect(current.map((row) => row.getAttribute('href'))).toEqual(['/admin#organization'])
+    expect(rowTitles(container)).toEqual(ADMIN_SECTIONS.map((section) => section.title))
+    // All settings is the overview, and it is where the back link goes.
+    expect(screen.getByRole('link', { name: 'All settings' }).getAttribute('href')).toBe('/admin#all')
+  })
+
   it('opens the section a fragment names, and marks its row current', () => {
     const { container } = renderAdmin(everythingConfigured(), '/admin#organization')
     expect(screen.getByRole('heading', { level: 2, name: 'Organization' })).toBeTruthy()

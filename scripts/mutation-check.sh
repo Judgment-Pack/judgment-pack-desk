@@ -6950,6 +6950,13 @@ export function assistantTransport(id: string): Transport {
   # Inspector for as long as it is mounted; a claim that is never released
   # leaves the pane suppressing its own empty state for every route after it,
   # and the panel Admin published standing over a page it is not about.
+  # **Admin opens on its first section, not on a menu.** `/admin` with no
+  # fragment opens Organization with the list beside it; the overview is All
+  # settings. This puts the menu back as the landing page.
+  ADVL=web/src/routes/AdminView.tsx
+  mutate web "Admin lands on the overview again" "$ADVL" \
+    '  if (hash.length < 2) return ADMIN_SECTIONS[0]' \
+    '  if (hash.length < 2) return undefined'
   mutate web "the Inspector claim is never released, so Admin's pane outlives it" "$ISLOT" \
     '    if (!publishing) return
     return claim()' \
