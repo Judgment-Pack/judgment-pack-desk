@@ -40,7 +40,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { loadEngine } from './engines'
 import { bindModelCall, openAssistantConnection, runAssistantSession } from './session'
-import { sessionBearer } from '../mcp/session'
+import { sessionBearer, whenSessionEnds } from '../mcp/session'
 import { normalize } from './thinking'
 import type { AssistantEvent } from './engine'
 import type { AssistantConnection } from './session'
@@ -276,6 +276,22 @@ export function useAssistantRun(options: {
       release(run)
     }
   }, [finish, release])
+
+  /**
+   * The session ending stops the run, and **stopping it is an abort**.
+   *
+   * Closing the connection is not enough on its own. The engine's loop is
+   * driving a model over the relay and a tool over the socket; a close ends the
+   * socket, and the engine goes on awaiting a model answer that will arrive,
+   * with nothing to deliver it to but the pane. So the run's own controller is
+   * aborted — the same abort Stop performs — which is what every await in the
+   * loop is already written against, and `finish` accounts for the one terminal
+   * event as it does for every other ending.
+   *
+   * `stop()` rather than `release()` for that reason: a run that ended with no
+   * terminal event is a pane that says it is still running for ever.
+   */
+  useEffect(() => whenSessionEnds(() => stop()), [stop])
 
   const start = useCallback(
     (prompt: string) => {

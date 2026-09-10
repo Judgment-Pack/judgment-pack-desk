@@ -303,6 +303,14 @@ export function bindModelCall(family: EndpointKind): ModelCall {
         // handoff — the one cookie there is — belongs on the exchange and on no
         // other request.
         credentials: 'omit',
+        // **A model API never redirects the browser relaying to it.** An
+        // endpoint answering `307 Location: /api/session` made this very fetch
+        // repeat the request — method, body and this desk's bearer included —
+        // against the exchange, whose marked refusal the classifier below then
+        // read as "this desk refused my session". The chassis strips `Location`
+        // now; this is the second layer, and it is the one that holds if a
+        // redirect ever reaches here by another route.
+        redirect: 'manual',
         // `POST` unless the caller named the one other method this capability
         // admits. A `GET` carries no body: `fetch` refuses one that does, and
         // the model listing is the only caller that asks for either.
@@ -336,7 +344,19 @@ export function bindModelCall(family: EndpointKind): ModelCall {
     // replaces read a *cloned body* to decide, which was wrong twice over: a
     // clone has tee semantics, so an oversized chunked refusal deadlocked the
     // reader classifying it, and an endpoint could write the envelope itself.
-    if (answered.status === 401 && refusalCode(answered) !== null) {
+    // An opaque redirect is not an answer: `redirect: 'manual'` gives a
+    // `Response` of type `opaqueredirect` with status 0 and no body, and an
+    // engine handed that would be handed nothing it could read. It is reported
+    // as what it is — an upstream that did not answer.
+    if (answered.type === 'opaqueredirect' || (answered.status === 0 && answered.redirected)) {
+      throw new Error(CALL_FAILED)
+    }
+    // **Only `unauthorized` ends the session.** The mark says the chassis wrote
+    // the refusal; the *code* says which refusal it is, and the exchange's own
+    // codes — `no-handoff`, `handoff-spent`, `handoff-expired` — are answers to
+    // a question this route never asks. A classifier that ended the session on
+    // any marked 401 turned a redirect into a forgotten valid session.
+    if (answered.status === 401 && refusalCode(answered) === 'unauthorized') {
       // Nothing reads this answer now, so the request is let go of rather than
       // left in flight behind an unconsumed stream. See `discardBody`.
       await discardBody(answered)
@@ -548,8 +568,17 @@ export function openAssistantConnection(options: {
         // closed transport and fail with whatever the SDK says about that,
         // which tells an engine nothing about why. This is the gate saying so.
         callTool: async (name, args) => {
+          // **Checked twice, and the second one is the point.** A call that
+          // was already in flight when the session ended resolves afterwards,
+          // and delivering that result would be this desk handing an engine
+          // the answer to a question it asked on a session the chassis had
+          // refused. Nothing is delivered after the end — not a result that
+          // arrived a moment too late, and not one that was queued a moment
+          // too early.
           if (ended !== null) throw new NoSession(ended)
-          return (await client.callTool({ name, arguments: args })) as McpToolResult
+          const answered = (await client.callTool({ name, arguments: args })) as McpToolResult
+          if (ended !== null) throw new NoSession(ended)
+          return answered
         }
       }
     } catch (cause) {

@@ -941,7 +941,15 @@ func (s *Server) mintSession(w http.ResponseWriter) {
 			"this desk could not mint a session")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": id, "subject": "local user", "issuer": nil})
+	// **The count travels with the id**, so a fresh tab stores what it needs
+	// without a second request. A tab that kept an old id asks `GET
+	// /api/session` for the same number instead. See `readSession`.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":       id,
+		"subject":  "local user",
+		"issuer":   nil,
+		"sessions": map[string]any{"minted": s.sessions.mintedSoFar()},
+	})
 }
 
 // readSession answers what this desk knows about the session the request

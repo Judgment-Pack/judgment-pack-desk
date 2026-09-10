@@ -14,12 +14,24 @@
  */
 import { ErrorBox } from '../components/primitives'
 import { useMcp } from '../mcp/McpProvider'
+import { sessionNotice } from '../mcp/session'
 
-/** The two banners that sit above whatever is on screen. */
+/** The banners that sit above whatever is on screen. */
 export function ConnectionNotices() {
   const { status, everConnected, attempt, retryNow, known, capabilitiesError } = useMcp()
+  // **Read at render, and it never changes after the first one.** The bootstrap
+  // sets it before anything here can mount — it is part of the one exchange —
+  // so there is nothing to subscribe to and nothing that would make this a
+  // second reader of the credential. It says a fact about this desk, not about
+  // this tab's session, which is why it is a banner and not a refusal.
+  const another = sessionNotice()
   return (
     <>
+      {another !== null && (
+        <p className="banner" role="status">
+          {another}
+        </p>
+      )}
       {status === 'reconnecting' && everConnected && (
         <p className="banner" role="status">
           Lost the connection to the chassis. Reconnecting (attempt {attempt})…{' '}

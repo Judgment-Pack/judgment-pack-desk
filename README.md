@@ -3225,15 +3225,18 @@ not; they are the page, and the page can do nothing without one of the two.
   page shows that sentence verbatim rather than "open the printed URL", because
   reopening it gets a fresh tab the same 503.
 
-  **Sixty-four is cumulative for the life of the process, not open tabs.** A
-  session is never removed, so every bootstrap since the desk started counts:
-  sixty-four page loads reach the bound whether or not any of those tabs is
-  still open. In ordinary use that is a desk somebody has been reloading all
-  day, and the answer is to restart it. **Anyone holding the launch secret can
-  force it deliberately** — sixty-four `POST /api/session` with the secret as a
-  bearer — which is a self-inflicted denial of service by whoever already has
-  the desk's own credential, and is written down here rather than guarded
-  against.
+  **Sixty-four is cumulative for the life of the process, not open tabs — and
+  an ordinary reload does not spend one.** A session is never removed, so every
+  session this process has minted counts. But a reload presents no handoff, is
+  answered `no-handoff`, and **mints nothing**: it keeps the id the tab already
+  holds. What spends capacity is a *launch* — opening the printed URL, which
+  buys a handoff, which buys one session — so sixty-four is sixty-four openings
+  of that URL, not sixty-four page loads. Reaching it means somebody has
+  reopened the launch link sixty-four times, and the answer is to restart the
+  desk. **Anyone holding the launch secret can force it deliberately** —
+  sixty-four `POST /api/session` with the secret as a bearer — which is a
+  self-inflicted denial of service by whoever already has the desk's own
+  credential, and is written down here rather than guarded against.
 
   **There is no eviction**, and that is a decision rather than an omission:
   eviction ends a live session from outside the page that holds it, so the page
@@ -3256,21 +3259,45 @@ not; they are the page, and the page can do nothing without one of the two.
 
   | code | what happened | what the page does |
   | --- | --- | --- |
-  | `no-handoff` | no handoff cookie was presented at all | keeps the id it holds |
-  | `handoff-spent` | a cookie was presented and this desk no longer holds it | forgets the id and stops |
+  | `no-handoff` | nothing this desk recognises was presented | keeps the id it holds |
+  | `handoff-spent` | a handoff this desk finished with: taken, or spent earlier | forgets the id, says the link was used |
+  | `handoff-expired` | a handoff this desk minted and let lapse | forgets the id, says the link expired |
 
-  `no-handoff` is overwhelmingly a **reload**: the exchange clears the handoff
-  it spends, so a page loading again presents nothing. That tab holds an id that
-  is very likely still live, and a desk that ended its session there would make
-  every reload a sign-out. `handoff-spent` is the residual actually happening —
-  or an expiry, which a page cannot tell from it and must not — and the page
-  says *The launch link was used by something else. Restart jpack-desk and open
-  the new URL it prints.* It does **not** say to reopen the printed URL: the
-  launch secret is reusable, so whatever took one handoff takes the next, and
-  what ends it is a new process with a new secret.
+  **The store remembers what it finished with**, in a ring of the last 64
+  handles, which is what makes those three different answers possible: a value
+  it never minted is *ignored* rather than refused. That matters because a
+  cookie's identity includes a path this desk never sees, so a page on any
+  sibling loopback port can set `jpack-desk-launch-<port>` at a longer path and
+  the browser will send it first — and a rule that refused what it did not
+  recognise would answer "your link was used" on every load, for ever, to a tab
+  whose session is fine. Every cookie of the name is read, the first live one
+  wins, and strangers count for nothing.
 
-  One code for both was the shape a review found: the page kept its session
-  either way, and the theft was invisible.
+  `no-handoff` is overwhelmingly a **reload**: only a successful exchange clears
+  the handoff, so a page loading again presents nothing. That tab holds an id
+  that is very likely still live, and a desk that ended its session there would
+  make every reload a sign-out. `handoff-spent` says *The launch link was used
+  by something else. Restart jpack-desk and open the new URL it prints.* — it
+  does **not** say to reopen the printed URL, because the secret is reusable and
+  whatever took one handoff takes the next. `handoff-expired` says *The launch
+  link expired before this page loaded. Open the URL jpack-desk printed at
+  startup.*, because an expiry is nobody's fault and the secret still works.
+
+  **A refusal clears nothing**, and that is a fix rather than an omission: the
+  clearing header and the refusal used to travel in one response, so a tab that
+  reloaded after the browser stored the first and before the page had handled
+  the second presented nothing, read `no-handoff`, and kept its session with the
+  theft invisible.
+
+  **And past the handoff's own lifetime, the count is what shows it.** `GET
+  /api/session` reports `sessions: {minted: N}` — every session this process has
+  minted, never decreasing, gone when the process is. A tab stores the count
+  beside its own id, and a later load that finds it higher shows one line:
+  *Another session was started on this desk since this tab's. Restart jpack-desk
+  if that was not you.* So a theft is visible **twice**: through the handoff's
+  own message inside its sixty seconds, and through the count at any reload
+  afterwards — including after the ring has forgotten the handoff, which is the
+  one case the ring's bound leaves open.
 - **A refusal after the bootstrap is terminal until the page is loaded again.**
   A `401` from any chassis call, or a refused upgrade the page puts to
   `GET /api/session` and sees refused, makes the page forget the id and say the

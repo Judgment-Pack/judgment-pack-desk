@@ -1067,19 +1067,19 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # was a better comparison and the next parser disagreed somewhere else, so
   # there is no strip any more.
   #
-  # **Renamed, because "forwarded" is not what the code can do.** The page's
-  # query is never *copied* outbound at all: `appendPath` builds the address
-  # from the configured URL and a validated path suffix, and the only thing that
-  # can join it is the one closed literal. What `relayQueryProblem` does is
-  # **refuse the request**, so what a skipped refusal produces is a request that
-  # reaches the endpoint when it should have reached nothing — which is the
-  # property, and which `TestNothingOfThePagesQueryReachesTheEndpoint` measures
-  # at the endpoint's own arrivals rather than by reading a status.
+  # **Named for what it breaks.** The page's query is never *copied* outbound
+  # at all: `appendPath` builds the address from the configured URL and a
+  # validated path suffix, and the only thing that can join it is the one closed
+  # literal. What `relayQueryProblem` does is **refuse the request**, so a
+  # skipped refusal produces a request that reaches the endpoint when it should
+  # have reached nothing — carrying only the configured query, which is what
+  # makes the endpoint's **arrival count** the measurement and not its
+  # `RawQuery`. See `TestNothingOfThePagesQueryReachesTheEndpoint`.
   #
   # The needle first named `sessionTokenParameter`, a query this chassis no
   # longer has; a second draft admitted the raw query as the stream pair, which
   # the kind check then refused a line later, so nothing travelled either way.
-  mutate go "a page query parameter reaches the endpoint" "$MR" \
+  mutate go "a page query no longer refuses the request" "$MR" \
     '		return "", "a relayed request carries no query of the page'"'"'s own: nothing of it is " +' \
     '		continue
 		_ = "a relayed request carries no query of the page'"'"'s own: nothing of it is " +'
@@ -1538,18 +1538,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # the session — and the whole of what makes that *visible* rather than quiet
   # is that the page's own exchange then fails. A reusable handoff is a desk
   # with two users and nobody told.
+  # Repaired: `consume` became `spend` and answers a verdict, so the needle
+  # names the removal that makes a handoff single use. The property is
+  # unchanged — a handoff left in `given` can be spent again and again.
   mutate go "the handoff is reusable" "$SE" \
-    '	key := ls.handle(value)
-	until, ok := ls.given[key]
-	if !ok {
-		return false
-	}
-	delete(ls.given, key)' \
-    '	key := ls.handle(value)
-	until, ok := ls.given[key]
-	if !ok {
-		return false
-	}'
+    '		delete(ls.given, key)
+		if ls.now().After(until) {' \
+    '		if ls.now().After(until) {'
   # **The bound is a refusal, and refusing is the property.** Making room would
   # end a live session from outside the page holding it, which is the second
   # actor this whole design exists without.
@@ -1615,17 +1610,83 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # page unable to tell them apart, so it kept its session either way and the
   # residual was invisible to the person it happened to.
   mutate go "a spent handoff reads as an absent one" "$SE" \
-    '		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,' \
-    '		writeJSONCoded(w, http.StatusUnauthorized, CodeNoHandoff,'
+    '	case handoffSpent:
+		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,' \
+    '	case handoffSpent:
+		writeJSONCoded(w, http.StatusUnauthorized, CodeNoHandoff,'
+  # **A refusal clearing the cookie concealed a theft.** The clearing header and
+  # the refusal travel in one response, so a reload between the two presented
+  # nothing, read `no-handoff`, and kept a session the person was never told
+  # about.
+  mutate go "a refusal clears the handoff too" "$SE" \
+    '	case handoffSpent:
+		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,' \
+    '	case handoffSpent:
+		http.SetCookie(w, expireLaunchCookie(s.launchCookie, requestScheme(r) == "https"))
+		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,'
+  # **The store remembers what it finished with**, which is the whole of how a
+  # theft is told from a stranger's cookie.
+  mutate go "the store forgets the handoffs it finished with" "$SE" \
+    '	if how, ok := ls.finished[key]; ok {
+		return how
+	}' \
+    '	if how, ok := ls.finished[key]; ok && false {
+		return how
+	}'
+  # **And a value it never minted is ignored.** A page on any sibling loopback
+  # port can plant a cookie of this name at a longer path; refusing what is not
+  # recognised turns that into a permanent false theft.
+  mutate go "an unrecognised cookie is treated as a spent handoff" "$SE" \
+    '		case handoffSpent, handoffExpired:
+			// The first classified answer stands. A second cookie may still be
+			// live, which is why this does not return.
+			if best == handoffUnknown {
+				best = how
+			}' \
+    '		case handoffSpent, handoffExpired:
+			if best == handoffUnknown {
+				best = how
+			}
+		default:
+			best = handoffSpent'
+  # **Every cookie of the name**, because `r.Cookie` answers the first and a
+  # browser sends the longest path first.
+  mutate go "only the first cookie of the name is read" "$SE" \
+    '	for _, cookie := range r.Cookies() {
+		if cookie.Name != s.launchCookie {
+			continue
+		}' \
+    '	for _, cookie := range r.Cookies()[:1] {
+		if cookie.Name != s.launchCookie {
+			continue
+		}'
+  # **The count that outlives the handoff.** Everything about a stolen handoff
+  # is over in sixty seconds; this is what a reload hours later can read.
+  mutate go "the session endpoint reports no minted count" "$SE" \
+    '		"sessions": map[string]any{"minted": s.sessions.mintedSoFar()},
+	})
+}' \
+    '		"sessions": map[string]any{},
+	})
+}'
+  # **And an endpoint may not redirect the page.** A 307 to `/api/session` made
+  # the page's own fetch repeat the request against the exchange with this
+  # desk's bearer on it.
+  mutate go "an upstream may redirect the page" "$MR" \
+    '			response.Header.Del("Location")' \
+    '			_ = "Location"'
   # **The mark on this desk's own refusals.** Without it the page cannot tell a
   # 401 this chassis wrote from a 401 the configured endpoint wrote, and an
   # expired model key reads as a lost desk session.
+  # Repaired: the mark moved from `writeJSONCoded` into `writeJSON`, the one
+  # function every JSON answer goes through — `writeJSONError` used to go round
+  # the back of it.
   mutate go "this chassis does not mark its own refusals" "$F" \
     '	if status >= 400 {
-		w.Header().Set(RefusalHeader, code)
+		w.Header().Set(RefusalHeader, codeIn(body))
 	}' \
     '	if false {
-		w.Header().Set(RefusalHeader, code)
+		w.Header().Set(RefusalHeader, codeIn(body))
 	}'
   # **And an endpoint may not wear it.** An endpoint that could set the mark
   # could end somebody's desk session from the far side of the relay.
@@ -1648,13 +1709,16 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # already had a row for. This one skips the spend, so the handoff survives,
   # and `TestTheHandoffIsSingleUse` inspects the store's own count after a
   # successful exchange.
-  # `cookie == nil` rather than `false`, because `cookie` would otherwise be
-  # declared and not used and the row would report a compile failure instead of
-  # a verdict. `r.Cookie` never answers a nil cookie with a nil error, so the
-  # branch is dead and the handoff is never spent — which is the property.
+  # Repaired: spending moved into `handoffPresented`, which asks the store for
+  # a verdict. Removing the handle from `given` is what spends it, so the row
+  # keeps the verdict and skips the removal — the exchange still accepts, and
+  # the handoff is still there afterwards.
   mutate go "the exchange mints without spending the handoff" "$SE" \
-    '	if !s.launches.consume(cookie.Value) {' \
-    '	if cookie == nil {'
+    '		ls.finishLocked(key, handoffSpent)
+		return handoffAccepted' \
+    '		ls.given[key] = until
+		ls.finishLocked(key, handoffSpent)
+		return handoffAccepted'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -6876,8 +6940,27 @@ export function assistantTransport(id: string): Transport {
   # **A relay 401 is classified by the mark and not by the status.** Reading the
   # status alone ends a desk session over an expired model key.
   mutate web "any relay 401 ends the session" "$ASN2" \
-    '    if (answered.status === 401 && refusalCode(answered) !== null) {' \
+    "    if (answered.status === 401 && refusalCode(answered) === 'unauthorized') {" \
     '    if (answered.status === 401) {'
+  # **A theft after the handoff's own lifetime.** The count is the only signal
+  # that survives the ring forgetting the handoff, and a reload hours later has
+  # nothing else to read.
+  mutate web "the page never compares the minted count" "$MS" \
+    '  if (stored !== null) await noticeAnotherSession(stored)' \
+    '  if (stored === null) await noticeAnotherSession(stored ?? '"''"')'
+  # **`unauthorized` and no other code.** A 307 into the exchange answers a
+  # marked `no-handoff`, and a classifier that read the mark alone turned that
+  # into a forgotten valid session.
+  mutate web "any marked relay 401 ends the session" "$ASN2" \
+    "    if (answered.status === 401 && refusalCode(answered) === 'unauthorized') {" \
+    '    if (answered.status === 401 && refusalCode(answered) !== null) {'
+  # **A result that arrived after the end is not delivered.** Closing the socket
+  # does not unmake a call that was already in flight.
+  mutate web "a tool result in flight is delivered after the end" "$ASN2" \
+    '          const answered = (await client.callTool({ name, arguments: args })) as McpToolResult
+          if (ended !== null) throw new NoSession(ended)
+          return answered' \
+    '          return (await client.callTool({ name, arguments: args })) as McpToolResult'
   # **A refusal is the end of the road.** An id the chassis has rejected that
   # stays in storage is an id every later call re-sends, and a page that never
   # says the one sentence a person can act on.
