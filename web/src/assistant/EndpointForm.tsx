@@ -52,7 +52,7 @@ import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
-import { DIAGNOSTIC_SAYS, type AssistantConfigWritten } from './client'
+import type { AssistantConfigWritten } from './client'
 import {
   KIND_OPTIONS,
   TIER_OPTIONS,
@@ -64,12 +64,12 @@ import {
   withTool,
   type EndpointDraft
 } from './endpointDraft'
+import { checkLine, identityOf, useEndpointCheck, type CheckAnswer } from './endpointCheck'
 import { KeyField } from './KeyField'
 import { keyBinding, type KeyBinding } from './keyBinding'
-import { ModelField } from './ModelField'
+import { ModelChoice } from './ModelChoice'
 import {
   useAssistantKey,
-  useProbeAssistant,
   useRemoveAssistantKey,
   useStoreAssistantKey,
   useUpdateAssistantConfig
@@ -107,6 +107,27 @@ const REMOVAL_MEANS =
 const NO_KEY_TYPED = 'Enter the key above to store it with the endpoint.'
 
 /**
+ * Where the button is not offered, and why.
+ *
+ * **A sentence and not a disabled button.** Testing needs an endpoint saved and
+ * a key stored for it — the chassis refuses without either, by name — and a
+ * control that would refuse is worse than a line saying what is missing. It is
+ * one line for both because there is one order: Connect does both, and until it
+ * has there is nothing to test.
+ */
+const NOTHING_TO_TEST = 'Connect first: this asks the saved endpoint with the key stored for it.'
+
+/**
+ * And where the address on screen is not the address in the file.
+ *
+ * The check asks the endpoint that is **saved**, always, and reads its family
+ * at the moment of asking — so a request cannot be composed for one destination
+ * and sent to another. What this stops is the other half: an answer about the
+ * saved endpoint presented under a form showing a different one.
+ */
+const NOT_SAVED = 'Save these changes first: this asks the endpoint that is saved.'
+
+/**
  * The one sentence a form over a file nobody could read is worth.
  *
  * **It claims no absence.** The fields hold the built-in defaults, which is not
@@ -136,7 +157,6 @@ export function EndpointForm({
   const key = useAssistantKey()
   const store = useStoreAssistantKey()
   const remove = useRemoveAssistantKey()
-  const probe = useProbeAssistant()
 
   // **Seeded from the file, and re-seeded only while nothing is typed.** The
   // read has usually not answered at first render, and a Save answers with a
@@ -178,9 +198,13 @@ export function EndpointForm({
   const [storeProblem, setStoreProblem] = useState<string | undefined>(undefined)
   const [removeProblem, setRemoveProblem] = useState<string | undefined>(undefined)
 
+  // **The one press that asks the endpoint anything**, and the answer it left
+  // on screen. It is dropped where the form says a different endpoint, which is
+  // the module's own rule and not a rendering decision here.
+  const check = useEndpointCheck(draft, config.assistant.endpoint)
+
   const read = keyBinding(key.data)
   const binding: KeyBinding = rebindAsked && read === 'bound' ? 'rebind' : read
-  const bound = binding === 'bound'
   // **Connect only where the desk has *said* there is no usable key.** A read
   // that has not answered is not "no key" — it is a page that has not been told
   // — so the primary action stays Save until the key route says otherwise. A
@@ -292,13 +316,30 @@ export function EndpointForm({
       assistantWrite(draft),
       (answer) => (value === '' ? (answer.created ? CREATED : SAVED) : CONNECTED),
       () => {
-        if (value !== '') storeKey(value)
+        // **And the check runs once, on its own**, so the list is there without
+        // a second press: this is the moment both of its preconditions are
+        // first true, and asking a person to press a button immediately after
+        // the one they just pressed is a step with no decision in it.
+        if (value !== '') storeKey(value, check.run)
       }
     )
   }
 
   const busy = write.isPending || store.isPending
   const blocked = digest === undefined || urlProblem !== undefined
+  // **Offered once there is an endpoint saved and a key stored for it**, which
+  // are the two states the probe and the relay each refuse without. Both are
+  // read off what the desk says rather than off the draft: the key state is the
+  // chassis' answer, and the endpoint is the one in the file.
+  const configured = config.assistant.endpoint
+  const connected = configured !== null && (key.data?.present ?? false)
+  // **And only while the form says that endpoint.** Compared rather than
+  // remembered — a sticky "has been edited" flag would keep the button away
+  // after an edit somebody undid — and compared on the two members that decide
+  // where a request goes, so ticking a model does not take the button away.
+  const here = configured !== null && identityOf(draft) === identityOf(configured)
+  const mayTest = connected && here
+  const whyNotTest = connected ? NOT_SAVED : NOTHING_TO_TEST
 
   return (
     <form
@@ -360,17 +401,25 @@ export function EndpointForm({
           )}
         </Field>
 
-        <ModelField
+        {/* **Right after the address, because it is the question a person has
+            at that point**: does this work, and what does it offer? One press,
+            both answers, and the Models list below fills in from it. */}
+        <p className="actions">
+          {mayTest && <Button onClick={check.run}>Test connection</Button>}{' '}
+          {!mayTest && <span className="quiet">{whyNotTest}</span>}
+          {check.answer !== undefined && <CheckReading answer={check.answer} />}
+        </p>
+
+        <ModelChoice
           draft={draft}
-          saved={config.assistant.endpoint}
-          bound={bound}
-          // **Compared rather than remembered.** A sticky "has been edited" flag
-          // would keep the listing disabled after an edit somebody undid; what
-          // the gate is actually about is whether the form on screen *is* the
-          // endpoint the listing would ask.
-          matchesSaved={seed === JSON.stringify(draft)}
+          // **The rows of the last press, and nothing before one.** Until
+          // somebody asks, this desk has been told nothing about what the
+          // endpoint offers, and a list drawn from anywhere else would be a
+          // claim it did not establish.
+          rows={check.answer?.rows}
           onChange={edit}
-          problem={problemFor('assistant.endpoint.model')}
+          problem={problemFor('assistant.endpoint.models')}
+          setProblem={problemFor('assistant.endpoint.model')}
         />
 
         <ToolChoice draft={draft} onChange={edit} problem={problemFor('assistant.endpoint.tools')} />
@@ -391,17 +440,6 @@ export function EndpointForm({
             />
           )}
         </Field>
-
-        <p className="actions">
-          <Button onClick={() => probe.mutate()}>Test connection</Button>{' '}
-          {probe.isPending && <span className="quiet">asking the endpoint…</span>}
-          {probe.data !== undefined && !probe.isPending && <ProbeReading result={probe.data} />}
-          {probe.error !== null && !probe.isPending && (
-            <span className="quiet">
-              the test was refused: <code className="partial-reason">{probe.error.message}</code>
-            </span>
-          )}
-        </p>
 
         <p className="actions">
           <Button variant="primary" type="submit" disabled={blocked || busy}>
@@ -511,6 +549,7 @@ const PLACED = [
   'assistant.endpoint.url',
   'assistant.endpoint.kind',
   'assistant.endpoint.model',
+  'assistant.endpoint.models',
   'assistant.endpoint.tools',
   'assistant.thinking'
 ] as const
@@ -552,28 +591,24 @@ function ToolChoice({
 }
 
 /**
- * One probe answer, reported as it came.
+ * One press of Test connection, reported as it came.
  *
  * `reachable` is the endpoint having answered *successfully*, and a refused
  * credential is therefore not reachable — a page that called a 401 reachable
- * would report a desk that cannot make one call as ready to work.
+ * would report a desk that cannot make one call as ready to work. What the
+ * line says is `checkLine`'s, so the sentence is one function's and not
+ * assembled here; a refusal from elsewhere is quoted rather than narrated.
  */
-function ProbeReading({
-  result
-}: {
-  result: { reachable: boolean; status: number; latencyMs: number; diagnostic: string }
-}) {
+function CheckReading({ answer }: { answer: CheckAnswer }) {
+  const line = checkLine(answer)
+  if (line.says === '') return null
   return (
     <span className="quiet">
-      {result.reachable ? 'connected' : 'not connected'}
-      {' · '}
-      {result.status === 0 ? 'no answer arrived' : `answered ${result.status}`}
-      {' · '}
-      {result.latencyMs} ms
-      {result.diagnostic !== '' && (
+      {line.says}
+      {line.quoted !== undefined && (
         <>
-          {' · '}
-          {DIAGNOSTIC_SAYS[result.diagnostic] ?? result.diagnostic}
+          {' '}
+          <code className="partial-reason">{line.quoted}</code>
         </>
       )}
     </span>

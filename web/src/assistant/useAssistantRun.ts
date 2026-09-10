@@ -194,18 +194,32 @@ export function canonicalProposal(
 /**
  * The model id a run is given, or a refusal.
  *
- * `assistant.endpoint.model` is nullable — "no model chosen yet" is a state the
- * schema has — and a run is the one place that state cannot be carried: a
+ * **It is the model the caller picked**, and the caller is the surface with the
+ * picker on it: which of the enabled models a piece of work wants is a decision
+ * made at the run, and a hook that reached past the pick for the file's default
+ * would be running something nobody chose.
+ *
+ * The empty string is the state the schema has — "no model chosen yet", where
+ * nothing is enabled — and a run is the one place it cannot be carried: a
  * request naming no model is a request whose answer means nothing. The tab does
  * not offer a run there, and this is the second layer under that.
  */
-function modelOf(endpoint: { model: string | null }): string {
-  if (endpoint.model === null) throw new Error(NO_MODEL_CHOSEN)
-  return endpoint.model
+function modelOf(picked: string): string {
+  if (picked === '') throw new Error(NO_MODEL_CHOSEN)
+  return picked
 }
 
 export function useAssistantRun(options: {
   endpoint: AssistantEndpointConfig
+  /**
+   * Which of the endpoint's enabled models this run uses.
+   *
+   * Passed in rather than read off the endpoint, because the choice belongs to
+   * the surface a person is working on: `usePickedModel` resolves the tab's own
+   * pick against the enabled set and hands the answer here. `''` where nothing
+   * is enabled, which is the state a run refuses.
+   */
+  model: string
   engine: AssistantEngine
   thinking: ThinkingTier
   /**
@@ -314,7 +328,7 @@ export function useAssistantRun(options: {
   const start = useCallback(
     (prompt: string) => {
       if (active.current !== null && !active.current.ended) return
-      const { endpoint, engine, thinking, testPrompt } = settings.current
+      const { endpoint, model, engine, thinking, testPrompt } = settings.current
       const run: Active = { controller: new AbortController(), connection: null, ended: false }
       active.current = run
       setEvents([])
@@ -356,7 +370,7 @@ export function useAssistantRun(options: {
               // wire naming no model and read whatever came back as an answer.
               model: {
                 family: endpoint.kind,
-                model: modelOf(endpoint),
+                model: modelOf(model),
                 call: bindModelCall(endpoint.kind)
               },
               // **Normalized here, once.** The engine is handed the desk's own

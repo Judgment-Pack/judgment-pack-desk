@@ -485,6 +485,12 @@
       "assistant.endpoint.models"
     ]
   },
+  "refused-endpoint-models-set-with-no-default": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.model"
+    ]
+  },
   "refused-endpoint-not-object": {
     "accepted": false,
     "keys": [

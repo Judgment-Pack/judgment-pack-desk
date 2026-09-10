@@ -52,6 +52,7 @@ const ENDPOINT = {
   url: 'https://api.example.invalid/v1',
   kind: 'openai-compatible' as const,
   model: 'a-model',
+  models: ['a-model'],
   tools: scenario.scenarioTools
 }
 
@@ -62,7 +63,12 @@ function drive() {
   vi.stubGlobal('WebSocket', runtime.WebSocket)
   vi.stubGlobal('fetch', async () => new Response('{}'))
   return renderHook(() =>
-    useAssistantRun({ endpoint: ENDPOINT, engine: 'vercel', thinking: 'off' })
+    useAssistantRun({
+      endpoint: ENDPOINT,
+      model: ENDPOINT.model,
+      engine: 'vercel',
+      thinking: 'off'
+    })
   )
 }
 

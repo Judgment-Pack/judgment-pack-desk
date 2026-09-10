@@ -44,9 +44,12 @@ import {
 import { Button } from '../ui/Button'
 import { CodeArea } from '../ui/CodeArea'
 import { TextArea } from '../ui/TextArea'
+import { useFileListing } from '../files/queries'
 import { useEditing } from '../packs/edit/editingContext'
 import type { BufferIdentity } from '../packs/edit/useDocumentBuffer'
 import { EventList } from './EventList'
+import { ModelPicker } from './ModelPicker'
+import { usePickedModel } from './pickedModel'
 import { ProposalDiffView } from './ProposalDiff'
 import { ProposalUnknowns, RefutationReport, RuntimeChecks } from './ProposalReport'
 import { DRAFT_MOVED, acceptState, applyProposal, writable, type Disposition } from './acceptProposal'
@@ -99,6 +102,9 @@ interface Baseline {
 
 /** Nothing is in the way. The default, for a caller with no draft to speak of. */
 const noBusy = () => ''
+
+/** One list, allocated once, so an unconfigured desk re-renders to one value. */
+const EMPTY_MODELS: readonly string[] = []
 
 /** Why Fix is not offered, where it is not. */
 function fixWhy(diagnostics: number, advertised: boolean, listed: boolean): string | undefined {
@@ -269,10 +275,20 @@ export function AssistantPane({
     advertisesTest &&
     testPrompt.data === undefined &&
     testPrompt.error === null
+  // **The pick is this tab's, on this project**, and the run is given its
+  // answer rather than the file's default. The project root is the chassis'
+  // own, from the listing every other per-project preference is keyed on.
+  const listing = useFileListing()
+  const picked = usePickedModel(
+    slot.endpoint?.models ?? EMPTY_MODELS,
+    slot.endpoint?.model ?? null,
+    listing.data?.root
+  )
   const run = useAssistantRun({
     // Only rendered where the endpoint exists; the fallback keeps the hook
     // unconditional, which is the rule React enforces.
-    endpoint: slot.endpoint ?? { url: '', kind: 'openai-compatible', model: '', tools: [] },
+    endpoint: slot.endpoint ?? { url: '', kind: 'openai-compatible', model: '', models: [], tools: [] },
+    model: picked.model,
     engine: slot.engine,
     thinking: slot.thinking,
     testPrompt: testPrompt.data?.text ?? ''
@@ -450,8 +466,14 @@ export function AssistantPane({
           events rather than remembered, so the line and the stream cannot
           disagree.
         */}
-        {run.engineId} · {slot.endpoint.model ?? 'no model'} ·{' '}
+        {/* **The model this run would use, which is the picked one.** A line
+            naming the file's default beside a picker showing something else
+            would be the page reporting a configuration rather than a run. */}
+        {run.engineId} · {picked.model === '' ? 'no model' : picked.model} ·{' '}
         {thinkingLine(slot.thinking, stateFromEvents(slot.thinking, run.events))}
+      </p>
+      <p className={styles.status}>
+        <ModelPicker picked={picked} id="assistant-model" />
       </p>
       {ran !== undefined && (
         <p className={styles.status}>

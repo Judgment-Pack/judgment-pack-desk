@@ -569,6 +569,7 @@ describe('the desk-level file, and the precedence between the two', () => {
     url: 'https://api.example.invalid/v1',
     kind: 'openai-compatible',
     model: 'a-model',
+    models: ['a-model'],
     tools: ['validate']
   }
 

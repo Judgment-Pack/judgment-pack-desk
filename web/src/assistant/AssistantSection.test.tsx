@@ -111,6 +111,8 @@ function stubChassis(answers: {
   keyError?: { error: string; code: string }
   probe?: unknown
   probeStatus?: number
+  /** What the endpoint's own model listing answers, for the other half. */
+  listing?: unknown
   /** What `PUT /api/desk-config` answers, where a case saves. */
   written?: unknown
   writtenStatus?: number
@@ -125,6 +127,14 @@ function stubChassis(answers: {
     // the request begins, not what it holds once the answer has come back and
     // a render has flushed.
     answers.onRequest?.(method, url)
+    if (url.includes('/api/assistant/relay/')) {
+      // The listing half of one press. This file is about the probe and the
+      // key; what the list does with the rows is `endpointForm.test.tsx`'s.
+      return new Response(JSON.stringify(answers.listing ?? { data: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    }
     if (url.includes('/api/assistant/probe')) {
       return {
         ok: (answers.probeStatus ?? 200) < 400,
@@ -400,10 +410,11 @@ describe('the Assistant section', () => {
     // holding the token could point the desk — and the key it holds — at a
     // host of its choosing.
     const { sent } = stubChassis({
+      key: BOUND,
       probe: { reachable: true, status: 200, latencyMs: 240, diagnostic: '' }
     })
     renderSection(configured())
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
     await waitFor(() =>
       expect(sent.some((request) => request.url.includes('/api/assistant/probe'))).toBe(true)
     )
@@ -413,11 +424,21 @@ describe('the Assistant section', () => {
     expect(probe.url).not.toContain('api.example.invalid')
   })
 
-  it('renders a reachable answer with its status and its latency', async () => {
-    stubChassis({ probe: { reachable: true, status: 200, latencyMs: 240, diagnostic: '' } })
+  it('says connected and how many models the endpoint has, on one press', async () => {
+    // **Two requests and one line.** The probe says whether the address and the
+    // credential work; the listing says what there is to enable. They are one
+    // question to a reader, so they are one button.
+    const { sent } = stubChassis({
+      key: BOUND,
+      probe: { reachable: true, status: 200, latencyMs: 240, diagnostic: '' },
+      listing: { data: [{ id: 'a-model' }, { id: 'a-second-model' }] }
+    })
     renderSection(configured())
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
-    expect(await screen.findByText(/connected · answered 200 · 240 ms/)).toBeTruthy()
+    fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
+    expect(await screen.findByText('Connected · 2 models available')).toBeTruthy()
+    await waitFor(() =>
+      expect(sent.filter((each) => each.url.includes('/api/assistant/relay/'))).toHaveLength(1)
+    )
   })
 
   it('renders a refused credential as not reachable, from the fixed vocabulary', async () => {
@@ -426,12 +447,14 @@ describe('the Assistant section', () => {
     // a derived representation of the credential that no substitution finds,
     // so the desk discards the body and answers one word from a closed list.
     stubChassis({
+      key: BOUND,
       probe: { reachable: false, status: 401, latencyMs: 88, diagnostic: 'unauthorized' }
     })
     renderSection(configured())
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
-    expect(await screen.findByText(/not connected · answered 401/)).toBeTruthy()
-    expect(screen.getByText(/the endpoint did not accept the key/)).toBeTruthy()
+    fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
+    expect(
+      await screen.findByText(/Not connected · answered 401 · the endpoint did not accept the key/)
+    ).toBeTruthy()
   })
 
   it('renders every word of the vocabulary as a sentence a person can read', async () => {
@@ -444,9 +467,9 @@ describe('the Assistant section', () => {
       ['dns', 'that host name did not resolve'],
       ['unexpected-status', 'the endpoint answered something unexpected']
     ] as const) {
-      stubChassis({ probe: { reachable: false, status: 0, latencyMs: 5, diagnostic } })
+      stubChassis({ key: BOUND, probe: { reachable: false, status: 0, latencyMs: 5, diagnostic } })
       renderSection(configured())
-      fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
       expect(await screen.findByText(new RegExp(says)), diagnostic).toBeTruthy()
       cleanup()
     }
@@ -454,6 +477,7 @@ describe('the Assistant section', () => {
 
   it('says no answer arrived where the status is zero', async () => {
     stubChassis({
+      key: BOUND,
       probe: {
         reachable: false,
         status: 0,
@@ -462,7 +486,7 @@ describe('the Assistant section', () => {
       }
     })
     renderSection(configured())
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
     expect(await screen.findByText(/no answer arrived/)).toBeTruthy()
     // Never "answered 0", which is a status nothing sends.
     expect(screen.queryByText(/answered 0/)).toBeNull()
@@ -470,6 +494,7 @@ describe('the Assistant section', () => {
 
   it('reports a probe the desk refused, naming which state refused it', async () => {
     stubChassis({
+      key: BOUND,
       probeStatus: 409,
       probe: {
         error: 'no key is stored on this machine, so there is nothing to present to the endpoint',
@@ -477,7 +502,7 @@ describe('the Assistant section', () => {
       }
     })
     renderSection(configured())
-    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
     expect(await screen.findByText(/no key is stored on this machine/)).toBeTruthy()
   })
 

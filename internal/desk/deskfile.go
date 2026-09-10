@@ -786,7 +786,7 @@ func decodeAssistant(value any) (assistantSlot, []deskProblem) {
 	// cleanly.** Naming a default outside a set that was refused member by
 	// member would be a second sentence about one mistake, against the wrong
 	// key.
-	if trimmedModel != "" && len(setProblems) == 0 {
+	if len(setProblems) == 0 {
 		if reason := modelDefaultProblem(trimmedModel, enabled); reason != "" {
 			problems = append(problems, deskProblem{
 				Key: "assistant.endpoint.model", Reason: reason})
@@ -904,9 +904,21 @@ func modelIDProblem(value any) string {
 // is how a form comes to offer a default that produces a 422 on the next Save.
 // Held identical to `modelDefaultProblem` in `deskConfig.ts` by the shared
 // fixtures both decoders read.
+//
+// **Total in both directions**, which is what makes it an invariant rather than
+// a check: a non-empty set with no default is refused too. A set of models a
+// run cannot start from is a configuration whose picker would open on nothing,
+// and it is exactly as much a mistake as a default nothing enabled. The empty
+// string is how this side spells the null.
 func modelDefaultProblem(model string, models []string) string {
 	if len(models) == 0 {
+		if model == "" {
+			return ""
+		}
 		return "must be null where no model is enabled; there is nothing for a default to be"
+	}
+	if model == "" {
+		return "must name one of the models enabled for this endpoint; found null"
 	}
 	if !contains(models, model) {
 		return fmt.Sprintf(

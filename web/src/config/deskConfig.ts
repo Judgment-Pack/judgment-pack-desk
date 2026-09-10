@@ -1432,7 +1432,7 @@ function endpointValue(
   // **The default is held to the set, and only where the set itself decoded
   // cleanly.** Naming a default outside a set that was refused member by member
   // would be a second sentence about one mistake, against the wrong key.
-  if (model !== null && setProblems.length === 0) {
+  if (setProblems.length === 0) {
     const defaultProblem = modelDefaultProblem(model, models)
     if (defaultProblem !== undefined) {
       problems.push({ key: 'assistant.endpoint.model', reason: defaultProblem })
@@ -1508,22 +1508,36 @@ function modelSet(value: unknown, problems: ConfigProblem[]): string[] {
   }
   const enabled: string[] = []
   for (const entry of value) {
-    const problem = modelIdProblem(entry)
+    const problem = modelAddProblem(entry, enabled)
     if (problem !== undefined) {
       problems.push({ key: 'assistant.endpoint.models', reason: problem })
       continue
     }
-    const id = (entry as string).trim()
-    if (enabled.includes(id)) {
-      problems.push({
-        key: 'assistant.endpoint.models',
-        reason: `${JSON.stringify(id)} is listed twice; each model appears once`
-      })
-      continue
-    }
-    enabled.push(id)
+    enabled.push((entry as string).trim())
   }
   return enabled
+}
+
+/**
+ * Whether one id may join a set that already holds these — **the decoder's own
+ * rule, asked by the decoder and by the field that types one in**.
+ *
+ * Two halves: the id rule every model is held to, and the set rule that no id
+ * appears twice. They are one function because Admin's **Other model…** field
+ * needs exactly the pair, and a copy of either beside that field is how a
+ * picker comes to offer something that produces a 422 on the next Save — which
+ * is the mistake `modelIdProblem` was lifted out to end.
+ *
+ * `undefined` where the id may join; otherwise the decoder's own sentence.
+ */
+export function modelAddProblem(value: unknown, models: readonly string[]): string | undefined {
+  const problem = modelIdProblem(value)
+  if (problem !== undefined) return problem
+  const id = (value as string).trim()
+  if (models.includes(id)) {
+    return `${JSON.stringify(id)} is listed twice; each model appears once`
+  }
+  return undefined
 }
 
 /**
@@ -1533,13 +1547,25 @@ function modelSet(value: unknown, problems: ConfigProblem[]): string[] {
  * decides which rows may carry the Default radio, and a copy of this reasoning
  * is how a form comes to offer a default that produces a 422 on the next Save.
  *
+ * **Total in both directions**, which is what makes it an invariant rather
+ * than a check: a non-empty set with no default is refused too. A set of
+ * models a run cannot start from is a configuration whose picker would open on
+ * nothing, and it is exactly as much a mistake as a default nothing enabled.
+ *
  * `undefined` where the pair is acceptable; otherwise the decoder's own
  * sentence, which is what a reader sees whether the default was typed or
  * clicked.
  */
-export function modelDefaultProblem(model: string, models: string[]): string | undefined {
+export function modelDefaultProblem(
+  model: string | null,
+  models: readonly string[]
+): string | undefined {
   if (models.length === 0) {
+    if (model === null) return undefined
     return 'must be null where no model is enabled; there is nothing for a default to be'
+  }
+  if (model === null) {
+    return 'must name one of the models enabled for this endpoint; found null'
   }
   if (!models.includes(model)) {
     return (

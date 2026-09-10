@@ -37,10 +37,13 @@ import {
   RefutationReport,
   RuntimeChecks
 } from '../assistant/ProposalReport'
+import { ModelPicker } from '../assistant/ModelPicker'
+import { usePickedModel, type PickedModel } from '../assistant/pickedModel'
 import { useAssistantRun } from '../assistant/useAssistantRun'
 import { whenSessionEnds } from '../mcp/session'
 import { outcomeOf, type ProposalEvent } from '../assistant/runOutcome'
 import { useAssistantSlot } from '../assistant/useAssistantSlot'
+import { useFileListing } from '../files/queries'
 import { AUTHOR_PACK_PROMPT, TEST_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
 import { Button } from '../ui/Button'
 import { CodeArea } from '../ui/CodeArea'
@@ -94,6 +97,8 @@ export interface DescribeItState {
   advertised: boolean
   /** The engine, the model and the tier, as the tab states them. */
   standing: string
+  /** The enabled set, this tab's pick of it, and how to change the pick. */
+  picked: PickedModel
   typed: string
   setTyped: (text: string) => void
   /**
@@ -148,8 +153,12 @@ const NO_ENDPOINT: AssistantEndpointConfig = {
   url: '',
   kind: 'openai-compatible',
   model: '',
+  models: [],
   tools: []
 }
+
+/** One list, allocated once, so an unconfigured desk re-renders to one value. */
+const EMPTY_MODELS: readonly string[] = []
 
 /** One list, allocated once, so an idle section re-renders to the same value. */
 const EMPTY: readonly AssistantEvent[] = []
@@ -158,6 +167,15 @@ export function useDescribeIt(): DescribeItState {
   const slot = useAssistantSlot()
   const prompts = usePromptNames()
   const advertised = (prompts.data ?? []).includes(AUTHOR_PACK_PROMPT)
+  // **The pick is this tab's, on this project**, and the run is given its
+  // answer rather than the file's default. The same hook and the same key the
+  // Assistant tab uses, so the two surfaces are one preference and not two.
+  const listing = useFileListing()
+  const picked = usePickedModel(
+    slot.endpoint?.models ?? EMPTY_MODELS,
+    slot.endpoint?.model ?? null,
+    listing.data?.root
+  )
   const [typed, setTyped] = useState('')
   /**
    * The submission a person actually made, **keyed by a run id**.
@@ -231,6 +249,7 @@ export function useDescribeIt(): DescribeItState {
     // Only ever started where the endpoint exists; the fallback keeps the hook
     // unconditional, which is the rule React enforces.
     endpoint: slot.endpoint ?? NO_ENDPOINT,
+    model: picked.model,
     engine: slot.engine,
     thinking: slot.thinking,
     testPrompt: testPrompt.data?.text ?? ''
@@ -460,7 +479,8 @@ export function useDescribeIt(): DescribeItState {
     standing:
       slot.endpoint === null
         ? ''
-        : `${slot.engine} · ${slot.endpoint.model ?? 'no model'} · thinking ${slot.thinking}`,
+        : `${slot.engine} · ${picked.model === '' ? 'no model' : picked.model} · thinking ${slot.thinking}`,
+    picked,
     typed,
     setTyped,
     offered: proposal !== undefined,
@@ -493,6 +513,9 @@ function Section({ state }: { state: DescribeItState }) {
   return (
     <div className={styles.section}>
       <p className={styles.quiet}>{state.standing}</p>
+      <p className={styles.quiet}>
+        <ModelPicker picked={state.picked} id="describe-model" />
+      </p>
       <label className={styles.label} htmlFor="describe-policy">
         {DESCRIBE_LABEL}
       </label>

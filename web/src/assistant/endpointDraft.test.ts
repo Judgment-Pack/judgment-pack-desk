@@ -32,6 +32,7 @@ const DRAFT: EndpointDraft = {
   kind: 'gemini',
   url: 'https://api.example.invalid/',
   model: 'a-model',
+  models: ['a-model'],
   tools: ['validate', 'get_schema'],
   thinking: 'ultra'
 }
@@ -46,6 +47,7 @@ describe('the object a save sends', () => {
     expect(Object.keys(written.endpoint as object).sort()).toEqual([
       'kind',
       'model',
+      'models',
       'tools',
       'url'
     ])
@@ -106,6 +108,7 @@ describe('the object a save sends', () => {
         url: 'https://api.example.invalid/',
         kind: 'gemini',
         model: 'a-model',
+        models: ['a-model'],
         tools: ['get_schema', 'validate']
       },
       engine: 'vercel',
@@ -135,6 +138,7 @@ describe('the draft a configuration opens on', () => {
         url: 'https://api.example.invalid/v1',
         kind: 'anthropic',
         model: 'a-model',
+        models: ['a-model'],
         tools: ['validate']
       },
       engine: 'vercel',
@@ -144,6 +148,7 @@ describe('the draft a configuration opens on', () => {
       kind: 'anthropic',
       url: 'https://api.example.invalid/v1',
       model: 'a-model',
+      models: ['a-model'],
       tools: ['validate'],
       thinking: 'on'
     })
