@@ -50,6 +50,18 @@ type deskProblem struct {
 	Reason string `json:"reason"`
 }
 
+// deskNotice is something this decoder did with a member it **accepted**.
+//
+// **Not a problem, and deliberately a different type.** A problem refuses the
+// whole file; a notice is a file that was accepted and decoded to something
+// other than what it literally says — today, exactly one thing: the withdrawn
+// engine. Sharing `deskProblem` would let a notice reach anything that renders
+// a refusal, which is a desk reporting an accepted file as a refused one.
+type deskNotice struct {
+	Key  string `json:"key"`
+	Says string `json:"says"`
+}
+
 // deskDecode is the verdict on one file.
 type deskDecode struct {
 	// Endpoint is what the assistant member decoded to, **whether or not the
@@ -71,6 +83,15 @@ type deskDecode struct {
 	// the verdict.
 	Engine   string
 	Thinking string
+	// Notices is what this decoder did with a member it accepted, and it is
+	// empty on a refused file: a refused file contributes nothing and shows
+	// nothing, so reporting what its engine migrated to would be describing a
+	// decode that never took effect.
+	//
+	// Carried for the same reason Engine and Thinking are. The shared corpus
+	// states the notices on both sides, so a migration written here and not in
+	// the browser — or written in different words — fails on both.
+	Notices []deskNotice
 	// ProjectFile is `project.file`: the absolute path of the `jpack-desk.json`
 	// this desk opens when it is launched with no directory argument. The
 	// empty string is "the file names none", which is also what an absent
@@ -227,6 +248,12 @@ func decodeDeskFile(text []byte) deskDecode {
 		problems = append(problems, assistantProblems...)
 		slot = found
 	}
+	// Dropped where anything at all was refused, which is the rule the browser
+	// holds too: nothing was decoded, so there is nothing this decoder did.
+	notices := slot.notices
+	if len(problems) > 0 {
+		notices = nil
+	}
 	projectFile := ""
 	if section, present := record["project"]; present {
 		found, projectProblems := decodeProject(section)
@@ -249,6 +276,7 @@ func decodeDeskFile(text []byte) deskDecode {
 		Endpoint:    slot.endpoint,
 		Engine:      slot.engine,
 		Thinking:    slot.thinking,
+		Notices:     notices,
 		ProjectFile: projectFile,
 		Problems:    dedupeProblems(withoutRedundantReasons(problems)),
 	}
@@ -664,7 +692,13 @@ func acceptableIssuer(issuer string) bool {
 // refused by name for an unknown value — an engine nobody certified, or a tier
 // nothing implements, is a setting that reads as a grant to whoever wrote it.
 //
-// Neither is carried out of here, because nothing in the chassis reads them:
+// **`engine` carries one migration**, the same one on both sides of the shared
+// decoder: `"builtin"` was withdrawn, so it decodes to the engine that runs and
+// this decoder says so rather than substituting in silence. The withdrawn value
+// is checked before `oneOf`, so the refusal a reader meets for anything else
+// never lists an id this build cannot run.
+//
+// Neither setting is acted on here, because nothing in the chassis reads them:
 // the browser decodes the same file under the same contract and is what shows
 // them. What this side is for is that a file the browser refuses refuses here
 // too, so an unknown engine authorises no outbound request either.
@@ -674,14 +708,20 @@ func decodeAssistant(value any) (assistantSlot, []deskProblem) {
 	if record == nil {
 		return slot, problems
 	}
-	problems = append(problems, oneOf(record, "assistant", "engine", AssistantEngines)...)
-	problems = append(problems, oneOf(record, "assistant", "thinking", AssistantThinkingTiers)...)
-	// Read back only where the file said something this decoder accepts; a
-	// refused value leaves the default standing, and the file is refused whole
-	// anyway.
-	if named, ok := record["engine"].(string); ok && contains(AssistantEngines, named) {
-		slot.engine = named
+	if named, ok := record["engine"].(string); ok && named == withdrawnAssistantEngine {
+		slot.notices = append(slot.notices,
+			deskNotice{Key: "assistant.engine", Says: assistantEngineWithdrawn})
+		slot.engine = defaultAssistantEngine
+	} else {
+		problems = append(problems, oneOf(record, "assistant", "engine", AssistantEngines)...)
+		// Read back only where the file said something this decoder accepts; a
+		// refused value leaves the default standing, and the file is refused
+		// whole anyway.
+		if named, ok := record["engine"].(string); ok && contains(AssistantEngines, named) {
+			slot.engine = named
+		}
 	}
+	problems = append(problems, oneOf(record, "assistant", "thinking", AssistantThinkingTiers)...)
 	if named, ok := record["thinking"].(string); ok && contains(AssistantThinkingTiers, named) {
 		slot.thinking = named
 	}

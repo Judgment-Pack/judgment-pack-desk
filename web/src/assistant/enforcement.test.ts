@@ -28,11 +28,13 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   ASSISTANT_ENGINES,
+  ASSISTANT_ENGINE_WITHDRAWN,
   ASSISTANT_KINDS,
   ASSISTANT_THINKING,
   ASSISTANT_TOOLS,
   DESK_DEFAULTS,
   KEYS_ARE_NEVER_IN_CONFIGURATION,
+  WITHDRAWN_ASSISTANT_ENGINE,
   decodeDeskConfig,
   type AssistantConfig,
   type AssistantEndpointConfig
@@ -233,13 +235,39 @@ describe('(1a) engine and thinking are closed lists that say how, not whether', 
   })
 
   it('allows both beside a null endpoint, because they say how and not whether', () => {
-    const decoded = decodeDesk({ endpoint: null, engine: 'builtin', thinking: 'ultra' })
+    const decoded = decodeDesk({ endpoint: null, engine: 'vercel', thinking: 'ultra' })
     expect(decoded.problems).toEqual([])
     expect(decoded.values?.assistant).toEqual({
       endpoint: null,
-      engine: 'builtin',
+      engine: 'vercel',
       thinking: 'ultra'
     })
+  })
+
+  it('migrates the withdrawn engine rather than refusing a file that names it', () => {
+    // **A removed choice is removed from the schema with a migration**, not left
+    // as a one-option menu and not turned into a refusal: a desk that named
+    // `builtin` yesterday is not a desk with a broken configuration file today.
+    // It decodes to the engine that runs, and the decoder says so — silence
+    // would be a value quietly meaning something else.
+    const decoded = decodeDesk({ endpoint: GOOD_ENDPOINT, engine: WITHDRAWN_ASSISTANT_ENGINE })
+    expect(decoded.problems).toEqual([])
+    expect(decoded.values?.assistant?.engine).toBe('vercel')
+    expect(decoded.notices).toEqual([
+      { key: 'assistant.engine', says: ASSISTANT_ENGINE_WITHDRAWN }
+    ])
+    // Absent and `vercel` are the other two cases, and neither says anything.
+    expect(decodeDesk({ endpoint: GOOD_ENDPOINT }).notices).toEqual([])
+    expect(decodeDesk({ endpoint: GOOD_ENDPOINT, engine: 'vercel' }).notices).toEqual([])
+  })
+
+  it('never offers the withdrawn id in the refusal anybody else meets', () => {
+    // The migration runs before the closed-list check, so a reader repairing an
+    // unknown engine is never told to write one this build cannot run.
+    const decoded = decodeDesk({ endpoint: GOOD_ENDPOINT, engine: 'langchain' })
+    const problem = decoded.problems.find((each) => each.key === 'assistant.engine')!
+    expect(problem.reason).not.toContain(WITHDRAWN_ASSISTANT_ENGINE)
+    expect(problem.reason).toContain('"vercel"')
   })
 
   it('defaults to vercel and off where the file says nothing', () => {
@@ -264,6 +292,12 @@ describe('(1a) engine and thinking are closed lists that say how, not whether', 
       join(SRC, '..', '..', 'internal', 'desk', 'assistant.go'),
       'utf8'
     )
+    // The migration's own two constants are on it too: a value decodable on one
+    // side and refused on the other, or migrated with a different sentence, is
+    // two contracts — and this one is about a file that is **accepted**, which
+    // the fixture corpus would report as agreement if the words differed.
+    expect(source).toContain(`const withdrawnAssistantEngine = "${WITHDRAWN_ASSISTANT_ENGINE}"`)
+    expect(source).toContain(`const assistantEngineWithdrawn = \`${ASSISTANT_ENGINE_WITHDRAWN}\``)
     for (const [declaration, list] of [
       ['AssistantKinds', ASSISTANT_KINDS],
       ['AssistantEngines', ASSISTANT_ENGINES],

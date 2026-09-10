@@ -66,9 +66,10 @@ export const GEMINI_SCHEMA_REMOVALS: readonly string[] = [
  * `convertJSONSchemaToOpenAPISchema`, which copies an allow-list of keywords and
  * drops the rest. So `pattern`, `maximum`, `uniqueItems`, the conditionals and
  * the annotations below never reach the model on that engine, and the desk's
- * closed six-keyword ruling was true of `builtin` and false of `vercel` — two
- * engines showing the model two different contracts, which is the exact
- * cross-engine contradiction the ruling exists to prevent.
+ * closed six-keyword ruling was true of a loop that sends the served schema
+ * itself and false of this one — two engines showing the model two different
+ * contracts, which is the exact cross-engine contradiction the ruling exists to
+ * prevent.
  *
  * The desk cannot stop it: the conversion is inside the provider, below the one
  * seam this adapter has. What it can do is **say so** — here, in the README, and
@@ -135,12 +136,12 @@ export const SDK_SCHEMA_REMOVALS: readonly string[] = [
  * and the session ends with the endpoint's status — measured by a conformance
  * leg, which is written to go red the day the provider starts carrying them.
  * And *this model always thinks* cannot be inferred from an empty signed
- * thought on that engine, because the desk is never told one arrived. The
- * built-in engine has neither limit: it reads the wire itself.
+ * thought on that engine, because the desk is never told one arrived. An engine
+ * that reads the wire itself has neither limit.
  *
  * This is the same shelf as `SDK_SCHEMA_REMOVALS` — a thing the provider does
  * below the one seam this adapter has, declared here so that it is a known
- * difference between two engines rather than a surprise.
+ * property of this engine rather than a surprise.
  */
 export const SDK_DROPS_EMPTY_SIGNED_THOUGHTS = true
 
@@ -316,13 +317,14 @@ export const NO_PARAMETERS_NOTICE =
  * the whole of the fix: the first version compared the runtime's raw schema
  * against a removal set that *included* the desk's own six, so every tool the
  * runtime serves produced a notice about `additionalProperties` — a warning
- * about the ruling itself rather than about anything lost on top of it, on both
- * engines, five times a run. A notice has to mean "your contract lost something
- * this desk did not already tell you about in the README".
+ * about the ruling itself rather than about anything lost on top of it, five
+ * times a run. A notice has to mean "your contract lost something this desk did
+ * not already tell you about in the README".
  *
- * So: what the **desk** shows, minus what **this engine** shows. On `builtin`
- * those are the same schema and the answer is empty. On `vercel` it is exactly
- * what that provider removes underneath, and nothing else.
+ * So: what the **desk** shows, minus what **this engine** shows. An engine that
+ * sends the served schema itself has the same two and an empty answer; on
+ * `vercel` it is exactly what that provider removes underneath, and nothing
+ * else.
  */
 export function keywordsLost(engine: string, family: string, served: unknown): string[] {
   if (keywordsNotShown(engine, family).length === 0) return []

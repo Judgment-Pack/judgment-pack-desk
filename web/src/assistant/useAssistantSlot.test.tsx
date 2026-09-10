@@ -147,14 +147,14 @@ describe('useAssistantSlot', () => {
         decoded: decodeDeskConfig(
           JSON.stringify({
             deskConfigVersion: 1,
-            assistant: { endpoint: null, engine: 'builtin', thinking: 'ultra' }
+            assistant: { endpoint: null, engine: 'vercel', thinking: 'ultra' }
           }),
           'desk'
         )
       }),
       Settings
     )
-    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('builtin|ultra'))
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('vercel|ultra'))
   })
 
   it('is read only by the surfaces that render an assistant', () => {

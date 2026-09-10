@@ -47,6 +47,12 @@ type fixtureVerdict struct {
 	// disagree about what it decoded to would pass a corpus that only checked
 	// the verdict.
 	ProjectFile string `json:"projectFile"`
+	// Notices is what the decoder did with a member it accepted, where it did
+	// anything. Compared-if-present rather than required, unlike Engine and
+	// Thinking, and the difference is that an omission here still checks: the
+	// absent value is the empty list, so a fixture that starts producing a
+	// notice and does not declare one fails.
+	Notices []deskNotice `json:"notices"`
 }
 
 func fixtureVerdicts(t *testing.T) map[string]fixtureVerdict {
@@ -130,10 +136,21 @@ func TestSharedFixturesDecodeAsTheVerdictSays(t *testing.T) {
 				if decoded.ProjectFile != verdict.ProjectFile {
 					t.Errorf("project.file %q, want %q", decoded.ProjectFile, verdict.ProjectFile)
 				}
+				// The migrations, in the decoder's own words. A sentence
+				// changed on one side of the shared decoder and not the other
+				// fails on both.
+				if !sameNotices(decoded.Notices, verdict.Notices) {
+					t.Errorf("notices %v, want %v", decoded.Notices, verdict.Notices)
+				}
 				return
 			}
 			if !decoded.refused() {
 				t.Fatal("refused fixture was accepted")
+			}
+			// A refused file shows nothing: it decoded to nothing, so it did
+			// nothing.
+			if len(decoded.Notices) != 0 {
+				t.Errorf("a refused file carries notices: %v", decoded.Notices)
 			}
 			// The endpoint is *carried* out of a refused decode now — see the
 			// note at the end of `decodeDeskFile` — so what this asserts is
@@ -349,4 +366,22 @@ func TestAMemberIsRefusedOnceWithTheCredentialSentence(t *testing.T) {
 			t.Errorf("colour: %q", problem.Reason)
 		}
 	}
+}
+
+// sameNotices compares two notice lists as lists, order included.
+//
+// Order rather than as a set, because a notice is written where the member is
+// read and there is one place each is written: two decoders that disagreed
+// about the order would be disagreeing about which member was read first,
+// which is a fact about the file and worth failing on.
+func sameNotices(got, want []deskNotice) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }

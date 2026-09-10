@@ -19,7 +19,7 @@ import type { AssistantEvent, AssistantSession, Engine } from './engine'
 
 /** An engine that yields nothing, ends never, and ignores its abort signal. */
 const deaf: Engine = {
-  id: 'builtin',
+  id: 'vercel',
   start(_session: AssistantSession): AsyncIterable<AssistantEvent> {
     return {
       [Symbol.asyncIterator]() {
@@ -34,7 +34,7 @@ const deaf: Engine = {
 
 /** An engine that yields its own `end` and then throws. */
 const endsThenThrows: Engine = {
-  id: 'builtin',
+  id: 'vercel',
   async *start(_session: AssistantSession): AsyncGenerator<AssistantEvent> {
     yield { type: 'end' }
     throw new Error('an engine that kept going after it said it had stopped')
@@ -62,7 +62,7 @@ function drive() {
   vi.stubGlobal('WebSocket', runtime.WebSocket)
   vi.stubGlobal('fetch', async () => new Response('{}'))
   return renderHook(() =>
-    useAssistantRun({ endpoint: ENDPOINT, engine: 'builtin', thinking: 'off' })
+    useAssistantRun({ endpoint: ENDPOINT, engine: 'vercel', thinking: 'off' })
   )
 }
 
@@ -154,7 +154,7 @@ describe('the run hook writes the terminal event itself', () => {
 describe('the proposal is canonicalized once, where it arrives', () => {
   /** An engine that puts one value on the stream and ends. */
   const emits = (event: AssistantEvent): Engine => ({
-    id: 'builtin',
+    id: 'vercel',
     // eslint-disable-next-line require-yield
     async *start(): AsyncGenerator<AssistantEvent> {
       yield event
@@ -220,7 +220,7 @@ describe('the proposal is canonicalized once, where it arrives', () => {
 
 describe('what ingestion hands on cannot be moved afterwards', () => {
   const emits = (event: AssistantEvent): Engine => ({
-    id: 'builtin',
+    id: 'vercel',
     async *start(): AsyncGenerator<AssistantEvent> {
       yield event
       yield { type: 'end' }

@@ -7,13 +7,18 @@
  * adding an adapter is one line here plus its module — and the suite certifies
  * it or the suite goes red.
  *
+ * **There is one engine on the list, and the list is still the mechanism.** The
+ * built-in fallback was withdrawn (ADR-0001's amendment); what a second engine
+ * will be admitted by is unchanged, and it is this table plus the session that
+ * runs over it.
+ *
  * **Every engine a `desk.json` may name is certified in this build, and there is
  * one table that says so.** The loaders are total over `AssistantEngine`, the
  * certified list is *derived* from them rather than written beside them, and the
  * two are asserted equal at the type level — so an id cannot become loadable
  * without being put in front of the conformance session, and an id the decoder
  * declares cannot be left without an adapter. The substitution this used to do —
- * a desk configured for `vercel` running `builtin` and a line in the tab saying
+ * a desk configured for one engine running another, and a line in the tab saying
  * so — is gone with the reason for it.
  *
  * The loaders are `import()` so a session downloads one chunk. The release
@@ -34,7 +39,6 @@ export type EngineLoaders = Record<string, () => Promise<Engine>>
  * from the decoder in either direction.
  */
 const LOADERS = {
-  builtin: async () => (await import('./builtin')).builtin,
   vercel: async () => (await import('./vercel')).vercel
 } satisfies Record<AssistantEngine, () => Promise<Engine>>
 

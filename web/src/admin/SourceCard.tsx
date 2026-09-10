@@ -52,7 +52,7 @@ import {
   useState,
   type ReactNode
 } from 'react'
-import type { ConfigProblem, ReadFailure } from '../config/deskConfig'
+import type { ConfigNotice, ConfigProblem, ReadFailure } from '../config/deskConfig'
 import styles from './SourceCard.module.css'
 
 /**
@@ -69,6 +69,15 @@ export type SourceStatus =
   | { state: 'pending' }
   | { state: 'refused'; problems: readonly ConfigProblem[] }
   | { state: 'unread'; failure: ReadFailure }
+  /**
+   * The file was read, and this decoder did something with a member of it.
+   *
+   * Seven states now, and this is the one that is **not** a problem: the file
+   * is in use exactly as it decoded, and what the line adds is the sentence
+   * saying so. Folding it into `read` would lose the sentence; folding it into
+   * `refused` would tell a reader nothing was written when everything was.
+   */
+  | { state: 'migrated'; notices: readonly ConfigNotice[] }
   /** A connection rather than a file. */
   | { state: 'said'; says: string }
   /** This card's own write is in the air. */
@@ -309,6 +318,13 @@ export function StatusLine({ status }: { status: SourceStatus }) {
   if (status.state === 'absent') return <>not present — defaults in use</>
   if (status.state === 'pending') return <>not read yet</>
   if (status.state === 'said') return <>{status.says}</>
+  if (status.state === 'migrated') {
+    return (
+      <>
+        read — <Notices notices={status.notices} />
+      </>
+    )
+  }
   if (status.state === 'writing') return <>writing — nothing is written until the desk answers</>
   if (status.state === 'stale') return <>the file changed on disk — nothing was written</>
   if (status.state === 'not-written') {
@@ -328,6 +344,19 @@ export function StatusLine({ status }: { status: SourceStatus }) {
     )
   }
   return <UnreadLine failure={status.failure} />
+}
+
+/** The decoder's own sentences about what it did, as quoted material. */
+function Notices({ notices }: { notices: readonly ConfigNotice[] }) {
+  return (
+    <>
+      {notices.map((notice) => (
+        <code key={`${notice.key}:${notice.says}`} className={styles.reason}>
+          {notice.says}
+        </code>
+      ))}
+    </>
+  )
 }
 
 /** The decoder's own sentences, key path and all, as quoted material. */

@@ -1099,16 +1099,13 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
     it('emits the event stream the ADR names, in order, ending once', async () => {
       const { events } = await runLeg(fromRegistry(engineId), leg)
       // **A notice is a loss the README does not already declare**, so over the
-      // runtime's own five there are none on `builtin` — its removals *are* the
-      // desk's ruling — and exactly one on `vercel`, for the tool whose schema
-      // that provider drops whole. Anything else would be the desk warning
-      // about its own rule, five times a run.
+      // runtime's own five there is exactly one, for the tool whose schema this
+      // provider drops whole on the Gemini wire. Anything else would be the
+      // desk warning about its own rule, five times a run.
       const narrowing = guardrails(events)
         .filter((event) => event.action === 'narrowed')
         .map((event) => event.tool)
-      expect(narrowing).toEqual(
-        leg.api === 'gemini' && engineId === 'vercel' ? [NO_PARAMETER_TOOL] : []
-      )
+      expect(narrowing).toEqual(leg.api === 'gemini' ? [NO_PARAMETER_TOOL] : [])
       expect(events.map((event) => event.type)).toEqual([
         ...narrowing.map(() => 'guardrail' as const),
         'tool_call', // T1 get_schema
@@ -1476,17 +1473,12 @@ describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
         .filter((keyword) => keywordsSent(desk).has(keyword))
         .sort()
       expect(derived, `${engineId} removes a set this desk does not declare`).toEqual(declared)
-      // The built-in engine sends the desk's own result untouched, so its
-      // derived set is empty — which is the control that says this leg would
-      // have caught a removal rather than passing because nothing was measured.
-      if (engineId === 'builtin') {
-        expect(derived).toEqual([])
-        // …and for it alone, deep equality over the vocabulary too: it removes
-        // nothing, so the schema on the wire is the desk's own byte for byte.
-        expect(requests[0]!.schemas[0]).toEqual(desk)
-      } else {
-        expect(derived.length).toBeGreaterThan(5)
-      }
+      // **And the set is not empty**, which is what says this leg measured
+      // something. The control that used to carry it was the built-in engine,
+      // whose derived set was empty because it sent the desk's own result
+      // untouched; with that engine withdrawn the claim is stated directly
+      // against the one engine there is.
+      expect(derived.length).toBeGreaterThan(5)
     })
 
     it('carries exactly the recorded runtime’s own schema vocabulary', () => {
@@ -1522,25 +1514,15 @@ describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
           expect(notice.detail, `${notice.tool} was warned about ${keyword}`).not.toContain(keyword)
         }
       }
-      if (engineId === 'builtin') {
-        // Its removals **are** the desk's ruling, so there is nothing left to
-        // report over the runtime's own five.
-        expect(narrowed).toEqual([])
-        for (const tool of RECORDED_TOOLS) {
-          expect(keywordsLost(engineId, leg.api, tool.inputSchema), tool.name).toEqual([])
-        }
-      } else {
-        // Exactly the one tool whose schema this provider drops whole. Every
-        // other recorded tool loses nothing beyond the desk's own list — and
-        // the one that does is reported by the sentence for *that* loss rather
-        // than as a list of the keywords its vanished schema happened to
-        // contain.
-        expect(narrowed.map((notice) => notice.tool)).toEqual([NO_PARAMETER_TOOL])
-        expect(narrowed[0]!.detail).toContain('no parameters at all')
-        for (const tool of RECORDED_TOOLS) {
-          if (tool.name === NO_PARAMETER_TOOL) continue
-          expect(keywordsLost(engineId, leg.api, tool.inputSchema), tool.name).toEqual([])
-        }
+      // Exactly the one tool whose schema this provider drops whole. Every
+      // other recorded tool loses nothing beyond the desk's own list — and the
+      // one that does is reported by the sentence for *that* loss rather than
+      // as a list of the keywords its vanished schema happened to contain.
+      expect(narrowed.map((notice) => notice.tool)).toEqual([NO_PARAMETER_TOOL])
+      expect(narrowed[0]!.detail).toContain('no parameters at all')
+      for (const tool of RECORDED_TOOLS) {
+        if (tool.name === NO_PARAMETER_TOOL) continue
+        expect(keywordsLost(engineId, leg.api, tool.inputSchema), tool.name).toEqual([])
       }
     })
 
@@ -1551,13 +1533,6 @@ describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
       const { events } = await runLeg(fromRegistry(engineId), leg, { tools: [VOCABULARY] })
       const narrowed = guardrails(events).filter((event) => event.action === 'narrowed')
       const lost = keywordsLost(engineId, leg.api, VOCABULARY.inputSchema)
-      if (engineId === 'builtin') {
-        // Nothing beyond the ruling, so nothing said — and the leg still means
-        // something, because it is the control for the branch below.
-        expect(lost).toEqual([])
-        expect(narrowed).toEqual([])
-        return
-      }
       expect(narrowed).toHaveLength(1)
       expect(narrowed[0]!.tool).toBe(VOCABULARY.name)
       expect(lost.length).toBeGreaterThan(0)
@@ -1924,7 +1899,7 @@ describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
  * imported directly proves the seal on a route nothing ships. The loader takes
  * its table as a parameter for exactly this — the fixtures are never in the
  * build's own table, so nothing a `desk.json` can name reaches them, and the
- * path they travel is the one `builtin` travels.
+ * path they travel is the one a certified engine travels.
  */
 const CERTIFICATION_LOADERS = {
   'touches-on-load': async () =>
@@ -2155,7 +2130,7 @@ describe('the seal, shown to fail', () => {
     // that none of the four is still a sentinel.
     const sealed = (name: string) =>
       ((globalThis as unknown as Record<string, { name?: string }>)[name]?.name ?? '') === 'sealed'
-    await runLeg(fromRegistry('builtin'), leg)
+    await runLeg(fromRegistry('vercel'), leg)
     for (const name of NETWORK_GLOBALS) {
       expect(sealed(name), `${name} is still sealed`).toBe(false)
     }
@@ -2180,7 +2155,7 @@ describe('the seal, shown to fail', () => {
     // And the one the harness **adds**: it must be gone again, not left as a
     // present-but-useless property for every test that runs after this one.
     expect('requestIdleCallback' in scope, 'jsdom has no idle callback').toBe(false)
-    await runLeg(fromRegistry('builtin'), leg)
+    await runLeg(fromRegistry('vercel'), leg)
     expect(names.map((name) => scope[name])).toEqual(before)
     expect('requestIdleCallback' in scope, 'the harness left its own behind').toBe(false)
     expect('cancelIdleCallback' in scope, 'the harness left its own behind').toBe(false)

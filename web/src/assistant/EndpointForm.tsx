@@ -1,35 +1,47 @@
 /**
- * Admin › Assistant, as a form: the endpoint, the tools, the model, the engine
- * and the tier — and the one conditional commit that writes them.
+ * Admin › Assistant, as one form: the provider, the key, the endpoint, the
+ * model, the tools and the tier — and the writes that put them somewhere.
  *
- * **This is the first configuration surface on this desk that writes a
- * configuration value**, and every bound on it is the chassis'. The request
- * names no file; it carries `ifMatch`, the digest of the bytes this page last
- * read; the chassis composes the file, decodes it under the contract this page
- * decodes by, and refuses the whole write where anything is wrong. So the only
- * thing this component may get wrong is *what it asks for*, and the two ways it
- * could are held here: the object is composed by naming members
- * (`assistantWrite`), and the digest is the one the read carried rather than
- * one this page assumed.
+ * **This section carries the desk's two writes**, and each is exactly as wide
+ * as its reason. A key must never be pasted into a project file, so it cannot
+ * go through the file API — which writes only inside the project — and gets its
+ * own endpoint. The `assistant` object of the desk-level file is the other:
+ * choosing a model and a tier is something an author does while working, and
+ * the alternative is telling them to edit a file in a configuration directory
+ * by hand between attempts.
+ *
+ * **The two writes are one action where a person is doing one thing.** A key is
+ * kept bound to the endpoint that is *configured*, so storing one before the
+ * endpoint is saved is refused by the chassis — which left a first-time setup
+ * as two buttons in an order nobody was told. **Connect** is the pair, in the
+ * only order the chassis admits: the endpoint through the desk-level write, and
+ * then the key through the key route. Neither route changed. If the write is
+ * refused the key is never sent; if the key store is refused the endpoint stays
+ * saved, and both refusals are shown where they happened.
  *
  * **A refusal is shown in the decoder's own words.** A 422 answers with the
  * `{key, reason}` list the browser's decoder would produce for the same file,
- * so each problem is rendered against the field its key path names and the
- * rest are rendered whole. Nothing here re-words one: the sentence that
- * repairs the file is the sentence the file's reader wrote.
+ * so each problem is rendered against the field its key path names and the rest
+ * are rendered whole. Nothing here re-words one: the sentence that repairs the
+ * file is the sentence the file's reader wrote.
  *
  * **A 409 is not an error.** The file moved underneath this page and nothing
  * was written; the form keeps every value the author typed, and Reload takes
  * the file on disk so the next Save states a digest that is true. There is no
  * "write anyway" — this is the file that names the endpoint a credential is
  * presented to, and the chassis offers no override for it.
+ *
+ * **The engine is not a field here.** The slot has one member; a menu with one
+ * item is a decision nobody makes. See `ASSISTANT_ENGINES` for the migration a
+ * file that names the withdrawn one gets.
  */
 import { useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
   ASSISTANT_TOOLS,
   endpointUrlProblem,
+  modelIdProblem,
   type AssistantTool,
   type EndpointKind
 } from '../config/deskConfig'
@@ -41,32 +53,36 @@ import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
-import type { AssistantConfigWritten } from './client'
+import { DIAGNOSTIC_SAYS, type AssistantConfigWritten } from './client'
 import {
-  ENGINE_OPTIONS,
-  ENGINE_SAYS,
   KIND_OPTIONS,
   TIER_OPTIONS,
   assistantWithoutEndpoint,
   assistantWrite,
   draftFrom,
   seedOf,
-  tierProvenance,
-  tierSays,
   withKind,
   withTool,
   type EndpointDraft
 } from './endpointDraft'
+import { KeyField } from './KeyField'
+import { keyBinding, type KeyBinding } from './keyBinding'
 import { ModelField } from './ModelField'
-import { useUpdateAssistantConfig } from './queries'
+import {
+  useAssistantKey,
+  useProbeAssistant,
+  useRemoveAssistantKey,
+  useStoreAssistantKey,
+  useUpdateAssistantConfig
+} from './queries'
 
 /**
  * The sentence the form refuses to write on, where the page never learned the
  * digest.
  *
  * A read that produced no digest is a page that has not seen the file. Writing
- * with the empty string would be claiming there is none — which is a claim,
- * and a wrong one would replace somebody's file with this form's idea of it.
+ * with the empty string would be claiming there is none — which is a claim, and
+ * a wrong one would replace somebody's file with this form's idea of it.
  */
 const NO_DIGEST =
   'This desk has not read its own configuration file, and a write states the bytes it replaces.'
@@ -74,48 +90,54 @@ const NO_DIGEST =
 const SAVED = 'Saved. The rest of the file is exactly as it was.'
 const CREATED = 'Saved, and the file was created. Nothing else is in it.'
 const REMOVED = 'Removed. This desk has no assistant endpoint configured.'
+const CONNECTED = 'Saved, and the key is stored on this computer.'
 
 /**
  * The one line a removal confirms, and it is about the key rather than the
  * endpoint.
  *
- * Taking the endpoint away does not take the key away — the two are separate,
- * which the section says in its own words — but it does mean there is nothing
- * to present it to, and storing another one needs an endpoint to bind it to.
- * Saying that here is what stops a removal reading as "and the key is gone".
+ * Taking the endpoint away does not take the key away — the key line says so in
+ * its own words — but it does mean there is nothing to present it to, and
+ * storing another one needs an endpoint to bind it to. Saying that here is what
+ * stops a removal reading as "and the key is gone".
  */
 const REMOVAL_MEANS =
-  'The key stays on this machine, entered for the endpoint you are removing, and goes nowhere.'
+  'The key stays on this computer, entered for the endpoint you are removing, and goes nowhere.'
+
+/** Beside Connect, where nothing has been typed into the key field. */
+const NO_KEY_TYPED = 'Enter the key above to store it with the endpoint.'
+
+/**
+ * The one sentence a form over a file nobody could read is worth.
+ *
+ * **It claims no absence.** The fields hold the built-in defaults, which is not
+ * "no assistant is configured" — it is this desk not knowing, and a page that
+ * said the first would be asserting something about a file it could not open.
+ */
+const UNAVAILABLE =
+  'This desk could not read its own configuration. Nothing below is what it is configured for.'
 
 export function EndpointForm({
-  bound,
-  unavailable,
-  onWritten
+  unavailable
 }: {
-  /**
-   * Whether the stored key is the key for the endpoint that is **saved**.
-   *
-   * The saved one and not the draft: a key is bound to what is in the file,
-   * and a host typed but not written has changed nothing about where the
-   * credential may go. It gates List models and nothing else.
-   */
-  bound: boolean
   /**
    * Whether this desk could not read the file these fields are about.
    *
    * The fields then hold the built-in defaults rather than anything anybody
    * configured, so they are shown and not edited: typing into them would be
-   * composing a write over a file nobody has seen. Save is refused for the
-   * same reason one layer along — there is no digest — and this is what says
-   * so before somebody has typed.
+   * composing a write over a file nobody has seen. Save is refused for the same
+   * reason one layer along — there is no digest — and this is what says so
+   * before somebody has typed.
    */
   unavailable: boolean
-  /** Called with every answer to a write that landed. */
-  onWritten: (answer: AssistantConfigWritten) => void
 }) {
   const { config, desk } = useEffectiveConfig()
   const client = useQueryClient()
   const write = useUpdateAssistantConfig()
+  const key = useAssistantKey()
+  const store = useStoreAssistantKey()
+  const remove = useRemoveAssistantKey()
+  const probe = useProbeAssistant()
 
   // **Seeded from the file, and re-seeded only while nothing is typed.** The
   // read has usually not answered at first render, and a Save answers with a
@@ -133,9 +155,39 @@ export function EndpointForm({
   }
   const [saved, setSaved] = useState<string | undefined>(undefined)
   // Two steps, and the first one only says what the second would do. A
-  // destructive action whose primary button is the destructive one is a
-  // client with no story about a mis-click.
+  // destructive action whose primary button is the destructive one is a client
+  // with no story about a mis-click.
   const [removing, setRemoving] = useState(false)
+
+  // **The answer to the last write, held until the key read disagrees with it.**
+  // The chassis says `keyRebindRequired` at the instant the endpoint moves, and
+  // waiting for the key read to be re-fetched would leave the line saying the
+  // key is bound for as long as that took. The read is the authority afterwards.
+  const [rebindAsked, setRebindAsked] = useState(false)
+  // **The field is uncontrolled, and that is the point.** It used to be React
+  // state cleared with `setTyped('')` immediately before the request — which
+  // reads as synchronous and is not: React batches the update, so `fetch` could
+  // begin while both the input and the state still held the key. An
+  // uncontrolled input is cleared by assigning to the DOM node, which happens at
+  // the instant it is written and not at the next render.
+  const keyInput = useRef<HTMLInputElement | null>(null)
+  // **Whether the field is empty, and nothing else about it.** A boolean is not
+  // a mirror: it says a key was typed, never any of it, and nothing derived from
+  // it could be a credential. It exists so that Connect can say what it will
+  // actually do rather than offering to store a key nobody entered.
+  const [typed, setTyped] = useState(false)
+  const [storeProblem, setStoreProblem] = useState<string | undefined>(undefined)
+  const [removeProblem, setRemoveProblem] = useState<string | undefined>(undefined)
+
+  const read = keyBinding(key.data)
+  const binding: KeyBinding = rebindAsked && read === 'bound' ? 'rebind' : read
+  const bound = binding === 'bound'
+  // **Connect only where the desk has *said* there is no usable key.** A read
+  // that has not answered is not "no key" — it is a page that has not been told
+  // — so the primary action stays Save until the key route says otherwise. A
+  // rule the other way round would flash Connect on every load of a configured
+  // desk and name a state nobody established.
+  const connecting = binding === 'none' || binding === 'no-endpoint' || binding === 'rebind'
 
   const edit = (next: EndpointDraft) => {
     setDirty(true)
@@ -144,10 +196,11 @@ export function EndpointForm({
   }
 
   const digest = desk?.sha256
-  // The decoder's own rule, run here so a URL it will refuse is not sent. It
-  // is the same function the file's reader uses, so this is not a second
-  // opinion about a URL — it is the same one, earlier.
+  // The decoder's own rules, run here so a value it will refuse is not sent.
+  // They are the same functions the file's reader uses, so this is not a second
+  // opinion about a URL or a model id — it is the same one, earlier.
   const urlProblem = draft.url.trim() === '' ? undefined : endpointUrlProblem(draft.url.trim())
+  const modelProblem = modelIdProblem(draft.model)
 
   const refused = write.error instanceof FileRequestError ? write.error : undefined
   const stale =
@@ -156,64 +209,110 @@ export function EndpointForm({
       : undefined
   // Every problem the decoder named, and which field each belongs against.
   const problems = refused?.problems ?? []
-  const problemFor = (key: string) =>
+  const problemFor = (path: string) =>
     problems
-      .filter((problem) => problem.key === key)
+      .filter((problem) => problem.key === path)
       .map((problem) => problem.reason)
       .join(' ') || undefined
   const unplaced = problems.filter(
     (problem) => !(PLACED as readonly string[]).includes(problem.key)
   )
-  // A refusal that is neither a stale write nor a decoder's list still has to
-  // be said: `assistant-key-unbound`, an unusable key store, a body too large.
+  // A refusal that is neither a stale write nor a decoder's list still has to be
+  // said: `assistant-key-unbound`, an unusable key store, a body too large.
   const otherRefusal =
     stale === undefined && (refused === undefined || problems.length === 0)
       ? (write.error?.message ?? undefined)
       : undefined
 
-  const commit = (assistant: unknown, said: (answer: AssistantConfigWritten) => string) => {
+  const commit = (
+    assistant: unknown,
+    said: (answer: AssistantConfigWritten) => string,
+    then?: () => void
+  ) => {
     if (digest === undefined) return
     setSaved(undefined)
+    setStoreProblem(undefined)
     write.mutate(
       { assistant, ifMatch: digest },
       {
         onSuccess: (answer) => {
           // Re-seeded from the file the chassis read back, not from the draft:
-          // the answer is what landed, and a form that showed what it sent
-          // would be reporting its own request as an outcome.
+          // the answer is what landed, and a form that showed what it sent would
+          // be reporting its own request as an outcome.
           setDirty(false)
           setRemoving(false)
           setSaved(said(answer))
-          onWritten(answer)
+          setRebindAsked(answer.keyRebindRequired)
+          then?.()
         }
       }
     )
   }
 
+  /** Take what was typed, clearing the node before the request is made. */
+  const takeKey = (): string => {
+    const input = keyInput.current
+    const value = input?.value ?? ''
+    // Cleared on the node, before the request is made. This assignment has
+    // taken effect by the next statement; a `setState` would not have.
+    if (input) input.value = ''
+    setTyped(false)
+    return value
+  }
+
+  const storeKey = (value: string, onStored?: () => void) => {
+    setStoreProblem(undefined)
+    store.submit(value, {
+      onError: (error) => setStoreProblem(error.message),
+      onStored: () => {
+        setRebindAsked(false)
+        onStored?.()
+      }
+    })
+  }
+
   const save = () => commit(assistantWrite(draft), (answer) => (answer.created ? CREATED : SAVED))
   const removeEndpoint = () => commit(assistantWithoutEndpoint(draft), () => REMOVED)
 
-  const busy = write.isPending
-  const blocked = digest === undefined || urlProblem !== undefined
+  /**
+   * The endpoint and its key, in the one order the chassis admits.
+   *
+   * The key is taken off the node **before** the write, because the write is
+   * what clears the form's dirty state and the node must not be read after a
+   * re-seed has been through it. It is sent only once the write has landed: a
+   * key stored against an endpoint that was refused would be bound to whatever
+   * the file said before, which is the opposite of what the person asked for.
+   */
+  const connect = () => {
+    const value = takeKey()
+    commit(
+      assistantWrite(draft),
+      (answer) => (value === '' ? (answer.created ? CREATED : SAVED) : CONNECTED),
+      () => {
+        if (value !== '') storeKey(value)
+      }
+    )
+  }
+
+  const busy = write.isPending || store.isPending
+  const blocked = digest === undefined || urlProblem !== undefined || modelProblem !== undefined
 
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault()
-        save()
+        if (connecting) connect()
+        else save()
       }}
     >
-      {/* Disabled as a whole while a write is in flight — a field edited
-          between the request and its answer would be a value the author
-          believes was saved and was not — and while the file these fields are
-          about could not be read, when they are the built-in defaults rather
-          than anything anybody configured. */}
+      {unavailable && <p className="quiet">{UNAVAILABLE}</p>}
+      {/* Disabled as a whole while a write is in flight — a field edited between
+          the request and its answer would be a value the author believes was
+          saved and was not — and while the file these fields are about could not
+          be read, when they are the built-in defaults rather than anything
+          anybody configured. */}
       <fieldset disabled={busy || unavailable}>
-        <Field
-          label="Wire protocol"
-          hint="How a request is shaped: which header carries the key, and which path the call goes on."
-          error={problemFor('assistant.endpoint.kind')}
-        >
+        <Field label="Provider" error={problemFor('assistant.endpoint.kind')}>
           {(wiring) => (
             <Select
               {...wiring}
@@ -224,9 +323,28 @@ export function EndpointForm({
           )}
         </Field>
 
+        <KeyField
+          state={key.data}
+          answered={key.isSuccess}
+          failed={key.error}
+          binding={binding}
+          field={keyInput}
+          onTyped={setTyped}
+          onStore={() => storeKey(takeKey())}
+          storeProblem={storeProblem}
+          onRemove={() => {
+            setRemoveProblem(undefined)
+            remove.mutate(undefined, {
+              onError: (error) => setRemoveProblem(error.message),
+              onSettled: () => remove.reset()
+            })
+          }}
+          removeProblem={removeProblem}
+        />
+
         <Field
-          label="Endpoint"
-          hint="The base this protocol documents. Type over it for a proxy or an endpoint you run."
+          label="Endpoint URL"
+          hint="Leave the default unless you use a proxy or your own server."
           error={urlProblem ?? problemFor('assistant.endpoint.url')}
         >
           {(wiring) => (
@@ -239,51 +357,24 @@ export function EndpointForm({
           )}
         </Field>
 
-        <ToolChoice draft={draft} onChange={edit} problem={problemFor('assistant.endpoint.tools')} />
-
         <ModelField
           draft={draft}
           saved={config.assistant.endpoint}
           bound={bound}
-          // **Compared rather than remembered.** A sticky "has been edited"
-          // flag would keep the listing disabled after an edit somebody undid;
-          // what the gate is actually about is whether the form on screen *is*
-          // the endpoint the listing would ask.
+          // **Compared rather than remembered.** A sticky "has been edited" flag
+          // would keep the listing disabled after an edit somebody undid; what
+          // the gate is actually about is whether the form on screen *is* the
+          // endpoint the listing would ask.
           matchesSaved={seed === JSON.stringify(draft)}
           onChange={edit}
-          problem={problemFor('assistant.endpoint.model')}
+          problem={modelProblem ?? problemFor('assistant.endpoint.model')}
         />
 
-        <Field
-          label="Engine"
-          hint={ENGINE_SAYS[draft.engine]}
-          error={problemFor('assistant.engine')}
-        >
-          {(wiring) => (
-            <Select
-              {...wiring}
-              value={draft.engine}
-              onValueChange={(value) =>
-                edit({ ...draft, engine: value as EndpointDraft['engine'] })
-              }
-              options={ENGINE_OPTIONS}
-            />
-          )}
-        </Field>
+        <ToolChoice draft={draft} onChange={edit} problem={problemFor('assistant.endpoint.tools')} />
 
         <Field
           label="Thinking"
-          hint={
-            <>
-              <span>
-                On this protocol <code>{draft.thinking}</code> sends{' '}
-                <code>{tierSays(draft.kind, draft.thinking)}</code>.
-              </span>
-              {tierProvenance(draft.kind) !== undefined && (
-                <span> {tierProvenance(draft.kind)}</span>
-              )}
-            </>
-          }
+          hint="How much reasoning the model may do before answering."
           error={problemFor('assistant.thinking')}
         >
           {(wiring) => (
@@ -299,15 +390,26 @@ export function EndpointForm({
         </Field>
 
         <p className="actions">
+          <Button onClick={() => probe.mutate()}>Test connection</Button>{' '}
+          {probe.isPending && <span className="quiet">asking the endpoint…</span>}
+          {probe.data !== undefined && !probe.isPending && <ProbeReading result={probe.data} />}
+          {probe.error !== null && !probe.isPending && (
+            <span className="quiet">
+              the test was refused: <code className="partial-reason">{probe.error.message}</code>
+            </span>
+          )}
+        </p>
+
+        <p className="actions">
           <Button variant="primary" type="submit" disabled={blocked || busy}>
-            Save
+            {connecting ? 'Connect' : 'Save'}
           </Button>{' '}
           {/* **The slot's other state, which the schema has and the form did
               not.** `assistant.endpoint` is one nullable field; clearing the
               boxes sends an object the decoder refuses, so without this a desk
-              that had configured an endpoint could only get back to None
-              through the generic file editor — while this page describes None
-              as one of three deployment states. */}
+              that had configured an endpoint could only get back to None through
+              the generic file editor — while this page describes None as one of
+              three deployment states. */}
           {config.assistant.endpoint !== null && !removing && (
             <Button
               variant="quiet"
@@ -318,6 +420,7 @@ export function EndpointForm({
             </Button>
           )}
           {busy && <span className="quiet">writing…</span>}
+          {connecting && !typed && !busy && <span className="quiet">{NO_KEY_TYPED}</span>}
           {saved !== undefined && !busy && <span className="quiet">{saved}</span>}
         </p>
 
@@ -395,13 +498,17 @@ export function EndpointForm({
  * Everything else the decoder can name is rendered whole, because a problem
  * whose field is not on this form is still a problem with the file this write
  * would have made — and dropping it would leave a refusal with no sentence.
+ *
+ * `assistant.engine` is still on it. The form has no Engine field and never
+ * writes the member, but a file that already carries a value this decoder
+ * refuses is refused when this form saves over the rest of it, and a refusal
+ * with nowhere to land is a refusal nobody reads.
  */
 const PLACED = [
   'assistant.endpoint.url',
   'assistant.endpoint.kind',
   'assistant.endpoint.model',
   'assistant.endpoint.tools',
-  'assistant.engine',
   'assistant.thinking'
 ] as const
 
@@ -409,9 +516,9 @@ const PLACED = [
  * The five tools, as five checkboxes.
  *
  * Not a Select and not a multi-select: each is an independent grant, and the
- * empty list is a real choice — an assistant that may call nothing — rather
- * than a state to be prevented. The list is the closed one, so a name outside
- * it cannot be offered here at all.
+ * empty list is a real choice — an assistant that may call nothing — rather than
+ * a state to be prevented. The list is the closed one, so a name outside it
+ * cannot be offered here at all.
  */
 function ToolChoice({
   draft,
@@ -424,7 +531,7 @@ function ToolChoice({
 }) {
   return (
     <fieldset className="tool-choice">
-      <legend>Tools it may call</legend>
+      <legend>Tools the assistant may use</legend>
       {ASSISTANT_TOOLS.map((tool) => (
         <label key={tool} className="checkbox">
           <input
@@ -435,11 +542,38 @@ function ToolChoice({
           <code>{tool}</code>
         </label>
       ))}
-      <p className="quiet">
-        Each is a read. None of them is a real choice: an assistant that may call nothing.
-      </p>
+      <p className="quiet">All read-only. Untick one to hide it from the assistant.</p>
       {problem !== undefined && <p className="partial-reason">{problem}</p>}
     </fieldset>
+  )
+}
+
+/**
+ * One probe answer, reported as it came.
+ *
+ * `reachable` is the endpoint having answered *successfully*, and a refused
+ * credential is therefore not reachable — a page that called a 401 reachable
+ * would report a desk that cannot make one call as ready to work.
+ */
+function ProbeReading({
+  result
+}: {
+  result: { reachable: boolean; status: number; latencyMs: number; diagnostic: string }
+}) {
+  return (
+    <span className="quiet">
+      {result.reachable ? 'connected' : 'not connected'}
+      {' · '}
+      {result.status === 0 ? 'no answer arrived' : `answered ${result.status}`}
+      {' · '}
+      {result.latencyMs} ms
+      {result.diagnostic !== '' && (
+        <>
+          {' · '}
+          {DIAGNOSTIC_SAYS[result.diagnostic] ?? result.diagnostic}
+        </>
+      )}
+    </span>
   )
 }
 

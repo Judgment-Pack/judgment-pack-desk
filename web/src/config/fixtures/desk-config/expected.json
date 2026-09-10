@@ -5,11 +5,23 @@
     "engine": "vercel",
     "thinking": "off"
   },
+  "accepted-assistant-engine-absent": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
+  },
   "accepted-assistant-engine-builtin": {
     "accepted": true,
     "keys": [],
-    "engine": "builtin",
-    "thinking": "off"
+    "engine": "vercel",
+    "thinking": "off",
+    "notices": [
+      {
+        "key": "assistant.engine",
+        "says": "engine: \"builtin\" was withdrawn; the Vercel engine runs"
+      }
+    ]
   },
   "accepted-assistant-engine-vercel": {
     "accepted": true,
@@ -20,7 +32,7 @@
   "accepted-assistant-slot-without-an-endpoint": {
     "accepted": true,
     "keys": [],
-    "engine": "builtin",
+    "engine": "vercel",
     "thinking": "ultra"
   },
   "accepted-assistant-thinking-off": {

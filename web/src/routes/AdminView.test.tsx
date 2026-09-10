@@ -383,7 +383,7 @@ function everythingConfigured() {
           model: 'a-model',
           tools: ['validate']
         },
-        engine: 'builtin',
+        engine: 'vercel',
         thinking: 'ultra'
       },
       identity: {
@@ -434,7 +434,12 @@ describe('Admin, with no overview', () => {
       ['both files read', everythingConfigured, '/admin#assistant'],
       [
         'a refused project file',
-        () => effectiveConfig({ values: undefined, problems: [{ key: 'colour', reason: 'unknown key' }] }),
+        () =>
+          effectiveConfig({
+            values: undefined,
+            problems: [{ key: 'colour', reason: 'unknown key' }],
+            notices: []
+          }),
         '/admin#storage'
       ],
       [
@@ -790,7 +795,8 @@ describe('Admin, with no overview', () => {
   it('reports a refused configuration by naming every problem, and stays on defaults', () => {
     const value = effectiveConfig({
       values: undefined,
-      problems: [{ key: 'colour', reason: 'unknown key' }]
+      problems: [{ key: 'colour', reason: 'unknown key' }],
+      notices: []
     })
     renderAdmin(value)
     expect(screen.getAllByText('refused:', { exact: false }).length).toBeGreaterThan(0)
@@ -1275,11 +1281,10 @@ describe('one section at a time', () => {
       [
         'assistant',
         [
-          'Check reachability',
-          'OpenAI-compatibleAnthropicGemini',
-          'List models',
-          'vercelbuiltin',
-          'offonultra',
+          'OpenAI-compatibleAnthropicGoogle Gemini',
+          'Store key',
+          'offstandarddeep',
+          'Test connection',
           'Save'
         ]
       ],
@@ -1299,25 +1304,24 @@ describe('one section at a time', () => {
     }
   })
 
-  it('offers the assistant’s three pickers, in two shapes, and no fourth', () => {
+  it('offers the assistant’s two pickers, and no engine picker at all', () => {
     const { container } = renderAdmin(effectiveConfig(undefined), '/admin#assistant')
     const triggers = Array.from(container.querySelectorAll('[role="combobox"]')).map(
       (element) => element.textContent
     )
-    expect(triggers).toEqual(['OpenAI-compatible', 'vercel', 'off'])
+    // Two, not three: the engine slot has one member, so there is nothing to
+    // choose — and the third picker was a menu with one item in it.
+    expect(triggers).toEqual(['OpenAI-compatible', 'off'])
     const offered = Array.from(container.querySelectorAll('select')).map(
       (element) => element.textContent
     )
-    expect(offered).toEqual(['OpenAI-compatibleAnthropicGemini', 'vercelbuiltin', 'offonultra'])
-    // No password field in this render: no endpoint is configured, so there is
-    // nothing to bind a key to and the row says so instead of offering one.
-    expect(container.querySelectorAll('input[type="password"]')).toHaveLength(0)
-    for (const conditional of ['Store key', 'Remove key']) {
-      expect(
-        Array.from(container.querySelectorAll('button')).map((each) => each.textContent),
-        conditional
-      ).not.toContain(conditional)
-    }
+    expect(offered).toEqual(['OpenAI-compatibleAnthropicGoogle Gemini', 'offstandarddeep'])
+    // The key field is on the form now, in the order a person setting this up
+    // reads: provider, key, endpoint.
+    expect(container.querySelectorAll('input[type="password"]')).toHaveLength(1)
+    // And no model picker in this render: nothing is configured, so no endpoint
+    // has been asked what it has.
+    expect(screen.queryByRole('combobox', { name: 'Model' })).toBeNull()
   })
 
   it('enables a Save once the file behind it has been read', () => {
@@ -1615,7 +1619,7 @@ describe('Admin carries no narration', () => {
                 model: 'a-model',
                 tools: ['validate']
               },
-              engine: 'builtin',
+              engine: 'vercel',
               thinking: 'ultra'
             }
           })
@@ -1650,7 +1654,8 @@ describe('Admin carries no narration', () => {
       () =>
         effectiveConfig({
           values: undefined,
-          problems: [{ key: 'colour', reason: 'unknown key' }]
+          problems: [{ key: 'colour', reason: 'unknown key' }],
+          notices: []
         })
     ],
     [

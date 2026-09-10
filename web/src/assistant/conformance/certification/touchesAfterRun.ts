@@ -40,7 +40,7 @@ function reach(from: string): void {
 }
 
 export const touchesAfterRun: Engine = {
-  id: 'builtin',
+  id: 'vercel',
   async *start(_session: AssistantSession): AsyncGenerator<AssistantEvent> {
     // Soon — the shape a fixed 200ms wait did catch.
     setTimeout(() => reach('soon'), 10)

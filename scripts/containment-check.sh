@@ -86,7 +86,7 @@ cat > "$XDG_CONFIG_HOME/jpack-desk/desk.json" <<JSON
       "model": "unreachable-on-purpose",
       "tools": ["get_schema", "validate"]
     },
-    "engine": "builtin",
+    "engine": "vercel",
     "thinking": "off"
   }
 }

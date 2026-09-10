@@ -17,7 +17,7 @@ const probed = typeof globalThis.fetch === 'function' ? globalThis.fetch('/anyth
 void probed
 
 export const touchesOnLoad: Engine = {
-  id: 'builtin',
+  id: 'vercel',
   async *start(_session: AssistantSession): AsyncGenerator<AssistantEvent> {
     yield { type: 'end' }
   }

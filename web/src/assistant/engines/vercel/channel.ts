@@ -2,7 +2,7 @@
  * One ordered channel between a framework's callbacks and the contract's
  * iterator.
  *
- * The built-in engine is an async generator all the way down, so `yield` is the
+ * A loop written as an async generator all the way down has `yield` as the
  * only ordering there is. A framework loop is not: `streamText` calls a tool's
  * `execute` from inside its own pipeline, and an adapter cannot `yield` from
  * there. What it can do is put the event on this channel and **wait until the

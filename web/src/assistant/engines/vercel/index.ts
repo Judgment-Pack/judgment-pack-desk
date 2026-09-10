@@ -5,7 +5,7 @@
  * a seam the desk owns: `callTool` is bound through the ToolGate, and its model
  * traffic goes to the chassis relay with no credential of its own — the SDK's
  * providers are constructed against a placeholder origin and a `fetch` that is
- * the desk's own capability. Swapping this engine for the built-in one changes
+ * the desk's own capability. Swapping this engine for a second one changes
  * none of those seams, which is what the slot is for.
  */
 import { runVercel } from './loop'
