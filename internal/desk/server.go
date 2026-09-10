@@ -493,7 +493,8 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := fs.Stat(s.cfg.Static, "index.html"); err != nil {
-		http.Error(w, "the single-page application has not been built: run `npm --prefix web ci && npm --prefix web run build`, then rebuild jpack-desk", http.StatusNotFound)
+		refuseText(w, http.StatusNotFound, CodeNotFound,
+			"the single-page application has not been built: run `npm --prefix web ci && npm --prefix web run build`, then rebuild jpack-desk")
 		return
 	}
 	clean := path.Clean(strings.TrimPrefix(r.URL.Path, "/"))
@@ -504,7 +505,11 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 		// Client-side route: hand back the shell. Never rewrite a request for a
 		// missing asset, which should stay a 404 the build can be blamed for.
 		if path.Ext(clean) != "" {
-			http.NotFound(w, r)
+			// **Marked, like every other refusal this chassis authors.** It is
+			// a missing asset rather than a security answer, and marking it
+			// anyway is what keeps "every refusal we wrote carries the mark" a
+			// rule with no exceptions to remember.
+			refuseText(w, http.StatusNotFound, CodeNotFound, "404 page not found")
 			return
 		}
 		r = r.Clone(r.Context())

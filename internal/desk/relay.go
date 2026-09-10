@@ -103,9 +103,12 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	// no header parameter and the id must not go on the URL. Naming only the
 	// plain one here means the id is read off the offer and **not echoed back**.
 	//
-	// The offer itself is a request header, so a proxy that logged request
-	// headers would see it; this desk binds loopback and has nothing in between,
-	// and what this avoids is the id being in the response as well.
+	// The offer itself is a request header, so anything between the page and
+	// this process sees it. In production that is nothing — the listener binds
+	// loopback — but **under `npm run dev` the Vite dev server proxies `/ws`**,
+	// and in that supported configuration it handles the session id. What
+	// answering with the plain protocol avoids is the id being in the response
+	// as well. See README §Security model.
 	//
 	// `InsecureSkipVerify` stays: this desk does its own Origin check, in
 	// `handleWS`, which is stricter than the library's and knows about

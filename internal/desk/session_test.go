@@ -267,14 +267,20 @@ func TestTheExchangeTellsAReloadFromATheft(t *testing.T) {
 	}
 }
 
-// TestASpentHandoffIsClearedSoTheNextReloadReadsNoHandoff. Without this the
-// tab meets `handoff-spent` on every reload for the rest of the minute, and a
-// page that ends its session on that code would end it again and again.
-func TestASpentHandoffIsClearedSoTheNextReloadReadsNoHandoff(t *testing.T) {
+// TestOnlyASuccessfulExchangeClearsTheHandoff.
+//
+// **A refusal clearing the cookie concealed a theft**, which is the HIGH this
+// pair of assertions exists for. The clearing header and the refusal travel in
+// one response, so a tab that reloaded after the browser stored the first and
+// before the page had handled the second presented **nothing**, read
+// `no-handoff`, and kept its old, still-valid session — the theft invisible.
+// Only success clears now; a stale cookie is bounded by its own sixty-second
+// `Max-Age` and reads as spent until then, however many times the page loads.
+func TestOnlyASuccessfulExchangeClearsTheHandoff(t *testing.T) {
 	_, ts := newTestServer(t, false)
 	handoff := launchHandoff(t, ts)
-	exchange(t, ts, handoff)
 
+	// The success clears it.
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/session", nil)
 	withHandoff(ts, handoff)(req)
 	resp, err := http.DefaultClient.Do(req)
@@ -289,7 +295,163 @@ func TestASpentHandoffIsClearedSoTheNextReloadReadsNoHandoff(t *testing.T) {
 		}
 	}
 	if !cleared {
-		t.Fatalf("a spent handoff was not cleared: %v", resp.Cookies())
+		t.Fatalf("a successful exchange did not clear the handoff: %v", resp.Cookies())
+	}
+
+	// **And the refusal does not**, so a reload inside the delivery window
+	// presents the same cookie and reads the same verdict.
+	for attempt := range 3 {
+		again, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/session", nil)
+		withHandoff(ts, handoff)(again)
+		refused, err := http.DefaultClient.Do(again)
+		if err != nil {
+			t.Fatalf("exchange: %v", err)
+		}
+		defer refused.Body.Close()
+		if refused.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("attempt %d answered %d, want 401", attempt, refused.StatusCode)
+		}
+		if got := refused.Header.Get(RefusalHeader); got != CodeHandoffSpent {
+			t.Fatalf("attempt %d is marked %q, want %q", attempt, got, CodeHandoffSpent)
+		}
+		for _, cookie := range refused.Cookies() {
+			if cookie.Name == handoff.Name {
+				t.Fatalf("a refusal cleared the handoff: %v", cookie)
+			}
+		}
+	}
+}
+
+// TestABogusCookieFromASiblingPortIsIgnored.
+//
+// A page on any other loopback port can set `jpack-desk-launch-<port>` at a
+// **longer path**, and the browser sends that one first. A rule that read one
+// cookie and refused what it did not recognise answered `handoff-spent` on
+// every load, for ever, to a tab whose session was perfectly good — and a
+// restart on the same port did not repair it, because the planted cookie is
+// still there.
+func TestABogusCookieFromASiblingPortIsIgnored(t *testing.T) {
+	s, ts := newTestServer(t, false)
+	bogus := &http.Cookie{Name: s.launchCookie, Value: "not-a-handoff-this-desk-ever-minted"}
+
+	// Alone: ignored entirely, which is `no-handoff` — so a page keeps its id.
+	status, body := exchangeAttempt(t, ts, func(r *http.Request) {
+		r.AddCookie(bogus)
+		r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+		r.Header.Set("Origin", ts.URL)
+	})
+	if status != http.StatusUnauthorized || body["code"] != CodeNoHandoff {
+		t.Fatalf("a planted cookie answered %d %v, want 401 %s", status, body["code"], CodeNoHandoff)
+	}
+
+	// An empty value is ignored the same way — that is also the shape this
+	// desk's own cleared cookie takes when it arrives late.
+	status, body = exchangeAttempt(t, ts, func(r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: s.launchCookie, Value: ""})
+		r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+		r.Header.Set("Origin", ts.URL)
+	})
+	if status != http.StatusUnauthorized || body["code"] != CodeNoHandoff {
+		t.Fatalf("an empty cookie answered %d %v, want 401 %s", status, body["code"], CodeNoHandoff)
+	}
+
+	// **Beside a live one, the live one wins**, whichever order they arrive in:
+	// the bogus one is planted at a longer path, so a browser sends it first.
+	handoff := launchHandoff(t, ts)
+	status, body = exchangeAttempt(t, ts, func(r *http.Request) {
+		r.AddCookie(bogus)
+		r.AddCookie(&http.Cookie{Name: handoff.Name, Value: handoff.Value})
+		r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+		r.Header.Set("Origin", ts.URL)
+	})
+	if status != http.StatusOK {
+		t.Fatalf("a live handoff beside a planted cookie answered %d: %v", status, body)
+	}
+	if id, _ := body["id"].(string); id == "" {
+		t.Fatalf("no id: %v", body)
+	}
+}
+
+// TestAnExpiredHandoffSaysSoRatherThanSayingNothing. An expiry is nobody's
+// fault and the launch secret still works, so the answer is to reopen the
+// printed URL — a different instruction from the one a theft gets.
+func TestAnExpiredHandoffSaysSoRatherThanSayingNothing(t *testing.T) {
+	s, ts := newTestServer(t, false)
+	handoff := launchHandoff(t, ts)
+
+	now := time.Now()
+	s.launches.mu.Lock()
+	s.launches.now = func() time.Time { return now.Add(launchWindow + time.Second) }
+	s.launches.mu.Unlock()
+
+	status, body := exchangeAttempt(t, ts, withHandoff(ts, handoff))
+	if status != http.StatusUnauthorized || body["code"] != CodeHandoffExpired {
+		t.Fatalf("an expired handoff answered %d %v, want 401 %s",
+			status, body["code"], CodeHandoffExpired)
+	}
+	// And it stays expired rather than becoming unknown on the next load.
+	status, body = exchangeAttempt(t, ts, withHandoff(ts, handoff))
+	if status != http.StatusUnauthorized || body["code"] != CodeHandoffExpired {
+		t.Fatalf("a second load answered %d %v, want %s", status, body["code"], CodeHandoffExpired)
+	}
+}
+
+// TestTheTombstoneRingIsBoundedAndSaysWhatThatCosts.
+//
+// Remembering that a handoff was spent is what tells a theft from a stranger's
+// cookie; remembering for ever is a map that grows for the life of the process.
+// Past the bound the oldest record goes and its value reads as unknown — so
+// **a secret holder who takes a victim's handoff and then cycles sixty-four
+// launches inside the victim's window pushes the spent record out**, and the
+// victim's next load keeps its id. `sessions.minted` is what still shows it,
+// and this test asserts that too.
+func TestTheTombstoneRingIsBoundedAndSaysWhatThatCosts(t *testing.T) {
+	s, ts := newTestServer(t, false)
+
+	// The victim's tab, holding a session and the count it saw.
+	beginSession(t, ts)
+	before := s.sessions.mintedSoFar()
+
+	stolen := launchHandoff(t, ts)
+	exchange(t, ts, stolen) // the thief takes it
+
+	// The victim's own load, immediately: it reads as spent.
+	status, body := exchangeAttempt(t, ts, withHandoff(ts, stolen))
+	if status != http.StatusUnauthorized || body["code"] != CodeHandoffSpent {
+		t.Fatalf("the victim read %d %v, want %s", status, body["code"], CodeHandoffSpent)
+	}
+
+	// Now the secret holder cycles the ring. **Launches and not exchanges**:
+	// the unspent-handoff map is itself bounded, so each launch past that bound
+	// tombstones the oldest — which fills the ring without minting a session
+	// per turn and running into the session bound instead. Either route gets
+	// there; this one isolates the ring.
+	for range maxTombstones + maxLaunches + 2 {
+		launchHandoff(t, ts)
+	}
+	if n := s.launches.remembered(); n > maxTombstones {
+		t.Fatalf("the ring holds %d, past its bound of %d", n, maxTombstones)
+	}
+	if n := s.launches.remembered(); n != maxTombstones {
+		t.Fatalf("the ring holds %d, want it full at %d — the cycle did not reach the bound",
+			n, maxTombstones)
+	}
+
+	// **And the spent record is gone**, so the same value now reads as nothing.
+	// This is the cost, asserted rather than assumed.
+	status, body = exchangeAttempt(t, ts, withHandoff(ts, stolen))
+	if status != http.StatusUnauthorized || body["code"] != CodeNoHandoff {
+		t.Fatalf("after the ring cycled, the victim read %d %v, want %s",
+			status, body["code"], CodeNoHandoff)
+	}
+
+	// What still shows it: the count of sessions this process has minted, which
+	// the ring's bound cannot touch. The victim's page stored `before` beside
+	// its own id; the count is higher now, and the page says so.
+	after := s.sessions.mintedSoFar()
+	if after <= before {
+		t.Fatalf("minted went from %d to %d: the count says nothing about the theft",
+			before, after)
 	}
 }
 
@@ -366,8 +528,8 @@ func TestTheHandoffExpires(t *testing.T) {
 	if status != http.StatusUnauthorized {
 		t.Fatalf("an expired handoff answered %d, want 401: %v", status, body)
 	}
-	if body["code"] != CodeHandoffSpent {
-		t.Errorf("code %v, want %s", body["code"], CodeHandoffSpent)
+	if body["code"] != CodeHandoffExpired {
+		t.Errorf("code %v, want %s", body["code"], CodeHandoffExpired)
 	}
 	if n := s.sessions.count(); n != 0 {
 		t.Fatalf("an expired handoff minted %d session(s)", n)
@@ -1334,8 +1496,20 @@ func TestSessionEndpointAnswersTheBearersSubject(t *testing.T) {
 	if issuer != nil {
 		t.Errorf("issuer = %v, want null", issuer)
 	}
-	if len(body) != 2 {
-		t.Errorf("the answer carries %d members, want subject and issuer: %v", len(body), body)
+	if len(body) != 3 {
+		t.Errorf("the answer carries %d members, want subject, issuer and sessions: %v",
+			len(body), body)
+	}
+	// **The count, which is what makes a theft visible after the handoff is
+	// gone.** A page stores it beside its own id and says so on a later load if
+	// it grew.
+	sessions, ok := body["sessions"].(map[string]any)
+	if !ok {
+		t.Fatalf("the answer carries no sessions member: %v", body)
+	}
+	minted, ok := sessions["minted"].(float64)
+	if !ok || minted < 1 {
+		t.Fatalf("sessions.minted is %v, want at least the one this test minted", sessions["minted"])
 	}
 }
 
@@ -1484,6 +1658,37 @@ func TestEveryRefusalThisChassisAuthoredIsMarked(t *testing.T) {
 			t.Helper()
 			handoff := launchHandoff(t, ts)
 			exchange(t, ts, handoff)
+			req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/session", nil)
+			withHandoff(ts, handoff)(req)
+			resp, err := ts.Client().Do(req)
+			if err != nil {
+				t.Fatalf("do: %v", err)
+			}
+			return resp
+		}},
+		// **The writer that went round the back of the mark.**
+		// `writeJSONError` reached `writeJSON` directly, so a `GET /api/file`
+		// with no `path` answered a refusal the page could not tell from an
+		// endpoint's. The mark is set in `writeJSON` now, which is the one
+		// function every JSON answer goes through.
+		plain("an authenticated read with no path", "/api/file", CodeBadRequest,
+			http.StatusBadRequest, pageBearer(id)),
+		// The static handler's own 404s, which are chassis-authored too.
+		plain("a missing asset", "/nothing.js", CodeNotFound, http.StatusNotFound),
+		// The exchange's third code.
+		{"an expired handoff", http.StatusUnauthorized, CodeHandoffExpired, func(t *testing.T) *http.Response {
+			t.Helper()
+			handoff := launchHandoff(t, ts)
+			now := time.Now()
+			s.launches.mu.Lock()
+			was := s.launches.now
+			s.launches.now = func() time.Time { return now.Add(launchWindow + time.Second) }
+			s.launches.mu.Unlock()
+			t.Cleanup(func() {
+				s.launches.mu.Lock()
+				s.launches.now = was
+				s.launches.mu.Unlock()
+			})
 			req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/session", nil)
 			withHandoff(ts, handoff)(req)
 			resp, err := ts.Client().Do(req)

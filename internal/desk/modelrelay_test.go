@@ -2904,3 +2904,50 @@ func TestNothingOfThePagesQueryReachesTheEndpoint(t *testing.T) {
 			"query parameter carried a request to it", n)
 	}
 }
+
+// TestAnUpstreamMayNotRedirectThePage.
+//
+// An endpoint answering `307 Location: /api/session` made the page's own
+// `fetch` **repeat the request** — method, body and this desk's bearer included
+// — against the exchange, which answered a marked refusal; the relay classifier
+// then read that as "this desk refused my session" and forgot a perfectly valid
+// one. A model API never legitimately redirects the browser relaying to it: the
+// desk chose the address, and the page follows nobody's routing.
+func TestAnUpstreamMayNotRedirectThePage(t *testing.T) {
+	for _, header := range []string{"Location", "Refresh"} {
+		t.Run(header, func(t *testing.T) {
+			u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set(header, "/api/session")
+				w.WriteHeader(http.StatusTemporaryRedirect)
+			})
+			_, ts, _ := relayDesk(t, "openai-compatible", u)
+			resp, _ := relayDo(t, ts, http.MethodPost, "chat/completions",
+				strings.NewReader(`{}`), nil)
+			if got := resp.Header.Get(header); got != "" {
+				t.Fatalf("%s reached the page as %q", header, got)
+			}
+			// The status still travels: what is refused is the *instruction*,
+			// not the endpoint's answer.
+			if resp.StatusCode != http.StatusTemporaryRedirect {
+				t.Fatalf("status %d, want the endpoint's 307", resp.StatusCode)
+			}
+		})
+	}
+
+	// **The positive control**: without the strip this is what the page would
+	// have been told to do. A relayed answer that carried a `Location` at all
+	// is the whole defect, so the test that proves it is gone has to show that
+	// the header is one this stack would otherwise copy.
+	t.Run("an ordinary header still travels", func(t *testing.T) {
+		u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Request-Id", "abc123")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		})
+		_, ts, _ := relayDesk(t, "openai-compatible", u)
+		resp, _ := relayDo(t, ts, http.MethodPost, "chat/completions", strings.NewReader(`{}`), nil)
+		if got := resp.Header.Get("X-Request-Id"); got != "abc123" {
+			t.Fatalf("an ordinary answer header was dropped too: %q", got)
+		}
+	})
+}

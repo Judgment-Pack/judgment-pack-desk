@@ -161,6 +161,15 @@ const (
 	// no longer holds: spent by another caller inside its sixty seconds, or
 	// expired. See CodeNoHandoff for why it is its own code.
 	CodeHandoffSpent = "handoff-spent"
+	// CodeHandoffExpired is `POST /api/session` with a handoff this desk minted
+	// and then let lapse: sixty seconds went by before the page loaded.
+	//
+	// **Its own code, beside CodeHandoffSpent**, because what a person should
+	// do differs. An expiry is nobody's fault and the launch secret still
+	// works, so the answer is to *reopen* the printed URL. A spent handoff
+	// means something else used the link, and reopening it hands the next one
+	// to whatever took the last — so the answer there is to restart.
+	CodeHandoffExpired = "handoff-expired"
 	// CodeSessionsFull is `POST /api/session` at the store's bound: this desk
 	// holds as many sessions as it will hold, and refuses rather than dropping
 	// one somebody is using.
@@ -1410,11 +1419,13 @@ func (s *Server) guard(w http.ResponseWriter, r *http.Request) bool {
 // it either, because the relay forwards no trailer at all.
 const RefusalHeader = "X-Jpack-Desk-Refusal"
 
-// **Set in `writeJSONCoded` and nowhere else**, so that every coded refusal
-// this chassis writes carries it by construction rather than by a call site
-// remembering to. `refuseText` does the same for the two routes that answer in
-// plain text — the launch path and the WebSocket upgrade, neither of which has
-// a JSON client.
+// **Set in `writeJSON` and nowhere else**, so that every JSON refusal this
+// chassis writes carries it by construction rather than by a call site
+// remembering to. `writeJSONError` went through `writeJSON` and round the back
+// of the marking when it lived one level up, which is exactly the hole "one
+// place" exists to prevent. `refuseText` does the same for the routes that
+// answer in plain text — the launch path, the WebSocket upgrade and the static
+// handler, none of which has a JSON client.
 
 // refuseText writes one plain-text refusal this chassis authored, marked as
 // ours.
@@ -1423,11 +1434,48 @@ func refuseText(w http.ResponseWriter, status int, code, message string) {
 	http.Error(w, message, status)
 }
 
+// writeJSON sends one JSON answer, and **marks every refusal as this chassis'
+// own**.
+//
+// The mark is set here — the one function every JSON answer goes through —
+// rather than at the call sites, so a refusal written tomorrow carries it
+// without anybody remembering to. It lived one level up, in `writeJSONCoded`,
+// and `writeJSONError` went round the back of it: a `GET /api/file` with no
+// `path` answered a `400` the page could not tell from an endpoint's.
+//
+// Guarded on the status, so a `200` is never marked. The code is read out of
+// the body being written where there is one; a refusal with no code is still
+// **marked**, because the property the page reads is the header's presence and
+// not its value.
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
+	if status >= 400 {
+		w.Header().Set(RefusalHeader, codeIn(body))
+	}
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+// codeIn is the `code` member of a refusal body, or a generic mark.
+//
+// Both refusal bodies this package builds are `map[string]string` with a
+// `code`; a stale-write answer is a struct with one too, and anything else
+// falls back rather than going unmarked. `refused` is not a code any client
+// branches on — `CHASSIS_CODES` in the page does not carry it — and that is the
+// point: a body that named no code names none here either.
+func codeIn(body any) string {
+	switch shaped := body.(type) {
+	case map[string]string:
+		if code, ok := shaped["code"]; ok && code != "" {
+			return code
+		}
+	case map[string]any:
+		if code, ok := shaped["code"].(string); ok && code != "" {
+			return code
+		}
+	}
+	return "refused"
 }
 
 // writeJSONError sends one refusal, code and all. The code is taken from the
@@ -1437,16 +1485,6 @@ func writeJSONError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, errorBody(err))
 }
 
-// writeJSONCoded sends one coded refusal, and **marks it as this chassis'
-// own**.
-//
-// The header is set here rather than at the call sites so that a refusal
-// written tomorrow carries it without anybody remembering to — see
-// `RefusalHeader`. Guarded on the status so that a future non-refusal written
-// through this function could not be mistaken for one.
 func writeJSONCoded(w http.ResponseWriter, status int, code, message string) {
-	if status >= 400 {
-		w.Header().Set(RefusalHeader, code)
-	}
 	writeJSON(w, status, codedBody(code, message))
 }

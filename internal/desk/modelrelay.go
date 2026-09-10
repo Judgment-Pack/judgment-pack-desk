@@ -896,6 +896,17 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 			// `Header.Del` canonicalises, so every casing goes, and no trailer
 			// survives the line below either.
 			response.Header.Del(RefusalHeader)
+			// **And nothing that redirects the page.** A `307` with
+			// `Location: /api/session` makes the page's own `fetch` repeat the
+			// request — method, body and this desk's bearer included — against
+			// the exchange, which answers a marked refusal that the relay
+			// classifier then read as "this desk refused my session". A model
+			// API never legitimately redirects the browser that is relaying to
+			// it: the desk chose the address, and the page is not following
+			// anybody's routing. `Refresh` is the same instruction spelled as a
+			// header, and goes with it.
+			response.Header.Del("Location")
+			response.Header.Del("Refresh")
 			// **No trailer is forwarded**, and this is where that is decided:
 			// the proxy copies `res.Trailer` to the page after the body, past
 			// every filter here, so an announced `Trailer: X-Echo` was a second
