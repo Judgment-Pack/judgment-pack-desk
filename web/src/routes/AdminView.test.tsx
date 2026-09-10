@@ -1,35 +1,40 @@
 /**
- * Admin: an overview, one open section, and the file in the right pane.
+ * Admin: a navigation column, one open section, and the file in the right pane.
  *
- * **What changed shape here, and why each change is written down.** The page
- * used to render every section at once, so most of this file could reach a form
- * by rendering `/admin` and looking for it. It renders an overview now, and a
- * section is open only where the fragment names it — so every case about a
- * form opens that form's own address, and the cases that were *about* the
- * stack are rewritten rather than adjusted:
+ * **What changed shape here, and why each change is written down.** The page had
+ * an overview — a landing state at `#all` that was a second page of the same
+ * list, linked from every open section and returned to by Escape. It has none:
+ * a fragment always names a section, and where it names none the first one
+ * opens. So every case that rendered "the overview" now renders **Project**, the
+ * first section, and the cases that were *about* the overview are rewritten
+ * rather than retargeted:
  *
- * - **the order case** asserted a heading per section; the overview has no
- *   section headings at all, and what it has is one row per section, in order,
- *   each a link to that section's fragment. It is the same claim about the same
- *   derived list.
- * - **the location case** said each file's path is stated once, in its group,
- *   and never on a card; there are no cards on the overview, so it says never
- *   on a row — and adds the rail beside an open section, which states no path
- *   at all because the pane does.
- * - **the write cases** drove two forms in one render. One section is open at a
- *   time now, so each drives its own, and the overview is asserted to carry
- *   neither.
- * - **the Content cases** are gone from this file: the bytes are in the right
- *   pane, `ConfigPane.test.tsx` holds what may be quoted, and what is here is
- *   that Admin publishes the right file into the pane, releases it on leaving,
- *   and carries no disclosure in the main column at all.
- * - **the controls case** was the whole list of what on the page changes
- *   anything, in one render. It is now the whole list per state — the overview
- *   and each of the four sections — which is the same rule over five renders.
+ * - **the order case** asserted a group heading per file; the column has no
+ *   headings, it has two group titles and five rows, and it is asserted at
+ *   exactly five under exactly two — a count rather than a derivation, so a
+ *   section added without a summary is caught here as well as there.
+ * - **the head cases** — a file's Location and Status, and the default-project
+ *   control under them — were the group header's, and the group header is gone.
+ *   They are the **Project section's** now, and they moved with their claims
+ *   word for word into `the Project section`.
+ * - **the fragment case** said an unknown fragment shows the overview. It says
+ *   the first section, and it names all four inputs that reach it: no fragment,
+ *   an empty one, a fragment naming no section, and one that is not valid
+ *   percent-encoding.
+ * - **the Escape case** asserted the key leaves the section. Nothing listens for
+ *   it, and the case asserts that the page is unchanged by it.
+ * - **the All settings cases** — the back link's address and the round trip
+ *   through it — are one case that no link by that name exists in any state,
+ *   and one that a row opens its section while the one that was open closes.
+ * - **the two-verdicts case** read the desk-level file's refusal off its group
+ *   header. That header stated it on the overview and never beside an open
+ *   section; the pane is where it is stated now, so the case renders the shell.
+ * - **the controls case** is the whole list of what changes anything, per open
+ *   section — five renders now rather than four and an overview.
  *
  * The narration sweep is unchanged as a rule and wider in reach: every state of
- * the configuration, every state of the connection, each open section, and the
- * pane.
+ * the configuration, every state of the connection, each of the five open
+ * sections, and the pane.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -80,8 +85,8 @@ const DESK_PATH = '/home/someone/.config/jpack-desk/desk.json'
  */
 function renderAdmin(
   value = effectiveConfig(undefined),
-  // The overview: `/admin` itself opens the first section.
-  path = '/admin#all',
+  // `/admin` opens the first section, which is the whole of the landing state.
+  path = '/admin',
   projectIdentity: string | null = ROOT,
   mcp: Partial<McpConnection> = {}
 ) {
@@ -123,7 +128,7 @@ function renderAdmin(
  * harness is a router whose element switches on the address and whose
  * `AppShell` does not remount when it does.
  */
-function renderInShell(value = effectiveConfig(undefined), path = '/admin#all') {
+function renderInShell(value = effectiveConfig(undefined), path = '/admin') {
   vi.stubGlobal('fetch', async () => ({
     ok: false,
     status: 404,
@@ -169,10 +174,26 @@ function page(container: HTMLElement): HTMLElement {
   return container.querySelector('article')!
 }
 
-/** The overview's rows, in the order they are rendered. */
+/** The navigation column, which is the whole of the list. */
+function rail(container: HTMLElement): HTMLElement {
+  return page(container).querySelector<HTMLElement>('nav[aria-label="Settings"]')!
+}
+
+/** The column's group titles, in the order they are rendered. */
+function railTitles(container: HTMLElement): (string | null)[] {
+  return Array.from(rail(container).querySelectorAll('p')).map((each) => each.textContent)
+}
+
+/** The column's rows, in the order they are rendered. */
 function rowsIn(container: HTMLElement): HTMLAnchorElement[] {
-  // Rows are list items; the All settings link above an open section is not one.
   return Array.from(page(container).querySelectorAll<HTMLAnchorElement>('li a[href^="/admin#"]'))
+}
+
+/** The address of every row marked current, which is never more than one. */
+function currentRows(container: HTMLElement): (string | null)[] {
+  return rowsIn(container)
+    .filter((row) => row.getAttribute('aria-current') !== null)
+    .map((row) => row.getAttribute('href'))
 }
 
 /** Every row's title, which is its first line and never its summary. */
@@ -247,7 +268,7 @@ function answered(body: unknown, status = 200) {
 }
 
 /** The same shell as `renderAdmin`, over the real configuration provider. */
-function renderLiveAdmin(path = '/admin#all') {
+function renderLiveAdmin(path = '/admin') {
   const router = createMemoryRouter(
     [
       {
@@ -373,39 +394,101 @@ function everythingConfigured() {
   )
 }
 
-describe('the Admin overview', () => {
-  it('renders every group and one row per section, in order, as links to their sections', () => {
-    // **The order case, in the shape the overview has.** It fails if a group or
-    // a section is added without being declared, declared without being
-    // rendered, or rendered out of order — and a row is a link to that
-    // section's own fragment, which is the address the rail and the user menu
-    // have been sending readers to since these were headings.
+describe('Admin, with no overview', () => {
+  it('renders every group title and one row per section, in order, as links to their sections', () => {
+    // **The order case, in the shape the column has.** It fails if a group or a
+    // section is added without being declared, declared without being rendered,
+    // or rendered out of order — and a row is a link to that section's own
+    // fragment, which is the address the rail and the user menu have been
+    // sending readers to since these were headings.
     const { container } = renderAdmin()
-    const groups = screen
-      .getAllByRole('heading', { level: 2 })
-      .map((heading) => heading.textContent)
-    expect(groups).toEqual(ADMIN_GROUPS.map((group) => group.title))
-    expect(groups).toEqual(['This project', 'This desk'])
+    expect(railTitles(container)).toEqual(ADMIN_GROUPS.map((group) => group.title))
+    expect(railTitles(container)).toEqual(['This project', 'This desk'])
     expect(rowTitles(container)).toEqual(ADMIN_SECTIONS.map((section) => section.title))
     expect(rowsIn(container).map((row) => row.getAttribute('href'))).toEqual(
       ADMIN_SECTIONS.map((section) => `/admin#${section.id}`)
     )
-    // Every row is inside the group whose file its section is a member of.
+    // Every row is under the title of the group whose file its section is a
+    // member of.
     for (const group of ADMIN_GROUPS) {
-      const section = document.getElementById(group.id)!.closest('section')!
+      const block = document.getElementById(`rail-${group.id}`)!.parentElement!
       expect(
-        Array.from(section.querySelectorAll<HTMLAnchorElement>('a[href^="/admin#"]')).map(
-          (row) => row.getAttribute('href')
+        Array.from(block.querySelectorAll<HTMLAnchorElement>('a[href^="/admin#"]')).map((row) =>
+          row.getAttribute('href')
         ),
         group.title
       ).toEqual(group.sections.map((each) => `/admin#${each.id}`))
     }
-    // And no form: the overview is what each setting *is*, not where it is set.
-    expect(page(container).querySelector('form')).toBeNull()
+  })
+
+  it('is exactly five rows under exactly two group titles, and states no file’s head', () => {
+    // **The column is a list of sections and nothing else.** The head it used to
+    // carry above the rows — where the file is, what reading it produced, and
+    // the control that writes it — is the Project section now: a path in a 13rem
+    // column is a line of prose, and the two places that fact belongs are the
+    // section that is about the file and the pane that quotes it. Asserted in
+    // four states, because a head that came back on a refusal would be invisible
+    // to a case that only ever rendered a desk with nothing configured.
+    const states = [
+      ['nothing read', () => effectiveConfig(undefined), '/admin'],
+      ['both files read', everythingConfigured, '/admin#assistant'],
+      [
+        'a refused project file',
+        () => effectiveConfig({ values: undefined, problems: [{ key: 'colour', reason: 'unknown key' }] }),
+        '/admin#storage'
+      ],
+      [
+        'a project file that could not be read',
+        () => effectiveConfig(undefined, undefined, CHASSIS_413),
+        '/admin#identity-provider'
+      ]
+    ] as const
+    for (const [where, build, path] of states) {
+      const { container } = renderAdmin(build(), path)
+      expect(railTitles(container), where).toEqual(['This project', 'This desk'])
+      expect(rowsIn(container), where).toHaveLength(5)
+      expect(rowTitles(container), where).toEqual([
+        'Project',
+        'Organization',
+        'Storage',
+        'Assistant',
+        'Identity provider'
+      ])
+      expect(rail(container).querySelectorAll('dt'), where).toHaveLength(0)
+      expect(rail(container).textContent, where).not.toContain('Location')
+      expect(rail(container).textContent, where).not.toContain('Status')
+      expect(rail(container).textContent, where).not.toContain(DESK_PATH)
+      // And no form and no button in the column: a row is a link.
+      expect(rail(container).querySelectorAll('button'), where).toHaveLength(0)
+      cleanup()
+    }
+  })
+
+  it('offers no All settings link, and no address that is not a section', () => {
+    // **There is nothing to go back to.** The overview was a page; every state
+    // of this one is an open section, so a link out of a section would be a link
+    // to another section pretending to be an exit.
+    for (const path of [
+      '/admin',
+      '/admin#project',
+      '/admin#storage',
+      '/admin#assistant',
+      '/admin#not-a-section'
+    ]) {
+      const { container } = renderAdmin(everythingConfigured(), path)
+      expect(screen.queryByRole('link', { name: 'All settings' }), path).toBeNull()
+      expect(page(container).textContent, path).not.toContain('All settings')
+      const addresses = Array.from(page(container).querySelectorAll('a'))
+        .map((each) => each.getAttribute('href') ?? '')
+        .filter((href) => href.startsWith('/admin'))
+      expect(addresses, path).toEqual(ADMIN_SECTIONS.map((section) => `/admin#${section.id}`))
+      cleanup()
+    }
   })
 
   it('says what each setting currently is, from the decoded configuration', () => {
     const { container } = renderAdmin(everythingConfigured())
+    expect(rowSays(container, 'project')).toBe('not the default project')
     expect(rowSays(container, 'organization')).toBe('Acme')
     expect(rowSays(container, 'storage')).toBe('filesystem · decisions')
     expect(rowSays(container, 'assistant')).toBe('gemini · a-model · thinking ultra')
@@ -422,6 +505,9 @@ describe('the Admin overview', () => {
     expect(rowSays(container, 'identity-provider')).toBe('None')
     // The two that always have a value have the built-in one, said as it is.
     expect(rowSays(container, 'storage')).toBe('filesystem · packs')
+    // And the row that is about the file rather than a member of it says the
+    // desk has not answered, which is neither of the other two answers.
+    expect(rowSays(container, 'project')).toBe('the desk has not said')
   })
 
   it('has a summary for every section it declares', () => {
@@ -494,10 +580,10 @@ describe('the Admin overview', () => {
     await waitFor(() => expect(line.textContent).toContain('connected — jpack test'))
   })
 
-  it('names neither configuration file on the line, because the groups do', () => {
-    // One path, one statement. The group header is the one that earns it: it
-    // is the file the rows under it name, and the grouping exists so that a
-    // file is named once rather than on every section that is a member of it.
+  it('names neither configuration file on the line, because the sections do', () => {
+    // One path, one statement. The section that is *about* a file is the one
+    // that earns it — Project for this project's, and the pane beside whichever
+    // section the desk-level file supplied.
     const { container } = renderAdmin(
       effectiveConfig(undefined, undefined, undefined, {
         path: DESK_PATH,
@@ -513,28 +599,25 @@ describe('the Admin overview', () => {
     const line = container.querySelector('dl')!
     expect(line.textContent).not.toContain('/real/a-project/jpack-desk.json')
     expect(line.textContent).not.toContain(DESK_PATH)
-    // Each is stated once as a location, and it is its group's own header.
-    for (const [id, path] of [
-      ['this-project', '/real/a-project/jpack-desk.json'],
-      ['this-desk', DESK_PATH]
-    ] as const) {
-      const header = document.getElementById(id)!.closest('section')!.querySelector(':scope > dl')!
-      expect(header.textContent, id).toContain(path)
-    }
-    // The desk-level path appears once more, and it is not a location: the
+    // The project's own file is stated once, and it is the open section's
+    // Location.
+    const project = document.getElementById('project')!.closest('section')!
+    expect(project.querySelector(':scope > dl')!.textContent).toContain(
+      '/real/a-project/jpack-desk.json'
+    )
+    // The desk-level path appears once, and it is not a location: the
     // nomination's own line names the file that **control** writes, which is
-    // not the file the group it sits in is about.
+    // not the file the section it sits in is about.
     const quoted = Array.from(container.querySelectorAll('code')).filter(
       (each) => each.textContent === DESK_PATH
     )
-    expect(quoted).toHaveLength(2)
-    const rule = quoted.map((each) => each.closest('p')).find((each) => each !== null)!
+    expect(quoted).toHaveLength(1)
+    const rule = quoted[0]!.closest('p')!
     expect(rule.textContent).toContain('used on the next launch')
-    // And that one is inside the *project* group, which is where the control is.
-    expect(rule.closest('section')!.querySelector('h2')!.id).toBe('this-project')
+    expect(rule.closest('section')!.querySelector('h2')!.id).toBe('project')
   })
 
-  it('states each file’s location once, in its group, and not on the rows', () => {
+  it('states a file’s Location in the section that is about it, and never in the column', () => {
     const { container } = renderAdmin(
       effectiveConfig(undefined, 'no configuration was read: no such file', undefined, {
         path: DESK_PATH,
@@ -544,36 +627,22 @@ describe('the Admin overview', () => {
     )
     // Inside the sections, so the status line's own pairs — which are not a
     // Location and a Status — are not counted as either.
-    const rows = Array.from(container.querySelectorAll('section dt')).map(
+    const labels = Array.from(container.querySelectorAll('section dt')).map(
       (each) => each.textContent
     )
-    // One Location per group, and none at all on the four rows under them.
-    expect(rows.filter((label) => label === 'Location')).toHaveLength(ADMIN_GROUPS.length)
-    expect(rows.slice(0, 2)).toEqual(['Location', 'Status'])
-    for (const group of ADMIN_GROUPS) {
-      const header = document.getElementById(group.id)!.closest('section')!
-      const locations = Array.from(header.querySelectorAll('dt')).filter(
-        (each) => each.textContent === 'Location'
-      )
-      expect(locations, group.title).toHaveLength(1)
-      // And it is the group's own: the one Location is above the rows rather
-      // than inside one of them.
-      expect(locations[0]!.closest('section')).toBe(header)
-    }
-    // The desk-level file is named once inside the group that is about it.
-    const deskGroup = document.getElementById('this-desk')!.closest('section')!
-    expect(
-      Array.from(deskGroup.querySelectorAll('code')).filter(
-        (each) => each.textContent === DESK_PATH
-      )
-    ).toHaveLength(1)
+    // One Location and one Status on the whole page, and both are the open
+    // section's own head.
+    expect(labels).toEqual(['Location', 'Status'])
+    const project = document.getElementById('project')!.closest('section')!
+    expect(project.querySelectorAll('dt')).toHaveLength(2)
+    expect(rail(container).querySelectorAll('dt')).toHaveLength(0)
     // And an absent file is absent, never "read".
     expect(screen.getAllByText('not present — defaults in use').length).toBeGreaterThan(0)
   })
 
-  it('keeps a section’s own status on its row where it differs from its group’s', () => {
-    // The whole file is absent, so every row says exactly what its group says
-    // and none of them says it twice.
+  it('keeps a section’s own status on its row where it differs from its file’s', () => {
+    // Both files are absent, so every row says exactly what the file its group
+    // is about says, and none of them says it twice.
     const { container } = renderAdmin(
       effectiveConfig(undefined, 'no configuration was read: no such file', undefined, {
         path: DESK_PATH,
@@ -584,7 +653,7 @@ describe('the Admin overview', () => {
     const statuses = Array.from(container.querySelectorAll('section dt')).filter(
       (each) => each.textContent === 'Status'
     )
-    expect(statuses).toHaveLength(ADMIN_GROUPS.length)
+    expect(statuses).toHaveLength(1)
     for (const section of ADMIN_SECTIONS) {
       const row = rowsIn(container).find(
         (each) => each.getAttribute('href') === `/admin#${section.id}`
@@ -619,70 +688,6 @@ describe('the Admin overview', () => {
     )!
     expect(storage.children).toHaveLength(3)
     expect(storage.children[2]!.textContent).toBe('read')
-  })
-
-  it('carries exactly the state-changing controls the overview names, and no others', () => {
-    // The whole list rather than a count, so a control cannot be added without
-    // appearing here. The overview offers one, and it is the nomination: no
-    // form is on this page, so no Save is either.
-    const { container } = renderAdmin()
-    const interactive = page(container).querySelectorAll('button, input, select, textarea')
-    expect(Array.from(interactive).map((element) => element.textContent?.trim())).toEqual([
-      'Use this project as the default'
-    ])
-    expect(screen.queryByLabelText('Default project')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
-    // **One control is disabled here, and it is not a permanent one.** This
-    // fixture is the state in which nothing asked for the desk-level file, so
-    // this page has never seen the bytes a write would replace.
-    expect(
-      Array.from(container.querySelectorAll('button[disabled]')).map(
-        (element) => element.textContent
-      )
-    ).toEqual(['Use this project as the default'])
-  })
-
-  it('will not offer the nomination where the chassis has not named this project', () => {
-    // The one value the route accepts is the chassis'. A page that offered the
-    // control without it could only compose a path or send nothing.
-    renderAdmin(
-      effectiveConfig(undefined, undefined, undefined, {
-        path: DESK_PATH,
-        present: false,
-        sha256: ''
-      })
-    )
-    const nominate = screen.getByRole('button', {
-      name: 'Use this project as the default'
-    }) as HTMLButtonElement
-    expect(nominate.disabled).toBe(true)
-    expect(screen.getByText(/has not said where its own configuration file is/)).toBeTruthy()
-  })
-
-  it('names the file the group’s control writes, which is not the one it shows', () => {
-    // The group's Location and Status are about the project's own file; its one
-    // control writes the desk-level one. The line under the control names that
-    // file, from the chassis' answer and never composed.
-    renderAdmin(
-      effectiveConfig(undefined, undefined, undefined, {
-        path: DESK_PATH,
-        present: false,
-        sha256: '',
-        chassis: {
-          projectDir: '/this/launch',
-          projectFile: '/this/launch/jpack-desk.json',
-          runtimeBin: 'jpack'
-        }
-      })
-    )
-    const project = document.getElementById('this-project')!.closest('section')!
-    // Location: the project's own file.
-    expect(project.querySelector('dd')!.textContent).toBe('/this/launch/jpack-desk.json')
-    // The control's own line: the desk-level file it writes, and this launch.
-    const rule = project.querySelector('p')!.textContent ?? ''
-    expect(rule).toContain(DESK_PATH)
-    expect(rule).toContain('used on the next launch without a directory')
-    expect(rule).toContain('/this/launch')
   })
 
   it('names no user management, roles, invitations or assignment anywhere', () => {
@@ -733,41 +738,6 @@ describe('the Admin overview', () => {
     expect(screen.getAllByText('/usr/local/bin/jpack').length).toBeGreaterThan(0)
     // And never the project-relative name once the chassis has answered.
     expect(screen.queryByText('jpack-desk.json')).toBeNull()
-  })
-
-  it('says the desk has not said, rather than offering the name it reads the file by', () => {
-    // `jpack-desk.json` is the address this page reads the file at, not an
-    // established location on a filesystem — and the row is about where the
-    // file **is**. Before `/api/desk-config` answers, and for ever where it
-    // carries no chassis facts, the row says so instead of standing in.
-    const { container } = renderAdmin()
-    const header = document
-      .getElementById('this-project')!
-      .closest('section')!
-      .querySelector(':scope > dl')!
-    expect(header.textContent).toContain('the desk has not said')
-    expect(container.textContent).not.toContain('jpack-desk.json')
-  })
-
-  it('names the file the chassis resolved the moment it answers', () => {
-    renderAdmin(
-      effectiveConfig(undefined, undefined, undefined, {
-        path: DESK_PATH,
-        present: false,
-        sha256: '',
-        chassis: {
-          projectDir: '/real/a-project',
-          projectFile: '/real/a-project/jpack-desk.json',
-          runtimeBin: 'jpack'
-        }
-      })
-    )
-    const header = document
-      .getElementById('this-project')!
-      .closest('section')!
-      .querySelector(':scope > dl')!
-    expect(header.textContent).toContain('/real/a-project/jpack-desk.json')
-    expect(header.textContent).not.toContain('the desk has not said')
   })
 
   it('names a configuration that could not be read, and does not call it absent', () => {
@@ -827,10 +797,15 @@ describe('the Admin overview', () => {
     expect(screen.getAllByText('colour: unknown key').length).toBeGreaterThan(0)
   })
 
-  it('refuses the desk-level file on its own, without blaming the project one', () => {
+  it('refuses the desk-level file on its own, without blaming the project one', async () => {
     // Two files, two verdicts. A bad key in one must not be reported as the
     // other's, and neither is repaired by the other being fine.
-    renderAdmin(
+    //
+    // **The desk-level verdict is the pane's**, and that is where the group
+    // header's status went: the two sections that file supplies state no status
+    // of their own where it is the file's, so the surface that says what reading
+    // that file produced is the one quoting it.
+    const value = () =>
       effectiveConfig(
         decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1 }), 'project'),
         undefined,
@@ -844,36 +819,212 @@ describe('the Admin overview', () => {
           )
         }
       )
-    )
+    renderAdmin(value())
+    // The project file's own section says what reading *it* produced, and
+    // nothing about the other file's refusal.
+    expect(statusOf('project')).toBe('read')
+    expect(screen.queryByText(/a key is never stored/)).toBeNull()
+    cleanup()
+
+    renderInShell(value(), '/admin#identity-provider')
     // The refusal says the thing that is actually wrong, in the decoder's words.
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(/assistant.endpoint.apiKey: a key is never stored/).length
+      ).toBeGreaterThan(0)
+    )
+  })
+})
+
+/**
+ * The section that is about the file rather than about a member of it.
+ *
+ * **These cases were the group header's**, and they are here because the header
+ * is. What it stated — where this project's file is, what reading it produced,
+ * and whether this desk opens this project when it is launched with no
+ * directory — had nowhere left to be said once the overview went, and a
+ * navigation column is not where a path or a button whose line names a second
+ * file belongs. It is a section, first under This project, and it is what
+ * `/admin` opens on.
+ */
+describe('the Project section', () => {
+  it('carries the file’s Location and Status, the control and its Save, and no other field', () => {
+    const { container } = renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: DESK_PATH,
+        present: false,
+        sha256: '',
+        chassis: {
+          projectDir: '/this/launch',
+          projectFile: '/this/launch/jpack-desk.json',
+          runtimeBin: 'jpack'
+        }
+      })
+    )
+    const section = document.getElementById('project')!.closest('section')!
+    // The two rows the group header carried, in the order it carried them.
     expect(
-      screen.getAllByText(/assistant.endpoint.apiKey: a key is never stored/).length
-    ).toBeGreaterThan(0)
-    // And the project file's own group does not report it.
-    expect(screen.getAllByText('read').length).toBeGreaterThan(0)
+      Array.from(section.querySelectorAll(':scope > dl dt')).map((each) => each.textContent)
+    ).toEqual(['Location', 'Status'])
+    expect(section.querySelector(':scope > dl dd')!.textContent).toBe(
+      '/this/launch/jpack-desk.json'
+    )
+    expect(statusOf('project')).toBe('read')
+    // The control, from the same hook and with the same Save.
+    const nomination = screen.getByRole('button', { name: 'Use this project as the default' })
+    expect(section.contains(nomination)).toBe(true)
+    expect(section.contains(screen.getByText('Default project'))).toBe(true)
+    // And no other field: every member of this file is a section of its own.
+    for (const elsewhere of ['Kind', 'Provider', 'Name', 'Packs go to', 'Assistant']) {
+      expect(section.textContent, elsewhere).not.toContain(elsewhere)
+    }
+    expect(page(container).querySelector('form')).toBeNull()
+  })
+
+  it('carries exactly the state-changing controls it names, and no others', () => {
+    // The whole list rather than a count, so a control cannot be added without
+    // appearing here. This section offers one, and it is the nomination: it has
+    // no form, so it has no Save button either.
+    const { container } = renderAdmin()
+    const interactive = page(container).querySelectorAll('button, input, select, textarea')
+    expect(Array.from(interactive).map((element) => element.textContent?.trim())).toEqual([
+      'Use this project as the default'
+    ])
+    expect(screen.queryByLabelText('Default project')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
+    // **One control is disabled here, and it is not a permanent one.** This
+    // fixture is the state in which nothing asked for the desk-level file, so
+    // this page has never seen the bytes a write would replace — and the Save
+    // node under the control is the sentence that says so.
+    expect(
+      Array.from(container.querySelectorAll('button[disabled]')).map(
+        (element) => element.textContent
+      )
+    ).toEqual(['Use this project as the default'])
+    expect(
+      screen.getByText(/has not read its own configuration file/).closest('section')!.querySelector('h2')!.id
+    ).toBe('project')
+  })
+
+  it('will not offer the nomination where the chassis has not named this project', () => {
+    // The one value the route accepts is the chassis'. A page that offered the
+    // control without it could only compose a path or send nothing.
+    renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: DESK_PATH,
+        present: false,
+        sha256: ''
+      })
+    )
+    const nominate = screen.getByRole('button', {
+      name: 'Use this project as the default'
+    }) as HTMLButtonElement
+    expect(nominate.disabled).toBe(true)
+    expect(screen.getByText(/has not said where its own configuration file is/)).toBeTruthy()
+  })
+
+  it('names the file its control writes, which is not the one it shows', () => {
+    // The section's Location and Status are about the project's own file; its
+    // one control writes the desk-level one. The line under the control names
+    // that file, from the chassis' answer and never composed.
+    renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: DESK_PATH,
+        present: false,
+        sha256: '',
+        chassis: {
+          projectDir: '/this/launch',
+          projectFile: '/this/launch/jpack-desk.json',
+          runtimeBin: 'jpack'
+        }
+      })
+    )
+    const project = document.getElementById('project')!.closest('section')!
+    // Location: the project's own file.
+    expect(project.querySelector('dd')!.textContent).toBe('/this/launch/jpack-desk.json')
+    // The control's own line: the desk-level file it writes, and this launch.
+    const rule = project.querySelector('p')!.textContent ?? ''
+    expect(rule).toContain(DESK_PATH)
+    expect(rule).toContain('used on the next launch without a directory')
+    expect(rule).toContain('/this/launch')
+  })
+
+  it('says the desk has not said, rather than offering the name it reads the file by', () => {
+    // `jpack-desk.json` is the address this page reads the file at, not an
+    // established location on a filesystem — and the row is about where the
+    // file **is**. Before `/api/desk-config` answers, and for ever where it
+    // carries no chassis facts, the row says so instead of standing in.
+    const { container } = renderAdmin()
+    const head = document
+      .getElementById('project')!
+      .closest('section')!
+      .querySelector(':scope > dl')!
+    expect(head.textContent).toContain('the desk has not said')
+    expect(container.textContent).not.toContain('jpack-desk.json')
+  })
+
+  it('names the file the chassis resolved the moment it answers', () => {
+    renderAdmin(
+      effectiveConfig(undefined, undefined, undefined, {
+        path: DESK_PATH,
+        present: false,
+        sha256: '',
+        chassis: {
+          projectDir: '/real/a-project',
+          projectFile: '/real/a-project/jpack-desk.json',
+          runtimeBin: 'jpack'
+        }
+      })
+    )
+    const head = document
+      .getElementById('project')!
+      .closest('section')!
+      .querySelector(':scope > dl')!
+    expect(head.textContent).toContain('/real/a-project/jpack-desk.json')
+    expect(head.textContent).not.toContain('the desk has not said')
+  })
+
+  it('summarises itself in three states, and composes no fourth', () => {
+    // **The closed vocabulary, and the third answer is not a spelling of the
+    // second.** The comparison is against the path the chassis resolved, so
+    // before it has answered this page does not know which of the other two is
+    // true — and a row that picked one would be answering for the desk.
+    const { container } = renderAdmin()
+    expect(rowSays(container, 'project')).toBe('the desk has not said')
+    cleanup()
+
+    const other = renderAdmin(effectiveConfig(undefined, undefined, undefined, deskRead({})))
+    expect(rowSays(other.container, 'project')).toBe('not the default project')
+    cleanup()
+
+    const own = renderAdmin(
+      effectiveConfig(
+        undefined,
+        undefined,
+        undefined,
+        deskRead({ project: { file: '/this/launch/jpack-desk.json' } })
+      )
+    )
+    expect(rowSays(own.container, 'project')).toBe('the default project')
+    // The control below it makes the same comparison, and agrees.
+    expect(screen.getByRole('button', { name: 'Clear the default' })).toBeTruthy()
   })
 })
 
 describe('one section at a time', () => {
   it('lands on the first section when there is no fragment, with the list beside it', () => {
     const { container } = renderAdmin(everythingConfigured(), '/admin')
-    expect(screen.getByRole('heading', { level: 2, name: 'Organization' })).toBeTruthy()
-    const current = rowsIn(container).filter(
-      (row) => row.getAttribute('aria-current') !== null
-    )
-    expect(current.map((row) => row.getAttribute('href'))).toEqual(['/admin#organization'])
+    expect(screen.getByRole('heading', { level: 2, name: 'Project' })).toBeTruthy()
+    expect(currentRows(container)).toEqual(['/admin#project'])
     expect(rowTitles(container)).toEqual(ADMIN_SECTIONS.map((section) => section.title))
-    // All settings is the overview, and it is where the back link goes.
-    expect(screen.getByRole('link', { name: 'All settings' }).getAttribute('href')).toBe('/admin#all')
+    // And nowhere to go back to, because there is nothing behind it.
+    expect(screen.queryByRole('link', { name: 'All settings' })).toBeNull()
   })
 
   it('opens the section a fragment names, and marks its row current', () => {
     const { container } = renderAdmin(everythingConfigured(), '/admin#organization')
     expect(screen.getByRole('heading', { level: 2, name: 'Organization' })).toBeTruthy()
-    const current = rowsIn(container).filter(
-      (row) => row.getAttribute('aria-current') !== null
-    )
-    expect(current.map((row) => row.getAttribute('href'))).toEqual(['/admin#organization'])
+    expect(currentRows(container)).toEqual(['/admin#organization'])
     // The list is still whole beside it: every section is one click away.
     expect(rowTitles(container)).toEqual(ADMIN_SECTIONS.map((section) => section.title))
     // And only that section's form is on the page.
@@ -881,52 +1032,67 @@ describe('one section at a time', () => {
     expect(screen.queryByLabelText('Packs go to')).toBeNull()
   })
 
-  it('round-trips: a row opens its section, and All settings clears the fragment', () => {
+  it('a row opens its section, and the one that was open closes', () => {
     const { container } = renderAdmin(everythingConfigured())
+    expect(screen.getByRole('heading', { level: 2, name: 'Project' })).toBeTruthy()
     expect(screen.queryByRole('heading', { level: 2, name: 'Storage' })).toBeNull()
     fireEvent.click(
       rowsIn(container).find((row) => row.getAttribute('href') === '/admin#storage')!
     )
     expect(screen.getByRole('heading', { level: 2, name: 'Storage' })).toBeTruthy()
     expect(screen.getByLabelText('Packs go to')).toBeTruthy()
+    expect(screen.queryByRole('heading', { level: 2, name: 'Project' })).toBeNull()
+    expect(currentRows(container)).toEqual(['/admin#storage'])
 
-    fireEvent.click(screen.getByRole('link', { name: 'All settings' }))
-    expect(screen.queryByRole('heading', { level: 2, name: 'Storage' })).toBeNull()
+    // And back, through the column rather than through a link out of it: there
+    // is no state between two sections to pass through.
+    fireEvent.click(
+      rowsIn(container).find((row) => row.getAttribute('href') === '/admin#project')!
+    )
+    expect(screen.getByRole('heading', { level: 2, name: 'Project' })).toBeTruthy()
     expect(screen.queryByLabelText('Packs go to')).toBeNull()
-    expect(rowsIn(container).some((row) => row.getAttribute('aria-current') !== null)).toBe(false)
+    expect(currentRows(container)).toEqual(['/admin#project'])
   })
 
-  it('leaves the section on Escape, and stays on it for a keystroke from a dialog', () => {
-    renderAdmin(everythingConfigured(), '/admin#storage')
-    // A dialog owns its own Escape — the Inspector's drawer form is one — so a
-    // keystroke that reached the page from inside it is not this page's.
+  it('changes nothing on Escape, because there is nothing to leave', () => {
+    // The key used to return to the overview. There is no overview: a page whose
+    // every state is one open section has no state Escape could put a reader in,
+    // and a keystroke that navigated to the first section would be a shortcut
+    // for losing your place.
+    const { container } = renderAdmin(everythingConfigured(), '/admin#storage')
+    const before = page(container).innerHTML
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(screen.getByRole('heading', { level: 2, name: 'Storage' })).toBeTruthy()
+    expect(currentRows(container)).toEqual(['/admin#storage'])
+    expect(page(container).innerHTML).toBe(before)
+
+    // Including one from inside a dialog, which owns its own Escape.
     const dialog = document.createElement('div')
     dialog.setAttribute('role', 'dialog')
     document.body.append(dialog)
     fireEvent.keyDown(dialog, { key: 'Escape' })
     expect(screen.getByRole('heading', { level: 2, name: 'Storage' })).toBeTruthy()
     dialog.remove()
-
-    fireEvent.keyDown(document.body, { key: 'Escape' })
-    expect(screen.queryByRole('heading', { level: 2, name: 'Storage' })).toBeNull()
-    expect(screen.getByRole('heading', { level: 2, name: 'This project' })).toBeTruthy()
   })
 
-  it('shows the overview for a fragment that names no section', () => {
-    // The page a link that named nothing should land on. An error about a
-    // section that does not exist would be a worse answer than the page the
-    // reader asked for.
-    const { container } = renderAdmin(everythingConfigured(), '/admin#not-a-section')
-    expect(rowTitles(container)).toEqual(ADMIN_SECTIONS.map((section) => section.title))
-    expect(rowsIn(container).some((row) => row.getAttribute('aria-current') !== null)).toBe(false)
-    expect(page(container).querySelector('form')).toBeNull()
-    cleanup()
-
-    // A group is not a section, and neither is a fragment that is not valid
-    // percent-encoding.
-    for (const fragment of ['this-project', '%zz']) {
-      const view = renderAdmin(everythingConfigured(), `/admin#${fragment}`)
-      expect(view.container.querySelector('form'), fragment).toBeNull()
+  it('opens the first section for every fragment that names none', () => {
+    // Four inputs and one answer. An error about a section that does not exist
+    // would be a worse answer than the page the reader asked for, and so would a
+    // landing state that is a second page of the list beside it.
+    for (const path of [
+      '/admin',
+      '/admin#',
+      '/admin#not-a-section',
+      // A group is not a section.
+      '/admin#this-project',
+      // And neither is a fragment that is not valid percent-encoding.
+      '/admin#%zz',
+      '/admin#storage%'
+    ]) {
+      const { container } = renderAdmin(everythingConfigured(), path)
+      expect(screen.getByRole('heading', { level: 2, name: 'Project' }), path).toBeTruthy()
+      expect(currentRows(container), path).toEqual(['/admin#project'])
+      expect(rowTitles(container), path).toEqual(ADMIN_SECTIONS.map((section) => section.title))
       cleanup()
     }
   })
@@ -953,11 +1119,12 @@ describe('one section at a time', () => {
     expect(rowSays(container, 'organization')).toBeNull()
     expect(rowSays(container, 'storage')).toBeNull()
     expect(rowSays(container, 'identity-provider')).toBeNull()
-    // And the overview at the same width is the overview: nothing is collapsed
-    // where there is no open section to make room for.
+    // And the landing is a section like any other: the row that is open keeps
+    // what it says, and the four the reader is not in are their titles.
     cleanup()
-    const overview = renderAdmin(everythingConfigured())
-    expect(rowSays(overview.container, 'organization')).toBe('Acme')
+    const landing = renderAdmin(everythingConfigured())
+    expect(rowSays(landing.container, 'project')).toBe('not the default project')
+    expect(rowSays(landing.container, 'organization')).toBeNull()
   })
 
   it('names the storage kind, the location and the id prefix', () => {
@@ -1094,14 +1261,15 @@ describe('one section at a time', () => {
   })
 
   it('carries exactly the controls each open section names, and no others', () => {
-    // The controls case, per state. The overview's own list is above; these
-    // four are the whole of what the rest of the page can change.
+    // The controls case, per state — one render per section, which is the whole
+    // of what this page can change.
     const controls = (container: HTMLElement) =>
       Array.from(page(container).querySelectorAll('button, input, select, textarea'))
         .filter((element) => element.getAttribute('role') !== 'combobox')
         .map((element) => element.textContent?.trim())
         .filter((label) => label !== '')
     for (const [fragment, expected] of [
+      ['project', ['Use this project as the default']],
       ['organization', ['Save']],
       ['storage', ['Save']],
       [
@@ -1119,11 +1287,14 @@ describe('one section at a time', () => {
     ] as const) {
       const view = renderAdmin(effectiveConfig(undefined), `/admin#${fragment}`)
       expect(controls(view.container), fragment).toEqual(expected)
-      // The nomination is the overview's, and it is not carried into a section.
-      expect(
-        screen.queryByRole('button', { name: 'Use this project as the default' }),
-        fragment
-      ).toBeNull()
+      // The nomination is the Project section's, and it is carried into none of
+      // the others.
+      if (fragment !== 'project') {
+        expect(
+          screen.queryByRole('button', { name: 'Use this project as the default' }),
+          fragment
+        ).toBeNull()
+      }
       cleanup()
     }
   })
@@ -1188,11 +1359,12 @@ describe('one section at a time', () => {
       scrolled.push(this.id === '' ? this.tagName.toLowerCase() : this.id)
     }
     try {
-      // The overview is the top already, and scrolling there would take the
-      // gutter above the heading with it.
+      // The landing is a section like any other, so it is the page's own top
+      // there too — and not the section's heading.
       renderAdmin(effectiveConfig(undefined))
-      expect(scrolled).toEqual([])
+      expect(scrolled).toEqual(['article'])
       cleanup()
+      scrolled.length = 0
 
       renderAdmin(effectiveConfig(undefined), '/admin#storage')
       // The page's own top, and never the section: a full load of a fragment is
@@ -1272,10 +1444,10 @@ describe('a section’s own write', () => {
     )
   })
 
-  it('says on the overview what the file is, and nothing about a write nobody made', async () => {
+  it('says on the Project section what the file is, and nothing about a write nobody made', async () => {
     servesAdmin(FILE, 'pending')
     const { container } = renderLiveAdmin()
-    await waitFor(() => expect(statusOf('this-project')).toBe('read'))
+    await waitFor(() => expect(statusOf('project')).toBe('read'))
     for (const section of ADMIN_SECTIONS) {
       const row = rowsIn(container).find(
         (each) => each.getAttribute('href') === `/admin#${section.id}`
@@ -1286,7 +1458,7 @@ describe('a section’s own write', () => {
 })
 
 describe('what Admin puts in the right pane', () => {
-  it('shows the whole project file on the overview, by the name it reads it at', async () => {
+  it('shows the whole project file under Project, by the name it reads it at', async () => {
     const { container } = renderInShell(everythingConfigured())
     await waitFor(() =>
       expect(screen.getByRole('heading', { level: 2, name: 'jpack-desk.json' })).toBeTruthy()
@@ -1670,8 +1842,14 @@ describe('every control on Admin comes through the same component', () => {
     }
   })
 
-  it('carries at most one primary button per section, and none in a group’s head', () => {
-    for (const path of ['/admin', '/admin#organization', '/admin#storage', '/admin#assistant']) {
+  it('carries at most one primary button per section, and none in the column', () => {
+    for (const path of [
+      '/admin',
+      '/admin#project',
+      '/admin#organization',
+      '/admin#storage',
+      '/admin#assistant'
+    ]) {
       const { container } = renderAdmin(effectiveConfig(undefined), path)
       const sections = Array.from(page(container).querySelectorAll('section'))
       expect(sections.length, path).toBeGreaterThan(0)
@@ -1692,13 +1870,13 @@ describe('every control on Admin comes through the same component', () => {
         const title = section.querySelector('h2, h3')?.textContent ?? '(untitled)'
         expect(primaries.length, `${path} ${title}: ${primaries.map((each) => each.textContent).join(', ')}`)
           .toBeLessThanOrEqual(1)
-        // A group is the section that holds the rows, and its head is where the
-        // file's own facts are stated — not where this page's loudest action
-        // belongs. The nomination sits on its row as a secondary.
-        if (section.querySelector('ul') !== null) {
-          expect(primaries.length, `${path} ${title} is a group head`).toBe(0)
-        }
       }
+      // **And the navigation column carries none at all**, because a row is a
+      // link. The rule used to be stated about a group's head, which was the one
+      // place on this page a loud action could sit above the rows it was not
+      // about; there is no head, and what is left in its place is a column that
+      // is only addresses.
+      expect(rail(container).querySelectorAll('button'), path).toHaveLength(0)
       cleanup()
     }
   })

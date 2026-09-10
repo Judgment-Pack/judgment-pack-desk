@@ -1,26 +1,24 @@
 /**
- * Admin: an overview, one open section at a time, and the file itself in the
+ * Admin: a navigation column, one open section, and the file itself in the
  * right pane.
  *
- * **The page was a stack and is now a list.** Four sections, each with a
- * heading, a status, a disclosure holding a code block and a form, rendered one
- * under another: the reader who came to change one thing scrolled past three
- * they did not, and the page grew with every setting the desk ever gains. What
- * is here now is what a settings page is — an **overview** of what each setting
- * currently *is*, and the one section a reader asked for, open beside the list
- * that names the others. It is the shape Linear's settings and macOS System
- * Settings have, and it is the shape because the vertical scroll was carrying
- * work the horizontal axis and the right pane were not.
+ * **There is no overview, and its absence is this file's argument.** The page
+ * was a stack of four sections, then a stack *and* an overview of it — a
+ * landing state that was a second page of the same list, reachable at `#all`,
+ * linked from every open section, and returned to by Escape. A settings page is
+ * a navigation column and a section that is open: macOS System Settings has no
+ * "all settings" pane, and neither does Linear's. What the overview carried
+ * that the column cannot — where each file is, what reading it produced, and
+ * the one control that is about the project rather than a member of it — is a
+ * **section** now, first under This project, and the right pane says the rest.
  *
  * **A row is a link and the hash is the state.** `/admin#assistant` opens the
  * assistant section, and it did nothing but scroll before; the rail's menu and
  * the user menu have linked to these fragments since they were headings, so the
- * addresses are the ones already in circulation. **`/admin` with no fragment
- * opens the first section**, the way a settings page opens on its first pane
- * rather than on a menu; the overview — the two groups with their files' heads
- * and the default-project control — is **All settings**, at `/admin#all`, and
- * an unknown fragment lands there too rather than on an error about a section
- * that does not exist.
+ * addresses are the ones already in circulation. **A fragment that names no
+ * section opens the first one** — as does no fragment at all, and one that is
+ * not valid percent-encoding. There is no state in which nothing is open, so
+ * there is nothing an error page or a back link would be for.
  *
  * **The bytes went to the right pane.** They are context and not a setting:
  * nobody edits a file's text here, and the disclosure that held it was one more
@@ -55,24 +53,18 @@
  * line reports what the process was started with.
  */
 import { useEffect, useRef, type ReactNode } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { AssistantSection } from '../assistant/AssistantSection'
 import { AdminStatusLine } from '../admin/AdminStatusLine'
 import { ConfigPane } from '../admin/ConfigPane'
 import { SECTION_SUMMARY } from '../admin/sectionSummary'
-import {
-  CardField,
-  SourceCard,
-  SourceGroup,
-  StatusLine,
-  type SourceStatus
-} from '../admin/SourceCard'
+import { CardField, SourceCard, StatusLine, type SourceStatus } from '../admin/SourceCard'
 import { useDefaultProject } from '../admin/DefaultProject'
 import { OrganizationForm, StorageForm, StorageKind } from '../admin/projectFileCards'
 import { useHashTarget } from '../shell/useHashTarget'
 import { useInspectorPortal } from '../shell/InspectorSlot'
 import { INSPECTOR_DRAWER_BELOW, useMediaQuery } from '../shell/useMediaQuery'
-import { IconChevronLeft, IconChevronRight } from '../shell/icons'
+import { IconChevronRight } from '../shell/icons'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
   type ConfigProblem,
@@ -107,16 +99,21 @@ const SECTION_MEMBER: Record<string, keyof DeskConfig> = {
 /** The two sections that exist only in the desk-level file. */
 const DESK_ONLY = new Set(['assistant', 'identity-provider'])
 
+/**
+ * The one section that is about the project's file itself rather than about a
+ * member of it — so it is in `ADMIN_SECTIONS` and in neither map above.
+ */
+const PROJECT_FILE_SECTION = 'project'
+
 export function AdminView() {
   const effective = useEffectiveConfig()
   const { config } = effective
   const mcp = useMcp()
   const listing = useFileListing()
-  // The project group's one field and its Save, sharing one draft across two
-  // of the header's slots.
+  // The Project section's one field and its Save, sharing one draft across two
+  // of that section's slots.
   const defaultProject = useDefaultProject()
   const { hash } = useLocation()
-  const navigate = useNavigate()
   // Below 1100px the Inspector is a drawer and the shell is one column: the
   // list stacks above the open section, and the rows that are not open say
   // their titles and nothing else, because a summary each is a second page of
@@ -143,54 +140,21 @@ export function AdminView() {
   // route is not selecting the frame it is rendered in.
   const top = useRef<HTMLElement | null>(null)
   useEffect(() => {
-    // Only on *opening* one: arriving at the overview is arriving at the top
-    // already, and scrolling there would take the gutter above the heading.
-    if (stacked || open === undefined) return
+    if (stacked) return
     top.current?.scrollIntoView()
-  }, [open?.id, stacked, open])
+  }, [open.id, stacked])
 
-  // **Escape leaves the section, and only the section.** The Inspector's
-  // drawer form is a `Dialog`, and Escape closes it there — the one place the
-  // shell's "Escape does not close a pane" rule bends — so a keystroke that
-  // reached the page from inside the drawer is the drawer's, not this page's.
-  useEffect(() => {
-    if (open === undefined) return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return
-      const target = event.target as Element | null
-      if (target?.closest?.('[role="dialog"]') != null) return
-      navigate(OVERVIEW)
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [open, navigate])
+  // **Nothing listens for Escape here, because there is nothing to leave.**
+  // The key used to return to the overview; a page whose every state is one
+  // open section has no state Escape could put a reader in, and a keystroke
+  // that navigated to the first section would be a shortcut for "lose your
+  // place".
 
   // **The pane, claimed for as long as this route is mounted.** The claim and
   // the portal are one call, so leaving Admin releases the slot and the next
   // route's own panel — or the pane's empty state — takes it back.
   const pane = useInspectorPortal(
     <ConfigPane {...paneFor(effective, open)} />
-  )
-
-  const list = (
-    <>
-      {ADMIN_GROUPS.map((group) => (
-        <GroupRows
-          key={group.id}
-          effective={effective}
-          group={group}
-          open={open}
-          stacked={stacked}
-          // The overview states each file once, where the group header has
-          // always stated it. The rail beside an open section does not: the
-          // file the open section is about is named in the pane, and a narrow
-          // column is not where a path belongs.
-          heads={open === undefined}
-          fields={group.id === 'this-project' ? defaultProject.field : undefined}
-          save={group.id === 'this-project' ? defaultProject.save : undefined}
-        />
-      ))}
-    </>
   )
 
   return (
@@ -201,157 +165,147 @@ export function AdminView() {
       </header>
 
       {/* Not a card, because none of it is a setting: what this desk is
-          running, from the connection's and the chassis' own answers. The two
-          files are **not** here — each group header names its own, and naming
-          it twice is what the grouping exists to stop. */}
+          running, from the connection's and the chassis' own answers. Neither
+          configuration file is here — the section that is about a file states
+          it, and the pane states it again beside the bytes. */}
       <AdminStatusLine runtime={runtimeSays(mcp)} binary={runtimeBinary(effective)} />
 
-      {open === undefined ? (
-        list
-      ) : (
-        <div className={styles.split}>
-          <nav className={styles.rail} aria-label="Settings">
-            {list}
-          </nav>
-          <div className={styles.open}>
-            <Link className={styles.back} to={OVERVIEW}>
-              <IconChevronLeft />
-              All settings
-            </Link>
-            {open.id === 'organization' && (
-              <SourceCard
-                id={SECTION.organization!.id}
-                title={SECTION.organization!.title}
-                level={2}
-                location={sectionLocation(effective, 'organization')}
-                status={sectionStatus(effective, 'organization')}
-                under={groupFor(effective, 'organization')}
-                save={<OrganizationForm />}
-              />
-            )}
-            {open.id === 'storage' && (
-              <SourceCard
-                id={SECTION.storage!.id}
-                title={SECTION.storage!.title}
-                level={2}
-                location={sectionLocation(effective, 'storage')}
-                status={sectionStatus(effective, 'storage')}
-                under={groupFor(effective, 'storage')}
-                fields={<StorageKind />}
-                save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocation]} />}
-              />
-            )}
-            {open.id === 'assistant' && (
-              <AssistantSection
-                id={SECTION.assistant!.id}
-                title={SECTION.assistant!.title}
-                level={2}
-                under={deskStatus(effective)}
-              />
-            )}
-            {open.id === 'identity-provider' && (
-              <SourceCard
-                id={SECTION['identity-provider']!.id}
-                title={SECTION['identity-provider']!.title}
-                level={2}
-                location={deskLocation(effective)}
-                status={deskStatus(effective)}
-                under={deskStatus(effective)}
-                fields={
-                  <CardField label="Provider">
-                    {config.identity.provider === null ? (
-                      'None'
-                    ) : (
-                      <>
-                        <code>{config.identity.provider.issuer}</code>
-                        {config.identity.provider.label !== null && (
-                          <> — {config.identity.provider.label}</>
-                        )}
-                      </>
-                    )}
-                  </CardField>
-                }
-              />
-            )}
-          </div>
+      <div className={styles.split}>
+        <nav className={styles.rail} aria-label="Settings">
+          {ADMIN_GROUPS.map((group) => (
+            <GroupRows
+              key={group.id}
+              effective={effective}
+              group={group}
+              open={open}
+              stacked={stacked}
+            />
+          ))}
+        </nav>
+        <div className={styles.open}>
+          {/* The file itself, and the one control that is about the project
+              rather than about a member of it. The two rows are the ones the
+              group header carried while there was an overview to carry them
+              on. */}
+          {open.id === 'project' && (
+            <SourceCard
+              id={SECTION.project!.id}
+              title={SECTION.project!.title}
+              level={2}
+              location={projectLocation(effective)}
+              status={projectStatus(effective)}
+              fields={defaultProject.field}
+              save={defaultProject.save}
+            />
+          )}
+          {open.id === 'organization' && (
+            <SourceCard
+              id={SECTION.organization!.id}
+              title={SECTION.organization!.title}
+              level={2}
+              location={sectionLocation(effective, 'organization')}
+              status={sectionStatus(effective, 'organization')}
+              under={groupFor(effective, 'organization')}
+              save={<OrganizationForm />}
+            />
+          )}
+          {open.id === 'storage' && (
+            <SourceCard
+              id={SECTION.storage!.id}
+              title={SECTION.storage!.title}
+              level={2}
+              location={sectionLocation(effective, 'storage')}
+              status={sectionStatus(effective, 'storage')}
+              under={groupFor(effective, 'storage')}
+              fields={<StorageKind />}
+              save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocation]} />}
+            />
+          )}
+          {open.id === 'assistant' && (
+            <AssistantSection
+              id={SECTION.assistant!.id}
+              title={SECTION.assistant!.title}
+              level={2}
+              under={deskStatus(effective)}
+            />
+          )}
+          {open.id === 'identity-provider' && (
+            <SourceCard
+              id={SECTION['identity-provider']!.id}
+              title={SECTION['identity-provider']!.title}
+              level={2}
+              location={deskLocation(effective)}
+              status={deskStatus(effective)}
+              under={deskStatus(effective)}
+              fields={
+                <CardField label="Provider">
+                  {config.identity.provider === null ? (
+                    'None'
+                  ) : (
+                    <>
+                      <code>{config.identity.provider.issuer}</code>
+                      {config.identity.provider.label !== null && (
+                        <> — {config.identity.provider.label}</>
+                      )}
+                    </>
+                  )}
+                </CardField>
+              }
+            />
+          )}
         </div>
-      )}
+      </div>
     </article>
   )
 }
 
 /**
- * One group of the list: the file it is about, and a row per member.
+ * One group of the navigation column: its title, and a row per section.
  *
- * The same component in both states, because they are the same list. What the
- * open state drops is the file's own head and the one control that writes it —
- * the pane says where the file is, and a narrow column is no place for a path
- * or for a button whose line names a second file.
+ * **A title and rows, and never the file's own head.** The group header used to
+ * state where its file is and what reading it produced, on an overview that no
+ * longer exists; beside an open section a path is a line of prose in a 13rem
+ * column, and the two places that fact belongs are the section that is about
+ * that file and the pane that quotes it.
  */
 function GroupRows({
   effective,
   group,
   open,
-  stacked,
-  heads,
-  fields,
-  save
+  stacked
 }: {
   effective: EffectiveConfig
   group: (typeof ADMIN_GROUPS)[number]
-  open: AdminSection | undefined
+  open: AdminSection
   stacked: boolean
-  heads: boolean
-  fields?: ReactNode
-  save?: ReactNode
 }) {
-  const rows = (
-    <ul className={styles.rows} aria-labelledby={heads ? undefined : `rail-${group.id}`}>
-      {group.sections.map((section) => (
-        <SectionRow
-          key={section.id}
-          effective={effective}
-          section={section}
-          current={open?.id === section.id}
-          // "Collapse to their titles" is what the narrow shell does to the
-          // rows a reader is not in: the list is above the open section there,
-          // not beside it, and a summary each pushes the section off the
-          // screen it was opened on.
-          bare={stacked && open !== undefined && open.id !== section.id}
-        />
-      ))}
-    </ul>
-  )
-  if (!heads) {
-    return (
-      <div className={styles.railGroup}>
-        <p className={styles.railTitle} id={`rail-${group.id}`}>
-          {group.title}
-        </p>
-        {rows}
-      </div>
-    )
-  }
   return (
-    <SourceGroup
-      id={group.id}
-      title={group.title}
-      location={group.id === 'this-project' ? projectLocation(effective) : deskLocation(effective)}
-      status={group.id === 'this-project' ? projectStatus(effective) : deskStatus(effective)}
-      // The one control that writes the *desk-level* file from here: it
-      // nominates this project as the default, or withdraws one. Its own line
-      // names the file it writes, which is not the file above it.
-      fields={fields}
-      save={save}
-    >
-      {rows}
-    </SourceGroup>
+    <div className={styles.railGroup}>
+      <p className={styles.railTitle} id={`rail-${group.id}`}>
+        {group.title}
+      </p>
+      <ul className={styles.rows} aria-labelledby={`rail-${group.id}`}>
+        {group.sections.map((section) => (
+          <SectionRow
+            key={section.id}
+            effective={effective}
+            section={section}
+            current={open.id === section.id}
+            // "Collapse to their titles" is what the narrow shell does to the
+            // rows a reader is not in: the list is above the open section there,
+            // not beside it, and a summary each pushes the section off the
+            // screen it was opened on.
+            bare={stacked && open.id !== section.id}
+          />
+        ))}
+      </ul>
+    </div>
   )
 }
 
 /**
  * One row: the title, what the setting currently is, and the section's own
- * status where it has one the group has not already given.
+ * status where it differs from the state of the file its group is about.
  *
  * The summary is `SECTION_SUMMARY`'s and is drawn from the decoded value — the
  * page composes no part of it. The status is the same comparison a card makes:
@@ -387,7 +341,7 @@ function SectionRow({
           </span>
         </span>
         {!bare && summarise !== undefined && (
-          <span className={styles.rowSays}>{summarise(effective.config)}</span>
+          <span className={styles.rowSays}>{summarise(effective)}</span>
         )}
         {!bare && differs && (
           <span className={styles.rowStatus}>
@@ -399,28 +353,37 @@ function SectionRow({
   )
 }
 
-/** Where the overview is: All settings. A fragment naming no section is one too. */
-const OVERVIEW = '/admin#all'
-
 /**
- * The section a fragment names; the first section where there is no fragment;
- * nothing — the overview — for a fragment that names no section.
+ * The section a fragment names, and the **first** section for every fragment
+ * that names none.
+ *
+ * Three inputs and one answer: no fragment, a fragment naming no section — a
+ * group id, a section that was renamed, a link somebody typed — and one that is
+ * not valid percent-encoding. There is no fourth state for any of them to land
+ * in: an error about a section that does not exist would be a worse answer than
+ * the page the reader asked for, and the page they asked for is a settings page,
+ * which opens on its first pane.
  */
-function sectionFromHash(hash: string): AdminSection | undefined {
-  if (hash.length < 2) return ADMIN_SECTIONS[0]
+function sectionFromHash(hash: string): AdminSection {
+  const first = ADMIN_SECTIONS[0]!
+  if (hash.length < 2) return first
   let id: string
   try {
     id = decodeURIComponent(hash.slice(1))
   } catch {
-    // A fragment that is not valid percent-encoding names nothing.
-    return undefined
+    return first
   }
-  return SECTION[id]
+  return SECTION[id] ?? first
 }
 
 /**
- * What the right pane is about: the whole project file on the overview, and one
- * member of whichever file supplied it while a section is open.
+ * What the right pane is about: the whole project file under Project, and one
+ * member of whichever file supplied it under every other section.
+ *
+ * **Project is the section that is about a file rather than a member of one**,
+ * so its pane is the whole document — which is what the overview's pane was,
+ * unchanged, safety rule included: a refused file shows its Status and no bytes
+ * at all.
  *
  * The title names the file by the name this desk knows it by — the project's
  * own is the name it is read at, and the desk-level file's is the last segment
@@ -429,7 +392,7 @@ function sectionFromHash(hash: string): AdminSection | undefined {
  */
 function paneFor(
   effective: EffectiveConfig,
-  open: AdminSection | undefined
+  open: AdminSection
 ): {
   title: string
   location: ReactNode
@@ -438,7 +401,7 @@ function paneFor(
   text?: string
   member?: string
 } {
-  if (open === undefined) {
+  if (open.id === PROJECT_FILE_SECTION) {
     return {
       title: effective.path,
       location: projectLocation(effective),
@@ -477,12 +440,14 @@ type LayeredSection = Exclude<
 
 /** One section's own state, whichever of the two files it belongs to. */
 function statusOfSection(effective: EffectiveConfig, id: string): SourceStatus {
+  if (id === PROJECT_FILE_SECTION) return projectStatus(effective)
   if (DESK_ONLY.has(id)) return deskStatus(effective)
   return sectionStatus(effective, SECTION_MEMBER[id] as LayeredSection)
 }
 
-/** The state the group's own header states for that section, for comparison. */
+/** The state the file this section's group is about is in, for comparison. */
 function groupStatusFor(effective: EffectiveConfig, id: string): SourceStatus | undefined {
+  if (id === PROJECT_FILE_SECTION) return projectStatus(effective)
   if (DESK_ONLY.has(id)) return deskStatus(effective)
   return groupFor(effective, SECTION_MEMBER[id] as LayeredSection)
 }
@@ -571,14 +536,13 @@ function deskStatus(effective: EffectiveConfig): SourceStatus {
 }
 
 /**
- * The group header a layered section sits under, where its own file is the
- * group's — and **nothing** where it is not.
+ * The state of the file a layered section's group is about, where its own file
+ * is that one — and **nothing** where it is not.
  *
- * A section that came from the desk-level file is not one the project group's
- * header speaks for: the header names this project's file, and a row that
- * dropped its status under it would be attributing a value to a file it did
- * not come from. So that section is given no group at all and states its own
- * status, exactly as it did before there were groups.
+ * A section that came from the desk-level file is not one This project speaks
+ * for, and a row that dropped its status under that title would be attributing
+ * a value to a file it did not come from. So that section is given no group at
+ * all and states its own status, exactly as it did before there were groups.
  */
 function groupFor(
   effective: EffectiveConfig,

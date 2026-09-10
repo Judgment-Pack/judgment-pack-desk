@@ -15,6 +15,10 @@
  * set of headings scattered through a component, so that adding one is a
  * reviewable line rather than a paragraph someone slipped in.
  *
+ * **The first section is the landing page**, because Admin has no overview:
+ * `/admin`, an unknown fragment and a malformed one all open it. So the order
+ * decides what a reader sees on arriving, and Project is what they see.
+ *
  * **Runtime, Panes and Appearance are not here, and their absence is the
  * change.** None was a setting. The Runtime card reported the binary the
  * chassis was launched with and whether the socket is up — status, which now
@@ -48,6 +52,14 @@ export const ADMIN_GROUPS: readonly AdminGroup[] = [
     id: 'this-project',
     title: 'This project',
     sections: [
+      // **First, and it is the file rather than a member of it.** Admin has no
+      // overview any more, so the two rows the group header used to carry —
+      // where this project's file is, and what reading it produced — have
+      // nowhere else to be said in the main column. They are a section, with
+      // the one control that is about the *project* rather than about a
+      // member: whether this desk opens it when it is launched with no
+      // directory.
+      { id: 'project', title: 'Project' },
       { id: 'organization', title: 'Organization' },
       // After Organization, because it is about where this project's packs live.
       { id: 'storage', title: 'Storage' }
