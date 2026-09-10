@@ -148,6 +148,17 @@ func run() error {
 		// later request. The page then exchanges that handoff for a session id
 		// it holds itself. See `internal/desk/session.go`.
 		fmt.Printf("judgment-pack desk\n  project: %s\n  runtime: %s\n  open:    http://%s/launch?secret=%s\n", absProject, *jpackBin, addr, token)
+		if *devToken != "" {
+			// **In dev mode the page to open is Vite's, not this one.** This
+			// process serves whatever `web/dist` held when it was built, which
+			// is stale the moment the page source changes; the dev server
+			// serves the source and proxies `/launch`, `/ws` and `/api` here.
+			// A person who opened the line above and met a page from an older
+			// build is who these two lines are for.
+			fmt.Printf("  dev:     this serves the bundle built into web/dist; for hot reload run\n"+
+				"           JPACK_DESK_CHASSIS=http://%s npm --prefix web run dev\n"+
+				"           and open http://localhost:5173/launch?secret=%s\n", addr, token)
+		}
 	}
 	if err := httpSrv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
