@@ -1548,7 +1548,6 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # **The bound is a refusal, and refusing is the property.** Making room would
   # end a live session from outside the page holding it, which is the second
   # actor this whole design exists without.
-  # Repaired: `create` answers a sequence too, so its refusal has three values.
   # Both bounds go — the one asked before a handoff is spent has its own row.
   mutate go "the 65th session is accepted" "$SE" \
     '	if len(st.live) >= maxSessions {
@@ -1605,20 +1604,21 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	}
 	return session{}, false
 }'
-  # **A reload and a theft are different facts.** One code for both left the
-  # page unable to tell them apart, so it kept its session either way and the
-  # residual was invisible to the person it happened to.
-  # **Spent and expired are the two the ring exists to tell apart**, because
-  # they send a person to do different things.
+  # **Spent and expired are the two the ring exists to tell apart**, and the
+  # only two: a spent handoff says nothing a page can act on, because this desk
+  # cannot tell a tab's own earlier spend from anybody else's. An expiry says
+  # nobody used the link and the launch secret still works, which is the one
+  # refusal that sends a person to do something.
   mutate go "an expired handoff reads as a spent one" "$SE" \
     '	case handoffExpired:
 		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffExpired,' \
     '	case handoffExpired:
 		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,'
-  # **A refusal clearing the cookie concealed a theft.** The clearing header and
-  # the refusal travel in one response, so a reload between the two presented
-  # nothing, read `no-handoff`, and kept a session the person was never told
-  # about.
+  # **A refusal that cleared the cookie would destroy the classification.** The
+  # clearing header and the refusal travel in one response, so a reload between
+  # the two presents nothing and reads `no-handoff` — a spent or expired handoff
+  # turned into an unknown one by the desk's own answer, and the reopen line
+  # lost with it.
   mutate go "a refusal clears the handoff too" "$SE" \
     '	case handoffSpent:
 		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,' \
@@ -1626,7 +1626,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		http.SetCookie(w, expireLaunchCookie(s.launchCookie, requestScheme(r) == "https"))
 		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,'
   # **The store remembers what it finished with**, which is the whole of how a
-  # theft is told from a stranger's cookie.
+  # spent handoff is told from an expired one.
   mutate go "the store forgets the handoffs it finished with" "$SE" \
     '	if until, ok := ls.given[key]; ok {
 		if ls.now().After(until) {
@@ -1645,7 +1645,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	}'
   # **And a value it never minted is ignored.** A page on any sibling loopback
   # port can plant a cookie of this name at a longer path; refusing what is not
-  # recognised turns that into a permanent false theft.
+  # recognised turns that into a permanent false refusal.
   mutate go "an unrecognised cookie is treated as a spent handoff" "$SE" \
     '		case handoffSpent, handoffExpired:
 			// The first classified answer stands, and a later live one still

@@ -231,11 +231,14 @@ func TestTheHandoffIsSingleUse(t *testing.T) {
 	}
 }
 
-// TestTheExchangeTellsAReloadFromATheft is the HIGH this pair of codes exists
-// for. One `401` for both left the page unable to tell "nobody opened the
-// printed URL for me, and I am simply reloading" from "somebody took the
-// handoff my launch set" — so it kept its session either way and the stated
-// residual was invisible to the person it happened to.
+// TestTheExchangeClassifiesWhatWasPresented.
+//
+// Three answers, and they exist because **one** of them says something a person
+// can act on. `no-handoff` is nothing this desk recognises, and overwhelmingly a
+// reload. `handoff-spent` is a handoff it finished with, which tells the page
+// nothing — it cannot distinguish a page's own earlier spend from anybody
+// else's, and neither can the page. `handoff-expired` is the one a person can
+// act on: nobody used the link, and the secret still works.
 func TestTheExchangeTellsAReloadFromATheft(t *testing.T) {
 	_, ts := newTestServer(t, false)
 
@@ -248,7 +251,7 @@ func TestTheExchangeTellsAReloadFromATheft(t *testing.T) {
 		t.Fatalf("an absent handoff answered %d %v, want 401 %s", noCookie, body["code"], CodeNoHandoff)
 	}
 
-	// A theft: a cookie this desk no longer holds.
+	// Spent: a cookie this desk finished with.
 	handoff := launchHandoff(t, ts)
 	exchange(t, ts, handoff)
 	spent, body := exchangeAttempt(t, ts, withHandoff(ts, handoff))
@@ -256,9 +259,8 @@ func TestTheExchangeTellsAReloadFromATheft(t *testing.T) {
 		t.Fatalf("a spent handoff answered %d %v, want 401 %s", spent, body["code"], CodeHandoffSpent)
 	}
 
-	// An **expiry** reads the same way as a theft, and must: a page cannot act
-	// on "it might still be yours", and both say the link is finished.
-	// `TestTheHandoffExpires` drives that one with the clock injected.
+	// An **expiry** is the third, and `TestTheHandoffExpires` drives it with the
+	// clock injected.
 
 	// And the control, so that none of the above passes on a desk that refuses
 	// every exchange: a fresh handoff still buys a session.
@@ -270,13 +272,15 @@ func TestTheExchangeTellsAReloadFromATheft(t *testing.T) {
 
 // TestOnlyASuccessfulExchangeClearsTheHandoff.
 //
-// **A refusal clearing the cookie concealed a theft**, which is the HIGH this
-// pair of assertions exists for. The clearing header and the refusal travel in
-// one response, so a tab that reloaded after the browser stored the first and
-// before the page had handled the second presented **nothing**, read
-// `no-handoff`, and kept its old, still-valid session — the theft invisible.
-// Only success clears now; a stale cookie is bounded by its own sixty-second
-// `Max-Age` and reads as spent until then, however many times the page loads.
+// **A refusal that cleared the cookie would destroy the classification**, which
+// is the property this pair of assertions holds. The clearing header and the
+// refusal travel in one response, so a tab that reloaded after the browser
+// stored the first and before the page had handled the second would present
+// **nothing** and read `no-handoff` — a spent or expired handoff turned into an
+// unknown one by the desk's own answer, and `handoff-expired` is the one code a
+// person can act on. Only success clears now; a stale cookie is bounded by its
+// own sixty-second `Max-Age` and reads as spent until then, however many times
+// the page loads.
 func TestOnlyASuccessfulExchangeClearsTheHandoff(t *testing.T) {
 	_, ts := newTestServer(t, false)
 	handoff := launchHandoff(t, ts)
@@ -375,7 +379,7 @@ func TestABogusCookieFromASiblingPortIsIgnored(t *testing.T) {
 
 // TestAnExpiredHandoffSaysSoRatherThanSayingNothing. An expiry is nobody's
 // fault and the launch secret still works, so the answer is to reopen the
-// printed URL — a different instruction from the one a theft gets.
+// printed URL — the one instruction a refused exchange can honestly give.
 func TestAnExpiredHandoffSaysSoRatherThanSayingNothing(t *testing.T) {
 	s, ts := newTestServer(t, false)
 	handoff := launchHandoff(t, ts)
@@ -585,11 +589,12 @@ func TestAScriptMintsASessionWithTheLaunchSecret(t *testing.T) {
 // written down as a test so that it is a known property rather than a surprise.
 //
 // A script that captures the handoff inside its window and forges
-// `Sec-Fetch-Site: same-origin` takes the session first. Forbidden-header rules
-// bind browsers, not scripts. What the shape buys is that the theft is
-// **visible**: the handoff is single use, so the page's own exchange then fails
-// and the desk says it has no session rather than working while somebody else
-// is also inside.
+// `Sec-Fetch-Site: same-origin` takes the session first, and this desk **cannot
+// tell that session from the person's own**. Forbidden-header rules bind
+// browsers, not scripts. What the shape buys is the bound and nothing more:
+// sixty seconds, and one use, so the stolen handoff buys exactly one session
+// and the window closes. The desk does not detect it and does not announce it;
+// the remedy is a restart.
 func TestTheStatedResidual(t *testing.T) {
 	_, ts := newTestServer(t, false)
 
@@ -611,11 +616,11 @@ func TestTheStatedResidual(t *testing.T) {
 		t.Fatal("the thief got no id")
 	}
 
-	// And the page's own exchange then fails **with the code that says which
-	// failure it is**. `handoff-spent` is what tells an authenticated tab that
-	// this is a theft and not a reload — without it the page keeps its session
-	// and the person is never told. `web/src/mcp/session.test.tsx` holds the
-	// page's half: the id forgotten, and the terminal sentence.
+	// And the page's own exchange then fails, `handoff-spent`, because the
+	// handoff is single use. **The page reads that exactly as `no-handoff`**:
+	// the desk cannot tell a thief's spend from this tab's own earlier one, so
+	// neither may the page. `web/src/mcp/session.test.tsx` holds that half —
+	// an authenticated tab keeps its id, a fresh tab has no session.
 	after, refusal := exchangeAttempt(t, ts, withHandoff(ts, handoff))
 	if after != http.StatusUnauthorized {
 		t.Fatalf("the page's own exchange answered %d after a theft, want 401", after)
@@ -623,8 +628,8 @@ func TestTheStatedResidual(t *testing.T) {
 	if refusal["code"] != CodeHandoffSpent {
 		t.Fatalf("code %v after a theft, want %s", refusal["code"], CodeHandoffSpent)
 	}
-	// The old id is still live on the wire — the chassis forgets nothing — so
-	// what ends the tab's session is the page acting on that code.
+	// The old id is still live on the wire — the chassis forgets nothing — and
+	// the tab goes on using it, alongside the thief, until the desk restarts.
 	acceptsSession(t, ts, held, ts.URL)
 }
 
@@ -1487,8 +1492,9 @@ func TestSessionEndpointAnswersTheBearersSubject(t *testing.T) {
 	}
 	// **Two members, and no more.** This route reported a count of the sessions
 	// this process had minted, so that a page could notice one it did not ask
-	// for; that whole line of work is withdrawn, and a route that still carried
-	// the number would be inviting the next reader to use it.
+	// for. **That whole line of work is withdrawn** — four rounds, four defects
+	// on one seam — and a route that still carried the number would be inviting
+	// the next reader to try again.
 	if len(body) != 2 {
 		t.Errorf("the answer carries %d members, want subject and issuer only: %v",
 			len(body), body)
@@ -1816,8 +1822,6 @@ func TestTheSessionsFullRefusalIsMarkedAndSaysWhatToDo(t *testing.T) {
 		t.Fatalf("%d sessions after the refusal, want the bound of %d", n, maxSessions)
 	}
 }
-
-/* The sequence, and the echo of a page's own spent link ------------------------ */
 
 // TestTheBoundIsAskedAfterTheCookieIsClassified.
 //

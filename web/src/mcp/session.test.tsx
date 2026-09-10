@@ -96,7 +96,7 @@ const refused = (code: string, body: unknown, status = 401) =>
 /** The exchange's own answer, and a plain success for everything else. */
 const mints = (seen: Seen) =>
   seen.url === '/api/session' && seen.method === 'POST'
-    ? json({ id: MINTED, subject: 'local user', issuer: null, sessions: { minted: 1, yours: 1 } })
+    ? json({ id: MINTED, subject: 'local user', issuer: null })
     : json({ root: '/project', files: [] })
 
 const exchanges = (seen: Seen[]) => seen.filter((c) => c.url === '/api/session' && c.method === 'POST')
@@ -188,7 +188,7 @@ describe('the one exchange', () => {
         refusal = refused('no-handoff', { code: 'no-handoff' })
         return refusal
       }
-      return json({ subject: 'local user', issuer: null, sessions: { minted: 1, yours: 1 } })
+      return json({ subject: 'local user', issuer: null })
     })
     expect(await bootstrap()).toBe(STORED)
     expect(refusal, 'the exchange was never made').toBeDefined()
@@ -610,7 +610,7 @@ describe('a refusal after the bootstrap is terminal', () => {
       window.sessionStorage.clear()
       record((call) =>
         call.url === '/api/session'
-          ? json({ id: MINTED, sessions: { minted: 1, yours: 1 } })
+          ? json({ id: MINTED })
           : refused(code, { code })
       )
       const answered = await bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
@@ -624,7 +624,7 @@ describe('a refusal after the bootstrap is terminal', () => {
     window.sessionStorage.clear()
     record((call) =>
       call.url === '/api/session'
-        ? json({ id: MINTED, sessions: { minted: 1, yours: 1 } })
+        ? json({ id: MINTED })
         : refused('unauthorized', { code: 'unauthorized' })
     )
     await expect(
@@ -644,7 +644,7 @@ describe('a refusal after the bootstrap is terminal', () => {
     // runtime — 0 is not a settable status — so a fixture that started there
     // was testing something the browser cannot produce.
     record((call) => {
-      if (call.url === '/api/session') return json({ id: MINTED, sessions: { minted: 1, yours: 1 } })
+      if (call.url === '/api/session') return json({ id: MINTED })
       const opaque = Response.error()
       Object.defineProperty(opaque, 'type', { value: 'opaqueredirect', configurable: true })
       expect(opaque.status).toBe(0)
@@ -659,7 +659,7 @@ describe('a refusal after the bootstrap is terminal', () => {
 
   it('asks the browser not to follow a redirect at all', async () => {
     const seen = record((call) =>
-      call.url === '/api/session' ? json({ id: MINTED, sessions: { minted: 1, yours: 1 } }) : json({ ok: true })
+      call.url === '/api/session' ? json({ id: MINTED }) : json({ ok: true })
     )
     await bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
     const relayed = seen.filter((c) => c.url.startsWith('/api/assistant/relay'))

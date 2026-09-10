@@ -279,9 +279,12 @@ async function beginSession(): Promise<string | null> {
  *    that is very likely still live, so it keeps it; if it is not live, the
  *    first chassis call answers a marked `401` and ends the session then.
  *
- * One code for the first and the last of those was a review's HIGH: the page
- * kept its session either way, so a theft was invisible to the person it
- * happened to.
+ * **`handoff-spent` is deliberately not its own case.** The chassis separates
+ * it from `no-handoff` so that a spent handoff can be told from an expired one;
+ * it cannot tell this tab's own earlier spend from anybody else's, and neither
+ * can this page, so acting on it would end live sessions on a guess. Four
+ * review rounds tried to turn it into a visible signal and each attempt was a
+ * defect on the same seam; the line of work is withdrawn.
  */
 async function refusedExchange(answered: Response, stored: string | null): Promise<string | null> {
   const code = refusalCode(answered)
