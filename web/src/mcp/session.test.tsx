@@ -19,7 +19,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { McpProvider, removeTheLaunchHash, socketProtocols, socketURL } from './McpProvider'
 import {
   HANDOFF_EXPIRED_MESSAGE,
-  HANDOFF_SPENT_MESSAGE,
   NO_SESSION_MESSAGE,
   NoSession,
   REFUSAL_HEADER,
@@ -27,16 +26,13 @@ import {
   forgetSession,
   resetSessionForTesting,
   sessionBearer,
-  otherSessionsMessage,
-  sequenceStorageKey,
   sessionEnded,
-  sessionNotice,
   sessionStorageKey,
   whenSessionEnds
 } from './session'
 import { deskFetch, listFiles } from '../files/client'
 import { bindModelCall, openAssistantConnection } from '../assistant/session'
-import { BlockedNotice, ConnectionNotices, useBlockingError } from '../shell/ConnectionNotices'
+import { BlockedNotice, useBlockingError } from '../shell/ConnectionNotices'
 
 /**
  * The shell's own notice, so that "the terminal UI is rendered" is a statement
@@ -185,10 +181,6 @@ describe('the one exchange', () => {
     // and is exactly what the containment gate caught: a page that never
     // reaches `networkidle` because one `POST /api/session` that answered 401
     // was still open.
-    // **The exchange's own answer, and not the count read that follows it.**
-    // Both are `/api/session`, and a stub that recorded whichever came last
-    // measured the wrong one — the count read releases its own body on its own
-    // path, so the row that breaks the exchange's release survived.
     window.sessionStorage.setItem(sessionStorageKey(), STORED)
     let refusal: Response | undefined
     vi.stubGlobal('fetch', async (input: unknown, init?: RequestInit) => {
@@ -201,22 +193,6 @@ describe('the one exchange', () => {
     expect(await bootstrap()).toBe(STORED)
     expect(refusal, 'the exchange was never made').toBeDefined()
     expect(refusal?.bodyUsed).toBe(true)
-  })
-
-  it('lets go of a refused count read too', async () => {
-    // The same property on the other read this bootstrap can make. It is its
-    // own row's subject rather than this one's, and its own assertion here.
-    window.sessionStorage.setItem(sessionStorageKey(), STORED)
-    let read: Response | undefined
-    vi.stubGlobal('fetch', async (input: unknown, init?: RequestInit) => {
-      if (String(input) === '/api/session' && init?.method === 'POST') {
-        return refused('no-handoff', { code: 'no-handoff' })
-      }
-      read = refused('unauthorized', { code: 'unauthorized' })
-      return read
-    })
-    expect(await bootstrap()).toBe(STORED)
-    expect(read?.bodyUsed).toBe(true)
   })
 
   it('answers null when there is no handoff and this tab holds nothing', async () => {
@@ -235,7 +211,7 @@ describe('the one exchange', () => {
   })
 })
 
-describe('a reload and a theft are told apart', () => {
+describe('what a refused exchange means', () => {
   it('keeps the stored id on `no-handoff`, which is what a reload is', async () => {
     // The exchange clears the handoff it spends, so a reload inside the window
     // presents nothing at all. That tab holds an id that is very likely still
@@ -252,10 +228,12 @@ describe('a reload and a theft are told apart', () => {
     expect(await sessionBearer()).toBe(STORED)
   })
 
-  it('forgets the id on `handoff-spent`, and says the link was used', async () => {
-    // **The residual, happening, to an authenticated tab.** The person reopens
-    // the printed URL; a script takes the handoff first; the page's own
-    // exchange is refused with the code that says which failure it was.
+  it('treats `handoff-spent` exactly as `no-handoff`: a tab with an id keeps it', async () => {
+    // **A cookie this desk no longer holds tells the page nothing it may act
+    // on.** The desk cannot distinguish a page's own earlier spend — the
+    // exchange clears only `Path=/`, so a copy planted at a longer path
+    // outlives it — from anybody else's, and neither can this. Four attempts at
+    // reading more into it were tried and withdrawn.
     window.sessionStorage.setItem(sessionStorageKey(), STORED)
     record((call) =>
       call.url === '/api/session'
@@ -265,27 +243,38 @@ describe('a reload and a theft are told apart', () => {
           })
         : json({})
     )
-    expect(await bootstrap()).toBeNull()
-    expect(window.sessionStorage.getItem(sessionStorageKey())).toBeNull()
-    expect(sessionEnded()).toBe(HANDOFF_SPENT_MESSAGE)
-    await expect(sessionBearer()).rejects.toThrow(HANDOFF_SPENT_MESSAGE)
-    // Reopening the printed URL cannot fix it, so the sentence does not say to.
-    expect(HANDOFF_SPENT_MESSAGE).toContain('Restart jpack-desk')
-    expect(HANDOFF_SPENT_MESSAGE).not.toContain('open the URL that jpack-desk printed')
+    expect(await bootstrap()).toBe(STORED)
+    expect(window.sessionStorage.getItem(sessionStorageKey())).toBe(STORED)
+    expect(sessionEnded()).toBeNull()
+    expect(await sessionBearer()).toBe(STORED)
   })
 
-  it('sends nothing at all after a spent handoff, on any transport', async () => {
-    const seen = record((call) =>
+  it('treats `handoff-spent` exactly as `no-handoff`: a tab with none has none', async () => {
+    record((call) =>
       call.url === '/api/session'
         ? refused('handoff-spent', { code: 'handoff-spent' })
         : json({})
     )
-    await expect(listFiles()).rejects.toThrow(HANDOFF_SPENT_MESSAGE)
-    await expect(
-      bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
-    ).rejects.toThrow(HANDOFF_SPENT_MESSAGE)
-    expect(seen.filter((c) => c.url !== '/api/session')).toHaveLength(0)
-    expect(exchanges(seen)).toHaveLength(1)
+    expect(await bootstrap()).toBeNull()
+    expect(sessionEnded()).toBeNull()
+    // The state a page with no id is in, with the sentence for it.
+    await expect(sessionBearer()).rejects.toThrow(NO_SESSION_MESSAGE)
+  })
+
+  it('ends a tab with no id on `handoff-expired`, and keeps one that has an id... no', async () => {
+    // `handoff-expired` is the one refusal a person can act on, so it ends the
+    // session whatever the tab was holding: the id it holds was bought by an
+    // earlier launch and may be anything, and the instruction — reopen the
+    // printed URL — is the same either way.
+    window.sessionStorage.setItem(sessionStorageKey(), STORED)
+    record((call) =>
+      call.url === '/api/session'
+        ? refused('handoff-expired', { code: 'handoff-expired' })
+        : json({})
+    )
+    expect(await bootstrap()).toBeNull()
+    expect(sessionEnded()).toBe(HANDOFF_EXPIRED_MESSAGE)
+    expect(window.sessionStorage.getItem(sessionStorageKey())).toBeNull()
   })
 
   it('shows the chassis’ own sentence when the desk is at its capacity', async () => {
@@ -313,118 +302,6 @@ describe('a reload and a theft are told apart', () => {
   })
 })
 
-describe('how many other sessions this desk is serving', () => {
-  it('derives the line on a fresh exchange, from what the exchange said', async () => {
-    // **Nothing is compared and nothing is remembered.** The exchange says how
-    // many sessions this desk has minted and which one is this tab's; the page
-    // subtracts.
-    record((call) =>
-      call.url === '/api/session' && call.method === 'POST'
-        ? json({ id: MINTED, sessions: { minted: 3, yours: 3 } })
-        : json({})
-    )
-    await bootstrap()
-    expect(sessionNotice()).toBe(otherSessionsMessage(2))
-    expect(window.sessionStorage.getItem(sequenceStorageKey())).toBe('3')
-  })
-
-  it('derives it on a keep too, with one read', async () => {
-    window.sessionStorage.setItem(sessionStorageKey(), STORED)
-    window.sessionStorage.setItem(sequenceStorageKey(), '1')
-    const seen = record((call) =>
-      call.url === '/api/session' && call.method === 'POST'
-        ? refused('no-handoff', { code: 'no-handoff' })
-        : json({ subject: 'local user', issuer: null, sessions: { minted: 4, yours: 1 } })
-    )
-    expect(await bootstrap()).toBe(STORED)
-    expect(sessionNotice()).toBe(otherSessionsMessage(3))
-    expect(seen.filter((c) => c.url === '/api/session' && c.method === 'GET')).toHaveLength(1)
-    expect(sessionEnded()).toBeNull()
-  })
-
-  it('says nothing where this tab is the only session', async () => {
-    record((call) =>
-      call.url === '/api/session' && call.method === 'POST'
-        ? json({ id: MINTED, sessions: { minted: 1, yours: 1 } })
-        : json({})
-    )
-    await bootstrap()
-    expect(sessionNotice()).toBeNull()
-  })
-
-  it('stores this tab’s sequence and nothing else about any of it', async () => {
-    record((call) =>
-      call.url === '/api/session' && call.method === 'POST'
-        ? json({ id: MINTED, sessions: { minted: 5, yours: 5 } })
-        : json({})
-    )
-    await bootstrap()
-    // **Exactly two keys**, and the second is this tab's own sequence. A count
-    // of anybody else, stored, is the state a reload could lose — which is the
-    // defect this shape removes rather than guards.
-    const keys = Object.keys(window.sessionStorage).sort()
-    expect(keys).toEqual([sequenceStorageKey(), sessionStorageKey()].sort())
-    expect(window.sessionStorage.getItem(sequenceStorageKey())).toBe('5')
-  })
-
-  it('says it again on every load, because nothing was remembered', async () => {
-    // **The round-3 HIGH.** The version this replaces persisted the count
-    // before the notice painted, so a reload in between silenced it for ever.
-    // There is nothing to persist now: each load asks and each load says.
-    for (const attempt of [1, 2, 3]) {
-      resetSessionForTesting()
-      window.sessionStorage.clear()
-      window.sessionStorage.setItem(sessionStorageKey(), STORED)
-      record((call) =>
-        call.url === '/api/session' && call.method === 'POST'
-          ? refused('no-handoff', { code: 'no-handoff' })
-          : json({ subject: 'local user', issuer: null, sessions: { minted: 2, yours: 1 } })
-      )
-      expect(await bootstrap(), `attempt ${attempt}`).toBe(STORED)
-      expect(sessionNotice(), `attempt ${attempt}`).toBe(otherSessionsMessage(1))
-    }
-  })
-
-  it('counts every other session, whatever the order they were minted in', async () => {
-    // A tab that holds session 1, a thief who minted 2, a relaunch that minted
-    // 3: the tab now holds 3 and there are two others. The version this
-    // replaces absorbed the thief's session into the relaunch's count.
-    record((call) =>
-      call.url === '/api/session' && call.method === 'POST'
-        ? json({ id: MINTED, sessions: { minted: 3, yours: 3 } })
-        : json({})
-    )
-    await bootstrap()
-    expect(sessionNotice()).toBe(otherSessionsMessage(2))
-    expect(sessionNotice()).toContain('2 other sessions')
-  })
-
-  it('shows the line once, in the shell’s own notice area', async () => {
-    record((call) =>
-      call.url === '/api/session' && call.method === 'POST'
-        ? json({ id: MINTED, sessions: { minted: 2, yours: 2 } })
-        : json({})
-    )
-    await bootstrap()
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <ConnectionNotices />
-      </QueryClientProvider>
-    )
-    const said = document.body.textContent ?? ''
-    const line = otherSessionsMessage(1)
-    expect(said).toContain(line)
-    expect(said.split(line).length - 1).toBe(1)
-    // The narration bound the shell holds every other sentence to, at every
-    // count a desk of 64 sessions can reach.
-    for (const others of [1, 2, 9, 63]) {
-      expect(otherSessionsMessage(others).length, String(others)).toBeLessThanOrEqual(140)
-    }
-    // And it names no session but this desk's own arithmetic.
-    expect(line).toContain('if that is not you')
-  })
-})
-
 describe('a lapsed link is not a stolen one', () => {
   it('says the link expired, and to reopen rather than restart', async () => {
     window.sessionStorage.setItem(sessionStorageKey(), STORED)
@@ -443,21 +320,17 @@ describe('a lapsed link is not a stolen one', () => {
 })
 
 describe('a reload inside the refusal’s delivery window', () => {
-  it('still ends terminal, because the cookie was not cleared', async () => {
-    // **The HIGH.** The clearing header used to travel in the same response as
-    // the refusal, so a tab that reloaded after the browser stored the first
-    // and before the page handled the second presented nothing and read
-    // `no-handoff` — keeping its old session with the theft invisible. The
-    // chassis clears only on success now, so the reload presents the same
-    // cookie and reads the same verdict. This is the page's half: the second
-    // load, with the handling of the first deferred, still ends terminal.
+  it('reads the same verdict on every load, because the cookie was not cleared', async () => {
+    // A refusal used to clear the cookie, in the same response that carried it
+    // — so a tab that reloaded after the browser stored the first and before
+    // the page handled the second presented nothing and got a *different*
+    // answer to the same question, decided by a race. Only success clears now,
+    // so every load reads what the load before it read.
     window.sessionStorage.setItem(sessionStorageKey(), STORED)
-    window.sessionStorage.setItem(sequenceStorageKey(), '1')
     record((call) =>
       call.url === '/api/session' && call.method === 'POST'
-        ? // A sequence that is not this tab's own: somebody else's spend.
-          refused('handoff-spent', { code: 'handoff-spent', producedSeq: 2 })
-        : json({ subject: 'local user', issuer: null, sessions: { minted: 2, yours: 1 } })
+        ? refused('handoff-spent', { code: 'handoff-spent' })
+        : json({})
     )
 
     // The first load's refusal, deliberately not awaited: the reload happens
@@ -466,84 +339,43 @@ describe('a reload inside the refusal’s delivery window', () => {
 
     // The reload — a fresh page, so the module state starts again.
     resetSessionForTesting()
-    expect(await bootstrap()).toBeNull()
-    expect(sessionEnded()).toBe(HANDOFF_SPENT_MESSAGE)
-    expect(window.sessionStorage.getItem(sessionStorageKey())).toBeNull()
-    await first
-  })
-
-  it('would have shown the other session in any case', async () => {
-    // And if the cookie had gone — the ring forgetting it, say — the desk still
-    // reports two sessions and one of them is not this tab's, so the reload
-    // says so. Nothing here was remembered from the load before.
-    window.sessionStorage.setItem(sessionStorageKey(), STORED)
-    record((call) =>
-      call.url === '/api/session' && call.method === 'POST'
-        ? refused('no-handoff', { code: 'no-handoff' })
-        : json({ subject: 'local user', issuer: null, sessions: { minted: 2, yours: 1 } })
-    )
-    expect(await bootstrap()).toBe(STORED)
-    expect(sessionNotice()).toBe(otherSessionsMessage(1))
-  })
-})
-
-describe('a spent handoff this tab spent itself', () => {
-  it('is an echo, not a theft: the id is kept and nothing is said', async () => {
-    // **The clear reaches `Path=/` and nothing else.** A copy of a genuine
-    // handoff planted at a longer path survives this tab's own exchange, so its
-    // own next load presents it — and without the produced sequence that reads
-    // as a theft the tab committed against itself.
-    window.sessionStorage.setItem(sessionStorageKey(), STORED)
-    window.sessionStorage.setItem(sequenceStorageKey(), '4')
-    record((call) =>
-      call.url === '/api/session' && call.method === 'POST'
-        ? refused('handoff-spent', { code: 'handoff-spent', producedSeq: 4 })
-        : json({ subject: 'local user', issuer: null, sessions: { minted: 4, yours: 4 } })
-    )
     expect(await bootstrap()).toBe(STORED)
     expect(sessionEnded()).toBeNull()
     expect(window.sessionStorage.getItem(sessionStorageKey())).toBe(STORED)
-    // Treated exactly as `no-handoff`, which includes asking about the others.
-    expect(sessionNotice()).toBe(otherSessionsMessage(3))
+    await first
   })
+})
 
-  it('is a theft where the sequence is somebody else’s', async () => {
+describe('a desk that restarted', () => {
+  it('keeps the dead id through the bootstrap, and ends at the first call', async () => {
+    // **This is the whole restart path, and it is two steps.** A restarted
+    // chassis mints a new store and a new secret, so the id this tab holds
+    // names nothing — but the exchange cannot say so: it answers `no-handoff`,
+    // because no handoff was presented, and the page keeps what it has. The
+    // *first chassis call* is what meets the marked refusal, and its message is
+    // the one that tells a person what to do.
     window.sessionStorage.setItem(sessionStorageKey(), STORED)
-    window.sessionStorage.setItem(sequenceStorageKey(), '4')
-    record((call) =>
-      call.url === '/api/session'
-        ? refused('handoff-spent', { code: 'handoff-spent', producedSeq: 5 })
-        : json({})
-    )
-    expect(await bootstrap()).toBeNull()
-    expect(sessionEnded()).toBe(HANDOFF_SPENT_MESSAGE)
-  })
-
-  it('is a theft where this tab knows no sequence of its own', async () => {
-    // A tab whose storage was cleared, or a browser that refuses it: the
-    // cautious reading, and the one a tab that never held a session gets.
-    window.sessionStorage.setItem(sessionStorageKey(), STORED)
-    record((call) =>
-      call.url === '/api/session'
-        ? refused('handoff-spent', { code: 'handoff-spent', producedSeq: 4 })
-        : json({})
-    )
-    expect(await bootstrap()).toBeNull()
-    expect(sessionEnded()).toBe(HANDOFF_SPENT_MESSAGE)
-  })
-
-  it('is a reload where the spend produced nothing at all', async () => {
-    // Zero is evidence of nobody: the exchange spent the handoff and then
-    // minted nothing, which is the race at the store's bound.
-    window.sessionStorage.setItem(sessionStorageKey(), STORED)
-    window.sessionStorage.setItem(sequenceStorageKey(), '4')
-    record((call) =>
+    const seen = record((call) =>
       call.url === '/api/session' && call.method === 'POST'
-        ? refused('handoff-spent', { code: 'handoff-spent', producedSeq: 0 })
-        : json({ subject: 'local user', issuer: null, sessions: { minted: 4, yours: 4 } })
+        ? refused('no-handoff', { code: 'no-handoff' })
+        : refused('unauthorized', { error: 'no session', code: 'unauthorized' })
     )
+
+    // Step one: the bootstrap keeps it.
     expect(await bootstrap()).toBe(STORED)
     expect(sessionEnded()).toBeNull()
+
+    // Step two: the first `deskFetch` ends the session, and says to open the
+    // URL the **new** process printed.
+    await expect(listFiles()).rejects.toThrow(NoSession)
+    expect(sessionEnded()).toBe(NO_SESSION_MESSAGE)
+    expect(NO_SESSION_MESSAGE).toContain('open the URL that jpack-desk printed at startup')
+    expect(window.sessionStorage.getItem(sessionStorageKey())).toBeNull()
+
+    // One exchange, one file call, and nothing after.
+    const after = seen.length
+    await expect(listFiles()).rejects.toThrow(NoSession)
+    expect(seen).toHaveLength(after)
   })
 })
 
@@ -556,7 +388,7 @@ describe('the one subscription a session’s end is published on', () => {
       told += 1
     })
     forgetSession()
-    forgetSession(HANDOFF_SPENT_MESSAGE)
+    forgetSession(HANDOFF_EXPIRED_MESSAGE)
     expect(told).toBe(1)
     // And the first reason is the one that stands: the session ended once.
     expect(sessionEnded()).toBe(NO_SESSION_MESSAGE)

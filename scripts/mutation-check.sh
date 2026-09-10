@@ -1552,7 +1552,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # Both bounds go — the one asked before a handoff is spent has its own row.
   mutate go "the 65th session is accepted" "$SE" \
     '	if len(st.live) >= maxSessions {
-		return "", 0, errTooManySessions
+		return "", errTooManySessions
 	}' \
     ''
   # **One credential each way on the upgrade.** A session id on the handshake's
@@ -1608,27 +1608,40 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # **A reload and a theft are different facts.** One code for both left the
   # page unable to tell them apart, so it kept its session either way and the
   # residual was invisible to the person it happened to.
-  mutate go "a spent handoff reads as an absent one" "$SE" \
-    '			"code":        CodeHandoffSpent,' \
-    '			"code":        CodeNoHandoff,'
+  # **Spent and expired are the two the ring exists to tell apart**, because
+  # they send a person to do different things.
+  mutate go "an expired handoff reads as a spent one" "$SE" \
+    '	case handoffExpired:
+		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffExpired,' \
+    '	case handoffExpired:
+		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,'
   # **A refusal clearing the cookie concealed a theft.** The clearing header and
   # the refusal travel in one response, so a reload between the two presented
   # nothing, read `no-handoff`, and kept a session the person was never told
   # about.
   mutate go "a refusal clears the handoff too" "$SE" \
     '	case handoffSpent:
-		// **And which session it bought**' \
+		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,' \
     '	case handoffSpent:
 		http.SetCookie(w, expireLaunchCookie(s.launchCookie, requestScheme(r) == "https"))
-		// **And which session it bought**'
+		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,'
   # **The store remembers what it finished with**, which is the whole of how a
   # theft is told from a stranger's cookie.
   mutate go "the store forgets the handoffs it finished with" "$SE" \
-    '	if ending, ok := ls.finished[key]; ok {
-		return ending.how, ending.produced
+    '	if until, ok := ls.given[key]; ok {
+		if ls.now().After(until) {
+			return handoffExpired
+		}
+		return handoffAccepted
+	}
+	if how, ok := ls.finished[key]; ok {
+		return how
 	}' \
-    '	if ending, ok := ls.finished[key]; ok && false {
-		return ending.how, ending.produced
+    '	if until, ok := ls.given[key]; ok {
+		if ls.now().After(until) {
+			return handoffExpired
+		}
+		return handoffAccepted
 	}'
   # **And a value it never minted is ignored.** A page on any sibling loopback
   # port can plant a cookie of this name at a longer path; refusing what is not
@@ -1638,11 +1651,11 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 			// The first classified answer stands, and a later live one still
 			// wins — which is why this does not return.
 			if best == handoffUnknown {
-				best, produced = how, was
+				best = how
 			}' \
     '		case handoffSpent, handoffExpired:
 			if best == handoffUnknown {
-				best, produced = how, was
+				best = how
 			}
 		default:
 			if best == handoffUnknown {
@@ -1651,62 +1664,54 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # **Every cookie of the name**, because `r.Cookie` answers the first and a
   # browser sends the longest path first.
   mutate go "only the first cookie of the name is read" "$SE" \
-    '	for _, cookie := range r.Cookies() {
-		if cookie.Name != s.launchCookie {
-			continue
-		}' \
-    '	for _, cookie := range r.Cookies()[:1] {
-		if cookie.Name != s.launchCookie {
-			continue
-		}'
+    '	best := handoffUnknown
+	for _, cookie := range r.Cookies() {' \
+    '	best := handoffUnknown
+	for _, cookie := range r.Cookies()[:1] {'
   # **The count that outlives the handoff.** Everything about a stolen handoff
   # is over in sixty seconds; this is what a reload hours later can read.
   # Anchored on `readSession`'s own body: the mint answer carries the same
   # member, so a needle naming only the member matched the wrong one and the
   # row reported that nothing failed — which was true of the edit it made.
-  # Repaired: both answers go through `sessionsBody` now, so the row breaks the
-  # one place the numbers are composed.
-  mutate go "the session endpoint reports no counts" "$SE" \
-    '	return map[string]any{"minted": s.sessions.mintedSoFar(), "yours": yours}' \
-    '	return map[string]any{}'
-  # **A sequence per session**, which is what tells a page's own spent link from
-  # somebody else's: without it every session says the same thing.
-  mutate go "every session shares one sequence" "$SE" \
-    '	st.minted++
-	st.live[st.handle(id)] = session{
-		subject: subject, issuer: issuer, created: time.Now(), seq: st.minted,
-	}
-	return id, st.minted, nil' \
-    '	st.minted++
-	st.live[st.handle(id)] = session{
-		subject: subject, issuer: issuer, created: time.Now(), seq: 1,
-	}
-	return id, 1, nil'
-  # **And the tombstone records which session its handoff bought.** Without it
-  # a page cannot tell the echo of its own spent link from a theft, and a copy
-  # planted at a longer path is a permanent false theft.
-  mutate go "a spent handoff records no session" "$SE" \
-    '	for _, value := range claimed {
-		s.launches.attribute(value, seq)
-	}' \
-    '	_ = claimed'
-  # **The bound is asked before a handoff is spent**, so a desk at capacity
-  # refuses without eating the launch link.
-  mutate go "a capacity refusal eats the launch link" "$SE" \
-    '	if s.sessions.full() {
-		writeJSONCoded(w, http.StatusServiceUnavailable, CodeSessionsFull, errTooManySessions.Error())
-		return
-	}' \
-    ''
-  # **Every live handoff in one request is attributed to the one session
-  # minted**, or the next reload mints a second from a cookie nobody used.
-  mutate go "only the first live handoff is claimed" "$SE" \
-    '		case handoffAccepted:
-			claimed = append(claimed, cookie.Value)' \
-    '		case handoffAccepted:
-			if len(claimed) == 0 {
-				claimed = append(claimed, cookie.Value)
-			}'
+  # **Retired, with the reason: the feature was withdrawn.** Five rows here
+  # broke session sequence numbers, the minted counter, tombstone attribution
+  # and the answer members that carried them. Four review rounds tried to make
+  # a stolen handoff visible on the page and each attempt was a defect on the
+  # same seam; the whole line of work is deleted, so the rows that held it
+  # measure nothing and are named here rather than quietly dropped.
+  #
+  #   - "the session endpoint reports no counts"
+  #   - "the exchange answers no minted count"
+  #   - "every session shares one sequence"
+  #   - "a spent handoff records no session"
+  #   - "only the first live handoff is claimed"
+  #
+  # What replaced the last of those is below: every live handoff is still spent
+  # together, and the row that breaks it is "only the first live handoff is
+  # spent".
+  mutate go "only the first live handoff is spent" "$SE" \
+    '		if s.launches.spend(cookie.Value) == handoffAccepted {
+			accepted = true
+		}' \
+    '		if accepted {
+			continue
+		}
+		if s.launches.spend(cookie.Value) == handoffAccepted {
+			accepted = true
+		}'
+  # **The bound is asked after the cookie is classified.** Asking first meant an
+  # ordinary reload at a full desk — no handoff presented — was answered `503`,
+  # and a page that acts on a capacity refusal deletes a good id.
+  mutate go "the bound is asked before the cookie is classified" "$SE" \
+    '	verdict := s.handoffPresented(r)
+	if verdict == handoffAccepted && s.sessions.full() {' \
+    '	verdict := s.handoffPresented(r)
+	if s.sessions.full() {'
+  # **And the classification spends nothing**, so a live handoff refused for
+  # want of room is still there after a restart.
+  mutate go "classifying a handoff spends it" "$SE" \
+    '		switch how := s.launches.classify(cookie.Value); how {' \
+    '		switch how := s.launches.spend(cookie.Value); how {'
   # **And an endpoint may not redirect the page.** A 307 to `/api/session` made
   # the page's own fetch repeat the request against the exchange with this
   # desk's bearer on it.
@@ -1769,10 +1774,14 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # the handoff is still there afterwards.
   mutate go "the exchange mints without spending the handoff" "$SE" \
     '		ls.finishLocked(key, handoffSpent)
-		return handoffAccepted' \
+		return handoffAccepted
+	}
+	if how, ok := ls.finished[key]; ok {' \
     '		ls.given[key] = until
 		ls.finishLocked(key, handoffSpent)
-		return handoffAccepted'
+		return handoffAccepted
+	}
+	if how, ok := ls.finished[key]; ok {'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -6974,27 +6983,22 @@ export function assistantTransport(id: string): Transport {
     '  await discardBody(answered)
   if (code === '"'"'handoff-expired'"'"') {' \
     '  if (code === '"'"'handoff-expired'"'"') {'
-  # And the count read's own release, which is a second call on the same route:
-  # a test that recorded whichever `/api/session` answer came last measured this
-  # one while naming the other.
-  mutate web "a refused count read's body is left in flight" "$MS" \
-    '    // A refused read is not this function'"'"'s business: the id is dead, and the
-    // call that meets it next says so. The body is let go of either way.
-    await discardBody(answered)' \
-    '    // A refused read is not this function'"'"'s business: the id is dead, and the
-    // call that meets it next says so. The body is let go of either way.
-    void answered'
-  # **A theft read as a reload.** `handoff-spent` is what tells an
-  # authenticated tab that its launch link was used by something else; treating
-  # it like `no-handoff` keeps a session the person was never told about.
-  mutate web "a spent handoff is treated as a reload" "$MS" \
-    "    forgetSession(HANDOFF_SPENT_MESSAGE)
+  # **Retired: the feature was withdrawn.** "a refused count read's body is
+  # left in flight" broke the release on the second `/api/session` call the
+  # bootstrap used to make. There is no second call now.
+  # **A spent handoff forgets the id.** It must not: a cookie this desk no
+  # longer holds tells the page nothing it may act on, and a page that ended its
+  # session on one would end it on its own earlier spend — a copy planted at a
+  # longer path outlives the clear, which reaches `Path=/` and no further.
+  mutate web "a spent handoff forgets the id" "$MS" \
+    "  await discardBody(answered)
+  if (code === 'handoff-expired') {" \
+    "  await discardBody(answered)
+  if (code === 'handoff-spent') {
+    forgetSession()
     return null
   }
-  await discardBody(answered)" \
-    "    return stored
-  }
-  await discardBody(answered)"
+  if (code === 'handoff-expired') {"
   # **The terminal state has to reach the sockets.** A connection established
   # before the refusal notices nothing on its own, and went on carrying frames
   # for a session the chassis had refused.
@@ -7013,31 +7017,19 @@ export function assistantTransport(id: string): Transport {
   mutate web "any relay 401 ends the session" "$ASN2" \
     "    if (answered.status === 401 && refusalCode(answered) === 'unauthorized') {" \
     '    if (answered.status === 401) {'
-  # **A theft after the handoff's own lifetime.** How many other sessions this
-  # desk is serving is the only signal that survives the ring forgetting the
-  # handoff, and a reload hours later has nothing else to read.
-  mutate web "the page never asks how many other sessions there are" "$MS" \
-    '  if (stored !== null) await askAboutSessions(stored)
-  return stored
-}' \
-    '  return stored
-}'
-  # **Derived, never remembered.** A page that stored what it last saw had to
-  # store before it painted, and a reload in between silenced it for ever.
-  mutate web "the other-sessions line is never derived" "$MS" \
-    '  noticed = others > 0 ? otherSessionsMessage(others) : null' \
-    '  noticed = null'
-  # **A page's own spent link is not a theft.** The clear reaches `Path=/`, so a
-  # copy planted at a longer path survives a tab's own exchange.
-  mutate web "a page's own spent handoff reads as a theft" "$MS" \
-    '    const echo =
-      produced === 0 || (produced !== null && mine !== null && produced === mine)' \
-    '    const echo = false'
-  # **And somebody else's spend is not an echo.**
-  mutate web "any spent handoff reads as this page's own" "$MS" \
-    '    const echo =
-      produced === 0 || (produced !== null && mine !== null && produced === mine)' \
-    '    const echo = true'
+  # **Retired, with the reason: the feature was withdrawn.** Four rows here
+  # broke the page's attempts to make a stolen handoff visible — the
+  # other-sessions line, its derivation, and the comparison that told a page's
+  # own spent link from somebody else's. All of it is deleted.
+  #
+  #   - "the page never asks how many other sessions there are"
+  #   - "the other-sessions line is never derived"
+  #   - "a page's own spent handoff reads as a theft"
+  #   - "any spent handoff reads as this page's own"
+  #   - "the page never compares the minted count" (retired a round earlier)
+  #
+  # What stands in their place is one row: a spent handoff must be read as a
+  # reload, because this desk cannot tell whose spend it was.
   # **An opaque redirect is not an answer**, and an engine handed one is handed
   # nothing it can read.
   mutate web "an opaque redirect is delivered to the engine" "$ASN2" \
