@@ -1980,22 +1980,57 @@ usually ends in `/v1`; for `anthropic` the base carrying `/v1/messages`; for
 desk appends the path its protocol prescribes and never guesses a version
 segment.
 
-`model` is the one member of the endpoint that is **not** required, and the
-reason is the order a person works in. The list to pick a model from is the
-endpoint's own, and this desk cannot read it until there is an endpoint saved
-and a key bound to it — so a required model put the first save behind a guess.
-Absent and `null` are one state, and the decoder says which it is:
+`models` is the **set of models enabled for this endpoint**, and `model` is
+that set's **default** — the one a run opens on. A set rather than a single
+choice, because one endpoint answers to several models and which one a piece of
+work wants is a decision made at the run, by the person doing the work; Admin
+decides what is *available*, and the picker on the Assistant tab decides what is
+*used*.
 
 ```json
-{ "assistant": { "endpoint": { "url": "…", "kind": "gemini", "model": null, "tools": [] } } }
+{
+  "assistant": {
+    "endpoint": {
+      "url": "…",
+      "kind": "gemini",
+      "models": ["gemini-2.5-pro", "gemini-2.5-flash"],
+      "model": "gemini-2.5-pro",
+      "tools": []
+    }
+  }
+}
 ```
 
-decodes with the notice `no model chosen yet — pick one below`, which Admin ›
-Assistant shows as that card's Status line. The endpoint is **saved and valid**;
-what it is not is ready, and the Assistant tab and Describe it say so and offer
-no run. `""` is still refused, here and on the chassis: the empty string is a
-value somebody wrote, and a member whose two spellings mean different things is
-a member two readers disagree about.
+Each id is one the provider spells exactly that way, order is the file's, and
+**a duplicate is refused rather than folded** — a set written twice is a file
+two readers count differently. Neither member is required, and the reason is the
+order a person works in: the list to pick from is the endpoint's own, and this
+desk cannot read it until there is an endpoint saved and a key bound to it, so a
+required model put the first save behind a guess.
+
+**The two are held to each other, in both directions**, and each half is refused
+**by name**:
+
+| the file says | and this desk | against |
+| --- | --- | --- |
+| `models` absent, `model: "x"` | migrates: the set is `["x"]`, the default is `"x"` | — |
+| `models` absent, `model` absent or `null` | migrates: the set is empty | — |
+| a default outside the set | refuses the file | `assistant.endpoint.model` |
+| a default beside an empty set | refuses the file | `assistant.endpoint.model` |
+| a set with no default | refuses the file | `assistant.endpoint.model` |
+| the same id twice | refuses the file | `assistant.endpoint.models` |
+| an id the model rule refuses (`""`, whitespace, not a string) | refuses the file | `assistant.endpoint.models` |
+
+A file written before the set decodes as it always meant: nothing is
+substituted and nothing is renamed, so there is no migration notice to write.
+
+**The empty set is what "no model chosen yet" means.** It decodes with the
+notice `no model chosen yet — pick one below`, which Admin › Assistant shows as
+that card's Status line. The endpoint is **saved and valid**; what it is not is
+ready, and the Assistant tab and Describe it say so and offer no run. `""` is
+still refused, here and on the chassis: the empty string is a value somebody
+wrote, and a member whose two spellings mean different things is a member two
+readers disagree about.
 
 `tools` is required, is validated against a closed list — `get_schema`,
 `list_examples`, `get_example`, `validate`, `experimental_evaluate` — and
@@ -2071,9 +2106,10 @@ tier with its refutation pass; the native Gemini wire on **both** engines —
 function declarations, thought summaries streamed into the tab as reasoning,
 thought signatures carried back verbatim across tool turns, and the tier mapped
 to Gemini's own thinking configuration — certified by the same session that
-certifies the other two families; and the **Admin form** below, which chooses
-the provider, the endpoint, the model and the tier, stores the key, and writes
-what belongs in the file.
+certifies the other two families; the **Admin form** below, which chooses the
+provider, the endpoint, the models and the tier, stores the key, and writes what
+belongs in the file; and the **model picker on the run**, which spends the set
+Admin enabled.
 
 **Admin › Assistant is a form**, and the paste block that stood here is gone —
 it existed because the page could not write the file, and a second way to do
@@ -2090,14 +2126,22 @@ sentence about this codebase.
 | **Provider** | one of the three wire protocols, by the name its operator uses: **OpenAI-compatible**, **Anthropic**, **Google Gemini**. Choosing one fills the endpoint URL at once with the base that protocol's own reference documents — `https://api.openai.com/v1`, `https://api.anthropic.com`, `https://generativelanguage.googleapis.com` — as a **default in an editable field**, replaced by typing over it, and left alone once it is somebody's own address. Nothing reads those back, compares an endpoint to them, or treats an endpoint at one of them differently: the enforcement guard admits the three literals only as values of one table in one module, and the sharper guard beside it — every host comparison in the page's source is a loopback name — is untouched. | none |
 | **API key** | the one credential this desk keeps, in a password field that is **populated from nothing**: no endpoint returns a key, and a masked box of the right length would be this page inventing evidence. Once one is stored **there is no field at all** — the state line says `Stored — <fingerprint>, for <provider>` and the actions are **Replace key**, which opens the one field there is, and **Remove key**. Before one: the field, the hint, and `No key stored`. | *Stored on this computer only, never in the project. Readable by your user account only.* |
 | **Endpoint URL** | the base, held to the transport rule and the configured-query rule **by the decoder's own function**, so a URL those rules refuse is shown refused in the sentence the file's reader would write and is not sent. | *Leave the default unless you use a proxy or your own server.* |
-| **Model** | the endpoint's own listing, in a picker, as soon as there is a key bound to the saved endpoint — see below. Its last option is **Other model… (type an id)**, which is the whole of how the field below is reached. | *From the provider's list. Choose Other to type an id.* |
-| **Type a model id** | the field, shown where there is no list to show — or where **Other** was chosen, or where the saved model is not one the endpoint listed. Never beside the picker unasked. | *Exactly as the endpoint spells it.* |
+| **Test connection** | one press, two questions — see below. | none |
+| **Models** | a checkbox for each id, with a **Default** radio beside it. The rows are what the endpoint listed over the set the file already enables, and the file's own set is never dropped from them: an id enabled before a listing existed is still one this desk is configured for. Ticking the first model makes it the default; unticking the default moves it to what is left, because a non-empty set with no default is a configuration this desk's own reader refuses. | *Tick a model to enable it. Default is the one a run opens on.* |
+| **Other model… (type an id)** | the field that adds an id nobody listed — a first-page miss, an endpoint that refuses to list at all, a gateway routing on a name of its own. **Add** puts it in the set, and it is held to the decoder's own rule: an empty id and one already in the set are each refused beside the field, in the sentence the file's reader would write. | *Exactly as the endpoint spells it.* |
 | **Tools the assistant may use** | the five, as five checkboxes. All on for a desk that has configured nothing, because `[]` is a real choice — an assistant that may call nothing — and a form opening on it would have a blank field making it. | *All read-only. Untick one to hide it from the assistant.* |
 | **Thinking** | **off**, **standard** or **deep**, which are `off`, `on` and `ultra` in the file. What each one puts on each protocol's wire is in **The thinking tier**, because it is a fact about a wire rather than a decision about this desk. | *How much reasoning the model may do before answering.* |
 
-The order is **provider → key → Connect → the list → a pick**, and no step in it
-asks anybody to guess: **Connect saves the endpoint with no model at all**, the
-listing loads against it, the person chooses, and Save writes the id.
+The order is **provider → key → Connect → Test connection → the list → a set and
+a default**, and no step in it asks anybody to guess: **Connect saves the
+endpoint with no model at all**, presses Test connection once on its own, the
+list fills in from what came back, the person ticks what this desk may run, and
+Save writes `models` and `model`.
+
+**Test connection sits right after the key and the address** because that is the
+moment a person has the question it answers. Nothing about models is shown
+before a key is stored except the file's own set: this desk has been told
+nothing about what the endpoint offers until somebody asks it.
 
 **Connect is the primary action until a key is stored for the endpoint that is
 saved**, and it is one action doing two things in the only order the chassis
@@ -2113,9 +2157,36 @@ Save until the desk says otherwise. **Store key** stands beside the field for a
 replacement, and is not offered at all where there is no endpoint to bind one
 to.
 
-**Test connection** is the desk's own probe, reported in plain words:
-`connected` or `not connected`, the status, the round trip, and one word from
-the probe's closed vocabulary rendered as a sentence.
+**Test connection is one press and two questions**: the desk's own reachability
+probe, and the endpoint's own model listing through the relay. They are one
+button because to a reader they are one question — *does this work, and what
+does it offer?* Its line says `Connected · 12 models available`, or the probe's
+or the listing's own refusal:
+
+| what happened | the line says |
+| --- | --- |
+| both answered | `Connected · 12 models available` |
+| the endpoint listed nothing | `Connected · the endpoint listed no models` |
+| the endpoint answered, the listing did not | `Connected · the models could not be listed:` and the listing's refusal |
+| the endpoint did not answer this request | `Not connected · answered 401 · the endpoint did not accept the key` |
+| this desk refused to ask | the chassis' own sentence, quoted |
+
+A refusal from elsewhere is **quoted rather than narrated**, and nothing the
+endpoint wrote is repeated on either half.
+
+**It is offered once an endpoint is saved and a key is stored for it**, and only
+while the form on screen says that endpoint — the two states the probe and the
+relay each refuse without, and the one state in which an answer would be about
+somewhere else. Where it is not offered there is a line saying which of those it
+is, because a control that would refuse is worse than a sentence that explains.
+**Connect presses it once on its own** the moment it has stored the key, so the
+list is there without a second click.
+
+**Anthropic with nothing enabled is refused by name, and nothing is sent.** That
+protocol's probe is a *generation* call: with no model it would put a request
+naming the empty string on the wire and read whatever came back as a verdict
+about the endpoint. The button says `Choose a model to test this provider.`
+instead, because the repair is right there.
 
 **Remove endpoint** writes the other state the slot has: `endpoint: null`,
 through the same conditional commit and with the same digest. Until it existed
@@ -2160,47 +2231,48 @@ The test drives the real provider over a stubbed file rather than a fixture,
 because a fixture would hold the mechanism constant and prove nothing about
 it.
 
-**The model list is asked for on its own, with no button to press.** As soon as
-a key is stored for the endpoint that is *saved*, the page reads that endpoint's
-own listing through the relay by naming a path suffix — `models`, `v1/models`,
-`v1beta/models` — and offers the rows in a picker, with the model the file names
-preselected. The button that used to stand here is gone: the answer to "which
-model" is a list the endpoint already knows, and pressing something first is a
-step with no decision in it.
+**The model listing is the second half of that press**, and it is asked for
+nowhere else. The page reads the saved endpoint's own listing through the relay
+by naming a path suffix — `models`, `v1/models`, `v1beta/models` — and the rows
+fill the Models list. It used to arrive on its own the instant a key was stored,
+which is this desk asking somebody's endpoint a question nobody put.
 
-Two things still gate the request and neither is new: the stored key must be
-bound to the saved endpoint, because the relay refuses a credential entered for
-another destination before opening a socket; and the form on screen must **be**
-that endpoint. The family and the suffix used to come off the editable draft
-while the gate came off the file, so choosing Gemini without saving sent
-`v1beta/models` to a still-saved OpenAI-compatible endpoint — a request the page
-composed for one destination and the desk sent to another. The endpoint asked
-about is read at the moment of asking, and the rows are **dropped from state**
-the moment the form says a different host or protocol: a picker left standing
-after that is a list of models from somewhere else, and rows merely *hidden*
-came back when the URL was typed away and back again — an arbitrarily stale
-listing with no request behind it. Typing the URL back asks again, which is a
-listing rather than a resurrection.
+The endpoint asked about is read **at the moment of asking**, off the file. The
+family and the suffix used to come off the editable draft while the gate came
+off the file, so choosing Gemini without saving sent `v1beta/models` to a
+still-saved OpenAI-compatible endpoint — a request the page composed for one
+destination and the desk sent to another. And the answer is **dropped from
+state** the moment the form says a different host or protocol: a list left
+standing after that is a list of models from somewhere else, and rows merely
+*hidden* came back when the URL was typed away and back again — an arbitrarily
+stale listing with no request behind it. Typing the URL back offers the button
+again, which is a listing rather than a resurrection.
 
-**One control at a time.** The picker and the typed field stood side by side and
-the page had no opinion about which one anybody was supposed to use. Where there
-is a list, the list is the control, and its last option — **Other model… (type
-an id)** — is the whole of how the field is reached. Where there is no list, the
-field is the only control, with the listing's own refusal beside it, so the form
-still works against an endpoint that will not answer. A saved model the endpoint
-does not list opens the field by itself, because a picker silently showing
-nothing while a perfectly good id is what would be saved is the state to avoid. **What is saved is the id and never the
-label**, which differ on two of the three protocols — and **an id is an option
-only if the configuration decoder would take it**, asked of that decoder rather
-than re-stated here: a copy of the rule is how a whitespace-only id came to be
-offered, saved cleanly into the field, and produced a 422 on the next Save.
-Typing the same value still gets the decoder's own sentence against the field,
-because the chassis is what decides — and the form runs that same function
-before it sends, so a model this desk will refuse is refused where it was typed
-rather than after a round trip. A listing refusal is its status and one word
-from the probe's own closed vocabulary, and the body is not read; an answer that
-is not JSON gets a fixed sentence, because `JSON.parse` quotes the text it
-failed on and that text is the body.
+**What is enabled is the id and never the label**, which differ on two of the
+three protocols — and **an id is a row only if the configuration decoder would
+take it**, asked of that decoder rather than re-stated here: a copy of the rule
+is how a whitespace-only id came to be offered, saved cleanly into a field, and
+produced a 422 on the next Save. Typing the same value into **Other model…**
+gets the decoder's own sentence against the field, because the chassis is what
+decides — and the form runs that same function before it sends, so a model this
+desk will refuse is refused where it was typed rather than after a round trip. A
+listing refusal is its status and one word from the probe's own closed
+vocabulary, and the body is not read; an answer that is not JSON gets a fixed
+sentence, because `JSON.parse` quotes the text it failed on and that text is the
+body.
+
+**And the run picks from the set.** On the Assistant tab and in **Describe it**
+there is a small Select of the enabled models with the default preselected; the
+run and the refutation pass use what it says, the request names it, and the
+standing line names it too. Nothing else changes.
+
+The pick is a **preference, not configuration**: it lives in `sessionStorage`,
+per tab, under a key naming the project root the chassis pinned, with every
+access in a try/catch — and it is never written to a file. A remembered pick the
+enabled set no longer holds is treated as absent and the default stands, because
+a set moves and a run on an id this desk is no longer configured for would be a
+request nobody enabled. With an empty set there is no picker at all, and both
+surfaces say what they already say about an endpoint with no model chosen.
 
 **The key line says which endpoint the key is for**, in five states: not read
 yet; **no endpoint**, where **Store key** is not offered at all because storing
@@ -2226,6 +2298,11 @@ On a pack's route — reading or `?edit` — the right pane carries two tabs,
 endpoint is configured *and* a key is stored on this machine; otherwise it says
 in one line where that is configured, because a control that would refuse is
 worse than a sentence that explains.
+
+Above the box is the standing line — the engine, the model this run would use
+and the tier — and beside it a **Model** picker of the set Admin enabled, open
+on that set's default. It changes this run and this tab's memory of the choice,
+and no file: see **the model picker** above.
 
 Type what the pack should decide and press **Run**. The desk fetches the
 runtime's own `author_pack` prompt over `prompts/get` with what you typed as its
