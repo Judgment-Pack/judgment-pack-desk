@@ -132,28 +132,6 @@
   align-content: start;
 }
 
-.back {
-  display: inline-flex;
-  align-items: center;
-  justify-self: start;
-  gap: 0.3rem;
-  min-height: var(--density-control);
-  margin-bottom: var(--density-block);
-  border-radius: var(--radius-sm);
-  color: var(--ink-soft);
-  font-size: 0.8rem;
-  text-decoration: none;
-}
-
-.back:hover {
-  color: var(--accent);
-}
-
-.back:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-
 .open > section {
   padding: 0;
   border-top-width: 0;

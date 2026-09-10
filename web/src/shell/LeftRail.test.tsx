@@ -205,6 +205,7 @@ describe('the left rail', () => {
     fireEvent.keyDown(screen.getByRole('button', { name: 'Admin sections' }), { key: 'Enter' })
     const items = await screen.findAllByRole('menuitem')
     expect(items.map((item) => item.textContent)).toEqual([
+      'Project',
       'Organization',
       'Storage',
       'Assistant',
