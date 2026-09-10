@@ -151,34 +151,23 @@ const (
 	// and does not remember finishing with, which are ignored. Overwhelmingly a
 	// page reloading — the exchange clears the handoff it spends — or a browser
 	// nobody opened the printed URL for.
-	//
-	// **Split from the two below because they mean opposite things to a page.**
-	// A tab reloading holds a session id that is very likely still live and
-	// must keep it; a tab whose handoff was used by something else must stop.
-	// One code for all of it left the page unable to tell a reload from a
-	// theft, which is the whole of what the handoff's residual costs.
 	CodeNoHandoff = "no-handoff"
 	// CodeHandoffSpent is `POST /api/session` with a handoff this desk **spent**
-	// — by this same tab on an earlier load, or by another caller inside its
-	// sixty seconds.
+	// — by this same tab on an earlier load, or by another caller.
 	//
-	// **It carries `producedSeq`**, the sequence of the session that handoff
-	// bought, because the two cases are told apart by nothing else: a copy of a
-	// genuine handoff planted at a longer path survives the clear, which reaches
-	// only `Path=/`, so a page's own next load presents it. A page whose own
-	// sequence matches is looking at the echo of its own link and treats it
-	// exactly as `no-handoff`; a different sequence is somebody else's session,
-	// and the page stops. Zero means the exchange spent it and then minted
-	// nothing, which is evidence of nobody.
+	// **The two are not distinguished, and the page acts on neither.** It reads
+	// this exactly as `no-handoff`: a tab holding an id keeps it, and a tab
+	// holding none has no session. This desk cannot tell a page's own earlier
+	// spend from anybody else's, so a code that invited the page to guess would
+	// be a code inviting it to be wrong — which it was, four times.
 	CodeHandoffSpent = "handoff-spent"
 	// CodeHandoffExpired is `POST /api/session` with a handoff this desk minted
 	// and then let **lapse**: sixty seconds went by before the page loaded.
 	//
-	// **Its own code, beside CodeHandoffSpent**, because what a person should
-	// do differs. An expiry is nobody's fault and the launch secret still
-	// works, so the answer is to *reopen* the printed URL. A spent handoff
-	// means something else used the link, and reopening it hands the next one
-	// to whatever took the last — so the answer there is to restart.
+	// **Its own code, because the instruction differs.** Nobody used the link
+	// and the launch secret still works, so the answer is to reopen the printed
+	// URL — which is not what a page that met a spend is told, because there
+	// nothing about the link can be concluded at all.
 	CodeHandoffExpired = "handoff-expired"
 	// CodeSessionsFull is `POST /api/session` at the store's bound: this desk
 	// holds as many sessions as it will hold, and refuses rather than dropping

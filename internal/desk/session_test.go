@@ -399,27 +399,24 @@ func TestAnExpiredHandoffSaysSoRatherThanSayingNothing(t *testing.T) {
 
 // TestTheTombstoneRingIsBoundedAndSaysWhatThatCosts.
 //
-// Remembering that a handoff was spent is what tells a theft from a stranger's
-// cookie; remembering for ever is a map that grows for the life of the process.
-// Past the bound the oldest record goes and its value reads as unknown — so
-// **a secret holder who takes a victim's handoff and then cycles sixty-four
-// launches inside the victim's window pushes the spent record out**, and the
-// victim's next load keeps its id. `sessions.minted` is what still shows it,
-// and this test asserts that too.
+// What the ring buys is one distinction — spent from expired — because those
+// two send a person to do different things. Remembering for ever is a map that
+// grows for the life of the process; past the bound the oldest record goes and
+// its value reads as unknown.
+//
+// **What that costs is nothing a page acts on**, which is what this asserts: a
+// spend that has been cycled out reads as `no-handoff` instead, and the page
+// follows the same instruction for both.
 func TestTheTombstoneRingIsBoundedAndSaysWhatThatCosts(t *testing.T) {
 	s, ts := newTestServer(t, false)
 
-	// The victim's tab, holding a session and the count it saw.
-	beginSession(t, ts)
-	before := s.sessions.mintedSoFar()
+	spent := launchHandoff(t, ts)
+	exchange(t, ts, spent)
 
-	stolen := launchHandoff(t, ts)
-	exchange(t, ts, stolen) // the thief takes it
-
-	// The victim's own load, immediately: it reads as spent.
-	status, body := exchangeAttempt(t, ts, withHandoff(ts, stolen))
+	// Immediately: it reads as spent.
+	status, body := exchangeAttempt(t, ts, withHandoff(ts, spent))
 	if status != http.StatusUnauthorized || body["code"] != CodeHandoffSpent {
-		t.Fatalf("the victim read %d %v, want %s", status, body["code"], CodeHandoffSpent)
+		t.Fatalf("read %d %v, want %s", status, body["code"], CodeHandoffSpent)
 	}
 
 	// Now the secret holder cycles the ring. **Launches and not exchanges**:
@@ -439,21 +436,11 @@ func TestTheTombstoneRingIsBoundedAndSaysWhatThatCosts(t *testing.T) {
 	}
 
 	// **And the spent record is gone**, so the same value now reads as nothing.
-	// This is the cost, asserted rather than assumed.
-	status, body = exchangeAttempt(t, ts, withHandoff(ts, stolen))
+	// The page follows the same instruction either way, which is why this is a
+	// cost worth naming and not a defect worth guarding.
+	status, body = exchangeAttempt(t, ts, withHandoff(ts, spent))
 	if status != http.StatusUnauthorized || body["code"] != CodeNoHandoff {
-		t.Fatalf("after the ring cycled, the victim read %d %v, want %s",
-			status, body["code"], CodeNoHandoff)
-	}
-
-	// What still shows it: the count of sessions this process has minted, which
-	// the ring's bound cannot touch. The page derives `minted - 1` at every
-	// bootstrap and says how many other sessions this desk is serving; nothing
-	// about that is stored, so nothing about it can be missed.
-	after := s.sessions.mintedSoFar()
-	if after <= before {
-		t.Fatalf("minted went from %d to %d: the count says nothing about the theft",
-			before, after)
+		t.Fatalf("after the ring cycled, read %d %v, want %s", status, body["code"], CodeNoHandoff)
 	}
 }
 
@@ -592,51 +579,6 @@ func TestAScriptMintsASessionWithTheLaunchSecret(t *testing.T) {
 		t.Fatalf("no id: %v", body)
 	}
 	acceptsSession(t, ts, id, "")
-}
-
-// TestTheExchangeReportsTheMintedCountWithTheID.
-//
-// **A fresh tab must not need a second request** to know the count it should
-// compare against later, so the id and the count travel together. A tab that
-// kept an old id asks `GET /api/session` for the same number instead — the two
-// answers report it identically, which is what makes a comparison across a
-// reload mean anything.
-func TestTheExchangeReportsTheMintedCountWithTheID(t *testing.T) {
-	s, ts := newTestServer(t, false)
-	status, body := exchangeAttempt(t, ts, bearer)
-	if status != http.StatusOK {
-		t.Fatalf("status %d, want 200: %v", status, body)
-	}
-	sessions, ok := body["sessions"].(map[string]any)
-	if !ok {
-		t.Fatalf("the exchange answered no sessions member: %v", body)
-	}
-	minted, ok := sessions["minted"].(float64)
-	if !ok || uint64(minted) != s.sessions.mintedSoFar() {
-		t.Fatalf("the exchange reported minted=%v, want %d", sessions["minted"], s.sessions.mintedSoFar())
-	}
-	// **And this session's own place in that order.** The page subtracts —
-	// `minted - 1` is how many other sessions this desk is serving — and stores
-	// only `yours`, which is what tells its own spent link from a theft.
-	yours, ok := sessions["yours"].(float64)
-	if !ok || yours != minted {
-		t.Fatalf("the first session says yours=%v of minted=%v", sessions["yours"], sessions["minted"])
-	}
-
-	// And the reader reports the same number for the same desk.
-	id, _ := body["id"].(string)
-	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/session", nil)
-	pageBearer(id)(req)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	defer resp.Body.Close()
-	var read map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&read)
-	if fmt.Sprint(read["sessions"]) != fmt.Sprint(body["sessions"]) {
-		t.Fatalf("the reader says %v and the exchange said %v", read["sessions"], body["sessions"])
-	}
 }
 
 // TestTheStatedResidual is the one this design does **not** claim to prevent,
@@ -1340,7 +1282,7 @@ func TestTheStoreHoldsNoSessionID(t *testing.T) {
 	}
 	minted := map[string]bool{}
 	for range 8 {
-		id, _, err := store.create("local user", nil)
+		id, err := store.create("local user", nil)
 		if err != nil {
 			t.Fatalf("create: %v", err)
 		}
@@ -1391,7 +1333,7 @@ func TestSessionStoreLookupRefusesWhatItNeverMinted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newSessionStore: %v", err)
 	}
-	id, _, err := store.create("local user", nil)
+	id, err := store.create("local user", nil)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -1426,7 +1368,7 @@ func TestTheSessionStoreRefusesPastItsBound(t *testing.T) {
 	}
 	ids := make([]string, 0, maxSessions)
 	for range maxSessions {
-		id, _, err := store.create("local user", nil)
+		id, err := store.create("local user", nil)
 		if err != nil {
 			t.Fatalf("create: %v", err)
 		}
@@ -1435,7 +1377,7 @@ func TestTheSessionStoreRefusesPastItsBound(t *testing.T) {
 	if n := store.count(); n != maxSessions {
 		t.Fatalf("the store holds %d, want it full at %d", n, maxSessions)
 	}
-	if _, _, err := store.create("local user", nil); err == nil {
+	if _, err := store.create("local user", nil); err == nil {
 		t.Fatal("the store minted a session past its bound")
 	} else if !strings.Contains(err.Error(), "maximum of sessions") {
 		t.Fatalf("the refusal is %q, want the one a person can act on", err)
@@ -1543,23 +1485,16 @@ func TestSessionEndpointAnswersTheBearersSubject(t *testing.T) {
 	if issuer != nil {
 		t.Errorf("issuer = %v, want null", issuer)
 	}
-	if len(body) != 3 {
-		t.Errorf("the answer carries %d members, want subject, issuer and sessions: %v",
+	// **Two members, and no more.** This route reported a count of the sessions
+	// this process had minted, so that a page could notice one it did not ask
+	// for; that whole line of work is withdrawn, and a route that still carried
+	// the number would be inviting the next reader to use it.
+	if len(body) != 2 {
+		t.Errorf("the answer carries %d members, want subject and issuer only: %v",
 			len(body), body)
 	}
-	// **The count, which is what makes a theft visible after the handoff is
-	// gone.** A page stores it beside its own id and says so on a later load if
-	// it grew.
-	sessions, ok := body["sessions"].(map[string]any)
-	if !ok {
-		t.Fatalf("the answer carries no sessions member: %v", body)
-	}
-	minted, ok := sessions["minted"].(float64)
-	if !ok || minted < 1 {
-		t.Fatalf("sessions.minted is %v, want at least the one this test minted", sessions["minted"])
-	}
-	if yours, ok := sessions["yours"].(float64); !ok || yours < 1 || yours > minted {
-		t.Fatalf("sessions.yours is %v of minted %v", sessions["yours"], minted)
+	if _, present := body["sessions"]; present {
+		t.Errorf("the answer still carries a sessions member: %v", body)
 	}
 }
 
@@ -1884,169 +1819,116 @@ func TestTheSessionsFullRefusalIsMarkedAndSaysWhatToDo(t *testing.T) {
 
 /* The sequence, and the echo of a page's own spent link ------------------------ */
 
-// TestEverySessionHasItsOwnPlaceInTheOrder.
+// TestTheBoundIsAskedAfterTheCookieIsClassified.
 //
-// The sequence is not a credential and nothing is looked up by it. It exists
-// for one comparison: a spent handoff carries the sequence of the session it
-// bought, and a page whose own sequence matches is looking at the echo of its
-// own link rather than at somebody else's theft.
-func TestEverySessionHasItsOwnPlaceInTheOrder(t *testing.T) {
-	_, ts := newTestServer(t, false)
-	seen := map[float64]bool{}
-	for want := 1; want <= 4; want++ {
-		_, body := exchangeAttempt(t, ts, bearer)
-		sessions, _ := body["sessions"].(map[string]any)
-		yours, _ := sessions["yours"].(float64)
-		minted, _ := sessions["minted"].(float64)
-		if int(yours) != want {
-			t.Fatalf("session %d says yours=%v", want, yours)
+// **Order, and it is the whole of one defect.** Asking the bound first meant an
+// ordinary reload at a full desk — no handoff presented, and `no-handoff` is
+// what it would have been told — was answered `503` instead. A page that acts
+// on a capacity refusal deletes an id that was perfectly good, so only a
+// **live** handoff, which is the only thing that can mint, may be refused for
+// want of room.
+func TestTheBoundIsAskedAfterTheCookieIsClassified(t *testing.T) {
+	fill := func(t *testing.T) (*Server, *httptest.Server) {
+		t.Helper()
+		s, ts := newTestServer(t, false)
+		for range maxSessions {
+			exchangeAttempt(t, ts, bearer)
 		}
-		if minted != yours {
-			t.Fatalf("minted=%v beside yours=%v with nothing else minting", minted, yours)
+		return s, ts
+	}
+
+	t.Run("a live handoff is refused, and not eaten", func(t *testing.T) {
+		s, ts := fill(t)
+		handoff := launchHandoff(t, ts)
+		before := s.launches.count()
+
+		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/session", nil)
+		withHandoff(ts, handoff)(req)
+		resp, err := ts.Client().Do(req)
+		if err != nil {
+			t.Fatalf("exchange: %v", err)
 		}
-		if seen[yours] {
-			t.Fatalf("two sessions share the sequence %v", yours)
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusServiceUnavailable {
+			t.Fatalf("status %d, want 503", resp.StatusCode)
 		}
-		seen[yours] = true
-	}
-}
-
-// TestAPlantedCopyOfAGenuineHandoffIsAnEchoAndNotATheft.
-//
-// **The success clears `Path=/` and nothing else.** A page on any sibling
-// loopback port can plant a *copy* of a genuine handoff at `Path=/api`, so the
-// victim's own exchange spends the value, the clear misses the copy, and the
-// victim's next reload presents it — reading a theft it committed against
-// itself. The tombstone carries the sequence it produced, and a page whose own
-// sequence matches treats that exactly as `no-handoff`.
-func TestAPlantedCopyOfAGenuineHandoffIsAnEchoAndNotATheft(t *testing.T) {
-	_, ts := newTestServer(t, false)
-	handoff := launchHandoff(t, ts)
-
-	// The victim's own exchange.
-	status, body := exchangeAttempt(t, ts, withHandoff(ts, handoff))
-	if status != http.StatusOK {
-		t.Fatalf("the victim's exchange answered %d: %v", status, body)
-	}
-	sessions, _ := body["sessions"].(map[string]any)
-	yours, _ := sessions["yours"].(float64)
-
-	// The reload, presenting the planted copy the clear could not reach.
-	again, refusal := exchangeAttempt(t, ts, withHandoff(ts, handoff))
-	if again != http.StatusUnauthorized || refusal["code"] != CodeHandoffSpent {
-		t.Fatalf("the reload answered %d %v, want 401 %s", again, refusal["code"], CodeHandoffSpent)
-	}
-	produced, ok := refusal["producedSeq"].(float64)
-	if !ok {
-		t.Fatalf("the refusal carries no producedSeq: %v", refusal)
-	}
-	if produced != yours {
-		t.Fatalf("producedSeq=%v beside the victim's own yours=%v: the page would read a theft",
-			produced, yours)
-	}
-}
-
-// TestAThiefsSpendCarriesADifferentSequence is the other half, and the reason
-// the comparison is worth making: a handoff somebody *else* spent bought a
-// session this tab has never held.
-func TestAThiefsSpendCarriesADifferentSequence(t *testing.T) {
-	_, ts := newTestServer(t, false)
-
-	// The victim's tab, holding session 1.
-	_, mine := exchangeAttempt(t, ts, bearer)
-	minesessions, _ := mine["sessions"].(map[string]any)
-	yours, _ := minesessions["yours"].(float64)
-
-	// A relaunch, taken by a script.
-	stolen := launchHandoff(t, ts)
-	if status, _ := exchangeAttempt(t, ts, withHandoff(ts, stolen)); status != http.StatusOK {
-		t.Fatalf("the thief's exchange answered %d", status)
-	}
-
-	// The victim's own load, presenting the handoff the thief spent.
-	status, refusal := exchangeAttempt(t, ts, withHandoff(ts, stolen))
-	if status != http.StatusUnauthorized || refusal["code"] != CodeHandoffSpent {
-		t.Fatalf("the victim read %d %v", status, refusal["code"])
-	}
-	produced, _ := refusal["producedSeq"].(float64)
-	if produced == yours {
-		t.Fatalf("a thief's spend carries the victim's own sequence %v", yours)
-	}
-	if produced == 0 {
-		t.Fatalf("a thief's spend carries no sequence at all: %v", refusal)
-	}
-}
-
-// TestTwoLiveHandoffsAreAllAttributedToTheOneSessionMinted.
-//
-// A request can only carry two live values of this name if something planted
-// one at a different path. Every live one is spent and all of them are
-// attributed to the one session minted — because the alternative, leaving the
-// rest live, makes the *next* reload mint a second session from a cookie nobody
-// deliberately used.
-func TestTwoLiveHandoffsAreAllAttributedToTheOneSessionMinted(t *testing.T) {
-	s, ts := newTestServer(t, false)
-	first := launchHandoff(t, ts)
-	second := launchHandoff(t, ts)
-
-	status, body := exchangeAttempt(t, ts, func(r *http.Request) {
-		r.AddCookie(&http.Cookie{Name: first.Name, Value: first.Value})
-		r.AddCookie(&http.Cookie{Name: second.Name, Value: second.Value})
-		r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
-		r.Header.Set("Origin", ts.URL)
+		if got := resp.Header.Get(RefusalHeader); got != CodeSessionsFull {
+			t.Fatalf("%s = %q, want %q", RefusalHeader, got, CodeSessionsFull)
+		}
+		// **The cookie is left where it is**, so the link is still usable after
+		// a restart: the secret and the store are both per process.
+		if cookies := resp.Cookies(); len(cookies) != 0 {
+			t.Fatalf("a capacity refusal set %v", cookies)
+		}
+		if after := s.launches.count(); after != before {
+			t.Fatalf("a capacity refusal spent a handoff: %d unspent before, %d after", before, after)
+		}
 	})
-	if status != http.StatusOK {
-		t.Fatalf("two live handoffs answered %d: %v", status, body)
-	}
-	if n := s.sessions.mintedSoFar(); n != 1 {
-		t.Fatalf("%d sessions minted from one exchange, want 1", n)
-	}
-	sessions, _ := body["sessions"].(map[string]any)
-	yours, _ := sessions["yours"].(float64)
 
-	// Both read as this tab's own echo afterwards, so neither mints anything on
-	// a later load and neither reads as a theft.
-	for name, handoff := range map[string]*http.Cookie{"the first": first, "the second": second} {
-		after, refusal := exchangeAttempt(t, ts, withHandoff(ts, handoff))
-		if after != http.StatusUnauthorized || refusal["code"] != CodeHandoffSpent {
-			t.Fatalf("%s handoff answered %d %v on a later load", name, after, refusal["code"])
+	t.Run("a plain reload is not refused for want of room", func(t *testing.T) {
+		_, ts := fill(t)
+		status, body := exchangeAttempt(t, ts, func(r *http.Request) {
+			r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+			r.Header.Set("Origin", ts.URL)
+		})
+		if status != http.StatusUnauthorized || body["code"] != CodeNoHandoff {
+			t.Fatalf("a reload at a full desk answered %d %v, want 401 %s",
+				status, body["code"], CodeNoHandoff)
 		}
-		if produced, _ := refusal["producedSeq"].(float64); produced != yours {
-			t.Fatalf("%s handoff produced %v, want this tab's own %v", name, produced, yours)
+	})
+
+	t.Run("a spent cookie is not refused for want of room", func(t *testing.T) {
+		s, ts := newTestServer(t, false)
+		handoff := launchHandoff(t, ts)
+		exchange(t, ts, handoff)
+		for s.sessions.count() < maxSessions {
+			exchangeAttempt(t, ts, bearer)
 		}
-	}
-	if n := s.sessions.mintedSoFar(); n != 1 {
-		t.Fatalf("%d sessions after the later loads, want still 1", n)
-	}
-}
+		status, body := exchangeAttempt(t, ts, withHandoff(ts, handoff))
+		if status != http.StatusUnauthorized || body["code"] != CodeHandoffSpent {
+			t.Fatalf("a spent cookie at a full desk answered %d %v, want 401 %s",
+				status, body["code"], CodeHandoffSpent)
+		}
+	})
 
-// TestACapacityRefusalLeavesTheHandoffAlone. A desk at its bound refuses
-// without consuming the launch link, so a restart and a reopen work — rather
-// than the person meeting a link this process already ate.
-func TestACapacityRefusalLeavesTheHandoffAlone(t *testing.T) {
-	s, ts := newTestServer(t, false)
-	for range maxSessions {
-		exchangeAttempt(t, ts, bearer)
-	}
-	handoff := launchHandoff(t, ts)
-	before := s.launches.count()
+	t.Run("an expired cookie is not refused for want of room", func(t *testing.T) {
+		s, ts := newTestServer(t, false)
+		handoff := launchHandoff(t, ts)
+		now := time.Now()
+		s.launches.mu.Lock()
+		s.launches.now = func() time.Time { return now.Add(launchWindow + time.Second) }
+		s.launches.mu.Unlock()
+		for s.sessions.count() < maxSessions {
+			exchangeAttempt(t, ts, bearer)
+		}
+		status, body := exchangeAttempt(t, ts, withHandoff(ts, handoff))
+		if status != http.StatusUnauthorized || body["code"] != CodeHandoffExpired {
+			t.Fatalf("an expired cookie at a full desk answered %d %v, want 401 %s",
+				status, body["code"], CodeHandoffExpired)
+		}
+	})
 
-	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/session", nil)
-	withHandoff(ts, handoff)(req)
-	resp, err := ts.Client().Do(req)
-	if err != nil {
-		t.Fatalf("exchange: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("status %d, want 503", resp.StatusCode)
-	}
-	if cookies := resp.Cookies(); len(cookies) != 0 {
-		t.Fatalf("a capacity refusal set %v", cookies)
-	}
-	if after := s.launches.count(); after != before {
-		t.Fatalf("a capacity refusal spent a handoff: %d unspent before, %d after", before, after)
-	}
+	t.Run("an unknown cookie is not refused for want of room", func(t *testing.T) {
+		s, ts := fill(t)
+		status, body := exchangeAttempt(t, ts, func(r *http.Request) {
+			r.AddCookie(&http.Cookie{Name: s.launchCookie, Value: "never-minted-here"})
+			r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+			r.Header.Set("Origin", ts.URL)
+		})
+		if status != http.StatusUnauthorized || body["code"] != CodeNoHandoff {
+			t.Fatalf("an unknown cookie at a full desk answered %d %v, want 401 %s",
+				status, body["code"], CodeNoHandoff)
+		}
+	})
+
+	t.Run("a script's bearer mint is refused", func(t *testing.T) {
+		_, ts := fill(t)
+		status, body := exchangeAttempt(t, ts, bearer)
+		if status != http.StatusServiceUnavailable || body["code"] != CodeSessionsFull {
+			t.Fatalf("a script at a full desk answered %d %v, want 503 %s",
+				status, body["code"], CodeSessionsFull)
+		}
+	})
 }
 
 // TestTheHandlersThatWriteTheirOwnRefusalsAreMarkedToo.
