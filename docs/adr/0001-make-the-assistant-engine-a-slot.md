@@ -87,7 +87,8 @@ memo was synthesized. Three results decide this record:
 framework is an adapter that implements it; adapters ship only when they pass the desk's
 conformance session; the desk enforces the guardrails and key custody **below** the adapter, so
 a user's choice of engine cannot weaken the contract. Two adapters ship first — `vercel` as the
-default and `builtin` as the keyless fallback — and others are certified on demand.
+default and `builtin` as the keyless fallback — and others are certified on demand. (`builtin` was
+withdrawn on 2026-09-10; see the amendment below.)
 
 The engine is the one swappable box. Everything it can reach passes through a seam the desk
 owns, and swapping the engine changes none of the seams:
@@ -96,7 +97,7 @@ owns, and swapping the engine changes none of the seams:
 flowchart LR
   subgraph page["Browser page · one artifact"]
     UI["Assistant tab · Describe it"]
-    ENG["Engine slot (assistant.engine)<br/>vercel · default<br/>builtin · keyless fallback<br/>… · certified on demand"]
+    ENG["Engine slot (assistant.engine)<br/>vercel · the engine that runs<br/>… · certified on demand"]
     GATE["ToolGate<br/>allow-list · rehearsal rewrite"]
     MCP["MCP client · official SDK"]
     MODEL["Model client"]
@@ -249,6 +250,57 @@ Bad:
 - The "always thinks" and "unavailable" states, and the dialect fallback between thinking
   spellings, are desk code on every engine.
 
+## Amendment, 2026-09-10 — the built-in engine is withdrawn
+
+**Status is unchanged: the slot stands.** What is withdrawn is one adapter, not the decision.
+
+`builtin` — the keyless fallback this record shipped first — is removed from the build. The
+reason is the one the record itself names under its own *Bad* column: **1,018 lines of assistant
+source are owned forever, including two SSE parsers and a four-vocabulary parameter table, with
+no community behind any provider quirk**. Nothing in the year since has bought that back. The
+fallback existed for a supply-chain argument the desk no longer needs to make in code: the
+guardrails the record places *below* the engine — the ToolGate, the model relay, the proposal as
+the only sink — are what hold the desk's promises, and they hold them for whatever runs the loop.
+Two engines were how that claim was demonstrated; the conformance session is how it is *kept*.
+
+The cost is stated rather than hidden. Three things went out with it: an engine that echoes the
+assistant turn as received, so split signatures and redacted thinking blocks survive by
+construction; an engine that reads reasoning under both vendor names; and the empty control in
+the schema-narrowing legs, whose derived removal set was empty because it sent the desk's own
+result untouched. The first two are now known limits of the one engine there is, declared in
+`geminiSchema.ts` and in the README. The third is replaced by a direct assertion that the
+measured set is not empty, which is weaker as a control and honest about being so.
+
+### The migration
+
+A removed choice is removed from the schema, with a migration — not left as a one-option menu,
+which is a decision nobody makes, and not turned into a refusal, which would break a desk that
+was configured correctly yesterday. One rule, on **both** sides of the shared decoder and in the
+shared fixture corpus:
+
+| `assistant.engine` | decodes to | and the decoder says |
+| --- | --- | --- |
+| absent | `vercel` | nothing |
+| `"vercel"` | `vercel` | nothing |
+| `"builtin"` | `vercel` | `engine: "builtin" was withdrawn; the Vercel engine runs` |
+| anything else | — | the file is refused by name, as before |
+
+The sentence is a **notice** and not a problem: the file was accepted and everything in it is in
+use. It travels on its own list, so nothing that renders a refusal can render one, and Admin ›
+Assistant shows it as that card's Status line. Both suites walk the three cases and compare the
+notices, because a migration written on one side and not the other — or written in different
+words — is two contracts. The value stays decodable **for one release**; the page never writes
+it, and a file that carries it keeps it until its next write.
+
+### What a second engine is admitted by
+
+Unchanged, and it is the whole point of the slot: the adapter, its conformance run over the
+registry, and its row in the table above. What is added is that the **menu comes back with the
+second engine and not before** — a picker over a one-member list is jargon on a settings page, so
+the Engine field left Admin with the engine. The registry, the contract, the certification
+session and the type-level assertion that loadable and certified are the same set are all still
+there and still run; they are what a candidate is measured against.
+
 ## Pros and cons of the options
 
 All measurements are from the bake-off of 2026-09-05 (design, memo, run logs and verifier reports
@@ -280,7 +332,7 @@ Browser. **+125.6 KiB** (or +68.9 KiB if the desk migrated its MCP client to `@a
 - Bad, because the refusal path leaks unhandled `AI_NoOutputGeneratedError` rejections the caller
   cannot claim; the page needs an `unhandledrejection` guard.
 
-### No framework — `builtin`, the keyless fallback
+### No framework — `builtin`, the keyless fallback (withdrawn 2026-09-10)
 
 `@modelcontextprotocol/sdk` client plus `fetch`; no new dependency. Browser. **+0 KiB** framework.
 
