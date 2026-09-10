@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { recordFileChange } from '../shell/consoleLog'
 import { deskFetch } from '../files/client'
-import { NoSession, sessionBearer } from './session'
+import { NO_SESSION_MESSAGE, NoSession, sessionBearer, sessionEnded, whenSessionEnds } from './session'
 import { UNKNOWN_CAPABILITIES, type RuntimeCapabilities, listAllTools, readCapabilities } from './capabilities'
 import { DeskWebSocketTransport } from './transport'
 
@@ -158,14 +158,20 @@ function backoffDelay(attempt: number): number {
  * Client over the chassis relay, runs initialize once, and hands the connected
  * client to the views. There is no desk-specific API in between.
  *
- * A dropped socket is reconnected rather than reported and left. The chassis is
- * a local process a user restarts, and a desk that needs a page reload after
- * every restart is a desk that lies about being live. Each attempt builds a
- * fresh Client and a fresh transport — an SDK Client that has closed already
- * negotiated with a server that is gone — and the delay between attempts
- * doubles up to a cap. A reconnect invalidates every query: the runtime
- * re-reads the project on every call, and whatever the project did while the
- * socket was down arrived as `desk/fileChanged` notifications nobody heard.
+ * A dropped socket is reconnected rather than reported and left, and each
+ * attempt builds a fresh Client and a fresh transport — an SDK Client that has
+ * closed already negotiated with a server that is gone. The delay between
+ * attempts doubles up to a cap, and a reconnect invalidates every query: the
+ * runtime re-reads the project on every call, and whatever the project did
+ * while the socket was down arrived as `desk/fileChanged` notifications nobody
+ * heard.
+ *
+ * **What reconnecting does not survive is a restart**, and this used to say the
+ * opposite. A restarted chassis mints a new session store and a new launch
+ * secret, so the id this page holds names nothing: the reconnect is refused,
+ * `classify` reads the refusal, and the page ends in the terminal no-session
+ * state asking for the URL the **new** process printed. What the backoff is for
+ * is a socket that dropped while the same process kept running.
  */
 /**
  * Thrown to abandon an attempt whose effect was torn down while it awaited.
@@ -227,6 +233,26 @@ export function McpProvider({ children }: { children: ReactNode }) {
         retryNow
       })
     }
+
+    /**
+     * The session's end, once, and it takes this connection with it.
+     *
+     * **A socket that is already open notices nothing.** A `401` is met by the
+     * caller that made the request; a connection established before the
+     * refusal went on carrying frames for a session the chassis had refused,
+     * and every query on the page went on driving it. The one subscription in
+     * `session.ts` is what reaches this effect, and the unsubscribe below is
+     * what keeps a StrictMode double-mount from announcing the end twice.
+     */
+    const stopWatching = whenSessionEnds(() => {
+      if (timer !== undefined) clearTimeout(timer)
+      const closing = live
+      // **Dropped before it is closed**, so the client's own `onclose` sees
+      // `live !== client` and does not schedule a retry behind this.
+      live = null
+      void closing?.close()
+      failed(new NoSession(sessionEnded() ?? NO_SESSION_MESSAGE))
+    })
 
     /**
      * Why an upgrade was refused, and what to do about it.
@@ -384,6 +410,7 @@ export function McpProvider({ children }: { children: ReactNode }) {
 
     return () => {
       disposed = true
+      stopWatching()
       if (timer !== undefined) clearTimeout(timer)
       const closing = live
       live = null

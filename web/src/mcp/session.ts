@@ -51,15 +51,49 @@ export const NO_SESSION_MESSAGE =
   'No session — open the URL that jpack-desk printed at startup.'
 
 /**
+ * What the page says when the handoff its launch set was **spent by something
+ * else**.
+ *
+ * The residual, happening. Reopening the printed URL cannot help: the launch
+ * secret is reusable, so a script that took one handoff takes the next one too.
+ * What ends it is a new process, whose secret and whose printed URL are new.
+ */
+export const HANDOFF_SPENT_MESSAGE =
+  'The launch link was used by something else. Restart jpack-desk and open the new URL it prints.'
+
+/**
  * Thrown where this page has no session the chassis will accept. It is not
- * retryable: no handoff appears on its own, and the fix is a person opening the
- * printed URL again.
+ * retryable: no handoff appears on its own, and what fixes it is a person — the
+ * message says which thing they should do.
  */
 export class NoSession extends Error {
-  constructor() {
-    super(NO_SESSION_MESSAGE)
+  constructor(message: string = NO_SESSION_MESSAGE) {
+    super(message)
     this.name = 'NoSession'
   }
+}
+
+/**
+ * The header the chassis marks **its own** refusals with, and the code it puts
+ * in it.
+ *
+ * One route on this desk forwards somebody else's answer — the model relay — so
+ * a `401` there is either this chassis refusing the session or the configured
+ * endpoint refusing the stored key. Ending a person's desk session because
+ * their model key expired would be this page reading one refusal as another.
+ *
+ * **Read off a header rather than out of a body**, and both halves of that
+ * matter. A body has to be consumed to be read, and a *cloned* body has tee
+ * semantics — an oversized chunked answer deadlocks the reader that is trying
+ * to classify it. And an endpoint can write any body it likes, so a body-borne
+ * discriminator was forgeable; the chassis strips this header from every
+ * upstream answer, in every casing and from trailers, so this one is not.
+ */
+export const REFUSAL_HEADER = 'X-Jpack-Desk-Refusal'
+
+/** The code this chassis marked an answer with, or `null` where it did not. */
+export function refusalCode(answered: Response): string | null {
+  return answered.headers.get(REFUSAL_HEADER)
 }
 
 /**
@@ -92,7 +126,35 @@ let bootstrapping: Promise<string | null> | null = null
  * what the bootstrap *answered*, which does not change, and this records
  * whether that answer is still usable.
  */
-let forgotten = false
+let forgotten: string | null = null
+
+/**
+ * The one subscription a session's end is published on.
+ *
+ * **Why an emitter and not a poll.** A `401` on a `fetch` is noticed by the
+ * caller that made it; an MCP socket that is already open notices nothing at
+ * all, and went on carrying frames for a session the chassis had refused. Both
+ * connections subscribe here, and `forgetSession` publishes once — so the
+ * terminal state reaches the sockets rather than only the requests.
+ *
+ * It is not a second actor over the credential: a listener is told that the
+ * session ended, and reads and writes nothing.
+ */
+const ending = new Set<() => void>()
+
+/**
+ * Be told when this page's session ends, and stop being told.
+ *
+ * The returned function unsubscribes, and a caller that mounts twice — React
+ * StrictMode does — must call it, which is what keeps the terminal state from
+ * being announced twice.
+ */
+export function whenSessionEnds(listener: () => void): () => void {
+  ending.add(listener)
+  return () => {
+    ending.delete(listener)
+  }
+}
 
 /**
  * Begin this page's session, or answer the one it already has.
@@ -116,8 +178,20 @@ export function bootstrap(): Promise<string | null> {
  */
 export async function sessionBearer(): Promise<string> {
   const id = await bootstrap()
-  if (forgotten || id === null || id === '') throw new NoSession()
+  if (forgotten !== null) throw new NoSession(forgotten)
+  if (id === null || id === '') throw new NoSession()
   return id
+}
+
+/**
+ * The sentence this page's session ended with, or `null` while it has not.
+ *
+ * Synchronous, for the renderers: what a person is told depends on *which*
+ * ending it was — a desk that restarted, a launch link somebody else used, or a
+ * desk at its capacity — and each says a different thing to do.
+ */
+export function sessionEnded(): string | null {
+  return forgotten
 }
 
 /**
@@ -127,13 +201,26 @@ export async function sessionBearer(): Promise<string> {
  * the three chassis transports and from the upgrade classifier, and it leaves
  * the page in the no-session state until it is loaded again.
  */
-export function forgetSession(): void {
-  forgotten = true
+export function forgetSession(reason: string = NO_SESSION_MESSAGE): void {
+  // **Once, whoever calls it.** Two transports can meet the same refusal in the
+  // same tick, and a page that announced the end twice would tear down twice
+  // and render the notice twice.
+  if (forgotten !== null) return
+  forgotten = reason
   try {
     window.sessionStorage.removeItem(sessionStorageKey())
   } catch {
     // A browser with storage disabled has nothing to remove, and a desk that
     // failed over that would be a worse desk than one that skips this.
+  }
+  // A copy, because a listener may unsubscribe itself while being told.
+  for (const listener of [...ending]) {
+    try {
+      listener()
+    } catch {
+      // A subscriber that throws on the way down does not stop the others
+      // being told; there is nothing left for this page to do about it.
+    }
   }
 }
 
@@ -163,10 +250,7 @@ async function beginSession(): Promise<string | null> {
   } catch {
     return stored
   }
-  if (!answered.ok) {
-    await discardBody(answered)
-    return stored
-  }
+  if (!answered.ok) return await refusedExchange(answered, stored)
   let id: unknown
   try {
     id = ((await answered.json()) as { id?: unknown }).id
@@ -176,6 +260,61 @@ async function beginSession(): Promise<string | null> {
   if (typeof id !== 'string' || id === '') return stored
   hold(id)
   return id
+}
+
+/**
+ * What a refused exchange means, which is **three different things**.
+ *
+ *  - **`handoff-spent`** — a handoff was presented and this desk no longer
+ *    holds it: somebody took it inside its sixty seconds, or it expired. This
+ *    is the stated residual actually happening, and it ends the page's session:
+ *    reopening the printed URL cannot help, because the secret is reusable and
+ *    whatever took one handoff takes the next.
+ *  - **`sessions-full`** — this desk holds as many sessions as it will. The
+ *    chassis' own sentence is shown **verbatim**, because "open the printed
+ *    URL" is advice that cannot work here: a fresh tab reopening it gets the
+ *    same 503.
+ *  - **anything else, `no-handoff` included** — nobody opened the printed URL
+ *    for this browser, or far more often this page is simply **reloading** after
+ *    its own handoff was spent and cleared. A tab in that state holds an id
+ *    that is very likely still live, so it keeps it; if it is not live, the
+ *    first chassis call answers a marked `401` and ends the session then.
+ *
+ * One code for the first and the last of those was a review's HIGH: the page
+ * kept its session either way, so a theft was invisible to the person it
+ * happened to.
+ */
+async function refusedExchange(answered: Response, stored: string | null): Promise<string | null> {
+  const code = refusalCode(answered)
+  if (answered.status === 503 && code === 'sessions-full') {
+    forgetSession(await sentenceOf(answered))
+    return null
+  }
+  await discardBody(answered)
+  if (code === 'handoff-spent') {
+    forgetSession(HANDOFF_SPENT_MESSAGE)
+    return null
+  }
+  return stored
+}
+
+/**
+ * The sentence out of a refusal **this chassis wrote**.
+ *
+ * Read whole, and that is safe here where it was not on the relay: the header
+ * has already said this body is the chassis' own, and the chassis' refusal is
+ * one small JSON object. Falls back to a sentence of this page's own rather
+ * than to nothing, because a person meeting a capacity refusal needs to be told
+ * something.
+ */
+async function sentenceOf(answered: Response): Promise<string> {
+  try {
+    const said = ((await answered.json()) as { error?: unknown }).error
+    if (typeof said === 'string' && said !== '') return said
+  } catch {
+    // Not a body this page can read. The fallback below is still true.
+  }
+  return 'This desk will not begin another session. Restart jpack-desk.'
 }
 
 /**
@@ -235,7 +374,13 @@ function hold(id: string): void {
  */
 export function resetSessionForTesting(): void {
   bootstrapping = null
-  forgotten = false
+  forgotten = null
+  // **The subscriptions too.** A listener that outlived its own test would be
+  // told about the next test's session ending, and would tear down a component
+  // that is no longer mounted. `whenSessionEnds` returns an unsubscribe and
+  // every caller in the page uses it — `TestUnmountingUnsubscribes`, in this
+  // file's own suite, is what holds that; this is the belt beside it.
+  ending.clear()
 }
 
 /**
@@ -251,5 +396,5 @@ export function resetSessionForTesting(): void {
  */
 export function giveThisPageASessionForTesting(id: string): void {
   bootstrapping = Promise.resolve(id)
-  forgotten = false
+  forgotten = null
 }

@@ -18,15 +18,30 @@ import { cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { McpProvider, removeTheLaunchHash, socketProtocols, socketURL } from './McpProvider'
 import {
+  HANDOFF_SPENT_MESSAGE,
   NO_SESSION_MESSAGE,
   NoSession,
+  REFUSAL_HEADER,
   bootstrap,
   forgetSession,
   resetSessionForTesting,
-  sessionStorageKey
+  sessionBearer,
+  sessionEnded,
+  sessionStorageKey,
+  whenSessionEnds
 } from './session'
 import { deskFetch, listFiles } from '../files/client'
-import { bindModelCall } from '../assistant/session'
+import { bindModelCall, openAssistantConnection } from '../assistant/session'
+import { BlockedNotice, useBlockingError } from '../shell/ConnectionNotices'
+
+/**
+ * The shell's own notice, so that "the terminal UI is rendered" is a statement
+ * about what a person sees rather than about a state member.
+ */
+function Notice() {
+  const error = useBlockingError()
+  return error === null ? <div data-connected="yes" /> : <BlockedNotice error={error} />
+}
 
 /** One request as the stub saw it. */
 interface Seen {
@@ -63,6 +78,18 @@ function record(answer: (seen: Seen) => Promise<Response> | Response) {
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+
+/**
+ * A refusal **this chassis authored**, marked as the chassis marks one.
+ *
+ * The mark is the whole discriminator on the relay route, so a test that
+ * answered a bare 401 would be testing the wrong wire.
+ */
+const refused = (code: string, body: unknown, status = 401) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json', [REFUSAL_HEADER]: code }
+  })
 
 /** The exchange's own answer, and a plain success for everything else. */
 const mints = (seen: Seen) =>
@@ -132,13 +159,13 @@ describe('the one exchange', () => {
     expect(window.sessionStorage.getItem(sessionStorageKey())).toBe(MINTED)
   })
 
-  it('keeps the stored id when the exchange is refused', async () => {
+  it('keeps the stored id when the exchange finds no handoff', async () => {
     // A reload of a tab that bootstrapped earlier: the handoff is long spent,
     // and the id this tab holds may well still be live. Throwing it away over
     // a 401 here would make a reload a sign-out.
     window.sessionStorage.setItem(sessionStorageKey(), STORED)
     const seen = record((call) =>
-      call.url === '/api/session' ? json({ error: 'no unspent launch', code: 'unauthorized' }, 401) : json({})
+      call.url === '/api/session' ? refused('no-handoff', { error: 'no launch is in progress', code: 'no-handoff' }) : json({})
     )
     expect(await bootstrap()).toBe(STORED)
     expect(window.sessionStorage.getItem(sessionStorageKey())).toBe(STORED)
@@ -156,7 +183,7 @@ describe('the one exchange', () => {
     let refusal: Response | undefined
     vi.stubGlobal('fetch', async (input: unknown) => {
       if (String(input) === '/api/session') {
-        refusal = json({ code: 'unauthorized' }, 401)
+        refusal = refused('no-handoff', { code: 'no-handoff' })
         return refusal
       }
       return json({})
@@ -165,8 +192,8 @@ describe('the one exchange', () => {
     expect(refusal?.bodyUsed).toBe(true)
   })
 
-  it('answers null when the exchange is refused and this tab holds nothing', async () => {
-    record((call) => (call.url === '/api/session' ? json({ code: 'unauthorized' }, 401) : json({})))
+  it('answers null when there is no handoff and this tab holds nothing', async () => {
+    record((call) => (call.url === '/api/session' ? refused('no-handoff', { code: 'no-handoff' }) : json({})))
     expect(await bootstrap()).toBeNull()
   })
 
@@ -178,6 +205,128 @@ describe('the one exchange', () => {
       throw new TypeError('Failed to fetch')
     })
     expect(await bootstrap()).toBe(STORED)
+  })
+})
+
+describe('a reload and a theft are told apart', () => {
+  it('keeps the stored id on `no-handoff`, which is what a reload is', async () => {
+    // The exchange clears the handoff it spends, so a reload inside the window
+    // presents nothing at all. That tab holds an id that is very likely still
+    // live, and a page that ended its session here would make every reload a
+    // sign-out.
+    window.sessionStorage.setItem(sessionStorageKey(), STORED)
+    record((call) =>
+      call.url === '/api/session'
+        ? refused('no-handoff', { error: 'no launch is in progress', code: 'no-handoff' })
+        : json({})
+    )
+    expect(await bootstrap()).toBe(STORED)
+    expect(sessionEnded()).toBeNull()
+    expect(await sessionBearer()).toBe(STORED)
+  })
+
+  it('forgets the id on `handoff-spent`, and says the link was used', async () => {
+    // **The residual, happening, to an authenticated tab.** The person reopens
+    // the printed URL; a script takes the handoff first; the page's own
+    // exchange is refused with the code that says which failure it was.
+    window.sessionStorage.setItem(sessionStorageKey(), STORED)
+    record((call) =>
+      call.url === '/api/session'
+        ? refused('handoff-spent', {
+            error: 'this launch link was already used',
+            code: 'handoff-spent'
+          })
+        : json({})
+    )
+    expect(await bootstrap()).toBeNull()
+    expect(window.sessionStorage.getItem(sessionStorageKey())).toBeNull()
+    expect(sessionEnded()).toBe(HANDOFF_SPENT_MESSAGE)
+    await expect(sessionBearer()).rejects.toThrow(HANDOFF_SPENT_MESSAGE)
+    // Reopening the printed URL cannot fix it, so the sentence does not say to.
+    expect(HANDOFF_SPENT_MESSAGE).toContain('Restart jpack-desk')
+    expect(HANDOFF_SPENT_MESSAGE).not.toContain('open the URL that jpack-desk printed')
+  })
+
+  it('sends nothing at all after a spent handoff, on any transport', async () => {
+    const seen = record((call) =>
+      call.url === '/api/session'
+        ? refused('handoff-spent', { code: 'handoff-spent' })
+        : json({})
+    )
+    await expect(listFiles()).rejects.toThrow(HANDOFF_SPENT_MESSAGE)
+    await expect(
+      bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
+    ).rejects.toThrow(HANDOFF_SPENT_MESSAGE)
+    expect(seen.filter((c) => c.url !== '/api/session')).toHaveLength(0)
+    expect(exchanges(seen)).toHaveLength(1)
+  })
+
+  it('shows the chassis’ own sentence when the desk is at its capacity', async () => {
+    // "Open the printed URL" is advice that cannot work here: a fresh tab
+    // reopening it meets the same 503. So the chassis' own line is shown
+    // verbatim, rather than a sentence this page composed.
+    const said = 'this desk holds its maximum of sessions; restart it'
+    record((call) =>
+      call.url === '/api/session'
+        ? refused('sessions-full', { error: said, code: 'sessions-full' }, 503)
+        : json({})
+    )
+    expect(await bootstrap()).toBeNull()
+    expect(sessionEnded()).toBe(said)
+    await expect(sessionBearer()).rejects.toThrow(said)
+  })
+
+  it('treats an unmarked refusal as a reload rather than an ending', async () => {
+    // A refusal this chassis did not author — a proxy, a captive portal —
+    // carries no mark, and the safe reading of it is "try the id I hold".
+    window.sessionStorage.setItem(sessionStorageKey(), STORED)
+    record((call) => (call.url === '/api/session' ? json({ nope: true }, 502) : json({})))
+    expect(await bootstrap()).toBe(STORED)
+    expect(sessionEnded()).toBeNull()
+  })
+})
+
+describe('the one subscription a session’s end is published on', () => {
+  it('tells every listener exactly once, however many callers forget', async () => {
+    record(mints)
+    await bootstrap()
+    let told = 0
+    const stop = whenSessionEnds(() => {
+      told += 1
+    })
+    forgetSession()
+    forgetSession(HANDOFF_SPENT_MESSAGE)
+    expect(told).toBe(1)
+    // And the first reason is the one that stands: the session ended once.
+    expect(sessionEnded()).toBe(NO_SESSION_MESSAGE)
+    stop()
+  })
+
+  it('stops telling a listener that unsubscribed', async () => {
+    record(mints)
+    await bootstrap()
+    let told = 0
+    whenSessionEnds(() => {
+      told += 1
+    })()
+    forgetSession()
+    expect(told).toBe(0)
+  })
+
+  it('carries on telling the others when one listener throws', async () => {
+    record(mints)
+    await bootstrap()
+    let told = 0
+    const stopFirst = whenSessionEnds(() => {
+      throw new Error('a subscriber came apart')
+    })
+    const stopSecond = whenSessionEnds(() => {
+      told += 1
+    })
+    forgetSession()
+    expect(told).toBe(1)
+    stopFirst()
+    stopSecond()
   })
 })
 
@@ -236,7 +385,7 @@ describe('a refusal after the bootstrap is terminal', () => {
     const seen = record((call) =>
       call.url === '/api/session'
         ? json({ id: MINTED })
-        : json({ error: 'no session', code: 'unauthorized' }, 401)
+        : refused('unauthorized', { error: 'no session', code: 'unauthorized' })
     )
 
     await expect(listFiles()).rejects.toThrow(NoSession)
@@ -256,7 +405,7 @@ describe('a refusal after the bootstrap is terminal', () => {
     const refusals: Response[] = []
     vi.stubGlobal('fetch', async (input: unknown) => {
       if (String(input) === '/api/session') return json({ id: MINTED })
-      const refusal = json({ error: 'no session', code: 'unauthorized' }, 401)
+      const refusal = refused('unauthorized', { error: 'no session', code: 'unauthorized' })
       refusals.push(refusal)
       return refusal
     })
@@ -269,7 +418,7 @@ describe('a refusal after the bootstrap is terminal', () => {
     const seen = record((call) =>
       call.url === '/api/session'
         ? json({ id: MINTED })
-        : json({ error: 'no session', code: 'unauthorized' }, 401)
+        : refused('unauthorized', { error: 'no session', code: 'unauthorized' })
     )
     const call = bindModelCall('openai-compatible')
     await expect(call('chat/completions', { body: '{}' })).rejects.toThrow(NoSession)
@@ -282,7 +431,9 @@ describe('a refusal after the bootstrap is terminal', () => {
     // The relay forwards the endpoint's status verbatim, so a 401 there is a
     // key the endpoint does not accept — not a session this desk refused.
     // Logging somebody out of their desk because their model key expired would
-    // be this desk reading one refusal as another.
+    // be this desk reading one refusal as another. **The endpoint's answer
+    // carries no mark**, because the chassis strips it from every upstream
+    // answer in every casing and from trailers.
     const seen = record((call) =>
       call.url === '/api/session'
         ? json({ id: MINTED })
@@ -297,6 +448,60 @@ describe('a refusal after the bootstrap is terminal', () => {
     const relayed = seen.filter((c) => c.url.startsWith('/api/assistant/relay'))
     expect(relayed).toHaveLength(2)
     expect(relayed[1]!.authorization).toBe(`Bearer ${MINTED}`)
+  })
+
+  it('delivers a chunked oversized endpoint 401 to the engine, promptly', async () => {
+    // **The classifier this replaced would have deadlocked here.** It read a
+    // `clone()` up to four kilobytes, and a clone has tee semantics: an answer
+    // larger than the bound, arriving in chunks, leaves the reader waiting for
+    // a stream nobody is draining. Nothing reads a relayed body now — the mark
+    // is a header — so this simply travels.
+    const chunk = 2 << 10
+    const chunks = 16 // 32 KiB
+    record((call) => {
+      if (call.url === '/api/session') return json({ id: MINTED })
+      let sent = 0
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (sent === chunks) {
+            controller.close()
+            return
+          }
+          sent += 1
+          controller.enqueue(new TextEncoder().encode('x'.repeat(chunk)))
+        }
+      })
+      // No mark: this is the endpoint's own refusal, and the chassis strips the
+      // mark from every upstream answer.
+      return new Response(body, { status: 401, headers: { 'content-type': 'application/json' } })
+    })
+
+    const began = Date.now()
+    const answered = await bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
+    expect(answered.status).toBe(401)
+    const said = await answered.text()
+    const took = Date.now() - began
+    expect(said).toHaveLength(chunk * chunks)
+    // Promptly: a reader that was waiting on a tee would not have returned at
+    // all. Five seconds is far past this and far short of any real timeout.
+    expect(took).toBeLessThan(5000)
+    // And the session is untouched, because the answer was the endpoint's.
+    expect(sessionEnded()).toBeNull()
+    expect(window.sessionStorage.getItem(sessionStorageKey())).toBe(MINTED)
+  })
+
+  it('ends the session on a marked 401 from the relay, whatever the body', async () => {
+    // The positive control for the row above: the same route, the same status,
+    // the mark present — and the mark is the whole of the difference.
+    record((call) =>
+      call.url === '/api/session'
+        ? json({ id: MINTED })
+        : refused('unauthorized', { error: 'no session', code: 'unauthorized' })
+    )
+    await expect(
+      bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
+    ).rejects.toThrow(NoSession)
+    expect(sessionEnded()).toBe(NO_SESSION_MESSAGE)
   })
 
   it('is terminal even for a caller that never saw the refusal', async () => {
@@ -362,7 +567,7 @@ describe('the desk’s own MCP connection', () => {
     render(
       <QueryClientProvider client={new QueryClient()}>
         <McpProvider>
-          <div />
+          <Notice />
         </McpProvider>
       </QueryClientProvider>
     )
@@ -389,7 +594,7 @@ describe('the desk’s own MCP connection', () => {
     render(
       <QueryClientProvider client={new QueryClient()}>
         <McpProvider>
-          <div />
+          <Notice />
         </McpProvider>
       </QueryClientProvider>
     )
@@ -398,18 +603,154 @@ describe('the desk’s own MCP connection', () => {
   })
 
   it('opens no socket at all for a page with no session', async () => {
-    record((call) => (call.url === '/api/session' ? json({ code: 'unauthorized' }, 401) : json({})))
+    record((call) => (call.url === '/api/session' ? refused('no-handoff', { code: 'no-handoff' }) : json({})))
     const dialled = recordingSockets()
     render(
       <QueryClientProvider client={new QueryClient()}>
         <McpProvider>
-          <div />
+          <Notice />
         </McpProvider>
       </QueryClientProvider>
     )
     // Given time to do the wrong thing, and it does not.
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(dialled).toEqual([])
+  })
+})
+
+describe('the terminal state reaches the sockets, not only the requests', () => {
+  /**
+   * A `WebSocket` that opens, answers an MCP `initialize`, and **records every
+   * frame the page sends**.
+   *
+   * The property is that frames stop, so counting them is the measurement. A
+   * stub that never opened would make every assertion below vacuous, which is
+   * why the socket completes its handshake first.
+   */
+  function speakingSockets() {
+    const sockets: {
+      sent: string[]
+      closed: boolean
+      protocols?: string | string[]
+    }[] = []
+    class Speaking {
+      // The transport asks `readyState !== WebSocket.OPEN` before it sends, and
+      // `WebSocket` is this class once it is stubbed — so the constants have to
+      // be here or every send is refused for the wrong reason.
+      static readonly CONNECTING = 0
+      static readonly OPEN = 1
+      static readonly CLOSING = 2
+      static readonly CLOSED = 3
+      onopen?: () => void
+      onerror?: () => void
+      onclose?: () => void
+      onmessage?: (event: { data: string }) => void
+      readyState = 1
+      private readonly record: { sent: string[]; closed: boolean; protocols?: string | string[] }
+      constructor(_url: string, protocols?: string | string[]) {
+        this.record = { sent: [], closed: false, protocols }
+        sockets.push(this.record)
+        setTimeout(() => this.onopen?.(), 0)
+      }
+      send(raw: string) {
+        this.record.sent.push(raw)
+        const message = JSON.parse(raw) as { id?: number; method?: string }
+        if (message.id === undefined) return
+        const answer =
+          message.method === 'initialize'
+            ? {
+                protocolVersion: '2025-06-18',
+                capabilities: {},
+                serverInfo: { name: 'stub', version: '0' }
+              }
+            : { tools: [] }
+        setTimeout(
+          () => this.onmessage?.({ data: JSON.stringify({ jsonrpc: '2.0', id: message.id, result: answer }) }),
+          0
+        )
+      }
+      close() {
+        this.record.closed = true
+        this.readyState = 3
+        this.onclose?.()
+      }
+    }
+    vi.stubGlobal('WebSocket', Speaking)
+    return sockets
+  }
+
+  it('closes both connections, refuses further calls, and says so once', async () => {
+    const seen = record((call) => {
+      if (call.url === '/api/session' && call.method === 'POST') return json({ id: MINTED })
+      if (call.url === '/api/files') return refused('unauthorized', { code: 'unauthorized' })
+      return json({})
+    })
+    const sockets = speakingSockets()
+
+    // **Both connections up first.** The desk's own, through the provider, and
+    // the assistant's, through the same code path a run uses.
+    const { rerender } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <McpProvider>
+          <Notice />
+        </McpProvider>
+      </QueryClientProvider>
+    )
+    // StrictMode double-mount, modelled by rendering the same tree again: the
+    // effect is set up twice, so the subscription must be torn down once per
+    // set-up or the ending is announced twice.
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <McpProvider>
+          <Notice />
+        </McpProvider>
+      </QueryClientProvider>
+    )
+    await waitFor(() => expect(sockets.length).toBeGreaterThan(0))
+
+    const assistant = openAssistantConnection({
+      allowed: ['get_schema'],
+      onEvent: () => {},
+      sessionId: MINTED
+    })
+    const gate = await assistant.ready
+    await waitFor(() => expect(sockets.length).toBeGreaterThan(1))
+    const before = sockets.map((socket) => socket.sent.length)
+    expect(before.every((n) => n > 0)).toBe(true)
+
+    // **The refusal, through an ordinary chassis call.** Nothing tells the
+    // sockets directly; the one subscription does.
+    await expect(listFiles()).rejects.toThrow(NoSession)
+
+    await waitFor(() => expect(sockets.every((socket) => socket.closed)).toBe(true))
+    const after = sockets.map((socket) => socket.sent.length)
+    expect(after, 'a frame was sent after the session ended').toEqual(before)
+
+    // The gated connection delivers nothing, and says why rather than
+    // reporting a closed transport.
+    await expect(gate.callTool('get_schema', {})).rejects.toThrow(NoSession)
+    // And a run started now opens nothing at all.
+    const late = openAssistantConnection({
+      allowed: ['get_schema'],
+      onEvent: () => {},
+      sessionId: MINTED
+    })
+    await expect(late.ready).rejects.toThrow(NoSession)
+    expect(sockets).toHaveLength(after.length)
+
+    // Queries refuse to send: no request of any kind followed the refusal.
+    const settled = seen.length
+    await expect(listFiles()).rejects.toThrow(NoSession)
+    expect(seen).toHaveLength(settled)
+
+    // The notice is rendered, and **once**: the sentence is in the document one
+    // time however many times the effect was set up.
+    await waitFor(() =>
+      expect(document.body.textContent).toContain('open the URL that jpack-desk printed')
+    )
+    const said = document.body.textContent ?? ''
+    const times = said.split('open the URL that jpack-desk printed').length - 1
+    expect(times, said.slice(0, 400)).toBe(1)
   })
 })
 

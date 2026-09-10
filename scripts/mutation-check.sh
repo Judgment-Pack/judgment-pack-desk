@@ -1067,14 +1067,20 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # was a better comparison and the next parser disagreed somewhere else, so
   # there is no strip any more.
   #
-  # Repaired: the needle named `sessionTokenParameter`, the query this chassis
-  # used to authenticate with, which no longer exists — nothing of the page's
-  # query is forwarded now, and the one closed literal `alt=sse` is the whole of
-  # the exception. This breaks the refusal itself.
+  # Repaired twice. The needle first named `sessionTokenParameter`, the query
+  # this chassis used to authenticate with, which no longer exists. Then the
+  # edit only skipped the *refusal*, so the pair was refused a moment later by
+  # the same rule and nothing was ever forwarded — the row measured a message.
+  # This one makes the function **admit the whole raw query**, so the pair does
+  # travel, and `TestNothingOfThePagesQueryReachesTheEndpoint` inspects the
+  # endpoint's own `RawQuery`.
   mutate go "a page query parameter is forwarded" "$MR" \
-    '		return "", "a relayed request carries no query of the page'"'"'s own: nothing of it is " +' \
-    '		continue
-		_ = "a relayed request carries no query of the page'"'"'s own: nothing of it is " +'
+    '	if raw == "" {
+		return "", ""
+	}' \
+    '	if true {
+		return raw, ""
+	}'
   mutate go "the relayed path is never validated" "$MR" \
     '	if reason := relaySuffixProblem(suffix); reason != "" {' \
     '	if reason := ""; reason != "" {'
@@ -1603,12 +1609,46 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	}
 	return session{}, false
 }'
+  # **A reload and a theft are different facts.** One code for both left the
+  # page unable to tell them apart, so it kept its session either way and the
+  # residual was invisible to the person it happened to.
+  mutate go "a spent handoff reads as an absent one" "$SE" \
+    '		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,' \
+    '		writeJSONCoded(w, http.StatusUnauthorized, CodeNoHandoff,'
+  # **The mark on this desk's own refusals.** Without it the page cannot tell a
+  # 401 this chassis wrote from a 401 the configured endpoint wrote, and an
+  # expired model key reads as a lost desk session.
+  mutate go "this chassis does not mark its own refusals" "$F" \
+    '	if status >= 400 {
+		w.Header().Set(RefusalHeader, code)
+	}' \
+    '	if false {
+		w.Header().Set(RefusalHeader, code)
+	}'
+  # **And an endpoint may not wear it.** An endpoint that could set the mark
+  # could end somebody's desk session from the far side of the relay.
+  mutate go "an upstream keeps this desk's refusal mark" "$MR" \
+    '			response.Header.Del(RefusalHeader)' \
+    '			_ = RefusalHeader'
+  # **Only GET mints a handoff.** Go'"'"'s mux matches HEAD on a GET pattern, so a
+  # HEAD with a valid secret handed a credential to a request that carries no
+  # body.
+  mutate go "HEAD on the launch path mints a handoff" "$SE" \
+    '	if r.Method != http.MethodGet {' \
+    '	if false {'
   # **The exchange spends what it mints against.** Minting without consuming is
   # a handoff left live in a cookie jar for the rest of its minute, worth a
   # session to anything that can read it.
+  #
+  # Repaired: the edit used to keep the `consume` call and ignore its answer,
+  # which is a *different* property — the handoff was still spent, so nothing
+  # about "without spending" was broken and the row measured the refusal it
+  # already had a row for. This one skips the spend, so the handoff survives,
+  # and `TestTheHandoffIsSingleUse` inspects the store's own count after a
+  # successful exchange.
   mutate go "the exchange mints without spending the handoff" "$SE" \
-    '	if err != nil || !s.launches.consume(cookie.Value) {' \
-    '	if err != nil || (!s.launches.consume(cookie.Value) && false) {'
+    '	if !s.launches.consume(cookie.Value) {' \
+    '	if false {'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -6796,14 +6836,42 @@ export function assistantTransport(id: string): Transport {
   # is neither consumed nor cancelled leaves the request in flight for the life
   # of the page: invisible in using the desk, and caught by the containment
   # gate as a page that never reaches `networkidle`.
+  # Repaired: the release moved into `refusedExchange` when the exchange grew
+  # two codes to tell apart. The property is unchanged.
   mutate web "a refused answer's body is left in flight" "$MS" \
-    '  if (!answered.ok) {
-    await discardBody(answered)
-    return stored
-  }' \
-    '  if (!answered.ok) {
-    return stored
-  }'
+    '  await discardBody(answered)
+  if (code === '"'"'handoff-spent'"'"') {' \
+    '  if (code === '"'"'handoff-spent'"'"') {'
+  # **A theft read as a reload.** `handoff-spent` is what tells an
+  # authenticated tab that its launch link was used by something else; treating
+  # it like `no-handoff` keeps a session the person was never told about.
+  mutate web "a spent handoff is treated as a reload" "$MS" \
+    "  if (code === 'handoff-spent') {
+    forgetSession(HANDOFF_SPENT_MESSAGE)
+    return null
+  }" \
+    "  if (false) {
+    forgetSession(HANDOFF_SPENT_MESSAGE)
+    return null
+  }"
+  # **The terminal state has to reach the sockets.** A connection established
+  # before the refusal notices nothing on its own, and went on carrying frames
+  # for a session the chassis had refused.
+  mutate web "a session's end is published to nobody" "$MS" \
+    '  for (const listener of [...ending]) {' \
+    '  for (const listener of [] as (() => void)[]) {'
+  # **And the provider has to be listening.**
+  mutate web "the desk's connection ignores the session ending" "$M" \
+    '    const stopWatching = whenSessionEnds(() => {
+      if (timer !== undefined) clearTimeout(timer)' \
+    '    const stopWatching = whenSessionEnds(() => {
+      if (true) return
+      if (timer !== undefined) clearTimeout(timer)'
+  # **A relay 401 is classified by the mark and not by the status.** Reading the
+  # status alone ends a desk session over an expired model key.
+  mutate web "any relay 401 ends the session" "$ASN2" \
+    '    if (answered.status === 401 && refusalCode(answered) !== null) {' \
+    '    if (answered.status === 401) {'
   # **A refusal is the end of the road.** An id the chassis has rejected that
   # stays in storage is an id every later call re-sends, and a page that never
   # says the one sentence a person can act on.

@@ -3221,13 +3221,25 @@ not; they are the page, and the page can do nothing without one of the two.
   so "is this id live" is not a hash-table probe over bytes a caller chose.
 - **The store holds 64 sessions and refuses a 65th.** `POST /api/session`
   answers `503` and `this desk holds its maximum of sessions; restart it`, and
-  every session already minted goes on working. **There is no eviction**, and
-  that is a design decision rather than an omission: eviction ends a live
-  session from outside the page that holds it, so the page needs a second actor
-  to notice — and this desk's page has exactly one actor, the bootstrap, because
-  every pair of actors that could read or replace the id was a race. Sixty-four
-  is far more open tabs than a local desk has; reaching it means something is
-  bootstrapping in a loop.
+  **every session already minted goes on working** — nothing is dropped. The
+  page shows that sentence verbatim rather than "open the printed URL", because
+  reopening it gets a fresh tab the same 503.
+
+  **Sixty-four is cumulative for the life of the process, not open tabs.** A
+  session is never removed, so every bootstrap since the desk started counts:
+  sixty-four page loads reach the bound whether or not any of those tabs is
+  still open. In ordinary use that is a desk somebody has been reloading all
+  day, and the answer is to restart it. **Anyone holding the launch secret can
+  force it deliberately** — sixty-four `POST /api/session` with the secret as a
+  bearer — which is a self-inflicted denial of service by whoever already has
+  the desk's own credential, and is written down here rather than guarded
+  against.
+
+  **There is no eviction**, and that is a decision rather than an omission:
+  eviction ends a live session from outside the page that holds it, so the page
+  needs a second actor to notice — and this desk's page has exactly one, the
+  bootstrap, because every pair of actors that could read or replace the id was
+  a race.
 - **The one thing that is still ambient, and the residual it leaves.** The
   handoff is a cookie, for the sixty seconds between the launch and the page's
   first request. It opens exactly one route and is spent by it.
@@ -3236,10 +3248,29 @@ not; they are the page, and the page can do nothing without one of the two.
   same-origin` **can take the session before the page does**. Nothing written
   here changes that: forbidden-header rules bind browsers, not scripts. What the
   shape does is bound it — sixty seconds, and one use — and make the theft
-  **visible**: the page's own exchange then fails, the page has no session, and
-  it says *No session — open the URL that jpack-desk printed at startup*. The
-  launch secret is reusable for the life of the process, so reopening the
-  printed URL is the way back.
+  **visible to the person it happened to**, which needs the chassis to say
+  *which* failure it was.
+
+  **So the exchange answers two different `401`s, and the page acts on each
+  differently.**
+
+  | code | what happened | what the page does |
+  | --- | --- | --- |
+  | `no-handoff` | no handoff cookie was presented at all | keeps the id it holds |
+  | `handoff-spent` | a cookie was presented and this desk no longer holds it | forgets the id and stops |
+
+  `no-handoff` is overwhelmingly a **reload**: the exchange clears the handoff
+  it spends, so a page loading again presents nothing. That tab holds an id that
+  is very likely still live, and a desk that ended its session there would make
+  every reload a sign-out. `handoff-spent` is the residual actually happening —
+  or an expiry, which a page cannot tell from it and must not — and the page
+  says *The launch link was used by something else. Restart jpack-desk and open
+  the new URL it prints.* It does **not** say to reopen the printed URL: the
+  launch secret is reusable, so whatever took one handoff takes the next, and
+  what ends it is a new process with a new secret.
+
+  One code for both was the shape a review found: the page kept its session
+  either way, and the theft was invisible.
 - **A refusal after the bootstrap is terminal until the page is loaded again.**
   A `401` from any chassis call, or a refused upgrade the page puts to
   `GET /api/session` and sees refused, makes the page forget the id and say the
@@ -3247,6 +3278,15 @@ not; they are the page, and the page can do nothing without one of the two.
   mints a session is a handoff, and the only thing that issues a handoff is
   `/launch?secret=…`. Reloading the page runs the bootstrap again, and a handoff
   present then is spent — **that is the whole recovery flow**.
+
+  **And terminal reaches the sockets, not only the requests.** A `401` is met by
+  the caller that made the request; a WebSocket that was already open notices
+  nothing at all, and went on carrying frames for a session the chassis had
+  refused. So `forgetSession` publishes on one subscription: the desk's own MCP
+  connection and the assistant's each close their transport, the gated
+  connection an engine drives delivers nothing further and says why, and the
+  page renders the notice **once** — a StrictMode double-mount included, because
+  each subscription is torn down with the effect that made it.
 - **No sign-out, no expiry, no eviction.** A session lives until the process
   stops. There is no `DELETE /api/session`; a `DELETE` to that path is read as
   the reader and the session is still live afterwards. Sign-out and eviction
@@ -3300,17 +3340,35 @@ not; they are the page, and the page can do nothing without one of the two.
   Firefox and Safari 16.4+ all do, and nothing else on this desk reads it. The
   WebSocket handshake is authorized by the subprotocol offer the page makes, so
   it depends on no fetch metadata at all.
-- **One 401 does not end the session, and it is the model endpoint's own.** The
-  assistant's relay forwards the configured endpoint's status verbatim, so a
-  `401` there usually means the stored key was not accepted. The page ends its
-  session only on the chassis' own refusal envelope (`{"code":"unauthorized"}`),
-  which `guard` writes before anything outbound happens. An endpoint could write
-  that body itself — the relay copies an answer's headers and body through a
-  blocklist, not an allow-list — and what it would achieve is putting the page
-  in the no-session state until it is reloaded. That is a nuisance, from an
-  endpoint the person configured on this machine and handed a key to, and it is
-  written down here rather than guarded against with a rule that would be wrong
-  the other way round.
+- **Under `npm run dev` the Vite dev server sees the session.** In production
+  nothing sits between the page and the chassis: the listener binds loopback.
+  The development configuration this repository documents puts Vite in between
+  and proxies `/ws` through it — and the session id travels in the
+  `Sec-WebSocket-Protocol` **request** header, so the dev server handles it, and
+  would log it if it logged request headers. It is a development arrangement on
+  the developer's own machine, and it is written down rather than left as an
+  assumption that there is nothing in between.
+- **Only `GET /launch` mints a handoff.** Every other method, `HEAD` included,
+  answers `405` and sets nothing. `HEAD` is named because Go's router matches it
+  on a `GET` pattern, so it reached the handler with a valid secret and was
+  handed a credential no page would ever spend.
+- **One 401 does not end the session, and one header is how the page knows.**
+  The assistant's relay forwards the configured endpoint's status verbatim, so a
+  `401` there usually means the stored key was not accepted; ending a person's
+  desk session over that would be reading one refusal as another.
+
+  Every refusal **this chassis authors** carries `X-Jpack-Desk-Refusal: <code>`
+  — set in one place, so a refusal written tomorrow carries it without anybody
+  remembering to — and the relay **strips that header from every upstream
+  answer**, in every casing (`Header.Del` canonicalises) and from trailers,
+  which it forwards none of anyway. So the header's presence is the
+  discriminator, and there is nothing an endpoint can send that wears it.
+
+  **This replaces reading the body, which was wrong twice.** A body has to be
+  consumed to be read and a *clone* has tee semantics, so an oversized chunked
+  refusal deadlocked the reader trying to classify it; and an endpoint can write
+  any body it likes, so a body-borne discriminator was **forgeable** — a
+  residual this desk no longer has.
 
 **A cross-origin write is refused twice, and neither layer is load-bearing
 alone.** A page on another site cannot send the file API's `PUT` from a browser

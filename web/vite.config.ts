@@ -51,7 +51,16 @@ export default defineConfig({
       // The redirect it answers with is `Location: /#`, which is a *relative*
       // location and therefore resolves against the dev server the browser is
       // talking to rather than against the chassis — so the browser lands on
-      // Vite's `/` holding a cookie scoped to `localhost:5173`.
+      // Vite's own `/` holding the **handoff** cookie, which the browser scoped
+      // to the dev origin it was set from. That cookie is not a session: the
+      // page spends it once at `POST /api/session` for a session id it holds
+      // itself, and no cookie authorizes anything afterwards.
+      //
+      // **This proxy sees the session, and that is worth knowing.** `/ws` below
+      // carries the id in the `Sec-WebSocket-Protocol` offer, so under
+      // `npm run dev` the dev server handles it. In production nothing sits
+      // between the page and the chassis; under this configuration something
+      // does. See README §Security model.
       '/launch': {
         target: CHASSIS,
         changeOrigin: true
