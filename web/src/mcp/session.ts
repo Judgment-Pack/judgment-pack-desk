@@ -34,12 +34,13 @@
  *
  * # What a refusal means, and why nothing retries
  *
- * A `401` after the bootstrap means the id names nothing: the chassis restarted,
- * or the handoff was taken by something else before this page spent it. Only the
- * printed URL mints another, so the page **forgets the id and stops**
- * (`forgetSession`). That state is terminal until the next page load, which runs
- * `bootstrap()` again — and a handoff present then is spent, which is the whole
- * recovery flow: reopen the URL the desk printed.
+ * A `401` this desk **marked `unauthorized`** means the id names nothing: the
+ * chassis restarted, or the handoff was taken by something else before this page
+ * spent it. Only the printed URL mints another, so the page **forgets the id and
+ * stops** (`forgetSession`). That state is terminal until the next page load,
+ * which runs `bootstrap()` again — and a handoff present then is spent, which is
+ * the whole recovery flow: reopen the URL the desk printed. A 401 wearing any
+ * other code, or no mark, is somebody else's answer and changes nothing here.
  *
  * `sessionStorage` rather than `localStorage`: per tab, and cleared when the tab
  * is. The key names `host:port`, so two desks on two ports never read each
@@ -265,10 +266,10 @@ async function beginSession(): Promise<string | null> {
  * What a refused exchange means, which is **three different things**.
  *
  *  - **`handoff-spent`** — a handoff was presented and this desk no longer
- *    holds it: somebody took it inside its sixty seconds, or it expired. This
- *    is the stated residual actually happening, and it ends the page's session:
- *    reopening the printed URL cannot help, because the secret is reusable and
- *    whatever took one handoff takes the next.
+ *    holds it: this tab spent it on an earlier load, or somebody else did.
+ *    **This desk cannot tell those apart, so neither does this page**, and it
+ *    is read exactly as `no-handoff`: a tab holding an id keeps it, a tab
+ *    holding none has no session.
  *  - **`sessions-full`** — this desk holds as many sessions as it will. The
  *    chassis' own sentence is shown **verbatim**, because "open the printed
  *    URL" is advice that cannot work here: a fresh tab reopening it gets the

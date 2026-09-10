@@ -198,9 +198,12 @@ func TestLaunchAcceptsOnlyGET(t *testing.T) {
 
 /* The exchange ---------------------------------------------------------------- */
 
-// TestTheHandoffIsSingleUse — the property the residual rests on. A second
-// `POST` with the same cookie is a `401`, so a stolen handoff makes the page
-// fail visibly rather than letting two callers share one desk quietly.
+// TestTheHandoffIsSingleUse — the property that **bounds** the residual. A
+// second `POST` with the same cookie is a `401`, so one handoff buys one
+// session and no more, however many callers present it. It makes nothing
+// visible: the page's own second `POST` reads `handoff-spent`, which is what
+// its own earlier spend reads as, so a tab that already holds an id keeps it
+// and goes on working alongside whoever took the other session.
 func TestTheHandoffIsSingleUse(t *testing.T) {
 	s, ts := newTestServer(t, false)
 	handoff := launchHandoff(t, ts)
@@ -221,8 +224,10 @@ func TestTheHandoffIsSingleUse(t *testing.T) {
 		t.Fatalf("the second exchange answered %d, want 401: %v", status, body)
 	}
 	// **`handoff-spent`, not `no-handoff`.** A cookie was presented and this
-	// desk no longer holds it — which is the residual actually happening, and
-	// the page has to stop rather than carry on beside whoever took it.
+	// desk no longer holds it. The two are separated so that a spend can be
+	// told from an *expiry*, which is the one refusal a person can act on;
+	// `handoff-spent` itself tells the page nothing, because this desk cannot
+	// tell a tab's own earlier spend from anybody else's.
 	if body["code"] != CodeHandoffSpent {
 		t.Errorf("code %v, want %s", body["code"], CodeHandoffSpent)
 	}

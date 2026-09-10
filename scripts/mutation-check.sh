@@ -1533,11 +1533,14 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # is. Each one is a property the README states in a sentence, and each one
   # was a review finding on the branch this design replaced.
   SE=internal/desk/session.go
-  # **Single use is what bounds the residual.** A script that captures the
-  # handoff inside its sixty seconds and forges the fetch-metadata header takes
-  # the session — and the whole of what makes that *visible* rather than quiet
-  # is that the page's own exchange then fails. A reusable handoff is a desk
-  # with two users and nobody told.
+  # **Single use is what bounds the residual, and the bound is all it is.** A
+  # script that captures the handoff inside its sixty seconds and forges the
+  # fetch-metadata header takes a session; single use means it takes exactly
+  # one, and the window then closes. It makes nothing visible — the page's own
+  # exchange reads `handoff-spent`, which is what its own earlier spend reads
+  # as, and an authenticated tab keeps its id alongside the stolen session. A
+  # reusable handoff would be a link that mints a session on every load, for as
+  # long as somebody holds a copy of it.
   # Repaired: `consume` became `spend` and answers a verdict, so the needle
   # names the removal that makes a handoff single use. The property is
   # unchanged — a handoff left in `given` can be spent again and again.
