@@ -19,7 +19,7 @@ import type { AssistantEvent, Engine } from './engine'
 /**
  * An engine this suite puts in the registry's place, where a case needs one.
  *
- * Null by default, so every other case runs the real `builtin` chunk against
+ * Null by default, so every other case runs the real `vercel` chunk against
  * the scripted model exactly as it did before.
  */
 let injected: Engine | null = null
@@ -28,7 +28,7 @@ vi.mock('./engines', async (importOriginal) => {
   const original = await importOriginal<typeof import('./engines')>()
   return {
     ...original,
-    loadEngine: async (id: 'builtin' | 'vercel') => injected ?? original.loadEngine(id)
+    loadEngine: async (id: 'vercel' | 'vercel') => injected ?? original.loadEngine(id)
   }
 })
 import { scriptedModel } from './conformance/scriptedModel'
@@ -277,14 +277,14 @@ describe('where there is no assistant to run', () => {
 
 describe('the tab before a run', () => {
   it('names the engine, the endpoint’s model and the tier as stored', async () => {
-    await draw({ assistant: { endpoint: ENDPOINT, engine: 'builtin', thinking: 'ultra' } })
-    expect(await screen.findByText('builtin · a-model · thinking ultra')).toBeTruthy()
+    await draw({ assistant: { endpoint: ENDPOINT, engine: 'vercel', thinking: 'ultra' } })
+    expect(await screen.findByText('vercel · a-model · thinking ultra')).toBeTruthy()
   })
 
   it('names the default engine where the file names none, and runs it', async () => {
     // `vercel` is the decoder's default and this build certifies it, so the
     // line names what actually ran. The substitution notice that used to stand
-    // here — a desk configured for `vercel` running `builtin` — is gone with
+    // here — a desk configured for one engine running another — is gone with
     // the fallback: `engines/index.ts` is a total map over the declared ids.
     await draw({ assistant: { endpoint: ENDPOINT } })
     expect(await screen.findByText('vercel · a-model · thinking off')).toBeTruthy()
@@ -955,7 +955,7 @@ describe('fixing what the check refused', () => {
 describe('the proposal the pane reads is the one the hook canonicalized', () => {
   /** An engine that proposes one document and ends. */
   const proposes = (document: unknown): Engine => ({
-    id: 'builtin',
+    id: 'vercel',
     async *start(): AsyncGenerator<AssistantEvent> {
       yield { type: 'proposal', document, unknowns: [] }
       yield { type: 'end' }
@@ -1041,7 +1041,7 @@ describe('a proposal belongs to the draft it was given', () => {
 
   /** An engine that proposes only when this suite lets it. */
   const waits = (): Engine => ({
-    id: 'builtin',
+    id: 'vercel',
     async *start(): AsyncGenerator<AssistantEvent> {
       started = true
       await new Promise<void>((resolve) => {
@@ -1142,7 +1142,7 @@ describe('a session that failed after it ended', () => {
    * in one place both read. `outcomeOf` is that place now.
    */
   const proposesThenFalls: Engine = {
-    id: 'builtin',
+    id: 'vercel',
     async *start(): AsyncGenerator<AssistantEvent> {
       yield {
         type: 'proposal',
@@ -1202,7 +1202,7 @@ describe('a session that failed after it ended', () => {
 })
 
 describe('the runtime’s testing prompt, which the refutation pass needs', () => {
-  const THINKING = { endpoint: ENDPOINT, engine: 'builtin', thinking: 'on' }
+  const THINKING = { endpoint: ENDPOINT, engine: 'vercel', thinking: 'on' }
 
   it('does not start a run until the testing prompt has arrived too', async () => {
     // **Both prompts, or neither.** A session begins by reading the runtime's

@@ -1980,6 +1980,23 @@ usually ends in `/v1`; for `anthropic` the base carrying `/v1/messages`; for
 desk appends the path its protocol prescribes and never guesses a version
 segment.
 
+`model` is the one member of the endpoint that is **not** required, and the
+reason is the order a person works in. The list to pick a model from is the
+endpoint's own, and this desk cannot read it until there is an endpoint saved
+and a key bound to it — so a required model put the first save behind a guess.
+Absent and `null` are one state, and the decoder says which it is:
+
+```json
+{ "assistant": { "endpoint": { "url": "…", "kind": "gemini", "model": null, "tools": [] } } }
+```
+
+decodes with the notice `no model chosen yet — pick one below`, which Admin ›
+Assistant shows as that card's Status line. The endpoint is **saved and valid**;
+what it is not is ready, and the Assistant tab and Describe it say so and offer
+no run. `""` is still refused, here and on the chassis: the empty string is a
+value somebody wrote, and a member whose two spellings mean different things is
+a member two readers disagree about.
+
 `tools` is required, is validated against a closed list — `get_schema`,
 `list_examples`, `get_example`, `validate`, `experimental_evaluate` — and
 refuses anything else by name. It is required rather than defaulted because a
@@ -2008,46 +2025,97 @@ no vendor, and a value outside the list refused **by name** (`assistant.engine`,
 `assistant.thinking`) rather than ignored — a setting that appears to grant
 something is a grant to whoever wrote it.
 
-`engine` admits `vercel`, the default, and `builtin`, a fallback that adds
-nothing to what this desk already ships. The slot exists so that the desk's
-promises — propose-only, rehearsal-only, the tool allow-list, key custody — are
-held *below* whatever runs the loop, and so that an engine ships only once it
-has passed the desk's own conformance session
-([ADR-0001](docs/adr/0001-make-the-assistant-engine-a-slot.md)). `thinking`
-admits `off`, `on` and `ultra`; the two states it cannot express — a model that
-always thinks, and an endpoint that offers no thinking at all — are the desk's
-to report when it meets them rather than settings anyone selects.
+`engine` admits `vercel`, and that is the whole of the list. The slot exists so
+that the desk's promises — propose-only, rehearsal-only, the tool allow-list,
+key custody — are held *below* whatever runs the loop, and so that an engine
+ships only once it has passed the desk's own conformance session
+([ADR-0001](docs/adr/0001-make-the-assistant-engine-a-slot.md)). The keyless
+fallback that shipped beside it, `builtin`, was **withdrawn** on 2026-09-10
+(ADR-0001's amendment): one adapter went, not the decision, and what admits a
+second engine — the contract, the registry and the session that runs over it —
+is unchanged.
 
-Both are acted on now: the page loads the named engine's chunk and runs it —
-and **this build certifies both ids**, so the tab's status line names the engine
-the file asked for and nothing is ever substituted — and a tier other than `off`
-puts real parameters on every request and runs the refutation pass below.
+**A file that names the withdrawn engine still decodes**, for one release, under
+one rule on both sides of the shared decoder:
+
+| `assistant.engine` | decodes to | and the decoder says |
+| --- | --- | --- |
+| absent | `vercel` | nothing |
+| `"vercel"` | `vercel` | nothing |
+| `"builtin"` | `vercel` | `engine: "builtin" was withdrawn; the Vercel engine runs` |
+| anything else | — | the file is refused, by name |
+
+That sentence is a **notice** rather than a problem — the file was accepted and
+everything in it is in use — and Admin › Assistant shows it as that card's
+Status line. A removed choice is removed from the schema with a migration, not
+left as a one-option menu; the form has no Engine field and never writes the
+member, so a file that carries one keeps it until its next write.
+
+`thinking` admits `off`, `on` and `ultra` — offered on the form as **off**,
+**standard** and **deep**, because `ultra` is a spelling and not an amount. The
+two states the tier cannot express, a model that always thinks and an endpoint
+that offers no thinking at all, are the desk's to report when it meets them
+rather than settings anyone selects. What each tier puts on each protocol's wire
+is the table in **The thinking tier** below; the form no longer restates it,
+because that is a fact about a wire and not a decision about a desk.
+
+The tier is acted on: anything other than `off` puts real parameters on every
+request and runs the refutation pass below.
 
 **What the slot has shipped so far**, in ADR-0001's own order: the slot and the
 key custody; the Assistant tab, with propose and accept-into-draft; the engine
-slot itself, with `vercel` and `builtin` both certified against the conformance
-session; **Describe it** in the Create dialog, which runs the same session with
+slot itself, certified against the conformance session; **Describe it** in the
+Create dialog, which runs the same session with
 no draft and hands what comes back to Create rather than to a diff; the thinking
 tier with its refutation pass; the native Gemini wire on **both** engines —
 function declarations, thought summaries streamed into the tab as reasoning,
 thought signatures carried back verbatim across tool turns, and the tier mapped
 to Gemini's own thinking configuration — certified by the same session that
 certifies the other two families; and the **Admin form** below, which chooses
-the endpoint, the model and the tier and writes them.
+the provider, the endpoint, the model and the tier, stores the key, and writes
+what belongs in the file.
 
 **Admin › Assistant is a form**, and the paste block that stood here is gone —
 it existed because the page could not write the file, and a second way to do
 one thing where the second is hand-editing a file this desk also rewrites is
 worse than either alone.
 
-| the form asks for | and it is |
-| --- | --- |
-| **Wire protocol** | one of the three, by name. Choosing one offers the base that protocol's own reference documents — `https://api.openai.com/v1`, `https://api.anthropic.com`, `https://generativelanguage.googleapis.com` — as a **default in an editable field**, replaced by typing over it. Nothing reads those back, compares an endpoint to them, or treats an endpoint at one of them differently: the enforcement guard admits the three literals only as values of one table in one module, and the sharper guard beside it — every host comparison in the page's source is a loopback name — is untouched. |
-| **Endpoint** | the base, held to the transport rule and the configured-query rule **by the decoder's own function**, so a URL those rules refuse is shown refused in the sentence the file's reader would write and is not sent. |
-| **Tools it may call** | the five, as five checkboxes. All on for a desk that has configured nothing, because `[]` is a real choice — an assistant that may call nothing — and a form opening on it would have a blank field making it. |
-| **Model** | typed, with **List models** beside it. |
-| **Engine** | `vercel` or `builtin`, with the two things the SDK-backed one cannot do named beside it: it shows the model a tool schema narrowed where the SDK declares one narrower (the tab says `narrowed` when it does, and on the Gemini wire `list_examples` arrives with no parameters at all), and it cannot carry an empty signed thought part back across a tool turn on that wire. Both are measured in this repository's own suite, and both are why an author might choose `builtin` for a Gemini endpoint. |
-| **Thinking** | `off`, `on` or `ultra`, with **what that tier puts on this protocol's wire read off `thinking.ts` itself** rather than restated beside it — so the line changes when the table does. On the Gemini rows it also says that the two budgets are this desk's choice inside a documented field. |
+**It reads in the order somebody sets one of these up**: choose who you are
+talking to, put the key in, check the address, pick a model. Every label and
+hint on it is a short line about the thing in front of you, and no label is a
+sentence about this codebase.
+
+| the form asks for | and it is | the line under it |
+| --- | --- | --- |
+| **Provider** | one of the three wire protocols, by the name its operator uses: **OpenAI-compatible**, **Anthropic**, **Google Gemini**. Choosing one fills the endpoint URL at once with the base that protocol's own reference documents — `https://api.openai.com/v1`, `https://api.anthropic.com`, `https://generativelanguage.googleapis.com` — as a **default in an editable field**, replaced by typing over it, and left alone once it is somebody's own address. Nothing reads those back, compares an endpoint to them, or treats an endpoint at one of them differently: the enforcement guard admits the three literals only as values of one table in one module, and the sharper guard beside it — every host comparison in the page's source is a loopback name — is untouched. | none |
+| **API key** | the one credential this desk keeps, in a password field that is **populated from nothing**: no endpoint returns a key, and a masked box of the right length would be this page inventing evidence. Once one is stored **there is no field at all** — the state line says `Stored — <fingerprint>, for <provider>` and the actions are **Replace key**, which opens the one field there is, and **Remove key**. Before one: the field, the hint, and `No key stored`. | *Stored on this computer only, never in the project. Readable by your user account only.* |
+| **Endpoint URL** | the base, held to the transport rule and the configured-query rule **by the decoder's own function**, so a URL those rules refuse is shown refused in the sentence the file's reader would write and is not sent. | *Leave the default unless you use a proxy or your own server.* |
+| **Model** | the endpoint's own listing, in a picker, as soon as there is a key bound to the saved endpoint — see below. Its last option is **Other model… (type an id)**, which is the whole of how the field below is reached. | *From the provider's list. Choose Other to type an id.* |
+| **Type a model id** | the field, shown where there is no list to show — or where **Other** was chosen, or where the saved model is not one the endpoint listed. Never beside the picker unasked. | *Exactly as the endpoint spells it.* |
+| **Tools the assistant may use** | the five, as five checkboxes. All on for a desk that has configured nothing, because `[]` is a real choice — an assistant that may call nothing — and a form opening on it would have a blank field making it. | *All read-only. Untick one to hide it from the assistant.* |
+| **Thinking** | **off**, **standard** or **deep**, which are `off`, `on` and `ultra` in the file. What each one puts on each protocol's wire is in **The thinking tier**, because it is a fact about a wire rather than a decision about this desk. | *How much reasoning the model may do before answering.* |
+
+The order is **provider → key → Connect → the list → a pick**, and no step in it
+asks anybody to guess: **Connect saves the endpoint with no model at all**, the
+listing loads against it, the person chooses, and Save writes the id.
+
+**Connect is the primary action until a key is stored for the endpoint that is
+saved**, and it is one action doing two things in the only order the chassis
+admits: the endpoint through `PUT /api/desk-config`, and then the key through
+the key route. A key is kept bound to the endpoint that is *configured*, so
+storing one first is refused — which used to leave first-time setup as two
+buttons in an order nobody was told. **Neither route changed.** If the endpoint
+write is refused the key is never sent and the refusal is shown against the
+field it belongs to; if the key store is refused the endpoint stays saved and
+the refusal is shown where the key is. Once the key is bound the same button is
+**Save**, and a read that has not answered yet is not "no key": the button stays
+Save until the desk says otherwise. **Store key** stands beside the field for a
+replacement, and is not offered at all where there is no endpoint to bind one
+to.
+
+**Test connection** is the desk's own probe, reported in plain words:
+`connected` or `not connected`, the status, the round trip, and one word from
+the probe's closed vocabulary rendered as a sentence.
 
 **Remove endpoint** writes the other state the slot has: `endpoint: null`,
 through the same conditional commit and with the same digest. Until it existed
@@ -2092,46 +2160,60 @@ The test drives the real provider over a stubbed file rather than a fixture,
 because a fixture would hold the mechanism constant and prove nothing about
 it.
 
-**List models** reads the endpoint's own listing through the relay by naming a
-path suffix — `models`, `v1/models`, `v1beta/models` — and fills a picker. Two
-things gate it and one of them is new: the stored key must be bound to the
-endpoint that is *saved*, because the relay refuses a credential entered for
+**The model list is asked for on its own, with no button to press.** As soon as
+a key is stored for the endpoint that is *saved*, the page reads that endpoint's
+own listing through the relay by naming a path suffix — `models`, `v1/models`,
+`v1beta/models` — and offers the rows in a picker, with the model the file names
+preselected. The button that used to stand here is gone: the answer to "which
+model" is a list the endpoint already knows, and pressing something first is a
+step with no decision in it.
+
+Two things still gate the request and neither is new: the stored key must be
+bound to the saved endpoint, because the relay refuses a credential entered for
 another destination before opening a socket; and the form on screen must **be**
 that endpoint. The family and the suffix used to come off the editable draft
 while the gate came off the file, so choosing Gemini without saving sent
 `v1beta/models` to a still-saved OpenAI-compatible endpoint — a request the page
-composed for one destination and the desk sent to another. The endpoint it asks
-about is captured at the click, and the rows are **dropped from state** the
-moment the form says a different host or protocol: a picker left standing after
-that is a list of models from somewhere else, and rows merely *hidden* came
-back when the URL was typed away and back again — an arbitrarily stale listing
-with no request behind it. **The field beside it never goes away**: the listing is
-first-page-only, an endpoint may refuse to list at all, and a gateway may route
-on a name of its own — a picker that was the only way to choose would make
-every one of those unconfigurable. **What is saved is the id and never the
+composed for one destination and the desk sent to another. The endpoint asked
+about is read at the moment of asking, and the rows are **dropped from state**
+the moment the form says a different host or protocol: a picker left standing
+after that is a list of models from somewhere else, and rows merely *hidden*
+came back when the URL was typed away and back again — an arbitrarily stale
+listing with no request behind it. Typing the URL back asks again, which is a
+listing rather than a resurrection.
+
+**One control at a time.** The picker and the typed field stood side by side and
+the page had no opinion about which one anybody was supposed to use. Where there
+is a list, the list is the control, and its last option — **Other model… (type
+an id)** — is the whole of how the field is reached. Where there is no list, the
+field is the only control, with the listing's own refusal beside it, so the form
+still works against an endpoint that will not answer. A saved model the endpoint
+does not list opens the field by itself, because a picker silently showing
+nothing while a perfectly good id is what would be saved is the state to avoid. **What is saved is the id and never the
 label**, which differ on two of the three protocols — and **an id is an option
 only if the configuration decoder would take it**, asked of that decoder rather
 than re-stated here: a copy of the rule is how a whitespace-only id came to be
 offered, saved cleanly into the field, and produced a 422 on the next Save.
 Typing the same value still gets the decoder's own sentence against the field,
-because the chassis is what decides. A refusal is its status
-and one word from the probe's own closed vocabulary, and the body is not read;
-an answer that is not JSON gets a fixed sentence, because `JSON.parse` quotes
-the text it failed on and that text is the body.
+because the chassis is what decides — and the form runs that same function
+before it sends, so a model this desk will refuse is refused where it was typed
+rather than after a round trip. A listing refusal is its status and one word
+from the probe's own closed vocabulary, and the body is not read; an answer that
+is not JSON gets a fixed sentence, because `JSON.parse` quotes the text it
+failed on and that text is the body.
 
-**The key row says which endpoint the key is for**, in five states: not read
-yet; **no endpoint**, where the entry field is not offered at all because
-storing a key requires one to bind it to; **none stored**, with the field
-labelled for the host it would be entered for; **stored and bound**, with
-Replace and Remove and no masked box standing beside a working key; and
-**stored for somewhere else**, naming both hosts, because a reader has to be
-able to see which of the two moved. A write answering `keyRebindRequired`
-moves the row at that instant rather than waiting for the key read.
+**The key line says which endpoint the key is for**, in five states: not read
+yet; **no endpoint**, where **Store key** is not offered at all because storing
+one requires an endpoint to bind it to — Connect is what reaches this state,
+because it saves the endpoint first; **no key stored**, naming the host one
+would be entered for; **stored**, with its fingerprint and its provider, and no
+field standing beside it; and **stored for somewhere else**, naming both hosts,
+because a reader has to be able to see which of the two moved. A write answering `keyRebindRequired` moves
+the line at that instant rather than waiting for the key read.
 
-The **Check reachability** button still reports the desk's own probe. The key
-and the endpoint stay separate: removing the endpoint does not remove the key
-from this machine, so the page says `none — no endpoint configured` and lets
-the key line say whether one is still kept here.
+The key and the endpoint stay separate: removing the endpoint does not remove
+the key from this computer, so **Remove endpoint** leaves the key line saying
+what is still kept here, and says so in the one sentence it confirms with.
 
 **What the assistant is, and is not**, in the sentence the page carries: it
 proposes edits to the draft; you accept them; the runtime checks them. It never
@@ -2367,15 +2449,16 @@ list and never quoted past it, so a refusal about a document cannot be read as a
 refusal of the parameter.
 
 The tab's status line names the tier the file asked for and the state the
-session reached: `builtin · a-model · thinking on · unavailable for this
+session reached: `vercel · a-model · thinking on · unavailable for this
 endpoint`. Each reasoning passage is one line in the stream, collapsed with its
 character count, and opens on a click. **Reasoning text never reaches the
 runtime** — it is for the person reading the tab, and the runtime is asked about
 documents.
 
 **Thinking blocks come back complete and unmodified**, which is both signing
-wires' own rule — Anthropic's and Google's — and the reason the built-in engine
-echoes the model's turn exactly as it received it rather than rebuilding it: a
+wires' own rule — Anthropic's and Google's — and the reason an engine that
+echoes the model's turn exactly as it received it rather than rebuilding it
+keeps them all: a
 `redacted_thinking` block survives because nothing filters by block type, a
 Gemini `thoughtSignature` survives because the part it sits on is the part that
 goes back, and an Anthropic signature split across two `signature_delta` events
@@ -2435,11 +2518,10 @@ would be shown as unconstrained. It travels — and **a keyword the list does no
 name is reported and never stripped**: a 400 whose message names a keyword this
 desk actually sent becomes an `error` event naming it, with the closed list
 quoted, rather than the desk widening its idea of the runtime's contract on
-being refused. Both engines carry that rule and both have a conformance leg for
-it.
+being refused. The engine carries that rule and has a conformance leg for it.
 
-**The two engines do not show the model the same contract, and the desk says
-which.** `@ai-sdk/google` does not send the schema it is given: it rebuilds it
+**This engine does not show the model the contract the desk composed, and the
+desk says so.** `@ai-sdk/google` does not send the schema it is given: it rebuilds it
 through its own converter, which copies an allow-list of keywords and drops the
 rest. So on the `vercel` engine `pattern`, `maximum`, `uniqueItems`, the
 conditionals and the annotations below never reach the model either, and a tool
@@ -2449,11 +2531,12 @@ and it is below the one seam this adapter has — but it is exactly the
 cross-engine contradiction the closed list exists to prevent, so it is declared
 rather than discovered:
 
-| engine | what the model is not shown, on `gemini` |
+| what shows it | what the model is not shown, on `gemini` |
 | --- | --- |
-| `builtin` | `$schema`, `$id`, `additionalProperties`, `const`, `examples`, `patternProperties` — the desk's list, and nothing else |
-| `vercel` | all of those, **plus** `$comment`, `$defs`, `$ref`, `contains`, `default`, `dependentRequired`, `deprecated`, `else`, `exclusiveMaximum`, `exclusiveMinimum`, `if`, `maxLength`, `maximum`, `minimum`, `multipleOf`, `not`, `nullable`, `pattern`, `prefixItems`, `propertyNames`, `readOnly`, `then`, `title`, `uniqueItems`, `writeOnly` — and a tool whose schema declares an object with no properties is declared with no `parameters` at all |
+| the desk's own closed ruling | `$schema`, `$id`, `additionalProperties`, `const`, `examples`, `patternProperties` — and nothing else |
+| `vercel`, on top of it | all of those, **plus** `$comment`, `$defs`, `$ref`, `contains`, `default`, `dependentRequired`, `deprecated`, `else`, `exclusiveMaximum`, `exclusiveMinimum`, `if`, `maxLength`, `maximum`, `minimum`, `multipleOf`, `not`, `nullable`, `pattern`, `prefixItems`, `propertyNames`, `readOnly`, `then`, `title`, `uniqueItems`, `writeOnly` — and a tool whose schema declares an object with no properties is declared with no `parameters` at all |
 | either, on the other two families | nothing: those wires take JSON Schema as written |
+
 
 Three things hold that table honest, and one boundary is stated rather than
 glossed.
@@ -2483,8 +2566,7 @@ about a handful of words.
 
 **And the author is told**: a run opens with one line per tool that lost
 something **beyond the desk's own list**, naming the tool and the keywords. Over
-the runtime's own five that is nothing at all on `builtin` — its removals *are*
-the ruling — and exactly one line on `vercel`, for the tool whose schema that
+the runtime's own five that is exactly one line, for the tool whose schema this
 provider drops whole. A notice about `additionalProperties` would be the desk
 warning about the rule it wrote down.
 
@@ -2532,8 +2614,8 @@ under the tier table.
 
 With the tier on, the assistant does not show you a proposal it has not tried to
 break. After the main loop has produced a document and **before** the proposal
-event is emitted, the engine runs a second, adversarial session over it — a
-second loop in `builtin`, a second `streamText` in `vercel` — instructed by the
+event is emitted, the engine runs a second, adversarial session over it — on
+this engine, a second `streamText` — instructed by the
 runtime's own `test_pack` prompt, the document fenced beneath it, and one fixed
 sentence from this desk saying to try to refute it with the runtime's tools and
 to state no verdict of its own.
@@ -2589,7 +2671,7 @@ rules.
 
 ### What is measured, and what is modelled
 
-The conformance session runs both engines over all three wire formats, each
+The conformance session runs every certified engine over all three wire formats, each
 answered as a stream and as one whole object, at tier `off`, `on` and `ultra`,
 against an endpoint with thinking, one with none, one that takes only the other
 Anthropic spelling, one that takes only the other Gemini spelling, one that
@@ -2861,7 +2943,7 @@ for ever.
 
 The runtime is reached through a guard that reads the run's signal **before it
 dispatches**, so no `tools/call` arrives after the consumer has left. A cancelled
-run says nothing at all, on either engine, not even `end`: the terminal event
+run says nothing at all, whatever the engine, not even `end`: the terminal event
 belongs to a run that finished, and the page's own terminal accounting is the run
 hook's.
 
@@ -2871,7 +2953,7 @@ A generator serves `next()`, `return()` and `throw()` from one queue, so a
 settles — and a run waiting on a model request that ends only when it is aborted
 could never be stopped by the consumer that owned it, because the abort was
 inside the `return()` queued behind the very `next()` it would have released.
-Both promises hung for ever, on both engines, measured. So `return()` cancels
+Both promises hung for ever, on every engine measured. So `return()` cancels
 **first**, synchronously, before it awaits anything: the pending `next()` settles
 `{ done: true }`, and only then does `return()`. Each engine holds an abort of
 its own, chained to the session's, and gives its model requests that one.
@@ -2903,20 +2985,17 @@ shown nothing*, and a permissive `{"type":"object"}` written by the desk is this
 desk telling the model that anything is acceptable for a tool whose real contract
 it does not know. The five a real `jpack mcp` serves all carry one.
 
-| engine | what runs the loop | added download (gzip) | what it guards | what it does not do yet |
+| engine | what runs the loop | added download (gzip) | what it guards | what it does not do |
 | --- | --- | --- | --- | --- |
-| `vercel` **(default)** | Vercel AI SDK v7 — `ai` 7.0.93, `@ai-sdk/openai-compatible` 3.0.44, `@ai-sdk/anthropic` 4.0.49, all pinned exactly | **96.0 KiB** for the lazy chunk, plus 2.0 KiB shared with the other engine and 1.2 KiB the main chunk grows by | the rehearsal hook named as a key of the SDK's own options type, so an upstream rename is a compile error rather than a guard that fails open; the desk's gate handed the call **as the model made it**; a placeholder origin the adapter never resolves, and a query refused at both layers; the SDK's own retries off; the truncated thinking signature it carries back (`vercel/ai#19663`), detected and degraded rather than sent | reassemble a split signature: it detects the truncation instead, and the session degrades once with the reason |
-| `builtin` | the bake-off's control loop, by hand — two SSE parsers, both wire formats | 3.2 KiB, and no new dependency at all | the same promises, held one level below it in the ToolGate and the model capability, which is where they are held for **every** engine; and the assistant turn echoed as received, so thinking blocks, redacted blocks and split signatures survive by construction | nothing the default does — it is the fallback that adds nothing to the supply chain |
+| `vercel` | Vercel AI SDK v7 — `ai` 7.0.93, `@ai-sdk/openai-compatible` 3.0.44, `@ai-sdk/anthropic` 4.0.49, all pinned exactly | **96.0 KiB** for the lazy chunk, plus what the main chunk grows by | the rehearsal hook named as a key of the SDK's own options type, so an upstream rename is a compile error rather than a guard that fails open; the desk's gate handed the call **as the model made it**; a placeholder origin the adapter never resolves, and a query refused at both layers; the SDK's own retries off; the truncated thinking signature it carries back (`vercel/ai#19663`), detected and degraded rather than sent | reassemble a split signature: it detects the truncation instead, and the session degrades once with the reason; and it cannot carry an empty signed thought part back across a tool turn on the Gemini wire |
 
-`builtin` is the port of the bake-off's control loop — a hand-written turn loop
-over an explicit messages array, both wire formats, no new dependency —
-restricted to the contract: it takes the runtime's prompt and the runtime's own
-tool definitions, speaks to the chassis relay **with no credential of its own**,
-reads a stream or a whole answer by what came back rather than by what it asked
-for, ends on one fenced JSON block, bounds itself at twenty model turns, and
-emits `end` exactly once.
+The keyless fallback that stood in this table, `builtin` — the bake-off's
+control loop by hand, two SSE parsers, no new dependency — was **withdrawn** on
+2026-09-10; ADR-0001's amendment states the reason and what went out with it.
+The registry, the contract and the session that certifies against them are
+unchanged, and are what a second engine is admitted by.
 
-`vercel` is the same contract on `streamText`. Its adapter is a translation and
+`vercel` is the contract on `streamText`. Its adapter is a translation and
 never a second opinion, and four things about the SDK are the adapter's business
 rather than the desk's:
 
@@ -2996,10 +3075,10 @@ repository and run in CI — keyless, deterministic, no network, no runtime
 binary. **It runs over the registry**, not over one engine: every id in
 `CERTIFIED_ENGINES` is put through all six legs and every check below, so
 certifying an adapter is adding its id to one list and a further engine is one
-PR — the adapter, its conformance run, and its row in the table above. Where the
-two engines' wire shapes differ, the scripted model is held to what each **wire
-format** defines rather than to either engine's spelling; a leg that needed an
-engine-specific branch in the fixture would be a finding rather than a fix.
+PR — the adapter, its conformance run, and its row in the table above. The
+scripted model is held to what each **wire format** defines rather than to any
+engine's own spelling; a leg that needed an engine-specific branch in the
+fixture would be a finding rather than a fix.
 
 - `scenario.json` is the experiment's own fixture, whose DRAFT_V1, DRAFT_V2 and
   FACTS were proved against the runtime before it was written.
@@ -3495,6 +3574,14 @@ with rather than quietly edited around.
 
 **The key is on this machine, in one file, owner-only — and it is stored
 together with the destination it was entered for.**
+
+**It is protected by file permissions and not by encryption**, and Admin says
+so in those words: *stored on this computer only, never in the project; readable
+by your user account only*. There is no passphrase and no keychain here. A
+desk-managed encryption key would have to be readable by this desk without a
+person present, which is the same file under a second name and one more thing to
+get wrong. Anything that can read your files as you can read this one — which is
+the same reach it already has over every project on this machine.
 
 ```
 ~/.config/jpack-desk/secrets/assistant     mode 0600, in a directory of mode 0700
@@ -4578,10 +4665,7 @@ The assistant's suites are named the same way. `assistant/toolGate.test.ts`
 holds the gate at a **recording transport**: what left the page, never what the
 gate believes it did. `assistant/conformance/conformance.test.ts` is the desk's
 conformance session, described above, and is the one that certifies an engine.
-`assistant/engines/builtin/engine.test.ts` holds the handful of properties that
-session only exercises incidentally — the request's headers and URL, the turn
-bound, `end` exactly once, and a proposal taken from the fenced block rather
-than from the prose beside it. `assistant/engines/vercel/engine.test.ts` holds
+`assistant/engines/vercel/engine.test.ts` holds
 the ones that are about **that SDK** rather than about the contract: the address
 discipline on the `fetch` its providers are given, the placeholder credential
 that never leaves it, the two layers that put `rehearsal: true` on an evaluate

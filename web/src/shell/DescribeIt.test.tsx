@@ -28,7 +28,7 @@ vi.mock('../assistant/engines', async (importOriginal) => {
   const original = await importOriginal<typeof import('../assistant/engines')>()
   return {
     ...original,
-    loadEngine: async (id: 'builtin' | 'vercel') => injected ?? original.loadEngine(id)
+    loadEngine: async (id: 'vercel' | 'vercel') => injected ?? original.loadEngine(id)
   }
 })
 
@@ -516,9 +516,9 @@ describe('the section before a run', () => {
 
   it('names the engine, the model and the tier as stored', async () => {
     serve()
-    draw({ endpoint: ENDPOINT, engine: 'builtin', thinking: 'ultra' })
+    draw({ endpoint: ENDPOINT, engine: 'vercel', thinking: 'ultra' })
     await openIt()
-    expect(await screen.findByText('builtin · a-model · thinking ultra')).toBeTruthy()
+    expect(await screen.findByText('vercel · a-model · thinking ultra')).toBeTruthy()
   })
 })
 
@@ -676,7 +676,7 @@ const createButton = () => screen.getByRole('button', { name: 'Create pack' }) a
 /** An engine that proposes exactly this, and then ends. */
 function proposing(document: unknown, unknowns: string[] = []): Engine {
   return {
-    id: 'builtin',
+    id: 'vercel',
     start: async function* (): AsyncIterable<AssistantEvent> {
       yield { type: 'proposal', document, unknowns }
       yield { type: 'end' }
@@ -899,7 +899,7 @@ describe('a proposal belongs to the submission that produced it', () => {
     // after it — and an engine that yields `end` and then throws while
     // unwinding has not had a clean run. It used to read as one.
     injected = {
-      id: 'builtin',
+      id: 'vercel',
       start: async function* (): AsyncIterable<AssistantEvent> {
         yield {
           type: 'proposal',
@@ -933,7 +933,7 @@ describe('a proposal belongs to the submission that produced it', () => {
     // event. One that proposes and then fails has shown its work and then said
     // the work does not stand.
     injected = {
-      id: 'builtin',
+      id: 'vercel',
       start: async function* (): AsyncIterable<AssistantEvent> {
         yield {
           type: 'proposal',
@@ -1312,7 +1312,7 @@ describe('a refusal shows the runtime’s whole diagnosis', () => {
 })
 
 describe('the runtime’s testing prompt, which the refutation pass needs', () => {
-  const THINKING = { endpoint: ENDPOINT, engine: 'builtin', thinking: 'on' }
+  const THINKING = { endpoint: ENDPOINT, engine: 'vercel', thinking: 'on' }
 
   it('runs without a critic where the read is refused, rather than waiting for ever', async () => {
     // **A read that failed is a settled read.** `data` alone stays undefined on

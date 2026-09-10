@@ -138,12 +138,51 @@ export type AssistantTool = (typeof ASSISTANT_TOOLS)[number]
  * outside this list refuses the whole file by name, because a configuration
  * naming an engine nobody certified is a configuration asking for one.
  *
- * `vercel` is the default and `builtin` is the keyless fallback. Mirrored from
- * `AssistantEngines` in `internal/desk/assistant.go` and held to it by a test
- * that reads that file.
+ * **One engine, and the slot is still a slot.** `builtin` was withdrawn — see
+ * ADR-0001's amendment — so the list has one member and the page no longer
+ * offers a choice: a menu with one item is a decision nobody makes. What the
+ * slot keeps is its contract and its conformance session, which is what a
+ * second engine will be admitted by.
+ *
+ * Mirrored from `AssistantEngines` in `internal/desk/assistant.go` and held to
+ * it by a test that reads that file.
  */
-export const ASSISTANT_ENGINES = ['vercel', 'builtin'] as const
+export const ASSISTANT_ENGINES = ['vercel'] as const
 export type AssistantEngine = (typeof ASSISTANT_ENGINES)[number]
+
+/**
+ * The engine this release withdrew, still **decodable for one release**.
+ *
+ * A removed choice is removed from the schema with a migration, not left as a
+ * one-option menu: a desk that named `builtin` yesterday is not a desk with a
+ * broken configuration file today. It decodes to the engine that runs, and the
+ * decoder says so — which is the difference between a migration and a value
+ * quietly meaning something else.
+ */
+export const WITHDRAWN_ASSISTANT_ENGINE = 'builtin'
+
+/**
+ * What the decoder says when it meets the withdrawn engine.
+ *
+ * Character for character as `assistantEngineWithdrawn` in
+ * `internal/desk/assistant.go` writes it, and held identical by a test that
+ * reads that file: a sentence a reader meets in one decoder and not the other
+ * is two contracts.
+ */
+export const ASSISTANT_ENGINE_WITHDRAWN =
+  'engine: "builtin" was withdrawn; the Vercel engine runs'
+
+/**
+ * What the decoder says about an endpoint that has no model yet.
+ *
+ * **A notice and not a refusal**: the file is accepted and the endpoint is
+ * saved; what it is not is ready to run. It is the decoder's sentence rather
+ * than a page's so that the card, the tab and the slot cannot disagree about
+ * what the state is called — character for character as
+ * `noModelChosen` in `internal/desk/assistant.go` writes it, and held identical
+ * by a test that reads that file.
+ */
+export const NO_MODEL_CHOSEN = 'no model chosen yet — pick one below'
 
 /**
  * The depths the engine may be asked to run the model's reasoning at.
@@ -181,7 +220,23 @@ export type ThinkingTier = (typeof ASSISTANT_THINKING)[number]
 export interface AssistantEndpointConfig {
   url: string
   kind: EndpointKind
-  model: string
+  /**
+   * The model id, or **null where none has been chosen yet**.
+   *
+   * Nullable on the identity slot's precedent, and for a reason about the order
+   * a person does things in: a model is picked from the list the endpoint
+   * itself offers, and that list cannot be read until there is an endpoint
+   * saved and a key bound to it. A required model made the first save the one
+   * step nobody could take without guessing — so an endpoint with no model is a
+   * valid configuration whose assistant is not ready, and the decoder says so
+   * rather than refusing the file.
+   *
+   * `""` is still refused, here and on the chassis. Absent, null and "no model"
+   * are one state; the empty string is a value somebody wrote, and a member
+   * whose two spellings mean different things is a member two readers disagree
+   * about.
+   */
+  model: string | null
   tools: string[]
 }
 
@@ -326,6 +381,23 @@ export interface ConfigProblem {
   reason: string
 }
 
+/**
+ * Something the decoder did with a member it accepted, said out loud.
+ *
+ * **Not a problem, and deliberately a different type.** A problem refuses the
+ * whole file; a notice is a file that was accepted and decoded to something
+ * other than what it literally says — today, exactly one thing: the withdrawn
+ * engine. Sharing `ConfigProblem` would have let a notice reach any surface
+ * that renders a refusal, which is a page reporting an accepted file as a
+ * refused one.
+ */
+export interface ConfigNotice {
+  /** The member the decoder acted on, path-qualified. */
+  key: string
+  /** The decoder's own sentence. Rendered as quoted material, never re-worded. */
+  says: string
+}
+
 /** Which top-level keys each location may carry. */
 // `storage` is a COMMON key rather than a project-only one: where a project's
 // packs live is a property of the project exactly as `panes` and `appearance`
@@ -457,6 +529,14 @@ export interface DecodedConfig {
   /** Undefined where anything at all was refused. */
   values: Partial<DeskConfig> | undefined
   problems: ConfigProblem[]
+  /**
+   * What the decoder did to a member it accepted. Empty on a refused file.
+   *
+   * Empty rather than carried, because a refused file contributes nothing and
+   * shows nothing: a page that reported what a refused file's engine migrated
+   * to would be describing a decode that never took effect.
+   */
+  notices: ConfigNotice[]
   /** Which pane dimensions the file stated, as opposed to inheriting. */
   declaredPanes?: DeclaredPanes
 }
@@ -483,6 +563,7 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
   }
   const record = parsed as Record<string, unknown>
   const problems: ConfigProblem[] = []
+  const notices: ConfigNotice[] = []
   let declaredPanes: DeclaredPanes = { ...NOTHING_DECLARED }
 
   // The credential scan, first and over everything. See `scanForKeys`.
@@ -563,10 +644,8 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
     )
     if (assistant) {
       values.assistant = {
-        endpoint: endpointValue(assistant.endpoint, problems),
-        engine:
-          oneOf(assistant.engine, 'assistant.engine', ASSISTANT_ENGINES, problems) ??
-          DESK_DEFAULTS.assistant.engine,
+        endpoint: endpointValue(assistant.endpoint, problems, notices),
+        engine: engineValue(assistant.engine, problems, notices),
         thinking:
           oneOf(assistant.thinking, 'assistant.thinking', ASSISTANT_THINKING, problems) ??
           DESK_DEFAULTS.assistant.thinking
@@ -674,8 +753,38 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
     seen.add(identity)
     unique.push(problem)
   }
-  if (unique.length > 0) return { values: undefined, problems: unique, declaredPanes }
-  return { values, problems: [], declaredPanes }
+  if (unique.length > 0) {
+    return { values: undefined, problems: unique, notices: [], declaredPanes }
+  }
+  return { values, problems: [], notices, declaredPanes }
+}
+
+/**
+ * `assistant.engine`, with the one migration this release carries.
+ *
+ * Three cases and no fourth: absent or `"vercel"` is the engine that runs;
+ * `"builtin"` is the engine that was withdrawn, so it decodes to the one that
+ * runs and the decoder **says so** rather than substituting in silence; any
+ * other value refuses the whole file by name, exactly as before, because a
+ * configuration naming an engine nobody certified is a configuration asking
+ * for one.
+ *
+ * The withdrawn value is checked before `oneOf`, so the refusal a reader meets
+ * for anything else never lists an id this build cannot run.
+ */
+function engineValue(
+  value: unknown,
+  problems: ConfigProblem[],
+  notices: ConfigNotice[]
+): AssistantEngine {
+  if (value === WITHDRAWN_ASSISTANT_ENGINE) {
+    notices.push({ key: 'assistant.engine', says: ASSISTANT_ENGINE_WITHDRAWN })
+    return DESK_DEFAULTS.assistant.engine
+  }
+  return (
+    oneOf(value, 'assistant.engine', ASSISTANT_ENGINES, problems) ??
+    DESK_DEFAULTS.assistant.engine
+  )
 }
 
 /**
@@ -952,7 +1061,7 @@ function idBase(value: unknown, problems: ConfigProblem[]): string | undefined {
 }
 
 function refuse(problem: ConfigProblem): DecodedConfig {
-  return { values: undefined, problems: [problem] }
+  return { values: undefined, problems: [problem], notices: [] }
 }
 
 /** True where a section is present and states this key at all. */
@@ -1225,12 +1334,18 @@ function providerValue(
 /**
  * The endpoint object, or null.
  *
- * **Every member is required, and `tools` least optionally of all.** The other
- * three could plausibly take a default and do not, because there is no
- * endpoint a desk could invent; `tools` could not, because a defaulted tool
- * list is a capability granted by a file that never mentioned it. An empty
- * array is accepted and means what it says: an assistant that may call
- * nothing.
+ * **Three members are required and `model` is not**, and `tools` is required
+ * least optionally of all. `url` and `kind` could plausibly take a default and
+ * do not, because there is no endpoint a desk could invent; `tools` could not,
+ * because a defaulted tool list is a capability granted by a file that never
+ * mentioned it, and an empty array is accepted and means what it says — an
+ * assistant that may call nothing.
+ *
+ * `model` is the exception because of the order a person works in: the list to
+ * pick from is the endpoint's own, and it cannot be read until an endpoint is
+ * saved and a key is bound to it. Absent and null are one state, said out loud
+ * with `NO_MODEL_CHOSEN`; a model somebody *wrote* is held to the rule it
+ * always was.
  *
  * The URL rule is the issuer rule, for the same reason and with the same
  * limit: `https:`, or `http:` on loopback so a locally-run endpoint works.
@@ -1240,7 +1355,8 @@ function providerValue(
  */
 function endpointValue(
   value: unknown,
-  problems: ConfigProblem[]
+  problems: ConfigProblem[],
+  notices: ConfigNotice[]
 ): AssistantEndpointConfig | null {
   if (value === undefined || value === null) return null
   const endpoint = section(
@@ -1267,11 +1383,20 @@ function endpointValue(
     problems.push({ key: 'assistant.endpoint.kind', reason: 'required' })
   }
 
-  const modelProblem = modelIdProblem(endpoint.model)
-  const model = typeof endpoint.model === 'string' ? endpoint.model.trim() : undefined
-  if (modelProblem !== undefined) {
-    problems.push({ key: 'assistant.endpoint.model', reason: modelProblem })
+  // **Three cases, and the middle one is the new state.** Absent or null is
+  // "no model chosen"; anything else is held to the same rule as before, so
+  // `""` and a whitespace-only id are refused exactly as they were. The notice
+  // is what stops "not chosen yet" being indistinguishable from "chosen".
+  let model: string | null = null
+  if (endpoint.model !== undefined && endpoint.model !== null) {
+    const modelProblem = modelIdProblem(endpoint.model)
+    if (modelProblem !== undefined) {
+      problems.push({ key: 'assistant.endpoint.model', reason: modelProblem })
+    } else {
+      model = (endpoint.model as string).trim()
+    }
   }
+  if (model === null) notices.push({ key: 'assistant.endpoint.model', says: NO_MODEL_CHOSEN })
 
   let tools: string[] = []
   if (endpoint.tools === undefined) {
@@ -1308,7 +1433,7 @@ function endpointValue(
   return {
     url: url ?? '',
     kind: kind ?? 'openai-compatible',
-    model: model ?? '',
+    model,
     tools
   }
 }
@@ -1325,6 +1450,11 @@ function endpointValue(
  *
  * `undefined` where the value is acceptable; otherwise the decoder's own
  * sentence, which is what a reader sees whether the value was typed or picked.
+ *
+ * **It is asked only about a value that is there.** `assistant.endpoint.model`
+ * may be absent or null, which is "no model chosen yet" and not a problem; what
+ * this rule holds is that a value somebody *wrote* is a usable id, so `""` and
+ * a whitespace-only string are refused as they always were.
  */
 export function modelIdProblem(value: unknown): string | undefined {
   const model = typeof value === 'string' ? value.trim() : undefined

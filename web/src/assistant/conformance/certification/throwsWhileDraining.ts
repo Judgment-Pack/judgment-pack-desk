@@ -12,7 +12,7 @@
 import type { AssistantEvent, AssistantSession, Engine } from '../../engine'
 
 export const throwsWhileDraining: Engine = {
-  id: 'builtin',
+  id: 'vercel',
   async *start(_session: AssistantSession): AsyncGenerator<AssistantEvent> {
     setTimeout(() => {
       throw new Error('an engine that threw from a callback nobody was awaiting')

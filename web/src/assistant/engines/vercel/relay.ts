@@ -128,7 +128,7 @@ export function signatureOf(family: EndpointKind, part: unknown): string | undef
  *
  * **The suffix is what follows the placeholder origin, and the family's base is
  * a second check on top of it.** So the address the desk composes is the same
- * one the built-in engine composes — `chat/completions`, `v1/messages` — and a
+ * one each protocol documents — `chat/completions`, `v1/messages` — and a
  * provider that reached for some other path under the same origin, or for a
  * different origin altogether, is refused rather than sent.
  */

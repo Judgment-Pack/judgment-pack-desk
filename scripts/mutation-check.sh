@@ -609,7 +609,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # settings that read as a grant to whoever wrote them, so both refuse the
   # whole file rather than falling back to the default.
   mutate go "an engine nobody certified is accepted" "$DF" \
-    '	problems = append(problems, oneOf(record, "assistant", "engine", AssistantEngines)...)' \
+    '		problems = append(problems, oneOf(record, "assistant", "engine", AssistantEngines)...)' \
     ''
   mutate go "a thinking tier nothing implements is accepted" "$DF" \
     '	problems = append(problems, oneOf(record, "assistant", "thinking", AssistantThinkingTiers)...)' \
@@ -618,10 +618,23 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # accepted: the two sides could otherwise agree a file is legal and disagree
   # about what it means, and the fixtures would pass.
   mutate go "an accepted engine decodes to the default anyway" "$DF" \
-    '	if named, ok := record["engine"].(string); ok && contains(AssistantEngines, named) {
-		slot.engine = named
-	}' \
+    '		if named, ok := record["engine"].(string); ok && contains(AssistantEngines, named) {
+			slot.engine = named
+		}' \
     ''
+  # **The withdrawn engine is migrated, not refused.** A desk that named
+  # `builtin` yesterday is not a desk with a broken configuration file today;
+  # the value decodes to the engine that runs, and the decoder says so. The
+  # shared corpus is where both halves of that are stated, so this fails the
+  # fixture walk on this side.
+  # The same claim on this side of the shared decoder: an endpoint with no model
+  # is accepted, said out loud, and not refused.
+  mutate go "the chassis refuses an endpoint with no model" "$DF" \
+    '	if declared, present := inner["model"]; present && declared != nil {' \
+    '	if declared := inner["model"]; true {'
+  mutate go "the chassis refuses the withdrawn engine rather than migrating it" "$DF" \
+    '	if named, ok := record["engine"].(string); ok && named == withdrawnAssistantEngine {' \
+    '	if false {'
   mutate go "an accepted thinking tier decodes to the default anyway" "$DF" \
     '	if named, ok := record["thinking"].(string); ok && contains(AssistantThinkingTiers, named) {
 		slot.thinking = named
@@ -1947,8 +1960,12 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "        recordFileChange(String((notification.params as { path?: unknown })?.path ?? ''))" \
     '        void recordFileChange'
   mutate web "a config problem no longer refuses the whole file" "$D" \
-    '  if (unique.length > 0) return { values: undefined, problems: unique, declaredPanes }' \
-    '  if (false) return { values: undefined, problems: unique, declaredPanes }'
+    '  if (unique.length > 0) {
+    return { values: undefined, problems: unique, notices: [], declaredPanes }
+  }' \
+    '  if (false) {
+    return { values: undefined, problems: unique, notices: [], declaredPanes }
+  }'
   mutate web "an unknown config key is accepted silently" "$D" \
     "    problems.push({ key, reason: 'unknown key' })" \
     '    void key'
@@ -4216,7 +4233,11 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     'const PANE_WIDTH = 392'
 
   # ---- The assistant slot, on the page side -------------------------------
-  AS=web/src/assistant/AssistantSection.tsx
+  # The card is a heading, a location, a status and one form now, so the rows
+  # that used to break `AssistantSection.tsx` break the two files its contents
+  # went into. Same claims, same catchers, one file name each.
+  KF=web/src/assistant/KeyField.tsx
+  AF=web/src/assistant/EndpointForm.tsx
   AC=web/src/assistant/client.ts
   AQ=web/src/assistant/queries.ts
   CQ=web/src/config/queries.ts
@@ -4275,24 +4296,30 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # input when `fetch` began — and the clearing it tested is now an assignment
   # to an uncontrolled node, which "the field is cleared only once the store
   # has answered" below breaks directly.
-  mutate web "the key field is an ordinary text input" "$AS" \
-    '          type="password"' \
-    '          type="text"'
-  mutate web "removal is offered where there is nothing to remove" "$AS" \
-    '      {state.present && (' \
-    '      {true && ('
+  mutate web "the key field is an ordinary text input" "$KF" \
+    '              type="password"' \
+    '              type="text"'
+  # **An empty masked box beside a working key** invites somebody to wonder what
+  # is in it and to type into it by accident. Replace is a state of this control
+  # and not a second control: it opens the one field there is.
+  mutate web "a masked box stands beside a key that is already stored" "$KF" \
+    "  const entry = binding !== 'bound' || replacing" \
+    '  const entry = true'
+  mutate web "removal is offered where there is nothing to remove" "$KF" \
+    '        {read.present && (' \
+    '        {true && ('
   # A 401 is a host that is there and a credential it will not take.
-  mutate web "a refused credential is painted as reachable" "$AS" \
-    "      {result.reachable ? 'reachable' : 'not reachable'}" \
-    "      {result.status < 500 ? 'reachable' : 'not reachable'}"
-  mutate web "a status of zero is painted as an answer" "$AS" \
+  mutate web "a refused credential is painted as reachable" "$AF" \
+    "      {result.reachable ? 'connected' : 'not connected'}" \
+    "      {result.status < 500 ? 'connected' : 'not connected'}"
+  mutate web "a status of zero is painted as an answer" "$AF" \
     "      {result.status === 0 ? 'no answer arrived' : \`answered \${result.status}\`}" \
     "      {\`answered \${result.status}\`}"
   # A read that has not answered is not "no key": it is a page that has not
   # been told.
-  mutate web "an unanswered read is reported as no key" "$AS" \
-    "  if (!answered) return 'not read yet'" \
-    "  if (!answered) return 'none stored on this machine'"
+  mutate web "an unanswered read is reported as no key" "$KF" \
+    "  if (!answered) return 'Not read yet'" \
+    "  if (!answered) return 'No key stored'"
   # If the probe named a URL, anything holding the token could point the desk
   # — and the key it holds — at a host of its choosing.
   mutate web "the probe names its own destination" "$AC" \
@@ -4328,10 +4355,31 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "  if (url.hash !== '' || raw.includes('#')) {" \
     '  if (false) {'
   mutate web "the page accepts an engine nobody certified" "$D" \
-    "        engine:
-          oneOf(assistant.engine, 'assistant.engine', ASSISTANT_ENGINES, problems) ??
-          DESK_DEFAULTS.assistant.engine," \
-    '        engine: DESK_DEFAULTS.assistant.engine,'
+    "  return (
+    oneOf(value, 'assistant.engine', ASSISTANT_ENGINES, problems) ??
+    DESK_DEFAULTS.assistant.engine
+  )" \
+    '  return DESK_DEFAULTS.assistant.engine'
+  # **The first of the two rows this chunk adds, and it is run.** The withdrawn
+  # engine decodes to the one that runs, with a notice — refusing it instead is
+  # a file that was correct yesterday and broken today, which is the whole
+  # reason a removed choice leaves a migration behind. The shared corpus states
+  # it, so this fails the fixture walk.
+  # **The third row this chunk adds, and it is run.** A model is picked from the
+  # list the endpoint itself offers, and that list cannot be read until there is
+  # an endpoint saved and a key bound to it — so an endpoint with no model is a
+  # configuration the schema has, and requiring one puts the first save behind a
+  # guess. The shared corpus states it, so this fails the fixture walk.
+  mutate web "an endpoint with no model is refused again" "$D" \
+    '  if (endpoint.model !== undefined && endpoint.model !== null) {' \
+    '  if (true) {'
+  mutate web "the page refuses the withdrawn engine rather than migrating it" "$D" \
+    "  if (value === WITHDRAWN_ASSISTANT_ENGINE) {
+    notices.push({ key: 'assistant.engine', says: ASSISTANT_ENGINE_WITHDRAWN })
+    return DESK_DEFAULTS.assistant.engine
+  }
+" \
+    ''
   mutate web "the page accepts a thinking tier nothing implements" "$D" \
     "        thinking:
           oneOf(assistant.thinking, 'assistant.thinking', ASSISTANT_THINKING, problems) ??
@@ -4340,7 +4388,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # The typed key, and how long the page holds it.
   # An assignment to the node takes effect at once; a `setState` would not
   # have, which is the whole reason the field is uncontrolled.
-  mutate web "the field is cleared only once the store has answered" "$AS" \
+  mutate web "the field is cleared only once the store has answered" "$AF" \
     "    if (input) input.value = ''" \
     '    void input'
   # **This row replaced one that did not discriminate.** It used to remove the
@@ -4363,11 +4411,14 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # reports "nothing failed" for ever, which reads as a missing safeguard
   # rather than an unobservable one. What *is* observable is that the cache
   # retains nothing, and the row above holds that.
-  # A key is not removed by removing the endpoint, so the page must not say so.
-  mutate web "no endpoint is reported as no key" "$AS" \
-    "              ? 'none — no endpoint configured'" \
-    "              ? 'none — no assistant, and no key'"
-  mutate web "a diagnostic is rendered as the bare word" "$AS" \
+  # A key is not removed by removing the endpoint, so the key line must not say
+  # so. **Retargeted rather than retired**: the sentence it used to break sat on
+  # a row of facts the card no longer carries, and the claim moved with the
+  # words — `keySays` reads `present` and nothing about the endpoint beside it.
+  mutate web "no endpoint is reported as no key" "$KF" \
+    "  if (!state.present) return 'No key stored'" \
+    "  if (!state.present || state.configuredOrigin === '') return 'No key stored'"
+  mutate web "a diagnostic is rendered as the bare word" "$AF" \
     "      {result.diagnostic !== '' && (" \
     "      {false && result.diagnostic !== '' && ("
 
@@ -4401,25 +4452,20 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  return {
     endpoint: {
       url: draft.url.trim(),
-      kind: draft.kind,
-      model: draft.model.trim(),
-      tools: ASSISTANT_TOOLS.filter((tool) => draft.tools.includes(tool))
-    },
-    engine: draft.engine,
-    thinking: draft.thinking
-  }' \
+      kind: draft.kind,' \
     '  return {
     ...(draft as unknown as Record<string, unknown>),
     endpoint: {
       ...(draft as unknown as Record<string, unknown>),
       url: draft.url.trim(),
-      kind: draft.kind,
-      model: draft.model.trim(),
-      tools: ASSISTANT_TOOLS.filter((tool) => draft.tools.includes(tool))
-    },
-    engine: draft.engine,
-    thinking: draft.thinking
-  }'
+      kind: draft.kind,'
+  # **The empty string is a value the decoder refuses, and null is the state it
+  # has.** A form that wrote `""` would compose a file its own reader rejects on
+  # the very first save — the one that has to work before a list can be asked
+  # for at all.
+  mutate web "an unchosen model is written as the empty string" "$ED" \
+    "      model: draft.model.trim() === '' ? null : draft.model.trim()," \
+    '      model: draft.model.trim(),'
   # **A write with no digest is a page overwriting whatever it found**, on the
   # file that names the endpoint a credential goes to. The empty string is not
   # "no opinion": it is the claim that there is no file.
@@ -4460,15 +4506,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "    state: endpoint === null ? 'none' : 'configured',"
   # The relay refuses a credential entered for another destination before it
   # opens a socket, so a listing offered here can only produce that refusal.
-  mutate web "List models is offered with no key bound to the endpoint" "$MF" \
-    '        <Button onClick={ask} disabled={!bound || !matchesSaved || asking}>' \
-    '        <Button onClick={ask} disabled={!matchesSaved || asking}>'
+  mutate web "the listing is asked for with no key bound to the endpoint" "$MF" \
+    '  const may = bound && matchesSaved && saved !== null' \
+    '  const may = matchesSaved && saved !== null'
   # **The gate came off the saved endpoint and the request came off the draft**,
   # so choosing Gemini without saving sent `v1beta/models` to a still-saved
   # OpenAI endpoint: a request composed for one destination and sent to another.
-  mutate web "the listing is offered while the form says another endpoint" "$MF" \
-    '        <Button onClick={ask} disabled={!bound || !matchesSaved || asking}>' \
-    '        <Button onClick={ask} disabled={!bound || asking}>'
+  mutate web "the listing is asked for while the form says another endpoint" "$MF" \
+    '  const may = bound && matchesSaved && saved !== null' \
+    '  const may = bound && saved !== null'
   # **Retired, with its reason.** It replaced the captured `saved` endpoint
   # with the draft, and nothing failed — because the row above makes the two
   # *equal* whenever the button can be pressed at all. The capture is still
@@ -4484,14 +4530,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # wrong rather than a weaker version of the right one.
   mutate web "the rows are hidden when the endpoint moves rather than cleared" "$MF" \
     '  const here = identityOf(draft)
-  if (rows !== undefined && askedFor !== here) {
-    setRows(undefined)
-    setAskedFor(undefined)
-    setRefusal(undefined)
-  }
-  const showing = rows !== undefined' \
-    '  const here = identityOf(draft)
-  const showing = rows !== undefined && askedFor === here'
+  if (listing !== undefined && listing.of !== here) setListing(undefined)' \
+    '  const here = identityOf(draft)'
   # **The page names a suffix; the desk builds the address.** A listing that
   # built its own URL would hold the endpoint — and, on this route, this
   # chassis' session token — in page code that no gate is on.
@@ -4518,20 +4558,33 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # The id is what the endpoint answers to; the label is what a person reads,
   # and the two differ on two of the three protocols.
   mutate web "the model is saved from the listing label rather than its id" "$MF" \
-    '              options={rows!.map((row) => ({ value: row.id, label: row.label }))}' \
-    '              options={rows!.map((row) => ({ value: row.label, label: row.label }))}'
+    '                ...rows.map((row) => ({ value: row.id, label: row.label })),' \
+    '                ...rows.map((row) => ({ value: row.label, label: row.label })),'
+  # **One control, and the field is reached through the list rather than beside
+  # it.** The two stood side by side and the page had no opinion about which one
+  # a person was supposed to use.
+  mutate web "the text field stands beside the list again" "$MF" \
+    '  const typed = !offering || typing || unlisted' \
+    '  const typed = true'
+  # **The second of the two rows this chunk adds, and it is run.** The listing
+  # is asked for on its own now, so what an author is offered is the rows the
+  # endpoint answered with; a Select that is never populated puts them back
+  # where they were, typing an id off a page they cannot see.
+  mutate web "the model Select is never populated" "$MF" \
+    '  const offering = rows !== undefined && rows.length > 0' \
+    '  const offering = false'
   # **The slot's other state, which the schema has.** `assistant.endpoint` is
   # one nullable field, and a form that could not write the null left a desk
   # that had configured an endpoint able to reach None only through the generic
   # file editor — while this page describes None as one of three states.
   mutate web "removing the endpoint writes an endpoint object anyway" "$ED" \
-    '  return { endpoint: null, engine: draft.engine, thinking: draft.thinking }' \
+    '  return { endpoint: null, thinking: draft.thinking }' \
     '  return assistantWrite(draft)'
   # How an assistant would run is not whether there is one, which is why the
-  # schema allows both beside a null endpoint.
-  mutate web "removing the endpoint discards the engine and the tier" "$ED" \
-    '  return { endpoint: null, engine: draft.engine, thinking: draft.thinking }' \
-    "  return { endpoint: null, engine: 'vercel', thinking: 'off' }"
+  # schema allows the tier beside a null endpoint.
+  mutate web "removing the endpoint discards the tier" "$ED" \
+    '  return { endpoint: null, thinking: draft.thinking }' \
+    "  return { endpoint: null, thinking: 'off' }"
   # A picker offering a fourth tier offers a configuration the decoder refuses
   # by name — and the two states it cannot express are the desk's to report.
   mutate web "the tier picker offers a value outside the union" "$EF" \
@@ -4552,11 +4605,42 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # session — the bake-off scenario, run against the engine registry, with every
   # network global sealed for the duration of the engine's run — or a test that
   # measures at a recording transport or on the serialized bytes.
+  # **Eighteen rows are retired here, by name, with one reason: the built-in
+  # engine was withdrawn** (ADR-0001's amendment, 2026-09-10) and its sources
+  # went with it, so each of these needled a file that no longer exists.
+  #
+  #   a credential header is restored to the model request
+  #   the engine reaches for globalThis.fetch
+  #   end is emitted twice
+  #   the built-in engine's tool call is not bounded by the run
+  #   the refusal continuation is handed the recorder
+  #   the critic calls the runtime outside the run's gate
+  #   the model's reasoning is sent to the runtime with the tool call
+  #   the built-in engine swallows a refused schema keyword
+  #   the built-in engine classifies a schema refusal on every family
+  #   a Gemini thought signature is dropped on the way back
+  #   the Gemini turn is rebuilt rather than echoed back
+  #   the model's thought summary is sent to the runtime with the tool call
+  #   the streaming Gemini call drops the pair the wire needs
+  #   the streaming Gemini call asks for a framing the relay refuses
+  #   a signed Gemini part is merged with the one beside it
+  #   an empty signed thought part is not reasoning seen
+  #   an empty Gemini part is dropped from the turn that goes back
+  #   the vercel entry in the registry points at builtin
+  #
+  # **Withdrawn, not weakened.** The slot keeps its contract, its registry and
+  # its conformance session, and a second engine returns only by passing them —
+  # at which point the rows that are about *an engine* come back with it. Every
+  # claim these held about the **desk** is held below the engine and has its own
+  # row here: the ToolGate's allow-list and rehearsal rewrite, the model
+  # capability's address and header discipline, the run gate, the tier table and
+  # the Gemini schema ruling. The last of the eighteen is the registry's, and
+  # what it broke — an entry pointing at a second engine's module — has no
+  # second module to point at; `CERTIFICATION_IS_TOTAL` is a compile error in
+  # its place, and "an unregistered engine id loads something anyway" below
+  # still holds the loader itself.
   TG=web/src/assistant/toolGate.ts
   ASN=web/src/assistant/session.ts
-  BL=web/src/assistant/engines/builtin/loop.ts
-  BT=web/src/assistant/engines/builtin/providers/types.ts
-  BO=web/src/assistant/engines/builtin/providers/openai.ts
   AR=web/src/assistant/useAssistantRun.ts
   AP=web/src/assistant/AssistantPane.tsx
   RO=web/src/assistant/runOutcome.ts
@@ -4794,25 +4878,12 @@ export function assistantTransport(id: string): Transport {
     "    const problem = ''"
 
   # K1. The page holds no key; a header here is a credential it had to have got.
-  mutate web "a credential header is restored to the model request" "$BT" \
-    "  return { 'content-type': 'application/json', ...extra }" \
-    "  return { 'content-type': 'application/json', authorization: 'Bearer x', ...extra }"
   # The whole reason session.model is a capability rather than a base URL: an
   # engine that reaches for a network global is an engine that can open its own
   # socket to /ws with this chassis' token. Every leg seals fetch, WebSocket,
   # XMLHttpRequest and EventSource for the duration of the engine's run.
-  mutate web "the engine reaches for globalThis.fetch" "$BO" \
-    '        options.call(SUFFIX, {' \
-    "        globalThis.fetch('/api/assistant/relay/v1/chat/completions', {
-          method: 'POST',"
   # `end` twice: a pane that renders "running" until it sees one would be right
   # either way, so what this breaks is the contract's own "exactly once".
-  mutate web "end is emitted twice" "$BL" \
-    "  yield { type: 'end' }
-}" \
-    "  yield { type: 'end' }
-  yield { type: 'end' }
-}"
   # The proposal taken from the prose rather than from the fenced block: a
   # worked example in an explanation becomes the document a person accepts.
   # **The reading moved to `engines/contract.ts` when the second engine landed**,
@@ -4955,9 +5026,6 @@ export function assistantTransport(id: string): Transport {
   # The registry's own entry. A `vercel` that loaded `builtin` would pass every
   # leg twice over and certify nothing — which is exactly what the fallback this
   # PR removed used to do on purpose.
-  mutate web "the vercel entry in the registry points at builtin" "$EN" \
-    "  vercel: async () => (await import('./vercel')).vercel" \
-    "  vercel: async () => (await import('./builtin')).builtin"
 
   # ---- What review round 1 found, each broken again ------------------------
   #
@@ -5140,9 +5208,6 @@ export function assistantTransport(id: string): Transport {
   mutate web "the vercel adapter's tool call is not bounded by the run" "$VL" \
     '  const callTool = guardedCallTool(session, gate.signal)' \
     '  const callTool: CallTool = (name, args) => session.callTool(name, args)'
-  mutate web "the built-in engine's tool call is not bounded by the run" "$BL" \
-    '    const callTool = guardedCallTool(session, signal)' \
-    '    const callTool: CallTool = (name, args) => session.callTool(name, args)'
   # **Retired: "the runtime is asked without reading the run's signal first".**
   # `guardedCallTool` still reads the signal before it dispatches, and that is
   # the readable statement of the rule where the rule lives — but it is no
@@ -5193,7 +5258,6 @@ export function assistantTransport(id: string): Transport {
   # below breaks one of them.
   TH=web/src/assistant/thinking.ts
   RF=web/src/assistant/refutation.ts
-  BA=web/src/assistant/engines/builtin/providers/anthropic.ts
 
   # `off` is expressed by OMISSION: Anthropic rejects `{"type":"disabled"}` on
   # the models that always think and several endpoints answer 400 to
@@ -5362,12 +5426,6 @@ export function assistantTransport(id: string): Transport {
   # prose happens not to parse as JSON — so this one hands the recorder the
   # refusal's words **shaped like a runtime answer**, which is the failure the
   # separation exists to make impossible.
-  mutate web "the refusal continuation is handed the recorder" "$BL" \
-    "      if (outcome.kind === 'answered') outcome.report(recorder, call.name)" \
-    "      recorder.saw(
-        call.name,
-        outcome.kind === 'answered' ? outcome.text : '{\"status\":\"invalid\"}'
-      )"
   # The recorder itself, which must not invent a status the runtime never
   # used for an answer that carried none.
   mutate web "an answer with no runtime status is recorded as refused" "$RF" \
@@ -5424,9 +5482,6 @@ export function assistantTransport(id: string): Transport {
   # The critic runs under the **run's** gate, not on the session capability
   # directly: a viewer who presses Stop during the pass must end it where they
   # would have ended the loop above.
-  mutate web "the critic calls the runtime outside the run's gate" "$BL" \
-    "        ? yield* refute({ session, provider, tools, callTool, slot, signal, document: proposal.document })" \
-    "        ? yield* refute({ session, provider, tools, callTool: session.callTool, slot, signal, document: proposal.document })"
 
   # **Retired: "the critic's stream is not bounded by the run".** It reported
   # NOT DISCRIMINATING, correctly. The critic's `streamText` is given the run's
@@ -5451,12 +5506,6 @@ export function assistantTransport(id: string): Transport {
   # **Reasoning is for the person reading the tab.** The runtime is asked about
   # documents, and a tool call carrying the model's own reasoning would put it
   # in a project's audit trail.
-  mutate web "the model's reasoning is sent to the runtime with the tool call" "$BA" \
-    "      args: (block.input ?? {}) as Record<string, unknown>," \
-    "      args: {
-        ...((block.input ?? {}) as Record<string, unknown>),
-        reasoning: content.find((held) => held.type === 'thinking')?.thinking
-      } as Record<string, unknown>,"
 
   # ---- The proposal as a diff, and accepting it into the draft -------------
   #
@@ -5686,15 +5735,12 @@ export function assistantTransport(id: string): Transport {
   # **Admin is where a reader goes to find out why**, so it was the worst place
   # to be still asserting an absence: it printed "none — no endpoint
   # configured" over a form painted as editable, on the same page as its own
-  # notice saying the file could not be read.
-  AS2=web/src/assistant/AssistantSection.tsx
-  mutate web "Admin claims no endpoint from a file it could not read" "$AS2" \
-    "              {unavailable
-                ? 'this desk could not read its own configuration'
-                : endpoint === null" \
-    "              {false
-                ? 'this desk could not read its own configuration'
-                : endpoint === null"
+  # notice saying the file could not be read. The row of facts that carried the
+  # sentence is gone with the rest of them; the sentence is on the form, above
+  # the fields it is about, and this is the line that renders it.
+  mutate web "Admin claims no endpoint from a file it could not read" "$AF" \
+    '      {unavailable && <p className="quiet">{UNAVAILABLE}</p>}' \
+    '      {false && <p className="quiet">{UNAVAILABLE}</p>}'
   # And the fields with it: they are the built-in defaults there, and typing
   # into them would compose a write over a file nobody has seen.
   mutate web "the form is editable over a file this desk could not read" "$EF" \
@@ -5858,11 +5904,10 @@ export function assistantTransport(id: string): Transport {
     '  const parsed = JSON.parse(raw) as { diagnostics?: unknown }
   return parsed.diagnostics === undefined ? undefined : JSON.stringify(parsed.diagnostics, null, 2)'
 
-  # ---- The native Gemini wire, on both engines ------------------------------
+  # ---- The native Gemini wire -----------------------------------------------
   #
   # Two closed exceptions and one closed removal list. Each row below opens one
   # of them, or breaks the property that makes it safe to have opened it at all.
-  BG=web/src/assistant/engines/builtin/providers/gemini.ts
   GS=web/src/assistant/geminiSchema.ts
 
   # **The page's mirror is only worth having if it is the chassis' rule.** A
@@ -5897,34 +5942,14 @@ export function assistantTransport(id: string): Transport {
   # `signaturesOf`, which turned out to feed nothing the wire can see: reported
   # NOT DISCRIMINATING, and correctly. What actually decides whether a signature
   # goes back is the part this accumulator keeps, so that is what this breaks.
-  mutate web "a Gemini thought signature is dropped on the way back" "$BG" \
-    '  parts.push({ ...arriving })' \
-    '  parts.push({ ...arriving, thoughtSignature: undefined })'
-  mutate web "the Gemini turn is rebuilt rather than echoed back" "$BG" \
-    '    messages.push(
-      turn.assistant ?? {' \
-    '    messages.push(
-      undefined ?? {'
   # **Reasoning is for the person reading the tab.** The runtime is asked about
   # documents, and a tool call carrying the model'"'"'s own thought summary would put
   # it in a project'"'"'s audit trail. The Anthropic row above is the same property
   # on the other signing wire.
-  mutate web "the model's thought summary is sent to the runtime with the tool call" "$BG" \
-    '      args: args !== null && typeof args === '"'"'object'"'"' ? args : {},' \
-    '      args: {
-        ...(args !== null && typeof args === '"'"'object'"'"' ? args : {}),
-        reasoning: parts.find((held) => held.thought === true)?.text
-      } as Record<string, unknown>,'
   # The pair is how this wire asks for a stream, and there is nowhere else to
   # put it. Dropped, the request is a unary call the desk then reads as a
   # stream; asked for in any other spelling, the desk'"'"'s own mirror refuses it
   # and nothing is sent.
-  mutate web "the streaming Gemini call drops the pair the wire needs" "$BG" \
-    '      ? `${VERSION}/models/${model}:streamGenerateContent?alt=sse`' \
-    '      ? `${VERSION}/models/${model}:streamGenerateContent`'
-  mutate web "the streaming Gemini call asks for a framing the relay refuses" "$BG" \
-    '      ? `${VERSION}/models/${model}:streamGenerateContent?alt=sse`' \
-    '      ? `${VERSION}/models/${model}:streamGenerateContent?alt=json`'
 
   # **The removal list is closed, or it is not a ruling.** Opened, the endpoint
   # refuses the declaration; the leg fails at the wire.
@@ -5940,9 +5965,6 @@ export function assistantTransport(id: string): Transport {
   # A keyword the list does not name is **reported**, never stripped: a desk
   # that widened its idea of the runtime'"'"'s contract on being refused would show
   # the model a contract nobody wrote down.
-  mutate web "the built-in engine swallows a refused schema keyword" "$BL" \
-    '          if (refusal.kind === '"'"'other'"'"') throw schemaRefusal(cause, session) ?? cause' \
-    '          if (refusal.kind === '"'"'other'"'"') throw cause'
   mutate web "the SDK-backed engine swallows a refused schema keyword" "$VL" \
     "        if (said.kind === 'other') throw schemaRefusal(cause) ?? cause" \
     "        if (said.kind === 'other') throw cause"
@@ -6002,10 +6024,6 @@ export function assistantTransport(id: string): Transport {
   # **A signature certifies the exact bytes it came with.** Merging a signed
   # part with an unsigned one produces a signature over text the endpoint never
   # signed; merging two signed parts throws one away.
-  mutate web "a signed Gemini part is merged with the one beside it" "$BG" \
-    '    !signed(last) &&
-    !signed(arriving) &&' \
-    ''
   # **Retired, with its reason: NOT DISCRIMINATING, and unavoidably so.** It was
   # "the joined part takes the later signature", the other half of Google's rule
   # — and with the fix in place a signed part is never joined at all, so the
@@ -6017,9 +6035,6 @@ export function assistantTransport(id: string): Transport {
   # **A signed thought part with no text is the endpoint reasoning.** The wire
   # emits one when a summary is empty, and counting only readable passages let a
   # model think through every turn at tier off without the desk noticing.
-  mutate web "an empty signed thought part is not reasoning seen" "$BG" \
-    '    (part) => part.thought === true && (signed(part) || (part.text ?? '"'"''"'"') !== '"'"''"'"')' \
-    "    (part) => part.thought === true && (part.text ?? '') !== ''"
 
   # **A name is not a keyword.** A definition called `const` was deleted as
   # though it were the keyword, leaving a `$ref` pointing at nothing.
@@ -6128,9 +6143,6 @@ export function assistantTransport(id: string): Transport {
   # **A rule about one wire's schema dialect belongs to that wire.** Installed
   # on every family, a 400 saying "unsupported response type" names `type` and
   # the real failure was rewritten into a sentence about a removal list.
-  mutate web "the built-in engine classifies a schema refusal on every family" "$BL" \
-    "  if (session.model.family !== 'gemini') return null" \
-    '  if (false) return null'
   mutate web "the SDK-backed engine classifies a schema refusal on every family" "$VL" \
     "    if (session.model.family !== 'gemini') return null" \
     '    if (false) return null'
@@ -6142,10 +6154,6 @@ export function assistantTransport(id: string): Transport {
     "      const onThought = part.thought === true && typeof part.text === 'string' && part.text !== ''"
   # And the desk's own half: the parts that arrived are the parts that go back,
   # empty ones included.
-  mutate web "an empty Gemini part is dropped from the turn that goes back" "$BG" \
-    '  parts.push({ ...arriving })' \
-    "  if ((arriving.text ?? '') === '' && arriving.functionCall === undefined) return
-  parts.push({ ...arriving })"
 
   # ---- Chunk 6a: the card, and what it may not invent --------------------
   SCD=web/src/admin/SourceCard.tsx
@@ -6699,7 +6707,6 @@ export function assistantTransport(id: string): Transport {
   # suite.
 
   SC=web/src/admin/SourceCard.module.css
-  AS=web/src/assistant/AssistantSection.tsx
   DP=web/src/admin/DefaultProject.tsx
 
   # **A box back on a member.** The shape of the page before this chunk: a
@@ -6730,9 +6737,9 @@ export function assistantTransport(id: string): Transport {
   # control beside three that do not, and no stylesheet is missing — there is
   # no stylesheet at all. The test names the class each button came out
   # carrying, which is a fact a `css: false` run still has.
-  mutate web "a bare button back on Admin (Check reachability)" "$AS" \
-    '<Button onClick={() => probe.mutate()}>Check reachability</Button>' \
-    '<button type="button" onClick={() => probe.mutate()}>Check reachability</button>'
+  mutate web "a bare button back on Admin (Test connection)" "$AF" \
+    '<Button onClick={() => probe.mutate()}>Test connection</Button>' \
+    '<button type="button" onClick={() => probe.mutate()}>Test connection</button>'
 
   # **The nomination back to primary.** A filled accent button in a group's
   # head, above the two Saves that are the writes — the loudest control on the

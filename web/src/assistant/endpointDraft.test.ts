@@ -2,11 +2,10 @@
  * The arithmetic between what an author typed and what is written.
  *
  * **The load-bearing case is the first one**, and it is a whole-set assertion
- * rather than a search for a forbidden name: the object this form sends
- * carries exactly the six members the schema declares, whatever the draft it
- * was built from happens to be carrying. A blacklist could not state that —
- * the thing it excludes is *any* member nobody declared, and that set has no
- * enumeration.
+ * rather than a search for a forbidden name: the object this form sends carries
+ * exactly the members the schema declares, whatever the draft it was built from
+ * happens to be carrying. A blacklist could not state that — the thing it
+ * excludes is *any* member nobody declared, and that set has no enumeration.
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -16,14 +15,14 @@ import {
   type AssistantConfig
 } from '../config/deskConfig'
 import {
+  KIND_LABEL,
   KIND_OPTIONS,
   PREFILLED_URL,
   TIER_OPTIONS,
+  assistantWithoutEndpoint,
   assistantWrite,
   draftFrom,
   seedOf,
-  tierProvenance,
-  tierSays,
   withKind,
   withTool,
   type EndpointDraft
@@ -34,14 +33,16 @@ const DRAFT: EndpointDraft = {
   url: 'https://api.example.invalid/',
   model: 'a-model',
   tools: ['validate', 'get_schema'],
-  engine: 'builtin',
   thinking: 'ultra'
 }
 
 describe('the object a save sends', () => {
   it('carries exactly the members the schema declares, and no others', () => {
     const written = assistantWrite(DRAFT) as Record<string, unknown>
-    expect(Object.keys(written).sort()).toEqual(['endpoint', 'engine', 'thinking'])
+    // **`engine` is not among them.** The member is still decodable, with a
+    // migration; the page has no field for it and writes none, so a file that
+    // carries one keeps it until this form saves over the slot.
+    expect(Object.keys(written).sort()).toEqual(['endpoint', 'thinking'])
     expect(Object.keys(written.endpoint as object).sort()).toEqual([
       'kind',
       'model',
@@ -61,7 +62,7 @@ describe('the object a save sends', () => {
       note: 'something a future edit added'
     } as unknown as EndpointDraft
     const written = assistantWrite(carrying)
-    expect(Object.keys(written as object).sort()).toEqual(['endpoint', 'engine', 'thinking'])
+    expect(Object.keys(written as object).sort()).toEqual(['endpoint', 'thinking'])
     expect(JSON.stringify(written)).not.toContain('apiKey')
     expect(JSON.stringify(written)).not.toContain('sk-a-real-looking-key-wxyz')
     expect(JSON.stringify(written)).not.toContain('something a future edit added')
@@ -107,9 +108,16 @@ describe('the object a save sends', () => {
         model: 'a-model',
         tools: ['get_schema', 'validate']
       },
-      engine: 'builtin',
+      engine: 'vercel',
       thinking: 'ultra'
     })
+  })
+
+  it('writes no engine on the way to None either', () => {
+    expect(Object.keys(assistantWithoutEndpoint(DRAFT) as object).sort()).toEqual([
+      'endpoint',
+      'thinking'
+    ])
   })
 })
 
@@ -129,7 +137,7 @@ describe('the draft a configuration opens on', () => {
         model: 'a-model',
         tools: ['validate']
       },
-      engine: 'builtin',
+      engine: 'vercel',
       thinking: 'on'
     }
     expect(draftFrom(config)).toEqual({
@@ -137,7 +145,6 @@ describe('the draft a configuration opens on', () => {
       url: 'https://api.example.invalid/v1',
       model: 'a-model',
       tools: ['validate'],
-      engine: 'builtin',
       thinking: 'on'
     })
   })
@@ -181,31 +188,26 @@ describe('granting one tool', () => {
   })
 })
 
-describe('what the tier picker says', () => {
-  it('reads what goes on the wire off the desk s own table', () => {
-    // Derived rather than restated: a sentence typed out beside the picker
-    // would be a second copy of `thinking.ts` that nothing keeps in step.
-    expect(tierSays('gemini', 'on')).toContain('thinkingBudget')
-    expect(tierSays('gemini', 'off')).toContain('"thinkingBudget":0')
-    expect(tierSays('openai-compatible', 'on')).toContain('reasoning_effort')
-    expect(tierSays('anthropic', 'ultra')).toContain('xhigh')
-  })
-
-  it('says nothing goes on the wire where off is omission', () => {
-    expect(tierSays('openai-compatible', 'off')).toBe('nothing at all goes on the wire')
-    expect(tierSays('anthropic', 'off')).toBe('nothing at all goes on the wire')
-  })
-
-  it('accounts for the two numbers on the one family that has them', () => {
-    expect(tierProvenance('gemini')).toContain('this desk’s choice')
-    expect(tierProvenance('openai-compatible')).toBeUndefined()
-    expect(tierProvenance('anthropic')).toBeUndefined()
-  })
-
+describe('what the pickers offer', () => {
   it('offers the tiers the file admits and nothing else', () => {
     // A picker offering a fourth value would be offering a configuration the
     // decoder refuses by name — and the two states it cannot express are the
     // desk's to report, never a person's to select.
     expect(TIER_OPTIONS.map((option) => option.value)).toEqual(['off', 'on', 'ultra'])
+  })
+
+  it('labels the tiers in plain words, and the values stay the file s', () => {
+    // What a person chooses between is an amount of thinking; `ultra` is a
+    // spelling. The value written is still the one the decoder admits.
+    expect(TIER_OPTIONS.map((option) => option.label)).toEqual(['off', 'standard', 'deep'])
+  })
+
+  it('names the providers the way their own operators do', () => {
+    expect(KIND_OPTIONS.map((option) => option.label)).toEqual([
+      'OpenAI-compatible',
+      'Anthropic',
+      'Google Gemini'
+    ])
+    expect(KIND_LABEL.gemini).toBe('Google Gemini')
   })
 })

@@ -40,6 +40,16 @@ interface Verdict {
    * *means* on both sides and not only whether it is legal.
    */
   projectFile?: string
+  /**
+   * What the decoder **did** with a member it accepted, where it did anything.
+   *
+   * Compared-if-present rather than required, unlike `engine` and `thinking`,
+   * and the difference is that an omission here still checks: the absent value
+   * is the empty list, so a fixture that starts producing a notice and does not
+   * declare one fails. A required field would only add `"notices": []` to
+   * twenty-odd verdicts that say nothing.
+   */
+  notices?: { key: string; says: string }[]
 }
 
 const expected = JSON.parse(
@@ -81,9 +91,14 @@ describe('the shared desk-configuration fixtures', () => {
         expect(assistant.thinking, `${name}: thinking`).toBe(verdict.thinking)
         const project = { ...DESK_DEFAULTS.project, ...(decoded.values?.project ?? {}) }
         expect(project.file ?? '', `${name}: project.file`).toBe(verdict.projectFile ?? '')
+        // The migrations, in the decoder's own words. A sentence changed on
+        // one side of the shared decoder and not the other fails on both.
+        expect(decoded.notices, `${name}: notices`).toEqual(verdict.notices ?? [])
         return
       }
       expect(decoded.values, `${name} was accepted`).toBeUndefined()
+      // A refused file shows nothing: it decoded to nothing, so it did nothing.
+      expect(decoded.notices, `${name}: a refused file carries a notice`).toEqual([])
       // The keys are asserted as a set rather than in order: the two decoders
       // walk the document differently, and requiring one order would be a
       // contract about traversal that neither side promises.

@@ -55,7 +55,11 @@ function stubDesk(): { writes: number } {
     if (url.includes('/api/desk-config') && method === 'PUT') {
       state.writes += 1
       const sent = JSON.parse(String(init?.body)) as { assistant: Record<string, unknown> }
-      assistant = sent.assistant
+      // **The decode, not the request.** The chassis answers with the
+      // `assistant` object it read back off the disk, so the defaults are on it
+      // whether or not the page wrote them — and the page does not write
+      // `engine` any more.
+      assistant = { engine: 'vercel', ...sent.assistant }
       digest = 'b'.repeat(64)
       return {
         ok: true,
@@ -90,7 +94,15 @@ function stubDesk(): { writes: number } {
         ok: true,
         status: 200,
         statusText: '',
-        text: async () => JSON.stringify({ present: false, fingerprint: '', origin: '', kind: '' })
+        text: async () => JSON.stringify({
+              present: true,
+              fingerprint: 'sk-a…wxyz',
+              origin: 'https://api.example.invalid',
+              kind: 'openai-compatible',
+              configuredOrigin: 'https://api.example.invalid',
+              configuredKind: 'openai-compatible',
+              bound: true
+            })
       }
     }
     // The project file, which this desk has none of in these cases.
@@ -165,9 +177,9 @@ describe('what a save reaches', () => {
         'configured · the-model-in-the-file · vercel · off'
       )
     )
-    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'the-model-chosen' } })
+    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: 'the-model-chosen' } })
     fireEvent.click(screen.getByRole('combobox', { name: 'Thinking' }))
-    fireEvent.click(await screen.findByRole('option', { name: 'ultra' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'deep' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     // **The whole assertion.** The write invalidates the desk-configuration
@@ -185,9 +197,11 @@ describe('what a save reaches', () => {
     // A refused write changed nothing on disk, so re-reading after one would
     // be this page telling itself that something happened.
     stubDesk()
+    let writes = 0
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
       const method = init?.method ?? 'GET'
       if (url.includes('/api/desk-config') && method === 'PUT') {
+        writes += 1
         return {
           ok: false,
           status: 422,
@@ -223,7 +237,15 @@ describe('what a save reaches', () => {
           status: 200,
           statusText: '',
           text: async () =>
-            JSON.stringify({ present: false, fingerprint: '', origin: '', kind: '' })
+            JSON.stringify({
+              present: true,
+              fingerprint: 'sk-a…wxyz',
+              origin: 'https://api.example.invalid',
+              kind: 'openai-compatible',
+              configuredOrigin: 'https://api.example.invalid',
+              configuredKind: 'openai-compatible',
+              bound: true
+            })
         }
       }
       return { ok: false, status: 404, statusText: '', text: async () => '{}' }
@@ -234,9 +256,13 @@ describe('what a save reaches', () => {
         'configured · the-model-in-the-file · vercel · off'
       )
     )
-    fireEvent.change(screen.getByLabelText('Model'), { target: { value: '   ' } })
+    // **A refusal the chassis makes, and the page shows.** A model the file's
+    // reader will not take is one the chassis refuses; what the form holds is
+    // that nothing on this page moves when it does.
+    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: 'a-bad-model' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText('must be a non-empty string')).toBeTruthy()
+    expect(writes).toBe(1)
     expect(slotLine()).toBe(
       'configured · the-model-in-the-file · vercel · off'
     )
@@ -316,7 +342,15 @@ describe('Reload after a file that moved', () => {
           status: 200,
           statusText: '',
           text: async () =>
-            JSON.stringify({ present: false, fingerprint: '', origin: '', kind: '' })
+            JSON.stringify({
+              present: true,
+              fingerprint: 'sk-a…wxyz',
+              origin: 'https://api.example.invalid',
+              kind: 'openai-compatible',
+              configuredOrigin: 'https://api.example.invalid',
+              configuredKind: 'openai-compatible',
+              bound: true
+            })
         }
       }
       return { ok: false, status: 404, statusText: '', text: async () => '{}' }
@@ -341,7 +375,7 @@ describe('Reload after a file that moved', () => {
     const before = state.reads
 
     state.move()
-    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'chosen-and-unsaved' } })
+    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: 'chosen-and-unsaved' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText(/changed on disk. Nothing was written/)).toBeTruthy()
     expect(state.sent).toEqual(['a'.repeat(64)])
@@ -363,7 +397,7 @@ describe('Reload after a file that moved', () => {
     await waitFor(() => expect(state.sent).toHaveLength(2))
     expect(state.sent[1]).toBe('c'.repeat(64))
     // And the value typed before the refusal survived both.
-    expect((screen.getByLabelText('Model') as HTMLInputElement).value).toBe('chosen-and-unsaved')
+    expect((screen.getByLabelText('Type a model id') as HTMLInputElement).value).toBe('chosen-and-unsaved')
   })
 })
 
@@ -390,7 +424,11 @@ describe('a write that landed while the read after it did not', () => {
       if (url.includes('/api/desk-config') && method === 'PUT') {
         state.writes += 1
         const sent = JSON.parse(String(init?.body)) as { assistant: Record<string, unknown> }
-        assistant = sent.assistant
+        // **The decode, not the request.** The chassis answers with the
+      // `assistant` object it read back off the disk, so the defaults are on it
+      // whether or not the page wrote them — and the page does not write
+      // `engine` any more.
+      assistant = { engine: 'vercel', ...sent.assistant }
         written = true
         return {
           ok: true,
@@ -437,7 +475,15 @@ describe('a write that landed while the read after it did not', () => {
           status: 200,
           statusText: '',
           text: async () =>
-            JSON.stringify({ present: false, fingerprint: '', origin: '', kind: '', configuredOrigin: '', bound: false })
+            JSON.stringify({
+              present: true,
+              fingerprint: 'sk-a…wxyz',
+              origin: 'https://api.example.invalid',
+              kind: 'openai-compatible',
+              configuredOrigin: 'https://api.example.invalid',
+              configuredKind: 'openai-compatible',
+              bound: true
+            })
         }
       }
       return { ok: false, status: 404, statusText: '', text: async () => '{}' }
@@ -455,7 +501,7 @@ describe('a write that landed while the read after it did not', () => {
     await waitFor(() =>
       expect(slotLine()).toContain('the-model-in-the-file')
     )
-    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'the-model-chosen' } })
+    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: 'the-model-chosen' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
       expect(slotLine()).toBe(
@@ -479,7 +525,7 @@ describe('a write that landed while the read after it did not', () => {
     await waitFor(() =>
       expect(slotLine()).toContain('the-model-in-the-file')
     )
-    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'the-model-chosen' } })
+    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: 'the-model-chosen' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
       expect(slotLine()).toBe('unavailable · none · vercel · off')
@@ -499,15 +545,15 @@ describe('a write that landed while the read after it did not', () => {
     await waitFor(() =>
       expect(slotLine()).toContain('the-model-in-the-file')
     )
-    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'the-model-chosen' } })
+    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: 'the-model-chosen' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
       expect(slotLine()).toBe('unavailable · none · vercel · off')
     )
     // The chassis says there is an endpoint and the key is for it, so the row
     // says that — rather than overruling it with a file it could not read.
-    expect(screen.getByText(/which is where this desk is configured/)).toBeTruthy()
-    expect(screen.queryByText(/Save an endpoint first/)).toBeNull()
+    expect(screen.getByText(/Stored — sk-a…wxyz, for OpenAI-compatible/)).toBeTruthy()
+    expect(screen.queryByText(/Connect saves the endpoint first/)).toBeNull()
   })
 
   it('reports the state as unverified where the read after it failed', async () => {
@@ -524,7 +570,7 @@ describe('a write that landed while the read after it did not', () => {
     await waitFor(() =>
       expect(slotLine()).toContain('the-model-in-the-file')
     )
-    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'the-model-chosen' } })
+    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: 'the-model-chosen' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText(/a write states the bytes it replaces/)).toBeTruthy()
     expect(
@@ -545,7 +591,7 @@ describe('a write that landed while the read after it did not', () => {
     await waitFor(() =>
       expect(slotLine()).toContain('the-model-in-the-file')
     )
-    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'the-model-chosen' } })
+    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: 'the-model-chosen' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
       expect(slotLine()).toBe(
@@ -577,9 +623,11 @@ describe('removing the endpoint', () => {
     )
     expect(state.writes).toBe(1)
     // The two are separate: the endpoint went and the key did not.
-    expect(await screen.findByText('stored on this machine — sk-a…wxyz')).toBeTruthy()
-    expect(screen.getByText(/Save an endpoint first/)).toBeTruthy()
-    expect(screen.getByText('none — no endpoint configured')).toBeTruthy()
+    expect(await screen.findByText('Stored — sk-a…wxyz, for OpenAI-compatible')).toBeTruthy()
+    expect(screen.getByText(/Connect saves the endpoint first/)).toBeTruthy()
+    // And there is no endpoint to remove any more, which is how the form says
+    // the slot is at None without a second sentence saying so.
+    expect(screen.queryByRole('button', { name: 'Remove endpoint' })).toBeNull()
   })
 })
 
@@ -628,7 +676,7 @@ describe('Admin, where the configuration could not be read', () => {
    *
    * The tab and Describe it had their own state for this. Admin did not, and
    * Admin is where a reader goes to find out **why** — so it was the one
-   * surface still printing "none — no endpoint configured" over a form painted
+   * surface still describing an endpoint it had not read, over a form painted
    * as editable, on the same page as its own notice saying the file could not
    * be read.
    */
@@ -705,23 +753,25 @@ describe('Admin, where the configuration could not be read', () => {
     const chassis = stubRefusedRead()
     const { client } = renderDesk()
     await waitFor(() => expect(slotLine()).toContain('the-model-in-the-file'))
-    expect(screen.getAllByText('a model endpoint').length).toBeGreaterThan(0)
+    expect(
+      (screen.getByLabelText('Type a model id') as HTMLInputElement).value
+    ).toBe('the-model-in-the-file')
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(
-      await screen.findByText('this desk could not read its own configuration')
+      await screen.findByText(/This desk could not read its own configuration/)
     ).toBeTruthy()
     // **No absence claimed anywhere on the section.**
-    expect(screen.queryByText('none — no endpoint configured')).toBeNull()
+    expect(screen.queryByText(/no endpoint configured/)).toBeNull()
     expect(screen.getAllByText(/not read — the desk answered/).length).toBeGreaterThan(0)
     // The fields are shown and not editable: they are the built-in defaults,
     // and typing into them would compose a write over a file nobody has seen.
-    const fields = (screen.getByLabelText('Model') as HTMLInputElement).closest('fieldset')
+    const fields = (screen.getByLabelText('Type a model id') as HTMLInputElement).closest('fieldset')
     expect((fields as HTMLFieldSetElement).disabled).toBe(true)
     // And the key row still follows the chassis, which said the endpoint is
     // there and the key is for it.
-    expect(screen.getByText(/which is where this desk is configured/)).toBeTruthy()
-    expect(screen.queryByText(/Save an endpoint first/)).toBeNull()
+    expect(screen.getByText(/Stored — sk-a…wxyz, for OpenAI-compatible/)).toBeTruthy()
+    expect(screen.queryByText(/Connect saves the endpoint first/)).toBeNull()
 
     // **A later read that works puts the configured form back**, which is what
     // makes this a state and not a mode: nothing latches, and the section
@@ -731,10 +781,9 @@ describe('Admin, where the configuration could not be read', () => {
       await client.refetchQueries({ queryKey: DESK_CONFIG_QUERY_KEY })
     })
     await waitFor(() => expect(slotLine()).toContain('the-model-in-the-file'))
-    expect(screen.queryByText('this desk could not read its own configuration')).toBeNull()
-    expect(screen.queryByText(/Nothing below is what this desk is configured for/)).toBeNull()
+    expect(screen.queryByText(/This desk could not read its own configuration/)).toBeNull()
     expect(
-      ((screen.getByLabelText('Model') as HTMLInputElement).closest(
+      ((screen.getByLabelText('Type a model id') as HTMLInputElement).closest(
         'fieldset'
       ) as HTMLFieldSetElement).disabled
     ).toBe(false)

@@ -6,7 +6,7 @@
  * custody — are held **below** whatever runs the loop, so this adapter is a
  * translation and never a second opinion. What it translates is
  * `streamText`'s `stream` into the contract's events, in the same order the
- * built-in engine emits them, and `session`'s two capabilities into the SDK's
+ * contract declares them, and `session`'s two capabilities into the SDK's
  * two extension points: a `fetch` for the model, a tool set for the runtime.
  *
  * Four defects the ADR records against this SDK are guarded here, and the
@@ -171,7 +171,7 @@ export function sdkThinking(
     // spelling as well as the wire's.** So this is the shortest of the three
     // translations: the members go under the provider key the Google provider
     // reads its options from, and the SDK puts them in `generationConfig`
-    // exactly where the built-in provider puts them by hand.
+    // exactly where each protocol's own wire puts them.
     return { providerOptions: { [GOOGLE_OPTIONS]: { thinkingConfig: members.thinkingConfig } } }
   }
   return { providerOptions: { [ENDPOINT_NAME]: { reasoningEffort: members.reasoning_effort } } }
@@ -582,7 +582,7 @@ export function runVercel(
       // exponential backoff, and its retryable set includes 409 — which is the
       // status the *desk's own relay* answers with when no key is stored on
       // this machine. So a refusal a person has to go and fix became three
-      // requests and six seconds of a spinner. The built-in engine makes one
+      // requests and six seconds of a spinner. This adapter makes one
       // request per turn and reports what came back; two engines that answer a
       // refusal differently is exactly what the slot exists to prevent.
       maxRetries: 0,
@@ -846,9 +846,9 @@ export function runVercel(
    * else is the failure it already was, reported unchanged.
    */
   const schemaRefusal = (cause: unknown): Error | null => {
-    // **Only on the family whose wire takes a schema subset.** See the built-in
-    // engine's own note: the classifier matches a substring, so on the other two
-    // families a 400 saying "unsupported response type" names `type` and the
+    // **Only on the family whose wire takes a schema subset.** The classifier
+    // matches a substring, so on the other two families a 400 saying
+    // "unsupported response type" names `type` and the
     // real failure was being rewritten into a sentence about a removal list that
     // has nothing to do with it.
     if (session.model.family !== 'gemini') return null

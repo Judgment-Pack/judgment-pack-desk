@@ -8,8 +8,8 @@
  * subsequent request.
  *
  * The form's own cases are in `endpointForm.test.tsx`; what is here about the
- * form is that it is *on* the section, and that the key row and the write
- * answer meet: `keyRebindRequired` moves the row without waiting for a read.
+ * form is that it is *on* the section, and that the key line and the write
+ * answer meet: `keyRebindRequired` moves the line without waiting for a read.
  */
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -49,6 +49,7 @@ const BOUND = {
   origin: 'https://api.example.invalid',
   kind: 'openai-compatible',
   configuredOrigin: 'https://api.example.invalid',
+  configuredKind: 'openai-compatible',
   bound: true
 }
 
@@ -65,11 +66,12 @@ const NO_KEY = {
   origin: '',
   kind: '',
   configuredOrigin: 'https://api.example.invalid',
+  configuredKind: 'openai-compatible',
   bound: false
 }
 
 /** No endpoint configured: the desk has no origin to name. */
-const NO_ENDPOINT = { ...NO_KEY, configuredOrigin: '' }
+const NO_ENDPOINT = { ...NO_KEY, configuredOrigin: '', configuredKind: '' }
 
 /** One effective configuration whose desk-level file carries an endpoint. */
 function configured(endpoint: unknown = ENDPOINT): EffectiveConfig {
@@ -102,6 +104,7 @@ function stubChassis(answers: {
     origin: string
     kind: string
     configuredOrigin: string
+    configuredKind?: string
     bound: boolean
   }
   keyStatus?: number
@@ -206,23 +209,23 @@ describe('the Assistant section', () => {
     expect(screen.queryByRole('radio')).toBeNull()
   })
 
-  it('says no endpoint is configured, and does not claim there is no key', () => {
-    // **It used to say "none — no assistant, and no key".** The key is
-    // independent of the endpoint: removing the endpoint from the file does
-    // not remove the key from this machine, so that line asserted something
-    // the page had not established and could be flatly false.
+  it('asks for the key where a person would look for it, and says where it lives', () => {
+    // **Second on the form, after the provider**, because that is the order
+    // somebody setting this up works in — and the hint answers the question the
+    // old wording left them to guess at.
     stubChassis({ key: BOUND })
-    renderSection()
-    expect(screen.getByText('none — no endpoint configured')).toBeTruthy()
-    expect(screen.queryByText(/no assistant, and no key/)).toBeNull()
-    // And the key row is still its own answer beside it.
-    expect(screen.getByText('Key')).toBeTruthy()
+    const { container } = renderSection()
+    const labels = Array.from(container.querySelectorAll('label')).map((each) => each.textContent)
+    expect(labels.slice(0, 3)).toEqual(['Provider', 'API key', 'Endpoint URL'])
+    expect(
+      screen.getByText('Stored on this computer only, never in the project. Readable by your user account only.')
+    ).toBeTruthy()
   })
 
   it('still reports a stored key where no endpoint is configured', async () => {
     stubChassis({ key: BOUND })
     renderSection()
-    expect(await screen.findByText('stored on this machine — sk-a…wxyz')).toBeTruthy()
+    expect(await screen.findByText('Stored — sk-a…wxyz, for OpenAI-compatible')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Remove key' })).toBeTruthy()
   })
 
@@ -231,20 +234,20 @@ describe('the Assistant section', () => {
     // has not been told, and saying otherwise is stating what was not observed.
     vi.stubGlobal('fetch', () => new Promise(() => {}))
     renderSection()
-    expect(screen.getByText('not read yet')).toBeTruthy()
+    expect(screen.getByText('Not read yet')).toBeTruthy()
   })
 
   it('reports a stored key by its fingerprint, and offers to remove it', async () => {
     stubChassis({ key: BOUND })
     renderSection()
-    expect(await screen.findByText('stored on this machine — sk-a…wxyz')).toBeTruthy()
+    expect(await screen.findByText('Stored — sk-a…wxyz, for OpenAI-compatible')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Remove key' })).toBeTruthy()
   })
 
   it('offers no removal where there is nothing to remove', async () => {
     stubChassis({ key: NO_KEY })
     renderSection()
-    expect(await screen.findByText('none stored on this machine')).toBeTruthy()
+    expect(await screen.findByText('No key stored')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Remove key' })).toBeNull()
   })
 
@@ -262,7 +265,7 @@ describe('the Assistant section', () => {
   it('sends the typed key on a store, and never renders it afterwards', async () => {
     const { sent } = stubChassis({ key: NO_KEY })
     const { container } = renderSection(configured())
-    await screen.findByText('none stored on this machine')
+    await screen.findByText('No key stored')
 
     const field = keyField(container)!
     expect(field.type).toBe('password')
@@ -281,7 +284,7 @@ describe('the Assistant section', () => {
     // answered with — never the value it was handed.
     await waitFor(() => expect(field.value).toBe(''))
     expect(container.textContent).not.toContain('sk-a-real-looking-key-wxyz')
-    expect(await screen.findByText('stored on this machine — sk-a…wxyz')).toBeTruthy()
+    expect(await screen.findByText('Stored — sk-a…wxyz, for OpenAI-compatible')).toBeTruthy()
   })
 
   it('removes a key on request, and says so', async () => {
@@ -289,7 +292,7 @@ describe('the Assistant section', () => {
     renderSection(configured())
     fireEvent.click(await screen.findByRole('button', { name: 'Remove key' }))
     await waitFor(() => expect(sent.some((request) => request.method === 'DELETE')).toBe(true))
-    expect(await screen.findByText('none stored on this machine')).toBeTruthy()
+    expect(await screen.findByText('No key stored')).toBeTruthy()
   })
 
   it('has emptied the field at the instant the request is made', async () => {
@@ -310,7 +313,7 @@ describe('the Assistant section', () => {
     })
     const rendered = renderSection(configured())
     container = rendered.container
-    await screen.findByText('none stored on this machine')
+    await screen.findByText('No key stored')
     const field = keyField(container)!
     fireEvent.change(field, { target: { value: 'sk-a-real-looking-key-wxyz' } })
     expect(field.value).toBe('sk-a-real-looking-key-wxyz')
@@ -331,7 +334,7 @@ describe('the Assistant section', () => {
       keyError: { error: 'a key may not contain a control character', code: 'bad-request' }
     })
     const { container } = renderSection(configured())
-    await screen.findByText('none stored on this machine')
+    await screen.findByText('No key stored')
     const field = keyField(container)!
     fireEvent.change(field, { target: { value: 'sk-a-real-looking-key-wxyz' } })
     fireEvent.click(screen.getByRole('button', { name: 'Store key' }))
@@ -359,7 +362,7 @@ describe('the Assistant section', () => {
           : { key: NO_KEY }
       )
       const { container } = renderSection(configured(), client)
-      await screen.findByText('none stored on this machine')
+      await screen.findByText('No key stored')
       fireEvent.change(keyField(container)!, {
         target: { value: 'sk-a-real-looking-key-wxyz' }
       })
@@ -384,12 +387,12 @@ describe('the Assistant section', () => {
       keyError: { error: 'a key may not contain a control character', code: 'bad-request' }
     })
     const { container } = renderSection(configured())
-    await screen.findByText('none stored on this machine')
+    await screen.findByText('No key stored')
     fireEvent.change(keyField(container)!, { target: { value: 'bad\nkey' } })
     fireEvent.click(screen.getByRole('button', { name: 'Store key' }))
     expect(await screen.findByText(/a key may not contain a control character/)).toBeTruthy()
     // And the page still says no key is stored, because none is.
-    expect(screen.getByText('none stored on this machine')).toBeTruthy()
+    expect(screen.getByText('No key stored')).toBeTruthy()
   })
 
   it('asks the desk to probe, sending no destination of its own', async () => {
@@ -400,7 +403,7 @@ describe('the Assistant section', () => {
       probe: { reachable: true, status: 200, latencyMs: 240, diagnostic: '' }
     })
     renderSection(configured())
-    fireEvent.click(screen.getByRole('button', { name: 'Check reachability' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
     await waitFor(() =>
       expect(sent.some((request) => request.url.includes('/api/assistant/probe'))).toBe(true)
     )
@@ -413,8 +416,8 @@ describe('the Assistant section', () => {
   it('renders a reachable answer with its status and its latency', async () => {
     stubChassis({ probe: { reachable: true, status: 200, latencyMs: 240, diagnostic: '' } })
     renderSection(configured())
-    fireEvent.click(screen.getByRole('button', { name: 'Check reachability' }))
-    expect(await screen.findByText(/reachable · answered 200 · 240 ms/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
+    expect(await screen.findByText(/connected · answered 200 · 240 ms/)).toBeTruthy()
   })
 
   it('renders a refused credential as not reachable, from the fixed vocabulary', async () => {
@@ -426,8 +429,8 @@ describe('the Assistant section', () => {
       probe: { reachable: false, status: 401, latencyMs: 88, diagnostic: 'unauthorized' }
     })
     renderSection(configured())
-    fireEvent.click(screen.getByRole('button', { name: 'Check reachability' }))
-    expect(await screen.findByText(/not reachable · answered 401/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
+    expect(await screen.findByText(/not connected · answered 401/)).toBeTruthy()
     expect(screen.getByText(/the endpoint did not accept the key/)).toBeTruthy()
   })
 
@@ -443,7 +446,7 @@ describe('the Assistant section', () => {
     ] as const) {
       stubChassis({ probe: { reachable: false, status: 0, latencyMs: 5, diagnostic } })
       renderSection(configured())
-      fireEvent.click(screen.getByRole('button', { name: 'Check reachability' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
       expect(await screen.findByText(new RegExp(says)), diagnostic).toBeTruthy()
       cleanup()
     }
@@ -459,7 +462,7 @@ describe('the Assistant section', () => {
       }
     })
     renderSection(configured())
-    fireEvent.click(screen.getByRole('button', { name: 'Check reachability' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
     expect(await screen.findByText(/no answer arrived/)).toBeTruthy()
     // Never "answered 0", which is a status nothing sends.
     expect(screen.queryByText(/answered 0/)).toBeNull()
@@ -474,7 +477,7 @@ describe('the Assistant section', () => {
       }
     })
     renderSection(configured())
-    fireEvent.click(screen.getByRole('button', { name: 'Check reachability' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
     expect(await screen.findByText(/no key is stored on this machine/)).toBeTruthy()
   })
 
@@ -490,7 +493,7 @@ describe('the Assistant section', () => {
     ]) {
       expect(screen.getByRole('checkbox', { name: tool }), tool).toBeTruthy()
     }
-    expect(screen.getByText(/Each is a read/)).toBeTruthy()
+    expect(screen.getByText('All read-only. Untick one to hide it from the assistant.')).toBeTruthy()
   })
 
   it('says nothing to the reader about a chassis, bytes or a path', () => {
@@ -504,33 +507,47 @@ describe('the Assistant section', () => {
 })
 
 describe('the key row and the endpoint it is bound to', () => {
-  it('asks for an endpoint to be saved before it offers the field', async () => {
-    // Storing a key requires an endpoint to bind it to. A field here would be
-    // an affordance whose only outcome is a refusal.
+  it('offers no store where there is nothing to bind a key to, and says why', async () => {
+    // Storing a key requires an endpoint to bind it to, so a second button here
+    // could only produce a refusal. The field itself stays, because Connect —
+    // the primary action — saves the endpoint first and then stores it.
     stubChassis({ key: NO_ENDPOINT })
     const { container } = renderSection()
-    await screen.findByText('none stored on this machine')
-    expect(screen.getByText(/Save an endpoint first/)).toBeTruthy()
-    expect(keyField(container)).toBeNull()
+    await screen.findByText('No key stored')
+    expect(screen.getByText(/Connect saves the endpoint first/)).toBeTruthy()
+    expect(keyField(container)).not.toBeNull()
     expect(screen.queryByRole('button', { name: 'Store key' })).toBeNull()
   })
 
-  it('labels the field with the host the key would be entered for', async () => {
+  it('names the key by what it is, and never by the host it goes to', async () => {
+    // The host is on the line below, where a mismatch names both halves. A
+    // label that carried it made the one field on the form read as five.
     stubChassis({ key: NO_KEY })
     renderSection(configured())
-    expect(await screen.findByText('none stored on this machine')).toBeTruthy()
-    expect(screen.getByLabelText('Key for https://api.example.invalid')).toBeTruthy()
+    expect(await screen.findByText('No key stored')).toBeTruthy()
+    expect(screen.getByLabelText('API key')).toBeTruthy()
+    expect(screen.getByText(/No key is stored for/)).toBeTruthy()
   })
 
-  it('says the key is for the endpoint that is configured, and offers to replace it', async () => {
+  it('says a stored key is stored, with its fingerprint and its provider', async () => {
     stubChassis({ key: BOUND })
     const { container } = renderSection(configured())
-    expect(await screen.findByText(/which is where this desk is configured/)).toBeTruthy()
-    // No field until Replace is asked for: a masked box beside a working key
-    // invites somebody to wonder what is in it.
+    expect(await screen.findByText('Stored — sk-a…wxyz, for OpenAI-compatible')).toBeTruthy()
+    // **And there is no field at all.** An empty masked box beside a working
+    // key invites somebody to wonder what is in it and to type into it by
+    // accident; what a person wants there is Replace and Remove.
     expect(keyField(container)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Replace key' }))
+    expect(screen.queryByRole('button', { name: 'Store key' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Replace key' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Remove key' })).toBeTruthy()
+  })
+
+  it('opens the one field there is when a replacement is asked for', async () => {
+    stubChassis({ key: BOUND })
+    const { container } = renderSection(configured())
+    fireEvent.click(await screen.findByRole('button', { name: 'Replace key' }))
     expect(keyField(container)).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Store key' })).toBeTruthy()
   })
 
   it('names both hosts where the stored key was entered for another one', async () => {
@@ -540,7 +557,7 @@ describe('the key row and the endpoint it is bound to', () => {
     const { container } = renderSection(configured())
     expect(await screen.findByText(/nothing will be sent/)).toBeTruthy()
     expect(screen.getByText('https://first.example.invalid')).toBeTruthy()
-    expect(screen.getByLabelText('Key for https://api.example.invalid')).toBeTruthy()
+    expect(screen.getByLabelText('API key')).toBeTruthy()
     expect(keyField(container)).not.toBeNull()
   })
 
@@ -570,7 +587,7 @@ describe('the key row and the endpoint it is bound to', () => {
       }
     })
     renderSection(configured())
-    expect(await screen.findByText(/which is where this desk is configured/)).toBeTruthy()
+    expect(await screen.findByText('Stored — sk-a…wxyz, for OpenAI-compatible')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText(/nothing will be sent/)).toBeTruthy()
   })
@@ -587,13 +604,13 @@ describe('the key row and the endpoint it is bound to', () => {
       }
     })
     const { container } = renderSection(configured())
-    await screen.findByText(/which is where this desk is configured/)
+    await screen.findByText('Stored — sk-a…wxyz, for OpenAI-compatible')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await screen.findByText(/nothing will be sent/)
     fireEvent.change(keyField(container)!, { target: { value: 'sk-another-real-looking-key' } })
     fireEvent.click(screen.getByRole('button', { name: 'Store key' }))
-    // The store answers with the binding the chassis now holds, and the row
+    // The store answers with the binding the chassis now holds, and the line
     // goes back to reading it.
-    expect(await screen.findByText(/which is where this desk is configured/)).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText(/nothing will be sent/)).toBeNull())
   })
 })

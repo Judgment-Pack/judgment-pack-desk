@@ -475,9 +475,12 @@ func projectView(decoded deskDecode) ProjectSlotView {
 
 // AssistantEndpointView is the four members an endpoint has, decoded.
 type AssistantEndpointView struct {
-	URL   string   `json:"url"`
-	Kind  string   `json:"kind"`
-	Model string   `json:"model"`
+	URL  string `json:"url"`
+	Kind string `json:"kind"`
+	// Model is null where none has been chosen yet, which is the same value the
+	// schema admits — so the page re-seeds its field from this without a second
+	// rule about what an empty string would have meant.
+	Model *string  `json:"model"`
 	Tools []string `json:"tools"`
 }
 
@@ -496,8 +499,11 @@ func slotView(decoded deskDecode) AssistantSlotView {
 	view.Endpoint = &AssistantEndpointView{
 		URL:   decoded.Endpoint.url,
 		Kind:  decoded.Endpoint.kind,
-		Model: decoded.Endpoint.model,
 		Tools: tools,
+	}
+	if decoded.Endpoint.model != "" {
+		model := decoded.Endpoint.model
+		view.Endpoint.Model = &model
 	}
 	return view
 }
@@ -1399,9 +1405,38 @@ var AssistantTools = []string{
 // this list is therefore refused by name rather than ignored: a configuration
 // naming an engine nobody certified is a configuration asking for one.
 //
-// `vercel` is the default and `builtin` is the keyless fallback. Nothing in
-// this release reads either: the member is stored and shown.
-var AssistantEngines = []string{"vercel", "builtin"}
+// **One engine, and the slot is still a slot.** `builtin` was withdrawn — see
+// ADR-0001's amendment — so this list has one member; what the slot keeps is
+// its contract and its conformance session, which is what a second engine will
+// be admitted by. Nothing in this release reads the member: it is stored and
+// shown.
+var AssistantEngines = []string{"vercel"}
+
+// withdrawnAssistantEngine is the id this release withdrew, still **decodable
+// for one release**.
+//
+// A removed choice is removed from the schema with a migration rather than left
+// as a one-option menu: a desk that named it yesterday is not a desk with a
+// broken configuration file today. It decodes to the engine that runs, and the
+// decoder says so.
+const withdrawnAssistantEngine = "builtin"
+
+// assistantEngineWithdrawn is what the decoder says when it meets that id,
+// character for character as `deskConfig.ts` writes it.
+//
+// Held identical by a test that reads the TypeScript declaration, because a
+// sentence a reader meets in one decoder and not the other is two contracts.
+const assistantEngineWithdrawn = `engine: "builtin" was withdrawn; the Vercel engine runs`
+
+// noModelChosen is what this decoder says about an endpoint with no model yet,
+// character for character as `deskConfig.ts` writes it.
+//
+// **A notice and not a refusal**: the file is accepted and the endpoint is
+// saved; what it is not is ready to run. A model is picked from the list the
+// endpoint itself offers, and that list cannot be read until there is an
+// endpoint saved and a key bound to it — so requiring one made the first save
+// the one step nobody could take without guessing.
+const noModelChosen = "no model chosen yet — pick one below"
 
 // AssistantThinkingTiers is the closed set of depths the engine may be asked
 // to run the model's reasoning at.
@@ -1431,12 +1466,18 @@ type assistantSlot struct {
 	endpoint *assistantEndpoint
 	engine   string
 	thinking string
+	// notices is what the decoder did with a member it accepted — today, the
+	// one migration: the withdrawn engine, decoded to the one that runs.
+	notices []deskNotice
 }
 
 // assistantEndpoint is what a clean decode of the whole file yields.
 type assistantEndpoint struct {
-	url   string
-	kind  string
+	url  string
+	kind string
+	// model is the empty string where none has been chosen yet. The decoder
+	// refuses a model member that is present and empty, so this spelling can
+	// only arrive from an absent or null one.
 	model string
 	tools []string
 }

@@ -13,25 +13,30 @@
  * no shape here the schema does not already have.
  */
 import {
-  ASSISTANT_ENGINES,
   ASSISTANT_KINDS,
   ASSISTANT_THINKING,
   ASSISTANT_TOOLS,
   type AssistantConfig,
-  type AssistantEngine,
   type AssistantTool,
   type EndpointKind,
   type ThinkingTier
 } from '../config/deskConfig'
-import { firstDialect, wireFor } from './thinking'
 
-/** What the form holds while it is being edited. */
+/**
+ * What the form holds while it is being edited.
+ *
+ * **`engine` is not on it, and the form never writes one.** The built-in engine
+ * was withdrawn and the slot has one member, so there is nothing to choose; the
+ * schema still decodes the member, with a migration, for a file that names it
+ * (see `engineValue` in `deskConfig.ts`). A file that carries `engine` keeps it
+ * until its next write, and that write drops it — the composed `assistant`
+ * object replaces the one in the file whole.
+ */
 export interface EndpointDraft {
   kind: EndpointKind
   url: string
   model: string
   tools: AssistantTool[]
-  engine: AssistantEngine
   thinking: ThinkingTier
 }
 
@@ -45,7 +50,7 @@ export interface EndpointDraft {
 export const KIND_LABEL: Readonly<Record<EndpointKind, string>> = {
   'openai-compatible': 'OpenAI-compatible',
   anthropic: 'Anthropic',
-  gemini: 'Gemini'
+  gemini: 'Google Gemini'
 }
 
 /**
@@ -88,12 +93,14 @@ export function draftFrom(config: AssistantConfig): EndpointDraft {
   return {
     kind: endpoint?.kind ?? 'openai-compatible',
     url: endpoint?.url ?? '',
+    // The draft holds a string throughout, and `''` is what "nothing chosen"
+    // looks like in a text field; `assistantWrite` is where it becomes the
+    // null the schema spells.
     model: endpoint?.model ?? '',
     tools:
       endpoint === null
         ? [...ASSISTANT_TOOLS]
         : ASSISTANT_TOOLS.filter((tool) => endpoint.tools.includes(tool)),
-    engine: config.engine,
     thinking: config.thinking
   }
 }
@@ -159,10 +166,14 @@ export function assistantWrite(draft: EndpointDraft): unknown {
     endpoint: {
       url: draft.url.trim(),
       kind: draft.kind,
-      model: draft.model.trim(),
+      // **Null and not the empty string.** "No model chosen yet" is a state the
+      // schema has and `""` is a value it refuses, so a form that wrote the
+      // empty string would compose a file its own reader rejects — on the very
+      // first save, which is the one that has to work before a list can be
+      // asked for.
+      model: draft.model.trim() === '' ? null : draft.model.trim(),
       tools: ASSISTANT_TOOLS.filter((tool) => draft.tools.includes(tool))
     },
-    engine: draft.engine,
     thinking: draft.thinking
   }
 }
@@ -177,25 +188,32 @@ export function assistantWrite(draft: EndpointDraft): unknown {
  * three deployment states, so a page that cannot reach it is a page describing
  * something it does not offer.
  *
- * **`engine` and `thinking` survive**, because they say *how* an assistant
- * would run and not whether there is one — the schema allows both beside a
- * null endpoint for exactly that reason, and a removal that reset them would
- * be discarding a decision nobody asked about.
+ * **`thinking` survives**, because it says *how* an assistant would run and not
+ * whether there is one — the schema allows it beside a null endpoint for
+ * exactly that reason, and a removal that reset it would be discarding a
+ * decision nobody asked about.
  */
 export function assistantWithoutEndpoint(draft: EndpointDraft): unknown {
-  return { endpoint: null, engine: draft.engine, thinking: draft.thinking }
+  return { endpoint: null, thinking: draft.thinking }
 }
 
-/** The engine options, in the order the closed list declares them. */
-export const ENGINE_OPTIONS = ASSISTANT_ENGINES.map((engine) => ({
-  value: engine,
-  label: engine
-}))
+/**
+ * What each thinking tier is called on the page.
+ *
+ * The `thinking` values are the file's and are shown as they are written
+ * wherever a value is *reported*; these are what a person chooses between,
+ * because `ultra` is a spelling and not an amount.
+ */
+export const TIER_LABEL: Readonly<Record<ThinkingTier, string>> = {
+  off: 'off',
+  on: 'standard',
+  ultra: 'deep'
+}
 
 /** The tier options, in the order the closed list declares them. */
 export const TIER_OPTIONS = ASSISTANT_THINKING.map((tier) => ({
   value: tier,
-  label: tier
+  label: TIER_LABEL[tier]
 }))
 
 /** The kinds, in the order the closed list declares them. */
@@ -203,50 +221,3 @@ export const KIND_OPTIONS = ASSISTANT_KINDS.map((kind) => ({
   value: kind,
   label: KIND_LABEL[kind]
 }))
-
-/**
- * What a tier puts on the wire for this endpoint's family, **read off the
- * desk's own table**.
- *
- * Derived rather than restated: a sentence typed out beside the picker would
- * be a second copy of `thinking.ts` that nothing keeps in step, and the first
- * time the table changed the form would describe the release before it. What
- * a reader sees is the members `wireFor` actually returns for the family's
- * first dialect, so a change to the table changes this line.
- */
-export function tierSays(family: EndpointKind, tier: ThinkingTier): string {
-  const wire = wireFor(tier, firstDialect(family))
-  if (wire === null) return 'nothing at all goes on the wire'
-  return JSON.stringify(wire.members)
-}
-
-/**
- * The sentence beside the tier picker that is **not** derived, because it is
- * about where the numbers came from rather than what they are.
- *
- * Only the Gemini wire carries one, and only because only that wire takes a
- * token budget: the allowed range is per model and the API reference states
- * none that holds across the family, so the two budgets are this desk's choice
- * inside a documented field. A model whose range excludes one answers 400 and
- * the desk falls back to the level spelling once. The other two families put a
- * named effort on the wire and have no number to account for.
- */
-export function tierProvenance(family: EndpointKind): string | undefined {
-  if (family !== 'gemini') return undefined
-  return 'The two budgets are this desk’s choice inside a documented field; the range is per model.'
-}
-
-/**
- * What each engine is, and what the SDK-backed one cannot do.
- *
- * **Both limits are measured and declared elsewhere in this repository**, and
- * they are here because they are the two reasons an author might choose
- * `builtin` for a Gemini endpoint. Neither is a guess about a vendor: each is
- * a behaviour this desk's own suite pins, and each is stated in the README
- * beside the measurement.
- */
-export const ENGINE_SAYS: Readonly<Record<AssistantEngine, string>> = {
-  vercel:
-    'The default. Narrows a tool schema where the SDK declares one narrower, and says when it does.',
-  builtin: 'A fallback with neither limit: the runtime’s own schemas, and a turn echoed as it arrived.'
-}

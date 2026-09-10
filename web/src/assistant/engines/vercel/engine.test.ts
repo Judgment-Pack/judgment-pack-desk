@@ -387,17 +387,38 @@ describe('the registry', () => {
   })
 
   it('loads this adapter for the id a desk.json names, and not another', async () => {
-    // A `vercel` entry pointing at `builtin` would pass every conformance leg
-    // twice over and certify nothing — which is exactly what the fallback this
-    // build removed used to do on purpose.
+    // An entry pointing at a second engine's module would pass every
+    // conformance leg twice over and certify nothing — which is exactly what
+    // the registry's old fallback used to do on purpose.
     const engine = await loadEngine('vercel')
     expect(engine.id).toBe('vercel')
     expect(engine).toBe(vercel)
   })
+
+  // The two below stood in the withdrawn engine's own suite and are properties
+  // of the **registry**, not of that engine: they came here with it rather than
+  // going out with it.
+  it('refuses an id no table registers, by name', async () => {
+    // The loader takes its table as a parameter so the conformance session can
+    // put its certification fixtures down the path a certified engine travels.
+    // That parameter is also the way an id with no chunk can reach it, so the
+    // refusal is the loader's own and says which id.
+    await expect(loadEngine('not-an-engine')).rejects.toThrow(
+      'no engine chunk is registered for not-an-engine'
+    )
+    await expect(loadEngine('vercel', {})).rejects.toThrow(
+      'no engine chunk is registered for vercel'
+    )
+  })
+
+  it('loads from the table it is given, which is how a fixture is certified', async () => {
+    const stub = { id: 'vercel' as const, start: () => [] as never }
+    await expect(loadEngine('anything', { anything: async () => stub })).resolves.toBe(stub)
+  })
 })
 
 describe('the address the SDK composes, and what this desk will send', () => {
-  it('reduces the SDK’s absolute URL to the suffix the built-in engine uses', () => {
+  it('reduces the SDK’s absolute URL to the suffix the desk’s capability names', () => {
     expect(
       suffixOf(
         `${PLACEHOLDER_ORIGIN}/chat/completions`,

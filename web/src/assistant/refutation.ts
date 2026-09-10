@@ -8,7 +8,7 @@
  * never taken from the model's prose, only from the runtime's results; and the
  * critic runs inside the same ToolGate as the main loop."*
  *
- * The **primitive** is each engine's — a second loop in `builtin`, a second
+ * The **primitive** is each engine's — a hand-written second loop, a second
  * `streamText` in `vercel`. Everything a person is shown is here, in one
  * module both import, for the reason the ToolGate's allow-list is one list: a
  * rule written twice is a rule two readers can disagree about, and this one is

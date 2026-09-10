@@ -399,18 +399,27 @@ export function AssistantPane({
     setAccepted(landed.text)
   }, [proposed, write, onBaseline])
 
-  if (slot.state === 'unavailable' || slot.endpoint === null || !slot.keyPresent) {
+  if (
+    slot.state === 'unavailable' ||
+    slot.endpoint === null ||
+    !slot.keyPresent ||
+    slot.unusable !== undefined
+  ) {
     return (
       <p className={styles.empty}>
-        {/* **Three sentences and not two.** A desk whose configuration could
-            not be read is not a desk that has none: saying "no assistant is
+        {/* **Four sentences and not two.** A desk whose configuration could not
+            be read is not a desk that has none: saying "no assistant is
             configured" there is the page reporting an absence it did not
-            establish, about a file it could not open. */}
+            establish, about a file it could not open. And an endpoint with no
+            model chosen is configured — it is simply not ready, and the one
+            place to pick one is named rather than described. */}
         {slot.state === 'unavailable'
           ? 'This desk could not read its own configuration, so it cannot say what assistant is configured. Admin › Assistant names the problem.'
           : slot.endpoint === null
             ? 'No assistant is configured on this desk. Configure an endpoint in Admin › Assistant.'
-            : 'An endpoint is configured and no key is stored on this machine. Add one in Admin › Assistant.'}
+            : !slot.keyPresent
+              ? 'An endpoint is configured and no key is stored on this machine. Add one in Admin › Assistant.'
+              : 'An endpoint is configured and no model is chosen for it. Pick one in Admin › Assistant.'}
       </p>
     )
   }
@@ -441,7 +450,7 @@ export function AssistantPane({
           events rather than remembered, so the line and the stream cannot
           disagree.
         */}
-        {run.engineId} · {slot.endpoint.model} ·{' '}
+        {run.engineId} · {slot.endpoint.model ?? 'no model'} ·{' '}
         {thinkingLine(slot.thinking, stateFromEvents(slot.thinking, run.events))}
       </p>
       {ran !== undefined && (

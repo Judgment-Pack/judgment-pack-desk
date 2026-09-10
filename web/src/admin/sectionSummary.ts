@@ -67,7 +67,11 @@ export const SECTION_SUMMARY: Record<
     // The wire, the model and the tier — the three the assistant slot actually
     // has. The URL is deliberately not here: it is the one part of the endpoint
     // that is long, and it is in the file the pane is showing.
-    return [endpoint.kind, endpoint.model, `thinking ${config.assistant.thinking}`].join(JOIN)
+    return [
+      endpoint.kind,
+      endpoint.model ?? 'no model',
+      `thinking ${config.assistant.thinking}`
+    ].join(JOIN)
   },
   'identity-provider': ({ config }) =>
     config.identity.provider === null ? 'None' : config.identity.provider.issuer

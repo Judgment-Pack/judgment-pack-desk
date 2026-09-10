@@ -31,7 +31,7 @@ function reach(from: string): void {
 }
 
 export const clearsItsInterval: Engine = {
-  id: 'builtin',
+  id: 'vercel',
   async *start(_session: AssistantSession): AsyncGenerator<AssistantEvent> {
     // Started and cleared: nothing is left ticking.
     const ticking = setInterval(() => reach('interval'), 50)
