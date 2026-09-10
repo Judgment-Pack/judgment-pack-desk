@@ -3278,7 +3278,7 @@ not; they are the page, and the page can do nothing without one of the two.
   | --- | --- | --- |
   | `no-handoff` | nothing this desk recognises was presented | keeps the id it holds |
   | `handoff-spent` | a handoff this desk finished with | keeps the id it holds |
-  | `handoff-expired` | a handoff this desk minted and let lapse | forgets the id, says the link expired |
+  | `handoff-expired` | a handoff this desk minted and let lapse | keeps the id it holds; a tab with none is told the link expired |
 
   `handoff-spent` is read **exactly as** `no-handoff`, and that is the point: a
   cookie this desk no longer holds tells the page nothing it may act on. The
@@ -3287,9 +3287,13 @@ not; they are the page, and the page can do nothing without one of the two.
   port outlives it — from anybody else's. The two codes exist because the store
   remembers which of its own handoffs it *spent* and which it let *lapse*, and
   only the second says something a person can act on: nobody used the link,
-  sixty seconds went by, and the launch secret still works, so the page says
-  *The launch link expired before this page loaded. Open the URL jpack-desk
-  printed at startup.*
+  sixty seconds went by, and the launch secret still works, so a tab **with no
+  session** is told *The launch link expired before this page loaded. Open the
+  URL jpack-desk printed at startup.* A tab that already holds an id is told
+  nothing and keeps it: the lapsed link says nothing about that id, which an
+  earlier launch bought and which is very likely still live. If it is not, the
+  first chassis call answers a marked `401` and ends the session then — the one
+  path that knows.
 
   **A refusal clears nothing**, and that is a fix rather than an omission: the
   clearing header and the refusal used to travel in one response, so a tab that

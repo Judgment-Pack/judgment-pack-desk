@@ -452,6 +452,30 @@ func TestTheTombstoneRingIsBoundedAndSaysWhatThatCosts(t *testing.T) {
 	if status != http.StatusUnauthorized || body["code"] != CodeNoHandoff {
 		t.Fatalf("after the ring cycled, read %d %v, want %s", status, body["code"], CodeNoHandoff)
 	}
+
+	// **The same, for an expired record**, which is the arm that matters to a
+	// tab holding an id: `handoff-expired` before the eviction and `no-handoff`
+	// after it, and the page keeps its id on both. The reopen line is for a tab
+	// with no session; `web/src/mcp/session.test.tsx` holds that half.
+	lapsed := launchHandoff(t, ts)
+	now := time.Now()
+	s.launches.mu.Lock()
+	s.launches.now = func() time.Time { return now.Add(launchWindow + time.Second) }
+	s.launches.mu.Unlock()
+
+	status, body = exchangeAttempt(t, ts, withHandoff(ts, lapsed))
+	if status != http.StatusUnauthorized || body["code"] != CodeHandoffExpired {
+		t.Fatalf("a lapsed handoff read %d %v, want %s", status, body["code"], CodeHandoffExpired)
+	}
+
+	for range maxTombstones + maxLaunches + 2 {
+		launchHandoff(t, ts)
+	}
+	status, body = exchangeAttempt(t, ts, withHandoff(ts, lapsed))
+	if status != http.StatusUnauthorized || body["code"] != CodeNoHandoff {
+		t.Fatalf("after the ring cycled, a lapsed handoff read %d %v, want %s",
+			status, body["code"], CodeNoHandoff)
+	}
 }
 
 // TestTheExchangeRefusesWithoutAHandoff: no cookie at all is the state a page

@@ -274,6 +274,12 @@ async function beginSession(): Promise<string | null> {
  *    chassis' own sentence is shown **verbatim**, because "open the printed
  *    URL" is advice that cannot work here: a fresh tab reopening it gets the
  *    same 503.
+ *  - **`handoff-expired`** — this desk minted the handoff and nobody used it
+ *    inside its sixty seconds. The launch secret still works, so the answer is
+ *    to reopen the printed URL — but that is advice for a tab with **no**
+ *    session. A tab that already holds an id keeps it: the id was bought by an
+ *    earlier launch and is very likely still live, and the lapsed link says
+ *    nothing about it.
  *  - **anything else, `no-handoff` included** — nobody opened the printed URL
  *    for this browser, or far more often this page is simply **reloading** after
  *    its own handoff was spent and cleared. A tab in that state holds an id
@@ -294,10 +300,17 @@ async function refusedExchange(answered: Response, stored: string | null): Promi
     return null
   }
   await discardBody(answered)
-  if (code === 'handoff-expired') {
-    // **The one refusal that says something a person can act on.** Nobody used
-    // the link; sixty seconds went by, and the launch secret still works, so
-    // the answer is to reopen the printed URL.
+  if (code === 'handoff-expired' && stored === null) {
+    // **The one refusal that says something a person can act on, and only to a
+    // tab that needs it.** Nobody used the link; sixty seconds went by, and the
+    // launch secret still works, so the answer is to reopen the printed URL.
+    //
+    // A tab that already holds an id is told nothing and keeps it. The lapsed
+    // link is not evidence about that id — it was bought by an earlier launch —
+    // and ending a live session over somebody's unused second tab is the same
+    // mistake `handoff-spent` was making. If the id is dead, the first chassis
+    // call answers a marked `401` and ends the session then, which is the one
+    // path that knows.
     forgetSession(HANDOFF_EXPIRED_MESSAGE)
     return null
   }

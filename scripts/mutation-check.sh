@@ -6999,10 +6999,12 @@ export function assistantTransport(id: string): Transport {
   # two codes to tell apart. The property is unchanged.
   # Repaired: the release moved past the spent branch, which now reads a body
   # of its own.
+  # Repaired again: the expiry branch reads the tab's stored id too, so the
+  # needle names the whole condition. The property is unchanged.
   mutate web "a refused answer's body is left in flight" "$MS" \
     '  await discardBody(answered)
-  if (code === '"'"'handoff-expired'"'"') {' \
-    '  if (code === '"'"'handoff-expired'"'"') {'
+  if (code === '"'"'handoff-expired'"'"' && stored === null) {' \
+    '  if (code === '"'"'handoff-expired'"'"' && stored === null) {'
   # **Retired: the feature was withdrawn.** "a refused count read's body is
   # left in flight" broke the release on the second `/api/session` call the
   # bootstrap used to make. There is no second call now.
@@ -7012,13 +7014,13 @@ export function assistantTransport(id: string): Transport {
   # longer path outlives the clear, which reaches `Path=/` and no further.
   mutate web "a spent handoff forgets the id" "$MS" \
     "  await discardBody(answered)
-  if (code === 'handoff-expired') {" \
+  if (code === 'handoff-expired' && stored === null) {" \
     "  await discardBody(answered)
   if (code === 'handoff-spent') {
     forgetSession()
     return null
   }
-  if (code === 'handoff-expired') {"
+  if (code === 'handoff-expired' && stored === null) {"
   # **The terminal state has to reach the sockets.** A connection established
   # before the refusal notices nothing on its own, and went on carrying frames
   # for a session the chassis had refused.
@@ -7092,6 +7094,13 @@ export function assistantTransport(id: string): Transport {
     '  forgetSession()
   throw new NoSession()' \
     '  throw new NoSession()'
+  # **An expiry is advice, and only a tab that needs it is given it.** A tab
+  # already holding an id is told nothing: the lapsed link is not evidence
+  # about an id an earlier launch bought, and ending a live session over
+  # somebody's unused second tab is the mistake `handoff-spent` was making.
+  mutate web "an expired handoff forgets the id of a tab that has one" "$MS" \
+    "  if (code === 'handoff-expired' && stored === null) {" \
+    "  if (code === 'handoff-expired') {"
   # **The same discriminator as the relay transport's, on the desk's own
   # fetch.** A 401 wearing one of the exchange's codes, or no mark at all, is
   # somebody else's answer — a proxy, an upstream reached some other way — and

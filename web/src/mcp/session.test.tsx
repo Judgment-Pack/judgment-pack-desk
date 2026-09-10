@@ -262,12 +262,24 @@ describe('what a refused exchange means', () => {
     await expect(sessionBearer()).rejects.toThrow(NO_SESSION_MESSAGE)
   })
 
-  it('ends a tab with no id on `handoff-expired`, and keeps one that has an id... no', async () => {
-    // `handoff-expired` is the one refusal a person can act on, so it ends the
-    // session whatever the tab was holding: the id it holds was bought by an
-    // earlier launch and may be anything, and the instruction — reopen the
-    // printed URL — is the same either way.
+  it('keeps the id on `handoff-expired` when the tab has one, and says nothing', async () => {
+    // The lapsed link says nothing about the id this tab holds: that id was
+    // bought by an earlier launch and is very likely still live. Ending a live
+    // session over somebody's unused second tab is the mistake `handoff-spent`
+    // was making. If the id is dead, the first chassis call answers a marked
+    // `401` and ends it then.
     window.sessionStorage.setItem(sessionStorageKey(), STORED)
+    record((call) =>
+      call.url === '/api/session'
+        ? refused('handoff-expired', { code: 'handoff-expired' })
+        : json({})
+    )
+    expect(await bootstrap()).toBe(STORED)
+    expect(sessionEnded()).toBeNull()
+    expect(window.sessionStorage.getItem(sessionStorageKey())).toBe(STORED)
+  })
+
+  it('ends a tab that holds no id on `handoff-expired`, and names the way back', async () => {
     record((call) =>
       call.url === '/api/session'
         ? refused('handoff-expired', { code: 'handoff-expired' })
@@ -305,7 +317,6 @@ describe('what a refused exchange means', () => {
 
 describe('a lapsed link is not a stolen one', () => {
   it('says the link expired, and to reopen rather than restart', async () => {
-    window.sessionStorage.setItem(sessionStorageKey(), STORED)
     record((call) =>
       call.url === '/api/session'
         ? refused('handoff-expired', { code: 'handoff-expired' })
@@ -313,7 +324,6 @@ describe('a lapsed link is not a stolen one', () => {
     )
     expect(await bootstrap()).toBeNull()
     expect(sessionEnded()).toBe(HANDOFF_EXPIRED_MESSAGE)
-    expect(window.sessionStorage.getItem(sessionStorageKey())).toBeNull()
     // An expiry is nobody's fault and the secret still works.
     expect(HANDOFF_EXPIRED_MESSAGE).toContain('Open the URL jpack-desk printed')
     expect(HANDOFF_EXPIRED_MESSAGE).not.toContain('Restart')
