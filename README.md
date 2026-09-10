@@ -3172,6 +3172,10 @@ and never matches the host it reaches the chassis under. Vite proxies `/launch`,
 without the `/launch` entry the dev origin acquires no handoff, the page has
 nothing to exchange, and the other two answer `401`.
 
+Node 22 or newer is required (`web/package.json` says so, `.nvmrc` says `22`, and
+`npm run dev` and `npm run build` refuse an older Node with a sentence rather than
+Vite's stack trace): run `nvm use` in the repository first.
+
 **In VS Code**, `.vscode/tasks.json` carries this as tasks. Set `jpackDesk.jpack`
 (the runtime binary) and `jpackDesk.project` (a directory with `jpack.json`) in
 your settings, then run **desk: open (hot reload)**: it starts the chassis on
