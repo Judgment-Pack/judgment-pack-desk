@@ -239,7 +239,7 @@ func TestTheHandoffIsSingleUse(t *testing.T) {
 // nothing — it cannot distinguish a page's own earlier spend from anybody
 // else's, and neither can the page. `handoff-expired` is the one a person can
 // act on: nobody used the link, and the secret still works.
-func TestTheExchangeTellsAReloadFromATheft(t *testing.T) {
+func TestTheExchangeClassifiesWhatWasPresented(t *testing.T) {
 	_, ts := newTestServer(t, false)
 
 	// A reload: no cookie at all, because the exchange that spent it cleared it.
