@@ -632,6 +632,25 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the chassis refuses an endpoint with no model" "$DF" \
     '	if declared, present := inner["model"]; present && declared != nil {' \
     '	if declared := inner["model"]; true {'
+  # **A file written before the set is not a broken file.** `model: "x"` with no
+  # `models` has always meant one enabled model, and deriving the set from it
+  # states that; a decoder that read the member unconditionally refuses every
+  # such file — which is every desk configured before this release — as
+  # `must be an array of strings; found null`. The shared corpus is where both
+  # halves of the migration are written down, so this fails the fixture walk.
+  mutate go "the enabled set is refused rather than migrated" "$DF" \
+    '	if declared, present := inner["models"]; !present {
+		if trimmedModel != "" {
+			enabled = []string{trimmedModel}
+		}
+	} else {
+		enabled, setProblems = modelSet(declared)
+		problems = append(problems, setProblems...)
+	}' \
+    '	{
+		enabled, setProblems = modelSet(inner["models"])
+		problems = append(problems, setProblems...)
+	}'
   mutate go "the chassis refuses the withdrawn engine rather than migrating it" "$DF" \
     '	if named, ok := record["engine"].(string); ok && named == withdrawnAssistantEngine {' \
     '	if false {'
@@ -4308,13 +4327,16 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "removal is offered where there is nothing to remove" "$KF" \
     '        {read.present && (' \
     '        {true && ('
-  # A 401 is a host that is there and a credential it will not take.
-  mutate web "a refused credential is painted as reachable" "$AF" \
-    "      {result.reachable ? 'connected' : 'not connected'}" \
-    "      {result.status < 500 ? 'connected' : 'not connected'}"
-  mutate web "a status of zero is painted as an answer" "$AF" \
-    "      {result.status === 0 ? 'no answer arrived' : \`answered \${result.status}\`}" \
-    "      {\`answered \${result.status}\`}"
+  # A 401 is a host that is there and a credential it will not take. The line
+  # is `checkLine`'s now — one press answers the probe and the listing, and the
+  # sentence is one function's rather than assembled at the render.
+  ECK=web/src/assistant/endpointCheck.ts
+  mutate web "a refused credential is painted as reachable" "$ECK" \
+    '  if (!probe.reachable) {' \
+    '  if (false) {'
+  mutate web "a status of zero is painted as an answer" "$ECK" \
+    "    const answered = probe.status === 0 ? 'no answer arrived' : \`answered \${probe.status}\`" \
+    "    const answered = \`answered \${probe.status}\`"
   # A read that has not answered is not "no key": it is a page that has not
   # been told.
   mutate web "an unanswered read is reported as no key" "$KF" \
@@ -4418,9 +4440,9 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "no endpoint is reported as no key" "$KF" \
     "  if (!state.present) return 'No key stored'" \
     "  if (!state.present || state.configuredOrigin === '') return 'No key stored'"
-  mutate web "a diagnostic is rendered as the bare word" "$AF" \
-    "      {result.diagnostic !== '' && (" \
-    "      {false && result.diagnostic !== '' && ("
+  mutate web "a diagnostic is rendered as the bare word" "$ECK" \
+    '        : `Not connected · ${answered} · ${DIAGNOSTIC_SAYS[probe.diagnostic] ?? probe.diagnostic}`' \
+    '        : `Not connected · ${answered} · ${probe.diagnostic}`'
 
   # ---- The Admin form: what it writes, and what it will not ---------------
   #
@@ -4431,7 +4453,12 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # wrong one is exactly the failure these exist for.
   ED=web/src/assistant/endpointDraft.ts
   EF=web/src/assistant/EndpointForm.tsx
-  MF=web/src/assistant/ModelField.tsx
+  # `ModelField.tsx` is gone: the single Select it was became the Models
+  # checkbox list, and the listing it asked for on its own became the second
+  # half of one press of Test connection. Its rows are below, at the file each
+  # claim actually lives in now — or retired by name, where the mechanism the
+  # row broke is not there to break.
+  MC=web/src/assistant/ModelChoice.tsx
   KB=web/src/assistant/keyBinding.ts
 
   # **The page must not compute the binding**, and it did: with the browser's
@@ -4505,16 +4532,19 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "    state: unread ? 'unavailable' : endpoint === null ? 'none' : 'configured'," \
     "    state: endpoint === null ? 'none' : 'configured',"
   # The relay refuses a credential entered for another destination before it
-  # opens a socket, so a listing offered here can only produce that refusal.
-  mutate web "the listing is asked for with no key bound to the endpoint" "$MF" \
-    '  const may = bound && matchesSaved && saved !== null' \
-    '  const may = matchesSaved && saved !== null'
+  # opens a socket, and the probe refuses with no key at all — so a button
+  # offered here could only produce those refusals.
+  mutate web "the listing is asked for with no key bound to the endpoint" "$EF" \
+    '  const connected = configured !== null && (key.data?.present ?? false)' \
+    '  const connected = configured !== null'
   # **The gate came off the saved endpoint and the request came off the draft**,
   # so choosing Gemini without saving sent `v1beta/models` to a still-saved
   # OpenAI endpoint: a request composed for one destination and sent to another.
-  mutate web "the listing is asked for while the form says another endpoint" "$MF" \
-    '  const may = bound && matchesSaved && saved !== null' \
-    '  const may = bound && saved !== null'
+  # The request is read off the file now, so what is left to hold is the other
+  # half — an answer about the saved endpoint shown under a form saying another.
+  mutate web "the listing is asked for while the form says another endpoint" "$EF" \
+    '  const here = configured !== null && identityOf(draft) === identityOf(configured)' \
+    '  const here = configured !== null'
   # **Retired, with its reason.** It replaced the captured `saved` endpoint
   # with the draft, and nothing failed — because the row above makes the two
   # *equal* whenever the button can be pressed at all. The capture is still
@@ -4528,18 +4558,45 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # no request behind them. **Dropped from state**, and this is what says so:
   # the mutation keeps them and hides them, which is the arrangement that was
   # wrong rather than a weaker version of the right one.
-  mutate web "the rows are hidden when the endpoint moves rather than cleared" "$MF" \
+  mutate web "the rows are hidden when the endpoint moves rather than cleared" "$ECK" \
     '  const here = identityOf(draft)
-  if (listing !== undefined && listing.of !== here) setListing(undefined)' \
+  if (answer !== undefined && answer.of !== here) setAnswer(undefined)' \
     '  const here = identityOf(draft)'
   # **The page names a suffix; the desk builds the address.** A listing that
   # built its own URL would hold the endpoint — and, on this route, this
   # chassis' session token — in page code that no gate is on.
-  mutate web "the listing address is built on the page" "$MF" \
-    '    listModels(target.kind, bindModelCall(target.kind)).then(' \
-    "    listModels(target.kind, async (suffix) =>
+  mutate web "the listing address is built on the page" "$ECK" \
+    '    void listModels(target.kind, bindModelCall(target.kind)).then(' \
+    "    void listModels(target.kind, async (suffix) =>
       globalThis.fetch(\`\${target.url}/\${suffix}\`, { method: 'GET' })
     ).then("
+  # **The default is a member of the set, and the two are one decision.** A
+  # default nothing enables is a value no picker would offer and no run could
+  # take, and the page composes both members from one draft — so a rule that
+  # let them drift is a form that writes a file its own reader rejects out of
+  # two clicks that each looked reasonable. Held in the shared corpus, which is
+  # what this fails.
+  D=web/src/config/deskConfig.ts
+  mutate web "the default is accepted outside the enabled set" "$D" \
+    '  if (!models.includes(model)) {
+    return (
+      `must be one of the models enabled for this endpoint; ` +' \
+    '  if (false) {
+    return (
+      `must be one of the models enabled for this endpoint; ` +'
+
+  # **One press, two questions.** Test connection is the reachability probe and
+  # the endpoint's own model listing, and a button that made only the first of
+  # them leaves the Models list showing the file's set for ever — with nothing
+  # on the page saying the endpoint was never asked.
+  mutate web "Test connection asks the probe and never the listing" "$ECK" \
+    "    void listModels(target.kind, bindModelCall(target.kind)).then(
+      (rows) => landed((previous) => ({ ...previous, rows, asking: !settled() })),
+      (cause: unknown) =>
+        landed((previous) => ({ ...previous, listingRefusal: said(cause), asking: !settled() }))
+    )" \
+    '    settled()'
+
   # **The picker offers what the file's reader would take, and asks the reader
   # rather than carrying a copy of it.** A copy is how a whitespace-only id
   # came to be an option: the decoder trims and the copy did not, so the choice
@@ -4557,22 +4614,28 @@ if [ "$which" = all ] || [ "$which" = web ]; then
       if (raw === '') continue"
   # The id is what the endpoint answers to; the label is what a person reads,
   # and the two differ on two of the three protocols.
-  mutate web "the model is saved from the listing label rather than its id" "$MF" \
-    '                ...rows.map((row) => ({ value: row.id, label: row.label })),' \
-    '                ...rows.map((row) => ({ value: row.label, label: row.label })),'
-  # **One control, and the field is reached through the list rather than beside
-  # it.** The two stood side by side and the page had no opinion about which one
-  # a person was supposed to use.
-  mutate web "the text field stands beside the list again" "$MF" \
-    '  const typed = !offering || typing || unlisted' \
-    '  const typed = true'
-  # **The second of the two rows this chunk adds, and it is run.** The listing
-  # is asked for on its own now, so what an author is offered is the rows the
-  # endpoint answered with; a Select that is never populated puts them back
-  # where they were, typing an id off a page they cannot see.
-  mutate web "the model Select is never populated" "$MF" \
-    '  const offering = rows !== undefined && rows.length > 0' \
-    '  const offering = false'
+  mutate web "the model is saved from the listing label rather than its id" "$MC" \
+    '                onChange={(event) => onChange(withModel(draft, row.id, event.target.checked))}' \
+    '                onChange={(event) => onChange(withModel(draft, row.label, event.target.checked))}'
+  # **Two rows retired here, by name, with one reason: the Select is gone.**
+  #
+  #   the text field stands beside the list again
+  #   the model Select is never populated
+  #
+  # Both broke a *single* control — a Select whose last option opened a field
+  # beside it — and what stands in its place is a checkbox each with a Default
+  # radio, plus one field that is always there because typing an id nobody
+  # listed is the only way to reach an unlisted model. There is no "one control
+  # at a time" left to break, and a picker that showed nothing is now the list
+  # showing the file's own set, which the row below holds. Retired rather than
+  # weakened: a row that cannot discriminate reports coverage for a safeguard
+  # nothing is measuring.
+  #
+  # **Deliberately not added here: a row for the file's own set staying on the
+  # list.** `offered()` keeps an id this desk enables that the endpoint did not
+  # return, and `endpointForm.test.tsx` measures it — but this chunk's row
+  # budget is four, spent on the four claims that had none at all, and a matrix
+  # grown one row per pull request stops being run.
   # **The slot's other state, which the schema has.** `assistant.endpoint` is
   # one nullable field, and a form that could not write the null left a desk
   # that had configured an endpoint able to reach None only through the generic
@@ -4902,6 +4965,13 @@ export function assistantTransport(id: string): Transport {
   # hook could write nothing at all and those cases still pass. The hook's test
   # uses an engine that ignores the signal and never settles — nothing but the
   # hook can end that session.
+  # **The run uses the model that was picked, and never the file's default.**
+  # Which of the enabled models a piece of work wants is decided at the run;
+  # a hook that reached past the pick would run something nobody chose, under a
+  # picker and a standing line both showing something else.
+  mutate web "the run ignores the model that was picked" "$AR" \
+    '                model: modelOf(model),' \
+    '                model: endpoint.model ?? '"'"''"'"','
   mutate web "Stop writes no terminal event" "$AR" \
     '    finish(run)
     release(run)
@@ -6738,8 +6808,8 @@ export function assistantTransport(id: string): Transport {
   # no stylesheet at all. The test names the class each button came out
   # carrying, which is a fact a `css: false` run still has.
   mutate web "a bare button back on Admin (Test connection)" "$AF" \
-    '<Button onClick={() => probe.mutate()}>Test connection</Button>' \
-    '<button type="button" onClick={() => probe.mutate()}>Test connection</button>'
+    '{mayTest && <Button onClick={check.run}>Test connection</Button>}' \
+    '{mayTest && <button type="button" onClick={check.run}>Test connection</button>}'
 
   # **The nomination back to primary.** A filled accent button in a group's
   # head, above the two Saves that are the writes — the loudest control on the
