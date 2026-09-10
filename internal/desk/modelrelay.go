@@ -889,6 +889,13 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 			// an origin, so a cookie from the endpoint would be stored against
 			// the desk and sent back to the desk's own endpoints.
 			withoutReflectedCredentials(response.Header, key)
+			// **And the mark this chassis puts on its own refusals**, which an
+			// endpoint must never be able to wear. The page reads it to tell a
+			// `401` this desk wrote from a `401` the endpoint wrote; an
+			// endpoint that could set it could end somebody's desk session.
+			// `Header.Del` canonicalises, so every casing goes, and no trailer
+			// survives the line below either.
+			response.Header.Del(RefusalHeader)
 			// **No trailer is forwarded**, and this is where that is decided:
 			// the proxy copies `res.Trailer` to the page after the body, past
 			// every filter here, so an announced `Trailer: X-Echo` was a second

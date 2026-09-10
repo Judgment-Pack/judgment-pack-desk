@@ -120,12 +120,15 @@ const (
 // remaining place the page can put it deliberately — and the server answers
 // with the plain `jpack-desk` protocol, so the id is never echoed *back*.
 //
-// **It is still on the request.** `Sec-WebSocket-Protocol` is a request header,
-// so anything that logged request headers between the page and this process
-// would see it — which on this desk is nothing, because the listener binds
-// loopback and there is nothing in between. What answering with the plain
-// protocol avoids is the id appearing in a *response* header as well, which is
-// one more place for it to be kept.
+// **It is still on the request, and something supported does sit in between.**
+// `Sec-WebSocket-Protocol` is a request header, so anything between the page
+// and this process sees the id. In production that is nothing: the listener
+// binds loopback. Under `npm run dev` it is **the Vite dev server**, which this
+// repository documents and proxies `/ws` through — so in that configuration the
+// dev server handles the session id, and it is written down here and in the
+// README rather than left as an assumption about there being nothing in
+// between. What answering with the plain protocol avoids is the id appearing in
+// a *response* header as well, which is one more place for it to be kept.
 const (
 	wsProtocol       = "jpack-desk"
 	wsSessionPrefix  = "jpack-desk-session."
@@ -535,14 +538,28 @@ func (s *Server) sessionOf(r *http.Request) (session, bool) {
 func (s *Server) handleLaunch(w http.ResponseWriter, r *http.Request) {
 	// A response that hands out a credential is never a cached response.
 	w.Header().Set("Cache-Control", "no-store")
+	// **`GET` and nothing else, checked here rather than by the router.**
+	// Registering `GET /launch` looks like it says this and does not: Go's mux
+	// treats a `GET` pattern as matching `HEAD` too, so `HEAD /launch?secret=…`
+	// minted a handoff and set the cookie — a credential handed out to a
+	// request whose whole contract is that it has no body. Every other method
+	// is a `405` that sets nothing.
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		refuseText(w, http.StatusMethodNotAllowed, CodeBadRequest,
+			"the launch exchange answers GET, and only GET mints a handoff")
+		return
+	}
 	secret := r.URL.Query().Get("secret")
 	if subtle.ConstantTimeCompare([]byte(secret), []byte(s.cfg.Token)) != 1 {
-		http.Error(w, "the launch secret is missing or wrong: open the URL jpack-desk printed at startup", http.StatusForbidden)
+		refuseText(w, http.StatusForbidden, CodeForbidden,
+			"the launch secret is missing or wrong: open the URL jpack-desk printed at startup")
 		return
 	}
 	handoff, err := s.launches.issue()
 	if err != nil {
-		http.Error(w, "this desk could not begin a session", http.StatusInternalServerError)
+		refuseText(w, http.StatusInternalServerError, CodeInternal,
+			"this desk could not begin a session")
 		return
 	}
 	http.SetCookie(w, newLaunchCookie(s.launchCookie, handoff, requestScheme(r) == "https"))
@@ -566,7 +583,7 @@ func (s *Server) handleLaunchSubpath(w http.ResponseWriter, _ *http.Request) {
 // refuseLaunchShape is the one answer for every near miss at the launch path.
 func refuseLaunchShape(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store")
-	http.Error(w, "there is nothing under /launch", http.StatusNotFound)
+	refuseText(w, http.StatusNotFound, CodeNotFound, "there is nothing under /launch")
 }
 
 // looksLikeALaunch reports whether a request must not be answered with the
@@ -736,13 +753,35 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 			"a session is begun by this desk's own page, or by a script presenting the launch secret")
 		return
 	}
+	// **Two refusals, because they mean opposite things to the page.**
+	//
+	//   - **No cookie at all** (`no-handoff`): nobody opened the printed URL for
+	//     this browser — or, far more often, a page is simply reloading after
+	//     its own handoff was spent and cleared. A tab in that state holds an id
+	//     that is very likely still live and must keep it.
+	//   - **A cookie this desk no longer holds** (`handoff-spent`): the handoff
+	//     was taken by another caller inside its sixty seconds, or it expired.
+	//     The first of those is the stated residual actually happening, and a
+	//     tab that met it must stop rather than carry on beside whoever took it.
+	//
+	// One code for both was the shape a review found: the page could not tell a
+	// reload from a theft, so it kept its session either way and the residual
+	// was invisible to the person it happened to.
 	cookie, err := r.Cookie(s.launchCookie)
+	if err != nil {
+		writeJSONCoded(w, http.StatusUnauthorized, CodeNoHandoff,
+			"no launch is in progress: open the URL jpack-desk printed at startup")
+		return
+	}
 	// **Spent under the store's own lock, and the answer is that call's.**
 	// `consume` removes the handoff and then says whether it was still good, so
 	// two requests carrying one handoff cannot both be told yes.
-	if err != nil || !s.launches.consume(cookie.Value) {
-		writeJSONCoded(w, http.StatusUnauthorized, CodeUnauthorized,
-			"no unspent launch is in progress: open the URL jpack-desk printed at startup")
+	if !s.launches.consume(cookie.Value) {
+		// And the dead cookie is cleared, so the reload after this one presents
+		// nothing and reads `no-handoff` rather than meeting this again.
+		http.SetCookie(w, expireLaunchCookie(s.launchCookie, requestScheme(r) == "https"))
+		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,
+			"this launch link was already used: restart jpack-desk and open the new URL it prints")
 		return
 	}
 	// Spent, and said so on the wire: the browser drops it here rather than

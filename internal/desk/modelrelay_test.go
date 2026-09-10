@@ -2739,3 +2739,151 @@ func TestRelayBoundsTheWaitForTheFirstByte(t *testing.T) {
 		t.Fatalf("the slot did not come back: %d %s", after.StatusCode, afterBody)
 	}
 }
+
+/* The refusal mark, and what an endpoint may not wear ------------------------- */
+
+// TestAnUpstreamCannotWearThisDesksRefusalMark.
+//
+// The page tells a `401` this desk wrote from a `401` the *endpoint* wrote by
+// one header, so an endpoint that could set that header could end somebody's
+// desk session. Three casings, because `Header.Del` canonicalises and a rule
+// that compared bytes would not; and a trailer, because the proxy copies
+// trailers to the page after the body, past every filter on the answer.
+func TestAnUpstreamCannotWearThisDesksRefusalMark(t *testing.T) {
+	for _, spelling := range []string{
+		"X-Jpack-Desk-Refusal",
+		"x-jpack-desk-refusal",
+		"X-JPACK-DESK-REFUSAL",
+	} {
+		t.Run(spelling, func(t *testing.T) {
+			u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header()[spelling] = []string{"unauthorized"}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"error":{"message":"invalid api key"}}`))
+			})
+			_, ts, _ := relayDesk(t, "openai-compatible", u)
+			resp, body := relayDo(t, ts, http.MethodPost, "chat/completions",
+				strings.NewReader(`{}`), nil)
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("status %d, want the endpoint's 401: %s", resp.StatusCode, body)
+			}
+			if got := resp.Header.Get(RefusalHeader); got != "" {
+				t.Fatalf("an endpoint's %s reached the page as %q", spelling, got)
+			}
+			// The endpoint's own answer still travels: what is refused is the
+			// *mark*, not the refusal.
+			if !strings.Contains(body, "invalid api key") {
+				t.Fatalf("the endpoint's answer did not reach the page: %s", body)
+			}
+		})
+	}
+
+	t.Run("in a trailer", func(t *testing.T) {
+		u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Trailer", RefusalHeader)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":{"message":"invalid api key"}}`))
+			w.Header().Set(http.TrailerPrefix+RefusalHeader, "unauthorized")
+		})
+		_, ts, _ := relayDesk(t, "openai-compatible", u)
+		resp, body := relayDo(t, ts, http.MethodPost, "chat/completions",
+			strings.NewReader(`{}`), nil)
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("status %d, want the endpoint's 401: %s", resp.StatusCode, body)
+		}
+		if got := resp.Header.Get(RefusalHeader); got != "" {
+			t.Fatalf("a trailer carried the mark to the page as %q", got)
+		}
+		if got := resp.Trailer.Get(RefusalHeader); got != "" {
+			t.Fatalf("the trailer map carried the mark as %q", got)
+		}
+	})
+
+	// **The positive control.** A `401` this chassis authored on the same route
+	// *does* carry the mark — otherwise every row above passes on a desk that
+	// never sets the header at all.
+	t.Run("the chassis' own 401 on this route", func(t *testing.T) {
+		u := newUpstream(t, nil)
+		_, ts, _ := relayDesk(t, "openai-compatible", u)
+		req := relayBare(t, ts, http.MethodPost, "chat/completions", strings.NewReader(`{}`))
+		resp, err := ts.Client().Do(req)
+		if err != nil {
+			t.Fatalf("do: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("status %d, want 401", resp.StatusCode)
+		}
+		if got := resp.Header.Get(RefusalHeader); got != CodeUnauthorized {
+			t.Fatalf("%s = %q, want %q", RefusalHeader, got, CodeUnauthorized)
+		}
+		if len(u.arrivals()) != 0 {
+			t.Fatal("an unauthorized relay request reached the endpoint")
+		}
+	})
+}
+
+// TestAChunkedOversizedRefusalStreamsThrough is the other half of item 3: the
+// classifier this replaced read a cloned body, and a clone has tee semantics —
+// an answer larger than the reader's bound, arriving in chunks, deadlocks the
+// reader trying to classify it. Nothing reads a relayed body on this path now,
+// so a large chunked refusal simply travels.
+func TestAChunkedOversizedRefusalStreamsThrough(t *testing.T) {
+	const chunk = 2 << 10
+	const chunks = 16 // 32 KiB
+	u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		flusher, _ := w.(http.Flusher)
+		for range chunks {
+			_, _ = w.Write(bytes.Repeat([]byte("x"), chunk))
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	})
+	_, ts, _ := relayDesk(t, "openai-compatible", u)
+
+	began := time.Now()
+	resp, body := relayDo(t, ts, http.MethodPost, "chat/completions", strings.NewReader(`{}`), nil)
+	took := time.Since(began)
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status %d, want the endpoint's 401", resp.StatusCode)
+	}
+	if len(body) != chunk*chunks {
+		t.Fatalf("the page received %d bytes, want %d", len(body), chunk*chunks)
+	}
+	if got := resp.Header.Get(RefusalHeader); got != "" {
+		t.Fatalf("the endpoint's 401 arrived marked as this desk's: %q", got)
+	}
+	// **Promptly**, which is the property: a bound that read this body would
+	// have taken the idle deadline or hung. Five seconds is far past a
+	// loopback copy of 32 KiB and far short of any deadline on this route.
+	if took > 5*time.Second {
+		t.Fatalf("a 32 KiB chunked refusal took %s to reach the page", took)
+	}
+}
+
+// TestNothingOfThePagesQueryReachesTheEndpoint inspects **the endpoint's own
+// raw query**, which is the only place the claim can be checked.
+//
+// The row that names this used to break only the *refusal*, so the request was
+// refused a moment later by the same rule and nothing was ever forwarded — the
+// row measured a message. It now makes the relay forward the pair, and this is
+// what notices.
+func TestNothingOfThePagesQueryReachesTheEndpoint(t *testing.T) {
+	u := newUpstream(t, nil)
+	// A configured endpoint with a query of its own, so that "the endpoint's
+	// routing travels and the page's does not" is two different assertions.
+	_, ts, _ := relayDeskAt(t, "openai-compatible", u.server.URL+"/v1?deployment=blue")
+	resp, body := relayDo(t, ts, http.MethodPost, "chat/completions", strings.NewReader(`{}`), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	if got := u.only(t).rawQuery; got != "deployment=blue" {
+		t.Fatalf("the endpoint saw the raw query %q, want only its own %q", got, "deployment=blue")
+	}
+}

@@ -263,7 +263,11 @@ func New(cfg Config) (*Server, error) {
 	// The launch exchange: the one path the launch secret is ever sent to, and
 	// the only route on this chassis that is not gated — it is where
 	// authorization is acquired rather than spent. See `handleLaunch`.
-	s.mux.HandleFunc("GET /launch", s.handleLaunch)
+	// Registered without a method on purpose: `GET /launch` would match `HEAD`
+	// too, and a `HEAD` that minted a handoff is a credential handed to a
+	// request that carries no body. `handleLaunch` answers 405 to everything
+	// but `GET`.
+	s.mux.HandleFunc("/launch", s.handleLaunch)
 	// And nothing under it: a near miss must not fall through to the SPA
 	// fallback carrying the secret it was sent with.
 	s.mux.HandleFunc("/launch/{rest...}", s.handleLaunchSubpath)
@@ -485,7 +489,7 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.static == nil {
-		http.Error(w, "no embedded assets in this build", http.StatusNotFound)
+		refuseText(w, http.StatusNotFound, CodeNotFound, "no embedded assets in this build")
 		return
 	}
 	if _, err := fs.Stat(s.cfg.Static, "index.html"); err != nil {
@@ -522,15 +526,17 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	// a caller that could not tell them apart would be told to fetch a new
 	// session over a duplicate subprotocol.
 	if _, problem := offeredSessionID(r); problem != "" {
-		http.Error(w, problem, http.StatusBadRequest)
+		refuseText(w, http.StatusBadRequest, CodeBadRequest, problem)
 		return
 	}
 	if !s.upgradeAuthorized(r) {
-		http.Error(w, "no session: open the URL jpack-desk printed at startup", http.StatusUnauthorized)
+		refuseText(w, http.StatusUnauthorized, CodeUnauthorized,
+			"no session: open the URL jpack-desk printed at startup")
 		return
 	}
 	if !s.originAllowed(r) {
-		http.Error(w, fmt.Sprintf("origin %q is not permitted", r.Header.Get("Origin")), http.StatusForbidden)
+		refuseText(w, http.StatusForbidden, CodeForbidden,
+			fmt.Sprintf("origin %q is not permitted", r.Header.Get("Origin")))
 		return
 	}
 	s.relay(w, r)

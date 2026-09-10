@@ -146,6 +146,21 @@ const (
 	// and they were one code. A client that must acquire a session and a client
 	// that must change its origin are given different answers now.
 	CodeUnauthorized = "unauthorized"
+	// CodeNoHandoff is `POST /api/session` with **no handoff cookie presented
+	// at all**: nobody opened the printed URL for this browser, or a page is
+	// simply reloading after its handoff was already spent and cleared.
+	//
+	// **Split from CodeHandoffSpent because the two mean opposite things to a
+	// page.** A tab reloading holds a session id that is very likely still
+	// live, and must keep it; a tab whose handoff was taken by something else
+	// is a tab whose launch link was used by somebody, and must stop. One code
+	// for both left the page unable to tell a reload from a theft — which is
+	// the whole of what the launch handoff's residual costs.
+	CodeNoHandoff = "no-handoff"
+	// CodeHandoffSpent is `POST /api/session` with a handoff cookie this desk
+	// no longer holds: spent by another caller inside its sixty seconds, or
+	// expired. See CodeNoHandoff for why it is its own code.
+	CodeHandoffSpent = "handoff-spent"
 	// CodeSessionsFull is `POST /api/session` at the store's bound: this desk
 	// holds as many sessions as it will hold, and refuses rather than dropping
 	// one somebody is using.
@@ -1370,6 +1385,44 @@ func (s *Server) guard(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// RefusalHeader marks an answer **this chassis wrote itself**, and carries the
+// code it wrote.
+//
+// # Why a header and not the body
+//
+// One route on this desk forwards somebody else's answer: the model relay. A
+// `401` there is either this chassis refusing the page's session or the
+// configured endpoint refusing the stored key, and the page has to tell them
+// apart — ending a person's desk session because their model key expired is a
+// desk reading one refusal as another.
+//
+// Reading the body to tell them apart was the first answer and it was wrong
+// twice over: a cloned body has tee semantics, so an oversized chunked answer
+// deadlocks the reader that is trying to classify it, and an endpoint can write
+// whatever body it likes, so the discriminator was **forgeable**. A header this
+// desk sets and **strips from every upstream answer** is neither: there is no
+// body to read and nothing an endpoint can say that survives the strip.
+//
+// It is set on every refusal this chassis authors — the shared guard, the
+// exchange, the relay's own refusals, the launch path — and deleted from every
+// upstream answer the relay copies, in `withoutReflectedCredentials`, where
+// `http.Header.Del` is case-insensitive by canonicalisation. No trailer carries
+// it either, because the relay forwards no trailer at all.
+const RefusalHeader = "X-Jpack-Desk-Refusal"
+
+// **Set in `writeJSONCoded` and nowhere else**, so that every coded refusal
+// this chassis writes carries it by construction rather than by a call site
+// remembering to. `refuseText` does the same for the two routes that answer in
+// plain text — the launch path and the WebSocket upgrade, neither of which has
+// a JSON client.
+
+// refuseText writes one plain-text refusal this chassis authored, marked as
+// ours.
+func refuseText(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set(RefusalHeader, code)
+	http.Error(w, message, status)
+}
+
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -1384,6 +1437,16 @@ func writeJSONError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, errorBody(err))
 }
 
+// writeJSONCoded sends one coded refusal, and **marks it as this chassis'
+// own**.
+//
+// The header is set here rather than at the call sites so that a refusal
+// written tomorrow carries it without anybody remembering to — see
+// `RefusalHeader`. Guarded on the status so that a future non-refusal written
+// through this function could not be mistaken for one.
 func writeJSONCoded(w http.ResponseWriter, status int, code, message string) {
+	if status >= 400 {
+		w.Header().Set(RefusalHeader, code)
+	}
 	writeJSON(w, status, codedBody(code, message))
 }

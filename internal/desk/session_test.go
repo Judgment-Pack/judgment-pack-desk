@@ -151,7 +151,35 @@ func TestLaunchSecretStaysValidForTheProcess(t *testing.T) {
 }
 
 func TestLaunchAcceptsOnlyGET(t *testing.T) {
-	_, ts := newTestServer(t, false)
+	s, ts := newTestServer(t, false)
+	// **`HEAD` is the one this list used to be missing.** Go's mux treats a
+	// `GET` pattern as matching `HEAD`, so `HEAD /launch?secret=…` reached the
+	// handler with a valid secret and minted a handoff — a credential handed
+	// to a request whose whole contract is that it carries no body, and one no
+	// page would ever spend.
+	for _, method := range []string{http.MethodHead, http.MethodPost, http.MethodPut, http.MethodDelete} {
+		req, _ := http.NewRequest(method, ts.URL+"/launch?secret="+testToken, nil)
+		resp, err := ts.Client().Do(req)
+		if err != nil {
+			t.Fatalf("%s: %v", method, err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Errorf("%s /launch answered %d, want 405", method, resp.StatusCode)
+		}
+		for _, cookie := range resp.Cookies() {
+			if cookie.Value != "" {
+				t.Fatalf("%s /launch set %v", method, cookie)
+			}
+		}
+	}
+	if n := s.launches.count(); n != 0 {
+		t.Fatalf("%d handoff(s) were minted by a method that is not GET", n)
+	}
+	// The control: GET still works.
+	if h := launchHandoff(t, ts); h.Value == "" {
+		t.Fatal("GET /launch stopped minting a handoff")
+	}
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
 		req, _ := http.NewRequest(method, ts.URL+"/launch?secret="+testToken, nil)
 		resp, err := ts.Client().Do(req)
@@ -180,15 +208,88 @@ func TestTheHandoffIsSingleUse(t *testing.T) {
 	if id == "" {
 		t.Fatal("the first exchange answered no id")
 	}
+	// **Spent means gone from the store**, which is what makes the second
+	// attempt below a refusal rather than a coincidence. A row that made the
+	// exchange ignore `consume`'s answer left this assertion as the only thing
+	// that could notice.
+	if n := s.launches.count(); n != 0 {
+		t.Fatalf("%d handoff(s) survive a successful exchange, want 0", n)
+	}
 	status, body := exchangeAttempt(t, ts, withHandoff(ts, handoff))
 	if status != http.StatusUnauthorized {
 		t.Fatalf("the second exchange answered %d, want 401: %v", status, body)
 	}
-	if body["code"] != CodeUnauthorized {
-		t.Errorf("code %v, want %s", body["code"], CodeUnauthorized)
+	// **`handoff-spent`, not `no-handoff`.** A cookie was presented and this
+	// desk no longer holds it — which is the residual actually happening, and
+	// the page has to stop rather than carry on beside whoever took it.
+	if body["code"] != CodeHandoffSpent {
+		t.Errorf("code %v, want %s", body["code"], CodeHandoffSpent)
 	}
 	if n := s.sessions.count(); n != 1 {
 		t.Fatalf("%d sessions after one spent handoff, want 1", n)
+	}
+}
+
+// TestTheExchangeTellsAReloadFromATheft is the HIGH this pair of codes exists
+// for. One `401` for both left the page unable to tell "nobody opened the
+// printed URL for me, and I am simply reloading" from "somebody took the
+// handoff my launch set" — so it kept its session either way and the stated
+// residual was invisible to the person it happened to.
+func TestTheExchangeTellsAReloadFromATheft(t *testing.T) {
+	_, ts := newTestServer(t, false)
+
+	// A reload: no cookie at all, because the exchange that spent it cleared it.
+	noCookie, body := exchangeAttempt(t, ts, func(r *http.Request) {
+		r.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+		r.Header.Set("Origin", ts.URL)
+	})
+	if noCookie != http.StatusUnauthorized || body["code"] != CodeNoHandoff {
+		t.Fatalf("an absent handoff answered %d %v, want 401 %s", noCookie, body["code"], CodeNoHandoff)
+	}
+
+	// A theft: a cookie this desk no longer holds.
+	handoff := launchHandoff(t, ts)
+	exchange(t, ts, handoff)
+	spent, body := exchangeAttempt(t, ts, withHandoff(ts, handoff))
+	if spent != http.StatusUnauthorized || body["code"] != CodeHandoffSpent {
+		t.Fatalf("a spent handoff answered %d %v, want 401 %s", spent, body["code"], CodeHandoffSpent)
+	}
+
+	// An **expiry** reads the same way as a theft, and must: a page cannot act
+	// on "it might still be yours", and both say the link is finished.
+	// `TestTheHandoffExpires` drives that one with the clock injected.
+
+	// And the control, so that none of the above passes on a desk that refuses
+	// every exchange: a fresh handoff still buys a session.
+	fresh, ok := exchangeAttempt(t, ts, withHandoff(ts, launchHandoff(t, ts)))
+	if fresh != http.StatusOK {
+		t.Fatalf("a fresh handoff answered %d, want 200: %v", fresh, ok)
+	}
+}
+
+// TestASpentHandoffIsClearedSoTheNextReloadReadsNoHandoff. Without this the
+// tab meets `handoff-spent` on every reload for the rest of the minute, and a
+// page that ends its session on that code would end it again and again.
+func TestASpentHandoffIsClearedSoTheNextReloadReadsNoHandoff(t *testing.T) {
+	_, ts := newTestServer(t, false)
+	handoff := launchHandoff(t, ts)
+	exchange(t, ts, handoff)
+
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/session", nil)
+	withHandoff(ts, handoff)(req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+	defer resp.Body.Close()
+	cleared := false
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == handoff.Name && cookie.MaxAge < 0 && cookie.Value == "" {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Fatalf("a spent handoff was not cleared: %v", resp.Cookies())
 	}
 }
 
@@ -203,6 +304,9 @@ func TestTheExchangeRefusesWithoutAHandoff(t *testing.T) {
 	})
 	if status != http.StatusUnauthorized {
 		t.Fatalf("status %d, want 401: %v", status, body)
+	}
+	if body["code"] != CodeNoHandoff {
+		t.Errorf("code %v, want %s", body["code"], CodeNoHandoff)
 	}
 	if message, _ := body["error"].(string); !strings.Contains(message, "printed at startup") {
 		t.Errorf("the refusal does not name the way out: %q", message)
@@ -261,6 +365,9 @@ func TestTheHandoffExpires(t *testing.T) {
 	status, body := exchangeAttempt(t, ts, withHandoff(ts, handoff))
 	if status != http.StatusUnauthorized {
 		t.Fatalf("an expired handoff answered %d, want 401: %v", status, body)
+	}
+	if body["code"] != CodeHandoffSpent {
+		t.Errorf("code %v, want %s", body["code"], CodeHandoffSpent)
 	}
 	if n := s.sessions.count(); n != 0 {
 		t.Fatalf("an expired handoff minted %d session(s)", n)
@@ -334,6 +441,13 @@ func TestAScriptMintsASessionWithTheLaunchSecret(t *testing.T) {
 // is also inside.
 func TestTheStatedResidual(t *testing.T) {
 	_, ts := newTestServer(t, false)
+
+	// **An authenticated tab**, which is the case the first version of this
+	// test missed. The tab already holds a working session; the person then
+	// reopens the printed URL, and a script takes the handoff that launch set
+	// before the page can spend it.
+	held := beginSession(t, ts)
+	acceptsSession(t, ts, held, ts.URL)
 	handoff := launchHandoff(t, ts)
 
 	// The thief, inside the window, forging the one header a browser would not
@@ -346,12 +460,21 @@ func TestTheStatedResidual(t *testing.T) {
 		t.Fatal("the thief got no id")
 	}
 
-	// And the page's own exchange then fails, which is the bound: the page has
-	// no session, and says so. `web/src/mcp/session.test.tsx` holds that half.
-	after, _ := exchangeAttempt(t, ts, withHandoff(ts, handoff))
+	// And the page's own exchange then fails **with the code that says which
+	// failure it is**. `handoff-spent` is what tells an authenticated tab that
+	// this is a theft and not a reload — without it the page keeps its session
+	// and the person is never told. `web/src/mcp/session.test.tsx` holds the
+	// page's half: the id forgotten, and the terminal sentence.
+	after, refusal := exchangeAttempt(t, ts, withHandoff(ts, handoff))
 	if after != http.StatusUnauthorized {
 		t.Fatalf("the page's own exchange answered %d after a theft, want 401", after)
 	}
+	if refusal["code"] != CodeHandoffSpent {
+		t.Fatalf("code %v after a theft, want %s", refusal["code"], CodeHandoffSpent)
+	}
+	// The old id is still live on the wire — the chassis forgets nothing — so
+	// what ends the tab's session is the page acting on that code.
+	acceptsSession(t, ts, held, ts.URL)
 }
 
 /* Nothing ambient authorizes anything ------------------------------------------ */
@@ -1295,4 +1418,164 @@ func TestASessionEndsOnlyWithTheProcess(t *testing.T) {
 		t.Fatalf("%d sessions after a DELETE, want the one that was minted", n)
 	}
 	acceptsSession(t, ts, id, ts.URL)
+}
+
+/* The mark this chassis puts on its own refusals ------------------------------ */
+
+// TestEveryRefusalThisChassisAuthoredIsMarked.
+//
+// **Why a header rather than the body.** One route forwards somebody else's
+// answer — the model relay — so a `401` there is either this desk refusing the
+// page's session or the configured endpoint refusing the stored key. The page
+// has to tell them apart, and reading the body to do it was wrong twice: a
+// cloned body has tee semantics, so an oversized chunked answer deadlocks the
+// reader classifying it, and an endpoint can write any body it likes, so the
+// discriminator was forgeable. This header is set by `writeJSONCoded` and
+// `refuseText`, and stripped from every upstream answer.
+func TestEveryRefusalThisChassisAuthoredIsMarked(t *testing.T) {
+	s, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", "{}")
+	id := beginSession(t, ts)
+
+	type want struct {
+		name   string
+		status int
+		code   string
+		do     func(t *testing.T) *http.Response
+	}
+	plain := func(name, path, code string, status int, decorate ...func(*http.Request)) want {
+		return want{name, status, code, func(t *testing.T) *http.Response {
+			t.Helper()
+			req, err := http.NewRequest(http.MethodGet, ts.URL+path, nil)
+			if err != nil {
+				t.Fatalf("request: %v", err)
+			}
+			for _, apply := range decorate {
+				apply(req)
+			}
+			resp, err := ts.Client().Do(req)
+			if err != nil {
+				t.Fatalf("do: %v", err)
+			}
+			return resp
+		}}
+	}
+	for _, each := range []want{
+		// The shared guard, both halves.
+		plain("the guard, no session", "/api/files", CodeUnauthorized, http.StatusUnauthorized),
+		plain("the guard, a foreign origin", "/api/files", CodeForbidden, http.StatusForbidden,
+			pageBearer(id), func(r *http.Request) { r.Header.Set("Origin", "http://evil.example") }),
+		// The launch path, in plain text.
+		plain("a wrong launch secret", "/launch?secret=wrong", CodeForbidden, http.StatusForbidden),
+		plain("under the launch path", "/launch/anything", CodeNotFound, http.StatusNotFound),
+		// The exchange's own two.
+		{"no handoff", http.StatusUnauthorized, CodeNoHandoff, func(t *testing.T) *http.Response {
+			t.Helper()
+			req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/session", nil)
+			req.Header.Set(fetchSiteHeader, fetchSiteSameOrigin)
+			req.Header.Set("Origin", ts.URL)
+			resp, err := ts.Client().Do(req)
+			if err != nil {
+				t.Fatalf("do: %v", err)
+			}
+			return resp
+		}},
+		{"a spent handoff", http.StatusUnauthorized, CodeHandoffSpent, func(t *testing.T) *http.Response {
+			t.Helper()
+			handoff := launchHandoff(t, ts)
+			exchange(t, ts, handoff)
+			req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/session", nil)
+			withHandoff(ts, handoff)(req)
+			resp, err := ts.Client().Do(req)
+			if err != nil {
+				t.Fatalf("do: %v", err)
+			}
+			return resp
+		}},
+		// HEAD on the launch path.
+		{"HEAD /launch", http.StatusMethodNotAllowed, CodeBadRequest, func(t *testing.T) *http.Response {
+			t.Helper()
+			req, _ := http.NewRequest(http.MethodHead, ts.URL+"/launch?secret="+testToken, nil)
+			resp, err := ts.Client().Do(req)
+			if err != nil {
+				t.Fatalf("do: %v", err)
+			}
+			return resp
+		}},
+		// The upgrade, in plain text: no credential, and a malformed offer.
+		{"the upgrade, no session", http.StatusUnauthorized, CodeUnauthorized, func(t *testing.T) *http.Response {
+			t.Helper()
+			return upgradeRequest(t, ts, "", ts.URL)
+		}},
+		{"the upgrade, two ids", http.StatusBadRequest, CodeBadRequest, func(t *testing.T) *http.Response {
+			t.Helper()
+			return upgradeRequest(t, ts, "", ts.URL, func(r *http.Request) {
+				r.Header.Set(wsProtocolHeader,
+					strings.Join([]string{wsProtocol, wsSessionPrefix + id, wsSessionPrefix + id}, ", "))
+			})
+		}},
+	} {
+		t.Run(each.name, func(t *testing.T) {
+			resp := each.do(t)
+			defer resp.Body.Close()
+			if resp.StatusCode != each.status {
+				body, _ := io.ReadAll(resp.Body)
+				t.Fatalf("status %d, want %d: %s", resp.StatusCode, each.status, body)
+			}
+			if got := resp.Header.Get(RefusalHeader); got != each.code {
+				t.Fatalf("%s = %q, want %q", RefusalHeader, got, each.code)
+			}
+		})
+	}
+
+	// **The positive control, and it is the point of the header.** An answer
+	// this chassis did not refuse carries no mark, so "the header is present"
+	// is a statement about refusals and not about every response.
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/files", nil)
+	pageBearer(id)(req)
+	ok, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer ok.Body.Close()
+	if ok.StatusCode != http.StatusOK {
+		t.Fatalf("the control answered %d, want 200", ok.StatusCode)
+	}
+	if got := ok.Header.Get(RefusalHeader); got != "" {
+		t.Fatalf("a successful answer carries %s = %q", RefusalHeader, got)
+	}
+	if n := s.sessions.count(); n == 0 {
+		t.Fatal("no session was ever minted: the sweep proves nothing")
+	}
+}
+
+// TestTheSessionsFullRefusalIsMarkedAndSaysWhatToDo is item 4's wire half: the
+// page shows this sentence verbatim, because "open the printed URL" cannot help
+// a tab that met a desk at its bound.
+func TestTheSessionsFullRefusalIsMarkedAndSaysWhatToDo(t *testing.T) {
+	s, ts := newTestServer(t, false)
+	for range maxSessions {
+		beginSession(t, ts)
+	}
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/session", nil)
+	withHandoff(ts, launchHandoff(t, ts))(req)
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status %d, want 503", resp.StatusCode)
+	}
+	if got := resp.Header.Get(RefusalHeader); got != CodeSessionsFull {
+		t.Fatalf("%s = %q, want %q", RefusalHeader, got, CodeSessionsFull)
+	}
+	var body map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	if body["error"] != "this desk holds its maximum of sessions; restart it" {
+		t.Fatalf("the refusal reads %q", body["error"])
+	}
+	if n := s.sessions.count(); n != maxSessions {
+		t.Fatalf("%d sessions after the refusal, want the bound of %d", n, maxSessions)
+	}
 }
