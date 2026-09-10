@@ -42,11 +42,9 @@
  * an established location. Where the chassis has not answered, the row says
  * so.
  *
- * **Nothing on this page is a box.** Hierarchy is type, spacing and hairlines —
- * one type scale, sentence case throughout, a rule between groups and above
- * each row, and one primary button per section, which is the Save that writes
- * the form. The one frame left is around an object: the code block in the pane,
- * and an alert.
+ * The shell's wide measure leaves room for navigation beside the form. Padded
+ * links and an accent tint identify the open section; headings and spacing
+ * separate the fields. Each section keeps one primary Save action.
  *
  * `runtime` and the project root are **not in the schema**, and that is the
  * design rather than a gap: `relay.go` runs the configured binary, so a
@@ -71,6 +69,7 @@ import { OrganizationForm, StorageForm, StorageKind } from '../admin/projectFile
 import { useHashTarget } from '../shell/useHashTarget'
 import { useInspectorPortal } from '../shell/InspectorSlot'
 import { INSPECTOR_DRAWER_BELOW, useMediaQuery } from '../shell/useMediaQuery'
+import { IconChevronLeft, IconChevronRight } from '../shell/icons'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
   type ConfigProblem,
@@ -181,7 +180,7 @@ export function AdminView() {
           stacked={stacked}
           // The overview states each file once, where the group header has
           // always stated it. The rail beside an open section does not: the
-          // file the open section is about is named in the pane, and a 14rem
+          // file the open section is about is named in the pane, and a narrow
           // column is not where a path belongs.
           heads={open === undefined}
           fields={group.id === 'this-project' ? defaultProject.field : undefined}
@@ -192,7 +191,7 @@ export function AdminView() {
   )
 
   return (
-    <article className={`detail ${styles.admin}`} data-measure="form" ref={top}>
+    <article className={`detail ${styles.admin}`} data-measure="wide" ref={top}>
       {pane}
       <header className="detail-head">
         <h1>Admin</h1>
@@ -213,6 +212,7 @@ export function AdminView() {
           </nav>
           <div className={styles.open}>
             <Link className={styles.back} to="/admin">
+              <IconChevronLeft />
               All settings
             </Link>
             {open.id === 'organization' && (
@@ -282,7 +282,7 @@ export function AdminView() {
  *
  * The same component in both states, because they are the same list. What the
  * open state drops is the file's own head and the one control that writes it —
- * the pane says where the file is, and a 14rem column is no place for a path
+ * the pane says where the file is, and a narrow column is no place for a path
  * or for a button whose line names a second file.
  */
 function GroupRows({
@@ -377,7 +377,12 @@ function SectionRow({
         to={`/admin#${section.id}`}
         aria-current={current ? 'true' : undefined}
       >
-        <span className={styles.rowTitle}>{section.title}</span>
+        <span className={styles.rowTitle}>
+          {section.title}
+          <span className={styles.rowArrow}>
+            <IconChevronRight />
+          </span>
+        </span>
         {!bare && summarise !== undefined && (
           <span className={styles.rowSays}>{summarise(effective.config)}</span>
         )}

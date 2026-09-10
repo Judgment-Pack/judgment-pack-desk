@@ -459,8 +459,8 @@ is the rail's right border plus one gutter (2rem, 1.25rem compact, 1rem below
 600px) and is the same on every route at every width, which is what a
 persistent rail is for; a centred column beside a rail is aligned to neither.
 **Each route names its width kind**, with `data-measure="form" | "wide" |
-"full"` on its top-level element: `form` is `--measure-form` (44rem: Admin,
-Help & About), `wide` is `--measure-wide` (72rem: the packs layout, a pack's
+"full"` on its top-level element: `form` is `--measure-form` (44rem:
+Help & About), `wide` is `--measure-wide` (72rem: Admin, the packs layout, a pack's
 evaluate route, project home, author) and is the declared default, `full` is
 `max-width: none` (matrix and coverage, graphs) — and a route that names none
 fails `web/src/routes/measure.test.ts`, which derives the set of routes from
@@ -1602,8 +1602,9 @@ naming two keys are not one status.
 | **This desk** | the desk-level file's path and its read status | Assistant, Identity provider |
 
 **A row is a link to `/admin#<id>` and the fragment is the state**: the section
-it names opens beside the list — a 14rem column of rows on a wide shell, the
-list stacked above the section below the Inspector's own breakpoint with every
+it names opens beside the list — a 13rem column of rows on a wide shell. The
+list stacks above the section below the Inspector's breakpoint or when the
+main pane has less than 40rem available, with every
 row the reader is not in collapsed to its title — `aria-current` marks the open
 row, Escape or the **All settings** link at the top of the open section clears
 the fragment, and a fragment naming no section is the overview. Those addresses
@@ -1666,10 +1667,11 @@ filesystem. A **Status** is still one line from a closed set: `read`, `not
 present — defaults in use`, `refused: <key>: <the decoder's own reason>`, `not
 read — <who said so>: <their reason>`.
 
-**Nothing on the page is a box.** Hierarchy is type, spacing and hairlines: one
-rule between groups, one above each row, one type scale, and every title in
-sentence case — a frame is drawn only around an object, which on Admin is the
-code block in the right pane and an alert. **One primary button per
+**Settings use the wide page measure**, with a separate navigation column,
+padded links, and an accent tint on the selected row. Section headings, larger
+controls, and space between fields establish the form's hierarchy. The layout
+follows the shared theme and density tokens. Containers remain unframed; the
+code block in the right pane and alerts keep their borders. **One primary button per
 section, and it is the Save that writes the form**; the default-project
 nomination sits on the row it changes as a secondary, and a Reload inside a
 stale panel keeps its own because an alert has one action. Three tests hold it
