@@ -331,6 +331,13 @@ export function bindModelCall(family: EndpointKind): ModelCall {
       }
       throw new Error(CALL_FAILED)
     }
+    // **An opaque redirect is not an answer.** `redirect: 'manual'` gives a
+    // `Response` of type `opaqueredirect` with status 0 and no body, and an
+    // engine handed that would be handed nothing it could read — so it is
+    // reported as what it is, an upstream that did not answer.
+    if (answered.type === 'opaqueredirect' || (answered.status === 0 && answered.redirected)) {
+      throw new Error(CALL_FAILED)
+    }
     // **A 401 is two different things on this one route, and one header tells
     // them apart.** Every other chassis call has a single meaning for a 401 —
     // this desk refused the session — but the relay forwards the *endpoint's*
@@ -344,18 +351,12 @@ export function bindModelCall(family: EndpointKind): ModelCall {
     // replaces read a *cloned body* to decide, which was wrong twice over: a
     // clone has tee semantics, so an oversized chunked refusal deadlocked the
     // reader classifying it, and an endpoint could write the envelope itself.
-    // An opaque redirect is not an answer: `redirect: 'manual'` gives a
-    // `Response` of type `opaqueredirect` with status 0 and no body, and an
-    // engine handed that would be handed nothing it could read. It is reported
-    // as what it is — an upstream that did not answer.
-    if (answered.type === 'opaqueredirect' || (answered.status === 0 && answered.redirected)) {
-      throw new Error(CALL_FAILED)
-    }
-    // **Only `unauthorized` ends the session.** The mark says the chassis wrote
-    // the refusal; the *code* says which refusal it is, and the exchange's own
-    // codes — `no-handoff`, `handoff-spent`, `handoff-expired` — are answers to
-    // a question this route never asks. A classifier that ended the session on
-    // any marked 401 turned a redirect into a forgotten valid session.
+    //
+    // **And the code, not just the mark.** The exchange's own codes —
+    // `no-handoff`, `handoff-spent`, `handoff-expired` — are answers to a
+    // question this route never asks, and a classifier that ended the session
+    // on any marked 401 turned an upstream redirect into a forgotten valid
+    // session.
     if (answered.status === 401 && refusalCode(answered) === 'unauthorized') {
       // Nothing reads this answer now, so the request is let go of rather than
       // left in flight behind an unconsumed stream. See `discardBody`.

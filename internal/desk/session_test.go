@@ -592,6 +592,44 @@ func TestAScriptMintsASessionWithTheLaunchSecret(t *testing.T) {
 	acceptsSession(t, ts, id, "")
 }
 
+// TestTheExchangeReportsTheMintedCountWithTheID.
+//
+// **A fresh tab must not need a second request** to know the count it should
+// compare against later, so the id and the count travel together. A tab that
+// kept an old id asks `GET /api/session` for the same number instead — the two
+// answers report it identically, which is what makes a comparison across a
+// reload mean anything.
+func TestTheExchangeReportsTheMintedCountWithTheID(t *testing.T) {
+	s, ts := newTestServer(t, false)
+	status, body := exchangeAttempt(t, ts, bearer)
+	if status != http.StatusOK {
+		t.Fatalf("status %d, want 200: %v", status, body)
+	}
+	sessions, ok := body["sessions"].(map[string]any)
+	if !ok {
+		t.Fatalf("the exchange answered no sessions member: %v", body)
+	}
+	minted, ok := sessions["minted"].(float64)
+	if !ok || uint64(minted) != s.sessions.mintedSoFar() {
+		t.Fatalf("the exchange reported minted=%v, want %d", sessions["minted"], s.sessions.mintedSoFar())
+	}
+
+	// And the reader reports the same number for the same desk.
+	id, _ := body["id"].(string)
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/session", nil)
+	pageBearer(id)(req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer resp.Body.Close()
+	var read map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&read)
+	if fmt.Sprint(read["sessions"]) != fmt.Sprint(body["sessions"]) {
+		t.Fatalf("the reader says %v and the exchange said %v", read["sessions"], body["sessions"])
+	}
+}
+
 // TestTheStatedResidual is the one this design does **not** claim to prevent,
 // written down as a test so that it is a known property rather than a surprise.
 //

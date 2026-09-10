@@ -1662,13 +1662,27 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		}'
   # **The count that outlives the handoff.** Everything about a stolen handoff
   # is over in sixty seconds; this is what a reload hours later can read.
+  # Anchored on `readSession`'s own body: the mint answer carries the same
+  # member, so a needle naming only the member matched the wrong one and the
+  # row reported that nothing failed — which was true of the edit it made.
   mutate go "the session endpoint reports no minted count" "$SE" \
-    '		"sessions": map[string]any{"minted": s.sessions.mintedSoFar()},
-	})
-}' \
-    '		"sessions": map[string]any{},
-	})
-}'
+    '		"subject":  got.subject,
+		"issuer":   got.issuer,
+		"sessions": map[string]any{"minted": s.sessions.mintedSoFar()},' \
+    '		"subject":  got.subject,
+		"issuer":   got.issuer,
+		"sessions": map[string]any{},'
+  # And the same member on the mint answer, which is what a **fresh** tab stores
+  # without a second request.
+  mutate go "the exchange answers no minted count" "$SE" \
+    '		"id":       id,
+		"subject":  "local user",
+		"issuer":   nil,
+		"sessions": map[string]any{"minted": s.sessions.mintedSoFar()},' \
+    '		"id":       id,
+		"subject":  "local user",
+		"issuer":   nil,
+		"sessions": map[string]any{},'
   # **And an endpoint may not redirect the page.** A 307 to `/api/session` made
   # the page's own fetch repeat the request against the exchange with this
   # desk's bearer on it.
@@ -4518,9 +4532,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '    return facade(answered)' \
     '    return answered'
   # A fetch TypeError quotes the URL, so the browser's own error is the token.
+  # Anchored on the catch it belongs to: the opaque-redirect branch throws the
+  # same sentence, so a needle naming only the throw matched the wrong one.
   mutate web "a failed model call rethrows the browser's own error" "$ASN" \
-    '      throw new Error(CALL_FAILED)' \
-    '      throw cause'
+    '      throw new Error(CALL_FAILED)
+    }
+    // **An opaque redirect is not an answer.**' \
+    '      throw cause
+    }
+    // **An opaque redirect is not an answer.**'
   mutate web "the answer's headers are not filtered" "$ASN" \
     '    if (MODEL_ANSWER_HEADERS.includes(name.toLowerCase())) carried.set(name, value)' \
     '    carried.set(name, value)'
