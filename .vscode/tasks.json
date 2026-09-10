@@ -1,0 +1,63 @@
+{
+  // Hot-reload development: the chassis (Go) once, Vite for the page.
+  // Set two settings first (user or workspace):
+  //   "jpackDesk.jpack":   "/path/to/jpack"       — the runtime binary
+  //   "jpackDesk.project": "/path/to/project"     — a directory with jpack.json
+  // Then run "desk: open (hot reload)" — Ctrl+Shift+B runs "desk: dev".
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "desk: chassis (dev)",
+      "detail": "go run . --dev-token dev --port 8790 — a fixed secret, so the URL never changes; restart this task after a Go change",
+      "type": "shell",
+      "command": "go run . --dev-token dev --port 8790 --jpack \"${config:jpackDesk.jpack}\" \"${config:jpackDesk.project}\"",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "jpack-desk",
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "judgment-pack desk",
+          "endsPattern": "open:"
+        }
+      },
+      "presentation": { "panel": "dedicated", "reveal": "always", "group": "desk" }
+    },
+    {
+      "label": "desk: vite (hot reload)",
+      "detail": "npm --prefix web run dev — proxies /launch, /ws and /api to the dev chassis on 8790",
+      "type": "shell",
+      "command": "npm --prefix web run dev",
+      "options": { "env": { "JPACK_DESK_CHASSIS": "http://127.0.0.1:8790" } },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "VITE",
+          "endsPattern": "Local:"
+        }
+      },
+      "presentation": { "panel": "dedicated", "reveal": "always", "group": "desk" }
+    },
+    {
+      "label": "desk: dev",
+      "detail": "the chassis and Vite together; then open http://localhost:5173/launch?secret=dev",
+      "dependsOn": ["desk: chassis (dev)", "desk: vite (hot reload)"],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "desk: open (hot reload)",
+      "detail": "starts both and opens the launch URL in the browser (wslview on WSL, xdg-open elsewhere)",
+      "type": "shell",
+      "command": "sh -c 'sleep 2; url=http://localhost:5173/launch?secret=dev; if command -v wslview >/dev/null 2>&1; then wslview \"$url\"; else xdg-open \"$url\"; fi'",
+      "dependsOn": ["desk: chassis (dev)", "desk: vite (hot reload)"],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent" }
+    }
+  ]
+}
