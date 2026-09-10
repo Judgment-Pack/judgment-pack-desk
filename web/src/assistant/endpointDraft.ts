@@ -93,6 +93,9 @@ export function draftFrom(config: AssistantConfig): EndpointDraft {
   return {
     kind: endpoint?.kind ?? 'openai-compatible',
     url: endpoint?.url ?? '',
+    // The draft holds a string throughout, and `''` is what "nothing chosen"
+    // looks like in a text field; `assistantWrite` is where it becomes the
+    // null the schema spells.
     model: endpoint?.model ?? '',
     tools:
       endpoint === null
@@ -163,7 +166,12 @@ export function assistantWrite(draft: EndpointDraft): unknown {
     endpoint: {
       url: draft.url.trim(),
       kind: draft.kind,
-      model: draft.model.trim(),
+      // **Null and not the empty string.** "No model chosen yet" is a state the
+      // schema has and `""` is a value it refuses, so a form that wrote the
+      // empty string would compose a file its own reader rejects — on the very
+      // first save, which is the one that has to work before a list can be
+      // asked for.
+      model: draft.model.trim() === '' ? null : draft.model.trim(),
       tools: ASSISTANT_TOOLS.filter((tool) => draft.tools.includes(tool))
     },
     thinking: draft.thinking

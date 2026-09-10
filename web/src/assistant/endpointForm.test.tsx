@@ -298,21 +298,33 @@ describe('the fields', () => {
     expect(sent.filter((each) => each.method === 'PUT')).toHaveLength(0)
   })
 
-  it('refuses an empty model in the decoder s own words, and sends nothing', async () => {
-    // **The same rule the URL gets, applied to the member beside it.** The
-    // decoder refuses an empty model, so a form that sent one would be
-    // composing a write its own reader rejects — and on a fresh desk that is
-    // the very first thing anybody would press.
-    const { sent } = stubWrites([{}])
+  it('saves an endpoint with no model chosen, as the null the schema spells', async () => {
+    // **The whole order this form is in depends on this save going through.** A
+    // model is picked from the list the endpoint itself offers, and that list
+    // cannot be read until there is an endpoint saved and a key bound to it —
+    // so the first save has to be allowed to name no model at all. `null` and
+    // not `''`: the empty string is a value the decoder refuses, so writing it
+    // would compose a file this page's own reader rejects.
+    const { sent } = stubWrites([{ body: { ...WRITTEN, created: true } }])
     renderForm(noFile())
     fireEvent.change(screen.getByLabelText('Endpoint URL'), {
       target: { value: 'https://api.example.invalid/v1' }
     })
-    expect(await screen.findByText(/must be a non-empty string/)).toBeTruthy()
-    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(false)
     save()
-    await Promise.resolve()
-    expect(sent.filter((each) => each.method === 'PUT')).toHaveLength(0)
+    await waitFor(() => expect(sent.some((each) => each.method === 'PUT')).toBe(true))
+    expect((theWrite(sent).assistant.endpoint as { model: unknown }).model).toBeNull()
+  })
+
+  it('writes a model that was typed, trimmed, exactly as it was spelled', async () => {
+    const { sent } = stubWrites([{}])
+    renderForm()
+    fireEvent.change(screen.getByLabelText('Type a model id'), {
+      target: { value: '  a-typed-model  ' }
+    })
+    save()
+    await waitFor(() => expect(sent.some((each) => each.method === 'PUT')).toBe(true))
+    expect((theWrite(sent).assistant.endpoint as { model: string }).model).toBe('a-typed-model')
   })
 
   it('refuses a configured query the relay reserves, in the same words', async () => {
@@ -485,6 +497,15 @@ describe('the model, and the list the endpoint offers', () => {
       }
     ]
   }
+  /** The same endpoint, already naming a model the stub lists. */
+  const LISTED_MODEL = configured({
+    endpoint: {
+      ...ENDPOINT,
+      kind: 'gemini',
+      url: 'https://api.example.invalid',
+      model: 'gemini-2.5-pro'
+    }
+  })
   const listed = () => screen.findByRole('combobox', { name: 'Model' })
   const noList = () => screen.queryByRole('combobox', { name: 'Model' })
   const relayed = (urls: string[]) => urls.filter((url) => url.includes('/api/assistant/relay/'))
@@ -535,20 +556,21 @@ describe('the model, and the list the endpoint offers', () => {
 
   it('preselects the model the file already names', async () => {
     servesListing(LISTED)
-    renderForm(
-      configured({
-        endpoint: {
-          ...ENDPOINT,
-          kind: 'gemini',
-          url: 'https://api.example.invalid',
-          model: 'gemini-2.5-pro'
-        }
-      }),
-      true
-    )
+    renderForm(LISTED_MODEL, true)
     // The trigger renders the label of the option whose value is selected, so
     // a preselected row is the label on screen without the list being opened.
     expect((await listed()).textContent).toContain('Gemini 2.5 Pro')
+  })
+
+  it('shows one control and not two: the Select, with no text field beside it', async () => {
+    // The two stood side by side and the page had no opinion about which one a
+    // person was supposed to use. Where there is a list, the list is the
+    // control.
+    servesListing(LISTED)
+    renderForm(LISTED_MODEL, true)
+    await listed()
+    expect(screen.queryByLabelText('Type a model id')).toBeNull()
+    expect(screen.getByText("From the provider's list. Choose Other to type an id.")).toBeTruthy()
   })
 
   it('saves the id it was listed under, and never the label', async () => {
@@ -556,18 +578,9 @@ describe('the model, and the list the endpoint offers', () => {
     renderForm(GEMINI, true)
     fireEvent.click(await listed())
     fireEvent.click(await screen.findByRole('option', { name: 'Gemini 2.5 Pro' }))
-    // The field beside the list takes the id, because the id is what the
-    // endpoint answers to and the label is what a person reads.
-    await waitFor(() =>
-      expect((screen.getByLabelText('Type a model id') as HTMLInputElement).value).toBe(
-        'gemini-2.5-pro'
-      )
-    )
-    // **And the list survives being picked from.** Choosing a model changes the
-    // model and not the endpoint, so the rows are still about the endpoint on
-    // screen — only a provider or a URL moving makes them a list from somewhere
-    // else.
-    expect(noList()).not.toBeNull()
+    // The trigger shows the label, because that is what a person reads; what is
+    // saved is the id, because that is what the endpoint answers to.
+    await waitFor(() => expect(noList()!.textContent).toBe('Gemini 2.5 Pro'))
     save()
     await waitFor(() => expect(seen.urls.some((url) => url.includes('/api/desk-config'))).toBe(true))
     const put = seen.inits.find((init) => init.method === 'PUT')!
@@ -575,19 +588,43 @@ describe('the model, and the list the endpoint offers', () => {
     expect(body.assistant.endpoint.model).toBe('gemini-2.5-pro')
   })
 
-  it('keeps the field usable for a model the first page does not carry', async () => {
-    // A listing is first-page-only and an endpoint may refuse to list at all.
-    // Neither may stop an author configuring a model they know the name of.
+  it('reveals the field through Other, and through nothing else', async () => {
+    // A listing is first-page-only and a gateway may route on a name of its
+    // own. Neither may stop an author configuring a model they know the name
+    // of — and the way there is one option rather than a second control that
+    // was always on screen.
     servesListing(LISTED)
     renderForm(GEMINI, true)
-    await listed()
-    fireEvent.change(screen.getByLabelText('Type a model id'), {
-      target: { value: 'a-model-not-listed' }
-    })
-    expect((screen.getByLabelText('Type a model id') as HTMLInputElement).value).toBe(
-      'a-model-not-listed'
+    fireEvent.click(await listed())
+    expect(
+      (await screen.findAllByRole('option')).map((option) => option.textContent)
+    ).toEqual(['Gemini 2.5 Pro', 'Other model… (type an id)'])
+    fireEvent.click(screen.getByRole('option', { name: 'Other model… (type an id)' }))
+    const field = await screen.findByLabelText('Type a model id')
+    fireEvent.change(field, { target: { value: 'a-model-not-listed' } })
+    expect((field as HTMLInputElement).value).toBe('a-model-not-listed')
+    // The Select stays, because it is the way back to the list.
+    expect(noList()).not.toBeNull()
+  })
+
+  it('opens on the field where the saved model is not one the endpoint listed', async () => {
+    // A model configured before this listing existed, or one from a page the
+    // endpoint no longer returns: a Select that silently showed nothing while a
+    // perfectly good id was what would be saved is the state to avoid.
+    servesListing(LISTED)
+    renderForm(
+      configured({
+        endpoint: {
+          ...ENDPOINT,
+          kind: 'gemini',
+          url: 'https://api.example.invalid',
+          model: 'a-model-the-endpoint-no-longer-lists'
+        }
+      }),
+      true
     )
-    expect(screen.getByText(/Anything else is typed in below/)).toBeTruthy()
+    const field = await screen.findByLabelText('Type a model id')
+    expect((field as HTMLInputElement).value).toBe('a-model-the-endpoint-no-longer-lists')
   })
 
   it('asks the endpoint that is saved, never the one being typed', async () => {
@@ -668,7 +705,7 @@ describe('the model, and the list the endpoint offers', () => {
     renderForm(GEMINI, true)
     fireEvent.click(await listed())
     const offered = (await screen.findAllByRole('option')).map((option) => option.textContent)
-    expect(offered).toEqual(['Gemini 2.5 Pro (stub)'])
+    expect(offered).toEqual(['Gemini 2.5 Pro (stub)', 'Other model… (type an id)'])
   })
 
   it('falls back to the typed field on a refused listing, in the probe s words', async () => {
@@ -779,8 +816,11 @@ describe('Connect: the endpoint and its key, in the one order the chassis admits
       (request) => request.url.includes('/api/assistant/key') && request.method === 'PUT'
     )!
     expect(JSON.parse(store.body!)).toEqual({ key: 'sk-a-real-looking-key-wxyz' })
-    // And it is gone from the field the instant it was handed to the request.
-    expect((screen.getByLabelText('API key') as HTMLInputElement).value).toBe('')
+    // **And there is no field left to hold it.** A key is stored, so what the
+    // row offers is Replace and Remove; an empty masked box beside a working
+    // key invites somebody to wonder what is in it.
+    await waitFor(() => expect(screen.queryByLabelText('API key')).toBeNull())
+    expect(screen.getByRole('button', { name: 'Replace key' })).toBeTruthy()
   })
 
   it('sends no key at all where the endpoint write was refused', async () => {

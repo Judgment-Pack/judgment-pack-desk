@@ -533,9 +533,20 @@ describe('the key row and the endpoint it is bound to', () => {
     stubChassis({ key: BOUND })
     const { container } = renderSection(configured())
     expect(await screen.findByText('Stored — sk-a…wxyz, for OpenAI-compatible')).toBeTruthy()
-    // The field is there and empty, because that is where a replacement goes.
-    // It is populated from nothing: no endpoint returns the key.
-    expect(keyField(container)!.value).toBe('')
+    // **And there is no field at all.** An empty masked box beside a working
+    // key invites somebody to wonder what is in it and to type into it by
+    // accident; what a person wants there is Replace and Remove.
+    expect(keyField(container)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Store key' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Replace key' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Remove key' })).toBeTruthy()
+  })
+
+  it('opens the one field there is when a replacement is asked for', async () => {
+    stubChassis({ key: BOUND })
+    const { container } = renderSection(configured())
+    fireEvent.click(await screen.findByRole('button', { name: 'Replace key' }))
+    expect(keyField(container)).not.toBeNull()
     expect(screen.getByRole('button', { name: 'Store key' })).toBeTruthy()
   })
 

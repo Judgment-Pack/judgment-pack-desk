@@ -34,6 +34,7 @@ import {
   ASSISTANT_TOOLS,
   DESK_DEFAULTS,
   KEYS_ARE_NEVER_IN_CONFIGURATION,
+  NO_MODEL_CHOSEN,
   WITHDRAWN_ASSISTANT_ENGINE,
   decodeDeskConfig,
   type AssistantConfig,
@@ -127,8 +128,15 @@ const ASSISTANT_KEYS = ['endpoint', 'engine', 'thinking'] as const
 /** The endpoint object's members, exactly as the schema declares them. */
 const ENDPOINT_KEYS = ['url', 'kind', 'model', 'tools'] as const
 
-/** What the future assistant pane reads. */
-const SLOT_KEYS = ['state', 'endpoint', 'keyPresent', 'engine', 'thinking'] as const
+/**
+ * What the assistant pane reads.
+ *
+ * `unusable` is on it and is **not** a sixth state: it is why a *configured*
+ * endpoint cannot run yet, in the decoder's own sentence, and today there is
+ * one reason — no model chosen. Folding it into `state` would make "configured"
+ * mean two things and force every consumer to invent the difference back.
+ */
+const SLOT_KEYS = ['state', 'endpoint', 'unusable', 'keyPresent', 'engine', 'thinking'] as const
 
 const assistantKeysAreExact: Exactly<keyof AssistantConfig, (typeof ASSISTANT_KEYS)[number]> = true
 const endpointKeysAreExact: Exactly<
@@ -217,6 +225,36 @@ describe('(1a) engine and thinking are closed lists that say how, not whether', 
     }
   })
 
+  it('takes an endpoint with no model, and says so rather than refusing it', () => {
+    // **A model is picked from the list the endpoint itself offers**, and that
+    // list cannot be read until there is an endpoint saved and a key bound to
+    // it. A required model made the first save the one step nobody could take
+    // without guessing — so absent and null are one state, said out loud.
+    for (const written of [{}, { model: null }]) {
+      const { model: _dropped, ...rest } = GOOD_ENDPOINT
+      const decoded = decodeDesk({ endpoint: { ...rest, ...written } })
+      expect(decoded.problems, JSON.stringify(written)).toEqual([])
+      expect(decoded.values?.assistant?.endpoint?.model).toBeNull()
+      expect(decoded.notices).toEqual([
+        { key: 'assistant.endpoint.model', says: NO_MODEL_CHOSEN }
+      ])
+    }
+    // And a model that **is** chosen says nothing at all.
+    expect(decodeDesk({ endpoint: GOOD_ENDPOINT }).notices).toEqual([])
+  })
+
+  it('still refuses a model somebody wrote and left empty', () => {
+    // The empty string is a value, not an absence, and a member whose two
+    // spellings mean different things is a member two readers disagree about.
+    for (const model of ['', '   ', 7, true]) {
+      const decoded = decodeDesk({ endpoint: { ...GOOD_ENDPOINT, model } })
+      expect(decoded.values, `model ${JSON.stringify(model)} was accepted`).toBeUndefined()
+      expect(decoded.problems.map((problem) => problem.key)).toContain('assistant.endpoint.model')
+      // A refused file decoded to nothing, so it says nothing either.
+      expect(decoded.notices).toEqual([])
+    }
+  })
+
   it('refuses an unknown value, and a wrong type, by its exact key path', () => {
     // Named the way `assistant.endpoint.kind` is named. An engine nobody
     // certified is a setting that reads as a grant to whoever wrote it, so it
@@ -298,6 +336,9 @@ describe('(1a) engine and thinking are closed lists that say how, not whether', 
     // the fixture corpus would report as agreement if the words differed.
     expect(source).toContain(`const withdrawnAssistantEngine = "${WITHDRAWN_ASSISTANT_ENGINE}"`)
     expect(source).toContain(`const assistantEngineWithdrawn = \`${ASSISTANT_ENGINE_WITHDRAWN}\``)
+    // The other sentence a file that is **accepted** carries, on the same
+    // terms: a state named differently on the two sides is two states.
+    expect(source).toContain(`const noModelChosen = "${NO_MODEL_CHOSEN}"`)
     for (const [declaration, list] of [
       ['AssistantKinds', ASSISTANT_KINDS],
       ['AssistantEngines', ASSISTANT_ENGINES],

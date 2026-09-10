@@ -1980,6 +1980,23 @@ usually ends in `/v1`; for `anthropic` the base carrying `/v1/messages`; for
 desk appends the path its protocol prescribes and never guesses a version
 segment.
 
+`model` is the one member of the endpoint that is **not** required, and the
+reason is the order a person works in. The list to pick a model from is the
+endpoint's own, and this desk cannot read it until there is an endpoint saved
+and a key bound to it — so a required model put the first save behind a guess.
+Absent and `null` are one state, and the decoder says which it is:
+
+```json
+{ "assistant": { "endpoint": { "url": "…", "kind": "gemini", "model": null, "tools": [] } } }
+```
+
+decodes with the notice `no model chosen yet — pick one below`, which Admin ›
+Assistant shows as that card's Status line. The endpoint is **saved and valid**;
+what it is not is ready, and the Assistant tab and Describe it say so and offer
+no run. `""` is still refused, here and on the chassis: the empty string is a
+value somebody wrote, and a member whose two spellings mean different things is
+a member two readers disagree about.
+
 `tools` is required, is validated against a closed list — `get_schema`,
 `list_examples`, `get_example`, `validate`, `experimental_evaluate` — and
 refuses anything else by name. It is required rather than defaulted because a
@@ -2071,12 +2088,16 @@ sentence about this codebase.
 | the form asks for | and it is | the line under it |
 | --- | --- | --- |
 | **Provider** | one of the three wire protocols, by the name its operator uses: **OpenAI-compatible**, **Anthropic**, **Google Gemini**. Choosing one fills the endpoint URL at once with the base that protocol's own reference documents — `https://api.openai.com/v1`, `https://api.anthropic.com`, `https://generativelanguage.googleapis.com` — as a **default in an editable field**, replaced by typing over it, and left alone once it is somebody's own address. Nothing reads those back, compares an endpoint to them, or treats an endpoint at one of them differently: the enforcement guard admits the three literals only as values of one table in one module, and the sharper guard beside it — every host comparison in the page's source is a loopback name — is untouched. | none |
-| **API key** | the one credential this desk keeps, in a password field that is **populated from nothing**: no endpoint returns a key, and a masked box of the right length would be this page inventing evidence. Below it, one of two states — `No key stored`, or `Stored — <fingerprint>, for <provider>` — and, where the two disagree, the line that names both destinations. | *Stored on this computer only, never in the project. Readable by your user account only.* |
+| **API key** | the one credential this desk keeps, in a password field that is **populated from nothing**: no endpoint returns a key, and a masked box of the right length would be this page inventing evidence. Once one is stored **there is no field at all** — the state line says `Stored — <fingerprint>, for <provider>` and the actions are **Replace key**, which opens the one field there is, and **Remove key**. Before one: the field, the hint, and `No key stored`. | *Stored on this computer only, never in the project. Readable by your user account only.* |
 | **Endpoint URL** | the base, held to the transport rule and the configured-query rule **by the decoder's own function**, so a URL those rules refuse is shown refused in the sentence the file's reader would write and is not sent. | *Leave the default unless you use a proxy or your own server.* |
-| **Model** | the endpoint's own listing, in a picker, as soon as there is a key bound to the saved endpoint — see below. | *The first page of what the endpoint lists. Anything else is typed in below.* |
-| **Type a model id** | the field beside it, which never goes away. | *Exactly as the endpoint spells it.* |
+| **Model** | the endpoint's own listing, in a picker, as soon as there is a key bound to the saved endpoint — see below. Its last option is **Other model… (type an id)**, which is the whole of how the field below is reached. | *From the provider's list. Choose Other to type an id.* |
+| **Type a model id** | the field, shown where there is no list to show — or where **Other** was chosen, or where the saved model is not one the endpoint listed. Never beside the picker unasked. | *Exactly as the endpoint spells it.* |
 | **Tools the assistant may use** | the five, as five checkboxes. All on for a desk that has configured nothing, because `[]` is a real choice — an assistant that may call nothing — and a form opening on it would have a blank field making it. | *All read-only. Untick one to hide it from the assistant.* |
 | **Thinking** | **off**, **standard** or **deep**, which are `off`, `on` and `ultra` in the file. What each one puts on each protocol's wire is in **The thinking tier**, because it is a fact about a wire rather than a decision about this desk. | *How much reasoning the model may do before answering.* |
+
+The order is **provider → key → Connect → the list → a pick**, and no step in it
+asks anybody to guess: **Connect saves the endpoint with no model at all**, the
+listing loads against it, the person chooses, and Save writes the id.
 
 **Connect is the primary action until a key is stored for the endpoint that is
 saved**, and it is one action doing two things in the only order the chassis
@@ -2161,11 +2182,14 @@ came back when the URL was typed away and back again — an arbitrarily stale
 listing with no request behind it. Typing the URL back asks again, which is a
 listing rather than a resurrection.
 
-**The typed field beside it never goes away**: the listing is first-page-only,
-an endpoint may refuse to list at all, and a gateway may route on a name of its
-own — a picker that was the only way to choose would make every one of those
-unconfigurable. So a refused or empty listing leaves the field with the reason
-beside it, and the form still works. **What is saved is the id and never the
+**One control at a time.** The picker and the typed field stood side by side and
+the page had no opinion about which one anybody was supposed to use. Where there
+is a list, the list is the control, and its last option — **Other model… (type
+an id)** — is the whole of how the field is reached. Where there is no list, the
+field is the only control, with the listing's own refusal beside it, so the form
+still works against an endpoint that will not answer. A saved model the endpoint
+does not list opens the field by itself, because a picker silently showing
+nothing while a perfectly good id is what would be saved is the state to avoid. **What is saved is the id and never the
 label**, which differ on two of the three protocols — and **an id is an option
 only if the configuration decoder would take it**, asked of that decoder rather
 than re-stated here: a copy of the rule is how a whitespace-only id came to be
@@ -2182,9 +2206,9 @@ failed on and that text is the body.
 yet; **no endpoint**, where **Store key** is not offered at all because storing
 one requires an endpoint to bind it to — Connect is what reaches this state,
 because it saves the endpoint first; **no key stored**, naming the host one
-would be entered for; **stored**, with its fingerprint and its provider; and
-**stored for somewhere else**, naming both hosts, because a reader has to be
-able to see which of the two moved. A write answering `keyRebindRequired` moves
+would be entered for; **stored**, with its fingerprint and its provider, and no
+field standing beside it; and **stored for somewhere else**, naming both hosts,
+because a reader has to be able to see which of the two moved. A write answering `keyRebindRequired` moves
 the line at that instant rather than waiting for the key read.
 
 The key and the endpoint stay separate: removing the endpoint does not remove

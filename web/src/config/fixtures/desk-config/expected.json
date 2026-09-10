@@ -83,6 +83,30 @@
     "engine": "vercel",
     "thinking": "off"
   },
+  "accepted-endpoint-model-null": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "notices": [
+      {
+        "key": "assistant.endpoint.model",
+        "says": "no model chosen yet — pick one below"
+      }
+    ]
+  },
+  "accepted-endpoint-no-model-yet": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "notices": [
+      {
+        "key": "assistant.endpoint.model",
+        "says": "no model chosen yet — pick one below"
+      }
+    ]
+  },
   "accepted-endpoint-no-tools-allowed": {
     "accepted": true,
     "keys": [],

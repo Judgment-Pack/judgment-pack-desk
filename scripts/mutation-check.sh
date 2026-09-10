@@ -627,6 +627,11 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # the value decodes to the engine that runs, and the decoder says so. The
   # shared corpus is where both halves of that are stated, so this fails the
   # fixture walk on this side.
+  # The same claim on this side of the shared decoder: an endpoint with no model
+  # is accepted, said out loud, and not refused.
+  mutate go "the chassis refuses an endpoint with no model" "$DF" \
+    '	if declared, present := inner["model"]; present && declared != nil {' \
+    '	if declared := inner["model"]; true {'
   mutate go "the chassis refuses the withdrawn engine rather than migrating it" "$DF" \
     '	if named, ok := record["engine"].(string); ok && named == withdrawnAssistantEngine {' \
     '	if false {'
@@ -4292,8 +4297,14 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # to an uncontrolled node, which "the field is cleared only once the store
   # has answered" below breaks directly.
   mutate web "the key field is an ordinary text input" "$KF" \
-    '            type="password"' \
-    '            type="text"'
+    '              type="password"' \
+    '              type="text"'
+  # **An empty masked box beside a working key** invites somebody to wonder what
+  # is in it and to type into it by accident. Replace is a state of this control
+  # and not a second control: it opens the one field there is.
+  mutate web "a masked box stands beside a key that is already stored" "$KF" \
+    "  const entry = binding !== 'bound' || replacing" \
+    '  const entry = true'
   mutate web "removal is offered where there is nothing to remove" "$KF" \
     '        {read.present && (' \
     '        {true && ('
@@ -4354,6 +4365,14 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # a file that was correct yesterday and broken today, which is the whole
   # reason a removed choice leaves a migration behind. The shared corpus states
   # it, so this fails the fixture walk.
+  # **The third row this chunk adds, and it is run.** A model is picked from the
+  # list the endpoint itself offers, and that list cannot be read until there is
+  # an endpoint saved and a key bound to it — so an endpoint with no model is a
+  # configuration the schema has, and requiring one puts the first save behind a
+  # guess. The shared corpus states it, so this fails the fixture walk.
+  mutate web "an endpoint with no model is refused again" "$D" \
+    '  if (endpoint.model !== undefined && endpoint.model !== null) {' \
+    '  if (true) {'
   mutate web "the page refuses the withdrawn engine rather than migrating it" "$D" \
     "  if (value === WITHDRAWN_ASSISTANT_ENGINE) {
     notices.push({ key: 'assistant.engine', says: ASSISTANT_ENGINE_WITHDRAWN })
@@ -4433,24 +4452,20 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  return {
     endpoint: {
       url: draft.url.trim(),
-      kind: draft.kind,
-      model: draft.model.trim(),
-      tools: ASSISTANT_TOOLS.filter((tool) => draft.tools.includes(tool))
-    },
-    thinking: draft.thinking
-  }' \
+      kind: draft.kind,' \
     '  return {
     ...(draft as unknown as Record<string, unknown>),
     endpoint: {
       ...(draft as unknown as Record<string, unknown>),
       url: draft.url.trim(),
-      kind: draft.kind,
-      model: draft.model.trim(),
-      tools: ASSISTANT_TOOLS.filter((tool) => draft.tools.includes(tool))
-    },
-    engine: draft.engine,
-    thinking: draft.thinking
-  }'
+      kind: draft.kind,'
+  # **The empty string is a value the decoder refuses, and null is the state it
+  # has.** A form that wrote `""` would compose a file its own reader rejects on
+  # the very first save — the one that has to work before a list can be asked
+  # for at all.
+  mutate web "an unchosen model is written as the empty string" "$ED" \
+    "      model: draft.model.trim() === '' ? null : draft.model.trim()," \
+    '      model: draft.model.trim(),'
   # **A write with no digest is a page overwriting whatever it found**, on the
   # file that names the endpoint a credential goes to. The empty string is not
   # "no opinion": it is the claim that there is no file.
@@ -4543,8 +4558,14 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # The id is what the endpoint answers to; the label is what a person reads,
   # and the two differ on two of the three protocols.
   mutate web "the model is saved from the listing label rather than its id" "$MF" \
-    '              options={rows.map((row) => ({ value: row.id, label: row.label }))}' \
-    '              options={rows.map((row) => ({ value: row.label, label: row.label }))}'
+    '                ...rows.map((row) => ({ value: row.id, label: row.label })),' \
+    '                ...rows.map((row) => ({ value: row.label, label: row.label })),'
+  # **One control, and the field is reached through the list rather than beside
+  # it.** The two stood side by side and the page had no opinion about which one
+  # a person was supposed to use.
+  mutate web "the text field stands beside the list again" "$MF" \
+    '  const typed = !offering || typing || unlisted' \
+    '  const typed = true'
   # **The second of the two rows this chunk adds, and it is run.** The listing
   # is asked for on its own now, so what an author is offered is the rows the
   # endpoint answered with; a Select that is never populated puts them back

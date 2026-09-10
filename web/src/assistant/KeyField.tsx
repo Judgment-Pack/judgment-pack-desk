@@ -6,6 +6,15 @@
  * placeholder of the right length would be this page inventing evidence about a
  * value it has never seen.
  *
+ * **So where a key is stored there is no field at all.** An empty masked box
+ * standing beside a working key invites somebody to wonder what is in it and to
+ * type into it by accident; what a person actually wants there is to know one
+ * is kept and to be able to replace or remove it. **Replace key** is a state of
+ * this control rather than a second control — it opens the one field there is —
+ * and it is cleared whenever the binding moves underneath it, because a row that
+ * has become "enter the key for another host" is already asking for exactly what
+ * Replace asked for.
+ *
  * **The field is not offered where storing one cannot work.** A key is written
  * bound to the endpoint configured at that instant, so a desk with none has
  * nothing to bind it to and the chassis refuses. The line then asks for the
@@ -18,7 +27,7 @@
  * presents it only there, and refuses otherwise; nothing here compares a URL to
  * anything.
  */
-import type { ReactNode, RefObject } from 'react'
+import { useState, type ReactNode, type RefObject } from 'react'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
@@ -67,6 +76,16 @@ export function KeyField({
   removeProblem: string | undefined
 }) {
   const read = state ?? NOTHING_READ
+  const [replacing, setReplacing] = useState(false)
+  const [openedAt, setOpenedAt] = useState(binding)
+  if (openedAt !== binding) {
+    setOpenedAt(binding)
+    setReplacing(false)
+  }
+  // The field is offered wherever a key is wanted: none stored, stored for
+  // somewhere else, or a replacement asked for. A read that has not answered is
+  // not "a key is stored", so it is offered there too.
+  const entry = binding !== 'bound' || replacing
   // **The desk's own origin for the configured endpoint**, never one this page
   // computed: the browser and Go disagree about an explicit default port, and a
   // label naming a destination the chassis would not present to would be this
@@ -75,19 +94,21 @@ export function KeyField({
 
   return (
     <>
-      <Field label="API key" hint={WHERE_IT_LIVES}>
-        {(wiring) => (
-          <Input
-            {...wiring}
-            ref={field}
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            defaultValue=""
-            onChange={(event) => onTyped(event.target.value !== '')}
-          />
-        )}
-      </Field>
+      {entry && (
+        <Field label="API key" hint={WHERE_IT_LIVES}>
+          {(wiring) => (
+            <Input
+              {...wiring}
+              ref={field}
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              defaultValue=""
+              onChange={(event) => onTyped(event.target.value !== '')}
+            />
+          )}
+        </Field>
+      )}
 
       <p className="quiet">{keySays(read, answered, failed)}</p>
       {binding !== 'bound' && binding !== 'unread' && (
@@ -96,8 +117,7 @@ export function KeyField({
 
       <p className="actions">
         {/* Store is the second action and never the first: on a form whose
-            primary action is Connect, it is what replaces a key on an endpoint
-            that is already saved.
+            primary action is Connect, it is what puts a replacement in.
 
             **And it is not offered where storing cannot work.** A key is
             written bound to the endpoint configured at that instant, so a desk
@@ -105,9 +125,14 @@ export function KeyField({
             is the action that reaches this state, because it saves the endpoint
             first; a second button that could only produce a refusal is an
             affordance that lies about what the page can do. */}
-        {binding !== 'no-endpoint' && (
+        {entry && binding !== 'no-endpoint' && (
           <Button variant="quiet" onClick={onStore}>
             Store key
+          </Button>
+        )}
+        {!entry && (
+          <Button variant="quiet" onClick={() => setReplacing(true)}>
+            Replace key
           </Button>
         )}{' '}
         {read.present && (

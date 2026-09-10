@@ -754,11 +754,24 @@ func decodeAssistant(value any) (assistantSlot, []deskProblem) {
 				quotedList(AssistantKinds), describe(inner["kind"]))})
 	}
 
-	model, ok := inner["model"].(string)
-	trimmedModel := strings.TrimSpace(model)
-	if !ok || trimmedModel == "" {
-		problems = append(problems, deskProblem{Key: "assistant.endpoint.model",
-			Reason: fmt.Sprintf("must be a non-empty string; found %s", describe(inner["model"]))})
+	// **Three cases, and the middle one is the state this release adds.** Absent
+	// or null is "no model chosen"; anything else is held to the rule it always
+	// was, so `""` and a whitespace-only id are refused exactly as before. The
+	// notice is what stops "not chosen yet" reading as "chosen".
+	trimmedModel := ""
+	if declared, present := inner["model"]; present && declared != nil {
+		model, ok := declared.(string)
+		trimmed := strings.TrimSpace(model)
+		if !ok || trimmed == "" {
+			problems = append(problems, deskProblem{Key: "assistant.endpoint.model",
+				Reason: fmt.Sprintf("must be a non-empty string; found %s", describe(declared))})
+		} else {
+			trimmedModel = trimmed
+		}
+	}
+	if trimmedModel == "" {
+		slot.notices = append(slot.notices,
+			deskNotice{Key: "assistant.endpoint.model", Says: noModelChosen})
 	}
 
 	var tools []string

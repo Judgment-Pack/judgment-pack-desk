@@ -44,7 +44,12 @@ import { sessionBearer, whenSessionEnds } from '../mcp/session'
 import { normalize } from './thinking'
 import type { AssistantEvent } from './engine'
 import type { AssistantConnection } from './session'
-import type { AssistantEndpointConfig, AssistantEngine, ThinkingTier } from '../config/deskConfig'
+import {
+  NO_MODEL_CHOSEN,
+  type AssistantEndpointConfig,
+  type AssistantEngine,
+  type ThinkingTier
+} from '../config/deskConfig'
 
 export type RunStatus = 'idle' | 'running' | 'finished'
 
@@ -184,6 +189,19 @@ export function canonicalProposal(
     unknowns: Array.isArray(held.unknowns) ? held.unknowns.map((entry) => String(entry)) : [],
     ...(held.critique === undefined ? {} : { critique: held.critique })
   })
+}
+
+/**
+ * The model id a run is given, or a refusal.
+ *
+ * `assistant.endpoint.model` is nullable — "no model chosen yet" is a state the
+ * schema has — and a run is the one place that state cannot be carried: a
+ * request naming no model is a request whose answer means nothing. The tab does
+ * not offer a run there, and this is the second layer under that.
+ */
+function modelOf(endpoint: { model: string | null }): string {
+  if (endpoint.model === null) throw new Error(NO_MODEL_CHOSEN)
+  return endpoint.model
 }
 
 export function useAssistantRun(options: {
@@ -332,7 +350,15 @@ export function useAssistantRun(options: {
               testPrompt: testPrompt ?? '',
               tools: ready.tools,
               callTool: ready.callTool,
-              model: { family: endpoint.kind, model: endpoint.model, call: bindModelCall(endpoint.kind) },
+              // **Refused rather than defaulted.** An endpoint with no model
+              // chosen is a saved endpoint whose assistant is not ready; a run
+              // that substituted the empty string would put a request on the
+              // wire naming no model and read whatever came back as an answer.
+              model: {
+                family: endpoint.kind,
+                model: modelOf(endpoint),
+                call: bindModelCall(endpoint.kind)
+              },
               // **Normalized here, once.** The engine is handed the desk's own
               // table's result rather than a tier it would have to interpret.
               thinking: normalize(thinking, endpoint.kind),

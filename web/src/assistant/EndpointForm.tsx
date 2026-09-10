@@ -41,7 +41,6 @@ import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
   ASSISTANT_TOOLS,
   endpointUrlProblem,
-  modelIdProblem,
   type AssistantTool,
   type EndpointKind
 } from '../config/deskConfig'
@@ -196,11 +195,15 @@ export function EndpointForm({
   }
 
   const digest = desk?.sha256
-  // The decoder's own rules, run here so a value it will refuse is not sent.
-  // They are the same functions the file's reader uses, so this is not a second
-  // opinion about a URL or a model id — it is the same one, earlier.
+  // The decoder's own rule, run here so a URL it will refuse is not sent. It is
+  // the same function the file's reader uses, so this is not a second opinion
+  // about a URL — it is the same one, earlier.
+  //
+  // **There is no rule for the model here, and there must not be one.** An
+  // endpoint with no model chosen is a configuration the schema has, and the
+  // whole order this form is in — provider, key, Connect, the list, a pick —
+  // depends on the first save going through without one.
   const urlProblem = draft.url.trim() === '' ? undefined : endpointUrlProblem(draft.url.trim())
-  const modelProblem = modelIdProblem(draft.model)
 
   const refused = write.error instanceof FileRequestError ? write.error : undefined
   const stale =
@@ -295,7 +298,7 @@ export function EndpointForm({
   }
 
   const busy = write.isPending || store.isPending
-  const blocked = digest === undefined || urlProblem !== undefined || modelProblem !== undefined
+  const blocked = digest === undefined || urlProblem !== undefined
 
   return (
     <form
@@ -367,7 +370,7 @@ export function EndpointForm({
           // endpoint the listing would ask.
           matchesSaved={seed === JSON.stringify(draft)}
           onChange={edit}
-          problem={modelProblem ?? problemFor('assistant.endpoint.model')}
+          problem={problemFor('assistant.endpoint.model')}
         />
 
         <ToolChoice draft={draft} onChange={edit} problem={problemFor('assistant.endpoint.tools')} />

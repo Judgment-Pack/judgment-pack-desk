@@ -460,7 +460,7 @@ export function useDescribeIt(): DescribeItState {
     standing:
       slot.endpoint === null
         ? ''
-        : `${slot.engine} · ${slot.endpoint.model} · thinking ${slot.thinking}`,
+        : `${slot.engine} · ${slot.endpoint.model ?? 'no model'} · thinking ${slot.thinking}`,
     typed,
     setTyped,
     offered: proposal !== undefined,

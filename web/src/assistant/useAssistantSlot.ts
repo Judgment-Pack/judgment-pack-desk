@@ -19,10 +19,11 @@
  */
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { useAssistantKey } from './queries'
-import type {
-  AssistantEndpointConfig,
-  AssistantEngine,
-  ThinkingTier
+import {
+  NO_MODEL_CHOSEN,
+  type AssistantEndpointConfig,
+  type AssistantEngine,
+  type ThinkingTier
 } from '../config/deskConfig'
 
 export interface AssistantSlot {
@@ -42,6 +43,17 @@ export interface AssistantSlot {
   state: 'none' | 'configured' | 'unavailable'
   /** Null exactly where `state` is `none`. There is no third value. */
   endpoint: AssistantEndpointConfig | null
+  /**
+   * Why a **configured** endpoint cannot run yet, where it cannot. Undefined
+   * where nothing stands in the way.
+   *
+   * There is one reason today and it is the decoder's own sentence, not a
+   * second one written here: an endpoint with no model chosen is a saved
+   * endpoint whose assistant is not ready. It is separate from `state` because
+   * it is not a fourth deployment state — the endpoint *is* configured, and a
+   * consumer that folded the two would have to invent the difference back.
+   */
+  unusable?: string
   /**
    * Whether a key is stored on this machine.
    *
@@ -77,6 +89,9 @@ export function useAssistantSlot(): AssistantSlot {
   return {
     state: unread ? 'unavailable' : endpoint === null ? 'none' : 'configured',
     endpoint,
+    // The decoder's words, read off the decoder's own constant. A sentence
+    // typed out here would be a second copy nothing keeps in step.
+    unusable: endpoint !== null && endpoint.model === null ? NO_MODEL_CHOSEN : undefined,
     keyPresent: key.data?.present ?? false,
     engine: config.assistant.engine,
     thinking: config.assistant.thinking

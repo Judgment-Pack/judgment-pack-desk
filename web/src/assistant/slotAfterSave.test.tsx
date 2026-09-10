@@ -256,15 +256,13 @@ describe('what a save reaches', () => {
         'configured · the-model-in-the-file · vercel · off'
       )
     )
-    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: '   ' } })
-    // **The decoder's own rule, run in the form.** A model it will refuse is
-    // not sent at all, so the primary action is refused before the request —
-    // and the sentence is the file reader's, which is what makes the two the
-    // same rule rather than two opinions about one.
-    expect(await screen.findByText(/must be a non-empty string/)).toBeTruthy()
-    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
+    // **A refusal the chassis makes, and the page shows.** A model the file's
+    // reader will not take is one the chassis refuses; what the form holds is
+    // that nothing on this page moves when it does.
+    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: 'a-bad-model' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(writes).toBe(0)
+    expect(await screen.findByText('must be a non-empty string')).toBeTruthy()
+    expect(writes).toBe(1)
     expect(slotLine()).toBe(
       'configured · the-model-in-the-file · vercel · off'
     )
