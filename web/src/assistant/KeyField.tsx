@@ -21,6 +21,7 @@
 import type { ReactNode, RefObject } from 'react'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
+import { Input } from '../ui/Input'
 import { KIND_LABEL } from './endpointDraft'
 import type { AssistantKeyState } from './client'
 import type { KeyBinding } from './keyBinding'
@@ -76,7 +77,7 @@ export function KeyField({
     <>
       <Field label="API key" hint={WHERE_IT_LIVES}>
         {(wiring) => (
-          <input
+          <Input
             {...wiring}
             ref={field}
             type="password"
