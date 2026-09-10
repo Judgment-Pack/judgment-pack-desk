@@ -1538,3 +1538,18 @@ fieldset {
 .model-row .checkbox {
   align-items: baseline;
 }
+
+/* The typed id and the control that adds it, on one line: the button is what
+   the field is for, so it sits with it rather than under its hint. The input
+   takes the room that is left. */
+
+.model-add {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.model-add input {
+  flex: 1 1 auto;
+  min-width: 0;
+}

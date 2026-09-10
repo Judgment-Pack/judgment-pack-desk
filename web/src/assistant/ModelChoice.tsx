@@ -114,29 +114,32 @@ export function ModelChoice({
 
       <p className="quiet">{HOW}</p>
 
+      {/* **Add sits with the field, above the hint**, because it is what the
+          field is for: a control a line below its own input, under a sentence
+          about the input, reads as a control about the sentence. */}
       <Field label="Other model… (type an id)" hint={TYPED} error={adding}>
         {(wiring) => (
-          <Input
-            {...wiring}
-            value={typed}
-            spellCheck={false}
-            onChange={(event) => setTyped(event.target.value)}
-            onKeyDown={(event) => {
-              // Enter adds the id rather than submitting the form, which would
-              // save an endpoint without the model somebody was in the middle
-              // of adding.
-              if (event.key !== 'Enter') return
-              event.preventDefault()
-              add()
-            }}
-          />
+          <span className="model-add">
+            <Input
+              {...wiring}
+              value={typed}
+              spellCheck={false}
+              onChange={(event) => setTyped(event.target.value)}
+              onKeyDown={(event) => {
+                // Enter adds the id rather than submitting the form, which
+                // would save an endpoint without the model somebody was in the
+                // middle of adding.
+                if (event.key !== 'Enter') return
+                event.preventDefault()
+                add()
+              }}
+            />
+            <Button disabled={typed.trim() === '' || adding !== undefined} onClick={add}>
+              Add
+            </Button>
+          </span>
         )}
       </Field>
-      <p className="actions">
-        <Button disabled={typed.trim() === '' || adding !== undefined} onClick={add}>
-          Add
-        </Button>
-      </p>
       {problem !== undefined && <p className="partial-reason">{problem}</p>}
       {setProblem !== undefined && <p className="partial-reason">{setProblem}</p>}
     </fieldset>
