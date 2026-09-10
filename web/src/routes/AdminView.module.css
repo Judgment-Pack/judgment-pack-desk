@@ -3,6 +3,8 @@
 .admin {
   container-type: inline-size;
   min-width: 0;
+  /* Keep the shell's top gutter when scrollIntoView resets a tall section. */
+  scroll-margin-block-start: var(--density-section);
 }
 
 .admin :global(.detail-head) {
