@@ -1443,8 +1443,8 @@ normalisation: a padded or otherwise re-spelled path is a second rule about
 which spellings mean the one value a page may write, and it is the re-spelling
 that would get stored.
 
-Admin's Project card is that rule as a shape rather than as a validation on top
-of one: one button, **Use this project as the default** (or **Clear the
+Admin's **Project** section is that rule as a shape rather than as a validation
+on top of one: one button, **Use this project as the default** (or **Clear the
 default** where it already is), and no field for a path. A different default is set by editing the desk-level file yourself,
 which is custody-validated and is the operator's own authority.
 
@@ -1565,7 +1565,7 @@ left beside the console button, and a link that neither shrinks nor wraps
 painted straight across it. The link's accessible name is the full sentence at
 every width.
 
-### Admin, as an overview and one open section
+### Admin: a navigation column and one open section
 
 **A settings page carries only settings.** That sentence is the whole of this
 shape, and three things follow from it. Every setting is editable in place.
@@ -1585,70 +1585,88 @@ could edit; the card's own content is in **Help & About**, which is where a
 reader goes to ask what they are connected to.
 
 **Neither configuration file is on that line**, and the omission is the point:
-each group below names its own, and naming a file twice is what the grouping
-exists to stop. The line is what the desk is *running*, which is the one thing
-no card is about.
+the section that is *about* a file names it, and naming a file twice is what
+this shape exists to stop. The line is what the desk is *running*, which is the
+one thing no section is about.
 
-**`/admin` opens on its first section**, Organization, with the list beside it —
-the way a settings page opens on its first pane rather than on a menu.
-**All settings** (`/admin#all`) is the overview: two groups, one per file, each
-stating its file's path and read status once, and under each a row per section
-carrying that section's title, a one-line summary drawn from the decoded
-configuration, and its own status only where it differs from its group's — the
-comparison being by what the status *says* rather than by which state it is,
-because two refusals naming two keys are not one status.
+**There is no overview, and its absence is the shape.** The page is a navigation
+column and a section that is open, always — the shape macOS System Settings and
+Linear's settings have, neither of which offers a pane listing all the others.
+There is no **All settings** link, no `/admin#all`, and nothing for Escape to
+return to. **`/admin` opens the first section**, and so does a fragment naming
+no section, a group's id, and a fragment that is not valid percent-encoding: an
+error about a section that does not exist is a worse answer than the page the
+reader asked for.
 
-| Group | Header states | Rows |
-|---|---|---|
-| **This project** | `jpack-desk.json`'s path, its read status, and the default-project nomination | Organization, Storage |
-| **This desk** | the desk-level file's path and its read status | Assistant, Identity provider |
+| Group | Sections |
+|---|---|
+| **This project** | Project, Organization, Storage |
+| **This desk** | Assistant, Identity provider |
 
-**A row is a link to `/admin#<id>` and the fragment is the state**: the section
-it names opens beside the list — a 13rem column of rows on a wide shell. The
-list stacks above the section below the Inspector's breakpoint or when the
-main pane has less than 40rem available, with every
-row the reader is not in collapsed to its title — `aria-current` marks the open
-row, Escape or the **All settings** link at the top of the open section goes to
-the overview, and a fragment naming no section lands there too. Those addresses
-are the ones the rail's menu and the user menu have linked to since these were
-headings; nothing else changed about them, and they scroll as they did.
+**Project is the first section, and it is about the file rather than a member of
+it.** It states the project file's **Location** and **Status** — the two rows the
+group's header used to carry — and offers the one control that is about the
+project itself: whether this desk opens it when it is launched without a
+directory. Nothing else is on it; every member of the file is a section of its
+own. Its right pane is the **whole file**, on exactly the terms every other
+pane has: the name this desk reads it at, the Location, the Digest, the Status,
+and the bytes only where the file was accepted.
 
-**The summaries come from the decoded configuration and are composed nowhere
-else**: the organization's name or `none`, `filesystem · <dir>`, `none` or
-`<kind> · <model> · thinking <tier>`, `None` or the issuer. A row that fell back
-to a name this page made up — the project it happens to be open on, the desk's
-own brand — would be a value nobody wrote that a reader cannot tell from one
-that is in the file.
+**The navigation column is two group titles and five rows, and nothing else.** No
+path, no read status, no control: a path in a 13rem column is a line of prose,
+and the two places that fact belongs are the section that is about the file and
+the pane that quotes it. A row is a link to `/admin#<id>` and the fragment is
+the state — `aria-current` marks the open row, and the section opens beside the
+column on a wide shell. The list stacks above the section below the Inspector's
+breakpoint or when the main pane has less than 40rem available, with every row
+the reader is not in collapsed to its title. Those addresses are the ones the
+rail's menu and the user menu have linked to since these were headings; nothing
+else changed about them, and they scroll as they did.
 
-**The page was a stack and is now a list, and that is the whole of the change.**
-Four sections each with a heading, a status, a disclosure and a form, one under
-another, meant a reader who came to change one thing scrolled past three they
-did not — and the page grew by a screen with every setting the desk gains. What
-a settings page is instead is an overview of what each setting currently *is*,
-and the one section that was asked for.
+**Each row carries a one-line summary drawn from the decoded configuration**, and
+its own status only where that differs from the state of the file its group is
+about — the comparison being by what the status *says* rather than by which
+state it is, because two refusals naming two keys are not one status.
 
-**A section's Status is its read state *and* its own write.** The group's status
-is the file's read state, so a section that only ever reported its read state
-showed nothing at all while it was writing, while a refusal stood against it, or
-while the file had moved underneath it — three things the section knows and the
-group does not. The form publishes what its write is doing up to the card it is
+**The summaries are composed nowhere else**: `the default project`, `not the
+default project` or `the desk has not said`; the organization's name or `none`;
+`filesystem · <dir>`; `none` or `<kind> · <model> · thinking <tier>`; `None` or
+the issuer. The Project row's third answer is **not** a spelling of its second:
+the comparison is against the path the chassis resolved, so before
+`/api/desk-config` has answered this page does not know which of the other two
+is true, and a row that picked one would be answering for the desk. A row that
+fell back to a name this page made up — the project it happens to be open on,
+the desk's own brand — would be a value nobody wrote that a reader cannot tell
+from one that is in the file.
+
+**The page was a stack, then a stack and an overview of it, and is now a
+column.** Four sections each with a heading, a status, a disclosure and a form,
+one under another, meant a reader who came to change one thing scrolled past
+three they did not. The overview that replaced it was a second page of the same
+list, reachable at `#all` and returned to by Escape — a landing state that
+answered "what is Admin" rather than "what is this setting". What is left is
+the column and the section that was asked for.
+
+**A section's Status is its read state *and* its own write.** The file's status
+is its read state, so a section that only ever reported that showed nothing at
+all while it was writing, while a refusal stood against it, or while the file had
+moved underneath it — three things the section knows and the file's read state
+does not. The form publishes what its write is doing up to the card it is
 inside, on the pattern the Inspector slot already uses: the form owns the draft
 and the save, the `save` node is handed to the card as a prop, and neither can
 reach into the other. A write in the air says so first, then a file that moved,
 then any other refusal in whoever's words refused it; a save that **landed**
 publishes nothing, because the file was read back and the read state is the
-truth again. A member the *other* file supplied is not one the
-group's header speaks for: it is given no group, and states its own Location and
-Status exactly as it did before there were groups. The heading levels follow the
-document — a group is an `h2` and its cards are `h3` — so the outline is the one
-on the screen.
+truth again. A member the *other* file supplied is not one This
+project speaks for: it is given no group, and states its own Location and Status
+exactly as it did before there were groups.
 
 **The file itself is in the right pane.** The bytes are context rather than a
 setting — nobody edits a file's text here — so Admin claims the Inspector slot
 the way the pack routes do, through `useInspectorPortal`, and releases it when
 the route leaves, which is what puts the next route's panel back. The panel names
 the file and the member (`jpack-desk.json › storage`, `desk.json › identity`, or
-the project file alone on the overview), states the **Location** the chassis
+the project file alone under **Project**), states the **Location** the chassis
 reported and the **Digest** the read carried, says the file's **Status** in the
 same closed vocabulary the sections use, and quotes the member's **own bytes** —
 never a re-serialisation of the decode, and where those bytes cannot be
@@ -1670,7 +1688,8 @@ present — defaults in use`, `refused: <key>: <the decoder's own reason>`, `not
 read — <who said so>: <their reason>`.
 
 **Settings use the wide page measure**, with a separate navigation column,
-padded links, and an accent tint on the selected row. Section headings, larger
+padded links, and an accent tint on the selected row. The column carries no
+button at all: a row is a link. Section headings, larger
 controls, and space between fields establish the form's hierarchy. The layout
 follows the shared theme and density tokens. Containers remain unframed; the
 code block in the right pane and alerts keep their borders. **One primary button per
@@ -1711,7 +1730,8 @@ on one over 140 characters, exempting quoted material — a path, a decoder's ow
 refusal, a member of the file as it is written. **The sweep runs over the states
 the configuration cannot express, too**: a connection opening, being retried and
 failed; a tool listing that did not answer; a save in the air with a refusal
-beside it; a stale write with its digests disclosed. And over the panes' reset
+beside it; a stale write with its digests disclosed. It runs over each of the five open
+sections, and over the panes' reset
 in the user menu, which is a portal outside the page, for each of its four
 answers — the two standing sentences in that menu are over the bound on purpose
 and the sweep is asserted against exactly them, so a third one fails. The standing disclaimer, the
@@ -1723,8 +1743,8 @@ it.
 **A refused file's bytes are never rendered.** The decoder refuses a whole file
 for one credential-shaped member, and the point of refusing it is that the desk
 will not act on it — so a pane that quoted it anyway would put the member the
-refusal is about, and on the overview the whole document around it, into the DOM
-of the surface reporting the refusal. On a refusal, and on a read that produced
+refusal is about, and under **Project** the whole document around it, into the
+DOM of the surface reporting the refusal. On a refusal, and on a read that produced
 no file, the pane shows its Status line and no bytes at all. **The rule has one
 spelling**: `showsContent` is exported from the card and imported by the pane,
 because two spellings of one rule are invisible to a harness that breaks one of
@@ -1732,9 +1752,9 @@ them — which is exactly how a second, redundant gate inside the old disclosure
 survived as a mutation nothing could catch.
 
 **Two things write the desk-level file, and each writes one member of it.** The
-project group's header nominates this project as the default (or withdraws one),
-the Assistant form writes `assistant`, and neither sends the other's — a member
-absent from the request is carried across untouched. That header's other slots
+Project section nominates this project as the default (or withdraws one), the
+Assistant form writes `assistant`, and neither sends the other's — a member
+absent from the request is carried across untouched. That section's other rows
 are about the *project's* file, so the one line under its control names the file
 it actually writes, from the chassis' own answer.
 
@@ -4306,11 +4326,11 @@ web/                 Vite + React + TypeScript SPA
   src/routes/        project home, the packs layout and its two children
                      (the "select a pack" page and the pack document),
                      evaluation, matrix, graphs, the authoring shell, the
-                     Admin page and Help & About — Admin being two groups of
-                     cards in one shape, one group per configuration file, of
-                     which two write the desk-level one: the project group's
-                     default project and the Assistant form's endpoint, model
-                     and tier
+                     Admin page and Help & About — Admin being a navigation
+                     column of two groups, one per configuration file, beside
+                     the one section that is open, of which two write the
+                     desk-level file: the Project section's default project and
+                     the Assistant form's endpoint, model and tier
   src/components/    evaluation, coverage, row and graph-walk views, plus the
                      trace and handoff-target renderers both the pack and graph
                      surfaces share
