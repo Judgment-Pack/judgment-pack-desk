@@ -1,48 +1,49 @@
-/* Admin: an overview, and one open section beside the list.
-   ---------------------------------------------------------------------------
-   **Admin's measure is not here.** `.admin { max-width: 44rem }` was the width
-   a label column and a value column need, measured on this page and living in
-   this page's module — so the next form-shaped page had nowhere to read it
-   from. It is `--measure-form` in `styles.css` now, and this page asks for it
-   the way every route asks for its width: `data-measure="form"` on its
-   top-level element, read by `.desk-measure` in `shell.css`. Nothing in this
-   file states a width in absolute terms again; the one column that has a size
-   is the list beside an open section, and it is a grid track rather than a cap
-   on anything.
+/* The shell owns the page measure. Inside it, the navigation and form each
+   get a column; a container query keeps them usable with the inspector open. */
+.admin {
+  container-type: inline-size;
+  min-width: 0;
+}
 
-   `.quiet` is the desk's own muted-aside class and is global, so it is styled
-   **here, under this page's class**, rather than in `styles.css`: the other
-   routes keep theirs at body size this chunk, and Admin needs it at the one
-   size its hints and rules already read at. A settings page whose asides are
-   two sizes has two type scales, which is the thing being taken out. */
+.admin :global(.detail-head) {
+  margin-bottom: var(--density-block);
+}
+
+.admin :global(.detail-head) h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
 
 .admin :global(.quiet) {
   font-size: 0.78rem;
 }
 
-/* The list, in both of its states. A row is a link with two or three lines in
-   it and nothing else: no box, no chevron, no second control. */
-
 .rows {
   display: grid;
+  gap: 0.25rem;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .rowItem {
+  min-width: 0;
   margin: 0;
 }
 
-/* A hairline above each row, on the top rather than the bottom, so the last
-   row of a group carries no rule under it — the same rule the members it
-   replaced were separated by. */
 .row {
+  position: relative;
   display: grid;
-  gap: 0.15rem;
-  padding-block: var(--density-gap);
-  border-top: 1px solid var(--border);
-  color: inherit;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  gap: 0.25rem var(--density-gap);
+  min-height: calc(var(--density-row) + var(--density-gap));
+  padding: var(--density-block);
+  padding-right: calc(var(--density-block) + 1.5rem);
+  border-radius: var(--radius);
+  color: var(--ink);
   text-decoration: none;
 }
 
@@ -55,90 +56,166 @@
   outline-offset: -2px;
 }
 
-/* The open row. A settings list marks where the reader is with weight and a
-   marker on the leading edge, not with a filled bar: the row is still a row. */
 .row[aria-current] {
-  box-shadow: inset 2px 0 0 0 var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
-.row[aria-current] .rowTitle {
-  color: var(--ink);
+.row[aria-current] .rowTitle,
+.row[aria-current] .rowArrow {
+  color: var(--accent);
 }
 
 .rowTitle {
+  grid-column: 1;
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--ink);
 }
 
-/* What the setting currently is, from the decoded configuration. It is the
-   reason the overview is an overview rather than a menu. */
 .rowSays {
+  grid-column: 1;
   font-size: 0.8rem;
   color: var(--ink-soft);
   overflow-wrap: anywhere;
 }
 
 .rowStatus {
+  grid-column: 1;
   font-size: 0.78rem;
   color: var(--ink-faint);
   overflow-wrap: anywhere;
 }
 
-/* Open: the list on the left, the section on the right.
-   ---------------------------------------------------------------------------
-   14rem is a column of titles and short summaries, which is what the list is
-   once the file's own head has left it. Below the Inspector's breakpoint the
-   two stack — the shell is one column there, and a 14rem rail beside a form
-   leaves neither of them room. */
+.rowArrow {
+  position: absolute;
+  inset-block: 0;
+  right: var(--density-block);
+  display: flex;
+  align-items: center;
+  color: var(--ink-faint);
+}
 
 .split {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--density-block);
+  gap: var(--density-section);
   align-items: start;
-}
-
-/* Stated as the *wide* case rather than as a narrow exception, so that the
-   stacked form is what a shell gets by default — and so that this file spells
-   no `max-width` at all, which is the rule `shellSheet.test.ts` holds it to:
-   a page that states a width of its own is a measure living somewhere the next
-   page cannot read it from. The breakpoint is the Inspector's own, because
-   what it is about is the shell being one column below it. */
-@media (min-width: 1100px) {
-  .split {
-    grid-template-columns: 14rem minmax(0, 1fr);
-    gap: var(--density-section);
-  }
 }
 
 .rail {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--density-block);
+  min-width: 0;
+  padding-bottom: var(--density-section);
+  border-bottom: 1px solid var(--border);
 }
 
 .railGroup {
   display: grid;
+  align-content: start;
+  min-width: 0;
 }
 
-/* The group's name in the list, as a label rather than a heading: the outline
-   of this page is its heading and the section that is open, and a navigation
-   column that added two more headings to it would be offering a reader an
-   outline that is not the one on the screen. */
 .railTitle {
   margin: 0 0 var(--density-gap);
-  font-size: 0.8rem;
+  padding-inline: var(--density-block);
+  font-size: 0.78rem;
   font-weight: 500;
-  color: var(--ink-soft);
+  color: var(--ink-faint);
 }
 
 .open {
   display: grid;
+  min-width: 0;
+  align-content: start;
 }
 
 .back {
+  display: inline-flex;
+  align-items: center;
   justify-self: start;
-  margin-bottom: var(--density-gap);
-  font-size: 0.8rem;
+  gap: 0.3rem;
+  min-height: var(--density-control);
+  margin-bottom: var(--density-block);
+  border-radius: var(--radius-sm);
   color: var(--ink-soft);
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
+.back:hover {
+  color: var(--accent);
+}
+
+.back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.open > section {
+  padding: 0;
+  border-top-width: 0;
+}
+
+.open > section > h2 {
+  margin-bottom: var(--density-section);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+/* Give settings controls more room while continuing to follow the density
+   scale and the shared components' focus, error and disabled states. */
+.open form fieldset > div {
+  margin-bottom: var(--density-section);
+}
+
+.open input:not([type='checkbox']):not([type='radio']),
+.open [role='combobox'] {
+  min-height: calc(var(--density-control) + 0.5rem);
+  padding-inline: 0.75rem;
+}
+
+.open textarea {
+  min-height: 9rem;
+  padding: 0.75rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.open form :global(.actions) {
+  gap: var(--density-block);
+  margin: var(--density-section) 0 0;
+  padding-top: var(--density-block);
+  border-top: 1px solid var(--border);
+}
+
+.open form :global(.actions) button {
+  min-width: 5rem;
+  min-height: calc(var(--density-control) + 0.25rem);
+}
+
+/* The shell stacks below 1100px. Above that, also check the actual available
+   space: an expanded rail and inspector can leave a narrow main pane. */
+@media (min-width: 1100px) {
+  @container (min-width: 40rem) {
+    .split {
+      grid-template-columns: 13rem minmax(0, var(--measure-form));
+      gap: calc(var(--density-section) * 1.5);
+    }
+
+    .rail {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--density-section);
+      padding: 0;
+      border-bottom-width: 0;
+    }
+
+    .open {
+      padding-left: calc(var(--density-section) * 1.5);
+      border-left: 1px solid var(--border);
+    }
+  }
 }
