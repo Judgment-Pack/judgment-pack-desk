@@ -1710,6 +1710,23 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	if verdict == handoffAccepted && s.sessions.full() {' \
     '	verdict := s.handoffPresented(r)
 	if s.sessions.full() {'
+  # **The bound is read before the handoff is spent, inside one lock.** With
+  # the spend first, two requests at the last slot both eat their handoffs and
+  # one is then refused for want of room — a 503 that also destroyed a launch
+  # link the person could still have used after a restart.
+  mutate go "the handoff is spent before the bound is read" "$SE" \
+    '	if len(st.live) >= maxSessions {
+		return "", errTooManySessions
+	}
+	if !commit() {
+		return "", errHandoffTaken
+	}' \
+    '	if !commit() {
+		return "", errHandoffTaken
+	}
+	if len(st.live) >= maxSessions {
+		return "", errTooManySessions
+	}'
   # **And the classification spends nothing**, so a live handoff refused for
   # want of room is still there after a restart.
   mutate go "classifying a handoff spends it" "$SE" \

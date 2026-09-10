@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -1938,6 +1939,170 @@ func TestTheBoundIsAskedAfterTheCookieIsClassified(t *testing.T) {
 				status, body["code"], CodeSessionsFull)
 		}
 	})
+}
+
+// oneExchange is one `POST /api/session` made from a goroutine, so a barrier
+// test can hold two of them at once. It reports rather than fails, because
+// `t.Fatalf` from a goroutine is not `t.Fatalf`.
+type oneExchange struct {
+	status  int
+	code    string
+	cookies []*http.Cookie
+	err     error
+}
+
+func exchangeFrom(ts *httptest.Server, decorate func(*http.Request)) oneExchange {
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/session", nil)
+	if err != nil {
+		return oneExchange{err: err}
+	}
+	decorate(req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return oneExchange{err: err}
+	}
+	defer resp.Body.Close()
+	var body map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	code, _ := body["code"].(string)
+	return oneExchange{status: resp.StatusCode, code: code, cookies: resp.Cookies()}
+}
+
+// holdEveryExchangeAtTheCommitment stops each exchange at the instant it has
+// classified its handoff and read the bound and has not yet committed, and
+// answers a channel that reports each arrival and a function that releases
+// them all.
+func holdEveryExchangeAtTheCommitment(t *testing.T, expect int) (<-chan struct{}, func()) {
+	t.Helper()
+	arrived := make(chan struct{}, expect)
+	release := make(chan struct{})
+	testHookBeforeCommit = func() {
+		arrived <- struct{}{}
+		<-release
+	}
+	t.Cleanup(func() { testHookBeforeCommit = nil })
+	return arrived, func() { close(release) }
+}
+
+// TestTheLastSlotIsMintedOnceAndTheOtherLinkSurvives.
+//
+// **The interleaving the commitment point exists for.** At sixty-three
+// sessions, two requests each carrying a live handoff both read a bound with
+// room in it. Spending before minting, both would eat their handoffs and one
+// would then be refused for want of room — a `503` that also destroyed a launch
+// link the person could otherwise still use after a restart.
+//
+// The bound, the spend and the write are one critical section, so exactly one
+// mints and the other refuses **without spending**: its cookie is untouched,
+// its handoff is still live in the store, and nothing was set on the way out.
+func TestTheLastSlotIsMintedOnceAndTheOtherLinkSurvives(t *testing.T) {
+	s, ts := newTestServer(t, false)
+	for s.sessions.count() < maxSessions-1 {
+		exchangeAttempt(t, ts, bearer)
+	}
+	if n := s.sessions.count(); n != maxSessions-1 {
+		t.Fatalf("%d sessions, want %d before the race", n, maxSessions-1)
+	}
+	first := launchHandoff(t, ts)
+	second := launchHandoff(t, ts)
+
+	arrived, release := holdEveryExchangeAtTheCommitment(t, 2)
+	answers := make(chan oneExchange, 2)
+	for _, handoff := range []*http.Cookie{first, second} {
+		go func(handoff *http.Cookie) {
+			answers <- exchangeFrom(ts, withHandoff(ts, handoff))
+		}(handoff)
+	}
+	// Both are past the classification and the early bound, and neither has
+	// committed. Releasing them here is what makes the interleaving the one
+	// under test rather than whichever one the scheduler picked.
+	<-arrived
+	<-arrived
+	release()
+
+	minted, refused := 0, 0
+	for range 2 {
+		got := <-answers
+		if got.err != nil {
+			t.Fatalf("exchange: %v", got.err)
+		}
+		switch got.status {
+		case http.StatusOK:
+			minted++
+		case http.StatusServiceUnavailable:
+			refused++
+			if got.code != CodeSessionsFull {
+				t.Errorf("the refusal read %q, want %s", got.code, CodeSessionsFull)
+			}
+			if len(got.cookies) != 0 {
+				t.Errorf("a capacity refusal set %v", got.cookies)
+			}
+		default:
+			t.Fatalf("an exchange answered %d %q", got.status, got.code)
+		}
+	}
+	if minted != 1 || refused != 1 {
+		t.Fatalf("%d minted and %d refused, want exactly one of each", minted, refused)
+	}
+	if n := s.sessions.count(); n != maxSessions {
+		t.Fatalf("%d sessions, want %d", n, maxSessions)
+	}
+	// **One handoff spent, one still live.** The refused request kept its link,
+	// which is the whole point of refusing before committing.
+	if n := s.launches.count(); n != 1 {
+		t.Fatalf("%d unspent handoff(s), want the refused request's one", n)
+	}
+	live := 0
+	for _, handoff := range []*http.Cookie{first, second} {
+		if s.launches.classify(handoff.Value) == handoffAccepted {
+			live++
+		}
+	}
+	if live != 1 {
+		t.Fatalf("%d of the two handoffs are still live, want 1", live)
+	}
+}
+
+// TestASlotTakenAfterTheClassificationRefusesWithoutSpending is the other order
+// Codex named: this request classifies a live handoff and reads a bound with
+// room, and another exchange fills the last slot before it commits.
+//
+// It must answer `sessions-full` **with its handoff unspent**, and it must not
+// clear the tab's cookie: a page that acted on a capacity refusal by deleting
+// its id would delete one that is perfectly good.
+func TestASlotTakenAfterTheClassificationRefusesWithoutSpending(t *testing.T) {
+	s, ts := newTestServer(t, false)
+	for s.sessions.count() < maxSessions-1 {
+		exchangeAttempt(t, ts, bearer)
+	}
+	handoff := launchHandoff(t, ts)
+
+	// The hook fires once, on the request under test, and fills the last slot
+	// from underneath it — the store's own door, so nothing here depends on a
+	// second request winning a race.
+	var once sync.Once
+	testHookBeforeCommit = func() {
+		once.Do(func() {
+			if _, err := s.sessions.create("local user", nil); err != nil {
+				t.Errorf("filling the last slot: %v", err)
+			}
+		})
+	}
+	t.Cleanup(func() { testHookBeforeCommit = nil })
+
+	status, body := exchangeAttempt(t, ts, withHandoff(ts, handoff))
+	if status != http.StatusServiceUnavailable {
+		t.Fatalf("status %d, want 503: %v", status, body)
+	}
+	if body["code"] != CodeSessionsFull {
+		t.Fatalf("code %v, want %s", body["code"], CodeSessionsFull)
+	}
+	if n := s.launches.count(); n != 1 {
+		t.Fatalf("%d unspent handoff(s), want the refused request's one", n)
+	}
+	if s.launches.classify(handoff.Value) != handoffAccepted {
+		t.Fatal("the refused request spent its handoff")
+	}
 }
 
 // TestTheHandlersThatWriteTheirOwnRefusalsAreMarkedToo.

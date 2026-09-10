@@ -158,6 +158,11 @@ const maxSessions = 64
 // desk is working and is temporarily unable to take another session.
 var errTooManySessions = errors.New("this desk holds its maximum of sessions; restart it")
 
+// errHandoffTaken is the commitment failing: the handoff was live when this
+// request classified it and gone by the time the mint asked for it. It is the
+// same answer to the page as any other spent handoff, because it is one.
+var errHandoffTaken = errors.New("this launch link was already used")
+
 // maxLaunches bounds the handoff store. It is small because a handoff lives
 // sixty seconds and is spent by the first page that loads.
 const maxLaunches = 32
@@ -232,13 +237,37 @@ func (st *sessionStore) handle(id string) string {
 // from: a session id is a bearer credential for the whole of this desk's
 // surface, so it is exactly as unguessable as the secret that bought it.
 //
-// **A full store refuses, and the check is under the lock that writes** — one
-// check and not two. An earlier draft tested the bound before minting as well,
-// to avoid generating an id it would throw away; two readings of one fact is
-// exactly the shape this package spends its comments arguing against, and a
-// mutation row proved the redundant one was holding nothing. Twenty-four bytes
-// of entropy discarded on the one path that reaches the bound is not a cost.
+// **A full store refuses, and the check is under the lock that writes.** The
+// caller may read `full` first to answer early; this is the reading that
+// decides, because it is the one the write cannot be separated from.
 func (st *sessionStore) create(subject string, issuer *string) (string, error) {
+	return st.createCommitting(subject, issuer, func() bool { return true })
+}
+
+// createCommitting mints a session, and **the bound, the commit and the write
+// are one critical section**.
+//
+// `commit` is the irreversible thing a caller must do to earn the session — for
+// the exchange, spending the launch handoff. It runs under this store's lock,
+// after the bound has been re-read and before anything is written, so those
+// three cannot interleave.
+//
+// **The interleaving this exists for.** At sixty-three sessions, two requests
+// each carrying a live handoff both pass any bound read outside this lock.
+// Spending before minting, each would eat its handoff and one would then be
+// refused for want of room — a `503` that also ate a launch link the person
+// could otherwise still use. Here the second request reads sixty-four, refuses,
+// and **never calls `commit`**: its handoff is untouched and its link still
+// works. The same holds for a slot taken between a caller's early read and this
+// one, which is the other order: refused, and nothing spent.
+//
+// A `commit` that answers false has changed nothing, and says somebody else
+// took what this request was going to spend.
+//
+// **Lock order: this store's lock, then the launch store's.** `commit` reaches
+// `launchStore.spend`, and nothing in this package takes the launch store's
+// lock and then this one, so the pair cannot deadlock.
+func (st *sessionStore) createCommitting(subject string, issuer *string, commit func() bool) (string, error) {
 	id, err := NewToken()
 	if err != nil {
 		return "", err
@@ -247,6 +276,9 @@ func (st *sessionStore) create(subject string, issuer *string) (string, error) {
 	defer st.mu.Unlock()
 	if len(st.live) >= maxSessions {
 		return "", errTooManySessions
+	}
+	if !commit() {
+		return "", errHandoffTaken
 	}
 	st.live[st.handle(id)] = session{subject: subject, issuer: issuer, created: time.Now()}
 	return id, nil
@@ -257,6 +289,10 @@ func (st *sessionStore) create(subject string, issuer *string) (string, error) {
 // **Asked before a handoff is spent**, so that a desk at its bound refuses
 // without consuming the launch link: a person who restarts and reopens the URL
 // gets a working desk, rather than a link this process has already eaten.
+//
+// **It is an early answer and not the decision.** The reading that decides is
+// inside `createCommitting`, under the lock that writes; this one only spares a
+// request that is certainly refused the rest of the work.
 func (st *sessionStore) full() bool {
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -842,6 +878,20 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	s.readSession(w, r)
 }
 
+// testHookBeforeCommit runs between classifying a handoff and committing to a
+// session, and is nil outside tests.
+//
+// It exists so a test can hold two exchanges at exactly the instant where both
+// have decided they may mint and neither has. Inside the commitment's lock a
+// barrier could never see the second request; here it can.
+var testHookBeforeCommit func()
+
+func beforeCommit() {
+	if testHookBeforeCommit != nil {
+		testHookBeforeCommit()
+	}
+}
+
 // createSession spends a handoff and answers with a session id.
 //
 // # What it accepts, and why each check is here
@@ -883,7 +933,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 				errTooManySessions.Error())
 			return
 		}
-		s.mintSession(w, nil)
+		s.mintSession(w, nil, nil)
 		return
 	}
 	if r.Header.Get(fetchSiteHeader) != fetchSiteSameOrigin {
@@ -908,15 +958,15 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 	}
 	switch verdict {
 	case handoffAccepted:
-		// **Spent now, and not a moment earlier.** Between the classification
-		// above and this line another request can take the same handoff; it is
-		// spent by then, and this answers what any spent handoff answers.
-		if !s.spendPresented(r) {
-			writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,
-				"this launch link was already used: open the URL jpack-desk printed at startup")
-			return
-		}
-		s.mintSession(w, r)
+		// The barrier a test holds two exchanges at: both past the
+		// classification and the early bound, neither yet committed.
+		beforeCommit()
+		// **Spent at the point of commitment, and nowhere else.** The spend
+		// runs under the session store's lock, after the bound has been read
+		// there, so a request refused for want of room has not eaten its
+		// handoff and a handoff another request took in the meantime refuses
+		// this one instead of minting a second session from it.
+		s.mintSession(w, r, func() bool { return s.spendPresented(r) })
 	case handoffSpent:
 		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,
 			"this launch link was already used: open the URL jpack-desk printed at startup")
@@ -1006,10 +1056,21 @@ func (s *Server) spendPresented(r *http.Request) bool {
 // **Nothing is cleared until the mint succeeds.** The bound is asked before a
 // handoff is spent, so a `503` here is only the race between two exchanges at
 // sixty-three, and the refusal leaves the cookie where it is.
-func (s *Server) mintSession(w http.ResponseWriter, r *http.Request) {
-	id, err := s.sessions.create("local user", nil)
+func (s *Server) mintSession(w http.ResponseWriter, r *http.Request, commit func() bool) {
+	if commit == nil {
+		commit = func() bool { return true }
+	}
+	id, err := s.sessions.createCommitting("local user", nil, commit)
 	if errors.Is(err, errTooManySessions) {
 		writeJSONCoded(w, http.StatusServiceUnavailable, CodeSessionsFull, errTooManySessions.Error())
+		return
+	}
+	if errors.Is(err, errHandoffTaken) {
+		// Somebody else spent it between the classification and the commitment.
+		// The page is told what any spent handoff tells it, because that is
+		// what this is.
+		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,
+			"this launch link was already used: open the URL jpack-desk printed at startup")
 		return
 	}
 	if err != nil {
