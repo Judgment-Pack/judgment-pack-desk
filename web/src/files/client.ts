@@ -1,4 +1,4 @@
-import { NoSession, discardBody, forgetSession, sessionBearer } from '../mcp/session'
+import { NoSession, discardBody, forgetSession, refusalCode, sessionBearer } from '../mcp/session'
 
 /**
  * The chassis file API, as this client calls it (issue #14, phase 1).
@@ -193,9 +193,11 @@ const endpoint = chassisUrl
  *   this page has no session throws `NoSession` without sending anything.
  * - **`Authorization: Bearer <id>`**, from `mcp/session.ts`. The id is a
  *   credential this page holds deliberately, so it goes on requests this page
- *   means to make and on nothing else. A `401` is the **end**: the id names
- *   nothing, only the printed URL mints another, and the page says so rather
- *   than retrying something no retry can fix.
+ *   means to make and on nothing else. A `401` **this desk authored and marked
+ *   `unauthorized`** is the end: the id names nothing, only the printed URL
+ *   mints another, and the page says so rather than retrying something no
+ *   retry can fix. Any other `401` is somebody else's answer and is returned
+ *   like any other failed status.
  * - **`credentials: 'omit'`**, stated rather than defaulted. `same-origin` is
  *   `fetch`'s default and would send the launch handoff on every request; that
  *   cookie is worth one call to `POST /api/session` and belongs on no other.
@@ -218,6 +220,17 @@ export async function deskFetch(input: string, init: RequestInit = {}): Promise<
     }
   })
   if (answered.status !== 401) return answered
+  // **A 401 is not on its own evidence that this page's session is over**, and
+  // this rule is the same one the assistant's relay transport applies: the
+  // chassis marks every refusal it authors with `X-Jpack-Desk-Refusal` and
+  // strips that header from every answer it relays, so the mark plus the code
+  // `unauthorized` is what says "this desk does not know your id". A 401
+  // carrying any other code, or none at all — a proxy in front of the desk, an
+  // upstream answer that reached a route through some other path — is returned
+  // like any other failed status, and `answer<T>()` turns it into an ordinary
+  // request error. Ending the session on it would delete a working id over
+  // somebody else's refusal.
+  if (refusalCode(answered) !== 'unauthorized') return answered
   // **The end of the road, and nothing is retried.** The id names nothing: the
   // chassis restarted, or something else spent the handoff this page's exchange
   // was for. Only the printed URL mints another, so what this page can usefully

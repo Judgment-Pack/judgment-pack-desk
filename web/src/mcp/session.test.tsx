@@ -24,6 +24,7 @@ import {
   REFUSAL_HEADER,
   bootstrap,
   forgetSession,
+  refusalCode,
   resetSessionForTesting,
   sessionBearer,
   sessionEnded,
@@ -671,6 +672,44 @@ describe('a refusal after the bootstrap is terminal', () => {
     await bootstrap()
     forgetSession()
     await expect(deskFetch('/api/desk-config')).rejects.toThrow(NoSession)
+  })
+
+  it('ends the session on the desk’s own fetch only on `unauthorized`', async () => {
+    // **The same rule as the relay transport's, on the same evidence.** A 401
+    // is not on its own a lost session: the chassis marks every refusal it
+    // authors and strips that mark from everything it relays, so the mark plus
+    // `unauthorized` is the whole discriminator. A 401 wearing one of the
+    // exchange's own codes, or none at all, is somebody else's answer, and
+    // ending the page's session over it would delete a working id.
+    for (const answer of [
+      refused('no-handoff', { code: 'no-handoff' }),
+      refused('handoff-spent', { code: 'handoff-spent' }),
+      refused('handoff-expired', { code: 'handoff-expired' }),
+      refused('sessions-full', { code: 'sessions-full' }),
+      refused('bad-request', { code: 'bad-request' }),
+      json({ error: 'a proxy said no' }, 401)
+    ]) {
+      const code = refusalCode(answer) ?? 'unmarked'
+      resetSessionForTesting()
+      window.sessionStorage.clear()
+      record((call) => (call.url === '/api/session' ? json({ id: MINTED }) : answer.clone()))
+      // An ordinary request error, not a `NoSession`.
+      await expect(listFiles(), code).rejects.toThrow()
+      await expect(listFiles(), code).rejects.not.toThrow(NoSession)
+      expect(sessionEnded(), code).toBeNull()
+      expect(window.sessionStorage.getItem(sessionStorageKey()), code).toBe(MINTED)
+    }
+
+    // The control: a marked `unauthorized` does end it.
+    resetSessionForTesting()
+    window.sessionStorage.clear()
+    record((call) =>
+      call.url === '/api/session'
+        ? json({ id: MINTED })
+        : refused('unauthorized', { error: 'no session', code: 'unauthorized' })
+    )
+    await expect(listFiles()).rejects.toThrow(NoSession)
+    expect(window.sessionStorage.getItem(sessionStorageKey())).toBeNull()
   })
 
   it('leaves the id in place for a call that answers anything but 401', async () => {

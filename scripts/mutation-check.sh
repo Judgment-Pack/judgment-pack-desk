@@ -7072,6 +7072,14 @@ export function assistantTransport(id: string): Transport {
     '  forgetSession()
   throw new NoSession()' \
     '  throw new NoSession()'
+  # **The same discriminator as the relay transport's, on the desk's own
+  # fetch.** A 401 wearing one of the exchange's codes, or no mark at all, is
+  # somebody else's answer — a proxy, an upstream reached some other way — and
+  # ending the session on it deletes a working id over a refusal this desk
+  # never wrote.
+  mutate web "any 401 ends the session on the desk's own fetch" "$FC" \
+    "  if (refusalCode(answered) !== 'unauthorized') return answered" \
+    ''
 fi
 
 restore
