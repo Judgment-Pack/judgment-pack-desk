@@ -520,6 +520,30 @@ describe('the section before a run', () => {
     await openIt()
     expect(await screen.findByText('vercel · a-model · thinking ultra')).toBeTruthy()
   })
+
+  it('offers the enabled set here too, and names what it would run', async () => {
+    // **One preference, two surfaces.** The dialog and the Assistant tab read
+    // the same hook under the same key, so a pick made in one is the pick the
+    // other opens on — and the standing line names it rather than the file's
+    // default.
+    serve()
+    draw({
+      endpoint: { ...ENDPOINT, model: 'a-model', models: ['a-model', 'a-second-model'] }
+    })
+    await openIt()
+    const picker = await screen.findByRole('combobox', { name: 'Model' })
+    fireEvent.click(picker)
+    fireEvent.click(await screen.findByRole('option', { name: 'a-second-model' }))
+    expect(await screen.findByText('vercel · a-second-model · thinking off')).toBeTruthy()
+  })
+
+  it('offers no picker where nothing is enabled', async () => {
+    serve()
+    draw({ endpoint: { ...ENDPOINT, model: null, models: [] } })
+    await openIt()
+    await screen.findByRole('button', { name: 'Propose' })
+    expect(screen.queryByRole('combobox', { name: 'Model' })).toBeNull()
+  })
 })
 
 describe('one whole run, in the dialog', () => {

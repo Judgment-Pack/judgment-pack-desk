@@ -17,6 +17,18 @@ import scenario from './conformance/scenario.json'
 import { canonicalProposal, frozen, plain, useAssistantRun } from './useAssistantRun'
 import type { AssistantEvent, AssistantSession, Engine } from './engine'
 
+/** What the engine was handed, for the case that is about the model. */
+let handed: AssistantSession | null = null
+
+/** An engine that records its session and ends at once. */
+const records: Engine = {
+  id: 'vercel',
+  async *start(session: AssistantSession): AsyncGenerator<AssistantEvent> {
+    handed = session
+    yield { type: 'end' }
+  }
+}
+
 /** An engine that yields nothing, ends never, and ignores its abort signal. */
 const deaf: Engine = {
   id: 'vercel',
@@ -58,17 +70,12 @@ const ENDPOINT = {
 
 let runtime: ReturnType<typeof scriptedWebSocket> | null = null
 
-function drive() {
+function drive(model = ENDPOINT.model) {
   runtime = scriptedWebSocket({})
   vi.stubGlobal('WebSocket', runtime.WebSocket)
   vi.stubGlobal('fetch', async () => new Response('{}'))
   return renderHook(() =>
-    useAssistantRun({
-      endpoint: ENDPOINT,
-      model: ENDPOINT.model,
-      engine: 'vercel',
-      thinking: 'off'
-    })
+    useAssistantRun({ endpoint: ENDPOINT, model, engine: 'vercel', thinking: 'off' })
   )
 }
 
@@ -76,6 +83,7 @@ const ends = (events: AssistantEvent[]) => events.filter((event) => event.type =
 
 beforeEach(() => {
   engine = deaf
+  handed = null
 })
 
 afterEach(() => {
@@ -83,6 +91,33 @@ afterEach(() => {
   vi.unstubAllGlobals()
   runtime = null
   window.sessionStorage.clear()
+})
+
+describe('the model a run is given', () => {
+  it('is the one the caller picked, and never the endpoint s own default', async () => {
+    // **Which of the enabled models a piece of work wants is decided at the
+    // run.** A hook that reached past the pick for the file's default would be
+    // running something nobody chose, under a picker showing something else.
+    engine = records
+    const { result } = drive('a-second-model')
+    act(() => result.current.start('the runtime’s prompt'))
+    await waitFor(() => expect(handed).not.toBeNull())
+    expect(handed!.model.model).toBe('a-second-model')
+    // The family is still the endpoint's: the pick names a model, not a wire.
+    expect(handed!.model.family).toBe(ENDPOINT.kind)
+  })
+
+  it('refuses to run at all where nothing is enabled', async () => {
+    // The empty string is the state the schema has, and it is the one state a
+    // run cannot carry: a request naming no model is a request whose answer
+    // means nothing. The tab offers no run there, and this is the layer under.
+    engine = records
+    const { result } = drive('')
+    act(() => result.current.start('the runtime’s prompt'))
+    await waitFor(() => expect(result.current.status).toBe('finished'))
+    expect(handed).toBeNull()
+    expect(result.current.failure).toContain('no model chosen yet')
+  })
 })
 
 describe('the run hook writes the terminal event itself', () => {

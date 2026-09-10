@@ -1192,4 +1192,51 @@ describe('the narration guard, over the states only the form can reach', () => {
     const { container } = renderForm(noFile(), false, true)
     expect(swept(container), swept(container).join(' | ')).toEqual([])
   })
+
+  it('carries no paragraph over a list the endpoint answered', async () => {
+    // The states the Models list and Test connection reach are the form's own,
+    // and the sweep on Admin renders configurations rather than presses.
+    vi.stubGlobal('fetch', async (url: string) => {
+      if (url.includes('/api/assistant/key')) {
+        return { ok: true, status: 200, statusText: '', text: async () => JSON.stringify(keyAnswer) }
+      }
+      if (url.includes('/api/assistant/probe')) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: '',
+          text: async () =>
+            JSON.stringify({ reachable: true, status: 200, latencyMs: 12, diagnostic: '' })
+        }
+      }
+      if (url.includes('/api/assistant/relay/')) {
+        return new Response(
+          JSON.stringify({ data: [{ id: 'a-listed-model' }, { id: 'a-second-listed-model' }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      }
+      return { ok: true, status: 200, statusText: '', text: async () => JSON.stringify(WRITTEN) }
+    })
+    keyAnswer = keyState(true)
+    const { container } = renderForm()
+    fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
+    await screen.findByText('Connected · 2 models available')
+    expect(swept(container), swept(container).join(' | ')).toEqual([])
+  })
+
+  it('carries no paragraph where the check refused before it asked', async () => {
+    vi.stubGlobal('fetch', async (url: string) => {
+      if (url.includes('/api/assistant/key')) {
+        return { ok: true, status: 200, statusText: '', text: async () => JSON.stringify(keyAnswer) }
+      }
+      return { ok: true, status: 200, statusText: '', text: async () => JSON.stringify(WRITTEN) }
+    })
+    keyAnswer = keyState(true)
+    const { container } = renderForm(
+      configured({ endpoint: { ...ENDPOINT, kind: 'anthropic', model: null, models: [] } })
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
+    await screen.findByText('Choose a model to test this provider.')
+    expect(swept(container), swept(container).join(' | ')).toEqual([])
+  })
 })
