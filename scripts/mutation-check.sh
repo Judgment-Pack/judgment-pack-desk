@@ -6932,6 +6932,16 @@ export function assistantTransport(id: string): Transport {
     '  await discardBody(answered)
   if (code === '"'"'handoff-spent'"'"') {' \
     '  if (code === '"'"'handoff-spent'"'"') {'
+  # And the count read's own release, which is a second call on the same route:
+  # a test that recorded whichever `/api/session` answer came last measured this
+  # one while naming the other.
+  mutate web "a refused count read's body is left in flight" "$MS" \
+    '    // A refused read is not this function'"'"'s business: the id is dead, and the
+    // call that meets it next says so. The body is let go of either way.
+    await discardBody(answered)' \
+    '    // A refused read is not this function'"'"'s business: the id is dead, and the
+    // call that meets it next says so. The body is let go of either way.
+    void answered'
   # **A theft read as a reload.** `handoff-spent` is what tells an
   # authenticated tab that its launch link was used by something else; treating
   # it like `no-handoff` keeps a session the person was never told about.

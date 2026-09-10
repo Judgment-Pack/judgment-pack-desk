@@ -185,17 +185,38 @@ describe('the one exchange', () => {
     // and is exactly what the containment gate caught: a page that never
     // reaches `networkidle` because one `POST /api/session` that answered 401
     // was still open.
+    // **The exchange's own answer, and not the count read that follows it.**
+    // Both are `/api/session`, and a stub that recorded whichever came last
+    // measured the wrong one — the count read releases its own body on its own
+    // path, so the row that breaks the exchange's release survived.
     window.sessionStorage.setItem(sessionStorageKey(), STORED)
     let refusal: Response | undefined
-    vi.stubGlobal('fetch', async (input: unknown) => {
-      if (String(input) === '/api/session') {
+    vi.stubGlobal('fetch', async (input: unknown, init?: RequestInit) => {
+      if (String(input) === '/api/session' && init?.method === 'POST') {
         refusal = refused('no-handoff', { code: 'no-handoff' })
         return refusal
       }
-      return json({})
+      return json({ subject: 'local user', issuer: null, sessions: { minted: 1 } })
     })
     expect(await bootstrap()).toBe(STORED)
+    expect(refusal, 'the exchange was never made').toBeDefined()
     expect(refusal?.bodyUsed).toBe(true)
+  })
+
+  it('lets go of a refused count read too', async () => {
+    // The same property on the other read this bootstrap can make. It is its
+    // own row's subject rather than this one's, and its own assertion here.
+    window.sessionStorage.setItem(sessionStorageKey(), STORED)
+    let read: Response | undefined
+    vi.stubGlobal('fetch', async (input: unknown, init?: RequestInit) => {
+      if (String(input) === '/api/session' && init?.method === 'POST') {
+        return refused('no-handoff', { code: 'no-handoff' })
+      }
+      read = refused('unauthorized', { code: 'unauthorized' })
+      return read
+    })
+    expect(await bootstrap()).toBe(STORED)
+    expect(read?.bodyUsed).toBe(true)
   })
 
   it('answers null when there is no handoff and this tab holds nothing', async () => {
