@@ -35,7 +35,15 @@ import {
 export interface EndpointDraft {
   kind: EndpointKind
   url: string
+  /**
+   * The **default** of the set below, and `''` where nothing is enabled.
+   *
+   * A string throughout, because that is what a control holds; `assistantWrite`
+   * is where `''` becomes the null the schema spells.
+   */
   model: string
+  /** The enabled set, in the order the boxes were ticked over the file's own. */
+  models: string[]
   tools: AssistantTool[]
   thinking: ThinkingTier
 }
@@ -97,6 +105,10 @@ export function draftFrom(config: AssistantConfig): EndpointDraft {
     // looks like in a text field; `assistantWrite` is where it becomes the
     // null the schema spells.
     model: endpoint?.model ?? '',
+    // **The file's own set, and never a list from anywhere else.** A form that
+    // opened on what an endpoint happened to list would show a set nobody
+    // enabled, under a Save that would write it.
+    models: endpoint?.models ?? [],
     tools:
       endpoint === null
         ? [...ASSISTANT_TOOLS]
@@ -131,6 +143,41 @@ export function withKind(draft: EndpointDraft, kind: EndpointKind): EndpointDraf
   const typed = draft.url.trim()
   const offered = typed === '' || typed === PREFILLED_URL[draft.kind]
   return { ...draft, kind, url: offered ? PREFILLED_URL[kind] : draft.url }
+}
+
+/**
+ * Enable or disable one model, keeping a default the set can actually have.
+ *
+ * **A non-empty set with no default is a configuration the decoder refuses by
+ * name**, so the two move together: ticking the first model chooses it, and
+ * unticking the default moves the default to what is left — or to `''` where
+ * nothing is. A form that let the two drift apart would compose a file its own
+ * reader rejects, out of two clicks that each looked reasonable.
+ *
+ * An id already in the set is not added twice, which is the same rule the
+ * decoder holds the member to.
+ */
+export function withModel(draft: EndpointDraft, id: string, enabled: boolean): EndpointDraft {
+  const models = enabled
+    ? draft.models.includes(id)
+      ? draft.models
+      : [...draft.models, id]
+    : draft.models.filter((each) => each !== id)
+  const model = models.includes(draft.model) ? draft.model : (models[0] ?? '')
+  return { ...draft, models, model }
+}
+
+/**
+ * Make one enabled model the default.
+ *
+ * **Only a member of the set may be it.** The radio is offered on enabled rows
+ * alone, and this is the second layer under that: a default nothing enabled is
+ * the state the decoder refuses, and a setter that could reach it would be a
+ * control composing that file.
+ */
+export function withDefaultModel(draft: EndpointDraft, id: string): EndpointDraft {
+  if (!draft.models.includes(id)) return draft
+  return { ...draft, model: id }
 }
 
 /** Turn one tool on or off, keeping the closed list's own order. */
@@ -172,6 +219,10 @@ export function assistantWrite(draft: EndpointDraft): unknown {
       // first save, which is the one that has to work before a list can be
       // asked for.
       model: draft.model.trim() === '' ? null : draft.model.trim(),
+      // **The set, named like every other member and trimmed like the default.**
+      // What the decoder accepts is the trimmed id, so a set written untrimmed
+      // would be a form showing one string and writing another.
+      models: draft.models.map((id) => id.trim()),
       tools: ASSISTANT_TOOLS.filter((tool) => draft.tools.includes(tool))
     },
     thinking: draft.thinking

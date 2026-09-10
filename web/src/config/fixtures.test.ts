@@ -50,6 +50,18 @@ interface Verdict {
    * twenty-odd verdicts that say nothing.
    */
   notices?: { key: string; says: string }[]
+  /**
+   * The endpoint's enabled set and its default, as the file decodes to them.
+   *
+   * Compared-if-present on the same terms as `notices`, and the omission still
+   * checks: the absent values are the empty set and no default, so a fixture
+   * that starts decoding to a set and does not declare one fails. This is where
+   * the migration is stated — a file naming a model and no set decodes to the
+   * set of that one id, on both sides — and where a default is proved to be
+   * held to the set beside it.
+   */
+  models?: string[]
+  model?: string
 }
 
 const expected = JSON.parse(
@@ -94,6 +106,10 @@ describe('the shared desk-configuration fixtures', () => {
         // The migrations, in the decoder's own words. A sentence changed on
         // one side of the shared decoder and not the other fails on both.
         expect(decoded.notices, `${name}: notices`).toEqual(verdict.notices ?? [])
+        // The set and its default, which is where the migration is stated.
+        const endpoint = (decoded.values?.assistant ?? DESK_DEFAULTS.assistant).endpoint
+        expect(endpoint?.models ?? [], `${name}: models`).toEqual(verdict.models ?? [])
+        expect(endpoint?.model ?? '', `${name}: model`).toBe(verdict.model ?? '')
         return
       }
       expect(decoded.values, `${name} was accepted`).toBeUndefined()

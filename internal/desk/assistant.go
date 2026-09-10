@@ -477,11 +477,15 @@ func projectView(decoded deskDecode) ProjectSlotView {
 type AssistantEndpointView struct {
 	URL  string `json:"url"`
 	Kind string `json:"kind"`
-	// Model is null where none has been chosen yet, which is the same value the
-	// schema admits — so the page re-seeds its field from this without a second
-	// rule about what an empty string would have meant.
-	Model *string  `json:"model"`
-	Tools []string `json:"tools"`
+	// Model is the default of Models, and null where nothing is enabled yet —
+	// which is the same value the schema admits, so the page re-seeds its field
+	// from this without a second rule about what an empty string would have
+	// meant.
+	Model *string `json:"model"`
+	// Models is the enabled set, and `[]` rather than null where it is empty:
+	// the empty set is a state this schema has, and null is not it.
+	Models []string `json:"models"`
+	Tools  []string `json:"tools"`
 }
 
 // slotView renders one accepted decode as an answer.
@@ -496,10 +500,17 @@ func slotView(decoded deskDecode) AssistantSlotView {
 	if tools == nil {
 		tools = []string{}
 	}
+	// The same rule, and for the same reason: `[]` is the empty set, which the
+	// schema has, and null is not it.
+	models := decoded.Endpoint.models
+	if models == nil {
+		models = []string{}
+	}
 	view.Endpoint = &AssistantEndpointView{
-		URL:   decoded.Endpoint.url,
-		Kind:  decoded.Endpoint.kind,
-		Tools: tools,
+		URL:    decoded.Endpoint.url,
+		Kind:   decoded.Endpoint.kind,
+		Models: models,
+		Tools:  tools,
 	}
 	if decoded.Endpoint.model != "" {
 		model := decoded.Endpoint.model
@@ -1475,11 +1486,15 @@ type assistantSlot struct {
 type assistantEndpoint struct {
 	url  string
 	kind string
-	// model is the empty string where none has been chosen yet. The decoder
-	// refuses a model member that is present and empty, so this spelling can
-	// only arrive from an absent or null one.
+	// model is the **default** of the set below: the empty string where nothing
+	// is enabled yet. The decoder refuses a model member that is present and
+	// empty, so this spelling can only arrive from an absent or null one.
 	model string
-	tools []string
+	// models is the enabled set, in the file's own order. Empty is what "no
+	// model chosen yet" means, and the default is held to this: one of these
+	// where there are any, and the empty string where there are none.
+	models []string
+	tools  []string
 }
 
 // configuredEndpoint decodes the whole desk-level file and answers the

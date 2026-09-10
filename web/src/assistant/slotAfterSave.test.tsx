@@ -168,6 +168,21 @@ function renderWith(client: ReturnType<typeof testQueryClient>) {
   }
 }
 
+/**
+ * Choose one model, in the two clicks the Models list has.
+ *
+ * Adding through **Other model…** enables an id nobody listed; unticking the
+ * one the file names moves the default to what is left. Together that is what
+ * typing over a single field used to be — and it is two clicks rather than one
+ * because the file now carries a set, and replacing a set is adding and
+ * removing.
+ */
+function chooseModel(id: string, instead = 'the-model-in-the-file') {
+  fireEvent.change(screen.getByLabelText('Other model… (type an id)'), { target: { value: id } })
+  fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: instead }))
+}
+
 describe('what a save reaches', () => {
   it('changes the slot every surface reads, with no reload and no remount', async () => {
     const state = stubDesk()
@@ -177,7 +192,7 @@ describe('what a save reaches', () => {
         'configured · the-model-in-the-file · vercel · off'
       )
     )
-    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: 'the-model-chosen' } })
+    chooseModel('the-model-chosen')
     fireEvent.click(screen.getByRole('combobox', { name: 'Thinking' }))
     fireEvent.click(await screen.findByRole('option', { name: 'deep' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
@@ -259,7 +274,7 @@ describe('what a save reaches', () => {
     // **A refusal the chassis makes, and the page shows.** A model the file's
     // reader will not take is one the chassis refuses; what the form holds is
     // that nothing on this page moves when it does.
-    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: 'a-bad-model' } })
+    chooseModel('a-bad-model')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText('must be a non-empty string')).toBeTruthy()
     expect(writes).toBe(1)
@@ -375,7 +390,7 @@ describe('Reload after a file that moved', () => {
     const before = state.reads
 
     state.move()
-    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: 'chosen-and-unsaved' } })
+    chooseModel('chosen-and-unsaved')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText(/changed on disk. Nothing was written/)).toBeTruthy()
     expect(state.sent).toEqual(['a'.repeat(64)])
@@ -397,7 +412,9 @@ describe('Reload after a file that moved', () => {
     await waitFor(() => expect(state.sent).toHaveLength(2))
     expect(state.sent[1]).toBe('c'.repeat(64))
     // And the value typed before the refusal survived both.
-    expect((screen.getByLabelText('Type a model id') as HTMLInputElement).value).toBe('chosen-and-unsaved')
+    expect(
+      (screen.getByRole('checkbox', { name: 'chosen-and-unsaved' }) as HTMLInputElement).checked
+    ).toBe(true)
   })
 })
 
@@ -501,7 +518,7 @@ describe('a write that landed while the read after it did not', () => {
     await waitFor(() =>
       expect(slotLine()).toContain('the-model-in-the-file')
     )
-    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: 'the-model-chosen' } })
+    chooseModel('the-model-chosen')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
       expect(slotLine()).toBe(
@@ -525,7 +542,7 @@ describe('a write that landed while the read after it did not', () => {
     await waitFor(() =>
       expect(slotLine()).toContain('the-model-in-the-file')
     )
-    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: 'the-model-chosen' } })
+    chooseModel('the-model-chosen')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
       expect(slotLine()).toBe('unavailable · none · vercel · off')
@@ -545,7 +562,7 @@ describe('a write that landed while the read after it did not', () => {
     await waitFor(() =>
       expect(slotLine()).toContain('the-model-in-the-file')
     )
-    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: 'the-model-chosen' } })
+    chooseModel('the-model-chosen')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
       expect(slotLine()).toBe('unavailable · none · vercel · off')
@@ -570,7 +587,7 @@ describe('a write that landed while the read after it did not', () => {
     await waitFor(() =>
       expect(slotLine()).toContain('the-model-in-the-file')
     )
-    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: 'the-model-chosen' } })
+    chooseModel('the-model-chosen')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText(/a write states the bytes it replaces/)).toBeTruthy()
     expect(
@@ -591,7 +608,7 @@ describe('a write that landed while the read after it did not', () => {
     await waitFor(() =>
       expect(slotLine()).toContain('the-model-in-the-file')
     )
-    fireEvent.change(screen.getByLabelText('Type a model id'), { target: { value: 'the-model-chosen' } })
+    chooseModel('the-model-chosen')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
       expect(slotLine()).toBe(
@@ -754,8 +771,8 @@ describe('Admin, where the configuration could not be read', () => {
     const { client } = renderDesk()
     await waitFor(() => expect(slotLine()).toContain('the-model-in-the-file'))
     expect(
-      (screen.getByLabelText('Type a model id') as HTMLInputElement).value
-    ).toBe('the-model-in-the-file')
+      (screen.getByRole('checkbox', { name: 'the-model-in-the-file' }) as HTMLInputElement).checked
+    ).toBe(true)
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(
@@ -766,7 +783,7 @@ describe('Admin, where the configuration could not be read', () => {
     expect(screen.getAllByText(/not read — the desk answered/).length).toBeGreaterThan(0)
     // The fields are shown and not editable: they are the built-in defaults,
     // and typing into them would compose a write over a file nobody has seen.
-    const fields = (screen.getByLabelText('Type a model id') as HTMLInputElement).closest('fieldset')
+    const fields = screen.getByLabelText('Endpoint URL').closest('fieldset')
     expect((fields as HTMLFieldSetElement).disabled).toBe(true)
     // And the key row still follows the chassis, which said the endpoint is
     // there and the key is for it.
@@ -783,9 +800,7 @@ describe('Admin, where the configuration could not be read', () => {
     await waitFor(() => expect(slotLine()).toContain('the-model-in-the-file'))
     expect(screen.queryByText(/This desk could not read its own configuration/)).toBeNull()
     expect(
-      ((screen.getByLabelText('Type a model id') as HTMLInputElement).closest(
-        'fieldset'
-      ) as HTMLFieldSetElement).disabled
+      (screen.getByLabelText('Endpoint URL').closest('fieldset') as HTMLFieldSetElement).disabled
     ).toBe(false)
   })
 })

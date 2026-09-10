@@ -275,6 +275,76 @@ describe('where there is no assistant to run', () => {
   })
 })
 
+describe('the model this run uses', () => {
+  const PICKS = {
+    endpoint: { ...ENDPOINT, model: 'a-model', models: ['a-model', 'a-second-model'] }
+  }
+  const picker = () => screen.findByRole('combobox', { name: 'Model' })
+
+  it('offers the enabled set, opening on the default', async () => {
+    await draw({ assistant: PICKS })
+    expect((await picker()).textContent).toContain('a-model')
+    fireEvent.click(await picker())
+    expect((await screen.findAllByRole('option')).map((each) => each.textContent)).toEqual([
+      'a-model',
+      'a-second-model'
+    ])
+  })
+
+  it('renders no picker at all where nothing is enabled', async () => {
+    await draw({ assistant: { endpoint: { ...ENDPOINT, model: null, models: [] } } })
+    // The tab says what it says about an endpoint with no model chosen, and a
+    // menu with nothing in it is a control that refuses.
+    expect(await screen.findByText(/no model is chosen for it/)).toBeTruthy()
+    expect(screen.queryByRole('combobox', { name: 'Model' })).toBeNull()
+  })
+
+  it('names the picked model in the standing line, and sends it on the run', async () => {
+    // **The line and the request are the same fact.** A line naming the file's
+    // default beside a picker showing something else would be the page
+    // reporting a configuration rather than a run.
+    const { relayed } = await draw({ assistant: PICKS })
+    fireEvent.click(await picker())
+    fireEvent.click(await screen.findByRole('option', { name: 'a-second-model' }))
+    expect(await screen.findByText('vercel · a-second-model · thinking off')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('What should this pack decide?'), {
+      target: { value: scenario.policy }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await waitFor(() => expect(relayed.length).toBeGreaterThan(0))
+    expect(JSON.parse(relayed[0]!.body) as { model: string }).toMatchObject({
+      model: 'a-second-model'
+    })
+  })
+
+  it('remembers the pick for the next visit to this tab, and never in a file', async () => {
+    const { relayed } = await draw({ assistant: PICKS })
+    fireEvent.click(await picker())
+    fireEvent.click(await screen.findByRole('option', { name: 'a-second-model' }))
+    await screen.findByText('vercel · a-second-model · thinking off')
+    // Nothing was written: a pick is a preference, and the one file this desk
+    // writes names where a credential is presented.
+    expect(relayed.filter((each) => each.url.includes('desk-config'))).toHaveLength(0)
+    cleanup()
+    await draw({ assistant: PICKS })
+    expect(await screen.findByText('vercel · a-second-model · thinking off')).toBeTruthy()
+  })
+
+  it('falls back to the default where the set no longer holds the remembered pick', async () => {
+    await draw({ assistant: PICKS })
+    fireEvent.click(await picker())
+    fireEvent.click(await screen.findByRole('option', { name: 'a-second-model' }))
+    await screen.findByText('vercel · a-second-model · thinking off')
+    cleanup()
+    // Admin unticked it. A run on an id this desk is no longer configured for
+    // would be a request nobody enabled.
+    await draw({
+      assistant: { endpoint: { ...ENDPOINT, model: 'a-model', models: ['a-model'] } }
+    })
+    expect(await screen.findByText('vercel · a-model · thinking off')).toBeTruthy()
+  })
+})
+
 describe('the tab before a run', () => {
   it('names the engine, the endpoint’s model and the tier as stored', async () => {
     await draw({ assistant: { endpoint: ENDPOINT, engine: 'vercel', thinking: 'ultra' } })

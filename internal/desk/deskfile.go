@@ -730,7 +730,7 @@ func decodeAssistant(value any) (assistantSlot, []deskProblem) {
 		return slot, problems
 	}
 	inner, innerProblems := object(endpoint, "assistant.endpoint",
-		[]string{"url", "kind", "model", "tools"})
+		[]string{"url", "kind", "model", "models", "tools"})
 	problems = append(problems, innerProblems...)
 	if inner == nil {
 		return slot, problems
@@ -760,16 +760,42 @@ func decodeAssistant(value any) (assistantSlot, []deskProblem) {
 	// notice is what stops "not chosen yet" reading as "chosen".
 	trimmedModel := ""
 	if declared, present := inner["model"]; present && declared != nil {
-		model, ok := declared.(string)
-		trimmed := strings.TrimSpace(model)
-		if !ok || trimmed == "" {
-			problems = append(problems, deskProblem{Key: "assistant.endpoint.model",
-				Reason: fmt.Sprintf("must be a non-empty string; found %s", describe(declared))})
+		if reason := modelIDProblem(declared); reason != "" {
+			problems = append(problems, deskProblem{Key: "assistant.endpoint.model", Reason: reason})
 		} else {
-			trimmedModel = trimmed
+			trimmedModel = strings.TrimSpace(declared.(string))
 		}
 	}
-	if trimmedModel == "" {
+
+	// **The set, and the migration that gives a file written before it one.** A
+	// file naming only a model has always meant one enabled model; deriving the
+	// set from it states that rather than leaving an endpoint whose picker would
+	// be empty. Nothing is substituted and nothing is renamed, so there is no
+	// notice: the set the file decodes to is the id the file already carried.
+	var enabled []string
+	var setProblems []deskProblem
+	if declared, present := inner["models"]; !present {
+		if trimmedModel != "" {
+			enabled = []string{trimmedModel}
+		}
+	} else {
+		enabled, setProblems = modelSet(declared)
+		problems = append(problems, setProblems...)
+	}
+	// **The default is held to the set, and only where the set itself decoded
+	// cleanly.** Naming a default outside a set that was refused member by
+	// member would be a second sentence about one mistake, against the wrong
+	// key.
+	if len(setProblems) == 0 {
+		if reason := modelDefaultProblem(trimmedModel, enabled); reason != "" {
+			problems = append(problems, deskProblem{
+				Key: "assistant.endpoint.model", Reason: reason})
+		}
+	}
+	// **The empty set is what "no model chosen yet" now means**, and the
+	// sentence is the one it always was: an endpoint with nothing enabled is
+	// saved, valid, and not ready to run.
+	if len(enabled) == 0 {
 		slot.notices = append(slot.notices,
 			deskNotice{Key: "assistant.endpoint.model", Says: noModelChosen})
 	}
@@ -811,12 +837,94 @@ func decodeAssistant(value any) (assistantSlot, []deskProblem) {
 		return slot, problems
 	}
 	slot.endpoint = &assistantEndpoint{
-		url:   normalizedEndpointURL(trimmedURL),
-		kind:  kind,
-		model: trimmedModel,
-		tools: tools,
+		url:    normalizedEndpointURL(trimmedURL),
+		kind:   kind,
+		model:  trimmedModel,
+		models: enabled,
+		tools:  tools,
 	}
 	return slot, problems
+}
+
+// modelSet decodes the enabled set — **each id held to the rule one model is
+// held to**, and no id twice.
+//
+// The rule is `modelIDProblem`'s rather than a second copy of it, for the
+// reason that function exists at all: the picker, the field and this file's
+// reader have to agree about what an id is, and a copy is how two of them came
+// to disagree once already.
+//
+// **A duplicate is refused rather than folded.** Folding would make a file
+// whose set is written twice decode to a set of a different length than it
+// says, which is a file two readers count differently — and the page writes
+// this member, so the refusal is also what stops a checkbox list composing one.
+func modelSet(value any) ([]string, []deskProblem) {
+	list, ok := value.([]any)
+	if !ok {
+		return nil, []deskProblem{{Key: "assistant.endpoint.models",
+			Reason: fmt.Sprintf("must be an array of strings; found %s", describe(value))}}
+	}
+	var enabled []string
+	var problems []deskProblem
+	for _, entry := range list {
+		if reason := modelIDProblem(entry); reason != "" {
+			problems = append(problems, deskProblem{
+				Key: "assistant.endpoint.models", Reason: reason})
+			continue
+		}
+		id := strings.TrimSpace(entry.(string))
+		if contains(enabled, id) {
+			problems = append(problems, deskProblem{Key: "assistant.endpoint.models",
+				Reason: fmt.Sprintf("%q is listed twice; each model appears once", id)})
+			continue
+		}
+		enabled = append(enabled, id)
+	}
+	return enabled, problems
+}
+
+// modelIDProblem is the rule a model id is held to, character for character as
+// `modelIdProblem` in `deskConfig.ts` writes it.
+//
+// It is asked only about a value that is there: `assistant.endpoint.model` may
+// be absent or null, which is "no model chosen yet" and not a problem, and the
+// members of `models` are each a value somebody wrote.
+func modelIDProblem(value any) string {
+	id, ok := value.(string)
+	if !ok || strings.TrimSpace(id) == "" {
+		return fmt.Sprintf("must be a non-empty string; found %s", describe(value))
+	}
+	return ""
+}
+
+// modelDefaultProblem is the rule the default is held to, and the whole of it.
+//
+// **Lifted out for the same reason `modelIDProblem` was**: Admin's Models list
+// decides which rows may carry the Default radio, and a copy of this reasoning
+// is how a form comes to offer a default that produces a 422 on the next Save.
+// Held identical to `modelDefaultProblem` in `deskConfig.ts` by the shared
+// fixtures both decoders read.
+//
+// **Total in both directions**, which is what makes it an invariant rather than
+// a check: a non-empty set with no default is refused too. A set of models a
+// run cannot start from is a configuration whose picker would open on nothing,
+// and it is exactly as much a mistake as a default nothing enabled. The empty
+// string is how this side spells the null.
+func modelDefaultProblem(model string, models []string) string {
+	if len(models) == 0 {
+		if model == "" {
+			return ""
+		}
+		return "must be null where no model is enabled; there is nothing for a default to be"
+	}
+	if model == "" {
+		return "must name one of the models enabled for this endpoint; found null"
+	}
+	if !contains(models, model) {
+		return fmt.Sprintf(
+			"must be one of the models enabled for this endpoint; %q is not one of them", model)
+	}
+	return ""
 }
 
 // endpointURLProblem is the transport rule, and the credential rule beside it.

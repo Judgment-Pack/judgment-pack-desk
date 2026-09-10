@@ -126,7 +126,7 @@ type Exactly<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
 const ASSISTANT_KEYS = ['endpoint', 'engine', 'thinking'] as const
 
 /** The endpoint object's members, exactly as the schema declares them. */
-const ENDPOINT_KEYS = ['url', 'kind', 'model', 'tools'] as const
+const ENDPOINT_KEYS = ['url', 'kind', 'model', 'models', 'tools'] as const
 
 /**
  * What the assistant pane reads.
@@ -154,6 +154,7 @@ const GOOD_ENDPOINT = {
   url: 'https://api.example.invalid/v1',
   kind: 'openai-compatible',
   model: 'a-model',
+  models: ['a-model'],
   tools: []
 }
 
@@ -230,8 +231,11 @@ describe('(1a) engine and thinking are closed lists that say how, not whether', 
     // list cannot be read until there is an endpoint saved and a key bound to
     // it. A required model made the first save the one step nobody could take
     // without guessing — so absent and null are one state, said out loud.
+    // The set goes with it: "no model chosen yet" is the **empty set** now, and
+    // an endpoint that enables one while naming no default is the state the
+    // rule beside it refuses.
     for (const written of [{}, { model: null }]) {
-      const { model: _dropped, ...rest } = GOOD_ENDPOINT
+      const { model: _dropped, models: _set, ...rest } = GOOD_ENDPOINT
       const decoded = decodeDesk({ endpoint: { ...rest, ...written } })
       expect(decoded.problems, JSON.stringify(written)).toEqual([])
       expect(decoded.values?.assistant?.endpoint?.model).toBeNull()

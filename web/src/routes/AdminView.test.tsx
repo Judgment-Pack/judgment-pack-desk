@@ -1279,12 +1279,16 @@ describe('one section at a time', () => {
       ['organization', ['Save']],
       ['storage', ['Save']],
       [
+        // **No Test connection here**, and that is the section reading
+        // truthfully: this desk has no endpoint saved and no key stored, and
+        // the button is offered once it has both. `Add` is the Models list's,
+        // for an id somebody types rather than one an endpoint listed.
         'assistant',
         [
           'OpenAI-compatibleAnthropicGoogle Gemini',
           'Store key',
+          'Add',
           'offstandarddeep',
-          'Test connection',
           'Save'
         ]
       ],
