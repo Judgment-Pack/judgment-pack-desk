@@ -1548,14 +1548,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # **The bound is a refusal, and refusing is the property.** Making room would
   # end a live session from outside the page holding it, which is the second
   # actor this whole design exists without.
+  # Repaired: `create` answers a sequence too, so its refusal has three values.
+  # Both bounds go — the one asked before a handoff is spent has its own row.
   mutate go "the 65th session is accepted" "$SE" \
-    '	st.mu.Lock()
-	defer st.mu.Unlock()
-	if len(st.live) >= maxSessions {
-		return "", errTooManySessions
+    '	if len(st.live) >= maxSessions {
+		return "", 0, errTooManySessions
 	}' \
-    '	st.mu.Lock()
-	defer st.mu.Unlock()'
+    ''
   # **One credential each way on the upgrade.** A session id on the handshake's
   # `Authorization` header is a second path for the page's credential, and a
   # path the browser cannot even use — a `WebSocket` constructor has no header
@@ -1610,45 +1609,45 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # page unable to tell them apart, so it kept its session either way and the
   # residual was invisible to the person it happened to.
   mutate go "a spent handoff reads as an absent one" "$SE" \
-    '	case handoffSpent:
-		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,' \
-    '	case handoffSpent:
-		writeJSONCoded(w, http.StatusUnauthorized, CodeNoHandoff,'
+    '			"code":        CodeHandoffSpent,' \
+    '			"code":        CodeNoHandoff,'
   # **A refusal clearing the cookie concealed a theft.** The clearing header and
   # the refusal travel in one response, so a reload between the two presented
   # nothing, read `no-handoff`, and kept a session the person was never told
   # about.
   mutate go "a refusal clears the handoff too" "$SE" \
     '	case handoffSpent:
-		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,' \
+		// **And which session it bought**' \
     '	case handoffSpent:
 		http.SetCookie(w, expireLaunchCookie(s.launchCookie, requestScheme(r) == "https"))
-		writeJSONCoded(w, http.StatusUnauthorized, CodeHandoffSpent,'
+		// **And which session it bought**'
   # **The store remembers what it finished with**, which is the whole of how a
   # theft is told from a stranger's cookie.
   mutate go "the store forgets the handoffs it finished with" "$SE" \
-    '	if how, ok := ls.finished[key]; ok {
-		return how
+    '	if ending, ok := ls.finished[key]; ok {
+		return ending.how, ending.produced
 	}' \
-    '	if how, ok := ls.finished[key]; ok && false {
-		return how
+    '	if ending, ok := ls.finished[key]; ok && false {
+		return ending.how, ending.produced
 	}'
   # **And a value it never minted is ignored.** A page on any sibling loopback
   # port can plant a cookie of this name at a longer path; refusing what is not
   # recognised turns that into a permanent false theft.
   mutate go "an unrecognised cookie is treated as a spent handoff" "$SE" \
     '		case handoffSpent, handoffExpired:
-			// The first classified answer stands. A second cookie may still be
-			// live, which is why this does not return.
+			// The first classified answer stands, and a later live one still
+			// wins — which is why this does not return.
 			if best == handoffUnknown {
-				best = how
+				best, produced = how, was
 			}' \
     '		case handoffSpent, handoffExpired:
 			if best == handoffUnknown {
-				best = how
+				best, produced = how, was
 			}
 		default:
-			best = handoffSpent'
+			if best == handoffUnknown {
+				best = handoffSpent
+			}'
   # **Every cookie of the name**, because `r.Cookie` answers the first and a
   # browser sends the longest path first.
   mutate go "only the first cookie of the name is read" "$SE" \
@@ -1665,24 +1664,49 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # Anchored on `readSession`'s own body: the mint answer carries the same
   # member, so a needle naming only the member matched the wrong one and the
   # row reported that nothing failed — which was true of the edit it made.
-  mutate go "the session endpoint reports no minted count" "$SE" \
-    '		"subject":  got.subject,
-		"issuer":   got.issuer,
-		"sessions": map[string]any{"minted": s.sessions.mintedSoFar()},' \
-    '		"subject":  got.subject,
-		"issuer":   got.issuer,
-		"sessions": map[string]any{},'
-  # And the same member on the mint answer, which is what a **fresh** tab stores
-  # without a second request.
-  mutate go "the exchange answers no minted count" "$SE" \
-    '		"id":       id,
-		"subject":  "local user",
-		"issuer":   nil,
-		"sessions": map[string]any{"minted": s.sessions.mintedSoFar()},' \
-    '		"id":       id,
-		"subject":  "local user",
-		"issuer":   nil,
-		"sessions": map[string]any{},'
+  # Repaired: both answers go through `sessionsBody` now, so the row breaks the
+  # one place the numbers are composed.
+  mutate go "the session endpoint reports no counts" "$SE" \
+    '	return map[string]any{"minted": s.sessions.mintedSoFar(), "yours": yours}' \
+    '	return map[string]any{}'
+  # **A sequence per session**, which is what tells a page's own spent link from
+  # somebody else's: without it every session says the same thing.
+  mutate go "every session shares one sequence" "$SE" \
+    '	st.minted++
+	st.live[st.handle(id)] = session{
+		subject: subject, issuer: issuer, created: time.Now(), seq: st.minted,
+	}
+	return id, st.minted, nil' \
+    '	st.minted++
+	st.live[st.handle(id)] = session{
+		subject: subject, issuer: issuer, created: time.Now(), seq: 1,
+	}
+	return id, 1, nil'
+  # **And the tombstone records which session its handoff bought.** Without it
+  # a page cannot tell the echo of its own spent link from a theft, and a copy
+  # planted at a longer path is a permanent false theft.
+  mutate go "a spent handoff records no session" "$SE" \
+    '	for _, value := range claimed {
+		s.launches.attribute(value, seq)
+	}' \
+    '	_ = claimed'
+  # **The bound is asked before a handoff is spent**, so a desk at capacity
+  # refuses without eating the launch link.
+  mutate go "a capacity refusal eats the launch link" "$SE" \
+    '	if s.sessions.full() {
+		writeJSONCoded(w, http.StatusServiceUnavailable, CodeSessionsFull, errTooManySessions.Error())
+		return
+	}' \
+    ''
+  # **Every live handoff in one request is attributed to the one session
+  # minted**, or the next reload mints a second from a cookie nobody used.
+  mutate go "only the first live handoff is claimed" "$SE" \
+    '		case handoffAccepted:
+			claimed = append(claimed, cookie.Value)' \
+    '		case handoffAccepted:
+			if len(claimed) == 0 {
+				claimed = append(claimed, cookie.Value)
+			}'
   # **And an endpoint may not redirect the page.** A 307 to `/api/session` made
   # the page's own fetch repeat the request against the exchange with this
   # desk's bearer on it.
@@ -1695,12 +1719,28 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # Repaired: the mark moved from `writeJSONCoded` into `writeJSON`, the one
   # function every JSON answer goes through — `writeJSONError` used to go round
   # the back of it.
+  # Repaired: the mark reads the encoded body now, so a struct-shaped refusal
+  # carries its own code rather than a generic one.
   mutate go "this chassis does not mark its own refusals" "$F" \
-    '	if status >= 400 {
-		w.Header().Set(RefusalHeader, codeIn(body))
+    '	w.Header().Set(RefusalHeader, codeIn(data))' \
+    '	_ = codeIn(data)'
+  # **And the mark says what the body says.** A generic mark on a refusal whose
+  # body names a code is a second opinion about one refusal.
+  mutate go "a structured refusal is marked generically" "$F" \
+    '	if err := json.Unmarshal(data, &named); err == nil && named.Code != "" {
+		return named.Code
 	}' \
     '	if false {
-		w.Header().Set(RefusalHeader, codeIn(body))
+		return named.Code
+	}'
+  # **The handlers that write their own refusals.** The WebSocket library's 400
+  # and the file server's 416 are chassis-authored and were unmarked.
+  mutate go "a library's own refusal goes unmarked" "$F" \
+    '	if status >= 400 && m.Header().Get(RefusalHeader) == "" {
+		m.Header().Set(RefusalHeader, m.code)
+	}' \
+    '	if false {
+		m.Header().Set(RefusalHeader, m.code)
 	}'
   # **And an endpoint may not wear it.** An endpoint that could set the mark
   # could end somebody's desk session from the far side of the relay.
@@ -6928,10 +6968,12 @@ export function assistantTransport(id: string): Transport {
   # gate as a page that never reaches `networkidle`.
   # Repaired: the release moved into `refusedExchange` when the exchange grew
   # two codes to tell apart. The property is unchanged.
+  # Repaired: the release moved past the spent branch, which now reads a body
+  # of its own.
   mutate web "a refused answer's body is left in flight" "$MS" \
     '  await discardBody(answered)
-  if (code === '"'"'handoff-spent'"'"') {' \
-    '  if (code === '"'"'handoff-spent'"'"') {'
+  if (code === '"'"'handoff-expired'"'"') {' \
+    '  if (code === '"'"'handoff-expired'"'"') {'
   # And the count read's own release, which is a second call on the same route:
   # a test that recorded whichever `/api/session` answer came last measured this
   # one while naming the other.
@@ -6946,14 +6988,13 @@ export function assistantTransport(id: string): Transport {
   # authenticated tab that its launch link was used by something else; treating
   # it like `no-handoff` keeps a session the person was never told about.
   mutate web "a spent handoff is treated as a reload" "$MS" \
-    "  if (code === 'handoff-spent') {
-    forgetSession(HANDOFF_SPENT_MESSAGE)
+    "    forgetSession(HANDOFF_SPENT_MESSAGE)
     return null
-  }" \
-    "  if (false) {
-    forgetSession(HANDOFF_SPENT_MESSAGE)
-    return null
-  }"
+  }
+  await discardBody(answered)" \
+    "    return stored
+  }
+  await discardBody(answered)"
   # **The terminal state has to reach the sockets.** A connection established
   # before the refusal notices nothing on its own, and went on carrying frames
   # for a session the chassis had refused.
@@ -6972,12 +7013,53 @@ export function assistantTransport(id: string): Transport {
   mutate web "any relay 401 ends the session" "$ASN2" \
     "    if (answered.status === 401 && refusalCode(answered) === 'unauthorized') {" \
     '    if (answered.status === 401) {'
-  # **A theft after the handoff's own lifetime.** The count is the only signal
-  # that survives the ring forgetting the handoff, and a reload hours later has
-  # nothing else to read.
-  mutate web "the page never compares the minted count" "$MS" \
-    '  if (stored !== null) await noticeAnotherSession(stored)' \
-    '  if (stored === null) await noticeAnotherSession(stored ?? '"''"')'
+  # **A theft after the handoff's own lifetime.** How many other sessions this
+  # desk is serving is the only signal that survives the ring forgetting the
+  # handoff, and a reload hours later has nothing else to read.
+  mutate web "the page never asks how many other sessions there are" "$MS" \
+    '  if (stored !== null) await askAboutSessions(stored)
+  return stored
+}' \
+    '  return stored
+}'
+  # **Derived, never remembered.** A page that stored what it last saw had to
+  # store before it painted, and a reload in between silenced it for ever.
+  mutate web "the other-sessions line is never derived" "$MS" \
+    '  noticed = others > 0 ? otherSessionsMessage(others) : null' \
+    '  noticed = null'
+  # **A page's own spent link is not a theft.** The clear reaches `Path=/`, so a
+  # copy planted at a longer path survives a tab's own exchange.
+  mutate web "a page's own spent handoff reads as a theft" "$MS" \
+    '    const echo =
+      produced === 0 || (produced !== null && mine !== null && produced === mine)' \
+    '    const echo = false'
+  # **And somebody else's spend is not an echo.**
+  mutate web "any spent handoff reads as this page's own" "$MS" \
+    '    const echo =
+      produced === 0 || (produced !== null && mine !== null && produced === mine)' \
+    '    const echo = true'
+  # **An opaque redirect is not an answer**, and an engine handed one is handed
+  # nothing it can read.
+  mutate web "an opaque redirect is delivered to the engine" "$ASN2" \
+    "    if (answered.type === 'opaqueredirect' || (answered.status === 0 && answered.redirected)) {
+      throw new Error(CALL_FAILED)
+    }" \
+    '    if (false) {
+      throw new Error(CALL_FAILED)
+    }'
+  # **The dialog's proposal goes with the session.** Stopping the run leaves
+  # `offered` true and Create willing to write it.
+  mutate web "the Describe-it proposal survives the session's end" "$DI" \
+    '      whenSessionEnds(() => {
+        if (!hadSession.current) return
+        discardNow.current()
+        setLost(SLOT_LOST)
+      }),' \
+    '      whenSessionEnds(() => {
+        if (true) return
+        discardNow.current()
+        setLost(SLOT_LOST)
+      }),'
   # **`unauthorized` and no other code.** A 307 into the exchange answers a
   # marked `no-handoff`, and a classifier that read the mark alone turned that
   # into a forgotten valid session.

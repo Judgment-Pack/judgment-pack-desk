@@ -20,10 +20,11 @@ import { sessionNotice } from '../mcp/session'
 export function ConnectionNotices() {
   const { status, everConnected, attempt, retryNow, known, capabilitiesError } = useMcp()
   // **Read at render, and it never changes after the first one.** The bootstrap
-  // sets it before anything here can mount — it is part of the one exchange —
-  // so there is nothing to subscribe to and nothing that would make this a
+  // derives it before anything here can mount — it is part of the one exchange
+  // — so there is nothing to subscribe to and nothing that would make this a
   // second reader of the credential. It says a fact about this desk, not about
-  // this tab's session, which is why it is a banner and not a refusal.
+  // this tab's session, which is why it is a banner and not a refusal; and it
+  // is derived rather than remembered, so a reload says it again.
   const another = sessionNotice()
   return (
     <>

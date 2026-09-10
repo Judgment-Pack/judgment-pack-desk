@@ -18,7 +18,6 @@ import { cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { McpProvider, removeTheLaunchHash, socketProtocols, socketURL } from './McpProvider'
 import {
-  ANOTHER_SESSION_MESSAGE,
   HANDOFF_EXPIRED_MESSAGE,
   HANDOFF_SPENT_MESSAGE,
   NO_SESSION_MESSAGE,
@@ -28,7 +27,8 @@ import {
   forgetSession,
   resetSessionForTesting,
   sessionBearer,
-  mintedStorageKey,
+  otherSessionsMessage,
+  sequenceStorageKey,
   sessionEnded,
   sessionNotice,
   sessionStorageKey,
@@ -100,7 +100,7 @@ const refused = (code: string, body: unknown, status = 401) =>
 /** The exchange's own answer, and a plain success for everything else. */
 const mints = (seen: Seen) =>
   seen.url === '/api/session' && seen.method === 'POST'
-    ? json({ id: MINTED, subject: 'local user', issuer: null, sessions: { minted: 1 } })
+    ? json({ id: MINTED, subject: 'local user', issuer: null, sessions: { minted: 1, yours: 1 } })
     : json({ root: '/project', files: [] })
 
 const exchanges = (seen: Seen[]) => seen.filter((c) => c.url === '/api/session' && c.method === 'POST')
@@ -196,7 +196,7 @@ describe('the one exchange', () => {
         refusal = refused('no-handoff', { code: 'no-handoff' })
         return refusal
       }
-      return json({ subject: 'local user', issuer: null, sessions: { minted: 1 } })
+      return json({ subject: 'local user', issuer: null, sessions: { minted: 1, yours: 1 } })
     })
     expect(await bootstrap()).toBe(STORED)
     expect(refusal, 'the exchange was never made').toBeDefined()
@@ -313,76 +313,97 @@ describe('a reload and a theft are told apart', () => {
   })
 })
 
-describe('the count that outlives the handoff', () => {
-  it('stores the count the exchange reported beside the id', async () => {
-    record(mints)
+describe('how many other sessions this desk is serving', () => {
+  it('derives the line on a fresh exchange, from what the exchange said', async () => {
+    // **Nothing is compared and nothing is remembered.** The exchange says how
+    // many sessions this desk has minted and which one is this tab's; the page
+    // subtracts.
+    record((call) =>
+      call.url === '/api/session' && call.method === 'POST'
+        ? json({ id: MINTED, sessions: { minted: 3, yours: 3 } })
+        : json({})
+    )
     await bootstrap()
-    expect(window.sessionStorage.getItem(mintedStorageKey())).toBe('1')
-    expect(sessionNotice()).toBeNull()
+    expect(sessionNotice()).toBe(otherSessionsMessage(2))
+    expect(window.sessionStorage.getItem(sequenceStorageKey())).toBe('3')
   })
 
-  it('says so when the desk has minted more since this tab looked', async () => {
-    // **This is the signal that survives the handoff.** Everything about a
-    // stolen handoff is over inside sixty seconds; a tab reloading hours later
-    // has nothing to read but this.
+  it('derives it on a keep too, with one read', async () => {
     window.sessionStorage.setItem(sessionStorageKey(), STORED)
-    window.sessionStorage.setItem(mintedStorageKey(), '3')
+    window.sessionStorage.setItem(sequenceStorageKey(), '1')
     const seen = record((call) =>
       call.url === '/api/session' && call.method === 'POST'
         ? refused('no-handoff', { code: 'no-handoff' })
-        : json({ subject: 'local user', issuer: null, sessions: { minted: 5 } })
+        : json({ subject: 'local user', issuer: null, sessions: { minted: 4, yours: 1 } })
     )
     expect(await bootstrap()).toBe(STORED)
-    expect(sessionNotice()).toBe(ANOTHER_SESSION_MESSAGE)
-    // The new count is stored, so the next reload does not say it again about
-    // the same two sessions.
-    expect(window.sessionStorage.getItem(mintedStorageKey())).toBe('5')
-    // One read, and one only.
+    expect(sessionNotice()).toBe(otherSessionsMessage(3))
     expect(seen.filter((c) => c.url === '/api/session' && c.method === 'GET')).toHaveLength(1)
-    // And it is a notice, not an ending: this tab's session still works.
     expect(sessionEnded()).toBeNull()
-    expect(await sessionBearer()).toBe(STORED)
   })
 
-  it('says nothing where the count has not grown', async () => {
-    window.sessionStorage.setItem(sessionStorageKey(), STORED)
-    window.sessionStorage.setItem(mintedStorageKey(), '5')
+  it('says nothing where this tab is the only session', async () => {
     record((call) =>
       call.url === '/api/session' && call.method === 'POST'
-        ? refused('no-handoff', { code: 'no-handoff' })
-        : json({ subject: 'local user', issuer: null, sessions: { minted: 5 } })
+        ? json({ id: MINTED, sessions: { minted: 1, yours: 1 } })
+        : json({})
     )
-    expect(await bootstrap()).toBe(STORED)
-    expect(sessionNotice()).toBeNull()
-  })
-
-  it('says nothing on a first load, having nothing to compare', async () => {
-    window.sessionStorage.setItem(sessionStorageKey(), STORED)
-    record((call) =>
-      call.url === '/api/session' && call.method === 'POST'
-        ? refused('no-handoff', { code: 'no-handoff' })
-        : json({ subject: 'local user', issuer: null, sessions: { minted: 9 } })
-    )
-    expect(await bootstrap()).toBe(STORED)
-    expect(sessionNotice()).toBeNull()
-    expect(window.sessionStorage.getItem(mintedStorageKey())).toBe('9')
-  })
-
-  it('asks for no count on the paths where it would mean nothing', async () => {
-    // A tab that just minted its own session knows the count; a tab that is
-    // ending has a better sentence. Neither spends a request on this.
-    const seen = record(mints)
     await bootstrap()
-    expect(seen.filter((c) => c.url === '/api/session' && c.method === 'GET')).toHaveLength(0)
+    expect(sessionNotice()).toBeNull()
+  })
+
+  it('stores this tab’s sequence and nothing else about any of it', async () => {
+    record((call) =>
+      call.url === '/api/session' && call.method === 'POST'
+        ? json({ id: MINTED, sessions: { minted: 5, yours: 5 } })
+        : json({})
+    )
+    await bootstrap()
+    // **Exactly two keys**, and the second is this tab's own sequence. A count
+    // of anybody else, stored, is the state a reload could lose — which is the
+    // defect this shape removes rather than guards.
+    const keys = Object.keys(window.sessionStorage).sort()
+    expect(keys).toEqual([sequenceStorageKey(), sessionStorageKey()].sort())
+    expect(window.sessionStorage.getItem(sequenceStorageKey())).toBe('5')
+  })
+
+  it('says it again on every load, because nothing was remembered', async () => {
+    // **The round-3 HIGH.** The version this replaces persisted the count
+    // before the notice painted, so a reload in between silenced it for ever.
+    // There is nothing to persist now: each load asks and each load says.
+    for (const attempt of [1, 2, 3]) {
+      resetSessionForTesting()
+      window.sessionStorage.clear()
+      window.sessionStorage.setItem(sessionStorageKey(), STORED)
+      record((call) =>
+        call.url === '/api/session' && call.method === 'POST'
+          ? refused('no-handoff', { code: 'no-handoff' })
+          : json({ subject: 'local user', issuer: null, sessions: { minted: 2, yours: 1 } })
+      )
+      expect(await bootstrap(), `attempt ${attempt}`).toBe(STORED)
+      expect(sessionNotice(), `attempt ${attempt}`).toBe(otherSessionsMessage(1))
+    }
+  })
+
+  it('counts every other session, whatever the order they were minted in', async () => {
+    // A tab that holds session 1, a thief who minted 2, a relaunch that minted
+    // 3: the tab now holds 3 and there are two others. The version this
+    // replaces absorbed the thief's session into the relaunch's count.
+    record((call) =>
+      call.url === '/api/session' && call.method === 'POST'
+        ? json({ id: MINTED, sessions: { minted: 3, yours: 3 } })
+        : json({})
+    )
+    await bootstrap()
+    expect(sessionNotice()).toBe(otherSessionsMessage(2))
+    expect(sessionNotice()).toContain('2 other sessions')
   })
 
   it('shows the line once, in the shell’s own notice area', async () => {
-    window.sessionStorage.setItem(sessionStorageKey(), STORED)
-    window.sessionStorage.setItem(mintedStorageKey(), '1')
     record((call) =>
       call.url === '/api/session' && call.method === 'POST'
-        ? refused('no-handoff', { code: 'no-handoff' })
-        : json({ subject: 'local user', issuer: null, sessions: { minted: 2 } })
+        ? json({ id: MINTED, sessions: { minted: 2, yours: 2 } })
+        : json({})
     )
     await bootstrap()
     render(
@@ -391,10 +412,16 @@ describe('the count that outlives the handoff', () => {
       </QueryClientProvider>
     )
     const said = document.body.textContent ?? ''
-    expect(said).toContain(ANOTHER_SESSION_MESSAGE)
-    expect(said.split(ANOTHER_SESSION_MESSAGE).length - 1).toBe(1)
-    // The narration bound the shell holds every other sentence to.
-    expect(ANOTHER_SESSION_MESSAGE.length).toBeLessThanOrEqual(140)
+    const line = otherSessionsMessage(1)
+    expect(said).toContain(line)
+    expect(said.split(line).length - 1).toBe(1)
+    // The narration bound the shell holds every other sentence to, at every
+    // count a desk of 64 sessions can reach.
+    for (const others of [1, 2, 9, 63]) {
+      expect(otherSessionsMessage(others).length, String(others)).toBeLessThanOrEqual(140)
+    }
+    // And it names no session but this desk's own arithmetic.
+    expect(line).toContain('if that is not you')
   })
 })
 
@@ -425,11 +452,12 @@ describe('a reload inside the refusal’s delivery window', () => {
     // cookie and reads the same verdict. This is the page's half: the second
     // load, with the handling of the first deferred, still ends terminal.
     window.sessionStorage.setItem(sessionStorageKey(), STORED)
-    window.sessionStorage.setItem(mintedStorageKey(), '1')
+    window.sessionStorage.setItem(sequenceStorageKey(), '1')
     record((call) =>
       call.url === '/api/session' && call.method === 'POST'
-        ? refused('handoff-spent', { code: 'handoff-spent' })
-        : json({ subject: 'local user', issuer: null, sessions: { minted: 2 } })
+        ? // A sequence that is not this tab's own: somebody else's spend.
+          refused('handoff-spent', { code: 'handoff-spent', producedSeq: 2 })
+        : json({ subject: 'local user', issuer: null, sessions: { minted: 2, yours: 1 } })
     )
 
     // The first load's refusal, deliberately not awaited: the reload happens
@@ -444,18 +472,78 @@ describe('a reload inside the refusal’s delivery window', () => {
     await first
   })
 
-  it('would have shown the count in any case', async () => {
-    // And if the cookie had gone — the ring forgetting it, say — the count is
-    // still higher than the one this tab stored, so the reload says so.
+  it('would have shown the other session in any case', async () => {
+    // And if the cookie had gone — the ring forgetting it, say — the desk still
+    // reports two sessions and one of them is not this tab's, so the reload
+    // says so. Nothing here was remembered from the load before.
     window.sessionStorage.setItem(sessionStorageKey(), STORED)
-    window.sessionStorage.setItem(mintedStorageKey(), '1')
     record((call) =>
       call.url === '/api/session' && call.method === 'POST'
         ? refused('no-handoff', { code: 'no-handoff' })
-        : json({ subject: 'local user', issuer: null, sessions: { minted: 2 } })
+        : json({ subject: 'local user', issuer: null, sessions: { minted: 2, yours: 1 } })
     )
     expect(await bootstrap()).toBe(STORED)
-    expect(sessionNotice()).toBe(ANOTHER_SESSION_MESSAGE)
+    expect(sessionNotice()).toBe(otherSessionsMessage(1))
+  })
+})
+
+describe('a spent handoff this tab spent itself', () => {
+  it('is an echo, not a theft: the id is kept and nothing is said', async () => {
+    // **The clear reaches `Path=/` and nothing else.** A copy of a genuine
+    // handoff planted at a longer path survives this tab's own exchange, so its
+    // own next load presents it — and without the produced sequence that reads
+    // as a theft the tab committed against itself.
+    window.sessionStorage.setItem(sessionStorageKey(), STORED)
+    window.sessionStorage.setItem(sequenceStorageKey(), '4')
+    record((call) =>
+      call.url === '/api/session' && call.method === 'POST'
+        ? refused('handoff-spent', { code: 'handoff-spent', producedSeq: 4 })
+        : json({ subject: 'local user', issuer: null, sessions: { minted: 4, yours: 4 } })
+    )
+    expect(await bootstrap()).toBe(STORED)
+    expect(sessionEnded()).toBeNull()
+    expect(window.sessionStorage.getItem(sessionStorageKey())).toBe(STORED)
+    // Treated exactly as `no-handoff`, which includes asking about the others.
+    expect(sessionNotice()).toBe(otherSessionsMessage(3))
+  })
+
+  it('is a theft where the sequence is somebody else’s', async () => {
+    window.sessionStorage.setItem(sessionStorageKey(), STORED)
+    window.sessionStorage.setItem(sequenceStorageKey(), '4')
+    record((call) =>
+      call.url === '/api/session'
+        ? refused('handoff-spent', { code: 'handoff-spent', producedSeq: 5 })
+        : json({})
+    )
+    expect(await bootstrap()).toBeNull()
+    expect(sessionEnded()).toBe(HANDOFF_SPENT_MESSAGE)
+  })
+
+  it('is a theft where this tab knows no sequence of its own', async () => {
+    // A tab whose storage was cleared, or a browser that refuses it: the
+    // cautious reading, and the one a tab that never held a session gets.
+    window.sessionStorage.setItem(sessionStorageKey(), STORED)
+    record((call) =>
+      call.url === '/api/session'
+        ? refused('handoff-spent', { code: 'handoff-spent', producedSeq: 4 })
+        : json({})
+    )
+    expect(await bootstrap()).toBeNull()
+    expect(sessionEnded()).toBe(HANDOFF_SPENT_MESSAGE)
+  })
+
+  it('is a reload where the spend produced nothing at all', async () => {
+    // Zero is evidence of nobody: the exchange spent the handoff and then
+    // minted nothing, which is the race at the store's bound.
+    window.sessionStorage.setItem(sessionStorageKey(), STORED)
+    window.sessionStorage.setItem(sequenceStorageKey(), '4')
+    record((call) =>
+      call.url === '/api/session' && call.method === 'POST'
+        ? refused('handoff-spent', { code: 'handoff-spent', producedSeq: 0 })
+        : json({ subject: 'local user', issuer: null, sessions: { minted: 4, yours: 4 } })
+    )
+    expect(await bootstrap()).toBe(STORED)
+    expect(sessionEnded()).toBeNull()
   })
 })
 
@@ -690,7 +778,7 @@ describe('a refusal after the bootstrap is terminal', () => {
       window.sessionStorage.clear()
       record((call) =>
         call.url === '/api/session'
-          ? json({ id: MINTED, sessions: { minted: 1 } })
+          ? json({ id: MINTED, sessions: { minted: 1, yours: 1 } })
           : refused(code, { code })
       )
       const answered = await bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
@@ -704,7 +792,7 @@ describe('a refusal after the bootstrap is terminal', () => {
     window.sessionStorage.clear()
     record((call) =>
       call.url === '/api/session'
-        ? json({ id: MINTED, sessions: { minted: 1 } })
+        ? json({ id: MINTED, sessions: { minted: 1, yours: 1 } })
         : refused('unauthorized', { code: 'unauthorized' })
     )
     await expect(
@@ -714,12 +802,21 @@ describe('a refusal after the bootstrap is terminal', () => {
 
   it('reports an opaque redirect as an upstream failure, not as an answer', async () => {
     // `redirect: 'manual'` answers a `Response` of type `opaqueredirect` with
-    // status 0 and no body. An engine handed that would be handed nothing it
-    // could read, so it is reported as what it is.
+    // status 0, a null body and no headers. An engine handed that would be
+    // handed nothing it could read, so it is reported as what it is.
+    //
+    // **Built from `Response.error()`**, which is the closest real construction
+    // a runtime offers: it already has status 0, a null body and immutable
+    // headers, so the only thing overridden is the `type` a browser sets on a
+    // manual redirect. `new Response(null, {status: 0})` throws in a spec
+    // runtime — 0 is not a settable status — so a fixture that started there
+    // was testing something the browser cannot produce.
     record((call) => {
-      if (call.url === '/api/session') return json({ id: MINTED, sessions: { minted: 1 } })
-      const opaque = new Response(null, { status: 0 })
-      Object.defineProperty(opaque, 'type', { value: 'opaqueredirect' })
+      if (call.url === '/api/session') return json({ id: MINTED, sessions: { minted: 1, yours: 1 } })
+      const opaque = Response.error()
+      Object.defineProperty(opaque, 'type', { value: 'opaqueredirect', configurable: true })
+      expect(opaque.status).toBe(0)
+      expect(opaque.body).toBeNull()
       return opaque
     })
     await expect(
@@ -730,7 +827,7 @@ describe('a refusal after the bootstrap is terminal', () => {
 
   it('asks the browser not to follow a redirect at all', async () => {
     const seen = record((call) =>
-      call.url === '/api/session' ? json({ id: MINTED, sessions: { minted: 1 } }) : json({ ok: true })
+      call.url === '/api/session' ? json({ id: MINTED, sessions: { minted: 1, yours: 1 } }) : json({ ok: true })
     )
     await bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
     const relayed = seen.filter((c) => c.url.startsWith('/api/assistant/relay'))

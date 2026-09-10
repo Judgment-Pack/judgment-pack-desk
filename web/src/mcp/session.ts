@@ -72,19 +72,28 @@ export const HANDOFF_EXPIRED_MESSAGE =
   'The launch link expired before this page loaded. Open the URL jpack-desk printed at startup.'
 
 /**
- * The one line a page shows when this desk minted a session it did not ask for.
+ * The one line a page shows when this desk is serving anybody but this tab.
  *
- * **Everything about a stolen handoff is over within sixty seconds.** The count
- * of sessions this process has minted is not, so a tab that stored the count it
- * saw and finds it higher on a later load can say so — hours later, and after
- * the launch store's ring has forgotten the handoff entirely. It is a notice
- * and not a refusal: this tab's own session is fine, and what it has learned is
- * that another one exists.
+ * **Derived, never remembered.** The version this replaces stored the count it
+ * last saw and said something when the number grew — which meant the *storing*
+ * had to happen before the *saying*, and a reload in between silenced it for
+ * ever. So nothing is stored: every bootstrap asks how many sessions this desk
+ * has and subtracts its own, and a reload recomputes the same answer. There is
+ * no state left for a reload to lose.
  *
- * Under 140 characters, because the shell's narration bound applies to it.
+ * It is a notice and not a refusal — this tab's session is fine — and it says
+ * "if that is not you" because it counts **every** other session: the person's
+ * own second tab, a script's, and a thief's, which this desk cannot tell apart
+ * and will not pretend to.
+ *
+ * Under 140 characters at every plausible count, because the shell's narration
+ * bound applies to it.
  */
-export const ANOTHER_SESSION_MESSAGE =
-  'Another session was started on this desk since this tab’s. Restart jpack-desk if that was not you.'
+export function otherSessionsMessage(others: number): string {
+  return others === 1
+    ? 'This desk has 1 other session. Restart jpack-desk if that is not you.'
+    : `This desk has ${others} other sessions. Restart jpack-desk if that is not you.`
+}
 
 /**
  * Thrown where this page has no session the chassis will accept. It is not
@@ -134,16 +143,23 @@ export function sessionStorageKey(): string {
 }
 
 /**
- * Where the count of sessions this desk had minted when this tab last looked
- * is kept — keyed by the same origin, for the same reason.
+ * Where **this tab's own session sequence** is kept — keyed by the same origin,
+ * for the same reason.
  *
- * A second key rather than a second member of the first, because the first
- * holds an id and exactly an id: the containment gate and the live drive both
- * read it and assert its shape, and a page that changed what that key means
- * would be changing a contract two measurements depend on.
+ * **A sibling key rather than a member of the first, and that is deliberate.**
+ * The id's key holds an id and exactly an id: the containment gate reads it and
+ * asserts 48 characters, and the live drive does the same. Making it a record
+ * would change a contract two measurements depend on, for no gain over a second
+ * key that dies with the tab exactly as the first does.
+ *
+ * **And it is the only other thing stored.** The sequence is not a credential
+ * and nothing is looked up by it; it exists for one comparison — a spent
+ * handoff carries the sequence of the session it bought, and a page whose own
+ * sequence matches is looking at the echo of its own link rather than at
+ * somebody else's theft.
  */
-export function mintedStorageKey(): string {
-  return `jpack-desk-minted:${window.location.host}`
+export function sequenceStorageKey(): string {
+  return `jpack-desk-sequence:${window.location.host}`
 }
 
 /**
@@ -183,9 +199,9 @@ const ending = new Set<() => void>()
 /**
  * What this page has learned that it should say, or `null`.
  *
- * Not a refusal and not a state: this tab's session works. It is set by the one
- * bootstrap when the desk reports more minted sessions than this tab last saw,
- * and the shell renders it once. See `ANOTHER_SESSION_MESSAGE`.
+ * Not a refusal and not a state a reload can lose: it is **derived** by the one
+ * bootstrap from what the desk reports, and a reload derives it again. See
+ * `otherSessionsMessage`.
  */
 let noticed: string | null = null
 
@@ -254,6 +270,9 @@ export function sessionEnded(): string | null {
  * the page in the no-session state until it is loaded again.
  */
 export function forgetSession(reason: string = NO_SESSION_MESSAGE): void {
+  // A page that has ended has nothing to say about how many other sessions
+  // there are; the sentence it does have is the one below.
+  noticed = null
   // **Once, whoever calls it.** Two transports can meet the same refusal in the
   // same tick, and a page that announced the end twice would tear down twice
   // and render the notice twice.
@@ -261,6 +280,7 @@ export function forgetSession(reason: string = NO_SESSION_MESSAGE): void {
   forgotten = reason
   try {
     window.sessionStorage.removeItem(sessionStorageKey())
+    window.sessionStorage.removeItem(sequenceStorageKey())
   } catch {
     // A browser with storage disabled has nothing to remove, and a desk that
     // failed over that would be a worse desk than one that skips this.
@@ -312,40 +332,63 @@ async function beginSession(): Promise<string | null> {
   const id = body.id
   if (typeof id !== 'string' || id === '') return stored
   hold(id)
-  // **The count this tab's session was minted at**, kept beside the id. The
-  // exchange reports it with the id so that a fresh tab needs no second
-  // request; a tab that kept an old id asks for it below instead.
-  holdMinted(mintedIn(body.sessions))
+  const counted = countsIn(body.sessions)
+  // **This tab's own sequence, and that is the whole of what is kept.** It is
+  // not a credential; it exists so that a spent handoff carrying the sequence
+  // it bought can be told from somebody else's.
+  holdSequence(counted?.yours ?? null)
+  // And the line, derived here and remembered nowhere.
+  noteOtherSessions(counted)
   return id
 }
 
-/**
- * The count of sessions this desk has minted, out of an answer that carries one.
- *
- * `null` where the answer says nothing — an older chassis, or a proxy — which
- * reads as "nothing to compare" everywhere below rather than as zero.
- */
-function mintedIn(sessions: unknown): number | null {
-  if (sessions === null || typeof sessions !== 'object') return null
-  const minted = (sessions as { minted?: unknown }).minted
-  return typeof minted === 'number' && Number.isFinite(minted) ? minted : null
+/** The pair every answer about a session carries, or `null`. */
+interface Counts {
+  minted: number
+  yours: number
 }
 
 /**
- * Ask the desk how many sessions it has minted, and say so if that is more than
- * this tab last saw.
+ * `{minted, yours}` out of an answer that carries them.
  *
- * **One request, on the one path where it means anything.** A tab that just
- * minted its own session knows the count already; a tab whose exchange was
- * refused as `handoff-spent` is ending anyway and has a better sentence. This
- * is for the *ordinary* case — a reload, `no-handoff`, an id kept — which is
- * exactly where a theft that happened hours ago is otherwise invisible.
- *
- * It runs inside `bootstrap()` rather than beside it, so that the stored count
- * has the same single writer the stored id has.
+ * `null` where the answer says nothing — an older chassis, or a proxy — which
+ * reads as "nothing to say" rather than as zero.
  */
-async function noticeAnotherSession(id: string): Promise<void> {
-  const seen = storedMinted()
+function countsIn(sessions: unknown): Counts | null {
+  if (sessions === null || typeof sessions !== 'object') return null
+  const { minted, yours } = sessions as { minted?: unknown; yours?: unknown }
+  if (typeof minted !== 'number' || !Number.isFinite(minted)) return null
+  if (typeof yours !== 'number' || !Number.isFinite(yours)) return null
+  return { minted, yours }
+}
+
+/**
+ * How many sessions this desk is serving that are not this tab's, said once.
+ *
+ * `minted - 1`, and the subtraction is the point: a count of *others* is a fact
+ * about the desk right now, computed from what the desk just said, so a reload
+ * computes it again. The version this replaces compared against a stored
+ * number, which meant a reload between the store and the paint silenced it for
+ * ever.
+ */
+function noteOtherSessions(counted: Counts | null): void {
+  if (counted === null) return
+  const others = counted.minted - 1
+  noticed = others > 0 ? otherSessionsMessage(others) : null
+}
+
+/**
+ * Ask the desk about its sessions, for a tab that kept the id it already had.
+ *
+ * **One request, on the one path where the numbers are not already in hand.** A
+ * tab that just minted its own session got them with the id. This is for the
+ * ordinary case — a reload, `no-handoff`, an id kept — and it is the path where
+ * a theft that happened hours ago is otherwise invisible.
+ *
+ * It runs inside `bootstrap()` rather than beside it, so that everything this
+ * page stores has the same single writer.
+ */
+async function askAboutSessions(id: string): Promise<void> {
   let answered: Response
   try {
     answered = await fetch('/api/session', {
@@ -361,15 +404,16 @@ async function noticeAnotherSession(id: string): Promise<void> {
     await discardBody(answered)
     return
   }
-  let minted: number | null = null
+  let counted: Counts | null = null
   try {
-    minted = mintedIn(((await answered.json()) as { sessions?: unknown }).sessions)
+    counted = countsIn(((await answered.json()) as { sessions?: unknown }).sessions)
   } catch {
     return
   }
-  if (minted === null) return
-  if (seen !== null && minted > seen) noticed = ANOTHER_SESSION_MESSAGE
-  holdMinted(minted)
+  // The sequence is refreshed too: a tab whose storage was cleared, or which
+  // met an older chassis, learns its own place here.
+  holdSequence(counted?.yours ?? null)
+  noteOtherSessions(counted)
 }
 
 /**
@@ -400,20 +444,53 @@ async function refusedExchange(answered: Response, stored: string | null): Promi
     forgetSession(await sentenceOf(answered))
     return null
   }
-  await discardBody(answered)
   if (code === 'handoff-spent') {
+    // **Whose spend was it?** The clear reaches `Path=/` and nothing else, so a
+    // copy of this tab's own genuine handoff planted at a longer path survives
+    // its own exchange and is presented again on the next load. The refusal
+    // carries the sequence of the session that handoff bought: this tab's own
+    // means the echo of its own link, which is exactly a reload; anything else
+    // is somebody who used the link, and the page stops.
+    //
+    // A produced sequence of zero is evidence of nobody — the exchange spent
+    // the handoff and then minted nothing — and reads as a reload too.
+    const produced = await producedSequenceOf(answered)
+    const mine = storedSequence()
+    const echo =
+      produced === 0 || (produced !== null && mine !== null && produced === mine)
+    if (echo) {
+      if (stored !== null) await askAboutSessions(stored)
+      return stored
+    }
     forgetSession(HANDOFF_SPENT_MESSAGE)
     return null
   }
+  await discardBody(answered)
   if (code === 'handoff-expired') {
     forgetSession(HANDOFF_EXPIRED_MESSAGE)
     return null
   }
   // `no-handoff`, or a refusal this page does not recognise: a reload. The id
   // is kept — and **this is the path where a theft is otherwise invisible**, so
-  // it is the path that compares the minted count.
-  if (stored !== null) await noticeAnotherSession(stored)
+  // it is the path that asks the desk how many sessions it is serving.
+  if (stored !== null) await askAboutSessions(stored)
   return stored
+}
+
+/**
+ * The sequence a spent handoff produced, out of the chassis' own refusal.
+ *
+ * Read whole and unbounded, and that is safe where it was not on the relay: the
+ * mark has already said this body is the chassis' own, and it is one small JSON
+ * object.
+ */
+async function producedSequenceOf(answered: Response): Promise<number | null> {
+  try {
+    const produced = ((await answered.json()) as { producedSeq?: unknown }).producedSeq
+    return typeof produced === 'number' && Number.isFinite(produced) ? produced : null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -483,25 +560,26 @@ function hold(id: string): void {
   }
 }
 
-/** The count this tab last saw, or `null` where it has never seen one. */
-function storedMinted(): number | null {
+/** This tab's own session sequence, or `null` where it has none. */
+function storedSequence(): number | null {
   try {
-    const held = window.sessionStorage.getItem(mintedStorageKey())
+    const held = window.sessionStorage.getItem(sequenceStorageKey())
     if (held === null) return null
-    const count = Number(held)
-    return Number.isFinite(count) ? count : null
+    const seq = Number(held)
+    return Number.isFinite(seq) && seq > 0 ? seq : null
   } catch {
     return null
   }
 }
 
-function holdMinted(count: number | null): void {
-  if (count === null) return
+function holdSequence(seq: number | null): void {
+  if (seq === null) return
   try {
-    window.sessionStorage.setItem(mintedStorageKey(), String(count))
+    window.sessionStorage.setItem(sequenceStorageKey(), String(seq))
   } catch {
-    // A browser that refuses storage compares nothing and says nothing, which
-    // is the same thing this tab does on its very first load.
+    // A browser that refuses storage cannot tell its own echo from a theft, so
+    // it reads a spent handoff as a theft — the cautious answer, and the one a
+    // tab that has never held a session gets too.
   }
 }
 

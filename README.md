@@ -3715,6 +3715,15 @@ no CORS, so a page calling one directly could not read the answer.
   through it. With an allow-list the claim is structural, and `Cookie`,
   `Origin` and `Referer` fall out without being named. A page that needs a
   header this list does not carry is a reviewed change to the list.
+- **And what the answer may not carry back.** The endpoint's own credential
+  names go, by name and by value. **`X-Jpack-Desk-Refusal` goes too**, so an
+  endpoint cannot wear the mark this chassis puts on its own refusals and end
+  somebody's desk session from the far side. **`Location` and `Refresh` go**,
+  for a different reason: a model API never legitimately redirects the browser
+  relaying to it, and a `307 Location: /api/session` made the page's own `fetch`
+  repeat the request — this desk's bearer included — against the exchange.
+  **And no trailer is forwarded at all**, because the proxy copies trailers to
+  the page after the body, past every filter on the answer.
 - **Nothing of the page's query is forwarded, ever.** A relayed request carries
   **no parameter of its own**: every raw pair — any name, any case, any
   encoding, an empty name included, `token` included — is refused with
