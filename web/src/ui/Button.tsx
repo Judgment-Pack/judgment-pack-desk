@@ -6,6 +6,7 @@
  * Cancel that creates the pack. The one control that means to submit says so.
  */
 import type { ButtonHTMLAttributes } from 'react'
+import { Link, type LinkProps } from 'react-router-dom'
 import styles from './Button.module.css'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger'
@@ -22,4 +23,9 @@ export function Button({ variant = 'secondary', className, type, ...rest }: Butt
       className={[styles.button, styles[variant], className].filter(Boolean).join(' ')}
     />
   )
+}
+
+/** Navigation with the same geometry and interaction states as an action. */
+export function ButtonLink({ variant = 'secondary', className, ...props }: LinkProps & { variant?: ButtonVariant }) {
+  return <Link {...props} className={[styles.button, styles[variant], className].filter(Boolean).join(' ')} />
 }

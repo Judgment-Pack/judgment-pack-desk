@@ -30,14 +30,10 @@
  *
  * # Why the button sits on the row and is not primary
  *
- * It is one action of the group's head, and the head is not where a page's
- * primary action lives: the two Saves under it are, and a filled accent button
- * above them made the nomination read as the thing this page is for. So it is
- * `secondary`, on the value line of the row it is about — `Default project`,
- * the value, and the one thing that can be done to it — which is where a
- * reader looks for a control over a value they are reading. The rule line
- * naming the file it writes stays under it, because that file is not the one
- * the group's header names.
+ * It applies immediately to this one value, so it is a secondary row action.
+ * The label and value align with the rows above; a separate action column
+ * places the button at the right edge. The explanation names the desk-level
+ * file it writes and stays below the value. Narrow containers stack the row.
  */
 import { useQueryClient } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
@@ -94,6 +90,19 @@ export function useDefaultProject(): { field: ReactNode; save: ReactNode } {
     field: (
       <CardField
         label="Default project"
+        action={isThisProject ? (
+          <Button variant="secondary" disabled={blocked} onClick={() => commit(null, CLEARED)}>
+            Clear the default
+          </Button>
+        ) : (
+          <Button
+            variant="secondary"
+            disabled={blocked}
+            onClick={() => commit(chassis?.projectFile ?? null, SET)}
+          >
+            Use this project as the default
+          </Button>
+        )}
         rule={
           <>
             Written to{' '}
@@ -117,19 +126,6 @@ export function useDefaultProject(): { field: ReactNode; save: ReactNode } {
           'this project'
         ) : (
           <code>{configured}</code>
-        )}{' '}
-        {isThisProject ? (
-          <Button variant="secondary" disabled={blocked} onClick={() => commit(null, CLEARED)}>
-            Clear the default
-          </Button>
-        ) : (
-          <Button
-            variant="secondary"
-            disabled={blocked}
-            onClick={() => commit(chassis?.projectFile ?? null, SET)}
-          >
-            Use this project as the default
-          </Button>
         )}{' '}
         {write.isPending && <span className="quiet">writing…</span>}
         {said !== undefined && !write.isPending && <span className="quiet">{said}</span>}

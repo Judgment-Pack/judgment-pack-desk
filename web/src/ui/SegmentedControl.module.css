@@ -1,6 +1,7 @@
 .group {
   display: inline-flex;
   align-items: stretch;
+  height: var(--density-control);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -9,13 +10,13 @@
 
 .segment {
   appearance: none;
-  padding: 0.25rem 0.6rem;
+  padding: 0 var(--space-3);
   border: none;
   border-left: 1px solid var(--border);
   background: transparent;
   color: var(--ink-soft);
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--text-control);
   line-height: 1.4;
   cursor: pointer;
 }
@@ -32,4 +33,9 @@
 .segment[disabled] {
   color: var(--ink-faint);
   cursor: default;
+}
+
+.segment:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }

@@ -1,116 +1,176 @@
 # Unveil design system
 
-Unveil uses a calm workspace shell and clearly grouped settings. Neutral
-navigation leaves attention on the task; teal identifies primary actions.
-Settings are comfortable to read, while lists and inspectors remain compact.
-Admin → Assistant and Packs are the first complete examples of this direction.
+Unveil follows the compact, neutral workspace direction in Linear's
+[2026 design refresh](https://linear.app/now/behind-the-latest-design-refresh)
+and [personalized sidebar and settings update](https://linear.app/changelog/2024-12-18-personalized-sidebar).
+The shared foundations apply to navigation, Admin, documents, editors, matrices,
+graphs, dialogs and the Assistant. The [design audit](design-audit.md) records
+the issues found and the resulting changes.
+
+## Reference fidelity
+
+The two references show different iterations of Linear. Use the newer neutral
+surfaces and quieter navigation with the dedicated settings layout shown in the
+2024 update. Do not introduce a different visual theme on each route.
+
+| Foundation | Evidence and implementation |
+| --- | --- |
+| Font | Linear's [public app](https://linear.app/login) preloads Inter Variable 4.1. Unveil serves the same upstream release locally. |
+| Action text and controls | The public app's initial action styles specify 13px text, weight 500, 32px height and 12px horizontal padding. These are the comfortable Button values. |
+| Sidebar width | The public app declares 244px. This is Unveil's default; an explicit project width still wins. |
+| Corners | Public app styles expose a 4px control radius and 12px main frame. Unveil uses those, with 8px cards and selected navigation items. |
+| Neutral surfaces | The public app's initial light/dark styles and the supplied settings screenshots inform the palette below. |
+| Primary action | The public app uses indigo `#5e6ad2`. Use it for action fills in both themes. |
+| Layout | Settings replace the app navigation with a dedicated sidebar and Back to app. The form is bounded and centered; row actions align to the right. |
+
+These are documented observations, not a claim to possess Linear's private
+design system. Screenshot spacing, card treatment, the type hierarchy, and
+Unveil's mobile adaptation are reconstructed. The 2024 and 2026 screenshots
+also differ in palette. A screenshot cannot establish hover, focus, disabled,
+or responsive behavior. Those states are explicitly defined here and checked
+in a browser. Primary hover is darker than Linear's public initial hover color
+to retain 4.5:1 text contrast.
 
 ## One source of truth
 
 | Concern | Owner |
 | --- | --- |
-| Color, typography, spacing, radius, density | `web/src/styles.css` |
-| Header, navigation, main, inspector, console geometry | `web/src/shell.css` |
-| Theme and density application | `web/src/config/theme.ts` |
+| Color, type, spacing, radius, density | `web/src/styles.css` |
+| Header, navigation, main frame, inspector, console | `web/src/shell.css` |
+| Theme/density application and list row arithmetic | `web/src/config/theme.ts` |
 | Saved appearance preferences | `web/src/shell/appearanceState.ts` |
-| Reusable controls and settings sections | `web/src/ui/` |
-| Feature composition | Its route or feature CSS module |
+| Reusable controls and settings groups | `web/src/ui/` |
+| Settings navigation placement | `web/src/shell/SettingsNavigation.tsx` |
+| Feature composition | The route or feature CSS module |
 
-Use the existing user menu's appearance controls for **System / Light / Dark**
-and **Comfortable / Compact**. A viewer's preference overrides the project's
-configured appearance. Do not introduce a second theme store or route-specific
-palette. Existing explicit sidebar widths remain respected; the new default is
-224px.
+Account and desk settings contains **System / Light / Dark** and
+**Comfortable / Compact**. A viewer's preference overrides the project setting.
+Use this existing preference store. Feature code must not add its own palette,
+font stack, density override or competing appearance page.
 
-## Live reference
+## Typography and geometry
 
-Run `npm --prefix web run dev` and open `/design-system.html`. This development
-page renders the actual Button, Field, Input, Select, TextArea and SettingsSection
-components. It needs no runtime or credentials. Its theme and density controls
-apply only to that page and do not persist preferences. Example actions have no
-side effects. The production build's entry remains `index.html`.
+| Token / role | Comfortable | Compact |
+| --- | --- | --- |
+| `--text-page` | 20px / 500, page title | Same |
+| `--text-heading` | 16px / 600, document sections | Same |
+| `--text-body` | 14px, body copy; 600 for group headings | Same |
+| `--text-label`, `--text-control` | 13px / 500 | Same |
+| `--text-sm` | 13px, secondary text | Same |
+| `--text-xs` | 12px, helpers and metadata | Same |
+| `--density-control`, `--density-form-control` | 32px | 28px |
+| `--density-row` | 40px | 32px |
+| `--density-field` | 16px between fields | 12px |
+| `--density-field-gap` | 6px label/control gap | 4px |
+| `--density-section` | 20px between groups / card padding | 16px |
+| `--density-block` | 12px within blocks | 9.6px |
+| `--density-gutter` | 24px | 20px |
+| Narrow viewport gutter | 16px | 16px |
+| `--radius-sm`, `--radius`, `--radius-panel` | 4px, 8px, 12px | Same |
+| `--measure-form`, `--measure-wide` | 704px, 1152px | Same |
 
-Use this page to check default, hover, focus, disabled, invalid and loading
-presentations before applying component changes to a product workflow.
+Type uses rem values at the default 16px root. Body line height is 1.5; headings
+use 1.3–1.35; controls use a single centered line. Inter's optical sizing stays
+on. Monospace is reserved for identifiers, paths, code and runtime output.
+Use sentence case. Dense table captions use the existing density font token;
+do not shrink all body copy when Compact is selected.
 
-## Foundations
+Fixed spacing steps `--space-1` through `--space-7` are 4, 8, 12, 16, 24, 32
+and 48px. Use density tokens for dimensions that tighten with the preference.
+The parent owns space between components; a child must not add a second bottom
+margin to the same gap. Long model names and translated labels may increase
+row height. Do not clip text to meet a screenshot measurement.
 
-| Token | Comfortable value / purpose |
-| --- | --- |
-| `--text-page` | 24px, page titles |
-| `--text-heading` | 20px, major sections |
-| `--text-body` | 15px, body text and settings group titles |
-| `--text-label`, `--text-control` | 14px, labels and controls |
-| `--text-sm` | 13px, helpers and secondary text |
-| `--text-xs` | 12px, compact metadata |
-| `--space-1` … `--space-7` | 4, 8, 12, 16, 24, 32, 48px |
-| `--density-control` | 36px; 32px in Compact |
-| `--density-form-control` | 40px; 36px in Compact |
-| `--density-row` | 40px; 32px in Compact; matches list virtualization |
-| `--density-gutter` | 24px; 20px in Compact; 16px on narrow screens |
-| `--radius`, `--radius-sm` | 8px controls/panels; 6px nested items |
-| `--measure-form`, `--measure-wide` | 704px forms; 1152px documents/lists |
+## Palette
 
-Sizes assume the default 16px root. Use rem-based typography so browser text
-preferences and zoom remain effective. Use `--density-*` for dimensions that
-should tighten with the user's preference and `--space-*` for fixed relationships.
-A settings container selects the shared size with
-`--density-control: var(--density-form-control)`; it must not target descendants
-to override Button, Input or Select dimensions.
+All literal colors live in `styles.css`. Both dark selectors carry the same
+palette: the system preference and explicit Dark must render identically.
 
-Use semantic colors: `--ink` for primary text, `--ink-soft` for secondary content,
-`--ink-faint` for helpers, `--accent` for actions, and `--danger` / `--warn` for
-their respective states. Every color is defined in both palettes. Do not add
-literal colors or radii to component modules.
+| Role | Light | Dark |
+| --- | --- | --- |
+| Page `--bg` | `#f9f9fa` | `#121213` |
+| Sidebar `--sidebar` | `#efeff0` | `#09090a` |
+| Card `--surface` | `#fefeff` | `#17181a` |
+| Menu `--surface-raised` | `#ffffff` | `#222427` |
+| Border `--border` | `#e2e2e2` | `#28282c` |
+| Primary text `--ink` | `#23252a` | `#e2e3e5` |
+| Secondary text `--ink-soft` | `#5b5b5d` | `#a0a0a4` |
+| Supporting text `--ink-faint` | `#68686b` | `#97979a` |
+| Inactive navigation `--sidebar-ink` | `#626368` | `#97979a` |
+| Action fill `--accent-fill` | `#5e6ad2` | `#5e6ad2` |
+| Action label `--ink-inverse` | `#fefeff` | `#fefeff` |
+| Hover / pressed fills | `#5964c7` / `#4f5bbf` | Same |
+| Links / focus `--accent` | `#545fbf` | `#a0a8ff` |
 
-## Components and page patterns
+Separate action fills from link/focus colors: a readable dark-theme link is too
+light to serve as a background under white text. Success stays green; warnings,
+errors and condition verdicts keep their existing semantic pairs. Indigo does
+not mean a successful runtime result. Selected sidebar rows use a quiet neutral
+fill; inactive entries are muted. Borders separate surfaces without enclosing
+every level of hierarchy.
 
-- Use `Button` variants `primary`, `secondary`, `quiet` and `danger`. A loading
-  action is disabled, says what is happening, and can carry `aria-busy`.
-- Use `Field` for an associated label, helper and validation error. Use the
-  shared controls inside its render callback so their accessibility wiring is
-  retained. A placeholder does not replace a label.
-- Use `SettingsSection` to group related fields. Its optional footer holds
-  actions belonging to that group. It owns its padding and border; children
-  own their internal spacing. Choose heading level 2 or 3 to match the page.
-- Use an inline action row for changes saved across multiple groups. Name the
-  scope, such as **Save API key** or **Save settings**. Never float a save bar
-  over scrolling content.
-- Place destructive actions in a separate section and retain explicit
-  confirmation for removal. Destructive actions must use the shared danger
-  variant, not a feature-specific color override.
-- Keep runtime paths and diagnostic details in a disclosure or inspector.
-  Display read failures and actionable errors without requiring discovery.
-- Preserve data provenance: runtime verdicts, model IDs, diagnostics and tool
-  permissions retain their meaning when their presentation changes.
+The palette tests measure the named text/background pairs and focus rings. They
+do not certify complete WCAG conformance: subtle borders are not all 3:1, and
+assistive technology and device testing remain separate work.
 
-## Cascade and maintenance
+## Components and action placement
 
-`main.tsx` imports `styles.css` before `shell.css`. The order declaration
-`@layer base, shell` places element defaults below navigation styling. Feature
-and UI modules remain unlayered, so their own classes take precedence. Do not
-fix a cascade conflict with increasingly specific descendant selectors.
+- Use `Button` for actions and `ButtonLink` for navigation styled as an action.
+  Both share geometry and states. Use `primary`, `secondary`, `quiet`, `danger`.
+  Hover changes paint only. Keyboard focus remains visible.
+- Each write names its scope: **Save API key**, **Save settings**, or a section's
+  **Save**. Group-wide saves sit at the bottom right with feedback before them.
+  Cancel/undo belongs beside its save. Toolbars wrap on narrow layouts.
+- An immediate row action, such as clearing the default project, occupies a
+  separate right-aligned action column. Its explanation sits below the value.
+  At narrow container widths the row stacks without collisions.
+- Keep key saving next to the key. Test connection belongs in the Connection
+  group's footer and stays disabled until there is a saved key for the endpoint.
+  A typed key is unsaved state. Saving endpoint/model settings is a separate task.
+- Removal belongs below the main form in a distinct section, with an explicit
+  confirmation. It uses the shared danger button and never sits beside Save as
+  an equally prominent alternative.
+- `Field` owns the label/control/helper relationship. Preserve its accessibility
+  wiring, errors and names. Input, Select and Button share height and corners.
+- `SettingsSection` owns its card, heading, padding and optional action footer.
+  Its children own internal spacing. Keep diagnostics in disclosures or the
+  inspector while leaving actionable failures visible.
+- Tables keep headers and cells aligned. Warnings use a status and border
+  without repeatedly filling the entire result area. Diagrams may shrink to
+  fit but must not be enlarged beyond their natural SVG coordinate size.
 
-New UI primitives live beside their own CSS module in `web/src/ui/`. Add them to
-the live reference when they define a reusable pattern. Extend existing tokens
-before introducing a new component-specific scale. Existing route styles can be
-migrated incrementally; the reference page is not a claim that every legacy
-screen has completed visual review.
+## Navigation and responsive behavior
 
-Build and run the component suite after changing shared components. The existing
-palette, convention, and density checks validate the foundations. Use the real
-browser containment check before merging stylesheet changes. Review Admin,
-Packs, a populated pack, a dialog, and a narrow layout in both themes; passing
-source tests alone does not demonstrate visual quality.
+Admin's section links live in the shell sidebar. The selected section has one
+page heading; the small Admin label provides context. Back to app returns to
+Packs and restores the app navigation. Settings retain `/admin#section` links.
+The fragment addresses the article in the shell so a hard load keeps its header
+visible. Standalone Admin retains its inline section navigation.
 
-## Reviewed examples
+Below the existing 900px rail breakpoint, settings links move into the navigation
+drawer. Choosing a section, including the current section, closes the drawer.
+Opening or closing navigation does not remount the form or discard its draft.
+The inspector and console keep their existing responsive behavior. Explicit pane
+sizes and the viewer's saved app-rail mode remain respected on return to the app.
 
-These captures use copied demo data and a placeholder key. Provider replies in
-connection tests were mocked; they are examples of the UI states, not evidence
-of a live provider connection.
+## Font distribution and live reference
 
-- [Assistant setup, dark](design/admin-assistant-dark.png)
-- [Inline saving and separate removal](design/admin-actions-dark.png)
-- [Packs navigation](design/packs-dark.png)
-- [Populated pack, light](design/pack-light.png)
-- [Shared component reference, dark](design/design-system-dark.png)
+`web/public/fonts/InterVariable.woff2` is the unmodified
+[Inter v4.1 variable font](https://github.com/rsms/inter/tree/v4.1), distributed
+under the included [SIL Open Font License](../web/public/fonts/OFL.txt).
+It is preloaded in the app and development reference, served locally, and uses
+`font-display: swap` with a system fallback. No external font request is needed.
+
+Run `npm --prefix web run dev` and open `/design-system.html`. It renders the
+production Button, Field, Input, Select, TextArea and SettingsSection components.
+Theme and density switches apply only to that reference page; sample actions
+have no side effects. The production entry remains `index.html`.
+
+`main.tsx` imports `styles.css` before `shell.css`; `@layer base, shell` orders
+base and shell rules. UI and feature modules stay unlayered. Extend existing
+tokens and components instead of increasing descendant specificity.
+
+Build and run the component suite after changing shared components. Run
+`scripts/containment-check.sh` before merging stylesheet changes. Inspect
+populated pages, empty/loading/error states, both themes, both densities, a
+dialog, and narrow layouts. Source checks alone cannot establish visual quality.

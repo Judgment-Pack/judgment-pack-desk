@@ -13,7 +13,7 @@
   width: min(30rem, calc(100vw - 2rem));
   max-height: calc(100vh - 4rem);
   overflow-y: auto;
-  padding: 1.15rem 1.25rem 1rem;
+  padding: var(--density-section);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
@@ -22,20 +22,21 @@
 }
 
 .title {
-  margin: 0 0 0.9rem;
-  font-size: 1.05rem;
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-heading);
   font-weight: 600;
 }
 
 .description {
-  margin: -0.5rem 0 0.9rem;
+  margin: 0 0 var(--density-field);
   color: var(--ink-faint);
-  font-size: 0.88rem;
+  font-size: var(--text-sm);
 }
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.5rem;
-  margin-top: 1.1rem;
+  margin-top: var(--density-field);
 }

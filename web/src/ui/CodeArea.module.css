@@ -17,7 +17,7 @@
   background: var(--bg);
   color: var(--ink-faint);
   font-family: var(--mono);
-  font-size: 0.76rem;
+  font-size: var(--text-xs);
   line-height: 1.5;
   text-align: right;
   overflow: hidden;
@@ -35,7 +35,7 @@
   background: transparent;
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 0.76rem;
+  font-size: var(--text-xs);
   line-height: 1.5;
   resize: vertical;
   white-space: pre;

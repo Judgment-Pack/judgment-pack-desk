@@ -406,16 +406,19 @@ function UnreadLine({ failure }: { failure: ReadFailure }) {
 export function CardField({
   label,
   rule,
+  action,
   children
 }: {
   label: string
   rule?: ReactNode
+  action?: ReactNode
   children: ReactNode
 }) {
   return (
-    <div className={styles.field}>
+    <div className={styles.field} data-action={action !== undefined || undefined}>
       <span className={styles.key}>{label}</span>
       <div className={styles.value}>{children}</div>
+      {action !== undefined && <div className={styles.action}>{action}</div>}
       {rule !== undefined && <p className={styles.rule}>{rule}</p>}
     </div>
   )

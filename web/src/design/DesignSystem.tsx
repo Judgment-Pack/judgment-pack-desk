@@ -51,7 +51,7 @@ function DesignSystem() {
           </div>
         </SettingsSection>
 
-        <SettingsSection level={2} title="Color roles" description="Neutral surfaces, readable text, and a restrained teal accent.">
+        <SettingsSection level={2} title="Color roles" description="Neutral surfaces, readable text, and an indigo action accent.">
           <div className={styles.swatches}>
             <div className={styles.surface}>Surface</div>
             <div className={styles.raised}>Raised</div>
@@ -63,7 +63,7 @@ function DesignSystem() {
 
         <div className={styles.form}>
           <SettingsSection level={2} title="Settings form" description="Labels, controls, helpers, and feedback follow one spacing scale."
-            footer={<div className={styles.actions}><Button variant="primary">Save settings</Button><Button variant="quiet">Cancel</Button></div>}>
+            footer={<div className={styles.actions}><Button variant="quiet">Cancel</Button><Button variant="primary">Save settings</Button></div>}>
             <Field label="Provider">
               {(wiring) => <Select {...wiring} value={provider} onValueChange={setProvider} options={[
                 { value: 'gemini', label: 'Google Gemini' }, { value: 'anthropic', label: 'Anthropic' }
@@ -85,20 +85,20 @@ function DesignSystem() {
         </div>
 
         <div>
-          <SettingsSection level={2} title="Typography" description="One scale for navigation, forms, and page content.">
-            <p className={styles.pageType}>Page title · 24</p>
-            <p className={styles.headingType}>Section title · 20</p>
-            <p className={styles.bodyType}>Body text · 15</p>
-            <p className={styles.labelType}>Labels and controls · 14</p>
+          <SettingsSection level={2} title="Typography" description="Inter Variable 4.1, served locally. One scale across every page.">
+            <p className={styles.pageType}>Page title · 20</p>
+            <p className={styles.headingType}>Section title · 16</p>
+            <p className={styles.bodyType}>Body text · 14</p>
+            <p className={styles.labelType}>Labels and controls · 13</p>
             <p className={styles.helperType}>Supporting text · 13</p>
             <p className={styles.captionType}>Compact metadata · 12</p>
           </SettingsSection>
           <SettingsSection level={2} title="Layout rules" description="Comfortable settings, compact working surfaces.">
             <ul className={styles.rules}>
-              <li>36px standard controls; 40px settings controls.</li>
-              <li>Compact density reduces controls to 32px and 36px.</li>
+              <li>32px controls across toolbars and settings.</li>
+              <li>Compact density reduces controls to 28px.</li>
               <li>4, 8, 12, 16, 24, 32, and 48px spacing steps.</li>
-              <li>24px page gutters and 224px default navigation.</li>
+              <li>24px page gutters and 244px default navigation.</li>
               <li>Inline actions stay attached to the task they affect.</li>
             </ul>
           </SettingsSection>

@@ -477,13 +477,13 @@ export function EndpointForm({
         </SettingsSection>
 
         <div className={styles.saveActions}>
-          <Button variant={binding === 'bound' && !replacingKey ? 'primary' : 'secondary'} type="submit" disabled={blocked || busy || checking || editingKey}>
-            Save settings
-          </Button>
           {busy && <span className="quiet">Saving…</span>}
           {editingKey && !busy && <span className="quiet">Save or cancel the API key changes first.</span>}
           {dirty && saved === undefined && !busy && !editingKey && <span className="quiet">Unsaved settings</span>}
           {saved !== undefined && !busy && <span className="quiet" role="status">{saved}</span>}
+          <Button variant={binding === 'bound' && !replacingKey ? 'primary' : 'secondary'} type="submit" disabled={blocked || busy || checking || editingKey}>
+            Save settings
+          </Button>
         </div>
 
         {configured !== null && (

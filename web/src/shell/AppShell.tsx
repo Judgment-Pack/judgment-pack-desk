@@ -20,6 +20,7 @@
  * `!important` on every property.
  */
 import { Tooltip } from 'radix-ui'
+import { useLocation } from 'react-router-dom'
 import {
   useCallback,
   useEffect,
@@ -35,6 +36,7 @@ import { BottomPane } from './BottomPane'
 import { HeaderBar } from './HeaderBar'
 import { InspectorSlotContext, type InspectorSlot } from './InspectorSlot'
 import { LeftRail } from './LeftRail'
+import { SettingsNavigationProvider } from './SettingsNavigation'
 import { RightPane } from './RightPane'
 import { StatusStrip } from './StatusStrip'
 import { AppearanceProvider } from './appearanceState'
@@ -107,6 +109,7 @@ function ShellFrame({
   children: ReactNode
 }) {
   const shell = useShellState()
+  const settingsPage = useLocation().pathname === '/admin'
   const { config, declaredPanes } = useEffectiveConfig()
   const [railDrawerOpen, setRailDrawerOpen] = useState(false)
 
@@ -209,7 +212,7 @@ function ShellFrame({
     '--console-h': `${config.panes.console.height}px`,
     '--rail-current': railIsDrawer
       ? '0px'
-      : shell.left.mode === 'expanded'
+      : settingsPage || shell.left.mode === 'expanded'
         ? 'var(--rail-w)'
         : 'var(--rail-w-icon)',
     '--inspector-current':
@@ -219,56 +222,58 @@ function ShellFrame({
 
   return (
     <InspectorSlotContext.Provider value={slot}>
-      <div className="desk" style={style}>
-        <a className="desk-skip" href="#main">
-          Skip to main content
-        </a>
+      <SettingsNavigationProvider>
+        <div className="desk" style={style}>
+          <a className="desk-skip" href="#main">
+            Skip to main content
+          </a>
 
-        <HeaderBar
-          inspectorOpen={shell.inspector.open}
-          inspectorIsDrawer={inspectorIsDrawer}
-          consoleOpen={shell.console.open}
-          onToggleInspector={shell.toggleInspector}
-          onToggleConsole={shell.toggleConsole}
-          inspectorOpenerRef={inspectorOpenerRef}
-          railIsDrawer={railIsDrawer}
-          railDrawerOpen={railDrawerOpen}
-          onOpenRail={() => setRailDrawerOpen(true)}
-          railOpenerRef={railOpenerRef}
-        />
+          <HeaderBar
+            inspectorOpen={shell.inspector.open}
+            inspectorIsDrawer={inspectorIsDrawer}
+            consoleOpen={shell.console.open}
+            onToggleInspector={shell.toggleInspector}
+            onToggleConsole={shell.toggleConsole}
+            inspectorOpenerRef={inspectorOpenerRef}
+            railIsDrawer={railIsDrawer}
+            railDrawerOpen={railDrawerOpen}
+            onOpenRail={() => setRailDrawerOpen(true)}
+            railOpenerRef={railOpenerRef}
+          />
 
-        <LeftRail
-          mode={shell.left.mode}
-          onToggle={railIsDrawer ? () => setRailDrawerOpen((open) => !open) : shell.toggleRail}
-          asDrawer={railIsDrawer}
-          drawerOpen={railDrawerOpen}
-          onDrawerOpenChange={setRailDrawerOpen}
-          openerRef={railOpenerRef}
-        />
+          <LeftRail
+            mode={settingsPage ? 'expanded' : shell.left.mode}
+            onToggle={railIsDrawer ? () => setRailDrawerOpen((open) => !open) : shell.toggleRail}
+            asDrawer={railIsDrawer}
+            drawerOpen={railDrawerOpen}
+            onDrawerOpenChange={setRailDrawerOpen}
+            openerRef={railOpenerRef}
+          />
 
-        <main id="main" tabIndex={-1} className="desk-main">
-          <div className="desk-measure">{children}</div>
-        </main>
+          <main id="main" tabIndex={-1} className="desk-main">
+            <div className="desk-measure">{children}</div>
+          </main>
 
-        <RightPane
-          open={shell.inspector.open}
-          onClose={shell.toggleInspector}
-          asDrawer={inspectorIsDrawer}
-          declaredWidth={declaredPanes.inspectorWidth ? inspectorWidth : undefined}
-          publishTarget={publishTarget}
-          publishPane={publishPane}
-          openerRef={inspectorOpenerRef}
-          showEmpty={inspectorClaims === 0}
-        />
+          <RightPane
+            open={shell.inspector.open}
+            onClose={shell.toggleInspector}
+            asDrawer={inspectorIsDrawer}
+            declaredWidth={declaredPanes.inspectorWidth ? inspectorWidth : undefined}
+            publishTarget={publishTarget}
+            publishPane={publishPane}
+            openerRef={inspectorOpenerRef}
+            showEmpty={inspectorClaims === 0}
+          />
 
-        <BottomPane
-          open={shell.console.open}
-          tab={shell.console.tab}
-          onTabChange={shell.setConsoleTab}
-        />
+          <BottomPane
+            open={shell.console.open}
+            tab={shell.console.tab}
+            onTabChange={shell.setConsoleTab}
+          />
 
-        <StatusStrip consoleOpen={shell.console.open} onToggleConsole={shell.toggleConsole} />
-      </div>
+          <StatusStrip consoleOpen={shell.console.open} onToggleConsole={shell.toggleConsole} />
+        </div>
+      </SettingsNavigationProvider>
     </InspectorSlotContext.Provider>
   )
 }

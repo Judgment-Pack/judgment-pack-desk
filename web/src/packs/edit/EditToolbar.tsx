@@ -124,7 +124,7 @@ export function EditToolbar({
       )}
       <ToolbarSpacer />
       {editing && (
-        <>
+        <ToolbarSlot>
           {/*
             The buffer keeps a capped stack of snapshots, one per committed
             action with typing coalesced per field. A control is what makes it
@@ -160,7 +160,7 @@ export function EditToolbar({
               {unwritten === 1 ? '1 field is not written yet' : `${unwritten} fields are not written yet`}
             </span>
           )}
-        </>
+        </ToolbarSlot>
       )}
     </Toolbar>
   )

@@ -125,9 +125,8 @@ function DocumentWalk({
         viewBox={`0 0 ${width} ${height}`}
         // Drawn near its natural size: the box widths and type sizes below are
         // chosen to be legible at 1:1, and a percentage width would scale a
-        // narrow single-column graph up until its labels swamped it. The floor
-        // keeps a two-node graph from being microscopic on a wide page.
-        style={{ maxWidth: Math.min(Math.max(width, 420), 760) }}
+        // narrow single-column graph up until its labels swamped it.
+        style={{ maxWidth: Math.min(width, 760) }}
         role="img"
         aria-label={
           `The ${shape.nodes.length} ${shape.nodes.length === 1 ? 'node' : 'nodes'} and ` +
