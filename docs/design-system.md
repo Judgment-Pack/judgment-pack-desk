@@ -21,7 +21,7 @@ surfaces and quieter navigation with the dedicated settings layout shown in the
 | Corners | Public app styles expose a 4px control radius and 12px main frame. Unveil uses those, with 8px cards and selected navigation items. |
 | Neutral surfaces | The public app's initial light/dark styles and the supplied settings screenshots inform the palette below. |
 | Primary action | The public app uses indigo `#5e6ad2`. Use it for action fills in both themes. |
-| Layout | Settings replace the app navigation with a dedicated sidebar and Back to app. The form is bounded and centered; row actions align to the right. |
+| Layout | Settings replace the app navigation with a dedicated sidebar and Back to app. The header spans the pane; the bounded form starts at a fixed gutter. Row actions align to the right. |
 
 These are documented observations, not a claim to possess Linear's private
 design system. Screenshot spacing, card treatment, the type hierarchy, and
@@ -40,6 +40,9 @@ to retain 4.5:1 text contrast.
 | Theme/density application and list row arithmetic | `web/src/config/theme.ts` |
 | Saved appearance preferences | `web/src/shell/appearanceState.ts` |
 | Reusable controls and settings groups | `web/src/ui/` |
+| Full-width page header and bounded body | `web/src/ui/PageLayout.tsx` |
+| Floating details and retained section panels | `web/src/ui/Popover.tsx`, `web/src/ui/RetainedPanel.tsx` |
+| Unsaved form aggregation and route protection | `web/src/shell/DraftScope.tsx`, `web/src/shell/useDirtyGuard.ts` |
 | Settings navigation placement | `web/src/shell/SettingsNavigation.tsx` |
 | Feature composition | The route or feature CSS module |
 
@@ -142,16 +145,40 @@ assistive technology and device testing remain separate work.
 ## Navigation and responsive behavior
 
 Admin's section links live in the shell sidebar. The selected section has one
-page heading; the small Admin label provides context. Back to app returns to
-Packs and restores the app navigation. Settings retain `/admin#section` links.
+page heading; the small `Admin / section` header provides context. Back to app
+returns to Packs and restores the app navigation. Settings retain `/admin#section` links.
 The fragment addresses the article in the shell so a hard load keeps its header
 visible. Standalone Admin retains its inline section navigation.
 
 Below the existing 900px rail breakpoint, settings links move into the navigation
 drawer. Choosing a section, including the current section, closes the drawer.
 Opening or closing navigation does not remount the form or discard its draft.
-The inspector and console keep their existing responsive behavior. Explicit pane
-sizes and the viewer's saved app-rail mode remain respected on return to the app.
+The inspector and console keep their existing responsive behavior.
+
+Pages using `data-layout="page"` opt out of the shell's outer padding. Compose
+`PageHeader` and `PageBody` inside the route's full-width article. The header has
+a 48px minimum height, spans the pane and stays visible while the form scrolls.
+Its divider has no reading-width cap. The body starts 24px from the pane edge
+(20px in Compact; 16px on narrow viewports), with the same vertical inset and a
+704px maximum form width. Resizing the window or opening the inspector must not
+center or shift this left edge. Narrow headings/actions may wrap without clipping.
+
+`Popover` hosts transient runtime details in a portal, with collision handling,
+Escape/outside dismissal and focus restoration. Expanding it must move neither
+the header nor the form. Copy reports success only after the clipboard answers.
+Runtime's global connection badge remains a status indicator; the Admin popover
+adds diagnostics without changing the badge's behavior on other routes.
+
+Use `RetainedPanel` for settings sections: mount on first visit, hide inactive
+sections from layout and accessibility, and retain their drafts and stale-write
+revision guards. `DraftScope` aggregates only dirty flags and uses the existing
+route/reload protection. It never stores field values or API keys. Typed keys
+stay only in their existing uncontrolled input until saved, canceled or the
+Admin page unmounts. A hidden dirty section must still protect leaving Admin.
+Saves are disabled when the configured values are unchanged; undoing an edit
+returns the form to clean. Sidebar exceptions use a compact indicator with
+accessible status text; the selected section and inspector provide full details.
+Explicit pane sizes and the viewer's saved app-rail mode remain respected on return to the app.
 
 ## Font distribution and live reference
 

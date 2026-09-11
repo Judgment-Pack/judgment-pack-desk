@@ -28,6 +28,7 @@ import { useState, type ReactNode } from 'react'
 import { AlertPanel } from '../ui/AlertPanel'
 import { Alert } from '../ui/Alert'
 import { Button } from '../ui/Button'
+import { useUnsavedChanges } from '../shell/DraftScope'
 import { usePublishedWriteStatus, type SourceStatus } from './SourceCard'
 import {
   useProjectFileSave,
@@ -173,6 +174,7 @@ export function ProjectFileForm<D>({
   children: ReactNode
 }) {
   const { save, changed } = state
+  useUnsavedChanges(changed)
   const unplaced = save.problems.filter((problem) => !placed.includes(problem.key))
   // **What this form's write is doing, told to the card it is inside.** The
   // card's Status is otherwise the file's read state, which the group header

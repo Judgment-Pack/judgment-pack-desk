@@ -1,0 +1,19 @@
+.content {
+  position: relative;
+  z-index: var(--z-menu);
+  width: min(24rem, calc(100vw - 2 * var(--space-4)));
+  max-height: var(--radix-popover-content-available-height);
+  overflow: auto;
+  padding: var(--density-section);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--ink);
+  box-shadow: 0 var(--space-2) var(--space-5) var(--shadow);
+}
+
+.title {
+  margin: 0 0 var(--density-block);
+  font-size: var(--text-body);
+  font-weight: 600;
+}

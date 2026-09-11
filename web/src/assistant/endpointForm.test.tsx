@@ -182,6 +182,7 @@ describe('what a save sends', () => {
   it('states the digest this page read, and names no file', async () => {
     const { sent } = stubWrites([{}])
     renderForm()
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://changed.example/v1' } })
     save()
     await waitFor(() => expect(sent.some((each) => each.method === 'PUT')).toBe(true))
     const body = theWrite(sent)
@@ -381,6 +382,7 @@ describe('a write the desk refused', () => {
       }
     ])
     renderForm()
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://changed.example/v1' } })
     save()
     // Beside the field, in the decoder's own sentence.
     const url = await screen.findByLabelText('Endpoint URL')
@@ -409,6 +411,7 @@ describe('a write the desk refused', () => {
       }
     ])
     renderForm()
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://changed.example/v1' } })
     save()
     expect(await screen.findByText(/identity.provider.issuer: must be an https URL/)).toBeTruthy()
   })
@@ -424,6 +427,7 @@ describe('a write the desk refused', () => {
       }
     ])
     renderForm()
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://changed.example/v1' } })
     save()
     expect(await screen.findByText(/entered for somewhere else/)).toBeTruthy()
   })
@@ -445,6 +449,7 @@ describe('a file that moved underneath the page', () => {
       }
     ])
     renderForm()
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://changed.example/v1' } })
     save()
     expect(await screen.findByText(/changed on disk. Nothing was written/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Reload' })).toBeTruthy()
@@ -1130,6 +1135,7 @@ describe('what this form no longer offers', () => {
   it('writes no engine member, whatever the file it opened on carried', async () => {
     const { sent } = stubWrites([{}])
     renderForm(configured({ endpoint: ENDPOINT, engine: 'builtin', thinking: 'on' }))
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://changed.example/v1' } })
     save()
     await waitFor(() => expect(sent.some((each) => each.method === 'PUT')).toBe(true))
     const body = theWrite(sent)
@@ -1165,6 +1171,7 @@ describe('the narration guard, over the states only the form can reach', () => {
       }
     ])
     const { container } = renderForm()
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://changed.example/v1' } })
     save()
     await screen.findByText(/changed on disk. Nothing was written/)
     expect(swept(container), swept(container).join(' | ')).toEqual([])
@@ -1185,6 +1192,7 @@ describe('the narration guard, over the states only the form can reach', () => {
       }
     ])
     const { container } = renderForm()
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://changed.example/v1' } })
     save()
     await screen.findByText(/This configuration was refused/)
     expect(swept(container), swept(container).join(' | ')).toEqual([])
@@ -1360,6 +1368,7 @@ describe('API key save and connection readiness', () => {
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search models' }), { target: { value: 'another' } })
     expect(screen.queryByRole('checkbox', { name: 'a-model' })).toBeNull()
     expect(screen.getByRole('checkbox', { name: 'another-model' })).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://changed.example/v1' } })
     save()
     await waitFor(() => expect(sent.some((request) => request.method === 'PUT')).toBe(true))
     expect(theWrite(sent).assistant.endpoint).toMatchObject({ model: 'a-model', models: ['a-model', 'another-model'] })

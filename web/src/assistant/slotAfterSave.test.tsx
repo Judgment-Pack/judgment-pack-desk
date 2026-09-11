@@ -774,6 +774,7 @@ describe('Admin, where the configuration could not be read', () => {
       (screen.getByRole('checkbox', { name: 'the-model-in-the-file' }) as HTMLInputElement).checked
     ).toBe(true)
 
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://changed.example/v1' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     expect(
       await screen.findByText(/This desk could not read its own configuration/)

@@ -249,15 +249,12 @@ describe('the measure is left-aligned, at one gutter, capped by kind', () => {
     expect(compact).not.toContain('--density-gutter: 1rem;')
   })
 
-  it('uses the shared measure when a settings form is centered inside the page', () => {
-    const admin = readFileSync(
-      join(import.meta.dirname, '..', 'routes', 'AdminView.module.css'),
-      'utf8'
-    ).replaceAll(/\/\*[\s\S]*?\*\//g, '')
-    // Settings use the shell sidebar now. Their inner form may be bounded,
-    // but its width must still come from the shared scale.
-    const widths = [...admin.matchAll(/max-width:\s*([^;}]+);/g)].map((match) => match[1]!.trim())
-    expect(widths).toEqual(['var(--measure-form)'])
+  it('keeps page chrome full width and bounds only its body with shared measures', () => {
+    const layout = readFileSync(join(import.meta.dirname, '..', 'ui', 'PageLayout.module.css'), 'utf8')
+    expect(layout).toContain(".content[data-width='form'] { max-width: var(--measure-form); }")
+    expect(layout).toContain('position: sticky;')
+    expect(layout).toContain('padding: var(--density-gutter) var(--density-gutter) var(--space-7);')
+    expect(values('.desk-measure:has([data-layout="page"])', 'padding')).toEqual(['0'])
   })
 })
 

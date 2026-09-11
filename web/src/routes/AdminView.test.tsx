@@ -394,6 +394,11 @@ function everythingConfigured() {
   )
 }
 
+function runtimeLine() {
+  fireEvent.click(screen.getByRole('button', { name: 'Runtime details' }))
+  return screen.getByRole('dialog', { name: 'Runtime details' }).querySelector('dl')!
+}
+
 describe('Admin, with no overview', () => {
   it('renders every group title and one row per section, in order, as links to their sections', () => {
     // **The order case, in the shape the column has.** It fails if a group or a
@@ -524,14 +529,16 @@ describe('Admin, with no overview', () => {
     }
   })
 
-  it('keeps runtime details collapsed and file bytes in the inspector', () => {
-    // The bytes are in the right pane. A `details` back on the page is the
-    // stack this chunk took apart, one section at a time.
+  it('opens runtime details in a dismissible popover outside page flow', () => {
     const { container } = renderAdmin(everythingConfigured())
-    const details = page(container).querySelectorAll('details')
-    expect(details).toHaveLength(1)
-    expect(details[0]!.open).toBe(false)
-    expect(details[0]!.querySelector('summary')!.textContent).toBe('Runtime details')
+    expect(screen.queryByRole('dialog', { name: 'Runtime details' })).toBeNull()
+    const trigger = screen.getByRole('button', { name: 'Runtime details' })
+    fireEvent.click(trigger)
+    const dialog = screen.getByRole('dialog', { name: 'Runtime details' })
+    expect(page(container).contains(dialog)).toBe(false)
+    expect(dialog.querySelectorAll('dt')).toHaveLength(2)
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(page(container).querySelector('pre')).toBeNull()
   })
 
@@ -539,7 +546,7 @@ describe('Admin, with no overview', () => {
     // Two facts, neither of them a setting: the connection and the binary the
     // chassis was launched with, each one the connection's or the chassis' own
     // answer.
-    const { container } = renderAdmin(
+    renderAdmin(
       effectiveConfig(undefined, undefined, undefined, {
         path: DESK_PATH,
         present: false,
@@ -551,7 +558,7 @@ describe('Admin, with no overview', () => {
         }
       })
     )
-    const line = container.querySelector('dl')!
+    const line = runtimeLine()
     expect(Array.from(line.querySelectorAll('dt')).map((each) => each.textContent)).toEqual([
       'Runtime',
       'Binary'
@@ -567,24 +574,24 @@ describe('Admin, with no overview', () => {
     // previous state — so a line that read "connected" off its presence said
     // so while the socket was down and the banner said the connection was
     // lost. The name is only said where the connection is actually up.
-    const { container } = renderAdmin(effectiveConfig(undefined), '/admin', ROOT, {
+    renderAdmin(effectiveConfig(undefined), '/admin', ROOT, {
       status: 'reconnecting',
       client: null,
       attempt: 3
     })
-    const line = container.querySelector('dl')!
+    const line = runtimeLine()
     await waitFor(() => expect(line.textContent).toContain('reconnecting'))
     expect(line.textContent).not.toContain('connected —')
     expect(line.textContent).not.toContain('jpack')
     cleanup()
 
     renderAdmin(effectiveConfig(undefined), '/admin', ROOT, { status: 'failed', client: null })
-    expect(document.querySelector('dl')!.textContent).toContain('not connected')
+    expect(runtimeLine().textContent).toContain('not connected')
   })
 
   it('names the runtime it is connected to where it actually is', async () => {
-    const { container } = renderAdmin()
-    const line = container.querySelector('dl')!
+    renderAdmin()
+    const line = runtimeLine()
     await waitFor(() => expect(line.textContent).toContain('connected — jpack test'))
   })
 
@@ -604,7 +611,7 @@ describe('Admin, with no overview', () => {
         }
       })
     )
-    const line = container.querySelector('dl')!
+    const line = runtimeLine()
     expect(line.textContent).not.toContain('/real/a-project/jpack-desk.json')
     expect(line.textContent).not.toContain(DESK_PATH)
     // The project's own file is stated once, and it is the open section's
@@ -743,6 +750,7 @@ describe('Admin, with no overview', () => {
       })
     )
     expect(screen.getAllByText('/real/a-project/jpack-desk.json').length).toBeGreaterThan(0)
+    runtimeLine()
     expect(screen.getAllByText('/usr/local/bin/jpack').length).toBeGreaterThan(0)
     // And never the project-relative name once the chassis has answered.
     expect(screen.queryByText('jpack-desk.json')).toBeNull()
@@ -895,7 +903,7 @@ describe('the Project section', () => {
     // appearing here. This section offers one, and it is the nomination: it has
     // no form, so it has no Save button either.
     const { container } = renderAdmin()
-    const interactive = page(container).querySelectorAll('button, input, select, textarea')
+    const interactive = page(container).querySelectorAll('section button, section input, section select, section textarea')
     expect(Array.from(interactive).map((element) => element.textContent?.trim())).toEqual([
       'Use this project as the default'
     ])
@@ -1059,8 +1067,30 @@ describe('one section at a time', () => {
       rowsIn(container).find((row) => row.getAttribute('href') === '/admin#project')!
     )
     expect(screen.getByRole('heading', { level: 2, name: 'Project' })).toBeTruthy()
-    expect(screen.queryByLabelText('Packs go to')).toBeNull()
+    expect(screen.getByLabelText('Packs go to').closest('[hidden]')).not.toBeNull()
     expect(currentRows(container)).toEqual(['/admin#project'])
+  })
+
+  it('retains a section draft and guards leaving Admin while a hidden form is dirty', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const { router } = renderInShell(everythingConfigured(), '/admin#organization')
+    const name = screen.getByLabelText('Name') as HTMLInputElement
+    fireEvent.change(name, { target: { value: 'Unsaved organization' } })
+    await act(() => router.navigate('/admin#storage'))
+    expect(name.closest('[hidden]')).not.toBeNull()
+    const reload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(reload)
+    expect(reload.defaultPrevented).toBe(true)
+    await act(() => router.navigate('/packs'))
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(router.state.location.pathname).toBe('/admin')
+    await act(() => router.navigate('/admin#organization'))
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Unsaved organization')
+    expect(confirm).toHaveBeenCalledOnce()
+    confirm.mockReturnValue(true)
+    await act(() => router.navigate('/packs'))
+    expect(router.state.location.pathname).toBe('/packs')
+    confirm.mockRestore()
   })
 
   it('changes nothing on Escape, because there is nothing to leave', () => {
@@ -1273,7 +1303,7 @@ describe('one section at a time', () => {
     // The controls case, per state — one render per section, which is the whole
     // of what this page can change.
     const controls = (container: HTMLElement) =>
-      Array.from(page(container).querySelectorAll('button, input, select, textarea'))
+      Array.from(page(container).querySelectorAll('section button, section input, section select, section textarea'))
         .filter((element) => element.getAttribute('role') !== 'combobox')
         .map((element) => element.textContent?.trim())
         .filter((label) => label !== '')

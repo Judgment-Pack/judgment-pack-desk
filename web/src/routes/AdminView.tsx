@@ -44,7 +44,7 @@
  * so.
  *
  * The shell hosts the section links in its settings sidebar. The bounded
- * form is centered in the page, and each section keeps its own Save action.
+ * form starts at a fixed gutter in the page, and each section keeps its own Save action.
  * Standalone renders retain an inline navigation column.
  *
  * `runtime` and the project root are **not in the schema**, and that is the
@@ -56,6 +56,11 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { AssistantSection } from '../assistant/AssistantSection'
 import { AdminStatusLine } from '../admin/AdminStatusLine'
+import { PageHeader, PageBody } from '../ui/PageLayout'
+import { Popover } from '../ui/Popover'
+import { Button } from '../ui/Button'
+import { RetainedPanel } from '../ui/RetainedPanel'
+import { DraftScope } from '../shell/DraftScope'
 import { ConfigPane } from '../admin/ConfigPane'
 import { SECTION_SUMMARY } from '../admin/sectionSummary'
 import { CardField, SourceCard, StatusLine, type SourceStatus } from '../admin/SourceCard'
@@ -163,104 +168,111 @@ export function AdminView() {
   )
 
   return (
-    <article className={`detail ${styles.admin}`} id={navigation.inSidebar ? open.id : undefined} data-measure="wide" data-navigation={navigation.inSidebar ? 'sidebar' : 'inline'} ref={top}>
+    <article className={`detail ${styles.admin}`} id={navigation.inSidebar ? open.id : undefined} data-measure="full" data-layout="page" data-navigation={navigation.inSidebar ? 'sidebar' : 'inline'} ref={top}>
       {pane}
-      <header className="detail-head">
-        <div>
-          <h1>Admin</h1>
-          <p className={styles.description}>Manage your project and this workspace.</p>
-        </div>
-        <details className={styles.diagnostics}>
-          <summary>Runtime details</summary>
-          <AdminStatusLine runtime={runtimeSays(mcp)} binary={runtimeBinary(effective)} />
-        </details>
-      </header>
-
-      <div className={styles.split}>
-        {navigation.render(<nav className={styles.rail} data-sidebar={navigation.inSidebar || undefined} aria-label="Settings">
-          {ADMIN_GROUPS.map((group) => (
-            <GroupRows
-              key={group.id}
-              effective={effective}
-              group={group}
-              open={open}
-              stacked={stacked && !navigation.inSidebar}
-            />
-          ))}
-        </nav>)}
-        <div className={styles.open}>
-          {/* The file itself, and the one control that is about the project
-              rather than about a member of it. The two rows are the ones the
-              group header carried while there was an overview to carry them
-              on. */}
-          {open.id === 'project' && (
-            <SourceCard
-              id={sectionId(SECTION.project!.id)}
-              title={SECTION.project!.title}
-              level={2}
-              location={projectLocation(effective)}
-              status={projectStatus(effective)}
-              fields={defaultProject.field}
-              save={defaultProject.save}
-            />
-          )}
-          {open.id === 'organization' && (
-            <SourceCard
-              id={sectionId(SECTION.organization!.id)}
-              title={SECTION.organization!.title}
-              level={2}
-              location={sectionLocation(effective, 'organization')}
-              status={sectionStatus(effective, 'organization')}
-              under={groupFor(effective, 'organization')}
-              save={<OrganizationForm />}
-            />
-          )}
-          {open.id === 'storage' && (
-            <SourceCard
-              id={sectionId(SECTION.storage!.id)}
-              title={SECTION.storage!.title}
-              level={2}
-              location={sectionLocation(effective, 'storage')}
-              status={sectionStatus(effective, 'storage')}
-              under={groupFor(effective, 'storage')}
-              fields={<StorageKind />}
-              save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocation]} />}
-            />
-          )}
-          {open.id === 'assistant' && (
-            <AssistantSection
-              id={sectionId(SECTION.assistant!.id)}
-              title={SECTION.assistant!.title}
-              level={2}
-              under={deskStatus(effective)}
-            />
-          )}
-          {open.id === 'identity-provider' && (
-            <SourceCard
-              id={sectionId(SECTION['identity-provider']!.id)}
-              title={SECTION['identity-provider']!.title}
-              level={2}
-              location={deskLocation(effective)}
-              status={deskStatus(effective)}
-              under={deskStatus(effective)}
-              fields={
-                <CardField label="Provider">
-                  {config.identity.provider === null ? (
-                    'None'
-                  ) : (
+      <PageHeader title="Admin" context={open.title} actions={
+        <Popover title="Runtime details" trigger={<Button variant="quiet">Runtime details</Button>}>
+          <AdminStatusLine runtime={runtimeSays(mcp)} binary={runtimeBinary(effective)}
+            copyText={effective.desk?.chassis === undefined ? undefined : `${runtimeSays(mcp)}\n${effective.desk.chassis.runtimeBin}`} />
+        </Popover>
+      } />
+      <DraftScope>
+        <PageBody width={navigation.inSidebar ? 'form' : 'wide'}>
+          <div className={styles.split}>
+            {navigation.render(<nav className={styles.rail} data-sidebar={navigation.inSidebar || undefined} aria-label="Settings">
+              {ADMIN_GROUPS.map((group) => (
+                <GroupRows
+                  key={group.id}
+                  effective={effective}
+                  group={group}
+                  open={open}
+                  stacked={stacked && !navigation.inSidebar}
+                />
+              ))}
+            </nav>)}
+            <div className={styles.open}>
+              {/* The file itself, and the one control that is about the project
+                  rather than about a member of it. The two rows are the ones the
+                  group header carried while there was an overview to carry them
+                  on. */}
+              <RetainedPanel active={open.id === 'project'}>
+                <SourceCard
+                  id={sectionId(SECTION.project!.id)}
+                  title={SECTION.project!.title}
+                  level={2}
+                  location={projectLocation(effective)}
+                  status={projectStatus(effective)}
+                  fields={defaultProject.field}
+                  save={defaultProject.save}
+                />
+              </RetainedPanel>
+              <RetainedPanel active={open.id === 'organization'}>
+                <SourceCard
+                  id={sectionId(SECTION.organization!.id)}
+                  title={SECTION.organization!.title}
+                  level={2}
+                  location={sectionLocation(effective, 'organization')}
+                  status={sectionStatus(effective, 'organization')}
+                  under={groupFor(effective, 'organization')}
+                  save={<OrganizationForm />}
+                />
+              </RetainedPanel>
+              <RetainedPanel active={open.id === 'storage'}>
+                <SourceCard
+                  id={sectionId(SECTION.storage!.id)}
+                  title={SECTION.storage!.title}
+                  level={2}
+                  location={sectionLocation(effective, 'storage')}
+                  status={sectionStatus(effective, 'storage')}
+                  under={groupFor(effective, 'storage')}
+                  fields={<StorageKind />}
+                  save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocation]} />}
+                />
+              </RetainedPanel>
+              <RetainedPanel active={open.id === 'assistant'}>
+                <AssistantSection
+                  id={sectionId(SECTION.assistant!.id)}
+                  title={SECTION.assistant!.title}
+                  level={2}
+                  under={deskStatus(effective)}
+                />
+              </RetainedPanel>
+              <RetainedPanel active={open.id === 'identity-provider'}>
+                <SourceCard
+                  id={sectionId(SECTION['identity-provider']!.id)}
+                  title={SECTION['identity-provider']!.title}
+                  level={2}
+                  location={deskLocation(effective)}
+                  status={deskStatus(effective)}
+                  under={deskStatus(effective)}
+                  fields={
                     <>
-                      <code>{config.identity.provider.issuer}</code>
-                      {config.identity.provider.label !== null && (
-                        <> — {config.identity.provider.label}</>
-                      )}
+                      <CardField label="Provider">
+                        {config.identity.provider === null ? (
+                          'None'
+                        ) : (
+                          <>
+                            <code>{config.identity.provider.issuer}</code>
+                            {config.identity.provider.label !== null && (
+                              <> — {config.identity.provider.label}</>
+                            )}
+                          </>
+                        )}
+                      </CardField>
+                      <p className={styles.explanation}>
+                        {config.identity.provider === null
+                          ? 'You are using a local session. No identity provider is configured.'
+                          : 'This provider describes the identity displayed in the header. Sign-in is not available yet.'}
+                        {' '}<Link to="/help#security">About local access</Link>
+                      </p>
                     </>
-                  )}
-                </CardField>
-              }
-            />
-          )}
-        </div>
-      </div>
+                  }
+                />
+              </RetainedPanel>
+            </div>
+          </div>
+        </PageBody>
+      </DraftScope>
     </article>
   )
 }
@@ -349,7 +361,7 @@ function SectionRow({
         )}
         {!bare && differs && (
           <span className={styles.rowStatus} data-state={own.state}>
-            <StatusLine status={own} />
+            <span className={styles.statusText}><StatusLine status={own} /></span>
           </span>
         )}
       </Link>

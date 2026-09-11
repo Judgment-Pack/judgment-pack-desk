@@ -603,6 +603,23 @@ describe('the key row and the endpoint it is bound to', () => {
     expect(await screen.findByText(/nothing will be sent/)).toBeTruthy()
   })
 
+  it('disables Save settings for unchanged values, including an edit undone', async () => {
+    const calls = stubChassis({ key: BOUND })
+    renderSection(configured())
+    await screen.findByText('Stored — sk-a…wxyz, for OpenAI-compatible')
+    const save = screen.getByRole('button', { name: 'Save settings' }) as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+    const url = screen.getByLabelText('Endpoint URL') as HTMLInputElement
+    const original = url.value
+    fireEvent.change(url, { target: { value: 'https://new.example/v1' } })
+    expect(save.disabled).toBe(false)
+    fireEvent.change(url, { target: { value: original } })
+    expect(save.disabled).toBe(true)
+    expect(screen.queryByText('Unsaved settings')).toBeNull()
+    fireEvent.submit(save.closest('form')!)
+    expect(calls.sent.filter((call) => call.method !== 'GET')).toEqual([])
+  })
+
   it('asks for the key again the moment a write says the endpoint moved', async () => {
     // **Without waiting for a read.** The chassis says `keyRebindRequired` at
     // the instant the endpoint moves; a row that waited for the key query to
@@ -620,6 +637,7 @@ describe('the key row and the endpoint it is bound to', () => {
     })
     renderSection(configured())
     expect(await screen.findByText('Stored — sk-a…wxyz, for OpenAI-compatible')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://new.example/v1' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     expect(await screen.findByText(/nothing will be sent/)).toBeTruthy()
   })
@@ -637,6 +655,7 @@ describe('the key row and the endpoint it is bound to', () => {
     })
     const { container } = renderSection(configured())
     await screen.findByText('Stored — sk-a…wxyz, for OpenAI-compatible')
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://new.example/v1' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     await screen.findByText(/nothing will be sent/)
     fireEvent.change(keyField(container)!, { target: { value: 'sk-another-real-looking-key' } })

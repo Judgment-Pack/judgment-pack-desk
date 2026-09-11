@@ -3,49 +3,8 @@
 .admin {
   container-type: inline-size;
   min-width: 0;
-  scroll-margin-block-start: var(--density-section);
-}
-
-.admin :global(.detail-head) {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--density-block);
-  margin-bottom: var(--density-section);
-  padding-bottom: var(--density-section);
-  border-bottom: 1px solid var(--border);
-}
-
-.admin :global(.detail-head) h1 {
-  margin: 0;
-  font-size: var(--text-page);
-  font-weight: 600;
-  line-height: 1.3;
-  letter-spacing: -0.025em;
-}
-
-.description {
-  margin: 0.375rem 0 0;
-  color: var(--ink-faint);
-  font-size: var(--text-body);
-}
-
-.diagnostics {
-  max-inline-size: 100%;
-  color: var(--ink-faint);
-  font-size: var(--text-sm);
-}
-
-.diagnostics summary {
-  padding: 0.375rem 0;
-  cursor: pointer;
-  text-align: right;
-}
-
-.diagnostics summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
+  min-height: 100%;
+  scroll-margin-block-start: 0;
 }
 
 .rows {
@@ -149,12 +108,12 @@
   align-content: start;
 }
 
-.open > section {
+.open > div > section {
   padding: 0;
   border-top-width: 0;
 }
 
-.open > section > h2 {
+.open > div > section > h2 {
   margin: 0 0 var(--density-section);
   font-size: var(--text-heading);
   font-weight: 600;
@@ -204,27 +163,8 @@
 
 /* In the application shell, settings have their own sidebar. Standalone
    renders retain the inline navigation above for embedding and tests. */
-.admin[data-navigation='sidebar'] :global(.detail-head) {
-  align-items: center;
-  padding-bottom: var(--space-3);
-  margin-bottom: 0;
-}
-
-.admin[data-navigation='sidebar'] :global(.detail-head) h1 {
-  font-size: var(--text-control);
-  font-weight: 500;
-  letter-spacing: normal;
-  color: var(--ink-soft);
-}
-
-.admin[data-navigation='sidebar'] .description {
-  display: none;
-}
-
 .admin[data-navigation='sidebar'] .split {
   display: block;
-  max-width: var(--measure-form);
-  margin: var(--space-6) auto 0;
 }
 
 .admin[data-navigation='sidebar'] .open {
@@ -232,7 +172,7 @@
   padding-left: 0;
 }
 
-.admin[data-navigation='sidebar'] .open > section > h2 {
+.admin[data-navigation='sidebar'] .open > div > section > h2 {
   font-size: var(--text-page);
   font-weight: 500;
   margin-bottom: var(--space-5);
@@ -260,3 +200,33 @@
 .rail[data-sidebar] .row:hover {
   color: var(--ink);
 }
+
+.explanation {
+  margin: var(--density-block) 0 0;
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+}
+
+/* Exceptional state occupies the same row; the selected section has details. */
+.rail[data-sidebar] .row { position: relative; padding-right: var(--space-5); }
+.rail[data-sidebar] .rowStatus {
+  position: absolute;
+  right: var(--space-2);
+  top: 50%;
+  transform: translateY(-50%);
+  width: var(--space-1);
+  height: var(--space-1);
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: currentColor;
+}
+
+.rail[data-sidebar] .statusText {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.rail[data-sidebar] .rowStatus[data-state='read'] { display: none; }

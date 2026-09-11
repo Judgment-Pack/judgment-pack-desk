@@ -154,7 +154,7 @@ export function HelpAbout() {
       </Section>
 
       <Section title="Security">
-        <p className="quiet">{SESSION_SENTENCE}</p>
+        <p className="quiet" id="security">{SESSION_SENTENCE}</p>
         <p className="quiet">
           The desk is authorized by three things and not by who you are: the loopback bind, that
           session, and an origin check on every relay and file-API request. A configured identity

@@ -88,10 +88,6 @@
       0px,
       calc(100vh - var(--header-h) - var(--strip-h) - var(--console-current))
     );
-
-    --z-drawer: 40;
-    --z-menu: 50;
-    --z-dialog: 60;
   }
 
   /* The guarded half of the pair above. A browser with `dvh` measures against
@@ -295,6 +291,12 @@
 
   .desk-measure:has([data-measure="wide"]) {
     max-width: var(--measure-wide);
+  }
+
+  /* Pages with separate chrome own their gutter and reading measure. */
+  .desk-measure:has([data-layout="page"]) {
+    max-width: none;
+    padding: 0;
   }
 
   .desk-measure:has([data-measure="full"]) {

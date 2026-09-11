@@ -65,6 +65,7 @@ import { KeyField } from './KeyField'
 import { keyBinding, type KeyBinding } from './keyBinding'
 import { SettingsSection } from '../ui/SettingsSection'
 import styles from './EndpointForm.module.css'
+import { useUnsavedChanges } from '../shell/DraftScope'
 import { ModelChoice } from './ModelChoice'
 import {
   useAssistantKey,
@@ -188,7 +189,7 @@ export function EndpointForm({
   const read = keyBinding(key.data)
   const binding: KeyBinding = rebindAsked && read === 'bound' ? 'rebind' : read
   const edit = (next: EndpointDraft) => {
-    setDirty(true)
+    setDirty(JSON.stringify(assistantWrite(next)) !== JSON.stringify(assistantWrite(draftFrom(config.assistant))))
     setSaved(undefined)
     setDraft(next)
   }
@@ -286,8 +287,12 @@ export function EndpointForm({
   const whyNotTest = editingKey ? KEY_NOT_SAVED : !here && configured !== null ? NOT_SAVED : NOTHING_TO_TEST
   const canSaveKey = typed && !blocked && !busy && !checking && !unavailable && key.isSuccess
 
+  const settingsChanged = configured === null ||
+    JSON.stringify(assistantWrite(draft)) !== JSON.stringify(assistantWrite(draftFrom(config.assistant)))
+  useUnsavedChanges(dirty || typed)
+
   const save = () => {
-    if (blocked || busy || checking || unavailable || editingKey) return
+    if (!settingsChanged || blocked || busy || checking || unavailable || editingKey) return
     commit(assistantWrite(draft), (answer) => (answer.created ? CREATED : SAVED))
   }
   const removeEndpoint = () => {
@@ -481,7 +486,7 @@ export function EndpointForm({
           {editingKey && !busy && <span className="quiet">Save or cancel the API key changes first.</span>}
           {dirty && saved === undefined && !busy && !editingKey && <span className="quiet">Unsaved settings</span>}
           {saved !== undefined && !busy && <span className="quiet" role="status">{saved}</span>}
-          <Button variant={binding === 'bound' && !replacingKey ? 'primary' : 'secondary'} type="submit" disabled={blocked || busy || checking || editingKey}>
+          <Button variant={binding === 'bound' && !replacingKey ? 'primary' : 'secondary'} type="submit" disabled={!settingsChanged || blocked || busy || checking || editingKey}>
             Save settings
           </Button>
         </div>

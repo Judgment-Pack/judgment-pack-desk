@@ -20,6 +20,12 @@
 :root {
   color-scheme: light;
 
+  /* Shared stacking order for page chrome and portaled controls. */
+  --z-page-header: 10;
+  --z-drawer: 40;
+  --z-menu: 50;
+  --z-dialog: 60;
+
   /* Surfaces, from the page up. `--surface-raised` is what sits *over* a
      surface — a menu, a drawer, the skip link — and in the light palette it is
      the same white, because there a shadow and a border already say "above".
