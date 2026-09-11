@@ -31,6 +31,12 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+async function testConnection() {
+  const button = await screen.findByRole('button', { name: 'Test connection' }) as HTMLButtonElement
+  await waitFor(() => expect(button.disabled).toBe(false))
+  fireEvent.click(button)
+}
+
 const DESK_PATH = '/home/someone/.config/jpack-desk/desk.json'
 const DIGEST = 'a'.repeat(64)
 const NEXT = 'b'.repeat(64)
@@ -159,7 +165,7 @@ function renderForm(
 
 /** The primary action, whatever it is called in the state under test. */
 const save = () => fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-const connect = () => fireEvent.click(screen.getByRole('button', { name: 'Connect' }))
+const saveApiKey = () => fireEvent.click(screen.getByRole('button', { name: 'Save API key' }))
 const typeKey = (value: string) =>
   fireEvent.change(screen.getByLabelText('API key'), { target: { value } })
 
@@ -256,7 +262,7 @@ describe('the fields', () => {
         </DeskConfigFixture>
       </QueryClientProvider>
     )
-    expect((screen.getByLabelText('Endpoint URL') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Endpoint URL') as HTMLInputElement).value).toBe(PREFILLED_URL['openai-compatible'])
     rerender(
       <QueryClientProvider client={testQueryClient()}>
         <DeskConfigFixture value={configured()}>
@@ -535,7 +541,7 @@ describe('Test connection: the probe and the listing, in one press', () => {
   }
   /** Press it, once the key read has answered and the button is offered. */
   const test = async () =>
-    fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
+    await testConnection()
   const relayed = (urls: string[]) => urls.filter((url) => url.includes('/api/assistant/relay/'))
   const probed = (urls: string[]) => urls.filter((url) => url.includes('/api/assistant/probe'))
 
@@ -552,7 +558,7 @@ describe('Test connection: the probe and the listing, in one press', () => {
     // With no key stored, the key's own field is on the form and sits second.
     servesCheck(LISTED)
     const first = renderForm(GEMINI, false)
-    await screen.findByText(/Connect first/)
+    await screen.findByText(/Save an API key for this endpoint to test/)
     // Each field's own label and each group's legend. The individual grants —
     // a model row, a tool box — carry `.checkbox` and are not what this reads.
     expect(named(first.container, 'legend, label:not(.checkbox)')).toEqual([
@@ -560,6 +566,7 @@ describe('Test connection: the probe and the listing, in one press', () => {
       'API key',
       'Endpoint URL',
       'Models',
+      'Search models',
       'Other model… (type an id)',
       'Tools the assistant may use',
       'Thinking'
@@ -673,21 +680,21 @@ describe('Test connection: the probe and the listing, in one press', () => {
     expect(relayed(seen.urls)).toHaveLength(0)
   })
 
-  it('is not offered before there is an endpoint saved and a key stored', async () => {
+  it('is disabled before there is an endpoint saved and a key stored', async () => {
     servesCheck(LISTED)
     renderForm(GEMINI, false)
-    expect(await screen.findByText(/Connect first/)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Test connection' })).toBeNull()
+    expect(await screen.findByText(/Save an API key for this endpoint to test/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Test connection' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('is not offered while the form says another endpoint', async () => {
+  it('is disabled while the form says another endpoint', async () => {
     servesCheck(LISTED)
     renderForm(GEMINI, true)
     fireEvent.change(screen.getByLabelText('Endpoint URL'), {
       target: { value: 'https://elsewhere.example.invalid' }
     })
     expect(await screen.findByText(/this asks the endpoint that is saved/)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Test connection' })).toBeNull()
+    expect((screen.getByRole('button', { name: 'Test connection' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('drops the answer when the endpoint the form says moves', async () => {
@@ -723,17 +730,17 @@ describe('Test connection: the probe and the listing, in one press', () => {
     expect(relayed(seen.urls)).toHaveLength(1)
   })
 
-  it('runs once on its own where Connect has just stored the key', async () => {
-    // The moment both preconditions first become true. Asking a person to press
-    // a button immediately after the one they just pressed is a step with no
-    // decision in it.
+  it('does not test automatically after saving a key', async () => {
+    // Saving establishes storage, not a successful connection. Testing is
+    // a separate, explicit action.
     const seen = servesCheck(LISTED)
     renderForm(GEMINI, false)
-    await screen.findByText(/Connect first/)
+    await screen.findByText(/Save an API key for this endpoint to test/)
     typeKey('sk-a-key')
-    connect()
-    await waitFor(() => expect(relayed(seen.urls)).toHaveLength(1))
-    expect(probed(seen.urls)).toHaveLength(1)
+    saveApiKey()
+    await screen.findByText('API key saved on this computer.')
+    expect(relayed(seen.urls)).toHaveLength(0)
+    expect(probed(seen.urls)).toHaveLength(0)
   })
 })
 
@@ -776,7 +783,7 @@ describe('Models: the set, the default, and an id nobody listed', () => {
   }
   /** Press it, once the key read has answered and the button is offered. */
   const test = async () =>
-    fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
+    await testConnection()
   const box = (id: string) => screen.getByRole('checkbox', { name: id }) as HTMLInputElement
   const defaults = () => screen.getAllByRole('radio') as HTMLInputElement[]
   const other = () => screen.getByLabelText('Other model… (type an id)')
@@ -806,7 +813,7 @@ describe('Models: the set, the default, and an id nobody listed', () => {
     expect(box('a-listed-model').checked).toBe(false)
   })
 
-  it('marks the file s default, and offers Default on enabled rows alone', async () => {
+  it('selecting a default also enables that model', async () => {
     servesListing(LISTED)
     renderForm(configured({ endpoint: { ...ENDPOINT, model: 'a-model', models: ['a-model'] } }), true)
     await test()
@@ -815,7 +822,9 @@ describe('Models: the set, the default, and an id nobody listed', () => {
     expect(chosen).toHaveLength(1)
     // A row nothing enables cannot be made the default: that is the state the
     // decoder refuses by name.
-    expect(defaults().filter((radio) => radio.disabled).length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('radio', { name: 'Default model: a-listed-model' }))
+    expect(box('a-listed-model').checked).toBe(true)
+    expect((screen.getByRole('radio', { name: 'Default model: a-listed-model' }) as HTMLInputElement).checked).toBe(true)
   })
 
   it('writes the set and the default it was left with', async () => {
@@ -1015,7 +1024,7 @@ describe('removing the endpoint', () => {
   })
 })
 
-describe('Connect: the endpoint and its key, in the one order the chassis admits', () => {
+describe('Save API key: the endpoint and its key, in the one order the chassis admits', () => {
   /** Both writes, in the order they were made. */
   const writes = (sent: { url: string; method: string; body?: string }[]) =>
     sent
@@ -1024,14 +1033,14 @@ describe('Connect: the endpoint and its key, in the one order the chassis admits
 
   it('is the primary action until a key is bound for the endpoint that is saved', async () => {
     stubWrites([{}])
-    renderForm(configured(), false)
-    expect(await screen.findByRole('button', { name: 'Connect' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
+    renderForm(noFile(), false)
+    expect(await screen.findByRole('button', { name: 'Save API key' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy()
     cleanup()
     stubWrites([{}])
     renderForm(configured(), true)
     expect(await screen.findByRole('button', { name: 'Save' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Save API key' })).toBeNull())
   })
 
   it('writes the endpoint, then stores the key, and says both landed', async () => {
@@ -1040,12 +1049,12 @@ describe('Connect: the endpoint and its key, in the one order the chassis admits
     // first-time setup can work at all.
     const { sent } = stubWrites([{}])
     keyStore = { status: 200 }
-    renderForm(configured(), false)
-    await screen.findByRole('button', { name: 'Connect' })
+    renderForm(noFile(), false)
+    await screen.findByRole('button', { name: 'Save API key' })
     typeKey('sk-a-real-looking-key-wxyz')
-    connect()
+    saveApiKey()
     await waitFor(() => expect(writes(sent)).toEqual(['endpoint', 'key']))
-    expect(await screen.findByText(/the key is stored on this computer/)).toBeTruthy()
+    expect(await screen.findByText('API key saved on this computer.')).toBeTruthy()
     // The key was sent once, as its own member, and to its own route.
     const store = sent.find(
       (request) => request.url.includes('/api/assistant/key') && request.method === 'PUT'
@@ -1072,10 +1081,10 @@ describe('Connect: the endpoint and its key, in the one order the chassis admits
         }
       }
     ])
-    renderForm(configured(), false)
-    await screen.findByRole('button', { name: 'Connect' })
+    renderForm(noFile(), false)
+    await screen.findByRole('button', { name: 'Save API key' })
     typeKey('sk-a-real-looking-key-wxyz')
-    connect()
+    saveApiKey()
     expect(await screen.findByText('must be an https: URL')).toBeTruthy()
     expect(writes(sent)).toEqual(['endpoint'])
   })
@@ -1086,10 +1095,10 @@ describe('Connect: the endpoint and its key, in the one order the chassis admits
       status: 409,
       body: { error: 'no endpoint is configured to bind a key to', code: 'assistant-key-unbound' }
     }
-    renderForm(configured(), false)
-    await screen.findByRole('button', { name: 'Connect' })
+    renderForm(noFile(), false)
+    await screen.findByRole('button', { name: 'Save API key' })
     typeKey('sk-a-real-looking-key-wxyz')
-    connect()
+    saveApiKey()
     await waitFor(() => expect(writes(sent)).toEqual(['endpoint', 'key']))
     // The endpoint write landed and is not undone; the key refusal is its own
     // sentence, where the key is.
@@ -1099,9 +1108,10 @@ describe('Connect: the endpoint and its key, in the one order the chassis admits
 
   it('saves the endpoint alone where nothing was typed into the key field', async () => {
     const { sent } = stubWrites([{}])
-    renderForm(configured(), false)
-    expect(await screen.findByText(/Enter the key above to store it with the endpoint/)).toBeTruthy()
-    connect()
+    renderForm(noFile(), false)
+    await screen.findByText('No key stored')
+    expect((screen.getByRole('button', { name: 'Save API key' }) as HTMLButtonElement).disabled).toBe(true)
+    save()
     await waitFor(() => expect(writes(sent)).toEqual(['endpoint']))
   })
 })
@@ -1219,7 +1229,7 @@ describe('the narration guard, over the states only the form can reach', () => {
     })
     keyAnswer = keyState(true)
     const { container } = renderForm()
-    fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
+    await testConnection()
     await screen.findByText('Connected · 2 models available')
     expect(swept(container), swept(container).join(' | ')).toEqual([])
   })
@@ -1235,8 +1245,123 @@ describe('the narration guard, over the states only the form can reach', () => {
     const { container } = renderForm(
       configured({ endpoint: { ...ENDPOINT, kind: 'anthropic', model: null, models: [] } })
     )
-    fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
+    await testConnection()
     await screen.findByText('Choose a model to test this provider.')
     expect(swept(container), swept(container).join(' | ')).toEqual([])
+  })
+})
+
+describe('API key save and connection readiness', () => {
+  it('disables saving an empty key and testing a missing or unsaved key', async () => {
+    const { sent } = stubWrites([{}])
+    renderForm(configured(), false)
+    await screen.findByText('No key stored')
+    const store = screen.getByRole('button', { name: 'Save API key' }) as HTMLButtonElement
+    const test = screen.getByRole('button', { name: 'Test connection' }) as HTMLButtonElement
+    expect(store.disabled).toBe(true)
+    expect(test.disabled).toBe(true)
+    typeKey('   ')
+    expect(store.disabled).toBe(true)
+    typeKey('sk-new-key')
+    expect(store.disabled).toBe(false)
+    expect(test.disabled).toBe(true)
+    fireEvent.click(test)
+    expect(sent.filter((request) => request.method !== 'GET')).toHaveLength(0)
+  })
+
+  it('waits for key storage to succeed, closes replacement, and requires an explicit test', async () => {
+    const { sent } = stubWrites([{}])
+    const original = globalThis.fetch
+    let finish!: (response: Response) => void
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      if (url.includes('/api/assistant/key') && init?.method === 'PUT') {
+        return new Promise<Response>((resolve) => { finish = resolve })
+      }
+      return original(url, init)
+    })
+    renderForm()
+    fireEvent.click(await screen.findByRole('button', { name: 'Replace key' }))
+    typeKey('sk-new-key')
+    expect((screen.getByRole('button', { name: 'Test connection' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Save API key' }))
+    await waitFor(() => expect(finish).toBeDefined())
+    expect(screen.queryByText('API key saved on this computer.')).toBeNull()
+    expect((screen.getByRole('button', { name: 'Saving API key…' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByLabelText('API key') as HTMLInputElement).value).toBe('')
+    finish(new Response(JSON.stringify(keyState(true))))
+    await screen.findByText('API key saved on this computer.')
+    expect(screen.queryByLabelText('API key')).toBeNull()
+    expect((screen.getByRole('button', { name: 'Test connection' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByText('Connection not tested.')).toBeTruthy()
+    expect(sent.some((request) => request.url.includes('/probe') || request.url.includes('/relay/'))).toBe(false)
+  })
+
+  it('never reports a failed key save as saved and allows cancelling a replacement', async () => {
+    stubWrites([{}])
+    keyStore = { status: 409, body: { error: 'key store unavailable', code: 'assistant-key-unbound' } }
+    renderForm()
+    fireEvent.click(await screen.findByRole('button', { name: 'Replace key' }))
+    typeKey('sk-new-key')
+    fireEvent.click(screen.getByRole('button', { name: 'Save API key' }))
+    await screen.findByText('key store unavailable')
+    expect(screen.queryByText('API key saved on this computer.')).toBeNull()
+    expect((screen.getByRole('button', { name: 'Test connection' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByLabelText('API key')).toBeNull()
+    expect((screen.getByRole('button', { name: 'Test connection' }) as HTMLButtonElement).disabled).toBe(false)
+    keyStore = { status: 200 }
+  })
+
+  it('does not test a stored key that the server says is bound elsewhere', async () => {
+    const { sent } = stubWrites([{}])
+    renderForm()
+    keyAnswer = keyState(false, true)
+    await screen.findByText(/nothing will be sent/)
+    const button = screen.getByRole('button', { name: 'Test connection' }) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    fireEvent.click(button)
+    expect(sent.some((request) => request.url.includes('/probe'))).toBe(false)
+  })
+
+  it('prevents duplicate tests and waits for both the probe and listing', async () => {
+    stubWrites([{}])
+    const original = globalThis.fetch
+    let probe!: (response: Response) => void
+    let listing!: (response: Response) => void
+    let requests = 0
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      if (url.includes('/api/assistant/probe')) {
+        requests++
+        return new Promise<Response>((resolve) => { probe = resolve })
+      }
+      if (url.includes('/api/assistant/relay/')) {
+        requests++
+        return new Promise<Response>((resolve) => { listing = resolve })
+      }
+      return original(url, init)
+    })
+    renderForm()
+    await testConnection()
+    const button = screen.getByRole('button', { name: 'Testing connection…' }) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    fireEvent.click(button)
+    await waitFor(() => expect(requests).toBe(2))
+    listing(new Response(JSON.stringify({ data: [{ id: 'test-model' }] })))
+    await screen.findByRole('checkbox', { name: 'test-model' })
+    expect(button.disabled).toBe(true)
+    probe(new Response(JSON.stringify({ reachable: true, status: 200, latencyMs: 12, diagnostic: '' })))
+    await screen.findByText('Connected · 1 model available')
+    expect((screen.getByRole('button', { name: 'Test connection' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('keeps enabled models in the saved configuration when search hides them', async () => {
+    const { sent } = stubWrites([{}])
+    renderForm(configured({ endpoint: { ...ENDPOINT, models: ['a-model', 'another-model'] } }))
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search models' }), { target: { value: 'another' } })
+    expect(screen.queryByRole('checkbox', { name: 'a-model' })).toBeNull()
+    expect(screen.getByRole('checkbox', { name: 'another-model' })).toBeTruthy()
+    save()
+    await waitFor(() => expect(sent.some((request) => request.method === 'PUT')).toBe(true))
+    expect(theWrite(sent).assistant.endpoint).toMatchObject({ model: 'a-model', models: ['a-model', 'another-model'] })
   })
 })

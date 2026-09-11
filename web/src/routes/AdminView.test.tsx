@@ -1286,7 +1286,9 @@ describe('one section at a time', () => {
         'assistant',
         [
           'OpenAI-compatibleAnthropicGoogle Gemini',
-          'Store key',
+          'Save API key',
+          'Reset to default',
+          'Test connection',
           'Add',
           'offstandarddeep',
           'Save'

@@ -2127,35 +2127,32 @@ sentence about this codebase.
 | **API key** | the one credential this desk keeps, in a password field that is **populated from nothing**: no endpoint returns a key, and a masked box of the right length would be this page inventing evidence. Once one is stored **there is no field at all** — the state line says `Stored — <fingerprint>, for <provider>` and the actions are **Replace key**, which opens the one field there is, and **Remove key**. Before one: the field, the hint, and `No key stored`. | *Stored on this computer only, never in the project. Readable by your user account only.* |
 | **Endpoint URL** | the base, held to the transport rule and the configured-query rule **by the decoder's own function**, so a URL those rules refuse is shown refused in the sentence the file's reader would write and is not sent. | *Leave the default unless you use a proxy or your own server.* |
 | **Test connection** | one press, two questions — see below. | none |
-| **Models** | a checkbox for each id, with a **Default** radio beside it. The rows are what the endpoint listed over the set the file already enables, and the file's own set is never dropped from them: an id enabled before a listing existed is still one this desk is configured for. Ticking the first model makes it the default; unticking the default moves it to what is left, because a non-empty set with no default is a configuration this desk's own reader refuses. | *Tick a model to enable it. Default is the one a run opens on.* |
+| **Models** | a checkbox for each id, with a **Default** radio beside it. The rows are what the endpoint listed over the set the file already enables, and the file's own set is never dropped from them: an id enabled before a listing existed is still one this desk is configured for. Ticking the first model makes it the default; unticking the default moves it to what is left, because a non-empty set with no default is a configuration this desk's own reader refuses. | *Enable models for the assistant. Choosing a default also enables it.* |
 | **Other model… (type an id)** | the field that adds an id nobody listed — a first-page miss, an endpoint that refuses to list at all, a gateway routing on a name of its own. **Add** puts it in the set, and it is held to the decoder's own rule: an empty id and one already in the set are each refused beside the field, in the sentence the file's reader would write. | *Exactly as the endpoint spells it.* |
 | **Tools the assistant may use** | the five, as five checkboxes. All on for a desk that has configured nothing, because `[]` is a real choice — an assistant that may call nothing — and a form opening on it would have a blank field making it. | *All read-only. Untick one to hide it from the assistant.* |
 | **Thinking** | **off**, **standard** or **deep**, which are `off`, `on` and `ultra` in the file. What each one puts on each protocol's wire is in **The thinking tier**, because it is a fact about a wire rather than a decision about this desk. | *How much reasoning the model may do before answering.* |
 
-The order is **provider → key → Connect → Test connection → the list → a set and
-a default**, and no step in it asks anybody to guess: **Connect saves the
-endpoint with no model at all**, presses Test connection once on its own, the
-list fills in from what came back, the person ticks what this desk may run, and
-Save writes `models` and `model`.
+The order is **provider → key → Save API key → Test connection → models → Save**.
+**Save API key** sits beside the password field and stays disabled until a key
+has been entered and the endpoint is valid. When the destination has changed,
+it writes the endpoint first and then stores the key against that saved
+endpoint. A refused endpoint write sends no key; a refused key write leaves the
+endpoint saved and reports the key failure separately. The success message
+appears only after key storage succeeds. Replacing a key uses the same action,
+and Cancel discards the entry. Remove key requires confirmation.
 
-**Test connection sits right after the key and the address** because that is the
-moment a person has the question it answers. Nothing about models is shown
-before a key is stored except the file's own set: this desk has been told
-nothing about what the endpoint offers until somebody asks it.
+Saving never starts a connection test. **Test connection** remains visible but
+disabled while key state is unknown, a key is missing or bound elsewhere, the
+endpoint or key has unsaved changes, or a save, removal, or test is in progress.
+Its helper states what needs attention. A successful test describes the saved
+credential; changing or removing that credential clears the previous result.
 
-**Connect is the primary action until a key is stored for the endpoint that is
-saved**, and it is one action doing two things in the only order the chassis
-admits: the endpoint through `PUT /api/desk-config`, and then the key through
-the key route. A key is kept bound to the endpoint that is *configured*, so
-storing one first is refused — which used to leave first-time setup as two
-buttons in an order nobody was told. **Neither route changed.** If the endpoint
-write is refused the key is never sent and the refusal is shown against the
-field it belongs to; if the key store is refused the endpoint stays saved and
-the refusal is shown where the key is. Once the key is bound the same button is
-**Save**, and a read that has not answered yet is not "no key": the button stays
-Save until the desk says otherwise. **Store key** stands beside the field for a
-replacement, and is not offered at all where there is no endpoint to bind one
-to.
+The endpoint address is under **Advanced settings**, with a reset to the selected
+provider's default. The model list has search, aligned enabled/default controls,
+and a bounded scrolling area. Choosing a default also enables that model.
+Searching never removes enabled models from the saved set. Model and assistant
+settings are saved separately using the visible save bar, which shows unsaved
+changes. Listings alone do not establish a model's text or tool capabilities.
 
 **Test connection is one press and two questions**: the desk's own reachability
 probe, and the endpoint's own model listing through the relay. They are one
@@ -2174,13 +2171,9 @@ or the listing's own refusal:
 A refusal from elsewhere is **quoted rather than narrated**, and nothing the
 endpoint wrote is repeated on either half.
 
-**It is offered once an endpoint is saved and a key is stored for it**, and only
-while the form on screen says that endpoint — the two states the probe and the
-relay each refuse without, and the one state in which an answer would be about
-somewhere else. Where it is not offered there is a line saying which of those it
-is, because a control that would refuse is worse than a sentence that explains.
-**Connect presses it once on its own** the moment it has stored the key, so the
-list is there without a second click.
+The test uses the saved endpoint and its bound key. Its disabled state is
+explained beside the button, and it stays disabled until both the probe and
+listing settle. Saving a key never triggers the test automatically.
 
 **Anthropic with nothing enabled is refused by name, and nothing is sent.** That
 protocol's probe is a *generation* call: with no model it would put a request
@@ -2275,9 +2268,8 @@ request nobody enabled. With an empty set there is no picker at all, and both
 surfaces say what they already say about an endpoint with no model chosen.
 
 **The key line says which endpoint the key is for**, in five states: not read
-yet; **no endpoint**, where **Store key** is not offered at all because storing
-one requires an endpoint to bind it to — Connect is what reaches this state,
-because it saves the endpoint first; **no key stored**, naming the host one
+yet; **no endpoint**, where **Save API key** saves the endpoint before binding
+the credential to it; **no key stored**, naming the host one
 would be entered for; **stored**, with its fingerprint and its provider, and no
 field standing beside it; and **stored for somewhere else**, naming both hosts,
 because a reader has to be able to see which of the two moved. A write answering `keyRebindRequired` moves

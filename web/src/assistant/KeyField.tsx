@@ -1,37 +1,10 @@
-/**
- * The API key: where it goes, where it lives, and which endpoint it is for.
- *
- * **The field is never populated from anything.** There is no value to populate
- * it with — no endpoint returns the key — and a masked field showing a
- * placeholder of the right length would be this page inventing evidence about a
- * value it has never seen.
- *
- * **So where a key is stored there is no field at all.** An empty masked box
- * standing beside a working key invites somebody to wonder what is in it and to
- * type into it by accident; what a person actually wants there is to know one
- * is kept and to be able to replace or remove it. **Replace key** is a state of
- * this control rather than a second control — it opens the one field there is —
- * and it is cleared whenever the binding moves underneath it, because a row that
- * has become "enter the key for another host" is already asking for exactly what
- * Replace asked for.
- *
- * **The field is not offered where storing one cannot work.** A key is written
- * bound to the endpoint configured at that instant, so a desk with none has
- * nothing to bind it to and the chassis refuses. The line then asks for the
- * endpoint to be saved instead of offering a field and letting the refusal
- * explain — and on this form that is one action away, because Connect saves the
- * endpoint first.
- *
- * **The binding is the chassis' and this only reads it.** See `keyBinding`: the
- * desk records the scheme, host and wire protocol an entered key was for,
- * presents it only there, and refuses otherwise; nothing here compares a URL to
- * anything.
- */
+/** API key entry, explicit saving, replacement, and confirmed removal. */
 import { useState, type ReactNode, type RefObject } from 'react'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
 import { KIND_LABEL } from './endpointDraft'
+import styles from './EndpointForm.module.css'
 import type { AssistantKeyState } from './client'
 import type { KeyBinding } from './keyBinding'
 import type { EndpointKind } from '../config/deskConfig'
@@ -58,6 +31,13 @@ export function KeyField({
   binding,
   field,
   onTyped,
+  replacing,
+  typed,
+  saving,
+  saveDisabled,
+  onReplace,
+  onCancel,
+  saved,
   onStore,
   storeProblem,
   onRemove,
@@ -70,18 +50,20 @@ export function KeyField({
   field: RefObject<HTMLInputElement | null>
   /** Whether anything at all has been typed. Never what. */
   onTyped: (typed: boolean) => void
+  replacing: boolean
+  typed: boolean
+  saving: boolean
+  saveDisabled: boolean
+  onReplace: () => void
+  onCancel: () => void
+  saved: string | undefined
   onStore: () => void
   storeProblem: string | undefined
   onRemove: () => void
   removeProblem: string | undefined
 }) {
   const read = state ?? NOTHING_READ
-  const [replacing, setReplacing] = useState(false)
-  const [openedAt, setOpenedAt] = useState(binding)
-  if (openedAt !== binding) {
-    setOpenedAt(binding)
-    setReplacing(false)
-  }
+  const [confirmingRemoval, setConfirmingRemoval] = useState(false)
   // The field is offered wherever a key is wanted: none stored, stored for
   // somewhere else, or a replacement asked for. A read that has not answered is
   // not "a key is stored", so it is offered there too.
@@ -104,7 +86,12 @@ export function KeyField({
               autoComplete="off"
               spellCheck={false}
               defaultValue=""
-              onChange={(event) => onTyped(event.target.value !== '')}
+              onChange={(event) => onTyped(event.target.value.trim() !== '')}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return
+                event.preventDefault()
+                if (!saveDisabled) onStore()
+              }}
             />
           )}
         </Field>
@@ -115,40 +102,43 @@ export function KeyField({
         <p className="quiet">{bindingSays(binding, read, destination)}</p>
       )}
 
-      <p className="actions">
-        {/* Store is the second action and never the first: on a form whose
-            primary action is Connect, it is what puts a replacement in.
-
-            **And it is not offered where storing cannot work.** A key is
-            written bound to the endpoint configured at that instant, so a desk
-            with none has nothing to bind it to and the chassis refuses. Connect
-            is the action that reaches this state, because it saves the endpoint
-            first; a second button that could only produce a refusal is an
-            affordance that lies about what the page can do. */}
-        {entry && binding !== 'no-endpoint' && (
-          <Button variant="quiet" onClick={onStore}>
-            Store key
-          </Button>
+      <div className={styles.keyActions}>
+        {entry && (
+          <>
+            <Button variant="primary" disabled={saveDisabled} onClick={onStore}>
+              {saving ? 'Saving API key…' : 'Save API key'}
+            </Button>
+            {(replacing || typed) && <Button variant="quiet" onClick={onCancel}>Cancel</Button>}
+          </>
         )}
-        {!entry && (
-          <Button variant="quiet" onClick={() => setReplacing(true)}>
-            Replace key
-          </Button>
-        )}{' '}
-        {read.present && (
-          <Button variant="quiet" onClick={onRemove}>
+        {!entry && <Button variant="quiet" onClick={onReplace}>Replace key</Button>}
+        {read.present && !confirmingRemoval && (
+          <Button variant="quiet" className={styles.danger} onClick={() => setConfirmingRemoval(true)}>
             Remove key
           </Button>
         )}
-      </p>
+      </div>
+      {saved !== undefined && <p className="quiet" role="status">{saved}</p>}
+      {entry && typed && !saving && <p className="quiet">API key changes are not saved.</p>}
+      {confirmingRemoval && read.present && (
+        <div className={styles.removal}>
+          <p>Removing the key prevents assistant requests until you save another key.</p>
+          <Button className={styles.danger} onClick={() => {
+            onCancel()
+            setConfirmingRemoval(false)
+            onRemove()
+          }}>Confirm removal</Button>{' '}
+          <Button variant="quiet" onClick={() => setConfirmingRemoval(false)}>Keep key</Button>
+        </div>
+      )}
 
       {storeProblem !== undefined && (
-        <p className="quiet">
+        <p className="quiet" role="alert">
           not stored: <code className="partial-reason">{storeProblem}</code>
         </p>
       )}
       {removeProblem !== undefined && (
-        <p className="quiet">
+        <p className="quiet" role="alert">
           not removed: <code className="partial-reason">{removeProblem}</code>
         </p>
       )}
@@ -192,7 +182,7 @@ export function bindingSays(
   destination: string | undefined
 ): ReactNode {
   if (binding === 'no-endpoint') {
-    return <>Connect saves the endpoint first: a key is kept bound to the endpoint it is for.</>
+    return <>Save API key saves the endpoint first: a key is kept bound to the endpoint it is for.</>
   }
   if (binding === 'none') {
     return (

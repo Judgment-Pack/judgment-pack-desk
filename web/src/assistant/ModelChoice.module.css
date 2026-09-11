@@ -1,0 +1,82 @@
+.list {
+  position: relative;
+  max-height: 24rem;
+  overflow-y: auto;
+  scroll-padding-top: 2.5rem;
+}
+
+.row,
+.heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5rem;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.heading {
+  position: sticky;
+  top: 0;
+  padding: 0.6rem 0.5rem;
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+
+.row {
+  border-bottom: 1px solid var(--border);
+}
+
+.row:focus-within {
+  background: var(--surface);
+}
+
+.model,
+.default {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 2.75rem;
+  padding: 0.5rem;
+  cursor: pointer;
+}
+
+.default {
+  justify-content: center;
+}
+
+.model input,
+.default input {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+}
+
+.model input:focus-visible,
+.default input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.name {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
+.name code {
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

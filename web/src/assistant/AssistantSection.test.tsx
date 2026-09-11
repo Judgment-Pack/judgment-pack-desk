@@ -24,6 +24,12 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+async function testConnection() {
+  const button = await screen.findByRole('button', { name: 'Test connection' }) as HTMLButtonElement
+  await waitFor(() => expect(button.disabled).toBe(false))
+  fireEvent.click(button)
+}
+
 const DESK_PATH = '/home/someone/.config/jpack-desk/desk.json'
 const DIGEST = 'a'.repeat(64)
 
@@ -280,7 +286,7 @@ describe('the Assistant section', () => {
     const field = keyField(container)!
     expect(field.type).toBe('password')
     fireEvent.change(field, { target: { value: 'sk-a-real-looking-key-wxyz' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Store key' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save API key' }))
 
     await waitFor(() =>
       expect(sent.some((request) => request.url.includes('/api/assistant/key') && request.method === 'PUT')).toBe(true)
@@ -301,6 +307,7 @@ describe('the Assistant section', () => {
     const { sent } = stubChassis({ key: BOUND })
     renderSection(configured())
     fireEvent.click(await screen.findByRole('button', { name: 'Remove key' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm removal' }))
     await waitFor(() => expect(sent.some((request) => request.method === 'DELETE')).toBe(true))
     expect(await screen.findByText('No key stored')).toBeTruthy()
   })
@@ -327,7 +334,7 @@ describe('the Assistant section', () => {
     const field = keyField(container)!
     fireEvent.change(field, { target: { value: 'sk-a-real-looking-key-wxyz' } })
     expect(field.value).toBe('sk-a-real-looking-key-wxyz')
-    fireEvent.click(screen.getByRole('button', { name: 'Store key' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save API key' }))
 
     await waitFor(() => expect(atTheRequest).toBeDefined())
     expect(atTheRequest, 'the field still held the key when the request began').toBe('')
@@ -347,7 +354,7 @@ describe('the Assistant section', () => {
     await screen.findByText('No key stored')
     const field = keyField(container)!
     fireEvent.change(field, { target: { value: 'sk-a-real-looking-key-wxyz' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Store key' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save API key' }))
 
     // Empty immediately, not after the answer arrives.
     expect(field.value).toBe('')
@@ -376,7 +383,7 @@ describe('the Assistant section', () => {
       fireEvent.change(keyField(container)!, {
         target: { value: 'sk-a-real-looking-key-wxyz' }
       })
-      fireEvent.click(screen.getByRole('button', { name: 'Store key' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Save API key' }))
       await waitFor(() =>
         expect(
           retainedVariables(client),
@@ -399,7 +406,7 @@ describe('the Assistant section', () => {
     const { container } = renderSection(configured())
     await screen.findByText('No key stored')
     fireEvent.change(keyField(container)!, { target: { value: 'bad\nkey' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Store key' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save API key' }))
     expect(await screen.findByText(/a key may not contain a control character/)).toBeTruthy()
     // And the page still says no key is stored, because none is.
     expect(screen.getByText('No key stored')).toBeTruthy()
@@ -414,7 +421,7 @@ describe('the Assistant section', () => {
       probe: { reachable: true, status: 200, latencyMs: 240, diagnostic: '' }
     })
     renderSection(configured())
-    fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
+    await testConnection()
     await waitFor(() =>
       expect(sent.some((request) => request.url.includes('/api/assistant/probe'))).toBe(true)
     )
@@ -434,7 +441,7 @@ describe('the Assistant section', () => {
       listing: { data: [{ id: 'a-model' }, { id: 'a-second-model' }] }
     })
     renderSection(configured())
-    fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
+    await testConnection()
     expect(await screen.findByText('Connected · 2 models available')).toBeTruthy()
     await waitFor(() =>
       expect(sent.filter((each) => each.url.includes('/api/assistant/relay/'))).toHaveLength(1)
@@ -451,7 +458,7 @@ describe('the Assistant section', () => {
       probe: { reachable: false, status: 401, latencyMs: 88, diagnostic: 'unauthorized' }
     })
     renderSection(configured())
-    fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
+    await testConnection()
     expect(
       await screen.findByText(/Not connected · answered 401 · the endpoint did not accept the key/)
     ).toBeTruthy()
@@ -469,7 +476,7 @@ describe('the Assistant section', () => {
     ] as const) {
       stubChassis({ key: BOUND, probe: { reachable: false, status: 0, latencyMs: 5, diagnostic } })
       renderSection(configured())
-      fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
+      await testConnection()
       expect(await screen.findByText(new RegExp(says)), diagnostic).toBeTruthy()
       cleanup()
     }
@@ -486,7 +493,7 @@ describe('the Assistant section', () => {
       }
     })
     renderSection(configured())
-    fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
+    await testConnection()
     expect(await screen.findByText(/no answer arrived/)).toBeTruthy()
     // Never "answered 0", which is a status nothing sends.
     expect(screen.queryByText(/answered 0/)).toBeNull()
@@ -502,7 +509,7 @@ describe('the Assistant section', () => {
       }
     })
     renderSection(configured())
-    fireEvent.click(await screen.findByRole('button', { name: 'Test connection' }))
+    await testConnection()
     expect(await screen.findByText(/no key is stored on this machine/)).toBeTruthy()
   })
 
@@ -532,16 +539,16 @@ describe('the Assistant section', () => {
 })
 
 describe('the key row and the endpoint it is bound to', () => {
-  it('offers no store where there is nothing to bind a key to, and says why', async () => {
+  it('offers an explicit key save that saves the endpoint first', async () => {
     // Storing a key requires an endpoint to bind it to, so a second button here
     // could only produce a refusal. The field itself stays, because Connect —
     // the primary action — saves the endpoint first and then stores it.
     stubChassis({ key: NO_ENDPOINT })
     const { container } = renderSection()
     await screen.findByText('No key stored')
-    expect(screen.getByText(/Connect saves the endpoint first/)).toBeTruthy()
+    expect(screen.getByText(/Save API key saves the endpoint first/)).toBeTruthy()
     expect(keyField(container)).not.toBeNull()
-    expect(screen.queryByRole('button', { name: 'Store key' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Save API key' })).toBeTruthy()
   })
 
   it('names the key by what it is, and never by the host it goes to', async () => {
@@ -562,7 +569,7 @@ describe('the key row and the endpoint it is bound to', () => {
     // key invites somebody to wonder what is in it and to type into it by
     // accident; what a person wants there is Replace and Remove.
     expect(keyField(container)).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Store key' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Save API key' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Replace key' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Remove key' })).toBeTruthy()
   })
@@ -572,7 +579,7 @@ describe('the key row and the endpoint it is bound to', () => {
     const { container } = renderSection(configured())
     fireEvent.click(await screen.findByRole('button', { name: 'Replace key' }))
     expect(keyField(container)).not.toBeNull()
-    expect(screen.getByRole('button', { name: 'Store key' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Save API key' })).toBeTruthy()
   })
 
   it('names both hosts where the stored key was entered for another one', async () => {
@@ -633,7 +640,7 @@ describe('the key row and the endpoint it is bound to', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await screen.findByText(/nothing will be sent/)
     fireEvent.change(keyField(container)!, { target: { value: 'sk-another-real-looking-key' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Store key' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save API key' }))
     // The store answers with the binding the chassis now holds, and the line
     // goes back to reading it.
     await waitFor(() => expect(screen.queryByText(/nothing will be sent/)).toBeNull())

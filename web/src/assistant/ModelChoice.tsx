@@ -36,16 +36,17 @@
  * the three protocols — Gemini's `displayName`, Anthropic's `display_name` — and
  * a form that saved what it showed would write a name no endpoint answers to.
  */
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { modelAddProblem } from '../config/deskConfig'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
 import { withDefaultModel, withModel, type EndpointDraft } from './endpointDraft'
 import type { ModelRow } from './modelListing'
+import styles from './ModelChoice.module.css'
 
 /** Under the list, saying what the two controls on each row are for. */
-const HOW = 'Tick a model to enable it. Default is the one a run opens on.'
+const HOW = 'Enable models for the assistant. Choosing a default also enables it.'
 
 /** Beside the Other field. */
 const TYPED = 'Exactly as the endpoint spells it.'
@@ -67,6 +68,11 @@ export function ModelChoice({
   setProblem: string | undefined
 }) {
   const [typed, setTyped] = useState('')
+  const [search, setSearch] = useState('')
+  const hintId = useId()
+  const choices = offered(draft.models, rows)
+  const query = search.trim().toLowerCase()
+  const filtered = choices.filter((row) => `${row.label} ${row.id}`.toLowerCase().includes(query))
   // **The rule is asked, not restated.** Held against the draft's set, which is
   // what the next Save writes, so a duplicate is refused against the state that
   // would actually carry it.
@@ -81,38 +87,52 @@ export function ModelChoice({
   return (
     <fieldset className="model-choice">
       <legend>Models</legend>
-      {offered(draft.models, rows).map((row) => {
-        const enabled = draft.models.includes(row.id)
-        return (
-          <p key={row.id} className="model-row">
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={enabled}
-                onChange={(event) => onChange(withModel(draft, row.id, event.target.checked))}
-              />{' '}
-              <code>{row.id}</code>
-              {row.label !== row.id && <> {row.label}</>}
-            </label>{' '}
-            {/* **Offered on an enabled row alone.** A default nothing enabled is
-                the state the decoder refuses by name, and a radio that could
-                reach it would be a control composing a file its own reader
-                rejects. */}
-            <label className="checkbox">
-              <input
-                type="radio"
-                name="assistant-default-model"
-                checked={draft.model === row.id}
-                disabled={!enabled}
-                onChange={() => onChange(withDefaultModel(draft, row.id))}
-              />{' '}
-              Default
-            </label>
-          </p>
-        )
-      })}
-
-      <p className="quiet">{HOW}</p>
+      <p id={hintId} className="quiet">{HOW}</p>
+      <Field label="Search models">
+        {(wiring) => <Input {...wiring} type="search" value={search}
+          onChange={(event) => setSearch(event.target.value)} />}
+      </Field>
+      <p className="quiet" role="status">{draft.models.length} enabled · {filtered.length} shown</p>
+      <div className={styles.list}>
+        {filtered.length > 0 && <div className={styles.heading} aria-hidden="true">
+          <span>Enabled / Model</span><span>Default</span>
+        </div>}
+        {filtered.map((row) => {
+          const enabled = draft.models.includes(row.id)
+          return (
+            <div key={row.id} className={styles.row}>
+              <label className={`checkbox ${styles.model}`}>
+                <input
+                  type="checkbox"
+                  aria-label={row.label === row.id ? row.id : `${row.id} ${row.label}`}
+                  aria-describedby={hintId}
+                  checked={enabled}
+                  onChange={(event) => onChange(withModel(draft, row.id, event.target.checked))}
+                />
+                <span className={styles.name}>
+                  <span>{row.label}</span>
+                  {row.label !== row.id && <code>{row.id}</code>}
+                </span>
+              </label>
+              <label className={`checkbox ${styles.default}`}>
+                <input
+                  type="radio"
+                  name="assistant-default-model"
+                  aria-label={`Default model: ${row.label}`}
+                  aria-describedby={hintId}
+                  checked={draft.model === row.id}
+                  onChange={() => onChange(withDefaultModel(withModel(draft, row.id, true), row.id))}
+                />
+                <span className={styles.srOnly}>Default</span>
+              </label>
+            </div>
+          )
+        })}
+      </div>
+      {filtered.length === 0 && <p className="quiet">
+        {query ? 'No models match your search.' : 'Test the connection to load models, or add a model below.'}
+      </p>}
+      <p className="quiet">Choose a model that supports text and tools; a listing alone does not confirm those capabilities.</p>
 
       {/* **Add sits with the field, above the hint**, because it is what the
           field is for: a control a line below its own input, under a sentence

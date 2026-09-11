@@ -100,7 +100,7 @@ export function draftFrom(config: AssistantConfig): EndpointDraft {
   const endpoint = config.endpoint
   return {
     kind: endpoint?.kind ?? 'openai-compatible',
-    url: endpoint?.url ?? '',
+    url: endpoint?.url ?? PREFILLED_URL['openai-compatible'],
     // The draft holds a string throughout, and `''` is what "nothing chosen"
     // looks like in a text field; `assistantWrite` is where it becomes the
     // null the schema spells.
