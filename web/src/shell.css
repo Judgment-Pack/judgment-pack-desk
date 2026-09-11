@@ -1,4 +1,4 @@
-/* The shell's own sheet: the five regions, and nothing a route renders.
+/* The shared shell layout, and nothing a route renders.
    Every selector is `.desk-*`, so it cannot collide with the ~60 class names
    `styles.css` already owns.
 
@@ -75,19 +75,10 @@
     --main-floor: 120px;
     --side-cap: 40vw;
     --console-floor: 80px;
-    --console-room: max(0px, calc(100vh - var(--header-h) - var(--strip-h)));
-    --console-cap: max(0px, calc(100vh - var(--header-h) - var(--strip-h) - var(--main-floor)));
+    /* Available inner height excludes the status gap and two 1px borders. */
+    --console-room: max(0px, calc(100vh - var(--header-h) - var(--strip-h) - var(--space-2) - 2px));
+    --console-cap: max(0px, calc(100vh - var(--header-h) - var(--strip-h) - var(--space-2) - 2px - var(--main-floor)));
 
-    /* How much room a route inside main actually has, top to bottom.
-       A route with a sticky column of its own — the packs pane — needs the
-       height between the header and the strip, less whatever the console is
-       currently taking. It is here rather than in the pane's module because
-       `shell.css` owns the regions' layout and every one of these terms is a
-       region's: the pane reads the token and computes none of it. */
-    --main-room: max(
-      0px,
-      calc(100vh - var(--header-h) - var(--strip-h) - var(--console-current))
-    );
   }
 
   /* The guarded half of the pair above. A browser with `dvh` measures against
@@ -95,14 +86,10 @@
      value, because this override never reaches it. */
   @supports (height: 100dvh) {
     :root {
-      --console-room: max(0px, calc(100dvh - var(--header-h) - var(--strip-h)));
-      --main-room: max(
-        0px,
-        calc(100dvh - var(--header-h) - var(--strip-h) - var(--console-current))
-      );
+      --console-room: max(0px, calc(100dvh - var(--header-h) - var(--strip-h) - var(--space-2) - 2px));
       --console-cap: max(
         0px,
-        calc(100dvh - var(--header-h) - var(--strip-h) - var(--main-floor))
+        calc(100dvh - var(--header-h) - var(--strip-h) - var(--space-2) - 2px - var(--main-floor))
       );
     }
   }
@@ -118,7 +105,7 @@
      a thirty-pack rail. `dvh` second, so a browser that has it uses the
      viewport that excludes the mobile URL bar and one that does not keeps
      `vh`. `overflow: hidden` on the frame, because the scrolling belongs to
-     the panes: `.desk-main` and `.desk-inspector` in the `minmax(0, 1fr)`
+     the workspace panes: `.desk-main` and `.desk-inspector` in its flexible
      row, and `.desk-console` in the row below it, each carrying
      `min-height: 0`. `.desk-rail` does not, and does not need to —
      measured: with 5,144px of content in it, the rail renders 752px tall,
@@ -186,15 +173,11 @@
     display: grid;
     grid-template-columns:
       min(var(--rail-current), var(--side-cap))
-      minmax(0, 1fr)
-      min(var(--inspector-current), var(--side-cap));
+      minmax(0, 1fr);
     grid-template-rows:
       var(--header-h)
       minmax(0, 1fr)
-      min(
-        var(--console-current),
-        max(var(--console-cap), min(var(--console-floor), var(--console-room)))
-      )
+      var(--space-2)
       var(--strip-h);
     height: 100vh;
     height: 100dvh;
@@ -229,22 +212,40 @@
     min-width: 0;
   }
 
-  /* The one scroll container, and **column 2 only**. Spanning 2/4 put main in
-     the same grid cell as the inspector, which paints an opaque surface over
-     it: the right 360px of every route was occluded the moment the Inspector
-     was opened. Measured in Chrome before and after; the check is in the PR.
-
-     The padding is on `.desk-measure` below and not on this scroll container,
-     so that the two together are one element's worth of geometry rather than
-     two. */
-  .desk-main {
+  /* One border and clipping boundary for all three workspace panes. The
+     status strip stays outside it. Closing either pane leaves the frame and
+     the main route mounted, with the same corners and content gutter. */
+  .desk-workspace {
+    --console-track: min(
+      var(--console-current),
+      max(var(--console-cap), min(var(--console-floor), var(--console-room)))
+    );
+    /* Derived here, where the shell's pane choices are inherited. Sticky
+       route panels receive the visible main height, including console caps. */
+    --main-room: max(0px, calc(var(--console-room) - var(--console-track)));
     grid-column: 2;
     grid-row: 2;
+    display: grid;
+    grid-template-columns:
+      minmax(0, 1fr)
+      min(var(--inspector-current), var(--side-cap));
+    grid-template-rows: minmax(0, 1fr) var(--console-track);
+    min-width: 0;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
+    background: var(--bg);
+  }
+
+  /* The main column scrolls independently; only the outer frame is rounded.
+     Page padding remains on the measure, keeping the existing left gutter. */
+  .desk-main {
+    grid-column: 1;
+    grid-row: 1;
     overflow: auto;
     background: var(--bg);
-    border: 1px solid var(--border);
-    border-bottom: 0;
-    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
     position: relative;
     scrollbar-gutter: stable;
     min-width: 0;
@@ -304,8 +305,8 @@
   }
 
   .desk-inspector {
-    grid-column: 3;
-    grid-row: 2;
+    grid-column: 2;
+    grid-row: 1;
     overflow: auto;
     position: relative;
     background: var(--surface);
@@ -315,8 +316,8 @@
   }
 
   .desk-console {
-    grid-column: 2 / 4;
-    grid-row: 3;
+    grid-column: 1 / -1;
+    grid-row: 2;
     overflow: hidden;
     position: relative;
     display: flex;
@@ -331,14 +332,13 @@
      `contentinfo` landmark that `.app-foot` was. The declarations are
      `.app-foot`'s, carried over. */
   .desk-strip {
-    grid-column: 2 / 4;
+    grid-column: 2;
     grid-row: 4;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
     padding: 0 1.5rem;
-    border-top: 1px solid var(--border);
     color: var(--ink-faint);
     font-size: var(--text-sm);
   }
@@ -959,6 +959,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .desk,
+    .desk-workspace,
     .desk-rail,
     .desk-inspector,
     .desk-console {

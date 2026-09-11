@@ -15,14 +15,14 @@
  * before every merge that touches a stylesheet. This is a convention; nothing
  * automated enforces it.
  *
- * Six things per row, and a row is contained only if all six hold:
+ * Seven things per row, and a row is contained only if all seven hold:
  *
  * 1. `document.scrollingElement.scrollHeight === innerHeight` — the document
  *    has no scrollable overflow at all.
  * 2. `.desk` is exactly `innerHeight` tall — the frame is one viewport.
  * 3. `scrollY` is 0 after `window.scrollTo(0, 5000)` — the thing the report
  *    was about: the whole shell could be scrolled up out of the window.
- * 4. The computed `position` of `.desk`, `.desk-rail`, `.desk-main`,
+ * 4. The computed `position` of `.desk`, `.desk-workspace`, `.desk-rail`, `.desk-main`,
  *    `.desk-inspector` and `.desk-console`, wherever the route renders them,
  *    is `relative`, and the drawer's (`.desk-drawer` — the rail or the
  *    Inspector below their breakpoints) is `fixed`. This is the one that
@@ -35,6 +35,8 @@
  *    and resolves to `.desk` after it.
  * 6. No page error and no console error. The collector is reset before each
  *    row, so what it holds is that row's.
+ * 7. The workspace keeps four 12px corners, a complete 1px border, clipped
+ *    square-edged panes, and an 8px gap above the external status strip.
  *
  * **The widths.** The widths are derived from every breakpoint the sheets
  * author, so an override scoped to a width this gate never enters cannot exist
@@ -130,6 +132,7 @@ const at = (path) => `${ORIGIN}${path}`
 const LAUNCH = `${ORIGIN}/launch?secret=${encodeURIComponent(SECRET)}`
 const PANES = {
   '.desk': 'relative',
+  '.desk-workspace': 'relative',
   '.desk-rail': 'relative',
   '.desk-main': 'relative',
   '.desk-inspector': 'relative',
@@ -517,9 +520,40 @@ const MEASURE = (panes) => {
         ` at ${Math.round(box.left)},${Math.round(box.top)}`
     )
   }
+  const frameFailures = []
+  const frame = document.querySelector('.desk-workspace')
+  const strip = document.querySelector('.desk-strip')
+  if (frame === null || strip === null) {
+    frameFailures.push('workspace frame or status strip is missing')
+  } else {
+    const outer = frame.getBoundingClientRect()
+    const style = getComputedStyle(frame)
+    const corners = ['borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomLeftRadius', 'borderBottomRightRadius']
+    if (corners.some((corner) => style[corner] !== '12px')) frameFailures.push('workspace corners are not all 12px')
+    if (['borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth'].some((edge) => style[edge] !== '1px')) {
+      frameFailures.push('workspace border is incomplete')
+    }
+    if (style.overflowX !== 'hidden' || style.overflowY !== 'hidden') frameFailures.push('workspace does not clip its panes')
+    if (Math.abs(strip.getBoundingClientRect().top - outer.bottom - 8) > 0.5) frameFailures.push('status strip gap is not 8px')
+    const main = document.querySelector('.desk-main')
+    const consolePane = document.querySelector('.desk-console:not([hidden])')
+    const bottomPane = consolePane ?? main
+    if (bottomPane === null || Math.abs(bottomPane.getBoundingClientRect().bottom - (outer.bottom - 1)) > 0.5) {
+      frameFailures.push('bottom pane does not meet the shared frame edge')
+    }
+    for (const pane of frame.querySelectorAll('.desk-main, .desk-inspector:not([hidden]), .desk-console:not([hidden])')) {
+      const box = pane.getBoundingClientRect()
+      const paneStyle = getComputedStyle(pane)
+      if (corners.some((corner) => paneStyle[corner] !== '0px')) frameFailures.push(`${pane.className} rounds an internal edge`)
+      if (box.left < outer.left || box.right > outer.right || box.top < outer.top || box.bottom > outer.bottom) {
+        frameFailures.push(`${pane.className} escapes the workspace`)
+      }
+    }
+  }
   return {
     innerWidth,
     innerHeight,
+    frameFailures,
     scrollHeight: scroller.scrollHeight,
     deskHeight: desk === null ? null : Math.round(desk.getBoundingClientRect().height),
     positions,
@@ -574,7 +608,7 @@ async function sample(route, config) {
   const unpositioned = Object.entries(seen.positions)
     .filter(([selector, value]) => value !== 'absent' && value !== PANES[selector])
     .map(([selector, value]) => `${selector}: ${value}`)
-  const failures = []
+  const failures = [...seen.frameFailures]
   for (const which of ['inspector', 'console']) {
     if (seenConfig[which] !== config[which]) {
       failures.push(`${which} ${config[which] ? 'open' : 'closed'} was not observed`)

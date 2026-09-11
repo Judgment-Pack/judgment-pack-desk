@@ -11,7 +11,7 @@
  *
  * **The boundary, in one paragraph.** This file holds the *declaring rules*:
  * that each rule which authors a scrolling overflow also declares a position
- * that positions, and that the frame and the four panes do so under their own
+ * that positions, and that the shell, workspace frame and four panes do so under their own
  * exact selector. A
  * later rule that changes a held element's *computed* position — by an
  * ancestor selector, an id, an attribute, a nested `&`, a `:global`, an inline
@@ -43,8 +43,8 @@
  *    at-rule prelude), on the nearest ancestor style rule that names the same
  *    element: `.x { position: relative; &.dense { overflow: auto } }` passes,
  *    and the same without the position fails naming `.x › &.dense`.
- * 2. **The frame and the four panes, by exact selector, in `shell.css`.**
- *    Every rule whose selector list contains `.desk`, `.desk-rail`,
+ * 2. **The shell, workspace frame and four panes, by exact selector, in `shell.css`.**
+ *    Every rule whose selector list contains `.desk`, `.desk-workspace`, `.desk-rail`,
  *    `.desk-main`, `.desk-inspector` or `.desk-console` *as that whole
  *    selector* is read: at least one declares a positioning value, and none
  *    declares a value that does not position. **This is a same-selector
@@ -371,8 +371,8 @@ function isContainer(rule: Rule): boolean {
   return effectiveSelector(rule) === '.desk' && overflow.length > 0
 }
 
-/** The frame and its four panes, held by their own exact selector in `shell.css`. */
-const PANES = ['.desk', '.desk-rail', '.desk-main', '.desk-inspector', '.desk-console']
+/** The shell, workspace frame and four panes, held by their own exact selector in `shell.css`. */
+const PANES = ['.desk', '.desk-workspace', '.desk-rail', '.desk-main', '.desk-inspector', '.desk-console']
 
 /** A container rule that declares no position at all, or one that does not position. */
 function unpositioned(containers: Rule[]): string[] {

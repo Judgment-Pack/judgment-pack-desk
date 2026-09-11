@@ -1,11 +1,10 @@
 /**
  * The frame: header, rail, main, inspector, console, strip.
  *
- * All six are **direct children of one CSS grid**, which is what makes the
- * landmark count come out right — a `banner`, a `navigation`, a `main`, a
- * `complementary`, a `region` and a `contentinfo`, each exactly once — and
- * what makes collapse the writing of a custom property rather than a
- * measurement in JavaScript. Nothing here computes a height.
+ * Header, rail, workspace and status strip follow the shell grid. Inside the
+ * workspace, main, Inspector and console share one rounded boundary. The
+ * wrapper is a div, so every landmark keeps its own name and role. Collapse
+ * still writes custom properties; nothing here computes a height.
  *
  * **Main never remounts on a shell state change.** No pane flag conditionally
  * renders it, no shell value keys it, and it never moves between parents. That
@@ -250,26 +249,28 @@ function ShellFrame({
             openerRef={railOpenerRef}
           />
 
-          <main id="main" tabIndex={-1} className="desk-main">
-            <div className="desk-measure">{children}</div>
-          </main>
+          <div className="desk-workspace">
+            <main id="main" tabIndex={-1} className="desk-main">
+              <div className="desk-measure">{children}</div>
+            </main>
 
-          <RightPane
-            open={shell.inspector.open}
-            onClose={shell.toggleInspector}
-            asDrawer={inspectorIsDrawer}
-            declaredWidth={declaredPanes.inspectorWidth ? inspectorWidth : undefined}
-            publishTarget={publishTarget}
-            publishPane={publishPane}
-            openerRef={inspectorOpenerRef}
-            showEmpty={inspectorClaims === 0}
-          />
+            <RightPane
+              open={shell.inspector.open}
+              onClose={shell.toggleInspector}
+              asDrawer={inspectorIsDrawer}
+              declaredWidth={declaredPanes.inspectorWidth ? inspectorWidth : undefined}
+              publishTarget={publishTarget}
+              publishPane={publishPane}
+              openerRef={inspectorOpenerRef}
+              showEmpty={inspectorClaims === 0}
+            />
 
-          <BottomPane
-            open={shell.console.open}
-            tab={shell.console.tab}
-            onTabChange={shell.setConsoleTab}
-          />
+            <BottomPane
+              open={shell.console.open}
+              tab={shell.console.tab}
+              onTabChange={shell.setConsoleTab}
+            />
+          </div>
 
           <StatusStrip consoleOpen={shell.console.open} onToggleConsole={shell.toggleConsole} />
         </div>
