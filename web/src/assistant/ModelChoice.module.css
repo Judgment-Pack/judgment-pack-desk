@@ -80,3 +80,23 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+.choice {
+  margin: 0;
+}
+
+.choice legend {
+  padding: 0;
+  color: var(--ink);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.choice > p {
+  margin: 0.5rem 0 var(--density-block);
+  font-size: var(--text-sm);
+}
+
+.choice > div:last-child {
+  margin-bottom: 0;
+}

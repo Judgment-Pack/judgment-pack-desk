@@ -6,11 +6,13 @@
  * reported, including where the listing failed, and two places saying it would
  * be two places that can disagree.
  */
+import { IconPack } from '../shell/icons'
 import styles from './PacksLayout.module.css'
 
 export function PacksIndex() {
   return (
     <div className={styles.empty}>
+      <div className={styles.emptyIcon} aria-hidden="true"><IconPack /></div>
       <h1>Select a pack</h1>
       <p>Its decision, outcomes and rules open here.</p>
     </div>

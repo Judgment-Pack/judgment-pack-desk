@@ -4,7 +4,7 @@
 
 .layout {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: 224px minmax(0, 1fr);
   gap: 1.5rem;
   align-items: start;
 }
@@ -20,6 +20,14 @@
 }
 
 .empty {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 24rem;
+  padding: var(--density-section);
+  text-align: center;
   color: var(--ink-soft);
 }
 
@@ -32,4 +40,17 @@
 .empty p {
   margin: 0;
   font-size: 0.9rem;
+}
+
+.emptyIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink-faint);
 }

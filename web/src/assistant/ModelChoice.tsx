@@ -85,8 +85,8 @@ export function ModelChoice({
   }
 
   return (
-    <fieldset className="model-choice">
-      <legend>Models</legend>
+    <fieldset className={styles.choice}>
+      <legend className={styles.srOnly}>Models</legend>
       <p id={hintId} className="quiet">{HOW}</p>
       <Field label="Search models">
         {(wiring) => <Input {...wiring} type="search" value={search}

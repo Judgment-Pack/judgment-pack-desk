@@ -58,16 +58,18 @@ describe('the one stylesheet cut', () => {
   })
 
   it('leaves the shell sheet entirely inside its own cascade layer', () => {
-    // Unlayered author rules beat every layer, so `styles.css` staying
-    // unlayered is what stops a `.desk-*` selector winning a collision by
-    // accident. The shell's `!important` still wins, because important
-    // declarations invert layer order.
+    // Element defaults precede the shell; CSS modules remain unlayered.
+    // This lets navigation own its colors while shared UI components still
+    // take precedence over shell rules.
     const shell = readFileSync(join(SRC, 'shell.css'), 'utf8')
     expect(shell.trimStart().startsWith('/*')).toBe(true)
     // Anchored at a line start, so the note about `@layer components` in the
     // sheet's own comment is not counted as a second layer.
     expect(shell).toContain('@layer shell {')
     expect(shell.match(/^@layer /gm)).toHaveLength(1)
-    expect(sheet.match(/^@layer /gm)).toBeNull()
+    expect(sheet).toContain('@layer base, shell;')
+    expect(sheet).toContain('@layer base {')
+    const entry = readFileSync(join(SRC, 'main.tsx'), 'utf8')
+    expect(entry.indexOf("import './styles.css'")).toBeLessThan(entry.indexOf("import './shell.css'"))
   })
 })

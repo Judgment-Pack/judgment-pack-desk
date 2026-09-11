@@ -63,6 +63,7 @@ import {
 import { checkLine, identityOf, useEndpointCheck, type CheckAnswer } from './endpointCheck'
 import { KeyField } from './KeyField'
 import { keyBinding, type KeyBinding } from './keyBinding'
+import { SettingsSection } from '../ui/SettingsSection'
 import styles from './EndpointForm.module.css'
 import { ModelChoice } from './ModelChoice'
 import {
@@ -310,7 +311,7 @@ export function EndpointForm({
   }
 
   return (
-    <form
+    <form className={styles.form}
       onSubmit={(event) => {
         event.preventDefault()
         if (typed) saveKey()
@@ -325,7 +326,7 @@ export function EndpointForm({
           anybody configured. */}
       <fieldset disabled={busy || checking || unavailable}>
         <p className={styles.setup}>
-          <strong>Setup</strong>{' '}
+          <strong>Assistant setup</strong>{' '}
           {unavailable ? 'Configuration unavailable.' : key.isError ? 'Could not read key status.'
             : !key.isSuccess ? 'Reading key status…'
             : remove.isPending ? 'Removing the API key…'
@@ -342,164 +343,165 @@ export function EndpointForm({
             : dirty ? 'Save your model and assistant settings.'
             : 'Assistant settings saved.'}
         </p>
-        <Field label="Provider" error={problemFor('assistant.endpoint.kind')}>
-          {(wiring) => (
-            <Select
-              {...wiring}
-              value={draft.kind}
-              onValueChange={(value) => edit(withKind(draft, value as EndpointKind))}
-              options={KIND_OPTIONS}
-            />
-          )}
-        </Field>
-
-        <KeyField
-          state={key.data}
-          answered={key.isSuccess}
-          failed={key.error}
-          binding={binding}
-          field={keyInput}
-          replacing={replacingKey}
-          typed={typed}
-          saving={busy}
-          saveDisabled={!canSaveKey}
-          onReplace={() => {
-            setReplacingKey(true)
-            setKeySaved(false)
-            check.reset()
-          }}
-          onCancel={() => {
-            takeKey()
-            setReplacingKey(false)
-            setStoreProblem(undefined)
-          }}
-          onTyped={(value) => {
-            setTyped(value)
-            setKeySaved(false)
-            setStoreProblem(undefined)
-            check.reset()
-          }}
-          onStore={saveKey}
-          saved={keySaved ? KEY_SAVED : undefined}
-          storeProblem={storeProblem}
-          onRemove={() => {
-            setRemoveProblem(undefined)
-            setKeySaved(false)
-            check.reset()
-            remove.mutate(undefined, {
-              onError: (error) => setRemoveProblem(error.message),
-              onSettled: () => remove.reset()
-            })
-          }}
-          removeProblem={removeProblem}
-        />
-
-        <details
-          className={styles.advanced}
-          open={advancedOpen || urlProblem !== undefined || problemFor('assistant.endpoint.url') !== undefined}
-          onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+        <SettingsSection
+          title="Connection"
+          description="Choose a provider and securely save its API key."
+          footer={
+            <div className={styles.connection}>
+              <Button
+                disabled={!mayTest}
+                aria-describedby={testHintId}
+                onClick={() => { if (mayTest) check.run() }}
+              >
+                {checking ? 'Testing connection…' : 'Test connection'}
+              </Button>
+              <span id={testHintId} role="status" className="quiet">
+                {check.answer !== undefined ? <CheckReading answer={check.answer} />
+                  : !mayTest ? whyNotTest : 'Connection not tested.'}
+              </span>
+            </div>
+          }
         >
-          <summary>Advanced settings</summary>
-          <Field
-            label="Endpoint URL"
-            hint="Leave the default unless you use a proxy or your own server."
-            error={urlProblem ?? problemFor('assistant.endpoint.url')}
-          >
+          <Field label="Provider" error={problemFor('assistant.endpoint.kind')}>
             {(wiring) => (
-              <Input
+              <Select
                 {...wiring}
-                value={draft.url}
-                spellCheck={false}
-                onChange={(event) => edit({ ...draft, url: event.target.value })}
+                value={draft.kind}
+                onValueChange={(value) => edit(withKind(draft, value as EndpointKind))}
+                options={KIND_OPTIONS}
               />
             )}
           </Field>
 
-          <Button variant="quiet" onClick={() => edit({ ...draft, url: PREFILLED_URL[draft.kind] })}>
-            Reset to default
-          </Button>
-        </details>
+          <KeyField
+            state={key.data}
+            answered={key.isSuccess}
+            failed={key.error}
+            binding={binding}
+            field={keyInput}
+            replacing={replacingKey}
+            typed={typed}
+            saving={busy}
+            saveDisabled={!canSaveKey}
+            onReplace={() => {
+              setReplacingKey(true)
+              setKeySaved(false)
+              check.reset()
+            }}
+            onCancel={() => {
+              takeKey()
+              setReplacingKey(false)
+              setStoreProblem(undefined)
+            }}
+            onTyped={(value) => {
+              setTyped(value)
+              setKeySaved(false)
+              setStoreProblem(undefined)
+              check.reset()
+            }}
+            onStore={saveKey}
+            saved={keySaved ? KEY_SAVED : undefined}
+            storeProblem={storeProblem}
+            onRemove={() => {
+              setRemoveProblem(undefined)
+              setKeySaved(false)
+              check.reset()
+              remove.mutate(undefined, {
+                onError: (error) => setRemoveProblem(error.message),
+                onSettled: () => remove.reset()
+              })
+            }}
+            removeProblem={removeProblem}
+          />
 
-        <div className={styles.connection}>
-          <Button
-            disabled={!mayTest}
-            aria-describedby={testHintId}
-            onClick={() => { if (mayTest) check.run() }}
+          <details
+            className={styles.advanced}
+            open={advancedOpen || urlProblem !== undefined || problemFor('assistant.endpoint.url') !== undefined}
+            onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
           >
-            {checking ? 'Testing connection…' : 'Test connection'}
-          </Button>
-          <span id={testHintId} role="status" className="quiet">
-            {check.answer !== undefined ? <CheckReading answer={check.answer} />
-              : !mayTest ? whyNotTest : 'Connection not tested.'}
-          </span>
-        </div>
-
-        <ModelChoice
-          draft={draft}
-          // **The rows of the last press, and nothing before one.** Until
-          // somebody asks, this desk has been told nothing about what the
-          // endpoint offers, and a list drawn from anywhere else would be a
-          // claim it did not establish.
-          rows={check.answer?.rows}
-          onChange={edit}
-          problem={problemFor('assistant.endpoint.models')}
-          setProblem={problemFor('assistant.endpoint.model')}
-        />
-
-        <ToolChoice draft={draft} onChange={edit} problem={problemFor('assistant.endpoint.tools')} />
-
-        <Field
-          label="Thinking"
-          hint="How much reasoning the model may do before answering."
-          error={problemFor('assistant.thinking')}
-        >
-          {(wiring) => (
-            <Select
-              {...wiring}
-              value={draft.thinking}
-              onValueChange={(value) =>
-                edit({ ...draft, thinking: value as EndpointDraft['thinking'] })
-              }
-              options={TIER_OPTIONS}
-            />
-          )}
-        </Field>
-
-        <p className={`actions ${styles.saveBar}`}>
-          <Button variant={binding === 'bound' && !replacingKey ? 'primary' : 'secondary'} type="submit" disabled={blocked || busy || checking || editingKey}>
-            Save
-          </Button>{' '}
-          {/* **The slot's other state, which the schema has and the form did
-              not.** `assistant.endpoint` is one nullable field; clearing the
-              boxes sends an object the decoder refuses, so without this a desk
-              that had configured an endpoint could only get back to None through
-              the generic file editor — while this page describes None as one of
-              three deployment states. */}
-          {config.assistant.endpoint !== null && !removing && (
-            <Button
-              variant="quiet"
-              disabled={digest === undefined || busy}
-              onClick={() => setRemoving(true)}
+            <summary>Advanced settings</summary>
+            <Field
+              label="Endpoint URL"
+              hint="Leave the default unless you use a proxy or your own server."
+              error={urlProblem ?? problemFor('assistant.endpoint.url')}
             >
-              Remove endpoint
+              {(wiring) => (
+                <Input
+                  {...wiring}
+                  value={draft.url}
+                  spellCheck={false}
+                  onChange={(event) => edit({ ...draft, url: event.target.value })}
+                />
+              )}
+            </Field>
+
+            <Button variant="quiet" onClick={() => edit({ ...draft, url: PREFILLED_URL[draft.kind] })}>
+              Reset to default
             </Button>
-          )}
-          {busy && <span className="quiet">writing…</span>}
+          </details>
+        </SettingsSection>
+
+        <SettingsSection title="Models">
+          <ModelChoice
+            draft={draft}
+            // **The rows of the last press, and nothing before one.** Until
+            // somebody asks, this desk has been told nothing about what the
+            // endpoint offers, and a list drawn from anywhere else would be a
+            // claim it did not establish.
+            rows={check.answer?.rows}
+            onChange={edit}
+            problem={problemFor('assistant.endpoint.models')}
+            setProblem={problemFor('assistant.endpoint.model')}
+          />
+        </SettingsSection>
+
+        <SettingsSection title="Behavior" description="Choose the tools and reasoning available to the assistant.">
+          <ToolChoice draft={draft} onChange={edit} problem={problemFor('assistant.endpoint.tools')} />
+
+          <Field
+            label="Thinking"
+            hint="How much reasoning the model may do before answering."
+            error={problemFor('assistant.thinking')}
+          >
+            {(wiring) => (
+              <Select
+                {...wiring}
+                value={draft.thinking}
+                onValueChange={(value) =>
+                  edit({ ...draft, thinking: value as EndpointDraft['thinking'] })
+                }
+                options={TIER_OPTIONS}
+              />
+            )}
+          </Field>
+        </SettingsSection>
+
+        <div className={styles.saveActions}>
+          <Button variant={binding === 'bound' && !replacingKey ? 'primary' : 'secondary'} type="submit" disabled={blocked || busy || checking || editingKey}>
+            Save settings
+          </Button>
+          {busy && <span className="quiet">Saving…</span>}
           {editingKey && !busy && <span className="quiet">Save or cancel the API key changes first.</span>}
           {dirty && saved === undefined && !busy && !editingKey && <span className="quiet">Unsaved settings</span>}
           {saved !== undefined && !busy && <span className="quiet" role="status">{saved}</span>}
-        </p>
+        </div>
 
-        {removing && (
-          <p className="quiet">
-            {REMOVAL_MEANS}{' '}
-            <Button variant="quiet" disabled={busy} onClick={removeEndpoint}>
-              Remove it
-            </Button>{' '}
-            <Button variant="quiet" disabled={busy} onClick={() => setRemoving(false)}>
-              Keep it
-            </Button>
-          </p>
+        {configured !== null && (
+          <section className={styles.dangerSection} aria-label="Remove endpoint">
+            <h3>Remove endpoint</h3>
+            <p>Disconnect this provider from the assistant.</p>
+            {!removing ? (
+              <Button variant="danger" disabled={digest === undefined || busy} onClick={() => setRemoving(true)}>
+                Remove endpoint
+              </Button>
+            ) : (
+              <div className={styles.removal}>
+                <p>{REMOVAL_MEANS}</p>
+                <Button variant="secondary" disabled={busy} onClick={() => setRemoving(false)}>Keep it</Button>{' '}
+                <Button variant="danger" disabled={busy} onClick={removeEndpoint}>Remove it</Button>
+              </div>
+            )}
+          </section>
         )}
       </fieldset>
 
@@ -597,7 +599,7 @@ function ToolChoice({
   problem: string | undefined
 }) {
   return (
-    <fieldset className="tool-choice">
+    <fieldset className={styles.tools}>
       <legend>Tools the assistant may use</legend>
       {ASSISTANT_TOOLS.map((tool) => (
         <label key={tool} className="checkbox">

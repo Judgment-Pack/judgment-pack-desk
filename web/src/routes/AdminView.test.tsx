@@ -524,11 +524,14 @@ describe('Admin, with no overview', () => {
     }
   })
 
-  it('carries no disclosure in the main column at all', () => {
+  it('keeps runtime details collapsed and file bytes in the inspector', () => {
     // The bytes are in the right pane. A `details` back on the page is the
     // stack this chunk took apart, one section at a time.
     const { container } = renderAdmin(everythingConfigured())
-    expect(page(container).querySelectorAll('details')).toHaveLength(0)
+    const details = page(container).querySelectorAll('details')
+    expect(details).toHaveLength(1)
+    expect(details[0]!.open).toBe(false)
+    expect(details[0]!.querySelector('summary')!.textContent).toBe('Runtime details')
     expect(page(container).querySelector('pre')).toBeNull()
   })
 
@@ -1291,7 +1294,7 @@ describe('one section at a time', () => {
           'Test connection',
           'Add',
           'offstandarddeep',
-          'Save'
+          'Save settings'
         ]
       ],
       ['identity-provider', []]

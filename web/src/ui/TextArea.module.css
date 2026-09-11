@@ -2,13 +2,13 @@
   width: 100%;
   min-height: 4.5rem;
   resize: vertical;
-  padding: 0.4rem 0.55rem;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: var(--text-control);
   line-height: 1.5;
 }
 
@@ -23,4 +23,10 @@
 
 .textarea[aria-invalid='true'] {
   border-color: var(--danger);
+}
+
+.textarea:disabled {
+  background: var(--false-soft);
+  color: var(--ink-faint);
+  cursor: not-allowed;
 }

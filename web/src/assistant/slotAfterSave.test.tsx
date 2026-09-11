@@ -195,7 +195,7 @@ describe('what a save reaches', () => {
     chooseModel('the-model-chosen')
     fireEvent.click(screen.getByRole('combobox', { name: 'Thinking' }))
     fireEvent.click(await screen.findByRole('option', { name: 'deep' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
 
     // **The whole assertion.** The write invalidates the desk-configuration
     // query, the read runs again, and the value every consumer of the slot
@@ -275,7 +275,7 @@ describe('what a save reaches', () => {
     // reader will not take is one the chassis refuses; what the form holds is
     // that nothing on this page moves when it does.
     chooseModel('a-bad-model')
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     expect(await screen.findByText('must be a non-empty string')).toBeTruthy()
     expect(writes).toBe(1)
     expect(slotLine()).toBe(
@@ -391,7 +391,7 @@ describe('Reload after a file that moved', () => {
 
     state.move()
     chooseModel('chosen-and-unsaved')
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     expect(await screen.findByText(/changed on disk. Nothing was written/)).toBeTruthy()
     expect(state.sent).toEqual(['a'.repeat(64)])
     // Nothing was read on the refusal: a refused write changed nothing.
@@ -408,7 +408,7 @@ describe('Reload after a file that moved', () => {
       expect(document.querySelector('#desk-digest')?.textContent).toBe('c'.repeat(64))
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     await waitFor(() => expect(state.sent).toHaveLength(2))
     expect(state.sent[1]).toBe('c'.repeat(64))
     // And the value typed before the refusal survived both.
@@ -519,7 +519,7 @@ describe('a write that landed while the read after it did not', () => {
       expect(slotLine()).toContain('the-model-in-the-file')
     )
     chooseModel('the-model-chosen')
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     await waitFor(() =>
       expect(slotLine()).toBe(
         'configured · the-model-chosen · vercel · off'
@@ -543,7 +543,7 @@ describe('a write that landed while the read after it did not', () => {
       expect(slotLine()).toContain('the-model-in-the-file')
     )
     chooseModel('the-model-chosen')
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     await waitFor(() =>
       expect(slotLine()).toBe('unavailable · none · vercel · off')
     )
@@ -563,7 +563,7 @@ describe('a write that landed while the read after it did not', () => {
       expect(slotLine()).toContain('the-model-in-the-file')
     )
     chooseModel('the-model-chosen')
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     await waitFor(() =>
       expect(slotLine()).toBe('unavailable · none · vercel · off')
     )
@@ -588,10 +588,10 @@ describe('a write that landed while the read after it did not', () => {
       expect(slotLine()).toContain('the-model-in-the-file')
     )
     chooseModel('the-model-chosen')
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     expect(await screen.findByText(/a write states the bytes it replaces/)).toBeTruthy()
     expect(
-      (screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled
+      (screen.getByRole('button', { name: 'Save settings' }) as HTMLButtonElement).disabled
     ).toBe(true)
     expect(state.writes).toBe(1)
     // And nothing claims the write did not happen either: the slot is not
@@ -609,7 +609,7 @@ describe('a write that landed while the read after it did not', () => {
       expect(slotLine()).toContain('the-model-in-the-file')
     )
     chooseModel('the-model-chosen')
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     await waitFor(() =>
       expect(slotLine()).toBe(
         'configured · the-model-chosen · vercel · off'
@@ -774,7 +774,7 @@ describe('Admin, where the configuration could not be read', () => {
       (screen.getByRole('checkbox', { name: 'the-model-in-the-file' }) as HTMLInputElement).checked
     ).toBe(true)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     expect(
       await screen.findByText(/This desk could not read its own configuration/)
     ).toBeTruthy()

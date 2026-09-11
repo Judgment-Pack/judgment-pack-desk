@@ -1,7 +1,7 @@
 .field {
   display: grid;
-  gap: 0.3rem;
-  margin: 0 0 1rem;
+  gap: var(--density-gap);
+  margin: 0 0 var(--density-section);
 }
 
 /* **One label style, and it is the one `SourceCard`'s `.key` carries.** A
@@ -9,14 +9,14 @@
    weights reads as two pages joined at a heading. The three values are picked
    once and written in both places; a test holds them equal. */
 .label {
-  font-size: 0.8rem;
+  font-size: var(--text-label);
   font-weight: 500;
   color: var(--ink-soft);
 }
 
 .hint {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--text-sm);
   color: var(--ink-faint);
   overflow-wrap: anywhere;
 }

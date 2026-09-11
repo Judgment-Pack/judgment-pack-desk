@@ -4568,6 +4568,14 @@ web/                 Vite + React + TypeScript SPA
 
 ## Styling
 
+The shared design system is documented in [Design system](docs/design-system.md).
+Its live reference is `/design-system.html` under the Vite development server;
+it renders production components with theme and density controls, without a
+runtime or credentials. Typography, spacing, palette and control sizes are
+shared tokens. Admin → Assistant and Packs are the first screens using the
+calmer navigation and grouped settings direction.
+
+
 Four rules and one test that holds all four
 (`web/src/ui/convention.test.ts`, which reads the source because vitest runs
 with `css: false` and a component whose stylesheet was deleted renders exactly
@@ -4655,8 +4663,8 @@ already owns. That is why there is no import-order rule in `main.tsx` to
 remember and no layer to keep in sync.
 
 The Create-pack dialog and the pack surface are built from these primitives
-today — `Button`, `Field`, `Input`, `TextArea`, `Select`, `Tabs`, `Dialog` and
-`Alert`. The other views keep the sheets they have; migrating them is its own
+today — `Button`, `Field`, `Input`, `TextArea`, `Select`, `Tabs`, `Dialog`,
+`Alert` and `SettingsSection`. The other views keep the sheets they have; migrating them is its own
 piece of work.
 
 ## Tests

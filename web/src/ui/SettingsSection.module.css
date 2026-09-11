@@ -1,0 +1,42 @@
+.section {
+  min-width: 0;
+  margin: 0 0 var(--density-section);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.head {
+  padding: var(--density-section) var(--density-section) 0;
+}
+
+.head h2,
+.head h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: var(--leading-body);
+}
+
+.head p {
+  margin: var(--space-1) 0 0;
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+}
+
+.content {
+  padding: var(--density-section);
+}
+
+.content > :last-child {
+  margin-bottom: 0;
+}
+
+.footer {
+  padding: var(--density-block) var(--density-section);
+  border-top: 1px solid var(--border);
+  border-bottom-left-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
+  background: var(--code-surface);
+}

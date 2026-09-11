@@ -5,13 +5,13 @@
   gap: 0.5rem;
   width: 100%;
   height: var(--density-control);
-  padding: 0 0.55rem;
+  padding: 0 0.75rem;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: var(--text-control);
   text-align: left;
   cursor: pointer;
 }
@@ -53,7 +53,7 @@
   align-items: center;
   padding: 0.35rem 0.55rem;
   border-radius: var(--radius-sm);
-  font-size: 0.9rem;
+  font-size: var(--text-control);
   color: var(--ink);
   cursor: pointer;
   user-select: none;
@@ -67,4 +67,10 @@
 
 .item[data-state='checked'] {
   font-weight: 600;
+}
+
+.trigger:disabled {
+  background: var(--false-soft);
+  color: var(--ink-faint);
+  cursor: not-allowed;
 }

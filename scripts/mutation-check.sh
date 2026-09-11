@@ -2577,16 +2577,12 @@ if [ "$which" = all ] || [ "$which" = web ]; then
       </span>' \
     ''
   mutate web "the short cue is never the one painted" "$G" \
-    '  @media (max-width: 599px) {
-    .desk-strip-warn-full {
-      display: none;
-    }
-
-    .desk-strip-warn-short {
+    '    .desk-strip-warn-short {
       display: inline;
-    }
-  }' \
-    ''
+    }' \
+    '    .desk-strip-warn-short {
+      display: none;
+    }'
   mutate web "the cue's accessible name is whichever spelling is painted" "$S" \
     '    <Link className="desk-strip-warn" to="/admin" aria-label={full}>' \
     '    <Link className="desk-strip-warn" to="/admin">'
@@ -6291,15 +6287,15 @@ export function assistantTransport(id: string): Transport {
   # only ever passed over a clean page would prove nothing about the sweep.
   mutate web "a paragraph is reintroduced above the cards" "$ADV" \
     '      <header className="detail-head">
-        <h1>Admin</h1>
-      </header>' \
+        <div>
+          <h1>Admin</h1>' \
     '      <header className="detail-head">
-        <h1>Admin</h1>
-        <p className="quiet">
-          This page shows the desk configuration for this machine and for this project, section
-          by section, with the file each value came from named beside it.
-        </p>
-      </header>'
+        <div>
+          <h1>Admin</h1>
+          <p className="quiet">
+            This page shows the desk configuration for this machine and for this project, section
+            by section, with the file each value came from named beside it.
+          </p>'
 
   # **Retired, with its reason: the code it broke left the card.** It was "the
   # content disclosure re-serialises instead of quoting the file", against
@@ -6742,9 +6738,9 @@ export function assistantTransport(id: string): Transport {
   # OS and not the toggle, or the toggle and not the OS. The needle is the
   # media block's copy, which its four-space indent makes unique.
   mutate web "a colour token dropped from one dark block" "$CSSP" \
-    '    --ink-soft: #c2c2b8;
-    --ink-faint: #a0a096;' \
-    '    --ink-faint: #a0a096;'
+    '    --ink-soft: #b9bcc3;
+    --ink-faint: #a0a4ad;' \
+    '    --ink-faint: #a0a4ad;'
 
   # **Contrast is measured, and the measurement is load-bearing.** A dark
   # palette that was chosen by eye is a palette nobody checked: this pushes the
@@ -6756,9 +6752,9 @@ export function assistantTransport(id: string): Transport {
   # value in both blocks`. The two cannot be separated — one `apply` edits one
   # block — and the row's own claim is the contrast one, which is in the list.
   mutate web "a dark text/background pair pushed under AA" "$CSSP" \
-    '  --ink: #f0f0ea;
-  --ink-soft: #c2c2b8;' \
-    '  --ink: #f0f0ea;
+    '  --ink: #eceef0;
+  --ink-soft: #b9bcc3;' \
+    '  --ink: #eceef0;
   --ink-soft: #3d3d38;'
 
   # **No sheet but `styles.css` spells a colour.** `shell.css` was spelling
@@ -6841,20 +6837,20 @@ export function assistantTransport(id: string): Transport {
   # no stylesheet at all. The test names the class each button came out
   # carrying, which is a fact a `css: false` run still has.
   mutate web "a bare button back on Admin (Test connection)" "$AF" \
-    '          <Button
-            disabled={!mayTest}
-            aria-describedby={testHintId}
-            onClick={() => { if (mayTest) check.run() }}
-          >
-            {checking ? '\''Testing connection…'\'' : '\''Test connection'\''}
-          </Button>' \
-    '          <button type="button"
-            disabled={!mayTest}
-            aria-describedby={testHintId}
-            onClick={() => { if (mayTest) check.run() }}
-          >
-            {checking ? '\''Testing connection…'\'' : '\''Test connection'\''}
-          </button>'
+    '              <Button
+                disabled={!mayTest}
+                aria-describedby={testHintId}
+                onClick={() => { if (mayTest) check.run() }}
+              >
+                {checking ? '\''Testing connection…'\'' : '\''Test connection'\''}
+              </Button>' \
+    '              <button type="button"
+                disabled={!mayTest}
+                aria-describedby={testHintId}
+                onClick={() => { if (mayTest) check.run() }}
+              >
+                {checking ? '\''Testing connection…'\'' : '\''Test connection'\''}
+              </button>'
 
   # **The nomination back to primary.** A filled accent button in a group's
   # head, above the two Saves that are the writes — the loudest control on the
@@ -6877,12 +6873,12 @@ export function assistantTransport(id: string): Transport {
   mutate web "uppercase back on an Admin section title" "$SC" \
     '.title {
   margin: 0 0 var(--density-gap);
-  font-size: 0.9rem;' \
+  font-size: var(--text-control);' \
     '.title {
   margin: 0 0 var(--density-gap);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-size: 0.9rem;'
+  font-size: var(--text-control);'
 
   # ---- Chunk 6g: every pane is a containing block --------------------------
   #

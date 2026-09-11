@@ -6,8 +6,9 @@ import { App } from './App'
 import { DeskConfigProvider } from './config/DeskConfigProvider'
 import { IdentityProvider } from './identity/IdentityProvider'
 import { McpProvider } from './mcp/McpProvider'
-import './shell.css'
+// Establish element defaults before the shell's component styles.
 import './styles.css'
+import './shell.css'
 
 // The runtime is a local subprocess reading local files, and the chassis tells
 // us when those files change. Refetching on window focus or on an interval

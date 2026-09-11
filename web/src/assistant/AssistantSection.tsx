@@ -24,7 +24,7 @@
  */
 import { SourceCard, type SourceStatus } from '../admin/SourceCard'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
-import type { DeskLevelSummary } from '../config/deskConfig'
+import { NO_MODEL_CHOSEN, type DeskLevelSummary } from '../config/deskConfig'
 import { EndpointForm } from './EndpointForm'
 import { useAssistantSlot } from './useAssistantSlot'
 
@@ -55,6 +55,12 @@ export function AssistantSection({
   // where a reader would go to find that out — so it must not be the one surface
   // still asserting an absence.
   const slot = useAssistantSlot()
+  const status = assistantStatus(desk)
+  // The form already explains model setup. Keep decoder failures and other
+  // migration notices visible, without repeating this one above the form.
+  const setupOnly = status.state === 'migrated' && status.notices.every(
+    (notice) => notice.says === NO_MODEL_CHOSEN
+  )
 
   return (
     <SourceCard
@@ -69,7 +75,7 @@ export function AssistantSection({
           <code>{desk.path}</code>
         )
       }
-      status={assistantStatus(desk)}
+      status={under !== undefined && setupOnly ? under : status}
       save={<EndpointForm unavailable={slot.state === 'unavailable'} />}
     />
   )
