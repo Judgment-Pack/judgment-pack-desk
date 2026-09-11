@@ -2536,16 +2536,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  const bounds = undefined as { min: number; max: number } | undefined'
   mutate web "a configured pane may take the whole frame" "$G" \
     '    grid-template-columns:
-      min(var(--rail-current), var(--side-cap))
       minmax(0, 1fr)
       min(var(--inspector-current), var(--side-cap));' \
-    '    grid-template-columns: var(--rail-current) minmax(0, 1fr) var(--inspector-current);'
+    '    grid-template-columns: minmax(0, 1fr) var(--inspector-current);'
   mutate web "the console may grow past the route it sits under" "$G" \
-    '      min(
-        var(--console-current),
-        max(var(--console-cap), min(var(--console-floor), var(--console-room)))
-      )' \
-    '      var(--console-current)'
+    '    --console-track: min(
+      var(--console-current),
+      max(var(--console-cap), min(var(--console-floor), var(--console-room)))
+    );' \
+    '    --console-track: var(--console-current);'
   mutate web "the caps reserve no room for main at all" "$G" \
     '    --main-floor: 120px;
     --side-cap: 40vw;' \
@@ -2616,36 +2615,32 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the dvh cap is a second declaration rather than a guarded one" "$G" \
     '  @supports (height: 100dvh) {
     :root {
-      --console-room: max(0px, calc(100dvh - var(--header-h) - var(--strip-h)));
-      --main-room: max(
-        0px,
-        calc(100dvh - var(--header-h) - var(--strip-h) - var(--console-current))
-      );
+      --console-room: max(0px, calc(100dvh - var(--header-h) - var(--strip-h) - var(--space-2) - 2px));
       --console-cap: max(
         0px,
-        calc(100dvh - var(--header-h) - var(--strip-h) - var(--main-floor))
+        calc(100dvh - var(--header-h) - var(--strip-h) - var(--space-2) - 2px - var(--main-floor))
       );
     }
   }' \
     ''
   mutate web "the vh cap is the one that never applies" "$G" \
-    '    --console-cap: max(0px, calc(100vh - var(--header-h) - var(--strip-h) - var(--main-floor)));' \
-    '    --console-cap: max(0px, calc(100dvh - var(--header-h) - var(--strip-h) - var(--main-floor)));'
+    '    --console-cap: max(0px, calc(100vh - var(--header-h) - var(--strip-h) - var(--space-2) - 2px - var(--main-floor)));' \
+    '    --console-cap: max(0px, calc(100dvh - var(--header-h) - var(--strip-h) - var(--space-2) - 2px - var(--main-floor)));'
 
   # 2. On a viewport too short for the reserve the cap reaches zero, and an
   # open console renders at no height with a toggle still saying it is open.
   mutate web "an open console can be capped down to no height at all" "$G" \
-    '        max(var(--console-cap), min(var(--console-floor), var(--console-room)))' \
-    '        var(--console-cap)'
+    '      max(var(--console-cap), min(var(--console-floor), var(--console-room)))' \
+    '      var(--console-cap)'
   # The other half, and the one the first fix got wrong on its own: a bare
   # 80px floor on a 109px viewport pushed the strip out of a frame that does
   # not scroll — trading this defect for the one the cap exists to prevent.
   mutate web "the console floor may push the strip out of the frame" "$G" \
-    '        max(var(--console-cap), min(var(--console-floor), var(--console-room)))' \
-    '        max(var(--console-cap), var(--console-floor))'
+    '      max(var(--console-cap), min(var(--console-floor), var(--console-room)))' \
+    '      max(var(--console-cap), var(--console-floor))'
   mutate web "the room the console may take reserves main's share too" "$G" \
-    '    --console-room: max(0px, calc(100vh - var(--header-h) - var(--strip-h)));' \
-    '    --console-room: max(0px, calc(100vh - var(--header-h) - var(--strip-h) - var(--main-floor)));'
+    '    --console-room: max(0px, calc(100vh - var(--header-h) - var(--strip-h) - var(--space-2) - 2px));' \
+    '    --console-room: max(0px, calc(100vh - var(--header-h) - var(--strip-h) - var(--space-2) - 2px - var(--main-floor)));'
   mutate web "the console floor is smaller than a console" "$G" \
     '    --console-floor: 80px;' \
     '    --console-floor: 0px;'

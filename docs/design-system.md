@@ -36,7 +36,7 @@ to retain 4.5:1 text contrast.
 | Concern | Owner |
 | --- | --- |
 | Color, type, spacing, radius, density | `web/src/styles.css` |
-| Header, navigation, main frame, inspector, console | `web/src/shell.css` |
+| Header, navigation, shared workspace frame, inspector, console | `web/src/shell.css`, `web/src/shell/AppShell.tsx` |
 | Theme/density application and list row arithmetic | `web/src/config/theme.ts` |
 | Saved appearance preferences | `web/src/shell/appearanceState.ts` |
 | Reusable controls and settings groups | `web/src/ui/` |
@@ -141,6 +141,27 @@ assistive technology and device testing remain separate work.
 - Tables keep headers and cells aligned. Warnings use a status and border
   without repeatedly filling the entire result area. Diagrams may shrink to
   fit but must not be enlarged beyond their natural SVG coordinate size.
+
+## Workspace frame
+
+`AppShell` groups main, Inspector and console in a stable `.desk-workspace`.
+The wrapper owns the complete 1px `--border` boundary, `--radius-panel` (12px)
+on all four corners, `--bg` surface, and clipping. Individual panes have square
+corners. Inspector uses a left divider; console uses a top divider. Floating
+menus, popovers and narrow-screen drawers remain portaled above the frame.
+
+The status strip is outside the frame with a fixed `--space-2` (8px) gap in
+both densities. It does not supply the workspace's bottom border. With console
+closed, main/Inspector meet the rounded bottom edge; with console open, the
+console meets it. The outer frame never changes shape during these toggles.
+
+Console caps and sticky-content height calculations account for the gap and
+both frame borders. The current capped console track is calculated on the
+workspace, where it can read the shell's pane choices. Existing content gutters,
+colors and typography remain owned by their usual shared tokens.
+
+[Browser captures](workspace-frame-review.md) show the frame with both panes
+open and closed, plus a narrow light-theme example.
 
 ## Navigation and responsive behavior
 

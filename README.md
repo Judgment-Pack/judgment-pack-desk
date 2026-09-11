@@ -452,6 +452,13 @@ one, and a test holds that with both of the route's own landmarks mounted.
 | Console | Collapsed to the 28px strip, `panes.console.height` (240px) | → the strip, never below it | `region`, named "Console" |
 | Status strip | Always visible, 28px | Never | `contentinfo` |
 
+**One workspace frame encloses main, Inspector and console.** `AppShell` keeps
+these panes in a stable `desk-workspace` container. It owns the complete 1px
+border, shared 12px radius and clipping; internal panes use straight dividers.
+The always-visible status strip sits outside it, with an 8px gap. Console
+height caps reserve that gap and the frame borders, including on short screens.
+The same boundary applies to every route; opening a pane never remounts main.
+
 **The measure is left-aligned at one gutter.** A route's content is not centred
 in the main pane — `.desk-measure` is `margin: 0` with `padding:
 var(--density-section) var(--density-gutter) 4rem` — so the content's left edge
@@ -472,7 +479,7 @@ block lies inside it, so **every rule that authors a scrolling overflow
 declares a position that positions in the same rule** — `relative` on sixteen
 of the eighteen, and `fixed` on the two that were already out of flow, the
 dialog's content and the shell's drawer, which the rail and the Inspector both
-use. So do the frame and its four panes, under their own exact selector. A
+use. So do the shell, workspace frame and four panes, under their own exact selector. A
 rule that *merely clips* is not held — an `overflow: hidden` on an ellipsis
 label or a popup clips text, and text has no containing block to be laid out
 against.
@@ -488,8 +495,8 @@ the frame, and counted into the document's own overflow.
 
 Two things check it, and they check different halves.
 `web/src/ui/containingBlock.test.ts` **reads the source**. It holds the
-declaring rules — each rule that authors a scrolling overflow, and the frame
-and the four panes under their own exact selector. What it cannot hold is the
+declaring rules — each rule that authors a scrolling overflow, and the shell,
+workspace frame and four panes under their own exact selector. What it cannot hold is the
 cascade: a rule that takes a pane's position
 back by *any other* selector — an ancestor in front of it, an id, an attribute,
 a nested `&`, a `:global`, an inline style — is a computed result and not a

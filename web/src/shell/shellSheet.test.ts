@@ -50,9 +50,33 @@ describe('the frame has a definite height', () => {
   it('gives every pane that scrolls a floor to shrink to', () => {
     // A grid item's automatic minimum size is its content, so a pane without
     // this refuses to shrink and pushes the row open again.
-    for (const pane of ['.desk-main', '.desk-inspector', '.desk-console']) {
+    for (const pane of ['.desk-workspace', '.desk-main', '.desk-inspector', '.desk-console']) {
       expect(values(pane, 'min-height'), `${pane} can shrink`).toEqual(['0'])
     }
+  })
+})
+
+describe('one rounded workspace boundary', () => {
+  it('owns the border and clipping while internal panes keep straight dividers', () => {
+    expect(values('.desk-workspace', 'border')).toEqual(['1px solid var(--border)'])
+    expect(values('.desk-workspace', 'border-radius')).toEqual(['var(--radius-panel)'])
+    expect(values('.desk-workspace', 'overflow')).toEqual(['hidden'])
+    for (const pane of ['.desk-main', '.desk-inspector', '.desk-console']) {
+      expect(values(pane, 'border-radius')).toEqual([])
+      expect(values(pane, 'border')).toEqual([])
+    }
+    expect(values('.desk-inspector', 'border-left')).toEqual(['1px solid var(--border)'])
+    expect(values('.desk-console', 'border-top')).toEqual(['1px solid var(--border)'])
+    expect(values('.desk-strip', 'border-top')).toEqual([])
+  })
+
+  it('reserves the status gap and borders before dividing room between main and console', () => {
+    expect(values('.desk', 'grid-template-rows')[0]).toMatch(/var\(--space-2\)\s+var\(--strip-h\)/)
+    for (const token of ['--console-room', '--console-cap']) {
+      const expression = new RegExp(`${token}:([^;]+);`).exec(declarations(':root'))![1]!
+      expect(expression).toContain('- var(--space-2) - 2px')
+    }
+    expect(declarations('.desk-workspace')).toContain('--main-room: max(0px, calc(var(--console-room) - var(--console-track)))')
   })
 })
 
@@ -98,9 +122,10 @@ describe('no pane may eat the frame, whatever the file says', () => {
     const rule = declarations('.desk')
     const columns = /grid-template-columns:([^;]+);/.exec(rule)![1]!
     expect(columns).toContain('min(var(--rail-current), var(--side-cap))')
-    expect(columns).toContain('min(var(--inspector-current), var(--side-cap))')
-    const rows = /grid-template-rows:([^;]+);/.exec(rule)![1]!
-    const normalised = rows.replace(/\s+/g, ' ')
+    const workspace = declarations('.desk-workspace')
+    expect(workspace).toContain('min(var(--inspector-current), var(--side-cap))')
+    const track = /--console-track:([^;]+);/.exec(workspace)![1]!
+    const normalised = track.replace(/\s+/g, ' ')
     expect(normalised).toContain(
       'min( var(--console-current), max(var(--console-cap), min(var(--console-floor), var(--console-room))) )'
     )
