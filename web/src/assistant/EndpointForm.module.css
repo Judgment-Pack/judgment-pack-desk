@@ -1,0 +1,59 @@
+.setup {
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.setup strong {
+  margin-right: 0.5rem;
+}
+
+.advanced {
+  margin: 1rem 0;
+}
+
+.advanced summary {
+  padding: 0.6rem 0;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.advanced summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.connection,
+.keyActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.85rem;
+  align-items: center;
+  margin: 1rem 0;
+}
+
+.saveBar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.75rem 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+.danger {
+  color: var(--danger);
+}
+
+.removal {
+  padding: 0.75rem;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+}

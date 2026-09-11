@@ -7,8 +7,8 @@
  * model listing says what there is to enable. Asking them separately meant two
  * controls for one moment in somebody's setup, and a list that arrived on its
  * own the instant a key was stored — before anybody had said they wanted this
- * endpoint asked anything. So it is a button, it is pressed once, and Connect
- * presses it for you the moment it has stored the key.
+ * endpoint asked anything. The check runs only when its button is pressed;
+ * saving a key leaves the connection untested.
  *
  * **Neither route changed, and neither is built here.** The probe carries no
  * destination — the chassis reads the file — and the listing names a path
@@ -53,7 +53,7 @@ export const CHOOSE_A_MODEL = 'Choose a model to test this provider.'
  * is deliberately not in it — enabling one must not throw the answer away.
  */
 export function identityOf(endpoint: { kind: string; url: string }): string {
-  return `${endpoint.kind}\n${endpoint.url}`
+  return `${endpoint.kind}\n${endpoint.url.trim()}`
 }
 
 /** One press, and everything it can have become. */
@@ -76,6 +76,8 @@ export interface EndpointCheck {
   answer: CheckAnswer | undefined
   /** Ask: the probe and the listing, in one press. */
   run: () => void
+  /** Discard readings after credentials change, including late responses. */
+  reset: () => void
 }
 
 /**
@@ -92,15 +94,21 @@ export function useEndpointCheck(draft: EndpointDraft, saved: AssistantEndpointC
   // only the latest may land; a cleanup that cancelled on re-render would
   // cancel the request the render was made to start.
   const generation = useRef(0)
+  const inFlight = useRef<number | undefined>(undefined)
+  const reset = () => {
+    generation.current += 1
+    inFlight.current = undefined
+    setAnswer(undefined)
+  }
 
   // **Dropped, not hidden**, the instant the form says a different endpoint.
   // Adjusted during render rather than in an effect, so there is never a frame
   // in which a reading of one endpoint is on screen under another's address.
   const here = identityOf(draft)
-  if (answer !== undefined && answer.of !== here) setAnswer(undefined)
+  if (answer !== undefined && answer.of !== here) reset()
 
   const run = () => {
-    if (saved === null) return
+    if (saved === null || inFlight.current !== undefined) return
     // **Read here, at the moment of asking.** What is asked about is the
     // endpoint in the file; a family read later, off a draft somebody kept
     // typing into, would be a suffix composed for one destination and sent to
@@ -112,35 +120,41 @@ export function useEndpointCheck(draft: EndpointDraft, saved: AssistantEndpointC
       return
     }
     const mine = ++generation.current
+    inFlight.current = mine
     setAnswer({ of, asking: true })
     const landed = (change: (previous: CheckAnswer) => CheckAnswer) => {
       if (generation.current !== mine) return
+      const asking = !settled()
       setAnswer((previous) =>
-        previous === undefined || previous.of !== of ? previous : change(previous)
+        previous === undefined || previous.of !== of ? previous : { ...change(previous), asking }
       )
     }
     // **Both, and neither waits for the other.** They are one question to a
     // reader and two requests on the wire, and a listing held back until a
     // probe had answered would be slower for no reason a reader could name.
     let outstanding = 2
-    const settled = (): boolean => (outstanding -= 1) === 0
+    const settled = (): boolean => {
+      const done = (outstanding -= 1) === 0
+      if (done && inFlight.current === mine) inFlight.current = undefined
+      return done
+    }
     void probeAssistantEndpoint().then(
-      (result) => landed((previous) => ({ ...previous, probe: result, asking: !settled() })),
+      (result) => landed((previous) => ({ ...previous, probe: result })),
       (cause: unknown) =>
-        landed((previous) => ({ ...previous, probeRefusal: said(cause), asking: !settled() }))
+        landed((previous) => ({ ...previous, probeRefusal: said(cause) }))
     )
     // **The desk's capability, bound to the saved family.** The page names a
     // path suffix; the address, this chassis' token and the credential are none
     // of its business. The family is the file's, so a listing cannot talk its
     // way into a query its endpoint does not admit.
     void listModels(target.kind, bindModelCall(target.kind)).then(
-      (rows) => landed((previous) => ({ ...previous, rows, asking: !settled() })),
+      (rows) => landed((previous) => ({ ...previous, rows })),
       (cause: unknown) =>
-        landed((previous) => ({ ...previous, listingRefusal: said(cause), asking: !settled() }))
+        landed((previous) => ({ ...previous, listingRefusal: said(cause) }))
     )
   }
 
-  return { answer: answer?.of === here ? answer : undefined, run }
+  return { answer: answer?.of === here ? answer : undefined, run, reset }
 }
 
 function said(cause: unknown): string {
@@ -163,7 +177,7 @@ export interface CheckLine {
   quoted?: string
 }
 
-export const ASKING = 'asking the endpoint…'
+export const ASKING = 'Checking credentials and loading models…'
 export const TEST_REFUSED = 'The test was refused:'
 
 /**

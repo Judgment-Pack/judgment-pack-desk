@@ -10,14 +10,9 @@
  * the alternative is telling them to edit a file in a configuration directory
  * by hand between attempts.
  *
- * **The two writes are one action where a person is doing one thing.** A key is
- * kept bound to the endpoint that is *configured*, so storing one before the
- * endpoint is saved is refused by the chassis — which left a first-time setup
- * as two buttons in an order nobody was told. **Connect** is the pair, in the
- * only order the chassis admits: the endpoint through the desk-level write, and
- * then the key through the key route. Neither route changed. If the write is
- * refused the key is never sent; if the key store is refused the endpoint stays
- * saved, and both refusals are shown where they happened.
+ * **Save API key** stores the endpoint first when its destination changed,
+ * then stores the credential through its own route. Saving does not test the
+ * endpoint. Key success is reported only after the key write succeeds.
  *
  * **A refusal is shown in the decoder's own words.** A 422 answers with the
  * `{key, reason}` list the browser's decoder would produce for the same file,
@@ -36,7 +31,7 @@
  * file that names the withdrawn one gets.
  */
 import { useQueryClient } from '@tanstack/react-query'
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
   ASSISTANT_TOOLS,
@@ -55,6 +50,7 @@ import { Select } from '../ui/Select'
 import type { AssistantConfigWritten } from './client'
 import {
   KIND_OPTIONS,
+  PREFILLED_URL,
   TIER_OPTIONS,
   assistantWithoutEndpoint,
   assistantWrite,
@@ -67,6 +63,7 @@ import {
 import { checkLine, identityOf, useEndpointCheck, type CheckAnswer } from './endpointCheck'
 import { KeyField } from './KeyField'
 import { keyBinding, type KeyBinding } from './keyBinding'
+import styles from './EndpointForm.module.css'
 import { ModelChoice } from './ModelChoice'
 import {
   useAssistantKey,
@@ -89,7 +86,7 @@ const NO_DIGEST =
 const SAVED = 'Saved. The rest of the file is exactly as it was.'
 const CREATED = 'Saved, and the file was created. Nothing else is in it.'
 const REMOVED = 'Removed. This desk has no assistant endpoint configured.'
-const CONNECTED = 'Saved, and the key is stored on this computer.'
+const KEY_SAVED = 'API key saved on this computer.'
 
 /**
  * The one line a removal confirms, and it is about the key rather than the
@@ -103,29 +100,9 @@ const CONNECTED = 'Saved, and the key is stored on this computer.'
 const REMOVAL_MEANS =
   'The key stays on this computer, entered for the endpoint you are removing, and goes nowhere.'
 
-/** Beside Connect, where nothing has been typed into the key field. */
-const NO_KEY_TYPED = 'Enter the key above to store it with the endpoint.'
-
-/**
- * Where the button is not offered, and why.
- *
- * **A sentence and not a disabled button.** Testing needs an endpoint saved and
- * a key stored for it — the chassis refuses without either, by name — and a
- * control that would refuse is worse than a line saying what is missing. It is
- * one line for both because there is one order: Connect does both, and until it
- * has there is nothing to test.
- */
-const NOTHING_TO_TEST = 'Connect first: this asks the saved endpoint with the key stored for it.'
-
-/**
- * And where the address on screen is not the address in the file.
- *
- * The check asks the endpoint that is **saved**, always, and reads its family
- * at the moment of asking — so a request cannot be composed for one destination
- * and sent to another. What this stops is the other half: an answer about the
- * saved endpoint presented under a form showing a different one.
- */
-const NOT_SAVED = 'Save these changes first: this asks the endpoint that is saved.'
+const NOTHING_TO_TEST = 'Save an API key for this endpoint to test the connection.'
+const NOT_SAVED = 'Save endpoint changes first: this asks the endpoint that is saved.'
+const KEY_NOT_SAVED = 'Save or cancel your API key changes before testing.'
 
 /**
  * The one sentence a form over a file nobody could read is worth.
@@ -192,9 +169,13 @@ export function EndpointForm({
   const keyInput = useRef<HTMLInputElement | null>(null)
   // **Whether the field is empty, and nothing else about it.** A boolean is not
   // a mirror: it says a key was typed, never any of it, and nothing derived from
-  // it could be a credential. It exists so that Connect can say what it will
+  // it could be a credential. It exists so that Save API key can say what it will
   // actually do rather than offering to store a key nobody entered.
   const [typed, setTyped] = useState(false)
+  const [replacingKey, setReplacingKey] = useState(false)
+  const [keySaved, setKeySaved] = useState(false)
+  const testHintId = useId()
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [storeProblem, setStoreProblem] = useState<string | undefined>(undefined)
   const [removeProblem, setRemoveProblem] = useState<string | undefined>(undefined)
 
@@ -205,13 +186,6 @@ export function EndpointForm({
 
   const read = keyBinding(key.data)
   const binding: KeyBinding = rebindAsked && read === 'bound' ? 'rebind' : read
-  // **Connect only where the desk has *said* there is no usable key.** A read
-  // that has not answered is not "no key" — it is a page that has not been told
-  // — so the primary action stays Save until the key route says otherwise. A
-  // rule the other way round would flash Connect on every load of a configured
-  // desk and name a state nobody established.
-  const connecting = binding === 'none' || binding === 'no-endpoint' || binding === 'rebind'
-
   const edit = (next: EndpointDraft) => {
     setDirty(true)
     setSaved(undefined)
@@ -225,7 +199,7 @@ export function EndpointForm({
   //
   // **There is no rule for the model here, and there must not be one.** An
   // endpoint with no model chosen is a configuration the schema has, and the
-  // whole order this form is in — provider, key, Connect, the list, a pick —
+  // whole order this form is in — provider, key, save, test, the list, a pick —
   // depends on the first save going through without one.
   const urlProblem = draft.url.trim() === '' ? undefined : endpointUrlProblem(draft.url.trim())
 
@@ -293,59 +267,53 @@ export function EndpointForm({
       onError: (error) => setStoreProblem(error.message),
       onStored: () => {
         setRebindAsked(false)
+        setReplacingKey(false)
+        setKeySaved(true)
         onStored?.()
       }
     })
   }
 
-  const save = () => commit(assistantWrite(draft), (answer) => (answer.created ? CREATED : SAVED))
-  const removeEndpoint = () => commit(assistantWithoutEndpoint(draft), () => REMOVED)
+  const busy = write.isPending || store.isPending || remove.isPending
+  const checking = check.answer?.asking ?? false
+  const blocked = digest === undefined || draft.url.trim() === '' || urlProblem !== undefined
+  const configured = config.assistant.endpoint
+  const connected = configured !== null && binding === 'bound' && key.isSuccess
+  const here = configured !== null && identityOf(draft) === identityOf(configured)
+  const editingKey = typed || replacingKey
+  const mayTest = connected && here && !editingKey && !busy && !checking && !unavailable
+  const whyNotTest = editingKey ? KEY_NOT_SAVED : !here && configured !== null ? NOT_SAVED : NOTHING_TO_TEST
+  const canSaveKey = typed && !blocked && !busy && !checking && !unavailable && key.isSuccess
 
-  /**
-   * The endpoint and its key, in the one order the chassis admits.
-   *
-   * The key is taken off the node **before** the write, because the write is
-   * what clears the form's dirty state and the node must not be read after a
-   * re-seed has been through it. It is sent only once the write has landed: a
-   * key stored against an endpoint that was refused would be bound to whatever
-   * the file said before, which is the opposite of what the person asked for.
-   */
-  const connect = () => {
-    const value = takeKey()
-    commit(
-      assistantWrite(draft),
-      (answer) => (value === '' ? (answer.created ? CREATED : SAVED) : CONNECTED),
-      () => {
-        // **And the check runs once, on its own**, so the list is there without
-        // a second press: this is the moment both of its preconditions are
-        // first true, and asking a person to press a button immediately after
-        // the one they just pressed is a step with no decision in it.
-        if (value !== '') storeKey(value, check.run)
-      }
-    )
+  const save = () => {
+    if (blocked || busy || checking || unavailable || editingKey) return
+    commit(assistantWrite(draft), (answer) => (answer.created ? CREATED : SAVED))
+  }
+  const removeEndpoint = () => {
+    check.reset()
+    commit(assistantWithoutEndpoint(draft), () => REMOVED)
   }
 
-  const busy = write.isPending || store.isPending
-  const blocked = digest === undefined || urlProblem !== undefined
-  // **Offered once there is an endpoint saved and a key stored for it**, which
-  // are the two states the probe and the relay each refuse without. Both are
-  // read off what the desk says rather than off the draft: the key state is the
-  // chassis' answer, and the endpoint is the one in the file.
-  const configured = config.assistant.endpoint
-  const connected = configured !== null && (key.data?.present ?? false)
-  // **And only while the form says that endpoint.** Compared rather than
-  // remembered — a sticky "has been edited" flag would keep the button away
-  // after an edit somebody undid — and compared on the two members that decide
-  // where a request goes, so ticking a model does not take the button away.
-  const here = configured !== null && identityOf(draft) === identityOf(configured)
-  const mayTest = connected && here
-  const whyNotTest = connected ? NOT_SAVED : NOTHING_TO_TEST
+  // Save the endpoint before binding a key to it. A successful endpoint write
+  // is reported separately; key success is shown only after the key route answers.
+  const saveKey = () => {
+    if (!canSaveKey) return
+    setKeySaved(false)
+    check.reset()
+    const value = takeKey()
+    if (here) storeKey(value)
+    else commit(
+      assistantWrite(draft),
+      (answer) => (answer.created ? CREATED : SAVED),
+      () => storeKey(value)
+    )
+  }
 
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault()
-        if (connecting) connect()
+        if (typed) saveKey()
         else save()
       }}
     >
@@ -355,7 +323,25 @@ export function EndpointForm({
           saved and was not — and while the file these fields are about could not
           be read, when they are the built-in defaults rather than anything
           anybody configured. */}
-      <fieldset disabled={busy || unavailable}>
+      <fieldset disabled={busy || checking || unavailable}>
+        <p className={styles.setup}>
+          <strong>Setup</strong>{' '}
+          {unavailable ? 'Configuration unavailable.' : key.isError ? 'Could not read key status.'
+            : !key.isSuccess ? 'Reading key status…'
+            : remove.isPending ? 'Removing the API key…'
+            : busy ? 'Saving changes…'
+            : checking ? 'Checking the connection…'
+            : editingKey ? 'Save your API key to continue.'
+            : !connected ? 'Save an API key for this endpoint.'
+            : !here ? 'Save the endpoint changes before testing.'
+            : check.answer === undefined ? 'Key saved. Test the connection next.'
+            : check.answer.refusedToAsk !== undefined ? 'Choose and save a model before testing this provider.'
+            : check.answer.probeRefusal !== undefined || check.answer.probe?.reachable === false
+              ? 'Connection test failed. Review the result below.'
+            : draft.model === '' ? 'Enable a model and choose its default.'
+            : dirty ? 'Save your model and assistant settings.'
+            : 'Assistant settings saved.'}
+        </p>
         <Field label="Provider" error={problemFor('assistant.endpoint.kind')}>
           {(wiring) => (
             <Select
@@ -373,11 +359,33 @@ export function EndpointForm({
           failed={key.error}
           binding={binding}
           field={keyInput}
-          onTyped={setTyped}
-          onStore={() => storeKey(takeKey())}
+          replacing={replacingKey}
+          typed={typed}
+          saving={busy}
+          saveDisabled={!canSaveKey}
+          onReplace={() => {
+            setReplacingKey(true)
+            setKeySaved(false)
+            check.reset()
+          }}
+          onCancel={() => {
+            takeKey()
+            setReplacingKey(false)
+            setStoreProblem(undefined)
+          }}
+          onTyped={(value) => {
+            setTyped(value)
+            setKeySaved(false)
+            setStoreProblem(undefined)
+            check.reset()
+          }}
+          onStore={saveKey}
+          saved={keySaved ? KEY_SAVED : undefined}
           storeProblem={storeProblem}
           onRemove={() => {
             setRemoveProblem(undefined)
+            setKeySaved(false)
+            check.reset()
             remove.mutate(undefined, {
               onError: (error) => setRemoveProblem(error.message),
               onSettled: () => remove.reset()
@@ -386,29 +394,45 @@ export function EndpointForm({
           removeProblem={removeProblem}
         />
 
-        <Field
-          label="Endpoint URL"
-          hint="Leave the default unless you use a proxy or your own server."
-          error={urlProblem ?? problemFor('assistant.endpoint.url')}
+        <details
+          className={styles.advanced}
+          open={advancedOpen || urlProblem !== undefined || problemFor('assistant.endpoint.url') !== undefined}
+          onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
         >
-          {(wiring) => (
-            <Input
-              {...wiring}
-              value={draft.url}
-              spellCheck={false}
-              onChange={(event) => edit({ ...draft, url: event.target.value })}
-            />
-          )}
-        </Field>
+          <summary>Advanced settings</summary>
+          <Field
+            label="Endpoint URL"
+            hint="Leave the default unless you use a proxy or your own server."
+            error={urlProblem ?? problemFor('assistant.endpoint.url')}
+          >
+            {(wiring) => (
+              <Input
+                {...wiring}
+                value={draft.url}
+                spellCheck={false}
+                onChange={(event) => edit({ ...draft, url: event.target.value })}
+              />
+            )}
+          </Field>
 
-        {/* **Right after the address, because it is the question a person has
-            at that point**: does this work, and what does it offer? One press,
-            both answers, and the Models list below fills in from it. */}
-        <p className="actions">
-          {mayTest && <Button onClick={check.run}>Test connection</Button>}{' '}
-          {!mayTest && <span className="quiet">{whyNotTest}</span>}
-          {check.answer !== undefined && <CheckReading answer={check.answer} />}
-        </p>
+          <Button variant="quiet" onClick={() => edit({ ...draft, url: PREFILLED_URL[draft.kind] })}>
+            Reset to default
+          </Button>
+        </details>
+
+        <div className={styles.connection}>
+          <Button
+            disabled={!mayTest}
+            aria-describedby={testHintId}
+            onClick={() => { if (mayTest) check.run() }}
+          >
+            {checking ? 'Testing connection…' : 'Test connection'}
+          </Button>
+          <span id={testHintId} role="status" className="quiet">
+            {check.answer !== undefined ? <CheckReading answer={check.answer} />
+              : !mayTest ? whyNotTest : 'Connection not tested.'}
+          </span>
+        </div>
 
         <ModelChoice
           draft={draft}
@@ -441,9 +465,9 @@ export function EndpointForm({
           )}
         </Field>
 
-        <p className="actions">
-          <Button variant="primary" type="submit" disabled={blocked || busy}>
-            {connecting ? 'Connect' : 'Save'}
+        <p className={`actions ${styles.saveBar}`}>
+          <Button variant={binding === 'bound' && !replacingKey ? 'primary' : 'secondary'} type="submit" disabled={blocked || busy || checking || editingKey}>
+            Save
           </Button>{' '}
           {/* **The slot's other state, which the schema has and the form did
               not.** `assistant.endpoint` is one nullable field; clearing the
@@ -461,8 +485,9 @@ export function EndpointForm({
             </Button>
           )}
           {busy && <span className="quiet">writing…</span>}
-          {connecting && !typed && !busy && <span className="quiet">{NO_KEY_TYPED}</span>}
-          {saved !== undefined && !busy && <span className="quiet">{saved}</span>}
+          {editingKey && !busy && <span className="quiet">Save or cancel the API key changes first.</span>}
+          {dirty && saved === undefined && !busy && !editingKey && <span className="quiet">Unsaved settings</span>}
+          {saved !== undefined && !busy && <span className="quiet" role="status">{saved}</span>}
         </p>
 
         {removing && (

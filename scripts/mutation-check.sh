@@ -4325,8 +4325,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "  const entry = binding !== 'bound' || replacing" \
     '  const entry = true'
   mutate web "removal is offered where there is nothing to remove" "$KF" \
-    '        {read.present && (' \
-    '        {true && ('
+    '        {read.present && !confirmingRemoval && (' \
+    '        {true && !confirmingRemoval && ('
   # A 401 is a host that is there and a credential it will not take. The line
   # is `checkLine`'s now — one press answers the probe and the listing, and the
   # sentence is one function's rather than assembled at the render.
@@ -4461,6 +4461,39 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   MC=web/src/assistant/ModelChoice.tsx
   KB=web/src/assistant/keyBinding.ts
 
+  # Explicit key saving and connection readiness: regressions from the admin UX review.
+  mutate web 'assistant setup: empty key can be saved' 'web/src/assistant/KeyField.tsx' \
+    '<Button variant="primary" disabled={saveDisabled} onClick={onStore}>' \
+    '<Button variant="primary" disabled={false} onClick={onStore}>'
+  mutate web 'assistant setup: unsaved key can be tested' 'web/src/assistant/EndpointForm.tsx' \
+    ' && !editingKey && !busy && !checking && !unavailable' \
+    ' && !busy && !checking && !unavailable'
+  mutate web 'assistant setup: key save succeeds before storage answers' 'web/src/assistant/EndpointForm.tsx' \
+    '    setKeySaved(false)
+    check.reset()
+    const value = takeKey()' \
+    '    setKeySaved(true)
+    check.reset()
+    const value = takeKey()'
+  mutate web 'assistant setup: stored key is assumed bound' 'web/src/assistant/EndpointForm.tsx' \
+    'configured !== null && binding === '\''bound'\'' && key.isSuccess' \
+    'configured !== null && (key.data?.present ?? false) && key.isSuccess'
+  mutate web 'assistant setup: test finishes after only one answer' 'web/src/assistant/endpointCheck.ts' \
+    '    let outstanding = 2' \
+    '    let outstanding = 1'
+  mutate web 'assistant setup: search discards enabled models' 'web/src/assistant/ModelChoice.tsx' \
+    'onChange={(event) => setSearch(event.target.value)}' \
+    'onChange={(event) => { setSearch(event.target.value); onChange({ ...draft, models: draft.models.filter((id) => id.includes(event.target.value)) }) }}'
+  mutate web 'assistant setup: default does not enable its model' 'web/src/assistant/ModelChoice.tsx' \
+    'withDefaultModel(withModel(draft, row.id, true), row.id)' \
+    'withDefaultModel(draft, row.id)'
+  mutate web 'assistant setup: saving a key automatically tests it' 'web/src/assistant/EndpointForm.tsx' \
+    '        setKeySaved(true)
+        onStored?.()' \
+    '        setKeySaved(true)
+        check.run()
+        onStored?.()'
+
   # **The page must not compute the binding**, and it did: with the browser's
   # `URL`, which drops an explicit `:443` where Go's `url.Parse` keeps it. A
   # key stored for a host and a configuration naming the same host with its
@@ -4535,7 +4568,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # opens a socket, and the probe refuses with no key at all — so a button
   # offered here could only produce those refusals.
   mutate web "the listing is asked for with no key bound to the endpoint" "$EF" \
-    '  const connected = configured !== null && (key.data?.present ?? false)' \
+    "  const connected = configured !== null && binding === 'bound' && key.isSuccess" \
     '  const connected = configured !== null'
   # **The gate came off the saved endpoint and the request came off the draft**,
   # so choosing Gemini without saving sent `v1beta/models` to a still-saved
@@ -4560,7 +4593,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # wrong rather than a weaker version of the right one.
   mutate web "the rows are hidden when the endpoint moves rather than cleared" "$ECK" \
     '  const here = identityOf(draft)
-  if (answer !== undefined && answer.of !== here) setAnswer(undefined)' \
+  if (answer !== undefined && answer.of !== here) reset()' \
     '  const here = identityOf(draft)'
   # **The page names a suffix; the desk builds the address.** A listing that
   # built its own URL would hold the endpoint — and, on this route, this
@@ -4591,9 +4624,9 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # on the page saying the endpoint was never asked.
   mutate web "Test connection asks the probe and never the listing" "$ECK" \
     "    void listModels(target.kind, bindModelCall(target.kind)).then(
-      (rows) => landed((previous) => ({ ...previous, rows, asking: !settled() })),
+      (rows) => landed((previous) => ({ ...previous, rows })),
       (cause: unknown) =>
-        landed((previous) => ({ ...previous, listingRefusal: said(cause), asking: !settled() }))
+        landed((previous) => ({ ...previous, listingRefusal: said(cause) }))
     )" \
     '    settled()'
 
@@ -5814,8 +5847,8 @@ export function assistantTransport(id: string): Transport {
   # And the fields with it: they are the built-in defaults there, and typing
   # into them would compose a write over a file nobody has seen.
   mutate web "the form is editable over a file this desk could not read" "$EF" \
-    '      <fieldset disabled={busy || unavailable}>' \
-    '      <fieldset disabled={busy}>'
+    '      <fieldset disabled={busy || checking || unavailable}>' \
+    '      <fieldset disabled={busy || checking}>'
   # The tab's own half of the same sentence: it renders the state directly
   # rather than through `unusableBecause`, so breaking one does not break the
   # other and each has its own row.
@@ -6808,8 +6841,20 @@ export function assistantTransport(id: string): Transport {
   # no stylesheet at all. The test names the class each button came out
   # carrying, which is a fact a `css: false` run still has.
   mutate web "a bare button back on Admin (Test connection)" "$AF" \
-    '{mayTest && <Button onClick={check.run}>Test connection</Button>}' \
-    '{mayTest && <button type="button" onClick={check.run}>Test connection</button>}'
+    '          <Button
+            disabled={!mayTest}
+            aria-describedby={testHintId}
+            onClick={() => { if (mayTest) check.run() }}
+          >
+            {checking ? '\''Testing connection…'\'' : '\''Test connection'\''}
+          </Button>' \
+    '          <button type="button"
+            disabled={!mayTest}
+            aria-describedby={testHintId}
+            onClick={() => { if (mayTest) check.run() }}
+          >
+            {checking ? '\''Testing connection…'\'' : '\''Test connection'\''}
+          </button>'
 
   # **The nomination back to primary.** A filled accent button in a group's
   # head, above the two Saves that are the writes — the loudest control on the

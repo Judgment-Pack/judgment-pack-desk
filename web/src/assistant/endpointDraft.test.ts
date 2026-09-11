@@ -129,7 +129,7 @@ describe('the draft a configuration opens on', () => {
     // `[]` means an assistant that may call nothing, which is a decision. A
     // form that opened on it would have a blank field making it.
     expect(draftFrom(DESK_DEFAULTS.assistant).tools).toEqual([...ASSISTANT_TOOLS])
-    expect(draftFrom(DESK_DEFAULTS.assistant).url).toBe('')
+    expect(draftFrom(DESK_DEFAULTS.assistant).url).toBe(PREFILLED_URL['openai-compatible'])
   })
 
   it('takes every field from the file where one is configured', () => {

@@ -570,7 +570,7 @@ describe('a write that landed while the read after it did not', () => {
     // The chassis says there is an endpoint and the key is for it, so the row
     // says that — rather than overruling it with a file it could not read.
     expect(screen.getByText(/Stored — sk-a…wxyz, for OpenAI-compatible/)).toBeTruthy()
-    expect(screen.queryByText(/Connect saves the endpoint first/)).toBeNull()
+    expect(screen.queryByText(/Save API key saves the endpoint first/)).toBeNull()
   })
 
   it('reports the state as unverified where the read after it failed', async () => {
@@ -641,7 +641,7 @@ describe('removing the endpoint', () => {
     expect(state.writes).toBe(1)
     // The two are separate: the endpoint went and the key did not.
     expect(await screen.findByText('Stored — sk-a…wxyz, for OpenAI-compatible')).toBeTruthy()
-    expect(screen.getByText(/Connect saves the endpoint first/)).toBeTruthy()
+    expect(screen.getByText(/Save API key saves the endpoint first/)).toBeTruthy()
     // And there is no endpoint to remove any more, which is how the form says
     // the slot is at None without a second sentence saying so.
     expect(screen.queryByRole('button', { name: 'Remove endpoint' })).toBeNull()
@@ -788,7 +788,7 @@ describe('Admin, where the configuration could not be read', () => {
     // And the key row still follows the chassis, which said the endpoint is
     // there and the key is for it.
     expect(screen.getByText(/Stored — sk-a…wxyz, for OpenAI-compatible/)).toBeTruthy()
-    expect(screen.queryByText(/Connect saves the endpoint first/)).toBeNull()
+    expect(screen.queryByText(/Save API key saves the endpoint first/)).toBeNull()
 
     // **A later read that works puts the configured form back**, which is what
     // makes this a state and not a mode: nothing latches, and the section
