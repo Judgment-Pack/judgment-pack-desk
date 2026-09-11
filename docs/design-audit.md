@@ -37,7 +37,7 @@ sweep; the limits of verification are listed separately.
 | Medium | Coverage results repeated large warning fills and uppercase headings, overwhelming successful run status. | Neutral result surfaces with warning accents and sentence-case section hierarchy. Runtime verdicts and coverage details remain distinct. |
 | Medium | Toolbars did not consistently wrap; long file names pushed byte counts and actions out of alignment. | Wrapping toolbar groups, ellipsized file names with full-path titles, and non-wrapping byte counts. |
 | Medium | Author's implementation explanation and Help's expanded connection JSON occupied prime screen space. | Explanations and connection capabilities move into keyboard-accessible disclosures; the editor and help content are easier to reach. |
-| High | Browser fragment scrolling could cut the Assistant heading off on a direct `/admin#assistant` load. | The shell's fragment target is the article; panel IDs stay distinct. Direct loads and section navigation keep the header visible. |
+| High | Browser fragment scrolling could cut the Assistant heading off on a direct `/admin#assistant` load. | The shell's fragment target is the article; panel IDs stay distinct. Direct loads and section navigation keep the header visible. Trailing-slash routes retain their settings sidebar. |
 | High | Moving Admin navigation into the shell could leave a mobile drawer covering the destination or destroy an unsaved draft. | Portal-based section navigation changes location without moving the form. Choosing the current or a different section closes the drawer; opening/dismissing it preserves the draft. |
 
 ## Previously reported Assistant behavior
@@ -90,7 +90,7 @@ navigation. Document/body dimensions stayed within those viewports. Organization
 changes and the project-default action were exercised against the copied backend.
 No browser page errors were observed in these runs.
 
-The production build and all 2,899 component tests passed. The pane-containment
+The production build and all 2,900 component tests passed. The pane-containment
 gate checked 319 route/viewport/pane combinations: all 319 were contained, with
 no project fixture changes. It covers 11 routes and derived breakpoint widths;
 it checks geometry, not visual taste. The palette suite

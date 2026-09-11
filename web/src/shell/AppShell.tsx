@@ -20,7 +20,7 @@
  * `!important` on every property.
  */
 import { Tooltip } from 'radix-ui'
-import { useLocation } from 'react-router-dom'
+import { useMatch } from 'react-router-dom'
 import {
   useCallback,
   useEffect,
@@ -109,7 +109,7 @@ function ShellFrame({
   children: ReactNode
 }) {
   const shell = useShellState()
-  const settingsPage = useLocation().pathname === '/admin'
+  const settingsPage = useMatch('/admin') !== null
   const { config, declaredPanes } = useEffectiveConfig()
   const [railDrawerOpen, setRailDrawerOpen] = useState(false)
 

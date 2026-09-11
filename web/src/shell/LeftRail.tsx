@@ -28,7 +28,7 @@
  */
 import { Dialog, DropdownMenu, Separator, Tooltip, VisuallyHidden } from 'radix-ui'
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useMatch } from 'react-router-dom'
 import { useGraphInventory, usePacks } from '../mcp/queries'
 import { ADMIN_SECTIONS } from '../routes/adminSections'
 import { CreatePackDialog } from './CreatePackDialog'
@@ -81,7 +81,7 @@ export function LeftRail({
    */
   openerRef?: RefObject<HTMLButtonElement | null>
 }) {
-  const settings = useLocation().pathname === '/admin'
+  const settings = useMatch('/admin') !== null
   const body = (onNavigate?: () => void) => settings ? (
     <div className="desk-settings" onClick={(event) => {
       if ((event.target as HTMLElement).closest('a')) onNavigate?.()

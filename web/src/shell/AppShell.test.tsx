@@ -98,8 +98,9 @@ function renderShell(
 }
 
 describe('the shell frame', () => {
-  it('puts Admin sections in the settings sidebar and restores app navigation on exit', async () => {
-    renderShell(<AppShell><AdminView /></AppShell>, {}, '/admin#assistant')
+  it.each(['/admin#assistant', '/admin/#assistant'])(
+    'puts %s sections in the sidebar and restores app navigation on exit', async (path) => {
+    renderShell(<AppShell><AdminView /></AppShell>, {}, path)
     const main = screen.getByRole('main')
     const settings = await screen.findByRole('navigation', { name: 'Settings' })
     expect(screen.getByRole('navigation', { name: 'Project' }).contains(settings)).toBe(true)
