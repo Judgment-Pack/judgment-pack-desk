@@ -1,46 +1,6 @@
-/* One muted line under the page title, and not a box.
-   ---------------------------------------------------------------------------
-   What this reports is two facts about the running process. It was drawn as a
-   framed strip on a surface, which is the shape a *card* has on this page — so
-   the one thing on Admin that is deliberately not a setting looked more like
-   one than the settings did. It is a line now: the `dl`/`dt`/`dd` structure is
-   unchanged, and only its dress is. */
-
-.line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--density-gap) var(--density-section);
-  margin: var(--density-gap) 0 0;
-  padding: var(--density-block);
-}
-
-/* **Space, and not a middle dot.** A dot was written first and the live drive
-   is what took it out: a binary path is long enough that the second pair wraps
-   on a normal shell, and a separator drawn on the pair goes with it — so the
-   second line began with a dot hanging off nothing. Room between the pairs
-   separates them on one line and says nothing at all on two. */
-.pair {
-  display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  min-width: 0;
-}
-
-/* A small muted label in sentence case. The tracked capitals this replaces
-   were the page's second label style, on the line above the first one. */
-.key {
-  margin: 0;
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--ink-faint);
-  white-space: nowrap;
-}
-
-.value {
-  margin: 0;
-  min-width: 0;
-  font-size: var(--text-sm);
-  color: var(--ink-soft);
-  overflow-wrap: anywhere;
-}
+.line { display: grid; gap: var(--density-block); margin: 0; }
+.pair { display: grid; gap: var(--space-1); min-width: 0; }
+.key { font-size: var(--text-xs); font-weight: 500; color: var(--ink-faint); }
+.value { margin: 0; font-size: var(--text-sm); color: var(--ink); overflow-wrap: anywhere; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--density-gap); margin-top: var(--density-field); }
+.actions span { color: var(--ink-soft); font-size: var(--text-xs); }

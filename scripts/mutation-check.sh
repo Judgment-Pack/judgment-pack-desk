@@ -6275,16 +6275,12 @@ export function assistantTransport(id: string): Transport {
   # **The narration guard, broken by putting narration back.** A sweep that
   # only ever passed over a clean page would prove nothing about the sweep.
   mutate web "a paragraph is reintroduced above the cards" "$ADV" \
-    '      <header className="detail-head">
-        <div>
-          <h1>Admin</h1>' \
-    '      <header className="detail-head">
-        <div>
-          <h1>Admin</h1>
-          <p className="quiet">
-            This page shows the desk configuration for this machine and for this project, section
-            by section, with the file each value came from named beside it.
-          </p>'
+    '      {pane}' \
+    '      {pane}
+      <p className="quiet">
+        This page shows the desk configuration for this machine and for this project, section
+        by section, with the file each value came from named beside it.
+      </p>'
 
   # **Retired, with its reason: the code it broke left the card.** It was "the
   # content disclosure re-serialises instead of quoting the file", against
@@ -7010,16 +7006,14 @@ export function assistantTransport(id: string): Transport {
   # and it is invisible to every other test because the pane goes on being
   # published correctly beside it.
   mutate web "a Content disclosure back in Admin's main column" "$ADMV" \
-    '      {pane}
-      <header className="detail-head">' \
+    '      {pane}' \
     '      {pane}
       <details>
         <summary>Content</summary>
         <pre>
           <code>{effective.text}</code>
         </pre>
-      </details>
-      <header className="detail-head">'
+      </details>'
 
   # **The pane re-serialising the decode.** `idBase` gains its separator at
   # decode, `1e2` is not `100`, and an integer past a float64 is not what it
@@ -7084,9 +7078,9 @@ export function assistantTransport(id: string): Transport {
   # the two rows and dropped the control is a header with its write taken off
   # it, which is what the overview's removal would have done by accident.
   mutate web "the Project section drops the default-project control" "$ADVL" \
-    '              fields={defaultProject.field}
-              save={defaultProject.save}' \
-    '              save={defaultProject.save}'
+    '                  fields={defaultProject.field}
+                  save={defaultProject.save}' \
+    '                  save={defaultProject.save}'
 
   # **A path in a 13rem column is a line of prose.** The head above the rows —
   # where the file is, what reading it produced — is the Project section's now

@@ -5,6 +5,9 @@ import { createRoot } from 'react-dom/client'
 import { applyDensity, applyTheme } from '../config/theme'
 import type { Density, ThemeChoice } from '../config/deskConfig'
 import { Button } from '../ui/Button'
+import { PageHeader, PageBody } from '../ui/PageLayout'
+import { Popover } from '../ui/Popover'
+import { RetainedPanel } from '../ui/RetainedPanel'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
@@ -17,6 +20,7 @@ function DesignSystem() {
   const [theme, setTheme] = useState<ThemeChoice>('system')
   const [density, setDensity] = useState<Density>('comfortable')
   const [provider, setProvider] = useState('gemini')
+  const [panel, setPanel] = useState('profile')
   return (
     <main className={styles.page}>
       <header className={styles.header}>
@@ -38,6 +42,29 @@ function DesignSystem() {
           </Field>
         </div>
       </header>
+
+      <div className={styles.layoutSample}>
+        <PageHeader title="Settings" context={panel === 'profile' ? 'Profile' : 'Preferences'} actions={
+          <Popover title="Workspace details" trigger={<Button variant="quiet">Details</Button>}>
+            <p>Details open above the page without moving its header or form.</p>
+            <p className="quiet">Press Escape or click outside to close.</p>
+          </Popover>
+        } />
+        <PageBody>
+          <div className={styles.actions}>
+            <Button aria-pressed={panel === 'profile'} onClick={() => setPanel('profile')}>Profile</Button>
+            <Button aria-pressed={panel === 'preferences'} onClick={() => setPanel('preferences')}>Preferences</Button>
+          </div>
+          <RetainedPanel active={panel === 'profile'}>
+            <Field label="Draft name" hint="Type a name, switch sections, and return. The draft stays in memory.">
+              {(wiring) => <Input {...wiring} defaultValue="Team assistant" />}
+            </Field>
+          </RetainedPanel>
+          <RetainedPanel active={panel === 'preferences'}>
+            <p className="quiet">Each section keeps its draft until the page is left.</p>
+          </RetainedPanel>
+        </PageBody>
+      </div>
 
       <div className={styles.grid}>
         <SettingsSection level={2} title="Actions" description="One primary action per task. Every state comes from the same component.">

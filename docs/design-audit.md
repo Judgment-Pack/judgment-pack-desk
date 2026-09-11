@@ -1,5 +1,8 @@
 # Workspace design audit
 
+The subsequent [Admin layout review](admin-layout-review.md) replaces the centered
+settings form and expanding runtime disclosure described in this initial sweep.
+
 Reviewed against the current desktop and narrow layouts, then implemented on
 `design/full-workspace-sweep`. The baseline is the previous design foundation
 at `853ffc6`. This review covers the entire workspace, including the Admin
