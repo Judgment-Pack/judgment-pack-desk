@@ -92,14 +92,15 @@ describe('every colour token has a dark value', () => {
     expect(Object.fromEntries(mediaDark)).toEqual(Object.fromEntries(attributeDark))
   })
 
-  it('changes every colour it redefines', () => {
-    // A dark value equal to its light one is the shape of the thing this whole
-    // piece of work is about: plumbing that selects a palette which is the
-    // palette it was already painting.
+  it('changes theme surfaces and text while preserving the primary action palette', () => {
+    // Indigo actions use the same fill and white label in both themes.
+    const invariant = new Set(['--accent-fill', '--accent-hover', '--accent-active', '--ink-inverse'])
     for (const name of colourTokens) {
-      expect(colour(attributeDark, name), `${name} is not the light value`).not.toBe(
-        colour(light, name)
-      )
+      if (invariant.has(name)) {
+        expect(colour(attributeDark, name), `${name} is shared between themes`).toBe(colour(light, name))
+      } else {
+        expect(colour(attributeDark, name), `${name} adapts to the theme`).not.toBe(colour(light, name))
+      }
     }
   })
 
@@ -148,7 +149,8 @@ const PAIRS: { front: string; back: string; least: number; why: string }[] = [
   { front: '--ink-faint', back: '--bg', least: 4.5, why: 'a label on the page' },
   { front: '--ink-faint', back: '--surface', least: 4.5, why: 'a label on a card' },
   { front: '--ink-faint', back: '--surface-raised', least: 4.5, why: 'a note in a menu' },
-  { front: '--ink-inverse', back: '--accent', least: 4.5, why: 'a primary button' },
+  { front: '--ink-inverse', back: '--accent-fill', least: 4.5, why: 'a primary button' },
+  { front: '--sidebar-ink', back: '--sidebar', least: 4.5, why: 'inactive navigation' },
   { front: '--ink-inverse', back: '--accent-hover', least: 4.5, why: 'a primary button, hovered' },
   { front: '--ink-inverse', back: '--accent-active', least: 4.5, why: 'a primary button, pressed' },
   { front: '--accent', back: '--surface', least: 4.5, why: 'a link on a card' },

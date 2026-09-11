@@ -45,7 +45,7 @@
   padding: 0 0.75rem;
   border-radius: var(--radius-sm);
   color: var(--ink);
-  font-size: 0.875rem;
+  font-size: var(--text-body);
   text-decoration: none;
 }
 
@@ -109,7 +109,7 @@
   flex: 1 1 auto;
   min-width: 0;
   color: var(--ink-faint);
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   text-align: right;
   white-space: nowrap;
   overflow: hidden;
@@ -118,7 +118,7 @@
 
 .title {
   margin: 0 0 var(--density-block);
-  font-size: 1rem;
+  font-size: var(--text-body);
   font-weight: 600;
   color: var(--ink);
 }

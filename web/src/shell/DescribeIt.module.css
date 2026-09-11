@@ -7,7 +7,7 @@
 
 .summary {
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   color: var(--ink-soft);
 }
 
@@ -21,19 +21,19 @@
 
 .label {
   margin: 0;
-  font-size: 0.74rem;
+  font-size: var(--text-xs);
   color: var(--ink-soft);
 }
 
 .quiet {
   margin: 0;
-  font-size: 0.74rem;
+  font-size: var(--text-xs);
   color: var(--ink-faint);
 }
 
 .notice {
   margin: 0;
-  font-size: 0.74rem;
+  font-size: var(--text-xs);
   color: var(--warn);
 }
 

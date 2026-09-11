@@ -9,7 +9,7 @@
   gap: 0.25rem 0.625rem;
   margin: 0 0 var(--density-section);
   color: var(--ink-soft);
-  font-size: 0.875rem;
+  font-size: var(--text-body);
 }
 
 .setup strong {
@@ -53,7 +53,7 @@
 
 .keyField {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-2);
 }
 
 .keyField > div:first-child {
@@ -78,7 +78,8 @@
 }
 
 .saveActions {
-  margin: 0 0 2rem;
+  justify-content: flex-end;
+  margin: 0;
 }
 
 .saveActions > span {
@@ -86,7 +87,7 @@
 }
 
 .dangerSection {
-  margin-top: 2rem;
+  margin-top: var(--density-section);
   padding-top: var(--density-section);
   border-top: 1px solid var(--border);
 }
@@ -94,7 +95,7 @@
 .dangerSection h3 {
   margin: 0;
   color: var(--ink);
-  font-size: 0.875rem;
+  font-size: var(--text-body);
   font-weight: 600;
 }
 
@@ -113,7 +114,7 @@
 
 .removal p {
   margin: 0 0 var(--density-block);
-  font-size: 0.875rem;
+  font-size: var(--text-body);
 }
 
 .tools {
@@ -123,13 +124,13 @@
 .tools legend {
   margin-bottom: var(--density-block);
   color: var(--ink-soft);
-  font-size: 0.875rem;
+  font-size: var(--text-body);
 }
 
 .tools label {
   align-items: center;
-  min-height: 2rem;
-  font-size: 0.875rem;
+  min-height: var(--density-control);
+  font-size: var(--text-control);
 }
 
 .tools input {

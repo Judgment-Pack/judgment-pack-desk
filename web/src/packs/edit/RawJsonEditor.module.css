@@ -5,13 +5,13 @@
 }
 
 .label {
-  font-size: 0.76rem;
+  font-size: var(--text-xs);
   color: var(--ink-soft);
 }
 
 .problem {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   color: var(--warn);
 }
 
@@ -19,6 +19,6 @@
   display: flex;
   gap: 0.6rem;
   margin: 0;
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   color: var(--ink-faint);
 }

@@ -6,7 +6,7 @@
   background: var(--surface);
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
 }
 
 .input:focus {

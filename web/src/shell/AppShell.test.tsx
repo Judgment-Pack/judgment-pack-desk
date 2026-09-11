@@ -17,6 +17,7 @@ import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { PackDocument } from '../mcp/types'
+import { AdminView } from '../routes/AdminView'
 import { PacksPane } from '../packs/PacksPane'
 import { PackDocumentView } from '../packs/document/PackDocumentView'
 import { AppShell } from './AppShell'
@@ -97,6 +98,23 @@ function renderShell(
 }
 
 describe('the shell frame', () => {
+  it.each(['/admin#assistant', '/admin/#assistant'])(
+    'puts %s sections in the sidebar and restores app navigation on exit', async (path) => {
+    renderShell(<AppShell><AdminView /></AppShell>, {}, path)
+    const main = screen.getByRole('main')
+    const settings = await screen.findByRole('navigation', { name: 'Settings' })
+    expect(screen.getByRole('navigation', { name: 'Project' }).contains(settings)).toBe(true)
+    expect(main.contains(settings)).toBe(false)
+    expect(screen.queryByRole('button', { name: 'Create a pack' })).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Assistant', level: 2 })).toBeTruthy()
+    fireEvent.click(screen.getByRole('link', { name: /^Organization/ }))
+    expect(await screen.findByRole('heading', { name: 'Organization', level: 2 })).toBeTruthy()
+    expect(screen.getByRole('main')).toBe(main)
+    fireEvent.click(screen.getByRole('link', { name: 'Back to app' }))
+    expect(await screen.findByRole('button', { name: 'Create a pack' })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Back to app' })).toBeNull()
+  })
+
   it('renders the six landmarks exactly once, each with its name', async () => {
     renderShell(
       <AppShell>

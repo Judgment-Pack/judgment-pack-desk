@@ -16,6 +16,7 @@
 .header h1 {
   margin: 0;
   font-size: var(--text-page);
+  font-weight: 500;
   line-height: 1.3;
 }
 
@@ -65,7 +66,7 @@
 
 .surface { background: var(--surface); color: var(--ink); }
 .raised { background: var(--surface-raised); color: var(--ink); }
-.accent { background: var(--accent); color: var(--ink-inverse); }
+.accent { background: var(--accent-fill); color: var(--ink-inverse); }
 .warning { background: var(--warn-soft); color: var(--warn); }
 .danger { background: var(--danger-soft); color: var(--danger); }
 
@@ -74,7 +75,7 @@
   min-width: 0;
 }
 
-.pageType { font-size: var(--text-page); font-weight: 600; }
+.pageType { font-size: var(--text-page); font-weight: 500; }
 .headingType { font-size: var(--text-heading); font-weight: 600; }
 .bodyType { font-size: var(--text-body); }
 .labelType { font-size: var(--text-label); font-weight: 500; }

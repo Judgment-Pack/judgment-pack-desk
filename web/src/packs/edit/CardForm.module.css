@@ -18,7 +18,7 @@
 
 .whenLabel {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--ink-faint);
@@ -32,7 +32,7 @@
 }
 
 .absentTag {
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   color: var(--ink-faint);
 }
 
@@ -43,12 +43,12 @@
 }
 
 .position {
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   color: var(--ink-faint);
 }
 
 .announcement {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   color: var(--ink-soft);
 }

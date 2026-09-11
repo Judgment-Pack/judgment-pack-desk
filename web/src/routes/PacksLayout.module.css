@@ -33,13 +33,13 @@
 
 .empty h1 {
   margin: 0 0 0.35rem;
-  font-size: 1.25rem;
+  font-size: var(--text-heading);
   color: var(--ink);
 }
 
 .empty p {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-body);
 }
 
 .emptyIcon {

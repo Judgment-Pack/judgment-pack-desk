@@ -1,7 +1,7 @@
 .field {
   display: grid;
-  gap: var(--density-gap);
-  margin: 0 0 var(--density-section);
+  gap: var(--density-field-gap);
+  margin: 0 0 var(--density-field);
 }
 
 /* **One label style, and it is the one `SourceCard`'s `.key` carries.** A
@@ -16,13 +16,13 @@
 
 .hint {
   margin: 0;
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   color: var(--ink-faint);
   overflow-wrap: anywhere;
 }
 
 .error {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   color: var(--danger);
 }

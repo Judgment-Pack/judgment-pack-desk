@@ -36,7 +36,7 @@
 
 .groupTitle {
   margin: 0 0 var(--density-gap);
-  font-size: 1rem;
+  font-size: var(--text-body);
   font-weight: 600;
   color: var(--ink);
 }
@@ -76,7 +76,7 @@
    a settings page whose labels are two widths reads as two pages. */
 .row {
   display: grid;
-  grid-template-columns: 9rem 1fr;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
   gap: var(--density-gap);
   align-items: baseline;
 }
@@ -99,13 +99,13 @@
 
 /* A path is quoted material and sits a step below the sentence around it. */
 .value code {
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
 }
 
 .reason {
   display: block;
   font-family: var(--mono);
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   color: var(--ink-soft);
   overflow-wrap: anywhere;
 }
@@ -118,7 +118,7 @@
 
 .field {
   display: grid;
-  grid-template-columns: 9rem 1fr;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
   gap: var(--density-gap);
   align-items: baseline;
 }
@@ -126,7 +126,7 @@
 .rule {
   grid-column: 2;
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   color: var(--ink-faint);
   overflow-wrap: anywhere;
 }
@@ -135,13 +135,51 @@
   margin-top: var(--density-gap);
 }
 
+.field[data-action] {
+  grid-template-columns: 7.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  padding-top: var(--density-field);
+  border-top: 1px solid var(--border);
+}
+
+.action {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
+}
+
+.field[data-action] .rule {
+  grid-column: 2 / -1;
+}
+
+@container settings-panel (max-width: 32rem) {
+  .row,
+  .field,
+  .field[data-action] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .action,
+  .rule,
+  .field[data-action] .rule {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: start;
+  }
+}
+
 @media (max-width: 40rem) {
   .row,
-  .field {
+  .field,
+  .field[data-action] {
     grid-template-columns: 1fr;
   }
 
-  .rule {
+  .rule,
+  .field[data-action] .rule,
+  .action {
     grid-column: 1;
+    grid-row: auto;
+    justify-self: start;
   }
 }

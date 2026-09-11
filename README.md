@@ -4569,6 +4569,8 @@ web/                 Vite + React + TypeScript SPA
 ## Styling
 
 The shared design system is documented in [Design system](docs/design-system.md).
+The [workspace design audit](docs/design-audit.md) records the Linear reference,
+measured typography and controls, layout changes, and reviewed screenshots.
 Its live reference is `/design-system.html` under the Vite development server;
 it renders production components with theme and density controls, without a
 runtime or credentials. Typography, spacing, palette and control sizes are

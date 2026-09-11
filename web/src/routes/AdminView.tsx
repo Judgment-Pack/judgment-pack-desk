@@ -1,5 +1,5 @@
 /**
- * Admin: a navigation column, one open section, and the file itself in the
+ * Admin: dedicated settings navigation, one open section, and the file itself in the
  * right pane.
  *
  * **There is no overview, and its absence is this file's argument.** The page
@@ -31,7 +31,7 @@
  * again.
  *
  * **The forms stay in the main column**, and that is a measurement rather than
- * a preference: the pane is 360px, the label column alone is 9rem, and below
+ * a preference: the pane is 360px, the label column alone is 7.5rem, and below
  * 1100px the pane is a drawer that covers the page it would be editing. A form
  * in a drawer over its own page is a worse answer than a form on the page.
  *
@@ -43,9 +43,9 @@
  * an established location. Where the chassis has not answered, the row says
  * so.
  *
- * The shell's wide measure leaves room for navigation beside the form. Padded
- * links and an accent tint identify the open section; headings and spacing
- * separate the fields. Each section keeps one primary Save action.
+ * The shell hosts the section links in its settings sidebar. The bounded
+ * form is centered in the page, and each section keeps its own Save action.
+ * Standalone renders retain an inline navigation column.
  *
  * `runtime` and the project root are **not in the schema**, and that is the
  * design rather than a gap: `relay.go` runs the configured binary, so a
@@ -63,6 +63,7 @@ import { useDefaultProject } from '../admin/DefaultProject'
 import { OrganizationForm, StorageForm, StorageKind } from '../admin/projectFileCards'
 import { useHashTarget } from '../shell/useHashTarget'
 import { useInspectorPortal } from '../shell/InspectorSlot'
+import { useSettingsNavigation } from '../shell/SettingsNavigation'
 import { INSPECTOR_DRAWER_BELOW, useMediaQuery } from '../shell/useMediaQuery'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
@@ -105,6 +106,7 @@ const DESK_ONLY = new Set(['assistant', 'identity-provider'])
 const PROJECT_FILE_SECTION = 'project'
 
 export function AdminView() {
+  const navigation = useSettingsNavigation()
   const effective = useEffectiveConfig()
   const { config } = effective
   const mcp = useMcp()
@@ -125,11 +127,15 @@ export function AdminView() {
   // Scrolling anyway took the page's heading, its status line and the top of
   // the list off the screen, because `.desk-main` is the one scroll container
   // both columns are in.
-  useHashTarget(stacked)
+  useHashTarget(stacked && !navigation.inSidebar)
   const open = sectionFromHash(hash)
+  const sectionId = (id: string) => navigation.inSidebar ? `settings-${id}` : id
   const packDir = config.storage.packs.dir
   const packLocation = packLocationState(packDir, listing)
 
+  // The shell's fragment target is the article, so the browser's delayed
+  // anchor scroll on a full load also keeps the header in view. Panels use
+  // distinct IDs; standalone renders retain their original section anchors.
   // **And where it does not scroll, it starts at the top.** A full load of
   // `/admin#assistant` is scrolled by the browser itself — the shell's scroll
   // container is `.desk-main` and the browser scrolls the nearest one, which
@@ -139,9 +145,9 @@ export function AdminView() {
   // route is not selecting the frame it is rendered in.
   const top = useRef<HTMLElement | null>(null)
   useEffect(() => {
-    if (stacked) return
+    if (stacked && !navigation.inSidebar) return
     top.current?.scrollIntoView()
-  }, [open.id, stacked])
+  }, [open.id, stacked, navigation.inSidebar])
 
   // **Nothing listens for Escape here, because there is nothing to leave.**
   // The key used to return to the overview; a page whose every state is one
@@ -157,7 +163,7 @@ export function AdminView() {
   )
 
   return (
-    <article className={`detail ${styles.admin}`} data-measure="wide" ref={top}>
+    <article className={`detail ${styles.admin}`} id={navigation.inSidebar ? open.id : undefined} data-measure="wide" data-navigation={navigation.inSidebar ? 'sidebar' : 'inline'} ref={top}>
       {pane}
       <header className="detail-head">
         <div>
@@ -171,17 +177,17 @@ export function AdminView() {
       </header>
 
       <div className={styles.split}>
-        <nav className={styles.rail} aria-label="Settings">
+        {navigation.render(<nav className={styles.rail} data-sidebar={navigation.inSidebar || undefined} aria-label="Settings">
           {ADMIN_GROUPS.map((group) => (
             <GroupRows
               key={group.id}
               effective={effective}
               group={group}
               open={open}
-              stacked={stacked}
+              stacked={stacked && !navigation.inSidebar}
             />
           ))}
-        </nav>
+        </nav>)}
         <div className={styles.open}>
           {/* The file itself, and the one control that is about the project
               rather than about a member of it. The two rows are the ones the
@@ -189,7 +195,7 @@ export function AdminView() {
               on. */}
           {open.id === 'project' && (
             <SourceCard
-              id={SECTION.project!.id}
+              id={sectionId(SECTION.project!.id)}
               title={SECTION.project!.title}
               level={2}
               location={projectLocation(effective)}
@@ -200,7 +206,7 @@ export function AdminView() {
           )}
           {open.id === 'organization' && (
             <SourceCard
-              id={SECTION.organization!.id}
+              id={sectionId(SECTION.organization!.id)}
               title={SECTION.organization!.title}
               level={2}
               location={sectionLocation(effective, 'organization')}
@@ -211,7 +217,7 @@ export function AdminView() {
           )}
           {open.id === 'storage' && (
             <SourceCard
-              id={SECTION.storage!.id}
+              id={sectionId(SECTION.storage!.id)}
               title={SECTION.storage!.title}
               level={2}
               location={sectionLocation(effective, 'storage')}
@@ -223,7 +229,7 @@ export function AdminView() {
           )}
           {open.id === 'assistant' && (
             <AssistantSection
-              id={SECTION.assistant!.id}
+              id={sectionId(SECTION.assistant!.id)}
               title={SECTION.assistant!.title}
               level={2}
               under={deskStatus(effective)}
@@ -231,7 +237,7 @@ export function AdminView() {
           )}
           {open.id === 'identity-provider' && (
             <SourceCard
-              id={SECTION['identity-provider']!.id}
+              id={sectionId(SECTION['identity-provider']!.id)}
               title={SECTION['identity-provider']!.title}
               level={2}
               location={deskLocation(effective)}
@@ -333,12 +339,13 @@ function SectionRow({
         className={styles.row}
         to={`/admin#${section.id}`}
         aria-current={current ? 'true' : undefined}
+        title={summarise?.(effective)}
       >
         <span className={styles.rowTitle}>
           {section.title}
         </span>
         {!bare && summarise !== undefined && (
-          <span className={styles.rowSays}>{summarise(effective)}</span>
+          <span className={styles.rowSays} title={summarise(effective)}>{summarise(effective)}</span>
         )}
         {!bare && differs && (
           <span className={styles.rowStatus} data-state={own.state}>

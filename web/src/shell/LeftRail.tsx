@@ -28,7 +28,7 @@
  */
 import { Dialog, DropdownMenu, Separator, Tooltip, VisuallyHidden } from 'radix-ui'
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useMatch } from 'react-router-dom'
 import { useGraphInventory, usePacks } from '../mcp/queries'
 import { ADMIN_SECTIONS } from '../routes/adminSections'
 import { CreatePackDialog } from './CreatePackDialog'
@@ -46,6 +46,7 @@ import {
   IconPlus
 } from './icons'
 import type { LeftRailMode } from './paneState'
+import { SettingsNavigationTarget } from './SettingsNavigation'
 
 interface RailItem {
   to: string
@@ -80,6 +81,17 @@ export function LeftRail({
    */
   openerRef?: RefObject<HTMLButtonElement | null>
 }) {
+  const settings = useMatch('/admin') !== null
+  const body = (onNavigate?: () => void) => settings ? (
+    <div className="desk-settings" onClick={(event) => {
+      if ((event.target as HTMLElement).closest('a')) onNavigate?.()
+    }}>
+      <NavLink to="/packs" className="desk-nav-item">
+        <IconChevronLeft /><span>Back to app</span>
+      </NavLink>
+      <SettingsNavigationTarget onNavigate={onNavigate} />
+    </div>
+  ) : <RailBody mode={asDrawer ? 'expanded' : mode} onToggle={onToggle} showCollapse={!asDrawer} onNavigate={onNavigate} />
   if (asDrawer) {
     return (
       <Dialog.Root open={drawerOpen} onOpenChange={onDrawerOpenChange}>
@@ -111,12 +123,7 @@ export function LeftRail({
                 had one fewer landmark than the README's region table says it
                 has — and the difference was the breakpoint, not the state. */}
             <nav aria-label="Project">
-              <RailBody
-                mode="expanded"
-                onToggle={onToggle}
-                showCollapse={false}
-                onNavigate={() => onDrawerOpenChange(false)}
-              />
+              {body(() => onDrawerOpenChange(false))}
             </nav>
           </Dialog.Content>
         </Dialog.Portal>
@@ -125,7 +132,7 @@ export function LeftRail({
   }
   return (
     <nav className="desk-rail" id="desk-rail" aria-label="Project" data-mode={mode}>
-      <RailBody mode={mode} onToggle={onToggle} showCollapse />
+      {body()}
     </nav>
   )
 }

@@ -1,5 +1,13 @@
 @layer base, shell;
 
+@font-face {
+  font-family: "Inter Variable";
+  src: url("/fonts/InterVariable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 /* One hand-written sheet, and both palettes. No framework: the scaffold's
    styling surface should stay small enough to read in one sitting.
 
@@ -16,28 +24,26 @@
      surface — a menu, a drawer, the skip link — and in the light palette it is
      the same white, because there a shadow and a border already say "above".
      In the dark palette it is a lighter grey, because there they do not. */
-  --bg: #fafafa;
-  --surface: #ffffff;
+  --bg: #f9f9fa;
+  --surface: #fefeff;
+  --sidebar: #efeff0;
+  --sidebar-ink: #626368;
+  --accent-fill: #5e6ad2;
   --surface-raised: #ffffff;
-  --code-surface: #f5f6f7;
+  --code-surface: #f3f3f4;
 
   /* Borders. Separators rather than controls: they are not held to the 3:1
      that WCAG 1.4.11 asks of a control's own boundary, and the test says so
      rather than leaving the omission to be discovered. */
-  --border: #e4e5e7;
-  --border-strong: #c9cbd0;
+  --border: #e2e2e2;
+  --border-strong: #c7c7ca;
 
-  /* Ink, three weights and its inverse. `--ink-inverse` is the text on an
-     accent fill, and it is a token rather than `#fff` because in the dark
-     palette the accent is light and the text on it has to be dark: a button
-     that spelled white would be white-on-mint the day this file grew a second
-     palette. Every weight is measured against every background it is used on
-     — `--ink-faint` was #86867d and reached only 3.4:1 on the page, which is
-     why it is darker here than it was. */
-  --ink: #202124;
-  --ink-soft: #52555c;
-  --ink-faint: #696d76;
-  --ink-inverse: #ffffff;
+  /* Primary, secondary and supporting text adapt to each theme. Primary
+     action labels stay white on the shared indigo fill in both palettes. */
+  --ink: #23252a;
+  --ink-soft: #5b5b5d;
+  --ink-faint: #68686b;
+  --ink-inverse: #fefeff;
 
   /* The accent, its two pressed states, and its tint. The **focus ring is
      `--accent`** and has no token of its own: twelve rings across ten modules
@@ -45,10 +51,10 @@
      name with no consumer. What the ring needs is contrast, and the test holds
      `--accent` at 3:1 against both backgrounds in both palettes, which is the
      ring's requirement asserted on the token the rings actually use. */
-  --accent: #286353;
-  --accent-hover: #215344;
-  --accent-active: #194336;
-  --accent-soft: #eaf3ef;
+  --accent: #545fbf;
+  --accent-hover: #5964c7;
+  --accent-active: #4f5bbf;
+  --accent-soft: #eeeffb;
 
   /* The semantic pairs. Each is a foreground and the background it is painted
      on, and the test measures one against the other in both palettes. There is
@@ -68,7 +74,7 @@
   --true: #2f5d50;
   --true-soft: #e8f0ed;
   --false: #62666e;
-  --false-soft: #f0f1f3;
+  --false-soft: #ededee;
   --unknown: #6b4a86;
   --unknown-soft: #f1ecf7;
 
@@ -80,16 +86,13 @@
      palette; `--ink` on it is measured. */
   --overlay: rgb(0 0 0 / 25%);
   --shadow: rgb(0 0 0 / 10%);
-  --selection: #d3e9df;
+  --selection: #dfe2fa;
 
-  /* Controls and settings panels share an 8px corner. Nested items use the
-     smaller radius so menus, rows, and badges remain visually compact. */
+  /* Controls use 4px corners; navigation items and cards use 8px; the main
+     workspace frame uses 12px. */
   --radius: 8px;
-  /* The small radius, for a control inside a control — a menu item in a
-     popup, a badge inside a panel. One definition, so that `src/ui/` takes
-     every radius from this file the way it takes every colour: a literal in a
-     module is a second answer to a question the tokens already answer. */
-  --radius-sm: 6px;
+  --radius-sm: 4px;
+  --radius-panel: 12px;
 
   /* The spacing scale, which `appearance.density` chooses between.
      ------------------------------------------------------------------------
@@ -111,8 +114,8 @@
      token" a question the sheet can answer about itself, so the test needs no
      list kept by hand. */
   --density-row: 40px;
-  --density-control: 36px;
-  --density-form-control: 40px;
+  --density-control: 32px;
+  --density-form-control: 32px;
   --density-cell-y: 0.5rem;
   --density-cell-x: 0.75rem;
   --density-gap: 0.5rem;
@@ -123,8 +126,10 @@
      than written per rule because they are exactly what a density is — the
      6e test holds every `--density-` token to a strictly smaller compact
      value, and these are the two that decide how tall Admin is. */
-  --density-block: 1rem;
-  --density-section: 1.5rem;
+  --density-block: 0.75rem;
+  --density-section: 1.25rem;
+  --density-field: 1rem;
+  --density-field-gap: 0.375rem;
   /* The gutter: the space between the rail and where the page's content
      starts, and the one number that decides the content's left edge on every
      route. It is on this scale and not a literal in `shell.css` because it is
@@ -163,11 +168,11 @@
      fixed steps describe relationships within a component. */
   --text-xs: 0.75rem;
   --text-sm: 0.8125rem;
-  --text-label: 0.875rem;
-  --text-control: 0.875rem;
-  --text-body: 0.9375rem;
-  --text-heading: 1.25rem;
-  --text-page: 1.5rem;
+  --text-label: 0.8125rem;
+  --text-control: 0.8125rem;
+  --text-body: 0.875rem;
+  --text-heading: 1rem;
+  --text-page: 1.25rem;
   --leading-body: 1.5;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -178,7 +183,7 @@
   --space-7: 3rem;
 
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 /* Compact: the same scale, tighter.
@@ -196,14 +201,16 @@
 
 :root[data-density="compact"] {
   --density-row: 32px;
-  --density-control: 32px;
-  --density-form-control: 36px;
+  --density-control: 28px;
+  --density-form-control: 28px;
   --density-cell-y: 0.3rem;
   --density-cell-x: 0.5rem;
   --density-gap: 0.3rem;
   --density-font: 0.72rem;
   --density-block: 0.6rem;
-  --density-section: 1.1rem;
+  --density-section: 1rem;
+  --density-field: 0.75rem;
+  --density-field-gap: 0.25rem;
   --density-gutter: 1.25rem;
 }
 
@@ -255,20 +262,23 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #17181a;
-    --surface: #202124;
-    --surface-raised: #282a2e;
-    --code-surface: #141517;
-    --border: #303236;
-    --border-strong: #494d54;
-    --ink: #eceef0;
-    --ink-soft: #b9bcc3;
-    --ink-faint: #a0a4ad;
-    --ink-inverse: #10251f;
-    --accent: #84c7b4;
-    --accent-hover: #a0d7c6;
-    --accent-active: #73b9a4;
-    --accent-soft: #233b34;
+    --bg: #121213;
+    --surface: #17181a;
+    --sidebar: #09090a;
+    --sidebar-ink: #97979a;
+    --accent-fill: #5e6ad2;
+    --surface-raised: #222427;
+    --code-surface: #0f1012;
+    --border: #28282c;
+    --border-strong: #3b3c40;
+    --ink: #e2e3e5;
+    --ink-soft: #a0a0a4;
+    --ink-faint: #97979a;
+    --ink-inverse: #fefeff;
+    --accent: #a0a8ff;
+    --accent-hover: #5964c7;
+    --accent-active: #4f5bbf;
+    --accent-soft: #25263b;
     --danger: #f08a86;
     --danger-soft: #3a1f1e;
     --warn: #e0b464;
@@ -276,31 +286,34 @@
     --true: #7fc9b0;
     --true-soft: #1e3a33;
     --false: #afb3bb;
-    --false-soft: #292b30;
+    --false-soft: #222326;
     --unknown: #c0a3e0;
     --unknown-soft: #2e2440;
     --overlay: rgb(0 0 0 / 55%);
     --shadow: rgb(0 0 0 / 45%);
-    --selection: #314d43;
+    --selection: #35395e;
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #17181a;
-  --surface: #202124;
-  --surface-raised: #282a2e;
-  --code-surface: #141517;
-  --border: #303236;
-  --border-strong: #494d54;
-  --ink: #eceef0;
-  --ink-soft: #b9bcc3;
-  --ink-faint: #a0a4ad;
-  --ink-inverse: #10251f;
-  --accent: #84c7b4;
-  --accent-hover: #a0d7c6;
-  --accent-active: #73b9a4;
-  --accent-soft: #233b34;
+  --bg: #121213;
+  --surface: #17181a;
+  --sidebar: #09090a;
+  --sidebar-ink: #97979a;
+  --accent-fill: #5e6ad2;
+  --surface-raised: #222427;
+  --code-surface: #0f1012;
+  --border: #28282c;
+  --border-strong: #3b3c40;
+  --ink: #e2e3e5;
+  --ink-soft: #a0a0a4;
+  --ink-faint: #97979a;
+  --ink-inverse: #fefeff;
+  --accent: #a0a8ff;
+  --accent-hover: #5964c7;
+  --accent-active: #4f5bbf;
+  --accent-soft: #25263b;
   --danger: #f08a86;
   --danger-soft: #3a1f1e;
   --warn: #e0b464;
@@ -308,12 +321,12 @@
   --true: #7fc9b0;
   --true-soft: #1e3a33;
   --false: #afb3bb;
-  --false-soft: #292b30;
+  --false-soft: #222326;
   --unknown: #c0a3e0;
   --unknown-soft: #2e2440;
   --overlay: rgb(0 0 0 / 55%);
   --shadow: rgb(0 0 0 / 45%);
-  --selection: #314d43;
+  --selection: #35395e;
 }
 
 * {
@@ -333,6 +346,7 @@ body {
   font-size: var(--text-body);
   line-height: var(--leading-body);
   -webkit-font-smoothing: antialiased;
+  font-optical-sizing: auto;
 }
 
 ::selection {
@@ -371,7 +385,7 @@ fieldset {
 /* Status ------------------------------------------------------------------ */
 
 .badge {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   padding: 0.15rem 0.55rem;
   border-radius: 99px;
   border: 1px solid var(--border-strong);
@@ -379,9 +393,9 @@ fieldset {
 }
 
 .badge-ready {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--true-soft);
+  border-color: var(--true);
+  color: var(--true);
 }
 
 .badge-failed {
@@ -403,7 +417,7 @@ fieldset {
   border-radius: var(--radius);
   background: var(--warn-soft);
   color: var(--warn);
-  font-size: 0.88rem;
+  font-size: var(--text-body);
 }
 
 /* Cards ------------------------------------------------------------------- */
@@ -442,7 +456,7 @@ fieldset {
 
 .card-head h3 {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--text-body);
   font-weight: 600;
 }
 
@@ -455,7 +469,7 @@ fieldset {
 }
 
 .pill {
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   padding: 0.1rem 0.5rem;
   border-radius: 99px;
   border: 1px solid var(--border-strong);
@@ -475,9 +489,9 @@ fieldset {
 }
 
 .pill-success {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--true-soft);
+  border-color: var(--true);
+  color: var(--true);
 }
 
 .pill-skipped {
@@ -494,16 +508,14 @@ fieldset {
 /* Sections and fields ------------------------------------------------------ */
 
 .section {
-  margin: 2rem 0;
+  margin: var(--density-section) 0;
 }
 
 .section-title {
-  font-size: 0.78rem;
+  font-size: var(--text-body);
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  margin: 0 0 0.7rem;
+  color: var(--ink-soft);
+  margin: 0 0 var(--space-3);
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -537,7 +549,7 @@ fieldset {
 
 .fields dt {
   color: var(--ink-faint);
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
 }
 
 .fields dd {
@@ -567,7 +579,7 @@ fieldset {
   padding: 0.3rem 0.75rem;
   border-bottom: 1px solid var(--border);
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--ink-faint);
   background: var(--bg);
 }
@@ -577,7 +589,7 @@ fieldset {
   padding: 0.75rem;
   overflow-x: auto;
   position: relative;
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 
@@ -592,14 +604,16 @@ fieldset {
 .crumbs {
   display: flex;
   gap: 0.5rem;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   color: var(--ink-faint);
   margin-bottom: 1rem;
 }
 
 .detail-head h1 {
-  margin: 0 0 0.4rem;
-  font-size: 1.5rem;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-page);
+  font-weight: 500;
+  line-height: 1.35;
   letter-spacing: -0.015em;
 }
 
@@ -621,7 +635,7 @@ fieldset {
   flex-wrap: wrap;
   gap: 0.9rem;
   margin: 0.5rem 0 0;
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   color: var(--ink-faint);
 }
 
@@ -639,7 +653,7 @@ fieldset {
   border-bottom: 2px solid transparent;
   padding: 0.5rem 0.85rem;
   font: inherit;
-  font-size: 0.9rem;
+  font-size: var(--text-body);
   color: var(--ink-faint);
   cursor: pointer;
 }
@@ -663,7 +677,7 @@ fieldset {
 .citation cite {
   display: block;
   margin-top: 0.35rem;
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   color: var(--ink-faint);
   font-style: normal;
 }
@@ -711,10 +725,11 @@ fieldset {
   font: inherit;
   font-size: var(--text-control);
   line-height: 1;
-  padding: 0 var(--space-4);
-  border-radius: var(--radius);
-  border: 1px solid var(--accent);
-  background: var(--accent);
+  padding: 0 var(--space-3);
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent-fill);
+  background: var(--accent-fill);
   color: var(--ink-inverse);
   cursor: pointer;
 }
@@ -727,6 +742,11 @@ fieldset {
 .button:not(:disabled):active {
   background: var(--accent-active);
   border-color: var(--accent-active);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .button:disabled {
@@ -757,8 +777,8 @@ fieldset {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.85rem;
-  margin-top: 1.1rem;
+  gap: var(--space-2);
+  margin: var(--density-field) 0 0;
 }
 
 /* Document editors --------------------------------------------------------- */
@@ -771,7 +791,7 @@ fieldset {
   display: block;
   margin-bottom: 0.4rem;
   color: var(--ink-soft);
-  font-size: 0.88rem;
+  font-size: var(--text-body);
 }
 
 .checkbox {
@@ -790,7 +810,7 @@ fieldset {
   background: var(--code-surface);
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 
@@ -800,7 +820,7 @@ fieldset {
 
 .editor-status {
   margin: 0.35rem 0 0;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   color: var(--ink-faint);
 }
 
@@ -818,7 +838,7 @@ fieldset {
 
 .reference-label {
   margin-right: 0.35rem;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   color: var(--ink-faint);
 }
 
@@ -853,7 +873,7 @@ fieldset {
 
 .disposition-aside h4 {
   margin: 0 0 0.4rem;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -862,7 +882,7 @@ fieldset {
 
 .disposition-aside .note {
   margin: 0.6rem 0 0;
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
 }
 
 .target-name {
@@ -872,7 +892,7 @@ fieldset {
 
 .kind {
   font-family: var(--mono);
-  font-size: 1.05rem;
+  font-size: var(--text-heading);
 }
 
 .kind-outcome {
@@ -891,7 +911,7 @@ fieldset {
 
 .trace-stage h4 {
   margin: 1rem 0 0.4rem;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -937,7 +957,7 @@ fieldset {
 
 .verdict {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   padding: 0.1rem 0.5rem;
   border-radius: 4px;
   border: 1px solid var(--border-strong);
@@ -972,7 +992,7 @@ fieldset {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
 .diff th,
@@ -985,7 +1005,7 @@ fieldset {
 }
 
 .diff thead th {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-faint);
@@ -1018,8 +1038,8 @@ fieldset {
 }
 
 .matrix-entry {
-  margin: 1.75rem 0;
-  padding: 1.25rem;
+  margin: var(--density-section) 0;
+  padding: var(--density-section);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1034,7 +1054,7 @@ fieldset {
 
 .matrix-entry-head h2 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: var(--text-heading);
 }
 
 /* Coverage. The missing probes are the report, so they are the ones that get
@@ -1046,9 +1066,7 @@ fieldset {
 
 .coverage-group-title {
   margin: 0 0 0.4rem;
-  font-size: 0.75rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: var(--text-xs);
   color: var(--ink-faint);
   font-weight: 600;
 }
@@ -1062,7 +1080,7 @@ fieldset {
 .coverage-covered summary {
   cursor: pointer;
   color: var(--ink-soft);
-  font-size: 0.9rem;
+  font-size: var(--text-body);
 }
 
 .probes {
@@ -1083,7 +1101,6 @@ fieldset {
 
 .probes-missing .probe {
   border-left-color: var(--warn);
-  background: var(--warn-soft);
 }
 
 .probes-covered .probe {
@@ -1103,7 +1120,7 @@ fieldset {
 
 .probe-status {
   flex: none;
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   font-weight: 600;
@@ -1121,7 +1138,7 @@ fieldset {
 
 .probe-detail {
   margin: 0.3rem 0 0;
-  font-size: 0.88rem;
+  font-size: var(--text-body);
   color: var(--ink-soft);
 }
 
@@ -1184,7 +1201,7 @@ fieldset {
 
 .row-side-label {
   display: block;
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--ink-faint);
@@ -1204,20 +1221,20 @@ fieldset {
 }
 
 .row-members {
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   color: var(--ink-soft);
 }
 
 .row-raw,
 .row-refusal {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
 
 .row-detail {
   margin: 0.5rem 0 0;
-  font-size: 0.88rem;
+  font-size: var(--text-body);
   color: var(--ink-soft);
 }
 
@@ -1252,12 +1269,12 @@ fieldset {
 }
 
 .row-node .section-title {
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
 }
 
 .trace-ask {
   margin-top: 0.9rem;
-  font-size: 0.88rem;
+  font-size: var(--text-body);
   color: var(--ink-soft);
   max-width: 60ch;
 }
@@ -1421,14 +1438,14 @@ fieldset {
 .edge-carries {
   color: var(--ink-soft);
   font-family: var(--mono);
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
 }
 
 .edge-detail {
   flex-basis: 100%;
   margin: 0.15rem 0 0;
   color: var(--ink-faint);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
 .edge-slots {
@@ -1452,8 +1469,8 @@ fieldset {
 
 .authoring-panes {
   display: grid;
-  grid-template-columns: minmax(220px, 18rem) minmax(0, 1fr);
-  gap: 1.2rem;
+  grid-template-columns: minmax(200px, 15rem) minmax(0, 1fr);
+  gap: var(--density-section);
   align-items: start;
 }
 
@@ -1479,7 +1496,7 @@ fieldset {
   width: 100%;
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: 0.5rem;
   padding: 0.35rem 0.5rem;
   border: 0;
@@ -1487,9 +1504,44 @@ fieldset {
   border-radius: var(--radius);
   background: none;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   text-align: left;
   cursor: pointer;
+}
+
+.file-entry code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-entry > span {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.file-entry:focus-visible,
+.disclosure > summary:focus-visible,
+.code-editor:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.disclosure {
+  margin: var(--space-3) 0;
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+}
+
+.disclosure > summary {
+  padding-block: var(--space-1);
+  cursor: pointer;
+}
+
+.disclosure[open] > summary {
+  margin-bottom: var(--space-2);
 }
 
 .file-entry:hover {
@@ -1532,7 +1584,7 @@ fieldset {
   padding: 0;
   margin-bottom: 0.4rem;
   color: var(--ink-soft);
-  font-size: 0.88rem;
+  font-size: var(--text-body);
 }
 
 /* The assistant form's model set --------------------------------------------
@@ -1553,7 +1605,7 @@ fieldset {
   padding: 0;
   margin-bottom: 0.4rem;
   color: var(--ink-soft);
-  font-size: 0.88rem;
+  font-size: var(--text-body);
 }
 
 .model-row {

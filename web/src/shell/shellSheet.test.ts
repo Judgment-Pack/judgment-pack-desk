@@ -249,19 +249,15 @@ describe('the measure is left-aligned, at one gutter, capped by kind', () => {
     expect(compact).not.toContain('--density-gutter: 1rem;')
   })
 
-  it('leaves no page holding a measure of its own', () => {
-    // `.admin { max-width: 44rem }` was the width a label column and a value
-    // column need, measured on that page and living in that page's module —
-    // so the next form-shaped page had nowhere to read it from and would have
-    // spelt 44rem again. The page states `data-measure="form"` now.
+  it('uses the shared measure when a settings form is centered inside the page', () => {
     const admin = readFileSync(
       join(import.meta.dirname, '..', 'routes', 'AdminView.module.css'),
       'utf8'
-    )
-    // Comments out: the module still *says* what the number was and where it
-    // went, and a check that could not tell a sentence from a declaration
-    // would be asking the file to forget its own history.
-    expect(admin.replaceAll(/\/\*[\s\S]*?\*\//g, '')).not.toContain('max-width')
+    ).replaceAll(/\/\*[\s\S]*?\*\//g, '')
+    // Settings use the shell sidebar now. Their inner form may be bounded,
+    // but its width must still come from the shared scale.
+    const widths = [...admin.matchAll(/max-width:\s*([^;}]+);/g)].map((match) => match[1]!.trim())
+    expect(widths).toEqual(['var(--measure-form)'])
   })
 })
 

@@ -2014,19 +2014,9 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '        {false && ('
   mutate web "the rail drawer carries no landmark" "$L" \
     '            <nav aria-label="Project">
-              <RailBody
-                mode="expanded"
-                onToggle={onToggle}
-                showCollapse={false}
-                onNavigate={() => onDrawerOpenChange(false)}
-              />
+              {body(() => onDrawerOpenChange(false))}
             </nav>' \
-    '            <RailBody
-              mode="expanded"
-              onToggle={onToggle}
-              showCollapse={false}
-              onNavigate={() => onDrawerOpenChange(false)}
-            />'
+    '            {body(() => onDrawerOpenChange(false))}'
   mutate web "the inspector drawer answers to no id" "$R" \
     '            id="desk-inspector"
             aria-label="Inspector"' \
@@ -2427,8 +2417,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # put the destination behind an overlay — including where the viewer was
   # already on that route.
   mutate web "the rail drawer stays open over the page it navigated to" "$L" \
-    '                onNavigate={() => onDrawerOpenChange(false)}' \
-    '                onNavigate={undefined}'
+    '              {body(() => onDrawerOpenChange(false))}' \
+    '              {body(undefined)}'
 
   # 12. A closed Dialog unmounts its portal, so an unconditional `aria-controls`
   # named an id that is not in the document; and neither drawer had a trigger
@@ -3416,12 +3406,11 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # the document view, so they can also stand beside the raw bytes — which is
   # the only view of a file the runtime will not serve.
   mutate web "the what-if view loses its last way in" "$PV" \
-    '      <Link
-        className={styles.elsewhereLink}
+    '      <ButtonLink
         to={`/packs/${encodeURIComponent(packId ?? '"''"')}/evaluate`}
       >
         Try it
-      </Link>' \
+      </ButtonLink>' \
     '      {null}'
 
   # Selecting with the pane closed.
@@ -6738,9 +6727,9 @@ export function assistantTransport(id: string): Transport {
   # OS and not the toggle, or the toggle and not the OS. The needle is the
   # media block's copy, which its four-space indent makes unique.
   mutate web "a colour token dropped from one dark block" "$CSSP" \
-    '    --ink-soft: #b9bcc3;
-    --ink-faint: #a0a4ad;' \
-    '    --ink-faint: #a0a4ad;'
+    '    --ink-soft: #a0a0a4;
+    --ink-faint: #97979a;' \
+    '    --ink-faint: #97979a;'
 
   # **Contrast is measured, and the measurement is load-bearing.** A dark
   # palette that was chosen by eye is a palette nobody checked: this pushes the
@@ -6752,9 +6741,9 @@ export function assistantTransport(id: string): Transport {
   # value in both blocks`. The two cannot be separated — one `apply` edits one
   # block — and the row's own claim is the contrast one, which is in the list.
   mutate web "a dark text/background pair pushed under AA" "$CSSP" \
-    '  --ink: #eceef0;
-  --ink-soft: #b9bcc3;' \
-    '  --ink: #eceef0;
+    '  --ink: #e2e3e5;
+  --ink-soft: #a0a0a4;' \
+    '  --ink: #e2e3e5;
   --ink-soft: #3d3d38;'
 
   # **No sheet but `styles.css` spells a colour.** `shell.css` was spelling
@@ -6921,11 +6910,9 @@ export function assistantTransport(id: string): Transport {
   # nothing out and vitest runs with `css: false`, so this is held by reading
   # the sheet.
   mutate web "position dropped from .desk-main, so the pane contains nothing" "$CSSH" \
-    '    overflow: auto;
-    position: relative;
+    '    position: relative;
     scrollbar-gutter: stable;' \
-    '    overflow: auto;
-    scrollbar-gutter: stable;'
+    '    scrollbar-gutter: stable;'
 
   # **And the frame stops clipping what it does not contain.** `.desk` is
   # `overflow: hidden` on purpose — the scrolling belongs to the panes — which
@@ -6946,11 +6933,11 @@ export function assistantTransport(id: string): Transport {
   mutate web "a new module scroller that positions nothing" "$CHK" \
     '.check {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
 }' \
     '.check {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
 }
 
 .checkScroll {

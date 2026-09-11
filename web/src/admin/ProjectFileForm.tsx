@@ -201,18 +201,18 @@ export function ProjectFileForm<D>({
       <fieldset disabled={save.pending || !save.ready}>
         {children}
         <p className="actions">
+          {save.pending && <span className="quiet">writing…</span>}
+          {save.reloading && <span className="quiet">reading…</span>}
+          {save.said !== undefined && !save.pending && (
+            <span className="quiet">{save.said}</span>
+          )}
           <Button
             variant="primary"
             type="submit"
             disabled={!changed || save.pending || save.reloading}
           >
             Save
-          </Button>{' '}
-          {save.pending && <span className="quiet">writing…</span>}
-          {save.reloading && <span className="quiet">reading…</span>}
-          {save.said !== undefined && !save.pending && (
-            <span className="quiet">{save.said}</span>
-          )}
+          </Button>
         </p>
       </fieldset>
 

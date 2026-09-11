@@ -10,24 +10,24 @@
 
 .check {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
 }
 
 .checkWhat {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   color: var(--ink-faint);
 }
 
 .warning {
   margin: 0.25rem 0 0;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   color: var(--warn);
 }
 
 .rootDiagnostics {
   margin: 0.25rem 0 0;
   padding-left: 1.1rem;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   color: var(--ink-soft);
 }

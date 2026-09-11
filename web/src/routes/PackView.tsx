@@ -43,10 +43,10 @@
  */
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
+import { useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { ErrorBox, Loading } from '../components/primitives'
 import { AlertPanel } from '../ui/AlertPanel'
-import { Button } from '../ui/Button'
+import { Button, ButtonLink } from '../ui/Button'
 import { StaleWrite } from '../files/client'
 import { useFileContent, useFileListing } from '../files/queries'
 import { useFileEditing } from '../files/useFileEditing'
@@ -890,26 +890,23 @@ export function PackView() {
         selecting a member is — how you are looking at a document is not a
         navigation and must not fill the Back stack.
       */}
-      <button
+      <Button
         type="button"
-        className={styles.elsewhereLink}
         onClick={() => setParams(withEditing(params, true), { replace: true })}
       >
         Edit
-      </button>
-      <Link
-        className={styles.elsewhereLink}
+      </Button>
+      <ButtonLink
         to={`/packs/${encodeURIComponent(packId ?? '')}/evaluate`}
       >
         Try it
-      </Link>
+      </ButtonLink>
       {hasMatrix && (
-        <Link
-          className={styles.elsewhereLink}
+        <ButtonLink
           to={`/packs/${encodeURIComponent(packId ?? '')}/matrix`}
         >
           Test matrix
-        </Link>
+        </ButtonLink>
       )}
     </p>
   )

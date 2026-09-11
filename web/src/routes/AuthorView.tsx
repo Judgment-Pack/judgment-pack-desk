@@ -90,15 +90,18 @@ export function AuthorView() {
         )}
       </header>
 
-      <p className="note">
-        <strong>The desk owns writes; the runtime does not.</strong> The runtime is a
-        stateless judge with no write tools by design (ADR-0006), so saving happens
-        here, over loopback, inside the project directory only. Nothing on this page
-        validates anything — not even that a file is JSON: what these bytes mean is
-        the runtime's answer, and every other view asks it. Schema-guided editing and
-        validate-on-change are phase 2 of{' '}
-        <a href="https://github.com/Judgment-Pack/judgment-pack-desk/issues/14">#14</a>.
-      </p>
+      <details className="disclosure">
+        <summary>About file editing</summary>
+        <p className="note">
+          <strong>The desk owns writes; the runtime does not.</strong> The runtime is a
+          stateless judge with no write tools by design (ADR-0006), so saving happens
+          here, over loopback, inside the project directory only. Nothing on this page
+          validates anything — not even that a file is JSON: what these bytes mean is
+          the runtime's answer, and every other view asks it. Schema-guided editing and
+          validate-on-change are phase 2 of{' '}
+          <a href="https://github.com/Judgment-Pack/judgment-pack-desk/issues/14">#14</a>.
+        </p>
+      </details>
 
       {/* An error replaces the pane only when there is nothing behind it.
           TanStack keeps the previous listing after a failed refetch, and the
@@ -145,6 +148,7 @@ export function AuthorView() {
                     <button
                       type="button"
                       className={`file-entry${file.path === selected ? ' file-entry-on' : ''}`}
+                      title={file.path}
                       aria-current={file.path === selected ? 'true' : undefined}
                       onClick={() => choose(file.path)}
                     >

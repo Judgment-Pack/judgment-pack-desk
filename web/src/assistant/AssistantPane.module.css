@@ -15,19 +15,19 @@
 
 .status {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   color: var(--ink-faint);
 }
 
 .notice {
   margin: 0;
-  font-size: 0.74rem;
+  font-size: var(--text-xs);
   color: var(--warn);
 }
 
 .label {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--ink-faint);
@@ -50,7 +50,7 @@
   background: var(--bg);
   list-style: none;
   font-family: var(--mono);
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   line-height: 1.45;
   max-height: 18rem;
   overflow: auto;
@@ -97,7 +97,7 @@
 
 .heading {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--ink-soft);
@@ -105,14 +105,14 @@
 
 .honesty {
   margin: 0;
-  font-size: 0.76rem;
+  font-size: var(--text-xs);
   color: var(--ink-soft);
 }
 
 .unknowns {
   margin: 0;
   padding-left: 1.1rem;
-  font-size: 0.76rem;
+  font-size: var(--text-xs);
   color: var(--ink-soft);
 }
 
@@ -132,7 +132,7 @@
 
 .entryHead {
   margin: 0;
-  font-size: 0.74rem;
+  font-size: var(--text-xs);
   color: var(--ink-soft);
   overflow-wrap: anywhere;
 }
@@ -140,27 +140,27 @@
 .added {
   color: var(--accent);
   text-transform: uppercase;
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.06em;
 }
 
 .removed {
   color: var(--danger);
   text-transform: uppercase;
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.06em;
 }
 
 .changed {
   color: var(--warn);
   text-transform: uppercase;
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.06em;
 }
 
 .unchanged {
   color: var(--ink-faint);
   text-transform: uppercase;
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.06em;
 }

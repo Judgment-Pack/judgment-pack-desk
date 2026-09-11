@@ -84,7 +84,10 @@ export function HelpAbout() {
             </>
           )}
         </p>
-        <Json label="This connection, and what this runtime advertises" value={connectionSummary(mcp)} />
+        <details className="disclosure">
+          <summary>Connection capabilities</summary>
+          <Json label="This connection, and what this runtime advertises" value={connectionSummary(mcp)} />
+        </details>
         <p className="quiet">
           Where a pack's evaluation reports a <code>conformanceClaimReference</code>, the desk
           renders it as what it is — a locator for the file that states the runtime's claim — and

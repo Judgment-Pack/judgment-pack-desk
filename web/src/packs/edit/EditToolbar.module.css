@@ -8,6 +8,6 @@
 
 /* Text an operand is holding that is not in the buffer yet. */
 .unwritten {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--ink-soft);
 }

@@ -7,10 +7,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
+  gap: var(--space-2);
   height: var(--density-control);
-  padding: 0 0.85rem;
-  border-radius: var(--radius);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
   /* A hairline, like every other control at rest. `--border-strong` here made
      a secondary button as loud as the primary beside it, which is how a page
      ends up with two actions competing for the one that writes. */
@@ -19,8 +19,10 @@
   color: var(--ink);
   font: inherit;
   font-size: var(--text-control);
+  font-weight: 500;
   line-height: 1;
   white-space: nowrap;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -36,13 +38,10 @@
   cursor: not-allowed;
 }
 
-/* The text on the accent fill is `--ink-inverse` and not `--surface`. They
-   are the same white in the light palette, which is why the substitution went
-   unnoticed for as long as there was only one: in the dark palette `--surface`
-   is a dark grey, and a primary button would have painted dark grey on mint. */
+/* Primary actions share an indigo fill and white label across both themes. */
 .primary {
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
   color: var(--ink-inverse);
 }
 

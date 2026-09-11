@@ -11,17 +11,17 @@
 
 .heading {
   margin: 0;
-  font-size: 0.86rem;
+  font-size: var(--text-body);
   font-weight: 600;
 }
 
 .body {
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   color: var(--ink-soft);
 }
 
 .details {
-  font-size: 0.76rem;
+  font-size: var(--text-xs);
 }
 
 .summary {
