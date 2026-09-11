@@ -1,3 +1,5 @@
+@layer base, shell;
+
 /* One hand-written sheet, and both palettes. No framework: the scaffold's
    styling surface should stay small enough to read in one sitting.
 
@@ -14,16 +16,16 @@
      surface — a menu, a drawer, the skip link — and in the light palette it is
      the same white, because there a shadow and a border already say "above".
      In the dark palette it is a lighter grey, because there they do not. */
-  --bg: #f7f7f5;
+  --bg: #fafafa;
   --surface: #ffffff;
   --surface-raised: #ffffff;
-  --code-surface: #fbfbf9;
+  --code-surface: #f5f6f7;
 
   /* Borders. Separators rather than controls: they are not held to the 3:1
      that WCAG 1.4.11 asks of a control's own boundary, and the test says so
      rather than leaving the omission to be discovered. */
-  --border: #e2e2dd;
-  --border-strong: #cfcfc7;
+  --border: #e4e5e7;
+  --border-strong: #c9cbd0;
 
   /* Ink, three weights and its inverse. `--ink-inverse` is the text on an
      accent fill, and it is a token rather than `#fff` because in the dark
@@ -32,9 +34,9 @@
      palette. Every weight is measured against every background it is used on
      — `--ink-faint` was #86867d and reached only 3.4:1 on the page, which is
      why it is darker here than it was. */
-  --ink: #1b1b19;
-  --ink-soft: #5c5c55;
-  --ink-faint: #6f6f66;
+  --ink: #202124;
+  --ink-soft: #52555c;
+  --ink-faint: #696d76;
   --ink-inverse: #ffffff;
 
   /* The accent, its two pressed states, and its tint. The **focus ring is
@@ -43,10 +45,10 @@
      name with no consumer. What the ring needs is contrast, and the test holds
      `--accent` at 3:1 against both backgrounds in both palettes, which is the
      ring's requirement asserted on the token the rings actually use. */
-  --accent: #2f5d50;
-  --accent-hover: #274e43;
-  --accent-active: #1f3f37;
-  --accent-soft: #e8f0ed;
+  --accent: #286353;
+  --accent-hover: #215344;
+  --accent-active: #194336;
+  --accent-soft: #eaf3ef;
 
   /* The semantic pairs. Each is a foreground and the background it is painted
      on, and the test measures one against the other in both palettes. There is
@@ -65,8 +67,8 @@
      half-dark desk the last piece of work refused to ship. */
   --true: #2f5d50;
   --true-soft: #e8f0ed;
-  --false: #6b6b61;
-  --false-soft: #eeeeea;
+  --false: #62666e;
+  --false-soft: #f0f1f3;
   --unknown: #6b4a86;
   --unknown-soft: #f1ecf7;
 
@@ -78,18 +80,16 @@
      palette; `--ink` on it is measured. */
   --overlay: rgb(0 0 0 / 25%);
   --shadow: rgb(0 0 0 / 10%);
-  --selection: #cfe3dc;
+  --selection: #d3e9df;
 
-  /* One radius for the whole desk. 8px reads as a card even on a control, and
-     a flat page has no cards to match; 6px is the corner a control has and a
-     panel can share. `--radius-sm` below is still the small one, for a control
-     inside a control. */
-  --radius: 6px;
+  /* Controls and settings panels share an 8px corner. Nested items use the
+     smaller radius so menus, rows, and badges remain visually compact. */
+  --radius: 8px;
   /* The small radius, for a control inside a control — a menu item in a
      popup, a badge inside a panel. One definition, so that `src/ui/` takes
      every radius from this file the way it takes every colour: a literal in a
      module is a second answer to a question the tokens already answer. */
-  --radius-sm: 4px;
+  --radius-sm: 6px;
 
   /* The spacing scale, which `appearance.density` chooses between.
      ------------------------------------------------------------------------
@@ -111,7 +111,8 @@
      token" a question the sheet can answer about itself, so the test needs no
      list kept by hand. */
   --density-row: 40px;
-  --density-control: 32px;
+  --density-control: 36px;
+  --density-form-control: 40px;
   --density-cell-y: 0.5rem;
   --density-cell-x: 0.75rem;
   --density-gap: 0.5rem;
@@ -122,8 +123,8 @@
      than written per rule because they are exactly what a density is — the
      6e test holds every `--density-` token to a strictly smaller compact
      value, and these are the two that decide how tall Admin is. */
-  --density-block: 0.9rem;
-  --density-section: 1.75rem;
+  --density-block: 1rem;
+  --density-section: 1.5rem;
   /* The gutter: the space between the rail and where the page's content
      starts, and the one number that decides the content's left edge on every
      route. It is on this scale and not a literal in `shell.css` because it is
@@ -133,7 +134,7 @@
 
      A **viewport** rule overrides it below 600px, further down this file. That
      is not a density: see the block itself. */
-  --density-gutter: 2rem;
+  --density-gutter: 1.5rem;
 
   /* The two widths a page is capped at, and which of them a route gets is the
      route's own statement — `data-measure="form" | "wide" | "full"` on its
@@ -158,6 +159,24 @@
   --measure-form: 44rem;
   --measure-wide: 72rem;
 
+  /* Shared typography and spacing. Density tokens describe context; these
+     fixed steps describe relationships within a component. */
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-label: 0.875rem;
+  --text-control: 0.875rem;
+  --text-body: 0.9375rem;
+  --text-heading: 1.25rem;
+  --text-page: 1.5rem;
+  --leading-body: 1.5;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
@@ -177,7 +196,8 @@
 
 :root[data-density="compact"] {
   --density-row: 32px;
-  --density-control: 26px;
+  --density-control: 32px;
+  --density-form-control: 36px;
   --density-cell-y: 0.3rem;
   --density-cell-x: 0.5rem;
   --density-gap: 0.3rem;
@@ -235,65 +255,65 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #1a1a18;
-    --surface: #232320;
-    --surface-raised: #2c2c28;
-    --code-surface: #131311;
-    --border: #3a3a34;
-    --border-strong: #55554c;
-    --ink: #f0f0ea;
-    --ink-soft: #c2c2b8;
-    --ink-faint: #a0a096;
-    --ink-inverse: #12211d;
-    --accent: #7fc9b0;
-    --accent-hover: #96d6c0;
-    --accent-active: #6ab79d;
-    --accent-soft: #1e3a33;
+    --bg: #17181a;
+    --surface: #202124;
+    --surface-raised: #282a2e;
+    --code-surface: #141517;
+    --border: #303236;
+    --border-strong: #494d54;
+    --ink: #eceef0;
+    --ink-soft: #b9bcc3;
+    --ink-faint: #a0a4ad;
+    --ink-inverse: #10251f;
+    --accent: #84c7b4;
+    --accent-hover: #a0d7c6;
+    --accent-active: #73b9a4;
+    --accent-soft: #233b34;
     --danger: #f08a86;
     --danger-soft: #3a1f1e;
     --warn: #e0b464;
     --warn-soft: #382a12;
     --true: #7fc9b0;
     --true-soft: #1e3a33;
-    --false: #b0b0a4;
-    --false-soft: #2b2b27;
+    --false: #afb3bb;
+    --false-soft: #292b30;
     --unknown: #c0a3e0;
     --unknown-soft: #2e2440;
     --overlay: rgb(0 0 0 / 55%);
     --shadow: rgb(0 0 0 / 45%);
-    --selection: #31584c;
+    --selection: #314d43;
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #1a1a18;
-  --surface: #232320;
-  --surface-raised: #2c2c28;
-  --code-surface: #131311;
-  --border: #3a3a34;
-  --border-strong: #55554c;
-  --ink: #f0f0ea;
-  --ink-soft: #c2c2b8;
-  --ink-faint: #a0a096;
-  --ink-inverse: #12211d;
-  --accent: #7fc9b0;
-  --accent-hover: #96d6c0;
-  --accent-active: #6ab79d;
-  --accent-soft: #1e3a33;
+  --bg: #17181a;
+  --surface: #202124;
+  --surface-raised: #282a2e;
+  --code-surface: #141517;
+  --border: #303236;
+  --border-strong: #494d54;
+  --ink: #eceef0;
+  --ink-soft: #b9bcc3;
+  --ink-faint: #a0a4ad;
+  --ink-inverse: #10251f;
+  --accent: #84c7b4;
+  --accent-hover: #a0d7c6;
+  --accent-active: #73b9a4;
+  --accent-soft: #233b34;
   --danger: #f08a86;
   --danger-soft: #3a1f1e;
   --warn: #e0b464;
   --warn-soft: #382a12;
   --true: #7fc9b0;
   --true-soft: #1e3a33;
-  --false: #b0b0a4;
-  --false-soft: #2b2b27;
+  --false: #afb3bb;
+  --false-soft: #292b30;
   --unknown: #c0a3e0;
   --unknown-soft: #2e2440;
   --overlay: rgb(0 0 0 / 55%);
   --shadow: rgb(0 0 0 / 45%);
-  --selection: #31584c;
+  --selection: #314d43;
 }
 
 * {
@@ -310,8 +330,8 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--sans);
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -325,8 +345,11 @@ code {
   font-size: 0.88em;
 }
 
-a {
-  color: var(--accent);
+/* Element defaults sit below the shell, whose links own their emphasis. */
+@layer base {
+  a {
+    color: var(--accent);
+  }
 }
 
 /* **No form frames its own fields.** A `<fieldset>` is the element that groups
@@ -680,9 +703,15 @@ fieldset {
 
 .button {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--density-control);
   font: inherit;
-  font-size: 0.9rem;
-  padding: 0.45rem 1rem;
+  font-size: var(--text-control);
+  line-height: 1;
+  padding: 0 var(--space-4);
   border-radius: var(--radius);
   border: 1px solid var(--accent);
   background: var(--accent);
@@ -701,8 +730,8 @@ fieldset {
 }
 
 .button:disabled {
-  background: var(--border);
-  border-color: var(--border-strong);
+  background: var(--false-soft);
+  border-color: var(--border);
   color: var(--ink-faint);
   cursor: not-allowed;
 }

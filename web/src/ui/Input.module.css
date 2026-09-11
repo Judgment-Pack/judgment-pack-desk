@@ -8,13 +8,13 @@
      hard-coded 32px, so `compact` shrank the Select trigger and the buttons
      beside it and left the text inputs where they were. */
   height: var(--density-control);
-  padding: 0 0.55rem;
+  padding: 0 0.75rem;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: var(--text-control);
 }
 
 .input:hover {
@@ -28,4 +28,10 @@
 
 .input[aria-invalid='true'] {
   border-color: var(--danger);
+}
+
+.input:disabled {
+  background: var(--false-soft);
+  color: var(--ink-faint);
+  cursor: not-allowed;
 }

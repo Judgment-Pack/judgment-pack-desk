@@ -10,7 +10,7 @@
   gap: 0.4rem;
   height: var(--density-control);
   padding: 0 0.85rem;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   /* A hairline, like every other control at rest. `--border-strong` here made
      a secondary button as loud as the primary beside it, which is how a page
      ends up with two actions competing for the one that writes. */
@@ -18,7 +18,7 @@
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 0.875rem;
+  font-size: var(--text-control);
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
@@ -30,8 +30,8 @@
 }
 
 .button:disabled {
-  background: var(--border);
-  border-color: var(--border-strong);
+  background: var(--false-soft);
+  border-color: var(--border);
   color: var(--ink-faint);
   cursor: not-allowed;
 }
@@ -47,10 +47,17 @@
 }
 
 .primary:not(:disabled):hover {
-  border-color: var(--ink);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.primary:not(:disabled):active {
+  background: var(--accent-active);
+  border-color: var(--accent-active);
 }
 
 .secondary:not(:disabled):hover {
+  background: var(--false-soft);
   border-color: var(--border-strong);
 }
 
@@ -62,5 +69,18 @@
 
 .quiet:not(:disabled):hover {
   color: var(--ink);
-  background: var(--surface);
+  background: var(--false-soft);
+}
+
+.danger {
+  color: var(--danger);
+}
+
+.danger:not(:disabled):hover {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+.danger:not(:disabled):active {
+  background: var(--danger-soft);
 }

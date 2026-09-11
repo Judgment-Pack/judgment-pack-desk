@@ -164,7 +164,7 @@ function renderForm(
 }
 
 /** The primary action, whatever it is called in the state under test. */
-const save = () => fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+const save = () => fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
 const saveApiKey = () => fireEvent.click(screen.getByRole('button', { name: 'Save API key' }))
 const typeKey = (value: string) =>
   fireEvent.change(screen.getByLabelText('API key'), { target: { value } })
@@ -207,7 +207,7 @@ describe('what a save sends', () => {
   it('writes nothing at all where this page never learned the digest', async () => {
     const { sent } = stubWrites([{}])
     renderForm(unread())
-    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(
+    expect((screen.getByRole('button', { name: 'Save settings' }) as HTMLButtonElement).disabled).toBe(
       true
     )
     expect(screen.getByText(/a write states the bytes it replaces/)).toBeTruthy()
@@ -298,7 +298,7 @@ describe('the fields', () => {
     expect(
       await screen.findByText(/a key sent in clear text over a network is a key given away/)
     ).toBeTruthy()
-    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(
+    expect((screen.getByRole('button', { name: 'Save settings' }) as HTMLButtonElement).disabled).toBe(
       true
     )
     save()
@@ -318,7 +318,7 @@ describe('the fields', () => {
     fireEvent.change(screen.getByLabelText('Endpoint URL'), {
       target: { value: 'https://api.example.invalid/v1' }
     })
-    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: 'Save settings' }) as HTMLButtonElement).disabled).toBe(false)
     save()
     await waitFor(() => expect(sent.some((each) => each.method === 'PUT')).toBe(true))
     expect((theWrite(sent).assistant.endpoint as { model: unknown }).model).toBeNull()
@@ -583,7 +583,7 @@ describe('Test connection: the probe and the listing, in one press', () => {
     expect(order.indexOf('Test connection')).toBeLessThan(order.indexOf('Models'))
     expect(order.indexOf('Models')).toBeLessThan(order.indexOf('Tools the assistant may use'))
     expect(order.indexOf('Tools the assistant may use')).toBeLessThan(order.indexOf('Thinking'))
-    expect(order.indexOf('Thinking')).toBeLessThan(order.indexOf('Save'))
+    expect(order.indexOf('Thinking')).toBeLessThan(order.indexOf('Save settings'))
   })
 
   it('asks nothing at all until it is pressed', async () => {
@@ -1035,11 +1035,11 @@ describe('Save API key: the endpoint and its key, in the one order the chassis a
     stubWrites([{}])
     renderForm(noFile(), false)
     expect(await screen.findByRole('button', { name: 'Save API key' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Save settings' })).toBeTruthy()
     cleanup()
     stubWrites([{}])
     renderForm(configured(), true)
-    expect(await screen.findByRole('button', { name: 'Save' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Save settings' })).toBeTruthy()
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Save API key' })).toBeNull())
   })
 
@@ -1120,7 +1120,7 @@ describe('what this form no longer offers', () => {
   it('has no Engine field at all', async () => {
     stubWrites([{}])
     renderForm()
-    await screen.findByRole('button', { name: 'Save' })
+    await screen.findByRole('button', { name: 'Save settings' })
     // The slot has one member, so there is nothing to choose. The member is
     // still decodable, with a migration; this form simply never writes one.
     expect(screen.queryByRole('combobox', { name: 'Engine' })).toBeNull()

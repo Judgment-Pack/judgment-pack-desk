@@ -368,7 +368,7 @@ export const DESK_DEFAULTS: DeskConfig = {
   project: { file: null },
   appearance: { theme: 'system', density: 'comfortable' },
   panes: {
-    left: { mode: 'expanded', width: 248 },
+    left: { mode: 'expanded', width: 224 },
     inspector: { open: false, width: 360 },
     console: { open: false, height: 240 }
   },

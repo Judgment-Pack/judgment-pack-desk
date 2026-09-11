@@ -1,23 +1,35 @@
+.form {
+  min-width: 0;
+}
+
 .setup {
-  padding: 0.8rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--ink);
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.625rem;
+  margin: 0 0 var(--density-section);
+  color: var(--ink-soft);
+  font-size: 0.875rem;
 }
 
 .setup strong {
-  margin-right: 0.5rem;
+  color: var(--ink);
+  font-weight: 500;
 }
 
 .advanced {
-  margin: 1rem 0;
+  margin: var(--density-section) 0 0;
 }
 
 .advanced summary {
-  padding: 0.6rem 0;
+  padding: 0.5rem 0;
   color: var(--ink-soft);
+  font-size: var(--text-sm);
   cursor: pointer;
+}
+
+.advanced[open] summary {
+  margin-bottom: var(--density-block);
 }
 
 .advanced summary:focus-visible {
@@ -25,35 +37,112 @@
   outline-offset: 2px;
 }
 
-.connection,
-.keyActions {
+.connection {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem 0.85rem;
   align-items: center;
-  margin: 1rem 0;
+  gap: var(--density-block);
+
 }
 
-.saveBar {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
+.connection > span {
+  flex: 1 1 14rem;
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.keyField {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.keyField > div:first-child {
+  margin-bottom: 0;
+}
+
+.keyField > p {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.keyActions,
+.saveActions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
   align-items: center;
-  padding: 0.75rem 0;
-  background: var(--surface);
+}
+
+.keyActions {
+  margin: 0;
+}
+
+.saveActions {
+  margin: 0 0 2rem;
+}
+
+.saveActions > span {
+  font-size: var(--text-sm);
+}
+
+.dangerSection {
+  margin-top: 2rem;
+  padding-top: var(--density-section);
   border-top: 1px solid var(--border);
 }
 
-.danger {
-  color: var(--danger);
+.dangerSection h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.dangerSection > p {
+  margin: 0.375rem 0 var(--density-block);
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
 }
 
 .removal {
-  padding: 0.75rem;
+  padding: var(--density-block);
   border: 1px solid var(--danger);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--danger-soft);
+}
+
+.removal p {
+  margin: 0 0 var(--density-block);
+  font-size: 0.875rem;
+}
+
+.tools {
+  margin: 0 0 var(--density-section);
+}
+
+.tools legend {
+  margin-bottom: var(--density-block);
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+
+.tools label {
+  align-items: center;
+  min-height: 2rem;
+  font-size: 0.875rem;
+}
+
+.tools input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+}
+
+.tools p {
+  margin: 0.5rem 0 0;
+  font-size: var(--text-sm);
+}
+
+.keyActions > span {
+  font-size: var(--text-sm);
 }

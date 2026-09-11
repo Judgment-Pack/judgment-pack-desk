@@ -558,7 +558,7 @@ describe('the key row and the endpoint it is bound to', () => {
     renderSection(configured())
     expect(await screen.findByText('No key stored')).toBeTruthy()
     expect(screen.getByLabelText('API key')).toBeTruthy()
-    expect(screen.getByText(/No key is stored for/)).toBeTruthy()
+    expect(screen.queryByText(/No key is stored for/)).toBeNull()
   })
 
   it('says a stored key is stored, with its fingerprint and its provider', async () => {
@@ -620,7 +620,7 @@ describe('the key row and the endpoint it is bound to', () => {
     })
     renderSection(configured())
     expect(await screen.findByText('Stored — sk-a…wxyz, for OpenAI-compatible')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     expect(await screen.findByText(/nothing will be sent/)).toBeTruthy()
   })
 
@@ -637,7 +637,7 @@ describe('the key row and the endpoint it is bound to', () => {
     })
     const { container } = renderSection(configured())
     await screen.findByText('Stored — sk-a…wxyz, for OpenAI-compatible')
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     await screen.findByText(/nothing will be sent/)
     fireEvent.change(keyField(container)!, { target: { value: 'sk-another-real-looking-key' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save API key' }))

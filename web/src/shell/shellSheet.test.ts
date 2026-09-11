@@ -227,7 +227,7 @@ describe('the measure is left-aligned, at one gutter, capped by kind', () => {
     // whose columns move when somebody tightens the row height.
     expect(TOKENS).toMatch(/\n {2}--measure-form: 44rem;/)
     expect(TOKENS).toMatch(/\n {2}--measure-wide: 72rem;/)
-    expect(TOKENS).toMatch(/\n {2}--density-gutter: 2rem;/)
+    expect(TOKENS).toMatch(/\n {2}--density-gutter: 1\.5rem;/)
     // The compact value is held strictly smaller by `ui/palette.test.ts`,
     // which sweeps the whole `--density-` prefix; what is held here is that
     // the gutter is on that scale at all, which is what puts it in the sweep.

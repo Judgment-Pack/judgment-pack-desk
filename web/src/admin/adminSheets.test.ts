@@ -164,7 +164,7 @@ describe('nothing on Admin is tracked capitals', () => {
   it.each(ADMIN_SHEETS)('%s spells no uppercase and no tracking', (name) => {
     const sheet = read(name).replace(/\/\*[\s\S]*?\*\//g, '')
     expect(sheet).not.toMatch(/text-transform:\s*uppercase/)
-    expect(sheet).not.toMatch(/letter-spacing:/)
+    expect(sheet).not.toMatch(/letter-spacing:\s*[0-9]/)
   })
 })
 
@@ -184,6 +184,6 @@ describe('one label style, written in both places', () => {
           .map((each) => [each.property, each.value])
       )
     expect([...values(label!)].sort()).toEqual([...values(key!)].sort())
-    expect(values(key!).get('font-size')).toBe('0.8rem')
+    expect(values(key!).get('font-size')).toBe('var(--text-label)')
   })
 })

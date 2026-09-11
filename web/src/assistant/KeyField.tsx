@@ -75,7 +75,7 @@ export function KeyField({
   const destination = read.configuredOrigin === '' ? undefined : read.configuredOrigin
 
   return (
-    <>
+    <div className={styles.keyField}>
       {entry && (
         <Field label="API key" hint={WHERE_IT_LIVES}>
           {(wiring) => (
@@ -97,8 +97,8 @@ export function KeyField({
         </Field>
       )}
 
-      <p className="quiet">{keySays(read, answered, failed)}</p>
-      {binding !== 'bound' && binding !== 'unread' && (
+      {(read.present || !answered || failed !== null) && <p className="quiet">{keySays(read, answered, failed)}</p>}
+      {(binding === 'rebind' || binding === 'no-endpoint') && (
         <p className="quiet">{bindingSays(binding, read, destination)}</p>
       )}
 
@@ -113,17 +113,18 @@ export function KeyField({
         )}
         {!entry && <Button variant="quiet" onClick={onReplace}>Replace key</Button>}
         {read.present && !confirmingRemoval && (
-          <Button variant="quiet" className={styles.danger} onClick={() => setConfirmingRemoval(true)}>
+          <Button variant="danger" onClick={() => setConfirmingRemoval(true)}>
             Remove key
           </Button>
         )}
+        {!read.present && answered && failed === null && <span className="quiet">{keySays(read, answered, failed)}</span>}
       </div>
       {saved !== undefined && <p className="quiet" role="status">{saved}</p>}
       {entry && typed && !saving && <p className="quiet">API key changes are not saved.</p>}
       {confirmingRemoval && read.present && (
         <div className={styles.removal}>
           <p>Removing the key prevents assistant requests until you save another key.</p>
-          <Button className={styles.danger} onClick={() => {
+          <Button variant="danger" onClick={() => {
             onCancel()
             setConfirmingRemoval(false)
             onRemove()
@@ -142,7 +143,7 @@ export function KeyField({
           not removed: <code className="partial-reason">{removeProblem}</code>
         </p>
       )}
-    </>
+    </div>
   )
 }
 

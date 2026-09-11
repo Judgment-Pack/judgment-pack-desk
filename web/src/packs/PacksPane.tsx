@@ -102,6 +102,7 @@ export function PacksPane() {
 
   return (
     <nav className={styles.pane} aria-label="Packs">
+      <h2 className={styles.title}>Packs</h2>
       <div className={styles.controls}>
         <Field label="Filter">
           {(wiring) => (
@@ -109,7 +110,7 @@ export function PacksPane() {
               {...wiring}
               type="search"
               value={filter}
-              placeholder="pack id"
+              placeholder="Search by pack ID"
               onChange={(event) => setFilter(event.target.value)}
             />
           )}

@@ -11,9 +11,8 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--density-gap) var(--density-section);
-  margin: 0 0 var(--density-section);
-  padding-bottom: var(--density-section);
-  border-bottom: 1px solid var(--border);
+  margin: var(--density-gap) 0 0;
+  padding: var(--density-block);
 }
 
 /* **Space, and not a middle dot.** A dot was written first and the live drive

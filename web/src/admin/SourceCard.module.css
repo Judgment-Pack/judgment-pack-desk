@@ -60,7 +60,7 @@
    were a second kind of label on a page that already had one. */
 .title {
   margin: 0 0 var(--density-gap);
-  font-size: 0.9rem;
+  font-size: var(--text-control);
   font-weight: 600;
   color: var(--ink);
 }
@@ -85,14 +85,14 @@
    the same thing and carries the same three values. */
 .key {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--text-label);
   font-weight: 500;
   color: var(--ink-soft);
 }
 
 .value {
   margin: 0;
-  font-size: 0.875rem;
+  font-size: var(--text-label);
   color: var(--ink);
   overflow-wrap: anywhere;
 }

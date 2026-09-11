@@ -64,7 +64,6 @@ import { OrganizationForm, StorageForm, StorageKind } from '../admin/projectFile
 import { useHashTarget } from '../shell/useHashTarget'
 import { useInspectorPortal } from '../shell/InspectorSlot'
 import { INSPECTOR_DRAWER_BELOW, useMediaQuery } from '../shell/useMediaQuery'
-import { IconChevronRight } from '../shell/icons'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
   type ConfigProblem,
@@ -161,14 +160,15 @@ export function AdminView() {
     <article className={`detail ${styles.admin}`} data-measure="wide" ref={top}>
       {pane}
       <header className="detail-head">
-        <h1>Admin</h1>
+        <div>
+          <h1>Admin</h1>
+          <p className={styles.description}>Manage your project and this workspace.</p>
+        </div>
+        <details className={styles.diagnostics}>
+          <summary>Runtime details</summary>
+          <AdminStatusLine runtime={runtimeSays(mcp)} binary={runtimeBinary(effective)} />
+        </details>
       </header>
-
-      {/* Not a card, because none of it is a setting: what this desk is
-          running, from the connection's and the chassis' own answers. Neither
-          configuration file is here — the section that is about a file states
-          it, and the pane states it again beside the bytes. */}
-      <AdminStatusLine runtime={runtimeSays(mcp)} binary={runtimeBinary(effective)} />
 
       <div className={styles.split}>
         <nav className={styles.rail} aria-label="Settings">
@@ -336,15 +336,12 @@ function SectionRow({
       >
         <span className={styles.rowTitle}>
           {section.title}
-          <span className={styles.rowArrow}>
-            <IconChevronRight />
-          </span>
         </span>
         {!bare && summarise !== undefined && (
           <span className={styles.rowSays}>{summarise(effective)}</span>
         )}
         {!bare && differs && (
-          <span className={styles.rowStatus}>
+          <span className={styles.rowStatus} data-state={own.state}>
             <StatusLine status={own} />
           </span>
         )}

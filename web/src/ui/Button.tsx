@@ -1,5 +1,5 @@
 /**
- * One button, three weights.
+ * One button, three weights and a destructive action.
  *
  * `type` defaults to `button`, deliberately. An HTML button inside a form
  * submits it unless told otherwise, so a Cancel that forgot its type is a
@@ -8,7 +8,7 @@
 import type { ButtonHTMLAttributes } from 'react'
 import styles from './Button.module.css'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'quiet'
+export type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger'
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant
