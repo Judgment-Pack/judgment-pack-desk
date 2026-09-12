@@ -104,14 +104,15 @@ palette: the system preference and explicit Dark must render identically.
 | Action label `--ink-inverse` | `#fefeff` | `#fefeff` |
 | Hover / pressed fills | `#0f2b2e` / `#102f32` | `#39786e` / `#30635c` |
 | Links / focus / selection `--accent` | `#0c5f68` | `#a7c8bc` |
-| Selection tint `--accent-soft` | `#e7f2f2` | `#213c35` |
+| Neutral selection background `--accent-soft` | `#ededee` | `#222326` |
 | Identity badge / letter | `#183b3f` / `#f4c175` | Same |
 
 Separate action fills from link/focus colors: a readable dark-theme link is too
 light to serve as a background under white text. Green and gold are the only
 chromatic families. Main backgrounds, panels, ordinary cards, field surfaces,
-borders, and body text remain neutral. Selected rows, tabs, toggles and native
-checkboxes use green; organization initials and the user avatar use gold on
+borders, and body text remain neutral. Selected rows, tabs and toggles use green
+text/icons over neutral backgrounds; native checkboxes use green. Organization
+initials and the user avatar use gold on
 deep green. Uploaded organization images retain their supplied artwork.
 
 Success uses green. Errors, warnings and unknown verdicts use gold, with explicit
@@ -131,8 +132,9 @@ brand badge uses its exact `#183b3f` and `#f4c175`; light actions, links and
 success colors also come from the site. Adjust dark-theme shades and contrast
 where needed. Use only the shared tokens, never page-specific color literals.
 The [color audit](reviews/pack-workspace-color-audit.md) records every role and
-source adjustment. Small selected controls may have a tint; large workspace
-surfaces must not acquire a green or gold wash.
+source adjustment. Selected-control backgrounds stay neutral, matching the
+earlier navigation surfaces. Green is reserved for selection text, icons, borders and underlines;
+large workspace surfaces must not acquire a green or gold wash.
 
 ## Components and action placement
 

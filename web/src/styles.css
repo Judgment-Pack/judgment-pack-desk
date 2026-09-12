@@ -64,7 +64,8 @@
   --accent: #0c5f68;
   --accent-hover: #0f2b2e;
   --accent-active: #102f32;
-  --accent-soft: #e7f2f2;
+  /* Selection backgrounds stay neutral; green belongs to text and icons. */
+  --accent-soft: #ededee;
 
   /* The semantic pairs. Each is a foreground and the background it is painted
      on, and the test measures one against the other in both palettes. There is
@@ -93,7 +94,7 @@
      palette; `--ink` on it is measured. */
   --overlay: rgb(0 0 0 / 25%);
   --shadow: rgb(0 0 0 / 10%);
-  --selection: #dcebe4;
+  --selection: #dedee0;
 
   /* Controls use 4px corners; navigation items and cards use 8px; the main
      workspace frame uses 12px. */
@@ -287,7 +288,7 @@
     --accent: #a7c8bc;
     --accent-hover: #39786e;
     --accent-active: #30635c;
-    --accent-soft: #213c35;
+    --accent-soft: #222326;
     --danger: #f4c175;
     --danger-soft: #3e301e;
     --warn: #f4c175;
@@ -300,7 +301,7 @@
     --unknown-soft: #3e301e;
     --overlay: rgb(0 0 0 / 55%);
     --shadow: rgb(0 0 0 / 45%);
-    --selection: #294b40;
+    --selection: #36373b;
   }
 }
 
@@ -324,7 +325,7 @@
   --accent: #a7c8bc;
   --accent-hover: #39786e;
   --accent-active: #30635c;
-  --accent-soft: #213c35;
+  --accent-soft: #222326;
   --danger: #f4c175;
   --danger-soft: #3e301e;
   --warn: #f4c175;
@@ -337,7 +338,7 @@
   --unknown-soft: #3e301e;
   --overlay: rgb(0 0 0 / 55%);
   --shadow: rgb(0 0 0 / 45%);
-  --selection: #294b40;
+  --selection: #36373b;
 }
 
 * {

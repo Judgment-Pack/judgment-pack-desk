@@ -6,21 +6,22 @@ Reference: [Judgment Pack](https://judgmentpack.org/) (live stylesheet checked S
 
 Neutral page, sidebar, panels, menus, fields, borders and text stay unchanged.
 Green and gold are the only chromatic families: no indigo, violet, red or browser
-blue. Accent fills are confined to small controls, selections, identity badges
-and existing status indicators, not large workspace surfaces.
+blue. Accent fills are confined to primary actions, native checked controls, identity
+badges and existing status indicators. Selected navigation, menu items, toggles
+and text-selection backgrounds are neutral.
 
 | Use | Light | Dark |
 | --- | --- | --- |
 | Primary action | `#183b3f` | `#346b63` |
 | Action hover / pressed | `#0f2b2e` / `#102f32` | `#39786e` / `#30635c` |
 | Links, focus, selection text | `#0c5f68` | `#a7c8bc` |
-| Selected control tint | `#e7f2f2` | `#213c35` |
+| Selected control background | `#ededee` | `#222326` |
 | Avatar / organization badge | `#183b3f` with `#f4c175` initials | Same |
 | Success / true text | `#236232` | `#93cf9e` |
 | Success / true tint | `#e4f3e7` | `#193623` |
 | Error, warning, unknown text | `#a25b12` | `#f4c175` |
 | Error, warning, unknown tint | `#fff0d8` | `#3e301e` |
-| Text-selection background | `#dcebe4` | `#294b40` |
+| Text-selection background | `#dedee0` | `#36373b` |
 
 The site's brand, brand-strong, links, gold scope-card title, success pair and
 warning tint are used directly. Its amber `#a65d13` reads at 4.46:1 on the
@@ -30,12 +31,12 @@ white labels above 4.5:1. Dark adaptations do not imply the website publishes
 a dark theme. Uploaded organization artwork is preserved.
 
 Errors, warnings and unknown verdicts keep separate semantic tokens and explicit
-labels even when they share gold. False verdicts stay neutral. A selected green
-control is not evidence of a successful runtime result.
+labels even when they share gold. False verdicts stay neutral. Green selected
+text/icons are not evidence of a successful runtime result.
 
 ## Findings and changes
 
-- Removed old indigo/violet/red accents, including native checkbox/radio defaults. Shared selected navigation, tabs, pickers and toggles use green; identity initials use gold.
+- Removed old indigo/violet/red accents, including native checkbox/radio defaults. Shared selected navigation, tabs, pickers and toggles use green text/icons on neutral backgrounds; identity initials use gold.
 - Added a green/gold palette guard alongside the contrast checks.
 - Fixed long pack IDs overflowing the shared page header: the context now truncates and exposes its full value on hover.
 - Fixed undefined `--ink-quiet` in saved-state text and `--rule` in document borders; both now use existing tokens.
@@ -52,7 +53,7 @@ control is not evidence of a successful runtime result.
 | Reading cards, forms, dialogs and inspectors | Neutral `surface`; raised menus use `surface-raised`; no JP wash. |
 | Separators and control boundaries | `border` at rest; `border-strong` for stronger separation/hover; invalid controls use `danger`. |
 | Primary buttons, links, focus | Green `accent` family; white `ink-inverse` for filled actions. |
-| Selection and toggles | Green `accent` / `accent-soft`; selected state also carries semantic markup and weight/underline. |
+| Selection and toggles | Green `accent` text/icons over neutral `accent-soft`; selected state also carries semantic markup and weight/underline. |
 | Identity badges | `brand-fill` deep green and `brand-label` gold. |
 | Connection badges, true verdicts | JP-derived green `true` pair. |
 | Warnings and stale-result notices | JP-derived amber `warn` pair. |
