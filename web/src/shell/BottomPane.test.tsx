@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { McpContext } from '../mcp/McpProvider'
 import { connected } from '../testing/harness'
 import { BottomPane } from './BottomPane'
-import { forgetConsole, recordFileChange } from './consoleLog'
+import { forgetConsole, recordFileChange, recordActivity } from './consoleLog'
 
 afterEach(() => {
   cleanup()
@@ -33,7 +33,7 @@ describe('the console', () => {
     renderConsole()
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Connection',
-      'Calls',
+      'Activity',
       'Files',
       'Notices'
     ])
@@ -82,9 +82,11 @@ describe('the console', () => {
     expect(screen.getByText('packs/intake-triage.json')).toBeTruthy()
   })
 
-  it('says the two unbuilt channels arrive later, and fabricates no rows', () => {
+  it('starts Activity empty, then shows only recorded milestones', () => {
     renderConsole({}, 'calls')
-    expect(screen.getByText('This channel arrives later.')).toBeTruthy()
+    expect(screen.getByText('No operations recorded yet.')).toBeTruthy()
+    act(() => recordActivity('Pack created and registered.'))
+    expect(screen.getByText('Pack created and registered.')).toBeTruthy()
     // No table, no columns, no plausible traffic.
     expect(screen.queryByRole('table')).toBeNull()
     expect(screen.queryByText(/ms/)).toBeNull()

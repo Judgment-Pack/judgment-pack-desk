@@ -38,7 +38,7 @@
   cursor: not-allowed;
 }
 
-/* Primary actions share an indigo fill and white label across both themes. */
+/* Primary actions use green fills and white labels in both themes. */
 .primary {
   border-color: var(--accent-fill);
   background: var(--accent-fill);

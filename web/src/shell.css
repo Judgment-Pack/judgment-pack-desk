@@ -242,6 +242,9 @@
   /* The main column scrolls independently; only the outer frame is rounded.
      Page padding remains on the measure, keeping the existing left gutter. */
   .desk-main {
+    /* A scroll region receives focus from the skip link and empty-area clicks.
+       It has no action to outline; interactive descendants keep their rings. */
+    outline: none;
     grid-column: 1;
     grid-row: 1;
     overflow: auto;
@@ -450,8 +453,8 @@
     height: 20px;
     flex: 0 0 auto;
     border-radius: var(--radius-sm);
-    background: var(--accent-soft);
-    color: var(--accent);
+    background: var(--brand-fill);
+    color: var(--brand-label);
     font-size: 10px;
     font-weight: 700;
     overflow: hidden;
@@ -523,8 +526,8 @@
     height: 24px;
     flex: 0 0 auto;
     border-radius: 99px;
-    background: var(--border);
-    color: var(--ink-soft);
+    background: var(--brand-fill);
+    color: var(--brand-label);
     font-size: 10px;
     font-weight: 700;
     overflow: hidden;
@@ -628,8 +631,8 @@
   }
 
   .desk-nav-item[aria-current='page'] {
-    background: var(--false-soft);
-    color: var(--ink);
+    background: var(--accent-soft);
+    color: var(--accent);
     font-weight: 600;
   }
 
@@ -816,7 +819,7 @@
   }
 
   .desk-tab[data-state='active'] {
-    color: var(--ink);
+    color: var(--accent);
     border-bottom-color: var(--accent);
   }
 

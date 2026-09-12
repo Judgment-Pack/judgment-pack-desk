@@ -11,14 +11,15 @@
  * and nesting them here would hand them a pane they never asked for and a
  * column width they were not drawn at.
  */
-import { Outlet } from 'react-router-dom'
+import { Outlet, useParams } from 'react-router-dom'
 import { PacksPane } from '../packs/PacksPane'
 import styles from './PacksLayout.module.css'
 
 export function PacksLayout() {
+  const { packId } = useParams()
   return (
-    <div className={styles.layout} data-measure="wide">
-      <PacksPane />
+    <div className={packId ? styles.selected : styles.layout} data-measure="wide">
+      <div hidden={Boolean(packId)}><PacksPane /></div>
       <div className={styles.main}>
         <Outlet />
       </div>

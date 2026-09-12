@@ -45,6 +45,7 @@ export function Select({
   onValueChange,
   options,
   placeholder,
+  disabled,
   ...described
 }: {
   id: string
@@ -52,12 +53,14 @@ export function Select({
   onValueChange: (value: string) => void
   options: readonly SelectOption[]
   placeholder?: string
+  disabled?: boolean
   'aria-describedby'?: string
   'aria-invalid'?: boolean
 }) {
   const offered = useMemo(() => new Set(options.map((option) => option.value)), [options])
   return (
     <RadixSelect.Root
+      disabled={disabled}
       // **Never undefined.** A caller with nothing selected yet — a listing
       // still in flight — used to hand Radix `undefined`, which makes the
       // component uncontrolled; the first real value then switched it to

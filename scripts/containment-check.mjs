@@ -392,6 +392,9 @@ function declaredRoutes() {
 const routesFor = (pack, graph) => [
   '/',
   '/packs',
+  '/create-pack',
+  pack,
+  `${pack}?view=document`,
   `${pack}?edit=1`,
   `${pack}/evaluate`,
   `${pack}/matrix`,

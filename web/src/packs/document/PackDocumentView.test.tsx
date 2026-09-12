@@ -59,7 +59,7 @@ describe('the full document', () => {
     ]) {
       expect(found.has(pointer), pointer).toBe(true)
     }
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(full.decision.question)
+    expect(screen.getByRole('heading', { level: 2, name: full.decision.question }).textContent).toBe(full.decision.question)
   })
 
   it('renders metadata.reviews, which the view this replaces dropped', () => {

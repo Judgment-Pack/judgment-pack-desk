@@ -133,7 +133,7 @@ describe('bytes shaped like nothing this desk expects', () => {
     break_(parsed)
     const wrong = `${JSON.stringify(parsed, null, 2)}\n`
     chassis({ content: wrong, sha256: PACK_DIGEST })
-    drawPack(served(wrong), { path: '/packs/vendor-onboarding' })
+    drawPack(served(wrong), { path: '/packs/vendor-onboarding?view=document' })
     await screen.findByRole('navigation', { name: 'Members' })
     const said = await screen.findAllByText(/not the shape this page draws/)
     expect(said.some((node) => node.textContent?.includes(pointer))).toBe(true)
@@ -244,7 +244,7 @@ describe('a pack the runtime will not serve', () => {
 
   it('offers the way in from read mode, where nothing can be drawn', async () => {
     chassis({ content: BROKEN, sha256: PACK_DIGEST })
-    drawPack(refusing(), { path: '/packs/vendor-onboarding' })
+    drawPack(refusing(), { path: '/packs/vendor-onboarding?view=document' })
     const raw = (await screen.findByLabelText("The document's bytes")) as HTMLTextAreaElement
     // Read means read: the bytes are shown and not editable until the mode is.
     expect(raw.readOnly).toBe(true)
@@ -277,7 +277,7 @@ describe('Mod+S belongs to the mode, not to a subtree', () => {
 
   it('leaves the chord alone in read mode', async () => {
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
-    drawPack(served(PACK_TEXT), { path: '/packs/vendor-onboarding' })
+    drawPack(served(PACK_TEXT), { path: '/packs/vendor-onboarding?view=document' })
     await screen.findByRole('navigation', { name: 'Members' })
     // Nothing is being edited, so nothing is being saved and the chord is the
     // browser's.

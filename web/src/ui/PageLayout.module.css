@@ -25,7 +25,13 @@
 }
 
 .separator { color: var(--ink-faint); }
-.context { color: var(--ink); }
+.context {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
 .actions { flex-shrink: 0; }
 .body { padding: var(--density-gutter) var(--density-gutter) var(--space-7); }
 .content { min-width: 0; }

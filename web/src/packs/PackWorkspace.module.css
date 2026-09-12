@@ -1,0 +1,40 @@
+.navigation, .subnavigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-5);
+}
+.navigation { padding: 0 var(--density-gutter); margin-bottom: 0; }
+.navigation a, .subnavigation a {
+  padding: var(--space-3) 0;
+  color: var(--ink-soft);
+  font-size: var(--text-control);
+  text-decoration: none;
+  border-bottom: 2px solid var(--border);
+  border-bottom-color: transparent;
+}
+.navigation a:hover, .subnavigation a:hover { color: var(--ink); }
+.navigation a[aria-current], .subnavigation a[aria-current] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.navigation a:focus-visible, .subnavigation a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.overview { display: grid; gap: var(--space-5); max-width: var(--measure-form); }
+.overview h2 { margin: 0; font-size: var(--text-page); font-weight: 500; }
+.overview h3 { margin: 0; font-size: var(--text-heading); font-weight: 600; }
+.overview p { margin: var(--space-2) 0 0; overflow-wrap: anywhere; }
+.question { padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.question p { font-size: var(--text-heading); color: var(--ink); }
+.label { font-size: var(--text-label); font-weight: 500; color: var(--ink-soft); }
+.muted { color: var(--ink-soft); font-size: var(--text-sm); }
+.counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-4); margin: 0; }
+.counts dt, .metadata dt { color: var(--ink-soft); font-size: var(--text-sm); }
+.counts dd { margin: var(--space-1) 0 0; font-size: var(--text-heading); font-weight: 500; }
+.outcomes ul { padding: 0; margin: var(--space-2) 0 0; list-style: none; }
+.outcomes li { display: grid; gap: var(--space-1); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+.outcomes li span { color: var(--ink-soft); font-size: var(--text-sm); }
+.metadata { display: grid; gap: var(--space-2); margin: 0; border-top: 1px solid var(--border); padding-top: var(--space-4); }
+.metadata div { display: grid; grid-template-columns: 6rem minmax(0, 1fr); gap: var(--space-2); }
+.metadata dd { margin: 0; font-size: var(--text-sm); overflow-wrap: anywhere; }
+@media (max-width: 599px) { .counts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

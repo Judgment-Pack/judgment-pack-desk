@@ -10,7 +10,7 @@ export function PageHeader({ title, context, actions }: {
   return <header className={styles.header}>
     <h1 className={styles.title}>{title}{context && <>
       <span className={styles.separator} aria-hidden="true">/</span>
-      <span className={styles.context}>{context}</span>
+      <span className={styles.context} title={context}>{context}</span>
     </>}</h1>
     {actions && <div className={styles.actions}>{actions}</div>}
   </header>

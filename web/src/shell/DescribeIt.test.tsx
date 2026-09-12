@@ -249,9 +249,11 @@ function Mounted({
   persist,
   secondPrompt = 'ok',
   validateSupported = true,
-  testPrompt = 'none'
+  testPrompt = 'none',
+  page = false
 }: {
   deskConfig: EffectiveConfig
+  page?: boolean
   persist: boolean
   /** What the runtime does with the **second** `prompts/get` it is asked. */
   secondPrompt?: 'ok' | 'reject' | 'hang'
@@ -334,7 +336,7 @@ function Mounted({
             <CreatePackDialog open={open} onOpenChange={setOpen} />
           </>
         ) : (
-          open && <CreatePackDialog open onOpenChange={setOpen} />
+          open && <CreatePackDialog open onOpenChange={setOpen} presentation={page ? 'page' : 'dialog'} />
         )}
       </DeskConfigFixture>
     </McpContext.Provider>
@@ -361,6 +363,7 @@ function draw(
   assistant: unknown = { endpoint: ENDPOINT },
   options: {
     persist?: boolean
+    page?: boolean
     secondPrompt?: 'ok' | 'reject' | 'hang'
     validateSupported?: boolean
     testPrompt?: 'none' | 'ok' | 'reject'
@@ -373,6 +376,7 @@ function drawWith(
   deskConfig: EffectiveConfig,
   options: {
     persist?: boolean
+    page?: boolean
     secondPrompt?: 'ok' | 'reject' | 'hang'
     validateSupported?: boolean
     testPrompt?: 'none' | 'ok' | 'reject'
@@ -386,6 +390,7 @@ function drawWith(
           <Mounted
             deskConfig={deskConfig}
             persist={options.persist ?? false}
+            page={options.page}
             secondPrompt={options.secondPrompt}
             validateSupported={options.validateSupported}
             testPrompt={options.testPrompt}
@@ -1052,6 +1057,14 @@ describe('losing the assistant ends the session', () => {
 
 
 describe('a route change is a dismissal', () => {
+  function DialogLauncher() {
+    const [open, setOpen] = useState(false)
+    return <>
+      <button onClick={() => setOpen(true)}>Open creation dialog</button>
+      {open && <CreatePackDialog open onOpenChange={setOpen} />}
+    </>
+  }
+
   /**
    * The whole shell, which is where this dialog actually lives.
    *
@@ -1091,7 +1104,7 @@ describe('a route change is a dismissal', () => {
             >
               <DeskConfigFixture value={deskConfig}>
                 <AppShell>
-                  <h1>a route</h1>
+                  <h1>a route</h1><DialogLauncher />
                 </AppShell>
               </DeskConfigFixture>
             </McpContext.Provider>
@@ -1111,7 +1124,7 @@ describe('a route change is a dismissal', () => {
   it('closes the dialog and ends the run when the route changes under it', async () => {
     serve({ hang: true })
     const router = drawShell()
-    fireEvent.click(await screen.findByRole('button', { name: 'Create a pack' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open creation dialog' }))
     await screen.findByRole('dialog', { name: 'Create a pack' })
     await propose()
     await waitFor(() => expect(runtime!.opened.length).toBe(1))
@@ -1130,7 +1143,7 @@ describe('a route change is a dismissal', () => {
     // And the run ended rather than being abandoned: the hook refuses a second
     // run while the first is open, so the next session starting is the first
     // one's terminal event, observed.
-    fireEvent.click(screen.getByRole('button', { name: 'Create a pack' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open creation dialog' }))
     await screen.findByRole('dialog', { name: 'Create a pack' })
     await propose()
     await waitFor(() => expect(runtime!.opened.length).toBe(2))
@@ -1142,7 +1155,7 @@ describe('a route change is a dismissal', () => {
     // and discard a proposal over a page that had not changed.
     serve({ hang: true })
     const router = drawShell()
-    fireEvent.click(await screen.findByRole('button', { name: 'Create a pack' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open creation dialog' }))
     await screen.findByRole('dialog', { name: 'Create a pack' })
     await propose()
     await waitFor(() => expect(runtime!.opened.length).toBe(1))
@@ -1157,7 +1170,7 @@ describe('a route change is a dismissal', () => {
   it('closes it when the search changes, which is a different page', async () => {
     serve({ hang: true })
     const router = drawShell()
-    fireEvent.click(await screen.findByRole('button', { name: 'Create a pack' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open creation dialog' }))
     await screen.findByRole('dialog', { name: 'Create a pack' })
     await propose()
     await waitFor(() => expect(runtime!.opened.length).toBe(1))
@@ -1174,7 +1187,7 @@ describe('a route change is a dismissal', () => {
     await act(async () => {
       await router.navigate('/packs')
     })
-    fireEvent.click(await screen.findByRole('button', { name: 'Create a pack' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open creation dialog' }))
     await screen.findByRole('dialog', { name: 'Create a pack' })
     await propose()
     await waitFor(() => expect(runtime!.opened.length).toBe(1))
@@ -1370,4 +1383,32 @@ describe('the runtime’s testing prompt, which the refutation pass needs', () =
       )
     ).toBe(false)
   }, 30000)
+})
+
+
+describe('AI handoff to the guided creation page', () => {
+  it('retains a reviewed draft when the assistant is removed, and keeps its declared unknowns for review', async () => {
+    injected = proposing(JSON.parse(TEMPLATE), ['Confirm the approval threshold with the policy owner.'])
+    const { sent } = serve()
+    const { setKey } = draw({ endpoint: ENDPOINT }, { page: true })
+    const ai = await screen.findByRole('radio', { name: 'Draft with AI' })
+    await waitFor(() => expect((ai as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(ai)
+    fireEvent.change(screen.getByLabelText('Name (required)'), { target: { value: 'Guided AI pack' } })
+    fireEvent.change(await screen.findByLabelText(/What should this pack decide/), { target: { value: 'An expense policy.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Propose' }))
+    await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15000 })
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    await screen.findByRole('heading', { name: 'Build your decision' })
+    setKey(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Review pack' }))
+    await screen.findByRole('heading', { name: 'Review your pack' })
+    expect(screen.getByText('Confirm the approval threshold with the policy owner.')).toBeTruthy()
+    const create = screen.getByRole('button', { name: 'Create pack' }) as HTMLButtonElement
+    expect(create.disabled).toBe(true)
+    fireEvent.click(screen.getByLabelText('I reviewed these unknowns and updated the draft where needed.'))
+    await waitFor(() => expect(create.disabled).toBe(false))
+    expect(sent).toEqual([])
+  })
 })

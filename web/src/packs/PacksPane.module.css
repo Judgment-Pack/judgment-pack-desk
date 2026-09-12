@@ -59,8 +59,8 @@
 }
 
 .link[aria-current='page'] {
-  background: var(--false-soft);
-  color: var(--ink);
+  background: var(--accent-soft);
+  color: var(--accent);
   font-weight: 600;
 }
 

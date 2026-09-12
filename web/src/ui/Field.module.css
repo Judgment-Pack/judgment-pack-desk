@@ -26,3 +26,6 @@
   font-size: var(--text-sm);
   color: var(--danger);
 }
+
+.group { display: grid; gap: var(--density-field); }
+.group > .field { margin-bottom: 0; }

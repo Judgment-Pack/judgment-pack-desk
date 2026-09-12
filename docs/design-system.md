@@ -20,7 +20,7 @@ surfaces and quieter navigation with the dedicated settings layout shown in the
 | Sidebar width | The public app declares 244px. This is Unveil's default; an explicit project width still wins. |
 | Corners | Public app styles expose a 4px control radius and 12px main frame. Unveil uses those, with 8px cards and selected navigation items. |
 | Neutral surfaces | The public app's initial light/dark styles and the supplied settings screenshots inform the palette below. |
-| Primary action | The public app uses indigo `#5e6ad2`. Use it for action fills in both themes. |
+| Brand accents | Judgment Pack green and gold replace the reference app’s indigo. Keep the neutral surfaces and compact geometry. |
 | Layout | Settings replace the app navigation with a dedicated sidebar and Back to app. The header spans the pane; the bounded form starts at a fixed gutter. Row actions align to the right. |
 
 These are documented observations, not a claim to possess Linear's private
@@ -100,21 +100,39 @@ palette: the system preference and explicit Dark must render identically.
 | Secondary text `--ink-soft` | `#5b5b5d` | `#a0a0a4` |
 | Supporting text `--ink-faint` | `#68686b` | `#97979a` |
 | Inactive navigation `--sidebar-ink` | `#626368` | `#97979a` |
-| Action fill `--accent-fill` | `#5e6ad2` | `#5e6ad2` |
+| Action fill `--accent-fill` | `#183b3f` | `#346b63` |
 | Action label `--ink-inverse` | `#fefeff` | `#fefeff` |
-| Hover / pressed fills | `#5964c7` / `#4f5bbf` | Same |
-| Links / focus `--accent` | `#545fbf` | `#a0a8ff` |
+| Hover / pressed fills | `#0f2b2e` / `#102f32` | `#39786e` / `#30635c` |
+| Links / focus / selection `--accent` | `#0c5f68` | `#a7c8bc` |
+| Selection tint `--accent-soft` | `#e7f2f2` | `#213c35` |
+| Identity badge / letter | `#183b3f` / `#f4c175` | Same |
 
 Separate action fills from link/focus colors: a readable dark-theme link is too
-light to serve as a background under white text. Success stays green; warnings,
-errors and condition verdicts keep their existing semantic pairs. Indigo does
-not mean a successful runtime result. Selected sidebar rows use a quiet neutral
-fill; inactive entries are muted. Borders separate surfaces without enclosing
-every level of hierarchy.
+light to serve as a background under white text. Green and gold are the only
+chromatic families. Main backgrounds, panels, ordinary cards, field surfaces,
+borders, and body text remain neutral. Selected rows, tabs, toggles and native
+checkboxes use green; organization initials and the user avatar use gold on
+deep green. Uploaded organization images retain their supplied artwork.
 
-The palette tests measure the named text/background pairs and focus rings. They
-do not certify complete WCAG conformance: subtle borders are not all 3:1, and
-assistive technology and device testing remain separate work.
+Success uses green. Errors, warnings and unknown verdicts use gold, with explicit
+labels and semantic markup preserving their different meanings. False verdicts
+remain neutral. Never communicate status through color alone, and never imply
+that selection green is a successful runtime result.
+
+The palette tests measure text/background pairs at 4.5:1 and focus rings at 3:1.
+They also reject chromatic tokens outside the green/gold families. They do not
+certify complete WCAG conformance: subtle borders are not all 3:1, and assistive
+technology and device testing remain separate work.
+
+### Restrained Judgment Pack accents
+
+Use the [Judgment Pack website](https://judgmentpack.org/) as the source. The
+brand badge uses its exact `#183b3f` and `#f4c175`; light actions, links and
+success colors also come from the site. Adjust dark-theme shades and contrast
+where needed. Use only the shared tokens, never page-specific color literals.
+The [color audit](reviews/pack-workspace-color-audit.md) records every role and
+source adjustment. Small selected controls may have a tint; large workspace
+surfaces must not acquire a green or gold wash.
 
 ## Components and action placement
 
@@ -222,3 +240,14 @@ Build and run the component suite after changing shared components. Run
 `scripts/containment-check.sh` before merging stylesheet changes. Inspect
 populated pages, empty/loading/error states, both themes, both densities, a
 dialog, and narrow layouts. Source checks alone cannot establish visual quality.
+
+
+## Pack workspace
+
+Creation lives at `/create-pack`, outside the pack-ID route so a pack named `new` remains addressable. It uses `PageHeader`, `PageBody`, `FieldGroup`, the shared controls, and the existing byte-preserving document editors. Basics → Build → Review holds one draft. AI is offered only with an available endpoint/key, enabled model, and runtime authoring prompt; accepted suggestions become editable drafts, with declared unknowns retained for review. Neither route navigation nor tab changes silently save a draft.
+
+The reading page starts with Overview. Rules, Evidence & sources, Test and Full document expose increasing detail. Deep links still reach the original document pointers. The full document and JSON editor retain members, ordering and extensions.
+
+The main area holds inputs and results. The right pane holds contextual guidance or inspection. The bottom Activity channel records bounded session milestones without retaining prompts, credentials, facts or evidence. Important errors remain in the main area. Opening a guide is an explicit action, and operations do not open panes automatically.
+
+Testing distinguishes exploratory outcomes from saved-case pass/fail comparisons. A completed request does not overwrite input edits made while it was in flight, and a result from another pack is never attached to the current page.

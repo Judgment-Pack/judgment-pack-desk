@@ -41,8 +41,8 @@
 }
 
 .row[aria-current] {
-  background: var(--false-soft);
-  color: var(--ink);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .rowTitle {
@@ -196,8 +196,9 @@
   display: none;
 }
 
-.rail[data-sidebar] .row[aria-current],
-.rail[data-sidebar] .row:hover {
+.rail[data-sidebar] .row[aria-current] { color: var(--accent); }
+
+.rail[data-sidebar] .row:hover:not([aria-current]) {
   color: var(--ink);
 }
 

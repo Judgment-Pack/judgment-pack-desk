@@ -18,6 +18,8 @@
    theme attribute never reaches. */
 
 :root {
+  /* Judgment Pack: judgmentpack.org. Green and gold are the only chromatic accents.
+     Page, panel, field, border and text surfaces retain the neutral palette. */
   color-scheme: light;
 
   /* Shared stacking order for page chrome and portaled controls. */
@@ -34,7 +36,9 @@
   --surface: #fefeff;
   --sidebar: #efeff0;
   --sidebar-ink: #626368;
-  --accent-fill: #5e6ad2;
+  --accent-fill: #183b3f;
+  --brand-fill: #183b3f;
+  --brand-label: #f4c175;
   --surface-raised: #ffffff;
   --code-surface: #f3f3f4;
 
@@ -45,44 +49,41 @@
   --border-strong: #c7c7ca;
 
   /* Primary, secondary and supporting text adapt to each theme. Primary
-     action labels stay white on the shared indigo fill in both palettes. */
+     action labels stay white on green fills adapted for each palette. */
   --ink: #23252a;
   --ink-soft: #5b5b5d;
   --ink-faint: #68686b;
   --ink-inverse: #fefeff;
 
-  /* The accent, its two pressed states, and its tint. The **focus ring is
+  /* Green links/selections and the primary action hover/pressed fills. The **focus ring is
      `--accent`** and has no token of its own: twelve rings across ten modules
      already name it, and a second token holding the same colour would be a
      name with no consumer. What the ring needs is contrast, and the test holds
      `--accent` at 3:1 against both backgrounds in both palettes, which is the
      ring's requirement asserted on the token the rings actually use. */
-  --accent: #545fbf;
-  --accent-hover: #5964c7;
-  --accent-active: #4f5bbf;
-  --accent-soft: #eeeffb;
+  --accent: #0c5f68;
+  --accent-hover: #0f2b2e;
+  --accent-active: #102f32;
+  --accent-soft: #e7f2f2;
 
   /* The semantic pairs. Each is a foreground and the background it is painted
      on, and the test measures one against the other in both palettes. There is
      no `info` family: nothing in this desk paints one, and a token with no
      consumer is a claim with no holder. */
-  --danger: #8c2f2f;
-  --danger-soft: #fbeceb;
-  --warn: #8a5b12;
-  --warn-soft: #fbf3e3;
+  --danger: #a25b12;
+  --danger-soft: #fff0d8;
+  --warn: #a25b12;
+  --warn-soft: #fff0d8;
 
-  /* Condition verdicts. Three colours for three values, and a neutral fourth
-     for anything the payload spells that this sheet does not know. They are
-     re-authored for dark rather than inverted: green, neutral and violet are
-     what they mean, and the dark values keep the hue and change the lightness.
-     Leaving them at their light values while the neutrals moved is exactly the
-     half-dark desk the last piece of work refused to ship. */
-  --true: #2f5d50;
-  --true-soft: #e8f0ed;
+  /* Verdicts use green for true, neutral for false, and gold for unknown.
+     Errors and warnings also use gold: explicit labels and control semantics
+     distinguish them; color alone never determines a result or severity. */
+  --true: #236232;
+  --true-soft: #e4f3e7;
   --false: #62666e;
   --false-soft: #ededee;
-  --unknown: #6b4a86;
-  --unknown-soft: #f1ecf7;
+  --unknown: #a25b12;
+  --unknown-soft: #fff0d8;
 
   /* What sits between layers. The scrim behind a modal and the shadow under a
      menu are colours like any other, and both are stronger in the dark palette
@@ -92,7 +93,7 @@
      palette; `--ink` on it is measured. */
   --overlay: rgb(0 0 0 / 25%);
   --shadow: rgb(0 0 0 / 10%);
-  --selection: #dfe2fa;
+  --selection: #dcebe4;
 
   /* Controls use 4px corners; navigation items and cards use 8px; the main
      workspace frame uses 12px. */
@@ -272,7 +273,9 @@
     --surface: #17181a;
     --sidebar: #09090a;
     --sidebar-ink: #97979a;
-    --accent-fill: #5e6ad2;
+    --accent-fill: #346b63;
+    --brand-fill: #183b3f;
+    --brand-label: #f4c175;
     --surface-raised: #222427;
     --code-surface: #0f1012;
     --border: #28282c;
@@ -281,23 +284,23 @@
     --ink-soft: #a0a0a4;
     --ink-faint: #97979a;
     --ink-inverse: #fefeff;
-    --accent: #a0a8ff;
-    --accent-hover: #5964c7;
-    --accent-active: #4f5bbf;
-    --accent-soft: #25263b;
-    --danger: #f08a86;
-    --danger-soft: #3a1f1e;
-    --warn: #e0b464;
-    --warn-soft: #382a12;
-    --true: #7fc9b0;
-    --true-soft: #1e3a33;
+    --accent: #a7c8bc;
+    --accent-hover: #39786e;
+    --accent-active: #30635c;
+    --accent-soft: #213c35;
+    --danger: #f4c175;
+    --danger-soft: #3e301e;
+    --warn: #f4c175;
+    --warn-soft: #3e301e;
+    --true: #93cf9e;
+    --true-soft: #193623;
     --false: #afb3bb;
     --false-soft: #222326;
-    --unknown: #c0a3e0;
-    --unknown-soft: #2e2440;
+    --unknown: #f4c175;
+    --unknown-soft: #3e301e;
     --overlay: rgb(0 0 0 / 55%);
     --shadow: rgb(0 0 0 / 45%);
-    --selection: #35395e;
+    --selection: #294b40;
   }
 }
 
@@ -307,7 +310,9 @@
   --surface: #17181a;
   --sidebar: #09090a;
   --sidebar-ink: #97979a;
-  --accent-fill: #5e6ad2;
+  --accent-fill: #346b63;
+  --brand-fill: #183b3f;
+  --brand-label: #f4c175;
   --surface-raised: #222427;
   --code-surface: #0f1012;
   --border: #28282c;
@@ -316,23 +321,23 @@
   --ink-soft: #a0a0a4;
   --ink-faint: #97979a;
   --ink-inverse: #fefeff;
-  --accent: #a0a8ff;
-  --accent-hover: #5964c7;
-  --accent-active: #4f5bbf;
-  --accent-soft: #25263b;
-  --danger: #f08a86;
-  --danger-soft: #3a1f1e;
-  --warn: #e0b464;
-  --warn-soft: #382a12;
-  --true: #7fc9b0;
-  --true-soft: #1e3a33;
+  --accent: #a7c8bc;
+  --accent-hover: #39786e;
+  --accent-active: #30635c;
+  --accent-soft: #213c35;
+  --danger: #f4c175;
+  --danger-soft: #3e301e;
+  --warn: #f4c175;
+  --warn-soft: #3e301e;
+  --true: #93cf9e;
+  --true-soft: #193623;
   --false: #afb3bb;
   --false-soft: #222326;
-  --unknown: #c0a3e0;
-  --unknown-soft: #2e2440;
+  --unknown: #f4c175;
+  --unknown-soft: #3e301e;
   --overlay: rgb(0 0 0 / 55%);
   --shadow: rgb(0 0 0 / 45%);
-  --selection: #35395e;
+  --selection: #294b40;
 }
 
 * {
@@ -358,6 +363,16 @@ body {
 ::selection {
   background: var(--selection);
   color: var(--ink);
+}
+
+/* Native selection controls must not fall back to the browser's blue accent. */
+input[type='checkbox'], input[type='radio'], progress {
+  accent-color: var(--accent);
+}
+
+input[type='checkbox']:focus-visible, input[type='radio']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 code {

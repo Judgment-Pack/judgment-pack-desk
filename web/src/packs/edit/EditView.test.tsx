@@ -55,7 +55,7 @@ describe('the mode is the address', () => {
     // A reading page with a Check button and a Save that can never be pressed
     // is chrome about a mode nobody is in.
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
-    const { router } = drawPack(served(PACK_TEXT), { path: '/packs/vendor-onboarding' })
+    const { router } = drawPack(served(PACK_TEXT), { path: '/packs/vendor-onboarding?view=document' })
     await screen.findByRole('navigation', { name: 'Members' })
     expect(screen.queryByRole('toolbar', { name: 'Editing' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()

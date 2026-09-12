@@ -35,6 +35,7 @@
  * reports the residue to nobody. There is no unwind to perform — the file API
  * has no delete verb — and claiming one would be worse than the residue.
  */
+import { SegmentedControl } from '../ui/SegmentedControl'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -69,10 +70,22 @@ import {
 import { Alert } from '../ui/Alert'
 import { Button } from '../ui/Button'
 import { Dialog, DialogActions, DialogClose } from '../ui/Dialog'
-import { Field } from '../ui/Field'
+import { Field, FieldGroup } from '../ui/Field'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
 import { TextArea } from '../ui/TextArea'
+import { PageHeader, PageBody } from '../ui/PageLayout'
+import { ProposalUnknowns } from '../assistant/ProposalReport'
+import { DraftPackEditor } from '../packs/DraftPackEditor'
+import { PackOverview } from '../packs/PackWorkspace'
+import { ownerOf } from '../packs/edit/editingContext'
+import { buffered, bytesAt } from '../packs/edit/writes'
+import { isRecord } from '../packs/document/MisshapenMember'
+import { useHeldText } from '../packs/edit/heldText'
+import type { PackDocument } from '../mcp/types'
+import { useInspectorPortal, useInspectorSlot } from './InspectorSlot'
+import { recordActivity } from './consoleLog'
+import flow from './CreatePackFlow.module.css'
 
 const PROJECT_FILE = 'jpack.json'
 
@@ -131,14 +144,20 @@ const DIALOG_DESCRIPTION =
  * exactly twice — which shaping function is called, and which sentence a
  * refusal gets.
  */
-type Source = { kind: 'template'; text: string } | { kind: 'proposal'; document: unknown }
+type Source = { kind: 'template'; text: string } | { kind: 'proposal'; document: unknown } | { kind: 'draft'; text: string }
 
 export function CreatePackDialog({
   open,
   onOpenChange,
   onCreated,
-  openerRef
+  openerRef,
+  presentation = 'dialog',
+  onDirtyChange,
+  onWritingChange
 }: {
+  presentation?: 'dialog' | 'page'
+  onDirtyChange?: (dirty: boolean) => void
+  onWritingChange?: (writing: boolean) => void
   open: boolean
   onOpenChange: (open: boolean) => void
   /**
@@ -176,11 +195,41 @@ export function CreatePackDialog({
    */
   const describe = useDescribeIt()
 
+  const [step, setStep] = useState(0)
+  const [method, setMethod] = useState<'manual' | 'ai'>('manual')
+  const [draft, setDraft] = useState<string | undefined>()
+  const [unknowns, setUnknowns] = useState<readonly string[]>([])
+  const [reviewedUnknowns, setReviewedUnknowns] = useState(false)
+  const held = useHeldText(() => {})
+  const inspector = useInspectorSlot()
+  const guide = useInspectorPortal(presentation === 'page' ? <aside className={flow.guide}>
+    <h2>Create a pack</h2>
+    <p><strong>1. Basics</strong><br />Name the decision you want to make. Start with a runtime template, or ask your configured assistant for a draft.</p>
+    <p><strong>2. Build</strong><br />Write a clear decision question and possible outcomes. Add ordered rules, then the evidence and sources that support them.</p>
+    <p><strong>3. Review</strong><br />Read the draft and its validation report before creating the file. AI suggestions still need your review.</p>
+    <p>After creating, use Test to explore inputs and read how the pack reaches an outcome. The bottom Activity tab records operation progress.</p>
+  </aside> : null)
+
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [choice, setChoice] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<{ lead: string; reason?: string } | undefined>(undefined)
+
+  useEffect(() => { onDirtyChange?.(name !== '' || description !== '' || describe.typed !== '' || draft !== undefined) }, [name, description, describe.typed, draft, onDirtyChange])
+  useEffect(() => { onWritingChange?.(busy) }, [busy, onWritingChange])
+
+  useEffect(() => {
+    if (draft === undefined) return
+    const read = buffered(draft)
+    held.update((pending) => {
+      const next = new Map(pending)
+      for (const [pointer, value] of pending) {
+        if ((bytesAt(read, pointer) ?? '') !== value.from || ownerOf(read, pointer) !== value.owner) next.delete(pointer)
+      }
+      return next.size === pending.size ? pending : next
+    })
+  }, [draft, held.update])
 
   const offered = useMemo(() => examples.data?.examples ?? [], [examples.data])
 
@@ -324,7 +373,7 @@ export function CreatePackDialog({
    * once, and this is that value rather than a second reading of an engine's
    * event.
    */
-  const source: Source | undefined = usingProposal
+  const source: Source | undefined = draft !== undefined ? { kind: 'draft', text: draft } : usingProposal
     ? describe.proposal === undefined
       ? undefined
       : { kind: 'proposal', document: describe.proposal.document }
@@ -352,6 +401,7 @@ export function CreatePackDialog({
    * asking.
    */
   const proposed = useMemo((): { text: string } | { problem: string } | undefined => {
+    if (source?.kind === 'draft') return { text: source.text }
     if (source?.kind !== 'proposal' || slug === undefined) return undefined
     try {
       return { text: packFromProposal(source.document, { name, description, slug, idBase }) }
@@ -375,7 +425,7 @@ export function CreatePackDialog({
    * checked" and "the bytes that would be written" one string rather than two.
    */
   const proposalRefusal: string | undefined =
-    source?.kind !== 'proposal'
+    source?.kind !== 'proposal' && source?.kind !== 'draft'
       ? undefined
       : proposed === undefined || 'problem' in proposed
         ? (proposed?.problem ?? CHECKING)
@@ -461,6 +511,8 @@ export function CreatePackDialog({
     source !== undefined &&
     proposalRefusal === undefined &&
     !busy &&
+    held.drafts.size === 0 &&
+    (unknowns.length === 0 || reviewedUnknowns) &&
     describe.blocking === '' &&
     listing.isSuccess &&
     !partial
@@ -509,7 +561,7 @@ export function CreatePackDialog({
    * re-offering a document nobody accepted.
    */
   const close = (next: boolean) => {
-    if (!next) describe.discard()
+    if (!next && presentation !== 'page') describe.discard()
     onOpenChange(next)
   }
 
@@ -517,6 +569,8 @@ export function CreatePackDialog({
     if (!ready || slug === undefined || path === undefined || source === undefined) return
     setFailure(undefined)
     setBusy(true)
+    recordActivity('Creating pack…')
+    let completed = false
     try {
       // (0a) The configuration as it is now, read directly and **first**.
       //
@@ -585,7 +639,7 @@ export function CreatePackDialog({
       // written. A template is the runtime's own document and is shaped here as
       // it always was.
       let content: string
-      if (source.kind === 'proposal') {
+      if (source.kind === 'proposal' || source.kind === 'draft') {
         const validated = checked.data
         if (validated === undefined || validated.checkedBytes !== shapedText) {
           setFailure({ lead: PROPOSAL_UNUSABLE, reason: CHECKING })
@@ -650,13 +704,19 @@ export function CreatePackDialog({
 
       // (3) Everything that answered before this pack existed.
       invalidate([['desk-files'], ['desk-file', PROJECT_FILE], ['list_packs'], ['desk-config']])
-      close(false)
+      completed = true
+      recordActivity('Pack created and registered.')
+      if (presentation === 'page') {
+        describe.discard()
+        onCreated?.()
+      } else close(false)
       navigate(`/packs/${slug}`)
       // Closing this dialog is not closing the thing it was inside. Below
       // 900px the rail is a modal drawer, and it stayed over the page this
       // just navigated to.
-      onCreated?.()
+      if (presentation !== 'page') onCreated?.()
     } finally {
+      if (!completed) recordActivity('Pack creation stopped. See the creation page for details.')
       setBusy(false)
     }
   }
@@ -689,6 +749,7 @@ export function CreatePackDialog({
   const page = `${location.pathname}${location.search}`
   const shownAt = useRef(page)
   useEffect(() => {
+    if (presentation === 'page') return
     if (!open) {
       shownAt.current = page
       return
@@ -697,7 +758,88 @@ export function CreatePackDialog({
     shownAt.current = page
     if (busy) return
     closeNow.current(false)
-  }, [page, open, busy])
+  }, [page, open, busy, presentation])
+
+  if (presentation === 'page') {
+    const next = () => {
+      if (step === 0) {
+        if (slug === undefined || taken !== undefined || source === undefined || describe.blocking !== '') return
+        try {
+          if (draft === undefined) setDraft(source.kind === 'proposal'
+            ? packFromProposal(source.document, { name, description, slug, idBase })
+            : shapeTemplate(source.text, { name, description, slug, idBase }))
+          if (source.kind === 'proposal') {
+            setUnknowns(describe.proposal?.unknowns ?? [])
+            describe.discard()
+          }
+          setStep(1)
+        } catch (cause) { setFailure({ lead: TEMPLATE_UNUSABLE, reason: reasonOf(cause) }) }
+      } else if (held.drafts.size === 0) setStep(2)
+    }
+    const preview = draft === undefined ? undefined : buffered(draft).index.value
+    return <>
+      {guide}
+      <PageHeader title="Packs" context="Create pack" actions={<Button onClick={() => inspector.reveal()}>Guide</Button>} />
+      <PageBody width="form">
+        <form noValidate className={flow.flow} onSubmit={(event) => { event.preventDefault(); if (step === 2) void create(); else next() }}>
+          <ol className={flow.steps} aria-label="Creation steps">
+            {['Basics', 'Build', 'Review'].map((label, index) => <li key={label} aria-current={step === index ? 'step' : undefined}>{index + 1}. {label}</li>)}
+          </ol>
+          <div className={flow.intro}><h2>{['Create a pack', 'Build your decision', 'Review your pack'][step]}</h2>
+            <p className={flow.hint}>{['Start manually or draft with your assistant.', 'Define the rules, outcomes, and supporting evidence.', 'Check the content and runtime validation before creating.'][step]}</p>
+          </div>
+          {step === 0 && <>
+            <div><SegmentedControl label="Creation method" value={method} onValueChange={(next) => {
+              if (next === 'manual') { setMethod('manual'); describe.discard(); setChoice(undefined) }
+              else setMethod('ai')
+            }} segments={[
+              { value: 'manual', label: 'Manual', disabled: draft !== undefined || describe.running },
+              { value: 'ai', label: 'Draft with AI', disabled: draft !== undefined || !describe.usable || !describe.advertised || describe.picked.model === '' }
+            ]} /></div>
+            {!describe.usable && <p className={flow.hint}>AI drafting is unavailable. Configure the assistant in Admin to enable it. {describe.unusableBecause}</p>}
+            {describe.usable && !describe.advertised && <p className={flow.hint}>This runtime does not offer the authoring prompt required for AI drafting.</p>}
+            {describe.usable && describe.advertised && describe.picked.model === '' && <p className={flow.hint}>Choose an enabled model in Admin → Assistant to use AI drafting.</p>}
+            <FieldGroup>
+            <Field label="Name (required)" hint={slug === undefined ? undefined : `id: ${slug}`} error={nameProblem}>
+              {(wiring) => <Input {...wiring} autoFocus required value={name} disabled={draft !== undefined} onChange={(event) => setName(event.target.value)} />}
+            </Field>
+            <Field label="Description" hint="What decision does this pack help someone make?">
+              {(wiring) => <TextArea {...wiring} rows={3} value={description} disabled={draft !== undefined} onChange={(event) => setDescription(event.target.value)} />}
+            </Field>
+            {method === 'manual' ? <Field label="Starting template" error={templateProblem}>
+              {(wiring) => <Select {...wiring} value={selected} onValueChange={setChoice} disabled={draft !== undefined} options={options} placeholder={templatesPending ? TEMPLATES_PENDING : 'Choose a template'} />}
+            </Field> : draft === undefined ? <DescribeIt state={describe} expanded /> : null}
+            </FieldGroup>
+            {draft !== undefined && <p className={flow.hint}>Your draft is retained. Edit its name, description, and other fields in Build → Full document.</p>}
+          </>}
+          {step === 1 && draft !== undefined && <DraftPackEditor text={draft} onChange={(next) => { setDraft(next); setReviewedUnknowns(false) }} pending={held.drafts} hold={held.hold} />}
+          {step === 2 && unknowns.length > 0 && <section className={flow.summary} aria-label="Assistant review">
+            <ProposalUnknowns unknowns={unknowns} />
+            <label><input type="checkbox" checked={reviewedUnknowns} onChange={(event) => setReviewedUnknowns(event.target.checked)} /> I reviewed these unknowns and updated the draft where needed.</label>
+          </section>}
+          {step === 2 && isRecord(preview) && <PackOverview document={preview as unknown as PackDocument} />}
+          {step > 0 && <section className={flow.summary} aria-label="Draft validation">
+            <h3>Structure check</h3>
+            <p role="status">{proposalRefusal ?? 'The runtime validated this draft. This does not mean its rules have passed tests.'}</p>
+            {refused !== undefined && <DiagnosticList diagnostics={anchor(refused, new Set())} label="What the runtime said about this document" />}
+            {refused !== undefined && truncationNote(refused) !== undefined && <p>{truncationNote(refused)}</p>}
+            {held.drafts.size > 0 && <p>Finish or clear the incomplete field values before continuing.</p>}
+          </section>}
+          {(failure ?? blocked) && <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>}
+          {busy && <p role="status">Creating and registering the pack. Stay on this page until it finishes.</p>}
+          <div className={flow.actions}>
+            <Button variant="quiet" disabled={busy} onClick={() => close(false)}>Cancel</Button>
+            <div>
+              {step > 0 && <Button disabled={busy} onClick={() => setStep(step - 1)}>Back</Button>}
+              <Button variant="primary" type="submit" disabled={step === 2 ? !ready : step === 0 ? slug === undefined || taken !== undefined || source === undefined || describe.blocking !== '' || (method === 'ai' && !usingProposal && draft === undefined) : held.drafts.size > 0} title={step === 2 ? createWhy : undefined}>
+                {busy ? 'Creating…' : step === 2 ? 'Create pack' : step === 1 ? 'Review pack' : 'Continue'}
+              </Button>
+            </div>
+          </div>
+        </form>
+      </PageBody>
+    </>
+  }
 
   return (
     <Dialog

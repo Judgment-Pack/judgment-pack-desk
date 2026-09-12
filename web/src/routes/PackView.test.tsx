@@ -158,7 +158,7 @@ function Slotted({
 function draw(
   handlers: Record<string, ToolHandler>,
   overrides: Partial<McpConnection> = {},
-  path = '/packs/vendor-onboarding',
+  path = '/packs/vendor-onboarding?view=document',
   pane: { inspector?: boolean; tab?: string | null; strict?: boolean } = {}
 ) {
   const stub = stubClient(handlers)
@@ -455,7 +455,7 @@ describe('the outline', () => {
   })
 
   it('selects without pushing, and keeps the rest of the address', async () => {
-    const { router } = draw(SERVED, {}, '/packs/vendor-onboarding?token=abc123')
+    const { router } = draw(SERVED, {}, '/packs/vendor-onboarding?view=document&token=abc123')
     await screen.findByRole('heading', { level: 1 })
     const outline = screen.getByRole('navigation', { name: 'Members' })
     fireEvent.click(outline.querySelectorAll('a')[1]!)
@@ -819,5 +819,25 @@ describe('arriving at an address that names a member', () => {
       fireEvent.click(screen.getByRole('button', { name: 'close the inspector' }))
     })
     expect(revealed).toEqual(['reveal'])
+  })
+})
+
+
+describe('the guided reading workspace', () => {
+  beforeEach(() => chassis(PACK_TEXT, DIGEST))
+  it('opens on an overview and keeps detailed members in their named sections', async () => {
+    draw(SERVED, {}, '/packs/vendor-onboarding')
+    await screen.findByRole('region', { name: 'Pack overview' })
+    expect(screen.queryByRole('navigation', { name: 'Members' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Overview' }).getAttribute('aria-current')).toBe('page')
+    fireEvent.click(screen.getByRole('link', { name: 'Rules' }))
+    await waitFor(() => expect(document.querySelector('[data-pointer="/rules"]')).not.toBeNull())
+    expect(document.querySelector('[data-pointer="/sources"]')).toBeNull()
+    fireEvent.click(screen.getByRole('link', { name: 'Evidence & sources' }))
+    await waitFor(() => expect(document.querySelector('[data-pointer="/sources"]')).not.toBeNull())
+    expect(document.querySelector('[data-pointer="/rules"]')).toBeNull()
+    fireEvent.click(screen.getByRole('link', { name: 'Full document' }))
+    await screen.findByRole('navigation', { name: 'Members' })
+    expect(document.querySelector('[data-pointer="/rules"]')).not.toBeNull()
   })
 })

@@ -4,6 +4,9 @@ import { MatrixRowList } from '../components/MatrixRowList'
 import { Empty, ErrorBox, Loading, Pill, Section, statusTone } from '../components/primitives'
 import { usePackMatrix } from '../mcp/queries'
 import type { PackTestEntry } from '../mcp/types'
+import { PageHeader, PageBody } from '../ui/PageLayout'
+import { Button } from '../ui/Button'
+import { PackNavigation, TestNavigation } from '../packs/PackWorkspace'
 
 /**
  * The project's declared matrices, run — every pack's, or one pack's.
@@ -20,7 +23,7 @@ import type { PackTestEntry } from '../mcp/types'
  */
 export function MatrixView() {
   const { packId } = useParams<{ packId?: string }>()
-  const { data, error, isPending, isFetching } = usePackMatrix(packId)
+  const { data, error, isPending, isFetching, refetch } = usePackMatrix(packId)
 
   if (isPending) return <Loading what={packId ? `the ${packId} matrix` : "the project's matrices"} />
   if (error) {
@@ -31,23 +34,14 @@ export function MatrixView() {
   const packs = data.packs ?? []
 
   return (
-    <article className="detail" data-measure="full">
-      <nav className="crumbs">
-        <Link to="/">Project</Link>
-        <span aria-hidden="true">/</span>
-        {packId ? (
-          <>
-            <Link to={`/packs/${encodeURIComponent(packId)}`}>{packId}</Link>
-            <span aria-hidden="true">/</span>
-            <span>Matrix</span>
-          </>
-        ) : (
-          <span>Matrix</span>
-        )}
-      </nav>
-
+    <article className="detail" data-measure="full" data-layout="page">
+      <PageHeader title={packId ? 'Packs' : 'Project'} context={packId ?? 'Matrix & coverage'}
+        actions={<Button onClick={() => void refetch()} disabled={isFetching}>{isFetching ? 'Running…' : 'Run tests'}</Button>} />
+      {packId && <PackNavigation packId={packId} current="test" />}
+      <PageBody width="full">
+      {packId && <TestNavigation packId={packId} saved hasMatrix />}
       <header className="detail-head">
-        <h1>{packId ? `${packId} matrix` : 'Project matrix'}</h1>
+        <h2>{packId ? `${packId} matrix` : 'Project matrix'}</h2>
         <p className="ids">
           <Pill tone={statusTone(data.status)}>{data.status}</Pill>
           <span>
@@ -88,6 +82,7 @@ export function MatrixView() {
           <strong>What this reports.</strong> {data.label}
         </p>
       )}
+      </PageBody>
     </article>
   )
 }

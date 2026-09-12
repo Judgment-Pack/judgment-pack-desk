@@ -52,7 +52,7 @@
   overflow-x: auto;
   position: relative;
   padding: 0.5rem;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);
   font-family: var(--mono);
