@@ -394,6 +394,7 @@ const routesFor = (pack, graph) => [
   '/packs',
   '/create-pack',
   pack,
+  `${pack}?view=logic&layout=map`,
   `${pack}?view=document`,
   `${pack}?edit=1`,
   `${pack}/evaluate`,
@@ -537,8 +538,20 @@ const MEASURE = (panes) => {
       frameFailures.push('workspace border is incomplete')
     }
     if (style.overflowX !== 'hidden' || style.overflowY !== 'hidden') frameFailures.push('workspace does not clip its panes')
+    if (Math.abs(innerWidth - outer.right - 12) > 0.5) frameFailures.push('workspace right gutter is not 12px')
+    const drawer = document.querySelector('.desk-drawer-right')
+    if (drawer) {
+      const box = drawer.getBoundingClientRect()
+      if (Math.abs(innerWidth - box.right - 12) > 0.5 || Math.abs(box.top - 12) > 0.5 || Math.abs(innerHeight - box.bottom - 12) > 0.5) {
+        frameFailures.push('inspector drawer does not retain its 12px inset')
+      }
+    }
     if (Math.abs(strip.getBoundingClientRect().top - outer.bottom - 8) > 0.5) frameFailures.push('status strip gap is not 8px')
     const main = document.querySelector('.desk-main')
+    const divider = document.querySelector('[role="separator"][aria-controls="desk-inspector"]')
+    if (divider && main && divider.getBoundingClientRect().bottom > main.getBoundingClientRect().bottom + .5) {
+      frameFailures.push('inspector divider extends below the upper panes')
+    }
     const consolePane = document.querySelector('.desk-console:not([hidden])')
     const bottomPane = consolePane ?? main
     if (bottomPane === null || Math.abs(bottomPane.getBoundingClientRect().bottom - (outer.bottom - 1)) > 0.5) {
@@ -709,7 +722,7 @@ for (const width of WIDTHS) {
       problems = []
       await go(route)
       if (route.includes('edit=1')) {
-        await page.waitForSelector('article', { timeout: 60000 }).catch(() => {})
+        await page.waitForSelector('.desk-measure [data-layout="page"]', { timeout: 30000 })
         await settle(1200)
       }
       let first = true

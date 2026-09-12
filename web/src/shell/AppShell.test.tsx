@@ -345,7 +345,7 @@ describe('the shell frame', () => {
     await waitFor(() => {
       const stored = window.localStorage.getItem(shellStateKey(projectKey(ROOT)))
       expect(JSON.parse(stored!)).toEqual({
-        v: 1,
+        v: 2,
         left: { mode: 'icons' },
         inspector: { open: true },
         console: { open: true, tab: 'connection' }
@@ -380,7 +380,7 @@ describe('the shell frame', () => {
     await waitFor(() => {
       const stored = window.localStorage.getItem(shellStateKey(projectKey(ROOT)))
       expect(stored).not.toBeNull()
-      expect(JSON.parse(stored!)).toEqual({ v: 1, console: { open: true, tab: 'connection' } })
+      expect(JSON.parse(stored!)).toEqual({ v: 2, console: { open: true, tab: 'connection' } })
     })
   })
 })

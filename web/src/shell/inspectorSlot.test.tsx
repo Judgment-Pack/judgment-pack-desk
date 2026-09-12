@@ -70,12 +70,13 @@ function observedResize() {
   }
   vi.stubGlobal('ResizeObserver', Stub)
   return {
-    /** Give every observed element a width, and tell its observer. */
+    /** Resize the inspector inside a stable, wide workspace. */
     resizeTo(width: number) {
       act(() => {
         for (const { element, notify } of watched) {
+          const measuredWidth = element.classList.contains('desk-workspace') ? 1400 : width
           ;(element as HTMLElement).getBoundingClientRect = () =>
-            ({ width, height: 0, top: 0, left: 0, right: width, bottom: 0, x: 0, y: 0 }) as DOMRect
+            ({ width: measuredWidth, height: 0, top: 0, left: 0, right: measuredWidth, bottom: 0, x: 0, y: 0 }) as DOMRect
           notify()
         }
       })
