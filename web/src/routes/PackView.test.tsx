@@ -326,14 +326,14 @@ describe('the other two views on this pack', () => {
     // Evaluate child; both went with this rewrite, and the route was reachable
     // only by typing its URL.
     draw(SERVED)
-    const link = await screen.findByRole('link', { name: 'Try it' })
+    const link = await screen.findByRole('link', { name: 'Test pack' })
     expect(link.getAttribute('href')).toBe('/packs/vendor-onboarding/evaluate')
   })
 
   it('offers the matrix only where the listing says the pack declares one', async () => {
     draw(SERVED)
-    await screen.findByRole('link', { name: 'Try it' })
-    expect(screen.queryByRole('link', { name: 'Test matrix' })).toBeNull()
+    await screen.findByRole('link', { name: 'Test pack' })
+    expect(screen.queryByRole('link', { name: 'Saved cases' })).toBeNull()
 
     cleanup()
     draw({
@@ -345,7 +345,8 @@ describe('the other two views on this pack', () => {
         })
       })
     })
-    expect(await screen.findByRole('link', { name: 'Test matrix' })).toBeTruthy()
+    fireEvent.click(await screen.findByRole('button', { name: 'More pack actions' }))
+    expect(await screen.findByRole('link', { name: 'Saved cases' })).toBeTruthy()
   })
 })
 
@@ -825,18 +826,26 @@ describe('arriving at an address that names a member', () => {
 
 describe('the guided reading workspace', () => {
   beforeEach(() => chassis(PACK_TEXT, DIGEST))
+  it('preserves a closed inspector when switching representations with a selected item', async () => {
+    const { revealed, router } = draw(SERVED, {}, '/packs/vendor-onboarding?view=logic&layout=list&at=/rules/1')
+    await screen.findByRole('radio', { name: 'List' })
+    await waitFor(() => expect(revealed).toHaveLength(1))
+    fireEvent.click(screen.getByRole('radio', { name: 'Map' }))
+    await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('layout')).toBe('map'))
+    expect(new URLSearchParams(router.state.location.search).get('at')).toBe('/rules/1')
+    expect(revealed).toHaveLength(1)
+  })
   it('opens on an overview and keeps detailed members in their named sections', async () => {
     draw(SERVED, {}, '/packs/vendor-onboarding')
     await screen.findByRole('region', { name: 'Pack overview' })
     expect(screen.queryByRole('navigation', { name: 'Members' })).toBeNull()
     expect(screen.getByRole('link', { name: 'Overview' }).getAttribute('aria-current')).toBe('page')
-    fireEvent.click(screen.getByRole('link', { name: 'Rules' }))
-    await waitFor(() => expect(document.querySelector('[data-pointer="/rules"]')).not.toBeNull())
-    expect(document.querySelector('[data-pointer="/sources"]')).toBeNull()
-    fireEvent.click(screen.getByRole('link', { name: 'Evidence & sources' }))
-    await waitFor(() => expect(document.querySelector('[data-pointer="/sources"]')).not.toBeNull())
-    expect(document.querySelector('[data-pointer="/rules"]')).toBeNull()
-    fireEvent.click(screen.getByRole('link', { name: 'Full document' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Logic' }))
+    fireEvent.click(await screen.findByRole('radio', { name: 'List' }))
+    await waitFor(() => expect(document.querySelector('[data-logic-pointer="/rules/0"]')).not.toBeNull())
+    expect(screen.getByRole('button', { name: 'Sources' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'More pack actions' }))
+    fireEvent.click(await screen.findByRole('link', { name: 'Full document' }))
     await screen.findByRole('navigation', { name: 'Members' })
     expect(document.querySelector('[data-pointer="/rules"]')).not.toBeNull()
   })

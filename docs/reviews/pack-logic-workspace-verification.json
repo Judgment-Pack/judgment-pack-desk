@@ -1,0 +1,930 @@
+{
+  "layouts": [
+    {
+      "theme": "dark",
+      "density": "comfortable",
+      "width": 1280,
+      "mode": "Map",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1034,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "dark",
+      "density": "comfortable",
+      "width": 1280,
+      "mode": "Map",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": true,
+      "inspectorWidth": 360,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1034,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "dark",
+      "density": "comfortable",
+      "width": 1280,
+      "mode": "List",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "mainWidth": 1034,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "dark",
+      "density": "comfortable",
+      "width": 1280,
+      "mode": "List",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "mainWidth": 674,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "dark",
+      "density": "comfortable",
+      "width": 1440,
+      "mode": "Map",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1194,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "dark",
+      "density": "comfortable",
+      "width": 1440,
+      "mode": "Map",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 834,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "dark",
+      "density": "comfortable",
+      "width": 1440,
+      "mode": "List",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "mainWidth": 1194,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "dark",
+      "density": "comfortable",
+      "width": 1440,
+      "mode": "List",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "mainWidth": 834,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "dark",
+      "density": "comfortable",
+      "width": 1920,
+      "mode": "Map",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1674,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "dark",
+      "density": "comfortable",
+      "width": 1920,
+      "mode": "Map",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1314,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "dark",
+      "density": "comfortable",
+      "width": 1920,
+      "mode": "List",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "mainWidth": 1674,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "dark",
+      "density": "comfortable",
+      "width": 1920,
+      "mode": "List",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "mainWidth": 1314,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "dark",
+      "density": "compact",
+      "width": 1280,
+      "mode": "Map",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1034,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "dark",
+      "density": "compact",
+      "width": 1280,
+      "mode": "Map",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": true,
+      "inspectorWidth": 360,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1034,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "dark",
+      "density": "compact",
+      "width": 1280,
+      "mode": "List",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "mainWidth": 1034,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "dark",
+      "density": "compact",
+      "width": 1280,
+      "mode": "List",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "mainWidth": 674,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "dark",
+      "density": "compact",
+      "width": 1440,
+      "mode": "Map",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1194,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "dark",
+      "density": "compact",
+      "width": 1440,
+      "mode": "Map",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 834,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "dark",
+      "density": "compact",
+      "width": 1440,
+      "mode": "List",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "mainWidth": 1194,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "dark",
+      "density": "compact",
+      "width": 1440,
+      "mode": "List",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "mainWidth": 834,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "dark",
+      "density": "compact",
+      "width": 1920,
+      "mode": "Map",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1674,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "dark",
+      "density": "compact",
+      "width": 1920,
+      "mode": "Map",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1314,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "dark",
+      "density": "compact",
+      "width": 1920,
+      "mode": "List",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "mainWidth": 1674,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "dark",
+      "density": "compact",
+      "width": 1920,
+      "mode": "List",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "mainWidth": 1314,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "light",
+      "density": "comfortable",
+      "width": 1280,
+      "mode": "Map",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1034,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "light",
+      "density": "comfortable",
+      "width": 1280,
+      "mode": "Map",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": true,
+      "inspectorWidth": 360,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1034,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "light",
+      "density": "comfortable",
+      "width": 1280,
+      "mode": "List",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "mainWidth": 1034,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "light",
+      "density": "comfortable",
+      "width": 1280,
+      "mode": "List",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "mainWidth": 674,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "light",
+      "density": "comfortable",
+      "width": 1440,
+      "mode": "Map",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1194,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "light",
+      "density": "comfortable",
+      "width": 1440,
+      "mode": "Map",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 834,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "light",
+      "density": "comfortable",
+      "width": 1440,
+      "mode": "List",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "mainWidth": 1194,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "light",
+      "density": "comfortable",
+      "width": 1440,
+      "mode": "List",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "mainWidth": 834,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "light",
+      "density": "comfortable",
+      "width": 1920,
+      "mode": "Map",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1674,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "light",
+      "density": "comfortable",
+      "width": 1920,
+      "mode": "Map",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1314,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "light",
+      "density": "comfortable",
+      "width": 1920,
+      "mode": "List",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "mainWidth": 1674,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "light",
+      "density": "comfortable",
+      "width": 1920,
+      "mode": "List",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "mainWidth": 1314,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "light",
+      "density": "compact",
+      "width": 1280,
+      "mode": "Map",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1034,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "light",
+      "density": "compact",
+      "width": 1280,
+      "mode": "Map",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": true,
+      "inspectorWidth": 360,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1034,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "light",
+      "density": "compact",
+      "width": 1280,
+      "mode": "List",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "mainWidth": 1034,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "light",
+      "density": "compact",
+      "width": 1280,
+      "mode": "List",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "mainWidth": 674,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "light",
+      "density": "compact",
+      "width": 1440,
+      "mode": "Map",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1194,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "light",
+      "density": "compact",
+      "width": 1440,
+      "mode": "Map",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 834,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "light",
+      "density": "compact",
+      "width": 1440,
+      "mode": "List",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "mainWidth": 1194,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "light",
+      "density": "compact",
+      "width": 1440,
+      "mode": "List",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "mainWidth": 834,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "light",
+      "density": "compact",
+      "width": 1920,
+      "mode": "Map",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1674,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "light",
+      "density": "compact",
+      "width": 1920,
+      "mode": "Map",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "viewport": "transform: translate(0px, 24px) scale(1);",
+      "mainWidth": 1314,
+      "pass": true,
+      "nodeCount": 7,
+      "nodeFonts": [
+        13
+      ]
+    },
+    {
+      "theme": "light",
+      "density": "compact",
+      "width": 1920,
+      "mode": "List",
+      "open": false,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 0,
+      "mainWidth": 1674,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    },
+    {
+      "theme": "light",
+      "density": "compact",
+      "width": 1920,
+      "mode": "List",
+      "open": true,
+      "pageOverflow": false,
+      "overlap": [],
+      "clipped": [],
+      "drawer": false,
+      "inspectorWidth": 360,
+      "mainWidth": 1314,
+      "pass": true,
+      "nodeCount": 0,
+      "nodeFonts": []
+    }
+  ],
+  "checks": [
+    {
+      "name": "Map to List preserves exception selection",
+      "pass": true
+    },
+    {
+      "name": "Map zoom and pan survive inspector and List round trip",
+      "pass": true,
+      "detail": {
+        "before": "transform: translate(40px, 59px) scale(1.25);",
+        "after": "transform: translate(40px, 59px) scale(1.25);"
+      }
+    },
+    {
+      "name": "Keyboard node activation opens responsive drawer",
+      "pass": true
+    },
+    {
+      "name": "Escape restores focus to map node",
+      "pass": true
+    },
+    {
+      "name": "Typing search does not open a drawer",
+      "pass": true
+    },
+    {
+      "name": "Narrow inspector wraps exact conditions",
+      "pass": true,
+      "detail": {
+        "pageOverflow": false,
+        "overlap": [],
+        "clipped": [],
+        "drawer": true,
+        "inspectorWidth": 331.5,
+        "viewport": "transform: translate(0px, 24px) scale(1);",
+        "mainWidth": 388
+      }
+    },
+    {
+      "name": "200% text stays readable without page overflow",
+      "pass": true,
+      "detail": {
+        "pageOverflow": false,
+        "overlap": [],
+        "clipped": [],
+        "drawer": true,
+        "inspectorWidth": 360,
+        "mainWidth": 1034
+      }
+    },
+    {
+      "name": "Short viewport retains scrollable content",
+      "pass": true
+    },
+    {
+      "name": "Large pack uses grouped nodes",
+      "pass": true
+    },
+    {
+      "name": "Search reaches last of 80 rules",
+      "pass": true
+    },
+    {
+      "name": "Unsupported semantics do not get a complete map",
+      "pass": true
+    },
+    {
+      "name": "Invalid carrier does not get an interpreted map",
+      "pass": true
+    },
+    {
+      "name": "Real force-outcome run reports skipped rules",
+      "pass": true
+    },
+    {
+      "name": "Forced rejection does not imply handoff",
+      "pass": true
+    },
+    {
+      "name": "Returning to Tests retains submitted inputs",
+      "pass": true
+    }
+  ],
+  "errors": [],
+  "summary": {
+    "layouts": 48,
+    "layoutFailures": 0,
+    "checks": 15,
+    "checkFailures": 0
+  }
+}

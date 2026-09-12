@@ -956,10 +956,22 @@ version the runtime does not bundle reports one layer row and a `capability`
 diagnostic whose layer appears in no row at all, while an unsupported required
 extension reports all three layers passing.
 
-The document is one of three views on a pack, and it carries the links to the
-other two: **Try it** to `/packs/:id/evaluate`, and **Test matrix** where the
-listing says the pack declares one. Both were reachable only from the view this
-replaced.
+Packs open on a concise **Overview** with a compact name/question header.
+**Logic** switches between a grouped relationship Map and a full-width List;
+both share the selected document pointer and the shell's contextual inspector.
+The optional Outline navigates the same items. **Test pack** opens
+`/packs/:id/evaluate`; **Saved cases** is available where the listing declares a
+matrix. More contains pack metadata, successful validation details and
+**Full document**, preserving existing deep links and the original editor.
+
+The map uses React Flow at native readable size, with explicit pan/zoom and
+neutral selected surfaces. It represents declared relationships, not a
+first-match rule sequence. A current valid runtime check is required to draw
+the complete map. Inspect unsupported definitions in List and invalid carriers
+as original text. **Explain on map** connects a test to its reported trace only
+when the displayed pack matches the exact bytes submitted for that run. The
+result and its requested handoff remain separate. See the
+[design system](docs/design-system.md#pack-workspace) for layout and state ownership.
 
 Diagnostics anchor on an exact `instancePath` match, else on the nearest
 **rendered** ancestor with the diagnostic's own pointer printed verbatim beside

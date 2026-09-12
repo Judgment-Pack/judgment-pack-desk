@@ -400,3 +400,8 @@
   list-style: none;
   font-size: var(--text-sm);
 }
+
+/* The same exact condition tree, with readable wrapping in a narrow inspector. */
+.treeWrapped { overflow: visible; padding: 0; background: transparent; border: none; }
+.treeWrapped .treeRow { display: grid; grid-template-columns: auto minmax(0, 1fr); white-space: normal; gap: var(--space-1); margin: var(--space-1) 0; }
+.treeWrapped .treeContent { white-space: normal; overflow-wrap: anywhere; min-width: 0; }

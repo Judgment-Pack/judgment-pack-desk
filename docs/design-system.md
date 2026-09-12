@@ -159,8 +159,9 @@ small indicators; large workspace surfaces must not acquire a green or gold wash
   Its children own internal spacing. Keep diagnostics in disclosures or the
   inspector while leaving actionable failures visible.
 - Tables keep headers and cells aligned. Warnings use a status and border
-  without repeatedly filling the entire result area. Diagrams may shrink to
-  fit but must not be enlarged beyond their natural SVG coordinate size.
+  without repeatedly filling the entire result area. Interactive relationship
+  maps start at readable native size. Opening an inspector must preserve their
+  viewport; zoom changes only through an explicit canvas gesture or control.
 
 ## Workspace frame
 
@@ -248,8 +249,56 @@ dialog, and narrow layouts. Source checks alone cannot establish visual quality.
 
 Creation lives at `/create-pack`, outside the pack-ID route so a pack named `new` remains addressable. It uses `PageHeader`, `PageBody`, `FieldGroup`, the shared controls, and the existing byte-preserving document editors. Basics → Build → Review holds one draft. AI is offered only with an available endpoint/key, enabled model, and runtime authoring prompt; accepted suggestions become editable drafts, with declared unknowns retained for review. Neither route navigation nor tab changes silently save a draft.
 
-The reading page starts with Overview. Rules, Evidence & sources, Test and Full document expose increasing detail. Deep links still reach the original document pointers. The full document and JSON editor retain members, ordering and extensions.
+The reading page starts with Overview. Its compact `PageHeader` title variant
+contains the pack name, decision question, primary Test pack action, and the
+Overview / Logic / Tests navigation. One divider spans the pane; metadata and
+successful validation details live under More. Material validation issues stay
+visible. The title uses `--text-page`, the question `--text-sm`, and the shared
+control height and gutters. Narrow layouts move Edit into More and wrap the
+title/question. The header scrolls with the page so long names and enlarged
+text cannot consume the entire work area.
+
+Logic offers Map and List over one `logicModel` projection. The grouped map
+uses the lazy-loaded `RelationshipMap` React Flow adapter; nodes express
+declared relationships within one pack, not first-match priority or the
+runtime composition graph's execution order. Node surfaces and selection stay
+neutral. Edges use `--ink-faint` because a meaningful connection needs stronger
+contrast than a decorative panel border. Normal node text remains 13px at the
+initial 100% zoom; inspector changes never run Fit view.
+
+List keeps rules and exceptions visible, with compact controls for context,
+resolution and references. Search spans all declared groups. In Map, typing
+does not open a modal: submitting the search opens Outline. The right slot
+holds either Outline or selected-item details. Exact conditions reuse
+`ConditionTree` with its wrapping variant; author prose and raw JSON are
+separate disclosures. Full document and editing remain reachable under More
+and retain the original pointer address space, ordering and extensions.
+
+Selection, outline/list scroll, and map viewport belong to the route, above
+pane remounts. An explicit Map/List choice is remembered; without a preference,
+desktop starts with Map and narrow layouts with List. Resizing adapts the
+inspector without changing the selected view. The shell's optional
+`requestWorkingWidth` contract measures the entire workspace, avoiding a
+feedback loop in which opening the inspector changes its own breakpoint input.
+Map requests 48rem including gutters; List requests 34rem. Existing project
+pane widths still apply. Drawer dismissal restores focus to the inspection
+gesture when it remains mounted, with the header toggle as fallback.
+
+Invalid carriers are shown as original text. A complete map requires a current
+valid runtime check; unsupported definitions remain inspectable in List with
+the runtime diagnostics. Trace overlays require the same pack and exact
+submitted bytes. Unknown, skipped, suppressed and unreported observations
+remain distinct from false. A declared outcome and a requested handoff are
+separate fields.
 
 The main area holds inputs and results. The right pane holds contextual guidance or inspection. The bottom Activity channel records bounded session milestones without retaining prompts, credentials, facts or evidence. Important errors remain in the main area. Opening a guide is an explicit action, and operations do not open panes automatically.
 
 Testing distinguishes exploratory outcomes from saved-case pass/fail comparisons. A completed request does not overwrite input edits made while it was in flight, and a result from another pack is never attached to the current page.
+
+When the saved document is available, Tests submits that exact loaded snapshot
+to evaluation. Explain on map explicitly publishes one result per pack into
+the query client's memory, with its submitted bytes. It writes neither facts
+nor traces to browser storage. Returning to Tests restores that selected run;
+a missing or different revision blocks the overlay instead of presenting an
+old observation on new conditions. Runs made without captured pack bytes
+remain readable in Tests but cannot offer a bound map explanation.
