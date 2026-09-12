@@ -3509,8 +3509,8 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
   # that brings it in — the step between `moveFocus` and `scrollRowIntoView`,
   # which each had a test and the thing between them did not.
   mutate web "a row that is not rendered yet is never focused" "$PN" \
-    '              else setWanted(next)' \
-    '              else void next'
+    '          else setWanted({ index: next, preview })' \
+    '          else void next'
   mutate web "a shorter row height leaves the scroll where it was" "$WR" \
     '  }, [node, count, rowHeight])' \
     '  }, [node, count])'
@@ -3525,15 +3525,14 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
     '"op": "all"' \
     '"op": "alll"'
 
-  # react-query keeps the last good data through a refetch error, so a failed
-  # refresh left this button under the failure sentence offering to show all N
-  # of a listing the pane had just said it could not read.
-  mutate web "a failed refresh still offers to show every pack" "$PN" \
-    '      {isSuccess && !expanded && packs.length > FIRST_SCREENFUL && (' \
-    '      {!expanded && packs.length > FIRST_SCREENFUL && ('
+  # react-query keeps the last good data through a refetch error. Failed
+  # refreshes must replace those stale rows with the retry state.
+  mutate web "a failed refresh still displays stale packs" "$PN" \
+    '    {error ? <section' \
+    '    {error && !data ? <section'
   mutate web "an empty version is drawn as a version" "$PN" \
-    '                  {isSpelled(pack.packVersion) ? (' \
-    '                  {pack.packVersion !== undefined ? ('
+    'isSpelled(pack.packVersion) ?' \
+    'pack.packVersion !== undefined ?'
 
   # The pointer escaping, at the one call site whose step is document data.
   mutate web "a pointer step is concatenated rather than escaped" "$PT" \
@@ -3574,8 +3573,8 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
     "const allModules = everyModule(SRC).sort()" \
     "const allModules = everyModule(join(SRC, 'ui')).sort()"
   mutate web "a colour in a module outside src/ui goes unreported" "$PPC" \
-    "  color: var(--danger);" \
-    "  color: #ff0000;"
+    ".rowDetail { color: var(--warn); }" \
+    ".rowDetail { color: #ff0000; }"
 
   # 9. Edit mode (issue: pack view phase 2). Each row breaks one claim the
   # editor makes about the bytes it writes, the check it quotes, or the run it
@@ -3809,8 +3808,8 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
   # Carried low from phase 1: the pane's keyboard, held by the element focus
   # landed on rather than by text that happens to contain the row's name.
   mutate web "the packs pane never takes focus to the row it arrowed to" "$PN" \
-    '              if (already instanceof HTMLElement) already.focus()' \
-    '              if (already instanceof HTMLElement) void already'
+    '          if (already instanceof HTMLElement) already.focus({ preventScroll: true })' \
+    '          if (already instanceof HTMLElement) void already'
 
   # ---------------------------------------------------------------------
   # The verification round. Each row is one finding, broken again.

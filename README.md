@@ -898,47 +898,36 @@ would be a lie about both.
   where the check is stale, because in each of those the empty set is not an
   answer.
 
-### The packs pane
+### The Packs collection
 
-240px in main's left: a filter over the pack id, a sort (name ascending and
-descending, and nothing else — `list_packs` reports no date and no size, so any
-other order would be one the desk invented), the rows with their versions, and
-"Show all N" past the first screenful, offered only while the listing has
-**currently** succeeded — a refetch error keeps the last good data, and a button
-underneath a failure sentence offering to show all N of a listing the pane had
-just said it could not read is an offer about nothing.
+`/packs` is a full-width collection with the shared compact page header, a
+result count, and Create pack. Search matches the project ID and supplied
+description. Sorting names its actual key: Pack ID A–Z or Z–A; the inventory
+reports no modification date, so no recent-change ordering is invented.
 
-Rows are links, so tab order is native; the arrow keys step between them and
-Home and End reach the ends of **the list**, not of the window. A destination
-that is not rendered is scrolled into view and focused in the render that brings
-it in: navigating by the rendered anchors clamped every key to the window, so
-with 300 rows in a 400px viewport focus stopped at row 21 and ArrowDown from
-there prevented the default and moved nothing. Filtering resets the scroll,
-because a window computed from the old position can begin past the end of the
-new list and render no rows at all.
+Each 40px comfortable / 32px compact row has a native pack link, version and a
+separate Preview button. Optional descriptions stay on one line; narrow layouts
+move version and description into preview. All rows are reachable through the
+existing windowing, without a second Show all step. Arrow keys, Home and End
+work across the complete list for both links and Preview buttons. A viewport
+that cannot be measured renders every row.
 
-A pack whose document the listing could not read is still listed, with `packId`
-and `packVersion` sent as **empty strings** and the reason in `detail`. Such a
-row carries the runtime's own sentence instead of a version: an empty version is
-not a version, and a bare "v" asserted a member of a document nothing could
-read.
+Preview publishes the inventory's description, document ID, version and paths
+through the shared Inspector slot. It sends no additional runtime request and
+runs no evaluation. The Inspector remains closed by default; saved and explicitly
+configured pane choices are honored. A manually opened empty Inspector explains
+how to preview a pack. Opening the document from a modal preview dismisses the
+drawer so the main page is visible.
 
-Past a screenful the list is windowed — a fixed row height, an overscan, and no
-new dependency. **A viewport that cannot be measured renders every row**, which
-is the case in jsdom, where nothing is laid out and every measured height is
-zero.
+The layout retains the collection while a pack is open: search, sorting, preview
+selection and list scroll survive Back, and its portal is released while the
+pack document owns the Inspector. Filtering resets scroll and suppresses preview
+metadata for an item outside the results.
 
-A refused listing shows the failure. "This project declares no packs" and "the
-listing did not answer" are different statements and only one is about the
-project — which is why the rail's Packs entry carries a count only where the
-listing actually answered, and never a `0`.
-
-The pane is a `<nav aria-label="Packs">`, because it is a list of navigations.
-That is a **seventh** landmark on the page while this route is open, inside
-`main`, and the document's own member outline is an **eighth** — three
-navigations in all, each named, so a screen reader can tell them apart. The
-shell's own six are unchanged, and a test mounts both of the route's landmarks
-and holds that each of the six is still exactly one.
+A listing failure replaces stale rows and previews, exposes Retry, and never
+claims zero packs. Empty projects and unmatched searches have distinct states.
+An empty version is shown as unavailable in preview, never a bare v; any refusal
+detail supplied by the runtime remains visible in the row and in preview.
 
 ### Checks and layers
 

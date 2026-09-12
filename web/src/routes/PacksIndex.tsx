@@ -1,20 +1,4 @@
-/**
- * `/packs` with nothing selected.
- *
- * The pane is beside this, so the page says what to do with it and nothing
- * more. It states no count of its own: the pane is where the listing is
- * reported, including where the listing failed, and two places saying it would
- * be two places that can disagree.
- */
-import { IconPack } from '../shell/icons'
-import styles from './PacksLayout.module.css'
-
+// The layout owns the collection. There is no empty preview beside its rows.
 export function PacksIndex() {
-  return (
-    <div className={styles.empty}>
-      <div className={styles.emptyIcon} aria-hidden="true"><IconPack /></div>
-      <h1>Select a pack</h1>
-      <p>Its decision, outcomes and rules open here.</p>
-    </div>
-  )
+  return null
 }

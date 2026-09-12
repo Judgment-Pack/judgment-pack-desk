@@ -13,6 +13,8 @@ import { McpContext } from '../mcp/McpProvider'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { PacksPane } from './PacksPane'
 
+const packLinks = () => screen.queryAllByRole('link').filter(link => link.getAttribute('href')?.startsWith('/packs/'))
+
 afterEach(() => {
   cleanup()
   unmeasure?.()
@@ -89,44 +91,43 @@ describe('the packs pane', () => {
     const many = Array.from({ length: 18 }, (_, index) => `pack-${index}`)
     draw(packs(many))
     await screen.findByRole('link', { name: /pack-0/ })
-    expect(screen.getAllByRole('link')).toHaveLength(18)
+    expect(packLinks()).toHaveLength(18)
     expect(screen.getByRole('link', { name: /pack-17/ })).toBeTruthy()
   })
 
   it('narrows by a substring of the id', async () => {
     draw(packs(['intake-triage', 'vendor-onboarding', 'access-review']))
     await screen.findByRole('link', { name: /intake-triage/ })
-    fireEvent.change(screen.getByLabelText('Filter'), { target: { value: 'ven' } })
-    await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(1))
+    fireEvent.change(screen.getByLabelText('Search packs'), { target: { value: 'ven' } })
+    await waitFor(() => expect(packLinks()).toHaveLength(1))
     expect(screen.getByRole('link', { name: /vendor-onboarding/ })).toBeTruthy()
 
     // A filter that matches nothing is not an empty project.
-    fireEvent.change(screen.getByLabelText('Filter'), { target: { value: 'zzz' } })
-    await screen.findByText('No pack id contains that.')
+    fireEvent.change(screen.getByLabelText('Search packs'), { target: { value: 'zzz' } })
+    await screen.findByText('No matching packs')
   })
 
   it('reorders on the sort control, and offers only orders it has data for', async () => {
     draw(packs(['b-pack', 'a-pack', 'c-pack']))
     await screen.findByRole('link', { name: /a-pack/ })
-    const names = () => screen.getAllByRole('link').map((link) => link.textContent)
+    const names = () => packLinks().map((link) => link.textContent)
     expect(names()[0]).toContain('a-pack')
 
-    fireEvent.keyDown(screen.getByLabelText('Sort'), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByLabelText('Sort packs'), { key: 'Enter' })
     const options = await screen.findAllByRole('option')
-    // Name ascending and descending, and nothing else: `list_packs` reports no
+    // ID ascending and descending, and nothing else: `list_packs` reports no
     // date and no size, so any other order would be the desk inventing one.
-    expect(options.map((option) => option.textContent)).toEqual(['Name A–Z', 'Name Z–A'])
+    expect(options.map((option) => option.textContent)).toEqual(['Pack ID: A–Z', 'Pack ID: Z–A'])
     fireEvent.click(options[1]!)
     await waitFor(() => expect(names()[0]).toContain('c-pack'))
   })
 
-  it('holds the rest back behind “Show all N”', async () => {
+  it('makes every pack available without a second expansion step', async () => {
     const many = Array.from({ length: 26 }, (_, index) => `pack-${String(index).padStart(2, '0')}`)
     draw(packs(many))
     await screen.findByRole('link', { name: /pack-00/ })
-    expect(screen.getAllByRole('link')).toHaveLength(20)
-    fireEvent.click(screen.getByRole('button', { name: 'Show all 26' }))
-    await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(26))
+    expect(screen.queryByRole('button', { name: /Show all/ })).toBeNull()
+    await waitFor(() => expect(packLinks()).toHaveLength(26))
   })
 
   it('moves focus between rows with the arrow keys, Home and End', async () => {
@@ -161,10 +162,9 @@ describe('the packs pane', () => {
     measured(400)
     draw(packs(many))
     await screen.findByRole('link', { name: /pack-000/ })
-    fireEvent.click(screen.getByRole('button', { name: 'Show all 300' }))
     // A screenful and its overscan, not three hundred: this is the arithmetic
     // and not the fallback.
-    await waitFor(() => expect(screen.getAllByRole('link').length).toBeLessThan(40))
+    await waitFor(() => expect(packLinks().length).toBeLessThan(40))
     expect(screen.queryByRole('link', { name: /pack-299/ })).toBeNull()
 
     const first = screen.getByRole('link', { name: /pack-000/ })
@@ -191,12 +191,12 @@ describe('the packs pane', () => {
     })
     draw(stub)
     await screen.findByText(/the runtime refused the listing/)
-    expect(screen.queryByText('This project declares no packs.')).toBeNull()
+    expect(screen.queryByText('No packs yet')).toBeNull()
   })
 
   it('says a project declares none where the listing said so', async () => {
     draw(packs([]))
-    await screen.findByText('This project declares no packs.')
+    await screen.findByText('No packs yet')
   })
 
   it('claims no version for a pack whose document the listing could not read', async () => {
@@ -230,12 +230,13 @@ describe('the packs pane', () => {
 
   it('is a named navigation, because it is a list of navigations', async () => {
     draw(packs(['a-pack']))
+    await screen.findByRole('link', { name: /a-pack/ })
     expect(screen.getByRole('navigation', { name: 'Packs' })).toBeTruthy()
   })
 })
 
 describe('a listing that failed after it had succeeded', () => {
-  it('takes its “Show all” offer away with it', async () => {
+  it('takes its stale rows and preview actions away with it', async () => {
     // react-query keeps the last good data through a refetch error, so the
     // pane printed the failure sentence and left a button underneath offering
     // to show all N of a listing it had just said it could not read.
@@ -268,7 +269,7 @@ describe('a listing that failed after it had succeeded', () => {
         <RouterProvider router={router} />
       </QueryClientProvider>
     )
-    expect(await screen.findByRole('button', { name: 'Show all 30' })).toBeTruthy()
+    expect(await screen.findByRole('link', { name: /pack-00/ })).toBeTruthy()
 
     // The same listing, refused this time.
     answer = () => {
@@ -279,8 +280,9 @@ describe('a listing that failed after it had succeeded', () => {
     await waitFor(() =>
       expect(screen.getByText(/the project could not be read/)).toBeTruthy()
     )
-    // And no offer to show all of something the pane cannot read.
-    expect(screen.queryByRole('button', { name: /Show all/ })).toBeNull()
+    // The stale rows and their preview actions are unavailable after refusal.
+    expect(packLinks()).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: /Preview pack/ })).toBeNull()
   })
 
   it('comes back when the same listing answers again', async () => {
@@ -317,16 +319,16 @@ describe('a listing that failed after it had succeeded', () => {
         <RouterProvider router={router} />
       </QueryClientProvider>
     )
-    await screen.findByRole('button', { name: 'Show all 30' })
+    await screen.findByRole('link', { name: /pack-00/ })
 
     fail = true
     await queryClient.refetchQueries({ queryKey: ['list_packs'] })
-    await waitFor(() => expect(screen.queryByRole('button', { name: /Show all/ })).toBeNull())
+    await waitFor(() => expect(packLinks()).toHaveLength(0))
 
     fail = false
     await queryClient.refetchQueries({ queryKey: ['list_packs'] })
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Show all 30' })).toBeTruthy()
+      expect(screen.getByRole('link', { name: /pack-00/ })).toBeTruthy()
     )
     expect(screen.getByRole('link', { name: /pack-00/ })).toBeTruthy()
   })

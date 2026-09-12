@@ -51,6 +51,7 @@
 }
 
 .separator { color: var(--ink-faint); }
+.meta { color: var(--ink-faint); font-size: var(--text-xs); font-weight: 400; }
 .context {
   min-width: 0;
   overflow: hidden;

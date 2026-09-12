@@ -1,221 +1,138 @@
-/**
- * The project's packs, in main's left pane.
- *
- * They used to be in the rail. A project can carry hundreds of packs and a
- * rail cannot: the old list capped at thirty and handed the rest to the
- * project home, which is a list that stops being a list at the point it starts
- * being useful. So the rail keeps one **destination** with a count, and the
- * list lives here — filtered, sorted, windowed, and beside the document rather
- * than instead of it.
- *
- * **A refused listing shows the failure, not an empty project.** "This project
- * declares no packs" and "the listing did not answer" are two different
- * statements and only one of them is about the project. That rule moved here
- * from the rail with the list.
- *
- * Sorting offers name ascending and descending and nothing else, because
- * nothing else is a fact the desk has: `list_packs` reports no date, no size
- * and no order of its own, and a "recently changed" sort would be the desk
- * inventing an ordering out of a file listing that answers a different
- * question.
- *
- * It is a `<nav>` with its own name. The pane is a list of navigations, so
- * that is the correct markup — and it means a route adds a landmark inside
- * main, which the README's region table now says.
- */
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { NavLink } from 'react-router-dom'
+/** The full-width collection. The parent retains it while a pack is open. */
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { VisuallyHidden } from 'radix-ui'
 import { ROW_HEIGHT } from '../config/theme'
 import { usePacks } from '../mcp/queries'
 import { useAppearance } from '../shell/appearanceState'
-import { Field } from '../ui/Field'
+import { useInspectorPortal, useInspectorSlot } from '../shell/InspectorSlot'
+import { useShellState } from '../shell/paneState'
+import { Button, ButtonLink } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
+import { PageHeader } from '../ui/PageLayout'
+import { PackPreview, PackPreviewHint } from './PackPreview'
 import styles from './PacksPane.module.css'
 import { moveFocus, useWindowedRows } from './useWindowedRows'
 
-/** A member the listing actually answered with, rather than left empty. */
 function isSpelled(value: string | undefined): value is string {
-  return typeof value === 'string' && value !== ''
+  return typeof value === 'string' && value.trim() !== ''
 }
-
-/** How many rows are shown before "Show all N". */
-const FIRST_SCREENFUL = 20
-
 const SORTS = [
-  { value: 'name-asc', label: 'Name A–Z' },
-  { value: 'name-desc', label: 'Name Z–A' }
+  { value: 'id-asc', label: 'Pack ID: A–Z' },
+  { value: 'id-desc', label: 'Pack ID: Z–A' }
 ]
 
-export function PacksPane() {
-  const { data, error, isPending, isSuccess } = usePacks()
+export function PacksPane({ active = true }: { active?: boolean }) {
+  const { data, error, isPending, isSuccess, isFetching, refetch } = usePacks()
+  const total = data?.packs?.length ?? 0
   const [filter, setFilter] = useState('')
-  const [sort, setSort] = useState('name-asc')
-  const [expanded, setExpanded] = useState(false)
+  const [sort, setSort] = useState('id-asc')
+  const [previewId, setPreviewId] = useState<string | null>(null)
   const list = useRef<HTMLDivElement | null>(null)
-  /**
-   * The row height this density paints, which the window arithmetic needs as a
-   * number.
-   *
-   * `.row` takes `--density-row` from the sheet, and the two spacers this list
-   * reserves for the rows it is *not* rendering are computed here — so a scale
-   * the sheet tightened while this stayed at 40 would scroll to the wrong place
-   * and focus the wrong row. `ROW_HEIGHT` is the same pair of numbers, and a
-   * test reads `--density-row` out of both blocks of `styles.css` and holds
-   * them equal to it. `undefined` is this desk not yet knowing which density
-   * is in force, and it paints the comfortable scale, which is what `:root`
-   * carries until the attribute is written.
-   */
+  const scrollPosition = useRef(0)
+  const sortId = useId()
   const { density } = useAppearance()
   const rowHeight = ROW_HEIGHT[density ?? 'comfortable']
-
+  const slot = useInspectorSlot()
+  const shell = useShellState()
   const packs = useMemo(() => {
-    const all = data?.packs ?? []
     const needle = filter.trim().toLowerCase()
-    const matching =
-      needle === '' ? [...all] : all.filter((pack) => pack.id.toLowerCase().includes(needle))
-    matching.sort((left, right) =>
-      sort === 'name-desc' ? right.id.localeCompare(left.id) : left.id.localeCompare(right.id)
-    )
-    return matching
+    const matching = (data?.packs ?? []).filter(pack => !needle ||
+      pack.id.toLowerCase().includes(needle) || pack.description?.toLowerCase().includes(needle))
+    return matching.sort((left, right) => sort === 'id-desc'
+      ? right.id.localeCompare(left.id) : left.id.localeCompare(right.id))
   }, [data, filter, sort])
+  const window = useWindowedRows(packs.length, rowHeight)
+  const preview = isSuccess ? packs.find(pack => pack.id === previewId) : undefined
+  const portal = useInspectorPortal(active
+    ? preview ? <PackPreview pack={preview} onOpen={() => {
+      // Opening the document from a modal preview must reveal the main page.
+      if (slot.open && slot.target?.closest('[role="dialog"]')) shell.toggleInspector()
+    }} /> : <PackPreviewHint />
+    : null)
 
-  const shown = expanded ? packs : packs.slice(0, FIRST_SCREENFUL)
-  const window = useWindowedRows(shown.length, rowHeight)
+  // A hidden collection must not replace the selected pack's Inspector or
+  // overwrite its own saved scroll position with a zero-height measurement.
+  useLayoutEffect(() => {
+    if (active && list.current) {
+      list.current.scrollTop = scrollPosition.current
+      list.current.dispatchEvent(new Event('scroll'))
+    }
+  }, [active])
 
-  /**
-   * A row the keyboard asked for that was not on screen yet.
-   *
-   * Focus cannot be given to an element that is not rendered, so a key that
-   * reaches past the window scrolls first and the row is focused in the render
-   * that brings it in. State rather than a frame callback, because the render
-   * is what this is waiting for and React is the thing that knows when it
-   * happened.
-   */
-  const [wanted, setWanted] = useState<number | undefined>(undefined)
+  const [wanted, setWanted] = useState<{ index: number; preview: boolean } | undefined>(undefined)
   useEffect(() => {
-    if (wanted === undefined) return
-    const row = list.current?.querySelector(`[data-row="${wanted}"]`)
-    if (row instanceof HTMLElement) row.focus()
+    if (!wanted) return
+    const row = list.current?.querySelector(`[data-row="${wanted.index}"]${wanted.preview ? '[data-preview]' : ':not([data-preview])'}`)
+    if (row instanceof HTMLElement) row.focus({ preventScroll: true })
     setWanted(undefined)
   }, [wanted, window.start, window.end])
+  const resetScroll = () => {
+    scrollPosition.current = 0
+    if (list.current) { list.current.scrollTop = 0; list.current.dispatchEvent(new Event('scroll')) }
+  }
+  const clearFilter = () => { resetScroll(); setFilter('') }
 
-  return (
-    <nav className={styles.pane} aria-label="Packs">
-      <h2 className={styles.title}>Packs</h2>
-      <div className={styles.controls}>
-        <Field label="Filter">
-          {(wiring) => (
-            <Input
-              {...wiring}
-              type="search"
-              value={filter}
-              placeholder="Search by pack ID"
-              onChange={(event) => setFilter(event.target.value)}
-            />
-          )}
-        </Field>
-        <Field label="Sort">
-          {(wiring) => (
-            <Select id={wiring.id} value={sort} onValueChange={setSort} options={SORTS} />
-          )}
-        </Field>
+  return <article className={styles.pane} data-layout={active ? 'page' : undefined} aria-label="Pack collection">
+    <PageHeader title="Packs" meta={isSuccess ? packs.length === total
+      ? total : `${packs.length} of ${total}` : undefined}
+      actions={<ButtonLink to="/create-pack" variant="primary">Create pack</ButtonLink>} />
+    <div className={styles.controls} role="group" aria-label="Pack list controls">
+      <Input className={styles.search} type="search" aria-label="Search packs" value={filter}
+        placeholder="Search packs…" onChange={event => { resetScroll(); setFilter(event.target.value) }} />
+      {filter && <Button variant="quiet" onClick={clearFilter}>Clear</Button>}
+      <div className={styles.sort}>
+        <VisuallyHidden.Root asChild><label htmlFor={sortId}>Sort packs</label></VisuallyHidden.Root>
+        <Select id={sortId} value={sort} onValueChange={value => { resetScroll(); setSort(value) }} options={SORTS} />
       </div>
-
-      {error ? (
-        <p className={styles.failure}>The pack listing did not answer — {error.message}</p>
-      ) : isPending ? (
-        <p className={styles.quiet}>Reading the project&rsquo;s packs&hellip;</p>
-      ) : packs.length === 0 ? (
-        <p className={styles.quiet}>
-          {(data?.packs ?? []).length === 0
-            ? 'This project declares no packs.'
-            : 'No pack id contains that.'}
-        </p>
-      ) : (
-        <div
-          className={styles.list}
-          ref={(node) => {
-            list.current = node
-            window.ref(node)
-          }}
-        >
-          <div style={{ height: window.padTop }} aria-hidden="true" />
-          <ul
-            className={styles.rows}
-            onKeyDown={(event) => {
-              // **Absolute indices, over the whole list.** The rendered
-              // anchors are the window, and navigating by them clamped every
-              // key to it: End reached the last *rendered* row and ArrowDown
-              // from there prevented the default and moved nothing, so the
-              // keyboard could not leave the first screenful of a list a
-              // pointer scrolls freely.
-              const focused = document.activeElement as HTMLElement | null
-              const pointer = focused?.getAttribute('data-row')
-              if (pointer === null || pointer === undefined) return
-              const current = Number(pointer)
-              if (!Number.isInteger(current)) return
-              const next = moveFocus(event, shown.length, current)
-              if (next === undefined) return
-              // Off-window destinations are scrolled to first: a row that is
-              // not rendered cannot be focused, and the window follows the
-              // scroll rather than the other way round.
-              window.scrollRowIntoView(next)
-              const already = list.current?.querySelector(`[data-row="${next}"]`)
-              if (already instanceof HTMLElement) already.focus()
-              // Not rendered yet: the scroll above moves the window, and the
-              // row is focused in the render that brings it in.
-              else setWanted(next)
-            }}
-          >
-            {shown.slice(window.start, window.end).map((pack, offset) => (
-              <li key={pack.id} className={styles.row}>
-                <NavLink
-                  className={styles.link}
-                  // The row's own index in the whole list, so the keyboard can
-                  // ask for a row that is not on screen.
-                  data-row={window.start + offset}
-                  to={`/packs/${encodeURIComponent(pack.id)}`}
-                >
-                  <span className={styles.name}>{pack.id}</span>
-                  {/* An **empty** version is not a version. `list_packs` lists
-                      a pack whose document it could not read with `packId` and
-                      `packVersion` as empty strings and the reason in
-                      `detail`, and a bare "v" beside the name asserted a member
-                      of a document nothing could read. */}
-                  {isSpelled(pack.packVersion) ? (
-                    <span className={styles.version}>v{pack.packVersion}</span>
-                  ) : (
-                    /* The runtime's own sentence, where it sent one. Quoted and
-                       not summarised: what the desk knows about this pack is
-                       exactly what the listing said about it. On one line, so
-                       every row is still the height the window arithmetic
-                       assumes. */
-                    isSpelled(pack.detail) && (
-                      <span className={styles.rowDetail} title={pack.detail}>
-                        {pack.detail}
-                      </span>
-                    )
-                  )}
-                </NavLink>
-              </li>
-            ))}
-          </ul>
-          <div style={{ height: window.padBottom }} aria-hidden="true" />
-        </div>
-      )}
-
-      {/*
-        **Gated on a listing that succeeded just now.** react-query keeps the
-        last good data through a refetch error, so a failed refresh left this
-        button under the failure sentence offering to show all N of a listing
-        the pane had just said it could not read.
-      */}
-      {isSuccess && !expanded && packs.length > FIRST_SCREENFUL && (
-        <button type="button" className={styles.more} onClick={() => setExpanded(true)}>
-          Show all {packs.length}
-        </button>
-      )}
-    </nav>
-  )
+    </div>
+    {error ? <section className={styles.empty} role="alert">
+      <h2>Couldn’t load packs</h2><p>{error.message}</p>
+      <Button onClick={() => { void refetch() }} disabled={isFetching}>{isFetching ? 'Retrying…' : 'Retry'}</Button>
+    </section> : isPending ? <p className={styles.message} role="status">Loading packs…</p>
+    : packs.length === 0 ? <section className={styles.empty} role="status">
+      <h2>{total ? 'No matching packs' : 'No packs yet'}</h2>
+      <p>{total ? 'Try another pack ID or description.' : 'Create a pack to define a decision and its rules.'}</p>
+      {total ? <Button onClick={clearFilter}>Clear search</Button> : null}
+    </section> : <nav className={styles.collection} aria-label="Packs">
+      <div className={styles.columns} aria-hidden="true"><span>Pack</span><span>Version</span><span /></div>
+      <div className={styles.list} data-pack-list ref={node => { list.current = node; window.ref(node) }}
+        onScroll={event => { if (active) scrollPosition.current = event.currentTarget.scrollTop }}>
+        <div style={{ height: window.padTop }} aria-hidden="true" />
+        <ul className={styles.rows} onKeyDown={event => {
+          const focused = document.activeElement as HTMLElement | null
+          const pointer = focused?.getAttribute('data-row')
+          if (pointer == null) return
+          const current = Number(pointer)
+          if (!Number.isInteger(current)) return
+          const next = moveFocus(event, packs.length, current)
+          if (next === undefined) return
+          const preview = focused?.hasAttribute('data-preview') ?? false
+          window.scrollRowIntoView(next)
+          const selector = `[data-row="${next}"]${preview ? '[data-preview]' : ':not([data-preview])'}`
+          const already = list.current?.querySelector(selector)
+          if (already instanceof HTMLElement) already.focus({ preventScroll: true })
+          else setWanted({ index: next, preview })
+        }}>
+          {packs.slice(window.start, window.end).map((pack, offset) => <li key={pack.id}
+            className={styles.row} data-selected={slot.open && preview?.id === pack.id || undefined}>
+            <Link className={styles.link} data-row={window.start + offset} to={`/packs/${encodeURIComponent(pack.id)}`}
+              onClick={() => { if (list.current) scrollPosition.current = list.current.scrollTop }}>
+              <span className={styles.identity}><span className={styles.name} title={pack.id}>{pack.id}</span>
+                {isSpelled(pack.detail) ? <span className={styles.rowDetail} title={pack.detail}>{pack.detail}</span>
+                  : isSpelled(pack.description) && <span className={styles.description} title={pack.description}>{pack.description}</span>}
+              </span>
+              <span className={styles.version}>{isSpelled(pack.packVersion) ? `v${pack.packVersion}` : '—'}</span>
+            </Link>
+            <Button variant="quiet" className={styles.preview} data-preview data-row={window.start + offset}
+              aria-label={`Preview ${pack.id}`} aria-pressed={slot.open && preview?.id === pack.id}
+              onClick={() => { setPreviewId(pack.id); slot.reveal() }}>Preview</Button>
+          </li>)}
+        </ul>
+        <div style={{ height: window.padBottom }} aria-hidden="true" />
+      </div>
+    </nav>}
+    {portal}
+  </article>
 }

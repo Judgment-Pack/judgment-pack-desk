@@ -1,15 +1,7 @@
 /**
- * The packs pane, and whatever is selected beside it.
- *
- * A **layout route**, so the pane survives every change to the child: choosing
- * a different pack, and — when it lands — switching into `?edit`. A pane that
- * remounted on selection would lose its filter, its sort and its scroll
- * position every time someone used it.
- *
- * `/packs/:packId/evaluate` and `/packs/:packId/matrix` stay outside this
- * layout, as their own branches. Those two views are untouched by this work
- * and nesting them here would hand them a pane they never asked for and a
- * column width they were not drawn at.
+ * Retain the collection while a pack is open so Back preserves its controls,
+ * selection and scroll position. Only the active page publishes to Inspector.
+ * Evaluation and matrix pages remain separate route branches.
  */
 import { Outlet, useParams } from 'react-router-dom'
 import { PacksPane } from '../packs/PacksPane'
@@ -18,8 +10,8 @@ import styles from './PacksLayout.module.css'
 export function PacksLayout() {
   const { packId } = useParams()
   return (
-    <div className={packId ? styles.selected : styles.layout} data-measure="wide">
-      <div hidden={Boolean(packId)}><PacksPane /></div>
+    <div className={styles.layout} data-measure="full">
+      <div hidden={Boolean(packId)}><PacksPane active={!packId} /></div>
       <div className={styles.main}>
         <Outlet />
       </div>

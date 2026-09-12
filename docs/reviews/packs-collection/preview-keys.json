@@ -1,0 +1,21 @@
+{
+  "checks": [
+    {
+      "name": "Preview End reaches the last virtualized action",
+      "pass": true
+    },
+    {
+      "name": "Preview Home returns to the first action",
+      "pass": true
+    },
+    {
+      "name": "Preview arrows preserve the action column",
+      "pass": true
+    },
+    {
+      "name": "Keyboard Preview opens Inspector without navigating",
+      "pass": true
+    }
+  ],
+  "errors": []
+}

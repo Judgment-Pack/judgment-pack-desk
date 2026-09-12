@@ -283,6 +283,29 @@ populated pages, empty/loading/error states, both themes, both densities, a
 dialog, and narrow layouts. Source checks alone cannot establish visual quality.
 
 
+## Pack collections
+
+Use the shared compact `PageHeader` for the collection name, subdued count and
+Create pack action. The main pane holds the collection at full width; it does
+not reserve an empty document preview beside a narrow list. Search and the
+explicit Pack ID sort share a wrapping control row. Keep native Tab behavior
+for these input controls and reuse `Input`, `Select`, `Button` and `ButtonLink`.
+
+Rows use `--text-control` (13px), `--text-xs` metadata, and the existing 40/32px
+density heights. Their headers reserve the same scrollbar gutter as the list.
+The collection uses fixed 24/20px gutters and 16px on phones; selection and hover
+stay neutral. Available descriptions share the name line and collapse on phones.
+Do not add columns for data the runtime has not supplied.
+
+Pack names navigate to Overview. A separate Preview action publishes inventory
+metadata into the shared Inspector without fetching documents or evaluating.
+Preserve intentional pane preferences and the existing closed default. A modal
+preview closes when its Open pack action navigates to the document. Retain
+collection controls and scroll across document navigation, and release its
+Inspector publication while the document is active. Window all results; no
+extra Show all step is needed. Short viewports keep at least three reachable
+rows, allowing main to scroll when the console consumes the remaining height.
+
 ## Pack workspace
 
 Creation lives at `/create-pack`, outside the pack-ID route so a pack named `new` remains addressable. It uses `PageHeader`, `PageBody`, `FieldGroup`, the shared controls, and the existing byte-preserving document editors. Basics → Build → Review holds one draft. AI is offered only with an available endpoint/key, enabled model, and runtime authoring prompt; accepted suggestions become editable drafts, with declared unknowns retained for review. Neither route navigation nor tab changes silently save a draft.
