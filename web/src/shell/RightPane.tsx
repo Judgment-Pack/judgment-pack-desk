@@ -44,6 +44,7 @@ export function RightPane({
   publishTarget,
   publishPane,
   openerRef,
+  restoreFocusRef,
   showEmpty,
   children
 }: {
@@ -77,6 +78,7 @@ export function RightPane({
    * header, two grid cells away — so the restoration is wired by hand.
    */
   openerRef: RefObject<HTMLButtonElement | null>
+  restoreFocusRef?: RefObject<HTMLElement | null>
   /** False while a route is publishing into the slot. */
   showEmpty: boolean
   children?: ReactNode
@@ -123,7 +125,9 @@ export function RightPane({
             }
             onCloseAutoFocus={(event) => {
               event.preventDefault()
-              openerRef.current?.focus()
+              const gesture = restoreFocusRef?.current
+              if (gesture?.isConnected && gesture.getClientRects().length) gesture.focus()
+              else openerRef.current?.focus()
             }}
           >
             <VisuallyHidden.Root>

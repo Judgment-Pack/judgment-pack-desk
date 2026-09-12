@@ -100,7 +100,7 @@ export function AppShell({ children }: { children: ReactNode }) {
  */
 function ShellFrame({
   railIsDrawer,
-  inspectorIsDrawer,
+  inspectorIsDrawer: defaultInspectorIsDrawer,
   children
 }: {
   railIsDrawer: boolean
@@ -123,6 +123,7 @@ function ShellFrame({
    */
   const railOpenerRef = useRef<HTMLButtonElement | null>(null)
   const inspectorOpenerRef = useRef<HTMLButtonElement | null>(null)
+  const inspectionGestureRef = useRef<HTMLElement | null>(null)
 
   /**
    * The Inspector slot, held **here** and not in the pane.
@@ -156,6 +157,20 @@ function ShellFrame({
     setInspectorPane(pane)
   }, [])
   const inspectorWidth = config.panes.inspector.width
+  const [workspaceElement, setWorkspaceElement] = useState<HTMLDivElement | null>(null)
+  const workspaceBox = useMeasuredBox(workspaceElement)
+  const workingWidths = useRef(new Map<symbol, number>())
+  const [minimumMainWidth, setMinimumMainWidth] = useState(0)
+  const requestWorkingWidth = useCallback((pixels: number) => {
+    const owner = Symbol()
+    const update = () => setMinimumMainWidth(Math.max(0, ...workingWidths.current.values()))
+    workingWidths.current.set(owner, pixels); update()
+    return () => { workingWidths.current.delete(owner); update() }
+  }, [])
+  // Measure the whole workspace so opening the inspector cannot change the
+  // input to this decision and cause a dock/drawer feedback loop.
+  const inspectorIsDrawer = defaultInspectorIsDrawer || (minimumMainWidth > 0 &&
+    (workspaceBox?.width ?? 0) > 0 && workspaceBox!.width - inspectorWidth < minimumMainWidth)
   /**
    * **Measured, not configured.** `size` promises a route the pane's width,
    * and the configured number is not that: the sheet caps it against the
@@ -177,7 +192,13 @@ function ShellFrame({
   // opened the pane immediately closed it again, and the link somebody sent
   // landed on a closed Inspector. `openInspector` is idempotent, so calling it
   // twice is calling it once and calling it on an open pane does nothing.
-  const reveal = shell.openInspector
+  const reveal = useCallback(() => {
+    if (document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
+      // Keep the actual route gesture through the dock/drawer remount.
+      if (!document.activeElement.closest('#desk-inspector')) inspectionGestureRef.current = document.activeElement
+    }
+    shell.openInspector()
+  }, [shell.openInspector])
   const slot = useMemo<InspectorSlot>(
     () => ({
       open: shell.inspector.open,
@@ -186,9 +207,10 @@ function ShellFrame({
       setTab: setInspectorTab,
       target: inspectorTarget,
       claim,
-      reveal
+      reveal,
+      requestWorkingWidth
     }),
-    [shell.inspector.open, inspectorBox, inspectorTab, inspectorTarget, claim, reveal]
+    [shell.inspector.open, inspectorBox, inspectorTab, inspectorTarget, claim, reveal, requestWorkingWidth]
   )
 
   useEffect(
@@ -231,7 +253,7 @@ function ShellFrame({
             inspectorOpen={shell.inspector.open}
             inspectorIsDrawer={inspectorIsDrawer}
             consoleOpen={shell.console.open}
-            onToggleInspector={shell.toggleInspector}
+            onToggleInspector={() => { inspectionGestureRef.current = null; shell.toggleInspector() }}
             onToggleConsole={shell.toggleConsole}
             inspectorOpenerRef={inspectorOpenerRef}
             railIsDrawer={railIsDrawer}
@@ -249,7 +271,7 @@ function ShellFrame({
             openerRef={railOpenerRef}
           />
 
-          <div className="desk-workspace">
+          <div className="desk-workspace" ref={setWorkspaceElement}>
             <main id="main" tabIndex={-1} className="desk-main">
               <div className="desk-measure">{children}</div>
             </main>
@@ -258,10 +280,11 @@ function ShellFrame({
               open={shell.inspector.open}
               onClose={shell.toggleInspector}
               asDrawer={inspectorIsDrawer}
-              declaredWidth={declaredPanes.inspectorWidth ? inspectorWidth : undefined}
+              declaredWidth={declaredPanes.inspectorWidth || minimumMainWidth > 0 ? inspectorWidth : undefined}
               publishTarget={publishTarget}
               publishPane={publishPane}
               openerRef={inspectorOpenerRef}
+              restoreFocusRef={inspectionGestureRef}
               showEmpty={inspectorClaims === 0}
             />
 

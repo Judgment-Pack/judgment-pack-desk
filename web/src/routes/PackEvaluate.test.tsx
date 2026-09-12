@@ -6,6 +6,7 @@ import { McpContext } from '../mcp/McpProvider'
 import { connected, stubClient, testQueryClient, type ToolHandler } from '../testing/harness'
 import { consoleSnapshot, forgetConsole } from '../shell/consoleLog'
 import { PackEvaluate } from './PackEvaluate'
+import type { PackRunSnapshot } from '../packs/runContext'
 
 const payload = {
   status: 'ok', experimental: true, rehearsal: true, packId: 'https://example.test/pack',
@@ -14,21 +15,39 @@ const payload = {
 const answer = { text: JSON.stringify(payload) }
 afterEach(() => { cleanup(); forgetConsole() })
 
-function draw(evaluate: ToolHandler) {
+function draw(evaluate: ToolHandler, packBytes?: string) {
   const stub = stubClient({
     list_packs: () => ({ text: JSON.stringify({ packs: [{ id: 'sample', matrix: true }] }) }),
-    experimental_evaluate: evaluate
+    experimental_evaluate: evaluate,
+    ...(packBytes === undefined ? {} : { get_pack: () => ({ text: packBytes }) })
   })
-  const router = createMemoryRouter([{ path: '/packs/:packId/evaluate', element: <PackEvaluate /> }], {
+  const router = createMemoryRouter([{ path: '/packs/:packId/evaluate', element: <PackEvaluate /> }, { path: '/packs/:packId', element: <p>Explanation destination</p> }], {
     initialEntries: ['/packs/sample/evaluate']
   })
-  render(<QueryClientProvider client={testQueryClient()}><McpContext.Provider value={connected({ client: stub.client, rehearsalSupported: true })}>
+  const queryClient = testQueryClient()
+  render(<QueryClientProvider client={queryClient}><McpContext.Provider value={connected({ client: stub.client, rehearsalSupported: true })}>
     <RouterProvider router={router} />
   </McpContext.Provider></QueryClientProvider>)
-  return { router, calls: stub.calls }
+  return { router, calls: stub.calls, queryClient }
 }
 
 describe('the pack testing workspace', () => {
+  it('binds Explain on map to the exact submitted pack bytes and retains that run on return', async () => {
+    const packBytes = '{"title":"Snapshot pack","version":"1","decision":{"question":"Approve?"}}\n'
+    const { calls, router, queryClient } = draw(() => answer, packBytes)
+    await screen.findByRole('heading', { name: 'Snapshot pack' })
+    fireEvent.change(screen.getByLabelText('Facts'), { target: { value: '{"amount":"20"}' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Run evaluation' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Explain on map' }))
+    await screen.findByText('Explanation destination')
+    expect(calls.find(c => c.name === 'experimental_evaluate')!.args).toEqual({ pack: packBytes, facts: '{"amount":"20"}', rehearsal: true })
+    const saved = queryClient.getQueryData<PackRunSnapshot>(['pack-explanation', 'sample'])!
+    expect(saved.packBytes).toBe(packBytes)
+    expect(new URLSearchParams(router.state.location.search).get('run')).toBe(saved.id)
+    await act(async () => { await router.navigate('/packs/sample/evaluate') })
+    await screen.findByRole('tab', { name: 'Outcome & trace' })
+    expect((screen.getByLabelText('Facts') as HTMLTextAreaElement).value).toBe('{"amount":"20"}')
+  })
   it('preserves edits made during a run, labels the old result, and sends only submitted inputs', async () => {
     let finish!: (value: typeof answer) => void
     const { calls } = draw(() => new Promise((resolve) => { finish = resolve }))

@@ -25,9 +25,9 @@ import { conditionKind } from '../edit/conditionOps'
 import { Block } from './Block'
 import styles from './PackDocument.module.css'
 
-export function ConditionTree({ condition, at }: { condition: unknown; at: string }) {
+export function ConditionTree({ condition, at, wrap = false }: { condition: unknown; at: string; wrap?: boolean }) {
   return (
-    <div className={styles.tree}>
+    <div className={[styles.tree, wrap ? styles.treeWrapped : ''].join(' ')}>
       <ConditionNode condition={condition} at={at} depth={0} />
     </div>
   )
@@ -144,7 +144,7 @@ function Row({
       <span className={styles.indent} aria-hidden="true">
         {'  '.repeat(depth)}
       </span>
-      {children}
+      <span className={styles.treeContent}>{children}</span>
     </Block>
   )
 }

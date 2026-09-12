@@ -64,6 +64,8 @@ export interface InspectorSlot {
    * one border.
    */
   reveal: () => void
+  /** Reserve readable main-area width; the shell chooses drawer versus dock. */
+  requestWorkingWidth?: (pixels: number) => () => void
 }
 
 const CLOSED: InspectorSlot = {
@@ -80,6 +82,11 @@ export const InspectorSlotContext = createContext<InspectorSlot>(CLOSED)
 
 export function useInspectorSlot(): InspectorSlot {
   return useContext(InspectorSlotContext)
+}
+
+export function useInspectorWorkingWidth(pixels: number): void {
+  const { requestWorkingWidth } = useInspectorSlot()
+  useEffect(() => requestWorkingWidth?.(pixels), [pixels, requestWorkingWidth])
 }
 
 /**

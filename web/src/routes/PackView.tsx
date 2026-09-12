@@ -86,9 +86,14 @@ import { usePublishedDirty } from '../shell/authorBridge'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useMeasuredBox } from '../shell/measured'
 import { Tabs } from '../ui/Tabs'
+import { PackLogic } from '../packs/PackLogic'
+import { LogicInspector } from '../packs/inspector/LogicInspector'
+import { projectLogic, selectedItem } from '../packs/logicModel'
+import { useLogicState, rememberLogicMode, type LogicMode } from '../packs/logicState'
+import { usePackRun, traceMatches } from '../packs/runContext'
 import styles from './PackView.module.css'
-import { PageHeader, PageBody } from '../ui/PageLayout'
-import { PackNavigation, PackOverview, PACK_GROUPS, type PackSection } from '../packs/PackWorkspace'
+import { PageBody } from '../ui/PageLayout'
+import { PackHeader, PackOverview, PACK_GROUPS, type PackSection } from '../packs/PackWorkspace'
 
 /**
  * What the what-if pane needs, and what the editor must keep beside it.
@@ -116,6 +121,10 @@ export function PackView() {
   const { packId } = useParams<{ packId: string }>()
   const { hash, key: locationKey } = useLocation()
   const [params, setParams] = useSearchParams()
+  const logic = useLogicState(packId)
+  const explanation = usePackRun(packId)
+  const [selectionNotice, setSelectionNotice] = useState('')
+  const selectionBinding = useRef<{ packId?: string; pointer: string | null; id: unknown } | null>(null)
   const { known, status, validateSupported, rehearsalSupported } = useMcp()
   const queryClient = useQueryClient()
   const pack = usePack(packId)
@@ -245,8 +254,13 @@ export function PackView() {
 
   const at = params.get('at')
   const select = (pointer: string) => {
+    setSelectionNotice('')
+    logic.setPane('detail')
+    setRightTab('inspector')
+    if (at === pointer) { slot.reveal(); return }
     const next = new URLSearchParams(params)
     next.set('at', pointer)
+    if (!params.has('view') && !editing && hash === '') next.set('view', 'overview')
     setParams(next, { replace: true })
   }
 
@@ -256,9 +270,14 @@ export function PackView() {
    * `location.key`.
    */
   const visited = useRef<string | undefined>(undefined)
+  const retainInspectorOnNavigation = useRef(false)
   useEffect(() => {
     if (visited.current === locationKey) return
     visited.current = locationKey
+    if (retainInspectorOnNavigation.current) {
+      retainInspectorOnNavigation.current = false
+      return
+    }
     if (at === null) return
     slot.reveal()
   }, [at, locationKey, slot])
@@ -358,9 +377,36 @@ export function PackView() {
    * about the same bytes by construction.
    */
   const requested = params.get('view')
-  const section: PackSection = editing || hash !== '' || (at !== null && (!requested || requested === 'overview'))
-    ? 'document' : requested === 'rules' || requested === 'evidence' || requested === 'document'
-      ? requested : 'overview'
+  const section: PackSection = editing || hash !== '' || (at !== null && !requested)
+    ? 'document' : requested === 'logic' || requested === 'rules' ? 'logic'
+      : requested === 'evidence' || requested === 'document' ? requested : 'overview'
+
+  const model = useMemo(() => drawn ? projectLogic(drawn) : undefined, [drawn])
+  useEffect(() => {
+    if (!model || editing || (section !== 'logic' && section !== 'overview')) return
+    const value = selectedItem(model, at)?.item.value
+    const id = isRecord(value) ? value.id : undefined
+    const previous = selectionBinding.current
+    selectionBinding.current = { packId, pointer: at, id }
+    if (previous?.packId === packId && previous?.pointer === at && previous.id !== undefined && previous.id !== id) {
+      setSelectionNotice('The selected item changed in this revision. Select an item again to inspect it.')
+      const next = new URLSearchParams(params); next.delete('at'); setParams(next, { replace: true })
+    }
+  }, [model, at, packId, editing, section, params, setParams])
+  const mode: LogicMode = params.get('layout') === 'list' || requested === 'rules' ? 'list'
+    : params.get('layout') === 'map' ? 'map' : logic.preferred
+  const changeMode = (nextMode: LogicMode) => {
+    rememberLogicMode(nextMode); logic.setPreferred(nextMode)
+    const next = new URLSearchParams(params); next.set('view', 'logic'); next.set('layout', nextMode)
+    if (nextMode === 'list') logic.setPane('detail')
+    retainInspectorOnNavigation.current = true
+    setParams(next, { replace: true })
+  }
+  const openOutline = () => { logic.setPane('outline'); setRightTab('inspector'); slot.reveal() }
+  const runRequested = params.get('run')
+  const run = explanation.data?.id === runRequested ? explanation.data : undefined
+  const matchingRun = traceMatches(run, packId, shownText)
+  const runTrace = matchingRun ? run?.run.payload.trace : undefined
 
   const documentKey = `${idle.checkedText ?? shownText ?? ''}|${editing ? shape : 'read'}|${section}`
   useEffect(() => {
@@ -813,7 +859,11 @@ export function PackView() {
         value={rightTab}
         onValueChange={setRightTab}
         tabs={[
-          { value: 'inspector', label: 'Inspector', panel: inspectorNode },
+          { value: 'inspector', label: 'Inspector', panel:
+            !editing && (section === 'logic' || section === 'overview') && model && formAvailable ?
+              <LogicInspector model={model} at={at} pane={logic.pane} query={logic.query}
+                onSelect={select} onOutline={openOutline} outlineScroll={logic.outlineScroll}
+                trace={runTrace} advanced={inspectorNode} /> : inspectorNode },
           {
             value: 'assistant',
             label: 'Assistant',
@@ -880,7 +930,6 @@ export function PackView() {
     file.data?.sha256 !== undefined &&
     meta.sha256 !== file.data.sha256
 
-  const hasMatrix = summary?.matrix === true
 
   /**
    * The two other views on this pack, and the way into edit mode.
@@ -902,18 +951,6 @@ export function PackView() {
       >
         Edit
       </Button>
-      <ButtonLink
-        to={`/packs/${encodeURIComponent(packId ?? '')}/evaluate`}
-      >
-        Try it
-      </ButtonLink>
-      {hasMatrix && (
-        <ButtonLink
-          to={`/packs/${encodeURIComponent(packId ?? '')}/matrix`}
-        >
-          Test matrix
-        </ButtonLink>
-      )}
     </p>
   )
 
@@ -939,9 +976,8 @@ export function PackView() {
       <EditingContext.Provider value={session}>
         {inspector}
         <div data-layout="page">
-        <PageHeader title="Packs" context={packId} actions={elsewhere} />
-        <PackNavigation packId={packId ?? ''} current={section} />
-        <PageBody width="wide">
+        <PackHeader packId={packId ?? ''} document={drawn} current={section} actions={elsewhere} details={strip} hasMatrix={Boolean(summary?.matrix || summary?.matrixPath)} />
+        <PageBody width={section === 'logic' ? 'full' : 'wide'}>
         <div
           className={styles.workspace}
           ref={setFrame}
@@ -1109,7 +1145,7 @@ export function PackView() {
                 )}
               </p>
             )}
-            {drawn === undefined || rawMode ? (
+            {drawn === undefined || rawMode || (!editing && onPath && !formAvailable) ? (
               <>
                 {strip}
                 <RawJsonEditor
@@ -1123,11 +1159,27 @@ export function PackView() {
               </>
             ) : (
               <>
-                {section === 'overview' ? <>
-                  {strip}
-                  <PackOverview document={drawn} />
+                {section === 'overview' || section === 'logic' ? <>
+                  {selectionNotice && <p role="status" className={styles.warning}>{selectionNotice}</p>}
+                  {(fetching || stale || unavailable || digestsDisagree || disagreement.length > 0 || Boolean(report?.diagnostics?.length) || (report?.status && report.status !== 'valid')) && <details className={styles.validation} open={Boolean(digestsDisagree || disagreement.length || report?.diagnostics?.length || (report?.status && report.status !== 'valid'))}>
+                    <summary>Validation · {fetching ? 'checking' : stale ? 'out of date' : report?.status ?? 'unchecked'}</summary>{strip}
+                  </details>}
+                  {section === 'overview' ? <PackOverview document={drawn} packId={packId} /> : model && <>
+                    {runRequested && <div className={styles.runContext} role="status">
+                      {run ? <><strong>{run.run.payload.disposition.kind}</strong>{run.run.payload.disposition.outcomeId ? ` · ${run.run.payload.disposition.outcomeId}` : ''} · Handoff: {run.run.payload.disposition.handoff.state}
+                        <p>{matchingRun ? 'Recorded run on these exact pack bytes.' : 'Different or unbound revision. No trace overlay is shown.'}</p></> : <p>This recorded run is no longer available. Run the test again to inspect its trace.</p>}
+                      <Button variant="quiet" onClick={() => { const next = new URLSearchParams(params); next.delete('run'); retainInspectorOnNavigation.current = true; setParams(next, { replace: true }) }}>Structure only</Button>
+                      <ButtonLink variant="quiet" to={`/packs/${encodeURIComponent(packId ?? '')}/evaluate`}>Back to Tests</ButtonLink>
+                    </div>}
+                    <PackLogic model={model} at={at} select={select} mode={mode} onMode={changeMode}
+                      query={logic.query} onQuery={logic.setQuery} openOutline={openOutline}
+                      viewport={logic.viewport} onViewport={logic.setViewport} listScroll={logic.listScroll}
+                      trace={runTrace} mapUnavailable={!formAvailable ? 'The document cannot be interpreted unambiguously.'
+                        : stale || !report ? 'A current validation is needed before displaying a complete map.'
+                        : report.status !== 'valid' ? 'This document is invalid or requires unsupported semantics. Inspect its definitions and validation details in List.' : undefined} />
+                  </>}
                 </> : <PackDocumentView key={section} document={drawn} active={active}
-                  members={section === 'rules' || section === 'evidence' ? PACK_GROUPS[section] : undefined}
+                  members={section === 'evidence' ? PACK_GROUPS.evidence : undefined}
                   outline={section === 'document'}>
                   {strip}
                 </PackDocumentView>}

@@ -1,19 +1,21 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { DispositionDiff } from '../components/DispositionDiff'
 import { EvaluationRaw, EvaluationView } from '../components/EvaluationView'
 import { Empty } from '../components/primitives'
 import { RefusalPanel } from '../components/RefusalPanel'
 import { useMcp } from '../mcp/McpProvider'
-import { useEvaluate, usePacks } from '../mcp/queries'
+import { useEvaluate, usePacks, usePack } from '../mcp/queries'
 import type { EvaluationRun, PackSummary } from '../mcp/types'
-import { PageHeader, PageBody } from '../ui/PageLayout'
+import { PageBody } from '../ui/PageLayout'
 import { Button } from '../ui/Button'
 import { Field, FieldGroup } from '../ui/Field'
 import { TextArea } from '../ui/TextArea'
 import { Tabs } from '../ui/Tabs'
-import { PackNavigation, TestNavigation } from '../packs/PackWorkspace'
+import { PackHeader, TestNavigation } from '../packs/PackWorkspace'
 import { recordActivity } from '../shell/consoleLog'
+import { publishPackRun, usePackRun, type PackRunSnapshot } from '../packs/runContext'
 import styles from './PackEvaluate.module.css'
 
 type ResultTab = 'reading' | 'raw'
@@ -33,6 +35,10 @@ type ResultTab = 'reading' | 'raw'
  */
 export function PackEvaluate() {
   const { packId } = useParams<{ packId: string }>()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const pack = usePack(packId)
+  const explanation = usePackRun(packId)
   const { status, rehearsalSupported, known: capabilitiesKnown } = useMcp()
   const { data: inventory } = usePacks()
   const evaluate = useEvaluate()
@@ -40,13 +46,16 @@ export function PackEvaluate() {
   const [facts, setFacts] = useState('{}')
   const [evidence, setEvidence] = useState('{}')
   const [evidenceSupplied, setEvidenceSupplied] = useState(false)
-  const [history, setHistory] = useState<EvaluationRun[]>([])
+  const [history, setHistory] = useState<(EvaluationRun & { packBytes?: string })[]>([])
   const [tab, setTab] = useState<ResultTab>('reading')
   const generation = useRef(0)
   useEffect(() => {
     generation.current += 1
     evaluate.reset()
-    setFacts('{}'); setEvidence('{}'); setEvidenceSupplied(false); setHistory([])
+    const saved = explanation.data?.packId === packId ? explanation.data : undefined
+    setFacts(saved?.run.facts ?? '{}'); setEvidence(saved?.run.evidence ?? '{}')
+    setEvidenceSupplied(saved?.run.evidence !== undefined)
+    setHistory(saved ? [{ ...saved.run, packBytes: saved.packBytes }] : [])
     return () => { generation.current += 1 }
   }, [packId])
 
@@ -70,14 +79,15 @@ export function PackEvaluate() {
   const run = () => {
     if (!packId || !runnable || evaluate.isPending) return
     const ticket = generation.current
+    const packBytes = pack.data?.raw
     recordActivity('Running pack evaluation…')
     evaluate.mutate(
-      { source: 'pack_id', packId, facts, evidence: evidenceSupplied ? evidence : undefined },
+      { ...(packBytes === undefined ? { source: 'pack_id' as const, packId } : { source: 'pack' as const, pack: packBytes }), facts, evidence: evidenceSupplied ? evidence : undefined },
       {
         onSuccess: (completed) => {
           recordActivity('Pack evaluation completed. Results are available in Test.')
           if (ticket !== generation.current) return
-          setHistory((runs) => [...runs, completed])
+          setHistory((runs) => [...runs, { ...completed, packBytes }])
           // Keep edits made while this request was in flight. The result is
           // bound to completed.facts/evidence; drifted labels the difference.
           setTab('reading')
@@ -85,6 +95,13 @@ export function PackEvaluate() {
         onError: () => recordActivity('Pack evaluation failed. See Test for the runtime response.')
       }
     )
+  }
+
+  const explain = () => {
+    if (!current || !packId || current.packBytes === undefined) return
+    const snapshot: PackRunSnapshot = { id: crypto.randomUUID(), packId, packBytes: current.packBytes, run: current }
+    publishPackRun(queryClient, snapshot)
+    navigate(`/packs/${encodeURIComponent(packId)}?view=logic&layout=map&run=${encodeURIComponent(snapshot.id)}`)
   }
 
   const revert = () => {
@@ -96,13 +113,12 @@ export function PackEvaluate() {
 
   return (
     <article data-measure="wide" data-layout="page">
-      <PageHeader title="Packs" context={packId} />
-      <PackNavigation packId={packId ?? ''} current="test" />
+      <PackHeader packId={packId ?? ''} document={pack.data?.document} current="test" />
       <PageBody width="wide">
       <div className={styles.workspace}>
       <TestNavigation packId={packId ?? ''} hasMatrix={Boolean(summary?.matrix || summary?.matrixPath)} />
       <details className={styles.notice}>
-        <summary>{rehearsalSupported ? 'Rehearsal · runs the saved pack without appending an audit record.' : 'Runtime behavior · this run may append an audit record.'}</summary>
+        <summary>{rehearsalSupported ? 'Rehearsal · evaluates the loaded pack snapshot without appending an audit record.' : 'Runtime behavior · this run may append an audit record.'}</summary>
         <p className="note note-warn">
           <strong>Experimental surface.</strong> This runs the runtime's
           <code> experimental_evaluate</code> tool, which may change or be removed
@@ -195,6 +211,8 @@ export function PackEvaluate() {
       </section>
       <section className={styles.results} aria-label="Test results">
       <h2>Result</h2>
+      {current && <Button onClick={explain} disabled={current.packBytes === undefined}>Explain on map</Button>}
+      {current && current.packBytes === undefined && <p className="quiet">This result has no captured pack revision, so a trace cannot be attached to the map.</p>}
       {drifted && <p className={styles.stale} role="status">Inputs changed since this result. Run again to evaluate the current inputs.</p>}
       {evaluate.isPending && <p role="status">Evaluating the submitted inputs…</p>}
       {evaluate.error && <RefusalPanel error={evaluate.error} />}
