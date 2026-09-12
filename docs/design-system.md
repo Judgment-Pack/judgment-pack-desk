@@ -141,6 +141,10 @@ small indicators; large workspace surfaces must not acquire a green or gold wash
 - Use `Button` for actions and `ButtonLink` for navigation styled as an action.
   Both share geometry and states. Use `primary`, `secondary`, `quiet`, `danger`.
   Hover changes paint only. Keyboard focus remains visible.
+- Shell icon buttons share one neutral state treatment: quiet at rest, `--bg`
+  on hover, and `--accent-soft` with `--ink` when pressed or expanded. Selected
+  controls never gain an accent border. Left navigation, Inspector, and both
+  console controls use this rule; keyboard focus retains the shared accent ring.
 - Each write names its scope: **Save API key**, **Save settings**, or a section's
   **Save**. Group-wide saves sit at the bottom right with feedback before them.
   Cancel/undo belongs beside its save. Toolbars wrap on narrow layouts.
@@ -178,8 +182,12 @@ inset on its top, right and bottom, with one rounded neutral border.
 
 The main/Inspector divider is draggable when docked. `PaneDivider` supplies
 pointer capture and a focusable vertical separator with its controlled pane
-and live width bounds. Its 12px hit area carries a quiet 2px hover line; the
-keyboard focus indicator uses the shared accent. Left/Right move the boundary
+and live width bounds. Its invisible 12px hit area paints only one 2px line:
+neutral on mouse hover or drag, shared accent for keyboard focus. Pointer
+interaction clears keyboard paint, even after focus was in a text field;
+release/cancel restores the idle boundary once the mouse leaves. Touch does
+not acquire a sticky hover. Never outline the hit area or add parallel rails.
+Left/Right move the boundary
 8px, Shift moves 32px, Home/End reach the current minimum/maximum, and Enter
 closes the Inspector and focuses its header toggle. Double-click or Escape
 restores the configured default width.
@@ -237,8 +245,9 @@ center or shift this left edge. Narrow headings/actions may wrap without clippin
 `Popover` hosts transient runtime details in a portal, with collision handling,
 Escape/outside dismissal and focus restoration. Expanding it must move neither
 the header nor the form. Copy reports success only after the clipboard answers.
-Runtime's global connection badge remains a status indicator; the Admin popover
-adds diagnostics without changing the badge's behavior on other routes.
+The bottom status strip is the shell's persistent connection indicator; the
+header does not duplicate it. The Admin popover adds diagnostics and connection
+notices continue to surface failures in the main area.
 
 Use `RetainedPanel` for settings sections: mount on first visit, hide inactive
 sections from layout and accessibility, and retain their drafts and stale-write

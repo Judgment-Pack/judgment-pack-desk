@@ -18,6 +18,10 @@
   width: 2px;
   background: transparent;
 }
-.divider:hover::after, .divider[data-dragging]::after { background: var(--border-strong); }
-.divider:focus-visible::after { background: var(--accent); }
-.divider:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (hover: hover) {
+  .divider:hover::after { background: var(--border-strong); }
+}
+.divider[data-dragging]::after { background: var(--border-strong); }
+/* Paint the center line only. Outlining the invisible hit area creates two
+   extra rails, and pointer focus must never leave a selected-looking border. */
+.divider[data-keyboard-focus]:not([data-dragging])::after { background: var(--accent); }

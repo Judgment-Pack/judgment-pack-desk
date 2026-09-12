@@ -223,6 +223,7 @@ describe('the shell frame', () => {
       </AppShell>
     )
     expect(screen.getByRole('contentinfo').textContent).toContain('connected to jpack test')
+    expect(screen.getByRole('banner').textContent).not.toContain('connected')
     unmount()
     // **The verdict is the status, not the metadata.** `server` is retained
     // across a reconnect, so a strip that read "connected to" off its presence

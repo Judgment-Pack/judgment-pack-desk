@@ -1,0 +1,566 @@
+{
+  "summary": {
+    "checks": 50,
+    "failed": 0,
+    "errors": 0
+  },
+  "results": [
+    {
+      "name": "dark/comfortable: idle separator has no interaction paint",
+      "pass": true,
+      "detail": {
+        "color": "rgba(0, 0, 0, 0)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": false,
+        "dragging": false,
+        "accent": "#a7c8bc",
+        "cursor": ""
+      }
+    },
+    {
+      "name": "dark/comfortable: connection is present only in footer",
+      "pass": true
+    },
+    {
+      "name": "dark/comfortable: hover and text-field-to-drag use one neutral line",
+      "pass": true,
+      "detail": {
+        "hover": {
+          "color": "rgb(59, 60, 64)",
+          "width": "2px",
+          "outline": "none",
+          "shadow": "none",
+          "focused": false,
+          "dragging": false,
+          "accent": "#a7c8bc",
+          "cursor": ""
+        },
+        "drag": {
+          "color": "rgb(59, 60, 64)",
+          "width": "2px",
+          "outline": "none",
+          "shadow": "none",
+          "focused": true,
+          "dragging": true,
+          "accent": "#a7c8bc",
+          "cursor": "col-resize"
+        }
+      }
+    },
+    {
+      "name": "dark/comfortable: pointer release clears paint while retaining focus",
+      "pass": true,
+      "detail": {
+        "color": "rgba(0, 0, 0, 0)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": true,
+        "dragging": false,
+        "accent": "#a7c8bc",
+        "cursor": ""
+      }
+    },
+    {
+      "name": "dark/comfortable: Tab focus paints one accessible line",
+      "pass": true,
+      "detail": {
+        "color": "rgb(167, 200, 188)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": true,
+        "dragging": false,
+        "accent": "#a7c8bc",
+        "cursor": ""
+      }
+    },
+    {
+      "name": "dark/comfortable: arrow resizing still works",
+      "pass": true
+    },
+    {
+      "name": "dark/comfortable: pointer use clears earlier keyboard highlight",
+      "pass": true,
+      "detail": {
+        "color": "rgba(0, 0, 0, 0)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": true,
+        "dragging": false,
+        "accent": "#a7c8bc",
+        "cursor": ""
+      }
+    },
+    {
+      "name": "dark/comfortable: keyboard reuse restores focus cue",
+      "pass": true
+    },
+    {
+      "name": "dark/comfortable: Tab away clears focus cue",
+      "pass": true
+    },
+    {
+      "name": "dark/comfortable: pressed and expanded pane toggles share neutral paint",
+      "pass": true,
+      "detail": {
+        "inspectorStyle": {
+          "background": "rgb(34, 35, 38)",
+          "color": "rgb(226, 227, 229)",
+          "border": "rgba(0, 0, 0, 0)"
+        },
+        "consoleStyle": {
+          "background": "rgb(34, 35, 38)",
+          "color": "rgb(226, 227, 229)",
+          "border": "rgba(0, 0, 0, 0)"
+        },
+        "footerStyle": {
+          "background": "rgb(34, 35, 38)",
+          "color": "rgb(226, 227, 229)",
+          "border": "rgba(0, 0, 0, 0)"
+        }
+      }
+    },
+    {
+      "name": "dark/comfortable: left drawer uses the same selected style",
+      "pass": true,
+      "detail": {
+        "background": "rgb(34, 35, 38)",
+        "color": "rgb(226, 227, 229)",
+        "border": "rgba(0, 0, 0, 0)"
+      }
+    },
+    {
+      "name": "dark/comfortable: narrow layout stays contained",
+      "pass": true
+    },
+    {
+      "name": "dark/compact: idle separator has no interaction paint",
+      "pass": true,
+      "detail": {
+        "color": "rgba(0, 0, 0, 0)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": false,
+        "dragging": false,
+        "accent": "#a7c8bc",
+        "cursor": ""
+      }
+    },
+    {
+      "name": "dark/compact: connection is present only in footer",
+      "pass": true
+    },
+    {
+      "name": "dark/compact: hover and text-field-to-drag use one neutral line",
+      "pass": true,
+      "detail": {
+        "hover": {
+          "color": "rgb(59, 60, 64)",
+          "width": "2px",
+          "outline": "none",
+          "shadow": "none",
+          "focused": false,
+          "dragging": false,
+          "accent": "#a7c8bc",
+          "cursor": ""
+        },
+        "drag": {
+          "color": "rgb(59, 60, 64)",
+          "width": "2px",
+          "outline": "none",
+          "shadow": "none",
+          "focused": true,
+          "dragging": true,
+          "accent": "#a7c8bc",
+          "cursor": "col-resize"
+        }
+      }
+    },
+    {
+      "name": "dark/compact: pointer release clears paint while retaining focus",
+      "pass": true,
+      "detail": {
+        "color": "rgba(0, 0, 0, 0)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": true,
+        "dragging": false,
+        "accent": "#a7c8bc",
+        "cursor": ""
+      }
+    },
+    {
+      "name": "dark/compact: Tab focus paints one accessible line",
+      "pass": true,
+      "detail": {
+        "color": "rgb(167, 200, 188)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": true,
+        "dragging": false,
+        "accent": "#a7c8bc",
+        "cursor": ""
+      }
+    },
+    {
+      "name": "dark/compact: arrow resizing still works",
+      "pass": true
+    },
+    {
+      "name": "dark/compact: pointer use clears earlier keyboard highlight",
+      "pass": true,
+      "detail": {
+        "color": "rgba(0, 0, 0, 0)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": true,
+        "dragging": false,
+        "accent": "#a7c8bc",
+        "cursor": ""
+      }
+    },
+    {
+      "name": "dark/compact: keyboard reuse restores focus cue",
+      "pass": true
+    },
+    {
+      "name": "dark/compact: Tab away clears focus cue",
+      "pass": true
+    },
+    {
+      "name": "dark/compact: pressed and expanded pane toggles share neutral paint",
+      "pass": true,
+      "detail": {
+        "inspectorStyle": {
+          "background": "rgb(34, 35, 38)",
+          "color": "rgb(226, 227, 229)",
+          "border": "rgba(0, 0, 0, 0)"
+        },
+        "consoleStyle": {
+          "background": "rgb(34, 35, 38)",
+          "color": "rgb(226, 227, 229)",
+          "border": "rgba(0, 0, 0, 0)"
+        },
+        "footerStyle": {
+          "background": "rgb(34, 35, 38)",
+          "color": "rgb(226, 227, 229)",
+          "border": "rgba(0, 0, 0, 0)"
+        }
+      }
+    },
+    {
+      "name": "dark/compact: left drawer uses the same selected style",
+      "pass": true,
+      "detail": {
+        "background": "rgb(34, 35, 38)",
+        "color": "rgb(226, 227, 229)",
+        "border": "rgba(0, 0, 0, 0)"
+      }
+    },
+    {
+      "name": "dark/compact: narrow layout stays contained",
+      "pass": true
+    },
+    {
+      "name": "light/comfortable: idle separator has no interaction paint",
+      "pass": true,
+      "detail": {
+        "color": "rgba(0, 0, 0, 0)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": false,
+        "dragging": false,
+        "accent": "#0c5f68",
+        "cursor": ""
+      }
+    },
+    {
+      "name": "light/comfortable: connection is present only in footer",
+      "pass": true
+    },
+    {
+      "name": "light/comfortable: hover and text-field-to-drag use one neutral line",
+      "pass": true,
+      "detail": {
+        "hover": {
+          "color": "rgb(199, 199, 202)",
+          "width": "2px",
+          "outline": "none",
+          "shadow": "none",
+          "focused": false,
+          "dragging": false,
+          "accent": "#0c5f68",
+          "cursor": ""
+        },
+        "drag": {
+          "color": "rgb(199, 199, 202)",
+          "width": "2px",
+          "outline": "none",
+          "shadow": "none",
+          "focused": true,
+          "dragging": true,
+          "accent": "#0c5f68",
+          "cursor": "col-resize"
+        }
+      }
+    },
+    {
+      "name": "light/comfortable: pointer release clears paint while retaining focus",
+      "pass": true,
+      "detail": {
+        "color": "rgba(0, 0, 0, 0)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": true,
+        "dragging": false,
+        "accent": "#0c5f68",
+        "cursor": ""
+      }
+    },
+    {
+      "name": "light/comfortable: Tab focus paints one accessible line",
+      "pass": true,
+      "detail": {
+        "color": "rgb(12, 95, 104)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": true,
+        "dragging": false,
+        "accent": "#0c5f68",
+        "cursor": ""
+      }
+    },
+    {
+      "name": "light/comfortable: arrow resizing still works",
+      "pass": true
+    },
+    {
+      "name": "light/comfortable: pointer use clears earlier keyboard highlight",
+      "pass": true,
+      "detail": {
+        "color": "rgba(0, 0, 0, 0)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": true,
+        "dragging": false,
+        "accent": "#0c5f68",
+        "cursor": ""
+      }
+    },
+    {
+      "name": "light/comfortable: keyboard reuse restores focus cue",
+      "pass": true
+    },
+    {
+      "name": "light/comfortable: Tab away clears focus cue",
+      "pass": true
+    },
+    {
+      "name": "light/comfortable: pressed and expanded pane toggles share neutral paint",
+      "pass": true,
+      "detail": {
+        "inspectorStyle": {
+          "background": "rgb(237, 237, 238)",
+          "color": "rgb(35, 37, 42)",
+          "border": "rgba(0, 0, 0, 0)"
+        },
+        "consoleStyle": {
+          "background": "rgb(237, 237, 238)",
+          "color": "rgb(35, 37, 42)",
+          "border": "rgba(0, 0, 0, 0)"
+        },
+        "footerStyle": {
+          "background": "rgb(237, 237, 238)",
+          "color": "rgb(35, 37, 42)",
+          "border": "rgba(0, 0, 0, 0)"
+        }
+      }
+    },
+    {
+      "name": "light/comfortable: left drawer uses the same selected style",
+      "pass": true,
+      "detail": {
+        "background": "rgb(237, 237, 238)",
+        "color": "rgb(35, 37, 42)",
+        "border": "rgba(0, 0, 0, 0)"
+      }
+    },
+    {
+      "name": "light/comfortable: narrow layout stays contained",
+      "pass": true
+    },
+    {
+      "name": "light/compact: idle separator has no interaction paint",
+      "pass": true,
+      "detail": {
+        "color": "rgba(0, 0, 0, 0)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": false,
+        "dragging": false,
+        "accent": "#0c5f68",
+        "cursor": ""
+      }
+    },
+    {
+      "name": "light/compact: connection is present only in footer",
+      "pass": true
+    },
+    {
+      "name": "light/compact: hover and text-field-to-drag use one neutral line",
+      "pass": true,
+      "detail": {
+        "hover": {
+          "color": "rgb(199, 199, 202)",
+          "width": "2px",
+          "outline": "none",
+          "shadow": "none",
+          "focused": false,
+          "dragging": false,
+          "accent": "#0c5f68",
+          "cursor": ""
+        },
+        "drag": {
+          "color": "rgb(199, 199, 202)",
+          "width": "2px",
+          "outline": "none",
+          "shadow": "none",
+          "focused": true,
+          "dragging": true,
+          "accent": "#0c5f68",
+          "cursor": "col-resize"
+        }
+      }
+    },
+    {
+      "name": "light/compact: pointer release clears paint while retaining focus",
+      "pass": true,
+      "detail": {
+        "color": "rgba(0, 0, 0, 0)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": true,
+        "dragging": false,
+        "accent": "#0c5f68",
+        "cursor": ""
+      }
+    },
+    {
+      "name": "light/compact: Tab focus paints one accessible line",
+      "pass": true,
+      "detail": {
+        "color": "rgb(12, 95, 104)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": true,
+        "dragging": false,
+        "accent": "#0c5f68",
+        "cursor": ""
+      }
+    },
+    {
+      "name": "light/compact: arrow resizing still works",
+      "pass": true
+    },
+    {
+      "name": "light/compact: pointer use clears earlier keyboard highlight",
+      "pass": true,
+      "detail": {
+        "color": "rgba(0, 0, 0, 0)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": true,
+        "dragging": false,
+        "accent": "#0c5f68",
+        "cursor": ""
+      }
+    },
+    {
+      "name": "light/compact: keyboard reuse restores focus cue",
+      "pass": true
+    },
+    {
+      "name": "light/compact: Tab away clears focus cue",
+      "pass": true
+    },
+    {
+      "name": "light/compact: pressed and expanded pane toggles share neutral paint",
+      "pass": true,
+      "detail": {
+        "inspectorStyle": {
+          "background": "rgb(237, 237, 238)",
+          "color": "rgb(35, 37, 42)",
+          "border": "rgba(0, 0, 0, 0)"
+        },
+        "consoleStyle": {
+          "background": "rgb(237, 237, 238)",
+          "color": "rgb(35, 37, 42)",
+          "border": "rgba(0, 0, 0, 0)"
+        },
+        "footerStyle": {
+          "background": "rgb(237, 237, 238)",
+          "color": "rgb(35, 37, 42)",
+          "border": "rgba(0, 0, 0, 0)"
+        }
+      }
+    },
+    {
+      "name": "light/compact: left drawer uses the same selected style",
+      "pass": true,
+      "detail": {
+        "background": "rgb(237, 237, 238)",
+        "color": "rgb(35, 37, 42)",
+        "border": "rgba(0, 0, 0, 0)"
+      }
+    },
+    {
+      "name": "light/compact: narrow layout stays contained",
+      "pass": true
+    },
+    {
+      "name": "touchEnd: touch leaves no sticky hover/focus",
+      "pass": true,
+      "detail": {
+        "color": "rgba(0, 0, 0, 0)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": true,
+        "dragging": false,
+        "accent": "#0c5f68",
+        "cursor": ""
+      }
+    },
+    {
+      "name": "touchCancel: touch leaves no sticky hover/focus",
+      "pass": true,
+      "detail": {
+        "color": "rgba(0, 0, 0, 0)",
+        "width": "2px",
+        "outline": "none",
+        "shadow": "none",
+        "focused": true,
+        "dragging": false,
+        "accent": "#0c5f68",
+        "cursor": ""
+      }
+    }
+  ],
+  "errors": []
+}

@@ -8,6 +8,7 @@ export function PaneDivider({ label, controls, value, min, max, onChange, onRese
 }) {
   const drag = useRef<{ id: number; x: number; value: number } | null>(null)
   const [dragging, setDragging] = useState(false)
+  const [keyboardFocus, setKeyboardFocus] = useState(false)
   const bound = (next: number) => Math.round(Math.max(min, Math.min(max, next)))
   const move = (event: PointerEvent<HTMLDivElement>) => {
     const start = drag.current
@@ -22,6 +23,7 @@ export function PaneDivider({ label, controls, value, min, max, onChange, onRese
     return () => { body.style.cursor = cursor; body.style.userSelect = selection }
   }, [dragging])
   const key = (event: KeyboardEvent<HTMLDivElement>) => {
+    setKeyboardFocus(true)
     const step = event.shiftKey ? 32 : 8
     if (event.key === 'ArrowLeft') onChange(bound(value + step))
     else if (event.key === 'ArrowRight') onChange(bound(value - step))
@@ -32,14 +34,20 @@ export function PaneDivider({ label, controls, value, min, max, onChange, onRese
     else return
     event.preventDefault()
   }
-  return <div className={styles.divider} data-dragging={dragging || undefined} role="separator" tabIndex={0}
+  return <div className={styles.divider} data-dragging={dragging || undefined}
+    data-keyboard-focus={keyboardFocus || undefined} role="separator" tabIndex={0}
     aria-label={label} aria-controls={controls} aria-orientation="vertical"
     aria-valuemin={min} aria-valuemax={max} aria-valuenow={value} aria-valuetext={`${value} pixels wide`}
     title="Drag to resize. Arrow keys adjust width; Shift moves faster. Double-click to reset."
     onKeyDown={key} onDoubleClick={onReset}
+    onFocus={event => setKeyboardFocus(event.currentTarget.matches(':focus-visible'))}
+    onBlur={() => setKeyboardFocus(false)}
     onPointerDown={event => {
       if (event.button !== 0 || !event.isPrimary) return
       event.preventDefault(); event.currentTarget.focus()
+      // Programmatic focus can inherit :focus-visible from a text field or
+      // keyboard interaction. A pointer gesture must not leave that paint behind.
+      setKeyboardFocus(false)
       event.currentTarget.setPointerCapture(event.pointerId)
       drag.current = { id: event.pointerId, x: event.clientX, value }
       setDragging(true)
