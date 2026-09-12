@@ -52,7 +52,8 @@ not specify exact tooltip timing, dimensions or private implementation tokens.
   errors. Covers hover/focus, existing help, Escape, resize-to-fit, modal layers,
   viewport edges, both themes/densities, long/very long questions, Preview, pane
   drag, touch and a 308-entry virtualized fixture.
-- Full responsive containment gate: results recorded before merge.
+- Full responsive containment gate: 435 configurations across 15 routes,
+  435 contained, zero failures; the copied project was unchanged by content.
 
 Browser tests use disposable fixture projects; no user project or real assistant
 key is needed. The intentionally updated extraction golden changes only native
