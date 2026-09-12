@@ -10,8 +10,8 @@
  * renders `TracePanel` and `MatrixRowList` renders `TargetPair`.
  *
  * **The one stylesheet cut.** `styles.css` lost exactly the `/* Layout *\/`
- * block. Its token block and its four badge rules are what the shell reads and
- * what `ConnectionBadge` still wears, and a second cut taken later — for
+ * block. Its token block and legacy badge palette remain shared styles,
+ * and a second cut taken later — for
  * tidiness, or by a merge — should fail here rather than on screen.
  */
 import { readFileSync } from 'node:fs'
@@ -45,7 +45,7 @@ describe('the one stylesheet cut', () => {
     }
   })
 
-  it('keeps the four badge rules ConnectionBadge still wears', () => {
+  it('keeps the shared legacy badge palette', () => {
     for (const rule of ['.badge {', '.badge-ready {', '.badge-failed {', '.badge-reconnecting {']) {
       expect(sheet).toContain(rule)
     }

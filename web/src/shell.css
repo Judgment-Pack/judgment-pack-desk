@@ -566,14 +566,14 @@
   }
 
   .desk-icon-button:hover {
-    border-color: var(--border);
+    background: var(--bg);
     color: var(--ink);
   }
 
   .desk-icon-button[data-state='on'],
-  .desk-icon-button[aria-pressed='true'] {
+  .desk-icon-button[aria-pressed='true'],
+  .desk-icon-button[aria-expanded='true'] {
     background: var(--accent-soft);
-    border-color: var(--accent);
     color: var(--ink);
   }
 

@@ -5,10 +5,8 @@
  * `contentinfo` landmark `.app-foot` was — and it carries the same two
  * sentences, character for character, read from `useMcp()` **directly**.
  *
- * It derives nothing. The connection appears in exactly two places in this
- * desk — here and the header badge — and both are deliberately dumb: a
- * "helpful" summary in either is how the two would drift into disagreeing
- * about one connection.
+ * It derives nothing. This is the shell's persistent connection indicator;
+ * actionable connection failures also appear in the main area's notices.
  *
  * The one other thing it carries is a **cue that the project's configuration
  * was refused**. A refused file is the built-in defaults, and that is correct;

@@ -1,6 +1,6 @@
 /**
- * The header: whose desk this is, what it points at, whether it is connected,
- * and who is looking.
+ * The header: whose desk this is, what it points at, and who is looking.
+ * The status strip owns the persistent connection indicator.
  *
  * A direct child of the grid, so it is the `banner` landmark. (Safe: every
  * route's own `<header className="detail-head">` is nested inside `<main>` and
@@ -22,7 +22,6 @@ import { Link } from 'react-router-dom'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { DESK_FALLBACK_NAME } from '../config/deskConfig'
 import { UserControl, monogram } from '../identity/UserControl'
-import { useMcp } from '../mcp/McpProvider'
 import { usePacks } from '../mcp/queries'
 import { IconChevronDown, IconPanelBottom, IconPanelLeft, IconPanelRight } from './icons'
 
@@ -124,8 +123,6 @@ export function HeaderBar({
       <div className="desk-head-centre" />
 
       <div className="desk-head-right">
-        <ConnectionBadge />
-        <Separator.Root className="desk-rule" decorative orientation="vertical" />
         <Toggle.Root
           ref={inspectorOpenerRef}
           className="desk-icon-button"
@@ -193,25 +190,4 @@ function ProjectChip() {
 function basename(path: string): string {
   const parts = path.split(/[/\\]/).filter(Boolean)
   return parts[parts.length - 1] ?? path
-}
-
-/**
- * Moved out of `App.tsx`, not rewritten: the same `badge badge-${status}`
- * classes, the same `title`, the same four-way label ladder.
- */
-function ConnectionBadge() {
-  const { status } = useMcp()
-  const label =
-    status === 'ready'
-      ? 'connected'
-      : status === 'connecting'
-        ? 'connecting'
-        : status === 'reconnecting'
-          ? 'reconnecting'
-          : 'offline'
-  return (
-    <span className={`badge badge-${status}`} title={`MCP connection: ${label}`}>
-      {label}
-    </span>
-  )
 }
