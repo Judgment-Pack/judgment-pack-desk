@@ -1,10 +1,12 @@
 import { useLayoutEffect, useRef, type MutableRefObject, type ReactNode } from 'react'
 import type { TraceEntry } from '../../mcp/types'
 import { Button } from '../../ui/Button'
+import { CodeBlock } from '../../ui/CodeBlock'
+import { MemberValue } from './MemberValue'
 import { ConditionTree } from '../document/ConditionTree'
 import { isRecord } from '../document/MisshapenMember'
 import { valueAt } from '../pointers'
-import { entries, itemTrace, matchingItems, outcomeLabel, selectedItem, text, type LogicProjection } from '../logicModel'
+import { itemTrace, matchingItems, outcomeLabel, selectedItem, text, type LogicProjection } from '../logicModel'
 import styles from './LogicInspector.module.css'
 
 export function LogicInspector({ model, at, pane, query, onSelect, onOutline, outlineScroll, trace, advanced }: {
@@ -45,7 +47,7 @@ export function LogicInspector({ model, at, pane, query, onSelect, onOutline, ou
     <p className={styles.meta}><code>{pointer || '/'}</code></p>
     {observed && <p className={styles.observation}>Recorded condition: <strong>{observed}</strong></p>}
     {condition !== undefined && <section className={styles.group}><h3>Condition</h3>
-      <ConditionTree wrap condition={condition} at={selected?.group.id === 'applicability' ? '/applicability' : `${pointer}/when`} />
+      <ConditionTree readOnly condition={condition} at={selected?.group.id === 'applicability' ? '/applicability' : `${pointer}/when`} />
     </section>}
     {isRecord(value) && (value.outcome !== undefined || value.effect !== undefined) && <section className={styles.group}>
       <h3>{value.effect === undefined ? 'Candidate outcome' : 'Effect'}</h3>
@@ -56,15 +58,15 @@ export function LogicInspector({ model, at, pane, query, onSelect, onOutline, ou
     {isRecord(value) && typeof value.description === 'string' && <details className={styles.group}><summary>Author description</summary><p>{value.description}</p></details>}
     {group && !selected && <section className={styles.group}>{group.items.map(item => <Button key={item.pointer} variant="quiet" onClick={() => onSelect(item.pointer)}>{item.label}</Button>)}{!group.items.length && <p>None declared.</p>}</section>}
     {condition === undefined && pointer !== '/fallbackOutcome' && <Definition value={value} />}
-    <details className={styles.group}><summary>Exact {condition !== undefined ? 'condition' : 'definition'} JSON</summary><pre>{JSON.stringify(condition ?? value, null, 2) ?? 'Not declared'}</pre></details>
-    <details className={styles.group}><summary>References, checks and metadata</summary>{advanced}</details>
+    <details className={styles.group}><summary>Exact {condition !== undefined ? 'condition' : 'definition'} JSON</summary><CodeBlock text={JSON.stringify(condition ?? value, null, 2) ?? 'Not declared'} /></details>
+    <section className={styles.group} aria-label="References, checks and metadata">{advanced}</section>
   </div>
 }
 
 function Definition({ value }: { value: unknown }) {
   if (value === undefined) return <p>Not declared.</p>
-  if (!isRecord(value)) return Array.isArray(value) ? null : <p>{JSON.stringify(value)}</p>
+  if (!isRecord(value)) return <MemberValue value={value} />
   return <dl className={styles.definition}>{Object.entries(value).filter(([key]) => !['description', 'extensions'].includes(key)).map(([key, child]) => <div key={key}>
-    <dt>{key}</dt><dd>{isRecord(child) ? <pre>{JSON.stringify(child, null, 2)}</pre> : Array.isArray(child) ? entries(child).map((entry, i) => <span key={i}>{typeof entry === 'string' ? entry : JSON.stringify(entry)}{i < child.length - 1 ? ' · ' : ''}</span>) : text(child, JSON.stringify(child))}</dd>
+    <dt>{key}</dt><dd><MemberValue value={child} /></dd>
   </div>)}</dl>
 }

@@ -2,6 +2,11 @@ import { Popover as RadixPopover } from 'radix-ui'
 import { useId, type ReactElement, type ReactNode } from 'react'
 import styles from './Popover.module.css'
 
+/** Close a popover after following a link or choosing a transient action. */
+export function PopoverClose({ children }: { children: ReactElement }) {
+  return <RadixPopover.Close asChild>{children}</RadixPopover.Close>
+}
+
 /** Portaled details with collision handling, dismissal and focus restoration. */
 export function Popover({ trigger, title, children }: {
   trigger: ReactElement

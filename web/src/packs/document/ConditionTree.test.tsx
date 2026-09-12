@@ -9,9 +9,22 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PackDocument } from '../../mcp/types'
 import { ConditionTree } from './ConditionTree'
+import { SelectionContext } from './Block'
+
+it('preserves long array operands exactly and gives Inspector copies no document targets', () => {
+  const value = ['5000', 5000, false, null, 'long-unbroken-value'.repeat(30)]
+  const condition = { op: 'fact', path: '/amount', operator: 'in', value }
+  const { container } = render(<SelectionContext.Provider value={{ at: '/applicability', select: vi.fn() }}>
+    <ConditionTree condition={condition} at="/applicability" />
+    <aside><ConditionTree readOnly condition={condition} at="/applicability" /></aside>
+  </SelectionContext.Provider>)
+  expect(container.querySelector('[data-pointer="/applicability/value"]')!.textContent).toBe(JSON.stringify(value))
+  expect(container.querySelectorAll('[id="/applicability"]')).toHaveLength(1)
+  expect(container.querySelector('aside [data-pointer], aside [tabindex], aside [aria-current]')).toBeNull()
+})
 
 afterEach(cleanup)
 
@@ -63,7 +76,7 @@ describe('the five node kinds', () => {
     for (const word of ['all of', 'any of', 'not', 'literal', 'evidence-present', 'in']) {
       expect(text, word).toContain(word)
     }
-    expect(screen.getByText('["x"]')).toBeTruthy()
+    expect(container.querySelector('[data-pointer="/rules/0/when/conditions/0/value"]')!.textContent).toBe('["x"]')
     expect(screen.getByText('true')).toBeTruthy()
   })
 

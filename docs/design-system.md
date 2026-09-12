@@ -331,8 +331,8 @@ List keeps rules and exceptions visible, with compact controls for context,
 resolution and references. Search spans all declared groups. In Map, typing
 does not open a modal: submitting the search opens Outline. The right slot
 holds either Outline or selected-item details. Exact conditions reuse
-`ConditionTree` with its wrapping variant; author prose and raw JSON are
-separate disclosures. Full document and editing remain reachable under More
+`ConditionTree`, which wraps in every reading context; Inspector copies have
+no document selection targets. Author prose and raw JSON are separate disclosures. Full document and editing remain reachable under More
 and retain the original pointer address space, ordering and extensions.
 
 Selection, outline/list scroll, and map viewport belong to the route, above
@@ -409,3 +409,45 @@ visible trace values and full digests do not need a redundant tooltip.
 Live examples: `/design-system.html`. Browser regression entry points:
 `scripts/tooltip-check.mjs` and `scripts/pane-controls-check.mjs`. See
 [the tooltip sweep](reviews/tooltip-sweep.md) for scope, references and results.
+
+
+## Reading, selection and exact values
+
+A selected document block uses the existing neutral `--accent-soft` background
+and `--radius-sm`, preserving its text color and dimensions. Selection is not
+keyboard focus: `:focus-visible` keeps the shared green outline. Dragging a text
+range to copy it must not move the Inspector selection. A displayed copy in the
+Inspector has no duplicate document IDs, roving tab stops or selection paint.
+Shared tabs mark their active item with a neutral `--ink` underline.
+
+`ConditionTree` wraps by default in Full document, rules, exceptions and the
+Inspector. Prefer a break between complete array operands; arrays exceeding
+three entries or 80 serialized characters stack vertically. Operators, quoted
+strings, numeric/boolean/null values, order and pointer addresses remain exact.
+Unbroken values may wrap anywhere. This is a presentation rule, not a rewrite
+of the document. The JSON disclosure retains the complete machine representation.
+
+`MemberValue` renders strings as prose and scalars explicitly. Structured values
+remain complete JSON. `CodeBlock` owns the shared 12px monospace source size,
+soft wrapping, optional horizontal scrolling, and Copy feedback. Its nested
+`code` inherits that size. Copy uses the full input text regardless of wrapping;
+clipboard failures leave selectable text and explain the fallback. Raw editing
+with line numbers still uses `CodeArea` and its existing unwrapped byte buffer.
+
+The Inspector has one mode row, followed by the selected-item heading and
+References, Checks and Provenance disclosures. Failed, unavailable, pending,
+truncated and stale checks open visibly; dirty/revision warnings remain outside
+collapsed provenance. The three-digest binding rule is unchanged. Logic details
+reuse this metadata without repeating the selected member or another tab row.
+
+Full document has an explicit active navigation label. Its **On this page**
+popover retains counts, omitted-member links, current-section feedback and
+pointer-addressed navigation. Ordinary successful check provenance is compact;
+warnings and diagnostics keep their existing visible presentation. All document
+members remain available in their original order.
+
+Use `Button variant="inline"` for actions occupying a metadata value column:
+its text aligns with plain values and can wrap. Keep ordinary quiet buttons in
+action groups, where their padding provides separation.
+
+See [the reading and selection sweep](reviews/reading-selection-sweep.md).

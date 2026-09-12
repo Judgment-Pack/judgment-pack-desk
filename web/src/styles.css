@@ -380,8 +380,11 @@ input[type='checkbox']:focus-visible, input[type='radio']:focus-visible {
 
 code {
   font-family: var(--mono);
-  font-size: 0.88em;
+  font-size: var(--text-xs);
 }
+
+/* A code block owns its size; nested code must never shrink it again. */
+pre code { font-size: inherit; }
 
 /* Element defaults sit below the shell, whose links own their emphasis. */
 @layer base {

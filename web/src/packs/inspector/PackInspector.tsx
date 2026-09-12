@@ -1,31 +1,15 @@
-/**
- * The Inspector's three panels: Member, References, Checks.
- *
- * **Selection is the pointer in `?at` and never pane state.** `RightPane`
- * swaps its wrapper at 1100px and remounts the subtree, so anything held here
- * is lost at that breakpoint — and a selection in the address is also a link
- * someone can send.
- *
- * The tab itself is pane-shaped state and is held by the shell's slot, which
- * survives the same swap because the frame holds it above `<main>`.
- *
- * Board 1 draws a fourth tab, Document, while also drawing the provenance
- * group inside Member. There are three here and the provenance is in Member,
- * exactly as drawn; a fourth tab is additive and would duplicate that group
- * unless Member gave it up.
- */
-import { Tabs } from '../../ui/Tabs'
+/** Pointer-addressed Inspector details. Pane state remembers the last disclosure;
+ * the selected document member remains in the route across drawer remounts. */
 import type { PackDocument, PackFileMeta } from '../../mcp/types'
 import type { AnchoredDiagnostic } from '../checks'
 import { diagnosticsFor } from '../checks'
 import { valueAt } from '../pointers'
+import { isRecord } from '../document/MisshapenMember'
 import { referencesFor } from '../references'
 import { ChecksTab } from './ChecksTab'
 import { MemberTab } from './MemberTab'
 import { ReferencesTab } from './ReferencesTab'
 import styles from './PackInspector.module.css'
-
-const TABS = ['member', 'references', 'checks'] as const
 
 export function PackInspector({
   packId,
@@ -43,7 +27,8 @@ export function PackInspector({
   checkedWhat,
   unavailable,
   tab,
-  onTabChange
+  onTabChange,
+  supplemental = false
 }: {
   packId: string
   document: PackDocument | undefined
@@ -71,6 +56,7 @@ export function PackInspector({
   unavailable?: string
   tab: string | null
   onTabChange: (tab: string) => void
+  supplemental?: boolean
 }) {
   if (doc === undefined) {
     // **No fallback to the served pack.** The page is over the bytes the editor
@@ -91,51 +77,30 @@ export function PackInspector({
       </p>
     )
   }
-  const current = (TABS as readonly string[]).includes(tab ?? '') ? tab! : 'member'
+  const references = referencesFor(doc, at)
+  const diagnostics = diagnosticsFor(anchored, at)
+  const attention = stale || pending || unavailable !== undefined || truncation !== undefined || diagnostics.length > 0
+  const value = subtreeAt(doc, at)
+  const heading = isRecord(value) ? [value.label, value.title, value.id].find(candidate => typeof candidate === 'string') : undefined
+  const name = at.split('/').filter(Boolean).at(-1)?.replace(/([a-z])([A-Z])/g, '$1 $2') ?? 'Document'
 
-  return (
-    <Tabs
-      label="Inspector panels"
-      value={current}
-      onValueChange={onTabChange}
-      tabs={[
-        {
-          value: 'member',
-          label: 'Member',
-          panel: (
-            <MemberTab
-              pointer={at}
-              subtree={subtreeAt(doc, at)}
-              meta={meta}
-              fileSha256={fileSha256}
-              baseSha256={baseSha256}
-              fileBytes={fileBytes}
-              dirty={dirty}
-            />
-          )
-        },
-        {
-          value: 'references',
-          label: 'References',
-          panel: <ReferencesTab references={referencesFor(doc, at)} packId={packId} />
-        },
-        {
-          value: 'checks',
-          label: 'Checks',
-          panel: (
-            <ChecksTab
-              diagnostics={diagnosticsFor(anchored, at)}
-              truncation={truncation}
-              stale={stale}
-              pending={pending}
-              checkedWhat={checkedWhat}
-              unavailable={unavailable}
-            />
-          )
-        }
-      ]}
-    />
-  )
+  return <div className={supplemental ? styles.supplemental : styles.inspector}>
+    {!supplemental && <h2>{typeof heading === 'string' ? heading : name.charAt(0).toUpperCase() + name.slice(1)}</h2>}
+    <MemberTab pointer={at} subtree={subtreeAt(doc, at)} meta={meta}
+      fileSha256={fileSha256} baseSha256={baseSha256} fileBytes={fileBytes}
+      dirty={dirty} metadataOnly={supplemental} />
+    <details className={styles.disclosure} open={tab === 'references'}
+      onToggle={event => { if (event.currentTarget.open) onTabChange('references'); else if (tab === 'references') onTabChange('member') }}>
+      <summary>References · {references.length}</summary>
+      <ReferencesTab references={references} packId={packId} />
+    </details>
+    <details className={styles.disclosure} open={tab === 'checks' || attention}
+      onToggle={event => { if (event.currentTarget.open && !attention) onTabChange('checks'); else if (!event.currentTarget.open && tab === 'checks') onTabChange('member') }}>
+      <summary>Checks{pending ? ' · Checking…' : attention ? ' · Attention' : ` · ${diagnostics.length}`} </summary>
+      <ChecksTab diagnostics={diagnostics} truncation={truncation} stale={stale}
+        pending={pending} checkedWhat={checkedWhat} unavailable={unavailable} />
+    </details>
+  </div>
 }
 
 /**

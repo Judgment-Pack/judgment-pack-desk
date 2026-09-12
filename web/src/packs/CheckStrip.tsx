@@ -49,7 +49,7 @@ export function CheckStrip({
   children?: ReactNode
 }) {
   return (
-    <div className={styles.strip}>
+    <div className={[styles.strip, !unavailable && !fetching && !stale && report?.status === 'valid' && !rootAnchored.length && !digestsDisagree && !disagreement.length ? styles.routine : ''].join(' ')}>
       <p className={styles.check}>
         {unavailable ??
           // Progress is `fetchStatus`, which is about a request being in

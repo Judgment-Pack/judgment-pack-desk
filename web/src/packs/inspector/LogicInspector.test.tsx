@@ -21,7 +21,8 @@ describe('contextual pack inspection', () => {
   it('shows exact nested conditions separately from the author description and raw JSON', () => {
     render(<LogicInspector model={projectLogic(doc)} at="/rules/1" pane="detail" query=""
       onSelect={() => {}} onOutline={() => {}} outlineScroll={{ current: 0 }} advanced={null} />)
-    expect(document.querySelector('[data-pointer="/rules/1/when"]')).not.toBeNull()
+    expect(document.querySelector('[data-pointer]')).toBeNull()
+    expect(screen.getByText('greater-than')).toBeTruthy()
     const raw = screen.getByText('Exact condition JSON').closest('details')!
     expect(raw.open).toBe(false)
     expect(JSON.parse(raw.querySelector('pre')!.textContent!)).toEqual(doc.rules[1]!.when)

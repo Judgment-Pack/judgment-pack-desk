@@ -23,12 +23,15 @@ import type { ReactNode } from 'react'
 import type { Condition } from '../../mcp/types'
 import { conditionKind } from '../edit/conditionOps'
 import { Block } from './Block'
+import { ReadOnlyBlocks } from './Block'
 import styles from './PackDocument.module.css'
 
-export function ConditionTree({ condition, at, wrap = false }: { condition: unknown; at: string; wrap?: boolean }) {
+export function ConditionTree({ condition, at, readOnly = false }: { condition: unknown; at: string; readOnly?: boolean }) {
   return (
-    <div className={[styles.tree, wrap ? styles.treeWrapped : ''].join(' ')}>
-      <ConditionNode condition={condition} at={at} depth={0} />
+    <div className={styles.tree}>
+      <ReadOnlyBlocks.Provider value={readOnly}>
+        <ConditionNode condition={condition} at={at} depth={0} />
+      </ReadOnlyBlocks.Provider>
     </div>
   )
 }
@@ -99,7 +102,7 @@ function ConditionNode({
           {String(node.operator ?? '')}
         </Block>{' '}
         <Block pointer={`${at}/value`} as="code" className={styles.literal}>
-          {JSON.stringify(node.value)}
+          <Operand value={node.value} />
         </Block>
       </Row>
     )
@@ -121,13 +124,24 @@ function ConditionNode({
       <Row at={at} depth={depth}>
         <span className={styles.op}>literal</span>{' '}
         <Block pointer={`${at}/value`} as="code" className={styles.literal}>
-          {JSON.stringify(node.value)}
+          <Operand value={node.value} />
         </Block>
       </Row>
     )
   }
 
   return null
+}
+
+/** Break between complete array entries first. Quotes, types and order stay exact. */
+function Operand({ value }: { value: unknown }) {
+  if (!Array.isArray(value)) return <>{JSON.stringify(value)}</>
+  const expanded = value.length > 3 || JSON.stringify(value).length > 80
+  return <span className={expanded ? styles.arrayExpanded : undefined}>[
+    {value.map((entry, index) => <span className={styles.arrayEntry} key={index}>
+      {JSON.stringify(entry)}{index < value.length - 1 ? ',' : ''}<wbr />
+    </span>)}
+  ]</span>
 }
 
 function Row({
