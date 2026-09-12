@@ -1,3 +1,4 @@
+import { OverflowTooltip } from '../ui/Tooltip'
 /**
  * Admin: dedicated settings navigation, one open section, and the file itself in the
  * right pane.
@@ -347,24 +348,23 @@ function SectionRow({
   const differs = JSON.stringify(own) !== JSON.stringify(group)
   return (
     <li className={styles.rowItem}>
-      <Link
+      <OverflowTooltip selector="[data-overflow-text]"><Link
         className={styles.row}
         to={`/admin#${section.id}`}
         aria-current={current ? 'true' : undefined}
-        title={summarise?.(effective)}
       >
         <span className={styles.rowTitle}>
           {section.title}
         </span>
         {!bare && summarise !== undefined && (
-          <span className={styles.rowSays} title={summarise(effective)}>{summarise(effective)}</span>
+          <span className={styles.rowSays} data-overflow-text>{summarise(effective)}</span>
         )}
         {!bare && differs && (
           <span className={styles.rowStatus} data-state={own.state}>
             <span className={styles.statusText}><StatusLine status={own} /></span>
           </span>
         )}
-      </Link>
+      </Link></OverflowTooltip>
     </li>
   )
 }

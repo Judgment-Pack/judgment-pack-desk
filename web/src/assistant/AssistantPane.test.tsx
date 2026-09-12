@@ -766,7 +766,7 @@ describe('accepting the proposal into the draft', () => {
     act(() => held!.commit(DRAFT))
     await waitFor(() =>
       expect(
-        screen.getByRole('button', { name: 'Accept into draft' }).getAttribute('title')
+        helpText(screen.getByRole('button', { name: 'Accept into draft' }))
       ).toBe('This draft is being saved.')
     )
     expect(wrote).toBe(0)
@@ -800,7 +800,7 @@ describe('accepting the proposal into the draft', () => {
     expect(region.textContent).toContain('Accepted into the draft.')
     expect(region.textContent).toContain('Nothing has been saved.')
     expect(
-      screen.getByRole('button', { name: 'Accept into draft' }).getAttribute('title')
+      helpText(screen.getByRole('button', { name: 'Accept into draft' }))
     ).toContain('already in the draft')
   })
 
@@ -942,7 +942,7 @@ describe('fixing what the check refused', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Fix' }).hasAttribute('disabled')).toBe(true)
     )
-    expect(screen.getByRole('button', { name: 'Fix' }).getAttribute('title')).toContain(
+    expect(helpText(screen.getByRole('button', { name: 'Fix' }))).toContain(
       'no diagnostic to fix'
     )
     cleanup()
@@ -960,7 +960,7 @@ describe('fixing what the check refused', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Fix' }).hasAttribute('disabled')).toBe(true)
     )
-    expect(screen.getByRole('button', { name: 'Fix' }).getAttribute('title')).toContain(
+    expect(helpText(screen.getByRole('button', { name: 'Fix' }))).toContain(
       'advertises no fix_pack'
     )
   })
@@ -1151,7 +1151,7 @@ describe('a proposal belongs to the draft it was given', () => {
     await runAndEdit()
     const accept = screen.getByRole('button', { name: 'Accept into draft' })
     expect(accept.hasAttribute('disabled')).toBe(true)
-    expect(accept.getAttribute('title')).toBe(
+    expect(helpText(accept)).toBe(
       'The draft changed since this proposal was made — run again to propose against it.'
     )
     expect(
@@ -1258,7 +1258,7 @@ describe('a session that failed after it ended', () => {
     const accept = () => screen.getByRole('button', { name: 'Accept into draft' })
     await waitFor(() => expect(accept().hasAttribute('disabled')).toBe(true))
     // The run's own words, which carry the error's name as the hook records it.
-    expect(accept().getAttribute('title')).toBe('Error: the session could not be closed')
+    expect(helpText(accept())).toBe('Error: the session could not be closed')
     expect(
       screen.getByRole('region', { name: 'The proposal' }).textContent
     ).toContain('did not stand behind what it proposed')
@@ -1408,3 +1408,7 @@ describe('the runtime’s testing prompt, which the refutation pass needs', () =
     expect(screen.queryByText(/refuted this proposal/)).toBeNull()
   }, 30000)
 })
+
+function helpText(control: HTMLElement) {
+  return control.getAttribute("aria-describedby")?.split(/\s+/).map(id => document.getElementById(id)?.textContent ?? "").join(" ")
+}

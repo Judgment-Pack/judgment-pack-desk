@@ -1,3 +1,6 @@
+.container { min-width: 0; }
+.help { margin: var(--space-2) 0 0; color: var(--ink-soft); font-size: var(--text-xs); max-width: 24rem; overflow-wrap: anywhere; }
+.help span { display: block; }
 .group {
   display: inline-flex;
   align-items: stretch;

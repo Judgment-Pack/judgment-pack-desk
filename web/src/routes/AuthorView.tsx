@@ -1,3 +1,4 @@
+import { OverflowTooltip } from '../ui/Tooltip'
 import { useEffect, useMemo, useState } from 'react'
 import { Empty, ErrorBox, Loading, Pill, Section } from '../components/primitives'
 import { StaleWrite, type FileContent } from '../files/client'
@@ -145,16 +146,15 @@ export function AuthorView() {
               <ul className="file-list">
                 {files.map((file) => (
                   <li key={file.path}>
-                    <button
+                    <OverflowTooltip selector="code"><button
                       type="button"
                       className={`file-entry${file.path === selected ? ' file-entry-on' : ''}`}
-                      title={file.path}
                       aria-current={file.path === selected ? 'true' : undefined}
                       onClick={() => choose(file.path)}
                     >
                       <code>{file.path}</code>
                       <span className="quiet">{file.bytes} bytes</span>
-                    </button>
+                    </button></OverflowTooltip>
                   </li>
                 ))}
               </ul>

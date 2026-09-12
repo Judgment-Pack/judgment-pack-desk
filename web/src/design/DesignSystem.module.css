@@ -104,3 +104,5 @@
   border-radius: var(--radius-panel);
 }
 .layoutSample .actions { margin-bottom: var(--density-field); }
+
+.clipped { display: block; max-width: 12rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

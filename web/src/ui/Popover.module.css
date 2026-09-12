@@ -1,6 +1,6 @@
 .content {
   position: relative;
-  z-index: var(--z-menu);
+  z-index: var(--z-popover);
   width: min(24rem, calc(100vw - 2 * var(--space-4)));
   max-height: var(--radix-popover-content-available-height);
   overflow: auto;

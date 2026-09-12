@@ -506,20 +506,20 @@ export function useDescribeIt(): DescribeItState {
   }
 }
 
-export function DescribeIt({ state, expanded = false }: { state: DescribeItState; expanded?: boolean }) {
+export function DescribeIt({ state, expanded = false, blockingElsewhere = false }: { state: DescribeItState; expanded?: boolean; blockingElsewhere?: boolean }) {
   // One line, and no control that would refuse. The prompt copy-out this
   // dialog already offers is what an unconfigured desk uses instead.
   if (!state.usable) return <p className={styles.quiet}>{state.unusableBecause}</p>
-  if (expanded) return <Section state={state} />
+  if (expanded) return <Section state={state} blockingElsewhere={blockingElsewhere} />
   return (
     <details className={styles.disclosure}>
       <summary className={styles.summary}>Describe it instead</summary>
-      <Section state={state} />
+      <Section state={state} blockingElsewhere={blockingElsewhere} />
     </details>
   )
 }
 
-function Section({ state }: { state: DescribeItState }) {
+function Section({ state, blockingElsewhere }: { state: DescribeItState; blockingElsewhere: boolean }) {
   const { proposal } = state
   return (
     <div className={styles.section}>
@@ -580,7 +580,7 @@ function Section({ state }: { state: DescribeItState }) {
           </details>
         </section>
       )}
-      {proposal === undefined && state.blocking !== '' && !state.running && (
+      {!blockingElsewhere && proposal === undefined && state.blocking !== '' && !state.running && (
         <p className={styles.notice}>{state.blocking}</p>
       )}
     </div>

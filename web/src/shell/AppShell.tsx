@@ -18,7 +18,7 @@
  * absolute as inline styles, which a class rule cannot beat without
  * `!important` on every property.
  */
-import { Tooltip } from 'radix-ui'
+import { TooltipProvider } from '../ui/Tooltip'
 import { useMatch } from 'react-router-dom'
 import {
   useCallback,
@@ -85,11 +85,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         projectDefault={config.appearance}
         projectDefaultKnown={configRead}
       >
-        <Tooltip.Provider delayDuration={300}>
+        <TooltipProvider>
           <ShellFrame railIsDrawer={railIsDrawer} inspectorIsDrawer={inspectorIsDrawer}>
             {children}
           </ShellFrame>
-        </Tooltip.Provider>
+        </TooltipProvider>
       </AppearanceProvider>
     </ShellStateProvider>
   )

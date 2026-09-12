@@ -100,7 +100,7 @@ export function MemberTab({
           <div className={styles.row}>
             <dt>sha256</dt>
             <dd>
-              <code title={meta.sha256}>{meta.sha256}</code>
+              <code>{meta.sha256}</code>
             </dd>
           </div>
         )}

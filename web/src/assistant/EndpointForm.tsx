@@ -30,6 +30,7 @@
  * item is a decision nobody makes. See `ASSISTANT_ENGINES` for the migration a
  * file that names the withdrawn one gets.
  */
+import { Digest } from '../ui/Digest'
 import { useQueryClient } from '@tanstack/react-query'
 import { useId, useRef, useState } from 'react'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
@@ -520,10 +521,10 @@ export function EndpointForm({
             <>
               <span>
                 this page read{' '}
-                <code title={stale.expectedSha256}>sha256 {short(stale.expectedSha256)}</code>
+                <Digest value={stale.expectedSha256} />
               </span>
               <span>
-                on disk now <code title={stale.actualSha256}>sha256 {short(stale.actualSha256)}</code>
+                on disk now <Digest value={stale.actualSha256} />
               </span>
             </>
           }
@@ -645,8 +646,4 @@ function CheckReading({ answer }: { answer: CheckAnswer }) {
       )}
     </span>
   )
-}
-
-function short(value: string): string {
-  return value ? `${value.slice(0, 12)}…` : '(no file)'
 }

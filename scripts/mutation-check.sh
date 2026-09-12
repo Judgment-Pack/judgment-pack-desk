@@ -3904,8 +3904,8 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
 
   # Both digests, whole, for a reader comparing against sha256sum.
   mutate web "the stale-write alert carries only the twelve characters it prints" "$SWA" \
-    '            <code title={stale.expectedSha256}>sha256 {digest(stale.expectedSha256)}</code>' \
-    '            <code>sha256 {digest(stale.expectedSha256)}</code>'
+    '            <Digest value={stale.expectedSha256} />' \
+    '            <Digest value={stale.expectedSha256.slice(0, 12)} />'
 
   # A pattern is not something to read aloud.
   mutate web "the id hint prints the pattern at the author" "$CF" \

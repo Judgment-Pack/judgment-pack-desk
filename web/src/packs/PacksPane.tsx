@@ -11,6 +11,7 @@ import { Button, ButtonLink } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
 import { PageHeader } from '../ui/PageLayout'
+import { OverflowTooltip } from '../ui/Tooltip'
 import { PackPreview, PackPreviewHint } from './PackPreview'
 import styles from './PacksPane.module.css'
 import { moveFocus, useWindowedRows } from './useWindowedRows'
@@ -117,14 +118,14 @@ export function PacksPane({ active = true }: { active?: boolean }) {
         }}>
           {packs.slice(window.start, window.end).map((pack, offset) => <li key={pack.id}
             className={styles.row} data-selected={slot.open && preview?.id === pack.id || undefined}>
-            <Link className={styles.link} data-row={window.start + offset} to={`/packs/${encodeURIComponent(pack.id)}`}
+            <OverflowTooltip selector="[data-overflow-text]" fallback="Open Preview to read the full pack details."><Link className={styles.link} data-row={window.start + offset} to={`/packs/${encodeURIComponent(pack.id)}`}
               onClick={() => { if (list.current) scrollPosition.current = list.current.scrollTop }}>
-              <span className={styles.identity}><span className={styles.name} title={pack.id}>{pack.id}</span>
-                {isSpelled(pack.detail) ? <span className={styles.rowDetail} title={pack.detail}>{pack.detail}</span>
-                  : isSpelled(pack.description) && <span className={styles.description} title={pack.description}>{pack.description}</span>}
+              <span className={styles.identity}><span className={styles.name} data-overflow-text>{pack.id}</span>
+                {isSpelled(pack.detail) ? <span className={styles.rowDetail} data-overflow-text>{pack.detail}</span>
+                  : isSpelled(pack.description) && <span className={styles.description} data-overflow-text>{pack.description}</span>}
               </span>
-              <span className={styles.version}>{isSpelled(pack.packVersion) ? `v${pack.packVersion}` : '—'}</span>
-            </Link>
+              <span className={styles.version} data-overflow-text>{isSpelled(pack.packVersion) ? `v${pack.packVersion}` : '—'}</span>
+            </Link></OverflowTooltip>
             <Button variant="quiet" className={styles.preview} data-preview data-row={window.start + offset}
               aria-label={`Preview ${pack.id}`} aria-pressed={slot.open && preview?.id === pack.id}
               onClick={() => { setPreviewId(pack.id); slot.reveal() }}>Preview</Button>

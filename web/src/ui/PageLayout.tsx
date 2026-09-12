@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { OverflowTooltip } from './Tooltip'
 import styles from './PageLayout.module.css'
 
 /** Full-width page chrome, independent of the reading measure below it. */
@@ -16,7 +17,7 @@ export function PageHeader({ title, context, meta, actions, description, navigat
     <div className={variant === 'title' ? styles.documentHeading : styles.heading}>
     <h1 className={styles.title}>{title}{context && <>
       <span className={styles.separator} aria-hidden="true">/</span>
-      <span className={styles.context} title={context}>{context}</span>
+      <OverflowTooltip><span className={styles.context}>{context}</span></OverflowTooltip>
     </>}{meta !== undefined && <span className={styles.meta}>{meta}</span>}</h1>
     {actions && <div className={styles.actions}>{actions}</div>}
     {description && <div className={styles.description}>{description}</div>}

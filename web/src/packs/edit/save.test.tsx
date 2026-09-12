@@ -335,9 +335,15 @@ describe('a file that moved underneath the edit', () => {
     fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
     fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
     const alert = await screen.findByRole('alert')
-    const titles = [...alert.querySelectorAll('code')].map((code) => code.getAttribute('title'))
-    expect(titles).toContain(PACK_DIGEST)
-    expect(titles).toContain(ON_DISK)
+    for (const value of [PACK_DIGEST, ON_DISK]) {
+      const control = alert.querySelector(`[aria-label="Show full digest ${value}"]`)!
+      expect(control).not.toBeNull()
+      fireEvent.click(control)
+      const popover = await screen.findByRole('dialog', { name: 'Full digest' })
+      expect(popover.querySelector('code')?.textContent).toBe(value)
+      fireEvent.keyDown(popover, { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Full digest' })).toBeNull())
+    }
   })
 
   it('offers Overwrite as the quiet control and never as the primary one', async () => {

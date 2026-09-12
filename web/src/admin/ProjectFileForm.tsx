@@ -24,6 +24,7 @@
  * with the file this save would have made is still a problem, and dropping it
  * would leave a refusal with no sentence.
  */
+import { Digest } from '../ui/Digest'
 import { useState, type ReactNode } from 'react'
 import { AlertPanel } from '../ui/AlertPanel'
 import { Alert } from '../ui/Alert'
@@ -228,13 +229,11 @@ export function ProjectFileForm<D>({
             <>
               <span>
                 this page read{' '}
-                <code title={save.stale.expectedSha256}>
-                  sha256 {short(save.stale.expectedSha256)}
-                </code>
+                <Digest value={save.stale.expectedSha256} />
               </span>
               <span>
                 on disk now{' '}
-                <code title={save.stale.actualSha256}>sha256 {short(save.stale.actualSha256)}</code>
+                <Digest value={save.stale.actualSha256} />
               </span>
             </>
           }
@@ -301,8 +300,4 @@ export function problemAt(
       .map((problem) => problem.reason)
       .join(' ') || undefined
   )
-}
-
-function short(value: string): string {
-  return value ? `${value.slice(0, 12)}…` : '(no file)'
 }

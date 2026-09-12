@@ -1,3 +1,4 @@
+import { Tooltip } from '../ui/Tooltip'
 /**
  * The 28px strip: the console's collapsed face, and today's footer sentence.
  *
@@ -90,7 +91,7 @@ export function StatusStrip({
           <ConfigCue full={CONFIG_UNREAD_CUE} short={CONFIG_UNREAD_SHORT} />
         )}
       </span>
-      <button
+      <Tooltip content={consoleOpen ? "Collapse Console" : "Expand Console"}><button
         type="button"
         className="desk-icon-button"
         aria-label={consoleOpen ? 'Collapse console' : 'Expand console'}
@@ -99,7 +100,7 @@ export function StatusStrip({
         onClick={onToggleConsole}
       >
         <IconPanelBottom />
-      </button>
+      </button></Tooltip>
     </footer>
   )
 }

@@ -37,7 +37,7 @@
  */
 import { SegmentedControl } from '../ui/SegmentedControl'
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { FileRequestError, readFile, writeFile, type FileContent } from '../files/client'
@@ -172,6 +172,7 @@ export function CreatePackDialog({
   /** The control that opened this, so focus goes back to it on every exit. */
   openerRef?: RefObject<HTMLElement | null>
 }) {
+  const createHelpId = useId()
   const { config } = useEffectiveConfig()
   const { dir, idBase } = config.storage.packs
   const { known, exampleSupported, schemaSupported, validateSupported } = useMcp()
@@ -808,7 +809,7 @@ export function CreatePackDialog({
             </Field>
             {method === 'manual' ? <Field label="Starting template" error={templateProblem}>
               {(wiring) => <Select {...wiring} value={selected} onValueChange={setChoice} disabled={draft !== undefined} options={options} placeholder={templatesPending ? TEMPLATES_PENDING : 'Choose a template'} />}
-            </Field> : draft === undefined ? <DescribeIt state={describe} expanded /> : null}
+            </Field> : draft === undefined ? <DescribeIt state={describe} blockingElsewhere={Boolean(createWhy)} expanded /> : null}
             </FieldGroup>
             {draft !== undefined && <p className={flow.hint}>Your draft is retained. Edit its name, description, and other fields in Build → Full document.</p>}
           </>}
@@ -820,18 +821,19 @@ export function CreatePackDialog({
           {step === 2 && isRecord(preview) && <PackOverview document={preview as unknown as PackDocument} />}
           {step > 0 && <section className={flow.summary} aria-label="Draft validation">
             <h3>Structure check</h3>
-            <p role="status">{proposalRefusal ?? 'The runtime validated this draft. This does not mean its rules have passed tests.'}</p>
+            <p id={createWhy === proposalRefusal ? createHelpId : undefined} role="status">{proposalRefusal ?? 'The runtime validated this draft. This does not mean its rules have passed tests.'}</p>
             {refused !== undefined && <DiagnosticList diagnostics={anchor(refused, new Set())} label="What the runtime said about this document" />}
             {refused !== undefined && truncationNote(refused) !== undefined && <p>{truncationNote(refused)}</p>}
             {held.drafts.size > 0 && <p>Finish or clear the incomplete field values before continuing.</p>}
           </section>}
           {(failure ?? blocked) && <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>}
           {busy && <p role="status">Creating and registering the pack. Stay on this page until it finishes.</p>}
+          {createWhy && (step === 0 || createWhy !== proposalRefusal) && <p id={createHelpId} className={flow.hint}>{createWhy}</p>}
           <div className={flow.actions}>
             <Button variant="quiet" disabled={busy} onClick={() => close(false)}>Cancel</Button>
             <div>
               {step > 0 && <Button disabled={busy} onClick={() => setStep(step - 1)}>Back</Button>}
-              <Button variant="primary" type="submit" disabled={step === 2 ? !ready : step === 0 ? slug === undefined || taken !== undefined || source === undefined || describe.blocking !== '' || (method === 'ai' && !usingProposal && draft === undefined) : held.drafts.size > 0} title={step === 2 ? createWhy : undefined}>
+              <Button variant="primary" type="submit" disabled={step === 2 ? !ready : step === 0 ? slug === undefined || taken !== undefined || source === undefined || describe.blocking !== '' || (method === 'ai' && !usingProposal && draft === undefined) : held.drafts.size > 0} aria-describedby={step === 2 && createWhy ? createHelpId : undefined}>
                 {busy ? 'Creating…' : step === 2 ? 'Create pack' : step === 1 ? 'Review pack' : 'Continue'}
               </Button>
             </div>
@@ -907,7 +909,7 @@ export function CreatePackDialog({
         </Field>
 
         {renamed && <p className="quiet">{RENAMED}</p>}
-        {proposalRefusal !== undefined && <p className="quiet">{proposalRefusal}</p>}
+        {proposalRefusal !== undefined && <p id={createWhy === proposalRefusal ? createHelpId : undefined} className="quiet">{proposalRefusal}</p>}
         {/*
           **Every diagnostic the runtime returned, as it wrote them.** Not the
           first, and not reworded: a runtime reporting independent errors at two
@@ -931,19 +933,20 @@ export function CreatePackDialog({
           </>
         )}
 
-        <DescribeIt state={describe} />
+        <DescribeIt state={describe} blockingElsewhere={Boolean(createWhy)} />
 
         {(failure ?? blocked) && (
           <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>
         )}
 
+        {createWhy && createWhy !== proposalRefusal && <p id={createHelpId} className="quiet">{createWhy}</p>}
         <DialogActions>
           <DialogClose asChild>
             <Button variant="secondary" disabled={busy}>
               Cancel
             </Button>
           </DialogClose>
-          <Button variant="primary" type="submit" disabled={!ready} title={createWhy}>
+          <Button variant="primary" type="submit" disabled={!ready} aria-describedby={createWhy ? createHelpId : undefined}>
             Create pack
           </Button>
         </DialogActions>

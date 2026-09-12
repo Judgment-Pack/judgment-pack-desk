@@ -5082,3 +5082,15 @@ would stop being one.
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+
+### Tooltips and long pack questions
+
+Collection rows use an ellipsis when text runs out of space. A shared Radix
+hint reveals clipped visible text; text that fits has no tooltip. Very long
+questions direct the reader to Preview, which displays the complete text and
+works on touch screens. Icon controls use the same neutral tooltip styling.
+Disabled-action reasons are visible help, full digest values open a selectable
+and copyable disclosure, and graph diagnostics can be expanded without hover.
+See [the tooltip rules](docs/design-system.md#tooltips-truncation-and-full-values)
+and [the completed sweep](docs/reviews/tooltip-sweep.md).

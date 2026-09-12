@@ -15,13 +15,14 @@
  * value stands, which is what a segmented control does.
  */
 import { ToggleGroup } from 'radix-ui'
+import { useId } from 'react'
 import styles from './SegmentedControl.module.css'
 
 export interface Segment {
   value: string
   label: string
-  /** An accessible name where the visible label is an abbreviation. */
-  title?: string
+  /** Visible explanatory help, including why an option is unavailable. */
+  description?: string
   disabled?: boolean
 }
 
@@ -39,12 +40,16 @@ export function SegmentedControl({
   segments: readonly Segment[]
   id?: string
 }) {
+  const helpId = useId()
+  const explanations = segments.filter(segment => segment.description)
   return (
+    <div className={styles.container}>
     <ToggleGroup.Root
       id={id}
       type="single"
       className={styles.group}
       aria-label={label}
+      aria-describedby={explanations.length ? helpId : undefined}
       value={value}
       onValueChange={(next) => {
         // A deselect is not a choice. Radix reports `""` when the pressed item
@@ -59,11 +64,14 @@ export function SegmentedControl({
           className={styles.segment}
           value={segment.value}
           disabled={segment.disabled}
-          title={segment.title}
         >
           {segment.label}
         </ToggleGroup.Item>
       ))}
     </ToggleGroup.Root>
+    {explanations.length > 0 && <p id={helpId} className={styles.help}>
+      {explanations.map(segment => <span key={segment.value}>{segment.label}: {segment.description}</span>)}
+    </p>}
+    </div>
   )
 }

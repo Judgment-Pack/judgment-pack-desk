@@ -95,7 +95,7 @@ export function EditToolbar({
                 // Withheld rather than hidden: a control that vanished would
                 // leave a viewer wondering whether the desk has forms at all.
                 disabled: !shapeAvailable,
-                title: shapeAvailable ? undefined : 'These bytes cannot be read as a document.'
+                description: shapeAvailable ? undefined : 'These bytes cannot be read as a document.'
               },
               { value: 'json', label: 'JSON' }
             ]}

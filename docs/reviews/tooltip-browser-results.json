@@ -1,0 +1,257 @@
+{
+  "checks": [
+    {
+      "name": "hover opens compact hint",
+      "pass": true
+    },
+    {
+      "name": "existing accessible description retained",
+      "pass": true
+    },
+    {
+      "name": "bubble remains hoverable",
+      "pass": true
+    },
+    {
+      "name": "Escape dismisses",
+      "pass": true
+    },
+    {
+      "name": "fitting label has no tooltip",
+      "pass": true
+    },
+    {
+      "name": "clipped text revealed",
+      "pass": true
+    },
+    {
+      "name": "resize to fit dismisses hint",
+      "pass": true
+    },
+    {
+      "name": "keyboard focus opens",
+      "pass": true
+    },
+    {
+      "name": "focus stays on trigger",
+      "pass": true
+    },
+    {
+      "name": "dialog hint above modal",
+      "pass": true
+    },
+    {
+      "name": "Escape closes tooltip before dialog",
+      "pass": true
+    },
+    {
+      "name": "digest selectable in modal",
+      "pass": true
+    },
+    {
+      "name": "tooltip fits 390",
+      "pass": true
+    },
+    {
+      "name": "tooltip fits 768",
+      "pass": true
+    },
+    {
+      "name": "tooltip fits 1440",
+      "pass": true
+    },
+    {
+      "name": "touch does not leave tooltip",
+      "pass": true
+    },
+    {
+      "name": "dark/comfortable: full clipped question",
+      "pass": true
+    },
+    {
+      "name": "dark/comfortable: row stays compact",
+      "pass": true
+    },
+    {
+      "name": "dark/comfortable: no native browser hints",
+      "pass": true
+    },
+    {
+      "name": "dark/comfortable: preview dismisses hint",
+      "pass": true
+    },
+    {
+      "name": "dark/comfortable: preview shows whole question",
+      "pass": true
+    },
+    {
+      "name": "dark/comfortable: dragging leaves no hint",
+      "pass": true
+    },
+    {
+      "name": "dark/comfortable: no residual divider paint",
+      "pass": true
+    },
+    {
+      "name": "dark/comfortable: huge question stays out of tooltip",
+      "pass": true
+    },
+    {
+      "name": "dark/comfortable: huge question available in Preview",
+      "pass": true
+    },
+    {
+      "name": "dark/comfortable: virtualized scrolling dismisses",
+      "pass": true
+    },
+    {
+      "name": "dark/comfortable: collection remains virtualized",
+      "pass": true
+    },
+    {
+      "name": "dark/compact: full clipped question",
+      "pass": true
+    },
+    {
+      "name": "dark/compact: row stays compact",
+      "pass": true
+    },
+    {
+      "name": "dark/compact: no native browser hints",
+      "pass": true
+    },
+    {
+      "name": "dark/compact: preview dismisses hint",
+      "pass": true
+    },
+    {
+      "name": "dark/compact: preview shows whole question",
+      "pass": true
+    },
+    {
+      "name": "dark/compact: dragging leaves no hint",
+      "pass": true
+    },
+    {
+      "name": "dark/compact: no residual divider paint",
+      "pass": true
+    },
+    {
+      "name": "dark/compact: huge question stays out of tooltip",
+      "pass": true
+    },
+    {
+      "name": "dark/compact: huge question available in Preview",
+      "pass": true
+    },
+    {
+      "name": "dark/compact: virtualized scrolling dismisses",
+      "pass": true
+    },
+    {
+      "name": "dark/compact: collection remains virtualized",
+      "pass": true
+    },
+    {
+      "name": "light/comfortable: full clipped question",
+      "pass": true
+    },
+    {
+      "name": "light/comfortable: row stays compact",
+      "pass": true
+    },
+    {
+      "name": "light/comfortable: no native browser hints",
+      "pass": true
+    },
+    {
+      "name": "light/comfortable: preview dismisses hint",
+      "pass": true
+    },
+    {
+      "name": "light/comfortable: preview shows whole question",
+      "pass": true
+    },
+    {
+      "name": "light/comfortable: dragging leaves no hint",
+      "pass": true
+    },
+    {
+      "name": "light/comfortable: no residual divider paint",
+      "pass": true
+    },
+    {
+      "name": "light/comfortable: huge question stays out of tooltip",
+      "pass": true
+    },
+    {
+      "name": "light/comfortable: huge question available in Preview",
+      "pass": true
+    },
+    {
+      "name": "light/comfortable: virtualized scrolling dismisses",
+      "pass": true
+    },
+    {
+      "name": "light/comfortable: collection remains virtualized",
+      "pass": true
+    },
+    {
+      "name": "light/compact: full clipped question",
+      "pass": true
+    },
+    {
+      "name": "light/compact: row stays compact",
+      "pass": true
+    },
+    {
+      "name": "light/compact: no native browser hints",
+      "pass": true
+    },
+    {
+      "name": "light/compact: preview dismisses hint",
+      "pass": true
+    },
+    {
+      "name": "light/compact: preview shows whole question",
+      "pass": true
+    },
+    {
+      "name": "light/compact: dragging leaves no hint",
+      "pass": true
+    },
+    {
+      "name": "light/compact: no residual divider paint",
+      "pass": true
+    },
+    {
+      "name": "light/compact: huge question stays out of tooltip",
+      "pass": true
+    },
+    {
+      "name": "light/compact: huge question available in Preview",
+      "pass": true
+    },
+    {
+      "name": "light/compact: virtualized scrolling dismisses",
+      "pass": true
+    },
+    {
+      "name": "light/compact: collection remains virtualized",
+      "pass": true
+    },
+    {
+      "name": "mobile preview reads question without hover",
+      "pass": true
+    },
+    {
+      "name": "mobile preview does not leave tooltip",
+      "pass": true
+    },
+    {
+      "name": "mobile has no horizontal overflow",
+      "pass": true
+    }
+  ],
+  "errors": []
+}

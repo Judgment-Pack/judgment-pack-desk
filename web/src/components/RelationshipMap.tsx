@@ -1,3 +1,4 @@
+import { Tooltip } from '../ui/Tooltip'
 import { useMemo, type KeyboardEvent } from 'react'
 import { ReactFlow, Handle, Position, MarkerType, type Node, type NodeProps, type Viewport } from '@xyflow/react'
 import '@xyflow/react/dist/base.css'
@@ -48,9 +49,9 @@ export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange
       minZoom={0.5} maxZoom={2} preventScrolling={false}
       ariaLabelConfig={{ 'node.a11yDescription.default': 'Press Enter or Space to inspect this group.' }} />
     <div className={styles.controls} aria-label="Map zoom">
-      <Button aria-label="Zoom out" onClick={() => onViewportChange({ ...viewport, zoom: Math.max(.5, viewport.zoom - .25) })}>−</Button>
-      <Button aria-label="Reset map view" onClick={() => onViewportChange({ x: 0, y: 24, zoom: 1 })}>{Math.round(viewport.zoom * 100)}%</Button>
-      <Button aria-label="Zoom in" onClick={() => onViewportChange({ ...viewport, zoom: Math.min(2, viewport.zoom + .25) })}>+</Button>
+      <Tooltip content="Zoom out"><Button aria-label="Zoom out" onClick={() => onViewportChange({ ...viewport, zoom: Math.max(.5, viewport.zoom - .25) })}>−</Button></Tooltip>
+      <Tooltip content="Reset map view"><Button aria-label="Reset map view" onClick={() => onViewportChange({ x: 0, y: 24, zoom: 1 })}>{Math.round(viewport.zoom * 100)}%</Button></Tooltip>
+      <Tooltip content="Zoom in"><Button aria-label="Zoom in" onClick={() => onViewportChange({ ...viewport, zoom: Math.min(2, viewport.zoom + .25) })}>+</Button></Tooltip>
     </div>
   </div>
 }

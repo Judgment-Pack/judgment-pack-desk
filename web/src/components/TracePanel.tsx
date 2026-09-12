@@ -101,7 +101,6 @@ function TraceRow({ entry }: { entry: TraceEntry }) {
     <li className={entry.skipped ? 'trace-entry trace-entry-skipped' : 'trace-entry'}>
       <span
         className={`verdict verdict-${slug(entry.condition)}`}
-        title={`condition: ${entry.condition}`}
       >
         {entry.condition}
       </span>
