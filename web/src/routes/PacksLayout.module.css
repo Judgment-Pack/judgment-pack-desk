@@ -54,3 +54,5 @@
   background: var(--surface);
   color: var(--ink-faint);
 }
+
+.selected { min-width: 0; }

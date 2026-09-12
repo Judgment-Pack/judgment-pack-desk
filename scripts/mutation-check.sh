@@ -2051,13 +2051,11 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the section links go nowhere" "$Q" \
     '    target?.scrollIntoView()' \
     '    void target'
-  mutate web "the create dialog is mounted on every route" "$L" \
-    '      {creating && (
-        <CreatePackDialog
-          open' \
-    '      {true && (
-        <CreatePackDialog
-          open={creating}'
+  mutate web "the rail fetches starter templates on every route" "$L" \
+    "import { useGraphInventory, usePacks } from '../mcp/queries'" \
+    "import { useExampleListing } from '../mcp/starters'
+import { useGraphInventory as readGraphInventory, usePacks } from '../mcp/queries'
+function useGraphInventory() { useExampleListing(); return readGraphInventory() }"
   # `navigate('/author')` from `/author` matches the same element, so a
   # mount-only take never runs again: the editor stayed where it was and the
   # request was left in module state for an unrelated mount to consume.
@@ -2834,10 +2832,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
             : undefined' \
     '          ? NO_TEMPLATE'
 
-  # 3. The rail below 900px is a modal drawer, and the dialog is inside it.
-  mutate web "a created pack leaves the rail drawer standing over it" "$LR" \
-    '          onCreated={onNavigate}' \
-    '          onCreated={undefined}'
+  # 3. Opening the creation page must dismiss the modal navigation drawer.
+  mutate web "opening creation leaves the rail drawer standing over it" "$LR" \
+    "onClick={() => { navigate('/create-pack'); onNavigate?.() }}" \
+    "onClick={() => { navigate('/create-pack') }}"
   mutate web "the dialog never says it created anything" "$X" \
     '      onCreated?.()' \
     ''
@@ -2853,9 +2851,11 @@ if [ "$which" = all ] || [ "$which" = web ]; then
                 }
           }' \
     ''
-  mutate web "the Create button is never held for focus restoration" "$LR" \
-    '          openerRef={createRef}' \
-    '          openerRef={undefined}'
+  # The opener is no longer a dialog trigger; focus belongs to the new page.
+  mutate web "the creation page never focuses its name field" "$X" \
+    '<Input {...wiring} autoFocus required value={name}' \
+    '<Input {...wiring} required value={name}'
+
 
   # 5. The runtime cleans interior `./`, `//` and surviving `..` and folds
   # case; comparing raw spellings let an alias through.
@@ -3936,8 +3936,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
         >
           <div className={styles.column} ref={setFrame}>'
   mutate web "the outline is rebuilt on every keystroke" "$PV" \
-    "  const documentKey = \`\${idle.checkedText ?? shownText ?? ''}|\${editing ? shape : 'read'}\`" \
-    "  const documentKey = \`\${shownText ?? ''}|\${editing ? shape : 'read'}\`"
+    "  const documentKey = \`\${idle.checkedText ?? shownText ?? ''}|\${editing ? shape : 'read'}|\${section}\`" \
+    "  const documentKey = \`\${shownText ?? ''}|\${editing ? shape : 'read'}|\${section}\`"
   mutate web "a deep link stops at the group instead of the control" "$PV" \
     "    const control = element.querySelector('input, textarea, [role=\"combobox\"]')" \
     "    const control = element.querySelector('nothing-at-all')"
@@ -5846,7 +5846,7 @@ export function assistantTransport(id: string): Transport {
   # ever writing the run's terminal event, so the next session cannot start and
   # the contract's one `end` is nowhere.
   mutate web "the run is left open when the dialog closes" "$X" \
-    '    if (!next) describe.discard()' \
+    "    if (!next && presentation !== 'page') describe.discard()" \
     '    void next'
 
   # **The desk owns four members, and `specVersion` is not one of them.** It was

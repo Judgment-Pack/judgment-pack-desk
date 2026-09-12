@@ -59,7 +59,7 @@ export function BottomPane({
             Connection
           </Tabs.Trigger>
           <Tabs.Trigger className="desk-tab" value="calls">
-            Calls
+            Activity
           </Tabs.Trigger>
           <Tabs.Trigger className="desk-tab" value="files">
             Files
@@ -72,7 +72,7 @@ export function BottomPane({
           <LogList entries={connection} empty="Nothing recorded on this connection yet." />
         </Tabs.Content>
         <Tabs.Content className="desk-console-body" value="calls">
-          <p className="desk-pane-empty">{LATER}</p>
+          <LogList entries={entries.filter((entry) => entry.channel === 'calls')} empty="No operations recorded yet." />
         </Tabs.Content>
         <Tabs.Content className="desk-console-body" value="files">
           <LogList entries={files} empty="No file change has been reported yet." />

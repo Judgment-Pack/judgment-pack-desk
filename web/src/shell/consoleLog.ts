@@ -14,7 +14,7 @@
  * than from whatever the test before it left behind.
  */
 
-export type ConsoleChannel = 'connection' | 'files'
+export type ConsoleChannel = 'connection' | 'files' | 'calls'
 
 export interface ConsoleEntry {
   seq: number
@@ -80,3 +80,6 @@ export function forgetConsole(): void {
   lastConnectionText = undefined
   publish()
 }
+
+/** Operation milestones only: never prompts, credentials, facts or evidence. */
+export function recordActivity(text: string): void { append('calls', text) }

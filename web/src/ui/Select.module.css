@@ -66,6 +66,7 @@
 }
 
 .item[data-state='checked'] {
+  color: var(--accent);
   font-weight: 600;
 }
 

@@ -80,7 +80,7 @@ describe('the left rail', () => {
     expect(stub.calls.every((call) => call.name !== 'experimental_test_graphs')).toBe(true)
   })
 
-  it('asks the runtime nothing for a dialog nobody has opened', async () => {
+  it('leaves starter requests to the creation page', async () => {
     // The Create-pack dialog was mounted unconditionally, so its body ran on
     // every route: `list_examples` on first paint everywhere, and again on
     // every `desk/fileChanged`, because a mounted query is an active one. This
@@ -99,9 +99,7 @@ describe('the left rail', () => {
     expect(stub.calls.map((call) => call.name)).toEqual(['list_packs'])
 
     fireEvent.click(screen.getByRole('button', { name: 'Create a pack' }))
-    await waitFor(() =>
-      expect(stub.calls.map((call) => call.name)).toContain('list_examples')
-    )
+    expect(stub.calls.map((call) => call.name)).not.toContain('list_examples')
   })
 
   it('renders Graphs whether or not the runtime advertises the inventory', async () => {

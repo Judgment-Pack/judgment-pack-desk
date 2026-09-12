@@ -11,10 +11,11 @@
  */
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { RouterProvider, createMemoryRouter } from 'react-router-dom'
+import { RouterProvider, Routes, Route, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { McpContext } from '../mcp/McpProvider'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
+import { CreatePackPage } from '../routes/CreatePackPage'
 import { AppShell } from './AppShell'
 import { forgetAuthorBridge } from './authorBridge'
 import { forgetConsole } from './consoleLog'
@@ -39,10 +40,12 @@ const PROJECT = `{
 }
 `
 
+let validationStatus = 'valid'
 const RUNTIME = stubClient({
   list_packs: () => ({ text: JSON.stringify({ status: 'valid', packs: [] }) }),
   list_examples: () => ({ text: EXAMPLES }),
-  get_example: () => ({ text: TEMPLATE })
+  get_example: () => ({ text: TEMPLATE }),
+  validate: () => ({ text: JSON.stringify({ status: validationStatus, diagnostics: [] }) })
 })
 
 interface Sent {
@@ -107,10 +110,10 @@ function renderDesk() {
         path: '*',
         element: (
           <McpContext.Provider
-            value={connected({ client: RUNTIME.client, exampleSupported: true, schemaSupported: false })}
+            value={connected({ client: RUNTIME.client, exampleSupported: true, schemaSupported: false, validateSupported: true })}
           >
             <AppShell>
-              <h1>a route</h1>
+              <Routes><Route path="/create-pack" element={<CreatePackPage />} /><Route path="*" element={<h1>a route</h1>} /></Routes>
             </AppShell>
           </McpContext.Provider>
         )
@@ -121,6 +124,7 @@ function renderDesk() {
   router.subscribe((state) => seen.push(state.location.pathname))
   return {
     seen,
+    router,
     ...render(
       <QueryClientProvider client={testQueryClient()}>
         <RouterProvider router={router} />
@@ -135,134 +139,114 @@ async function openCreate(): Promise<HTMLElement> {
   await screen.findByRole('navigation', { name: 'Project' })
   const opener = screen.getByRole('button', { name: 'Create a pack' })
   fireEvent.click(opener)
-  await screen.findByRole('dialog', { name: 'Create a pack' })
+  await screen.findByRole('heading', { name: 'Create a pack' })
   return opener
 }
 
 let sent: Sent[] = []
 
 beforeEach(() => {
+  validationStatus = 'valid'
   sent = serveProject()
+  vi.spyOn(window, 'confirm').mockReturnValue(false)
 })
 
 afterEach(() => {
   cleanup()
   forgetConsole()
   forgetAuthorBridge()
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
   window.localStorage.clear()
 })
 
-describe('creating a pack from the rail at 800px, where the rail is a drawer', () => {
-  it('sends both writes and leaves neither the dialog nor the drawer standing', async () => {
-    // The whole sequence, in the composition it runs in. Closing the dialog is
-    // not closing the drawer, and the drawer is modal: the page this navigates
-    // to was underneath an overlay with `aria-hidden` on it.
+
+async function nameAndBuild() {
+  await waitFor(() => expect(screen.getByLabelText('Starting template').textContent).toContain('minimal'))
+  fireEvent.change(screen.getByLabelText('Name (required)'), { target: { value: 'Vendor Onboarding' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+  await screen.findByRole('heading', { name: 'Build your decision' })
+}
+async function review() {
+  fireEvent.click(screen.getByRole('button', { name: 'Review pack' }))
+  await screen.findByRole('heading', { name: 'Review your pack' })
+}
+
+describe('guided creation from the rail', () => {
+  it('opens the creation page and dismisses the mobile navigation drawer', async () => {
     viewport(800)
-    const { seen } = renderDesk()
+    const { router } = renderDesk()
     await openCreate()
+    expect(router.state.location.pathname).toBe('/create-pack')
+    expect(screen.queryByRole('navigation', { name: 'Project' })).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect((screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('radio', { name: 'Draft with AI' }) as HTMLButtonElement).disabled).toBe(true)
+  })
 
-    await waitFor(() =>
-      expect(screen.getByLabelText('Template').textContent).toContain('minimal')
-    )
-    fireEvent.change(screen.getByLabelText('Name (required)'), {
-      target: { value: 'Vendor Onboarding' }
-    })
+  it('checks the edited draft and writes those exact bytes only after Review and Create', async () => {
+    viewport(800)
+    const { router } = renderDesk()
+    await openCreate()
+    await nameAndBuild()
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'JSON' }), { button: 0 })
+    const editor = await screen.findByLabelText('Draft document')
+    const draft = JSON.stringify({ ...JSON.parse((editor as HTMLTextAreaElement).value), description: 'Reviewed by the author', extensions: { 'example.keep': { a: 1 } } }, null, 2)
+    fireEvent.change(editor, { target: { value: draft } })
+    await review()
+    expect(sent).toEqual([])
     const create = screen.getByRole('button', { name: 'Create pack' }) as HTMLButtonElement
     await waitFor(() => expect(create.disabled).toBe(false))
     fireEvent.click(create)
-
-    // Two writes, the pack then the registration. Given room: this is two
-    // sequential round trips through the query client behind a modal drawer,
-    // and under the mutation harness's back-to-back full-suite runs the
-    // default second was occasionally not enough — which failed the harness's
-    // baseline gate and made rows that had nothing to do with this file
-    // unrunnable.
-    await waitFor(() => expect(sent).toHaveLength(2), { timeout: 5000 })
-    expect(sent.map((write) => write.path)).toEqual([
-      'packs/vendor-onboarding.pack.json',
-      'jpack.json'
-    ])
-
-    // The route changed, and nothing modal is left over it.
-    await waitFor(() => expect(seen).toContain('/packs/vendor-onboarding'), { timeout: 5000 })
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Create a pack' })).toBeNull())
-    await waitFor(() =>
-      expect(screen.queryByRole('navigation', { name: 'Project' })).toBeNull()
-    )
-    // The page underneath is back in the accessibility tree, which is the
-    // thing a standing modal drawer takes away.
-    expect(screen.getAllByRole('main')).toHaveLength(1)
+    await waitFor(() => expect(sent).toHaveLength(2))
+    expect(sent.map((write) => write.path)).toEqual(['packs/vendor-onboarding.pack.json', 'jpack.json'])
+    expect(sent[0]!.body.content).toBe(draft)
+    await waitFor(() => expect(router.state.location.pathname).toBe('/packs/vendor-onboarding'))
+    expect(window.confirm).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('gives focus back to the Create button on Cancel', async () => {
+  it('keeps invalid drafts editable and refuses creation until the runtime validates them', async () => {
+    validationStatus = 'invalid'
+    viewport(800); renderDesk(); await openCreate(); await nameAndBuild(); await review()
+    await screen.findByText(/will not call this document a pack/)
+    expect((screen.getByRole('button', { name: 'Create pack' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    await screen.findByRole('heading', { name: 'Build your decision' })
+    expect(sent).toEqual([])
+  })
+
+  it('retains the draft when a dirty navigation is declined and discards it when confirmed', async () => {
     viewport(800)
-    renderDesk()
-    const opener = await openCreate()
+    const { router } = renderDesk()
+    await openCreate(); await nameAndBuild()
+    await act(async () => { await router.navigate('/packs') })
+    await waitFor(() => expect(window.confirm).toHaveBeenCalled())
+    expect(router.state.location.pathname).toBe('/create-pack')
+    expect(screen.getByRole('heading', { name: 'Build your decision' })).toBeTruthy()
+    vi.mocked(window.confirm).mockReturnValue(true)
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Create a pack' })).toBeNull())
-    await waitFor(() => expect(document.activeElement).toBe(opener))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/packs'))
+    expect(sent).toEqual([])
   })
 
-  it('gives focus back to the Create button on Escape', async () => {
+  it('cancels an untouched creation page without a discard prompt', async () => {
     viewport(800)
-    renderDesk()
-    const opener = await openCreate()
-    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Create a pack' })).toBeNull())
-    await waitFor(() => expect(document.activeElement).toBe(opener))
+    const { router } = renderDesk()
+    await openCreate()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/packs'))
+    expect(window.confirm).not.toHaveBeenCalled()
   })
 
-  it('gives focus back to the Create button after a successful create', async () => {
-    // The success path unmounts the dialog through the rail's own state, so
-    // this is the exit most likely to drop focus on `<body>`.
-    viewport(800)
-    renderDesk()
-    const opener = await openCreate()
-    await waitFor(() =>
-      expect(screen.getByLabelText('Template').textContent).toContain('minimal')
-    )
-    fireEvent.change(screen.getByLabelText('Name (required)'), {
-      target: { value: 'Vendor Onboarding' }
-    })
-    const create = screen.getByRole('button', { name: 'Create pack' }) as HTMLButtonElement
-    await waitFor(() => expect(create.disabled).toBe(false))
-    await act(async () => {
-      fireEvent.click(create)
-    })
-    await waitFor(() => expect(sent).toHaveLength(2))
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Create a pack' })).toBeNull())
-    // The opener has gone with the drawer, so what must not happen is focus
-    // being left on a detached node — the document keeps it.
-    expect(document.body.contains(opener)).toBe(false)
-    expect(document.activeElement === document.body || document.body.contains(document.activeElement)).toBe(true)
-  })
-})
-
-describe('creating a pack from the rail as a column', () => {
-  it('closes the dialog, navigates, and leaves the rail exactly where it was', async () => {
-    // Wide, the rail is not modal and there is nothing to dismiss: `onCreated`
-    // must not close anything, because the rail is the page's own furniture.
+  it('keeps the desktop rail in place when opening the creation page', async () => {
     viewport(1400)
-    const { seen } = renderDesk()
-    const opener = screen.getByRole('button', { name: 'Create a pack' })
-    fireEvent.click(opener)
-    await screen.findByRole('dialog', { name: 'Create a pack' })
-    await waitFor(() =>
-      expect(screen.getByLabelText('Template').textContent).toContain('minimal')
-    )
-    fireEvent.change(screen.getByLabelText('Name (required)'), {
-      target: { value: 'Vendor Onboarding' }
-    })
-    const create = screen.getByRole('button', { name: 'Create pack' }) as HTMLButtonElement
-    await waitFor(() => expect(create.disabled).toBe(false))
-    fireEvent.click(create)
-
-    await waitFor(() => expect(sent).toHaveLength(2))
-    await waitFor(() => expect(seen).toContain('/packs/vendor-onboarding'))
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Create a pack' })).toBeNull())
-    // Still there, still a column.
-    expect(screen.getByRole('navigation', { name: 'Project' })).toBeTruthy()
-    await waitFor(() => expect(document.activeElement).toBe(opener))
+    const { router } = renderDesk()
+    const rail = screen.getByRole('navigation', { name: 'Project' })
+    fireEvent.click(screen.getByRole('button', { name: 'Create a pack' }))
+    await screen.findByRole('heading', { name: 'Create a pack' })
+    expect(router.state.location.pathname).toBe('/create-pack')
+    expect(document.activeElement).toBe(screen.getByLabelText('Name (required)'))
+    expect(screen.getByRole('navigation', { name: 'Project' })).toBe(rail)
   })
 })

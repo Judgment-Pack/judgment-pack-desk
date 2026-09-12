@@ -87,6 +87,8 @@ import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useMeasuredBox } from '../shell/measured'
 import { Tabs } from '../ui/Tabs'
 import styles from './PackView.module.css'
+import { PageHeader, PageBody } from '../ui/PageLayout'
+import { PackNavigation, PackOverview, PACK_GROUPS, type PackSection } from '../packs/PackWorkspace'
 
 /**
  * What the what-if pane needs, and what the editor must keep beside it.
@@ -355,7 +357,12 @@ export function PackView() {
    * feed arrive: the rendered set and the report it anchors against are then
    * about the same bytes by construction.
    */
-  const documentKey = `${idle.checkedText ?? shownText ?? ''}|${editing ? shape : 'read'}`
+  const requested = params.get('view')
+  const section: PackSection = editing || hash !== '' || (at !== null && (!requested || requested === 'overview'))
+    ? 'document' : requested === 'rules' || requested === 'evidence' || requested === 'document'
+      ? requested : 'overview'
+
+  const documentKey = `${idle.checkedText ?? shownText ?? ''}|${editing ? shape : 'read'}|${section}`
   useEffect(() => {
     if (rawMode) {
       // **The JSON view puts every member on the page**, as the bytes it is.
@@ -370,9 +377,8 @@ export function PackView() {
       return
     }
     const article = document.querySelector('[data-pointer=""]')
-    if (article === null) return
     const found = new Set<string>([''])
-    for (const element of article.querySelectorAll('[data-pointer]')) {
+    for (const element of article?.querySelectorAll('[data-pointer]') ?? []) {
       const pointer = element.getAttribute('data-pointer')
       if (pointer !== null) found.add(pointer)
     }
@@ -927,10 +933,15 @@ export function PackView() {
     </CheckStrip>
   )
 
+
   return (
     <SelectionContext.Provider value={{ at, select }}>
       <EditingContext.Provider value={session}>
         {inspector}
+        <div data-layout="page">
+        <PageHeader title="Packs" context={packId} actions={elsewhere} />
+        <PackNavigation packId={packId ?? ''} current={section} />
+        <PageBody width="wide">
         <div
           className={styles.workspace}
           ref={setFrame}
@@ -1100,7 +1111,6 @@ export function PackView() {
             )}
             {drawn === undefined || rawMode ? (
               <>
-                {elsewhere}
                 {strip}
                 <RawJsonEditor
                   text={bufferText ?? servedText ?? ''}
@@ -1112,13 +1122,21 @@ export function PackView() {
                 />
               </>
             ) : (
-              <PackDocumentView document={drawn} active={active}>
-                {elsewhere}
-                {strip}
-              </PackDocumentView>
+              <>
+                {section === 'overview' ? <>
+                  {strip}
+                  <PackOverview document={drawn} />
+                </> : <PackDocumentView key={section} document={drawn} active={active}
+                  members={section === 'rules' || section === 'evidence' ? PACK_GROUPS[section] : undefined}
+                  outline={section === 'document'}>
+                  {strip}
+                </PackDocumentView>}
+              </>
             )}
           </div>
           {paneNode !== null && roomInMain && <div className={styles.pane}>{paneNode}</div>}
+        </div>
+        </PageBody>
         </div>
       </EditingContext.Provider>
     </SelectionContext.Provider>

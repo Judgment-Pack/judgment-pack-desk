@@ -26,7 +26,7 @@ export function DecisionBlock({ decision, at }: { decision: Decision; at: string
   }
   return (
     <Block pointer={at} className={styles.decision}>
-      <Block pointer={`${at}/question`} as="h1" className={styles.question}>
+      <Block pointer={`${at}/question`} as="h2" className={styles.question}>
         {decision.question}
       </Block>
       {decision.intent !== undefined && (

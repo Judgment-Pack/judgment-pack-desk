@@ -78,7 +78,7 @@ function DesignSystem() {
           </div>
         </SettingsSection>
 
-        <SettingsSection level={2} title="Color roles" description="Neutral surfaces, readable text, and an indigo action accent.">
+        <SettingsSection level={2} title="Color roles" description="Neutral surfaces and text, green actions and selections, and gold attention states.">
           <div className={styles.swatches}>
             <div className={styles.surface}>Surface</div>
             <div className={styles.raised}>Raised</div>

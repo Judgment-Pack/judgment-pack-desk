@@ -55,7 +55,7 @@ import { OutcomesBlock } from './OutcomesBlock'
 import { OmittedMember } from './OmittedMember'
 import { RulesBlock } from './RulesBlock'
 import { SourcesBlock } from './SourcesBlock'
-import { outlineUnits, readingOrder, unitCount, unitIsPresent, type MemberUnit } from './members'
+import { outlineUnits, readingOrder, unitCount, unitIsPresent, type MemberUnit, type RootMember } from './members'
 import styles from './PackDocument.module.css'
 
 /** What an absent member means, in the document's own vocabulary. */
@@ -78,15 +78,19 @@ const ABSENCE_NOTE: Record<string, string> = {
 export function PackDocumentView({
   document: doc,
   active,
-  children
+  children,
+  members,
+  outline = true
 }: {
   document: PackDocument
   /** The member the outline marks as the one being read. */
   active: string | null
   /** The check strip, rendered between the outline and the first member. */
   children?: ReactNode
+  members?: readonly RootMember[]
+  outline?: boolean
 }) {
-  const order = readingOrder(doc)
+  const order = readingOrder(doc).filter((unit) => members === undefined || unit.members.some((member) => members.includes(member)))
   // The nav is not the page. Reading order is one unit per member, in the
   // document's own order; the outline collapses the identity members into one
   // entry, at the position of the first of them.
@@ -116,7 +120,7 @@ export function PackDocumentView({
         data-pointer=""
         onKeyDown={(event) => onDocumentKey(event, article.current, select, setMoved)}
       >
-        <MemberOutline entries={entries} active={active} />
+        {outline && <MemberOutline entries={entries} active={active} />}
         {children}
         {order.map((unit) => (
           <MemberBlock key={unit.id} unit={unit} document={doc} />

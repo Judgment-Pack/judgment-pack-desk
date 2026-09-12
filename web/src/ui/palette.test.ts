@@ -22,7 +22,7 @@
  *   modules; the two global sheets were never covered, and `shell.css` was
  *   spelling three.
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ROW_HEIGHT } from '../config/theme'
@@ -66,6 +66,20 @@ function colour(tokens: Tokens, name: string): string {
 /** The dark palette as a whole map: `:root`'s tokens with the dark ones over them. */
 const dark: Tokens = new Map([...light, ...attributeDark])
 
+describe.each([['light', light], ['dark', dark]] as const)('%s uses only neutral, green and gold colors', (_name, palette) => {
+  it('keeps every chromatic token within the brand families', () => {
+    for (const [name, value] of palette) {
+      if (!/^#[\da-f]{6}$/i.test(value)) continue
+      const [r, g, b] = [1, 3, 5].map((offset) => parseInt(value.slice(offset, offset + 2), 16)) as [number, number, number]
+      const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min
+      // The existing neutral surfaces have a small cool bias. Preserve them.
+      if (delta <= 16) continue
+      const hue = ((max === r ? (g - b) / delta : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4) * 60 + 360) % 360
+      expect((hue >= 25 && hue <= 55) || (hue >= 100 && hue <= 190), `${name}: ${value} has hue ${hue.toFixed(1)}`).toBe(true)
+    }
+  })
+})
+
 describe('every colour token has a dark value', () => {
   it('defines the same colour names in both dark blocks as on :root', () => {
     // The defect this replaces: both blocks carried the light values, so
@@ -92,9 +106,9 @@ describe('every colour token has a dark value', () => {
     expect(Object.fromEntries(mediaDark)).toEqual(Object.fromEntries(attributeDark))
   })
 
-  it('changes theme surfaces and text while preserving the primary action palette', () => {
-    // Indigo actions use the same fill and white label in both themes.
-    const invariant = new Set(['--accent-fill', '--accent-hover', '--accent-active', '--ink-inverse'])
+  it('changes theme surfaces and text while preserving the identity badge palette', () => {
+    // Small identity badges keep the website colors; other accents adapt for contrast.
+    const invariant = new Set(['--brand-fill', '--brand-label', '--ink-inverse'])
     for (const name of colourTokens) {
       if (invariant.has(name)) {
         expect(colour(attributeDark, name), `${name} is shared between themes`).toBe(colour(light, name))
@@ -149,6 +163,8 @@ const PAIRS: { front: string; back: string; least: number; why: string }[] = [
   { front: '--ink-faint', back: '--bg', least: 4.5, why: 'a label on the page' },
   { front: '--ink-faint', back: '--surface', least: 4.5, why: 'a label on a card' },
   { front: '--ink-faint', back: '--surface-raised', least: 4.5, why: 'a note in a menu' },
+  { front: '--brand-label', back: '--brand-fill', least: 4.5, why: 'avatar and organization initials' },
+  { front: '--accent', back: '--sidebar', least: 4.5, why: 'selected navigation text' },
   { front: '--ink-inverse', back: '--accent-fill', least: 4.5, why: 'a primary button' },
   { front: '--sidebar-ink', back: '--sidebar', least: 4.5, why: 'inactive navigation' },
   { front: '--ink-inverse', back: '--accent-hover', least: 4.5, why: 'a primary button, hovered' },
@@ -320,5 +336,24 @@ describe('the instrument', () => {
     expect(withoutBlocks('a { --x: red; }\n.b { color: var(--x); }', ['a {'])).toBe(
       'a {}\n.b { color: var(--x); }'
     )
+  })
+})
+
+
+describe('all stylesheet references have a source', () => {
+  it('resolves custom properties across CSS and the shell, apart from Radix-owned values', () => {
+    const files = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(dir, entry.name)
+      return entry.isDirectory() ? files(path) : /\.(css|tsx?)$/.test(path) && !path.includes('.test.') ? [path] : []
+    })
+    const sources = files(SRC).map((path) => ({ path, text: readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '') }))
+    const defined = new Set(sources.flatMap(({ text }) => [
+      ...[...text.matchAll(/(--[\w-]+)\s*:/g)].map((match) => match[1]),
+      ...[...text.matchAll(/['"](--[\w-]+)['"]\s*[:,]/g)].map((match) => match[1])
+    ]))
+    const unresolved = sources.filter(({ path }) => path.endsWith('.css')).flatMap(({ path, text }) =>
+      [...text.matchAll(/var\((--[\w-]+)/g)].filter((match) => !defined.has(match[1]) && !match[1]!.startsWith('--radix-'))
+        .map((match) => `${path}: ${match[1]}`))
+    expect(unresolved).toEqual([])
   })
 })

@@ -1,12 +1,20 @@
-import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useParams } from 'react-router-dom'
 import { DispositionDiff } from '../components/DispositionDiff'
 import { EvaluationRaw, EvaluationView } from '../components/EvaluationView'
-import { Empty, Section } from '../components/primitives'
+import { Empty } from '../components/primitives'
 import { RefusalPanel } from '../components/RefusalPanel'
 import { useMcp } from '../mcp/McpProvider'
 import { useEvaluate, usePacks } from '../mcp/queries'
 import type { EvaluationRun, PackSummary } from '../mcp/types'
+import { PageHeader, PageBody } from '../ui/PageLayout'
+import { Button } from '../ui/Button'
+import { Field, FieldGroup } from '../ui/Field'
+import { TextArea } from '../ui/TextArea'
+import { Tabs } from '../ui/Tabs'
+import { PackNavigation, TestNavigation } from '../packs/PackWorkspace'
+import { recordActivity } from '../shell/consoleLog'
+import styles from './PackEvaluate.module.css'
 
 type ResultTab = 'reading' | 'raw'
 
@@ -34,6 +42,13 @@ export function PackEvaluate() {
   const [evidenceSupplied, setEvidenceSupplied] = useState(false)
   const [history, setHistory] = useState<EvaluationRun[]>([])
   const [tab, setTab] = useState<ResultTab>('reading')
+  const generation = useRef(0)
+  useEffect(() => {
+    generation.current += 1
+    evaluate.reset()
+    setFacts('{}'); setEvidence('{}'); setEvidenceSupplied(false); setHistory([])
+    return () => { generation.current += 1 }
+  }, [packId])
 
   const factsError = useMemo(() => jsonError(facts), [facts])
   const evidenceError = useMemo(
@@ -53,19 +68,21 @@ export function PackEvaluate() {
     status === 'ready' && Boolean(packId) && factsError === null && evidenceError === null
 
   const run = () => {
-    if (!packId || !runnable) return
+    if (!packId || !runnable || evaluate.isPending) return
+    const ticket = generation.current
+    recordActivity('Running pack evaluation…')
     evaluate.mutate(
       { source: 'pack_id', packId, facts, evidence: evidenceSupplied ? evidence : undefined },
       {
         onSuccess: (completed) => {
+          recordActivity('Pack evaluation completed. Results are available in Test.')
+          if (ticket !== generation.current) return
           setHistory((runs) => [...runs, completed])
-          // The editors hold the documents that produced what is on screen, so
-          // the next what-if starts from the run being read rather than from
-          // whatever was typed after it.
-          setFacts(completed.facts)
-          if (completed.evidence !== undefined) setEvidence(completed.evidence)
+          // Keep edits made while this request was in flight. The result is
+          // bound to completed.facts/evidence; drifted labels the difference.
           setTab('reading')
-        }
+        },
+        onError: () => recordActivity('Pack evaluation failed. See Test for the runtime response.')
       }
     )
   }
@@ -78,17 +95,14 @@ export function PackEvaluate() {
   }
 
   return (
-    <article className="detail" data-measure="wide">
-      <nav className="crumbs">
-        <Link to="/">Project</Link>
-        <span aria-hidden="true">/</span>
-        <Link to={`/packs/${encodeURIComponent(packId ?? '')}`}>{packId}</Link>
-        <span aria-hidden="true">/</span>
-        <span>Evaluate</span>
-      </nav>
-
-      <header className="detail-head">
-        <h1>Evaluate {packId}</h1>
+    <article data-measure="wide" data-layout="page">
+      <PageHeader title="Packs" context={packId} />
+      <PackNavigation packId={packId ?? ''} current="test" />
+      <PageBody width="wide">
+      <div className={styles.workspace}>
+      <TestNavigation packId={packId ?? ''} hasMatrix={Boolean(summary?.matrix || summary?.matrixPath)} />
+      <details className={styles.notice}>
+        <summary>{rehearsalSupported ? 'Rehearsal · runs the saved pack without appending an audit record.' : 'Runtime behavior · this run may append an audit record.'}</summary>
         <p className="note note-warn">
           <strong>Experimental surface.</strong> This runs the runtime's
           <code> experimental_evaluate</code> tool, which may change or be removed
@@ -116,27 +130,17 @@ export function PackEvaluate() {
             </>
           )}
         </p>
-      </header>
-
-      <Section title="Documents">
+      </details>
+      <div className={styles.columns}>
+      <section className={styles.inputs} aria-label="Test inputs">
+        <h2>Try inputs</h2>
+        <p className="quiet">Supply facts to explore an outcome. This is an exploratory run; a pass or fail requires saved expectations.</p>
         <PackReference summary={summary} />
-        <div className="editor">
-          <label htmlFor="facts-editor">
-            <strong>Facts</strong> — one JSON document; the pack's{' '}
-            <code>fact.path</code> pointers descend into it.
-          </label>
-          <textarea
-            id="facts-editor"
-            className={factsError ? 'code-editor code-editor-bad' : 'code-editor'}
-            spellCheck={false}
-            rows={14}
-            value={facts}
-            onChange={(event) => setFacts(event.target.value)}
-          />
-          <p className={factsError ? 'editor-status editor-status-bad' : 'editor-status'}>
-            {factsError ?? 'valid JSON'}
-          </p>
-        </div>
+        <FieldGroup>
+        <Field label="Facts" error={factsError} hint="JSON values at the fact paths used by the pack. Omitted values remain unknown.">
+          {(wiring) => <TextArea {...wiring} rows={7} value={facts}
+            spellCheck={false} onChange={(event) => setFacts(event.target.value)} />}
+        </Field>
 
         <div className="editor">
           <label className="checkbox">
@@ -156,63 +160,59 @@ export function PackEvaluate() {
                 <strong>Evidence</strong> — requirement id to{' '}
                 <code>present</code>, <code>absent</code>, or <code>unknown</code>.
               </label>
-              <textarea
+              <TextArea
                 id="evidence-editor"
-                className={evidenceError ? 'code-editor code-editor-bad' : 'code-editor'}
+                aria-invalid={Boolean(evidenceError)}
+                aria-describedby="evidence-status"
                 spellCheck={false}
                 rows={6}
                 value={evidence}
                 onChange={(event) => setEvidence(event.target.value)}
               />
-              <p className={evidenceError ? 'editor-status editor-status-bad' : 'editor-status'}>
+              <p id="evidence-status" className={evidenceError ? 'editor-status editor-status-bad' : 'editor-status'}>
                 {evidenceError ?? 'valid JSON'}
               </p>
             </>
           )}
         </div>
 
-        <div className="actions">
-          <button type="button" className="button" disabled={!runnable || evaluate.isPending} onClick={run}>
+        </FieldGroup>
+        <div className={styles.actions}>
+          <Button variant="primary" disabled={!runnable || evaluate.isPending} onClick={run}>
             {evaluate.isPending
               ? 'Evaluating…'
               : history.length === 0
                 ? 'Run evaluation'
                 : 'Re-evaluate'}
-          </button>
+          </Button>
           {drifted && (
-            <button type="button" className="link-button" onClick={revert}>
-              Revert to the documents of the last run
-            </button>
+            <Button variant="quiet" onClick={revert}>
+              Restore last run inputs
+            </Button>
           )}
           {status !== 'ready' && <span className="quiet">waiting for the runtime connection</span>}
         </div>
-      </Section>
-
+      </section>
+      <section className={styles.results} aria-label="Test results">
+      <h2>Result</h2>
+      {drifted && <p className={styles.stale} role="status">Inputs changed since this result. Run again to evaluate the current inputs.</p>}
+      {evaluate.isPending && <p role="status">Evaluating the submitted inputs…</p>}
       {evaluate.error && <RefusalPanel error={evaluate.error} />}
 
       {current ? (
         <>
-          <div className="tabs" role="tablist">
-            <TabButton current={tab} value="reading" onSelect={setTab}>
-              Payload
-            </TabButton>
-            <TabButton current={tab} value="raw" onSelect={setTab}>
-              Raw JSON
-            </TabButton>
-          </div>
           <p className="meta">
             <span>
               run {history.length} of this page{drifted ? '; the editors have moved since' : ''}
             </span>
           </p>
-          {tab === 'reading' ? (
-            <>
+          <Tabs label="Result view" value={tab} onValueChange={(next) => setTab(next as ResultTab)} tabs={[
+            { value: 'reading', label: 'Outcome & trace', panel: <>
               {previous && <DispositionDiff previous={previous.payload} current={current.payload} />}
               <EvaluationView payload={current.payload} />
-            </>
-          ) : (
-            <EvaluationRaw raw={current.raw} />
-          )}
+            </> },
+            { value: 'raw', label: 'Raw response', panel: <EvaluationRaw raw={current.raw} /> }
+          ]} />
         </>
       ) : (
         !evaluate.isPending && (
@@ -222,6 +222,10 @@ export function PackEvaluate() {
           </Empty>
         )
       )}
+      </section>
+      </div>
+      </div>
+      </PageBody>
     </article>
   )
 }
@@ -264,32 +268,6 @@ function PackReference({ summary }: { summary?: PackSummary }) {
   )
 }
 
-function TabButton({
-  current,
-  value,
-  onSelect,
-  children
-}: {
-  current: ResultTab
-  value: ResultTab
-  onSelect: (tab: ResultTab) => void
-  children: string
-}) {
-  const selected = current === value
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={selected}
-      className={selected ? 'tab tab-on' : 'tab'}
-      onClick={() => onSelect(value)}
-    >
-      {children}
-    </button>
-  )
-}
-
-/** The parse failure, or null when the text is JSON. */
 function jsonError(text: string): string | null {
   try {
     JSON.parse(text)

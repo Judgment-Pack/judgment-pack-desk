@@ -49,6 +49,7 @@ import { Button } from '../ui/Button'
 import { CodeArea } from '../ui/CodeArea'
 import { TextArea } from '../ui/TextArea'
 import styles from './DescribeIt.module.css'
+import { recordActivity } from './consoleLog'
 import type { AssistantEvent } from '../assistant/engine'
 import type { AssistantEndpointConfig } from '../config/deskConfig'
 
@@ -467,6 +468,15 @@ export function useDescribeIt(): DescribeItState {
               : problem
             : ''
 
+  const wasRunning = useRef(false)
+  useEffect(() => {
+    if (running && !wasRunning.current) recordActivity('Assistant drafting started…')
+    if (!running && wasRunning.current) recordActivity(proposal === undefined
+      ? 'Assistant drafting ended without an available proposal. See the creation page for details.'
+      : 'Assistant draft ready for review. No pack has been created.')
+    wasRunning.current = running
+  }, [running, proposal])
+
   return {
     usable,
     unusableBecause:
@@ -496,10 +506,11 @@ export function useDescribeIt(): DescribeItState {
   }
 }
 
-export function DescribeIt({ state }: { state: DescribeItState }) {
+export function DescribeIt({ state, expanded = false }: { state: DescribeItState; expanded?: boolean }) {
   // One line, and no control that would refuse. The prompt copy-out this
   // dialog already offers is what an unconfigured desk uses instead.
   if (!state.usable) return <p className={styles.quiet}>{state.unusableBecause}</p>
+  if (expanded) return <Section state={state} />
   return (
     <details className={styles.disclosure}>
       <summary className={styles.summary}>Describe it instead</summary>
