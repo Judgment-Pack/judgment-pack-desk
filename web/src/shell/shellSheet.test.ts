@@ -123,7 +123,7 @@ describe('no pane may eat the frame, whatever the file says', () => {
     const columns = /grid-template-columns:([^;]+);/.exec(rule)![1]!
     expect(columns).toContain('min(var(--rail-current), var(--side-cap))')
     const workspace = declarations('.desk-workspace')
-    expect(workspace).toContain('min(var(--inspector-current), var(--side-cap))')
+    expect(workspace).toContain('min(var(--inspector-current), var(--inspector-cap))')
     const track = /--console-track:([^;]+);/.exec(workspace)![1]!
     const normalised = track.replace(/\s+/g, ' ')
     expect(normalised).toContain(

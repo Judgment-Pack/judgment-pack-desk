@@ -1,12 +1,10 @@
 /**
  * Which panes are open, per project, per browser.
  *
- * **Phase A persists collapse flags and the console's channel, and nothing
- * else.** No widths, no heights: phase A is collapse-only, so a stored number
- * no viewer can change would be a record of a choice nobody made. Sizes come
- * from the config's `panes` block and then from the built-in defaults; when
- * drag arrives it writes a `v2` record, which is why the version is in the
- * value rather than implied by its shape.
+ * Collapse flags and the console channel migrate from v1. An explicit
+ * Inspector resize adds its width to v2; configured and viewport-clamped
+ * widths are never persisted as viewer choices. The storage key stays stable
+ * so existing collapse choices migrate on the next actual interaction.
  *
  * **And it persists them one pane at a time.** A record is preferred over the
  * configuration on the next read, so a section written because a *sibling* was
@@ -37,6 +35,7 @@ import {
 } from 'react'
 import { createElement } from 'react'
 import type { PanesConfig } from '../config/deskConfig'
+import { INSPECTOR_MIN, INSPECTOR_MAX } from './inspectorGeometry'
 
 export type LeftRailMode = 'expanded' | 'icons'
 export type ConsoleTab = 'connection' | 'calls' | 'files' | 'notices'
@@ -45,6 +44,7 @@ export interface ShellState {
   left: { mode: LeftRailMode }
   inspector: { open: boolean }
   console: { open: boolean; tab: ConsoleTab }
+  inspectorWidth?: number
 }
 
 export const BUILT_IN_SHELL_STATE: ShellState = {
@@ -53,11 +53,11 @@ export const BUILT_IN_SHELL_STATE: ShellState = {
   console: { open: false, tab: 'connection' }
 }
 
-const RECORD_VERSION = 1
+const RECORD_VERSION = 2
 
 /** One record's key. Exported so a test — and the menu's reset — can name it. */
 export function shellStateKey(projectKey: string): string {
-  return `jpack-desk:shell:v${RECORD_VERSION}:${projectKey}`
+  return `jpack-desk:shell:v1:${projectKey}`
 }
 
 /**
@@ -151,9 +151,10 @@ export function readShellState(key: string): Partial<ShellState> | undefined {
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined
   const record = parsed as Record<string, unknown>
-  if (record.v !== RECORD_VERSION) return undefined
+  if (record.v !== 1 && record.v !== RECORD_VERSION) return undefined
 
   const restored: Partial<ShellState> = {}
+  if (record.v === RECORD_VERSION && validInspectorWidth(record.inspectorWidth)) restored.inspectorWidth = record.inspectorWidth
   const left = record.left as { mode?: unknown } | undefined
   if (left && (left.mode === 'expanded' || left.mode === 'icons')) {
     restored.left = { mode: left.mode }
@@ -177,11 +178,16 @@ function isConsoleTab(value: unknown): value is ConsoleTab {
   return value === 'connection' || value === 'calls' || value === 'files' || value === 'notices'
 }
 
+function validInspectorWidth(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= INSPECTOR_MIN && value <= INSPECTOR_MAX
+}
+
 /** Which panes a viewer has moved by hand. One bit each, never one for all. */
 export interface TouchedPanes {
   left: boolean
   inspector: boolean
   console: boolean
+  inspectorWidth?: boolean
 }
 
 export const NOTHING_TOUCHED: TouchedPanes = { left: false, inspector: false, console: false }
@@ -210,10 +216,12 @@ export function writeShellState(key: string, state: ShellState, touched: Touched
   const left = touched.left ? state.left : kept.left
   const inspector = touched.inspector ? state.inspector : kept.inspector
   const consoleSection = touched.console ? state.console : kept.console
+  const width = touched.inspectorWidth ? state.inspectorWidth : kept.inspectorWidth
   const record: Record<string, unknown> = { v: RECORD_VERSION }
   if (left !== undefined) record.left = left
   if (inspector !== undefined) record.inspector = inspector
   if (consoleSection !== undefined) record.console = consoleSection
+  if (validInspectorWidth(width)) record.inspectorWidth = width
   try {
     window.localStorage.setItem(key, JSON.stringify(record))
   } catch {
@@ -297,7 +305,8 @@ export function initialShellState(
   return {
     left: { mode: viewport.railIsDrawer ? 'icons' : merged.left.mode },
     inspector: { open: viewport.inspectorIsDrawer ? false : merged.inspector.open },
-    console: merged.console
+    console: merged.console,
+    ...(stored?.inspectorWidth === undefined ? {} : { inspectorWidth: stored.inspectorWidth })
   }
 }
 
@@ -334,6 +343,8 @@ export interface ShellStateApi extends ShellState {
    * put the live state back on the configured defaults — and say what happened.
    */
   resetPanes: () => ResetOutcome
+  resizeInspector: (width: number) => void
+  resetInspectorWidth: () => void
 }
 
 /**
@@ -349,7 +360,9 @@ const DEFAULT_API: ShellStateApi = {
   setConsoleTab: () => {},
   storageKey: shellStateKey('default'),
   keyResolved: false,
-  resetPanes: () => 'unresolved'
+  resetPanes: () => 'unresolved',
+  resizeInspector: () => {},
+  resetInspectorWidth: () => {}
 }
 
 const ShellStateContext = createContext<ShellStateApi>(DEFAULT_API)
@@ -439,18 +452,24 @@ export function ShellStateProvider({
   // becomes readable: the seed taken while the key was provisional saw no
   // record at all, and the one taken after must see this project's.
   const seededFrom = useRef(`${storageKey}|${keyResolved}|${panesSignature}|${viewportSignature}`)
+  const widthOwner = useRef(keyResolved ? storageKey : undefined)
   useEffect(() => {
     const signature = `${storageKey}|${keyResolved}|${panesSignature}|${viewportSignature}`
     if (seededFrom.current === signature) return
     seededFrom.current = signature
     const chosen = touched.current
-    if (chosen.left && chosen.inspector && chosen.console) return
+    if (keyResolved && widthOwner.current !== undefined && widthOwner.current !== storageKey) chosen.inspectorWidth = false
+    if (keyResolved) widthOwner.current = storageKey
+    if (chosen.left && chosen.inspector && chosen.console && chosen.inspectorWidth) return
     setState((previous) => {
       const seeded = initialShellState(storedForKey(), panes, viewport)
       return {
         left: chosen.left ? previous.left : seeded.left,
         inspector: chosen.inspector ? previous.inspector : seeded.inspector,
-        console: chosen.console ? previous.console : seeded.console
+        console: chosen.console ? previous.console : seeded.console,
+        ...((chosen.inspectorWidth ? previous.inspectorWidth : seeded.inspectorWidth) === undefined ? {} : {
+          inspectorWidth: chosen.inspectorWidth ? previous.inspectorWidth : seeded.inspectorWidth
+        })
       }
     })
     // `panes` and `viewport` are read at the moment the seed is re-taken and
@@ -487,7 +506,7 @@ export function ShellStateProvider({
     const timer = setTimeout(() => {
       pending.current = undefined
       const chosen = touched.current
-      if (!chosen.left && !chosen.inspector && !chosen.console) return
+      if (!chosen.left && !chosen.inspector && !chosen.console && !chosen.inspectorWidth) return
       writeShellState(storageKey, state, chosen)
     }, WRITE_DEBOUNCE_MS)
     pending.current = timer
@@ -570,6 +589,16 @@ export function ShellStateProvider({
     setState((previous) => ({ ...previous, console: { ...previous.console, tab } }))
   }, [])
 
+  const resizeInspector = useCallback((width: number) => {
+    if (!validInspectorWidth(width)) return
+    touched.current.inspectorWidth = true
+    setState(previous => previous.inspectorWidth === width ? previous : { ...previous, inspectorWidth: width })
+  }, [])
+  const resetInspectorWidth = useCallback(() => {
+    touched.current.inspectorWidth = true
+    setState(previous => { const next = { ...previous }; delete next.inspectorWidth; return next })
+  }, [])
+
   const value = useMemo<ShellStateApi>(
     () => ({
       ...state,
@@ -580,7 +609,9 @@ export function ShellStateProvider({
       setConsoleTab,
       storageKey,
       keyResolved,
-      resetPanes
+      resetPanes,
+      resizeInspector,
+      resetInspectorWidth
     }),
     [
       state,
@@ -591,7 +622,9 @@ export function ShellStateProvider({
       setConsoleTab,
       storageKey,
       keyResolved,
-      resetPanes
+      resetPanes,
+      resizeInspector,
+      resetInspectorWidth
     ]
   )
   return createElement(ShellStateContext.Provider, { value }, children)

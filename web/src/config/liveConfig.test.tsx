@@ -206,7 +206,7 @@ describe('the desk reading jpack-desk.json', () => {
     // And only the Console is written down.
     await waitFor(() => expect(shellRecords()).toHaveLength(1))
     expect(JSON.parse(shellRecords()[0]![1])).toEqual({
-      v: 1,
+      v: 2,
       console: { open: false, tab: 'connection' }
     })
   })

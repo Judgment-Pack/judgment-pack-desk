@@ -40,6 +40,8 @@ import { RightPane } from './RightPane'
 import { StatusStrip } from './StatusStrip'
 import { AppearanceProvider } from './appearanceState'
 import { useMeasuredBox } from './measured'
+import { inspectorGeometry } from './inspectorGeometry'
+import { PaneDivider } from '../ui/PaneDivider'
 import { ShellStateProvider, useShellState } from './paneState'
 import { installShortcuts } from './shortcuts'
 import { INSPECTOR_DRAWER_BELOW, RAIL_DRAWER_BELOW, useMediaQuery } from './useMediaQuery'
@@ -156,7 +158,6 @@ function ShellFrame({
   const publishPane = useCallback((pane: HTMLElement | null) => {
     setInspectorPane(pane)
   }, [])
-  const inspectorWidth = config.panes.inspector.width
   const [workspaceElement, setWorkspaceElement] = useState<HTMLDivElement | null>(null)
   const workspaceBox = useMeasuredBox(workspaceElement)
   const workingWidths = useRef(new Map<symbol, number>())
@@ -169,16 +170,12 @@ function ShellFrame({
   }, [])
   // Measure the whole workspace so opening the inspector cannot change the
   // input to this decision and cause a dock/drawer feedback loop.
-  const inspectorIsDrawer = defaultInspectorIsDrawer || (minimumMainWidth > 0 &&
-    (workspaceBox?.width ?? 0) > 0 && workspaceBox!.width - inspectorWidth < minimumMainWidth)
-  /**
-   * **Measured, not configured.** `size` promises a route the pane's width,
-   * and the configured number is not that: the sheet caps it against the
-   * viewport — an accepted 720px renders 440px at 1100px — and the drawer form
-   * ignores it entirely unless the file stated one, rendering at the sheet's
-   * own 320px while Admin said 360. A route laying something out against the
-   * old value was laying it out against a width nothing on screen had.
-   */
+  const inspectorLayout = inspectorGeometry(workspaceBox?.width,
+    shell.inspectorWidth ?? config.panes.inspector.width, minimumMainWidth, defaultInspectorIsDrawer)
+  const inspectorWidth = inspectorLayout.width
+  const inspectorIsDrawer = inspectorLayout.drawer
+  // Publish the rendered width, including drawer/CSS caps, rather than the
+  // saved preference or the project's configured default.
   const inspectorBox = useMeasuredBox(inspectorPane)
   /**
    * Opening the pane because a route was asked to inspect something.
@@ -223,10 +220,8 @@ function ShellFrame({
     [railIsDrawer, shell.toggleRail, shell.toggleInspector, shell.toggleConsole]
   )
 
-  // Geometry is six custom properties on the grid element and nothing else.
-  // The first three are the configured sizes — decoded, shown on Admin as the
-  // effective values, and until now not applied to anything; the last three
-  // are what collapse writes, each one of the two values above it.
+  // Rail and console use configuration; Inspector uses its bounded viewer
+  // preference. Collapse only chooses between the effective size and zero.
   const style = {
     '--rail-w': `${config.panes.left.width}px`,
     '--inspector-w': `${inspectorWidth}px`,
@@ -244,7 +239,7 @@ function ShellFrame({
   return (
     <InspectorSlotContext.Provider value={slot}>
       <SettingsNavigationProvider>
-        <div className="desk" style={style}>
+        <div className="desk" style={style} data-rail-drawer={railIsDrawer || undefined}>
           <a className="desk-skip" href="#main">
             Skip to main content
           </a>
@@ -276,11 +271,16 @@ function ShellFrame({
               <div className="desk-measure">{children}</div>
             </main>
 
+            {shell.inspector.open && !inspectorIsDrawer && <PaneDivider label="Inspector" controls="desk-inspector"
+              value={inspectorWidth} min={inspectorLayout.min} max={inspectorLayout.max}
+              onChange={shell.resizeInspector} onReset={shell.resetInspectorWidth}
+              onCollapse={() => { inspectorOpenerRef.current?.focus(); shell.toggleInspector() }} />}
+
             <RightPane
               open={shell.inspector.open}
               onClose={shell.toggleInspector}
               asDrawer={inspectorIsDrawer}
-              declaredWidth={declaredPanes.inspectorWidth || minimumMainWidth > 0 ? inspectorWidth : undefined}
+              declaredWidth={declaredPanes.inspectorWidth || minimumMainWidth > 0 || shell.inspectorWidth !== undefined ? inspectorWidth : undefined}
               publishTarget={publishTarget}
               publishPane={publishPane}
               openerRef={inspectorOpenerRef}

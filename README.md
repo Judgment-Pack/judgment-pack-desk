@@ -419,9 +419,15 @@ red badge in a nav rail would be a gate the runtime never issued.
 `height: 100dvh` and not `min-height`, so the content row divides the viewport
 instead of growing to fit a long page, `.desk-main` is the route's scroll
 container, and the 28px strip stays on screen. The three pane sizes in the table are the
-configured values, written onto the grid as `--rail-w`, `--inspector-w` and
-`--console-h`; collapse writes one of two values into a second custom property
-and never a third number.
+configured defaults. The Inspector also accepts a per-project viewer width.
+The effective, viewport-bounded values are written onto the grid as `--rail-w`,
+`--inspector-w` and `--console-h`; collapse uses a second custom property.
+
+The workspace keeps a 12px right gutter. Drag the main/Inspector divider to
+resize the docked Inspector: 360px default, 320–640px within the available
+space. Main retains its reading or map working width; smaller screens use an
+inset drawer. Arrow keys resize, Shift moves faster, Home/End reach the limits,
+Enter closes the pane, and double-click or Escape restores its default width.
 
 A route publishes into the Inspector through `useInspectorPortal(node)`, which
 portals into the element the slot hands it and **claims the slot while it is
@@ -618,10 +624,11 @@ and that decision belongs to one predicate so the two cannot disagree.
 
 One desk on one origin serves whichever project it was started against, and a
 layout chosen for a three-pack project is not the one chosen for a forty-pack
-one. Only the collapse flags and the console's channel are stored — no widths,
-because nothing on this desk can yet change one, and a stored number no viewer
-could have chosen would be a record of a choice nobody made — and **only for the
-panes the viewer has actually moved**, one bit each. A record that carried all
+one. Collapse flags, the console's channel and an explicitly resized Inspector
+width are stored **only for the choices the viewer has actually made**.
+Version 1 records remain readable; the next gesture writes version 2 under
+the existing key. Configured defaults and temporary viewport clamps are never
+stored as width choices. A record that carried all
 three because one was toggled would be two built-in defaults outranking the
 configuration file for ever. Every read and write is in `try/catch`: a private
 window and a browser with site data blocked *throw* on the accessor rather than

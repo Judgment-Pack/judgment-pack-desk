@@ -171,6 +171,35 @@ on all four corners, `--bg` surface, and clipping. Individual panes have square
 corners. Inspector uses a left divider; console uses a top divider. Floating
 menus, popovers and narrow-screen drawers remain portaled above the frame.
 
+The frame has a `--workspace-edge` gutter of `--space-3` (12px) at the
+browser's right edge, including when the Inspector is closed. With the rail
+in a drawer, the same inset applies on the left. The right drawer uses that
+inset on its top, right and bottom, with one rounded neutral border.
+
+The main/Inspector divider is draggable when docked. `PaneDivider` supplies
+pointer capture and a focusable vertical separator with its controlled pane
+and live width bounds. Its 12px hit area carries a quiet 2px hover line; the
+keyboard focus indicator uses the shared accent. Left/Right move the boundary
+8px, Shift moves 32px, Home/End reach the current minimum/maximum, and Enter
+closes the Inspector and focuses its header toggle. Double-click or Escape
+restores the configured default width.
+
+The default remains 360px (or the project's explicit default). Docked widths
+range from 320px to 640px, additionally capped at 45% of the workspace and at
+what leaves the route's working-width floor. Main keeps at least 480px, or the
+larger width its route requests. A divider never drags itself into a drawer:
+its current maximum stops it first. When even 320px cannot fit, the shell uses
+the drawer, where resizing is unavailable. Viewport clamps do not overwrite
+the saved preference, so a chosen width returns when the window grows again.
+
+Only explicit resize gestures store an Inspector width in the existing
+per-project shell record. Version 1 collapse choices remain readable; the
+next interaction writes version 2 under the same key. Reset panes includes
+the width, while divider reset clears only its width override. Preference
+changes write no project configuration and preserve route state and canvas
+zoom. The keyboard semantics follow the
+[WAI-ARIA window splitter pattern](https://www.w3.org/WAI/ARIA/apg/patterns/windowsplitter/).
+
 The status strip is outside the frame with a fixed `--space-2` (8px) gap in
 both densities. It does not supply the workspace's bottom border. With console
 closed, main/Inspector meet the rounded bottom edge; with console open, the
@@ -280,7 +309,7 @@ desktop starts with Map and narrow layouts with List. Resizing adapts the
 inspector without changing the selected view. The shell's optional
 `requestWorkingWidth` contract measures the entire workspace, avoiding a
 feedback loop in which opening the inspector changes its own breakpoint input.
-Map requests 48rem including gutters; List requests 34rem. Existing project
+Map requests 49rem including content and scrollbar gutters; List requests 34rem. Existing project
 pane widths still apply. Drawer dismissal restores focus to the inspection
 gesture when it remains mounted, with the header toggle as fallback.
 

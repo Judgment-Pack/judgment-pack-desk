@@ -32,6 +32,7 @@
     --inspector-w: 360px;
     --console-h: 240px;
     --strip-h: 28px;
+    --workspace-edge: var(--space-3);
 
     /* What collapse writes. Each is one of the two values above. */
     --rail-current: var(--rail-w);
@@ -42,9 +43,9 @@
        The decoder refuses an absurd pane size by name, which is the right
        place for it — but a size legal on a 27-inch monitor is still able to
        eat the frame on a phone, and the frame no longer scrolls. So each pane
-       is additionally capped against the viewport it is actually in: neither
-       side column may take more than 40% of the width, which leaves main at
-       least 20% with both open, and the console may not grow past what leaves
+       is additionally capped against the space it is actually in: the rail
+       is capped at 40vw, the Inspector at 45% of the workspace after its
+       working-width calculation, and the console may not grow past what leaves
        `--main-floor` of route visible under the header and above the strip.
        `max(0px, …)` keeps the track non-negative on a viewport shorter than
        the reserve, where a bare `calc` would make the whole declaration
@@ -74,6 +75,7 @@
        `height` below and does not work here. */
     --main-floor: 120px;
     --side-cap: 40vw;
+    --inspector-cap: 45%;
     --console-floor: 80px;
     /* Available inner height excludes the status gap and two 1px borders. */
     --console-room: max(0px, calc(100vh - var(--header-h) - var(--strip-h) - var(--space-2) - 2px));
@@ -228,7 +230,7 @@
     display: grid;
     grid-template-columns:
       minmax(0, 1fr)
-      min(var(--inspector-current), var(--side-cap));
+      min(var(--inspector-current), var(--inspector-cap));
     grid-template-rows: minmax(0, 1fr) var(--console-track);
     min-width: 0;
     min-height: 0;
@@ -237,7 +239,10 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
     background: var(--bg);
+    margin-inline-end: var(--workspace-edge);
   }
+
+  .desk[data-rail-drawer] .desk-workspace { margin-inline-start: var(--workspace-edge); }
 
   /* The main column scrolls independently; only the outer frame is rounded.
      Page padding remains on the measure, keeping the existing left gutter. */
@@ -337,6 +342,7 @@
   .desk-strip {
     grid-column: 2;
     grid-row: 4;
+    margin-inline-end: var(--workspace-edge);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -864,8 +870,11 @@
   }
 
   .desk-drawer-right {
-    right: 0;
-    border-left: 1px solid var(--border);
+    right: var(--workspace-edge);
+    top: var(--workspace-edge);
+    bottom: var(--workspace-edge);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
   }
 
   .desk-menu {

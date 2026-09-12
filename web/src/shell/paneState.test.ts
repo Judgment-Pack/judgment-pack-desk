@@ -149,7 +149,7 @@ describe('readShellState', () => {
 
   it('discards another version silently', () => {
     const key = shellStateKey('p')
-    window.localStorage.setItem(key, JSON.stringify({ v: 2, left: { mode: 'icons' } }))
+    window.localStorage.setItem(key, JSON.stringify({ v: 3, left: { mode: 'icons' } }))
     expect(readShellState(key)).toBeUndefined()
   })
 
@@ -193,7 +193,7 @@ describe('writeShellState', () => {
     const key = shellStateKey('p')
     writeShellState(key, STATE, { ...NOTHING_TOUCHED, console: true })
     expect(JSON.parse(window.localStorage.getItem(key)!)).toEqual({
-      v: 1,
+      v: 2,
       console: { open: true, tab: 'files' }
     })
   })
@@ -202,7 +202,7 @@ describe('writeShellState', () => {
     const key = shellStateKey('p')
     writeShellState(key, STATE, { left: true, inspector: true, console: true })
     expect(JSON.parse(window.localStorage.getItem(key)!)).toEqual({
-      v: 1,
+      v: 2,
       left: { mode: 'icons' },
       inspector: { open: true },
       console: { open: true, tab: 'files' }
@@ -235,7 +235,7 @@ describe('writeShellState', () => {
       { ...NOTHING_TOUCHED, console: true }
     )
     expect(JSON.parse(window.localStorage.getItem(key)!)).toEqual({
-      v: 1,
+      v: 2,
       left: { mode: 'icons' },
       inspector: { open: true },
       console: { open: true, tab: 'files' }
@@ -249,7 +249,7 @@ describe('writeShellState', () => {
     window.localStorage.setItem(key, JSON.stringify({ v: 99, left: { mode: 'icons' } }))
     writeShellState(key, STATE, { ...NOTHING_TOUCHED, console: true })
     expect(JSON.parse(window.localStorage.getItem(key)!)).toEqual({
-      v: 1,
+      v: 2,
       console: { open: true, tab: 'files' }
     })
   })
@@ -259,7 +259,7 @@ describe('writeShellState', () => {
     window.localStorage.setItem(key, JSON.stringify({ v: 1, left: { mode: 'expanded' } }))
     writeShellState(key, STATE, { ...NOTHING_TOUCHED, left: true })
     expect(JSON.parse(window.localStorage.getItem(key)!)).toEqual({
-      v: 1,
+      v: 2,
       left: { mode: 'icons' }
     })
   })
@@ -293,7 +293,7 @@ describe('resetShellState', () => {
     // whatever happens to be there would be a reset deleting somebody else's
     // value under a name it merely computed.
     const key = shellStateKey('one')
-    for (const foreign of ['not json', '[1,2,3]', JSON.stringify({ v: 2, left: { mode: 'icons' } })]) {
+    for (const foreign of ['not json', '[1,2,3]', JSON.stringify({ v: 3, left: { mode: 'icons' } })]) {
       window.localStorage.setItem(key, foreign)
       expect(resetShellState(key), foreign).toBe('foreign')
       expect(window.localStorage.getItem(key), foreign).toBe(foreign)

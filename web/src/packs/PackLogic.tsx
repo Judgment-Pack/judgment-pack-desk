@@ -35,7 +35,8 @@ export function PackLogic({ model, at, select, mode, onMode, query, onQuery, ope
 }) {
   const [ruler, setRuler] = useState<HTMLSpanElement | null>(null)
   const rem = useMeasuredBox(ruler)?.width || 16
-  useInspectorWorkingWidth(mode === 'map' ? 48 * rem : 34 * rem)
+  // 45rem of nodes, 3rem of comfortable gutters, and 1rem for the scroll gutter.
+  useInspectorWorkingWidth(mode === 'map' ? 49 * rem : 34 * rem)
   const list = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => { if (list.current) list.current.scrollTop = listScroll.current }, [mode, listScroll])
   const current = selectedItem(model, at)
