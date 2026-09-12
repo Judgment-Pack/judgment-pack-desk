@@ -62,6 +62,9 @@ export interface DocumentCursor {
 
 export const CursorContext = createContext<DocumentCursor>({ at: null, move: () => {} })
 
+/** Inspector copies are reading content, not a second set of document targets. */
+export const ReadOnlyBlocks = createContext(false)
+
 export function useDocumentCursor(): DocumentCursor {
   return useContext(CursorContext)
 }
@@ -73,7 +76,7 @@ function insideControl(target: unknown): boolean {
   if (typeof element.closest !== 'function') return false
   return (
     element.closest(
-      'a, button, input, select, textarea, label, [role="combobox"], [role="radio"], [role="checkbox"]'
+      'a, button, input, select, textarea, label, summary, [role="combobox"], [role="radio"], [role="checkbox"]'
     ) !== null
   )
 }
@@ -105,8 +108,10 @@ export function Block({
 }) {
   const { at, select } = useDocumentSelection()
   const cursor = useDocumentCursor()
+  const readOnly = useContext(ReadOnlyBlocks)
   const selected = at === pointer
   const Tag = (as ?? 'section') as ElementType
+  if (readOnly) return <Tag className={className} aria-label={label}>{children}</Tag>
   return (
     <Tag
       id={elementIdFor(pointer)}
@@ -118,7 +123,7 @@ export function Block({
       className={[styles.block, selected ? styles.selected : undefined, className]
         .filter(Boolean)
         .join(' ')}
-      onClick={(event: { stopPropagation: () => void; target: unknown }) => {
+      onClick={(event: { stopPropagation: () => void; target: unknown; currentTarget: HTMLElement }) => {
         // The innermost block wins: a click on a condition operand selects the
         // operand, not the rule that contains it.
         event.stopPropagation()
@@ -130,6 +135,10 @@ export function Block({
         // `PackDocumentView` already skips these elements; this is the click
         // path, which did not.
         if (insideControl(event.target)) return
+        // Selecting prose to copy is not a request to inspect it. This also
+        // covers a range spanning several nested blocks.
+        const selection = event.currentTarget.ownerDocument.getSelection()
+        if (selection && !selection.isCollapsed && selection.toString()) return
         select(pointer)
         cursor.move(pointer)
       }}

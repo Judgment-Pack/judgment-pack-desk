@@ -1,17 +1,8 @@
-/**
- * The document's own outline, on one line under the standfirst.
- *
- * Identity, Decision, Outcomes 2, Applicability (not declared), and so on.
- *
- * Every entry is a link to its member's block, except the ones the document
- * does not declare: those carry "not declared" and no link, because a link to
- * a block that is not there is a link that does nothing.
- *
- * It is also the scroll-spy's readout — one line rather than a second column,
- * because the desk already has a rail and a pane, and a third fixed column
- * would leave the document less room than the frame it sits in.
- */
+/** Compact, portaled table of contents. Absent members remain reachable;
+ * choosing a link preserves the route query and replaces its fragment. */
 import { Link, useLocation } from 'react-router-dom'
+import { Button } from '../../ui/Button'
+import { Popover, PopoverClose } from '../../ui/Popover'
 import styles from './PackDocument.module.css'
 
 export interface OutlineEntry {
@@ -34,8 +25,11 @@ export function MemberOutline({
   // outline entry and a block — would then produce different addresses for the
   // same choice, one of them missing the token the URL was opened with.
   const { search } = useLocation()
+  const current = entries.find(entry => entry.pointer === active)?.label
   return (
-    <nav className={styles.outline} aria-label="Members">
+    <div className={styles.outline}>
+      <Popover title="On this page" trigger={<Button variant="inline">On this page{current ? ` · ${current}` : ''} ▾</Button>}>
+      <nav aria-label="Members">
       <ul className={styles.outlineList}>
         {entries.map((entry) => (
           <li key={entry.id} className={styles.outlineItem}>
@@ -48,7 +42,7 @@ export function MemberOutline({
               kept: the link goes to the statement of absence, and the entry
               still says which it is.
             */}
-            <Link
+            <PopoverClose><Link
               className={entry.present ? styles.outlineLink : styles.outlineAbsentLink}
               to={{ search, hash: `#${entry.pointer}` }}
               // Choosing what to inspect is not a navigation, and the block
@@ -64,10 +58,12 @@ export function MemberOutline({
               ) : (
                 <span className={styles.outlineAbsent}> — not declared</span>
               )}
-            </Link>
+            </Link></PopoverClose>
           </li>
         ))}
       </ul>
-    </nav>
+      </nav>
+      </Popover>
+    </div>
   )
 }

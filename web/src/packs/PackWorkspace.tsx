@@ -19,11 +19,12 @@ export const PACK_GROUPS: Record<'rules' | 'evidence', readonly RootMember[]> = 
 
 export function PackNavigation({ packId, current }: { packId: string; current: PackSection }) {
   const base = `/packs/${encodeURIComponent(packId)}`
-  const active = current === 'rules' || current === 'evidence' || current === 'document' ? 'logic' : current
+  const active = current === 'rules' || current === 'evidence' ? 'logic' : current
   return <nav className={styles.navigation} aria-label="Pack sections">
     {([['overview', 'Overview'], ['logic', 'Logic'], ['test', 'Tests']] as const).map(([value, label]) =>
       <Link key={value} to={value === 'test' ? `${base}/evaluate` : `${base}?view=${value}`}
         aria-current={active === value ? 'page' : undefined}>{label}</Link>)}
+    {current === 'document' && <Link to={`${base}?view=document`} aria-current="page">Full document</Link>}
   </nav>
 }
 
@@ -61,8 +62,8 @@ export function PackOverview({ document: doc, packId = '' }: { document: PackDoc
     <section>
       <h2>What this pack needs</h2>
       <dl className={styles.metadata}>
-        <div><dt>Applicability</dt><dd><Button variant="quiet" onClick={() => select('/applicability')}>{doc.applicability ? 'Inspect declared scope' : 'No scope condition declared'}</Button></dd></div>
-        <div><dt>Evidence</dt><dd><Button variant="quiet" onClick={() => select('/evidenceRequirements')}>
+        <div><dt>Applicability</dt><dd><Button variant="inline" onClick={() => select('/applicability')}>{doc.applicability ? 'Inspect declared scope' : 'No scope condition declared'}</Button></dd></div>
+        <div><dt>Evidence</dt><dd><Button variant="inline" onClick={() => select('/evidenceRequirements')}>
           {evidence.filter(x => isRecord(x) && x.required === true).length} required · {evidence.filter(x => isRecord(x) && x.required === false).length} optional
         </Button></dd></div>
       </dl>
@@ -85,7 +86,7 @@ export function PackOverview({ document: doc, packId = '' }: { document: PackDoc
       <p className={styles.muted}>A fallback outcome does not itself request a handoff.</p>
     </section>
     <section className={styles.group}>
-      <Button variant="quiet" onClick={() => select('/sources')}>Sources · {entries(doc.sources).length}</Button>
+      <Button variant="inline" onClick={() => select('/sources')}>Sources · {entries(doc.sources).length}</Button>
       {typeof doc.description === 'string' && <details className={styles.description}><summary>Author description</summary><p>{doc.description}</p></details>}
     </section>
   </section>

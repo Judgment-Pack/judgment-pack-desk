@@ -833,6 +833,7 @@ export function PackView() {
         unavailable={unavailable}
         tab={slot.tab}
         onTabChange={slot.setTab}
+        supplemental={!editing && (section === 'logic' || section === 'overview') && Boolean(model) && formAvailable}
       />
     )
 
@@ -840,7 +841,7 @@ export function PackView() {
    * The right pane's two tabs, on the pack routes only.
    *
    * **The selection is held here rather than in the shell slot.** `slot.tab`
-   * is the Inspector's *inner* tab (Member, References, Checks) and pairing a
+   * remembers an Inspector disclosure (References or Checks); pairing a
    * second meaning onto it would make selecting a member change which pane is
    * showing. This route does not remount at the 1100px breakpoint — the pane
    * does, and the portal's contents are rendered from here — so state held in

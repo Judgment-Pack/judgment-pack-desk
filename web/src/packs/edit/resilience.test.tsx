@@ -134,7 +134,7 @@ describe('bytes shaped like nothing this desk expects', () => {
     const wrong = `${JSON.stringify(parsed, null, 2)}\n`
     chassis({ content: wrong, sha256: PACK_DIGEST })
     drawPack(served(wrong), { path: '/packs/vendor-onboarding?view=document' })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     const said = await screen.findAllByText(/not the shape this page draws/)
     expect(said.some((node) => node.textContent?.includes(pointer))).toBe(true)
     expect(document.getElementById(pointer)).toBeTruthy()
@@ -148,7 +148,7 @@ describe('bytes shaped like nothing this desk expects', () => {
     const wrong = `${JSON.stringify(parsed, null, 2)}\n`
     chassis({ content: wrong, sha256: PACK_DIGEST })
     drawPack(served(wrong), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     const said = await screen.findByText(/not the shape this page draws/)
     expect(said.textContent).toContain('/rules/1')
     expect(document.getElementById('/rules/1')).toBeTruthy()
@@ -166,7 +166,7 @@ describe('bytes shaped like nothing this desk expects', () => {
     const wrong = `${JSON.stringify(parsed, null, 2)}\n`
     chassis({ content: wrong, sha256: PACK_DIGEST })
     drawPack(served(wrong), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     const said = await screen.findByText(/not the shape this page draws/)
     expect(said.textContent).toContain('/rules')
     // The block is addressed, so a diagnostic about it still lands here and the
@@ -185,7 +185,7 @@ describe('bytes shaped like nothing this desk expects', () => {
     const wrong = `${JSON.stringify(parsed, null, 2)}\n`
     chassis({ content: wrong, sha256: PACK_DIGEST })
     drawPack(served(wrong), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     const said = await screen.findAllByText(/not the shape this form edits/)
     expect(said.length).toBeGreaterThan(0)
   })
@@ -278,7 +278,7 @@ describe('Mod+S belongs to the mode, not to a subtree', () => {
   it('leaves the chord alone in read mode', async () => {
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     drawPack(served(PACK_TEXT), { path: '/packs/vendor-onboarding?view=document' })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     // Nothing is being edited, so nothing is being saved and the chord is the
     // browser's.
     expect(fireEvent.keyDown(document.body, { key: 's', ctrlKey: true })).toBe(true)
@@ -289,7 +289,7 @@ describe('a deep link into a form', () => {
   it('moves focus to the control the pointer names', async () => {
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     drawPack(served(PACK_TEXT), { path: `${EDIT}#/rules/0/description` })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     await waitFor(() => {
       const focused = document.activeElement as HTMLElement | null
       expect(focused?.tagName).toBe('TEXTAREA')
@@ -307,7 +307,7 @@ describe('the rule-move chord', () => {
     // dead — and nothing said so.
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     drawPack(served(PACK_TEXT), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     const first = within(document.getElementById('/rules/0')!).getByDisplayValue('screen-first')
     fireEvent.keyDown(first, { key: 'ArrowDown', altKey: true })
     await waitFor(() =>
@@ -365,7 +365,7 @@ describe('where Try it opens, measured', () => {
     measured(912, 512)
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     fireEvent.click(screen.getByRole('button', { name: 'Try it' }))
     const pane = await screen.findByRole('complementary', { name: 'Try it' })
     expect(String(pane.parentElement?.className)).toContain('pane')
@@ -376,7 +376,7 @@ describe('where Try it opens, measured', () => {
     measured(911, 511)
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT, inspector: true })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     fireEvent.click(screen.getByRole('button', { name: 'Try it' }))
     const pane = await screen.findByRole('complementary', { name: 'Try it' })
     // Published into the slot rather than placed beside the editor, and the
@@ -393,7 +393,7 @@ describe('where Try it opens, measured', () => {
     measured(1000, 600)
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     fireEvent.click(screen.getByRole('button', { name: 'Try it' }))
     const pane = await screen.findByRole('complementary', { name: 'Try it' })
     expect(String(pane.parentElement?.className)).toContain('pane')
@@ -423,7 +423,7 @@ describe('the outline while the author types', () => {
     vi.stubGlobal('IntersectionObserver', Counting)
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     drawPack(served(PACK_TEXT), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     const title = await screen.findByDisplayValue('Vendor onboarding')
     await waitFor(() => expect(built.length).toBeGreaterThan(0))
     const before = built.length
@@ -446,7 +446,7 @@ describe('a file that moved after it was loaded', () => {
       inspector: true,
       tab: 'member'
     })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     await waitFor(() =>
       expect(screen.getByText('matches the file the editor holds')).toBeTruthy()
     )
@@ -471,7 +471,7 @@ describe('a file that moved after it was loaded', () => {
     // it is rather than as the file.
     expect(screen.queryByText('matches the file the editor holds')).toBeNull()
     expect(screen.getByText(/showing the revision it loaded/)).toBeTruthy()
-    expect(screen.getByText(/the bytes you loaded from/)).toBeTruthy()
+    expect(screen.getAllByText(/the bytes you loaded from/).length).toBeGreaterThan(0)
     // And the way to the bytes that are there now is offered rather than taken.
     expect(screen.getByRole('button', { name: 'Reload' })).toBeTruthy()
   })
@@ -523,7 +523,7 @@ describe('when both answers move and the editor does not', () => {
       inspector: true,
       tab: 'member'
     })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     await waitFor(() =>
       expect(screen.getByText('matches the file the editor holds')).toBeTruthy()
     )
@@ -557,7 +557,7 @@ describe('the Inspector’s provenance', () => {
       inspector: true,
       tab: 'member'
     })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     await waitFor(() =>
       expect(screen.getByText('matches the file the editor holds')).toBeTruthy()
     )

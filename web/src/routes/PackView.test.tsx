@@ -449,6 +449,7 @@ describe('the outline', () => {
     // answer away for the rest of the visit.
     draw(SERVED, {}, '/packs/vendor-onboarding?at=%2Frules%2F0')
     await screen.findByRole('heading', { level: 1 })
+    fireEvent.click(screen.getByRole('button', { name: /On this page/ }))
     const outline = screen.getByRole('navigation', { name: 'Members' })
     await waitFor(() =>
       expect(outline.querySelector('[aria-current="true"]')?.textContent).toContain('Rules')
@@ -458,6 +459,7 @@ describe('the outline', () => {
   it('selects without pushing, and keeps the rest of the address', async () => {
     const { router } = draw(SERVED, {}, '/packs/vendor-onboarding?view=document&token=abc123')
     await screen.findByRole('heading', { level: 1 })
+    fireEvent.click(screen.getByRole('button', { name: /On this page/ }))
     const outline = screen.getByRole('navigation', { name: 'Members' })
     fireEvent.click(outline.querySelectorAll('a')[1]!)
     await waitFor(() => expect(router.state.location.search).toContain('at='))
@@ -524,6 +526,7 @@ describe('the outline entry an identity member marks', () => {
     chassis(PACK_TEXT, DIGEST)
     draw(SERVED, {}, `/packs/vendor-onboarding?at=${encodeURIComponent(pointer)}`)
     await screen.findByRole('heading', { level: 1 })
+    fireEvent.click(screen.getByRole('button', { name: /On this page/ }))
     const entry = screen.getByRole('link', { name: /Identity/ })
     await waitFor(() => expect(entry.getAttribute('aria-current')).toBe('true'))
     const current = screen
@@ -538,6 +541,7 @@ describe('the outline entry an identity member marks', () => {
     draw(SERVED)
     await screen.findByRole('heading', { level: 1 })
     viewport.show(pointer)
+    fireEvent.click(screen.getByRole('button', { name: /On this page/ }))
     const entry = screen.getByRole('link', { name: /Identity/ })
     await waitFor(() => expect(entry.getAttribute('aria-current')).toBe('true'))
   })
@@ -846,7 +850,7 @@ describe('the guided reading workspace', () => {
     expect(screen.getByRole('button', { name: 'Sources' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'More pack actions' }))
     fireEvent.click(await screen.findByRole('link', { name: 'Full document' }))
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     expect(document.querySelector('[data-pointer="/rules"]')).not.toBeNull()
   })
 })

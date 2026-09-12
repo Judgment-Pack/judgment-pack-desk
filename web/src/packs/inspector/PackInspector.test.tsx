@@ -1,5 +1,5 @@
 /**
- * The three panels, driven from the pointer in the route.
+ * The selected member and disclosures, driven from the pointer in the route.
  *
  * What each may say is the substance here: References reports a document fact
  * and never a verdict, Checks prints the runtime's own words and never dresses
@@ -89,6 +89,15 @@ describe('nothing selected', () => {
 })
 
 describe('the Member panel', () => {
+  it('reads strings as prose and keeps their exact quoted JSON in a disclosure', () => {
+    const description = 'Long prose\nwith a second line and "quotes".'
+    draw('/description', { document: { ...full, description } })
+    expect(screen.getByText('Long prose with a second line and "quotes".').textContent).toBe(description)
+    const raw = screen.getByText('Exact value JSON').closest('details')!
+    expect(raw.open).toBe(false)
+    expect(JSON.parse(raw.querySelector('pre')!.textContent!)).toBe(description)
+    expect(screen.queryByRole('tablist')).toBeNull()
+  })
   it('prints the member’s own subtree and the provenance beside it', () => {
     draw('/rules/1')
     const json = screen.getByText(/"approve-when-clear"/)
@@ -130,12 +139,13 @@ describe('the Member panel', () => {
 describe('the References panel', () => {
   it('reports both directions', () => {
     const { props } = draw('/rules/1')
-    // Radix activates a tab on pointer-down, not on click.
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'References' }))
+    const disclosure = screen.getByText(/^References ·/).closest('details')!
+    disclosure.open = true
+    fireEvent(disclosure, new Event('toggle'))
     expect(props.onTabChange).toHaveBeenCalledWith('references')
     cleanup()
     draw('/rules/1', { tab: 'references' })
-    const panel = screen.getByRole('tabpanel')
+    const panel = screen.getByText(/^References ·/).closest('details')!
     expect(panel.textContent).toContain('outcome')
     expect(panel.textContent).toContain('approve')
     expect(panel.textContent).toContain('cited by')
@@ -148,7 +158,7 @@ describe('the References panel', () => {
       rules: [{ ...full.rules[0]!, outcome: 'nope' }]
     }
     draw('/rules/0', { document: broken, tab: 'references' })
-    const panel = screen.getByRole('tabpanel')
+    const panel = screen.getByText(/^References ·/).closest('details')!
     expect(panel.textContent).toContain('no declared outcome carries this id')
     // JPS-SEMANTIC-UNRESOLVED-OUTCOME is the runtime's to issue.
     for (const verdict of ['invalid', 'error', 'broken']) {
@@ -170,7 +180,7 @@ describe('an id the document declares twice', () => {
       ]
     }
     draw('/rules/1', { document: twice, tab: 'references' })
-    const panel = screen.getByRole('tabpanel')
+    const panel = screen.getByText(/^References ·/).closest('details')!
     expect(panel.textContent).toContain('is declared 2 times')
     expect(panel.textContent).toContain('this document does not say which')
     // Both places, each reachable, and no single link standing for "the" target.
@@ -186,7 +196,7 @@ describe('an id the document declares twice', () => {
 describe('the Checks panel', () => {
   it('prints code, layer, severity, provisional and the pointer verbatim', () => {
     draw('/rules/1/when/conditions/0/value', { tab: 'checks' })
-    const panel = screen.getByRole('tabpanel')
+    const panel = screen.getByText(/^Checks ·/).closest('details')!
     expect(panel.textContent).toContain('JPS-STRUCTURE-DECIMAL-OPERAND')
     expect(panel.textContent).toContain('structural')
     expect(panel.textContent).toContain('error')
@@ -199,7 +209,7 @@ describe('the Checks panel', () => {
 
   it('does not dress an empty set as a clean bill', () => {
     draw('/outcomes/0', { tab: 'checks' })
-    const panel = screen.getByRole('tabpanel')
+    const panel = screen.getByText(/^Checks ·/).closest('details')!
     expect(panel.textContent).toContain('No other diagnostic names this member.')
     for (const verdict of ['valid', 'passed', 'no problems', 'clean']) {
       expect(panel.textContent, verdict).not.toContain(verdict)
@@ -209,14 +219,14 @@ describe('the Checks panel', () => {
   it('says the list was cut rather than that nothing else was found', () => {
     const cut: ValidationReport = { ...REPORT, diagnosticsTruncated: true }
     draw('/outcomes/0', { tab: 'checks', truncation: truncationNote(cut) })
-    const panel = screen.getByRole('tabpanel')
+    const panel = screen.getByText(/^Checks ·/).closest('details')!
     expect(panel.textContent).not.toContain('No other diagnostic names this member.')
     expect(panel.textContent).toContain('100')
   })
 
   it('names which bytes were checked', () => {
     draw('/outcomes/0', { tab: 'checks' })
-    expect(screen.getByRole('tabpanel').textContent).toContain(
+    expect(screen.getByText(/^Checks ·/).closest('details')!.textContent).toContain(
       'checked against the bytes of packs/vendor-onboarding.pack.json'
     )
   })
@@ -226,14 +236,14 @@ describe('the Checks panel', () => {
     // flight, because "checked against these bytes" under a panel that has
     // nothing to report is a sentence about a check nobody made.
     draw('/outcomes/0', { tab: 'checks', pending: true, anchored: [], checkedWhat: undefined })
-    const panel = screen.getByRole('tabpanel')
+    const panel = screen.getByText(/^Checks ·/).closest('details')!
     expect(panel.textContent).toContain('The check has not answered yet.')
     expect(panel.textContent).not.toContain('checked against')
   })
 
   it('says a check ran over other bytes rather than re-anchoring it', () => {
     draw('/rules/1', { tab: 'checks', stale: true, anchored: [] })
-    const panel = screen.getByRole('tabpanel')
+    const panel = screen.getByText(/^Checks ·/).closest('details')!
     expect(panel.textContent).toContain('computed against other bytes')
     // And it does not put a clean bill under that banner. Nothing below is
     // anchored to what is on screen, so "no other diagnostic names this
@@ -247,7 +257,7 @@ describe('the Checks panel', () => {
     // panel printed a clean bill for the whole of every page load, while the
     // strip beside it said "Checking…".
     draw('/outcomes/0', { tab: 'checks', pending: true, anchored: [], truncation: undefined })
-    const panel = screen.getByRole('tabpanel')
+    const panel = screen.getByText(/^Checks ·/).closest('details')!
     expect(panel.textContent).toContain('The check has not answered yet.')
     expect(panel.textContent).not.toContain('No other diagnostic names this member.')
   })
@@ -257,7 +267,7 @@ describe('the Checks panel', () => {
       tab: 'checks',
       unavailable: 'This runtime does not offer validate, so this document is unchecked.'
     })
-    const panel = screen.getByRole('tabpanel')
+    const panel = screen.getByText(/^Checks ·/).closest('details')!
     expect(panel.textContent).toContain('does not offer validate')
     expect(panel.textContent).not.toContain('No other diagnostic')
   })

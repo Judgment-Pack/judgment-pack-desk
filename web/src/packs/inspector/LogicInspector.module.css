@@ -3,7 +3,6 @@
 .details h2, .outline h2 { font-size: var(--text-heading); margin: var(--space-3) 0; overflow-wrap: anywhere; }
 .details h3, .outline h3 { font-size: var(--text-control); margin: 0 0 var(--space-2); }
 .details p, .details code, .details pre { overflow-wrap: anywhere; }
-.details pre { white-space: pre-wrap; font-size: var(--text-xs); }
 .details p { margin: var(--space-2) 0; }
 .group { margin-top: var(--density-section); padding-top: var(--space-4); border-top: 1px solid var(--border); }
 .outline .group { border: none; padding-top: 0; }

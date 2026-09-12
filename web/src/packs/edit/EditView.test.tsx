@@ -46,7 +46,7 @@ describe('the mode is the address', () => {
   it('draws the toolbar in edit mode and not in read mode', async () => {
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     drawPack(served(PACK_TEXT), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     expect(screen.getByRole('toolbar', { name: 'Editing' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy()
   })
@@ -56,7 +56,7 @@ describe('the mode is the address', () => {
     // is chrome about a mode nobody is in.
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     const { router } = drawPack(served(PACK_TEXT), { path: '/packs/vendor-onboarding?view=document' })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     expect(screen.queryByRole('toolbar', { name: 'Editing' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
@@ -72,7 +72,7 @@ describe('the mode is the address', () => {
     const { router } = drawPack(served(PACK_TEXT), {
       path: '/packs/vendor-onboarding?at=%2Frules%2F1'
     })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     // The way in from the reading page is the control beside the standing
     // links; the toolbar's own segmented pair is the way back out.
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
@@ -90,7 +90,7 @@ describe('the mode is the address', () => {
     // the draft; in edit mode only the second is offered.
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     drawPack(served(PACK_TEXT), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     expect(screen.queryByRole('link', { name: 'Try it' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Try it' })).toBeTruthy()
   })
@@ -113,7 +113,7 @@ describe('both views are one buffer', () => {
   it('moves the bytes when a form field is typed into', async () => {
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     drawPack(served(PACK_TEXT), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     const title = await screen.findByDisplayValue('Vendor onboarding')
     fireEvent.change(title, { target: { value: 'Vendor onboarding, revised' } })
     fireEvent.click(screen.getByRole('radio', { name: 'JSON' }))
@@ -129,7 +129,7 @@ describe('both views are one buffer', () => {
     // so Undo is the action it looks like rather than a character eraser.
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     drawPack(served(PACK_TEXT), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     const undo = screen.getByRole('button', { name: 'Undo' })
     expect(undo.hasAttribute('disabled')).toBe(true)
     const title = await screen.findByDisplayValue('Vendor onboarding')
@@ -210,7 +210,7 @@ describe('a diagnostic reaches the field it is about', () => {
   it('describes the control by aria-describedby, in the runtime’s own words', async () => {
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     drawPack(served(PACK_TEXT, REFUSED), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     const operand = await screen.findByDisplayValue('5000')
     const described = operand.getAttribute('aria-describedby')
     expect(described).toBeTruthy()
@@ -246,7 +246,7 @@ describe('a diagnostic reaches the field it is about', () => {
     expect(without).not.toBe(PACK_TEXT)
     chassis({ content: without, sha256: PACK_DIGEST })
     drawPack(served(without, missing), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     await waitFor(() => expect(screen.getByText('onUnknown is required.')).toBeTruthy())
     const field = document.getElementById('/exceptions/0/onUnknown')
     expect(field).toBeTruthy()
@@ -258,7 +258,7 @@ describe('rule order, which is what the pack decides', () => {
   it('moves a rule through the writer, follows it with focus, and announces where it landed', async () => {
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     drawPack(served(PACK_TEXT), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     const down = await screen.findAllByRole('button', { name: 'Move this rule down' })
     fireEvent.click(down[0]!)
     await waitFor(() => expect(screen.getByText('Moved to position 2 of 2.')).toBeTruthy())
@@ -293,7 +293,7 @@ describe('rule order, which is what the pack decides', () => {
       inspector: true,
       tab: 'checks'
     })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     await waitFor(() => expect(screen.getByText('This rule can never fire.')).toBeTruthy())
     fireEvent.click((await screen.findAllByRole('button', { name: 'Move this rule down' }))[0]!)
     await waitFor(() =>
@@ -310,7 +310,7 @@ describe('what an omitted member offers', () => {
     expect(without).not.toBe(PACK_TEXT)
     chassis({ content: without, sha256: PACK_DIGEST })
     drawPack(served(without), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     fireEvent.click(await screen.findByRole('button', { name: 'Declare it' }))
     fireEvent.click(screen.getByRole('radio', { name: 'JSON' }))
     const raw = (await screen.findByLabelText("The document's bytes")) as HTMLTextAreaElement
@@ -351,7 +351,7 @@ describe('where Try it opens', () => {
     measured(1400)
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     fireEvent.click(screen.getByRole('button', { name: 'Try it' }))
     const pane = await screen.findByRole('complementary', { name: 'Try it' })
     // Inside main, not in the Inspector — and the Inspector is not opened for
@@ -366,7 +366,7 @@ describe('where Try it opens', () => {
     measured(700)
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT, inspector: true })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     fireEvent.click(screen.getByRole('button', { name: 'Try it' }))
     await screen.findByRole('complementary', { name: 'Try it' })
     // The pane it replaces is the Inspector's, so the Inspector's own panels
@@ -379,7 +379,7 @@ describe('where Try it opens', () => {
     measured(700)
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     expect(revealed).toEqual([])
     fireEvent.click(screen.getByRole('button', { name: 'Try it' }))
     expect(revealed).toContain('reveal')

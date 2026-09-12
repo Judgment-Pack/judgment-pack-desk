@@ -4,6 +4,15 @@
   gap: var(--density-gap);
 }
 
+.inspector { display: grid; gap: var(--density-field); min-width: 0; padding: var(--space-4); }
+.inspector h2 { margin: 0; font-size: var(--text-heading); overflow-wrap: anywhere; }
+.supplemental { display: grid; gap: var(--density-field); min-width: 0; }
+.prose { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-sm); }
+.disclosure { min-width: 0; font-size: var(--text-sm); }
+.disclosure summary { color: var(--ink-soft); cursor: pointer; overflow-wrap: anywhere; }
+.disclosure[open] > summary { margin-bottom: var(--space-3); }
+.disclosure > div { min-width: 0; }
+
 .pointer {
   margin: 0;
   font-family: var(--mono);

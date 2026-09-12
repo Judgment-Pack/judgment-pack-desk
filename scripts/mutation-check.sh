@@ -3189,7 +3189,7 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
           {String(node.operator ?? '"''"')}
         </Block>{'"' '"'}
         <Block pointer={`${at}/value`} as="code" className={styles.literal}>
-          {JSON.stringify(node.value)}
+          <Operand value={node.value} />
         </Block>' \
     '        <Block pointer={`${at}/operator`} as="span" className={styles.op}>
           is greater than
@@ -3468,7 +3468,7 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
   # entry that could not reach it was the only line in this nav naming something
   # you could not go to. This is that shape, restored.
   mutate web "an omitted member is the one outline entry you cannot follow" "$MO" \
-    "            <Link
+    "            <PopoverClose><Link
               className={entry.present ? styles.outlineLink : styles.outlineAbsentLink}
               to={{ search, hash: \`#\${entry.pointer}\` }}
               // Choosing what to inspect is not a navigation, and the block
@@ -3484,7 +3484,7 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
               ) : (
                 <span className={styles.outlineAbsent}> — not declared</span>
               )}
-            </Link>" \
+            </Link></PopoverClose>" \
     "            {entry.present ? (
               <Link
                 className={styles.outlineLink}

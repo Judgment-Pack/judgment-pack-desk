@@ -75,6 +75,22 @@
   color: var(--danger);
 }
 
+/* A value-column action aligns with prose and may wrap. Toolbars use quiet. */
+.inline {
+  height: auto;
+  min-height: var(--space-5);
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  white-space: normal;
+  text-align: start;
+  justify-content: flex-start;
+  overflow-wrap: anywhere;
+}
+.inline:not(:disabled):hover { color: var(--ink); text-decoration-line: underline; text-underline-offset: var(--space-1); }
+
 .danger:not(:disabled):hover {
   background: var(--danger-soft);
   border-color: var(--danger);

@@ -154,6 +154,7 @@ describe('the shell frame', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Inspector' }))
     fireEvent.click(screen.getByRole('button', { name: 'Console' }))
     await screen.findByRole('navigation', { name: 'Packs' })
+    fireEvent.click(screen.getByRole('button', { name: /On this page/ }))
     expect(screen.getByRole('navigation', { name: 'Members' })).toBeTruthy()
 
     expect(screen.getAllByRole('banner')).toHaveLength(1)

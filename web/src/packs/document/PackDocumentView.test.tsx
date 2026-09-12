@@ -271,6 +271,7 @@ describe('the minimal document', () => {
 
   it('marks the same members “not declared” in the outline', () => {
     draw(minimal)
+    fireEvent.click(screen.getByRole('button', { name: /On this page/ }))
     const outline = screen.getByRole('navigation', { name: 'Members' })
     expect(outline.textContent).toContain('Applicability — not declared')
     expect(outline.textContent).toContain('Escalation — not declared')
@@ -296,6 +297,7 @@ describe('the minimal document', () => {
     // and not a reason to move anything on the page: the five are five units
     // in the document's own order, and this line is where they become one.
     draw(full)
+    fireEvent.click(screen.getByRole('button', { name: /On this page/ }))
     const outline = screen.getByRole('navigation', { name: 'Members' })
     const labels = [...outline.querySelectorAll('a')].map((entry) => entry.textContent ?? '')
     expect(labels.filter((label) => label.startsWith('Identity'))).toHaveLength(1)
@@ -307,6 +309,7 @@ describe('the minimal document', () => {
 
   it('counts the lists it lists', () => {
     draw(full)
+    fireEvent.click(screen.getByRole('button', { name: /On this page/ }))
     const outline = screen.getByRole('navigation', { name: 'Members' })
     expect(outline.textContent).toContain('Outcomes 2')
     expect(outline.textContent).toContain('Rules 2')
@@ -394,6 +397,7 @@ describe('reaching a member without a mouse', () => {
   it('leaves the outline’s own links alone', () => {
     // Enter on a link is the link's. Arrowing out of one would be a surprise.
     const { chosen } = drive()
+    fireEvent.click(screen.getByRole('button', { name: /On this page/ }))
     const link = screen.getAllByRole('link')[0]!
     fireEvent.keyDown(link, { key: 'Enter' })
     fireEvent.keyDown(link, { key: 'ArrowDown' })

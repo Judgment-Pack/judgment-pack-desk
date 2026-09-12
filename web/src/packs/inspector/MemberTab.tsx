@@ -1,13 +1,10 @@
 /**
  * The selected member's own JSON subtree, and where the bytes came from.
  *
- * The subtree is printed rather than described. It is the member as the
- * document carries it, pretty-printed for reading, in a container that scrolls
- * sideways — a long condition is long, and wrapping it would change where the
- * lines break in a document whose line breaks are someone's.
+ * Strings are readable prose; structured values keep their full JSON shape.
+ * Soft wrapping never changes the value copied from the document.
  *
- * The provenance group lives here rather than in a fourth tab, which is how
- * board 1 draws it: the path, the byte length, the digest of the loaded
+ * The provenance disclosure holds the path, byte length and digest of the loaded
  * document, and one sentence — **printed only when the two digests are
  * equal**. `get_pack`'s `sha256` and the file read's are two answers about one
  * file, and only equality proves they describe one revision. Printing the
@@ -21,6 +18,8 @@
  * sentence is replaced by what these figures actually describe.
  */
 import type { PackFileMeta } from '../../mcp/types'
+import { CodeBlock } from '../../ui/CodeBlock'
+import { MemberValue } from './MemberValue'
 import styles from './PackInspector.module.css'
 
 export function MemberTab({
@@ -30,7 +29,8 @@ export function MemberTab({
   fileSha256,
   fileBytes,
   baseSha256,
-  dirty
+  dirty,
+  metadataOnly = false
 }: {
   pointer: string
   /** The member at that pointer, or undefined where the document has none. */
@@ -51,6 +51,8 @@ export function MemberTab({
   baseSha256?: string | undefined
   /** True where the editor holds bytes that are not on disk. */
   dirty?: boolean
+  /** The Logic Inspector already renders this member. */
+  metadataOnly?: boolean
 }) {
   // **All three, and each of them defined.** An absent base was read as
   // agreement, so a page whose editor holds no revision of this file at all —
@@ -69,18 +71,22 @@ export function MemberTab({
 
   return (
     <div className={styles.panel}>
-      <p className={styles.pointer}>
+      {!metadataOnly && <p className={styles.pointer}>
         <code>{pointer}</code>
-      </p>
-      {subtree === undefined ? (
+      </p>}
+      {!metadataOnly && (subtree === undefined ? (
         <p className={styles.empty}>The document declares no member at this pointer.</p>
       ) : (
-        <pre className={styles.json}>
-          <code>{JSON.stringify(subtree, null, 2)}</code>
-        </pre>
-      )}
+        <>
+          <MemberValue value={subtree} />
+          {(subtree === null || typeof subtree !== 'object') && <details className={styles.disclosure}>
+            <summary>Exact value JSON</summary><CodeBlock text={JSON.stringify(subtree, null, 2)} />
+          </details>}
+        </>
+      ))}
 
-      <h3 className={styles.groupHead}>Provenance</h3>
+      <details className={styles.disclosure}>
+      <summary>Provenance</summary>
       <dl className={styles.provenance}>
         {meta.path !== undefined && (
           <div className={styles.row}>
@@ -112,6 +118,7 @@ export function MemberTab({
         )}
       </dl>
       {bound && <p className={styles.bound}>matches the file the editor holds</p>}
+      </details>
       {dirty === true && (
         <p className={styles.unbound}>
           These figures are the file on disk. The editor holds changes that are not in it.

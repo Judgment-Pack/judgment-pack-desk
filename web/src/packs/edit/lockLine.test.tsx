@@ -67,7 +67,7 @@ describe('the line on the page', () => {
       files: listed(PACK_PATH, 'jpack.json', 'jpack.lock.json')
     })
     drawPack(served(PACK_TEXT), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     await waitFor(() => expect(screen.getByText(SENTENCE)).toBeTruthy())
   })
 
@@ -78,7 +78,7 @@ describe('the line on the page', () => {
       files: listed(PACK_PATH, 'jpack.json')
     })
     drawPack(served(PACK_TEXT), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     await waitFor(() => expect(screen.getByRole('toolbar', { name: 'Editing' })).toBeTruthy())
     expect(screen.queryByText(SENTENCE)).toBeNull()
   })
@@ -92,7 +92,7 @@ describe('what this page will not say', () => {
       files: listed(PACK_PATH, 'jpack.lock.json')
     })
     const { container } = drawPack(served(PACK_TEXT), { path: EDIT })
-    await screen.findByRole('navigation', { name: 'Members' })
+    await screen.findByRole('button', { name: /On this page/ })
     await waitFor(() => expect(screen.getByText(SENTENCE)).toBeTruthy())
     const words = container.textContent ?? ''
     for (const forbidden of [

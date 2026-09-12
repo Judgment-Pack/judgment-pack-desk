@@ -875,14 +875,14 @@ units and nothing under them — no rule card, no condition operand, no review. 
 inside one another, and `role="button"` on a container holding more of them
 would be a lie about both.
 
-### The Inspector's three panels
+### Inspector details and disclosures
 
-- **Member** — the pointer, the member's own JSON subtree pretty-printed in a
-  container that scrolls sideways, and the provenance beside it: the declared
+- **Member** — the pointer, prose or the member's complete JSON subtree in a
+  wrapping view with Copy and Wrap controls, and provenance in a disclosure: the declared
   path, the byte count, the digest of the loaded document, and the line
-  "matches the file the editor holds" **only when the two digests are equal**.
-  `get_pack`'s `sha256` and the chassis' file read are two answers about one
-  file, and only equality proves they describe one revision.
+  "matches the file the editor holds" **only when all three defined digests are equal and the buffer is clean**.
+  `get_pack`, the chassis file read and the revision loaded by the editor must
+  agree; dirty or moved-buffer warnings remain visible outside the disclosure.
 - **References** — what the member names and what names it, in both directions,
   computed from the document. Where an id resolves to nothing the line says "no
   declared outcome carries this id" and stops: `JPS-SEMANTIC-UNRESOLVED-OUTCOME`
@@ -4545,7 +4545,7 @@ web/                 Vite + React + TypeScript SPA
                      the roving tab stop and its key handling, the
                      omitted-member line, the unparaphrased condition tree and
                      one component per member kind
-    inspector/       the three panels: Member, References, Checks
+    inspector/       readable member details, references, checks and provenance
     edit/            edit mode: the `?edit` helpers, the editing context, the
                      shapes mirrored from the schema, the one place a form edit
                      becomes text, the buffer with its undo and its discard,
