@@ -62,11 +62,11 @@
 .item[data-highlighted] {
   outline: none;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--ink);
 }
 
 .item[data-state='checked'] {
-  color: var(--accent);
+  color: var(--ink);
   font-weight: 600;
 }
 
