@@ -16,7 +16,7 @@
 }
 .navigation a:hover, .subnavigation a:hover { color: var(--ink); }
 .navigation a[aria-current], .subnavigation a[aria-current] {
-  color: var(--accent);
+  color: var(--ink);
   border-bottom-color: var(--accent);
 }
 .navigation a:focus-visible, .subnavigation a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

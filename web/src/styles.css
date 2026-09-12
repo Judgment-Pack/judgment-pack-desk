@@ -64,7 +64,7 @@
   --accent: #0c5f68;
   --accent-hover: #0f2b2e;
   --accent-active: #102f32;
-  /* Selection backgrounds stay neutral; green belongs to text and icons. */
+  /* Selection backgrounds and text stay neutral; accents mark actions and focus. */
   --accent-soft: #ededee;
 
   /* The semantic pairs. Each is a foreground and the background it is painted

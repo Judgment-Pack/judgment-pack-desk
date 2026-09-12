@@ -14,7 +14,8 @@ and text-selection backgrounds are neutral.
 | --- | --- | --- |
 | Primary action | `#183b3f` | `#346b63` |
 | Action hover / pressed | `#0f2b2e` / `#102f32` | `#39786e` / `#30635c` |
-| Links, focus, selection text | `#0c5f68` | `#a7c8bc` |
+| Links and focus | `#0c5f68` | `#a7c8bc` |
+| Selected text / icons | `#23252a` | `#e2e3e5` |
 | Selected control background | `#ededee` | `#222326` |
 | Avatar / organization badge | `#183b3f` with `#f4c175` initials | Same |
 | Success / true text | `#236232` | `#93cf9e` |
@@ -31,12 +32,12 @@ white labels above 4.5:1. Dark adaptations do not imply the website publishes
 a dark theme. Uploaded organization artwork is preserved.
 
 Errors, warnings and unknown verdicts keep separate semantic tokens and explicit
-labels even when they share gold. False verdicts stay neutral. Green selected
-text/icons are not evidence of a successful runtime result.
+labels even when they share gold. False verdicts stay neutral. Selection uses
+normal neutral text/icons and is separate from runtime status.
 
 ## Findings and changes
 
-- Removed old indigo/violet/red accents, including native checkbox/radio defaults. Shared selected navigation, tabs, pickers and toggles use green text/icons on neutral backgrounds; identity initials use gold.
+- Removed old indigo/violet/red accents, including native checkbox/radio defaults. Shared selected navigation, tabs, pickers and toggles use normal neutral text/icons on neutral backgrounds; identity initials use gold.
 - Added a green/gold palette guard alongside the contrast checks.
 - Fixed long pack IDs overflowing the shared page header: the context now truncates and exposes its full value on hover.
 - Fixed undefined `--ink-quiet` in saved-state text and `--rule` in document borders; both now use existing tokens.
@@ -53,7 +54,7 @@ text/icons are not evidence of a successful runtime result.
 | Reading cards, forms, dialogs and inspectors | Neutral `surface`; raised menus use `surface-raised`; no JP wash. |
 | Separators and control boundaries | `border` at rest; `border-strong` for stronger separation/hover; invalid controls use `danger`. |
 | Primary buttons, links, focus | Green `accent` family; white `ink-inverse` for filled actions. |
-| Selection and toggles | Green `accent` text/icons over neutral `accent-soft`; selected state also carries semantic markup and weight/underline. |
+| Selection and toggles | Normal `ink` text/icons over neutral `accent-soft`; selected state also carries semantic markup and weight/underline. |
 | Identity badges | `brand-fill` deep green and `brand-label` gold. |
 | Connection badges, true verdicts | JP-derived green `true` pair. |
 | Warnings and stale-result notices | JP-derived amber `warn` pair. |

@@ -60,7 +60,7 @@
 
 .link[aria-current='page'] {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--ink);
   font-weight: 600;
 }
 

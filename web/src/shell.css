@@ -568,7 +568,7 @@
   .desk-icon-button[aria-pressed='true'] {
     background: var(--accent-soft);
     border-color: var(--accent);
-    color: var(--accent);
+    color: var(--ink);
   }
 
   .desk-rule {
@@ -632,7 +632,7 @@
 
   .desk-nav-item[aria-current='page'] {
     background: var(--accent-soft);
-    color: var(--accent);
+    color: var(--ink);
     font-weight: 600;
   }
 
@@ -819,7 +819,7 @@
   }
 
   .desk-tab[data-state='active'] {
-    color: var(--accent);
+    color: var(--ink);
     border-bottom-color: var(--accent);
   }
 
@@ -902,7 +902,7 @@
 
   .desk-menu-item[data-highlighted] {
     background: var(--accent-soft);
-    color: var(--accent);
+    color: var(--ink);
     outline: none;
   }
 
@@ -932,7 +932,7 @@
     top: 50%;
     display: flex;
     transform: translateY(-50%);
-    color: var(--accent);
+    color: var(--ink);
   }
 
   /* Skip link. A plain class, not `VisuallyHidden`: that primitive applies

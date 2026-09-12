@@ -27,7 +27,7 @@
 
 .segment[data-state='on'] {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--ink);
 }
 
 .segment[disabled] {
