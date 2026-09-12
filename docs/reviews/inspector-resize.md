@@ -46,13 +46,19 @@ leaves other pane preferences intact.
 - 144 browser layout states passed: dark/light, comfortable/compact,
   1100/1280/1440/1920px, Map/List, console open/closed, and each applicable
   default/minimum/maximum width.
-- 16 browser interaction checks passed: dragging past both limits, keyboard
+- 20 browser interaction checks passed: dragging past both limits, keyboard
   steps and bounds, reset, close/focus restoration, reload persistence,
   laptop clamping, restoring the saved size on a larger screen, changing
   viewport during a drag, 390px drawer, 200% text, 640×450 viewport, and
-  retaining unsent test inputs. No page JavaScript errors occurred.
-- The expanded 480-row application containment audit is running. It includes
-  the Logic route, frame/drawer insets and divider height above the console.
+  retaining unsent test inputs, touch dragging and cancellation, lost pointer
+  capture, and blocked browser storage. The 144-state sweep raised no page
+  JavaScript errors.
+- The expanded application containment gate samples 480 configurations,
+  including Logic, frame/drawer insets and divider height above the console.
+  Its final run result is recorded in [PR #62](https://github.com/Judgment-Pack/judgment-pack-desk/pull/62).
+
+The [measurement summary](inspector-resize-verification.json) records the
+144 layouts and 20 interactions individually.
 
 The sweep caught and fixed two edge cases: an absolutely positioned divider
 whose implicit grid end extended across the console, and insufficient map

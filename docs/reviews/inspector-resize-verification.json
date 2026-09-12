@@ -2,7 +2,7 @@
   "summary": {
     "layouts": 144,
     "failedLayouts": 0,
-    "checks": 16,
+    "checks": 20,
     "failedChecks": 0,
     "errors": 0
   },
@@ -69,6 +69,22 @@
     },
     {
       "name": "Resizing keeps unsent test inputs",
+      "pass": true
+    },
+    {
+      "name": "Touch dragging resizes the inspector",
+      "pass": true
+    },
+    {
+      "name": "Touch cancellation releases drag styles",
+      "pass": true
+    },
+    {
+      "name": "Lost pointer capture releases drag styles",
+      "pass": true
+    },
+    {
+      "name": "Blocked localStorage retains live resizing and safely returns to default on reload",
       "pass": true
     }
   ],
