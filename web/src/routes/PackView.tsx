@@ -253,12 +253,15 @@ export function PackView() {
   )
 
   const at = params.get('at')
+  // A map group is view state, not a fabricated JSON pointer (e.g. Resolution).
+  const groupId = at === null ? params.get('group') : null
   const select = (pointer: string) => {
     setSelectionNotice('')
     logic.setPane('detail')
     setRightTab('inspector')
-    if (at === pointer) { slot.reveal(); return }
+    if (at === pointer && !params.has('group')) { slot.reveal(); return }
     const next = new URLSearchParams(params)
+    next.delete('group')
     next.set('at', pointer)
     if (!params.has('view') && !editing && hash === '') next.set('view', 'overview')
     setParams(next, { replace: true })
@@ -278,9 +281,9 @@ export function PackView() {
       retainInspectorOnNavigation.current = false
       return
     }
-    if (at === null) return
+    if (at === null && groupId === null) return
     slot.reveal()
-  }, [at, locationKey, slot])
+  }, [at, groupId, locationKey, slot])
 
   // The bytes the page is about: the buffer where the file loaded, the served
   // document where it did not.
@@ -403,6 +406,14 @@ export function PackView() {
     setParams(next, { replace: true })
   }
   const openOutline = () => { logic.setPane('outline'); setRightTab('inspector'); slot.reveal() }
+  const inspectGroup = (id: string) => {
+    if (!model?.groups.some(group => group.id === id)) return
+    setSelectionNotice(''); logic.setPane('detail'); setRightTab('inspector')
+    if (groupId === id) { slot.reveal(); return }
+    const next = new URLSearchParams(params)
+    next.set('view', 'logic'); next.set('group', id); next.delete('at')
+    setParams(next, { replace: true })
+  }
   const runRequested = params.get('run')
   const run = explanation.data?.id === runRequested ? explanation.data : undefined
   const matchingRun = traceMatches(run, packId, shownText)
@@ -862,7 +873,7 @@ export function PackView() {
         tabs={[
           { value: 'inspector', label: 'Inspector', panel:
             !editing && (section === 'logic' || section === 'overview') && model && formAvailable ?
-              <LogicInspector model={model} at={at} pane={logic.pane} query={logic.query}
+              <LogicInspector model={model} at={at} groupId={groupId} pane={logic.pane} query={logic.query}
                 onSelect={select} onOutline={openOutline} outlineScroll={logic.outlineScroll}
                 trace={runTrace} advanced={inspectorNode} /> : inspectorNode },
           {
@@ -1172,7 +1183,7 @@ export function PackView() {
                       <Button variant="quiet" onClick={() => { const next = new URLSearchParams(params); next.delete('run'); retainInspectorOnNavigation.current = true; setParams(next, { replace: true }) }}>Structure only</Button>
                       <ButtonLink variant="quiet" to={`/packs/${encodeURIComponent(packId ?? '')}/evaluate`}>Back to Tests</ButtonLink>
                     </div>}
-                    <PackLogic model={model} at={at} select={select} mode={mode} onMode={changeMode}
+                    <PackLogic model={model} at={at} groupId={groupId} select={select} inspectGroup={inspectGroup} mode={mode} onMode={changeMode}
                       query={logic.query} onQuery={logic.setQuery} openOutline={openOutline}
                       viewport={logic.viewport} onViewport={logic.setViewport} listScroll={logic.listScroll}
                       trace={runTrace} mapUnavailable={!formAvailable ? 'The document cannot be interpreted unambiguously.'

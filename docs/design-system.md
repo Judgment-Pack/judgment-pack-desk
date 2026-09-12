@@ -451,3 +451,23 @@ its text aligns with plain values and can wrap. Keep ordinary quiet buttons in
 action groups, where their padding provides separation.
 
 See [the reading and selection sweep](reviews/reading-selection-sweep.md).
+
+
+## Relationship-map interaction
+
+`RelationshipMap` owns the React Flow integration. Fixed nodes use the documented
+`nopan` utility class, a pointer cursor, button semantics and a route-controlled
+pressed state. Clicking, tapping, Enter and Space all inspect the same node.
+Dragging the empty canvas pans; inspecting a visible node does not reset the
+viewport. The attribution badge is disabled through `proOptions.hideAttribution`.
+
+Single-item nodes select their real document pointer. Multi-item and empty nodes
+select a view group via `?group=`, replacing `?at=`. Their Inspector shows only
+that group’s entries. Choosing an entry clears the group and selects its real
+`?at=` pointer. This keeps aggregate nodes such as Resolution separate from the
+JPS document address space. Group selection survives pane/drawer changes and
+reloads, and uses the existing neutral selected-node treatment.
+
+The integration follows React Flow’s
+[interaction props](https://reactflow.dev/api-reference/react-flow) and
+[attribution option](https://reactflow.dev/api-reference/types/pro-options).

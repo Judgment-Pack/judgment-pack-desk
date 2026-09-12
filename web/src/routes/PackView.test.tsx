@@ -440,6 +440,21 @@ describe('a diagnostic about a member the document omits', () => {
   })
 })
 
+describe('map group addresses', () => {
+  beforeEach(() => chassis(PACK_TEXT, DIGEST))
+
+  it('restores a group deep link, then replaces it with the chosen real member pointer', async () => {
+    const { router, revealed } = draw(SERVED, {}, '/packs/vendor-onboarding?view=logic&layout=map&group=resolution', { inspector: true })
+    await screen.findByRole('heading', { name: 'Resolution · 2' })
+    await waitFor(() => expect(revealed).toEqual(['reveal']))
+    fireEvent.click(screen.getByRole('button', { name: 'Handoff' }))
+    await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('at')).toBe('/escalation'))
+    expect(new URLSearchParams(router.state.location.search).has('group')).toBe(false)
+    expect(router.state.historyAction).toBe('REPLACE')
+    expect(screen.queryByRole('heading', { name: 'Resolution · 2' })).toBeNull()
+  })
+})
+
 describe('the outline', () => {
   beforeEach(() => chassis(PACK_TEXT, DIGEST))
 

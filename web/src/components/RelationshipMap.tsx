@@ -26,7 +26,10 @@ export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange
   const flowNodes = useMemo<GroupNode[]>(() => nodes.map(n => ({
     id: n.id, type: 'relationship', position: { x: n.x * unit, y: n.y * unit },
     data: { title: n.title, description: n.description, observation: n.observation },
-    selected: n.selected, ariaLabel: n.title, draggable: false, connectable: false
+    selected: n.selected, ariaLabel: n.title, ariaRole: 'button',
+    domAttributes: { 'aria-pressed': Boolean(n.selected) },
+    // Fixed nodes still own clicks/taps; a slight movement must not start panning.
+    className: 'nopan', draggable: false, connectable: false
   })), [nodes, unit])
   const flowEdges = useMemo(() => edges.map(e => ({ ...e, type: 'smoothstep',
     markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--ink-faint)' },
@@ -41,6 +44,7 @@ export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange
   }
   return <div className={styles.map} onKeyDownCapture={keyDown} aria-label="Pack relationship map">
     <ReactFlow nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes}
+      proOptions={{ hideAttribution: true }}
       viewport={viewport} onViewportChange={onViewportChange}
       onNodeClick={(_event, node) => onInspect(node.id)}
       nodesDraggable={false} nodesConnectable={false} edgesReconnectable={false}
