@@ -70,11 +70,19 @@ private Linear component library.
   comfortable/compact, 320–1920px widths, Inspector and rail drawer boundaries,
   Console states, a 308-pack inventory, long IDs, doubled root text size, and
   a short viewport. Search, sort and scroll restore together after navigation.
+- Four additional [Preview keyboard checks](packs-collection/preview-keys.json)
+  passed across the virtualized list: End, Home, arrows and Enter keep focus on
+  Preview actions and open Inspector without navigating.
 - The separate [state checks](packs-collection/states-results.json) passed loading,
   empty project, failed listing and successful Retry recovery using a temporary
   project. Only that temporary fixture was modified.
-- The required application containment audit is pending its final result before
-  merge. It uses a copied demo project and an isolated desk configuration.
+- The required application containment audit uses a copied demo project and an
+  isolated desk configuration. The final result is recorded in
+  [PR #64](https://github.com/Judgment-Pack/judgment-pack-desk/pull/64) before merge.
+- Mutation-needle inspection checked 885 rows. The five updated collection
+  needles match; eight stale needles and one ambiguous needle remain in
+  unchanged shell/document/backend code from the base branch. The full mutation
+  suite was not run.
 
 Browser coverage is Chromium. Captures show synthetic fixture data, including
 one deliberately unreadable pack to exercise warning and missing-version UI.
