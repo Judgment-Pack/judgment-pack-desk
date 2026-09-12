@@ -9,8 +9,9 @@ import { valueAt } from '../pointers'
 import { itemTrace, matchingItems, outcomeLabel, selectedItem, text, type LogicProjection } from '../logicModel'
 import styles from './LogicInspector.module.css'
 
-export function LogicInspector({ model, at, pane, query, onSelect, onOutline, outlineScroll, trace, advanced }: {
+export function LogicInspector({ model, at, groupId, pane, query, onSelect, onOutline, outlineScroll, trace, advanced }: {
   model: LogicProjection; at: string | null; pane: 'outline' | 'detail'; query: string
+  groupId?: string | null
   onSelect: (pointer: string) => void; onOutline: () => void; outlineScroll: MutableRefObject<number>
   trace?: readonly TraceEntry[]; advanced: ReactNode
 }) {
@@ -33,6 +34,20 @@ export function LogicInspector({ model, at, pane, query, onSelect, onOutline, ou
       </section>
     })}
     {!model.groups.some(g => matchingItems(g, query).length) && <p role="status">No matching items.</p>}
+  </div>
+
+  const inspectedGroup = model.groups.find(group => group.id === groupId)
+  if (inspectedGroup) return <div className={styles.details}>
+    <Button variant="quiet" onClick={onOutline}>← Outline</Button>
+    <h2>{inspectedGroup.label} · {inspectedGroup.items.length}</h2>
+    <p className={styles.meta}>{inspectedGroup.description}</p>
+    {inspectedGroup.items.map(item => <button type="button" key={item.pointer}
+      className={styles.outlineRow} data-outline-pointer={item.pointer}
+      onClick={() => onSelect(item.pointer)}>{item.label}
+      {item.effect && <span>{item.effect}</span>}
+      {itemTrace(inspectedGroup, item, trace) && <span className={styles.observation}>{itemTrace(inspectedGroup, item, trace)}</span>}
+    </button>)}
+    {!inspectedGroup.items.length && <p>None declared.</p>}
   </div>
 
   if (at === null) return <div className={styles.details}><p>Select an item to inspect its definition.</p><Button onClick={onOutline}>Open Outline</Button></div>

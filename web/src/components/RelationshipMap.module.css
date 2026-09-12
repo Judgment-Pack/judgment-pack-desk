@@ -4,13 +4,11 @@
   --xy-edge-stroke: var(--ink-faint);
   --xy-edge-stroke-width: 1.5;
   --xy-edge-stroke-selected: var(--ink);
-  --xy-attribution-background-color: var(--surface);
   --xy-selection-background-color: var(--accent-soft);
   --xy-selection-border: 1px solid var(--border-strong);
 }
 .map :global(.react-flow__node):focus-visible { outline: 2px solid var(--accent); outline-offset: var(--space-1); }
-.map :global(.react-flow__attribution) a { color: var(--ink-soft); }
-.node { width: 13rem; min-height: 7rem; padding: var(--density-section); display: flex; flex-direction: column; justify-content: center; gap: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); overflow-wrap: anywhere; }
+.node { width: 13rem; min-height: 7rem; padding: var(--density-section); display: flex; flex-direction: column; justify-content: center; gap: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); overflow-wrap: anywhere; cursor: pointer; }
 .node strong { font-size: var(--text-control); font-weight: 500; }
 .node span { font-size: var(--text-xs); color: var(--ink-soft); }
 .selected { background: var(--accent-soft); border-color: var(--border-strong); box-shadow: inset 3px 0 var(--ink-soft); }

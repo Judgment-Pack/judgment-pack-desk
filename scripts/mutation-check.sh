@@ -3410,9 +3410,9 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
 
   # Selecting with the pane closed.
   mutate web "an address that arrives with a selection opens no pane" "$PV" \
-    '    if (at === null) return
+    '    if (at === null && groupId === null) return
     slot.reveal()' \
-    '    if (at === null) return
+    '    if (at === null && groupId === null) return
     void slot'
   # **Back is an arrival.** Recording only the keys that revealed meant an entry
   # without `?at` returned before writing anything down, so Back to the selected
@@ -3420,14 +3420,22 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
   mutate web "an arrival with no selection is not recorded as visited" "$PV" \
     '    if (visited.current === locationKey) return
     visited.current = locationKey
-    if (at === null) return' \
-    '    if (at === null) return
+    if (retainInspectorOnNavigation.current) {
+      retainInspectorOnNavigation.current = false
+      return
+    }
+    if (at === null && groupId === null) return' \
+    '    if (at === null && groupId === null) return
     if (visited.current === locationKey) return
-    visited.current = locationKey'
+    visited.current = locationKey
+    if (retainInspectorOnNavigation.current) {
+      retainInspectorOnNavigation.current = false
+      return
+    }'
   # A mount-only effect made *zero* calls for /packs/a -> /packs/a?at=/rules/0,
   # which reuses this component: every References link opened nothing.
   mutate web "a selection arriving in an address the route is already at opens nothing" "$PV" \
-    '  }, [at, locationKey, slot])' \
+    '  }, [at, groupId, locationKey, slot])' \
     '    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])'
   # The other half: this must not fight a viewer who closed the pane and stayed

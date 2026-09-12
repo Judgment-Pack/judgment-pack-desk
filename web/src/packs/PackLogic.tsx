@@ -26,9 +26,10 @@ const relations: RelationshipEdge[] = [
   { id: 'outcomes', source: 'resolution', target: 'outcomes' }
 ]
 
-export function PackLogic({ model, at, select, mode, onMode, query, onQuery, openOutline,
+export function PackLogic({ model, at, groupId, select, inspectGroup, mode, onMode, query, onQuery, openOutline,
   viewport, onViewport, listScroll, mapUnavailable, trace }: {
   model: LogicProjection; at: string | null; select: (pointer: string) => void
+  groupId: string | null; inspectGroup: (id: string) => void
   mode: LogicMode; onMode: (mode: LogicMode) => void; query: string; onQuery: (query: string) => void
   openOutline: () => void; viewport: Viewport; onViewport: (v: Viewport) => void
   listScroll: MutableRefObject<number>; mapUnavailable?: string; trace?: readonly TraceEntry[]
@@ -44,9 +45,9 @@ export function PackLogic({ model, at, select, mode, onMode, query, onQuery, ope
     const observed = g.items.map(item => itemTrace(g, item, trace)).filter((s): s is string => s !== undefined)
     const counts = new Map<string, number>(); observed.forEach(s => counts.set(s, (counts.get(s) ?? 0) + 1))
     return { id: g.id, title: g.label + (['applicability', 'resolution'].includes(g.id) ? '' : ` · ${g.items.length}`),
-      description: g.description, x: positions[g.id]![0], y: positions[g.id]![1] * (trace ? 4 / 3 : 1), selected: current?.group.id === g.id || at === '/' + g.id,
+      description: g.description, x: positions[g.id]![0], y: positions[g.id]![1] * (trace ? 4 / 3 : 1), selected: groupId === g.id || current?.group.id === g.id || at === '/' + g.id,
       observation: counts.size ? [...counts].map(([label, count]) => `${count} ${label}`).join(' · ') : undefined }
-  }), [model, current?.group.id, at, trace])
+  }), [model, current?.group.id, at, groupId, trace])
   const edges = useMemo(() => relations.filter(e => nodes.some(n => n.id === e.source)), [nodes])
   return <section className={styles.logic} aria-label="Pack logic">
     <span ref={setRuler} className={styles.ruler} aria-hidden="true" />
@@ -64,7 +65,7 @@ export function PackLogic({ model, at, select, mode, onMode, query, onQuery, ope
         onViewportChange={onViewport} onInspect={id => {
           const group = model.groups.find(g => g.id === id)!
           if (group.items.length === 1) select(group.items[0]!.pointer)
-          else openOutline()
+          else inspectGroup(id)
         }} /></Suspense></div>
       <p className={styles.caption}>{current ? `Selected in ${current.group.label}: ${current.item.label}. ` : ''}{trace ? 'Recorded observations. Select an item for its exact trace.' : 'Declared relationships. Select a group to explore.'}</p>
     </> : <div className={styles.list} ref={list} onScroll={e => { listScroll.current = e.currentTarget.scrollTop }}>
