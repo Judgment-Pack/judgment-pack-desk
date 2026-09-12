@@ -1,3 +1,4 @@
+import { Tooltip } from './Tooltip'
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import styles from './PaneDivider.module.css'
 
@@ -23,6 +24,7 @@ export function PaneDivider({ label, controls, value, min, max, onChange, onRese
     return () => { body.style.cursor = cursor; body.style.userSelect = selection }
   }, [dragging])
   const key = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented) return
     setKeyboardFocus(true)
     const step = event.shiftKey ? 32 : 8
     if (event.key === 'ArrowLeft') onChange(bound(value + step))
@@ -34,11 +36,11 @@ export function PaneDivider({ label, controls, value, min, max, onChange, onRese
     else return
     event.preventDefault()
   }
-  return <div className={styles.divider} data-dragging={dragging || undefined}
+  return <Tooltip disabled={dragging} side="left" content="Drag to resize. Arrow keys adjust width; Shift moves faster. Double-click to reset."><div className={styles.divider} data-dragging={dragging || undefined}
     data-keyboard-focus={keyboardFocus || undefined} role="separator" tabIndex={0}
     aria-label={label} aria-controls={controls} aria-orientation="vertical"
     aria-valuemin={min} aria-valuemax={max} aria-valuenow={value} aria-valuetext={`${value} pixels wide`}
-    title="Drag to resize. Arrow keys adjust width; Shift moves faster. Double-click to reset."
+    aria-description="Drag to resize. Arrow keys adjust width; Shift moves faster. Double-click to reset."
     onKeyDown={key} onDoubleClick={onReset}
     onFocus={event => setKeyboardFocus(event.currentTarget.matches(':focus-visible'))}
     onBlur={() => setKeyboardFocus(false)}
@@ -54,5 +56,5 @@ export function PaneDivider({ label, controls, value, min, max, onChange, onRese
     }} onPointerMove={move} onPointerUp={event => {
       move(event); stop()
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-    }} onPointerCancel={stop} onLostPointerCapture={stop} />
+    }} onPointerCancel={stop} onLostPointerCapture={stop} /></Tooltip>
 }

@@ -182,9 +182,9 @@ function EnvelopePanel({ payload }: { payload: Evaluation }) {
             [
               'Bundled artifacts',
               payload.artifact ? (
-                <span key="artifact" title={payload.artifact.bundleDigest}>
-                  {payload.artifact.specVersion} · {payload.artifact.provenance} · sha256{' '}
-                  {payload.artifact.bundleDigest.slice(0, 12)}…
+                <span key="artifact">
+                  {payload.artifact.specVersion} · {payload.artifact.provenance} ·{' '}
+                  <code>{payload.artifact.bundleDigest}</code>
                 </span>
               ) : undefined
             ],

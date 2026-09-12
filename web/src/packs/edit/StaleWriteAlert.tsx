@@ -20,6 +20,7 @@
  * digest believed nothing was there, and finding something is a different
  * event from a file that moved underneath an edit.
  */
+import { Digest } from '../../ui/Digest'
 import type { StaleWrite } from '../../files/client'
 import { AlertPanel } from '../../ui/AlertPanel'
 import { Button } from '../../ui/Button'
@@ -44,10 +45,10 @@ export function StaleWriteAlert({
         <>
           <span>
             this edit started from{' '}
-            <code title={stale.expectedSha256}>sha256 {digest(stale.expectedSha256)}</code>
+            <Digest value={stale.expectedSha256} />
           </span>
           <span>
-            on disk now <code title={stale.actualSha256}>sha256 {digest(stale.actualSha256)}</code>
+            on disk now <Digest value={stale.actualSha256} />
           </span>
         </>
       }
@@ -71,8 +72,4 @@ export function StaleWriteAlert({
       </span>
     </AlertPanel>
   )
-}
-
-function digest(value: string): string {
-  return value ? `${value.slice(0, 12)}…` : '(no file)'
 }

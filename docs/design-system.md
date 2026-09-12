@@ -363,3 +363,49 @@ nor traces to browser storage. Returning to Tests restores that selected run;
 a missing or different revision blocks the overlay instead of presenting an
 old observation on new conditions. Runs made without captured pack bytes
 remain readable in Tests but cannot offer a bound map explanation.
+
+
+## Tooltips, truncation and full values
+
+Use `ui/Tooltip.tsx` for brief supplemental hints. `TooltipProvider` is mounted
+once by the shell: 300ms hover delay, 300ms skip delay between controls,
+immediate keyboard focus, Escape/click dismissal, and navigation cleanup.
+These timings are desk choices, not claims about Linear's private tokens.
+The content uses the existing neutral raised surface, border, shadow, 12px type,
+4px radius, 8px/12px padding and a 20rem maximum width. It portals above dialogs,
+collides within the viewport, and remains hoverable. No native HTML `title`
+attributes for hover help; component heading props and SVG accessible titles
+have different meanings and are retained.
+
+`Tooltip` wraps one existing control with Radix `asChild`. The control retains
+its accessible name, ref, action, keyboard behavior and existing
+`aria-describedby` references. Labels never depend on the tooltip. Do not put
+links, buttons or other interactive content inside a tooltip. Use `Popover`
+for selectable/copyable details. For a control automatically focused when a
+dialog opens, use `openOnFocus={false}` to avoid an unsolicited hint consuming
+Escape; its accessible name still identifies the control.
+
+`OverflowTooltip` measures actual rendered overflow, including descendant text
+when a row has multiple cells. Hidden text and text that fits produce no hint.
+Resize, content changes, font loading, theme and density changes remeasure it.
+Use existing row links/buttons as keyboard targets; do not add a tab stop for
+each static label. Full content remains in the DOM and in the destination.
+
+Pack collection rows retain single-line ellipsis and their existing height.
+The hint reveals only clipped visible values; names, questions and versions
+that fit remain quiet. Beyond 320 characters, a short hint directs the reader
+to Preview. Preview wraps the entire description without truncation and works
+on touch screens, where collection descriptions may be hidden. Selection and
+selected text remain neutral. Full pack-page questions continue to wrap.
+
+Unavailable-action explanations belong in visible help associated with
+`aria-describedby`, including Create, Accept, Fix and unavailable editor modes.
+Do not attach essential explanations only to a disabled button's hover state.
+`Digest` offers full selectable/copyable values in a shared popover, and keeps
+an absent file distinct from a real digest. Graph probe explanations use a
+native disclosure, so they remain available on touch and keyboard. Already
+visible trace values and full digests do not need a redundant tooltip.
+
+Live examples: `/design-system.html`. Browser regression entry points:
+`scripts/tooltip-check.mjs` and `scripts/pane-controls-check.mjs`. See
+[the tooltip sweep](reviews/tooltip-sweep.md) for scope, references and results.

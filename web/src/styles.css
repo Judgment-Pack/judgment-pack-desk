@@ -27,6 +27,8 @@
   --z-drawer: 40;
   --z-menu: 50;
   --z-dialog: 60;
+  --z-popover: 65;
+  --z-tooltip: 70;
 
   /* Surfaces, from the page up. `--surface-raised` is what sits *over* a
      surface — a menu, a drawer, the skip link — and in the light palette it is

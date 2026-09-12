@@ -1,3 +1,4 @@
+import { Tooltip } from '../ui/Tooltip'
 /**
  * The Inspector.
  *
@@ -87,14 +88,14 @@ export function RightPane({
     <>
       <div className="desk-pane-head">
         <span>Inspector</span>
-        <button
+        <Tooltip content="Close Inspector" openOnFocus={false} side="left"><button
           type="button"
           className="desk-icon-button"
           aria-label="Close inspector"
           onClick={onClose}
         >
           <IconClose />
-        </button>
+        </button></Tooltip>
       </div>
       {/* Always mounted, so a route's portal target never disappears under
           it — including while nothing is published. */}

@@ -1,3 +1,5 @@
+import { SHORTCUTS } from './shortcuts'
+import { Tooltip } from '../ui/Tooltip'
 /**
  * The header: whose desk this is, what it points at, and who is looking.
  * The status strip owns the persistent connection indicator.
@@ -80,7 +82,7 @@ export function HeaderBar({
             so without this the entire left menu was reachable by Mod+B alone
             — on a width whose likeliest device has no keyboard at all. */}
         {railIsDrawer && (
-          <button
+          <Tooltip content="Open navigation" shortcut={SHORTCUTS[0]?.keys} side="bottom"><button
             type="button"
             ref={railOpenerRef}
             className="desk-icon-button"
@@ -95,7 +97,7 @@ export function HeaderBar({
             onClick={onOpenRail}
           >
             <IconPanelLeft />
-          </button>
+          </button></Tooltip>
         )}
         <Avatar.Root className="desk-orgmark">
           {mark && <Avatar.Image src={mark} alt="" />}
@@ -123,7 +125,7 @@ export function HeaderBar({
       <div className="desk-head-centre" />
 
       <div className="desk-head-right">
-        <Toggle.Root
+        <Tooltip content={inspectorOpen ? "Close Inspector" : "Open Inspector"} shortcut={SHORTCUTS[1]?.keys} side="bottom"><Toggle.Root
           ref={inspectorOpenerRef}
           className="desk-icon-button"
           aria-label="Inspector"
@@ -135,8 +137,8 @@ export function HeaderBar({
           onPressedChange={onToggleInspector}
         >
           <IconPanelRight />
-        </Toggle.Root>
-        <Toggle.Root
+        </Toggle.Root></Tooltip>
+        <Tooltip content={consoleOpen ? "Close Console" : "Open Console"} shortcut={SHORTCUTS[2]?.keys} side="bottom"><Toggle.Root
           className="desk-icon-button"
           aria-label="Console"
           aria-controls="desk-console"
@@ -144,7 +146,7 @@ export function HeaderBar({
           onPressedChange={onToggleConsole}
         >
           <IconPanelBottom />
-        </Toggle.Root>
+        </Toggle.Root></Tooltip>
         <Separator.Root className="desk-rule" decorative orientation="vertical" />
         <UserControl />
       </div>

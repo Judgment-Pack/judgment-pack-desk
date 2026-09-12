@@ -4,6 +4,9 @@ import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { applyDensity, applyTheme } from '../config/theme'
 import type { Density, ThemeChoice } from '../config/deskConfig'
+import { Tooltip, OverflowTooltip, TooltipProvider } from '../ui/Tooltip'
+import { Digest } from '../ui/Digest'
+import { Dialog } from '../ui/Dialog'
 import { Button } from '../ui/Button'
 import { PageHeader, PageBody } from '../ui/PageLayout'
 import { Popover } from '../ui/Popover'
@@ -17,6 +20,7 @@ import '../styles.css'
 import styles from './DesignSystem.module.css'
 
 function DesignSystem() {
+  const [dialog, setDialog] = useState(false)
   const [theme, setTheme] = useState<ThemeChoice>('system')
   const [density, setDensity] = useState<Density>('comfortable')
   const [provider, setProvider] = useState('gemini')
@@ -66,6 +70,24 @@ function DesignSystem() {
         </PageBody>
       </div>
 
+      <SettingsSection level={2} title="Tooltips and full values" description="Short hints on existing controls. Full documents and essential help stay accessible without hover.">
+        <div className={styles.actions}>
+          <Tooltip content="Open Inspector" shortcut="Mod+Alt+I"><Button aria-label="Example Inspector" aria-describedby="tooltip-existing-help">◫</Button></Tooltip>
+          <OverflowTooltip><Button>Fits</Button></OverflowTooltip>
+          <OverflowTooltip><Button className={styles.clipped}>A longer question that cannot fit in a compact collection row</Button></OverflowTooltip>
+          <Button disabled aria-describedby="tooltip-disabled-help">Unavailable action</Button>
+          <Button onClick={() => setDialog(true)}>Open tooltip dialog</Button>
+          <Digest value={'0123456789abcdef'.repeat(4)} />
+        </div>
+        <p id="tooltip-existing-help" className="quiet">An example of a control with an existing description.</p>
+        <p id="tooltip-disabled-help" className="quiet">Configure an endpoint before running this action.</p>
+        <Dialog open={dialog} onOpenChange={setDialog} title="Tooltips inside a dialog">
+          <Tooltip content="Dialog action help"><Button aria-label="Example dialog action">?</Button></Tooltip>
+          <Digest value={'abcdef0123456789'.repeat(4)} />
+          <Button onClick={() => setDialog(false)}>Close example dialog</Button>
+        </Dialog>
+      </SettingsSection>
+
       <div className={styles.grid}>
         <SettingsSection level={2} title="Actions" description="One primary action per task. Every state comes from the same component.">
           <div className={styles.actions}>
@@ -78,7 +100,7 @@ function DesignSystem() {
           </div>
         </SettingsSection>
 
-        <SettingsSection level={2} title="Color roles" description="Neutral surfaces and text, green actions and selections, and gold attention states.">
+        <SettingsSection level={2} title="Color roles" description="Neutral surfaces and text, neutral selections, green actions, and gold attention states.">
           <div className={styles.swatches}>
             <div className={styles.surface}>Surface</div>
             <div className={styles.raised}>Raised</div>
@@ -136,4 +158,4 @@ function DesignSystem() {
 }
 
 const root = document.getElementById('root')
-if (root) createRoot(root).render(<DesignSystem />)
+if (root) createRoot(root).render(<TooltipProvider><DesignSystem /></TooltipProvider>)

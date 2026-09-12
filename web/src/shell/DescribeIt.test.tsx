@@ -795,7 +795,7 @@ describe('Create writes the proposal', () => {
     await propose()
     await waitFor(() => expect(runtime!.opened.length).toBe(1))
     await waitFor(() => expect(createButton().disabled).toBe(true))
-    expect(createButton().title).toBe(
+    expect(helpText(createButton())).toBe(
       'The assistant is still running. Stop it or wait for it to end.'
     )
   })
@@ -820,7 +820,7 @@ describe('Create writes the proposal', () => {
       target: { value: 'Vendor Onboarding' }
     })
     await waitFor(() => expect(createButton().disabled).toBe(true))
-    expect(createButton().title).toContain('could not be read as JSON data')
+    expect(helpText(createButton())).toContain('could not be read as JSON data')
     fireEvent.click(createButton())
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(sent).toEqual([])
@@ -834,7 +834,7 @@ describe('Create writes the proposal', () => {
     const { sent } = serve({ refuse: true })
     draw()
     await propose()
-    await waitFor(() => expect(createButton().title).toContain('409'), { timeout: 15_000 })
+    await waitFor(() => expect(helpText(createButton())).toContain('409'), { timeout: 15_000 })
     fireEvent.change(screen.getByLabelText('Name (required)'), {
       target: { value: 'Vendor Onboarding' }
     })
@@ -896,7 +896,7 @@ describe('a proposal belongs to the submission that produced it', () => {
     await screen.findByText(/refused to serve author_pack/)
     expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull()
     expect(createButton().disabled).toBe(true)
-    expect(createButton().title).toContain('refused to serve author_pack')
+    expect(helpText(createButton())).toContain('refused to serve author_pack')
     fireEvent.click(createButton())
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(sent).toEqual([])
@@ -951,7 +951,7 @@ describe('a proposal belongs to the submission that produced it', () => {
     await waitFor(() => expect(createButton().disabled).toBe(true))
     expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull()
     expect(screen.getByLabelText('Template').textContent).not.toContain('The assistant’s proposal')
-    expect(createButton().title).toContain('the session could not be closed')
+    expect(helpText(createButton())).toContain('the session could not be closed')
     fireEvent.click(createButton())
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(sent).toEqual([])
@@ -984,7 +984,7 @@ describe('a proposal belongs to the submission that produced it', () => {
     })
     await waitFor(() => expect(createButton().disabled).toBe(true))
     expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull()
-    expect(createButton().title).toContain('the final check did not complete')
+    expect(helpText(createButton())).toContain('the final check did not complete')
     fireEvent.click(createButton())
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(sent).toEqual([])
@@ -1226,7 +1226,7 @@ describe('a proposal is checked before it is written', () => {
     // The button's own reason is the check strip's sentence; the runtime's
     // diagnostics are printed in full below it, in the Checks panel's own
     // rendering rather than squeezed into a `title`.
-    expect(createButton().title).toContain('will not call this document a pack')
+    expect(helpText(createButton())).toContain('will not call this document a pack')
     expect(
       screen.getByRole('list', { name: 'What the runtime said about this document' }).textContent
     ).toContain('additional properties are not allowed: "fileName"')
@@ -1291,7 +1291,7 @@ describe('a proposal is checked before it is written', () => {
       target: { value: 'Vendor Onboarding' }
     })
     await waitFor(() => expect(createButton().disabled).toBe(true))
-    expect(createButton().title).toContain('serves no validate')
+    expect(helpText(createButton())).toContain('serves no validate')
     expect(sent).toEqual([])
   })
 
@@ -1412,3 +1412,7 @@ describe('AI handoff to the guided creation page', () => {
     expect(sent).toEqual([])
   })
 })
+
+function helpText(control: HTMLElement) {
+  return control.getAttribute("aria-describedby")?.split(/\s+/).map(id => document.getElementById(id)?.textContent ?? "").join(" ")
+}

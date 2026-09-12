@@ -1,3 +1,5 @@
+import { Tooltip } from '../ui/Tooltip'
+import { type ReactElement } from 'react'
 /**
  * The rail: the primary action, what the project contains, and Admin.
  *
@@ -26,7 +28,7 @@
  * retained state, and each arrives as its own two-line change if it ever
  * should.
  */
-import { Dialog, DropdownMenu, Separator, Tooltip, VisuallyHidden } from 'radix-ui'
+import { Dialog, DropdownMenu, Separator, VisuallyHidden } from 'radix-ui'
 import { useRef, type ReactNode, type RefObject } from 'react'
 import { NavLink, useMatch, useNavigate } from 'react-router-dom'
 import { useGraphInventory, usePacks } from '../mcp/queries'
@@ -156,13 +158,9 @@ function RailBody({
    */
   onNavigate?: () => void
 }) {
+  const graphs = useGraphInventory()
   const icons = mode === 'icons'
   const dirty = useAuthorDirty()
-  // The cheap inventory, and only ever this one. It is disabled inside the
-  // hook unless the runtime advertises `experimental_list_graphs`, so against
-  // an older runtime it costs nothing and the entry is simply rendered quiet.
-  // Its message is printed where it failed, verbatim, and never summarised.
-  const graphs = useGraphInventory()
   const navigate = useNavigate()
   const toggleRef = useRef<HTMLButtonElement | null>(null)
 
@@ -193,7 +191,6 @@ function RailBody({
             to={item.to}
             aria-label={item.label}
             onClick={onNavigate}
-            title={item.to === '/graphs' && graphs.error ? graphs.error.message : undefined}
           >
             {item.icon}
             {!icons && <span className="desk-nav-label">{item.label}</span>}
@@ -203,6 +200,8 @@ function RailBody({
           </NavLink>
         </Labelled>
       ))}
+
+      {!icons && graphs.error && <p className="desk-pane-empty">The graph listing did not answer — {graphs.error.message}</p>}
 
       <div className="desk-spacer" />
       <Separator.Root className="desk-rule-h" decorative />
@@ -240,7 +239,7 @@ function RailBody({
       </Labelled>
 
       {showCollapse && (
-        <button
+        <Tooltip content="Expand navigation" disabled={!icons} side="right"><button
           type="button"
           ref={toggleRef}
           className="desk-nav-item"
@@ -257,7 +256,7 @@ function RailBody({
           {icons ? <IconChevronRight /> : <IconChevronLeft />}
           {!icons && <span className="desk-nav-label">Collapse navigation</span>}
           {icons && <VisuallyHidden.Root>Expand navigation</VisuallyHidden.Root>}
-        </button>
+        </button></Tooltip>
       )}
     </>
   )
@@ -276,18 +275,11 @@ function Labelled({
 }: {
   icons: boolean
   label: string
-  children: ReactNode
+  children: ReactElement
 }) {
   if (!icons) return <>{children}</>
   return (
-    <Tooltip.Root>
-      <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
-      <Tooltip.Portal>
-        <Tooltip.Content className="desk-menu" side="right" sideOffset={6}>
-          {label}
-        </Tooltip.Content>
-      </Tooltip.Portal>
-    </Tooltip.Root>
+    <Tooltip content={label} side="right">{children}</Tooltip>
   )
 }
 
@@ -317,7 +309,6 @@ function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => 
           to="/packs"
           aria-label={count === undefined ? 'Packs' : `Packs, ${count}`}
           onClick={onNavigate}
-          title={error ? error.message : undefined}
         >
           <IconPack />
           {!icons && <span className="desk-nav-label">Packs</span>}

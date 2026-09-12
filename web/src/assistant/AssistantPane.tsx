@@ -33,7 +33,7 @@
  * **Nothing is persisted.** Leaving the route ends the session and closes its
  * connection; coming back is a new one.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
   AUTHOR_PACK_PROMPT,
   FIX_PACK_PROMPT,
@@ -52,7 +52,7 @@ import { ModelPicker } from './ModelPicker'
 import { usePickedModel } from './pickedModel'
 import { ProposalDiffView } from './ProposalDiff'
 import { ProposalUnknowns, RefutationReport, RuntimeChecks } from './ProposalReport'
-import { DRAFT_MOVED, acceptState, applyProposal, writable, type Disposition } from './acceptProposal'
+import { acceptState, applyProposal, writable, type Disposition } from './acceptProposal'
 import { diffProposal } from './proposalDiff'
 import { outcomeOf } from './runOutcome'
 import { stateFromEvents, thinkingLine } from './thinking'
@@ -171,6 +171,7 @@ export function AssistantPane({
    */
   diagnostics?: { count: number; bytes: string }
 } = {}) {
+  const helpId = useId()
   const slot = useAssistantSlot()
   // The editing session is the only way bytes change on this desk, and `write`
   // is the whole of what this pane uses it for. There is no `commit` here to
@@ -517,7 +518,7 @@ export function AssistantPane({
         */}
         <Button
           disabled={running || diagnostics === undefined || !canFix}
-          title={fixWhy(diagnosticCount, canFix, prompts.isSuccess)}
+          aria-describedby={fixWhy(diagnosticCount, canFix, prompts.isSuccess) ? `${helpId}-fix` : undefined}
           onClick={() => {
             if (diagnostics === undefined) return
             setSubmitted({
@@ -534,6 +535,9 @@ export function AssistantPane({
           Stop
         </Button>
       </div>
+      {fixWhy(diagnosticCount, canFix, prompts.isSuccess) && <p id={`${helpId}-fix`} className={styles.honesty}>
+        {fixWhy(diagnosticCount, canFix, prompts.isSuccess)}
+      </p>}
       {!advertised && prompts.isSuccess && (
         <p className={styles.notice}>
           This runtime advertises no {AUTHOR_PACK_PROMPT} prompt, so there is nothing for the
@@ -601,7 +605,7 @@ export function AssistantPane({
               <Button
                 variant="primary"
                 disabled={!accept.enabled}
-                title={accept.why === '' ? undefined : accept.why}
+                aria-describedby={accept.why ? `${helpId}-accept` : undefined}
                 onClick={acceptIntoDraft}
               >
                 Accept into draft
@@ -613,9 +617,7 @@ export function AssistantPane({
               Reject
             </Button>
           </div>
-          {disposition === 'open' && editing && !onBaseline && (
-            <p className={styles.notice}>{DRAFT_MOVED}</p>
-          )}
+          {editing && accept.why && <p id={`${helpId}-accept`} className={styles.honesty}>{accept.why}</p>}
           {disposition === 'accepted' && (
             <p className={styles.honesty}>
               Accepted into the draft. <strong>Nothing has been saved.</strong> The check runs

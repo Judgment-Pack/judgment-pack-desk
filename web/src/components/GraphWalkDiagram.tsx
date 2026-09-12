@@ -370,13 +370,7 @@ function EdgeList({
               )
               if (!probe) return null
               return (
-                <span
-                  key={branch}
-                  className={`probe-status probe-status-${probe.status}`}
-                  title={probe.detail}
-                >
-                  {branch}: {probe.status}
-                </span>
+                <ProbeDetail key={branch} branch={branch} status={probe.status} detail={probe.detail} />
               )
             })}
             {edge.description && <p className="edge-detail">{edge.description}</p>}
@@ -543,13 +537,7 @@ function CoverageWalk({
                   )
                   if (!probe) return null
                   return (
-                    <span
-                      key={branch}
-                      className={`probe-status probe-status-${probe.status}`}
-                      title={probe.detail}
-                    >
-                      {branch}: {probe.status}
-                    </span>
+                    <ProbeDetail key={branch} branch={branch} status={probe.status} detail={probe.detail} />
                   )
                 })}
               </li>
@@ -582,4 +570,12 @@ function countMissing(coverage: MatrixProbe[] | undefined, node: string): number
 function describe(disposition: ReturnType<typeof parseDisposition>): string {
   if (!disposition) return 'no disposition reported'
   return disposition.outcomeId ? `${disposition.kind} ${disposition.outcomeId}` : disposition.kind
+}
+
+/** Runtime explanations remain available without hover, including on touch. */
+function ProbeDetail({ branch, status, detail }: { branch: string; status: string; detail?: string }) {
+  const label = `${branch}: ${status}`
+  const className = `probe-status probe-status-${status}`
+  return detail ? <details className={className}><summary>{label}</summary><p className="edge-detail">{detail}</p></details>
+    : <span className={className}>{label}</span>
 }
