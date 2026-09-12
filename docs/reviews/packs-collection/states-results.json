@@ -1,0 +1,21 @@
+{
+  "results": [
+    {
+      "name": "Collection has an explicit loading state",
+      "pass": true
+    },
+    {
+      "name": "Empty project has one create action in its page header",
+      "pass": true
+    },
+    {
+      "name": "Failure is distinct from empty project and exposes Retry",
+      "pass": true
+    },
+    {
+      "name": "Retry recovers the collection after the source is fixed",
+      "pass": true
+    }
+  ],
+  "errors": []
+}

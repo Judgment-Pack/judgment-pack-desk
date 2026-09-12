@@ -1,0 +1,9 @@
+.preview { padding: var(--density-section); font-size: var(--text-sm); min-width: 0; }
+.preview h2 { margin: 0 0 var(--space-3); font-size: var(--text-heading); overflow-wrap: anywhere; }
+.preview p { margin: 0 0 var(--space-4); overflow-wrap: anywhere; }
+.eyebrow { color: var(--ink-faint); font-size: var(--text-xs); }
+.notice { color: var(--warn); }
+.metadata { display: grid; gap: var(--space-4); margin: var(--space-5) 0; }
+.metadata dt { color: var(--ink-soft); font-size: var(--text-xs); }
+.metadata dd { margin: var(--space-1) 0 0; overflow-wrap: anywhere; }
+.metadata code { font-size: var(--text-xs); }

@@ -1,124 +1,71 @@
-/* The pane reads `--main-room` from shell.css and computes no geometry of its
-   own: the shell owns the regions' layout, which is the rule the README
-   states. The row's height and the list's gap come from the density scale, and
-   `PacksPane.tsx` reads the same number for the window arithmetic. */
-
 .pane {
-  position: sticky;
-  top: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--density-gap);
-  max-height: var(--main-room);
+  height: var(--main-room, 100dvh);
   min-height: 0;
+  min-width: 0;
 }
-
 .controls {
   display: flex;
-  flex-direction: column;
-  gap: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--density-gutter);
 }
-
-.list {
-  overflow: hidden auto;
-  position: relative;
-  min-height: 0;
-  flex: 1;
+.controls .search { width: min(20rem, 100%); flex: 0 1 20rem; min-width: 0; }
+.sort { margin-left: auto; width: 12rem; max-width: 100%; }
+.collection { display: flex; flex-direction: column; min-height: calc(var(--density-row) * 3 + var(--density-control)); flex: 1; padding: 0 var(--density-gutter); }
+.columns, .row { --version-width: 7rem; --preview-width: 5rem; }
+.columns {
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--version-width) var(--preview-width);
+  align-items: center;
+  min-height: var(--density-control);
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--border);
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
 }
-
-.rows {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
+.list { overflow: hidden auto; position: relative; flex: 1; min-height: 0; scrollbar-gutter: stable; }
+.rows { margin: 0; padding: 0; list-style: none; }
 .row {
-  height: var(--density-row);
-}
-
-.link {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.4rem;
+  height: var(--density-row);
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.row:hover, .row[data-selected] { background: var(--accent-soft); }
+.link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--version-width);
+  align-items: center;
+  flex: 1;
+  min-width: 0;
   height: 100%;
-  padding: 0 0.75rem;
-  border-radius: var(--radius-sm);
   color: var(--ink);
-  font-size: var(--text-body);
+  font-size: var(--text-control);
   text-decoration: none;
 }
-
-.link:hover {
-  background: var(--false-soft);
-}
-
-.link:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-.link[aria-current='page'] {
-  background: var(--accent-soft);
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.version {
-  flex: none;
-  font-size: var(--text-xs);
-  color: var(--ink-faint);
-}
-
-.more {
-  padding: 0.35rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--ink-soft);
-  font: inherit;
-  font-size: var(--density-font);
-  cursor: pointer;
-}
-
-.more:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.failure {
-  margin: 0;
-  font-size: var(--density-font);
-  color: var(--danger);
-}
-
-.quiet {
-  margin: 0;
-  font-size: var(--density-font);
-  color: var(--ink-faint);
-}
-
-/* What the listing said about a pack it could not read, on the row's one line. */
-.rowDetail {
-  flex: 1 1 auto;
-  min-width: 0;
-  color: var(--ink-faint);
-  font-size: var(--text-xs);
-  text-align: right;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.title {
-  margin: 0 0 var(--density-block);
-  font-size: var(--text-body);
-  font-weight: 600;
-  color: var(--ink);
+.link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.identity { display: flex; align-items: baseline; gap: var(--space-4); min-width: 0; padding-right: var(--space-4); }
+.name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; min-width: 0; }
+.description, .rowDetail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; font-size: var(--text-xs); }
+.description { color: var(--ink-faint); }
+.rowDetail { color: var(--warn); }
+.version { font-size: var(--text-xs); color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .preview { width: var(--preview-width); min-width: 0; height: calc(var(--density-row) - var(--space-2)); padding: 0 var(--space-2); font-size: var(--text-xs); color: var(--ink-soft); }
+.empty { padding: var(--space-6) var(--density-gutter); max-width: var(--measure-form); }
+.empty h2 { margin: 0 0 var(--space-2); font-size: var(--text-heading); }
+.empty p { margin: 0 0 var(--space-4); color: var(--ink-soft); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.message { padding: var(--space-4) var(--density-gutter); color: var(--ink-soft); font-size: var(--text-sm); }
+@media (max-width: 599px) {
+  .controls { padding-inline: var(--space-4); }
+  .collection { padding-inline: var(--space-4); }
+  .controls .search { flex-grow: 1; }
+  .sort { margin-left: 0; }
+  .columns, .row { --version-width: 0px; }
+  .columns > span:nth-child(2), .version, .description { display: none; }
 }
