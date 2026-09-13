@@ -73,7 +73,8 @@ font stack, density override or competing appearance page.
 | `--measure-form`, `--measure-wide` | 704px, 1152px | Same |
 
 Type uses rem values at the default 16px root. Body line height is 1.5; headings
-use 1.3–1.35; controls use a single centered line. Inter's optical sizing stays
+use 1.3–1.35. Action buttons use a single centered line; inspection rows and
+disclosure labels align left and wrap as needed. Inter's optical sizing stays
 on. Monospace is reserved for identifiers, paths, code and runtime output.
 Use sentence case. Dense table captions use the existing density font token;
 do not shrink all body copy when Compact is selected.
