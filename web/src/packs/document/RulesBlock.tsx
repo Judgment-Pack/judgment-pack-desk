@@ -1,3 +1,4 @@
+import { PACK_TERMS } from '../terminology'
 /**
  * The rules, in the document's own order — which is the order they apply in.
  *
@@ -18,7 +19,7 @@ export function RulesBlock({ rules, at }: { rules: Rule[]; at: string }) {
   const { move, announcement, onCardKey } = useCardOrder(at, rules.length)
   return (
     <Block pointer={at}>
-      <h2 className={styles.heading}>Rules — document order</h2>
+      <h2 className={styles.heading}>{PACK_TERMS.rules.label}</h2>
       {editing && <OrderAnnouncement text={announcement} />}
       <ol className={styles.cards}>
         {rules.map((rule, index) =>

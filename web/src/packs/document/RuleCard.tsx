@@ -1,7 +1,8 @@
+import { PACK_TERMS, valueLabel } from '../terminology'
 /**
  * One rule, in the document's own order.
  *
- * Order is §7-significant, so the card carries its index as well as its id:
+ * Array order carries no priority. The card keeps its index as well as its id:
  * "the second rule" is a fact about this document and `/rules/1` is the
  * address that says it. In edit mode the index is also a control — the two
  * move buttons, and `Alt+ArrowUp`/`Alt+ArrowDown` inside the card.
@@ -79,7 +80,7 @@ export function RuleCard({
           → {rule.outcome}
         </Block>
         <Block pointer={`${at}/onUnknown`} as="span" className={styles.tagQuiet}>
-          on unknown: {rule.onUnknown}
+          {PACK_TERMS.onUnknown.label}: {valueLabel('onUnknown', rule.onUnknown)}
         </Block>
       </p>
       {rule.evidenceRequirementRefs !== undefined && (

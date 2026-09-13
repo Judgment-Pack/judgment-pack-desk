@@ -1,3 +1,4 @@
+import { PACK_TERMS } from '../terminology'
 /** What the pack cites. A locator is shown as the document spells it. */
 import type { Source } from '../../mcp/types'
 import { useEditing } from '../edit/editingContext'
@@ -12,7 +13,7 @@ export function SourcesBlock({ sources, at }: { sources: Source[]; at: string })
   const { editing } = useEditing()
   return (
     <Block pointer={at}>
-      <h2 className={styles.heading}>Sources</h2>
+      <h2 className={styles.heading}>{PACK_TERMS.sources.label}</h2>
       <ul className={styles.cards}>
         {sources.map((source, index) =>
           // Not an object: there are no fields to draw and nothing to point a

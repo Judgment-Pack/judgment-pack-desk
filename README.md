@@ -132,9 +132,10 @@ unwind would be worse than the residue.
   the what-if view and the test matrix. Described under
   [Pack view](#pack-view).
 
-Conditions are rendered as an indented tree and never paraphrased into English.
-A paraphrase of a policy condition would be a claim about what the policy
-means, and only the document gets to make that claim.
+Conditions use an indented tree with shared, plain-language labels for known
+operators and fields. These are presentation mappings: exact keys, identifiers,
+operand types and author values remain unchanged. Technical details expose the
+original JSON. Unknown operators retain their original spelling.
 
 **An evaluation and trace view:**
 
@@ -417,8 +418,10 @@ red badge in a nav rail would be a gate the runtime never issued.
 
 **Six regions**, on a CSS grid of a **definite** viewport height —
 `height: 100dvh` and not `min-height`, so the content row divides the viewport
-instead of growing to fit a long page, `.desk-main` is the route's scroll
-container, and the 28px strip stays on screen. The three pane sizes in the table are the
+instead of growing to fit a long page. Pages using `PageHeader` and `PageBody`
+keep chrome outside the scrolling body; other routes scroll in `.desk-main`.
+The Inspector likewise keeps its header and tabs outside its scrolling content,
+and the 28px strip stays on screen. The three pane sizes in the table are the
 configured defaults. The Inspector also accepts a per-project viewer width.
 The effective, viewport-bounded values are written onto the grid as `--rail-w`,
 `--inspector-w` and `--console-h`; collapse uses a second custom property.
@@ -1248,10 +1251,10 @@ is the file listing's own answer and nobody's inference: where the listing
 contains `jpack.lock.json`, one line says the project keeps a reviewed set and
 that updating it is the project's own step.
 
-The editor adds four more. **No English paraphrase of a condition**: `"5000"`
-keeps its quotes and `greater-than` stays the document's word, in the reading
-tree and in the builder alike, because "is greater than" is a second,
-unversioned statement of the rule. **No re-lock button** — `packs lock` is a
+The editor adds four more. **Display labels never alter condition data**:
+`"5000"` keeps its string type and the option labeled "is greater than" still
+writes `greater-than`. The shared terminology registry supplies labels; it
+does not infer new policy prose, rewrite author values, or change evaluation. **No re-lock button** — `packs lock` is a
 CLI verb (ADR-0019) and the lock line says whose step it is. **No generated row
 expectation**, and no claim to call `packs suggest`, which is CLI-only
 (ADR-0024). And **no form that refuses a value**: what an author types is
@@ -1314,7 +1317,7 @@ the pane actually has, updated as the window is dragged.
 does not.** An open console never renders below 80px — the smallest height the
 schema accepts for one — even where the cap would otherwise reach zero, because
 a pane of no height whose toggle still says it is open is a control that lies.
-`.desk-main` scrolls; it is the one that can afford to lose the pixels. The
+The route’s content scrolls within the remaining space. The
 one thing that never gives way is the strip: where the viewport has less room
 between the header and the strip than the floor asks for, the console takes all
 of it and no more. At a 203px viewport an open console renders 80px with 47px

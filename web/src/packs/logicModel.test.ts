@@ -19,7 +19,7 @@ describe('one projection for the pack views', () => {
     const model = projectLogic(fixture('exceptions'))
     const exceptions = model.groups.find(g => g.id === 'exceptions')!
     expect(exceptions.items.map(i => i.effect)).toEqual(expect.arrayContaining([
-      expect.stringContaining('Suppress '), expect.stringContaining('Force '), 'Request handoff'
+      expect.stringContaining('Exclude rule '), expect.stringContaining('Force '), 'Request handoff'
     ]))
     expect(matchingItems(exceptions, 'decline-outside-window').length).toBeGreaterThan(0)
   })
@@ -35,8 +35,9 @@ describe('one projection for the pack views', () => {
     const id = doc.rules[0]!.id
     expect(itemTrace(group, item)).toBeUndefined()
     expect(itemTrace(group, item, [])).toBe('Unreported')
-    expect(itemTrace(group, item, [{ stage: 'rule', id, condition: 'unknown' }])).toBe('unknown')
-    expect(itemTrace(group, item, [{ stage: 'rule', id, condition: 'not-evaluated', skipped: true }])).toBe('not-evaluated · skipped')
-    expect(itemTrace(group, item, [{ stage: 'rule', id, condition: 'not-evaluated', suppressed: true }])).toBe('not-evaluated · suppressed')
+    expect(itemTrace(group, item, [{ stage: 'rule', id, condition: 'false' }])).toBe('Not met')
+    expect(itemTrace(group, item, [{ stage: 'rule', id, condition: 'unknown' }])).toBe('Cannot determine')
+    expect(itemTrace(group, item, [{ stage: 'rule', id, condition: 'not-evaluated', skipped: true }])).toBe('Not evaluated')
+    expect(itemTrace(group, item, [{ stage: 'rule', id, condition: 'not-evaluated', suppressed: true }])).toBe('Not evaluated · excluded by a special case')
   })
 })

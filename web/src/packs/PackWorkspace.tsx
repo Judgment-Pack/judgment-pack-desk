@@ -6,6 +6,8 @@ import type { RootMember } from './document/members'
 import { useDocumentSelection } from './document/Block'
 import { Button, ButtonLink } from '../ui/Button'
 import { PageHeader } from '../ui/PageLayout'
+import { ExpandableText } from '../ui/ExpandableText'
+import { PACK_TERMS } from './terminology'
 import { Popover } from '../ui/Popover'
 import { useMediaQuery } from '../shell/useMediaQuery'
 import { entries, outcomeLabel, text } from './logicModel'
@@ -33,14 +35,13 @@ export function PackHeader({ packId, document: doc, current, actions, hasMatrix 
   packId: string; document?: PackDocument; current: PackSection; actions?: ReactNode; hasMatrix?: boolean; details?: ReactNode
 }) {
   const base = `/packs/${encodeURIComponent(packId)}`
-  const decision = isRecord(doc?.decision) ? doc.decision : undefined
   const narrow = useMediaQuery('(max-width: 599px)')
   return <PageHeader variant="title" title={text(doc?.title, packId)}
-    description={text(decision?.question, '') || undefined}
     navigation={<PackNavigation packId={packId} current={current} />}
     actions={<div className={styles.actions}>{!narrow && actions}
       <Popover title="Pack details" trigger={<Button variant="quiet" aria-label="More pack actions">{narrow ? '…' : 'More'}</Button>}>
         <dl className={styles.metadata}>
+          <div><dt>Title</dt><dd>{text(doc?.title, packId)}</dd></div>
           <div><dt>Version</dt><dd>{text(doc?.version)}</dd></div>
           <div><dt>Pack ID</dt><dd>{text(doc?.id, packId)}</dd></div>
         </dl>
@@ -49,6 +50,12 @@ export function PackHeader({ packId, document: doc, current, actions, hasMatrix 
       </Popover>
       {current !== 'test' && <ButtonLink variant="primary" to={`${base}/evaluate`}>Test pack</ButtonLink>}
     </div>} />
+}
+
+export function PackQuestion({ document: doc }: { document?: PackDocument }) {
+  const decision = isRecord(doc?.decision) ? doc.decision : undefined
+  const question = text(decision?.question, '')
+  return question ? <ExpandableText text={question} label="question" /> : null
 }
 
 /** A short brief of declared content, not a computed disposition. */
@@ -62,31 +69,31 @@ export function PackOverview({ document: doc, packId = '' }: { document: PackDoc
     <section>
       <h2>What this pack needs</h2>
       <dl className={styles.metadata}>
-        <div><dt>Applicability</dt><dd><Button variant="inline" onClick={() => select('/applicability')}>{doc.applicability ? 'Inspect declared scope' : 'No scope condition declared'}</Button></dd></div>
-        <div><dt>Evidence</dt><dd><Button variant="inline" onClick={() => select('/evidenceRequirements')}>
+        <div><dt>{PACK_TERMS.applicability.label}</dt><dd><Button variant="inline" onClick={() => select('/applicability')}>{doc.applicability ? 'View conditions' : 'No scope restriction set'}</Button></dd></div>
+        <div><dt>{PACK_TERMS.evidenceRequirements.label}</dt><dd><Button variant="inline" onClick={() => select('/evidenceRequirements')}>
           {evidence.filter(x => isRecord(x) && x.required === true).length} required · {evidence.filter(x => isRecord(x) && x.required === false).length} optional
         </Button></dd></div>
       </dl>
     </section>
-    <section className={styles.group} aria-label="Declared outcomes">
-      <h2>Declared outcomes</h2>
+    <section className={styles.group} aria-label={PACK_TERMS.outcomes.label}>
+      <h2>{PACK_TERMS.outcomes.label}</h2>
       <div className={styles.outcomes}>{outcomes.slice(0, 4).map((value, index) =>
         <Button key={index} variant="quiet" onClick={() => select(`/outcomes/${index}`)}>{isRecord(value) ? text(value.label, text(value.id)) : 'Unrecognized outcome'}</Button>)}
         {outcomes.length > 4 && <Button variant="quiet" onClick={() => select('/outcomes')}>View all {outcomes.length}</Button>}
         {outcomes.length === 0 && <p>No outcomes are declared.</p>}
       </div>
-      <p className={styles.muted}>{entries(doc.rules).length} rules and {entries(doc.exceptions).length} exceptions contribute to this decision.</p>
+      <p className={styles.muted}>{entries(doc.rules).length} decision rules and {entries(doc.exceptions).length} special cases contribute to this decision.</p>
       <ButtonLink to={`/packs/${encodeURIComponent(packId)}?view=logic`}>Explore logic →</ButtonLink>
     </section>
     <section className={styles.group}>
       <dl className={styles.metadata}>
-        <div><dt>Fallback</dt><dd>{doc.fallbackOutcome === undefined ? 'Not declared' : outcomeLabel(doc, doc.fallbackOutcome)}</dd></div>
+        <div><dt>{PACK_TERMS.fallbackOutcome.label}</dt><dd>{doc.fallbackOutcome === undefined ? 'Not declared' : outcomeLabel(doc, doc.fallbackOutcome)}</dd></div>
         <div><dt>Handoff target</dt><dd>{text(target?.name)}</dd></div>
       </dl>
       <p className={styles.muted}>A fallback outcome does not itself request a handoff.</p>
     </section>
     <section className={styles.group}>
-      <Button variant="inline" onClick={() => select('/sources')}>Sources · {entries(doc.sources).length}</Button>
+      <Button variant="inline" onClick={() => select('/sources')}>{PACK_TERMS.sources.label} · {entries(doc.sources).length}</Button>
       {typeof doc.description === 'string' && <details className={styles.description}><summary>Author description</summary><p>{doc.description}</p></details>}
     </section>
   </section>

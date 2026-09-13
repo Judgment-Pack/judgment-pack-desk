@@ -102,7 +102,7 @@ describe('what the form will not refuse', () => {
     // Change the operator first, which keeps the author's operand.
     const operator = document.getElementById(`${WHEN}/conditions/0/operator`)!
     fireEvent.click(within(operator).getByRole('combobox'))
-    fireEvent.click(await screen.findByRole('option', { name: 'in' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'is one of' }))
     await waitFor(() => expect(bytes.current).toContain('"operator": "in"'))
     // The operand is still the author's string, untouched by the change.
     expect(bytes.current).toContain('"value": "5000"')

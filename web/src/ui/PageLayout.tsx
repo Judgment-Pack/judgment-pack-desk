@@ -13,7 +13,7 @@ export function PageHeader({ title, context, meta, actions, description, navigat
   variant?: 'context' | 'title'
 }) {
   // Route chrome is not a second banner landmark; the shell owns that role.
-  return <header role="presentation" className={variant === 'title' ? styles.documentHeader : styles.header}>
+  return <header role="presentation" data-page-header className={variant === 'title' ? styles.documentHeader : styles.header}>
     <div className={variant === 'title' ? styles.documentHeading : styles.heading}>
     <h1 className={styles.title}>{title}{context && <>
       <span className={styles.separator} aria-hidden="true">/</span>
@@ -31,7 +31,7 @@ export function PageBody({ children, width = 'form' }: {
   children: ReactNode
   width?: 'form' | 'wide' | 'full'
 }) {
-  return <div className={styles.body}>
+  return <div className={styles.body} data-page-scroll>
     <div className={styles.content} data-width={width}>{children}</div>
   </div>
 }

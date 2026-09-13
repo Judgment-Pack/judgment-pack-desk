@@ -1,8 +1,8 @@
 /**
  * Which member the reader is looking at.
  *
- * An `IntersectionObserver` rooted on `.desk-main`, which is the shell's one
- * scroll container — the document does not scroll, so the browser's own
+ * An `IntersectionObserver` rooted on the page's scrolling body. The document
+ * does not scroll, so the browser's own
  * fragment behaviour and a viewport-rooted observer would both watch the wrong
  * box.
  *
@@ -54,7 +54,7 @@ export function useDocumentSpy(
 
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') return
-    const root = document.querySelector('.desk-main')
+    const root = document.querySelector('.desk-main [data-page-scroll]') ?? document.querySelector('.desk-main')
     const visible = new Set<string>()
     const observer = new IntersectionObserver(
       (entries) => {

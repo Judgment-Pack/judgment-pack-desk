@@ -3,8 +3,11 @@
   flex-direction: column;
   min-height: 0;
 }
+.root[data-pane-tabs] { height: 100%; overflow: hidden; }
+.root[data-pane-tabs] > .content { position: relative; flex: 1 1 auto; overflow: auto; scrollbar-gutter: stable; }
 
 .list {
+  flex-shrink: 0;
   display: flex;
   gap: 0.25rem;
   padding: 0 0.75rem;

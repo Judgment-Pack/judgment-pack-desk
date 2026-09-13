@@ -1,3 +1,4 @@
+import { PACK_TERMS, valueLabel } from '../terminology'
 /** One exception: a rule's card plus the effect and the rule it targets. */
 import type { KeyboardEvent } from 'react'
 import type { Exception } from '../../mcp/types'
@@ -55,7 +56,7 @@ export function ExceptionCard({
           {exception.id}
         </Block>
         <Block pointer={`${at}/effect`} as="span" className={styles.tag}>
-          {exception.effect}
+          {valueLabel('effect', exception.effect)}
         </Block>
         {exception.targetRule !== undefined && (
           <Block pointer={`${at}/targetRule`} as="span" className={styles.tagQuiet}>
@@ -81,7 +82,7 @@ export function ExceptionCard({
           </Block>
         )}
         <Block pointer={`${at}/onUnknown`} as="span" className={styles.tagQuiet}>
-          on unknown: {exception.onUnknown}
+          {PACK_TERMS.onUnknown.label}: {valueLabel('onUnknown', exception.onUnknown)}
         </Block>
       </p>
       {exception.sourceRefs !== undefined && (

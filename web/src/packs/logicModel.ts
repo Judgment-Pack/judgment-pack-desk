@@ -1,5 +1,6 @@
 import type { PackDocument, TraceEntry } from '../mcp/types'
 import { isRecord } from './document/MisshapenMember'
+import { PACK_TERMS, valueLabel } from './terminology'
 
 export interface LogicItem {
   pointer: string
@@ -19,7 +20,7 @@ export function outcomeLabel(doc: PackDocument, id: unknown): string {
 export function effectLabel(doc: PackDocument, value: unknown): string {
   if (!isRecord(value)) return 'Unrecognized entry'
   if (value.effect === 'force-outcome') return `Force ${outcomeLabel(doc, value.outcome)}`
-  if (value.effect === 'suppress-rule') return `Suppress ${text(value.targetRule)}`
+  if (value.effect === 'suppress-rule') return `Exclude rule ${text(value.targetRule)}`
   if (value.effect === 'escalate') return 'Request handoff'
   if (value.effect !== undefined) return text(value.effect, 'Unrecognized effect')
   return outcomeLabel(doc, value.outcome)
@@ -34,16 +35,16 @@ export function projectLogic(document: PackDocument): LogicProjection {
       effect: key === 'rules' || key === 'exceptions' ? effectLabel(document, value) : undefined
     }))
   return { document, groups: [
-    { id: 'applicability', label: 'Applicability', description: document.applicability === undefined ? 'No scope condition declared' : 'Declared scope condition', items: [{ pointer: '/applicability', label: 'Applicability', value: document.applicability }] },
-    { id: 'evidenceRequirements', label: 'Evidence', description: `${entries(document.evidenceRequirements).filter(x => isRecord(x) && x.required === true).length} required`, items: rows('evidenceRequirements') },
-    { id: 'rules', label: 'Rules', description: 'Candidate outcomes · no first-match priority', items: rows('rules') },
-    { id: 'exceptions', label: 'Exceptions', description: [...new Set(entries(document.exceptions).map(x => isRecord(x) ? text(x.effect) : 'Unrecognized effect'))].join(' · '), items: rows('exceptions') },
-    { id: 'resolution', label: 'Resolution', description: 'Outcome · not applicable · unresolved. Handoff is separate.', items: [
-      { pointer: '/fallbackOutcome', label: 'Fallback outcome', value: document.fallbackOutcome },
-      { pointer: '/escalation', label: 'Handoff', value: document.escalation }
+    { id: 'applicability', ...PACK_TERMS.applicability, description: document.applicability === undefined ? 'No scope restriction is set.' : PACK_TERMS.applicability.description, items: [{ pointer: '/applicability', label: PACK_TERMS.applicability.label, value: document.applicability }] },
+    { id: 'evidenceRequirements', ...PACK_TERMS.evidenceRequirements, description: `${entries(document.evidenceRequirements).filter(x => isRecord(x) && x.required === true).length} required evidence items`, items: rows('evidenceRequirements') },
+    { id: 'rules', ...PACK_TERMS.rules, items: rows('rules') },
+    { id: 'exceptions', ...PACK_TERMS.exceptions, items: rows('exceptions') },
+    { id: 'resolution', ...PACK_TERMS.resolution, items: [
+      { pointer: '/fallbackOutcome', label: PACK_TERMS.fallbackOutcome.label, value: document.fallbackOutcome },
+      { pointer: '/escalation', label: PACK_TERMS.escalation.label, value: document.escalation }
     ] },
-    { id: 'outcomes', label: 'Declared outcomes', description: 'Possible outcome labels', items: rows('outcomes') },
-    { id: 'sources', label: 'Sources', description: 'Inspect citations on demand', items: rows('sources') }
+    { id: 'outcomes', ...PACK_TERMS.outcomes, items: rows('outcomes') },
+    { id: 'sources', ...PACK_TERMS.sources, items: rows('sources') }
   ] }
 }
 export function selectedItem(model: LogicProjection, pointer: string | null): { group: LogicGroup; item: LogicItem } | undefined {
@@ -64,5 +65,5 @@ export function itemTrace(group: LogicGroup, item: LogicItem, trace?: readonly T
   if (!stage) return undefined
   const id = isRecord(item.value) ? item.value.id : undefined
   const found = trace.find(t => t.stage === stage && (stage === 'applicability' || t.id === id))
-  return found ? `${found.condition}${found.suppressed ? ' · suppressed' : ''}${found.skipped ? ' · skipped' : ''}` : 'Unreported'
+  return found ? `${valueLabel('condition', found.condition)}${found.suppressed ? ' · excluded by a special case' : ''}${found.skipped && found.condition !== 'not-evaluated' ? ' · not evaluated' : ''}` : 'Unreported'
 }

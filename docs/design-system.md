@@ -396,7 +396,8 @@ The hint reveals only clipped visible values; names, questions and versions
 that fit remain quiet. Beyond 320 characters, a short hint directs the reader
 to Preview. Preview wraps the entire description without truncation and works
 on touch screens, where collection descriptions may be hidden. Selection and
-selected text remain neutral. Full pack-page questions continue to wrap.
+selected text remain neutral. Pack questions live in the scrolling body. A two-line preview offers Read full
+question when measured text overflows; expansion keeps the header compact.
 
 Unavailable-action explanations belong in visible help associated with
 `aria-describedby`, including Create, Accept, Fix and unavailable editor modes.
@@ -471,3 +472,43 @@ reloads, and uses the existing neutral selected-node treatment.
 The integration follows React Flow’s
 [interaction props](https://reactflow.dev/api-reference/react-flow) and
 [attribution option](https://reactflow.dev/api-reference/types/pro-options).
+
+
+## Plain-language pack labels and contextual help
+
+`packs/terminology.ts` owns display labels, concept descriptions and explicit
+value mappings. Use these consistently across Overview, Logic, document reading,
+Inspector, forms and trace observations. Stored JSON, pointers, IDs, authored
+labels and operand types remain exact. Unknown keys and values retain their
+spelling. Never infer a friendly alias for arbitrary author data or merge
+unknown, false, skipped and unreported states.
+
+Use a clear heading and one visible sentence for an essential concept. Graph
+nodes use the same names and open their group's content in Inspector. Complex
+settings such as unknown-condition policy and fallback use `InfoHelp`: a neutral
+info button beside the label, backed by the shared Radix `Popover`. Explanations
+with examples support click/tap, keyboard focus, Escape and focus restoration.
+They do not belong inside a tooltip or require hovering over ordinary prose.
+Existing `Tooltip` remains for optional action hints and shortcuts.
+
+`ExpandableText` displays a measured two-line preview of long questions, with
+an explicit keyboard/touch control for the full text. It changes only the body;
+pack titles and actions stay in the header. Full titles remain in More details.
+
+## Pinned pane headers
+
+`data-layout="page"` declares the shared column layout: `PageHeader` does not
+scroll and `PageBody` (`data-page-scroll`) owns the remaining scrollable space.
+Page wrappers must propagate the available height and allow children to shrink.
+The document observer watches this body, so navigation and deep links use the
+same visible region. Scrolling content never passes behind the header.
+
+`RightPane` holds the pane header above its scrollable slot. `Tabs scrollable`
+keeps the tab list above the active panel's scroll region in both docked and
+drawer forms. Its `resetScrollKey` starts new selections at their heading;
+outline scroll retention remains independent. Pane scrolling never moves the
+other pane, shell header or bottom strip. Keep existing neutral surfaces,
+borders, corner clipping and keyboard focus treatment.
+
+See [the terminology and pane review](reviews/plain-language-panes.md) and run
+`scripts/pane-help-check.mjs` for actual-browser regression coverage.

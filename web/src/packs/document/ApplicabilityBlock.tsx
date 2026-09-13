@@ -1,3 +1,4 @@
+import { PACK_TERMS } from '../terminology'
 /**
  * The condition that says where this pack decides at all.
  *
@@ -28,8 +29,8 @@ export function ApplicabilityBlock({
   const { editing } = useEditing()
   return (
     <section>
-      <h2 className={styles.heading}>Applicability</h2>
-      <p className={styles.note}>The pack decides only where this holds.</p>
+      <h2 className={styles.heading}>{PACK_TERMS.applicability.label}</h2>
+      <p className={styles.note}>{PACK_TERMS.applicability.description}</p>
       {/*
         **The same builder a rule's `when` gets.** It is the same kind of object
         and editing it should not depend on where it sits — and this was the one

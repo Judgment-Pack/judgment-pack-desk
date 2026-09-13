@@ -1,3 +1,4 @@
+import { PACK_TERMS } from '../terminology'
 /** The exceptions, in the document's own order. */
 import type { Exception } from '../../mcp/types'
 import { OrderAnnouncement, useCardOrder } from '../edit/CardForm'
@@ -12,7 +13,7 @@ export function ExceptionsBlock({ exceptions, at }: { exceptions: Exception[]; a
   const { move, announcement, onCardKey } = useCardOrder(at, exceptions.length)
   return (
     <Block pointer={at}>
-      <h2 className={styles.heading}>Exceptions</h2>
+      <h2 className={styles.heading}>{PACK_TERMS.exceptions.label}</h2>
       {editing && <OrderAnnouncement text={announcement} />}
       <ol className={styles.cards}>
         {exceptions.map((exception, index) =>

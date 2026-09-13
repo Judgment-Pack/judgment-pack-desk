@@ -12,6 +12,7 @@
   background: var(--bg);
 }
 .heading { display: contents; }
+.header, .documentHeader { flex: 0 0 auto; }
 .documentHeader { background: var(--bg); border-bottom: 1px solid var(--border); }
 .documentHeading {
   display: grid;
@@ -21,7 +22,10 @@
   padding: var(--space-3) var(--density-gutter) var(--space-2);
 }
 .documentHeading .title {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
   margin: 0;
   font-size: var(--text-page);
   font-weight: 500;
@@ -60,7 +64,7 @@
   color: var(--ink);
 }
 .actions { flex-shrink: 0; }
-.body { padding: var(--density-gutter) var(--density-gutter) var(--space-7); }
+.body { position: relative; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: auto; scrollbar-gutter: stable; padding: var(--density-gutter) var(--density-gutter) var(--space-7); }
 .content { min-width: 0; }
 .content[data-width='form'] { max-width: var(--measure-form); }
 .content[data-width='wide'] { max-width: var(--measure-wide); }

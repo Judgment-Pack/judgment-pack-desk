@@ -3171,32 +3171,22 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
   mutate web "the rules member is treated as optional" "$MB" \
     "  {
     id: 'rules',
-    label: 'Rules',
+    label: PACK_TERMS.rules.label,
     members: ['rules'],
     pointer: '/rules',
     counted: true,
     required: true
   }," \
-    "  { id: 'rules', label: 'Rules', members: ['rules'], pointer: '/rules', counted: true },"
+    "  { id: 'rules', label: PACK_TERMS.rules.label, members: ['rules'], pointer: '/rules', counted: true },"
   # Every omission at the end would have passed the ordering test this replaces:
   # it filtered every omission out of the actual output before comparing.
   mutate web "an omission is drawn after the members rather than in its place" "$MB" \
     '    order.splice(anchor + 1, 0, unit)' \
     '    void anchor
     order.push(unit)'
-  mutate web "the condition tree paraphrases" "$CT" \
-    '        <Block pointer={`${at}/operator`} as="span" className={styles.op}>
-          {String(node.operator ?? '"''"')}
-        </Block>{'"' '"'}
-        <Block pointer={`${at}/value`} as="code" className={styles.literal}>
-          <Operand value={node.value} />
-        </Block>' \
-    '        <Block pointer={`${at}/operator`} as="span" className={styles.op}>
-          is greater than
-        </Block>{'"' '"'}
-        <Block pointer={`${at}/value`} as="code" className={styles.literal}>
-          {String(node.value)}
-        </Block>'
+  mutate web "the condition tree loses the operand type" "$CT" \
+    '  if (!Array.isArray(value)) return <>{JSON.stringify(value)}</>' \
+    '  if (!Array.isArray(value)) return <>{String(value)}</>'
 
   # 12. The pane's empty state used to stand beside every published panel.
   mutate web "the empty state stands beside a published panel" "$RP" \
@@ -3750,13 +3740,14 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
   # diagnostic a screen reader never reaches.
   mutate web "a diagnostic is printed beside its field rather than described to it" "$PF" \
     '      <Field
-        label={label}
-        hint={hint}
+        label={pointerLabel(pointer, label)}
+        help={explanation && <InfoHelp title={term!.label}>{explanation}</InfoHelp>}
+        hint={hint ?? (explanation ? term?.description : undefined)}
         error={found.length === 0 ? undefined : <Diagnostics found={found} />}
       >
         {children}
       </Field>' \
-    '      <Field label={label} hint={hint}>
+    '      <Field label={pointerLabel(pointer, label)} hint={hint ?? (explanation ? term?.description : undefined)}>
         {children}
       </Field>
       {found.length > 0 && <Diagnostics found={found} />}'

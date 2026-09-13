@@ -1,3 +1,4 @@
+import { PACK_TERMS } from '../terminology'
 /** What the pack requires before it decides, as the document declares it. */
 import type { EvidenceRequirement } from '../../mcp/types'
 import { useEditing } from '../edit/editingContext'
@@ -18,7 +19,7 @@ export function EvidenceBlock({
   const { editing } = useEditing()
   return (
     <Block pointer={at}>
-      <h2 className={styles.heading}>Evidence requirements</h2>
+      <h2 className={styles.heading}>{PACK_TERMS.evidenceRequirements.label}</h2>
       <ul className={styles.cards}>
         {requirements.map((requirement, index) =>
           // Not an object: there are no fields to draw and nothing to point a

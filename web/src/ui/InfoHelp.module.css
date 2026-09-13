@@ -1,0 +1,2 @@
+.trigger { display: inline-flex; vertical-align: middle; min-width: var(--space-6); min-height: var(--space-6); padding: var(--space-1); color: var(--ink-soft); }
+.description { margin: 0; font-size: var(--text-sm); color: var(--ink-soft); overflow-wrap: anywhere; }

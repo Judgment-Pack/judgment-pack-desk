@@ -17,9 +17,8 @@
  * the reading tree holds it. A runtime may grow a sixth kind; offering
  * controls for it would be editing a condition this desk does not understand.
  *
- * **Nothing here paraphrases.** `greater-than` stays the document's word and
- * `"5000"` keeps its quotes in the bytes; the operator is a Select over the
- * schema's own list, not "is greater than".
+ * Known operators have shared display labels. Select values and document
+ * writes remain the schema's exact values; operand types remain unchanged.
  *
  * One deviation from "every keystroke reaches the buffer", and it is here
  * rather than hidden: the operand controls that take **arbitrary JSON** hold
@@ -52,6 +51,7 @@ import { ownerOf, useEditing } from './editingContext'
 import { PointerField } from './PointerField'
 import { DECIMAL_STRING, ENUMS, operandControl } from './shape'
 import { bytesAt, setRawJson, type Buffered } from './writes'
+import { valueLabel } from '../terminology'
 import styles from './ConditionBuilder.module.css'
 
 export function ConditionBuilder({ at }: { at: string }) {
@@ -125,12 +125,12 @@ function ConditionNode({
       <div role="group" aria-label={label} className={styles.frame} data-depth={depth}>
         <div className={styles.head}>
           <label className={styles.kindLabel} htmlFor={`${at}-kind`}>
-            kind
+            Condition type
           </label>
           <Select
             id={`${at}-kind`}
             value={kind}
-            options={ENUMS.conditionOp.map((op) => ({ value: op, label: op }))}
+            options={ENUMS.conditionOp.map((op) => ({ value: op, label: valueLabel('op', op) }))}
             onValueChange={(next) => write((current) => changeKind(current, at, next))}
           />
           {(kind === 'all' || kind === 'any') && (
@@ -260,7 +260,7 @@ function FactNode({ at }: { at: string }) {
             {...wiring}
             value={operator}
             placeholder="not declared"
-            options={withHeld(ENUMS.factOperator, operator)}
+            options={withHeld(ENUMS.factOperator, operator).map(option => ({ ...option, label: valueLabel('operator', option.value) }))}
             onValueChange={(next) => write((current) => setOperator(current, at, next))}
           />
         )}

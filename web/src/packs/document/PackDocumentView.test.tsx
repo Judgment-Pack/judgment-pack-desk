@@ -273,15 +273,15 @@ describe('the minimal document', () => {
     draw(minimal)
     fireEvent.click(screen.getByRole('button', { name: /On this page/ }))
     const outline = screen.getByRole('navigation', { name: 'Members' })
-    expect(outline.textContent).toContain('Applicability — not declared')
-    expect(outline.textContent).toContain('Escalation — not declared')
+    expect(outline.textContent).toContain('When this pack applies — not declared')
+    expect(outline.textContent).toContain('Handoff settings — not declared')
     // **Every entry is a link, absent ones included.** The document renders an
     // addressed block for an omitted member — that is what `OmittedMember` is
     // for — so an entry that could not reach it was the only line in this nav
     // naming something you could not go to. The words stay: the link goes to
     // the statement of absence, and the entry still says which it is.
-    expect(screen.getByRole('link', { name: /Rules/ })).toBeTruthy()
-    const absent = screen.getByRole('link', { name: /Applicability/ })
+    expect(screen.getByRole('link', { name: /Decision rules/ })).toBeTruthy()
+    const absent = screen.getByRole('link', { name: /When this pack applies/ })
     expect(absent.textContent).toContain('not declared')
     expect(absent.getAttribute('href')).toContain('#/applicability')
     // The block it names is on the page and carries that pointer.
@@ -311,9 +311,9 @@ describe('the minimal document', () => {
     draw(full)
     fireEvent.click(screen.getByRole('button', { name: /On this page/ }))
     const outline = screen.getByRole('navigation', { name: 'Members' })
-    expect(outline.textContent).toContain('Outcomes 2')
-    expect(outline.textContent).toContain('Rules 2')
-    expect(outline.textContent).toContain('Exceptions 1')
+    expect(outline.textContent).toContain('Possible outcomes 2')
+    expect(outline.textContent).toContain('Decision rules 2')
+    expect(outline.textContent).toContain('Special cases 1')
   })
 })
 

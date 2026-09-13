@@ -5,6 +5,7 @@ import type { AnchoredDiagnostic } from '../checks'
 import { diagnosticsFor } from '../checks'
 import { valueAt } from '../pointers'
 import { isRecord } from '../document/MisshapenMember'
+import { fieldLabel } from '../terminology'
 import { referencesFor } from '../references'
 import { ChecksTab } from './ChecksTab'
 import { MemberTab } from './MemberTab'
@@ -82,7 +83,8 @@ export function PackInspector({
   const attention = stale || pending || unavailable !== undefined || truncation !== undefined || diagnostics.length > 0
   const value = subtreeAt(doc, at)
   const heading = isRecord(value) ? [value.label, value.title, value.id].find(candidate => typeof candidate === 'string') : undefined
-  const name = at.split('/').filter(Boolean).at(-1)?.replace(/([a-z])([A-Z])/g, '$1 $2') ?? 'Document'
+  const key = at.split('/').filter(Boolean).at(-1) ?? 'Document'
+  const name = fieldLabel(key, key.replace(/([a-z])([A-Z])/g, '$1 $2'))
 
   return <div className={supplemental ? styles.supplemental : styles.inspector}>
     {!supplemental && <h2>{typeof heading === 'string' ? heading : name.charAt(0).toUpperCase() + name.slice(1)}</h2>}

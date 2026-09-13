@@ -445,13 +445,13 @@ describe('map group addresses', () => {
 
   it('restores a group deep link, then replaces it with the chosen real member pointer', async () => {
     const { router, revealed } = draw(SERVED, {}, '/packs/vendor-onboarding?view=logic&layout=map&group=resolution', { inspector: true })
-    await screen.findByRole('heading', { name: 'Resolution · 2' })
+    await screen.findByRole('heading', { name: 'Result handling · 2' })
     await waitFor(() => expect(revealed).toEqual(['reveal']))
-    fireEvent.click(screen.getByRole('button', { name: 'Handoff' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Handoff settings' }))
     await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('at')).toBe('/escalation'))
     expect(new URLSearchParams(router.state.location.search).has('group')).toBe(false)
     expect(router.state.historyAction).toBe('REPLACE')
-    expect(screen.queryByRole('heading', { name: 'Resolution · 2' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Result handling · 2' })).toBeNull()
   })
 })
 
@@ -467,7 +467,7 @@ describe('the outline', () => {
     fireEvent.click(screen.getByRole('button', { name: /On this page/ }))
     const outline = screen.getByRole('navigation', { name: 'Members' })
     await waitFor(() =>
-      expect(outline.querySelector('[aria-current="true"]')?.textContent).toContain('Rules')
+      expect(outline.querySelector('[aria-current="true"]')?.textContent).toContain('Decision rules')
     )
   })
 
@@ -862,7 +862,7 @@ describe('the guided reading workspace', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Logic' }))
     fireEvent.click(await screen.findByRole('radio', { name: 'List' }))
     await waitFor(() => expect(document.querySelector('[data-logic-pointer="/rules/0"]')).not.toBeNull())
-    expect(screen.getByRole('button', { name: 'Sources' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Source references' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'More pack actions' }))
     fireEvent.click(await screen.findByRole('link', { name: 'Full document' }))
     await screen.findByRole('button', { name: /On this page/ })

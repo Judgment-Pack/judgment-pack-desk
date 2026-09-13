@@ -62,8 +62,8 @@ describe('EvaluationView', () => {
     expect(lists).toEqual(['1', '2', '3'])
 
     expect(container.textContent).toContain('sanctioned-jurisdiction')
-    expect(container.textContent).toContain('on unknown: escalate')
-    expect(container.textContent).toContain('skipped')
+    expect(container.textContent).toContain('If this condition is unknown: Keep the result unresolved')
+    expect(container.textContent).toContain('Not evaluated')
     // An entry with no id is said to be unnamed rather than shown blank.
     expect(container.textContent).toContain('unnamed applicability condition')
   })

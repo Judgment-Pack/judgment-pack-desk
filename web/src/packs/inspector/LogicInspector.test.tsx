@@ -25,7 +25,7 @@ describe('contextual pack inspection', () => {
   it('makes an empty group inspectable without inventing a member', () => {
     render(<LogicInspector model={projectLogic({ ...doc, sources: [] })} at={null} groupId="sources" pane="detail" query=""
       onSelect={() => {}} onOutline={() => {}} outlineScroll={{ current: 0 }} advanced={null} />)
-    expect(screen.getByRole('heading', { name: 'Sources · 0' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Source references · 0' })).toBeTruthy()
     expect(screen.getByText('None declared.')).toBeTruthy()
     expect(document.querySelector('[data-pointer]')).toBeNull()
   })
@@ -42,7 +42,7 @@ describe('contextual pack inspection', () => {
     render(<LogicInspector model={projectLogic(doc)} at="/rules/1" pane="detail" query=""
       onSelect={() => {}} onOutline={() => {}} outlineScroll={{ current: 0 }} advanced={null} />)
     expect(document.querySelector('[data-pointer]')).toBeNull()
-    expect(screen.getByText('greater-than')).toBeTruthy()
+    expect(screen.getByText('is greater than')).toBeTruthy()
     const raw = screen.getByText('Exact condition JSON').closest('details')!
     expect(raw.open).toBe(false)
     expect(JSON.parse(raw.querySelector('pre')!.textContent!)).toEqual(doc.rules[1]!.when)

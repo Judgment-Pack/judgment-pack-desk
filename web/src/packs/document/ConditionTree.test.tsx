@@ -50,17 +50,17 @@ describe('an ordered comparison', () => {
     expect(screen.queryByText('5000')).toBeNull()
   })
 
-  it('keeps the document’s own operator word and never prose', () => {
+  it('uses a known comparison label without changing the condition or operand', () => {
     const { container } = draw(full.rules[1]!.when, '/rules/1/when')
-    expect(screen.getByText('greater-than')).toBeTruthy()
-    for (const prose of ['is greater than', 'greater than ', 'must be', 'at least']) {
+    expect(screen.getByText('is greater than')).toBeTruthy()
+    for (const prose of ['must be', 'at least']) {
       expect(container.textContent, prose).not.toContain(prose)
     }
   })
 })
 
 describe('the five node kinds', () => {
-  it('renders all of them, each as the schema names it', () => {
+  it('renders every known kind with its shared display label', () => {
     const { container } = draw(
       {
         op: 'all',
@@ -73,7 +73,7 @@ describe('the five node kinds', () => {
       '/rules/0/when'
     )
     const text = container.textContent ?? ''
-    for (const word of ['all of', 'any of', 'not', 'literal', 'evidence-present', 'in']) {
+    for (const word of ['All conditions', 'Any condition', 'Not', 'Fixed condition', 'Evidence is present', 'is one of']) {
       expect(text, word).toContain(word)
     }
     expect(container.querySelector('[data-pointer="/rules/0/when/conditions/0/value"]')!.textContent).toBe('["x"]')

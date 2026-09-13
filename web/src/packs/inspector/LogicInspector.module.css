@@ -1,5 +1,5 @@
 .details, .outline { padding: var(--space-4); font-size: var(--text-sm); min-width: 0; }
-.outline { position: relative; height: max(20rem, calc(var(--main-room, 100dvh) - 8rem)); overflow: auto; }
+.outline { position: relative; height: 100%; overflow: auto; }
 .details h2, .outline h2 { font-size: var(--text-heading); margin: var(--space-3) 0; overflow-wrap: anywhere; }
 .details h3, .outline h3 { font-size: var(--text-control); margin: 0 0 var(--space-2); }
 .details p, .details code, .details pre { overflow-wrap: anywhere; }

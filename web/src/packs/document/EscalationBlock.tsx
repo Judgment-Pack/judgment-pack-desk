@@ -1,3 +1,4 @@
+import { PACK_TERMS, valueLabel } from '../terminology'
 /**
  * Where the pack sends a decision it will not make, and what triggers that.
  *
@@ -20,7 +21,8 @@ export function EscalationBlock({ escalation, at }: { escalation: Escalation; at
   const { editing } = useEditing()
   return (
     <Block pointer={at}>
-      <h2 className={styles.heading}>Escalation</h2>
+      <h2 className={styles.heading}>{PACK_TERMS.escalation.label}</h2>
+      <p className={styles.note}>{PACK_TERMS.escalation.description}</p>
       {editing ? (
         <>
           <StringListField
@@ -70,8 +72,8 @@ export function EscalationBlock({ escalation, at }: { escalation: Escalation; at
                 <Block pointer={`${at}/triggers`} as="span" className={styles.refs}>
                   {(Array.isArray(escalation.triggers) ? escalation.triggers : []).map(
                     (trigger) => (
-                      <span key={trigger} className={styles.tagQuiet}>
-                        {trigger}
+                      <span key={valueLabel('triggers', trigger)} className={styles.tagQuiet}>
+                        {valueLabel('triggers', trigger)}
                       </span>
                     )
                   )}
