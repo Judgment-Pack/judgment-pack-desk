@@ -67,6 +67,6 @@ describe('the connection notices', () => {
   it('offers a retry on the blocked reason while a reconnect is pending', () => {
     renderPage({ status: 'reconnecting', error: new Error('closed'), everConnected: false, attempt: 2 })
     expect(screen.getByText(/Retrying automatically \(attempt 2\)/)).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Try now' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Retry connection' })).toBeTruthy()
   })
 })

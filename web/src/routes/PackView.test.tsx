@@ -447,7 +447,7 @@ describe('map group addresses', () => {
     const { router, revealed } = draw(SERVED, {}, '/packs/vendor-onboarding?view=logic&layout=map&group=resolution', { inspector: true })
     await screen.findByRole('heading', { name: 'Result handling · 2' })
     await waitFor(() => expect(revealed).toEqual(['reveal']))
-    fireEvent.click(screen.getByRole('button', { name: 'Handoff settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'View details: Handoff settings' }))
     await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('at')).toBe('/escalation'))
     expect(new URLSearchParams(router.state.location.search).has('group')).toBe(false)
     expect(router.state.historyAction).toBe('REPLACE')
@@ -845,6 +845,27 @@ describe('arriving at an address that names a member', () => {
 
 describe('the guided reading workspace', () => {
   beforeEach(() => chassis(PACK_TEXT, DIGEST))
+  it('opens overview information in the Inspector without executing an outcome', async () => {
+    const { router, calls } = draw(SERVED, {}, '/packs/vendor-onboarding', { inspector: true })
+    const overview = await screen.findByRole('region', { name: 'Pack overview' })
+    for (const [name, pointer] of [
+      ['View conditions', '/applicability'],
+      ['View evidence needed', '/evidenceRequirements'],
+      ['View outcome: Approve', '/outcomes/0'],
+      ['View outcome: Decline', '/outcomes/1'],
+      ['View source references', '/sources']
+    ]) {
+      const control = Array.from(overview.querySelectorAll('button')).find(button => button.getAttribute('aria-label') === name)!
+      fireEvent.click(control)
+      await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('at')).toBe(pointer))
+      expect(control.getAttribute('aria-current')).toBe('true')
+      expect(overview.querySelectorAll('[aria-current="true"]')).toHaveLength(1)
+    }
+    expect(slotTarget!.querySelectorAll('pre')).toHaveLength(1)
+    expect(slotTarget!.querySelector('pre')!.closest('details')?.open).toBe(false)
+    expect([...new Set(calls.map(call => call.name))].sort()).toEqual(['get_pack', 'list_packs', 'validate'])
+    expect(screen.getByRole('link', { name: 'View logic' }).getAttribute('href')).toBe('/packs/vendor-onboarding?view=logic')
+  })
   it('preserves a closed inspector when switching representations with a selected item', async () => {
     const { revealed, router } = draw(SERVED, {}, '/packs/vendor-onboarding?view=logic&layout=list&at=/rules/1')
     await screen.findByRole('radio', { name: 'List' })

@@ -1,3 +1,4 @@
+import { Disclosure } from '../../ui/Disclosure'
 /**
  * The selected member's own JSON subtree, and where the bytes came from.
  *
@@ -79,14 +80,12 @@ export function MemberTab({
       ) : (
         <>
           <MemberValue value={subtree} />
-          {(subtree === null || typeof subtree !== 'object') && <details className={styles.disclosure}>
-            <summary>Exact value JSON</summary><CodeBlock text={JSON.stringify(subtree, null, 2)} />
-          </details>}
+          {(subtree === null || typeof subtree !== 'object') && <Disclosure title="Exact value JSON" className={styles.disclosure}><CodeBlock text={JSON.stringify(subtree, null, 2)} />
+          </Disclosure>}
         </>
       ))}
 
-      <details className={styles.disclosure}>
-      <summary>File details</summary>
+      <Disclosure title="File details" className={styles.disclosure}>
       <dl className={styles.provenance}>
         {meta.path !== undefined && (
           <div className={styles.row}>
@@ -118,7 +117,7 @@ export function MemberTab({
         )}
       </dl>
       {bound && <p className={styles.bound}>matches the file the editor holds</p>}
-      </details>
+      </Disclosure>
       {dirty === true && (
         <p className={styles.unbound}>
           These figures are the file on disk. The editor holds changes that are not in it.

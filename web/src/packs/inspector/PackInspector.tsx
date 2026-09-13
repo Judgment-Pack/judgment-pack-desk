@@ -10,6 +10,7 @@ import { referencesFor } from '../references'
 import { ChecksTab } from './ChecksTab'
 import { MemberTab } from './MemberTab'
 import { ReferencesTab } from './ReferencesTab'
+import { Disclosure } from '../../ui/Disclosure'
 import styles from './PackInspector.module.css'
 
 export function PackInspector({
@@ -91,17 +92,15 @@ export function PackInspector({
     <MemberTab pointer={at} subtree={subtreeAt(doc, at)} meta={meta}
       fileSha256={fileSha256} baseSha256={baseSha256} fileBytes={fileBytes}
       dirty={dirty} metadataOnly={supplemental} />
-    <details className={styles.disclosure} open={tab === 'references'}
+    <Disclosure title={`References · ${references.length}`} className={styles.disclosure} open={tab === 'references'}
       onToggle={event => { if (event.currentTarget.open) onTabChange('references'); else if (tab === 'references') onTabChange('member') }}>
-      <summary>References · {references.length}</summary>
       <ReferencesTab references={references} packId={packId} />
-    </details>
-    <details className={styles.disclosure} open={tab === 'checks' || attention}
+    </Disclosure>
+    <Disclosure title={`Checks${pending ? ' · Checking…' : attention ? ' · Attention' : ` · ${diagnostics.length}`}`} className={styles.disclosure} open={tab === 'checks' || attention}
       onToggle={event => { if (event.currentTarget.open && !attention) onTabChange('checks'); else if (!event.currentTarget.open && tab === 'checks') onTabChange('member') }}>
-      <summary>Checks{pending ? ' · Checking…' : attention ? ' · Attention' : ` · ${diagnostics.length}`} </summary>
       <ChecksTab diagnostics={diagnostics} truncation={truncation} stale={stale}
         pending={pending} checkedWhat={checkedWhat} unavailable={unavailable} />
-    </details>
+    </Disclosure>
   </div>
 }
 

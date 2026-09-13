@@ -1,6 +1,8 @@
 import { useLayoutEffect, useRef, type MutableRefObject, type ReactNode } from 'react'
 import type { TraceEntry } from '../../mcp/types'
 import { Button } from '../../ui/Button'
+import { InspectionRow } from '../../ui/InspectionRow'
+import { Disclosure } from '../../ui/Disclosure'
 import { CodeBlock } from '../../ui/CodeBlock'
 import { InfoHelp } from '../../ui/InfoHelp'
 import { fieldLabel, packTerm, PACK_TERMS, TERM_HELP, valueLabel } from '../terminology'
@@ -8,7 +10,7 @@ import { MemberValue } from './MemberValue'
 import { ConditionTree } from '../document/ConditionTree'
 import { isRecord } from '../document/MisshapenMember'
 import { valueAt } from '../pointers'
-import { itemTrace, matchingItems, outcomeLabel, selectedItem, text, type LogicProjection } from '../logicModel'
+import { itemTrace, matchingItems, outcomeLabel, selectedItem, text, type LogicGroup, type LogicItem, type LogicProjection } from '../logicModel'
 import styles from './LogicInspector.module.css'
 
 export function LogicInspector({ model, at, groupId, pane, query, onSelect, onOutline, outlineScroll, trace, advanced }: {
@@ -20,6 +22,13 @@ export function LogicInspector({ model, at, groupId, pane, query, onSelect, onOu
   const outline = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => { if (outline.current) outline.current.scrollTop = outlineScroll.current }, [pane, outlineScroll])
   const selected = selectedItem(model, at)
+  const row = (group: LogicGroup, item: LogicItem) => {
+    const observation = itemTrace(group, item, trace)
+    return <InspectionRow key={item.pointer} label={item.label}
+    aria-label={`View details: ${item.label}`} current={selected?.item.pointer === item.pointer}
+    data-outline-pointer={item.pointer} onClick={() => onSelect(item.pointer)}
+    description={item.effect || observation ? <>{item.effect}{observation && <span className={styles.observation}>{observation}</span>}</> : undefined} />
+  }
   if (pane === 'outline') return <div className={styles.outline} ref={outline} onScroll={e => { outlineScroll.current = e.currentTarget.scrollTop }}>
     <h2>Pack outline</h2>
     {model.groups.map(group => {
@@ -27,12 +36,7 @@ export function LogicInspector({ model, at, groupId, pane, query, onSelect, onOu
       if (!matches.length) return null
       return <section key={group.id} className={styles.group}>
         <h3>{group.label}{group.items.length > 1 ? ` · ${group.items.length}` : ''}</h3>
-        {matches.map(item => <button type="button" key={item.pointer} className={styles.outlineRow}
-          aria-pressed={selected?.item.pointer === item.pointer} data-outline-pointer={item.pointer}
-          onClick={() => onSelect(item.pointer)}>{item.label}
-          {item.effect && <span>{item.effect}</span>}
-          {itemTrace(group, item, trace) && <span className={styles.observation}>{itemTrace(group, item, trace)}</span>}
-        </button>)}
+        {matches.map(item => row(group, item))}
       </section>
     })}
     {!model.groups.some(g => matchingItems(g, query).length) && <p role="status">No matching items.</p>}
@@ -43,12 +47,7 @@ export function LogicInspector({ model, at, groupId, pane, query, onSelect, onOu
     <Button variant="quiet" onClick={onOutline}>← Outline</Button>
     <h2>{inspectedGroup.label} · {inspectedGroup.items.length}</h2>
     <p className={styles.meta}>{inspectedGroup.description}</p>
-    {inspectedGroup.items.map(item => <button type="button" key={item.pointer}
-      className={styles.outlineRow} data-outline-pointer={item.pointer}
-      onClick={() => onSelect(item.pointer)}>{item.label}
-      {item.effect && <span>{item.effect}</span>}
-      {itemTrace(inspectedGroup, item, trace) && <span className={styles.observation}>{itemTrace(inspectedGroup, item, trace)}</span>}
-    </button>)}
+    {inspectedGroup.items.map(item => row(inspectedGroup, item))}
     {!inspectedGroup.items.length && <p>None declared.</p>}
   </div>
 
@@ -73,14 +72,14 @@ export function LogicInspector({ model, at, groupId, pane, query, onSelect, onOu
       <p>{valueLabel('onUnknown', text(value.onUnknown))}</p>
     </section>}
     {pointer === '/fallbackOutcome' && <section className={styles.group}><h3>{PACK_TERMS.fallbackOutcome.label} <InfoHelp title={PACK_TERMS.fallbackOutcome.label}>{TERM_HELP.fallbackOutcome}</InfoHelp></h3><p>{outcomeLabel(model.document, value)}</p><p className={styles.meta}>A fallback does not itself request a handoff.</p></section>}
-    {isRecord(value) && typeof value.description === 'string' && <details className={styles.group}><summary>Author description</summary><p>{value.description}</p></details>}
-    {group && !selected && <section className={styles.group}>{group.items.map(item => <Button key={item.pointer} variant="quiet" onClick={() => onSelect(item.pointer)}>{item.label}</Button>)}{!group.items.length && <p>None declared.</p>}</section>}
-    {condition === undefined && pointer !== '/fallbackOutcome' && <Definition value={value} />}
-    <details className={styles.group}><summary>Technical details</summary>
+    {isRecord(value) && typeof value.description === 'string' && <Disclosure className={styles.group} title="Author description"><p>{value.description}</p></Disclosure>}
+    {group && !selected && <section className={styles.group}>{group.items.map(item => row(group, item))}{!group.items.length && <p>None declared.</p>}</section>}
+    {condition === undefined && pointer !== '/fallbackOutcome' && !group && <Definition value={value} />}
+    <Disclosure className={styles.group} title="Technical details">
       <p className={styles.meta}>Document path: <code>{pointer || '/'}</code></p>
       <h3>Exact {condition !== undefined ? 'condition' : 'definition'} JSON</h3>
       <CodeBlock text={JSON.stringify(condition ?? value, null, 2) ?? 'Not declared'} />
-    </details>
+    </Disclosure>
     <section className={styles.group} aria-label="References, checks and metadata">{advanced}</section>
   </div>
 }

@@ -73,7 +73,8 @@ font stack, density override or competing appearance page.
 | `--measure-form`, `--measure-wide` | 704px, 1152px | Same |
 
 Type uses rem values at the default 16px root. Body line height is 1.5; headings
-use 1.3–1.35; controls use a single centered line. Inter's optical sizing stays
+use 1.3–1.35. Action buttons use a single centered line; inspection rows and
+disclosure labels align left and wrap as needed. Inter's optical sizing stays
 on. Monospace is reserved for identifiers, paths, code and runtime output.
 Use sentence case. Dense table captions use the existing density font token;
 do not shrink all body copy when Compact is selected.
@@ -140,6 +141,8 @@ small indicators; large workspace surfaces must not acquire a green or gold wash
 
 - Use `Button` for actions and `ButtonLink` for navigation styled as an action.
   Both share geometry and states. Use `primary`, `secondary`, `quiet`, `danger`.
+  Use `InspectionRow` to open details of displayed information and `Disclosure`
+  to expand content in place; neither is styled as a command to execute the value.
   Hover changes paint only. Keyboard focus remains visible.
 - Shell icon buttons share one neutral state treatment: quiet at rest, `--bg`
   on hover, and `--accent-soft` with `--ink` when pressed or expanded. Selected
@@ -447,9 +450,25 @@ pointer-addressed navigation. Ordinary successful check provenance is compact;
 warnings and diagnostics keep their existing visible presentation. All document
 members remain available in their original order.
 
-Use `Button variant="inline"` for actions occupying a metadata value column:
-its text aligns with plain values and can wrap. Keep ordinary quiet buttons in
-action groups, where their padding provides separation.
+Use `InspectionRow` for conditions, evidence, outcomes, source references and
+Inspector member lists. Its trailing chevron is visible without hover. The
+entire row is one native button; the accessible name starts with View and
+includes the visible subject. Outcome labels are author content, never commands
+to execute a decision. Current items use `aria-current` and the shared neutral
+selection fill, with unchanged text color and geometry. This is not an on/off
+toggle. Long labels and secondary values wrap within the row.
+
+Use `Disclosure` for author descriptions, technical details, file information,
+references and checks in the Inspector. Its leading chevron rotates when open;
+its native summary owns keyboard/touch interaction. All instances share padding,
+hover and focus states, including controlled open state for attention messages.
+
+Keep the neutral active underline on view navigation and ordinary links inside
+prose. Reserve `Button variant="inline"` for controls embedded in prose, such
+as expanding a long question. Secondary navigation, such as View logic, uses a
+quiet link beside the section heading. Commands such as Save and Retry connection
+use the shared Button; legacy global button/link-button classes are retired.
+Do not use tooltips as the only clue that information can be inspected.
 
 See [the reading and selection sweep](reviews/reading-selection-sweep.md).
 
