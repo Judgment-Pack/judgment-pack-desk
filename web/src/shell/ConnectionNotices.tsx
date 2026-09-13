@@ -1,6 +1,6 @@
+import { Button } from '../ui/Button'
 /**
- * The three connection notices, lifted out of `App.tsx` with their comments
- * and their wording intact.
+ * The three connection notices, with shared retry controls.
  *
  * They live in `<main>` and never in a collapsible pane: **nothing whose
  * absence changes what is on screen may live somewhere a viewer has closed.**
@@ -23,9 +23,9 @@ export function ConnectionNotices() {
       {status === 'reconnecting' && everConnected && (
         <p className="banner" role="status">
           Lost the connection to the chassis. Reconnecting (attempt {attempt})…{' '}
-          <button type="button" className="link-button" onClick={retryNow}>
-            try now
-          </button>
+          <Button variant="secondary" onClick={retryNow}>
+            Retry connection
+          </Button>
         </p>
       )}
       {/* Connected, and this page does not know what it is connected to. Every
@@ -38,9 +38,9 @@ export function ConnectionNotices() {
           {capabilitiesError ? ` — ${capabilitiesError.message}` : ''}. What this runtime can do
           is unknown rather than known to be little, so the optional surfaces are left off and
           nothing here should be read as the runtime lacking them.{' '}
-          <button type="button" className="link-button" onClick={retryNow}>
-            reconnect and ask again
-          </button>
+          <Button variant="secondary" onClick={retryNow}>
+            Retry connection
+          </Button>
         </p>
       )}
     </>
@@ -72,9 +72,9 @@ export function BlockedNotice({ error }: { error: Error }) {
       {status === 'reconnecting' && (
         <p className="note">
           Retrying automatically (attempt {attempt}).{' '}
-          <button type="button" className="link-button" onClick={retryNow}>
-            Try now
-          </button>
+          <Button variant="secondary" onClick={retryNow}>
+            Retry connection
+          </Button>
         </p>
       )}
     </>

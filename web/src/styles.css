@@ -742,58 +742,6 @@ fieldset {
 
 /* Controls ----------------------------------------------------------------- */
 
-.button {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  min-height: var(--density-control);
-  font: inherit;
-  font-size: var(--text-control);
-  line-height: 1;
-  padding: 0 var(--space-3);
-  font-weight: 500;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--accent-fill);
-  background: var(--accent-fill);
-  color: var(--ink-inverse);
-  cursor: pointer;
-}
-
-.button:not(:disabled):hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-}
-
-.button:not(:disabled):active {
-  background: var(--accent-active);
-  border-color: var(--accent-active);
-}
-
-.button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.button:disabled {
-  background: var(--false-soft);
-  border-color: var(--border);
-  color: var(--ink-faint);
-  cursor: not-allowed;
-}
-
-.link-button {
-  appearance: none;
-  border: 0;
-  background: none;
-  padding: 0;
-  font: inherit;
-  color: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
 .tab-action {
   margin-left: auto;
   align-self: center;

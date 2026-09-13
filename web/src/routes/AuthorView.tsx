@@ -1,3 +1,4 @@
+import { Button } from '../ui/Button'
 import { OverflowTooltip } from '../ui/Tooltip'
 import { useEffect, useMemo, useState } from 'react'
 import { Empty, ErrorBox, Loading, Pill, Section } from '../components/primitives'
@@ -312,17 +313,15 @@ function FileEditor({
         />
 
         <div className="actions">
-          <button
-            type="button"
-            className="button"
+          <Button
+            variant="primary"
             disabled={!dirty || write.isPending}
             onClick={() => save(false)}
           >
             {write.isPending ? 'Saving…' : 'Save'}
-          </button>
-          <button
-            type="button"
-            className="button button-quiet"
+          </Button>
+          <Button
+            variant="quiet"
             disabled={!dirty || write.isPending}
             onClick={() => {
               // Discard puts the buffer back *and* clears what the last attempt
@@ -334,18 +333,17 @@ function FileEditor({
             }}
           >
             Discard changes
-          </button>
+          </Button>
           {/* Disabled while a write is in flight: the PUT cannot be cancelled,
               so reloading during one would replace the base with bytes that are
               about to be superseded by a save already on its way. */}
-          <button
-            type="button"
-            className="link-button"
+          <Button
+            variant="quiet"
             disabled={write.isPending}
             onClick={reload}
           >
             Reload from disk
-          </button>
+          </Button>
         </div>
 
         {stale && (
@@ -423,17 +421,16 @@ function StaleNotice({
         </span>
       </p>
       <div className="actions">
-        <button type="button" className="button" disabled={pending} onClick={onReload}>
+        <Button disabled={pending} onClick={onReload}>
           Reload from disk
-        </button>
-        <button
-          type="button"
-          className="button button-quiet"
+        </Button>
+        <Button
+          variant="danger"
           disabled={pending}
           onClick={onOverride}
         >
           Overwrite anyway
-        </button>
+        </Button>
       </div>
     </div>
   )
