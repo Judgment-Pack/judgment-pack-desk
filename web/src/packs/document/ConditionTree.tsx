@@ -1,12 +1,11 @@
 /**
- * A condition, rendered as an indented tree and **never paraphrased**.
+ * A condition, rendered as an indented tree with shared operator labels.
  *
  * `"5000"` keeps its quotes, because a decimal operand is a *string* and the
  * difference between `"5000"` and `5000` is the difference between a document
  * the runtime accepts and one it refuses by name. `greater-than` stays the
- * document's own word, because "is greater than" is English about what the
- * policy means and only the document says that. A view that paraphrased would
- * be authoring a second, unversioned statement of the rule.
+ * exact value in the document. Display labels never change operand types,
+ * author values or the machine representation available in the Inspector.
  *
  * The five node kinds are the schema's own (`$defs/condition`): `literal`,
  * `all`/`any`, `not`, `fact`, `evidence-present`, recursing through `$ref`. A
@@ -24,6 +23,7 @@ import type { Condition } from '../../mcp/types'
 import { conditionKind } from '../edit/conditionOps'
 import { Block } from './Block'
 import { ReadOnlyBlocks } from './Block'
+import { valueLabel } from '../terminology'
 import styles from './PackDocument.module.css'
 
 export function ConditionTree({ condition, at, readOnly = false }: { condition: unknown; at: string; readOnly?: boolean }) {
@@ -67,7 +67,7 @@ function ConditionNode({
     return (
       <>
         <Row at={at} depth={depth}>
-          <span className={styles.op}>{node.op} of</span>
+          <span className={styles.op}>{valueLabel('op', node.op)}</span>
         </Row>
         {children.map((child, index) => (
           <ConditionNode
@@ -85,7 +85,7 @@ function ConditionNode({
     return (
       <>
         <Row at={at} depth={depth}>
-          <span className={styles.op}>not</span>
+          <span className={styles.op}>{valueLabel('op', 'not')}</span>
         </Row>
         <ConditionNode condition={node.condition} at={`${at}/condition`} depth={depth + 1} />
       </>
@@ -99,7 +99,7 @@ function ConditionNode({
           {String(node.path ?? '')}
         </Block>{' '}
         <Block pointer={`${at}/operator`} as="span" className={styles.op}>
-          {String(node.operator ?? '')}
+          {valueLabel('operator', String(node.operator ?? ''))}
         </Block>{' '}
         <Block pointer={`${at}/value`} as="code" className={styles.literal}>
           <Operand value={node.value} />
@@ -111,7 +111,7 @@ function ConditionNode({
   if (kind === 'evidence-present') {
     return (
       <Row at={at} depth={depth}>
-        <span className={styles.op}>evidence-present</span>{' '}
+        <span className={styles.op}>{valueLabel('op', 'evidence-present')}</span>{' '}
         <Block pointer={`${at}/evidenceRequirement`} as="code" className={styles.literal}>
           {String(node.evidenceRequirement ?? '')}
         </Block>
@@ -122,7 +122,7 @@ function ConditionNode({
   if (kind === 'literal') {
     return (
       <Row at={at} depth={depth}>
-        <span className={styles.op}>literal</span>{' '}
+        <span className={styles.op}>{valueLabel('op', 'literal')}</span>{' '}
         <Block pointer={`${at}/value`} as="code" className={styles.literal}>
           <Operand value={node.value} />
         </Block>

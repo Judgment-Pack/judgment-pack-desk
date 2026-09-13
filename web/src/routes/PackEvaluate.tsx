@@ -1,3 +1,4 @@
+import { PACK_TERMS } from '../packs/terminology'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -13,7 +14,7 @@ import { Button } from '../ui/Button'
 import { Field, FieldGroup } from '../ui/Field'
 import { TextArea } from '../ui/TextArea'
 import { Tabs } from '../ui/Tabs'
-import { PackHeader, TestNavigation } from '../packs/PackWorkspace'
+import { PackHeader, PackQuestion, TestNavigation } from '../packs/PackWorkspace'
 import { recordActivity } from '../shell/consoleLog'
 import { publishPackRun, usePackRun, type PackRunSnapshot } from '../packs/runContext'
 import styles from './PackEvaluate.module.css'
@@ -115,6 +116,7 @@ export function PackEvaluate() {
     <article data-measure="wide" data-layout="page">
       <PackHeader packId={packId ?? ''} document={pack.data?.document} current="test" />
       <PageBody width="wide">
+      <PackQuestion document={pack.data?.document} />
       <div className={styles.workspace}>
       <TestNavigation packId={packId ?? ''} hasMatrix={Boolean(summary?.matrix || summary?.matrixPath)} />
       <details className={styles.notice}>
@@ -274,7 +276,7 @@ function PackReference({ summary }: { summary?: PackSummary }) {
       )}
       {evidence.length > 0 && (
         <p className="reference">
-          <span className="reference-label">Evidence requirements</span>
+          <span className="reference-label">{PACK_TERMS.evidenceRequirements.label}</span>
           {evidence.map((id) => (
             <code key={id} className="id">
               {id}

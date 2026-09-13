@@ -24,11 +24,13 @@ export interface FieldWiring {
 
 export function Field({
   label,
+  help,
   hint,
   error,
   children
 }: {
   label: string
+  help?: ReactNode
   hint?: ReactNode
   error?: ReactNode
   children: (wiring: FieldWiring) => ReactNode
@@ -40,9 +42,9 @@ export function Field({
 
   return (
     <div className={styles.field}>
-      <label className={styles.label} htmlFor={id}>
+      <div className={styles.labelRow}><label className={styles.label} htmlFor={id}>
         {label}
-      </label>
+      </label>{help}</div>
       {children({
         id,
         'aria-describedby': described.length > 0 ? described.join(' ') : undefined,

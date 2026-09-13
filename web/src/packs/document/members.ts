@@ -1,3 +1,4 @@
+import { PACK_TERMS } from '../terminology'
 /**
  * The document's members, in the order the schema declares them, in one place.
  *
@@ -151,21 +152,21 @@ export const MEMBER_UNITS: readonly MemberUnit[] = [
   { id: 'decision', label: 'Decision', members: ['decision'], pointer: '/decision', required: true },
   {
     id: 'applicability',
-    label: 'Applicability',
+    label: PACK_TERMS.applicability.label,
     members: ['applicability'],
     pointer: '/applicability'
   },
   {
     id: 'evidenceRequirements',
-    label: 'Evidence',
+    label: PACK_TERMS.evidenceRequirements.label,
     members: ['evidenceRequirements'],
     pointer: '/evidenceRequirements',
     counted: true
   },
-  { id: 'sources', label: 'Sources', members: ['sources'], pointer: '/sources', counted: true },
+  { id: 'sources', label: PACK_TERMS.sources.label, members: ['sources'], pointer: '/sources', counted: true },
   {
     id: 'outcomes',
-    label: 'Outcomes',
+    label: PACK_TERMS.outcomes.label,
     members: ['outcomes'],
     pointer: '/outcomes',
     counted: true,
@@ -173,7 +174,7 @@ export const MEMBER_UNITS: readonly MemberUnit[] = [
   },
   {
     id: 'rules',
-    label: 'Rules',
+    label: PACK_TERMS.rules.label,
     members: ['rules'],
     pointer: '/rules',
     counted: true,
@@ -181,18 +182,18 @@ export const MEMBER_UNITS: readonly MemberUnit[] = [
   },
   {
     id: 'exceptions',
-    label: 'Exceptions',
+    label: PACK_TERMS.exceptions.label,
     members: ['exceptions'],
     pointer: '/exceptions',
     counted: true
   },
   {
     id: 'fallbackOutcome',
-    label: 'Fallback outcome',
+    label: PACK_TERMS.fallbackOutcome.label,
     members: ['fallbackOutcome'],
     pointer: '/fallbackOutcome'
   },
-  { id: 'escalation', label: 'Escalation', members: ['escalation'], pointer: '/escalation' },
+  { id: 'escalation', label: PACK_TERMS.escalation.label, members: ['escalation'], pointer: '/escalation' },
   { id: 'metadata', label: 'Metadata', members: ['metadata'], pointer: '/metadata' },
   { id: 'extensions', label: 'Extensions', members: ['extensions'], pointer: '/extensions' }
 ]

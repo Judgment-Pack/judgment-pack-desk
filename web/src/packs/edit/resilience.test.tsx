@@ -489,12 +489,12 @@ describe('the Inspector over bytes that are not a document', () => {
       tab: 'member'
     })
     const raw = await editableBytes()
-    expect(screen.getByText('Provenance')).toBeTruthy()
+    expect(screen.getByText('File details')).toBeTruthy()
     fireEvent.change(raw, { target: { value: '{ this is not json' } })
     await waitFor(() =>
       expect(screen.getByText(/not a document this desk can read/)).toBeTruthy()
     )
-    expect(screen.queryByText('Provenance')).toBeNull()
+    expect(screen.queryByText('File details')).toBeNull()
   })
 })
 

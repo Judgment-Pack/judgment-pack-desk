@@ -97,10 +97,10 @@ export function RightPane({
           <IconClose />
         </button></Tooltip>
       </div>
+      {showEmpty && <p className="desk-pane-empty">{EMPTY_STATE}</p>}
       {/* Always mounted, so a route's portal target never disappears under
           it — including while nothing is published. */}
       <div ref={publishTarget} className="desk-inspector-slot" />
-      {showEmpty && <p className="desk-pane-empty">{EMPTY_STATE}</p>}
       {children}
     </>
   )

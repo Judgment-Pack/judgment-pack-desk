@@ -1,3 +1,4 @@
+import { PACK_TERMS } from '../terminology'
 /**
  * The identity members: what this document is, above the question it answers.
  *
@@ -46,11 +47,11 @@ export function SpecVersionBlock({ document: doc }: { document: PackDocument }) 
   // from. The runtime refuses a version it does not bundle, by name, at this
   // pointer — so a Select over the versions this desk happens to know would be
   // this desk deciding which specifications exist.
-  if (editing) return <StringField pointer="/specVersion" label="specVersion" />
+  if (editing) return <StringField pointer="/specVersion" label={PACK_TERMS.specVersion.label} />
   return (
     <Block pointer="/specVersion" className={styles.identity}>
       <p className={styles.eyebrow}>
-        <span className={styles.eyebrowPart}>specVersion {doc.specVersion}</span>
+        <span className={styles.eyebrowPart}>{PACK_TERMS.specVersion.label} {doc.specVersion}</span>
       </p>
     </Block>
   )

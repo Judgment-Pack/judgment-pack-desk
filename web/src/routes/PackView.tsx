@@ -93,7 +93,7 @@ import { useLogicState, rememberLogicMode, type LogicMode } from '../packs/logic
 import { usePackRun, traceMatches } from '../packs/runContext'
 import styles from './PackView.module.css'
 import { PageBody } from '../ui/PageLayout'
-import { PackHeader, PackOverview, PACK_GROUPS, type PackSection } from '../packs/PackWorkspace'
+import { PackHeader, PackQuestion, PackOverview, PACK_GROUPS, type PackSection } from '../packs/PackWorkspace'
 
 /**
  * What the what-if pane needs, and what the editor must keep beside it.
@@ -867,6 +867,8 @@ export function PackView() {
   const inspector = useInspectorPortal(
     inspectorNode === null ? null : (
       <Tabs
+        scrollable
+        resetScrollKey={`${packId}:${at}:${groupId}:${logic.pane}`}
         label="Right pane"
         value={rightTab}
         onValueChange={setRightTab}
@@ -990,6 +992,7 @@ export function PackView() {
         <div data-layout="page">
         <PackHeader packId={packId ?? ''} document={drawn} current={section} actions={elsewhere} details={strip} hasMatrix={Boolean(summary?.matrix || summary?.matrixPath)} />
         <PageBody width={section === 'logic' ? 'full' : 'wide'}>
+        <PackQuestion document={drawn} />
         <div
           className={styles.workspace}
           ref={setFrame}

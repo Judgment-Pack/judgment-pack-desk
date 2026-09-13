@@ -1,3 +1,4 @@
+import { PACK_TERMS } from '../terminology'
 /**
  * The outcomes this pack can produce, as chips, with the fallback tagged.
  *
@@ -27,7 +28,7 @@ export function OutcomesBlock({
   const { editing } = useEditing()
   return (
     <Block pointer={at}>
-      <h2 className={styles.heading}>Outcomes</h2>
+      <h2 className={styles.heading}>{PACK_TERMS.outcomes.label}</h2>
       <ul className={styles.chips}>
         {outcomes.map((outcome, index) =>
           // Not an object: there are no fields to draw and nothing to point a

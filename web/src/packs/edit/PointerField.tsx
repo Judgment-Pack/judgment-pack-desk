@@ -26,6 +26,8 @@ import type { ReactNode } from 'react'
 import type { AnchoredDiagnostic } from '../checks'
 import { elementIdFor } from '../pointers'
 import { Field, type FieldWiring } from '../../ui/Field'
+import { InfoHelp } from '../../ui/InfoHelp'
+import { pointerLabel, packTerm, TERM_HELP } from '../terminology'
 import { useEditing } from './editingContext'
 import styles from './PointerField.module.css'
 
@@ -42,6 +44,9 @@ export function PointerField({
 }) {
   const { diagnosticsAt } = useEditing()
   const found = diagnosticsAt(pointer)
+  const key = pointer.split('/').at(-1) ?? ''
+  const term = packTerm(key)
+  const explanation = key === 'onUnknown' || key === 'fallbackOutcome' ? TERM_HELP[key] : undefined
   return (
     // `tabIndex={-1}` so a deep link can land here. `#/rules/0/description`
     // is answered by `getElementById(...).focus()`, and focus on a plain `div`
@@ -55,8 +60,9 @@ export function PointerField({
       className={styles.field}
     >
       <Field
-        label={label}
-        hint={hint}
+        label={pointerLabel(pointer, label)}
+        help={explanation && <InfoHelp title={term!.label}>{explanation}</InfoHelp>}
+        hint={hint ?? (explanation ? term?.description : undefined)}
         error={found.length === 0 ? undefined : <Diagnostics found={found} />}
       >
         {children}

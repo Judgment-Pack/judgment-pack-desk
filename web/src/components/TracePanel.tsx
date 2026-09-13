@@ -22,6 +22,7 @@
  */
 import type { TraceEntry } from '../mcp/types'
 import { Pill, Section, slug } from './primitives'
+import { PACK_TERMS, valueLabel } from '../packs/terminology'
 
 /** One run of consecutive trace entries sharing a stage, keeping their place. */
 export interface TraceStage {
@@ -102,7 +103,7 @@ function TraceRow({ entry }: { entry: TraceEntry }) {
       <span
         className={`verdict verdict-${slug(entry.condition)}`}
       >
-        {entry.condition}
+        {valueLabel('condition', entry.condition)}
       </span>
       <span className="trace-id">
         {entry.id ? (
@@ -112,11 +113,11 @@ function TraceRow({ entry }: { entry: TraceEntry }) {
         )}
       </span>
       <span className="trace-badges">
-        {entry.effect && <Pill>{entry.effect}</Pill>}
+        {entry.effect && <Pill>{valueLabel('effect', entry.effect)}</Pill>}
         {entry.outcome && <Pill tone="strong">→ {entry.outcome}</Pill>}
-        {entry.skipped && <Pill>skipped</Pill>}
-        {entry.suppressed && <Pill>suppressed</Pill>}
-        {entry.onUnknown && <Pill tone="quiet">on unknown: {entry.onUnknown}</Pill>}
+        {entry.skipped && <Pill>Not evaluated</Pill>}
+        {entry.suppressed && <Pill>Excluded by a special case</Pill>}
+        {entry.onUnknown && <Pill tone="quiet">{PACK_TERMS.onUnknown.label}: {valueLabel('onUnknown', entry.onUnknown)}</Pill>}
       </span>
     </li>
   )

@@ -29,6 +29,7 @@ import { elementIdFor, valueAt } from '../pointers'
 import { useEditing } from './editingContext'
 import { PointerField } from './PointerField'
 import { starterFor } from './shape'
+import { valueLabel } from '../terminology'
 import { setBoolean, setEnum, setRawJson, setString, setStringList } from './writes'
 import styles from './PointerField.module.css'
 
@@ -156,7 +157,7 @@ export function EnumField({
           options={[
             ...(optional === true ? [{ value: NOT_DECLARED, label: 'not declared' }] : []),
             ...declared.map((word) => ({ value: word, label: word })),
-            ...options.map((word) => ({ value: word, label: word }))
+            ...options.map((word) => ({ value: word, label: valueLabel(pointer.split('/').at(-1) ?? '', word) }))
           ]}
           onValueChange={(next) =>
             write((current) => setEnum(current, pointer, next === NOT_DECLARED ? '' : next))
@@ -261,7 +262,7 @@ export function StringListField({
                   write((current) => setStringList(current, pointer, next))
                 }}
               />
-              <span>{entry}</span>
+              <span>{pointer.endsWith('/triggers') ? valueLabel('triggers', entry) : entry}</span>
             </label>
           ))}
         </div>

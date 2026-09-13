@@ -2,6 +2,8 @@ import { useLayoutEffect, useRef, type MutableRefObject, type ReactNode } from '
 import type { TraceEntry } from '../../mcp/types'
 import { Button } from '../../ui/Button'
 import { CodeBlock } from '../../ui/CodeBlock'
+import { InfoHelp } from '../../ui/InfoHelp'
+import { fieldLabel, packTerm, PACK_TERMS, TERM_HELP, valueLabel } from '../terminology'
 import { MemberValue } from './MemberValue'
 import { ConditionTree } from '../document/ConditionTree'
 import { isRecord } from '../document/MisshapenMember'
@@ -58,22 +60,27 @@ export function LogicInspector({ model, at, groupId, pane, query, onSelect, onOu
   const group = model.groups.find(g => '/' + g.id === at)
   return <div className={styles.details}>
     <Button variant="quiet" onClick={onOutline}>← Outline</Button>
-    <h2>{selected?.item.label ?? group?.label ?? (at.slice(1) || 'Document')}</h2>
-    <p className={styles.meta}><code>{pointer || '/'}</code></p>
+    <h2>{selected?.item.label ?? group?.label ?? fieldLabel(at.slice(1) || 'Document')}</h2>
+    <p className={styles.meta}>{packTerm(pointer.slice(1))?.description ?? selected?.group.description}</p>
     {observed && <p className={styles.observation}>Recorded condition: <strong>{observed}</strong></p>}
     {condition !== undefined && <section className={styles.group}><h3>Condition</h3>
       <ConditionTree readOnly condition={condition} at={selected?.group.id === 'applicability' ? '/applicability' : `${pointer}/when`} />
     </section>}
     {isRecord(value) && (value.outcome !== undefined || value.effect !== undefined) && <section className={styles.group}>
-      <h3>{value.effect === undefined ? 'Candidate outcome' : 'Effect'}</h3>
+      <h3>{value.effect === undefined ? 'Contributes outcome' : 'Effect'}</h3>
       <p>{selected?.item.effect}</p>
-      <h3>If unknown</h3><p>{text(value.onUnknown)}</p>
+      <h3>{PACK_TERMS.onUnknown.label} <InfoHelp title={PACK_TERMS.onUnknown.label}>{TERM_HELP.onUnknown}</InfoHelp></h3>
+      <p>{valueLabel('onUnknown', text(value.onUnknown))}</p>
     </section>}
-    {pointer === '/fallbackOutcome' && <section className={styles.group}><h3>Fallback outcome</h3><p>{outcomeLabel(model.document, value)}</p><p className={styles.meta}>A fallback does not itself request a handoff.</p></section>}
+    {pointer === '/fallbackOutcome' && <section className={styles.group}><h3>{PACK_TERMS.fallbackOutcome.label} <InfoHelp title={PACK_TERMS.fallbackOutcome.label}>{TERM_HELP.fallbackOutcome}</InfoHelp></h3><p>{outcomeLabel(model.document, value)}</p><p className={styles.meta}>A fallback does not itself request a handoff.</p></section>}
     {isRecord(value) && typeof value.description === 'string' && <details className={styles.group}><summary>Author description</summary><p>{value.description}</p></details>}
     {group && !selected && <section className={styles.group}>{group.items.map(item => <Button key={item.pointer} variant="quiet" onClick={() => onSelect(item.pointer)}>{item.label}</Button>)}{!group.items.length && <p>None declared.</p>}</section>}
     {condition === undefined && pointer !== '/fallbackOutcome' && <Definition value={value} />}
-    <details className={styles.group}><summary>Exact {condition !== undefined ? 'condition' : 'definition'} JSON</summary><CodeBlock text={JSON.stringify(condition ?? value, null, 2) ?? 'Not declared'} /></details>
+    <details className={styles.group}><summary>Technical details</summary>
+      <p className={styles.meta}>Document path: <code>{pointer || '/'}</code></p>
+      <h3>Exact {condition !== undefined ? 'condition' : 'definition'} JSON</h3>
+      <CodeBlock text={JSON.stringify(condition ?? value, null, 2) ?? 'Not declared'} />
+    </details>
     <section className={styles.group} aria-label="References, checks and metadata">{advanced}</section>
   </div>
 }
@@ -82,6 +89,6 @@ function Definition({ value }: { value: unknown }) {
   if (value === undefined) return <p>Not declared.</p>
   if (!isRecord(value)) return <MemberValue value={value} />
   return <dl className={styles.definition}>{Object.entries(value).filter(([key]) => !['description', 'extensions'].includes(key)).map(([key, child]) => <div key={key}>
-    <dt>{key}</dt><dd><MemberValue value={child} /></dd>
+    <dt>{fieldLabel(key)}</dt><dd>{typeof child === 'string' ? <span>{valueLabel(key, child)}</span> : <MemberValue value={child} />}</dd>
   </div>)}</dl>
 }

@@ -86,7 +86,7 @@ export function MemberTab({
       ))}
 
       <details className={styles.disclosure}>
-      <summary>Provenance</summary>
+      <summary>File details</summary>
       <dl className={styles.provenance}>
         {meta.path !== undefined && (
           <div className={styles.row}>

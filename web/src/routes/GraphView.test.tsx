@@ -718,7 +718,7 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
     expect(container.textContent).toContain('applicability')
     expect(container.textContent).toContain('sanctioned-jurisdiction')
     expect(container.textContent).toContain('screen-clear')
-    expect(container.textContent).toContain('on unknown: escalate')
+    expect(container.textContent).toContain('If this condition is unknown: Keep the result unresolved')
     // The framing travels with the renderer rather than being restated here.
     expect(container.textContent).toContain('It decides nothing')
     // And the fact only this surface has: two orders, neither read off the other.

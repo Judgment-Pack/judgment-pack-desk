@@ -72,6 +72,20 @@ async function bytes(): Promise<string> {
 }
 
 describe('a member the document does not carry', () => {
+  it('explains an unknown policy and writes its exact enum without changing other values', async () => {
+    await draft()
+    const field = document.getElementById('/rules/1/onUnknown')!
+    fireEvent.click(within(field).getByRole('button', { name: 'About if this condition is unknown' }))
+    const help = await screen.findByRole('dialog', { name: 'If this condition is unknown' })
+    expect(help.textContent).toContain('Handoff settings separately determine')
+    fireEvent.keyDown(help, { key: 'Escape' })
+    fireEvent.click(within(field).getByRole('combobox'))
+    fireEvent.click(await screen.findByRole('option', { name: 'Continue without a contribution' }))
+    const expected = JSON.parse(DRAFT)
+    expected.rules[1].onUnknown = 'ignore'
+    expect(JSON.parse(await bytes())).toEqual(expected)
+  })
+
   it('offers to write a source’s locator rather than drawing fields that do nothing', async () => {
     await draft()
     const group = document.getElementById('/sources/0/locator')!
@@ -79,11 +93,11 @@ describe('a member the document does not carry', () => {
     // Not drawn: `locator.kind` and `locator.value` have nothing to splice
     // into while the object is absent, so a control for either would take a
     // keystroke and move no bytes.
-    expect(screen.queryByLabelText('locator kind')).toBeNull()
-    expect(screen.queryByLabelText('locator')).toBeNull()
+    expect(screen.queryByLabelText('Location type')).toBeNull()
+    expect(screen.queryByLabelText('Source location')).toBeNull()
 
     fireEvent.click(within(group).getByRole('button', { name: 'Write a locator' }))
-    const value = await screen.findByLabelText('locator')
+    const value = await screen.findByLabelText('Source location')
     fireEvent.change(value, { target: { value: 'https://example.invalid/handbook' } })
     expect(await bytes()).toContain('"value": "https://example.invalid/handbook"')
   })
@@ -92,9 +106,9 @@ describe('a member the document does not carry', () => {
     await draft()
     const group = document.getElementById('/escalation/target')!
     expect(within(group).getByText('not declared')).toBeTruthy()
-    expect(screen.queryByLabelText('target name')).toBeNull()
+    expect(screen.queryByLabelText('Recipient name')).toBeNull()
     fireEvent.click(within(group).getByRole('button', { name: 'Write a target' }))
-    const name = await screen.findByLabelText('target name')
+    const name = await screen.findByLabelText('Recipient name')
     fireEvent.change(name, { target: { value: 'risk-desk' } })
     const written = await bytes()
     expect(written).toContain('"name": "risk-desk"')
@@ -201,7 +215,7 @@ describe('what the form can now reach', () => {
     const kind = within(group).getAllByRole('combobox')[0]!
     expect(kind).toBeTruthy()
     fireEvent.click(kind)
-    fireEvent.click(await screen.findByRole('option', { name: 'all' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'All conditions' }))
     await waitFor(async () => expect(await bytes()).toContain('"op": "all"'))
   })
 

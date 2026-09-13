@@ -2,11 +2,8 @@
  * A rule and an exception, as the forms they become in place — and the
  * ordering that is part of what they say.
  *
- * **Order is §7-significant.** The first matching rule is the one that fires,
- * so moving a rule is an edit to what the pack decides and not a tidy. It
- * moves by keyboard: two buttons on each card and `Alt+ArrowUp` /
- * `Alt+ArrowDown` inside it. Not drag — a drag surface has no keyboard story
- * that is not a second implementation, and this one is the whole story.
+ * Array order is presentation, not rule priority. Moving cards preserves their
+ * contents and updates their document addresses. All matching rules contribute.
  *
  * **Every `/rules/N` pointer past the move is now a different rule.** `?at`,
  * the Inspector's subtree, and every anchored diagnostic are addressed by

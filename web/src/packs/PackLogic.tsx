@@ -1,3 +1,4 @@
+import { PACK_TERMS, valueLabel } from './terminology'
 import { lazy, Suspense, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import type { TraceEntry } from '../mcp/types'
 import type { Viewport } from '@xyflow/react'
@@ -70,8 +71,8 @@ export function PackLogic({ model, at, groupId, select, inspectGroup, mode, onMo
       <p className={styles.caption}>{current ? `Selected in ${current.group.label}: ${current.item.label}. ` : ''}{trace ? 'Recorded observations. Select an item for its exact trace.' : 'Declared relationships. Select a group to explore.'}</p>
     </> : <div className={styles.list} ref={list} onScroll={e => { listScroll.current = e.currentTarget.scrollTop }}>
       {!query && <section className={styles.listGroup}><h2>Context</h2><div className={styles.compact}>
-        <Button onClick={() => select('/applicability')}>Applicability</Button>
-        <Button onClick={() => select('/evidenceRequirements')}>Evidence requirements</Button>
+        <Button onClick={() => select('/applicability')}>{PACK_TERMS.applicability.label}</Button>
+        <Button onClick={() => select('/evidenceRequirements')}>{PACK_TERMS.evidenceRequirements.label}</Button>
       </div></section>}
       {model.groups.filter(group => query || ['rules', 'exceptions'].includes(group.id)).map(group => {
         const rows = matchingItems(group, query)
@@ -81,14 +82,14 @@ export function PackLogic({ model, at, groupId, select, inspectGroup, mode, onMo
           {rows.length ? rows.map(item => <button type="button" key={item.pointer} data-logic-pointer={item.pointer}
             className={styles.row} aria-pressed={current?.item.pointer === item.pointer} onClick={() => select(item.pointer)}>
             <span className={styles.rowTitle}>{item.label}</span>
-            <span className={styles.rowSummary}>{isRecord(item.value) && isRecord(item.value.when) ? <>{text(item.value.when.op)}{Array.isArray(item.value.when.conditions) ? ` · ${item.value.when.conditions.length} branches` : ''}<br />Inspect exact condition</> : item.value === undefined ? 'Not declared' : 'Inspect definition'}</span>
+            <span className={styles.rowSummary}>{isRecord(item.value) && isRecord(item.value.when) ? <>{valueLabel('op', text(item.value.when.op))}{Array.isArray(item.value.when.conditions) ? ` · ${item.value.when.conditions.length} conditions` : ''}<br />Inspect exact condition</> : item.value === undefined ? 'Not declared' : 'Inspect definition'}</span>
             <span>{item.effect}{itemTrace(group, item, trace) && <span className={styles.trace}>{itemTrace(group, item, trace)}</span>}</span>
           </button>) : <p className={styles.muted}>None declared.</p>}
         </section>
       })}
-      {!query && <section className={styles.listGroup}><h2>Resolution and references</h2><div className={styles.compact}>
-        <Button onClick={() => select('/fallbackOutcome')}>Fallback</Button><Button onClick={() => select('/escalation')}>Handoff</Button>
-        <Button onClick={() => select('/outcomes')}>Outcomes</Button><Button onClick={() => select('/sources')}>Sources</Button>
+      {!query && <section className={styles.listGroup}><h2>{PACK_TERMS.resolution.label} and references</h2><div className={styles.compact}>
+        <Button onClick={() => select('/fallbackOutcome')}>{PACK_TERMS.fallbackOutcome.label}</Button><Button onClick={() => select('/escalation')}>{PACK_TERMS.escalation.label}</Button>
+        <Button onClick={() => select('/outcomes')}>{PACK_TERMS.outcomes.label}</Button><Button onClick={() => select('/sources')}>{PACK_TERMS.sources.label}</Button>
       </div></section>}
       {query && !model.groups.some(g => matchingItems(g, query).length) && <p role="status">No items match “{query}”.</p>}
     </div>}

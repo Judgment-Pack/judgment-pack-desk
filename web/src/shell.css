@@ -306,7 +306,13 @@
   .desk-measure:has([data-layout="page"]) {
     max-width: none;
     padding: 0;
+    height: 100%;
+    min-height: 0;
   }
+
+  /* PageHeader and PageBody form one reusable fixed-header/scroll-body frame. */
+  .desk-main:has([data-layout="page"]) { overflow: hidden; scrollbar-gutter: auto; }
+  [data-layout="page"] { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: hidden; }
 
   .desk-measure:has([data-measure="full"]) {
     max-width: none;
@@ -315,13 +321,17 @@
   .desk-inspector {
     grid-column: 2;
     grid-row: 1;
-    overflow: auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
     position: relative;
     background: var(--surface);
     border-left: 1px solid var(--border);
     min-width: 0;
     min-height: 0;
   }
+
+  .desk-inspector-slot { position: relative; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: auto; }
 
   .desk-console {
     grid-column: 1 / -1;
@@ -743,6 +753,7 @@
   /* Panes ---------------------------------------------------------------- */
 
   .desk-pane-head {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -870,6 +881,9 @@
   }
 
   .desk-drawer-right {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     right: var(--workspace-edge);
     top: var(--workspace-edge);
     bottom: var(--workspace-edge);

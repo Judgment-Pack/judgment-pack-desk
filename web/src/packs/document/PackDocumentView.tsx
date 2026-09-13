@@ -1,3 +1,4 @@
+import { PACK_TERMS } from '../terminology'
 /**
  * One pack, read.
  *
@@ -228,7 +229,7 @@ function FallbackOutcomeBlock({ fallback }: { fallback: string | undefined }) {
   const { editing, ids } = useEditing()
   return (
     <Block pointer="/fallbackOutcome">
-      <h2 className={styles.heading}>Fallback outcome</h2>
+      <h2 className={styles.heading}>{PACK_TERMS.fallbackOutcome.label}</h2>
       {editing ? (
         <IdRefField pointer="/fallbackOutcome" label="fallback outcome" ids={ids.outcomes} optional />
       ) : (
