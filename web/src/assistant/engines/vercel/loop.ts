@@ -51,6 +51,7 @@ import {
   SYSTEM,
   eventIterator,
   extractProposal,
+  proseOf,
   guardedCallTool,
   isCancelled,
   narrowingEvents,
@@ -75,7 +76,7 @@ import { eventChannel } from './channel'
 import { placeholderBase, relayFetch, signatureLedger, signatureOf } from './relay'
 import type { LanguageModel, ToolSet } from 'ai'
 import type { AssistantEngine, EndpointKind } from '../../../config/deskConfig'
-import type { AssistantEvent, AssistantSession, McpTool, McpToolResult } from '../../engine'
+import type { AssistantEvent, AssistantSession, McpTool, McpToolResult, HostTool } from '../../engine'
 import type { CritiqueRecorder } from '../../refutation'
 import type { ThinkingSlot } from '../../thinking'
 import type { SignatureLedger } from './relay'
@@ -228,13 +229,31 @@ function modelFor(
   )
 }
 
-/** The runtime's tools, as the SDK's, with the runtime's own schemas. */
+/**
+ * The runtime's tools, as the SDK's, with the runtime's own schemas — and the
+ * desk's host tools beside them, each executed by the desk's own function
+ * rather than dispatched over the gate.
+ */
 function toolsFor(
   family: EndpointKind,
   tools: McpTool[],
-  execute: (name: string, input: unknown) => Promise<McpToolResult>
+  execute: (name: string, input: unknown) => Promise<McpToolResult>,
+  hostTools: HostTool[] = [],
+  executeHost: (tool: HostTool, input: unknown) => Promise<McpToolResult> = async () => ({
+    content: [],
+    isError: true
+  })
 ): ToolSet {
   const set: ToolSet = {}
+  for (const tool of hostTools) {
+    set[tool.name] = dynamicTool({
+      description: tool.description,
+      inputSchema: jsonSchema<unknown>(
+        servedSchemaFor(family, tool) as Parameters<typeof jsonSchema>[0]
+      ),
+      execute: (input: unknown) => executeHost(tool, input)
+    })
+  }
   for (const tool of tools) {
     set[tool.name] = dynamicTool({
       description: tool.description ?? '',
@@ -550,6 +569,34 @@ export function runVercel(
       // refused is a `guardrail` line and never a check.
       recording?.saw(name, said.text)
       return answer
+    }, session.hostTools, async (tool, input) => {
+      // A host tool runs on the page, under the run's own signal: a stopped run
+      // stops it, and its answer is reported in the same two events a runtime
+      // answer earns. It is never a check the critic counts — the runtime's
+      // verdicts are the runtime's — and it never reaches the recorder.
+      const args = (input ?? {}) as Record<string, unknown>
+      await deliver({ type: 'tool_call', name: tool.name, args })
+      let answer: McpToolResult
+      try {
+        answer = await withAbort(() => tool.execute(args, gate.signal), gate.signal)
+      } catch (cause) {
+        if (isCancelled(cause)) {
+          const text = 'the session was stopped before this call was made; nothing was written'
+          return { content: [{ type: 'text', text }], isError: true }
+        }
+        const text = `refused: ${(cause as Error).message}`
+        await deliver({ type: 'tool_result', name: tool.name, isError: true, text })
+        return { content: [{ type: 'text', text }], isError: true }
+      }
+      const said = outcome(answer)
+      await deliver({
+        type: 'tool_result',
+        name: tool.name,
+        isError: said.isError,
+        text: said.text,
+        ...(said.structured === undefined ? {} : { structured: said.structured })
+      })
+      return answer
     })
 
     // One model and one refinement hook, shared by the loop and the critic:
@@ -711,9 +758,11 @@ export function runVercel(
 
     // `result.text` mints a fresh promise on every read, so it is read here,
     // where it is awaited, and nowhere it would be left standing.
-    const proposal = extractProposal(
-      final !== '' ? final : await withAbort(() => Promise.resolve(result.text), gate.signal)
-    )
+    const finalText = final !== '' ? final : await withAbort(() => Promise.resolve(result.text), gate.signal)
+    const proposal = extractProposal(finalText)
+    // What the model said beside the document, as it said it.
+    const prose = proseOf(finalText)
+    if (prose !== '') await deliver({ type: 'message', text: prose })
 
     /**
      * The refutation pass: a second `streamText`, which is this SDK's own
@@ -879,7 +928,7 @@ export function runVercel(
     // counting them as delivered would spend the one retry a tier refusal
     // earns, on every run that narrows a schema at all — and pushing them here
     // rather than from `open` keeps them in order with everything after them.
-    for (const notice of narrowingEvents(id, session.model.family, session.tools)) {
+    for (const notice of narrowingEvents(id, session.model.family, [...session.tools, ...session.hostTools])) {
       await channel.push(notice)
     }
     for (let attempt = 1; ; attempt += 1) {

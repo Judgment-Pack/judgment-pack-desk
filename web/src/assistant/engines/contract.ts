@@ -300,6 +300,14 @@ export interface Proposal {
  * worked example become a proposal. Exactly one block, because two is a
  * message no engine can choose between and none should guess at.
  */
+/**
+ * The model's prose with every fenced block removed: what the final turn said
+ * to the person, beside the document it set apart. Empty where it said nothing.
+ */
+export function proseOf(text: string): string {
+  return (text ?? '').replace(FENCE, '').trim()
+}
+
 export function extractProposal(text: string): Proposal {
   const blocks = [...(text ?? '').matchAll(FENCE)].map((match) => match[1] ?? '')
   if (blocks.length !== 1) {

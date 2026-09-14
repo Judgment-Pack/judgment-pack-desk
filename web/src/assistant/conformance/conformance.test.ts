@@ -695,6 +695,7 @@ async function runLeg(
         testPrompt: TEST_PROMPT,
         tools: how.tools ?? ready.tools,
         callTool: ready.callTool,
+        hostTools: [],
         model: { family: leg.api, model: 'scripted-model', call },
         thinking: normalize(how.tier ?? 'off', leg.api),
         signal: new AbortController().signal
@@ -1124,6 +1125,7 @@ describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
         'tool_call', // T7 write_file
         'guardrail', //    …refused; the frame never left the page
         'tool_result',
+        'message', // T8's prose beside the fence, as the model wrote it
         'proposal', // T8
         'end'
       ])

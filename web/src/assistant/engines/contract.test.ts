@@ -73,6 +73,7 @@ function sessionWith(signal: AbortSignal): AssistantSession {
     testPrompt: '',
     tools: [],
     callTool: async () => ({ content: [] }),
+    hostTools: [],
     model: { family: 'openai-compatible', model: 'm', call: async () => new Response('{}') },
     thinking: normalize('off', 'openai-compatible'),
     signal
