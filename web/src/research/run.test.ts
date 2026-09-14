@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { join } from 'node:path'
@@ -700,7 +700,7 @@ it.runIf(Boolean(process.env.JPACK_EXPECTATION_BINARY))('replays admission, expl
   }
   const { stdout: version } = await execute(process.env.JPACK_EXPECTATION_BINARY!, ['version'])
   expect(version).toContain('0.2.0-draft')
-  const { run } = await blockedRun([correctionTurn()], { callTool })
+  const { run, ledger } = await blockedRun([correctionTurn()], { callTool })
   const before = run.getSnapshot().candidates[0]!
   run.proposeExpectationCorrection('hours-missing')
   const issue = (await settled(run)).expectationIssues[0]!
@@ -713,4 +713,8 @@ it.runIf(Boolean(process.env.JPACK_EXPECTATION_BINARY))('replays admission, expl
   expect(state.candidates[0]!.check?.cases.map(row => [row.id, row.passed])).toEqual([
     ['meets-hours', true], ['under-hours', true], ['hours-missing', true]
   ])
+  if (process.env.JPACK_HANDOVER_FIXTURE) writeFileSync(process.env.JPACK_HANDOVER_FIXTURE, JSON.stringify({
+    document: state.candidates[0]!.document, name: 'Reviewed fixture', description: 'Native regression replay', unknowns: [],
+    matrix: matrixDocument(state, ledger), research: researchRecord(state, ledger, state.candidates[0]!.digest)
+  }, null, 2) + '\n')
 }, 15000)

@@ -61,6 +61,11 @@ npm test --prefix web -- --maxWorkers=4
 JPACK_EXPECTATION_BINARY=/absolute/path/to/jpack npm test --prefix web -- --maxWorkers=4 src/research/run.test.ts
 ```
 
+Set `JPACK_HANDOVER_FIXTURE=/absolute/path/to/handover.json` on the native
+replay command to export its final reviewed document, matrix and research
+record for a browser handover fixture. This is test data, not a live research
+result.
+
 The optional native replay uses scripted model turns and a signed fixture gateway
 response. It performs real stdio expectation admission, pack validation and all
 three rehearsals; it first blocks the reasonless missing-fact case, then approves
@@ -77,13 +82,45 @@ draft, failed source verification, Stop, a corrected but disagreeing assertion,
 full case retention, creation gating and correction history. UI tests exercise
 review navigation, exact displayed values, approval token and disabled actions.
 
+## Reviewed draft handover
+
+The Create page previously accepted the research document as its source, but
+kept Continue disabled until a separate AI proposal selector was selected.
+That selector belongs to the standalone drafting flow; a reviewed research
+handover never selected it. Continue now checks the actual proposal source.
+The method picker and AI setup prompts are omitted for an existing research
+handover. Runtime validation still gates the final Create action.
+
+Four additional Create-page regression cases cover that transition, a runtime
+validation refusal, and failure of either companion write. On success they
+assert pack → matrix → research record → project registration, runtime
+validation of the exact saved document, the approved assertion and original
+expectation history, and navigation to the saved pack. Companion failures leave
+the pack unregistered and report the files left behind. The new success/failure
+handover tests reproduced the disabled Continue defect before the fix.
+
+A real Chrome drive also used the native replay's handover with the actual
+Create page, MCP connection and file endpoints in a disposable Desk process.
+At 1,280px and 390px it created separate packs in a temporary project, preserving
+all three cases each, the correction history and matching saved-pack digests.
+The runtime then passed all six cases from the saved matrices. This verified
+browser-to-disk handover with no model calls; it does not close the separate
+fresh live research/search smoke gap from PR #76.
+
 ## Validation recorded for this change
 
 - Production build and type checking passed.
-- Full Desk suite: 3,286 passed; the optional native replay skipped by default.
+- Full Desk suite: 3,290 passed; the optional native replay skipped by default.
 - Native replay enabled explicitly: all 58 focused tests passed, including actual
   runtime admission, validation and evaluation.
 - Chrome fixture review: 320, 480, 720, 900 and 1,280px in light and dark themes;
   no horizontal page overflow, tabs remain fixed while the panel scrolls, and
   approval sends the displayed case/proposal token. These are component fixture
   checks, not a claim that a new live model smoke was run.
+- Create-page suite: 48 passed, including the four new handover regression cases.
+- Browser-to-disk handover: both widths passed, no page overflow, all six saved
+  matrix cases passed, and zero model calls.
+- `scripts/needle-check.sh .` is **not green**: 16 stale needles in 885 rows,
+  plus one ambiguous needle. These are unchanged from the PR's base; see the
+  separate [maintenance record](needle-maintenance.md). No mutation-coverage
+  success is claimed for this run.

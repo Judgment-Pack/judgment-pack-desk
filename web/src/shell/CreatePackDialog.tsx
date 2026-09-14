@@ -832,7 +832,7 @@ export function CreatePackDialog({
             <p className={flow.hint}>{['Start manually or draft with your assistant.', 'Define the rules, outcomes, and supporting evidence.', 'Check the content and runtime validation before creating.'][step]}</p>
           </div>
           {step === 0 && <>
-            <div><SegmentedControl label="Creation method" value={method} onValueChange={(next) => {
+            {handover === undefined && <><div><SegmentedControl label="Creation method" value={method} onValueChange={(next) => {
               if (next === 'manual') { setMethod('manual'); describe.discard(); setChoice(undefined) }
               else setMethod('ai')
             }} segments={[
@@ -842,6 +842,7 @@ export function CreatePackDialog({
             {!describe.usable && <p className={flow.hint}>AI drafting is unavailable. Configure the assistant in Admin to enable it. {describe.unusableBecause}</p>}
             {describe.usable && !describe.advertised && <p className={flow.hint}>This runtime does not offer the authoring prompt required for AI drafting.</p>}
             {describe.usable && describe.advertised && describe.picked.model === '' && <p className={flow.hint}>Choose an enabled model in Admin → Assistant to use AI drafting.</p>}
+            </>}
             <FieldGroup>
             <Field label="Name (required)" hint={slug === undefined ? undefined : `id: ${slug}`} error={nameProblem}>
               {(wiring) => <Input {...wiring} autoFocus required value={name} disabled={draft !== undefined} onChange={(event) => setName(event.target.value)} />}
@@ -878,7 +879,7 @@ export function CreatePackDialog({
             <Button variant="quiet" disabled={busy} onClick={() => close(false)}>Cancel</Button>
             <div>
               {step > 0 && <Button disabled={busy} onClick={() => setStep(step - 1)}>Back</Button>}
-              <Button variant="primary" type="submit" disabled={step === 2 ? !ready : step === 0 ? slug === undefined || taken !== undefined || source === undefined || describe.blocking !== '' || (method === 'ai' && !usingProposal && draft === undefined) : held.drafts.size > 0} aria-describedby={step === 2 && createWhy ? createHelpId : undefined}>
+              <Button variant="primary" type="submit" disabled={step === 2 ? !ready : step === 0 ? slug === undefined || taken !== undefined || source === undefined || describe.blocking !== '' || (method === 'ai' && source?.kind !== 'proposal' && draft === undefined) : held.drafts.size > 0} aria-describedby={step === 2 && createWhy ? createHelpId : undefined}>
                 {busy ? 'Creating…' : step === 2 ? 'Create pack' : step === 1 ? 'Review pack' : 'Continue'}
               </Button>
             </div>
