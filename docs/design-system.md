@@ -314,39 +314,63 @@ rows, allowing main to scroll when the console consumes the remaining height.
 Creation lives at `/create-pack`, outside the pack-ID route so a pack named `new` remains addressable. It uses `PageHeader`, `PageBody`, `FieldGroup`, the shared controls, and the existing byte-preserving document editors. Basics → Build → Review holds one draft. AI is offered only with an available endpoint/key, enabled model, and runtime authoring prompt; accepted suggestions become editable drafts, with declared unknowns retained for review. Neither route navigation nor tab changes silently save a draft.
 
 The reading page starts with Overview. Its compact `PageHeader` title variant
-contains the pack name, decision question, primary Test pack action, and the
-Overview / Logic / Tests navigation. One divider spans the pane; metadata and
-successful validation details live under More. Material validation issues stay
-visible. The title uses `--text-page`, the question `--text-sm`, and the shared
-control height and gutters. Narrow layouts move Edit into More and wrap the
-title/question. The header scrolls with the page so long names and enlarged
-text cannot consume the entire work area.
+contains the pack name, primary Test pack action, and Overview / Logic / Tests
+navigation. One divider spans the pane; metadata and successful validation
+details live under More. Material validation issues stay visible. The title
+uses `--text-page`; the decision question uses `--text-sm` in the scrolling
+body. The header stays outside that scroll region. Narrow layouts move Edit
+into More and allow the title to wrap.
 
-Logic offers Map and List over one `logicModel` projection. The grouped map
-uses the lazy-loaded `RelationshipMap` React Flow adapter; nodes express
-declared relationships within one pack, not first-match priority or the
-runtime composition graph's execution order. Node surfaces and selection stay
-neutral. Edges use `--ink-faint` because a meaningful connection needs stronger
-contrast than a decorative panel border. Normal node text remains 13px at the
-initial 100% zoom; inspector changes never run Fit view.
+Logic offers a detailed List and Map over one `logicModel` projection. Essential
+information is readable with the Inspector closed: exact scope, evidence names
+and requirements, rule/exception conditions, contributed outcomes, unknown
+behavior, fallback, and handoff configuration. List starts detailed and is the
+first-time default at every width. An explicit Map/List preference still wins.
+Rules sit alongside each other where there is room and stack at narrow widths.
+Long conditions wrap without clipping or horizontal scrolling. `LogicDetails`
+shares reading content between representations; `ConditionTree` preserves
+operators, operand types, order, nested logic and unrecognized values. Inline
+array layout wraps between complete entries without changing the values.
 
-List keeps rules and exceptions visible, with compact controls for context,
-resolution and references. Search spans all declared groups. In Map, typing
-does not open a modal: submitting the search opens Outline. The right slot
-holds either Outline or selected-item details. Exact conditions reuse
-`ConditionTree`, which wraps in every reading context; Inspector copies have
-no document selection targets. Author prose and raw JSON are separate disclosures. Full document and editing remain reachable under More
-and retain the original pointer address space, ordering and extensions.
+The lazy-loaded `RelationshipMap` React Flow adapter shows individual rules,
+special cases and outcomes. `logicGraph` derives edges from exact declared
+outcome IDs and exclusion targets. Documentary evidence/source references are
+not execution edges. Source references, scope/evidence and fallback/handoff
+remain in the reading area around the canvas. Rules contribute independently;
+map placement does not set first-match priority or imply runtime composition.
+Node surfaces and selection stay neutral; edges use `--ink-faint`. Node heights
+are measured and columns reflow without overlaps. Inspector changes never run
+Fit view or reduce the reader's chosen zoom.
 
-Selection, outline/list scroll, and map viewport belong to the route, above
-pane remounts. An explicit Map/List choice is remembered; without a preference,
-desktop starts with Map and narrow layouts with List. Resizing adapts the
-inspector without changing the selected view. The shell's optional
-`requestWorkingWidth` contract measures the entire workspace, avoiding a
-feedback loop in which opening the inspector changes its own breakpoint input.
-Map requests 49rem including content and scrollbar gutters; List requests 34rem. Existing project
-pane widths still apply. Drawer dismissal restores focus to the inspection
-gesture when it remains mounted, with the header toggle as fallback.
+One shared Display popover remembers condition visibility and optional grouping
+of map rules by outcome. Group cards name their members, show accurate counts,
+and expand directly on the canvas. Rules targeted by an exclusion stay
+individual so an edge cannot suggest the whole group is excluded. Detailed
+conditions are the default; compact mode is an explicit reader preference.
+
+Search spans all declared groups. List filters matching items; Map highlights
+matches without moving the viewport on each keystroke. Enter / Next match
+reveals and focuses the next matching item without opening the Inspector.
+Matching conditions are readable even when compact display is selected.
+
+The Logic toolbar sticks within the main PageBody scroll region. List uses
+that one scroll owner; Map has a bounded pan/zoom canvas. Selection, List scroll,
+Outline scroll and map viewport belong to the route. Switching representations
+preserves the Inspector's current mode and open/closed preference. The optional
+Outline and detail pane supplement the main content with reasoning, author
+explanations, references, checks and exact JSON. Inspection uses shared
+`InspectionRow` controls; graph nodes expose one keyboard/touch inspection
+action. Exact technical details retain the original pointer address space.
+
+The shell's `requestWorkingWidth` contract measures the entire workspace,
+avoiding breakpoint feedback loops. Map requests 51rem and List 34rem, while
+existing project pane widths still apply. Drawer dismissal restores focus to
+the inspection gesture when mounted, with the header toggle as fallback.
+
+These choices apply Linear's [content hierarchy](https://linear.app/now/behind-the-latest-design-refresh),
+[persistent display options](https://linear.app/docs/display-options), and
+[overview/detail sidebar](https://linear.app/docs/project-overview) principles
+to pack reading; they are not claims about a private Linear component library.
 
 Invalid carriers are shown as original text. A complete map requires a current
 valid runtime check; unsupported definitions remain inspectable in List with

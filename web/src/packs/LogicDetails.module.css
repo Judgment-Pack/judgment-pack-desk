@@ -1,0 +1,9 @@
+.content { min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.content p, .note { margin: 0; }
+.note { font-size: var(--text-xs); color: var(--ink-soft); overflow-wrap: anywhere; }
+.facts { display: grid; gap: var(--space-2); margin: 0; font-size: var(--text-xs); }
+.facts > div { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
+.facts dt { color: var(--ink-soft); }
+.facts dd { margin: 0; }
+.triggers { margin: 0; padding-inline-start: var(--space-4); font-size: var(--text-xs); color: var(--ink-soft); }
+.raw { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: var(--text-xs) / 1.5 var(--mono); }

@@ -955,9 +955,12 @@ version the runtime does not bundle reports one layer row and a `capability`
 diagnostic whose layer appears in no row at all, while an unsupported required
 extension reports all three layers passing.
 
-Packs open on a concise **Overview** with a compact name/question header.
-**Logic** switches between a grouped relationship Map and a full-width List;
-both share the selected document pointer and the shell's contextual inspector.
+Packs open on a concise **Overview** with a compact name header and the question
+in the scrolling body. **Logic** starts with a detailed List and offers a Map;
+both show actual conditions, outcomes and handling settings without requiring
+the Inspector. Saved layout preferences still apply. Display offers compact
+conditions and optional map grouping by outcome. The views share the selected
+document pointer and the shell's contextual inspector.
 The optional Outline navigates the same items. **Test pack** opens
 `/packs/:id/evaluate`; **Saved cases** is available where the listing declares a
 matrix. More contains pack metadata, successful validation details and

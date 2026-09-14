@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "results": [
+    "All essential values visible without inspection",
+    "Sticky toolbar/header, restored List position, search highlight and jump, direct keyboard inspection",
+    "dark 1700px List contains full conditions",
+    "dark 1100px List contains full conditions",
+    "dark 640px List contains full conditions",
+    "dark 360px List contains full conditions",
+    "light 1700px List contains full conditions",
+    "light 1100px List contains full conditions",
+    "light 640px List contains full conditions",
+    "light 360px List contains full conditions",
+    "80 rules, 12 nested long conditions, grouping and expansion without overlap",
+    "Display preferences persist; search reveals conditions; 200% text remains contained"
+  ],
+  "errors": []
+}
