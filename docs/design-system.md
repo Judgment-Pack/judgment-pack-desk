@@ -583,3 +583,20 @@ borders, corner clipping and keyboard focus treatment.
 
 See [the terminology and pane review](reviews/plain-language-panes.md) and run
 `scripts/pane-help-check.mjs` for actual-browser regression coverage.
+
+
+## Pack editing and return navigation
+
+`PackEditHeader` composes the shared `PageHeader`, `Button` and `EditToolbar`.
+Save is the only primary header command. Back to pack is always visible, including
+narrow panes; neither belongs in a popover or the scrolling document. Secondary
+controls use the shared toolbar and neutral Form/JSON selection. The reading
+header's Test pack and section links are replaced while editing, so saved-pack
+navigation is not mistaken for a test of unsaved changes.
+
+Save status and unfinished-field guidance stay with the actions. An explicit return
+with unsaved work uses the shared Radix Dialog, with Keep editing, Discard and
+return, and Save and return. Focus returns to the editor on cancellation and to
+the reading action after exiting. The dialog never dismisses unsaved work merely
+because a write was attempted; verified read-back and the current buffer determine
+whether Save and return can finish.

@@ -39,7 +39,7 @@ export function PackHeader({ packId, document: doc, current, actions, hasMatrix 
   const narrow = useMediaQuery('(max-width: 599px)')
   return <PageHeader variant="title" title={text(doc?.title, packId)}
     navigation={<PackNavigation packId={packId} current={current} />}
-    actions={<div className={styles.actions}>{!narrow && actions}
+    actions={<div className={styles.actions}>{actions}
       <Popover title="Pack details" trigger={<Button variant="quiet" aria-label="More pack actions">{narrow ? '…' : 'More'}</Button>}>
         <dl className={styles.metadata}>
           <div><dt>Title</dt><dd>{text(doc?.title, packId)}</dd></div>
@@ -47,7 +47,7 @@ export function PackHeader({ packId, document: doc, current, actions, hasMatrix 
           <div><dt>Pack ID</dt><dd>{text(doc?.id, packId)}</dd></div>
         </dl>
         {details}
-        <div className={styles.moreActions}>{narrow && actions}<ButtonLink variant="quiet" to={`${base}?view=document`}>Full document</ButtonLink>{hasMatrix && <ButtonLink variant="quiet" to={`${base}/matrix`}>Saved cases</ButtonLink>}</div>
+        <div className={styles.moreActions}><ButtonLink variant="quiet" to={`${base}?view=document`}>Full document</ButtonLink>{hasMatrix && <ButtonLink variant="quiet" to={`${base}/matrix`}>Saved cases</ButtonLink>}</div>
       </Popover>
       {current !== 'test' && <ButtonLink variant="primary" to={`${base}/evaluate`}>Test pack</ButtonLink>}
     </div>} />

@@ -192,9 +192,9 @@ export function TryItPane({
 
 
   return (
-    <aside className={styles.pane} aria-label="Try it">
+    <aside className={styles.pane} aria-label="Test draft">
       <div className={styles.head}>
-        <h2 className={styles.heading}>Try it</h2>
+        <h2 className={styles.heading}>Test draft</h2>
         <Button variant="quiet" onClick={onClose}>
           Close
         </Button>

@@ -5,13 +5,13 @@
  * submits it unless told otherwise, so a Cancel that forgot its type is a
  * Cancel that creates the pack. The one control that means to submit says so.
  */
-import type { ButtonHTMLAttributes } from 'react'
+import type { ComponentPropsWithRef } from 'react'
 import { Link, type LinkProps } from 'react-router-dom'
 import styles from './Button.module.css'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'inline' | 'danger'
 
-export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps extends ComponentPropsWithRef<'button'> {
   variant?: ButtonVariant
 }
 

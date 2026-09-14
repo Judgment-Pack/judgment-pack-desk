@@ -36,7 +36,7 @@ export function editShape(params: URLSearchParams): EditShape {
 }
 
 /** The address with edit mode turned on or off, everything else kept. */
-export function withEditing(params: URLSearchParams, editing: boolean): URLSearchParamsInit {
+export function withEditing(params: URLSearchParams, editing: boolean): URLSearchParams {
   const next = new URLSearchParams(params)
   if (editing) next.set(EDIT_PARAM, '1')
   else {
