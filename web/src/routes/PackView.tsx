@@ -88,7 +88,7 @@ import { useMeasuredBox } from '../shell/measured'
 import { Tabs } from '../ui/Tabs'
 import { PackLogic } from '../packs/PackLogic'
 import { LogicInspector } from '../packs/inspector/LogicInspector'
-import { projectLogic, selectedItem } from '../packs/logicModel'
+import { matchingItems, projectLogic, selectedItem } from '../packs/logicModel'
 import { useLogicState, rememberLogicMode, type LogicMode } from '../packs/logicState'
 import { usePackRun, traceMatches } from '../packs/runContext'
 import styles from './PackView.module.css'
@@ -257,7 +257,6 @@ export function PackView() {
   const groupId = at === null ? params.get('group') : null
   const select = (pointer: string) => {
     setSelectionNotice('')
-    logic.setPane('detail')
     setRightTab('inspector')
     if (at === pointer && !params.has('group')) { slot.reveal(); return }
     const next = new URLSearchParams(params)
@@ -404,7 +403,13 @@ export function PackView() {
     retainInspectorOnNavigation.current = true
     setParams(next, { replace: true })
   }
-  const openOutline = () => { logic.setPane('outline'); setRightTab('inspector'); slot.reveal() }
+  const selectInMain = (pointer: string) => {
+    setSelectionNotice('')
+    if (at === pointer && !params.has('group')) return
+    retainInspectorOnNavigation.current = true
+    const next = new URLSearchParams(params); next.delete('group'); next.set('at', pointer)
+    setParams(next, { replace: true })
+  }
   const runRequested = params.get('run')
   const run = explanation.data?.id === runRequested ? explanation.data : undefined
   const matchingRun = traceMatches(run, packId, shownText)
@@ -859,15 +864,17 @@ export function PackView() {
     inspectorNode === null ? null : (
       <Tabs
         scrollable
-        resetScrollKey={`${packId}:${at}:${groupId}:${logic.pane}`}
+        resetScrollKey={`${packId}:${at}:${groupId}`}
         label="Right pane"
         value={rightTab}
         onValueChange={setRightTab}
         tabs={[
           { value: 'inspector', label: 'Inspector', panel:
             !editing && (section === 'logic' || section === 'overview') && model && formAvailable ?
-              <LogicInspector model={model} at={at} groupId={groupId} pane={logic.pane} query={logic.query}
-                onSelect={select} onOutline={openOutline} outlineScroll={logic.outlineScroll}
+              <LogicInspector model={model} at={at} groupId={groupId}
+                onSelect={select} mainContent={section === 'logic' && (mode === 'map' || !logic.query.trim()
+                  || model.groups.some(group => matchingItems(group, logic.query).some(item => item.pointer === selectedItem(model, at)?.item.pointer)))}
+                conditionsVisible={logic.display.conditions || Boolean(logic.query.trim())}
                 trace={runTrace} advanced={inspectorNode} /> : inspectorNode },
           {
             value: 'assistant',
@@ -1177,8 +1184,8 @@ export function PackView() {
                       <Button variant="quiet" onClick={() => { const next = new URLSearchParams(params); next.delete('run'); retainInspectorOnNavigation.current = true; setParams(next, { replace: true }) }}>Structure only</Button>
                       <ButtonLink variant="quiet" to={`/packs/${encodeURIComponent(packId ?? '')}/evaluate`}>Back to Tests</ButtonLink>
                     </div>}
-                    <PackLogic model={model} at={at} groupId={groupId} select={select} mode={mode} onMode={changeMode}
-                      query={logic.query} onQuery={logic.setQuery} openOutline={openOutline}
+                    <PackLogic model={model} at={at} groupId={groupId} select={selectInMain} inspect={select} mode={mode} onMode={changeMode}
+                      query={logic.query} onQuery={logic.setQuery} display={logic.display} onDisplay={logic.setDisplay}
                       viewport={logic.viewport} onViewport={logic.setViewport} listScroll={logic.listScroll}
                       trace={runTrace} mapUnavailable={!formAvailable ? 'The document cannot be interpreted unambiguously.'
                         : stale || !report ? 'A current validation is needed before displaying a complete map.'

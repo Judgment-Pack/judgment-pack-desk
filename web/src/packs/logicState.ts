@@ -23,10 +23,9 @@ export const DEFAULT_MAP_VIEWPORT: Viewport = { x: 0, y: 24, zoom: 1 }
 export function useLogicState(packId?: string) {
   const [preferred, setPreferred] = useState(initialLogicMode)
   const [query, setQuery] = useState('')
-  const [pane, setPane] = useState<'outline' | 'detail'>('detail')
+  const [display, setDisplay] = useState(initialLogicDisplay)
   const [viewport, setViewport] = useState<Viewport>(DEFAULT_MAP_VIEWPORT)
   const listScroll = useRef(0)
-  const outlineScroll = useRef(0)
-  useEffect(() => { setQuery(''); setPane('detail'); setViewport(DEFAULT_MAP_VIEWPORT); listScroll.current = 0; outlineScroll.current = 0 }, [packId])
-  return { preferred, setPreferred, query, setQuery, pane, setPane, viewport, setViewport, listScroll, outlineScroll }
+  useEffect(() => { setQuery(''); setViewport(DEFAULT_MAP_VIEWPORT); listScroll.current = 0 }, [packId])
+  return { preferred, setPreferred, query, setQuery, display, setDisplay, viewport, setViewport, listScroll }
 }

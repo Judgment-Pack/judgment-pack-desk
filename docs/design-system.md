@@ -329,8 +329,12 @@ first-time default at every width. An explicit Map/List preference still wins.
 Rules sit alongside each other where there is room and stack at narrow widths.
 Long conditions wrap without clipping or horizontal scrolling. `LogicDetails`
 shares reading content between representations; `ConditionTree` preserves
-operators, operand types, order, nested logic and unrecognized values. Inline
-array layout wraps between complete entries without changing the values.
+operators, operand types, order, nested logic and unrecognized values. Structured reading separates the field, comparison and exact operands. Arrays
+show one complete quoted/typed value per row, with no surrounding JSON punctuation.
+Mechanical field labels accompany the exact paths; neither changes authored values.
+Evidence uses one full-width row per item with requirement/type below its name.
+The scope/evidence columns and rule cards stack when the Logic container is under
+54rem; the evidence list never nests a second two-column grid.
 
 The lazy-loaded `RelationshipMap` React Flow adapter shows individual rules,
 special cases and outcomes. `logicGraph` derives edges from exact declared
@@ -355,12 +359,29 @@ Matching conditions are readable even when compact display is selected.
 
 The Logic toolbar sticks within the main PageBody scroll region. List uses
 that one scroll owner; Map has a bounded pan/zoom canvas. Selection, List scroll,
-Outline scroll and map viewport belong to the route. Switching representations
-preserves the Inspector's current mode and open/closed preference. The optional
-Outline and detail pane supplement the main content with reasoning, author
-explanations, references, checks and exact JSON. Inspection uses shared
-`InspectionRow` controls; graph nodes expose one keyboard/touch inspection
-action. Exact technical details retain the original pointer address space.
+display preferences and map viewport belong to the route. Switching representations
+preserves the Inspector's current tab and open/closed preference. A searchable
+`PackJumpTo` popover navigates to items in the main view, clears a conflicting
+filter and closes with focus on the destination. It expands a grouped map target
+before focusing the measured node. Escape returns focus to the trigger.
+
+Map node clicks/Enter/Space select without opening the Inspector or changing
+its Assistant tab. A separate native View details button opens supporting details;
+group actions expand in the main canvas. `InspectionRow` remains the explicit
+detail action for reading rows. Deep links still open their addressed Inspector.
+
+Alongside detailed Logic, the Inspector omits already-visible conditions, outcome
+contributions, unknown handling and primary definitions. It adds author reasoning,
+references, checks, provenance and exact JSON. Compact reading and Overview
+inspection retain the condition definition where the main view does not show it.
+With no selection it shows pack metadata, without a duplicate Outline.
+
+Overview contains the author's purpose/description, a short list of possible
+outcomes, aggregate evidence/rule counts, source access and View logic navigation.
+It does not repeat scope conditions, evidence members, fallback or handoff
+configuration. Authored context is visible and exact repeated paragraphs/question
+text are omitted. Summary outcome names are intentional orientation; their full
+definitions and contributions belong in Logic.
 
 The shell's `requestWorkingWidth` contract measures the entire workspace,
 avoiding breakpoint feedback loops. Map requests 51rem and List 34rem, while
@@ -500,8 +521,9 @@ See [the reading and selection sweep](reviews/reading-selection-sweep.md).
 ## Relationship-map interaction
 
 `RelationshipMap` owns the React Flow integration. Fixed nodes use the documented
-`nopan` utility class, a pointer cursor, button semantics and a route-controlled
-pressed state. Clicking, tapping, Enter and Space all inspect the same node.
+`nopan` utility class, a pointer cursor and a route-controlled current state.
+Focusable node groups select on click, tap, Enter or Space. A separate native
+button opens supporting details or expands an aggregate group.
 Dragging the empty canvas pans; inspecting a visible node does not reset the
 viewport. The attribution badge is disabled through `proOptions.hideAttribution`.
 
@@ -549,7 +571,7 @@ same visible region. Scrolling content never passes behind the header.
 `RightPane` holds the pane header above its scrollable slot. `Tabs scrollable`
 keeps the tab list above the active panel's scroll region in both docked and
 drawer forms. Its `resetScrollKey` starts new selections at their heading;
-outline scroll retention remains independent. Pane scrolling never moves the
+Jump to navigation is transient and has no persistent duplicate outline. Pane scrolling never moves the
 other pane, shell header or bottom strip. Keep existing neutral surfaces,
 borders, corner clipping and keyboard focus treatment.
 

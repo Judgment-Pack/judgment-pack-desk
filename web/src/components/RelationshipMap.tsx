@@ -10,7 +10,7 @@ export interface RelationshipNode {
   selected?: boolean; matched?: boolean; observation?: string
 }
 export interface RelationshipEdge { id: string; source: string; target: string; label?: string }
-type ReadNode = Node<Omit<RelationshipNode, 'id' | 'column'>, 'relationship'>
+type ReadNode = Node<Omit<RelationshipNode, 'id' | 'column'> & { inspect: () => void }, 'relationship'>
 function ReadingNode({ data, selected }: NodeProps<ReadNode>) {
   return <div className={[styles.node, selected ? styles.selected : '', data.matched ? styles.matched : ''].join(' ')}>
     <Handle type="target" position={Position.Left} className={styles.handle} />
@@ -18,7 +18,8 @@ function ReadingNode({ data, selected }: NodeProps<ReadNode>) {
     {data.matched && <span className={styles.match}>Search match</span>}
     <div className={styles.content}>{data.content}</div>
     {data.observation && <span className={styles.observation}>{data.observation}</span>}
-    <span className={styles.action}>{data.action} <span aria-hidden="true">›</span></span>
+    <Button variant="quiet" className={styles.action} aria-label={`${data.action}: ${data.title}`}
+      onClick={event => { event.stopPropagation(); data.inspect() }}>{data.action} <span aria-hidden="true">›</span></Button>
     <Handle type="source" position={Position.Right} className={styles.handle} />
   </div>
 }
@@ -41,9 +42,9 @@ export function relationshipPositions(nodes: Pick<RelationshipNode, 'id' | 'colu
 }
 
 /** Read-only canvas infrastructure; callers own document and edge semantics. */
-export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange, onInspect, focusRequest }: {
+export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange, onSelect, onInspect, focusRequest }: {
   nodes: RelationshipNode[]; edges: RelationshipEdge[]; unit: number; viewport: Viewport
-  onViewportChange: (next: Viewport) => void; onInspect: (id: string) => void
+  onViewportChange: (next: Viewport) => void; onSelect: (id: string) => void; onInspect: (id: string) => void
   focusRequest?: { id: string; sequence: number }
 }) {
   const [sizes, setSizes] = useState<Record<string, { width: number; height: number }>>({})
@@ -52,10 +53,10 @@ export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange
   const positions = useMemo(() => relationshipPositions(nodes, sizes, unit), [nodes, sizes, unit])
   const flowNodes = useMemo<ReadNode[]>(() => nodes.map(n => ({
     id: n.id, type: 'relationship', position: positions.get(n.id)!,
-    data: n, selected: n.selected, ariaLabel: `${n.action}: ${n.title}`, ariaRole: 'button',
+    data: { ...n, inspect: () => onInspect(n.id) }, selected: n.selected, ariaLabel: `Select: ${n.title}`, ariaRole: 'group',
     domAttributes: { 'aria-current': n.selected ? 'true' : undefined, 'data-search-match': n.matched ? 'true' : undefined },
     className: 'nopan', draggable: false, connectable: false
-  })), [nodes, positions])
+  })), [nodes, positions, onInspect])
   const flowEdges = useMemo(() => edges.map(e => ({ ...e, type: 'smoothstep',
     markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--ink-faint)' },
     labelStyle: { fill: 'var(--ink-soft)', fontSize: .75 * unit },
@@ -81,16 +82,25 @@ export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange
     if (!focusRequest || focused.current === focusRequest.sequence || !instance) return
     const position = positions.get(focusRequest.id), size = sizes[focusRequest.id]
     if (!position || !size) return
-    focused.current = focusRequest.sequence
-    void instance.setCenter(position.x + size.width / 2, position.y + size.height / 2, { zoom: 1 })
-    const target = Array.from(root.current?.querySelectorAll<HTMLElement>('.react-flow__node') ?? []).find(el => el.dataset.id === focusRequest.id)
-    target?.focus({ preventScroll: true })
+    // Expanding a group changes React Flow's nodes in a later commit. Wait for
+    // that real node and its measurement before consuming the focus request.
+    let frame = 0
+    const focus = () => {
+      const target = Array.from(root.current?.querySelectorAll<HTMLElement>('.react-flow__node') ?? []).find(el => el.dataset.id === focusRequest.id)
+      if (!target || getComputedStyle(target).visibility === 'hidden') { frame = requestAnimationFrame(focus); return }
+      focused.current = focusRequest.sequence
+      target.focus({ preventScroll: true })
+      void instance.setCenter(position.x + size.width / 2, position.y + size.height / 2, { zoom: 1 })
+    }
+    frame = requestAnimationFrame(() => { frame = requestAnimationFrame(focus) })
+    return () => cancelAnimationFrame(frame)
   }, [focusRequest, instance, positions, sizes])
   const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Enter' && event.key !== ' ') return
+    if ((event.target as HTMLElement).closest('button, a, input')) return
     const node = (event.target as HTMLElement).closest<HTMLElement>('.react-flow__node')
     const id = node?.dataset.id
-    if (id) { event.preventDefault(); event.stopPropagation(); onInspect(id) }
+    if (id) { event.preventDefault(); event.stopPropagation(); onSelect(id) }
   }
   return <div ref={root} className={styles.map} onKeyDownCapture={keyDown} aria-label="Pack relationship map">
     <ReactFlow nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onInit={setInstance}
@@ -99,13 +109,13 @@ export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange
       onNodeClick={(_event, node) => {
         const selection = root.current?.ownerDocument.getSelection()
         if (selection && !selection.isCollapsed && selection.toString()) return
-        onInspect(node.id)
+        onSelect(node.id)
       }}
       nodesDraggable={false} nodesConnectable={false} edgesReconnectable={false}
       edgesFocusable={false} elementsSelectable={false} nodesFocusable
       deleteKeyCode={null} selectionKeyCode={null} panOnScroll zoomOnScroll={false}
       minZoom={0.5} maxZoom={2} preventScrolling={false}
-      ariaLabelConfig={{ 'node.a11yDescription.default': 'Press Enter or Space to view details or expand a rule group.' }} />
+      ariaLabelConfig={{ 'node.a11yDescription.default': 'Press Enter or Space to select. Use View details for supporting information or Expand rules to read a group.' }} />
     <div className={styles.controls} aria-label="Map zoom">
       <Tooltip content="Zoom out"><Button aria-label="Zoom out" onClick={() => onViewportChange({ ...viewport, zoom: Math.max(.5, viewport.zoom - .25) })}>−</Button></Tooltip>
       <Tooltip content="Reset map view"><Button aria-label="Reset map view" onClick={() => onViewportChange({ x: 0, y: 24, zoom: 1 })}>{Math.round(viewport.zoom * 100)}%</Button></Tooltip>

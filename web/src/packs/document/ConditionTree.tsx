@@ -25,13 +25,15 @@ import { Block } from './Block'
 import { ReadOnlyBlocks } from './Block'
 import { valueLabel } from '../terminology'
 import styles from './PackDocument.module.css'
+import reading from './ConditionTree.module.css'
 
 const ArrayLayout = createContext<'stacked' | 'inline'>('stacked')
-export function ConditionTree({ condition, at, readOnly = false, arrayLayout = 'stacked' }: { condition: unknown; at: string; readOnly?: boolean; arrayLayout?: 'stacked' | 'inline' }) {
+const Structured = createContext(false)
+export function ConditionTree({ condition, at, readOnly = false, arrayLayout = 'stacked', structured = false }: { condition: unknown; at: string; readOnly?: boolean; arrayLayout?: 'stacked' | 'inline'; structured?: boolean }) {
   return (
-    <div className={styles.tree}>
+    <div className={structured ? reading.tree : styles.tree} data-condition-tree={structured ? 'structured' : 'document'}>
       <ReadOnlyBlocks.Provider value={readOnly}>
-        <ArrayLayout.Provider value={arrayLayout}><ConditionNode condition={condition} at={at} depth={0} /></ArrayLayout.Provider>
+        <Structured.Provider value={structured}><ArrayLayout.Provider value={arrayLayout}><ConditionNode condition={condition} at={at} depth={0} /></ArrayLayout.Provider></Structured.Provider>
       </ReadOnlyBlocks.Provider>
     </div>
   )
@@ -46,6 +48,7 @@ function ConditionNode({
   at: string
   depth: number
 }) {
+  const structured = useContext(Structured)
   // **The one discrimination.** `edit/conditionOps.ts` decides what kind a node
   // is, and the builder reads it from there too: two spellings of "what makes a
   // node a `fact`" is a tree that draws one thing while the form edits another,
@@ -62,6 +65,17 @@ function ConditionNode({
     )
   }
   const node = condition as Condition
+
+  if (structured && (kind === 'all' || kind === 'any' || kind === 'not')) {
+    const children = kind === 'not' ? [node.condition] : Array.isArray(node.conditions) ? node.conditions : []
+    return <Block pointer={at} as="div" className={reading.group}>
+      <span className={reading.groupLabel}>{valueLabel('op', kind)}</span>
+      <div className={reading.children}>{children.map((child, index) => <ConditionNode key={index} condition={child}
+        at={kind === 'not' ? `${at}/condition` : `${at}/conditions/${index}`} depth={depth + 1} />)}
+        {!children.length && <span className={reading.comparison}>{Array.isArray(node.conditions) ? 'No conditions declared' : JSON.stringify(node.conditions) ?? 'Conditions not declared'}</span>}
+      </div>
+    </Block>
+  }
 
   if (kind === 'all' || kind === 'any') {
     const children = Array.isArray(node.conditions) ? node.conditions : []
@@ -94,6 +108,16 @@ function ConditionNode({
   }
 
   if (kind === 'fact') {
+    if (structured) return <Block pointer={at} as="div" className={reading.fact}>
+      <div className={reading.field}>
+        <span>{factLabel(String(node.path ?? ''))}</span>
+        <Block pointer={`${at}/path`} as="code" className={reading.path}>{String(node.path ?? '')}</Block>
+      </div>
+      <div className={reading.test}>
+        <Block pointer={`${at}/operator`} as="span" className={reading.comparison}>{valueLabel('operator', String(node.operator ?? ''))}</Block>
+        <Block pointer={`${at}/value`} as="div" className={reading.operand}><Operand value={node.value} /></Block>
+      </div>
+    </Block>
     return (
       <Row at={at} depth={depth}>
         <Block pointer={`${at}/path`} as="code" className={styles.factPath}>
@@ -110,6 +134,10 @@ function ConditionNode({
   }
 
   if (kind === 'evidence-present') {
+    if (structured) return <Block pointer={at} as="div" className={reading.fact}>
+      <span className={reading.comparison}>{valueLabel('op', kind)}</span>
+      <Block pointer={`${at}/evidenceRequirement`} as="code" className={reading.operand}>{String(node.evidenceRequirement ?? '')}</Block>
+    </Block>
     return (
       <Row at={at} depth={depth}>
         <span className={styles.op}>{valueLabel('op', 'evidence-present')}</span>{' '}
@@ -137,7 +165,13 @@ function ConditionNode({
 /** Break between complete array entries first. Quotes, types and order stay exact. */
 function Operand({ value }: { value: unknown }) {
   const layout = useContext(ArrayLayout)
-  if (!Array.isArray(value)) return <>{JSON.stringify(value)}</>
+  const structured = useContext(Structured)
+  if (structured && Array.isArray(value)) return <>
+    <span className={reading.count}>{value.length} {value.length === 1 ? 'value' : 'values'}</span>
+    {value.length ? <span className={reading.values} role="list" aria-label="Exact values">{value.map((entry, index) =>
+      <span role="listitem" key={index}><code>{JSON.stringify(entry)}</code></span>)}</span> : <code>[]</code>}
+  </>
+  if (!Array.isArray(value)) return <>{JSON.stringify(value) ?? (structured ? 'Value not declared' : undefined)}</>
   const expanded = layout === 'stacked' && (value.length > 3 || JSON.stringify(value).length > 80)
   return <span className={expanded ? styles.arrayExpanded : undefined}>[
     {value.map((entry, index) => <span className={styles.arrayEntry} key={index}>
@@ -155,12 +189,20 @@ function Row({
   depth: number
   children: ReactNode
 }) {
+  const structured = useContext(Structured)
   return (
-    <Block pointer={at} as="div" className={styles.treeRow}>
+    <Block pointer={at} as="div" className={structured ? reading.row : styles.treeRow}>
       <span className={styles.indent} aria-hidden="true">
         {'  '.repeat(depth)}
       </span>
       <span className={styles.treeContent}>{children}</span>
     </Block>
   )
+}
+
+/** Mechanical display label only; the complete, exact pointer stays visible. */
+function factLabel(path: string): string {
+  const words = path.replace(/^\//, '').split('/').map(part => part.replace(/~1/g, '/').replace(/~0/g, '~'))
+    .join(' ').replace(/([a-z0-9])([A-Z])/g, (_match, before: string, after: string) => `${before} ${after.toLowerCase()}`).replace(/[-_]/g, ' ')
+  return words ? words[0]!.toUpperCase() + words.slice(1) : 'Fact'
 }

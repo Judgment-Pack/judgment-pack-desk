@@ -1,0 +1,16 @@
+.tree { min-width: 0; container-type: inline-size; font-size: var(--text-sm); }
+.group { display: grid; gap: var(--space-2); min-width: 0; }
+.groupLabel { font-weight: 500; }
+.children { display: grid; gap: var(--space-3); padding-inline-start: var(--space-3); border-inline-start: 1px solid var(--border); min-width: 0; }
+.children .children { padding-inline-start: var(--space-2); }
+.fact { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-3); align-items: start; min-width: 0; }
+.fact:has(.values) { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
+.field, .test { display: grid; gap: var(--space-1); min-width: 0; }
+.field, .comparison { overflow-wrap: break-word; }
+.path, .operand, .row code { font-family: var(--mono); font-size: var(--text-xs); overflow-wrap: anywhere; white-space: pre-wrap; min-width: 0; }
+.path, .comparison, .count { color: var(--ink-soft); }
+.count { display: block; font: var(--text-xs) / 1.5 var(--sans); margin-bottom: var(--space-1); }
+.values { display: grid; gap: var(--space-1); }
+.values code { font: inherit; }
+.row { display: flex; gap: var(--space-1); min-width: 0; }
+@container (max-width: 19rem) { .fact { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); } }

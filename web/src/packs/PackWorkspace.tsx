@@ -8,11 +8,10 @@ import { Button, ButtonLink } from '../ui/Button'
 import { PageHeader } from '../ui/PageLayout'
 import { ExpandableText } from '../ui/ExpandableText'
 import { InspectionRow } from '../ui/InspectionRow'
-import { Disclosure } from '../ui/Disclosure'
 import { PACK_TERMS } from './terminology'
 import { Popover } from '../ui/Popover'
 import { useMediaQuery } from '../shell/useMediaQuery'
-import { entries, outcomeLabel, text } from './logicModel'
+import { entries, text } from './logicModel'
 import styles from './PackWorkspace.module.css'
 
 export type PackSection = 'overview' | 'logic' | 'rules' | 'evidence' | 'document' | 'test'
@@ -65,41 +64,32 @@ export function PackOverview({ document: doc, packId = '' }: { document: PackDoc
   const { at, select } = useDocumentSelection()
   const evidence = entries(doc.evidenceRequirements)
   const outcomes = entries(doc.outcomes)
-  const escalation = isRecord(doc.escalation) ? doc.escalation : undefined
-  const target = isRecord(escalation?.target) ? escalation.target : undefined
+  const decision = isRecord(doc.decision) ? doc.decision : undefined
+  const question = text(decision?.question, '').trim()
+  const context = [...new Set([text(decision?.intent, ''), text(doc.description, '')].map(value => value.trim()).filter(value => value && value !== question))]
   return <section className={styles.overview} aria-label="Pack overview">
-    <section>
-      <h2>What this pack needs</h2>
-      <InspectionRow label={PACK_TERMS.applicability.label} value={doc.applicability ? 'View conditions' : 'No scope restriction set'}
-        aria-label="View conditions" current={at === '/applicability'} onClick={() => select('/applicability')} />
-      <InspectionRow label={PACK_TERMS.evidenceRequirements.label}
-        value={`${evidence.filter(x => isRecord(x) && x.required === true).length} required · ${evidence.filter(x => isRecord(x) && x.required === false).length} optional`}
-        aria-label="View evidence needed" current={at === '/evidenceRequirements'} onClick={() => select('/evidenceRequirements')} />
-    </section>
+    {context.length > 0 && <section><h2>About this pack</h2>{context.map((paragraph, index) => <p key={index}>{paragraph}</p>)}</section>}
     <section className={styles.group} aria-label={PACK_TERMS.outcomes.label}>
-      <div className={styles.sectionHeading}><h2>{PACK_TERMS.outcomes.label}</h2>
-        <ButtonLink variant="quiet" to={`/packs/${encodeURIComponent(packId)}?view=logic`}>View logic</ButtonLink>
-      </div>
-      <div className={styles.outcomes}>{outcomes.slice(0, 4).map((value, index) =>
-        <InspectionRow key={index} label={isRecord(value) ? text(value.label, text(value.id)) : 'Unrecognized outcome'}
-          aria-label={`View outcome: ${isRecord(value) ? text(value.label, text(value.id)) : 'Unrecognized outcome'}`}
-          current={at === `/outcomes/${index}`} onClick={() => select(`/outcomes/${index}`)} />)}
-        {outcomes.length > 4 && <InspectionRow label={`View all ${outcomes.length} outcomes`} current={at === '/outcomes'} onClick={() => select('/outcomes')} />}
+      <h2>{PACK_TERMS.outcomes.label}</h2>
+      <ul className={styles.outcomes}>{outcomes.slice(0, 4).map((value, index) =>
+        <li key={index}>{isRecord(value) ? text(value.label, text(value.id)) : 'Unrecognized outcome'}</li>)}</ul>
+      <div>
+        {outcomes.length > 4 && <p className={styles.muted}>{outcomes.length - 4} more outcomes in Logic.</p>}
         {outcomes.length === 0 && <p>No outcomes are declared.</p>}
       </div>
-      <p className={styles.muted}>{entries(doc.rules).length} decision rules and {entries(doc.exceptions).length} special cases contribute to this decision.</p>
     </section>
     <section className={styles.group}>
+      <div className={styles.sectionHeading}><h2>At a glance</h2>
+        <ButtonLink variant="quiet" to={`/packs/${encodeURIComponent(packId)}?view=logic`}>View logic</ButtonLink>
+      </div>
       <dl className={styles.metadata}>
-        <div><dt>{PACK_TERMS.fallbackOutcome.label}</dt><dd>{doc.fallbackOutcome === undefined ? 'Not declared' : outcomeLabel(doc, doc.fallbackOutcome)}</dd></div>
-        <div><dt>Handoff target</dt><dd>{text(target?.name)}</dd></div>
+        <div><dt>Evidence needed</dt><dd>{evidence.filter(x => isRecord(x) && x.required === true).length} required · {evidence.filter(x => isRecord(x) && x.required === false).length} optional</dd></div>
+        <div><dt>Decision logic</dt><dd>{entries(doc.rules).length} rules · {entries(doc.exceptions).length} special cases</dd></div>
       </dl>
-      <p className={styles.muted}>A fallback outcome does not itself request a handoff.</p>
     </section>
     <section>
       <InspectionRow label={PACK_TERMS.sources.label} value={entries(doc.sources).length} aria-label="View source references"
         current={at === '/sources'} onClick={() => select('/sources')} />
-      {typeof doc.description === 'string' && <Disclosure title="Author description" className={styles.description}><p>{doc.description}</p></Disclosure>}
     </section>
   </section>
 }
