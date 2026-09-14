@@ -62,6 +62,11 @@ type fixtureVerdict struct {
 	// default is proved to be held to the set beside it.
 	Models []string `json:"models"`
 	Model  string   `json:"model"`
+	// ResearchGateway is `research.gateway.url` as the file decodes to it,
+	// empty where it names none. Required both ways like ProjectFile: an
+	// accepted fixture that decodes to a gateway must say which, so the corpus
+	// proves where the chassis would forward and not only that it may.
+	ResearchGateway string `json:"researchGateway"`
 }
 
 func fixtureVerdicts(t *testing.T) map[string]fixtureVerdict {
@@ -144,6 +149,13 @@ func TestSharedFixturesDecodeAsTheVerdictSays(t *testing.T) {
 				}
 				if decoded.ProjectFile != verdict.ProjectFile {
 					t.Errorf("project.file %q, want %q", decoded.ProjectFile, verdict.ProjectFile)
+				}
+				gatewayURL := ""
+				if decoded.Research != nil && decoded.Research.gateway != nil {
+					gatewayURL = decoded.Research.gateway.url
+				}
+				if gatewayURL != verdict.ResearchGateway {
+					t.Errorf("research.gateway.url %q, want %q", gatewayURL, verdict.ResearchGateway)
 				}
 				// The migrations, in the decoder's own words. A sentence
 				// changed on one side of the shared decoder and not the other

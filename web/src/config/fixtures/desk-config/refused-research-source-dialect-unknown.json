@@ -1,0 +1,11 @@
+{
+  "deskConfigVersion": 1,
+  "research": {
+    "sources": {
+      "search": {
+        "source": "search",
+        "dialect": "bing"
+      }
+    }
+  }
+}

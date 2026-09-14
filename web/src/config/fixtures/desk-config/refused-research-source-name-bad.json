@@ -1,0 +1,11 @@
+{
+  "deskConfigVersion": 1,
+  "research": {
+    "sources": {
+      "read": {
+        "source": "read me",
+        "dialect": "jina-reader"
+      }
+    }
+  }
+}

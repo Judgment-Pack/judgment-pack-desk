@@ -1,0 +1,29 @@
+{
+  "deskConfigVersion": 1,
+  "research": {
+    "gateway": {
+      "url": "http://127.0.0.1:8787",
+      "authority": "gateway:local",
+      "signer": {
+        "algorithm": "ed25519",
+        "public": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b"
+      }
+    },
+    "sources": {
+      "search": {
+        "source": "search",
+        "dialect": "tavily-search"
+      },
+      "read": {
+        "source": "read",
+        "dialect": "jina-reader"
+      }
+    },
+    "limits": {
+      "searches": 4,
+      "reads": 6,
+      "bytes": 1048576,
+      "seconds": 120
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "deskConfigVersion": 1,
+  "research": {
+    "limits": {
+      "reads": 2.5
+    }
+  }
+}
