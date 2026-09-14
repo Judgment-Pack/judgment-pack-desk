@@ -22,6 +22,8 @@ import { effectiveConfig, decodeDeskConfig } from '../config/deskConfig'
 import { McpContext, type McpConnection } from '../mcp/McpProvider'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { CreatePackDialog } from './CreatePackDialog'
+import type { ResearchHandover } from '../routes/ResearchAuthoringPage'
+import { proposedExpectation } from '../research/__fixtures__/expectationReview'
 
 afterEach(() => {
   cleanup()
@@ -205,12 +207,14 @@ function Mounted({
   stub,
   overrides,
   deskConfig,
-  onClose
+  onClose,
+  presentation = 'dialog'
 }: {
   stub: ReturnType<typeof stubClient>
   overrides: Partial<McpConnection>
   deskConfig: ReturnType<typeof effectiveConfig>
   onClose: (open: boolean) => void
+  presentation?: 'page' | 'dialog'
 }) {
   const [open, setOpen] = useState(true)
   return (
@@ -219,6 +223,7 @@ function Mounted({
         {open && (
           <CreatePackDialog
             open
+            presentation={presentation}
             onOpenChange={(next) => {
               onClose(next)
               setOpen(next)
@@ -233,7 +238,8 @@ function Mounted({
 function renderDialog(
   stub: ReturnType<typeof stubClient> = FULL,
   overrides: Partial<McpConnection> = FULL_CAPS,
-  deskConfig = effectiveConfig(undefined)
+  deskConfig = effectiveConfig(undefined),
+  entry: { research?: ResearchHandover; presentation?: 'page' | 'dialog' } = {}
 ) {
   const seen: string[] = []
   const closed: boolean[] = []
@@ -246,12 +252,13 @@ function renderDialog(
             stub={stub}
             overrides={overrides}
             deskConfig={deskConfig}
+            presentation={entry.presentation}
             onClose={(next) => closed.push(next)}
           />
         )
       }
     ],
-    { initialEntries: ['/'] }
+    { initialEntries: [{ pathname: '/', state: entry.research ? { research: entry.research } : undefined }] }
   )
   router.subscribe((state) => seen.push(state.location.pathname))
   const queryClient: QueryClient = testQueryClient()
@@ -1125,5 +1132,80 @@ describe('what it invalidates', () => {
     await screen.findByRole('alert')
     expect(sent).toHaveLength(1)
     expect(invalidated).toContainEqual(['desk-files'])
+  })
+})
+
+function researchHandover(): ResearchHandover {
+  const issue = proposedExpectation.expectationIssues[0]!
+  const replacement = { ...issue.original, expectedDisposition: issue.proposal!.expectedDisposition }
+  return {
+    document: JSON.parse(TEMPLATE), name: 'Reviewed pack', description: 'A reviewed decision', unknowns: [],
+    matrix: { matrixVersion: '3', cases: [replacement] },
+    research: { researchRecordVersion: '1', packSha256: 'before-create', cases: [replacement], sources: [],
+      expectationIssues: [{ ...issue, resolved: { replacement, rationale: issue.proposal!.rationale, approvedAt: '2026-09-14T20:00:00Z' } }] }
+  }
+}
+
+function renderHandover(handover = researchHandover(), validationStatus: 'valid' | 'invalid' = 'valid') {
+  const stub = stubClient({
+    list_examples: () => ({ text: EXAMPLES }), get_example: () => ({ text: TEMPLATE }), get_schema: () => ({ text: SCHEMA }),
+    validate: () => ({ text: JSON.stringify({ status: validationStatus, layers: ['carrier', 'structural', 'semantic'].map(name => ({ name, status: validationStatus === 'valid' ? 'passed' : 'failed' })), diagnostics: [] }) })
+  })
+  const rendered = renderDialog(stub, { ...FULL_CAPS, validateSupported: true }, effectiveConfig(undefined), { research: handover, presentation: 'page' })
+  return { ...rendered, stub, handover }
+}
+
+async function reviewHandedDraft() {
+  const next = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement
+  await waitFor(() => expect(next.disabled).toBe(false))
+  fireEvent.click(next)
+  fireEvent.click(await screen.findByRole('button', { name: 'Review pack' }))
+  await waitFor(() => expect(createButton().disabled).toBe(false))
+}
+
+describe('creating a reviewed research handover', () => {
+  it('still withholds Create when the runtime refuses the handed-over draft', async () => {
+    const sent = serveProject({ project: PROJECT })
+    renderHandover(researchHandover(), 'invalid')
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Review pack' }))
+    expect(await screen.findByText(/runtime will not call this document a pack/)).toBeTruthy()
+    expect(createButton().disabled).toBe(true)
+    fireEvent.click(createButton())
+    expect(sent).toEqual([])
+  })
+
+  it('continues the handed-over proposal without another AI run, and writes its approved assertion and history before registration', async () => {
+    const sent = serveProject({ project: PROJECT })
+    const { handover, stub, seen } = renderHandover()
+    expect(screen.queryByRole('radiogroup', { name: 'Creation method' })).toBeNull()
+    expect(screen.queryByText(/AI drafting is unavailable/)).toBeNull()
+    await reviewHandedDraft()
+    expect(sent).toEqual([])
+    fireEvent.click(createButton())
+    await waitFor(() => expect(sent).toHaveLength(4))
+    expect(sent.map(row => row.path)).toEqual(['packs/reviewed-pack.pack.json', 'packs/reviewed-pack.matrix.json', 'packs/reviewed-pack.research.json', 'jpack.json'])
+    expect(stub.calls.some(call => call.name === 'validate' && call.args.document === sent[0]!.body.content)).toBe(true)
+    expect(JSON.parse(sent[1]!.body.content as string)).toEqual(handover.matrix)
+    const saved = JSON.parse(sent[2]!.body.content as string)
+    expect(saved).toEqual({ ...(handover.research as Record<string, unknown>), packSha256: 'cc' })
+    expect(saved.expectationIssues[0].original.expectedDisposition.reasons).toEqual([])
+    expect(saved.expectationIssues[0].resolved.replacement.expectedDisposition.reasons).toEqual(['unknown'])
+    expect(sent[1]!.body.baseSha256).toBe('')
+    expect(sent[2]!.body.baseSha256).toBe('')
+    const config = JSON.parse(sent[3]!.body.content as string)
+    expect(config.packs['reviewed-pack']).toMatchObject({ path: sent[0]!.path, matrix: sent[1]!.path })
+    await waitFor(() => expect(seen).toContain('/packs/reviewed-pack'))
+  })
+
+  it.each(['matrix', 'research'])('does not register the pack if the %s companion write fails', async companion => {
+    const sent = serveProject({ project: PROJECT, answer: path => path.endsWith(`.${companion}.json`) ? { status: 409, body: { code: 'stale', error: 'a companion already exists' } } : undefined })
+    const { seen } = renderHandover()
+    await reviewHandedDraft()
+    fireEvent.click(createButton())
+    expect(await screen.findByText(/test cases or research record could not be written/)).toBeTruthy()
+    expect(sent.map(row => row.path)).not.toContain('jpack.json')
+    expect(sent).toHaveLength(companion === 'matrix' ? 2 : 3)
+    expect(seen).not.toContain('/packs/reviewed-pack')
   })
 })

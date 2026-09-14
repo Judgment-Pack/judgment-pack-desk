@@ -87,6 +87,8 @@ export interface RuntimeCapabilities {
    * is "the listing has not answered". The check strip says which.
    */
   validateSupported: boolean
+  /** Read-only validation of exact test expectations before admission. */
+  expectationValidationSupported: boolean
 }
 
 /**
@@ -103,6 +105,7 @@ export const UNKNOWN_CAPABILITIES: RuntimeCapabilities = {
   graphTracesSupported: false,
   exampleSupported: false,
   schemaSupported: false,
+  expectationValidationSupported: false,
   validateSupported: false
 }
 
@@ -186,6 +189,7 @@ export function readCapabilities(tools: readonly AdvertisedTool[]): RuntimeCapab
     graphTracesSupported: takes('experimental_test_graphs', 'include_traces'),
     exampleSupported: names.has('list_examples') && names.has('get_example'),
     schemaSupported: names.has('get_schema'),
+    expectationValidationSupported: names.has('experimental_validate_expectations'),
     validateSupported: names.has('validate')
   }
 }

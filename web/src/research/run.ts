@@ -17,7 +17,9 @@
  * conversation are this run's.
  */
 import type { AssistantEvent, CallTool, HostTool } from '../assistant/engine'
+import { isCancelled } from '../assistant/engines/contract'
 import { checkCandidate, digestOf, jsonIdentity, type AuthoringCase, type CandidateCheck } from './checkCandidate'
+import { expectationSpec, validateExpectations } from './expectations'
 import type { Ledger, SourceRecord } from './ledger'
 import { CASES_INSTRUCTIONS, CONTINUE_INSTRUCTIONS, CONVERSATION_INSTRUCTIONS, REPAIR_INSTRUCTIONS, RESEARCH_INSTRUCTIONS } from './prompts'
 import { memberOf, parseJsonText, stringMember, type JsonNode } from './verify/canon'
@@ -52,6 +54,15 @@ export interface Citation {
   reason: string
 }
 
+export interface ExpectationIssue {
+  id: string
+  original: AuthoringCase
+  message: string
+  proposal?: { expectedDisposition: unknown; rationale: string; token: string; candidateDigest: string }
+  proposalError?: string
+  resolved?: { replacement: AuthoringCase; approvedAt: string; rationale: string }
+}
+
 export interface RunState {
   phase: Phase
   status: Status
@@ -63,6 +74,7 @@ export interface RunState {
   candidates: Candidate[]
   cases: AuthoringCase[]
   droppedCases: { id: string; reason: string }[]
+  expectationIssues: ExpectationIssue[]
   unknowns: string[]
   citations: Citation[]
   verdicts: Record<string, SessionVerdict>
@@ -117,6 +129,7 @@ export const INITIAL_STATE: RunState = {
   candidates: [],
   cases: [],
   droppedCases: [],
+  expectationIssues: [],
   unknowns: [],
   citations: [],
   verdicts: {},
@@ -179,7 +192,7 @@ export function traceCitations(document: unknown, ledger: Ledger): Citation[] {
   })
 }
 
-/** Cases the reviewer proposed, each held to its shape and to an excerpt this run recorded. */
+/** Screen source-grounded case proposals; runtime expectation validation must follow before admission. */
 export function admitCases(
   proposed: unknown,
   ledger: Ledger,
@@ -196,10 +209,6 @@ export function admitCases(
     if (!KEBAB.test(id)) return dropped.push({ id, reason: 'the id is not kebab-case' })
     if (seen.has(id)) return dropped.push({ id, reason: 'a case with this id is already established and is never rewritten' })
     if (row.facts === null || typeof row.facts !== 'object' || Array.isArray(row.facts)) return dropped.push({ id, reason: 'facts must be an object' })
-    const disposition = row.expectedDisposition as Record<string, unknown> | undefined
-    if (!disposition || typeof disposition !== 'object' || typeof disposition.kind !== 'string') {
-      return dropped.push({ id, reason: 'expectedDisposition must carry a kind' })
-    }
     const source = typeof row.expectationSource === 'string' ? row.expectationSource : ''
     if (!EXCERPT_ID.test(source) || !ledger.excerpt(source)) {
       return dropped.push({ id, reason: `expectationSource ${JSON.stringify(source)} is not an excerpt recorded in this run` })
@@ -216,7 +225,7 @@ export function admitCases(
           id,
           facts: row.facts,
           ...(row.evidenceAvailability !== undefined ? { evidenceAvailability: row.evidenceAvailability } : {}),
-          expectedDisposition: row.expectedDisposition,
+          expectedDisposition: row.expectedDisposition ?? null,
           ...(row.expectedHandoffTarget !== undefined ? { expectedHandoffTarget: row.expectedHandoffTarget } : {}),
           expectationSource: source,
           rationale: typeof row.rationale === 'string' ? row.rationale : ''
@@ -299,6 +308,7 @@ export class AuthoringRun {
   /** A message from the person, at any rest state. */
   send(message: string): void {
     if (this.running || this.state.phase === 'idle') return
+    this.arm()
     this.addTurn({ role: 'user', kind: 'message', text: message })
     this.set({ status: 'running', phase: 'conversation', detail: 'Answering.' })
     void this.drive(async (signal) => {
@@ -306,6 +316,68 @@ export class AuthoringRun {
       await this.continuingTurn(signal, 'conversation', this.conversationPrompt(message), this.ports.researchTools)
       if (this.latest()?.digest !== before) await this.casesAndCheck(signal)
       else this.settleReview('Answered. The candidate still has disagreements or no established cases.')
+    })
+  }
+
+  /** A fresh reviewer corrects only the expectation; the candidate and case inputs are fixed. */
+  proposeExpectationCorrection(id: string): void {
+    const issue = this.state.expectationIssues.find(item => item.id === id && !item.resolved)
+    if (this.running || !issue || !this.latest()) return
+    this.arm()
+    this.set({ phase: 'review', status: 'running', detail: `Reviewing the expectation for ${id}.`,
+      expectationIssues: this.state.expectationIssues.map(item => item.id === id ? { ...item, proposal: undefined, proposalError: undefined } : item) })
+    void this.drive(async signal => {
+      const excerpt = this.ports.ledger.verifiedExcerpt(issue.original.expectationSource)
+      if (!excerpt) throw new Error('The expectation source is no longer verified. Restore its verification before reviewing the expectation.')
+      const candidate = this.latest()!
+      const document = candidate.document as Record<string, unknown>
+      const prompt = [this.ports.authorPrompt,
+        'CORRECT AN INVALID EXPECTATION. Preserve the case id, facts, evidence availability, source and intended behavior. Propose only a complete expectedDisposition and a rationale explaining the correction under JPS §8.3. Empty reasons is valid only for outcome; unresolved must retain its reason(s). Do not remove a case, change the pack, or weaken the assertion to fit a candidate. If the cited source and contract do not settle the correction, return unknowns and no correction. The person must approve any correction before it is used.',
+        `CASE\n${JSON.stringify(issue.original)}`, `VALIDATOR FINDING\n${issue.message}`,
+        `SOURCE EXCERPT\n${JSON.stringify(excerpt)}`, `DECLARED OUTCOMES\n${JSON.stringify(document.outcomes)}`,
+        `HANDOFF CONFIGURATION\n${JSON.stringify(document.escalation ?? null)}`,
+        'Answer with prose and exactly one fenced JSON block: {"proposal":{"document":{"expectedDisposition":{...},"rationale":"..."},"unknowns":[]}}.'
+      ].join('\n\n')
+      const response = await this.engineTurn(signal, 'research', prompt, [], true)
+      const value = response?.document as { expectedDisposition?: unknown; rationale?: unknown } | null
+      let proposal: ExpectationIssue['proposal']
+      let proposalError = response?.unknowns.length ? response.unknowns.join('\n') : ''
+      if (!proposalError && (!value || typeof value.rationale !== 'string' || !value.rationale.trim())) proposalError = 'The reviewer did not explain a correction. The expectation remains blocked.'
+      if (!proposalError && value) {
+        const [finding] = await validateExpectations(expectationSpec(this.latest()!.document), [value.expectedDisposition], this.ports.callTool, signal)
+        if (finding!.status === 'invalid') proposalError = finding!.message
+        else {
+          const rationale = (value.rationale as string).trim()
+          proposal = deepFreeze({ expectedDisposition: JSON.parse(finding!.canonical), rationale, candidateDigest: candidate.digest,
+            token: await digestOf(JSON.stringify({ id, original: issue.original, disposition: finding!.canonical, rationale, candidateDigest: candidate.digest })) })
+        }
+      }
+      this.check(signal)
+      this.set({ phase: 'review', status: 'needs-input', detail: proposal ? 'Review the proposed expectation correction before approving it.' : 'The expectation still needs a decision.',
+        expectationIssues: this.state.expectationIssues.map(item => item.id === id ? { ...item, proposal, proposalError: proposalError || undefined } : item) })
+    })
+  }
+
+  /** Explicit approval, bound to the visible proposal. Recheck all cases on unchanged pack bytes. */
+  approveExpectationCorrection(id: string, token: string): void {
+    const issue = this.state.expectationIssues.find(item => item.id === id && !item.resolved)
+    const proposal = issue?.proposal
+    if (this.running || !issue || !proposal || proposal.token !== token || proposal.candidateDigest !== this.latest()?.digest) return
+    this.arm()
+    this.set({ phase: 'review', status: 'running', detail: `Validating the approved correction for ${id}.` })
+    void this.drive(async signal => {
+      if (!this.ports.ledger.verifiedExcerpt(issue.original.expectationSource)) throw new Error('The expectation source is no longer verified; the correction was not applied.')
+      const [finding] = await validateExpectations(expectationSpec(this.latest()!.document), [proposal.expectedDisposition], this.ports.callTool, signal)
+      if (finding!.status !== 'valid') throw new Error(`The correction is no longer valid: ${finding!.message}`)
+      this.check(signal)
+      const replacement = deepFreeze(structuredClone({ ...issue.original, expectedDisposition: proposal.expectedDisposition }))
+      // No established case can be silently replaced by this approval.
+      if (this.state.cases.some(row => row.id === id)) throw new Error('A case with this id is already established; the correction was not applied.')
+      this.set({ cases: [...this.state.cases, replacement],
+        candidates: this.state.candidates.map(({ check: _check, ...candidate }) => candidate),
+        expectationIssues: this.state.expectationIssues.map(item => item.id === id ? { ...item, resolved: { replacement, approvedAt: this.stamp(), rationale: proposal.rationale } } : item) })
+      this.addTurn({ role: 'user', kind: 'note', text: `Approved the corrected expectation for ${id}: ${proposal.rationale}` })
+      await this.casesAndCheck(signal, false)
     })
   }
 
@@ -319,7 +391,7 @@ export class AuthoringRun {
     try {
       await work(controller.signal)
     } catch (cause) {
-      if ((cause as Error)?.name === 'AbortError' || cause instanceof Stopped) {
+      if (isCancelled(cause) || cause instanceof Stopped) {
         if (this.outOfTime) {
           this.set({ status: 'budget', detail: `The time budget of ${this.ports.seconds} seconds is spent. The last completed stage is kept.` })
         } else {
@@ -438,7 +510,10 @@ export class AuthoringRun {
         this.set({
           candidates: [...this.state.candidates, candidate],
           unknowns: taken.unknowns,
-          citations: traceCitations(taken.document, this.ports.ledger)
+          citations: traceCitations(taken.document, this.ports.ledger),
+          expectationIssues: this.state.expectationIssues.map(issue => issue.resolved || !issue.proposal ? issue : {
+            ...issue, proposal: undefined, proposalError: 'The draft changed. Request a new correction before approving.'
+          })
         })
       } else if (producedBy === 'conversation') {
         // An answer that returned the document unchanged is an answer, and
@@ -497,15 +572,23 @@ export class AuthoringRun {
   }
 
   /** Establish cases where none are, then check, and repair until the budget. */
-  private async casesAndCheck(signal: AbortSignal): Promise<void> {
+  private async casesAndCheck(signal: AbortSignal, repair = true): Promise<void> {
     const candidate = this.latest()
     if (!candidate) throw new Error('no candidate to check')
-    if (this.state.cases.length === 0) {
+    if (this.state.cases.length === 0 && this.state.expectationIssues.length === 0) {
       this.set({ phase: 'cases', detail: 'Establishing test cases from the sources.' })
       this.ports.log('cases: a reviewer establishes expectations from the excerpts')
       const proposal = await this.engineTurn(signal, 'research', this.casesPrompt(candidate.document), [], true)
       const { admitted, dropped } = admitCases(proposal?.document, this.ports.ledger, this.state.cases)
-      this.set({ cases: admitted, droppedCases: dropped })
+      const checked = await validateExpectations(expectationSpec(candidate.document), admitted.map(row => row.expectedDisposition), this.ports.callTool, signal)
+      const issues: ExpectationIssue[] = []
+      const cases = admitted.filter((row, index) => {
+        const finding = checked[index]!
+        if (finding.status === 'valid') return true
+        issues.push({ id: row.id, original: row, message: finding.message })
+        return false
+      })
+      this.set({ cases, expectationIssues: issues, droppedCases: dropped })
       if (dropped.length) {
         this.addTurn({ role: 'assistant', kind: 'note', text: `Dropped ${dropped.length} proposed case(s): ${dropped.map((d) => `${d.id} (${d.reason})`).join('; ')}` })
       }
@@ -516,7 +599,11 @@ export class AuthoringRun {
         this.set({ status: 'needs-input', phase: 'review', detail: this.withheld() ?? 'No test case could be grounded in a cited excerpt. Cite the requirements, or say what the cases should be.' })
         return
       }
-      this.ports.log(`cases: ${admitted.length} established, ${dropped.length} dropped`)
+      this.ports.log(`cases: ${cases.length} established, ${issues.length} invalid expectations, ${dropped.length} dropped`)
+    }
+    if (this.unresolvedExpectations()) {
+      this.set({ phase: 'review', status: 'needs-input', detail: this.unresolvedExpectations()! })
+      return
     }
     for (;;) {
       this.check(signal)
@@ -527,7 +614,7 @@ export class AuthoringRun {
       this.set({
         candidates: this.state.candidates.map((candidate) => (candidate.digest === current.digest ? { ...candidate, check } : candidate))
       })
-      const passed = check.valid && check.cases.length > 0 && check.cases.every((row) => row.passed)
+      const passed = completeCurrentCheck(this.state)
       this.ports.log(`check: revision ${current.revision} — ${check.valid ? 'valid' : 'invalid'}, ${check.cases.filter((c) => c.passed).length}/${check.cases.length} agree`)
       if (passed) {
         // Agreement is not enough where what the draft rests on did not
@@ -535,6 +622,10 @@ export class AuthoringRun {
         // trace, withholds `ready` -- the draft is shown, and what stands in
         // its way is said.
         this.settleReview('')
+        return
+      }
+      if (!repair) {
+        this.set({ phase: 'review', status: 'needs-input', detail: 'The unchanged draft disagrees with the reviewed expectations. Review the results or request a pack change.' })
         return
       }
       if (this.state.revisionsUsed >= this.ports.maxRevisions) {
@@ -561,9 +652,17 @@ export class AuthoringRun {
    * a passed check, an unchanged answer to a message, a continuation -- so
    * no path reaches `ready` around the sources it rests on.
    */
+  private unresolvedExpectations(): string | null {
+    const count = this.state.expectationIssues.filter(issue => !issue.resolved).length
+    return count ? `${count} invalid expectation${count === 1 ? '' : 's'} must be corrected and approved before testing or creating the pack.` : null
+  }
+
   private settleReview(notPassing: string): void {
-    const check = this.latest()?.check
-    const passing = check !== undefined && check.valid && check.cases.length > 0 && check.cases.every((c) => c.passed)
+    if (this.unresolvedExpectations()) {
+      this.set({ phase: 'review', status: 'needs-input', detail: this.unresolvedExpectations()! })
+      return
+    }
+    const passing = completeCurrentCheck(this.state)
     if (!passing) {
       this.set({ phase: 'review', status: 'needs-input', detail: notPassing })
       return
@@ -722,6 +821,7 @@ export function researchRecord(state: RunState, ledger: Ledger, packDigest: stri
     citations: state.citations,
     cases: state.cases,
     droppedCases: state.droppedCases,
+    expectationIssues: state.expectationIssues,
     unknowns: state.unknowns,
     sources: ledger.sources.map(sourceOf),
     note: 'A receipt establishes byte lineage from the gateway within its stated bounds, not the truth, currency or legal authority of a source, nor the origin of a page beyond the provider that rendered it.'
@@ -759,3 +859,17 @@ export function receiptsOf(record: SourceRecord): JsonNode | null {
 }
 
 export { parseJsonText, memberOf, stringMember }
+
+/** A complete check is bound to the current candidate and every established case. */
+function completeCurrentCheck(state: RunState): boolean {
+  const latest = state.candidates.at(-1)
+  const check = latest?.check
+  return check !== undefined && check.valid && check.documentDigest === latest?.digest && state.cases.length > 0 &&
+    check.cases.length === state.cases.length && check.cases.every((row, index) => row.passed && row.id === state.cases[index]?.id)
+}
+
+/** Every intended, admitted case must have a current passing result before Create. */
+export function canCreateResearchDraft(state: RunState): boolean {
+  return state.status === 'ready' && !state.expectationIssues.some(issue => !issue.resolved) && completeCurrentCheck(state) &&
+    state.citations.length > 0 && state.citations.every(citation => citation.traced)
+}

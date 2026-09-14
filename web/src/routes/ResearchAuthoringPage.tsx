@@ -18,7 +18,7 @@ import { Conversation, statusLine } from '../research/ui/Conversation'
 import { DraftTabs, type Selection } from '../research/ui/DraftPanels'
 import { SourceInspector } from '../research/ui/SourceInspector'
 import styles from '../research/ui/ResearchAuthoring.module.css'
-import { matrixDocument, researchRecord } from '../research/run'
+import { canCreateResearchDraft, matrixDocument, researchRecord } from '../research/run'
 import { useResearchRun } from '../research/useResearchRun'
 import { useInspectorPortal, useInspectorSlot } from '../shell/InspectorSlot'
 import { useMediaQuery } from '../shell/useMediaQuery'
@@ -75,7 +75,7 @@ export function ResearchAuthoringPage() {
   const inspector = useInspectorPortal(ledger === null ? null : <SourceInspector selection={selection} ledger={ledger} state={state} />)
 
   const latest = state.candidates.at(-1)
-  const passing = latest?.check !== undefined && latest.check.valid && latest.check.cases.length > 0 && latest.check.cases.every((c) => c.passed)
+  const passing = canCreateResearchDraft(state)
   const create = () => {
     if (!latest || !passing || ledger === null || running) return
     const document = latest.document as { title?: unknown; decision?: { question?: unknown } }
@@ -164,7 +164,7 @@ export function ResearchAuthoringPage() {
                 <Conversation state={state} onSend={(text) => run?.send(text)} onStop={() => run?.stop()} />
               </div>
               <div data-pane="draft" data-shown={!narrow || shown === 'draft'} style={{ display: 'contents' }}>
-                <DraftTabs state={state} sources={sources} selection={selection} onSelect={select} onCreate={create} />
+                <DraftTabs onProposeCorrection={id => run?.proposeExpectationCorrection(id)} onApproveCorrection={(id, token) => run?.approveExpectationCorrection(id, token)} state={state} sources={sources} selection={selection} onSelect={select} onCreate={create} />
               </div>
             </div>
           </>
