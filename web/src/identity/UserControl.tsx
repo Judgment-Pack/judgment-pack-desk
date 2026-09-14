@@ -2,7 +2,7 @@
  * The header's user control.
  *
  * **NONE — the only fully-live state in phase A.** A monogram, the local
- * display name, a `local` tag, and a menu whose first line is non-interactive
+ * display name and a menu whose first line is non-interactive
  * and says what actually authorizes this desk. There is **no Sign out and no
  * disabled Sign out**: there is no session to end, and a greyed control that
  * will never enable is an affordance that lies. There is no Sign in either —
@@ -175,15 +175,13 @@ export function UserControl() {
           <Avatar.Fallback delayMs={0}>{monogram(name)}</Avatar.Fallback>
         </Avatar.Root>
         <span className="desk-user-name">{name}</span>
-        {provider === null ? (
-          <span className="desk-tag">local</span>
-        ) : (
+        {provider !== null && (
           <span className="desk-tag">{provider.issuerHost}</span>
         )}
         <IconChevronDown />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content className="desk-menu" align="end" sideOffset={6}>
+        <DropdownMenu.Content className="desk-menu desk-header-menu" align="end" sideOffset={6} collisionPadding={16}>
           <DropdownMenu.Label className="desk-menu-note">
             {provider === null ? NONE_MENU_SENTENCE : PROVIDER_PHASE_NOTE}
           </DropdownMenu.Label>

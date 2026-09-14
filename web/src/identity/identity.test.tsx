@@ -188,13 +188,13 @@ describe('the header’s organization identity', () => {
 })
 
 describe('the user control, identity NONE', () => {
-  it('shows the local display name and a local tag', async () => {
+  it('shows the local display name and avatar without a redundant local tag', async () => {
     renderHeader({
       user: { displayName: 'local user' },
       identity: { provider: null }
     })
     expect(screen.getByText('local user')).toBeTruthy()
-    expect(screen.getByText('local')).toBeTruthy()
+    expect(screen.queryByText('local')).toBeNull()
     expect(await screen.findByText(monogram('local user'))).toBeTruthy()
   })
 

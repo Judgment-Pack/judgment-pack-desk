@@ -892,13 +892,23 @@
   }
 
   .desk-menu {
-    min-width: 200px;
+    position: relative;
+    min-width: min(12.5rem, calc(100vw - 2 * var(--space-4)));
+    max-width: min(22rem, var(--radix-dropdown-menu-content-available-width, calc(100vw - 2 * var(--space-4))));
+    max-height: var(--radix-dropdown-menu-content-available-height, calc(100dvh - 2 * var(--space-4)));
+    overflow: auto;
+    overflow-wrap: anywhere;
+    overscroll-behavior: contain;
     padding: 0.3rem;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--surface-raised);
     box-shadow: 0 6px 24px var(--shadow);
     z-index: var(--z-menu);
+  }
+
+  .desk-header-menu {
+    width: 22rem;
   }
 
   .desk-menu-note {
