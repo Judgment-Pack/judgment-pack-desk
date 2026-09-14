@@ -64,6 +64,8 @@ export interface PackEntry {
   path: string
   description?: string
   expectedVersion: string
+  /** The rows document beside the pack, where one was written with it. */
+  matrix?: string
 }
 
 /** The configuration as a generic object. Nothing here is decoded further. */

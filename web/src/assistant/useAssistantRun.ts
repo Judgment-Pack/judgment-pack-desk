@@ -42,7 +42,7 @@ import { loadEngine } from './engines'
 import { bindModelCall, openAssistantConnection, runAssistantSession } from './session'
 import { sessionBearer, whenSessionEnds } from '../mcp/session'
 import { normalize } from './thinking'
-import type { AssistantEvent } from './engine'
+import type { HostTool, AssistantEvent } from './engine'
 import type { AssistantConnection } from './session'
 import {
   NO_MODEL_CHOSEN,
@@ -231,6 +231,12 @@ export function useAssistantRun(options: {
    * in this hook.
    */
   testPrompt?: string
+  /**
+   * The desk's own tools for this run, executed on the page: the research
+   * tools where a surface offers them, and none otherwise. Read at start, so a
+   * run holds the set it began with.
+   */
+  hostTools?: HostTool[]
 }): AssistantRun {
   const [status, setStatus] = useState<RunStatus>('idle')
   const [events, setEvents] = useState<AssistantEvent[]>([])
@@ -328,7 +334,7 @@ export function useAssistantRun(options: {
   const start = useCallback(
     (prompt: string) => {
       if (active.current !== null && !active.current.ended) return
-      const { endpoint, model, engine, thinking, testPrompt } = settings.current
+      const { endpoint, model, engine, thinking, testPrompt, hostTools } = settings.current
       const run: Active = { controller: new AbortController(), connection: null, ended: false }
       active.current = run
       setEvents([])
@@ -364,6 +370,7 @@ export function useAssistantRun(options: {
               testPrompt: testPrompt ?? '',
               tools: ready.tools,
               callTool: ready.callTool,
+              hostTools: hostTools ?? [],
               // **Refused rather than defaulted.** An endpoint with no model
               // chosen is a saved endpoint whose assistant is not ready; a run
               // that substituted the empty string would put a request on the

@@ -30,6 +30,7 @@ function byteCount(text: string): number {
 
 /** What the compact list carries. See the module doc for why these. */
 const COMPACT: ReadonlySet<AssistantEvent['type']> = new Set([
+  'message',
   'tool_call',
   'tool_result',
   'guardrail',
@@ -60,6 +61,8 @@ export function describeEvent(event: AssistantEvent): string {
       return event.detail
     case 'reasoning':
       return `${event.text.length} characters of reasoning`
+    case 'message':
+      return event.text
     case 'critique':
       return event.text
     case 'proposal':

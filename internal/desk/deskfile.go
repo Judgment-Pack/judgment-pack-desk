@@ -39,6 +39,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -102,10 +103,53 @@ type deskDecode struct {
 	// server: `resolveProjectDir` reads it, and everything after that is
 	// pinned to the directory it produced.
 	ProjectFile string
-	Problems    []deskProblem
+	// Research is what the research member decoded to, nil where the file
+	// names none, on the same terms as Endpoint: usable only where `refused()`
+	// is false, and `configuredResearch` -- the only reader -- asks that first.
+	Research *researchConfig
+	Problems []deskProblem
 }
 
 func (d deskDecode) refused() bool { return len(d.Problems) > 0 }
+
+// researchConfig is the research member as the chassis reads it: the gateway
+// the research relay forwards to, the key its receipts are pinned to, and the
+// sources the page asks it for. The chassis acts on the gateway's URL and on
+// nothing else here; the rest is carried so the shared corpus can hold both
+// decoders to one answer rather than one verdict.
+type researchConfig struct {
+	gateway *researchGateway
+	search  *researchSource
+	read    *researchSource
+	limits  map[string]int64
+}
+
+type researchGateway struct {
+	url          string
+	authority    string
+	signerPublic string
+}
+
+type researchSource struct {
+	source  string
+	dialect string
+}
+
+// ResearchDialects mirrors `RESEARCH_DIALECTS` in `deskConfig.ts`.
+var ResearchDialects = []string{"tavily-search", "jina-reader"}
+
+// researchLimitBounds mirrors `RESEARCH_LIMIT_BOUNDS`.
+var researchLimitBounds = map[string][2]int64{
+	"searches": {0, 50}, "reads": {0, 100}, "bytes": {65536, 67108864}, "seconds": {30, 3600},
+}
+
+var researchLimitDefaults = map[string]int64{"searches": 8, "reads": 12, "bytes": 8388608, "seconds": 600}
+
+var (
+	publicKeyHex       = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	researchSourceName = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,128}$`)
+	authorityLabel     = regexp.MustCompile(`^[\x21-\x7e]{1,128}$`)
+)
 
 // keysAreNeverInConfiguration is the sentence a key-shaped member is refused
 // with, character for character as `deskConfig.ts` writes it.
@@ -172,7 +216,7 @@ func withoutRedundantReasons(problems []deskProblem) []deskProblem {
 // are the two that may appear **only** here.
 var deskTopLevelKeys = []string{
 	"deskConfigVersion", "organization", "user", "appearance", "panes", "storage",
-	"identity", "assistant", "project",
+	"identity", "assistant", "research", "project",
 }
 
 // The pane dimensions and their bounds, mirrored from `PANE_BOUNDS`.
@@ -248,6 +292,12 @@ func decodeDeskFile(text []byte) deskDecode {
 		problems = append(problems, assistantProblems...)
 		slot = found
 	}
+	var research *researchConfig
+	if section, present := record["research"]; present {
+		found, researchProblems := decodeResearch(section)
+		problems = append(problems, researchProblems...)
+		research = found
+	}
 	// Dropped where anything at all was refused, which is the rule the browser
 	// holds too: nothing was decoded, so there is nothing this decoder did.
 	notices := slot.notices
@@ -278,6 +328,7 @@ func decodeDeskFile(text []byte) deskDecode {
 		Thinking:    slot.thinking,
 		Notices:     notices,
 		ProjectFile: projectFile,
+		Research:    research,
 		Problems:    dedupeProblems(withoutRedundantReasons(problems)),
 	}
 }
@@ -587,6 +638,134 @@ func decodeIdentity(value any) []deskProblem {
 	return problems
 }
 
+// decodeResearch reads `research`: the gateway, its two sources and the
+// limits, mirrored member for member from `deskConfig.ts` and held to it by
+// the shared fixtures. The chassis forwards to the gateway's URL and reads
+// nothing else here, but every member is validated on both sides for the
+// reason `decodeIdentity` gives: a member accepted here and refused by the
+// browser is a request the page never saw a configuration for.
+func decodeResearch(value any) (*researchConfig, []deskProblem) {
+	record, problems := object(value, "research", []string{"gateway", "sources", "limits"})
+	if record == nil {
+		return nil, problems
+	}
+	found := &researchConfig{limits: map[string]int64{}}
+	for name, fallback := range researchLimitDefaults {
+		found.limits[name] = fallback
+	}
+	if gateway, present := record["gateway"]; present && gateway != nil {
+		inner, innerProblems := object(gateway, "research.gateway", []string{"url", "authority", "signer"})
+		problems = append(problems, innerProblems...)
+		if inner != nil {
+			g := &researchGateway{}
+			raw, ok := inner["url"].(string)
+			trimmed := strings.TrimSpace(raw)
+			if !ok || trimmed == "" {
+				problems = append(problems, deskProblem{Key: "research.gateway.url",
+					Reason: fmt.Sprintf("must be a non-empty string; found %s", describe(inner["url"]))})
+			} else if reason := endpointURLProblem(trimmed); reason != "" {
+				problems = append(problems, deskProblem{Key: "research.gateway.url", Reason: reason})
+			} else if strings.Contains(trimmed, "?") {
+				problems = append(problems, deskProblem{Key: "research.gateway.url",
+					Reason: "must not carry a query; the relay appends the gateway's own paths and nothing else"})
+			} else {
+				g.url = trimmed
+			}
+			// One predicate, spelled the same on both sides: printable ASCII
+			// with no space, which is what a gateway's authority label is.
+			// Trimming would be two whitespace vocabularies, Go's and the
+			// browser's, and the label is compared byte for byte to every
+			// receipt.
+			authority, ok := inner["authority"].(string)
+			if !ok || !authorityLabel.MatchString(authority) {
+				problems = append(problems, deskProblem{Key: "research.gateway.authority",
+					Reason: fmt.Sprintf("must be the gateway's authority label as it was started with: printable ASCII with no space; found %s", describe(inner["authority"]))})
+			} else {
+				g.authority = authority
+			}
+			signer, signerProblems := object(inner["signer"], "research.gateway.signer", []string{"algorithm", "public"})
+			problems = append(problems, signerProblems...)
+			if signer != nil {
+				if algorithm, ok := signer["algorithm"].(string); !ok || algorithm != "ed25519" {
+					problems = append(problems, deskProblem{Key: "research.gateway.signer.algorithm",
+						Reason: fmt.Sprintf(`must be "ed25519"; found %s`, describe(signer["algorithm"]))})
+				}
+				if public, ok := signer["public"].(string); !ok || !publicKeyHex.MatchString(public) {
+					problems = append(problems, deskProblem{Key: "research.gateway.signer.public",
+						Reason: "must be the public key as gateway keygen printed it: 64 lowercase hexadecimal " +
+							fmt.Sprintf("characters; found %s", describe(signer["public"]))})
+				} else {
+					g.signerPublic = public
+				}
+			}
+			found.gateway = g
+		}
+	}
+	if sources, present := record["sources"]; present {
+		inner, innerProblems := object(sources, "research.sources", []string{"search", "read"})
+		problems = append(problems, innerProblems...)
+		if inner != nil {
+			var sourceProblems []deskProblem
+			found.search, sourceProblems = decodeResearchSource(inner["search"], "research.sources.search")
+			problems = append(problems, sourceProblems...)
+			found.read, sourceProblems = decodeResearchSource(inner["read"], "research.sources.read")
+			problems = append(problems, sourceProblems...)
+		}
+	}
+	if limits, present := record["limits"]; present {
+		names := make([]string, 0, len(researchLimitBounds))
+		for name := range researchLimitBounds {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		inner, innerProblems := object(limits, "research.limits", names)
+		problems = append(problems, innerProblems...)
+		if inner != nil {
+			for _, name := range names {
+				given, present := inner[name]
+				if !present {
+					continue
+				}
+				bounds := researchLimitBounds[name]
+				number, ok := given.(float64)
+				if !ok || number != float64(int64(number)) || number < float64(bounds[0]) || number > float64(bounds[1]) {
+					problems = append(problems, deskProblem{Key: "research.limits." + name,
+						Reason: fmt.Sprintf("must be an integer from %d to %d; found %s", bounds[0], bounds[1], describe(given))})
+					continue
+				}
+				found.limits[name] = int64(number)
+			}
+		}
+	}
+	return found, problems
+}
+
+func decodeResearchSource(value any, key string) (*researchSource, []deskProblem) {
+	if value == nil {
+		return nil, nil
+	}
+	record, problems := object(value, key, []string{"source", "dialect"})
+	if record == nil {
+		return nil, problems
+	}
+	found := &researchSource{}
+	if name, ok := record["source"].(string); !ok || !researchSourceName.MatchString(name) {
+		problems = append(problems, deskProblem{Key: key + ".source",
+			Reason: fmt.Sprintf(`must be a gateway source name (letters, digits, ".", "_", "-" or "/"); found %s`, describe(record["source"]))})
+	} else {
+		found.source = name
+	}
+	if _, present := record["dialect"]; !present {
+		problems = append(problems, deskProblem{Key: key + ".dialect", Reason: "required"})
+	} else {
+		problems = append(problems, oneOf(record, key, "dialect", ResearchDialects)...)
+		if dialect, ok := record["dialect"].(string); ok && contains(ResearchDialects, dialect) {
+			found.dialect = dialect
+		}
+	}
+	return found, problems
+}
+
 // projectConfigName is the file a `project.file` must name.
 //
 // The same constant the page reads a project's configuration from, because it
@@ -680,7 +859,7 @@ func acceptableIssuer(issuer string) bool {
 		return true
 	}
 	return parsed.Scheme == "http" &&
-		(parsed.Hostname() == "localhost" || parsed.Hostname() == "127.0.0.1")
+		(strings.EqualFold(parsed.Hostname(), "localhost") || parsed.Hostname() == "127.0.0.1")
 }
 
 // decodeAssistant reads the slot, and is the only section that yields a value.
@@ -967,7 +1146,7 @@ func endpointURLProblem(raw string) string {
 		return ""
 	}
 	if parsed.Scheme == "http" &&
-		(parsed.Hostname() == "localhost" || parsed.Hostname() == "127.0.0.1") {
+		(strings.EqualFold(parsed.Hostname(), "localhost") || parsed.Hostname() == "127.0.0.1") {
 		return ""
 	}
 	return fmt.Sprintf(

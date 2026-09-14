@@ -1,0 +1,9 @@
+{
+  "deskConfigVersion": 1,
+  "research": {
+    "limits": {
+      "searches": 51,
+      "bytes": 1024
+    }
+  }
+}

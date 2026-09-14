@@ -119,6 +119,14 @@ export const ASSISTANT_KINDS: readonly EndpointKind[] = [
  * it by a test that reads that file** — both sides refuse by this list, and two
  * answers about what the assistant may call is worse than either one.
  */
+/**
+ * The wire dialects a research source may speak: what the page writes on an
+ * `/acquire` and how it reads the answer. Closed, so that a configured source is
+ * one the page knows how to ask; a provider outside it is a reviewed change here.
+ */
+export const RESEARCH_DIALECTS = ['tavily-search', 'jina-reader'] as const
+export type ResearchDialect = (typeof RESEARCH_DIALECTS)[number]
+
 export const ASSISTANT_TOOLS = [
   'get_schema',
   'list_examples',
@@ -290,6 +298,61 @@ export interface ProjectConfig {
   file: string | null
 }
 
+/**
+ * The research slot: the gateway that acquires external material for the
+ * assistant, the key its receipts are verified under, and which of its sources
+ * search and read.
+ *
+ * **Desk-level only, on the assistant slot's precedent, and for the same
+ * reason.** The gateway is a service this machine reaches and the pinned key is
+ * this machine's out-of-band act of trust; a project is a shared checkout, and
+ * committing either would push one operator's arrangement onto every clone —
+ * and would let a project file choose where this desk's chassis sends traffic.
+ *
+ * **There is no credential here, at any depth.** A search provider's key lives
+ * in the gateway's own credentials file, read by the adapter that spawns for
+ * that source and by nothing else; this desk never holds it, and the page never
+ * sees it. The public key under `signer` is not a credential: it is what a
+ * consumer *checks* receipts with, pinned out of band from `gateway keygen`, and
+ * publishing it grants nothing.
+ */
+export interface ResearchGatewayConfig {
+  /** The gateway's origin: `https:`, or `http:` on `localhost` or `127.0.0.1`. */
+  url: string
+  /** The authority label the gateway was started with, checked on every receipt. */
+  authority: string
+  /**
+   * The pinned signing identity: the algorithm and the public key, 64 lowercase
+   * hex characters, exactly as `gateway keygen` printed it. The key id every
+   * receipt names is derived from this at verification, never configured.
+   */
+  signer: { algorithm: 'ed25519'; public: string }
+}
+
+/** One of the gateway's configured sources, and the wire dialect it speaks. */
+export interface ResearchSourceConfig {
+  /** The source name as `gateway serve --source NAME=…` declared it. */
+  source: string
+  dialect: ResearchDialect
+}
+
+export interface ResearchLimits {
+  /** Searches one authoring run may make. */
+  searches: number
+  /** Pages or documents one authoring run may read. */
+  reads: number
+  /** Bytes of retrieved material one run may hold, over every source. */
+  bytes: number
+  /** Seconds a research phase may take before it is stopped as over budget. */
+  seconds: number
+}
+
+export interface ResearchConfig {
+  gateway: ResearchGatewayConfig | null
+  sources: { search: ResearchSourceConfig | null; read: ResearchSourceConfig | null }
+  limits: ResearchLimits
+}
+
 export interface AppearanceConfig {
   theme: ThemeChoice
   density: Density
@@ -353,6 +416,7 @@ export interface DeskConfig {
   user: UserConfig
   identity: IdentityConfig
   assistant: AssistantConfig
+  research: ResearchConfig
   project: ProjectConfig
   appearance: AppearanceConfig
   panes: PanesConfig
@@ -365,6 +429,11 @@ export const DESK_DEFAULTS: DeskConfig = {
   user: { displayName: 'local user' },
   identity: { provider: null },
   assistant: { endpoint: null, engine: 'vercel', thinking: 'off' },
+  research: {
+    gateway: null,
+    sources: { search: null, read: null },
+    limits: { searches: 8, reads: 12, bytes: 8_388_608, seconds: 600 }
+  },
   project: { file: null },
   appearance: { theme: 'system', density: 'comfortable' },
   panes: {
@@ -432,12 +501,22 @@ const COMMON_KEYS = [
   'storage'
 ] as const
 const PROJECT_KEYS: readonly string[] = COMMON_KEYS
-const DESK_KEYS: readonly string[] = [...COMMON_KEYS, 'identity', 'assistant', 'project']
+const DESK_KEYS: readonly string[] = [
+  ...COMMON_KEYS,
+  'identity',
+  'assistant',
+  'research',
+  'project'
+]
 
 const IDENTITY_AT_PROJECT =
   'identity may only be configured in the desk-level desk.json — a project is a shared ' +
   'checkout, and committing an issuer would push one operator’s directory onto every clone'
 
+const RESEARCH_AT_PROJECT =
+  'research may only be configured in the desk-level desk.json — the gateway this desk ' +
+  'reaches and the key it pins are this machine\'s arrangement, and a project file must not ' +
+  'choose where this chassis sends traffic'
 const ASSISTANT_AT_PROJECT =
   'assistant may only be configured in the desk-level desk.json — a project is a shared ' +
   'checkout, and committing an endpoint would push one operator’s model endpoint onto every clone'
@@ -608,6 +687,10 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
       problems.push({ key: 'assistant', reason: ASSISTANT_AT_PROJECT })
       continue
     }
+    if (key === 'research' && location === 'project') {
+      problems.push({ key: 'research', reason: RESEARCH_AT_PROJECT })
+      continue
+    }
     if (key === 'project' && location === 'project') {
       problems.push({ key: 'project', reason: PROJECT_AT_PROJECT })
       continue
@@ -668,6 +751,22 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
         thinking:
           oneOf(assistant.thinking, 'assistant.thinking', ASSISTANT_THINKING, problems) ??
           DESK_DEFAULTS.assistant.thinking
+      }
+    }
+  }
+
+  if ('research' in record && location === 'desk') {
+    const research = section(
+      record.research,
+      'research',
+      ['gateway', 'sources', 'limits'],
+      problems
+    )
+    if (research) {
+      values.research = {
+        gateway: researchGatewayValue(research.gateway, problems),
+        sources: researchSourcesValue(research.sources, problems),
+        limits: researchLimitsValue(research.limits, problems)
       }
     }
   }
@@ -1077,6 +1176,150 @@ function idBase(value: unknown, problems: ConfigProblem[]): string | undefined {
     return undefined
   }
   return trimmed.endsWith('/') || trimmed.endsWith('#') ? trimmed : `${trimmed}/`
+}
+
+/** 64 lowercase hex characters: the 32 raw bytes of an Ed25519 public key. */
+const PUBLIC_KEY_HEX = /^[0-9a-f]{64}$/
+/** A gateway authority label: printable ASCII, no space, as `gateway serve` took it. */
+const AUTHORITY_LABEL = /^[\x21-\x7e]{1,128}$/
+
+/**
+ * The gateway object, or null.
+ *
+ * The URL is held to the endpoint rule — a transport rule and only that — with
+ * one more refusal: no query, because the relay appends a fixed path suffix and
+ * nothing else, and a configured query would travel on every acquire as this
+ * desk's own. The signer is the pinned key: the algorithm named so a second one
+ * is a reviewed change rather than a guess, and the key held to its exact form.
+ */
+function researchGatewayValue(
+  value: unknown,
+  problems: ConfigProblem[]
+): ResearchGatewayConfig | null {
+  if (value === undefined || value === null) return null
+  const gateway = section(value, 'research.gateway', ['url', 'authority', 'signer'], problems)
+  if (!gateway) return null
+  const url = typeof gateway.url === 'string' ? gateway.url.trim() : undefined
+  if (url === undefined || url === '') {
+    problems.push({
+      key: 'research.gateway.url',
+      reason: `must be a non-empty string; found ${describe(gateway.url)}`
+    })
+  } else {
+    const reason = endpointUrlProblem(url)
+    if (reason !== undefined) problems.push({ key: 'research.gateway.url', reason })
+    else if (/\?/.test(url)) {
+      problems.push({
+        key: 'research.gateway.url',
+        reason: 'must not carry a query; the relay appends the gateway\'s own paths and nothing else'
+      })
+    }
+  }
+  // One predicate, spelled the same as the chassis': printable ASCII with
+  // no space. Trimming would be two whitespace vocabularies, and the label
+  // is compared byte for byte to every receipt.
+  const authority = typeof gateway.authority === 'string' && AUTHORITY_LABEL.test(gateway.authority) ? gateway.authority : undefined
+  if (authority === undefined) {
+    problems.push({
+      key: 'research.gateway.authority',
+      reason: `must be the gateway's authority label as it was started with: printable ASCII with no space; found ${describe(gateway.authority)}`
+    })
+  }
+  let publicKey = ''
+  const signer = section(gateway.signer, 'research.gateway.signer', ['algorithm', 'public'], problems)
+  if (signer) {
+    if (signer.algorithm !== 'ed25519') {
+      problems.push({
+        key: 'research.gateway.signer.algorithm',
+        reason: `must be "ed25519"; found ${describe(signer.algorithm)}`
+      })
+    }
+    if (typeof signer.public !== 'string' || !PUBLIC_KEY_HEX.test(signer.public)) {
+      problems.push({
+        key: 'research.gateway.signer.public',
+        reason:
+          'must be the public key as gateway keygen printed it: 64 lowercase hexadecimal ' +
+          `characters; found ${describe(signer.public)}`
+      })
+    } else {
+      publicKey = signer.public
+    }
+  }
+  return {
+    url: url ?? '',
+    authority: authority ?? '',
+    signer: { algorithm: 'ed25519', public: publicKey }
+  }
+}
+
+/** A gateway source name: what `--source NAME=…` declared, one flat token. */
+const SOURCE_NAME = /^[A-Za-z0-9._/-]{1,128}$/
+
+function researchSourceValue(
+  value: unknown,
+  key: string,
+  problems: ConfigProblem[]
+): ResearchSourceConfig | null {
+  if (value === undefined || value === null) return null
+  const source = section(value, key, ['source', 'dialect'], problems)
+  if (!source) return null
+  const name = typeof source.source === 'string' ? source.source : undefined
+  if (name === undefined || !SOURCE_NAME.test(name)) {
+    problems.push({
+      key: `${key}.source`,
+      reason: `must be a gateway source name (letters, digits, ".", "_", "-" or "/"); found ${describe(source.source)}`
+    })
+  }
+  const dialect = oneOf(source.dialect, `${key}.dialect`, RESEARCH_DIALECTS, problems)
+  if (source.dialect === undefined) problems.push({ key: `${key}.dialect`, reason: 'required' })
+  return { source: name ?? '', dialect: dialect ?? RESEARCH_DIALECTS[0] }
+}
+
+function researchSourcesValue(
+  value: unknown,
+  problems: ConfigProblem[]
+): ResearchConfig['sources'] {
+  if (value === undefined) return { search: null, read: null }
+  const sources = section(value, 'research.sources', ['search', 'read'], problems)
+  if (!sources) return { search: null, read: null }
+  return {
+    search: researchSourceValue(sources.search, 'research.sources.search', problems),
+    read: researchSourceValue(sources.read, 'research.sources.read', problems)
+  }
+}
+
+/**
+ * The bounds each research limit is held to. Zero is a real value for the two
+ * counts — a run that may search nothing is a run that works from the URLs it
+ * was given — and the upper bounds are what stops a file from configuring a
+ * run this desk would never finish.
+ */
+export const RESEARCH_LIMIT_BOUNDS: Readonly<Record<keyof ResearchLimits, [number, number]>> = {
+  searches: [0, 50],
+  reads: [0, 100],
+  bytes: [65_536, 67_108_864],
+  seconds: [30, 3_600]
+}
+
+function researchLimitsValue(value: unknown, problems: ConfigProblem[]): ResearchLimits {
+  const limits = { ...DESK_DEFAULTS.research.limits }
+  if (value === undefined) return limits
+  const declared = section(value, 'research.limits', Object.keys(RESEARCH_LIMIT_BOUNDS), problems)
+  if (!declared) return limits
+  for (const name of Object.keys(RESEARCH_LIMIT_BOUNDS) as (keyof ResearchLimits)[]) {
+    const [low, high] = RESEARCH_LIMIT_BOUNDS[name]
+    const given = declared[name]
+    if (given === undefined) continue
+    if (typeof given !== 'number' || !Number.isInteger(given) || given < low || given > high) {
+      problems.push({
+        key: `research.limits.${name}`,
+        reason: `must be an integer from ${low} to ${high}; found ${describe(given)}`
+      })
+      continue
+    }
+    limits[name] = given
+  }
+  return limits
 }
 
 function refuse(problem: ConfigProblem): DecodedConfig {
@@ -2014,6 +2257,7 @@ export function effectiveConfig(
       // default, and nothing in between.
       identity: deskValues?.identity ?? DESK_DEFAULTS.identity,
       assistant: deskValues?.assistant ?? DESK_DEFAULTS.assistant,
+      research: deskValues?.research ?? DESK_DEFAULTS.research,
       project: deskValues?.project ?? DESK_DEFAULTS.project,
       appearance: pick('appearance'),
       panes: pick('panes'),
@@ -2024,6 +2268,7 @@ export function effectiveConfig(
       user: from('user'),
       identity: deskValues?.identity === undefined ? 'default' : 'desk file',
       assistant: deskValues?.assistant === undefined ? 'default' : 'desk file',
+      research: deskValues?.research === undefined ? 'default' : 'desk file',
       project: deskValues?.project === undefined ? 'default' : 'desk file',
       appearance: from('appearance'),
       panes: from('panes'),

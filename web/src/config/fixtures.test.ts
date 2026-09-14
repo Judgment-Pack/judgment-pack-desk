@@ -62,6 +62,20 @@ interface Verdict {
    */
   models?: string[]
   model?: string
+  /**
+   * `research.gateway.url` as the file decodes to it, absent where it names
+   * none, on `projectFile`'s terms: where the chassis would forward research
+   * traffic is a value both decoders must agree on, not only a verdict.
+   */
+  researchGateway?: string
+  /** Every other research value, compared where the verdict states it. */
+  research?: {
+    authority: string
+    signer: string
+    search: string | null
+    read: string | null
+    limits: Record<string, number>
+  }
 }
 
 const expected = JSON.parse(
@@ -103,6 +117,23 @@ describe('the shared desk-configuration fixtures', () => {
         expect(assistant.thinking, `${name}: thinking`).toBe(verdict.thinking)
         const project = { ...DESK_DEFAULTS.project, ...(decoded.values?.project ?? {}) }
         expect(project.file ?? '', `${name}: project.file`).toBe(verdict.projectFile ?? '')
+        const research = decoded.values?.research ?? DESK_DEFAULTS.research
+        expect(research.gateway?.url ?? '', `${name}: research.gateway.url`).toBe(
+          verdict.researchGateway ?? ''
+        )
+        if (verdict.research !== undefined) {
+          const spell = (source: { source: string; dialect: string } | null) => (source === null ? null : `${source.source}/${source.dialect}`)
+          expect(
+            {
+              authority: research.gateway?.authority ?? '',
+              signer: research.gateway?.signer.public ?? '',
+              search: spell(research.sources.search),
+              read: spell(research.sources.read),
+              limits: research.limits
+            },
+            `${name}: research values`
+          ).toEqual(verdict.research)
+        }
         // The migrations, in the decoder's own words. A sentence changed on
         // one side of the shared decoder and not the other fails on both.
         expect(decoded.notices, `${name}: notices`).toEqual(verdict.notices ?? [])

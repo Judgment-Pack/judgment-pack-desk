@@ -1,0 +1,9 @@
+{
+  "deskConfigVersion": 1,
+  "research": {
+    "gateway": {
+      "url": "http://127.0.0.1:8787",
+      "authority": "gateway:local"
+    }
+  }
+}

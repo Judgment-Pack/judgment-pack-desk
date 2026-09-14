@@ -1,0 +1,13 @@
+{
+  "deskConfigVersion": 1,
+  "research": {
+    "gateway": {
+      "url": "http://127.0.0.1:8787",
+      "authority": "gateway:local",
+      "signer": {
+        "algorithm": "ed25519",
+        "public": "FC9FA9B25640778D85953A5E1B4618CB8223565B6F566F739C73035079D7681B"
+      }
+    }
+  }
+}

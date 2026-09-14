@@ -93,6 +93,29 @@ export interface McpToolResult {
 export type CallTool = (name: string, args: Record<string, unknown>) => Promise<McpToolResult>
 
 /**
+ * A tool the **desk** executes on the engine's behalf, beside the runtime's.
+ *
+ * The runtime's tools reach it over the ToolGate; a host tool never leaves the
+ * page — the desk's own code runs it, under the desk's own budgets, and hands
+ * the model an `McpToolResult` in the shape a runtime answer takes so an engine
+ * treats the two alike. Today these are the research tools: a search and a
+ * read through the configured gateway, and a citation into what was read.
+ * None of them writes anything, and the slot is a member of the session so a
+ * run that hands an engine none is a run in which none exists — an engine
+ * cannot reach for one it was not handed, exactly as with `callTool`.
+ *
+ * The schema is the desk's, written in the subset every family's wire carries
+ * (an object of string and integer properties, `required`, and nothing else),
+ * so the narrowing notice a served schema can earn never fires for one.
+ */
+export interface HostTool {
+  name: string
+  description: string
+  inputSchema: unknown
+  execute: (args: Record<string, unknown>, signal: AbortSignal) => Promise<McpToolResult>
+}
+
+/**
  * What an engine may put in one model request, and the whole of it.
  *
  * A body, a signal, and headers the **protocol** needs. There is no URL member
@@ -153,6 +176,8 @@ export interface AssistantSession {
   tools: McpTool[]
   /** Bound through the ToolGate. */
   callTool: CallTool
+  /** The desk's own tools, executed on the page. Empty where the desk offers none. */
+  hostTools: HostTool[]
   /** A capability and a name. No address, and no credential. */
   model: { family: EndpointKind; model: string; call: ModelCall }
   /**
@@ -180,6 +205,12 @@ export interface AssistantSession {
  */
 export type AssistantEvent =
   | { type: 'reasoning'; text: string; done: boolean }
+  /**
+   * The model's own prose in its final turn, outside the proposal fence: what
+   * it said to the person, as it said it. Never written by the desk, and absent
+   * where the model wrote nothing but the fence.
+   */
+  | { type: 'message'; text: string }
   | { type: 'tool_call'; name: string; args: unknown }
   | { type: 'tool_result'; name: string; isError: boolean; text: string; structured?: unknown }
   /**

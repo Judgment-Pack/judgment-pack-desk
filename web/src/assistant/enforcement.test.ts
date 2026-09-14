@@ -678,6 +678,7 @@ const SESSION_KEYS = [
   'testPrompt',
   'tools',
   'callTool',
+  'hostTools',
   'model',
   'thinking',
   'signal'
@@ -689,7 +690,7 @@ const sessionKeysAreExact: Exactly<
 > = true
 
 describe('(8) the engine is handed a bound callTool and nothing else', () => {
-  it('declares the session member set as exactly those seven', () => {
+  it('declares the session member set as exactly those eight', () => {
     // A `client` here — or a `transport`, or a `fetch` — would put a door
     // beside the ToolGate rather than behind it, and every guarantee the gate
     // holds would become a guarantee about the door engines happened to use.

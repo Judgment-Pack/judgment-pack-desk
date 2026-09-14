@@ -2164,12 +2164,16 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
   # is composed inline on the configuration read in (0b), because that read
   # moved in front of the pack write. The row is the same safeguard against the
   # same defect; only the shape it names moved.
+  # Moved again: the entry may carry the matrix a research handover wrote
+  # beside the pack, so the composition names both shapes in one expression.
   mutate web "create writes the pack and never registers it" "$X" \
     '        await writeFile({
           path: PROJECT_FILE,
           content: serialiseProjectConfig(
             read.content,
-            withPack(current, slug, packEntryFor(landed.path, description))
+            withPack(current, slug, matrixPath === undefined
+              ? packEntryFor(landed.path, description)
+              : { ...packEntryFor(landed.path, description), matrix: matrixPath })
           ),
           baseSha256: read.sha256
         })' \
@@ -2812,8 +2816,8 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
   # 1. The write answers with the path the chassis resolved the request to;
   # registering the requested spelling names a file the runtime cleans away.
   mutate web "the registration names the path that was asked for, not the one written" "$X" \
-    '            withPack(current, slug, packEntryFor(landed.path, description))' \
-    '            withPack(current, slug, packEntryFor(path, description))'
+    '              ? packEntryFor(landed.path, description)' \
+    '              ? packEntryFor(path, description)'
 
   # 2. Pending, refused and settled-empty were one state, and Empty was
   # offered on the strength of a capability flag rather than a skeleton.

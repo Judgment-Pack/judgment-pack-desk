@@ -58,6 +58,10 @@ export const CHASSIS_CODES = [
   'assistant-key-unbound',
   'desk-config-changed',
   'desk-config-refused',
+  'research-unconfigured',
+  'research-relay-path',
+  'research-relay-busy',
+  'research-relay-upstream',
   'internal'
 ] as const
 
@@ -109,6 +113,12 @@ export const OTHER_ENDPOINT_CODES = [
   // object of the file in `~/.config`, which no create touches.
   'desk-config-changed',
   'desk-config-refused',
+  // The research relay's four. A create writes through the file API and
+  // never calls the gateway; the research page reads these, not this dialog.
+  'research-unconfigured',
+  'research-relay-path',
+  'research-relay-busy',
+  'research-relay-upstream',
   // The exchange's four. `POST /api/session` is what the page calls once at
   // load — nothing this desk recognises was presented, a handoff it had
   // finished with was, one it had let lapse was, or it holds as many sessions

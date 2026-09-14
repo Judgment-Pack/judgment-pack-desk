@@ -209,6 +209,7 @@ function session(
     callTool:
       callTool ??
       (async (): Promise<McpToolResult> => ({ content: [{ type: 'text', text: '{"status":"ok"}' }] })),
+    hostTools: [],
     model: { family: 'openai-compatible', model: 'a-model', call },
     thinking: normalize('off', 'openai-compatible'),
     signal: new AbortController().signal,
@@ -713,6 +714,7 @@ describe('exactly one end, on every path', () => {
     expect(events.map((event) => event.type)).toEqual([
       'tool_call',
       'tool_result',
+      'message', // "Here it is." — the model's prose beside the fence
       'proposal',
       'end'
     ])
@@ -1091,6 +1093,7 @@ describe('what the model said about its own reasoning', () => {
       'reasoning',
       'reasoning',
       'reasoning',
+      'message',
       'proposal',
       'end'
     ])
@@ -2028,5 +2031,132 @@ describe('a schema refusal is one wire’s business, on this engine too', () => 
     const said = await failure('gemini', 'Unknown name "properties" at parameters')
     expect(said).toContain('"properties"')
     expect(said).toContain('closed')
+  })
+})
+
+describe('host tools: the desk’s own, executed on the page', () => {
+  const searchTool = (execute: (args: Record<string, unknown>, signal: AbortSignal) => Promise<McpToolResult>) => ({
+    name: 'search_sources',
+    description: 'search',
+    inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+    execute
+  })
+
+  it('runs a host tool through its own function and reports the two events, never the gate', async () => {
+    const { call, seen } = scriptedCall([
+      turn({ tool: { name: 'search_sources', args: { query: 'federal skilled worker' } } }),
+      turn({ text: PROPOSAL_TEXT })
+    ])
+    const executed: unknown[] = []
+    let gated = 0
+    const events = await drain(
+      vercel.start(
+        session(
+          call,
+          {
+            hostTools: [
+              searchTool(async (args) => {
+                executed.push(args)
+                return { content: [{ type: 'text', text: 'src-1: a hit' }], structuredContent: { sourceId: 'src-1' } }
+              })
+            ]
+          },
+          async () => {
+            gated += 1
+            return { content: [] }
+          }
+        )
+      )
+    )
+    expect(executed).toEqual([{ query: 'federal skilled worker' }])
+    expect(gated).toBe(0)
+    expect(events.map((event) => event.type)).toEqual(['tool_call', 'tool_result', 'message', 'proposal', 'end'])
+    expect(events[0]).toEqual({ type: 'tool_call', name: 'search_sources', args: { query: 'federal skilled worker' } })
+    expect(events[1]).toMatchObject({ type: 'tool_result', name: 'search_sources', isError: false, text: 'src-1: a hit' })
+    // The model was offered the host tool beside the runtime's, under the desk's schema.
+    const offered = (seen[0]!.body.tools as { function: { name: string } }[]).map((tool) => tool.function.name)
+    expect(offered).toEqual(['search_sources', 'validate', 'experimental_evaluate'])
+  })
+
+  it('reports a host tool that threw as a refused result, and goes on', async () => {
+    const { call } = scriptedCall([
+      turn({ tool: { name: 'search_sources', args: { query: 'x' } } }),
+      turn({ text: PROPOSAL_TEXT })
+    ])
+    const events = await drain(
+      vercel.start(
+        session(call, {
+          hostTools: [
+            searchTool(async () => {
+              throw new Error('the budget of 8 searches is spent')
+            })
+          ]
+        })
+      )
+    )
+    expect(events[1]).toMatchObject({ type: 'tool_result', name: 'search_sources', isError: true })
+    expect((events[1] as { text: string }).text).toContain('refused: the budget of 8 searches is spent')
+    expect(events.at(-1)).toEqual({ type: 'end' })
+  })
+
+  it('stops a host tool with the run, and delivers nothing after', async () => {
+    // The tool_call event is delivered before the tool runs, and the consumer
+    // aborts in that gap: `withAbort` never starts work for a closed run, so
+    // the tool is not called at all, no result is reported, and the run ends
+    // without a proposal.
+    const controller = new AbortController()
+    const { call } = scriptedCall([
+      turn({ tool: { name: 'search_sources', args: { query: 'x' } } }),
+      turn({ text: PROPOSAL_TEXT })
+    ])
+    let started = 0
+    const iterator = vercel
+      .start(
+        session(call, {
+          signal: controller.signal,
+          hostTools: [
+            searchTool(async () => {
+              started += 1
+              return { content: [{ type: 'text', text: 'late' }] }
+            })
+          ]
+        })
+      )
+      [Symbol.asyncIterator]()
+    const first = await iterator.next()
+    expect(first.value).toMatchObject({ type: 'tool_call', name: 'search_sources' })
+    controller.abort()
+    const rest: AssistantEvent[] = []
+    const drained = await within(
+      3000,
+      (async () => {
+        for (;;) {
+          const step = await iterator.next()
+          if (step.done === true) break
+          rest.push(step.value)
+          if (rest.length > 8) throw new Error('the run kept delivering after the abort')
+        }
+      })()
+    )
+    expect(drained).toBe('settled')
+    expect(started).toBe(0)
+    expect(rest.filter((event) => event.type === 'proposal' || event.type === 'tool_result')).toEqual([])
+  })
+
+  it('refuses a host tool named like a runtime tool, before the model is asked', async () => {
+    const { call, seen } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
+    const events = await drain(
+      vercel.start(session(call, { hostTools: [searchTool(async () => ({ content: [] })), { ...searchTool(async () => ({ content: [] })), name: 'validate' }] }))
+    )
+    expect(seen).toHaveLength(0)
+    expect(events.map((event) => event.type)).toEqual(['error', 'end'])
+    expect((events[0] as { message: string }).message).toContain('named like a tool the runtime serves')
+  })
+
+  it('offers no host tool where the session hands none', async () => {
+    const { call, seen } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
+    await drain(vercel.start(session(call)))
+    const offered = (seen[0]!.body.tools as { function: { name: string } }[]).map((tool) => tool.function.name)
+    expect(offered).toEqual(['validate', 'experimental_evaluate'])
   })
 })

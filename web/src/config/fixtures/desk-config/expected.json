@@ -139,7 +139,7 @@
     "notices": [
       {
         "key": "assistant.endpoint.model",
-        "says": "no model chosen yet — pick one below"
+        "says": "no model chosen yet \u2014 pick one below"
       }
     ]
   },
@@ -151,7 +151,7 @@
     "notices": [
       {
         "key": "assistant.endpoint.model",
-        "says": "no model chosen yet — pick one below"
+        "says": "no model chosen yet \u2014 pick one below"
       }
     ]
   },
@@ -184,7 +184,7 @@
     "notices": [
       {
         "key": "assistant.endpoint.model",
-        "says": "no model chosen yet — pick one below"
+        "says": "no model chosen yet \u2014 pick one below"
       }
     ]
   },
@@ -336,6 +336,100 @@
     "engine": "vercel",
     "thinking": "off",
     "projectFile": "C:/p/jpack-desk.json"
+  },
+  "accepted-research-gateway-only": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "researchGateway": "http://127.0.0.1:8787",
+    "research": {
+      "authority": "gateway:local",
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
+      "search": null,
+      "read": null,
+      "limits": {
+        "searches": 8,
+        "reads": 12,
+        "bytes": 8388608,
+        "seconds": 600
+      }
+    }
+  },
+  "accepted-research-gateway-uppercase-localhost": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "researchGateway": "http://LOCALHOST:8787",
+    "research": {
+      "authority": "gateway:local",
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
+      "search": null,
+      "read": null,
+      "limits": {
+        "searches": 8,
+        "reads": 12,
+        "bytes": 8388608,
+        "seconds": 600
+      }
+    }
+  },
+  "accepted-research-https-gateway": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "researchGateway": "https://gateway.example.invalid/engine",
+    "research": {
+      "authority": "gateway:local",
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
+      "search": null,
+      "read": null,
+      "limits": {
+        "searches": 8,
+        "reads": 12,
+        "bytes": 8388608,
+        "seconds": 600
+      }
+    }
+  },
+  "accepted-research-in-full": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "researchGateway": "http://127.0.0.1:8787",
+    "research": {
+      "authority": "gateway:local",
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
+      "search": "search/tavily-search",
+      "read": "read/jina-reader",
+      "limits": {
+        "searches": 4,
+        "reads": 6,
+        "bytes": 1048576,
+        "seconds": 120
+      }
+    }
+  },
+  "accepted-research-null-gateway": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "research": {
+      "authority": "",
+      "signer": "",
+      "search": null,
+      "read": null,
+      "limits": {
+        "searches": 8,
+        "reads": 12,
+        "bytes": 8388608,
+        "seconds": 600
+      }
+    }
   },
   "accepted-storage-nested-dir": {
     "accepted": true,
@@ -913,6 +1007,115 @@
     "accepted": false,
     "keys": [
       "project.dir"
+    ]
+  },
+  "refused-research-gateway-authority-bom": {
+    "accepted": false,
+    "keys": [
+      "research.gateway.authority"
+    ]
+  },
+  "refused-research-gateway-authority-empty": {
+    "accepted": false,
+    "keys": [
+      "research.gateway.authority"
+    ]
+  },
+  "refused-research-gateway-authority-space": {
+    "accepted": false,
+    "keys": [
+      "research.gateway.authority"
+    ]
+  },
+  "refused-research-gateway-http-off-loopback": {
+    "accepted": false,
+    "keys": [
+      "research.gateway.url"
+    ]
+  },
+  "refused-research-gateway-userinfo": {
+    "accepted": false,
+    "keys": [
+      "research.gateway.url"
+    ]
+  },
+  "refused-research-gateway-with-query": {
+    "accepted": false,
+    "keys": [
+      "research.gateway.url"
+    ]
+  },
+  "refused-research-key-shaped": {
+    "accepted": false,
+    "keys": [
+      "research.gateway.apiKey"
+    ]
+  },
+  "refused-research-limits-fraction": {
+    "accepted": false,
+    "keys": [
+      "research.limits.reads"
+    ]
+  },
+  "refused-research-limits-out-of-bounds": {
+    "accepted": false,
+    "keys": [
+      "research.limits.searches",
+      "research.limits.bytes"
+    ]
+  },
+  "refused-research-not-object": {
+    "accepted": false,
+    "keys": [
+      "research"
+    ]
+  },
+  "refused-research-signer-algorithm-unknown": {
+    "accepted": false,
+    "keys": [
+      "research.gateway.signer.algorithm"
+    ]
+  },
+  "refused-research-signer-missing": {
+    "accepted": false,
+    "keys": [
+      "research.gateway.signer"
+    ]
+  },
+  "refused-research-signer-public-short": {
+    "accepted": false,
+    "keys": [
+      "research.gateway.signer.public"
+    ]
+  },
+  "refused-research-signer-public-uppercase": {
+    "accepted": false,
+    "keys": [
+      "research.gateway.signer.public"
+    ]
+  },
+  "refused-research-source-dialect-missing": {
+    "accepted": false,
+    "keys": [
+      "research.sources.read.dialect"
+    ]
+  },
+  "refused-research-source-dialect-unknown": {
+    "accepted": false,
+    "keys": [
+      "research.sources.search.dialect"
+    ]
+  },
+  "refused-research-source-name-bad": {
+    "accepted": false,
+    "keys": [
+      "research.sources.read.source"
+    ]
+  },
+  "refused-research-unknown-member": {
+    "accepted": false,
+    "keys": [
+      "research.crawler"
     ]
   },
   "refused-storage-dir-absolute": {
