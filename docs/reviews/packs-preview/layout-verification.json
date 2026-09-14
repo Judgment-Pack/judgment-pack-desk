@@ -1,0 +1,38 @@
+{
+  "testedCommit": "e31ae841e87786e3c255e02f5e596f157b4bfdd0",
+  "runtimeVersion": "0.21.0",
+  "routes": [
+    "/",
+    "/admin",
+    "/author",
+    "/create-pack",
+    "/create-pack/research",
+    "/graphs",
+    "/graphs/onboarding",
+    "/help",
+    "/matrix",
+    "/packs",
+    "/packs/sanctions-screening",
+    "/packs/sanctions-screening/evaluate",
+    "/packs/sanctions-screening/matrix",
+    "/packs/sanctions-screening?edit=1",
+    "/packs/sanctions-screening?view=document",
+    "/packs/sanctions-screening?view=logic&layout=map"
+  ],
+  "widths": [
+    479,
+    598,
+    639,
+    640,
+    735,
+    759,
+    831,
+    1100,
+    1400
+  ],
+  "cases": 464,
+  "contained": 464,
+  "failures": 0,
+  "fixtureCopiesUnchanged": true,
+  "execution": "Three disjoint width groups using the unchanged containment assertions."
+}

@@ -38,10 +38,13 @@ surfaces, shared typography, controls and restrained Judgment Pack accents.
   a malformed-pack warning at phone width and opening a document from the drawer.
   Zero page errors and zero test-suite requests were observed. Results and
   screenshots are in `packs-preview/`.
-- The complete component suite (130 files) and Go checks passed on GitHub CI.
-  Local broad runs encountered host-load timeouts and the host's inotify limit;
-  assertions and timeouts were not relaxed. The 435-configuration route/pane
-  gate runs before merge, with its final result recorded on the pull request.
+- The complete component suite (137 files) and Go checks passed on GitHub CI
+  after integration with the research authoring route. Local broad runs
+  encountered host resource limits; assertions and timeouts were not relaxed.
+- All 464 route/pane configurations passed across 16 routes and nine viewport
+  widths, including `/create-pack/research`. Three disjoint width groups covered
+  the complete gate with unchanged assertions, and every fixture copy remained
+  unchanged. `packs-preview/layout-verification.json` records the scope and result.
 
 Browser verification uses a disposable copy of the latest runtime's graph project
 fixtures and runtime 0.21.0. The design changes introduce no runtime, gateway or
