@@ -34,9 +34,14 @@ surfaces, shared typography, controls and restrained Judgment Pack accents.
   navigation, filtering, keyboard preview and shared divider controls.
 - Chrome passed eight viewport/theme/density combinations from 320–1512px,
   preview/document transitions, header alignment, sort selection, resizing,
-  153 virtualized rows, long text and empty searches. Zero page errors and zero
-  test-suite requests were observed. Results and screenshots are in `packs-preview/`.
-- The full component, Go and 435-configuration route/pane gates are run before merge.
+  153 virtualized rows, long text and empty searches. The final pass also checks
+  a malformed-pack warning at phone width and opening a document from the drawer.
+  Zero page errors and zero test-suite requests were observed. Results and
+  screenshots are in `packs-preview/`.
+- The complete component suite (130 files) and Go checks passed on GitHub CI.
+  Local broad runs encountered host-load timeouts and the host's inotify limit;
+  assertions and timeouts were not relaxed. The 435-configuration route/pane
+  gate runs before merge, with its final result recorded on the pull request.
 
 Browser verification uses a disposable copy of the latest runtime's graph project
 fixtures and runtime 0.21.0. The design changes introduce no runtime, gateway or

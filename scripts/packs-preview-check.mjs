@@ -19,8 +19,9 @@ await cp(fixture, `${work}/project`, { recursive: true })
 await mkdir(`${work}/config`)
 const config = JSON.parse(await readFile(`${work}/project/jpack.json`, 'utf8'))
 const originalFlow = JSON.parse(await readFile(`${work}/project/onboarding.graph.json`, 'utf8'))
-const longDescription = 'May this investigation proceed when records are complete, evidence is available, and all declared requirements have been checked? '.repeat(7)
-config.packs['sanctions-screening'].description = longDescription
+const question = 'May this investigation proceed when records are complete, evidence is available, and all declared requirements have been checked?'
+const longDescription = (question + ' ').repeat(7)
+config.packs['sanctions-screening'].description = question
 await writeFile(`${work}/project/jpack.json`, JSON.stringify(config))
 const secret = randomBytes(24).toString('hex')
 const server = spawn(binary, ['--dev-token', secret, '--port', '8821', '--jpack', process.env.JPACK_BIN, `${work}/project`], {
@@ -71,7 +72,7 @@ try {
   await pane.getByRole('heading', { name: 'sanctions-screening', exact: true }).waitFor()
   assert.equal(Math.round((await pane.boundingBox()).width), 360)
   assert(Math.abs((await header.boundingBox()).height - (await pane.locator('.desk-pane-head').boundingBox()).height) <= 1)
-  assert.equal(await pane.getByText(longDescription.trim(), { exact: true }).count(), 1)
+  assert.equal(await pane.getByText(question, { exact: true }).count(), 1)
   assert.equal(await pane.locator('details').getAttribute('open'), null)
   await pane.getByText('Technical details', { exact: true }).click()
   assert.equal(await pane.locator('details').getAttribute('open'), '')
@@ -177,6 +178,23 @@ try {
     await main.getByRole('heading', { name: 'No matching packs' }).waitFor()
     assert.equal(await pane.count(), 0)
   }
+  // A bad document still has a visible warning marker on a narrow list, and
+  // its exact runtime explanation remains readable in preview.
+  config.packs.broken = { path: 'missing-pack.json' }
+  await writeFile(`${work}/project/jpack.json`, JSON.stringify(config))
+  await page.goto('http://127.0.0.1:8821/packs')
+  await preview('broken').waitFor()
+  const warning = link('broken').getByRole('img')
+  assert(await warning.isVisible())
+  const explanation = await warning.getAttribute('aria-label')
+  await preview('broken').click()
+  assert((await pane.innerText()).includes(explanation))
+  await pane.getByRole('button', { name: 'Close pack preview' }).click()
+  await preview('pack-000').click()
+  await pane.getByRole('link', { name: 'Open pack', exact: true }).click()
+  await header.getByRole('button', { name: 'Edit', exact: true }).waitFor()
+  assert.equal(await page.getByRole('dialog').count(), 0, 'Opening a pack from the narrow preview reveals the document.')
+  checks.push('Malformed-pack warning on a narrow list and opening a document from the preview drawer')
   checks.push('Eight viewport/theme/density combinations, narrow drawers, 153 virtualized rows, long IDs/descriptions, no horizontal overflow and empty search')
   assert.equal(commands.length, 0)
   assert.deepEqual(errors, [])

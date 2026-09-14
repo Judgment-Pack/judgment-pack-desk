@@ -1,6 +1,7 @@
 {
   "checks": [
     "Single-row header, separate preview/document state, full metadata, keyboard browsing, focus return, explicit sorting and preview resize limits",
+    "Malformed-pack warning on a narrow list and opening a document from the preview drawer",
     "Eight viewport/theme/density combinations, narrow drawers, 153 virtualized rows, long IDs/descriptions, no horizontal overflow and empty search"
   ],
   "geometry": [
