@@ -52,8 +52,9 @@ import pathlib, sys
 path, old, new = sys.argv[1], sys.argv[2], sys.argv[3]
 p = pathlib.Path(path)
 s = p.read_text()
-if old not in s:
-    sys.exit("MUTATION DID NOT APPLY: " + old[:70])
+matches = s.count(old)
+if not old or matches != 1:
+    sys.exit(f"MUTATION DID NOT APPLY ({matches} matches): " + old[:70])
 p.write_text(s.replace(old, new, 1))
 PY
 }
@@ -660,9 +661,9 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	}' \
     ''
   # A bearer credential in clear text over a network is a credential given away.
-  mutate go "http is accepted off loopback" "$DF" \
+  mutate go "http is accepted off loopback" internal/desk/deskfile.go \
     '	if parsed.Scheme == "http" &&
-		(parsed.Hostname() == "localhost" || parsed.Hostname() == "127.0.0.1") {
+		(strings.EqualFold(parsed.Hostname(), "localhost") || parsed.Hostname() == "127.0.0.1") {
 		return ""
 	}' \
     '	if parsed.Scheme == "http" {
@@ -939,9 +940,11 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if false {'
   # One JSON value, and nothing behind it: a body two readers disagree about is
   # the class this desk refuses everywhere else.
-  mutate go "a configuration write accepts a second value behind the first" "$A" \
-    '	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {' \
-    '	if false {'
+  mutate go "a configuration write accepts a second value behind the first" internal/desk/assistant.go \
+    '	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,' \
+    '	if false {
+		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,'
   # No override on this route: a file that moved under the writer is refused,
   # because this is the file that names where a credential goes.
   #
@@ -1913,9 +1916,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # `experimental_test_graphs` walk against any runtime without the inventory
   # tool, and in the rail that would fire on every route. Aliased at the import
   # so the mutation is one line and still compiles.
-  mutate web "rail calls the whole-project graph walk" "$L" \
-    "import { useGraphInventory, usePacks } from '../mcp/queries'" \
-    "import { useConfiguredGraphs as useGraphInventory, usePacks } from '../mcp/queries'"
+  mutate web "rail calls the whole-project graph walk" web/src/shell/LeftRail.tsx \
+    'import { usePacks } from '"'"'../mcp/queries'"'"'' \
+    'import { useConfiguredGraphs, usePacks as readPacks } from '"'"'../mcp/queries'"'"'
+function usePacks() { useConfiguredGraphs(); return readPacks() }'
   mutate web "shortcuts fire inside the editor" "$K" \
     "  if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') return true
   if (element.isContentEditable === true) return true
@@ -1927,10 +1931,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # The other half of the same effect: a record nobody chose must not be
   # written, because the seed prefers a stored record over the configured one —
   # so a shell that persisted its own defaults would shadow the file for ever.
-  mutate web "an unchosen layout is persisted anyway" "$P" \
-    '      if (!chosen.left && !chosen.inspector && !chosen.console) return
+  mutate web "an unchosen layout is persisted anyway" web/src/shell/paneState.ts \
+    '      if (!chosen.left && !chosen.inspector && !chosen.console && !chosen.inspectorWidth) return
       writeShellState(storageKey, state, chosen)' \
-    '      writeShellState(storageKey, state, { left: true, inspector: true, console: true })'
+    '      writeShellState(storageKey, state, { left: true, inspector: true, console: true, inspectorWidth: true })'
   mutate web "a throwing localStorage takes the shell down" "$P" \
     '  let raw: string | null = null
   try {
@@ -1942,8 +1946,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the reset clears more than one key" "$P" \
     '    window.localStorage.removeItem(key)' \
     '    window.localStorage.clear()'
-  mutate web "a record from another shell version is restored anyway" "$P" \
-    '  if (record.v !== RECORD_VERSION) return undefined' \
+  mutate web "a record from another shell version is restored anyway" web/src/shell/paneState.ts \
+    '  if (record.v !== 1 && record.v !== RECORD_VERSION) return undefined' \
     '  if (false) return undefined'
   mutate web "the configured pane default never arrives" "$P" \
     '    if (seededFrom.current === signature) return' \
@@ -2017,10 +2021,10 @@ if [ "$which" = all ] || [ "$which" = web ]; then
               {body(() => onDrawerOpenChange(false))}
             </nav>' \
     '            {body(() => onDrawerOpenChange(false))}'
-  mutate web "the inspector drawer answers to no id" "$R" \
+  mutate web "the inspector drawer answers to no id" web/src/shell/RightPane.tsx \
     '            id="desk-inspector"
-            aria-label="Inspector"' \
-    '            aria-label="Inspector"'
+            aria-label={title}' \
+    '            aria-label={title}'
   mutate web "the brand leaves the router on every click" "$H" \
     '        <Link className="desk-brand" to="/">' \
     '        <Link className="desk-brand" to="/" reloadDocument>'
@@ -2051,11 +2055,11 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "the section links go nowhere" "$Q" \
     '    target?.scrollIntoView()' \
     '    void target'
-  mutate web "the rail fetches starter templates on every route" "$L" \
-    "import { useGraphInventory, usePacks } from '../mcp/queries'" \
-    "import { useExampleListing } from '../mcp/starters'
-import { useGraphInventory as readGraphInventory, usePacks } from '../mcp/queries'
-function useGraphInventory() { useExampleListing(); return readGraphInventory() }"
+  mutate web "the rail fetches starter templates on every route" web/src/shell/LeftRail.tsx \
+    'import { usePacks } from '"'"'../mcp/queries'"'"'' \
+    'import { useExampleListing } from '"'"'../mcp/starters'"'"'
+import { usePacks as readPacks } from '"'"'../mcp/queries'"'"'
+function usePacks() { useExampleListing(); return readPacks() }'
   # `navigate('/author')` from `/author` matches the same element, so a
   # mount-only take never runs again: the editor stayed where it was and the
   # request was left in module state for an unrelated mount to consume.
@@ -2351,9 +2355,9 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
     '  const left = state.left
   const inspector = state.inspector
   const consoleSection = state.console'
-  mutate web "one moved pane suppresses the re-seed for every pane" "$P" \
-    '    if (chosen.left && chosen.inspector && chosen.console) return' \
-    '    if (chosen.left || chosen.inspector || chosen.console) return'
+  mutate web "one moved pane suppresses the re-seed for every pane" web/src/shell/paneState.ts \
+    '    if (chosen.left && chosen.inspector && chosen.console && chosen.inspectorWidth) return' \
+    '    if (chosen.left || chosen.inspector || chosen.console || chosen.inspectorWidth) return'
 
   # 5. The key came from the runtime's `configPath`, which a project with no
   # `jpack.json` does not have — so every configless project on one origin
@@ -2437,10 +2441,12 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
               openerRef?.current?.focus()
             }}' \
     ''
-  mutate web "closing the inspector drawer drops focus on the body" "$E" \
+  mutate web "closing the inspector drawer drops focus on the body" web/src/shell/RightPane.tsx \
     '            onCloseAutoFocus={(event) => {
               event.preventDefault()
-              openerRef.current?.focus()
+              const gesture = restoreFocusRef?.current
+              if (gesture?.isConnected && gesture.getClientRects().length) gesture.focus()
+              else openerRef.current?.focus()
             }}' \
     ''
   mutate web "the rail drawer has no visible way out" "$L" \
@@ -2536,10 +2542,10 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
   mutate web "a pane dimension of zero or twenty thousand is accepted" "$D" \
     '  const bounds = PANE_BOUNDS[key]' \
     '  const bounds = undefined as { min: number; max: number } | undefined'
-  mutate web "a configured pane may take the whole frame" "$G" \
+  mutate web "a configured pane may take the whole frame" web/src/shell.css \
     '    grid-template-columns:
       minmax(0, 1fr)
-      min(var(--inspector-current), var(--side-cap));' \
+      min(var(--inspector-current), var(--inspector-cap));' \
     '    grid-template-columns: minmax(0, 1fr) var(--inspector-current);'
   mutate web "the console may grow past the route it sits under" "$G" \
     '    --console-track: min(
@@ -2649,9 +2655,9 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
 
   # 3. `slot.size` promises a route the pane's width; the configured number is
   # capped by the sheet and ignored outright by the drawer form.
-  mutate web "the slot reports a configured width the pane does not have" "$N" \
-    '      size: shell.inspector.open ? (inspectorBox?.width ?? 0) : 0,' \
-    '      size: shell.inspector.open ? inspectorWidth : 0,'
+  mutate web "the slot reports a configured width the pane does not have" web/src/shell/AppShell.tsx \
+    '      size: inspectorOpen ? (inspectorBox?.width ?? 0) : 0,' \
+    '      size: inspectorOpen ? inspectorWidth : 0,'
   mutate web "the pane is never published for measurement" "$E" \
     '      ref={publishPane}
       className="desk-inspector"' \
@@ -3188,8 +3194,8 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
     '    order.splice(anchor + 1, 0, unit)' \
     '    void anchor
     order.push(unit)'
-  mutate web "the condition tree loses the operand type" "$CT" \
-    '  if (!Array.isArray(value)) return <>{JSON.stringify(value)}</>' \
+  mutate web "the condition tree loses the operand type" web/src/packs/document/ConditionTree.tsx \
+    '  if (!Array.isArray(value)) return <>{JSON.stringify(value) ?? (structured ? '"'"'Value not declared'"'"' : undefined)}</>' \
     '  if (!Array.isArray(value)) return <>{String(value)}</>'
 
   # 12. The pane's empty state used to stand beside every published panel.
@@ -3391,15 +3397,10 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
     '      {false && ('
 
   # The two other views on this pack, which nothing else links to.
-  # Re-pinned: the two standing links and the way into edit mode moved out of
-  # the document view, so they can also stand beside the raw bytes — which is
-  # the only view of a file the runtime will not serve.
-  mutate web "the what-if view loses its last way in" "$PV" \
-    '      <ButtonLink
-        to={`/packs/${encodeURIComponent(packId ?? '"''"')}/evaluate`}
-      >
-        Try it
-      </ButtonLink>' \
+  # The standing primary action moved into the shared PackHeader. Tests also
+  # remains a navigation entry; this row specifically preserves the action.
+  mutate web "the primary Test pack link disappears" web/src/packs/PackWorkspace.tsx \
+    '      {current !== '"'"'test'"'"' && <ButtonLink variant="primary" to={`${base}/evaluate`}>Test pack</ButtonLink>}' \
     '      {null}'
 
   # Selecting with the pane closed.
@@ -3439,9 +3440,11 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
     '    if (false) return'
   # "If closed, toggle" is one gesture read twice, and StrictMode — which
   # production runs in — runs an effect twice on purpose.
-  mutate web "the shell flips the Inspector where a route asked it to open" "$AS" \
-    '  const reveal = shell.openInspector' \
-    '  const reveal = shell.toggleInspector'
+  mutate web "the shell flips the Inspector where a route asked it to open" web/src/shell/AppShell.tsx \
+    '    openInspector()
+  }, [openInspector])' \
+    '    toggleInspector()
+  }, [toggleInspector])'
   mutate web "opening the Inspector is a toggle" "$P" \
     '    setState((previous) =>
       previous.inspector.open ? previous : { ...previous, inspector: { open: true } }
@@ -3810,9 +3813,9 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
 
   # Carried low from phase 1: the pane's keyboard, held by the element focus
   # landed on rather than by text that happens to contain the row's name.
-  mutate web "the packs pane never takes focus to the row it arrowed to" "$PN" \
-    '          if (already instanceof HTMLElement) already.focus({ preventScroll: true })' \
-    '          if (already instanceof HTMLElement) void already'
+  mutate web "the packs pane never takes focus to the row it arrowed to" web/src/packs/PacksPane.tsx \
+    '          if (already instanceof HTMLElement) { already.focus({ preventScroll: true }); if (previewOpen) slot.reveal() }' \
+    '          if (already instanceof HTMLElement) { void already; if (previewOpen) slot.reveal() }'
 
   # ---------------------------------------------------------------------
   # The verification round. Each row is one finding, broken again.
@@ -3858,9 +3861,9 @@ function useGraphInventory() { useExampleListing(); return readGraphInventory() 
   mutate web "an unwritten operand is the field’s own again" "$CB" \
     '    hold(at, { text: next, from: held, owner: ownerOf(buffer, at) })' \
     '    hold(at, null)'
-  mutate web "the toolbar says nothing about a field that is not written" "$ETB" \
-    '          {unwritten > 0 && (' \
-    '          {unwritten > 99 && ('
+  mutate web "the editor header hides unfinished fields" web/src/packs/edit/PackEditHeader.tsx \
+    '      {unwritten > 0 && <span className={styles.unwritten}>' \
+    '      {unwritten > 99 && <span className={styles.unwritten}>'
 
   # One word, spliced, where the new kind needs no member the old node lacks.
   mutate web "a kind change re-serializes a subtree it only renamed" "$COP" \
@@ -6973,9 +6976,9 @@ export function assistantTransport(id: string): Transport {
   # which is why "every route states its kind" has to be a test and not a
   # convention. This takes the attribute off the graphs page, whose kind is
   # `full`: the page that most wants every pixel silently becomes a column.
-  mutate web "the page measure unstated by a route (graphs takes the default)" "$GRV" \
-    '    <article className="detail" data-measure="full">' \
-    '    <article className="detail">'
+  mutate web "the page measure unstated by a route (graphs takes the default)" web/src/routes/GraphView.tsx \
+    '  return <article className="detail" data-measure="full" data-layout="page">' \
+    '  return <article className="detail" data-layout="page">'
 
   # **And the rule that reads the attribute.** The other half: a route may
   # state `form` and be given the wide measure anyway, because the `:has` rule

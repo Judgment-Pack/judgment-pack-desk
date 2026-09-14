@@ -10,22 +10,23 @@
 #   scripts/needle-check.sh .
 #
 # It is not a substitute for running the rows. It answers one question — is the
-# matrix complete — that a full pass answers slowly and this answers in a second.
+# matrix complete — without running the mutation suites.
 set -uo pipefail
-cd "$1"
+cd "${1:?usage: needle-check.sh <repository>}" || exit 2
 missing=0
 total=0
 apply() {
   total=$((total+1))
-  python3 - "$2" "$3" <<'PY' || { echo "STALE NEEDLE in $2 :: ${3:0:70}"; missing=$((missing+1)); }
+  python3 - "$2" "$3" <<'PY' || { echo "INVALID NEEDLE in $2 :: ${3:0:70}"; missing=$((missing+1)); return 1; }
 import pathlib, sys
 path, old = sys.argv[1], sys.argv[2]
 s = pathlib.Path(path).read_text()
 n = s.count(old)
-if n == 0:
+if not old or n == 0:
     sys.exit(1)
 if n > 1:
     print(f"AMBIGUOUS ({n}x) in {path}: {old[:60]!r}")
+    sys.exit(1)
 PY
 }
 report() { :; }
@@ -37,11 +38,13 @@ mutate() {
   if ! apply "$lang" "$file" "$needle"; then echo "  ↳ row: $name"; fi
 }
 # Source only the row bodies: replace the harness's own preamble.
+rows_file="$(mktemp)" || exit 2
+trap 'rm -f "$rows_file"' EXIT
 sed -n '/^if \[ "\$which" = all \] || \[ "\$which" = go \]; then$/,$p' scripts/mutation-check.sh \
-  | sed 's/^\[ "\$fail" -eq 0 \]//' > /tmp/rows-only.sh
+  | sed 's/^\[ "\$fail" -eq 0 \]//' > "$rows_file" || exit 2
 which=all
 only=""
 pass=0; fail=0; matched=0
-source /tmp/rows-only.sh
-echo "rows checked: $total   stale: $missing"
-[ "$missing" -eq 0 ]
+source "$rows_file" || exit 2
+echo "rows checked: $total   invalid: $missing"
+[ "$total" -gt 0 ] && [ "$missing" -eq 0 ]
