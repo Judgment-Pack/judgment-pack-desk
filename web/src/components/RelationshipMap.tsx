@@ -10,9 +10,9 @@ export interface RelationshipNode {
   selected?: boolean; matched?: boolean; observation?: string
 }
 export interface RelationshipEdge { id: string; source: string; target: string; label?: string }
-type ReadNode = Node<Omit<RelationshipNode, 'id' | 'column'> & { inspect: () => void }, 'relationship'>
+type ReadNode = Node<Omit<RelationshipNode, 'id' | 'column'> & { inspect: () => void; width?: number }, 'relationship'>
 function ReadingNode({ data, selected }: NodeProps<ReadNode>) {
-  return <div className={[styles.node, selected ? styles.selected : '', data.matched ? styles.matched : ''].join(' ')}>
+  return <div className={[styles.node, selected ? styles.selected : '', data.matched ? styles.matched : ''].join(' ')} style={data.width === undefined ? undefined : { width: data.width }}>
     <Handle type="target" position={Position.Left} className={styles.handle} />
     <strong className={styles.title}>{data.title}</strong>
     {data.matched && <span className={styles.match}>Search match</span>}
@@ -27,12 +27,12 @@ const nodeTypes = { relationship: ReadingNode }
 
 /** Stacks measured nodes in their declared columns; changing text, density or
  * display options never overlaps nodes or silently zooms the reader out. */
-export function relationshipPositions(nodes: Pick<RelationshipNode, 'id' | 'column'>[], sizes: Record<string, { width: number; height: number }>, unit: number) {
+export function relationshipPositions(nodes: Pick<RelationshipNode, 'id' | 'column'>[], sizes: Record<string, { width: number; height: number }>, unit: number, columnGap = 5, nodeWidth = 22 * unit) {
   const widths = new Map<number, number>(), heights = new Map<number, number>()
-  nodes.forEach(n => widths.set(n.column, Math.max(widths.get(n.column) ?? 22 * unit, sizes[n.id]?.width ?? 0)))
+  nodes.forEach(n => widths.set(n.column, Math.max(widths.get(n.column) ?? nodeWidth, sizes[n.id]?.width ?? 0)))
   const offsets = new Map<number, number>(); let x = unit
   for (const column of [...widths.keys()].sort((a, b) => a - b)) {
-    offsets.set(column, x); x += widths.get(column)! + 5 * unit
+    offsets.set(column, x); x += widths.get(column)! + columnGap * unit
   }
   return new Map(nodes.map(n => {
     const y = heights.get(n.column) ?? 0
@@ -42,22 +42,25 @@ export function relationshipPositions(nodes: Pick<RelationshipNode, 'id' | 'colu
 }
 
 /** Read-only canvas infrastructure; callers own document and edge semantics. */
-export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange, onSelect, onInspect, focusRequest }: {
+export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange, onSelect, onInspect, focusRequest, ariaLabel = 'Pack relationship map', onEdgeInspect, columnGap = 5, nodeWidth }: {
   nodes: RelationshipNode[]; edges: RelationshipEdge[]; unit: number; viewport: Viewport
   onViewportChange: (next: Viewport) => void; onSelect: (id: string) => void; onInspect: (id: string) => void
+  columnGap?: number; nodeWidth?: number
+  ariaLabel?: string; onEdgeInspect?: (id: string) => void
   focusRequest?: { id: string; sequence: number }
 }) {
   const [sizes, setSizes] = useState<Record<string, { width: number; height: number }>>({})
   const [instance, setInstance] = useState<ReactFlowInstance<ReadNode> | null>(null)
   const root = useRef<HTMLDivElement>(null)
-  const positions = useMemo(() => relationshipPositions(nodes, sizes, unit), [nodes, sizes, unit])
+  const positions = useMemo(() => relationshipPositions(nodes, sizes, unit, columnGap, nodeWidth), [nodes, sizes, unit, columnGap, nodeWidth])
   const flowNodes = useMemo<ReadNode[]>(() => nodes.map(n => ({
     id: n.id, type: 'relationship', position: positions.get(n.id)!,
-    data: { ...n, inspect: () => onInspect(n.id) }, selected: n.selected, ariaLabel: `Select: ${n.title}`, ariaRole: 'group',
+    data: { ...n, width: nodeWidth, inspect: () => onInspect(n.id) }, selected: n.selected, ariaLabel: `Select: ${n.title}`, ariaRole: 'group',
     domAttributes: { 'aria-current': n.selected ? 'true' : undefined, 'data-search-match': n.matched ? 'true' : undefined },
     className: 'nopan', draggable: false, connectable: false
-  })), [nodes, positions, onInspect])
+  })), [nodes, positions, onInspect, nodeWidth])
   const flowEdges = useMemo(() => edges.map(e => ({ ...e, type: 'smoothstep',
+    ariaLabel: `Connection: ${e.source} to ${e.target}`,
     markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--ink-faint)' },
     labelStyle: { fill: 'var(--ink-soft)', fontSize: .75 * unit },
     labelBgStyle: { fill: 'var(--bg)' },
@@ -98,11 +101,13 @@ export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange
   const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Enter' && event.key !== ' ') return
     if ((event.target as HTMLElement).closest('button, a, input')) return
+    const edge = (event.target as HTMLElement).closest<HTMLElement>('.react-flow__edge')
+    if (edge?.dataset.id && onEdgeInspect) { event.preventDefault(); event.stopPropagation(); onEdgeInspect(edge.dataset.id); return }
     const node = (event.target as HTMLElement).closest<HTMLElement>('.react-flow__node')
     const id = node?.dataset.id
     if (id) { event.preventDefault(); event.stopPropagation(); onSelect(id) }
   }
-  return <div ref={root} className={styles.map} onKeyDownCapture={keyDown} aria-label="Pack relationship map">
+  return <div ref={root} className={styles.map} onKeyDownCapture={keyDown} aria-label={ariaLabel}>
     <ReactFlow nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onInit={setInstance}
       proOptions={{ hideAttribution: true }}
       viewport={viewport} onViewportChange={onViewportChange}
@@ -111,8 +116,9 @@ export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange
         if (selection && !selection.isCollapsed && selection.toString()) return
         onSelect(node.id)
       }}
+      onEdgeClick={(_event, edge) => onEdgeInspect?.(edge.id)}
       nodesDraggable={false} nodesConnectable={false} edgesReconnectable={false}
-      edgesFocusable={false} elementsSelectable={false} nodesFocusable
+      edgesFocusable={Boolean(onEdgeInspect)} elementsSelectable={false} nodesFocusable
       deleteKeyCode={null} selectionKeyCode={null} panOnScroll zoomOnScroll={false}
       minZoom={0.5} maxZoom={2} preventScrolling={false}
       ariaLabelConfig={{ 'node.a11yDescription.default': 'Press Enter or Space to select. Use View details for supporting information or Expand rules to read a group.' }} />

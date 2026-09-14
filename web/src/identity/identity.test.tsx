@@ -177,11 +177,12 @@ describe('the header’s organization identity', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/'))
   })
 
-  it('labels the project chip as a label rather than a switcher', async () => {
+  it('offers project files and explains how to open another project', async () => {
     renderHeader()
     fireEvent.keyDown(screen.getByRole('button', { name: /this project/ }), { key: 'Enter' })
     const menu = await screen.findByRole('menu')
-    expect(menu.textContent).toContain('a label, not a switcher')
+    expect(menu.textContent).toContain('To open another project, start Desk')
+    expect(screen.getByRole('menuitem', { name: 'Project files' }).getAttribute('href')).toBe('/author')
     expect(menu.textContent).not.toContain('workspace')
     expect(menu.textContent).not.toContain('tenant')
   })

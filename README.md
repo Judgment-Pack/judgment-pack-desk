@@ -22,11 +22,11 @@ machine-held credential to the browser as a model id. See
 
 ## What it shows
 
-**A project home.** `/` is what the project declares — its packs, and the two
-rehearsals that can be run over them. The matrix and graph entries appear only
-where the project has one: `list_packs` reports a matrix flag per pack, and the
-configured graphs come from `experimental_list_graphs` where the runtime serves
-it, or from running their matrices where it does not.
+**A Packs workspace.** `/` opens `/packs`. The main sidebar keeps Create pack,
+Packs, Admin and Help & About. Packs has three contextual views: All packs,
+Tests (`/matrix`) and Pack flows (`/graphs`). Project files is available in the
+header’s project menu at the existing `/author` URL. Pack IDs such as `tests`
+and `flows` remain valid; collection views reserve no pack IDs.
 
 **A shell around all of it.** A header, a left rail, an Inspector, a Console and
 a status strip — described under [Shell](#shell). The rail's first entry creates
@@ -184,11 +184,14 @@ unchecked omits the key entirely, which is what "no evidence document at all"
 means; a key present with an empty string would be a *supplied* empty document,
 and is refused as malformed-input.
 
-**A matrix and coverage view:**
+**Pack tests and coverage:**
 
-- `/matrix` runs every matrix the project declares, through
-  `experimental_test_packs`.
-- `/packs/:id/matrix` runs one pack's.
+- `/matrix` lists packs with saved cases. **Run all tests** requests the project’s
+  matrices through `experimental_test_packs`.
+- `/packs/:id/matrix` opens one pack’s saved cases. **Run tests** requests its matrix.
+- Opening a Tests page, changing files, window focus and reconnecting do not run
+  tests. Completed results are retained for the current connection and labeled
+  Last run. The Console records command progress without input payloads.
 
 Two things are on that page, and they answer different questions.
 
@@ -221,10 +224,22 @@ threshold would differ, which is the one input a matrix is most likely to lack.
 None of it gates. A missing probe moves no status, and the page says so, because
 a report that looked like a failing check would be read as one.
 
-**Graph views:**
+**Pack flows:**
 
-- `/graphs` runs every graph the project configures, through
-  `experimental_test_graphs`; `/graphs/:id` runs one.
+- `/graphs` lists configured flows through `experimental_list_graphs`, with the
+  last completed result already held in this connection’s cache.
+- `/graphs/:id` reads `experimental_get_graph` and draws the declared connections
+  with the shared relationship map. Nodes and connections open contextual
+  Inspector details; nodes link to their packs.
+- A flow’s Tests tab and the collection’s **Run all flow tests** command use
+  `experimental_test_graphs` only when explicitly requested. Detailed traces are
+  an option for the next command, never an automatic run.
+- Older runtimes retain explicit testing without an inventory fallback that
+  executes suites while browsing. Old `/graphs` links continue to work.
+
+The diagram browser and test-result walk have separate purposes. The diagram
+shows declarations before a test exists; the walk below a test result joins the
+served document with that particular run only when their revisions permit it.
 
 A graph composes packs: one node's outcome lands at a fact pointer the next
 node's rules read, and its resolution state feeds that node's evidence. No JPS
@@ -289,7 +304,8 @@ revision, a binding of bytes and not a verdict on the revision. Where they
 **disagree**, the graph file was edited between the two calls, so the two
 answers are about two revisions and the desk does not join them at all — the
 document walk is withdrawn, the coverage fallback stands in with a line naming
-the divergence, and both queries are asked again so the next pair can re-bind.
+the divergence, and the document is read again. The user explicitly runs tests
+again to obtain a new result; a document mismatch never executes a suite.
 That re-ask is **one cycle per pair**: the pairs a connection has asked about
 are remembered whole, digests folded to one spelling, so a file still being
 edited settles into the withdrawal instead of spinning, and one edited back and
@@ -332,11 +348,11 @@ row's own verdict — which covers the headline and every reported node comparis
 together — is shown beside the diagram as the row's, never painted onto the
 composite.
 
-**What the project configures** is listed above the run where
+**What the project configures** is listed in Pack flows where
 `experimental_list_graphs` is served: the configured id beside the document's
 own id and version, its declared format version and result node, its node and
 edge counts, and the configuration's description. It costs one call that
-evaluates nothing, so it lands before the matrix has finished — and it lists a
+evaluates nothing, so browsing needs no matrix run — and it lists a
 graph whose rows would not load, which a matrix run reports only as a failure.
 Counts absent from a row are printed as not read rather than as `0`: the runtime
 omits them, never zeroes them, exactly so a malformed document cannot look
@@ -374,8 +390,8 @@ an error that is not a refusal at all covers a response the runtime *did*
 produce and the desk could not read. So the page shows the runtime's own message
 as the reason and adds only what it actually knows: that **this request asked
 for traces**, that it **did not produce a usable answer**, and what clearing the
-ask will do — return to the untraced answer where one is still in hand, or retry
-the untraced request where none was ever received. The control stays on screen
+option will do — show the cached untraced answer where one is still in hand,
+or leave the user an explicit Run tests action where none was received. The control stays on screen
 through the failure. It never renders a failure as an absence of traces: the
 question was not answered, so nothing is known about the answer.
 

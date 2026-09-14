@@ -1,0 +1,74 @@
+{
+  "checks": [
+    "Home and contextual navigation; mouse/keyboard node and edge inspection; zero implicit test calls",
+    "Explicit flow test, cached collection result and file-change isolation",
+    "Project files menu and existing pack IDs named flows/tests remain reachable",
+    "Six viewport/theme/density combinations; sticky headers; Inspector limits/drawers; malformed and empty flows"
+  ],
+  "geometry": [
+    {
+      "width": 1700,
+      "height": 1000,
+      "documentWidth": 1700,
+      "documentHeight": 1000,
+      "bodyWidth": 1067,
+      "bodyScrollWidth": 1067,
+      "theme": "dark",
+      "density": "comfortable"
+    },
+    {
+      "width": 1400,
+      "height": 800,
+      "documentWidth": 1400,
+      "documentHeight": 800,
+      "bodyWidth": 1127,
+      "bodyScrollWidth": 1127,
+      "theme": "light",
+      "density": "compact"
+    },
+    {
+      "width": 1024,
+      "height": 768,
+      "documentWidth": 1024,
+      "documentHeight": 768,
+      "bodyWidth": 751,
+      "bodyScrollWidth": 751,
+      "theme": "dark",
+      "density": "comfortable"
+    },
+    {
+      "width": 600,
+      "height": 700,
+      "documentWidth": 600,
+      "documentHeight": 700,
+      "bodyWidth": 559,
+      "bodyScrollWidth": 559,
+      "theme": "light",
+      "density": "compact"
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "documentWidth": 390,
+      "documentHeight": 844,
+      "bodyWidth": 349,
+      "bodyScrollWidth": 349,
+      "theme": "light",
+      "density": "comfortable"
+    },
+    {
+      "width": 360,
+      "height": 640,
+      "documentWidth": 360,
+      "documentHeight": 640,
+      "bodyWidth": 319,
+      "bodyScrollWidth": 319,
+      "theme": "dark",
+      "density": "compact"
+    }
+  ],
+  "commands": [
+    "experimental_test_graphs"
+  ],
+  "errors": []
+}

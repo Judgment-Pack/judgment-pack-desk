@@ -454,7 +454,7 @@ await page.waitForSelector('.desk', { timeout: 30000 })
 {
   const wrong = []
   const landed = new URL(page.url())
-  if (landed.pathname !== '/' || landed.search !== '') {
+  if (landed.pathname !== '/packs' || landed.search !== '') {
     wrong.push(`the address is ${page.url()}`)
   }
   // **`href`, not `hash`.** The launch redirects to `/#` so the request's own

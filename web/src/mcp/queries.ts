@@ -222,17 +222,18 @@ export function useValidate(
  * the tool writes nothing: a matrix row is a rehearsal rather than a decision,
  * so no audit record is appended and no reviewed set is consulted (ADR-0018,
  * ADR-0019). That is the distinction `experimental_evaluate` does not draw,
- * and it is why this one may be cached and re-run on a file change.
+ * and it is why this one may be cached. Views disable automatic execution
+ * and refetch only after a Run tests command.
  *
  * Passing a decision id runs that pack's matrix alone. Omitting the key runs
  * every declared pack — and the key is omitted rather than sent empty, because
  * a present-but-empty `pack_id` is refused rather than read as absent.
  */
-export function usePackMatrix(packId?: string): UseQueryResult<PackTest, Error> {
-  const { client, status } = useMcp()
+export function usePackMatrix(packId?: string, enabled = true): UseQueryResult<PackTest, Error> {
+  const { client, status, connectionEpoch } = useMcp()
   return useQuery({
-    queryKey: ['experimental_test_packs', packId ?? null],
-    enabled: status === 'ready' && client !== null,
+    queryKey: ['experimental_test_packs', packId ?? null, connectionEpoch],
+    enabled: enabled && status === 'ready' && client !== null,
     queryFn: async ({ signal }) => {
       const args = packId === undefined ? {} : { pack_id: packId }
       const { parsed } = await callToolJSON<PackTest>(client!, 'experimental_test_packs', args, signal)
@@ -252,7 +253,7 @@ export function usePackMatrix(packId?: string): UseQueryResult<PackTest, Error> 
 export function useGraphMatrix(
   graphId?: string,
   /**
-   * Whether to run at all. The home page turns it off where the cheap
+   * Whether to run automatically. Command-driven views leave this false; the cheap
    * inventory answers its question instead — running every configured graph's
    * matrix to decide whether to render a link is a real cost on a large
    * project, and ADR-0029 made it unnecessary.
@@ -275,9 +276,9 @@ export function useGraphMatrix(
    */
   includeTraces = false
 ): UseQueryResult<GraphSuite, Error> {
-  const { client, status } = useMcp()
+  const { client, status, connectionEpoch } = useMcp()
   return useQuery({
-    queryKey: ['experimental_test_graphs', graphId ?? null, includeTraces],
+    queryKey: ['experimental_test_graphs', graphId ?? null, includeTraces, connectionEpoch],
     enabled: enabled && status === 'ready' && client !== null,
     queryFn: async ({ signal }) => {
       const args: Record<string, unknown> = graphId === undefined ? {} : { graph_id: graphId }
@@ -366,37 +367,6 @@ export function useGraphDocument(graphId: string | undefined): UseQueryResult<Se
         : { meta, raw, unreadable: read.reason }
     }
   })
-}
-
-/**
- * How many graphs the project configures, by the cheapest route the connected
- * runtime offers.
- *
- * With `experimental_list_graphs` (ADR-0029) that is one call that evaluates
- * nothing. Without it the only way to find out is to run every configured
- * graph's matrix — affordable, because a row is a rehearsal and writes nothing,
- * but a real cost on a large project paid to decide whether to render a link.
- * Exactly one of the two queries is enabled, so the older route is not run
- * beside the newer one.
- */
-export function useConfiguredGraphs(): {
-  count: number
-  isPending: boolean
-  error: Error | null
-  /** True where the count came from the inventory rather than from a matrix run. */
-  fromInventory: boolean
-} {
-  const { graphInventorySupported } = useMcp()
-  const inventory = useGraphInventory()
-  const matrix = useGraphMatrix(undefined, !graphInventorySupported)
-  const source = graphInventorySupported ? inventory : matrix
-  const graphs = graphInventorySupported ? inventory.data?.graphs : matrix.data?.graphs
-  return {
-    count: graphs?.length ?? 0,
-    isPending: source.isPending,
-    error: source.error,
-    fromInventory: graphInventorySupported
-  }
 }
 
 /**

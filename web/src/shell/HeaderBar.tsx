@@ -25,6 +25,7 @@ import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { DESK_FALLBACK_NAME } from '../config/deskConfig'
 import { UserControl, monogram } from '../identity/UserControl'
 import { usePacks } from '../mcp/queries'
+import { useAuthorDirty } from './authorBridge'
 import { IconChevronDown, IconPanelBottom, IconPanelLeft, IconPanelRight } from './icons'
 
 /**
@@ -154,15 +155,10 @@ export function HeaderBar({
   )
 }
 
-/**
- * The project, as a label.
- *
- * **Not a switcher**, and the menu says so in words: the chassis pins one
- * `os.Root` at startup, so there is no second project for this desk to move
- * to. The words *workspace* and *tenant* appear nowhere — both imply a
- * server-side bounded space this desk does not have.
- */
+/** Project context and advanced file access. Opening another project still
+ * requires starting Desk in that directory; this menu does not switch roots. */
 function ProjectChip() {
+  const dirty = useAuthorDirty()
   const { data } = usePacks()
   const configPath = data?.configPath
   const label = configPath ? basename(configPath) : 'this project'
@@ -170,13 +166,16 @@ function ProjectChip() {
     <DropdownMenu.Root>
       <DropdownMenu.Trigger className="desk-chip">
         <span className="desk-chip-name">{label}</span>
+        {dirty && <span className="desk-dirty" aria-label="unsaved changes" role="img" />}
         <IconChevronDown />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content className="desk-menu desk-header-menu" align="start" sideOffset={6} collisionPadding={16}>
+          <DropdownMenu.Item asChild className="desk-menu-item">
+            <Link to="/author">Project files</Link>
+          </DropdownMenu.Item>
           <DropdownMenu.Label className="desk-menu-note">
-            This is a label, not a switcher. The chassis opens one project directory at startup
-            and holds it for the life of the process; to work on another, start a desk there.
+            To open another project, start Desk in that project’s folder.
           </DropdownMenu.Label>
           {configPath && (
             <DropdownMenu.Label className="desk-menu-note">

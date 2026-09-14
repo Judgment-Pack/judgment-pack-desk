@@ -1,17 +1,4 @@
-/**
- * The rail, and the one call it must never make.
- *
- * `useConfiguredGraphs()` falls back to a whole-project
- * `experimental_test_graphs` walk against any runtime that does not advertise
- * `experimental_list_graphs`. Today one page pays that, once. In the rail it
- * would fire on every route and every navigation — including `/author`, where
- * the user is editing a file and the desk would be running the evaluator over
- * every configured graph to decide whether to draw a link.
- *
- * The stub answers `list_packs` and nothing else, and `stubClient` records the
- * name **before** it looks the handler up — so a rail that made the call is
- * caught by the record, not by whether the call happened to succeed.
- */
+/** Navigation never executes suites or fetches graph inventory. */
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Tooltip } from 'radix-ui'
@@ -20,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { McpContext, type McpConnection } from '../mcp/McpProvider'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { LeftRail } from './LeftRail'
+import { HeaderBar } from './HeaderBar'
 import { forgetAuthorBridge, publishDirty } from './authorBridge'
 
 afterEach(() => {
@@ -38,7 +26,8 @@ function packs(ids: string[]) {
 function renderRail(
   stub: ReturnType<typeof stubClient>,
   overrides: Partial<McpConnection> = {},
-  path = '/'
+  path = '/',
+  header = false
 ) {
   const value = connected({ client: stub.client, ...overrides })
   const router = createMemoryRouter(
@@ -48,6 +37,8 @@ function renderRail(
         element: (
           <McpContext.Provider value={value}>
             <Tooltip.Provider>
+              {header && <HeaderBar inspectorOpen={false} inspectorIsDrawer={false} consoleOpen={false}
+                onToggleInspector={() => {}} onToggleConsole={() => {}} railIsDrawer={false} railDrawerOpen={false} onOpenRail={() => {}} />}
               <LeftRail
                 mode="expanded"
                 onToggle={() => {}}
@@ -102,13 +93,13 @@ describe('the left rail', () => {
     expect(stub.calls.map((call) => call.name)).not.toContain('list_examples')
   })
 
-  it('renders Graphs whether or not the runtime advertises the inventory', async () => {
-    renderRail(packs([]), { graphInventorySupported: false })
-    expect(screen.getByRole('link', { name: 'Graphs' })).toBeTruthy()
+  it('keeps secondary features out of the primary rail', async () => {
+    const stub = packs([])
+    renderRail(stub, { graphInventorySupported: true })
+    await screen.findByRole('link', { name: /^Packs/ })
+    for (const name of ['Author', 'Graphs', 'Matrix and coverage']) expect(screen.queryByRole('link', { name })).toBeNull()
+    expect(stub.calls.map(call => call.name)).toEqual(['list_packs'])
   })
-
-
-
 
   it('is one destination with a count, not a list', async () => {
     // The list moved into main's left pane. A project can carry hundreds of
@@ -145,17 +136,17 @@ describe('the left rail', () => {
     expect(link.getAttribute('aria-label')).toBe('Packs')
   })
 
-  it('marks the active route with aria-current', async () => {
-    renderRail(packs([]), {}, '/matrix')
+  it.each(['/packs', '/packs/vendor', '/matrix', '/graphs', '/graphs/onboarding'])('marks Packs active at %s', async path => {
+    renderRail(packs([]), {}, path)
     await waitFor(() =>
       expect(
-        screen.getByRole('link', { name: 'Matrix and coverage' }).getAttribute('aria-current')
+        screen.getByRole('link', { name: /^Packs/ }).getAttribute('aria-current')
       ).toBe('page')
     )
   })
 
-  it('shows a dot beside Author exactly while the buffer is dirty', async () => {
-    renderRail(packs([]))
+  it('shows a dot in the project menu trigger exactly while the buffer is dirty', async () => {
+    renderRail(packs([]), {}, '/', true)
     expect(screen.queryByLabelText('unsaved changes')).toBeNull()
     fireEvent.click(document.body)
     publishDirty('jpack.json', true)
@@ -177,7 +168,7 @@ describe('the left rail', () => {
     // harness is what found that: clearing the whole map on every publish left
     // this case green. `act` makes each publish a completed render, and an
     // assertion that has to be true *now* is one a later render cannot repair.
-    renderRail(packs([]))
+    renderRail(packs([]), {}, '/', true)
     fireEvent.click(document.body)
     await act(async () => {
       publishDirty('jpack.json', true)

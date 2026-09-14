@@ -163,12 +163,13 @@ describe('the shell frame', () => {
     expect(screen.getAllByRole('complementary', { name: 'Inspector' })).toHaveLength(1)
     expect(screen.getAllByRole('region', { name: 'Console' })).toHaveLength(1)
     expect(screen.getAllByRole('contentinfo')).toHaveLength(1)
-    // And every navigation on the page is named, so the three are
-    // distinguishable: the rail's Project, the pane's Packs, and the
+    // Every navigation landmark is named, so collection tabs are
+    // distinguishable from the rail, the collection and the
     // document's Members.
     const navigations = screen.getAllByRole('navigation')
     expect(navigations.map((landmark) => landmark.getAttribute('aria-label'))).toEqual([
       'Project',
+      'Packs workspace',
       'Packs',
       'Members'
     ])

@@ -1,3 +1,4 @@
+import { PageHeader, PageBody } from '../ui/PageLayout'
 import { Button } from '../ui/Button'
 import { OverflowTooltip } from '../ui/Tooltip'
 import { useEffect, useMemo, useState } from 'react'
@@ -78,33 +79,10 @@ export function AuthorView() {
   useOpenRequests(choose)
 
   return (
-    <article className="detail authoring" data-measure="wide">
-      <header className="detail-head">
-        <h1>Author</h1>
-        <p className="ids">
-          <Pill tone="quiet">phase 1</Pill>
-          <span className="quiet">edit the project's files; the runtime judges them</span>
-        </p>
-        {listing.data?.root && (
-          <p className="meta">
-            <code>{listing.data.root}</code>
-          </p>
-        )}
-      </header>
-
-      <details className="disclosure">
-        <summary>About file editing</summary>
-        <p className="note">
-          <strong>The desk owns writes; the runtime does not.</strong> The runtime is a
-          stateless judge with no write tools by design (ADR-0006), so saving happens
-          here, over loopback, inside the project directory only. Nothing on this page
-          validates anything — not even that a file is JSON: what these bytes mean is
-          the runtime's answer, and every other view asks it. Schema-guided editing and
-          validate-on-change are phase 2 of{' '}
-          <a href="https://github.com/Judgment-Pack/judgment-pack-desk/issues/14">#14</a>.
-        </p>
-      </details>
-
+    <article className="detail authoring" data-measure="full" data-layout="page">
+      <PageHeader title="Project files" />
+      <PageBody width="full">
+      <p className="quiet">Edit configuration, inputs and source files in this project.</p>
       {/* An error replaces the pane only when there is nothing behind it.
           TanStack keeps the previous listing after a failed refetch, and the
           file watcher refetches on every change — so treating any error as
@@ -171,6 +149,7 @@ export function AuthorView() {
           )}
         </div>
       )}
+      </PageBody>
     </article>
   )
 }

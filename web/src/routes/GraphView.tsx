@@ -1,6 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { PageHeader, PageBody } from '../ui/PageLayout'
+import { Button, ButtonLink } from '../ui/Button'
+import { PacksNavigation } from '../packs/PacksNavigation'
+import { recordActivity } from '../shell/consoleLog'
+import { useLatestFlowResult } from '../packs/flows/useLatestFlowResult'
+import { FlowExplorer } from '../packs/flows/FlowExplorer'
+import workspace from '../packs/PackWorkspace.module.css'
 import { CoverageReport } from '../components/CoverageReport'
 import { GraphWalkDiagram } from '../components/GraphWalkDiagram'
 import { Empty, ErrorBox, Loading, Pill, Section, statusTone } from '../components/primitives'
@@ -24,225 +31,75 @@ import type {
   GraphTestRow
 } from '../mcp/types'
 
-/**
- * The project's configured graphs, and their matrices run.
- *
- * A graph composes packs: one node's disposition lands at a fact pointer the
- * next node's rules read, and its resolution state feeds that node's evidence.
- * No JPS version defines any of that — the graph format is the runtime's own
- * convention, and only each node's pack evaluation reaches the shared
- * evaluator. The payload says so in its label, and so does this page.
- *
- * Two of the runtime's tools answer two different questions here, and the page
- * uses whichever it has:
- *
- * - `experimental_list_graphs` (ADR-0029) says what the project *configures*,
- *   for one cheap call that evaluates nothing. It lands first, so the page has
- *   something true to show while the matrix is still running — and it lists a
- *   graph whose rows would not load, which a matrix run reports only as a
- *   failure.
- * - `experimental_test_graphs` runs the rows, and stays the only source of
- *   rows and coverage.
- *
- * A project that configures no graph is an answer rather than an error: the
- * walk reports `skipped` with no entries, and the page says so plainly.
- */
+/** Browsing reads declarations. Tests run only after an explicit command. */
 export function GraphView() {
   const { graphId } = useParams<{ graphId?: string }>()
-  const { graphInventorySupported, graphTracesSupported } = useMcp()
+  const [search, setSearch] = useSearchParams()
+  const tests = search.get('view') === 'tests'
+  const { status, graphInventorySupported, graphTracesSupported } = useMcp()
   const inventory = useGraphInventory()
-
-  // Off by default, and off is today's call byte for byte (ADR-0031). Traces
-  // multiply per node per row and ride inside the runtime's own report budget,
-  // so asking is a decision with a cost — which is why it is a control a person
-  // presses rather than something this page decides for them.
   const [includeTraces, setIncludeTraces] = useState(false)
   const asked = graphTracesSupported && includeTraces
-  const { data, error, isPending, isFetching } = useGraphMatrix(graphId, true, asked)
-
-  // Whether an untraced answer is actually in hand, observed rather than
-  // assumed. The two runs are separate cache entries, so clearing the ask lands
-  // on a result only where one was fetched — and a page that promised to
-  // "restore the run that worked" after a toggle flipped before any untraced
-  // run ever completed would be promising something that does not exist. This
-  // observer never fetches; it only reads what the untraced key holds.
+  // Disabled observers retain results but cannot run on mount, focus, reconnect
+  // or file invalidation. Switching trace options is also a read of cache only.
+  const { data, error, isFetching, refetch } = useGraphMatrix(graphId, false, asked)
   const retainedUntraced = useGraphMatrix(graphId, false, false).data !== undefined
-
-  // The inventory is what lets the page render before the matrix has run. With
-  // no inventory to show, the old behaviour stands exactly: wait, then report.
-  //
-  // A listing that failed shows nothing rather than what it last said: this
-  // section is titled "Configured", and configuration a failed call cannot
-  // confirm is not what the project configures now. The failure itself is
-  // reported below, which is what the home page sends a reader here for.
   const listing = inventory.error ? undefined : inventory.data
-
-  // Nonfatal, and never silent: the matrix still runs and still reports what it
-  // can, but a listing that refused is the one thing that would otherwise
-  // vanish — the graphs it would have named are exactly the ones a matrix run
-  // cannot report on.
-  const inventoryNotice = inventory.error ? (
-    <p className="note note-warn">
-      The configured graphs could not be listed — {inventory.error.message}. What is below is the
-      matrix run, which reports a graph only where its rows loaded.
-    </p>
-  ) : null
-
-  // The control is rendered on every path this component can take, including
-  // the ones that show only an error. A run refused *because* traces were asked
-  // for must leave the ask reachable — a control that vanished with the payload
-  // would strand the page on the question that failed.
-  const tracesControl = graphTracesSupported ? (
-    <label className="checkbox trace-ask">
-      <input
-        type="checkbox"
-        checked={includeTraces}
-        onChange={(event) => setIncludeTraces(event.target.checked)}
-      />
-      <span>
-        Ask for traces of the compared nodes the walk evaluates (ADR-0031). Off — the default — is the
-        call this desk has always made, byte for byte. Asked, the traces are
-        charged against the runtime's own report budget, so a suite that fits
-        without them can be refused with them.
-      </span>
-    </label>
-  ) : null
-
-  // Named, never diagnosed.
-  //
-  // What went wrong is the runtime's to say and it says it verbatim below. This
-  // adds only the two facts its message cannot carry: that *this* request was
-  // the one that asked for traces, and what clearing the ask will do. It stops
-  // short of the budget on purpose. A tool error arrives in one unstructured
-  // shape whether the cause was the report budget, an argument this runtime
-  // rejects, a configuration it could not find, or a graph id it does not have
-  // — and an error that is not a refusal at all covers a response the runtime
-  // *did* produce and this client could not read. Naming the budget would be
-  // this page diagnosing a message it has not parsed.
-  //
-  // Nor does it ever report the failure as an absence of traces. The question
-  // was not answered, so nothing at all is known about the answer.
-  const tracesRefusal =
-    asked && error ? (
-      <p className="note note-warn">
-        This request asked for traces, and it did not produce a usable answer.
-        The runtime's own message is below and is the reason.{' '}
-        {retainedUntraced
-          ? 'Clear the ask to return to the untraced request, whose answer is still in hand.'
-          : 'Clear the ask to retry the untraced request.'}{' '}
-        Nothing here says these nodes have no traces: the question was not
-        answered.
-      </p>
-    ) : null
-
-  if (isPending && !listing) {
-    return (
-      <>
-        {inventoryNotice}
-        {tracesControl}
-        <Loading what={graphId ? `graph ${graphId}` : "the project's graphs"} />
-      </>
-    )
-  }
-  if (error && !listing) {
-    return (
-      <>
-        {inventoryNotice}
-        {tracesControl}
-        {tracesRefusal}
-        <ErrorBox
-          title={graphId ? `Could not run graph ${graphId}` : 'Could not run the graphs'}
-          error={error}
-        />
-      </>
-    )
+  const run = () => {
+    if (status !== 'ready' || isFetching) return
+    setSearch(previous => { const next = new URLSearchParams(previous); next.set('view', 'tests'); return next })
+    recordActivity('Flow tests started.')
+    void refetch().then(result => recordActivity(result.error ? 'Flow tests failed.' : `Flow tests completed: ${result.data?.status ?? 'no result'}.`))
   }
 
-  const graphs = data?.graphs ?? []
-
-  return (
-    <article className="detail" data-measure="full">
-      <nav className="crumbs">
-        <Link to="/">Project</Link>
-        <span aria-hidden="true">/</span>
-        {graphId ? (
-          <>
-            <Link to="/graphs">Graphs</Link>
-            <span aria-hidden="true">/</span>
-            <span>{graphId}</span>
-          </>
-        ) : (
-          <span>Graphs</span>
-        )}
-      </nav>
-
-      <header className="detail-head">
-        <h1>{graphId ?? 'Graphs'}</h1>
-        {data ? (
-          <p className="ids">
-            <Pill tone={statusTone(data.status)}>{data.status}</Pill>
-            <span>
-              {data.summary.passed} of {data.summary.total}{' '}
-              {data.summary.total === 1 ? 'row' : 'rows'} passed
-            </span>
-            {data.summary.mismatched > 0 && (
-              <Pill tone="danger">{data.summary.mismatched} mismatched</Pill>
-            )}
-            {isFetching && <span className="quiet">re-running…</span>}
-          </p>
-        ) : (
-          <p className="ids">
-            <span className="quiet">
-              {error ? 'the graph matrix could not run' : 'running the graph matrix…'}
-            </span>
-          </p>
-        )}
-        <p className="meta">
-          {(data?.configPath ?? listing?.configPath) && (
-            <code>{data?.configPath ?? listing?.configPath}</code>
-          )}
-          {(data?.configVersion ?? listing?.configVersion) && (
-            <span>configVersion {data?.configVersion ?? listing?.configVersion}</span>
-          )}
-          {data?.formatVersion && <span>graph format {data.formatVersion}</span>}
-          {data?.evaluatorSpecVersion && <span>evaluator {data.evaluatorSpecVersion}</span>}
-        </p>
-        {tracesControl}
-      </header>
-
-      {inventoryNotice}
-      {tracesRefusal}
-
-      {graphInventorySupported && listing && (
-        <ConfiguredGraphs inventory={listing} only={graphId} />
-      )}
-
-      {error ? (
-        <ErrorBox
-          title={graphId ? `Could not run graph ${graphId}` : 'Could not run the graphs'}
-          error={error}
-        />
-      ) : !data ? (
-        <Loading what={graphId ? `graph ${graphId}` : "the project's graphs"} />
-      ) : graphs.length === 0 ? (
-        <Empty>
-          This project configures no graph. A graph is declared under{' '}
-          <code>graphs</code> in <code>jpack.json</code>, which needs{' '}
-          <code>configVersion</code> 2 or newer.
-        </Empty>
-      ) : (
-        graphs.map((entry) => (
-          <GraphEntry key={entry.id} entry={entry} matrixSettled={!isFetching} />
-        ))
-      )}
-
-      {data?.label && (
-        <p className="note">
-          <strong>What this reports.</strong> {data.label}
-        </p>
-      )}
-    </article>
-  )
+  return <article className="detail" data-measure="full" data-layout="page">
+    <PageHeader title={graphId ? 'Pack flows' : 'Packs'} context={graphId} titleHref={graphId ? '/graphs' : undefined}
+      actions={<Button onClick={run} disabled={status !== 'ready' || isFetching}>
+        {isFetching ? 'Running…' : graphId ? 'Run tests' : 'Run all flow tests'}
+      </Button>}
+      navigation={graphId ? <nav className={workspace.navigation} aria-label="Pack flow sections">
+        <Link to={`/graphs/${encodeURIComponent(graphId)}`} aria-current={!tests ? 'page' : undefined}>Diagram</Link>
+        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=tests`} aria-current={tests ? 'page' : undefined}>Tests</Link>
+      </nav> : <PacksNavigation current="flows" />} />
+    <PageBody width="full">
+      {!graphId && <p className="quiet">Connect packs and see how their results feed into the next decision.</p>}
+      {!graphId && graphInventorySupported && (inventory.error
+        ? <ErrorBox title="Could not list pack flows" error={inventory.error} />
+        : inventory.isPending ? <Loading what="pack flows" />
+        : listing && !tests && <ConfiguredGraphs inventory={listing} />)}
+      {!graphId && !graphInventorySupported && <p className="note">
+        This runtime cannot list pack flows without running their tests. Choose Run all flow tests to discover their test results, or connect a newer runtime to browse their diagrams.
+      </p>}
+      {graphId && !tests && <FlowExplorer key={graphId} graphId={graphId} />}
+      {tests && <section aria-label="Flow tests">
+        {!graphId && <ButtonLink variant="quiet" to="/graphs">Back to pack flows</ButtonLink>}
+        <h2>{graphId ? 'Flow tests' : 'All flow tests'}</h2>
+        {graphTracesSupported && <label className="checkbox trace-ask">
+          <input type="checkbox" checked={includeTraces} disabled={isFetching}
+            onChange={event => setIncludeTraces(event.target.checked)} />
+          <span>Include detailed traces</span>
+        </label>}
+        {isFetching && <Loading what="flow test results" />}
+        {error && asked && <p className="note note-warn">
+          This run requested detailed traces. {retainedUntraced
+            ? 'Turn off detailed traces to view the previous untraced result.'
+            : 'Turn off detailed traces and run tests to try without them.'}
+        </p>}
+        {error ? <ErrorBox title="Could not run flow tests" error={error} />
+          : !data ? !isFetching && <Empty>Run tests to check saved cases and coverage. Opening this view does not run tests.</Empty>
+          : <>
+            <p className="ids"><Pill tone={statusTone(data.status)}>{data.status}</Pill>
+              <span>{data.summary.passed} of {data.summary.total} cases passed</span>
+              <span className="quiet">Last run{asked ? ' · detailed traces' : ''}</span>
+            </p>
+            {(data.graphs ?? []).length === 0 ? <Empty>No flow test results were reported.</Empty>
+              : data.graphs!.map(entry => <GraphEntry key={entry.id} entry={entry} matrixSettled={!isFetching} />)}
+            {data.label && <p className="note">{data.label}</p>}
+          </>}
+        <p className="quiet">Pack flows use the runtime’s experimental graph format. Test results describe the supplied cases.</p>
+      </section>}
+    </PageBody>
+  </article>
 }
 
 /**
@@ -260,14 +117,14 @@ function ConfiguredGraphs({ inventory, only }: { inventory: GraphInventory; only
   const all = inventory.graphs ?? []
   const rows = only ? all.filter((row) => row.id === only) : all
   return (
-    <Section title="Configured" count={rows.length}>
+    <Section title="Pack flows" count={rows.length}>
       <>
         {inventory.note && <p className="note">{inventory.note}</p>}
         {rows.length === 0 ? (
           <Empty>
             {only
               ? `The project's configuration declares no graph with the id ${only}.`
-              : 'The configuration declares no graph.'}
+              : 'No pack flows are configured.'}
           </Empty>
         ) : (
           <ul className="cards">
@@ -282,6 +139,7 @@ function ConfiguredGraphs({ inventory, only }: { inventory: GraphInventory; only
 }
 
 function ConfiguredGraph({ row }: { row: GraphSummary }) {
+  const lastRun = useLatestFlowResult(row.id)
   return (
     <li className="card">
       <div className="card-head">
@@ -290,10 +148,15 @@ function ConfiguredGraph({ row }: { row: GraphSummary }) {
         </h3>
         {row.graphVersion && <Pill tone="quiet">v{row.graphVersion}</Pill>}
         {row.resultNode && <Pill tone="neutral">result {row.resultNode}</Pill>}
-        {!row.rowsDeclared && <Pill tone="skipped">no rows declared</Pill>}
+        {!row.rowsDeclared && <span className="quiet">No saved test cases</span>}
       </div>
       {row.description && <p>{row.description}</p>}
-      <p className="meta">
+      <p className="quiet">
+        {row.nodeCount !== undefined && <>{row.nodeCount} steps · </>}
+        {row.edgeCount !== undefined && <>{row.edgeCount} connections · </>}
+        {lastRun ? `Last completed run: ${lastRun.status}` : 'Not tested in this session'}
+      </p>
+      <details className="disclosure"><summary>Technical details</summary><p className="meta">
         {row.path && <code>{row.path}</code>}
         {row.rowsPath && <code>{row.rowsPath}</code>}
         {row.graphId && <span>graph id {row.graphId}</span>}
@@ -306,6 +169,7 @@ function ConfiguredGraph({ row }: { row: GraphSummary }) {
               }`}
         </span>
       </p>
+      </details>
       {row.detail && <p className="note note-warn">{row.detail}</p>}
     </li>
   )
@@ -329,8 +193,8 @@ function ConfiguredGraph({ row }: { row: GraphSummary }) {
  * - **They disagree.** The graph file was edited between the two calls, so the
  *   two answers are about two revisions and joining them would put one
  *   revision's rows against another's arrows. The joined walk is withdrawn, the
- *   page says why in as many words, and both queries are invalidated so the
- *   next pair of answers can re-bind. Silently combining them is exactly the
+ *   page explains why and refreshes the document. A new suite run requires
+ *   the user’s command. Silently combining two revisions is exactly the
  *   thing this exists to prevent.
  * - **The matrix entry states no digest.** Either the connected runtime is
  *   jpack 0.18.0 or older, or this entry's document did not load at all (a rows
@@ -545,7 +409,7 @@ function BindingNotice({
       <code>{shortDigest(servedDigest)}</code>, so the graph file was edited between the two calls
       and the rows below describe a different revision from the document. The walk is not drawn
       from that document, because combining one revision's rows with another revision's arrows
-      would be a picture neither answer supports. Both answers have been asked for again. Neither
+      would be a picture neither answer supports. The document has been requested again. Run tests to compare the current revision. Neither
       revision is being called wrong: this says only that the two are not one file.
     </p>
   )
@@ -557,13 +421,11 @@ function shortDigest(digest: string | undefined): string {
 }
 
 /**
- * Ask for both answers again, once per disagreeing pair.
+ * Refresh the served document once per disagreeing pair.
  *
  * A divergence is a fact about two readings taken at two moments, and the
- * repair is to take both again from the file as it is now — not to pick one, and
- * not to leave the page showing a withdrawal it will never come out of. Both
- * queries are invalidated: the matrix payload is one answer covering every
- * entry, so a divergence in any entry means the whole answer is being re-asked.
+ * view must keep them separate. The served document is refreshed. Test results remain a snapshot until the
+ * user runs tests again; a file edit must never execute a suite implicitly.
  *
  * One cycle per pair, and the memory of which pairs have been asked about is
  * the connection's rather than this component's — see `refetchLedger` for why
@@ -595,7 +457,6 @@ function useDigestRefetch({
     void queryClient.invalidateQueries({
       queryKey: ['experimental_get_graph', connectionEpoch, graphId]
     })
-    void queryClient.invalidateQueries({ queryKey: ['experimental_test_graphs'] })
   }, [active, connectionEpoch, graphId, run, served, queryClient])
 }
 
