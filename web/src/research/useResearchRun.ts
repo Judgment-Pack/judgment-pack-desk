@@ -13,6 +13,7 @@
  * contract, with the desk's host tools in their slot.
  */
 import { useMemo, useRef, useSyncExternalStore } from 'react'
+import { describeEvent } from '../assistant/EventList'
 import { loadEngine } from '../assistant/engines'
 import type { AssistantEvent, CallTool, McpToolResult } from '../assistant/engine'
 import { usePickedModel } from '../assistant/pickedModel'
@@ -100,11 +101,19 @@ export function useResearchRun(): ResearchRunBinding {
   const run = useMemo(() => {
     const log = (text: string) => recordActivity(`research: ${text}`)
     const spent = { searches: 0, reads: 0, bytes: 0, startedAt: Date.now() }
-    const current = settings.current
-    const turn = async (request: TurnRequest, signal: AbortSignal, onEvent: (event: AssistantEvent) => void) => {
+    const turn = async (request: TurnRequest, signal: AbortSignal, deliver: (event: AssistantEvent) => void) => {
       const { slot, picked, testPrompt } = settings.current
       const endpoint = slot.endpoint
       if (endpoint === null) throw new Error('no assistant endpoint is configured')
+      // What the engine actually did, as it did it, on the Console: every
+      // call and answer, every guardrail, every refusal -- the same line the
+      // Assistant tab would show -- and never the model's prose or a page.
+      const onEvent = (event: AssistantEvent) => {
+        if (event.type === 'tool_call' || event.type === 'tool_result' || event.type === 'guardrail' || event.type === 'thinking_unavailable' || event.type === 'error') {
+          recordActivity(`assistant: ${describeEvent(event)}`)
+        }
+        deliver(event)
+      }
       const sessionId = await sessionBearer()
       const opened = openAssistantConnection({ allowed: endpoint.tools, onEvent, sessionId, signal })
       try {
@@ -128,6 +137,19 @@ export function useResearchRun(): ResearchRunBinding {
         await opened.close()
       }
     }
+    // The tools and the pinned key are read when a turn needs them rather
+    // than when this run was built: the desk-level file answers after the
+    // first render, and a run built against the defaults would offer tools
+    // that refuse everything and a verifier with no key.
+    const toolsFor = () =>
+      researchTools({
+        config: settings.current.research,
+        ledger,
+        budget: settings.current.research.limits,
+        spent,
+        acquire,
+        log
+      })
     return new AuthoringRun({
       turn,
       callTool: async (name, args) => {
@@ -138,22 +160,17 @@ export function useResearchRun(): ResearchRunBinding {
         return callToolThrough(client)(name, name === 'experimental_evaluate' ? { ...args, rehearsal: true } : args)
       },
       ledger,
-      researchTools: researchTools({
-        config: current.research,
-        ledger,
-        budget: current.research.limits,
-        spent,
-        acquire,
-        log
-      }),
+      get researchTools() {
+        return toolsFor()
+      },
       seal: async (session, signal) => {
         await seal(session, signal)
       },
       registry: (signal) => registry(signal),
-      gateway:
-        current.research.gateway === null
-          ? null
-          : { authority: current.research.gateway.authority, publicKeyHex: current.research.gateway.signer.public },
+      get gateway() {
+        const gateway = settings.current.research.gateway
+        return gateway === null ? null : { authority: gateway.authority, publicKeyHex: gateway.signer.public }
+      },
       newSession: newResearchSession,
       get authorPrompt() {
         return settings.current.authorPrompt

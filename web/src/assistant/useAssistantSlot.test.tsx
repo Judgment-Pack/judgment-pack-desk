@@ -192,6 +192,9 @@ describe('useAssistantSlot', () => {
       // asserting an absence — "none — no endpoint configured" — over a file
       // this desk had just said it could not read. One reading, three readers.
       'assistant/AssistantSection.tsx',
+      // Research and draft renders an assistant of its own: the same slot,
+      // read for the same reasons, and the same three states shown.
+      'research/useResearchRun.ts',
       'shell/DescribeIt.tsx'
     ])
   })
