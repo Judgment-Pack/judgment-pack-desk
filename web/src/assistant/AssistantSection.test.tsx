@@ -253,6 +253,17 @@ describe('the Assistant section', () => {
     expect(screen.getByText('Not read yet')).toBeTruthy()
   })
 
+  it('retries a failed status read and finds the stored key without replacing it', async () => {
+    vi.stubGlobal('fetch', async () => { throw new TypeError('Connection interrupted') })
+    renderSection(configured())
+    await screen.findByText(/this desk could not say/)
+    expect(screen.queryByText('No key stored')).toBeNull()
+    const { sent } = stubChassis({ key: BOUND })
+    fireEvent.click(screen.getByRole('button', { name: 'Retry key status' }))
+    expect(await screen.findByText('Stored — sk-a…wxyz, for OpenAI-compatible')).toBeTruthy()
+    expect(sent.every(request => request.method === 'GET')).toBe(true)
+  })
+
   it('reports a stored key by its fingerprint, and offers to remove it', async () => {
     stubChassis({ key: BOUND })
     renderSection()

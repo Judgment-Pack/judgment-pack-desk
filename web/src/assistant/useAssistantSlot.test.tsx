@@ -46,7 +46,7 @@ function Reading() {
   const slot = useAssistantSlot()
   return (
     <output>
-      {slot.state}|{slot.endpoint?.model ?? 'no endpoint'}|{slot.keyPresent ? 'key' : 'no key'}
+      {slot.state}|{slot.endpoint?.model ?? 'no endpoint'}|{slot.keyStatus === 'success' ? slot.keyPresent ? 'key' : 'no key' : slot.keyStatus}
     </output>
   )
 }
@@ -109,7 +109,7 @@ describe('useAssistantSlot', () => {
     )
   })
 
-  it('says no key while the read has not answered, rather than guessing', () => {
+  it('keeps a pending read distinct from a confirmed absent key', () => {
     vi.stubGlobal('fetch', () => new Promise(() => {}))
     render(
       <QueryClientProvider client={testQueryClient()}>
@@ -118,10 +118,7 @@ describe('useAssistantSlot', () => {
         </DeskConfigFixture>
       </QueryClientProvider>
     )
-    // The honest reading: the page has not been told there is a key. Nothing
-    // gates on this — the desk refuses a probe with no key by name, which is
-    // where that decision belongs.
-    expect(screen.getByRole('status').textContent).toBe('configured|a-model|no key')
+    expect(screen.getByRole('status').textContent).toBe('configured|a-model|pending')
   })
 
   it('reports the engine and the tier, defaulted where the file says nothing', async () => {

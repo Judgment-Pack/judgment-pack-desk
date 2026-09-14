@@ -42,7 +42,7 @@ import { usePickedModel, type PickedModel } from '../assistant/pickedModel'
 import { useAssistantRun } from '../assistant/useAssistantRun'
 import { whenSessionEnds } from '../mcp/session'
 import { outcomeOf, type ProposalEvent } from '../assistant/runOutcome'
-import { useAssistantSlot } from '../assistant/useAssistantSlot'
+import { CHECKING_KEY, UNREAD_KEY, useAssistantSlot } from '../assistant/useAssistantSlot'
 import { useFileListing } from '../files/queries'
 import { AUTHOR_PACK_PROMPT, TEST_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
 import { Button } from '../ui/Button'
@@ -94,6 +94,7 @@ export interface DescribeItState {
   usable: boolean
   /** Which line to render where it is not usable. */
   unusableBecause: string
+  retryKey?: () => void
   /** Whether the runtime advertises the prompt this section runs. */
   advertised: boolean
   /** The engine, the model and the tier, as the tab states them. */
@@ -484,7 +485,10 @@ export function useDescribeIt(): DescribeItState {
         ? UNREAD_CONFIGURATION
         : slot.endpoint === null
           ? NO_ASSISTANT
-          : NO_KEY,
+          : slot.keyStatus === 'pending'
+            ? CHECKING_KEY
+            : slot.keyStatus === 'error' ? UNREAD_KEY : NO_KEY,
+    retryKey: slot.state === 'configured' && slot.keyStatus === 'error' ? slot.retryKey : undefined,
     advertised,
     standing:
       slot.endpoint === null
@@ -507,9 +511,12 @@ export function useDescribeIt(): DescribeItState {
 }
 
 export function DescribeIt({ state, expanded = false, blockingElsewhere = false }: { state: DescribeItState; expanded?: boolean; blockingElsewhere?: boolean }) {
-  // One line, and no control that would refuse. The prompt copy-out this
-  // dialog already offers is what an unconfigured desk uses instead.
-  if (!state.usable) return <p className={styles.quiet}>{state.unusableBecause}</p>
+  if (!state.usable) return (
+    <div className={styles.quiet}>
+      <p>{state.unusableBecause}</p>
+      {state.retryKey && <Button variant="quiet" onClick={state.retryKey}>Retry key status</Button>}
+    </div>
+  )
   if (expanded) return <Section state={state} blockingElsewhere={blockingElsewhere} />
   return (
     <details className={styles.disclosure}>

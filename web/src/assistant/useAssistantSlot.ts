@@ -26,6 +26,9 @@ import {
   type ThinkingTier
 } from '../config/deskConfig'
 
+export const CHECKING_KEY = 'Checking saved API key…'
+export const UNREAD_KEY = 'Could not check the saved API key. Retry or open Admin › Assistant for details.'
+
 export interface AssistantSlot {
   /**
    * `configured` exactly where an endpoint is, `none` where the file says
@@ -57,12 +60,13 @@ export interface AssistantSlot {
   /**
    * Whether a key is stored on this machine.
    *
-   * `false` while the read has not answered, which is the honest reading: the
-   * page has not been told there is one. Nothing branches on it except to say
-   * so, and nothing gates on it — the chassis refuses a probe with no key by
-   * name, which is where that decision belongs.
+   * True only after a successful read confirms presence. Consumers must read
+   * keyStatus before describing false as an absent key: loading and failed
+   * requests establish nothing about the credential on disk.
    */
   keyPresent: boolean
+  keyStatus: 'pending' | 'error' | 'success'
+  retryKey: () => void
   /**
    * Which engine would run the loop, and at what depth.
    *
@@ -92,7 +96,9 @@ export function useAssistantSlot(): AssistantSlot {
     // The decoder's words, read off the decoder's own constant. A sentence
     // typed out here would be a second copy nothing keeps in step.
     unusable: endpoint !== null && endpoint.model === null ? NO_MODEL_CHOSEN : undefined,
-    keyPresent: key.data?.present ?? false,
+    keyPresent: key.isSuccess && key.data.present,
+    keyStatus: key.status,
+    retryKey: () => { void key.refetch() },
     engine: config.assistant.engine,
     thinking: config.assistant.thinking
   }

@@ -3677,6 +3677,12 @@ the same reach it already has over every project on this machine.
 ~/.config/jpack-desk/secrets/assistant     mode 0600, in a directory of mode 0700
 ```
 
+Press **Save API key** in Admin › Assistant to persist it. A saved key survives
+page reloads and backend restarts. The page reads its stored status and fingerprint;
+it never fills the password field with the saved key. Assistant surfaces show
+**Checking saved API key** while that read is pending and offer **Retry key status**
+if it fails. A failed read is not evidence that the key is missing.
+
 ```json
 { "assistantKeyVersion": 1, "origin": "https://gw.example", "kind": "gemini", "key": "…" }
 ```

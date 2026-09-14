@@ -151,6 +151,7 @@ async function draw(options: {
   /** A desk whose own configuration read did not produce a file. */
   unreadConfiguration?: boolean
   keyPresent?: boolean
+  keyReply?: () => Promise<Response>
   prompts?: Record<string, { text: string; hold?: Promise<void>; fails?: string }>
   /** Leave the model's answer in flight, so a run is still open. */
   hang?: boolean
@@ -190,6 +191,7 @@ async function draw(options: {
       }
       return model.fetch(input as string, init)
     }
+    if (url.startsWith('/api/assistant/key') && options.keyReply) return options.keyReply()
     return { ok: true, status: 200, statusText: '', text: async () => keyRead } as unknown as Response
   })
   runtime = scriptedWebSocket({ deaf: options.deafSocket ?? false })
@@ -249,6 +251,29 @@ afterEach(() => {
 })
 
 describe('where there is no assistant to run', () => {
+  it('waits for the saved key after mounting instead of reporting it missing', async () => {
+    let answer!: (response: Response) => void
+    const pending = new Promise<Response>(resolve => { answer = resolve })
+    await draw({ keyReply: () => pending })
+    expect(screen.getByText('Checking saved API key…')).toBeTruthy()
+    expect(screen.queryByText(/no key is stored on this machine/)).toBeNull()
+    await act(async () => { answer(Response.json({ present: true, fingerprint: 'fixture…only' })) })
+    expect(await screen.findByRole('button', { name: 'Run' })).toBeTruthy()
+  })
+
+  it('can retry a failed key read without asking for the key again', async () => {
+    let failed = true
+    await draw({ keyReply: async () => {
+      if (failed) throw new TypeError('Connection interrupted')
+      return Response.json({ present: true, fingerprint: 'fixture…only' })
+    } })
+    expect(await screen.findByText(/Could not check the saved API key/)).toBeTruthy()
+    expect(screen.queryByText(/no key is stored on this machine/)).toBeNull()
+    failed = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry key status' }))
+    expect(await screen.findByRole('button', { name: 'Run' })).toBeTruthy()
+  })
+
   it('says where an endpoint is configured, and offers no control', async () => {
     await draw({ assistant: { endpoint: null } })
     expect(await screen.findByText(/No assistant is configured on this desk/)).toBeTruthy()

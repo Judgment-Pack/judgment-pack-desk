@@ -57,7 +57,7 @@ import { diffProposal } from './proposalDiff'
 import { outcomeOf } from './runOutcome'
 import { stateFromEvents, thinkingLine } from './thinking'
 import { useAssistantRun } from './useAssistantRun'
-import { useAssistantSlot } from './useAssistantSlot'
+import { CHECKING_KEY, UNREAD_KEY, useAssistantSlot } from './useAssistantSlot'
 import styles from './AssistantPane.module.css'
 import type { AssistantEvent } from './engine'
 
@@ -423,21 +423,24 @@ export function AssistantPane({
     slot.unusable !== undefined
   ) {
     return (
-      <p className={styles.empty}>
-        {/* **Four sentences and not two.** A desk whose configuration could not
-            be read is not a desk that has none: saying "no assistant is
-            configured" there is the page reporting an absence it did not
-            establish, about a file it could not open. And an endpoint with no
-            model chosen is configured — it is simply not ready, and the one
-            place to pick one is named rather than described. */}
+      <div className={styles.empty}>
+        {/* Configuration, key-read status and model readiness are separate.
+            A pending or failed read establishes no absence on disk. */}
         {slot.state === 'unavailable'
           ? 'This desk could not read its own configuration, so it cannot say what assistant is configured. Admin › Assistant names the problem.'
           : slot.endpoint === null
             ? 'No assistant is configured on this desk. Configure an endpoint in Admin › Assistant.'
-            : !slot.keyPresent
-              ? 'An endpoint is configured and no key is stored on this machine. Add one in Admin › Assistant.'
-              : 'An endpoint is configured and no model is chosen for it. Pick one in Admin › Assistant.'}
-      </p>
+            : slot.keyStatus === 'pending'
+              ? CHECKING_KEY
+              : slot.keyStatus === 'error'
+                ? UNREAD_KEY
+                : !slot.keyPresent
+                  ? 'An endpoint is configured and no key is stored on this machine. Add one in Admin › Assistant.'
+                  : 'An endpoint is configured and no model is chosen for it. Pick one in Admin › Assistant.'}
+        {slot.state === 'configured' && slot.keyStatus === 'error' && (
+          <p><Button variant="quiet" onClick={slot.retryKey}>Retry key status</Button></p>
+        )}
+      </div>
     )
   }
 
