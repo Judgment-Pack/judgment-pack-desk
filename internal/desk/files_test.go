@@ -2808,6 +2808,43 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 				`"tools":[]}}}`)
 			return postJSON(t, ts, "/api/assistant/probe")
 		},
+		CodeResearchUnconfigured: func(t *testing.T) (int, map[string]any) {
+			// A desk-level file naming no research gateway at all.
+			writeDeskConfig(t, server, `{"deskConfigVersion":1}`)
+			return getJSON(t, ts, researchPrefix+"registry")
+		},
+		CodeResearchRelayPath: func(t *testing.T) (int, map[string]any) {
+			// The gateway's own /verify: a route this desk relays by no name.
+			// Decided on the request alone, before any configuration is read.
+			return getJSON(t, ts, researchPrefix+"verify")
+		},
+		CodeResearchRelayBusy: func(t *testing.T) (int, map[string]any) {
+			writeDeskConfig(t, server, researchDeskFile("http://127.0.0.1:1"))
+			for i := 0; i < maxResearchInFlight; i++ {
+				server.researchSlots <- struct{}{}
+			}
+			defer func() {
+				for i := 0; i < maxResearchInFlight; i++ {
+					<-server.researchSlots
+				}
+			}()
+			client := &http.Client{Timeout: 5 * time.Second}
+			busy, _ := http.NewRequest(http.MethodGet, ts.URL+researchPrefix+"registry", nil)
+			bearer(busy)
+			resp, err := client.Do(busy)
+			if err != nil {
+				t.Fatalf("the research relay never answered past its bound: %v", err)
+			}
+			defer resp.Body.Close()
+			var body map[string]any
+			_ = json.NewDecoder(resp.Body).Decode(&body)
+			return resp.StatusCode, body
+		},
+		CodeResearchRelayUpstream: func(t *testing.T) (int, map[string]any) {
+			// Port 1 on loopback, where nothing listens.
+			writeDeskConfig(t, server, researchDeskFile("http://127.0.0.1:1"))
+			return getJSON(t, ts, researchPrefix+"registry")
+		},
 		CodeAssistantKeyUnbound: func(t *testing.T) (int, map[string]any) {
 			// A key entered for one endpoint, and a desk now configured for
 			// another: the credential does not follow the configuration, and

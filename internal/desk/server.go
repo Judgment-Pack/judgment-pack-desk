@@ -147,6 +147,10 @@ type Server struct {
 	// waiting is one `select` with a `default`, which is exactly the "a bound,
 	// not a queue" the relay promises. See modelrelay.go.
 	relaySlots chan struct{}
+	// researchSlots bounds the research relay the same way. Its own channel,
+	// because a research run holding both of these must not starve the model
+	// relay the same run is talking to. See researchrelay.go.
+	researchSlots chan struct{}
 	// writes serializes the compare-and-commit of every write. One mutex, not
 	// one per path: a per-path key is a *spelling*, and two spellings of one
 	// file on a case-insensitive filesystem would take different locks and both
@@ -228,18 +232,19 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("desk: launch store: %w", lerr)
 	}
 	s := &Server{
-		cfg:          cfg,
-		mux:          http.NewServeMux(),
-		log:          cfg.Logger,
-		conns:        make(map[*conn]struct{}),
-		root:         pinned.own.root,
-		project:      pinned,
-		projectDir:   pinned.dir,
-		configDir:    configDirFor(cfg.DeskConfigDir),
-		relaySlots:   make(chan struct{}, maxRelayInFlight),
-		sessions:     sessions,
-		launches:     launches,
-		launchCookie: launchCookieName(cfg.Port),
+		cfg:           cfg,
+		mux:           http.NewServeMux(),
+		log:           cfg.Logger,
+		conns:         make(map[*conn]struct{}),
+		root:          pinned.own.root,
+		project:       pinned,
+		projectDir:    pinned.dir,
+		configDir:     configDirFor(cfg.DeskConfigDir),
+		relaySlots:    make(chan struct{}, maxRelayInFlight),
+		researchSlots: make(chan struct{}, maxResearchInFlight),
+		sessions:      sessions,
+		launches:      launches,
+		launchCookie:  launchCookieName(cfg.Port),
 	}
 	adopted = true
 	// **One owner from here on.** The wrapper the caller still holds stops
@@ -306,6 +311,11 @@ func New(cfg Config) (*Server, error) {
 	// made here. Every method, because the protocols on the other side define
 	// their own. See modelrelay.go for the whole argument.
 	s.mux.HandleFunc(relayPrefix+"{suffix...}", s.handleModelRelay)
+	// The research relay: the second such route, carrying the page's calls to
+	// the configured judgment-pack gateway — acquire, seal, registry, by name
+	// and nothing else — with no credential in either direction. See
+	// researchrelay.go for the whole argument.
+	s.mux.HandleFunc(researchPrefix+"{suffix...}", s.handleResearchRelay)
 	s.mux.HandleFunc("/", s.handleStatic)
 
 	// **Watched through the descriptor where the host has a way to name one.**

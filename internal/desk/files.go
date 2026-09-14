@@ -287,6 +287,22 @@ const (
 	// representation — base64, percent-encoded, hex, half of it — is not
 	// detectable by any comparison, which is the ruling chunk 1 already took.
 	CodeAssistantListingRefused = "assistant-listing-refused"
+	// CodeResearchUnconfigured is a research request with no usable gateway
+	// to forward to: no desk-level file, a refused one, or one naming no
+	// `research.gateway`. One code for all three, on the assistant's precedent:
+	// the repair is the same file, and the sentence names the member.
+	CodeResearchUnconfigured = "research-unconfigured"
+	// CodeResearchRelayPath is a research request naming a route outside the
+	// closed three, the wrong method for it, or a query. Decided on the
+	// request alone, before anything is read off this machine.
+	CodeResearchRelayPath = "research-relay-path"
+	// CodeResearchRelayBusy is a research request past the number this desk
+	// carries at once; a bound, not a queue.
+	CodeResearchRelayBusy = "research-relay-busy"
+	// CodeResearchRelayUpstream is a research request the configured gateway
+	// never answered: one word from the probe's vocabulary, never the
+	// gateway's own text.
+	CodeResearchRelayUpstream = "research-relay-upstream"
 	// CodeInternal is everything with no better answer. A client that branches
 	// on this is a client guessing, which is what the others are for.
 	CodeInternal = "internal"
@@ -342,7 +358,14 @@ var codeStatus = map[string]int{
 	CodeAssistantKeyUnbound: http.StatusConflict,
 	CodeDeskConfigChanged:   http.StatusConflict,
 	CodeDeskConfigRefused:   http.StatusUnprocessableEntity,
-	CodeInternal:            http.StatusInternalServerError,
+	// The research relay's four, on the model relay's terms: the desk's own
+	// state disagreeing with the request is a 409, the request itself a 400,
+	// a desk with no room a 503, and a gateway that never answered a 502.
+	CodeResearchUnconfigured:  http.StatusConflict,
+	CodeResearchRelayPath:     http.StatusBadRequest,
+	CodeResearchRelayBusy:     http.StatusServiceUnavailable,
+	CodeResearchRelayUpstream: http.StatusBadGateway,
+	CodeInternal:              http.StatusInternalServerError,
 }
 
 // allCodes is every code this API declares, for the tests that walk them.
@@ -355,6 +378,8 @@ var allCodes = []string{
 	CodeAssistantRelayPath, CodeAssistantRelayBusy, CodeAssistantRelayUpstream,
 	CodeAssistantListingRefused,
 	CodeAssistantKeyUnbound, CodeDeskConfigChanged, CodeDeskConfigRefused,
+	CodeResearchUnconfigured, CodeResearchRelayPath, CodeResearchRelayBusy,
+	CodeResearchRelayUpstream,
 	CodeInternal,
 }
 

@@ -298,10 +298,16 @@ var relayTransport http.RoundTripper
 type beforeTheFirstByte struct {
 	inner  http.RoundTripper
 	cancel context.CancelFunc
+	// idle is the bound; the model relay's `relayIdle` where zero.
+	idle time.Duration
 }
 
 func (b beforeTheFirstByte) RoundTrip(r *http.Request) (*http.Response, error) {
-	timer := time.AfterFunc(relayIdle, b.cancel)
+	idle := b.idle
+	if idle == 0 {
+		idle = relayIdle
+	}
+	timer := time.AfterFunc(idle, b.cancel)
 	defer timer.Stop()
 	inner := b.inner
 	if inner == nil {
@@ -1111,6 +1117,16 @@ type deadlineWriter struct {
 	// past it. Zero until then. Written and read on the proxy's own goroutine,
 	// which is the only one that writes a response.
 	finalUntil time.Time
+	// idle is the bound each write is extended by; the model relay's
+	// `relayIdle` where zero.
+	idle time.Duration
+}
+
+func (d *deadlineWriter) idleBound() time.Duration {
+	if d.idle == 0 {
+		return relayIdle
+	}
+	return d.idle
 }
 
 // extend gives the next write the idle bound, capped at the request's overall
@@ -1122,7 +1138,7 @@ type deadlineWriter struct {
 // is what the README says.
 func (d *deadlineWriter) extend() {
 	now := time.Now()
-	next := now.Add(relayIdle)
+	next := now.Add(d.idleBound())
 	if next.After(d.until) {
 		next = d.until
 	}
@@ -1189,16 +1205,23 @@ func (d *deadlineWriter) Unwrap() http.ResponseWriter { return d.ResponseWriter 
 type idleBody struct {
 	inner io.ReadCloser
 	timer *time.Timer
+	idle  time.Duration
 }
 
 func boundedByIdle(inner io.ReadCloser, cancel context.CancelFunc) io.ReadCloser {
-	return &idleBody{inner: inner, timer: time.AfterFunc(relayIdle, cancel)}
+	return boundedByIdleFor(inner, cancel, relayIdle)
+}
+
+// boundedByIdleFor is boundedByIdle under a bound of the caller's: the
+// research relay's, which is not the model relay's.
+func boundedByIdleFor(inner io.ReadCloser, cancel context.CancelFunc, idle time.Duration) io.ReadCloser {
+	return &idleBody{inner: inner, idle: idle, timer: time.AfterFunc(idle, cancel)}
 }
 
 func (b *idleBody) Read(p []byte) (int, error) {
 	n, err := b.inner.Read(p)
 	if err == nil {
-		b.timer.Reset(relayIdle)
+		b.timer.Reset(b.idle)
 	}
 	return n, err
 }
