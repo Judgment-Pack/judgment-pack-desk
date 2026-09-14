@@ -1,5 +1,19 @@
 # Existing mutation needle maintenance
 
+## Resolution
+
+[Desk PR #81](https://github.com/Judgment-Pack/judgment-pack-desk/pull/81)
+repairs every target listed below and the ambiguous request-decoder target.
+All 885 rows remain and match exactly once. All 17 affected mutations fail named
+assertions in focused tests; the pane re-seeding row needed an additional
+provider regression. The checker now refuses ambiguous/empty targets and empty
+collections, uses a private temporary file, and runs in CI with seven guard
+tests. See the [repair evidence](../mutation-needle-maintenance.md) for scope
+and reproduction. This resolves the original maintenance finding; the runtime
+review dependency is separate.
+
+## Original finding
+
 Recorded during the research handover continuation on 2026-09-14. This is
 pre-existing test-maintenance work, separate from the expectation admission
 and Create handover fixes.
@@ -34,5 +48,5 @@ Retire a row only with an explicit explanation if the behavior is gone. Make
 ambiguity fail the checker and reproduce both missing and multiple-match
 conditions. Do not equate a repaired needle with a killed mutation.
 
-No unrelated mutation row is rewritten or removed in this feature PR, and this
-record does not waive the handoff's before-merge check.
+The repair was made separately from the authoring feature. No row was removed
+and the handoff's before-merge check was not waived.

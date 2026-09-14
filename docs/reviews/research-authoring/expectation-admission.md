@@ -110,7 +110,7 @@ fresh live research/search smoke gap from PR #76.
 ## Validation recorded for this change
 
 - Production build and type checking passed.
-- Full Desk suite: 3,290 passed; the optional native replay skipped by default.
+- Full Desk suite: 3,291 passed; the optional native replay skipped by default.
 - Native replay enabled explicitly: all 58 focused tests passed, including actual
   runtime admission, validation and evaluation.
 - Chrome fixture review: 320, 480, 720, 900 and 1,280px in light and dark themes;
@@ -120,7 +120,8 @@ fresh live research/search smoke gap from PR #76.
 - Create-page suite: 48 passed, including the four new handover regression cases.
 - Browser-to-disk handover: both widths passed, no page overflow, all six saved
   matrix cases passed, and zero model calls.
-- `scripts/needle-check.sh .` is **not green**: 16 stale needles in 885 rows,
-  plus one ambiguous needle. These are unchanged from the PR's base; see the
-  separate [maintenance record](needle-maintenance.md). No mutation-coverage
-  success is claimed for this run.
+- `scripts/needle-check.sh .`: **885 rows, zero invalid targets** after the
+  separate repair in Desk PR #81. All 17 repaired mutations are caught by named
+  assertions, and seven checker guard tests pass; see the
+  [maintenance record](needle-maintenance.md). This is focused evidence for
+  those repaired rows, not a run of all 885 mutations.
