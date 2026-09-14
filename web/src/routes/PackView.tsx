@@ -20,9 +20,9 @@
  * pointer address space. Selection writes are `replace: true`: choosing what
  * to inspect is not a navigation and must not fill the Back stack.
  *
- * `?edit` is the mode, on this same route, so the toggle keeps the mount, the
- * scroll, the selection and the buffer — and so the dirty blocker, whose
- * predicate is the pathname alone, never asks about it.
+ * `?edit` is the mode on this same route, retaining the buffer. The pinned
+ * editor header owns an explicit return action and its unsaved-work dialog;
+ * the pathname dirty guard continues to cover navigation to other pages.
  *
  * **The document on screen is the buffer, and there is no fallback behind it.**
  * Both modes draw `indexDocument(buffer).value`, so a keystroke in the JSON
@@ -42,8 +42,8 @@
  * the authority this whole surface exists not to be.
  */
 import { useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { useLocation, useParams, useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ErrorBox, Loading } from '../components/primitives'
 import { AlertPanel } from '../ui/AlertPanel'
 import { Button, ButtonLink } from '../ui/Button'
@@ -61,7 +61,8 @@ import { AssistantPane } from '../assistant/AssistantPane'
 import { PackDocumentView } from '../packs/document/PackDocumentView'
 import { describe as describeShape, isRecord } from '../packs/document/MisshapenMember'
 import { SelectionContext } from '../packs/document/Block'
-import { EditToolbar } from '../packs/edit/EditToolbar'
+import { PackEditHeader } from '../packs/edit/PackEditHeader'
+import { Dialog, DialogActions } from '../ui/Dialog'
 import {
   EditingContext,
   declaredIds,
@@ -88,7 +89,7 @@ import { useMeasuredBox } from '../shell/measured'
 import { Tabs } from '../ui/Tabs'
 import { PackLogic } from '../packs/PackLogic'
 import { LogicInspector } from '../packs/inspector/LogicInspector'
-import { matchingItems, projectLogic, selectedItem } from '../packs/logicModel'
+import { matchingItems, projectLogic, selectedItem, text } from '../packs/logicModel'
 import { useLogicState, rememberLogicMode, type LogicMode } from '../packs/logicState'
 import { usePackRun, traceMatches } from '../packs/runContext'
 import styles from './PackView.module.css'
@@ -119,7 +120,9 @@ const LEAVING = 'This pack has unsaved changes. Leave without saving?'
 
 export function PackView() {
   const { packId } = useParams<{ packId: string }>()
-  const { hash, key: locationKey } = useLocation()
+  const location = useLocation()
+  const { hash, key: locationKey } = location
+  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const logic = useLogicState(packId)
   const explanation = usePackRun(packId)
@@ -146,6 +149,26 @@ export function PackView() {
 
   const editing = isEditing(params)
   const askedShape = editShape(params)
+  const editButton = useRef<HTMLButtonElement | null>(null)
+  const backButton = useRef<HTMLButtonElement | null>(null)
+  const exitHelpId = useId()
+  const returnLocation = useRef({ packId, search: new URLSearchParams(withEditing(params, false)).toString(), hash })
+  const [exitOpen, setExitOpen] = useState(false)
+  const [savedExit, setSavedExit] = useState<{ path: string; generation: number; content: string } | null>(null)
+  const wasEditing = useRef(editing)
+  useEffect(() => {
+    if (wasEditing.current === editing) return
+    wasEditing.current = editing
+    const target = editing ? backButton : editButton
+    target.current?.focus()
+  }, [editing])
+  useEffect(() => {
+    setExitOpen(false)
+    setSavedExit(null)
+    if (returnLocation.current.packId !== packId) {
+      returnLocation.current = { packId, search: new URLSearchParams(withEditing(params, false)).toString(), hash }
+    }
+  }, [packId])
 
   // The revision, the write, and the verdict the last write left behind. The
   // buffer's discard clears that verdict, which is why the two are wired
@@ -642,7 +665,7 @@ export function PackView() {
   const pathNow = useRef<string | undefined>(path)
   pathNow.current = path
   const save = useCallback(
-    (override?: boolean) => {
+    (override?: boolean, returnWhenSaved = false) => {
       if (path === undefined || bufferText === undefined || buffer.base === undefined) return
       // **One save at a time, decided synchronously.** `write.isPending` is
       // state and arrives a render later, so two chords inside one frame both
@@ -685,7 +708,13 @@ export function PackView() {
         onSaved: (landed) => {
           // Refused where this buffer is no longer the buffer that was saved —
           // and a refusal is reported rather than dropped, for the same reason.
-          if (!buffer.landed(landed, submitted, ticket)) setUnaccounted(true)
+          const accepted = buffer.landed(landed, submitted, ticket)
+          if (!accepted) setUnaccounted(true)
+          // Returning is conditional on a verified write of this buffer. The
+          // effect below also checks for edits made while the write was running.
+          if (returnWhenSaved && accepted && ticket && landed.content === submitted) {
+            setSavedExit({ path, generation: ticket.generation, content: submitted })
+          }
           // The runtime is now serving a file it has already read. These three
           // are what would otherwise keep answering about the old revision.
           // They are invalidated whichever buffer is on screen: a refetch of a
@@ -752,11 +781,13 @@ export function PackView() {
       // refusals from happening at all.
       if (event.repeat || event.defaultPrevented) return
       event.preventDefault()
-      if (dirty) saveNow.current()
+      // The return dialog owns its explicit save/discard decision. A shortcut
+      // must not write behind it and leave a stale unsaved-work prompt open.
+      if (dirty && !exitOpen) saveNow.current()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [editing, dirty])
+  }, [editing, dirty, exitOpen])
 
   /**
    * What the viewer would lose by leaving — which is **not only bytes**.
@@ -772,6 +803,26 @@ export function PackView() {
     buffer.discard()
     forgetDrafts()
   }, [buffer, forgetDrafts])
+
+  const returnToPack = useCallback(() => {
+    setExitOpen(false)
+    const target = returnLocation.current
+    if (target.packId !== packId) return
+    void navigate({ search: target.search ? `?${target.search}` : '', hash: target.hash }, { replace: true })
+  }, [navigate, packId])
+
+  useEffect(() => {
+    if (!savedExit || savePending) return
+    setSavedExit(null)
+    if (editing && onPath && savedExit.path === path && savedExit.generation === buffer.generation &&
+        savedExit.content === bufferText && !hasWork && editor.verified) returnToPack()
+  }, [savedExit, savePending, editing, onPath, path, buffer.generation, bufferText, hasWork, editor.verified, returnToPack])
+
+  const requestReturn = () => {
+    if (saving.current !== undefined || savePending) return
+    if (hasWork) setExitOpen(true)
+    else returnToPack()
+  }
 
   usePublishedDirty(path ?? `pack:${packId ?? ''}`, hasWork)
   useDirtyGuard(hasWork, LEAVING)
@@ -800,7 +851,7 @@ export function PackView() {
   const roomInMain = (box?.width ?? 0) - PANE_WIDTH - PANE_GAP >= EDITOR_FLOOR
 
   const paneNode =
-    tryingIt ? (
+    editing && tryingIt ? (
       <TryItPane
         buffer={bufferText ?? servedText ?? ''}
         packId={packId ?? ''}
@@ -958,8 +1009,12 @@ export function PackView() {
         navigation and must not fill the Back stack.
       */}
       <Button
+        ref={editButton}
         type="button"
-        onClick={() => setParams(withEditing(params, true), { replace: true })}
+        onClick={() => {
+          returnLocation.current = { packId, search: location.search.replace(/^\?/, ''), hash }
+          setParams(withEditing(params, true), { replace: true })
+        }}
       >
         Edit
       </Button>
@@ -988,7 +1043,49 @@ export function PackView() {
       <EditingContext.Provider value={session}>
         {inspector}
         <div data-layout="page">
-        <PackHeader packId={packId ?? ''} document={drawn} current={section} actions={elsewhere} details={strip} hasMatrix={Boolean(summary?.matrix || summary?.matrixPath)} />
+        {editing ? <PackEditHeader
+          title={text(drawn?.title, packId ?? 'Pack')}
+          backRef={backButton}
+          onBack={requestReturn}
+          onSave={() => save()}
+          status={savePending ? 'Saving…' : staleWrite ? 'Save conflict — review the file changes below.'
+            : saveFailure ? 'Could not save — your changes are still in the editor.'
+            : unaccounted ? 'Save could not be confirmed. Reload the file to check.'
+            : editor.outcome && !editor.verified ? 'Save could not be verified. Review the details below.'
+            : hasWork ? 'Unsaved changes' : editor.verified ? 'Saved' : 'No changes to save'}
+          saveReason={savePending ? 'Saving…' : !onPath ? 'Waiting for the editable file.'
+            : !dirty ? (unwritten ? 'No completed changes to save.' : (editor.verified ? 'Saved' : 'No changes to save')) : undefined}
+          shape={shape}
+          shapeAvailable={formAvailable}
+          discardable={hasWork}
+          saving={savePending}
+          checking={fetching}
+          tryingIt={tryingIt}
+          canUndo={buffer.canUndo}
+          unwritten={unwritten}
+          onShape={(next) => setParams(withShape(params, next), { replace: true })}
+          onCheck={idle.checkNow}
+          onTryIt={() => {
+            setTryingIt((was) => {
+              const next = !was
+              if (next && !roomInMain) slot.reveal()
+              return next
+            })
+          }}
+          onUndo={buffer.undo}
+          onDiscard={discardAll}
+        /> : <PackHeader packId={packId ?? ''} document={drawn} current={section} actions={elsewhere} details={strip} hasMatrix={Boolean(summary?.matrix || summary?.matrixPath)} />}
+        <Dialog open={exitOpen} onOpenChange={setExitOpen} title="Save changes before leaving?"
+          description="Your changes have not been saved to the pack." openerRef={editing ? backButton : editButton}>
+          {unwritten > 0 && <p id={exitHelpId}>Finish or discard unfinished fields before saving and returning.</p>}
+          <DialogActions>
+            <Button onClick={() => setExitOpen(false)}>Keep editing</Button>
+            <Button variant="danger" disabled={savePending} onClick={() => { discardAll(); returnToPack() }}>Discard and return</Button>
+            <Button variant="primary" disabled={!dirty || unwritten > 0 || savePending || !onPath}
+              aria-describedby={unwritten > 0 ? exitHelpId : undefined}
+              onClick={() => { setExitOpen(false); save(false, true) }}>Save and return</Button>
+          </DialogActions>
+        </Dialog>
         <PageBody width={section === 'logic' ? 'full' : 'wide'}>
         <PackQuestion document={drawn} />
         <div
@@ -997,42 +1094,6 @@ export function PackView() {
           style={{ '--tryit-pane-width': `${PANE_WIDTH}px` } as CSSProperties}
         >
           <div className={styles.column}>
-            {/*
-              The toolbar is edit mode's. A reading page carrying a Check
-              button and a Save that can never be pressed is chrome about a
-              mode nobody is in; the way *into* the mode is one control beside
-              the two standing links, below.
-            */}
-            {editing && (
-              <EditToolbar
-                editing={editing}
-                shape={shape}
-                shapeAvailable={formAvailable}
-                dirty={buffer.dirty}
-                discardable={hasWork}
-                saving={editor.write.isPending}
-                checking={fetching}
-                tryingIt={tryingIt}
-                canUndo={buffer.canUndo}
-                unwritten={unwritten}
-                onEditing={(next) => setParams(withEditing(params, next), { replace: true })}
-                onShape={(next) => setParams(withShape(params, next), { replace: true })}
-                onCheck={idle.checkNow}
-                onTryIt={() => {
-                  setTryingIt((was) => {
-                    const next = !was
-                    // Where the pane cannot fit beside the editor it takes the
-                    // Inspector's place, and a closed Inspector has nowhere to
-                    // publish into.
-                    if (next && !roomInMain) slot.reveal()
-                    return next
-                  })
-                }}
-                onUndo={buffer.undo}
-                onDiscard={discardAll}
-                onSave={() => save()}
-              />
-            )}
             {pack.error !== null && (
               <ErrorBox
                 title={`The runtime could not read ${path ?? 'this pack'}`}

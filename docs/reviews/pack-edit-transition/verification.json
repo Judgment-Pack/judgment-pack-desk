@@ -1,0 +1,52 @@
+{
+  "passed": true,
+  "configurations": [
+    {
+      "width": 1700,
+      "height": 1000,
+      "theme": "dark",
+      "density": "comfortable"
+    },
+    {
+      "width": 1400,
+      "height": 800,
+      "theme": "light",
+      "density": "compact"
+    },
+    {
+      "width": 1024,
+      "height": 768,
+      "theme": "dark",
+      "density": "comfortable"
+    },
+    {
+      "width": 600,
+      "height": 700,
+      "theme": "light",
+      "density": "compact"
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "density": "comfortable"
+    },
+    {
+      "width": 360,
+      "height": 640,
+      "theme": "dark",
+      "density": "compact"
+    }
+  ],
+  "checks": [
+    "scrolled entry and pinned controls",
+    "visible edit and return at every width",
+    "focus on entry and return",
+    "dialog cancellation and focus restoration",
+    "discard never writes",
+    "Inspector minimum/maximum resizing and draft-pane exit",
+    "one verified save and return through real chassis",
+    "no page or form overflow"
+  ],
+  "errors": []
+}

@@ -1007,15 +1007,23 @@ found.
 
 ### Editing
 
-`?edit` on the same route, and a search parameter rather than a path segment
-for one reason: the dirty blocker's predicate is
-`currentLocation.pathname !== nextLocation.pathname`, so a mode in the path
-would ask "leave without saving?" every time a viewer switched back to Read,
-and a predicate loose enough to allow that would stop asking on the exits it
-exists for. The toggle is the same page — same mount, same scroll, same
-selection, same buffer — and `?at` and `?edit` are both written with
-`replace: true`, because how you are looking at a document is not a
-navigation.
+**Edit** opens the same pack route with `?edit`. The pinned editor header keeps
+**Back to pack**, **Save** and a visible save status available at every scroll
+position. Form/JSON, Check, Test draft, Undo and Discard are secondary controls
+in that header. Saved-pack navigation is available after leaving edit mode;
+Test draft uses the draft's inline evaluation surface.
+
+Back to pack restores the reading view and selection from which editing began.
+With unsaved work it offers Keep editing, Discard and return, or Save and return.
+Save and return leaves only after the submitted bytes are read back unchanged,
+with no later edits or unfinished operands left behind. Failed writes and
+conflicts keep the editor open. Save still permits invalid draft bytes; validation
+is advisory. Unfinished operand text stays in the editor and is explicitly
+excluded from an ordinary Save.
+
+Mode and selection changes use `replace: true` and retain the same buffer.
+Leaving the pack's pathname or closing the browser still invokes the existing
+unsaved-work guard.
 
 **The buffer is the document, and nothing stands behind it.** Both modes draw
 `indexDocument(buffer).value` rather than the parsed pack `get_pack` served, so
@@ -1044,11 +1052,6 @@ carries the same path and still does not rebase, which is the rule the base
 depends on. The Inspector's provenance group says the same thing from the other
 side: while the buffer is dirty it stops claiming the file matches what the
 editor holds, and says the figures are the file on disk instead.
-
-The toolbar is edit mode's: a reading page carrying a Check button and a Save
-that can never be pressed is chrome about a mode nobody is in. The way *in* is
-one control beside the two standing links, and it writes `?edit` with
-`replace: true` for the same reason selecting a member does.
 
 **Forms in place.** A member's card becomes its form where it stands, and it
 keeps the block's pointer as its `data-pointer` and element id — so a
@@ -1136,7 +1139,7 @@ the JSON view the strip prints every diagnostic with its own pointer, because
 there are no blocks to distribute them to and a report visible only to whoever
 has the Inspector open is a report the page is keeping to itself.
 
-**Try it** runs the draft without saving it. `experimental_evaluate` takes
+**Test draft** runs the draft without saving it. `experimental_evaluate` takes
 `pack` as JSON text **XOR** `pack_id`, so the source control sends one or the
 other and never both: the tool's `required` list is `["facts"]` alone and the
 handler enforces exactly-one-of by hand, so both and neither are each refused

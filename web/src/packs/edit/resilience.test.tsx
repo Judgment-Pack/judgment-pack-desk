@@ -366,8 +366,8 @@ describe('where Try it opens, measured', () => {
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT })
     await screen.findByRole('button', { name: /On this page/ })
-    fireEvent.click(screen.getByRole('button', { name: 'Try it' }))
-    const pane = await screen.findByRole('complementary', { name: 'Try it' })
+    fireEvent.click(screen.getByRole('button', { name: 'Test draft' }))
+    const pane = await screen.findByRole('complementary', { name: 'Test draft' })
     expect(String(pane.parentElement?.className)).toContain('pane')
     expect(revealed).toEqual([])
   })
@@ -377,8 +377,8 @@ describe('where Try it opens, measured', () => {
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT, inspector: true })
     await screen.findByRole('button', { name: /On this page/ })
-    fireEvent.click(screen.getByRole('button', { name: 'Try it' }))
-    const pane = await screen.findByRole('complementary', { name: 'Try it' })
+    fireEvent.click(screen.getByRole('button', { name: 'Test draft' }))
+    const pane = await screen.findByRole('complementary', { name: 'Test draft' })
     // Published into the slot rather than placed beside the editor, and the
     // pane is asked to open because a closed one has nowhere to publish into.
     expect(String(pane.parentElement?.className)).not.toContain('pane')
@@ -394,8 +394,8 @@ describe('where Try it opens, measured', () => {
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT })
     await screen.findByRole('button', { name: /On this page/ })
-    fireEvent.click(screen.getByRole('button', { name: 'Try it' }))
-    const pane = await screen.findByRole('complementary', { name: 'Try it' })
+    fireEvent.click(screen.getByRole('button', { name: 'Test draft' }))
+    const pane = await screen.findByRole('complementary', { name: 'Test draft' })
     expect(String(pane.parentElement?.className)).toContain('pane')
     // Nothing was asked to move: the Inspector is not opened for a pane that
     // fits beside the editor.

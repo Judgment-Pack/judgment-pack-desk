@@ -91,8 +91,8 @@ describe('the mode is the address', () => {
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     drawPack(served(PACK_TEXT), { path: EDIT })
     await screen.findByRole('button', { name: /On this page/ })
-    expect(screen.queryByRole('link', { name: 'Try it' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Try it' })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Test draft' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Test draft' })).toBeTruthy()
   })
 })
 
@@ -352,8 +352,8 @@ describe('where Try it opens', () => {
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT })
     await screen.findByRole('button', { name: /On this page/ })
-    fireEvent.click(screen.getByRole('button', { name: 'Try it' }))
-    const pane = await screen.findByRole('complementary', { name: 'Try it' })
+    fireEvent.click(screen.getByRole('button', { name: 'Test draft' }))
+    const pane = await screen.findByRole('complementary', { name: 'Test draft' })
     // Inside main, not in the Inspector — and the Inspector is not opened for
     // it, because nothing needs to move.
     expect(pane.closest('[data-pointer=""]')).toBeNull()
@@ -367,8 +367,8 @@ describe('where Try it opens', () => {
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT, inspector: true })
     await screen.findByRole('button', { name: /On this page/ })
-    fireEvent.click(screen.getByRole('button', { name: 'Try it' }))
-    await screen.findByRole('complementary', { name: 'Try it' })
+    fireEvent.click(screen.getByRole('button', { name: 'Test draft' }))
+    await screen.findByRole('complementary', { name: 'Test draft' })
     // The pane it replaces is the Inspector's, so the Inspector's own panels
     // are not on screen beside it.
     expect(screen.queryByRole('tab', { name: 'Member' })).toBeNull()
@@ -381,7 +381,7 @@ describe('where Try it opens', () => {
     const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT })
     await screen.findByRole('button', { name: /On this page/ })
     expect(revealed).toEqual([])
-    fireEvent.click(screen.getByRole('button', { name: 'Try it' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Test draft' }))
     expect(revealed).toContain('reveal')
   })
 })
